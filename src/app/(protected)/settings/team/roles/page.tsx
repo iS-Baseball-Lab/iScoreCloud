@@ -29,7 +29,6 @@ export default function TeamMembersPage() {
   const [myRole, setMyRole] = useState("");
   const [teamId, setTeamId] = useState<string | null>(null);
   const [teamName, setTeamName] = useState("");
-  const [inviteCode, setInviteCode] = useState("");
   const [roleSettings, setRoleSettings] = useState<CustomRoleSetting[]>([]);
   
   const [isLoading, setIsLoading] = useState(true);
@@ -47,13 +46,11 @@ export default function TeamMembersPage() {
       const json = await res.json() as { 
         success: boolean; 
         members?: TeamMember[]; 
-        inviteCode?: string;
         roleSettings?: CustomRoleSetting[];
       };
       
       if (json.success && json.members) {
         setMembers(json.members);
-        if (json.inviteCode) setInviteCode(json.inviteCode);
         if (json.roleSettings) setRoleSettings(json.roleSettings);
       }
     } catch {
@@ -189,14 +186,12 @@ export default function TeamMembersPage() {
         
         {/* ━━ ページヘッダー ━━ */}
         <div className="space-y-4">
-          {/* 🌟 見出しは単体で独立。これで他の登録画面と完全に並びが揃います */}
           <SectionHeader 
             title="メンバー管理" 
             subtitle="MEMBERS" 
             showPulse={true} 
           />
           
-          {/* 🌟 メンバー数表示とアクションボタンのコンテナ */}
           <div className="flex items-center justify-between bg-card p-3 rounded-[var(--radius-xl)] border border-border shadow-sm">
             <p className="text-sm font-black text-foreground flex items-center gap-1.5">
               <Users className="h-4 w-4 text-primary" />
@@ -204,7 +199,6 @@ export default function TeamMembersPage() {
               <span className="text-xs font-bold text-muted-foreground">名参加中（{teamName}）</span>
             </p>
             
-            {/* 🌟 右側のアクショングループ */}
             <div className="flex items-center gap-2">
               {canManage && (
                 <Button
@@ -239,8 +233,8 @@ export default function TeamMembersPage() {
           onFilterChange={setFilter}
         />
 
-        {/* ━━ 招待コード ━━ */}
-        {canManage && inviteCode && <TeamInviteCard inviteCode={inviteCode} />}
+        {/* ━━ 招待コード (🌟 teamIdをそのまま渡すため、100%確実に表示・コピーできます！) ━━ */}
+        {canManage && <TeamInviteCard inviteCode={teamId} />}
 
         {/* ━━ メンバーリスト ━━ */}
         <div className="space-y-3">
