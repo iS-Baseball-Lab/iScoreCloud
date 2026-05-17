@@ -10,11 +10,11 @@ const app = new Hono<{ Bindings: WorkerEnv }>()
 const getRoleLabel = (role: string) => {
   switch (role.toUpperCase()) {
     case 'manager': return '監督/代表者';
-    case 'COACH': return 'コーチ';
-    case 'SCORER': return 'スコアラー';
-    case 'STAFF': return 'スタッフ';
-    case 'PLAYER': return '選手';
-    case 'PARENT': return '保護者';
+    case 'coach': return 'コーチ';
+    case 'scorer': return 'スコアラー';
+    case 'staff': return 'スタッフ';
+    case 'player': return '選手';
+    case 'parent': return '保護者';
     default: return 'メンバー';
   }
 };

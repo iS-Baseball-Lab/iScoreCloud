@@ -177,17 +177,22 @@ export function TeamMemberCard({ member, myUserId, myRole, onRoleChange, onRemov
       </div>
 
       <div className="shrink-0 flex items-center gap-2">
-        {isPending ? (
+        {/* 💡 監督(canManage)なら、承認待ちでもRoleSelectorを出して「承認（役割付与）」できるようにする */}
+        {isPending && !canManage ? (
           <RoleBadge role={ROLES.PENDING} />
         ) : (
-          <RoleSelector currentRole={member.role} memberId={member.memberId} myRole={myRole} onRoleChange={onRoleChange} disabled={isMe} />
+          <div className="flex items-center gap-2">
+            {isPending && <span className="text-[10px] font-black text-orange-500 animate-pulse">未承認:</span>}
+            <RoleSelector currentRole={member.role} memberId={member.memberId} myRole={myRole} onRoleChange={onRoleChange} disabled={isMe} />
+          </div>
         )}
 
+        {/* 💡 ゴミ箱ボタンは「承認拒否」としても機能します */}
         {canManage && !isMe && (
           <button
             onClick={() => onRemove(member)}
             className="h-8 w-8 rounded-[var(--radius-lg)] border border-border flex items-center justify-center text-muted-foreground hover:bg-destructive hover:text-destructive-foreground hover:border-destructive transition-all opacity-0 group-hover:opacity-100 shadow-sm active:scale-95 shrink-0"
-            title="チームから除名"
+            title={isPending ? "参加申請を拒否" : "チームから除名"}
           >
             <Trash2 className="h-3.5 w-3.5" />
           </button>
