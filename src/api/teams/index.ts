@@ -7,20 +7,34 @@ import { desc, eq, and } from 'drizzle-orm'
 import { canManageTeam } from '@/lib/roles'
 import type { AuthUser } from '@/types/api'
 
-// 🔥 子ルーターのインポート
+// 🌟 members.ts から各ハンドラー関数をインポート
+import { 
+  handleJoinTeam, 
+  handleSearchTeam, 
+  handleGetMembers, 
+  handlePutRoleSettings, 
+  handlePatchMemberRole, 
+  handleRemoveMember 
+} from './members'
+
+// 他の子ルーターのインポート
 import playersApp from './players'
 import statsApp from './stats'
 import lineupsApp from './lineups'
-import membersApp from './members' // 🌟 新設したメンバー管理ルーター
 
 const app = new Hono<{ Bindings: { DB: D1Database, ASSETS: Fetcher } }>()
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 🌟 子ルーターのマウント
+// 🌟 メンバー・申請関連のルーティングテーブル (Honoが100%誤認しない登録方式)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// ⚠️ Honoの仕様上、/join 固定ルートを確実に優先評価させるため、
-// 動的ルート(/:id)を含む「membersApp」は他のルーターより最優先（一番上）にマウントします
-app.route('/', membersApp) 
+app.post('/join', handleJoinTeam)
+app.get('/search/:id', handleSearchTeam)
+app.get('/:id/members', handleGetMembers)
+  app.put('/:id/roles/settings', handlePutRoleSettings)
+app.patch('/:id/members/:memberId', handlePatchMemberRole)
+app.delete('/:id/members/:memberId', handleRemoveMember)
+
+// 既存の子ルーターをマウント
 app.route('/', playersApp)
 app.route('/', statsApp)
 app.route('/', lineupsApp)
