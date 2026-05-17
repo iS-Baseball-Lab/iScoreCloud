@@ -122,7 +122,7 @@ export default function PendingApprovalPage() {
                 チームへの参加
               </h1>
               <p className="text-sm font-bold text-muted-foreground leading-relaxed text-left sm:text-center">
-                監督や代表から共有された<br /><span className="text-foreground">招待コード（チームID）</span>を入力して、<br />参加申請を送信してください。
+                監督や代表者または、管理者などから共有された<br /><span className="text-foreground">招待コード（チームID）</span>を入力して、<br />参加申請を送信してください。
               </p>
             </div>
 
@@ -187,7 +187,7 @@ export default function PendingApprovalPage() {
               </h1>
               <p className="text-sm font-bold text-muted-foreground leading-relaxed">
                 チームへの参加申請を送信しました。<br />
-                監督や代表者が承認するまで、しばらくお待ちください。
+                承認されるまで、しばらくお待ちください。
               </p>
             </div>
 
