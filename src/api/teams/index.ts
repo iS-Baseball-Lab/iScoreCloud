@@ -129,6 +129,9 @@ app.get('/:id/members', async (c) => {
       .get()
     if (!myMembership) return c.json({ error: '権限がありません' }, 403)
 
+    // チームテーブル等から invite_code をクエリして取得する処理が必要！
+    const teamData = await db.select().from(teams).where(eq(teams.id, teamId)).get();
+  
     // active メンバー一覧を user テーブルと JOIN して返す
     const { results } = await c.env.DB.prepare(`
       SELECT
@@ -148,7 +151,7 @@ app.get('/:id/members', async (c) => {
         tm.joined_at ASC
     `).bind(teamId).all()
 
-    return c.json({ success: true, members: results })
+    return c.json({ success: true, members: results, inviteCode: teamData?.inviteCode ?? "CODE1234", })
   } catch (e) {
     return c.json({ success: false, error: 'メンバー一覧の取得に失敗しました' }, 500)
   }
