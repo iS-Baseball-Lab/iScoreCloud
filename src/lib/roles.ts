@@ -1,48 +1,99 @@
-// src/lib/roles.ts
+// filepath: src/lib/roles.ts
 
-// 💡 7つのロールを厳密に定義
+// 💡 7つのロールを厳密に定義（値は小文字で統一）
 export const ROLES = {
-  ADMIN: "admin", // IT管理者
-  MANAGER: "manager", // 代表・監督
-  COACH: "coach", // コーチ
-  SCORER: "scorer", // スコアラー
-  STAFF: "staff", // 保護者・スタッフ
-  PLAYER: "player", // 選手
-  VIEWER: "viewer", // OB・関係者
-  PENDING: "pending", // 認証待ちの仮ユーザー（デフォルト）
+  ADMIN: "admin",       // IT管理者
+  MANAGER: "manager",   // 代表・監督
+  COACH: "coach",       // コーチ
+  SCORER: "scorer",     // スコアラー
+  STAFF: "staff",       // 保護者・スタッフ
+  PLAYER: "player",     // 選手
+  VIEWER: "viewer",     // OB・関係者
+  PENDING: "pending",   // 認証待ちの仮ユーザー（デフォルト）
 } as const;
 
 // TypeScript用の型（'admin' | 'manager' | 'coach' ... となります）
 export type Role = typeof ROLES[keyof typeof ROLES];
 
+/**
+ * 💡 チーム固有のロールカスタム呼称データを受け取るための型定義
+ * バックエンドのDB（D1）やAPIレスポンスと共通化します
+ */
+export interface CustomRoleSetting {
+  role: string;         // 'manager', 'coach' などのシステムロールキー
+  customLabel: string;  // '総監督', '代表', '保護者会' などのカスタム呼称
+}
+
+// 💡 チームがカスタム設定していない場合のシステムデフォルトの日本語呼称
+export const DEFAULT_ROLE_LABELS: Record<Role, string> = {
+  [ROLES.ADMIN]: "IT管理者",
+  [ROLES.MANAGER]: "監督",
+  [ROLES.COACH]: "コーチ",
+  [ROLES.SCORER]: "スコアラー",
+  [ROLES.STAFF]: "スタッフ",
+  [ROLES.PLAYER]: "選手",
+  [ROLES.VIEWER]: "閲覧者",
+  [ROLES.PENDING]: "承認待ち",
+};
+
+/**
+ * 💡 チーム固有のカスタム設定を考慮して、正しい日本語表示ラベルを返す共通関数
+ * @param role ユーザーのロール文字列
+ * @param customSettings チームごとのカスタム呼称設定（任意）
+ */
+export function resolveRoleLabel(
+  role: string | null | undefined,
+  customSettings?: CustomRoleSetting[] | null
+): string {
+  if (!role) return "メンバー";
+  
+  // 小文字に正規化してRole型にキャスト
+  const normalizedRole = role.toLowerCase() as Role;
+
+  // 1. チーム固有のカスタム設定があればそれを最優先で適用
+  if (customSettings && Array.isArray(customSettings)) {
+    const setting = customSettings.find(s => s.role.toLowerCase() === normalizedRole);
+    if (setting?.customLabel) return setting.customLabel;
+  }
+
+  // 2. カスタム設定がなければシステムデフォルトの呼称を返す
+  return DEFAULT_ROLE_LABELS[normalizedRole] ?? "メンバー";
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // 💡 各アクションに対する権限チェック用のヘルパー関数
-// これを作っておくと、後々の画面やAPIの制御が劇的に楽になります
+// （既存のロジックは完全維持。文字列の揺れ防止のため型安全に強化）
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 // 0. チームに承認されたメンバーか？（pending以外ならOK）
 export const isApprovedMember = (role?: string | null): boolean => {
   if (!role) return false;
-  return role !== ROLES.PENDING;
+  return role.toLowerCase() !== ROLES.PENDING;
 };
 
 // 1. システム管理（IT担当）ができるか
 export const canManageSystem = (role?: string | null): boolean => {
-  return role === ROLES.ADMIN;
+  if (!role) return false;
+  return role.toLowerCase() === ROLES.ADMIN;
 };
 
 // 2. チーム管理（代表・監督・IT担当）ができるか
 export const canManageTeam = (role?: string | null): boolean => {
   if (!role) return false;
-  return ([ROLES.ADMIN, ROLES.MANAGER] as string[]).includes(role as Role);
+  const r = role.toLowerCase();
+  return (r === ROLES.ADMIN || r === ROLES.MANAGER);
 };
 
 // 3. スコアの入力・編集（管理者、監督、コーチ、スコアラー）ができるか
 export const canEditScore = (role?: string | null): boolean => {
   if (!role) return false;
-  return ([ROLES.ADMIN, ROLES.MANAGER, ROLES.COACH, ROLES.SCORER] as string[]).includes(role as Role);
+  const r = role.toLowerCase();
+  return (r === ROLES.ADMIN || r === ROLES.MANAGER || r === ROLES.COACH || r === ROLES.SCORER);
 };
 
 // 4. チーム内部情報の閲覧（スタッフ以上）ができるか
 export const canViewInternalData = (role?: string | null): boolean => {
   if (!role) return false;
-  return ([ROLES.ADMIN, ROLES.MANAGER, ROLES.COACH, ROLES.SCORER, ROLES.STAFF] as string[]).includes(role as Role);
+  const r = role.toLowerCase();
+  return (r === ROLES.ADMIN || r === ROLES.MANAGER || r === ROLES.COACH || r === ROLES.SCORER || r === ROLES.STAFF);
 };
