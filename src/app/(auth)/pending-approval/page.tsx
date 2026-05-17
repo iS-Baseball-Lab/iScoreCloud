@@ -139,7 +139,7 @@ export default function PendingApprovalPage() {
               </h1>
               <p className="text-sm font-bold text-muted-foreground leading-relaxed text-left sm:text-center">
                 監督や代表者または、管理者などから共有された<br />
-                <span className="text-foreground">招待コード（チームID）</span>を入力して、<br />
+                チームへの<span className="text-foreground">招待コード（チームID）</span>を入力して、<br />
                 参加申請を送信してください。
               </p>
             </div>
