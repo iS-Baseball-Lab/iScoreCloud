@@ -182,6 +182,12 @@ export interface InningDetail {
   isBottom: boolean;
 }
 
+export interface InningRow {
+  teamType: "home" | "away";
+  inningNumber: number;
+  runs: number;
+}
+
 export interface ScoreSet {
   home: number;
   away: number;

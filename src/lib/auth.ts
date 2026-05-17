@@ -14,7 +14,6 @@ interface AuthEnv {
   MICROSOFT_CLIENT_ID?: string;
   MICROSOFT_CLIENT_SECRET?: string;
   MICROSOFT_TENANT_ID?: string;
-  [key: string]: unknown; // 他の Bindings（DB, BUCKET, ASSETS 等）を許容
 }
 
 let authCache: ReturnType<typeof betterAuth> | null = null;

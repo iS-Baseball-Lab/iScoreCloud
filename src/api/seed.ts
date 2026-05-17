@@ -6,11 +6,9 @@ import {
   organizations, organizationMembers, teams, teamMembers, players, matches
 } from '../db/schema';
 
-type Env = {
-  DB: D1Database;
-};
+import type { WorkerEnv } from '../types/api';
 
-const app = new Hono<{ Bindings: Env }>();
+const app = new Hono<{ Bindings: WorkerEnv }>();
 
 app.post('/', async (c) => {
   const auth = getAuth(c.env.DB, c.env);

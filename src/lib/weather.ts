@@ -19,8 +19,8 @@ export async function reverseGeocode(lat: number, lon: number): Promise<string> 
       `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&accept-language=ja`
     );
     if (res.ok) {
-      const data = await res.json();
-      const addr = data.address;
+      const data = (await res.json()) as any;
+      const addr = data.address || {};
       // 都道府県 + 市区町村 + 区(あれば) を連結
       const pref = addr.province || addr.state || addr.region || "";
       const city = addr.city || addr.town || addr.village || "";

@@ -179,7 +179,7 @@ export default function TeamsPage() {
             onCategoryChange={handleCategoryChange}
             onSelectOrg={handleSelectOrg}
             onOpenDetail={(e, org) => { e.preventDefault(); e.stopPropagation(); setDetailModal({ type: 'org', data: org }); }}
-            onOpponentClick={(opp) => handleSelectOrg(opp.originalOrg)}
+            onOpponentClick={(opp) => opp.originalOrg && handleSelectOrg(opp.originalOrg)}
             onAddOrg={(isExternal) => { setIsExternalOrgCreate(isExternal); setIsDrawerOpen(true); }}
           />
         ) : (

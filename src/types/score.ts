@@ -54,6 +54,9 @@ export interface ScoreState {
   pitcherId: string | null;
   pitchCount: number;
 
+  status: string;
+  isScorer: boolean;
+
   logs: PlayLogEntry[];
 }
 
@@ -82,6 +85,7 @@ export interface ScoreContextType {
   state: ScoreState;
   isLoading: boolean;
   isSyncing: boolean;
+  isScorer: boolean;
   initMatch: (matchId: string) => Promise<void>;
   recordPitch: (result: "ball" | "strike" | "foul" | "swinging_strike" | "out") => Promise<void>;
   recordInPlay: (

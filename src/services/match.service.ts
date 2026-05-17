@@ -17,6 +17,7 @@ export const MatchService = {
   async getMatchesByTeam(db: DrizzleDB, teamId: string): Promise<MatchRow[]> {
     const rows = await db.select({
       id: matches.id,
+      teamId: matches.teamId,
       opponent: matches.opponent,
       date: matches.date,
       myScore: matches.myScore,
@@ -29,6 +30,12 @@ export const MatchService = {
       innings: matches.innings,
       myInningScores: matches.myInningScores,
       opponentInningScores: matches.opponentInningScores,
+      currentInning: matches.currentInning,
+      isBottom: matches.isBottom,
+      isTiebreaker: matches.isTiebreaker,
+      isColdGame: matches.isColdGame,
+      venueId: matches.venueId,
+      weather: matches.weather,
     })
       .from(matches)
       .leftJoin(tournaments, eq(matches.tournamentId, tournaments.id))
@@ -39,7 +46,8 @@ export const MatchService = {
     // DBのJSON文字列を配列に変換してフロントエンドに返す
     return rows.map((r) => ({
       ...r,
-      // matchType / battingOrder はスキーマ上 string だがアプリ内では限定値のみ使用
+      // status / matchType / battingOrder はスキーマ上 string だがアプリ内では限定値のみ使用
+      status: r.status as "scheduled" | "live" | "finished",
       matchType: r.matchType as "official" | "practice",
       battingOrder: r.battingOrder as "first" | "second",
       myInningScores: JSON.parse(r.myInningScores ?? "[]") as number[],

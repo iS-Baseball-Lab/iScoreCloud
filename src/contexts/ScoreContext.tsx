@@ -39,6 +39,9 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
     isGuestFirst: true,
     status: 'scheduled',
     isScorer: false, // 🌟 編集権限フラグ
+    batterId: null,
+    pitcherId: null,
+    pitchCount: 0,
     logs: [],
   });
 
@@ -229,10 +232,35 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
+  // 🚀 7. ランナー状態の更新
+  const updateRunners = (runners: { base1: string | null; base2: string | null; base3: string | null }) => {
+    setState(prev => ({ ...prev, runners }));
+  };
+
+  // 🚀 8. 打者のリセット
+  const resetBatter = (playerId: string | null) => {
+    setState(prev => ({ ...prev, batterId: playerId }));
+  };
+
+  // 🚀 9. 試合の終了
+  const finishMatch = async () => {
+    setState(prev => {
+      const next = { ...prev, status: 'finished' };
+      syncWithBackend(next, "試合終了");
+      return next;
+    });
+  };
+
+  // 🚀 10. 試合設定の更新
+  const updateMatchSettings = (settings: Partial<ScoreState>) => {
+    setState(prev => ({ ...prev, ...settings }));
+  };
+
   return (
     <ScoreContext.Provider value={{
       state, isLoading, isSyncing, initMatch, recordPitch, recordInPlay,
-      changeInning, isScorer: state.isScorer
+      changeInning, isScorer: state.isScorer,
+      updateRunners, resetBatter, finishMatch, updateMatchSettings
     }}>
       {children}
     </ScoreContext.Provider>

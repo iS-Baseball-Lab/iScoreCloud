@@ -23,7 +23,7 @@ export const handleJoinTeam = async (c: Context) => {
 
   try {
     const team = await db.select().from(teams).where(eq(teams.id, targetTeamId)).get()
-    if (!team) return c.json({ success: false, error: '無効な招待コードです' }, 444)
+    if (!team) return c.json({ success: false, error: '無効な招待コードです' }, 404)
 
     const existing = await db.select().from(teamMembers).where(and(eq(teamMembers.teamId, targetTeamId), eq(teamMembers.userId, session.user.id))).get()
     if (existing) {
@@ -37,11 +37,19 @@ export const handleJoinTeam = async (c: Context) => {
       userId: session.user.id,
       role: ROLES.PENDING,
       status: 'pending',
-      joinedAt: Math.floor(Date.now() / 1000)
+      joinedAt: new Date()
     })
 
     return c.json({ success: true, message: '参加申請を送信しました！' })
-  } catch (e) { return c.json({ success: false, error: '申請処理に失敗しました' }, 500) }
+  }
+  catch (e: any) {
+    console.error("[iScore API Error] チーム参加申請でエラー:", e.message);
+    return c.json({
+      success: false,
+      error: '申請処理に失敗しました',
+      details: e.message // 👈 これが絶対に必要！
+    }, 500)
+  }
 }
 
 /** チーム検索 */
@@ -80,7 +88,7 @@ export const handleGetMembers = async (c: Context) => {
     } catch (sqlError) {
       console.warn("[iScore Warning] team_role_settings テーブルが未作成です。マイグレーションを実行してください。")
     }
-  
+
     const { results } = await c.env.DB.prepare(`
       SELECT
         tm.id        AS memberId,
@@ -144,7 +152,7 @@ export const handlePatchMemberRole = async (c: Context) => {
   const session = await auth.api.getSession({ headers: c.req.raw.headers })
   if (!session) return c.json({ error: 'Unauthorized' }, 401)
 
-  const teamId   = c.req.param('id')
+  const teamId = c.req.param('id')
   const memberId = c.req.param('memberId')
   const { role } = await c.req.json<{ role: string }>()
   const db = drizzle(c.env.DB)
@@ -170,7 +178,7 @@ export const handleRemoveMember = async (c: Context) => {
   const session = await auth.api.getSession({ headers: c.req.raw.headers })
   if (!session) return c.json({ error: 'Unauthorized' }, 401)
 
-  const teamId   = c.req.param('id')
+  const teamId = c.req.param('id')
   const memberId = c.req.param('memberId')
   const db = drizzle(c.env.DB)
 

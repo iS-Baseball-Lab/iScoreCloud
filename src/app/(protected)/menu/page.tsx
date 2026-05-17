@@ -30,9 +30,9 @@ export default function MenuPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-background p-6 pt-24 pb-32">
+    <div className="min-h-screen p-6 pt-24 pb-32">
       <h1 className="text-3xl font-black italic tracking-tighter text-primary mb-8">MENU</h1>
-      
+
       <div className="space-y-8">
         {menuSections.map((section) => (
           <div key={section.title} className="space-y-3">

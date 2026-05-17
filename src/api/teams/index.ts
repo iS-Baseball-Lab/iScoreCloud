@@ -5,7 +5,7 @@ import { drizzle } from 'drizzle-orm/d1'
 import { teams, teamMembers, organizations } from '@/db/schema'
 import { desc, eq, and } from 'drizzle-orm'
 import { canManageTeam } from '@/lib/roles'
-import type { AuthUser } from '@/types/api'
+import type { AuthUser, WorkerEnv } from '@/types/api'
 
 // 🌟 members.ts から各ハンドラー関数をインポート
 import { 
@@ -22,7 +22,7 @@ import playersApp from './players'
 import statsApp from './stats'
 import lineupsApp from './lineups'
 
-const app = new Hono<{ Bindings: { DB: D1Database, ASSETS: Fetcher } }>()
+const app = new Hono<{ Bindings: WorkerEnv }>()
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // 🌟 メンバー・申請関連のルーティングテーブル (Honoが100%誤認しない登録方式)
@@ -119,6 +119,7 @@ app.delete('/:id', async (c) => {
   const session = await auth.api.getSession({ headers: c.req.raw.headers })
   if (!session) return c.json({ error: 'Unauthorized' }, 401)
   const teamId = c.req.param('id')
+  const db = drizzle(c.env.DB)
 
   try {
     await c.env.DB.prepare(`DELETE FROM play_logs WHERE match_id IN (SELECT id FROM matches WHERE team_id = ?)`).bind(teamId).run()

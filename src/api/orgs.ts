@@ -6,7 +6,9 @@ import { organizations, organizationMembers, teams } from '@/db/schema'
 import type { AuthUser } from '@/types/api'
 import { desc, eq, and } from 'drizzle-orm'
 
-const app = new Hono<{ Bindings: { DB: D1Database, ASSETS: Fetcher } }>()
+import type { WorkerEnv } from '@/types/api'
+
+const app = new Hono<{ Bindings: WorkerEnv }>()
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // 💡 1. クラブ一覧取得 (カテゴリも取得するように修正！)
