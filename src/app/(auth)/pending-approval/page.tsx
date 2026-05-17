@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Loader2, Send, Clock, ArrowLeft, ShieldQuestion } from "lucide-react";
+import { Loader2, Send, Clock, ShieldQuestion, LogOut } from "lucide-react"; // 💡 LogOutアイコンを追加、ArrowLeftを削除
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // 💡 型定義 (Type Safety)
@@ -17,7 +17,7 @@ interface Membership {
   teamId: string;
   teamName: string;
   role: string;
-  status: "active" | "pending"; // 🌟 ステータスを厳格に型付け
+  status: "active" | "pending";
   isMainTeam: boolean;
 }
 
@@ -41,6 +41,7 @@ export default function PendingApprovalPage() {
   const [view, setView] = useState<ViewState>("input");
   const [inviteCode, setInviteCode] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false); // 💡 ログアウト中のローディング状態
   const [isLoading, setIsLoading] = useState(true);
 
   // ─── 初期状態のチェック（既に申請中かどうか） ───
@@ -50,11 +51,9 @@ export default function PendingApprovalPage() {
         const res = await fetch("/api/auth/me");
         if (!res.ok) throw new Error("ネットワークエラー");
 
-        // 💡 取得したJSONに AuthMeResponse 型を適用
         const json = (await res.json()) as AuthMeResponse;
 
         if (json.success && json.data?.memberships) {
-          // 💡 m: any を排除。m は Membership 型として自動推論され、タイポを防ぎます
           const hasPending = json.data.memberships.some(m => m.status === "pending");
           if (hasPending) {
             setView("pending");
@@ -82,7 +81,6 @@ export default function PendingApprovalPage() {
         body: JSON.stringify({ inviteCode: inviteCode.trim() }),
       });
 
-      // 💡 取得したJSONに JoinTeamResponse 型を適用
       const json = (await res.json()) as JoinTeamResponse;
 
       if (!json.success) {
@@ -90,12 +88,30 @@ export default function PendingApprovalPage() {
       }
 
       toast.success(json.message || "チームへの参加申請を送信しました！");
-      setView("pending"); // 申請完了後は待合室へ
+      setView("pending");
 
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "参加申請に失敗しました。");
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // ─── 💡 ログアウト処理 ───
+  const handleLogout = async () => {
+    setIsLoggingOut(true);
+    try {
+      // 💡 i-Scoreの認証機構（Auth.js / NextAuth等）のサインアウトエンドポイントへリクエスト
+      const res = await fetch("/api/auth/signout", { method: "POST" });
+
+      toast.success("ログアウトしました");
+      // セッションをクリアしたため、安全にログイン画面（またはトップ）へ戻す
+      router.push("/login");
+    } catch (error) {
+      // 通信エラーなどのフォールバック処理として、強制的に画面を切り替えて安全を担保
+      window.location.href = "/login";
+    } finally {
+      setIsLoggingOut(false);
     }
   };
 
@@ -122,7 +138,9 @@ export default function PendingApprovalPage() {
                 チームへの参加
               </h1>
               <p className="text-sm font-bold text-muted-foreground leading-relaxed text-left sm:text-center">
-                監督や代表者または、管理者などから共有された<br /><span className="text-foreground">招待コード（チームID）</span>を入力して、<br />参加申請を送信してください。
+                監督や代表者または、管理者などから共有された<br />
+                <span className="text-foreground">招待コード（チームID）</span>を入力して、<br />
+                参加申請を送信してください。
               </p>
             </div>
 
@@ -144,7 +162,7 @@ export default function PendingApprovalPage() {
               <div className="space-y-3 pt-2">
                 <Button
                   type="submit"
-                  disabled={isSubmitting || !inviteCode.trim()}
+                  disabled={isSubmitting || isLoggingOut || !inviteCode.trim()}
                   className="w-full h-12 rounded-[var(--radius-xl)] font-black text-sm shadow-md transition-all active:scale-[0.98] group"
                 >
                   {isSubmitting ? (
@@ -157,14 +175,20 @@ export default function PendingApprovalPage() {
                   )}
                 </Button>
 
+                {/* 💡 不自然なダッシュボードへの導線を廃して、ログアウトボタンへ変更 */}
                 <Button
                   type="button"
                   variant="ghost"
-                  onClick={() => router.push("/teams")}
+                  onClick={handleLogout}
+                  disabled={isSubmitting || isLoggingOut}
                   className="w-full h-12 rounded-[var(--radius-xl)] font-bold text-muted-foreground hover:text-foreground"
                 >
-                  <ArrowLeft className="h-4 w-4 mr-2" />
-                  ダッシュボードへ戻る
+                  {isLoggingOut ? (
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  ) : (
+                    <LogOut className="h-4 w-4 mr-2" />
+                  )}
+                  ログアウトして戻る
                 </Button>
               </div>
             </form>
@@ -194,17 +218,27 @@ export default function PendingApprovalPage() {
             <div className="pt-4 space-y-3">
               <Button
                 onClick={() => window.location.reload()}
+                disabled={isLoggingOut}
                 variant="outline"
                 className="w-full h-12 rounded-[var(--radius-xl)] font-black border-border shadow-sm"
               >
                 ステータスを更新
               </Button>
+
+              {/* 💡 待合室側も、一度離脱してやり直せるようにログアウトボタンへ変更 */}
               <Button
-                onClick={() => router.push("/teams")}
+                type="button"
+                onClick={handleLogout}
+                disabled={isLoggingOut}
                 variant="ghost"
-                className="w-full h-12 rounded-[var(--radius-xl)] font-bold text-muted-foreground hover:text-foreground"
+                className="w-full h-12 rounded-[var(--radius-xl)] font-bold text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
               >
-                ダッシュボードへ戻る
+                {isLoggingOut ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : (
+                  <LogOut className="h-4 w-4 mr-2" />
+                )}
+                ログアウトする
               </Button>
             </div>
           </div>
