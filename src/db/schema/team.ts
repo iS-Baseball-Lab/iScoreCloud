@@ -116,3 +116,13 @@ export const teamMembers = sqliteTable('team_members', {
     teamIdx: index("idx_team_members_team_id").on(table.teamId),
     userIdx: index("idx_team_members_user_id").on(table.userId),
 }));
+
+export const teamRoleSettings = sqliteTable('team_role_settings', {
+  id: text('id').primaryKey(),                  // 設定ID (ULID等)
+  teamId: text('team_id').notNull(),            // チームIDへの参照
+  role: text('role').notNull(),                  // 'MANAGER', 'COACH' 等のシステムロールキー
+  customLabel: text('custom_label').notNull(),  // '代表', 'ヘッドコーチ' などのカスタム呼称
+}, (table) => ({
+  // 1つのチーム内で1つのロールに対して設定は1つのみ
+  teamRoleIdx: uniqueIndex('team_role_idx').on(table.teamId, table.role),
+}));
