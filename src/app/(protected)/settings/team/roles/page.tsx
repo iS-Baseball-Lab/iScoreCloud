@@ -5,18 +5,22 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Loader2, RefreshCw, Users, ShieldAlert } from "lucide-react";
-import { ROLES } from "@/lib/roles";
+import { Badge } from "@/components/ui/badge";
+import { Loader2, RefreshCw, Users, Settings2, ShieldAlert } from "lucide-react";
 
-// 💡 共通レイアウトコンポーネント（現場至上主義UI）
+// 💡 共通レイアウト
 import { SectionHeader } from "@/components/layout/SectionHeader";
 import { EmptyState } from "@/components/layout/EmptyState";
 
-// 💡 共通機能コンポーネントのインポート
+// 💡 確立したロール定義 & 権限ヘルパー関数のインポート
+import { canManageTeam, type CustomRoleSetting } from "@/lib/roles";
+
+// 💡 共有機能コンポーネント
 import { TeamMemberSummaryCards } from "@/components/features/teams/team-member-summary-cards";
 import { TeamInviteCard } from "@/components/features/teams/team-invite-card";
 import { TeamMemberCard, type TeamMember } from "@/components/features/teams/team-member-card";
 import { TeamMemberRemoveModal } from "@/components/features/teams/team-member-remove-modal";
+import { TeamRoleSettingsModal } from "@/components/features/teams/team-role-settings-modal"; // 🌟追加
 
 export default function TeamMembersPage() {
   const router = useRouter();
@@ -27,23 +31,31 @@ export default function TeamMembersPage() {
   const [teamId, setTeamId] = useState<string | null>(null);
   const [teamName, setTeamName] = useState("");
   const [inviteCode, setInviteCode] = useState("");
+  const [roleSettings, setRoleSettings] = useState<CustomRoleSetting[]>([]); // 🌟呼称マスタ状態
+  
   const [isLoading, setIsLoading] = useState(true);
+  const [isRoleSettingsOpen, setIsRoleSettingsOpen] = useState(false); // 🌟モーダル状態
   const [removeTarget, setRemoveTarget] = useState<TeamMember | null>(null);
   const [isRemoving, setIsRemoving] = useState(false);
-  
-  // フィルター状態管理 ("all" | "pending" | "manager")
   const [filter, setFilter] = useState<string>("all");
 
-  // ─── データの取得 (Cloudflare Workers API) ───
+  // ─── データの取得 ───
   const fetchMembers = useCallback(async (tid: string) => {
     setIsLoading(true);
     try {
       const res = await fetch(`/api/teams/${tid}/members`);
       if (!res.ok) throw new Error();
-      const json = await res.json() as { success: boolean; members?: TeamMember[]; inviteCode?: string };
+      const json = await res.json() as { 
+        success: boolean; 
+        members?: TeamMember[]; 
+        inviteCode?: string;
+        roleSettings?: CustomRoleSetting[]; // 🌟サーバーから呼称マスタも返してもらう設計
+      };
+      
       if (json.success && json.members) {
         setMembers(json.members);
         if (json.inviteCode) setInviteCode(json.inviteCode);
+        if (json.roleSettings) setRoleSettings(json.roleSettings);
       }
     } catch {
       toast.error("メンバー情報の取得に失敗しました");
@@ -134,20 +146,20 @@ export default function TeamMembersPage() {
     }
   };
 
-  // ─── フィルタリング & 集計 ───
+  // ─── フィルタリング ───
   const activeMembers = members.filter(m => m.status === "active");
   const pendingMembers = members.filter(m => m.status === "pending");
-  const managerCount = activeMembers.filter(m => m.role === ROLES.MANAGER).length;
+  const managerCount = activeMembers.filter(m => m.role.toLowerCase() === "manager").length;
 
   const filteredMembers = members.filter(m => {
     if (filter === "pending") return m.status === "pending";
-    if (filter === "manager") return m.status === "active" && m.role === ROLES.MANAGER;
-    return true; // "all"
+    if (filter === "manager") return m.status === "active" && m.role.toLowerCase() === "manager";
+    return true;
   });
 
-  const canManage = myRole === ROLES.MANAGER || myRole === "SYSTEM_ADMIN";
+  // 🌟 厳密な型安全ヘルパーによる権限チェック（manager大文字小文字問題を完全解決）
+  const canManage = canManageTeam(myRole);
 
-  // ─── 共通仕様ローディング ───
   if (isLoading) {
     return (
       <div className="flex h-[60vh] items-center justify-center">
@@ -159,7 +171,6 @@ export default function TeamMembersPage() {
     );
   }
 
-  // ─── 共通仕様チーム未選択 ───
   if (!teamId) {
     return (
       <div className="flex h-[60vh] items-center justify-center p-6 animate-in fade-in">
@@ -179,11 +190,25 @@ export default function TeamMembersPage() {
         
         {/* ━━ ページヘッダー ━━ */}
         <div className="space-y-4">
-          <SectionHeader 
-            title="メンバー管理" 
-            subtitle="MEMBERS" 
-            showPulse={true} 
-          />
+          <div className="flex items-start justify-between gap-4">
+            <SectionHeader 
+              title="メンバー管理" 
+              subtitle="MEMBERS" 
+              showPulse={true} 
+            />
+            {/* 🌟 権限がある場合のみ、呼称のカスタマイズ設定ボタンを配置 */}
+            {canManage && (
+              <Button
+                onClick={() => setIsRoleSettingsOpen(true)}
+                size="sm"
+                variant="outline"
+                className="h-9 rounded-[var(--radius-lg)] font-black gap-1.5 shrink-0 border-border"
+              >
+                <Settings2 className="h-4 w-4" />
+                呼称設定
+              </Button>
+            )}
+          </div>
           
           <div className="flex items-center justify-between bg-card p-3 rounded-[var(--radius-xl)] border border-border shadow-sm">
             <p className="text-sm font-black text-foreground flex items-center gap-1.5">
@@ -212,7 +237,7 @@ export default function TeamMembersPage() {
           onFilterChange={setFilter}
         />
 
-        {/* ━━ 招待コード (マネージャー権限のみ表示) ━━ */}
+        {/* ━━ 招待コード (大文字小文字バグが解決され、managerでも確実に表示されます) ━━ */}
         {canManage && inviteCode && <TeamInviteCard inviteCode={inviteCode} />}
 
         {/* ━━ メンバーリスト ━━ */}
@@ -221,11 +246,10 @@ export default function TeamMembersPage() {
             <EmptyState 
               icon={Users} 
               title="メンバーが見つかりません" 
-              description="該当するステータスのユーザーは登録されていません。" 
+              description="登録されているユーザーはいません。" 
               className="mt-4"
             />
           ) : (
-            // 申請中を優先表示
             [...filteredMembers]
               .sort((a, b) => (a.status === "pending" ? -1 : 1))
               .map(member => (
@@ -242,13 +266,24 @@ export default function TeamMembersPage() {
         </div>
       </div>
 
-      {/* ━━ チームメンバー除名確認モーダル (現場仕様装備) ━━ */}
+      {/* ━━ チームメンバー除名確認モーダル ━━ */}
       <TeamMemberRemoveModal
         member={removeTarget}
         isRemoving={isRemoving}
         onConfirm={handleRemoveConfirm}
         onCancel={() => setRemoveTarget(null)}
       />
+
+      {/* ━━ 🌟 役割呼称カスタマイズモーダル ━━ */}
+      {teamId && (
+        <TeamRoleSettingsModal
+          isOpen={isRoleSettingsOpen}
+          onOpenChange={setIsRoleSettingsOpen}
+          teamId={teamId}
+          initialSettings={roleSettings}
+          onSaveSuccess={() => fetchMembers(teamId)}
+        />
+      )}
     </div>
   );
 }
