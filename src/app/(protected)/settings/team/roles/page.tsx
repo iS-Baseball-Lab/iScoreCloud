@@ -5,7 +5,6 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Loader2, RefreshCw, Users, Settings2, ShieldAlert } from "lucide-react";
 
 // 💡 共通レイアウト
@@ -20,7 +19,7 @@ import { TeamMemberSummaryCards } from "@/components/features/teams/team-member-
 import { TeamInviteCard } from "@/components/features/teams/team-invite-card";
 import { TeamMemberCard, type TeamMember } from "@/components/features/teams/team-member-card";
 import { TeamMemberRemoveModal } from "@/components/features/teams/team-member-remove-modal";
-import { TeamRoleSettingsModal } from "@/components/features/teams/team-role-settings-modal"; // 🌟追加
+import { TeamRoleSettingsModal } from "@/components/features/teams/team-role-settings-modal";
 
 export default function TeamMembersPage() {
   const router = useRouter();
@@ -31,10 +30,10 @@ export default function TeamMembersPage() {
   const [teamId, setTeamId] = useState<string | null>(null);
   const [teamName, setTeamName] = useState("");
   const [inviteCode, setInviteCode] = useState("");
-  const [roleSettings, setRoleSettings] = useState<CustomRoleSetting[]>([]); // 🌟呼称マスタ状態
+  const [roleSettings, setRoleSettings] = useState<CustomRoleSetting[]>([]);
   
   const [isLoading, setIsLoading] = useState(true);
-  const [isRoleSettingsOpen, setIsRoleSettingsOpen] = useState(false); // 🌟モーダル状態
+  const [isRoleSettingsOpen, setIsRoleSettingsOpen] = useState(false);
   const [removeTarget, setRemoveTarget] = useState<TeamMember | null>(null);
   const [isRemoving, setIsRemoving] = useState(false);
   const [filter, setFilter] = useState<string>("all");
@@ -49,7 +48,7 @@ export default function TeamMembersPage() {
         success: boolean; 
         members?: TeamMember[]; 
         inviteCode?: string;
-        roleSettings?: CustomRoleSetting[]; // 🌟サーバーから呼称マスタも返してもらう設計
+        roleSettings?: CustomRoleSetting[];
       };
       
       if (json.success && json.members) {
@@ -157,7 +156,7 @@ export default function TeamMembersPage() {
     return true;
   });
 
-  // 🌟 厳密な型安全ヘルパーによる権限チェック（manager大文字小文字問題を完全解決）
+  // 権限チェック
   const canManage = canManageTeam(myRole);
 
   if (isLoading) {
@@ -190,41 +189,44 @@ export default function TeamMembersPage() {
         
         {/* ━━ ページヘッダー ━━ */}
         <div className="space-y-4">
-          <div className="flex items-start justify-between gap-4">
-            <SectionHeader 
-              title="メンバー管理" 
-              subtitle="MEMBERS" 
-              showPulse={true} 
-            />
-            {/* 🌟 権限がある場合のみ、呼称のカスタマイズ設定ボタンを配置 */}
-            {canManage && (
-              <Button
-                onClick={() => setIsRoleSettingsOpen(true)}
-                size="sm"
-                variant="outline"
-                className="h-9 rounded-[var(--radius-lg)] font-black gap-1.5 shrink-0 border-border"
-              >
-                <Settings2 className="h-4 w-4" />
-                呼称設定
-              </Button>
-            )}
-          </div>
+          {/* 🌟 見出しは単体で独立。これで他の登録画面と完全に並びが揃います */}
+          <SectionHeader 
+            title="メンバー管理" 
+            subtitle="MEMBERS" 
+            showPulse={true} 
+          />
           
+          {/* 🌟 メンバー数表示とアクションボタンのコンテナ */}
           <div className="flex items-center justify-between bg-card p-3 rounded-[var(--radius-xl)] border border-border shadow-sm">
             <p className="text-sm font-black text-foreground flex items-center gap-1.5">
               <Users className="h-4 w-4 text-primary" />
               {activeMembers.length}
               <span className="text-xs font-bold text-muted-foreground">名参加中（{teamName}）</span>
             </p>
-            <Button 
-              onClick={() => fetchMembers(teamId)} 
-              variant="ghost"
-              size="sm" 
-              className="h-9 w-9 p-0 rounded-[var(--radius-lg)]"
-              title="情報を更新"
-            >
-              <RefreshCw className="h-4 w-4" />
-            </Button>
+            
+            {/* 🌟 右側のアクショングループ */}
+            <div className="flex items-center gap-2">
+              {canManage && (
+                <Button
+                  onClick={() => setIsRoleSettingsOpen(true)}
+                  size="sm"
+                  variant="outline"
+                  className="h-9 px-3 rounded-[var(--radius-lg)] font-black gap-1.5 border-border shadow-sm"
+                >
+                  <Settings2 className="h-4 w-4" />
+                  呼称設定
+                </Button>
+              )}
+              <Button 
+                onClick={() => fetchMembers(teamId)} 
+                variant="ghost"
+                size="sm" 
+                className="h-9 w-9 p-0 rounded-[var(--radius-lg)]"
+                title="情報を更新"
+              >
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -237,7 +239,7 @@ export default function TeamMembersPage() {
           onFilterChange={setFilter}
         />
 
-        {/* ━━ 招待コード (大文字小文字バグが解決され、managerでも確実に表示されます) ━━ */}
+        {/* ━━ 招待コード ━━ */}
         {canManage && inviteCode && <TeamInviteCard inviteCode={inviteCode} />}
 
         {/* ━━ メンバーリスト ━━ */}
@@ -274,7 +276,7 @@ export default function TeamMembersPage() {
         onCancel={() => setRemoveTarget(null)}
       />
 
-      {/* ━━ 🌟 役割呼称カスタマイズモーダル ━━ */}
+      {/* ━━ 役割呼称カスタマイズモーダル ━━ */}
       {teamId && (
         <TeamRoleSettingsModal
           isOpen={isRoleSettingsOpen}
