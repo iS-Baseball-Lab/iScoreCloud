@@ -15,6 +15,7 @@ const getRoleLabel = (role: string) => {
     case 'staff': return 'スタッフ';
     case 'player': return '選手';
     case 'parent': return '保護者';
+    case ,'pending': return '承認待ち';
     default: return 'メンバー';
   }
 };
@@ -38,6 +39,7 @@ app.get('/me', async (c) => {
         teamName: teams.name,
         organizationName: organizations.name,
         role: teamMembers.role,
+        status: teamMembers.status,
       })
       .from(teamMembers)
       .innerJoin(teams, eq(teamMembers.teamId, teams.id))
@@ -51,6 +53,7 @@ app.get('/me', async (c) => {
         organizationName: t.organizationName ?? t.teamName,
         role: t.role,
         roleLabel: getRoleLabel(t.role),
+        status: t.status,
         isMainTeam: index === 0,
       });
     });
