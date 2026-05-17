@@ -124,7 +124,7 @@ export default function PendingApprovalPage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-muted/20 animate-in fade-in duration-500">
+    <div className="min-h-screen flex flex-col items-center justify-center p-4 animate-in fade-in duration-500">
       <div className="w-full max-w-md bg-card border border-border rounded-[var(--radius-2xl)] shadow-lg overflow-hidden">
 
         {/* ━━ 【ビュー1】招待コード入力画面 ━━ */}
