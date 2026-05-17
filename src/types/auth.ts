@@ -55,7 +55,7 @@ export const DEFAULT_ROLES: Record<string, TeamRole> = {
     permissions: ['score_write', 'roster_edit', 'match_manage', 'stats_view'],
   },
   Parent: {
-    id: 'Parent',
+    id: 'parent',
     label: '保護者',
     permissions: ['stats_view'],
   }
