@@ -1,4 +1,4 @@
-// src/components/features/teams/team-invite-card.tsx
+// filepath: src/components/features/teams/team-invite-card.tsx
 "use client";
 
 import React, { useState } from "react";
@@ -28,38 +28,36 @@ export function TeamInviteCard({ inviteCode }: TeamInviteCardProps) {
   };
 
   return (
-    <Card className="bg-gradient-to-br from-card/80 to-card/40 backdrop-blur-md border-border/60 rounded-2xl overflow-hidden relative shadow-md group">
-      <div className="absolute top-0 left-0 w-1 h-full bg-primary transition-all duration-300 group-hover:h-full group-hover:w-1.5" />
-      <CardContent className="p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5">
-        <div className="space-y-1">
-          <h3 className="text-sm font-black flex items-center gap-2 text-primary uppercase tracking-wider">
-            <UserPlus className="h-4 w-4" />
-            Invitation Code
-          </h3>
-          <p className="text-xs text-muted-foreground font-medium leading-relaxed">
-            このコードを共有して、新しいメンバーをチームに招待しましょう。
+    <Card className="bg-card border border-border rounded-[var(--radius-xl)] shadow-sm">
+      <CardContent className="p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div className="space-y-0.5">
+          <p className="text-xs font-black flex items-center gap-1.5 text-primary uppercase tracking-wider">
+            <UserPlus className="h-3.5 w-3.5" />
+            TEAM INVITATION CODE
+          </p>
+          <p className="text-xs text-muted-foreground font-bold">
+            このコードを共有して新メンバーを招待できます。
           </p>
         </div>
-        <div className="flex items-center gap-2.5 w-full sm:w-auto shrink-0">
-          <div className="bg-muted/60 dark:bg-muted/30 border border-border/50 rounded-xl px-4 py-2 flex-1 sm:flex-none text-center sm:text-left min-w-[150px] shadow-inner">
-            <code className="text-lg font-black tracking-widest text-foreground font-mono select-all">
+        <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
+          <div className="bg-muted/50 border border-border rounded-[var(--radius-lg)] px-3 py-2 flex-1 sm:flex-none text-center sm:text-left min-w-[130px]">
+            <code className="text-base font-black tracking-widest text-foreground font-mono select-all">
               {inviteCode}
             </code>
           </div>
           <Button
             onClick={handleCopyCode}
+            size="sm"
             variant={isCopied ? "default" : "outline"}
             className={cn(
-              "h-11 px-4 rounded-xl transition-all duration-200 font-black tracking-wide shrink-0 shadow-sm",
-              isCopied 
-                ? "bg-green-600 hover:bg-green-600 text-white border-green-600" 
-                : "border-border/60 hover:bg-muted hover:text-foreground"
+              "h-10 px-4 rounded-[var(--radius-lg)] font-black transition-all",
+              isCopied && "bg-green-600 hover:bg-green-600 text-white border-green-600"
             )}
           >
             {isCopied ? (
-              <><Check className="h-4 w-4 mr-1.5 stroke-[3]" /> COPIED</>
+              <><Check className="h-4 w-4 mr-1.5" /> 完了</>
             ) : (
-              <><Copy className="h-4 w-4 mr-1.5" /> COPY</>
+              <><Copy className="h-4 w-4 mr-1.5" /> コピー</>
             )}
           </Button>
         </div>
