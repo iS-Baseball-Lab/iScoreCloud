@@ -122,14 +122,14 @@ export default function PendingApprovalPage() {
                 チームへの参加
               </h1>
               <p className="text-sm font-bold text-muted-foreground leading-relaxed text-left sm:text-center">
-                監督や代表から共有された<span className="text-foreground">招待コード（チームID）</span>を入力して、参加申請を送信してください。
+                監督や代表から共有された<br /><span className="text-foreground">招待コード（チームID）</span>を入力して、<br />参加申請を送信してください。
               </p>
             </div>
 
             <form onSubmit={handleJoin} className="space-y-5 pt-2">
               <div className="space-y-2">
                 <label className="text-xs font-black text-foreground uppercase tracking-wider ml-1">
-                  INVITATION CODE
+                  招待コード（チームID）
                 </label>
                 <Input
                   value={inviteCode}
