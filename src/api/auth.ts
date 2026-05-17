@@ -14,6 +14,7 @@ const getRoleLabel = (role: string) => {
     case 'SCORER': return 'スコアラー';
     case 'STAFF': return 'スタッフ';
     case 'PLAYER': return '選手';
+    case 'PARENT': return '保護者';
     default: return 'メンバー';
   }
 };
