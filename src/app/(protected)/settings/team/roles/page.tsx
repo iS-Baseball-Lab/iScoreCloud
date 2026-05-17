@@ -1,15 +1,18 @@
-// src/app/(protected)/settings/team/roles/page.tsx
+// filepath: src/app/(protected)/settings/team/roles/page.tsx
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { ChevronLeft, Loader2, RefreshCw, Clock, Users } from "lucide-react";
+import { Loader2, RefreshCw, Users, ShieldAlert } from "lucide-react";
 import { ROLES } from "@/lib/roles";
 
-// 洗練された共有コンポーネントをインポート
+// 💡 共通レイアウトコンポーネント（現場至上主義UI）
+import { SectionHeader } from "@/components/layout/SectionHeader";
+import { EmptyState } from "@/components/layout/EmptyState";
+
+// 💡 共通機能コンポーネントのインポート
 import { TeamMemberSummaryCards } from "@/components/features/teams/team-member-summary-cards";
 import { TeamInviteCard } from "@/components/features/teams/team-invite-card";
 import { TeamMemberCard, type TeamMember } from "@/components/features/teams/team-member-card";
@@ -21,17 +24,22 @@ export default function TeamMembersPage() {
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [myUserId, setMyUserId] = useState("");
   const [myRole, setMyRole] = useState("");
-  const [teamId, setTeamId] = useState("");
+  const [teamId, setTeamId] = useState<string | null>(null);
   const [teamName, setTeamName] = useState("");
   const [inviteCode, setInviteCode] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [removeTarget, setRemoveTarget] = useState<TeamMember | null>(null);
   const [isRemoving, setIsRemoving] = useState(false);
+  
+  // フィルター状態管理 ("all" | "pending" | "manager")
+  const [filter, setFilter] = useState<string>("all");
 
-  // ─── データ取得 ───────────────────────
+  // ─── データの取得 (Cloudflare Workers API) ───
   const fetchMembers = useCallback(async (tid: string) => {
+    setIsLoading(true);
     try {
       const res = await fetch(`/api/teams/${tid}/members`);
+      if (!res.ok) throw new Error();
       const json = await res.json() as { success: boolean; members?: TeamMember[]; inviteCode?: string };
       if (json.success && json.members) {
         setMembers(json.members);
@@ -39,12 +47,20 @@ export default function TeamMembersPage() {
       }
     } catch {
       toast.error("メンバー情報の取得に失敗しました");
+    } finally {
+      setIsLoading(false);
     }
   }, []);
 
   useEffect(() => {
     const init = async () => {
-      setIsLoading(true);
+      const tid = localStorage.getItem("iscore_selectedTeamId");
+      if (!tid) {
+        setIsLoading(false);
+        return;
+      }
+      setTeamId(tid);
+
       try {
         const meRes = await fetch("/api/auth/me");
         const meJson = await meRes.json() as {
@@ -54,34 +70,31 @@ export default function TeamMembersPage() {
             memberships: { teamId: string; teamName: string; role: string; isMainTeam: boolean }[];
           };
         };
-        if (!meJson.success) throw new Error("認証エラー");
+        if (!meJson.success) throw new Error();
 
         const me = meJson.data;
         setMyUserId(me.id);
 
-        const selectedTeamId = localStorage.getItem("iscore_selectedTeamId") ?? "";
-        const membership = me.memberships.find(m => m.teamId === selectedTeamId)
+        const membership = me.memberships.find(m => m.teamId === tid)
           ?? me.memberships.find(m => m.isMainTeam)
           ?? me.memberships[0];
 
         if (!membership) { router.push("/teams"); return; }
 
-        setTeamId(membership.teamId);
         setTeamName(membership.teamName);
         setMyRole(membership.role);
 
-        await fetchMembers(membership.teamId);
+        await fetchMembers(tid);
       } catch {
-        toast.error("データの取得に失敗しました");
-      } finally {
-        setIsLoading(false);
+        toast.error("認証データの取得に失敗しました");
       }
     };
     init();
   }, [router, fetchMembers]);
 
-  // ─── ロール変更 ───────────────────────
+  // ─── ロール変更 ───
   const handleRoleChange = async (memberId: string, newRole: string) => {
+    if (!teamId) return;
     try {
       const res = await fetch(`/api/teams/${teamId}/members/${memberId}`, {
         method: "PATCH",
@@ -89,7 +102,7 @@ export default function TeamMembersPage() {
         body: JSON.stringify({ role: newRole }),
       });
       const json = await res.json() as { success: boolean; error?: string };
-      if (!json.success) throw new Error(json.error ?? "更新失敗");
+      if (!json.success) throw new Error(json.error);
 
       setMembers(prev => prev.map(m =>
         m.memberId === memberId ? { ...m, role: newRole } : m
@@ -100,16 +113,16 @@ export default function TeamMembersPage() {
     }
   };
 
-  // ─── 除名 ─────────────────────────────
+  // ─── 除名処理 ───
   const handleRemoveConfirm = async () => {
-    if (!removeTarget) return;
+    if (!teamId || !removeTarget) return;
     setIsRemoving(true);
     try {
       const res = await fetch(`/api/teams/${teamId}/members/${removeTarget.memberId}`, {
         method: "DELETE",
       });
       const json = await res.json() as { success: boolean; error?: string };
-      if (!json.success) throw new Error(json.error ?? "除名失敗");
+      if (!json.success) throw new Error(json.error);
 
       setMembers(prev => prev.filter(m => m.memberId !== removeTarget.memberId));
       toast.success(`${removeTarget.name} さんをチームから除名しました`);
@@ -121,129 +134,121 @@ export default function TeamMembersPage() {
     }
   };
 
-  // ─── 表示分類 ─────────────────────────
+  // ─── フィルタリング & 集計 ───
   const activeMembers = members.filter(m => m.status === "active");
   const pendingMembers = members.filter(m => m.status === "pending");
-  const canManage = myRole === ROLES.MANAGER || myRole === "SYSTEM_ADMIN";
   const managerCount = activeMembers.filter(m => m.role === ROLES.MANAGER).length;
 
+  const filteredMembers = members.filter(m => {
+    if (filter === "pending") return m.status === "pending";
+    if (filter === "manager") return m.status === "active" && m.role === ROLES.MANAGER;
+    return true; // "all"
+  });
+
+  const canManage = myRole === ROLES.MANAGER || myRole === "SYSTEM_ADMIN";
+
+  // ─── 共通仕様ローディング ───
   if (isLoading) {
     return (
-      <div className="flex h-[65vh] items-center justify-center">
-        <div className="flex flex-col items-center gap-3.5">
-          <Loader2 className="h-9 w-9 animate-spin text-primary" />
-          <p className="text-xs font-black text-muted-foreground uppercase tracking-widest animate-pulse">Loading Members...</p>
+      <div className="flex h-[60vh] items-center justify-center">
+        <div className="text-center space-y-3">
+          <Loader2 className="h-8 w-8 animate-spin text-primary/40 mx-auto" />
+          <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.3em]">Loading...</p>
         </div>
       </div>
     );
   }
 
-  return (
-    <div className="max-w-2xl mx-auto space-y-8 animate-in fade-in duration-300 pb-24 px-1 sm:px-0">
-      {/* ヘッダー */}
-      <div className="flex items-start gap-4">
-        <Button
-          variant="ghost" size="icon"
-          onClick={() => router.back()}
-          className="h-10 w-10 rounded-full bg-card/60 dark:bg-card/20 border border-border/50 hover:bg-muted shrink-0 mt-1 active:scale-95 transition-all shadow-sm"
-        >
-          <ChevronLeft className="h-5 w-5" />
-        </Button>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            <Badge variant="outline" className="border-primary/30 text-primary bg-primary/5 rounded-full px-3 py-0.5 text-[9px] font-black tracking-widest uppercase shadow-sm">
-              Team Settings
-            </Badge>
-          </div>
-          <h1 className="text-3xl sm:text-4xl font-black italic tracking-tighter uppercase text-foreground leading-none">
-            Members
-          </h1>
-          <p className="text-xs font-bold text-muted-foreground mt-1.5 truncate tracking-wide">{teamName}</p>
-        </div>
-        <Button
-          variant="ghost" size="icon"
-          onClick={() => fetchMembers(teamId)}
-          className="h-10 w-10 rounded-full bg-card/60 dark:bg-card/20 border border-border/50 hover:bg-muted shrink-0 mt-1 active:scale-95 transition-all shadow-sm"
-          title="更新"
-        >
-          <RefreshCw className="h-4 w-4" />
-        </Button>
+  // ─── 共通仕様チーム未選択 ───
+  if (!teamId) {
+    return (
+      <div className="flex h-[60vh] items-center justify-center p-6 animate-in fade-in">
+        <EmptyState 
+          icon={ShieldAlert} 
+          title="チームが選択されていません" 
+          description="ダッシュボードでチームを選択してください" 
+          className="w-full max-w-sm"
+        />
       </div>
+    );
+  }
 
-      {/* チームメンバーサマリーバー */}
-      <TeamMemberSummaryCards
-        totalCount={activeMembers.length}
-        pendingCount={pendingMembers.length}
-        managerCount={managerCount}
-      />
-
-      {/* 招待コード (マネージャー権限のみ表示) */}
-      {canManage && inviteCode && <TeamInviteCard inviteCode={inviteCode} />}
-
-      {/* 承認待ちメンバー */}
-      {pendingMembers.length > 0 && (
-        <div className="space-y-3.5">
-          <div className="flex items-center gap-2 px-0.5">
-            <Clock className="h-4 w-4 text-orange-500" />
-            <h2 className="text-xs font-black uppercase tracking-widest text-orange-500">
-              Pending Approvals ({pendingMembers.length})
-            </h2>
-          </div>
-          <div className="space-y-2.5">
-            {pendingMembers.map(m => (
-              <TeamMemberCard
-                key={m.memberId}
-                member={m}
-                myUserId={myUserId}
-                myRole={myRole}
-                onRoleChange={handleRoleChange}
-                onRemove={setRemoveTarget}
-              />
-            ))}
-          </div>
-          {canManage && (
-            <Button
-              variant="outline"
-              onClick={() => router.push("/teams/requests")}
-              className="w-full rounded-2xl h-11 border-orange-500/30 text-orange-500 hover:bg-orange-500/10 font-bold text-sm transition-all active:scale-99 shadow-sm"
+  return (
+    <div className="min-h-screen pb-28 animate-in fade-in duration-400">
+      <div className="max-w-2xl mx-auto px-4 pt-6 space-y-6">
+        
+        {/* ━━ ページヘッダー ━━ */}
+        <div className="space-y-4">
+          <SectionHeader 
+            title="メンバー管理" 
+            subtitle="MEMBERS" 
+            showPulse={true} 
+          />
+          
+          <div className="flex items-center justify-between bg-card p-3 rounded-[var(--radius-xl)] border border-border shadow-sm">
+            <p className="text-sm font-black text-foreground flex items-center gap-1.5">
+              <Users className="h-4 w-4 text-primary" />
+              {activeMembers.length}
+              <span className="text-xs font-bold text-muted-foreground">名参加中（{teamName}）</span>
+            </p>
+            <Button 
+              onClick={() => fetchMembers(teamId)} 
+              variant="ghost"
+              size="sm" 
+              className="h-9 w-9 p-0 rounded-[var(--radius-lg)]"
+              title="情報を更新"
             >
-              参加申請を管理する →
+              <RefreshCw className="h-4 w-4" />
             </Button>
+          </div>
+        </div>
+
+        {/* ━━ カテゴリ別サマリー ━━ */}
+        <TeamMemberSummaryCards
+          totalCount={activeMembers.length}
+          pendingCount={pendingMembers.length}
+          managerCount={managerCount}
+          currentFilter={filter}
+          onFilterChange={setFilter}
+        />
+
+        {/* ━━ 招待コード (マネージャー権限のみ表示) ━━ */}
+        {canManage && inviteCode && <TeamInviteCard inviteCode={inviteCode} />}
+
+        {/* ━━ メンバーリスト ━━ */}
+        <div className="space-y-3">
+          {filteredMembers.length === 0 ? (
+            <EmptyState 
+              icon={Users} 
+              title="メンバーが見つかりません" 
+              description="該当するステータスのユーザーは登録されていません。" 
+              className="mt-4"
+            />
+          ) : (
+            // 申請中を優先表示
+            [...filteredMembers]
+              .sort((a, b) => (a.status === "pending" ? -1 : 1))
+              .map(member => (
+                <TeamMemberCard
+                  key={member.memberId}
+                  member={member}
+                  myUserId={myUserId}
+                  myRole={myRole}
+                  onRoleChange={handleRoleChange}
+                  onRemove={setRemoveTarget}
+                />
+              ))
           )}
         </div>
-      )}
-
-      {/* アクティブメンバー */}
-      <div className="space-y-3.5">
-        <div className="flex items-center gap-2 px-0.5">
-          <Users className="h-4 w-4 text-primary" />
-          <h2 className="text-xs font-black uppercase tracking-widest text-primary">
-            Active Members ({activeMembers.length})
-          </h2>
-        </div>
-        <div className="space-y-2.5">
-          {activeMembers.map(m => (
-            <TeamMemberCard
-              key={m.memberId}
-              member={m}
-              myUserId={myUserId}
-              myRole={myRole}
-              onRoleChange={handleRoleChange}
-              onRemove={setRemoveTarget}
-          />
-          ))}
-        </div>
       </div>
 
-      {/* チームメンバー除名確認モーダル */}
-      {removeTarget && (
-        <TeamMemberRemoveModal
-          member={removeTarget}
-          isRemoving={isRemoving}
-          onConfirm={handleRemoveConfirm}
-          onCancel={() => setRemoveTarget(null)}
-        />
-      )}
+      {/* ━━ チームメンバー除名確認モーダル (現場仕様装備) ━━ */}
+      <TeamMemberRemoveModal
+        member={removeTarget}
+        isRemoving={isRemoving}
+        onConfirm={handleRemoveConfirm}
+        onCancel={() => setRemoveTarget(null)}
+      />
     </div>
   );
 }
