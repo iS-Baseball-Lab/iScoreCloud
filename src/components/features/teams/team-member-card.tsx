@@ -12,21 +12,17 @@ export interface TeamMember {
   memberId: string;
   userId: string;
   name: string;
-  email: string;
+  // 💡 email: string; を削除し、プロバイダー配列に変更
+  authProviders?: string[];
   avatarUrl: string | null;
   role: string;
   status: "active" | "pending";
   joinedAt: number | null;
 }
 
-const ROLE_CONFIG: Record<string, {
-  label: string;
-  desc: string;
-  color: string;
-  bg: string;
-  icon: React.ReactNode;
-}> = {
-  [ROLES.MANAGER]: { label: "監督 / 代表", desc: "全権限 — チーム設定・メンバー管理まで", color: "text-amber-600 dark:text-amber-400", bg: "bg-amber-500/10 border-amber-500/30", icon: <Crown className="h-3.5 w-3.5" /> },
+// （ROLE_CONFIG, SELECTABLE_ROLES, getRoleConfig, RoleBadge, RoleSelector は変更なしのため省略せずにそのままお使いください）
+const ROLE_CONFIG: Record<string, { label: string; desc: string; color: string; bg: string; icon: React.ReactNode; }> = {
+  [ROLES.MANAGER]: { label: "監督/代表", desc: "全権限 — チーム設定・メンバー管理まで", color: "text-amber-600 dark:text-amber-400", bg: "bg-amber-500/10 border-amber-500/30", icon: <Crown className="h-3.5 w-3.5" /> },
   [ROLES.COACH]: { label: "コーチ", desc: "スコア入力・選手管理・データ閲覧", color: "text-blue-600 dark:text-blue-400", bg: "bg-blue-500/10 border-blue-500/30", icon: <ShieldCheck className="h-3.5 w-3.5" /> },
   [ROLES.SCORER]: { label: "スコアラー", desc: "スコア入力・データ閲覧", color: "text-green-600 dark:text-green-400", bg: "bg-green-500/10 border-green-500/30", icon: <UserCog className="h-3.5 w-3.5" /> },
   [ROLES.STAFF]: { label: "スタッフ", desc: "データ閲覧・限定アクセス", color: "text-purple-600 dark:text-purple-400", bg: "bg-purple-500/10 border-purple-500/30", icon: <Users className="h-3.5 w-3.5" /> },
@@ -37,9 +33,7 @@ const ROLE_CONFIG: Record<string, {
 
 const SELECTABLE_ROLES: Role[] = [ROLES.MANAGER, ROLES.COACH, ROLES.SCORER, ROLES.STAFF, ROLES.PLAYER, ROLES.VIEWER];
 
-function getRoleConfig(role: string) {
-  return ROLE_CONFIG[role] ?? { label: role, desc: "", color: "text-muted-foreground", bg: "bg-muted/40 border-border/40", icon: <Users className="h-3.5 w-3.5" /> };
-}
+function getRoleConfig(role: string) { return ROLE_CONFIG[role] ?? { label: role, desc: "", color: "text-muted-foreground", bg: "bg-muted/40 border-border/40", icon: <Users className="h-3.5 w-3.5" /> }; }
 
 function RoleBadge({ role }: { role: string }) {
   const cfg = getRoleConfig(role);
@@ -109,6 +103,16 @@ function RoleSelector({ currentRole, memberId, myRole, onRoleChange, disabled }:
   );
 }
 
+// 🌟 プロバイダーごとのブランドカラーを判定するヘルパー
+const getProviderConfig = (provider: string) => {
+  const p = provider.toLowerCase();
+  if (p.includes("google")) return { label: "Google", color: "text-red-600 dark:text-red-400", bg: "bg-red-500/10", border: "border-red-500/20" };
+  if (p.includes("line")) return { label: "LINE", color: "text-[#06C755]", bg: "bg-[#06C755]/10", border: "border-[#06C755]/20" };
+  if (p.includes("microsoft") || p.includes("azure")) return { label: "Microsoft", color: "text-blue-600 dark:text-blue-400", bg: "bg-blue-500/10", border: "border-blue-500/20" };
+  // その他の認証（メールパスワード等）
+  return { label: "Email Auth", color: "text-muted-foreground", bg: "bg-muted/50", border: "border-border" };
+};
+
 interface TeamMemberCardProps {
   member: TeamMember;
   myUserId: string;
@@ -121,10 +125,6 @@ export function TeamMemberCard({ member, myUserId, myRole, onRoleChange, onRemov
   const isMe = member.userId === myUserId;
   const canManage = myRole === ROLES.MANAGER || myRole === "SYSTEM_ADMIN";
   const isPending = member.status === "pending";
-
-  const joinedDate = member.joinedAt
-    ? new Date(member.joinedAt * 1000).toLocaleDateString("ja-JP", { year: "numeric", month: "short", day: "numeric" })
-    : null;
 
   return (
     <div className={cn(
@@ -156,20 +156,31 @@ export function TeamMemberCard({ member, myUserId, myRole, onRoleChange, onRemov
           </p>
           {isMe && <span className="text-[9px] font-black text-primary bg-primary/10 border border-primary/20 px-1 py-0.5 rounded-[var(--radius-sm)] uppercase tracking-wider">あなた</span>}
         </div>
-        <p className="text-[11px] text-muted-foreground truncate font-medium mt-0.5">{member.email}</p>
+
+        {/* 🌟 メールアドレスを廃止し、ソーシャルログインバッジを並べる */}
+        <div className="flex items-center gap-1 mt-1 flex-wrap">
+          {member.authProviders && member.authProviders.length > 0 ? (
+            member.authProviders.map(p => {
+              const cfg = getProviderConfig(p);
+              return (
+                <span key={p} className={cn("text-[9px] font-bold px-1.5 py-0.5 rounded-md border", cfg.bg, cfg.color, cfg.border)}>
+                  {cfg.label}
+                </span>
+              );
+            })
+          ) : (
+            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md border bg-muted/30 text-muted-foreground border-border">
+              Standard Auth
+            </span>
+          )}
+        </div>
       </div>
 
       <div className="shrink-0 flex items-center gap-2">
         {isPending ? (
           <RoleBadge role={ROLES.PENDING} />
         ) : (
-          <RoleSelector
-            currentRole={member.role}
-            memberId={member.memberId}
-            myRole={myRole}
-            onRoleChange={onRoleChange}
-            disabled={isMe}
-          />
+          <RoleSelector currentRole={member.role} memberId={member.memberId} myRole={myRole} onRoleChange={onRoleChange} disabled={isMe} />
         )}
 
         {canManage && !isMe && (
