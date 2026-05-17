@@ -3,7 +3,6 @@
 
 import React, { useState } from "react";
 import { toast } from "sonner";
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Copy, Check, UserPlus } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -20,7 +19,7 @@ export function TeamInviteCard({ inviteCode }: TeamInviteCardProps) {
     try {
       await navigator.clipboard.writeText(inviteCode);
       setIsCopied(true);
-      toast.success("招待コードをコピーしました！");
+      toast.success("招待コード（チームID）をコピーしました！");
       setTimeout(() => setIsCopied(false), 2000);
     } catch (err) {
       toast.error("クリップボードへのコピーに失敗しました");
@@ -28,20 +27,26 @@ export function TeamInviteCard({ inviteCode }: TeamInviteCardProps) {
   };
 
   return (
-    <Card className="bg-card border border-border rounded-[var(--radius-xl)] shadow-sm">
-      <CardContent className="p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+    <div className="relative overflow-hidden rounded-[var(--radius-xl)] border-2 border-dashed border-primary/30 bg-primary/[0.02] dark:bg-primary/[0.01] p-3 shadow-sm transition-all hover:border-primary/50">
+      {/* 💡 左端の鮮やかなアクセント縦線 */}
+      <div className="absolute top-0 left-0 w-1 h-full bg-primary" />
+      
+      <div className="pl-2 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        {/* 左側：テキスト情報 */}
         <div className="space-y-0.5">
-          <p className="text-xs font-black flex items-center gap-1.5 text-primary uppercase tracking-wider">
-            <UserPlus className="h-3.5 w-3.5" />
+          <p className="text-[11px] font-black flex items-center gap-1.5 text-primary tracking-widest uppercase">
+            <UserPlus className="h-3.5 w-3.5 stroke-[2.5]" />
             TEAM INVITATION CODE
           </p>
-          <p className="text-xs text-muted-foreground font-bold">
-            このコードを共有して新メンバーを招待できます。
+          <p className="text-[11px] text-muted-foreground font-bold tracking-tight">
+            この招待コード（チームID）を共有してメンバーを招待できます。
           </p>
         </div>
+        
+        {/* 右側：コード表示 ＆ コピーボタン */}
         <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
-          <div className="bg-muted/50 border border-border rounded-[var(--radius-lg)] px-3 py-2 flex-1 sm:flex-none text-center sm:text-left min-w-[130px]">
-            <code className="text-base font-black tracking-widest text-foreground font-mono select-all">
+          <div className="bg-background/80 backdrop-blur-sm border border-border rounded-[var(--radius-lg)] px-3 py-1.5 flex-1 sm:flex-none text-center sm:text-left min-w-[140px] shadow-inner select-all">
+            <code className="text-sm font-black tracking-widest text-foreground font-mono">
               {inviteCode}
             </code>
           </div>
@@ -50,18 +55,18 @@ export function TeamInviteCard({ inviteCode }: TeamInviteCardProps) {
             size="sm"
             variant={isCopied ? "default" : "outline"}
             className={cn(
-              "h-10 px-4 rounded-[var(--radius-lg)] font-black transition-all",
+              "h-9 px-3.5 rounded-[var(--radius-lg)] font-black text-xs transition-all duration-200 shadow-sm active:scale-95",
               isCopied && "bg-green-600 hover:bg-green-600 text-white border-green-600"
             )}
           >
             {isCopied ? (
-              <><Check className="h-4 w-4 mr-1.5" /> 完了</>
+              <><Check className="h-3.5 w-3.5 mr-1 stroke-[3]" /> コピー完了</>
             ) : (
-              <><Copy className="h-4 w-4 mr-1.5" /> コピー</>
+              <><Copy className="h-3.5 w-3.5 mr-1" /> COPY</>
             )}
           </Button>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
