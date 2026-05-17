@@ -1,4 +1,4 @@
-// src/components/features/teams/team-member-summary-cards.tsx
+// filepath: src/components/features/teams/team-member-summary-cards.tsx
 "use client";
 
 import React from "react";
@@ -9,29 +9,45 @@ interface TeamMemberSummaryCardsProps {
   totalCount: number;
   pendingCount: number;
   managerCount: number;
+  currentFilter: string;
+  onFilterChange: (filter: string) => void;
 }
 
-export function TeamMemberSummaryCards({ totalCount, pendingCount, managerCount }: TeamMemberSummaryCardsProps) {
+export function TeamMemberSummaryCards({ 
+  totalCount, 
+  pendingCount, 
+  managerCount,
+  currentFilter,
+  onFilterChange
+}: TeamMemberSummaryCardsProps) {
+  
   const items = [
-    { label: "Total Members", value: totalCount, color: "text-foreground" },
-    { 
-      label: "Pending", 
-      value: pendingCount, 
-      color: pendingCount > 0 ? "text-orange-500 animate-pulse" : "text-muted-foreground" 
-    },
-    { label: "Managers", value: managerCount, color: "text-amber-500" },
+    { id: "all", label: "全体メンバー", value: totalCount, color: "text-foreground" },
+    { id: "pending", label: "承認待ち", value: pendingCount, color: pendingCount > 0 ? "text-orange-500 animate-pulse" : "text-muted-foreground" },
+    { id: "manager", label: "管理者/代表", value: managerCount, color: "text-amber-500" },
   ];
 
   return (
-    <div className="grid grid-cols-3 gap-4">
-      {items.map(({ label, value, color }) => (
-        <Card key={label} className="bg-card/40 dark:bg-card/20 backdrop-blur-md border-border/50 rounded-2xl shadow-sm transition-all hover:border-border">
-          <CardContent className="p-4 text-center">
-            <p className={cn("text-3xl sm:text-4xl font-black tabular-nums tracking-tight", color)}>{value}</p>
-            <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mt-1.5">{label}</p>
-          </CardContent>
-        </Card>
-      ))}
+    <div className="grid grid-cols-3 gap-2">
+      {items.map(({ id, label, value, color }) => {
+        const isActive = currentFilter === id;
+        return (
+          <button
+            key={id}
+            onClick={() => onFilterChange(currentFilter === id ? "all" : id)}
+            className={cn(
+              "text-left transition-all rounded-[var(--radius-xl)] border shadow-sm p-3 bg-card",
+              isActive ? "border-primary ring-1 ring-primary" : "border-border hover:border-muted-foreground/30"
+            )}
+          >
+            <p className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">{label}</p>
+            <p className={cn("text-2xl sm:text-3xl font-black tabular-nums tracking-tight mt-1", color)}>
+              {value}
+              <span className="text-xs font-bold text-muted-foreground ml-0.5">名</span>
+            </p>
+          </button>
+        );
+      })}
     </div>
   );
 }
