@@ -8,7 +8,7 @@ import type { WorkerEnv, Membership, AuthUser } from '@/types/api'
 const app = new Hono<{ Bindings: WorkerEnv }>()
 
 const getRoleLabel = (role: string) => {
-  switch (role.toUpperCase()) {
+  switch (role) {
     case 'manager': return '監督/代表者';
     case 'coach': return 'コーチ';
     case 'scorer': return 'スコアラー';
