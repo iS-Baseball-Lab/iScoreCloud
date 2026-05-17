@@ -15,7 +15,7 @@ const getRoleLabel = (role: string) => {
     case 'staff': return 'スタッフ';
     case 'player': return '選手';
     case 'parent': return '保護者';
-    case ,'pending': return '承認待ち';
+    case 'pending': return '承認待ち';
     default: return 'メンバー';
   }
 };
