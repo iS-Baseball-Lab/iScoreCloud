@@ -6,7 +6,7 @@ import { teams, teamMembers, teamRoleSettings } from '@/db/schema'
 import { and, eq } from 'drizzle-orm'
 import { canManageTeam, ROLES } from '@/lib/roles'
 import type { AuthUser } from '@/types/api'
-import { ulid } from 'ulid'
+// 💡 `import { ulid } from 'ulid'` は削除し、標準の crypto.randomUUID() を使用します
 
 const app = new Hono<{ Bindings: { DB: D1Database, ASSETS: Fetcher } }>()
 
@@ -39,7 +39,7 @@ app.post('/join', async (c) => {
     }
 
     await db.insert(teamMembers).values({
-      id: crypto.randomUUID(),
+      id: crypto.randomUUID(), // 💡 標準APIに変更
       teamId: targetTeamId,
       userId: session.user.id,
       role: ROLES.PENDING,
@@ -129,7 +129,7 @@ app.put('/:id/roles/settings', async (c) => {
     for (const item of settings) {
       if (!item.customLabel.trim()) continue
       await db.insert(teamRoleSettings).values({
-        id: ulid(),
+        id: crypto.randomUUID(), // 💡 標準APIに変更
         teamId,
         role: item.role.toLowerCase(),
         customLabel: item.customLabel.trim()
