@@ -9,7 +9,7 @@ const app = new Hono<{ Bindings: WorkerEnv }>()
 
 const getRoleLabel = (role: string) => {
   switch (role.toUpperCase()) {
-    case 'Rmanager': return '監督/代表者';
+    case 'manager': return '監督/代表者';
     case 'COACH': return 'コーチ';
     case 'SCORER': return 'スコアラー';
     case 'STAFF': return 'スタッフ';
