@@ -25,6 +25,7 @@ export function FloatingNav() {
 
   return (
     <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100]">
+      {/* 🌟 復活：美しいすりガラス（backdrop-blur-sm） */}
       <AnimatePresence>
         {isOpen && (
           <motion.div
@@ -33,14 +34,13 @@ export function FloatingNav() {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
             onClick={() => setIsOpen(false)}
-            // 🌟 真犯人逮捕：backdrop-blur-sm を完全撤去！
-            // 代わりに bg-zinc-950/80 (少し濃いグレーの半透明) を使い、バグなく美しい暗幕を作ります。
-            className="fixed inset-0 bg-zinc-950/80 z-[-1]"
+            className="fixed inset-0 bg-background/70 backdrop-blur-sm z-[-1]"
           />
         )}
       </AnimatePresence>
 
       <div className="relative flex items-center justify-center">
+        {/* サブボタンの扇状アニメーションはそのまま維持 */}
         <AnimatePresence>
           {isOpen && menuItems.map((item, index) => {
             const isActive = pathname === item.href;
@@ -62,7 +62,7 @@ export function FloatingNav() {
                   <div className={cn(
                     "w-16 h-16 rounded-full flex flex-col items-center justify-center gap-1 border-[3px] transition-colors relative z-10",
                     isActive 
-                      ? "bg-primary border-primary text-primary-foreground shadow-xl shadow-black/20" 
+                      ? "bg-primary border-primary text-primary-foreground shadow-xl shadow-black/20 dark:shadow-black/40" 
                       : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-xl shadow-black/10"
                   )}>
                     <item.icon className="w-6 h-6 stroke-[2.5]" />
@@ -74,43 +74,42 @@ export function FloatingNav() {
           })}
         </AnimatePresence>
 
-        {/* ⚾️ センターボタン */}
-        <button
-          onClick={() => setIsOpen(!isOpen)}
-          className={cn(
-            // 🌟 修正：不要になった複雑なハック (clip-path等) を削除し、最もクリーンな形に。
-            "relative flex items-center justify-center rounded-full active:scale-95 z-50 transition-all duration-300 ease-out",
-            isOpen
-              ? "w-14 h-14 bg-white dark:bg-zinc-800 shadow-[0_8px_30px_rgb(0,0,0,0.12)] border border-border/50"
-              : "w-24 h-24 bg-primary shadow-2xl shadow-primary/50"
-          )}
-        >
-          <AnimatePresence mode="wait">
-            {isOpen ? (
-              <motion.div
-                key="close"
-                initial={{ opacity: 0, scale: 0.5, rotate: -90 }}
-                animate={{ opacity: 1, scale: 1, rotate: 0 }}
-                exit={{ opacity: 0, scale: 0.5, rotate: 90 }}
-                transition={{ duration: 0.15, ease: "easeOut" }}
-                className="absolute inset-0 flex items-center justify-center"
-              >
-                <X className="w-6 h-6 text-muted-foreground stroke-[3]" />
-              </motion.div>
-            ) : (
-              <motion.div
-                key="logo"
-                initial={{ opacity: 0, scale: 0.5 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.5 }}
-                transition={{ duration: 0.15, ease: "easeOut" }}
-                className="absolute inset-0 flex items-center justify-center"
-              >
-                <Image src="/logo.webp" alt="iScore" fill className="object-contain pointer-events-none" priority />
-              </motion.div>
+        {/* ⚾️ センターボタン：DOM生成破棄をやめ、CSSの透過と回転だけで切り替える究極の安定構造 */}
+        <div className="relative flex items-center justify-center w-24 h-24 z-50">
+          <button
+            onClick={() => setIsOpen(!isOpen)}
+            // 🌟 究極対策1: CSSエンジンに「ここは絶対に真円！」と分からせるためインラインで指定
+            style={{ borderRadius: "50%", WebkitBorderRadius: "50%" }}
+            className={cn(
+              // 🌟 究極対策2: バグの元凶「overflow-hidden」を完全削除！
+              "absolute flex items-center justify-center transition-all duration-300 ease-out active:scale-95",
+              isOpen
+                ? "w-14 h-14 bg-white dark:bg-zinc-800 shadow-[0_8px_30px_rgb(0,0,0,0.12)] border border-border/50"
+                : "w-24 h-24 bg-primary shadow-2xl shadow-primary/50 border-none outline-none ring-0"
             )}
-          </AnimatePresence>
-        </button>
+          >
+            {/* ✕アイコン（開いている時だけ表示） */}
+            <div
+              className={cn(
+                "absolute inset-0 flex items-center justify-center transition-all duration-300",
+                isOpen ? "opacity-100 scale-100 rotate-0" : "opacity-0 scale-50 -rotate-90 pointer-events-none"
+              )}
+            >
+              <X className="w-6 h-6 text-muted-foreground stroke-[3]" />
+            </div>
+
+            {/* ロゴ画像（閉じている時だけ表示） */}
+            <div
+              className={cn(
+                "absolute inset-0 flex items-center justify-center transition-all duration-300",
+                isOpen ? "opacity-0 scale-50 rotate-90 pointer-events-none" : "opacity-100 scale-100 rotate-0"
+              )}
+            >
+              {/* paddingを入れて画像の枠線が見えるような錯覚を予防 */}
+              <Image src="/logo.webp" alt="iScore" fill className="object-contain p-2" priority />
+            </div>
+          </button>
+        </div>
       </div>
     </div>
   );
