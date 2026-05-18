@@ -21,23 +21,24 @@ const POSITIONS = [
   { id: "9", label: "9 右", color: "bg-cyan-500" }, { id: "DH", label: "DH 指", color: "bg-zinc-500" }
 ];
 
-// 💡 動作確認用のダミー選手データ（後でAPIからの取得に置き換えてください）
-const MOCK_PLAYERS = Array.from({ length: 15 }, (_, i) => ({
-  id: `player_${i + 1}`,
-  name: `テスト選手 ${i + 1}`,
-  uniformNumber: `${i + 1}`
-}));
+// 💡 実際のデータベース構成に合わせた型定義
+interface Player {
+  id: string;
+  name: string;
+  uniformNumber: string | null;
+}
 
 export default function LineupPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const matchId = searchParams.get("id");
-  const teamId = searchParams.get("teamId");
+  const urlTeamId = searchParams.get("teamId");
 
   const [activeTab, setActiveTab] = useState<"myTeam" | "opponent">("myTeam");
-  const [teamPlayers, setTeamPlayers] = useState<typeof MOCK_PLAYERS>([]);
+  const [teamPlayers, setTeamPlayers] = useState<Player[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // 💡 スタメン以外のメンバーの出欠状態を管理するステート（デフォルトは全員'bench'）
+  // スタメン以外のメンバーの出欠状態を管理するステート（デフォルトは全員'bench'）
   const [attendance, setAttendance] = useState<Record<string, "bench" | "absent">>({});
 
   // モーダル用
@@ -51,15 +52,41 @@ export default function LineupPage() {
     Array.from({ length: 9 }, (_, i) => ({ order: i + 1, position: "", name: "", uniformNumber: "" }))
   );
 
+  // ─── 🌟 実際の選手データをバックエンドから取得 ───
   useEffect(() => {
-    // 💡 初期マウント時にダミーデータをセット
-    setTeamPlayers(MOCK_PLAYERS);
-    
-    // 全員を一旦「控え」として初期化
-    const initialAttendance: Record<string, "bench" | "absent"> = {};
-    MOCK_PLAYERS.forEach(p => { initialAttendance[p.id] = "bench"; });
-    setAttendance(initialAttendance);
-  }, []);
+    const fetchPlayers = async () => {
+      try {
+        // 💡 URLパラメータにない場合はlocalStorageから選択中のチームIDを補完
+        const targetTeamId = urlTeamId || localStorage.getItem("iscore_selectedTeamId");
+        if (!targetTeamId) {
+          toast.error("チーム情報が特定できませんでした");
+          setIsLoading(false);
+          return;
+        }
+
+        const res = await fetch(`/api/teams/${targetTeamId}/players`, { cache: "no-store" });
+        if (!res.ok) throw new Error("選手データの取得に失敗しました");
+        
+        const data = await res.json() as Player[];
+        setTeamPlayers(data || []);
+        
+        // 全員を一旦「控え（bench）」として初期化
+        const initialAttendance: Record<string, "bench" | "absent"> = {};
+        data.forEach(p => { 
+          initialAttendance[p.id] = "bench"; 
+        });
+        setAttendance(initialAttendance);
+
+      } catch (error) {
+        console.error(error);
+        toast.error("選手情報の読み込みに失敗しました");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchPlayers();
+  }, [urlTeamId]);
 
   // 排他制御ロジック（すでに選ばれているポジション・選手は選べないようにする）
   const getDisabledPositions = (lineup: any[], currentIndex: number) =>
@@ -83,15 +110,27 @@ export default function LineupPage() {
     })));
   };
 
-  // 💡 スタメンに選ばれている選手のIDリスト
+  // スタメンに選ばれている選手のIDリスト
   const startingPlayerIds = myLineup.map(p => p.playerId).filter(Boolean);
   
-  // 💡 スタメンから漏れた残りの選手リスト
+  // スタメンから漏れた残りの選手リスト
   const remainingPlayers = teamPlayers.filter(p => !startingPlayerIds.includes(p.id));
   
   // 人数カウント
   const benchCount = remainingPlayers.filter(p => attendance[p.id] !== "absent").length;
   const absentCount = remainingPlayers.filter(p => attendance[p.id] === "absent").length;
+
+  // ─── 🌟 ロード中の画面 ───
+  if (isLoading) {
+    return (
+      <div className="flex h-[60vh] items-center justify-center">
+        <div className="text-center space-y-3">
+          <Loader2 className="h-8 w-8 animate-spin text-primary/40 mx-auto" />
+          <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.3em]">Loading Squad...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full animate-in fade-in duration-500 min-h-screen pb-24">
@@ -146,7 +185,7 @@ export default function LineupPage() {
           )}
         </div>
 
-        {/* 🌟 メインリストエリア 🌟 */}
+        {/* メインリストエリア */}
         <div className="space-y-8">
           
           {/* 【セクション1】スターティングメンバー */}
@@ -155,11 +194,11 @@ export default function LineupPage() {
               <h3 className="text-sm font-black text-foreground flex items-center gap-2">
                 <Shield className="w-4 h-4 text-primary" /> スターティングメンバー
               </h3>
-              {activeTab === "myTeam" && (
+              {activeTab === "myTeam" ? (
                 <span className="text-[10px] font-bold bg-primary/10 text-primary px-2 py-0.5 rounded-md">
                   {startingPlayerIds.length} / 9人
                 </span>
-              )}
+              ) : null}
             </div>
 
             {(activeTab === "myTeam" ? myLineup : opponentLineup).map((player, index) => {
@@ -203,7 +242,7 @@ export default function LineupPage() {
                         const selectedPlayer = teamPlayers.find(p => p.id === selectedId);
                         list[index].playerId = selectedId;
                         list[index].name = selectedPlayer ? selectedPlayer.name : "";
-                        list[index].uniformNumber = selectedPlayer ? selectedPlayer.uniformNumber : "";
+                        list[index].uniformNumber = selectedPlayer ? (selectedPlayer.uniformNumber || "") : "";
                         setMyLineup(list);
                       }}
                       className="flex-1 h-11 bg-transparent border-none font-bold text-sm focus:outline-none cursor-pointer"
@@ -213,9 +252,9 @@ export default function LineupPage() {
                         <option 
                           key={p.id} 
                           value={p.id} 
-                          disabled={disabledPlayers.includes(p.id)} // 他の打順で選ばれている選手はグレーアウト
+                          disabled={disabledPlayers.includes(p.id)}
                         >
-                          {disabledPlayers.includes(p.id) ? `[選択済] ${p.name}` : `${p.uniformNumber}. ${p.name}`}
+                          {disabledPlayers.includes(p.id) ? `[選択済] ${p.name}` : `${p.uniformNumber ? p.uniformNumber + '.' : ''} ${p.name}`}
                         </option>
                       ))}
                     </select>
@@ -236,8 +275,8 @@ export default function LineupPage() {
             })}
           </div>
 
-          {/* 🌟 【セクション2】ベンチ・欠席メンバー（自チームタブのみ表示） 🌟 */}
-          {activeTab === "myTeam" && (
+          {/* 【セクション2】ベンチ・欠席メンバー（自チームタブのみ表示） */}
+          {activeTab === "myTeam" ? (
             <div className="space-y-4 pt-6 border-t-2 border-border/40 border-dashed">
               <div className="flex items-center justify-between px-2">
                 <h3 className="text-sm font-black text-foreground flex items-center gap-2">
@@ -260,18 +299,17 @@ export default function LineupPage() {
                     return (
                       <div key={player.id} className="flex items-center justify-between bg-card/50 border border-border/40 p-2 pl-4 rounded-xl">
                         <div className="flex items-center gap-3">
-                          <span className="text-xs font-black text-muted-foreground w-4">{player.uniformNumber}</span>
+                          <span className="text-xs font-black text-muted-foreground w-4">{player.uniformNumber || "-"}</span>
                           <span className={cn("text-sm font-bold", status === "absent" ? "text-muted-foreground line-through opacity-70" : "text-foreground")}>
                             {player.name}
                           </span>
                         </div>
                         
-                        {/* 控え / 欠席 トグルスイッチ */}
                         <div className="flex bg-muted p-1 rounded-lg w-32">
                           <button
                             onClick={() => setAttendance(prev => ({ ...prev, [player.id]: "bench" }))}
                             className={cn(
-                              "flex-1 flex items-center justify-center py-1.5 rounded-md text-[10px] font-black transition-all",
+                              "flex-1 flex items-center justify-center py-1.5 rounded-md text-[10px] font-black transition-all cursor-pointer",
                               status === "bench" ? "bg-white dark:bg-zinc-700 text-emerald-600 dark:text-emerald-400 shadow-sm" : "text-muted-foreground hover:text-foreground"
                             )}
                           >
@@ -280,7 +318,7 @@ export default function LineupPage() {
                           <button
                             onClick={() => setAttendance(prev => ({ ...prev, [player.id]: "absent" }))}
                             className={cn(
-                              "flex-1 flex items-center justify-center py-1.5 rounded-md text-[10px] font-black transition-all",
+                              "flex-1 flex items-center justify-center py-1.5 rounded-md text-[10px] font-black transition-all cursor-pointer",
                               status === "absent" ? "bg-white dark:bg-zinc-700 text-rose-500 shadow-sm" : "text-muted-foreground hover:text-foreground"
                             )}
                           >
@@ -293,7 +331,7 @@ export default function LineupPage() {
                 </div>
               )}
             </div>
-          )}
+          ) : null}
         </div>
 
         {/* プレイボールボタン */}
