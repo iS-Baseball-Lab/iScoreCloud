@@ -5,22 +5,22 @@ import { Users, Calendar, Clock, MapPin, Trophy, Hash, Tent } from "lucide-react
 import { cn } from "@/lib/utils";
 import { TournamentSelector } from "./tournament-selector";
 
-interface MatchFormState {
+export interface MatchFormState {
   opponent: string;
   date: string;
   time: string;
   venue: string;
   matchType: 'official' | 'practice';
   tournamentName: string;
-  battingOrder: 'first' | 'second';
-  benchSide: '1B' | '3B';
+  battingOrder: 'first' | 'second' | 'unknown'; // 先攻後攻も未定があるかもしれないので拡張可能ですが、今回はベンチに集中します
+  benchSide: '1B' | '3B' | 'unknown'; // 🌟 'unknown' を追加
   inningCount: 6 | 7 | 9;
 }
 
 interface Props {
   state: MatchFormState;
   setState: (state: MatchFormState) => void;
-  tournaments: any[];
+  tournaments: any[]; // ※ゆくゆくはTournament型を定義してimport推奨
   isNewTournament: boolean;
   setIsNewTournament: (val: boolean) => void;
 }
@@ -70,20 +70,21 @@ export function MatchBasicForm({ state, setState, tournaments, isNewTournament, 
         </div>
       )}
 
-      {/* ベンチ・先攻後攻 */}
+      {/* 🌟 ベンチ・先攻後攻 */}
       <div className="grid grid-cols-2 gap-4 pt-2 border-t border-border">
         <div className="space-y-1.5">
           <label className="text-[10px] font-black uppercase text-muted-foreground flex items-center gap-1.5"><Tent className="h-3.5 w-3.5" /> Bench</label>
           <div className="flex p-1 bg-muted rounded-2xl border border-border">
-            <button type="button" onClick={() => setState({...state, benchSide: '1B'})} className={cn("flex-1 h-9 text-[10px] font-black rounded-xl", state.benchSide === '1B' ? "bg-blue-600 text-white" : "text-muted-foreground")}>1塁側</button>
-            <button type="button" onClick={() => setState({...state, benchSide: '3B'})} className={cn("flex-1 h-9 text-[10px] font-black rounded-xl", state.benchSide === '3B' ? "bg-red-600 text-white" : "text-muted-foreground")}>3塁側</button>
+            <button type="button" onClick={() => setState({...state, benchSide: '1B'})} className={cn("flex-1 h-9 text-[10px] font-black rounded-xl transition-colors", state.benchSide === '1B' ? "bg-blue-600 text-white shadow-sm" : "text-muted-foreground hover:text-foreground")}>1塁側</button>
+            <button type="button" onClick={() => setState({...state, benchSide: 'unknown'})} className={cn("flex-1 h-9 text-[10px] font-black rounded-xl transition-colors", state.benchSide === 'unknown' ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>未定</button>
+            <button type="button" onClick={() => setState({...state, benchSide: '3B'})} className={cn("flex-1 h-9 text-[10px] font-black rounded-xl transition-colors", state.benchSide === '3B' ? "bg-red-600 text-white shadow-sm" : "text-muted-foreground hover:text-foreground")}>3塁側</button>
           </div>
         </div>
         <div className="space-y-1.5">
           <label className="text-[10px] font-black uppercase text-muted-foreground flex items-center gap-1.5"><Users className="h-3.5 w-3.5" /> Order</label>
           <div className="flex p-1 bg-muted rounded-2xl border border-border">
-            <button type="button" onClick={() => setState({...state, battingOrder: 'first'})} className={cn("flex-1 h-9 text-[10px] font-black rounded-xl", state.battingOrder === 'first' ? "bg-background text-foreground" : "text-muted-foreground")}>先攻</button>
-            <button type="button" onClick={() => setState({...state, battingOrder: 'second'})} className={cn("flex-1 h-9 text-[10px] font-black rounded-xl", state.battingOrder === 'second' ? "bg-background text-foreground" : "text-muted-foreground")}>後攻</button>
+            <button type="button" onClick={() => setState({...state, battingOrder: 'first'})} className={cn("flex-1 h-9 text-[10px] font-black rounded-xl transition-colors", state.battingOrder === 'first' ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>先攻</button>
+            <button type="button" onClick={() => setState({...state, battingOrder: 'second'})} className={cn("flex-1 h-9 text-[10px] font-black rounded-xl transition-colors", state.battingOrder === 'second' ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>後攻</button>
           </div>
         </div>
       </div>
