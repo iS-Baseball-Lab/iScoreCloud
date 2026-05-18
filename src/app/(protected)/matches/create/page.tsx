@@ -8,7 +8,7 @@
 
 import React, { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ChevronLeft, PlayCircle } from "lucide-react";
+import { ChevronLeft, PlayCircle, CalendarPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SectionHeader } from "@/components/layout/SectionHeader";
@@ -25,7 +25,7 @@ interface CreateMatchResponse {
 
 function CreateMatchContent() {
   const router = useRouter();
-  const { currentTeam } = useTeam(); // 🌟 Contextから現在のチームを取得
+  const { currentTeam } = useTeam();
   const searchParams = useSearchParams();
   const mode = searchParams.get("mode") || "real";
 
@@ -61,7 +61,6 @@ function CreateMatchContent() {
       return;
     }
 
-    // 💡 チームが選ばれていない場合のガード
     if (!currentTeam?.id) {
       toast.error("操作するチームを選択してください");
       return;
@@ -69,7 +68,6 @@ function CreateMatchContent() {
     setIsLoading(true);
 
     try {
-      // 🚀 実APIへのリクエスト送信
       const res = await fetch("/api/matches/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -81,7 +79,7 @@ function CreateMatchContent() {
           battingOrder: formData.battingOrder,
           innings: formData.innings,
           surfaceDetails: formData.surfaceDetails,
-          // 🌟 追加：未来の予定(real)は'scheduled'、事後入力(quick)は'finished'として保存
+          // 🌟 予定(real)は'scheduled'、事後入力(quick)は'finished'として保存
           status: mode === "real" ? "scheduled" : "finished",
           myScore: formData.myScore ? Number(formData.myScore) : 0,
           opponentScore: formData.opponentScore ? Number(formData.opponentScore) : 0,
@@ -90,19 +88,17 @@ function CreateMatchContent() {
         }),
       });
 
-      // 💡 unknown型をキャストしてエラー回避
       const result = (await res.json()) as CreateMatchResponse;
 
       if (!result.success) {
         throw new Error(result.error || "試合の作成に失敗しました");
       }
 
+      // 💡 修正: どちらのモードでも一覧へ戻るようにし、スタメン画面への強制遷移を廃止
       if (mode === "real") {
-        toast.success("試合予定をセットアップしました！");
-        // 🌟 統一ルール: クエリパラメータ形式でスタメン画面へ遷移
-        router.push(`/matches/lineup?id=${result.matchId}`);
+        toast.success("試合予定を登録しました！");
+        router.push("/dashboard"); 
       } else {
-        // Quickモード（簡易保存）
         toast.success("試合結果を保存しました");
         router.push("/dashboard");
       }
@@ -118,15 +114,15 @@ function CreateMatchContent() {
     <div className="w-full animate-in fade-in slide-in-from-bottom-4 duration-500 min-h-screen pb-24">
       <div className="max-w-2xl mx-auto px-4 pt-8 space-y-10">
 
-        {/* ヘッダー */}
+        {/* 💡 修正: ヘッダー文言を「予定登録」に合う形にブラッシュアップ */}
         <div className="flex items-center justify-between">
           <Button variant="ghost" size="icon" onClick={() => router.back()} className="rounded-full">
             <ChevronLeft className="h-6 w-6" />
           </Button>
           <SectionHeader
-            title={mode === "real" ? "LIVE SCORE" : "QUICK SCORE"}
-            subtitle={mode === "real" ? "Lineup & Play-by-play" : "Quick Entry"}
-            showPulse
+            title={mode === "real" ? "NEW SCHEDULE" : "QUICK SCORE"}
+            subtitle={mode === "real" ? "Match Registration" : "Quick Entry"}
+            showPulse={mode === "real"}
           />
           <div className="w-10" />
         </div>
@@ -242,8 +238,9 @@ function CreateMatchContent() {
           </div>
 
           <Button type="submit" disabled={isLoading} className="w-full h-16 rounded-full text-lg font-black uppercase tracking-[0.2em] shadow-sm shadow-primary/20">
-            {isLoading ? "保存中..." : (mode === "real" ? "スタメン設定へ" : "試合結果を保存")}
-            <PlayCircle className="ml-2 h-6 w-6" />
+            {/* 💡 修正: モードに合わせた的確なラベルとアイコン */}
+            {isLoading ? "保存中..." : (mode === "real" ? "予定を登録" : "試合結果を保存")}
+            {mode === "real" ? <CalendarPlus className="ml-2 h-6 w-6" /> : <PlayCircle className="ml-2 h-6 w-6" />}
           </Button>
 
         </form>
@@ -252,7 +249,6 @@ function CreateMatchContent() {
   );
 }
 
-// 🌟 Next.js App Routerの規約に基づき、useSearchParams利用部分をSuspenseでラップ
 export default function CreateMatchPage() {
   return (
     <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Loading...</div>}>
