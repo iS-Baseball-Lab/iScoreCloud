@@ -190,7 +190,6 @@ export default function LineupPage() {
               const disabledPos = getDisabledPositions(activeTab === "myTeam" ? myLineup : opponentLineup, index);
               const disabledPlayers = activeTab === "myTeam" ? getDisabledPlayers(myLineup, index) : [];
 
-              // 🌟 ここがポイント：守備位置と選手名の両方が埋まっているかチェック
               const isCompleted = activeTab === "myTeam" 
                 ? Boolean(player.position && player.playerId)
                 : Boolean(player.position && player.name.trim());
@@ -200,13 +199,11 @@ export default function LineupPage() {
                   key={index} 
                   className={cn(
                     "flex items-center gap-2 p-2 rounded-2xl transition-all duration-300 focus-within:border-primary/50",
-                    // 🌟 埋まっていればソリッドな背景と影、未入力なら半透明の点線枠
                     isCompleted
                       ? "bg-white dark:bg-zinc-800 border-2 border-primary/30 shadow-md opacity-100"
                       : "bg-card/40 border-2 border-border/50 border-dashed opacity-80"
                   )}
                 >
-                  {/* 打順番号（完了時は色が濃くなる） */}
                   <div className={cn(
                     "w-8 text-center font-black italic transition-colors flex items-center justify-center",
                     isCompleted ? "text-primary" : "text-primary/40"
@@ -256,15 +253,28 @@ export default function LineupPage() {
                       )}
                     >
                       <option value="">選手を選択...</option>
-                      {teamPlayers.map(p => (
-                        <option 
-                          key={p.id} 
-                          value={p.id} 
-                          disabled={disabledPlayers.includes(p.id)}
-                        >
-                          {disabledPlayers.includes(p.id) ? `[選択済] ${p.name}` : `${p.uniformNumber ? p.uniformNumber + '.' : ''} ${p.name}`}
-                        </option>
-                      ))}
+                      {teamPlayers.map(p => {
+                        const isAlreadySelected = disabledPlayers.includes(p.id);
+                        // 🌟 欠席判定を追加
+                        const isAbsent = attendance[p.id] === "absent";
+                        
+                        // 既に選択済みか、欠席の場合は選択不可（disabled）にする
+                        const isDisabled = isAlreadySelected || isAbsent;
+
+                        // 表示するラベルを状態に応じて変更
+                        let label = `${p.uniformNumber ? p.uniformNumber + '.' : ''} ${p.name}`;
+                        if (isAlreadySelected) {
+                          label = `[選択済] ${p.name}`;
+                        } else if (isAbsent) {
+                          label = `[欠席] ${p.name}`; // 🌟 欠席者には [欠席] と表示
+                        }
+
+                        return (
+                          <option key={p.id} value={p.id} disabled={isDisabled}>
+                            {label}
+                          </option>
+                        );
+                      })}
                     </select>
                   ) : (
                     <Input
@@ -282,7 +292,6 @@ export default function LineupPage() {
                     />
                   )}
 
-                  {/* 🌟 完了チェックマーク（埋まると右端にフワッと表示されます） */}
                   {isCompleted && (
                     <div className="w-8 flex justify-center animate-in zoom-in duration-300">
                       <CheckCircle2 className="w-5 h-5 text-primary" />
@@ -314,11 +323,29 @@ export default function LineupPage() {
                 <div className="grid gap-2">
                   {remainingPlayers.map(player => {
                     const status = attendance[player.id] || "bench";
+                    const isAbsent = status === "absent";
                     return (
-                      <div key={player.id} className="flex items-center justify-between bg-card/50 border border-border/40 p-2 pl-4 rounded-xl">
+                      <div 
+                        key={player.id} 
+                        // 🌟 欠席の場合は確定イメージ（ソリッドな背景と枠）を強める
+                        className={cn(
+                          "flex items-center justify-between p-2 pl-4 rounded-xl transition-all duration-300",
+                          isAbsent 
+                            ? "bg-rose-500/5 border-2 border-rose-500/20 shadow-sm opacity-90"
+                            : "bg-card/50 border-2 border-border/40"
+                        )}
+                      >
                         <div className="flex items-center gap-3">
-                          <span className="text-xs font-black text-muted-foreground w-4">{player.uniformNumber || "-"}</span>
-                          <span className={cn("text-sm font-bold", status === "absent" ? "text-muted-foreground line-through opacity-70" : "text-foreground")}>
+                          <span className={cn(
+                            "text-xs font-black w-4",
+                            isAbsent ? "text-rose-500/50" : "text-muted-foreground"
+                          )}>
+                            {player.uniformNumber || "-"}
+                          </span>
+                          <span className={cn(
+                            "text-sm font-bold transition-all", 
+                            isAbsent ? "text-rose-600/60 dark:text-rose-400/60 line-through" : "text-foreground"
+                          )}>
                             {player.name}
                           </span>
                         </div>
