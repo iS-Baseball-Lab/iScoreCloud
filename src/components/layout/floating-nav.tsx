@@ -59,9 +59,8 @@ export function FloatingNav() {
                 <Link href={item.href} className="relative flex items-center justify-center active:scale-95 transition-transform">
                   <div className={cn(
                     "w-16 h-16 rounded-full flex flex-col items-center justify-center gap-1 border-[3px] transition-colors relative z-10",
-                    // 🌟 修正1: 影の色を primary から他と同じ汎用的なブラック/ダークシャドウに変更。これで背景と同化しません！
                     isActive 
-                      ? "bg-primary border-primary text-primary-foreground shadow-xl shadow-black/20 dark:shadow-black/40" 
+                      ? "bg-primary border-primary text-primary-foreground shadow-xl shadow-black/20" 
                       : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-xl shadow-black/10"
                   )}>
                     <item.icon className="w-6 h-6 stroke-[2.5]" />
@@ -77,23 +76,23 @@ export function FloatingNav() {
         <button
           onClick={() => setIsOpen(!isOpen)}
           className={cn(
-            // 🌟 修正2: 究極のバグ対策 [clip-path:circle(50%_at_50%_50%)] を追加。
-            // 端末のGPUに対して「絶対に真円の形でしか描画するな」と強制命令を下すため、四角くなる余地が物理的になくなります。
-            "relative flex items-center justify-center rounded-full overflow-hidden isolate active:scale-95 z-50 transition-all duration-300 ease-out [clip-path:circle(50%_at_50%_50%)]",
+            // 🌟 修正: clip-pathをbutton側ではなく、内部のレンダリング要素全てに適用させるための構造に変更
+            "relative flex items-center justify-center rounded-full overflow-hidden active:scale-95 z-50 transition-all duration-300 ease-out",
             isOpen
               ? "w-14 h-14 bg-white dark:bg-zinc-800 shadow-[0_8px_30px_rgb(0,0,0,0.12)] border border-border/50"
               : "w-24 h-24 bg-primary shadow-2xl shadow-primary/50 border-none outline-none ring-0"
           )}
         >
-          <AnimatePresence>
+          <AnimatePresence mode="popLayout">
             {isOpen ? (
               <motion.div
                 key="close"
                 initial={{ opacity: 0, scale: 0.5, rotate: -90 }}
                 animate={{ opacity: 1, scale: 1, rotate: 0 }}
                 exit={{ opacity: 0, scale: 0.5, rotate: 90 }}
-                transition={{ duration: 0.15, ease: "easeOut" }}
-                className="absolute inset-0 flex items-center justify-center bg-transparent"
+                transition={{ duration: 0.2, ease: "easeOut" }}
+                // 🌟 修正: containerに rounded-full と overflow-hidden をこれでもかと強制する
+                className="absolute inset-0 flex items-center justify-center rounded-full overflow-hidden"
               >
                 <X className="w-6 h-6 text-muted-foreground stroke-[3]" />
               </motion.div>
@@ -103,10 +102,10 @@ export function FloatingNav() {
                 initial={{ opacity: 0, scale: 0.5 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.5 }}
-                transition={{ duration: 0.15, ease: "easeOut" }}
-                className="absolute inset-0 flex items-center justify-center bg-transparent"
+                transition={{ duration: 0.2, ease: "easeOut" }}
+                // 🌟 修正: ロゴ側も同様に強制
+                className="absolute inset-0 flex items-center justify-center rounded-full overflow-hidden"
               >
-                {/* 🌟 修正3: pointer-events-none を追加し、Imageコンポーネントの不要な干渉を排除 */}
                 <Image src="/logo.webp" alt="iScore" fill className="object-contain pointer-events-none" priority />
               </motion.div>
             )}
