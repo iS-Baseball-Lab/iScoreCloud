@@ -15,12 +15,14 @@ export function FloatingNav() {
 
   useEffect(() => setIsOpen(false), [pathname]);
 
+  // 🌟 修正1: 角度を扇状（アーチ型）に美しく配置。
+  // -160度(左) から 35度ずつ進み、-20度(右) で終わる完璧なシンメトリー
   const menuItems = [
-    { icon: Users, label: "TEAM", href: "/team", angle: -210 },
-    { icon: UserSquare2, label: "PLAYER", href: "/players", angle: -150 },
+    { icon: Users, label: "TEAM", href: "/team", angle: -160 },
+    { icon: UserSquare2, label: "PLAYER", href: "/players", angle: -125 },
     { icon: LayoutDashboard, label: "HOME", href: "/dashboard", angle: -90 },
-    { icon: Trophy, label: "EVENT", href: "/tournaments", angle: -30 },
-    { icon: MoreHorizontal, label: "MENU", href: "/menu", angle: 30 },
+    { icon: Trophy, label: "EVENT", href: "/tournaments", angle: -55 },
+    { icon: MoreHorizontal, label: "MENU", href: "/menu", angle: -20 },
   ];
 
   return (
@@ -42,7 +44,8 @@ export function FloatingNav() {
         <AnimatePresence>
           {isOpen && menuItems.map((item, index) => {
             const isActive = pathname === item.href;
-            const RADIUS = 100;
+            // 🌟 修正2: 半径を100から115に広げ、親指が自然に届くアーチの大きさに
+            const RADIUS = 115;
             const radian = (item.angle * Math.PI) / 180;
             const x = Math.cos(radian) * RADIUS;
             const y = Math.sin(radian) * RADIUS;
@@ -53,7 +56,8 @@ export function FloatingNav() {
                 initial={{ scale: 0, x: 0, y: 0 }}
                 animate={{ scale: 1, x, y }}
                 exit={{ scale: 0, x: 0, y: 0 }}
-                transition={{ type: "spring", stiffness: 700, damping: 32, delay: index * 0.01 }}
+                // 🌟 修正3: delay を index * 0.02 に増やし、扇子がパラッと開くような心地よい順次表示に
+                transition={{ type: "spring", stiffness: 650, damping: 28, delay: index * 0.02 }}
                 className="absolute"
               >
                 <Link href={item.href} className="relative flex items-center justify-center active:scale-95 transition-transform">
@@ -66,11 +70,12 @@ export function FloatingNav() {
                       />
                     </div>
                   )}
+                  {/* 🌟 修正4: ボタンサイズを w-16 h-16 に微調整し、アーチにピッタリ収まる黄金比に */}
                   <div className={cn(
-                    "w-18 h-18 rounded-full flex flex-col items-center justify-center gap-1 shadow-2xl border-[3px] transition-colors relative z-10",
+                    "w-16 h-16 rounded-full flex flex-col items-center justify-center gap-1 shadow-2xl border-[3px] transition-colors relative z-10",
                     isActive ? "bg-primary border-primary text-primary-foreground" : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100"
                   )}>
-                    <item.icon className="w-7 h-7 stroke-[2.5]" />
+                    <item.icon className="w-6 h-6 stroke-[2.5]" />
                     <span className="text-[8px] font-black uppercase tracking-tighter">{item.label}</span>
                   </div>
                 </Link>
@@ -87,13 +92,10 @@ export function FloatingNav() {
             "relative rounded-full flex items-center justify-center active:scale-95 z-50 overflow-hidden",
             isOpen
               ? "w-14 h-14 bg-white dark:bg-zinc-800 shadow-md border border-border/50"
-              // 💡 修正1: 枠線の原因を完全に消去。border-none, outline-none, ring-0 を明示。
               : "w-24 h-24 bg-primary shadow-xl border-none outline-none ring-0"
           )}
-          // 💡 修正2: サイズ変更自体のスピードもアップ（stiffnessを上げてバネを硬く）
           transition={{ type: "spring", stiffness: 700, damping: 25 }}
         >
-          {/* 💡 修正3: mode="wait" を削除し、瞬時にクロスフェードさせる */}
           <AnimatePresence>
             {isOpen ? (
               <motion.div
@@ -101,7 +103,6 @@ export function FloatingNav() {
                 initial={{ opacity: 0, scale: 0.5, rotate: -90 }}
                 animate={{ opacity: 1, scale: 1, rotate: 0 }}
                 exit={{ opacity: 0, scale: 0.5, rotate: 90 }}
-                // 💡 修正4: アニメーション時間を 0.15秒に短縮し、爆速レスポンスに
                 transition={{ duration: 0.15, ease: "easeOut" }}
                 className="absolute inset-0 flex items-center justify-center"
               >
@@ -116,7 +117,6 @@ export function FloatingNav() {
                 transition={{ duration: 0.15, ease: "easeOut" }}
                 className="absolute inset-0 flex items-center justify-center"
               >
-                {/* 💡 修正5: p-1 を削除し、背景色が枠線のように見えてしまう隙間を完全に埋める */}
                 <Image src="/logo.webp" alt="iScore" fill className="object-contain" priority />
               </motion.div>
             )}
