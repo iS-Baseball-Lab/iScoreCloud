@@ -1,84 +1,77 @@
 // filepath: src/components/layout/protected-client-layout.tsx
-/* 💡 認証ガード・レイアウト（オフライン耐性強化版） */
 "use client";
 
 import React, { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { authClient } from "@/lib/auth-client";
-import { toast } from "sonner";
+import { Loader2 } from "lucide-react";
 
-export function ProtectedClientLayout({ children }: { children: React.ReactNode }) {
+export function ProtectedClientLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const router = useRouter();
   const pathname = usePathname();
-  const [isPending, setIsPending] = useState(true);
+  
+  // 💡 検問のステータス（最初は「確認中」なので false）
   const [isAuthorized, setIsAuthorized] = useState(false);
 
   useEffect(() => {
     const checkAuth = async () => {
-      // 🌟 オフライン時はチェックをスキップし、既存の認証状態を信じる
-      if (typeof window !== "undefined" && !navigator.onLine) {
-        console.log("Offline mode: Skipping auth check and maintaining current state.");
-        // すでに一度認証を通っていれば、そのまま表示を維持
-        if (isAuthorized) {
-          setIsPending(false);
-          return;
-        }
-      }
-
       try {
-        const { data: session, error } = await authClient.getSession();
+        const res = await fetch("/api/auth/me");
+        const json = await res.json();
 
-        if (error || !session) {
-          // 🌟 通信エラー（ネットワークダウン）の場合はリダイレクトしない
-          if (error && !navigator.onLine) {
-             console.warn("Auth check failed due to network. Staying on page.");
-             return; 
-          }
-          
-          console.log("No session found, redirecting to login...");
+        // 1. 未ログインならログイン画面へ弾く
+        if (!json.success || !json.data) {
           router.replace("/login");
           return;
         }
 
-        // 承認待ちチェック（GUEST = 新規登録直後、PENDING = 申請済み未承認）
-        if ((session.user.role === "GUEST" || session.user.role === "PENDING") && pathname !== "/pending-approval") {
+        const memberships = json.data.memberships || [];
+        const hasActive = memberships.some((m: any) => m.status === "active");
+        const hasPending = memberships.some((m: any) => m.status === "pending");
+
+        // 🌟 2. 承認済みのチームがなく、申請中（Pending）のチームがある場合は強制送還！
+        if (!hasActive && hasPending) {
           router.replace("/pending-approval");
+          return; // 👈 ここで止めるので isAuthorized は false のまま
+        }
+
+        // 🌟 3. どのチームにも属していない（新規ユーザー）場合も入力画面へ
+        if (!hasActive && !hasPending) {
+          router.replace("/pending-approval"); 
           return;
         }
 
+        // 💡 4. すべての検問をクリアした人だけ、ダッシュボードの描画を許可！
         setIsAuthorized(true);
-      } catch (err) {
-        // 🌟 通信例外が発生しても、オフラインならログアウトさせない
-        if (!navigator.onLine) {
-          console.error("Network error during auth check, but user is offline. Keeping session.");
-        } else {
-          router.replace("/login");
-        }
-      } finally {
-        setIsPending(false);
+        
+      } catch (error) {
+        console.error("認証チェックエラー:", error);
+        router.replace("/login");
       }
     };
 
     checkAuth();
+  }, [router, pathname]);
 
-    // 🌟 ネットワーク復帰時に自動で再チェックするリスナー
-    const handleOnline = () => {
-      console.log("Network restored. Re-validating session...");
-      checkAuth();
-    };
-    window.addEventListener("online", handleOnline);
-    return () => window.removeEventListener("online", handleOnline);
-
-  }, [router, pathname, isAuthorized]);
-
-  // ローディング中かつ未認証時のみスケルトン等を表示
-  if (isPending && !isAuthorized) {
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // 🚨 検問をクリアするまでは、絶対に AppShell や children を描画しない！
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  if (!isAuthorized) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-background">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="h-8 w-8 animate-spin text-primary/40" />
+          <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.3em] animate-pulse">
+            Authenticating...
+          </p>
+        </div>
       </div>
     );
   }
 
+  // 検問クリアで初めて中身を描画
   return <>{children}</>;
 }
