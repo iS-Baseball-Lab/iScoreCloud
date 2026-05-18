@@ -36,7 +36,7 @@ export function FloatingNav() {
             transition={{ duration: 0.2 }}
             onClick={() => setIsOpen(false)}
             // 💡 余計な「rounded-full」の暗い枠を削除し、画面全体を覆う綺麗なすりガラスに変更
-            className="fixed inset-0 bg-background/70 backdrop-blur-sm z-[-1]"
+            className="fixed inset-0 z-[-1]"
           />
         )}
       </AnimatePresence>
