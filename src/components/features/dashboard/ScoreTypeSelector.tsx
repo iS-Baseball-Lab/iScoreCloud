@@ -17,7 +17,7 @@ export const ScoreTypeSelector = () => {
     <div className="grid grid-cols-2 gap-3 sm:gap-4 px-1">
       {/* --- Live Score --- */}
       <button
-        onClick={() => router.push('/matches/create?mode=real')}
+        onClick={() => router.push('/matches/create?mode=live')}
         className={cn(
           "relative group overflow-hidden flex flex-col items-center justify-center p-5 sm:p-8 transition-all active:scale-[0.96]",
           "bg-primary text-primary-foreground shadow-sm shadow-primary/20 border border-white/10",
