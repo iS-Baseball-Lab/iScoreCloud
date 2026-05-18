@@ -25,7 +25,6 @@ export function FloatingNav() {
 
   return (
     <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[100]">
-      {/* 🌟 背景オーバーレイ：巨大な丸い枠を撤廃し、画面全体を上品なすりガラスで覆う */}
       <AnimatePresence>
         {isOpen && (
           <motion.div
@@ -40,7 +39,6 @@ export function FloatingNav() {
       </AnimatePresence>
 
       <div className="relative flex items-center justify-center">
-        {/* サブボタン展開 */}
         <AnimatePresence>
           {isOpen && menuItems.map((item, index) => {
             const isActive = pathname === item.href;
@@ -81,41 +79,45 @@ export function FloatingNav() {
           })}
         </AnimatePresence>
 
-        {/* ⚾️ センターボタン：極限までスッキリさせたモダン仕様 */}
+        {/* ⚾️ センターボタン */}
         <motion.button
           layout
           onClick={() => setIsOpen(!isOpen)}
           className={cn(
-            "relative rounded-full flex items-center justify-center transition-all duration-300 active:scale-95 z-50 overflow-hidden",
+            "relative rounded-full flex items-center justify-center active:scale-95 z-50 overflow-hidden",
             isOpen
-              // 💡 展開時: サイズを小さく (w-14) し、半透明のリング (ring-4) を完全削除。色も控えめに。
               ? "w-14 h-14 bg-white dark:bg-zinc-800 shadow-md border border-border/50"
-              // 💡 閉鎖時: ロゴの枠線 (border) を完全削除。ロゴそのものの美しさで勝負。
-              : "w-24 h-24 bg-primary shadow-xl"
+              // 💡 修正1: 枠線の原因を完全に消去。border-none, outline-none, ring-0 を明示。
+              : "w-24 h-24 bg-primary shadow-xl border-none outline-none ring-0"
           )}
-          transition={{ type: "spring", stiffness: 500, damping: 30 }}
+          // 💡 修正2: サイズ変更自体のスピードもアップ（stiffnessを上げてバネを硬く）
+          transition={{ type: "spring", stiffness: 700, damping: 25 }}
         >
-          <AnimatePresence mode="wait">
+          {/* 💡 修正3: mode="wait" を削除し、瞬時にクロスフェードさせる */}
+          <AnimatePresence>
             {isOpen ? (
               <motion.div
                 key="close"
                 initial={{ opacity: 0, scale: 0.5, rotate: -90 }}
                 animate={{ opacity: 1, scale: 1, rotate: 0 }}
                 exit={{ opacity: 0, scale: 0.5, rotate: 90 }}
-                className="flex items-center justify-center"
+                // 💡 修正4: アニメーション時間を 0.15秒に短縮し、爆速レスポンスに
+                transition={{ duration: 0.15, ease: "easeOut" }}
+                className="absolute inset-0 flex items-center justify-center"
               >
-                {/* 💡 ✕アイコンも細く、小さく、色を落ち着かせて目立たないように */}
                 <X className="w-6 h-6 text-muted-foreground stroke-[3]" />
               </motion.div>
             ) : (
               <motion.div
                 key="logo"
-                initial={{ opacity: 0, scale: 0.8 }}
+                initial={{ opacity: 0, scale: 0.5 }}
                 animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.8 }}
-                className="relative w-full h-full"
+                exit={{ opacity: 0, scale: 0.5 }}
+                transition={{ duration: 0.15, ease: "easeOut" }}
+                className="absolute inset-0 flex items-center justify-center"
               >
-                <Image src="/logo.webp" alt="iScore" fill className="object-contain p-1" priority />
+                {/* 💡 修正5: p-1 を削除し、背景色が枠線のように見えてしまう隙間を完全に埋める */}
+                <Image src="/logo.webp" alt="iScore" fill className="object-contain" priority />
               </motion.div>
             )}
           </AnimatePresence>
