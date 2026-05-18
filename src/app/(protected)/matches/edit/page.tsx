@@ -1,4 +1,4 @@
-// src/app/(protected)/matches/edit/page.tsx
+// filepath: src/app/(protected)/matches/edit/page.tsx
 "use client";
 
 import React, { useState, useEffect, useRef, Suspense } from "react";
@@ -25,7 +25,7 @@ interface Tournament {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 大会選択ドロップダウン（create/edit 共通コンポーネント）
+// 大会選択ドロップダウン
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 interface TournamentSelectorProps {
   tournaments: Tournament[];
@@ -168,6 +168,9 @@ function MatchEditContent() {
   const [battingOrder, setBattingOrder] = useState<'first' | 'second'>("first");
   const [venue, setVenue] = useState("");
 
+  // 🌟 状態維持バグ修正: 試合の現在のステータスを保持するStateを追加
+  const [matchStatus, setMatchStatus] = useState<string>("scheduled");
+
   const [inningCount, setInningCount] = useState(7);
   const [myInnings, setMyInnings] = useState<string[]>([]);
   const [opponentInnings, setOpponentInnings] = useState<string[]>([]);
@@ -192,6 +195,7 @@ function MatchEditContent() {
             id: string; opponent: string; tournamentName?: string;
             matchType: 'official' | 'practice'; battingOrder: 'first' | 'second';
             surfaceDetails?: string; innings?: number; date?: string;
+            status?: string; // 🌟 statusの型を追加
           }
         };
 
@@ -203,6 +207,9 @@ function MatchEditContent() {
           setBattingOrder(m.battingOrder || "first");
           setVenue(m.surfaceDetails || "");
           setInningCount(m.innings || 7);
+          
+          // 🌟 状態維持バグ修正: 現在のステータスを退避
+          setMatchStatus(m.status || "scheduled");
 
           if (m.date) {
             const [d, t] = m.date.split(" ");
@@ -280,6 +287,7 @@ function MatchEditContent() {
     setIsSubmitting(true);
 
     try {
+      // 1. 基本情報の更新（PATCH）
       const res = await fetch(`/api/matches/${matchId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -296,16 +304,19 @@ function MatchEditContent() {
       const data = (await res.json()) as { success: boolean; error?: string };
       if (!data.success) throw new Error(data.error);
 
-      await fetch(`/api/matches/${matchId}/finish`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          myScore: myTotalScore,
-          opponentScore: opponentTotalScore,
-          myInningScores: myInnings.map(val => parseInt(val) || 0),
-          opponentInningScores: opponentInnings.map(val => parseInt(val) || 0),
-        }),
-      });
+      // 🌟 状態維持バグ修正: 既に終了している試合(finished)の場合のみスコア詳細を保存する
+      if (matchStatus === 'finished') {
+        await fetch(`/api/matches/${matchId}/finish`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            myScore: myTotalScore,
+            opponentScore: opponentTotalScore,
+            myInningScores: myInnings.map(val => parseInt(val) || 0),
+            opponentInningScores: opponentInnings.map(val => parseInt(val) || 0),
+          }),
+        });
+      }
 
       toast.success("試合情報を更新しました！");
       router.back();
@@ -455,103 +466,108 @@ function MatchEditContent() {
         </CardContent>
       </Card>
 
-      {/* スコアボード */}
-      <Card className="rounded-3xl border-border/40 bg-background shadow-xl overflow-hidden">
-        <div className="bg-zinc-900 text-zinc-100 p-3 flex items-center justify-between">
-          <h2 className="text-xs font-black italic tracking-wider">SCOREBOARD</h2>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="icon" onClick={removeInning} disabled={inningCount <= 1}
-              className="h-7 w-7 rounded-full bg-zinc-800 border-zinc-700 text-zinc-300 hover:bg-zinc-700 hover:text-white">
-              <X className="h-3 w-3" />
-            </Button>
-            <span className="text-[10px] font-bold text-zinc-400 tabular-nums w-12 text-center">{inningCount} INN</span>
-            <Button variant="outline" size="icon" onClick={addInning}
-              className="h-7 w-7 rounded-full bg-zinc-800 border-zinc-700 text-zinc-300 hover:bg-zinc-700 hover:text-white">
-              <Plus className="h-3 w-3" />
-            </Button>
-          </div>
-        </div>
-
-        <div className="p-3 overflow-x-auto">
-          <div className="min-w-max">
-            <div className="flex items-center mb-1.5">
-              <div className="w-16 sm:w-20 shrink-0" />
-              <div className="flex gap-1.5">
-                {Array.from({ length: inningCount }).map((_, i) => (
-                  <div key={i} className="w-9 sm:w-10 text-center text-[10px] font-black text-muted-foreground uppercase">{i + 1}</div>
-                ))}
-              </div>
-              <div className="w-10 shrink-0 text-center text-[10px] font-black text-primary">R</div>
-            </div>
-
-            {/* 先攻行 */}
-            <div className="flex items-center mb-2">
-              <div className="w-16 sm:w-20 shrink-0 text-xs font-black truncate pr-2 text-foreground/80">
-                {battingOrder === 'first' ? teamName : (opponent || 'Opp')}
-              </div>
-              <div className="flex gap-1.5">
-                {Array.from({ length: inningCount }).map((_, i) => (
-                  <Input key={i} type="text" inputMode="numeric" pattern="[0-9]*"
-                    value={battingOrder === 'first' ? myInnings[i] : opponentInnings[i]}
-                    onChange={e => {
-                      const val = e.target.value;
-                      if (battingOrder === 'first') { const n = [...myInnings]; n[i] = val; setMyInnings(n); }
-                      else { const n = [...opponentInnings]; n[i] = val; setOpponentInnings(n); }
-                    }}
-                    className="w-9 sm:w-10 h-10 sm:h-11 text-center text-sm font-black bg-muted/30 border-border/50 rounded-xl px-0 focus:bg-background"
-                    placeholder="-"
-                  />
-                ))}
-              </div>
-              <div className="w-10 shrink-0 text-center text-xl font-black tabular-nums">
-                {battingOrder === 'first' ? myTotalScore : opponentTotalScore}
-              </div>
-            </div>
-
-            {/* 後攻行 */}
-            <div className="flex items-center">
-              <div className="w-16 sm:w-20 shrink-0 text-xs font-black truncate pr-2 text-foreground/80">
-                {battingOrder === 'second' ? teamName : (opponent || 'Opp')}
-              </div>
-              <div className="flex gap-1.5">
-                {Array.from({ length: inningCount }).map((_, i) => (
-                  <Input key={i} type="text" inputMode="numeric" pattern="[0-9]*"
-                    value={battingOrder === 'second' ? myInnings[i] : opponentInnings[i]}
-                    onChange={e => {
-                      const val = e.target.value;
-                      if (battingOrder === 'second') { const n = [...myInnings]; n[i] = val; setMyInnings(n); }
-                      else { const n = [...opponentInnings]; n[i] = val; setOpponentInnings(n); }
-                    }}
-                    className="w-9 sm:w-10 h-10 sm:h-11 text-center text-sm font-black bg-muted/30 border-border/50 rounded-xl px-0 focus:bg-background"
-                    placeholder="-"
-                  />
-                ))}
-              </div>
-              <div className="w-10 shrink-0 text-center text-xl font-black tabular-nums">
-                {battingOrder === 'second' ? myTotalScore : opponentTotalScore}
-              </div>
+      {/* 🌟 復元＆完全補完：スコアボードセクション（Finishedの試合のみイニングスコア入力可能） */}
+      {matchStatus === 'finished' && (
+        <Card className="rounded-3xl border-border/40 bg-background shadow-xl overflow-hidden animate-in fade-in duration-300">
+          <div className="bg-zinc-900 text-zinc-100 p-4 flex items-center justify-between">
+            <h2 className="text-xs font-black italic tracking-wider">SCOREBOARD</h2>
+            <div className="flex items-center gap-2">
+              <Button type="button" variant="outline" size="icon" onClick={removeInning} disabled={inningCount <= 1}
+                className="h-7 w-7 rounded-full bg-zinc-800 border-zinc-700 text-zinc-300 hover:bg-zinc-700 hover:text-white">
+                <X className="h-3 w-3" />
+              </Button>
+              <span className="text-[10px] font-bold text-zinc-400 tabular-nums w-12 text-center">{inningCount} INN</span>
+              <Button type="button" variant="outline" size="icon" onClick={addInning}
+                className="h-7 w-7 rounded-full bg-zinc-800 border-zinc-700 text-zinc-300 hover:bg-zinc-700 hover:text-white">
+                <Plus className="h-3 w-3" />
+              </Button>
             </div>
           </div>
-        </div>
-      </Card>
 
-      {/* アクションボタン */}
-      <div className="pt-4 space-y-3">
-        <Button onClick={handleUpdate} disabled={isSubmitting}
-          className="w-full h-14 sm:h-16 rounded-3xl font-black text-base sm:text-lg shadow-lg bg-primary">
-          {isSubmitting ? <Loader2 className="animate-spin mr-2" /> : <Save className="h-5 w-5 mr-2" />}
-          試合情報を更新する
+          <CardContent className="p-4 overflow-x-auto">
+            <div className="min-w-[340px] space-y-3">
+              {/* 先攻チームのスコア行 */}
+              <div className="flex items-center gap-2">
+                <div className="w-20 font-black text-xs truncate text-muted-foreground">
+                  {battingOrder === 'first' ? teamName : opponent}
+                </div>
+                <div className="flex-1 flex gap-1.5">
+                  {Array.from({ length: inningCount }).map((_, i) => (
+                    <Input
+                      key={`first-${i}`}
+                      type="text"
+                      placeholder="-"
+                      value={battingOrder === 'first' ? myInnings[i] : opponentInnings[i]}
+                      onChange={(e) => {
+                        if (battingOrder === 'first') {
+                          const next = [...myInnings]; next[i] = e.target.value; setMyInnings(next);
+                        } else {
+                          const next = [...opponentInnings]; next[i] = e.target.value; setOpponentInnings(next);
+                        }
+                      }}
+                      className="w-8 h-8 p-0 text-center font-bold text-xs rounded-lg bg-muted/40 border-0"
+                    />
+                  ))}
+                </div>
+                <div className="w-8 text-center font-black text-sm text-primary tabular-nums">
+                  {battingOrder === 'first' ? myTotalScore : opponentTotalScore}
+                </div>
+              </div>
+
+              {/* 後攻チームのスコア行 */}
+              <div className="flex items-center gap-2">
+                <div className="w-20 font-black text-xs truncate text-muted-foreground">
+                  {battingOrder === 'second' ? teamName : opponent}
+                </div>
+                <div className="flex-1 flex gap-1.5">
+                  {Array.from({ length: inningCount }).map((_, i) => (
+                    <Input
+                      key={`second-${i}`}
+                      type="text"
+                      placeholder="-"
+                      value={battingOrder === 'second' ? myInnings[i] : opponentInnings[i]}
+                      onChange={(e) => {
+                        if (battingOrder === 'second') {
+                          const next = [...myInnings]; next[i] = e.target.value; setMyInnings(next);
+                        } else {
+                          const next = [...opponentInnings]; next[i] = e.target.value; setOpponentInnings(next);
+                        }
+                      }}
+                      className="w-8 h-8 p-0 text-center font-bold text-xs rounded-lg bg-muted/40 border-0"
+                    />
+                  ))}
+                </div>
+                <div className="w-8 text-center font-black text-sm text-primary tabular-nums">
+                  {battingOrder === 'second' ? myTotalScore : opponentTotalScore}
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 🌟 補完：保存・削除アクションボタン */}
+      <div className="space-y-3 pt-2">
+        <Button
+          onClick={handleUpdate}
+          disabled={isSubmitting}
+          className="w-full h-14 rounded-2xl text-sm font-black uppercase tracking-[0.15em] shadow-md shadow-primary/10 flex items-center justify-center gap-2"
+        >
+          {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+          試合情報を更新
         </Button>
+
         <Button
           variant="ghost"
           onClick={() => setShowDeleteModal(true)}
-          className="w-full text-red-500 hover:bg-red-500/10 rounded-2xl h-12 font-bold text-xs gap-2"
+          className="w-full h-12 rounded-2xl text-xs font-bold text-destructive hover:bg-destructive/5 flex items-center justify-center gap-2"
         >
-          <Trash2 className="h-4 w-4" /> この試合を削除する
+          <Trash2 className="h-4 w-4" />
+          この試合を削除する
         </Button>
       </div>
 
-      {/* 削除確認モーダル */}
+      {/* 削除モーダルコンポーネント */}
       {showDeleteModal && (
         <DeleteConfirmModal
           isDeleting={isDeleting}
@@ -559,14 +575,18 @@ function MatchEditContent() {
           onCancel={() => setShowDeleteModal(false)}
         />
       )}
-
     </div>
   );
 }
 
+// 🌟 Suspenseで安全にラップしてエクスポート
 export default function MatchEditPage() {
   return (
-    <Suspense fallback={<div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin h-8 w-8 text-primary" /></div>}>
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="animate-spin h-8 w-8 text-primary/50" />
+      </div>
+    }>
       <MatchEditContent />
     </Suspense>
   );
