@@ -9,11 +9,6 @@ import { motion, AnimatePresence } from "motion/react";
 import { LayoutDashboard, Users, Trophy, MoreHorizontal, UserSquare2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-/**
- * 💡 iScoreCloud 規約: 
- * センターボタンは閉鎖時 w-24（シンボル）、展開時 w-18（操作性）の可変サイズ。
- * 閉鎖時の過剰なエフェクトを排除し、ロゴの美しさを際立たせる。
- */
 export function FloatingNav() {
   const [isOpen, setIsOpen] = useState(false);
   const pathname = usePathname();
@@ -30,32 +25,21 @@ export function FloatingNav() {
 
   return (
     <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[100]">
+      {/* 🌟 背景オーバーレイ：巨大な丸い枠を撤廃し、画面全体を上品なすりガラスで覆う */}
       <AnimatePresence>
         {isOpen && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.1 }}
+            transition={{ duration: 0.2 }}
             onClick={() => setIsOpen(false)}
-            className="fixed inset-0 bg-zinc-950/98 z-[-1] rounded-full"
+            className="fixed inset-0 bg-background/70 backdrop-blur-sm z-[-1]"
           />
         )}
       </AnimatePresence>
 
       <div className="relative flex items-center justify-center">
-        {/* 🌟 センター・リング（結界）：展開時のみ控えめに表示 */}
-        <AnimatePresence>
-          {isOpen && (
-            <motion.div
-              initial={{ scale: 0.5, opacity: 0 }}
-              animate={{ scale: 1.3, opacity: 1 }}
-              exit={{ scale: 0.5, opacity: 0 }}
-              className="absolute w-20 h-20 rounded-full border border-primary/30 bg-primary/5 backdrop-blur-sm pointer-events-none z-40"
-            />
-          )}
-        </AnimatePresence>
-
         {/* サブボタン展開 */}
         <AnimatePresence>
           {isOpen && menuItems.map((item, index) => {
@@ -86,7 +70,7 @@ export function FloatingNav() {
                   )}
                   <div className={cn(
                     "w-18 h-18 rounded-full flex flex-col items-center justify-center gap-1 shadow-2xl border-[3px] transition-colors relative z-10",
-                    isActive ? "bg-primary border-primary text-primary-foreground" : "bg-white border-zinc-200 text-zinc-900"
+                    isActive ? "bg-primary border-primary text-primary-foreground" : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100"
                   )}>
                     <item.icon className="w-7 h-7 stroke-[2.5]" />
                     <span className="text-[8px] font-black uppercase tracking-tighter">{item.label}</span>
@@ -97,16 +81,17 @@ export function FloatingNav() {
           })}
         </AnimatePresence>
 
-        {/* ⚾️ センターボタン：うるさい縁取りを廃止した「スッキリ」版 */}
+        {/* ⚾️ センターボタン：極限までスッキリさせたモダン仕様 */}
         <motion.button
           layout
           onClick={() => setIsOpen(!isOpen)}
           className={cn(
             "relative rounded-full flex items-center justify-center transition-all duration-300 active:scale-95 z-50 overflow-hidden",
-            // 💡 修正：うるさい縁取り（ring/blur）を削ぎ落とし、ソリッドな影と薄いボーダーのみに。
             isOpen
-              ? "w-18 h-18 bg-white ring-4 ring-primary/40 shadow-none border-none"
-              : "w-24 h-24 bg-primary border-2 border-white/20 shadow-xl"
+              // 💡 展開時: サイズを小さく (w-14) し、半透明のリング (ring-4) を完全削除。色も控えめに。
+              ? "w-14 h-14 bg-white dark:bg-zinc-800 shadow-md border border-border/50"
+              // 💡 閉鎖時: ロゴの枠線 (border) を完全削除。ロゴそのものの美しさで勝負。
+              : "w-24 h-24 bg-primary shadow-xl"
           )}
           transition={{ type: "spring", stiffness: 500, damping: 30 }}
         >
@@ -119,7 +104,8 @@ export function FloatingNav() {
                 exit={{ opacity: 0, scale: 0.5, rotate: 90 }}
                 className="flex items-center justify-center"
               >
-                <X className="w-9 h-9 text-primary stroke-[5]" />
+                {/* 💡 ✕アイコンも細く、小さく、色を落ち着かせて目立たないように */}
+                <X className="w-6 h-6 text-muted-foreground stroke-[3]" />
               </motion.div>
             ) : (
               <motion.div
@@ -129,7 +115,7 @@ export function FloatingNav() {
                 exit={{ opacity: 0, scale: 0.8 }}
                 className="relative w-full h-full"
               >
-                <Image src="/logo.webp" alt="iScoreCloud" fill className="object-contain p-1" priority />
+                <Image src="/logo.webp" alt="iScore" fill className="object-contain p-1" priority />
               </motion.div>
             )}
           </AnimatePresence>
