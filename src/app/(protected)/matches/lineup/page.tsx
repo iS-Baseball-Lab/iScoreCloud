@@ -1,13 +1,13 @@
 // filepath: src/app/(protected)/matches/lineup/page.tsx
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   ChevronLeft, Users, Loader2, ChevronRight, Wand2,
-  Shield, Swords, Save, FolderOpen, X
+  Shield, Swords, Save, UserMinus, UserCheck
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -21,6 +21,13 @@ const POSITIONS = [
   { id: "9", label: "9 右", color: "bg-cyan-500" }, { id: "DH", label: "DH 指", color: "bg-zinc-500" }
 ];
 
+// 💡 動作確認用のダミー選手データ（後でAPIからの取得に置き換えてください）
+const MOCK_PLAYERS = Array.from({ length: 15 }, (_, i) => ({
+  id: `player_${i + 1}`,
+  name: `テスト選手 ${i + 1}`,
+  uniformNumber: `${i + 1}`
+}));
+
 export default function LineupPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -28,9 +35,10 @@ export default function LineupPage() {
   const teamId = searchParams.get("teamId");
 
   const [activeTab, setActiveTab] = useState<"myTeam" | "opponent">("myTeam");
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [teamPlayers, setTeamPlayers] = useState<any[]>([]);
-  const [templates, setTemplates] = useState<any[]>([]);
+  const [teamPlayers, setTeamPlayers] = useState<typeof MOCK_PLAYERS>([]);
+
+  // 💡 スタメン以外のメンバーの出欠状態を管理するステート（デフォルトは全員'bench'）
+  const [attendance, setAttendance] = useState<Record<string, "bench" | "absent">>({});
 
   // モーダル用
   const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
@@ -43,9 +51,20 @@ export default function LineupPage() {
     Array.from({ length: 9 }, (_, i) => ({ order: i + 1, position: "", name: "", uniformNumber: "" }))
   );
 
-  // 排他制御ロジック
+  useEffect(() => {
+    // 💡 初期マウント時にダミーデータをセット
+    setTeamPlayers(MOCK_PLAYERS);
+    
+    // 全員を一旦「控え」として初期化
+    const initialAttendance: Record<string, "bench" | "absent"> = {};
+    MOCK_PLAYERS.forEach(p => { initialAttendance[p.id] = "bench"; });
+    setAttendance(initialAttendance);
+  }, []);
+
+  // 排他制御ロジック（すでに選ばれているポジション・選手は選べないようにする）
   const getDisabledPositions = (lineup: any[], currentIndex: number) =>
     lineup.filter((_, i) => i !== currentIndex).map(p => p.position).filter(Boolean);
+  
   const getDisabledPlayers = (lineup: any[], currentIndex: number) =>
     lineup.filter((_, i) => i !== currentIndex).map(p => p.playerId).filter(Boolean);
 
@@ -64,8 +83,17 @@ export default function LineupPage() {
     })));
   };
 
+  // 💡 スタメンに選ばれている選手のIDリスト
+  const startingPlayerIds = myLineup.map(p => p.playerId).filter(Boolean);
+  
+  // 💡 スタメンから漏れた残りの選手リスト
+  const remainingPlayers = teamPlayers.filter(p => !startingPlayerIds.includes(p.id));
+  
+  // 人数カウント
+  const benchCount = remainingPlayers.filter(p => attendance[p.id] !== "absent").length;
+  const absentCount = remainingPlayers.filter(p => attendance[p.id] === "absent").length;
+
   return (
-    // 💡 下部Fixedをやめたので、pb-40 を pb-24 に変更
     <div className="w-full animate-in fade-in duration-500 min-h-screen pb-24">
       <div className="max-w-2xl mx-auto px-4 pt-8 space-y-8">
 
@@ -83,7 +111,6 @@ export default function LineupPage() {
           <button
             onClick={() => setActiveTab("myTeam")}
             className={cn(
-              // 💡 text-xs -> text-sm sm:text-base にサイズアップ
               "flex-1 py-4 text-sm sm:text-base font-black rounded-2xl transition-all flex items-center justify-center gap-2",
               activeTab === "myTeam" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground"
             )}
@@ -93,7 +120,6 @@ export default function LineupPage() {
           <button
             onClick={() => setActiveTab("opponent")}
             className={cn(
-              // 💡 text-xs -> text-sm sm:text-base にサイズアップ
               "flex-1 py-4 text-sm sm:text-base font-black rounded-2xl transition-all flex items-center justify-center gap-2",
               activeTab === "opponent" ? "bg-rose-500 text-white shadow-sm" : "text-muted-foreground"
             )}
@@ -120,62 +146,157 @@ export default function LineupPage() {
           )}
         </div>
 
-        {/* 打順リスト */}
-        <div className="space-y-3">
-          {(activeTab === "myTeam" ? myLineup : opponentLineup).map((player, index) => {
-            const disabledPos = getDisabledPositions(activeTab === "myTeam" ? myLineup : opponentLineup, index);
-            return (
-              <div key={index} className="flex items-center gap-2 bg-card/50 border-2 border-border/40 p-2 rounded-2xl shadow-xs">
-                <div className="w-8 text-center font-black text-primary/40 italic">{index + 1}</div>
+        {/* 🌟 メインリストエリア 🌟 */}
+        <div className="space-y-8">
+          
+          {/* 【セクション1】スターティングメンバー */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between px-2 mb-2">
+              <h3 className="text-sm font-black text-foreground flex items-center gap-2">
+                <Shield className="w-4 h-4 text-primary" /> スターティングメンバー
+              </h3>
+              {activeTab === "myTeam" && (
+                <span className="text-[10px] font-bold bg-primary/10 text-primary px-2 py-0.5 rounded-md">
+                  {startingPlayerIds.length} / 9人
+                </span>
+              )}
+            </div>
 
-                <select
-                  value={player.position}
-                  onChange={(e) => {
-                    // 💡 TypeScriptエラー解消：明示的に分岐させる
-                    if (activeTab === "myTeam") {
-                      const list = [...myLineup];
-                      list[index].position = e.target.value;
-                      setMyLineup(list);
-                    } else {
-                      const list = [...opponentLineup];
-                      list[index].position = e.target.value;
-                      setOpponentLineup(list);
-                    }
-                  }}
-                  className={cn(
-                    "w-14 h-11 rounded-xl text-white font-black text-xs appearance-none text-center shadow-sm",
-                    POSITIONS.find(p => p.id === player.position)?.color || "bg-zinc-400"
-                  )}
-                >
-                  <option value="">守備</option>
-                  {POSITIONS.map(p => !disabledPos.includes(p.id) && (
-                    <option key={p.id} value={p.id}>{p.label}</option>
-                  ))}
-                </select>
+            {(activeTab === "myTeam" ? myLineup : opponentLineup).map((player, index) => {
+              const disabledPos = getDisabledPositions(activeTab === "myTeam" ? myLineup : opponentLineup, index);
+              const disabledPlayers = activeTab === "myTeam" ? getDisabledPlayers(myLineup, index) : [];
 
-                {activeTab === "myTeam" ? (
-                  <select className="flex-1 h-11 bg-transparent border-none font-bold text-sm focus:outline-none">
-                    <option value="">選手を選択...</option>
-                    {/* teamPlayers.map(...) */}
-                  </select>
-                ) : (
-                  <Input
-                    placeholder="相手選手名"
-                    className="flex-1 h-11 border-none bg-transparent font-bold"
-                    value={player.name}
+              return (
+                <div key={index} className="flex items-center gap-2 bg-card/50 border-2 border-border/40 p-2 rounded-2xl shadow-xs focus-within:border-primary/50 transition-colors">
+                  <div className="w-8 text-center font-black text-primary/40 italic">{index + 1}</div>
+
+                  <select
+                    value={player.position}
                     onChange={(e) => {
-                      const list = [...opponentLineup];
-                      list[index].name = e.target.value;
-                      setOpponentLineup(list);
+                      if (activeTab === "myTeam") {
+                        const list = [...myLineup];
+                        list[index].position = e.target.value;
+                        setMyLineup(list);
+                      } else {
+                        const list = [...opponentLineup];
+                        list[index].position = e.target.value;
+                        setOpponentLineup(list);
+                      }
                     }}
-                  />
-                )}
+                    className={cn(
+                      "w-14 h-11 rounded-xl text-white font-black text-xs appearance-none text-center shadow-sm cursor-pointer",
+                      POSITIONS.find(p => p.id === player.position)?.color || "bg-zinc-300 dark:bg-zinc-700"
+                    )}
+                  >
+                    <option value="">守備</option>
+                    {POSITIONS.map(p => !disabledPos.includes(p.id) && (
+                      <option key={p.id} value={p.id}>{p.label}</option>
+                    ))}
+                  </select>
+
+                  {activeTab === "myTeam" ? (
+                    <select 
+                      value={player.playerId || ""}
+                      onChange={(e) => {
+                        const list = [...myLineup];
+                        const selectedId = e.target.value;
+                        const selectedPlayer = teamPlayers.find(p => p.id === selectedId);
+                        list[index].playerId = selectedId;
+                        list[index].name = selectedPlayer ? selectedPlayer.name : "";
+                        list[index].uniformNumber = selectedPlayer ? selectedPlayer.uniformNumber : "";
+                        setMyLineup(list);
+                      }}
+                      className="flex-1 h-11 bg-transparent border-none font-bold text-sm focus:outline-none cursor-pointer"
+                    >
+                      <option value="">選手を選択...</option>
+                      {teamPlayers.map(p => (
+                        <option 
+                          key={p.id} 
+                          value={p.id} 
+                          disabled={disabledPlayers.includes(p.id)} // 他の打順で選ばれている選手はグレーアウト
+                        >
+                          {disabledPlayers.includes(p.id) ? `[選択済] ${p.name}` : `${p.uniformNumber}. ${p.name}`}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <Input
+                      placeholder="相手選手名"
+                      className="flex-1 h-11 border-none bg-transparent font-bold focus-visible:ring-0"
+                      value={player.name}
+                      onChange={(e) => {
+                        const list = [...opponentLineup];
+                        list[index].name = e.target.value;
+                        setOpponentLineup(list);
+                      }}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* 🌟 【セクション2】ベンチ・欠席メンバー（自チームタブのみ表示） 🌟 */}
+          {activeTab === "myTeam" && (
+            <div className="space-y-4 pt-6 border-t-2 border-border/40 border-dashed">
+              <div className="flex items-center justify-between px-2">
+                <h3 className="text-sm font-black text-foreground flex items-center gap-2">
+                  <Users className="w-4 h-4 text-muted-foreground" /> ベンチ・欠席メンバー
+                </h3>
+                <div className="flex gap-2">
+                  <span className="text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-2 py-0.5 rounded-md">控え: {benchCount}人</span>
+                  <span className="text-[10px] font-bold bg-rose-500/10 text-rose-600 dark:text-rose-400 px-2 py-0.5 rounded-md">欠席: {absentCount}人</span>
+                </div>
               </div>
-            );
-          })}
+
+              {remainingPlayers.length === 0 ? (
+                <div className="text-center py-8 bg-card/30 rounded-2xl border border-border/30">
+                  <p className="text-xs font-bold text-muted-foreground">全員がスタメンに登録されています</p>
+                </div>
+              ) : (
+                <div className="grid gap-2">
+                  {remainingPlayers.map(player => {
+                    const status = attendance[player.id] || "bench";
+                    return (
+                      <div key={player.id} className="flex items-center justify-between bg-card/50 border border-border/40 p-2 pl-4 rounded-xl">
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs font-black text-muted-foreground w-4">{player.uniformNumber}</span>
+                          <span className={cn("text-sm font-bold", status === "absent" ? "text-muted-foreground line-through opacity-70" : "text-foreground")}>
+                            {player.name}
+                          </span>
+                        </div>
+                        
+                        {/* 控え / 欠席 トグルスイッチ */}
+                        <div className="flex bg-muted p-1 rounded-lg w-32">
+                          <button
+                            onClick={() => setAttendance(prev => ({ ...prev, [player.id]: "bench" }))}
+                            className={cn(
+                              "flex-1 flex items-center justify-center py-1.5 rounded-md text-[10px] font-black transition-all",
+                              status === "bench" ? "bg-white dark:bg-zinc-700 text-emerald-600 dark:text-emerald-400 shadow-sm" : "text-muted-foreground hover:text-foreground"
+                            )}
+                          >
+                            <UserCheck className="w-3 h-3 mr-1" /> 控え
+                          </button>
+                          <button
+                            onClick={() => setAttendance(prev => ({ ...prev, [player.id]: "absent" }))}
+                            className={cn(
+                              "flex-1 flex items-center justify-center py-1.5 rounded-md text-[10px] font-black transition-all",
+                              status === "absent" ? "bg-white dark:bg-zinc-700 text-rose-500 shadow-sm" : "text-muted-foreground hover:text-foreground"
+                            )}
+                          >
+                            <UserMinus className="w-3 h-3 mr-1" /> 欠席
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
-        {/* 💡 プレイボールボタン (Fixed解除・通常フロー配置) */}
+        {/* プレイボールボタン */}
         <div className="pt-8">
           <Button
             onClick={() => router.push(`/matches/score?id=${matchId}`)}
