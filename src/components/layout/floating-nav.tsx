@@ -15,7 +15,6 @@ export function FloatingNav() {
 
   useEffect(() => setIsOpen(false), [pathname]);
 
-  // 💡 扇状（アーチ型）への配置変更
   const menuItems = [
     { icon: Users, label: "TEAM", href: "/team", angle: -160 },
     { icon: UserSquare2, label: "PLAYER", href: "/players", angle: -125 },
@@ -25,7 +24,6 @@ export function FloatingNav() {
   ];
 
   return (
-    // 💡 位置を bottom-10 から bottom-6 に下げ、親指のホームポジションに合わせました
     <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100]">
       <AnimatePresence>
         {isOpen && (
@@ -35,20 +33,17 @@ export function FloatingNav() {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
             onClick={() => setIsOpen(false)}
-            // 💡 余計な「rounded-full」の暗い枠を削除し、画面全体を覆う綺麗なすりガラスに変更
             className="fixed inset-0 z-[-1]"
           />
         )}
       </AnimatePresence>
 
       <div className="relative flex items-center justify-center">
-        {/* 💡 元あった「センター・リング（周りに表示される半透明の枠）」は不要なため完全削除 */}
-
         {/* サブボタン展開 */}
         <AnimatePresence>
           {isOpen && menuItems.map((item, index) => {
             const isActive = pathname === item.href;
-            const RADIUS = 115; // 💡 アーチの半径
+            const RADIUS = 115; 
             const radian = (item.angle * Math.PI) / 180;
             const x = Math.cos(radian) * RADIUS;
             const y = Math.sin(radian) * RADIUS;
@@ -63,11 +58,8 @@ export function FloatingNav() {
                 className="absolute"
               >
                 <Link href={item.href} className="relative flex items-center justify-center active:scale-95 transition-transform">
-                  {/* 💡 カクつきの原因だった波紋アニメーションを完全に削除 */}
-                  
                   <div className={cn(
                     "w-16 h-16 rounded-full flex flex-col items-center justify-center gap-1 border-[3px] transition-colors relative z-10",
-                    // 💡 影の色を黒系(shadow-black)に統一し、背景と同化する問題も解決
                     isActive 
                       ? "bg-primary border-primary text-primary-foreground shadow-xl shadow-black/20 dark:shadow-black/40" 
                       : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-xl shadow-black/10"
@@ -81,40 +73,46 @@ export function FloatingNav() {
           })}
         </AnimatePresence>
 
-        {/* ⚾️ センターボタン：元の「四角くならない完璧な構造」をそのまま維持 */}
+        {/* ⚾️ センターボタン */}
         <motion.button
           layout
           onClick={() => setIsOpen(!isOpen)}
           className={cn(
             "relative rounded-full flex items-center justify-center transition-all duration-300 active:scale-95 z-50 overflow-hidden",
-            // 💡 ✕ボタンを小さく(w-14)＆メインロゴの枠線をなくす(border削除)
             isOpen
               ? "w-14 h-14 bg-white dark:bg-zinc-800 shadow-md border border-border/50"
-              : "w-24 h-24 bg-primary shadow-xl"
+              // 💡 修正1: 念のため border-none outline-none ring-0 を追加し、枠線を完全に無効化
+              : "w-24 h-24 bg-primary shadow-xl border-none outline-none ring-0"
           )}
-          transition={{ type: "spring", stiffness: 500, damping: 30 }}
+          // 💡 修正2: サイズ変更のバネを少し強く(速く)設定
+          transition={{ type: "spring", stiffness: 700, damping: 25 }}
         >
-          <AnimatePresence mode="wait">
+          {/* 💡 修正3: mode="wait" を削除して、待たずに瞬時に切り替える(クロスフェード) */}
+          <AnimatePresence>
             {isOpen ? (
               <motion.div
                 key="close"
                 initial={{ opacity: 0, scale: 0.5, rotate: -90 }}
                 animate={{ opacity: 1, scale: 1, rotate: 0 }}
                 exit={{ opacity: 0, scale: 0.5, rotate: 90 }}
-                className="flex items-center justify-center"
+                // 💡 修正4: トランジションを 0.15秒に短縮し爆速化
+                transition={{ duration: 0.15, ease: "easeOut" }}
+                // 💡 修正5: absolute inset-0 を追加して位置を重ね、スムーズにクロスフェードさせる
+                className="absolute inset-0 flex items-center justify-center"
               >
-                {/* 💡 ✕アイコンを目立たないデザインに */}
                 <X className="w-6 h-6 text-muted-foreground stroke-[3]" />
               </motion.div>
             ) : (
               <motion.div
                 key="logo"
-                initial={{ opacity: 0, scale: 0.8 }}
+                initial={{ opacity: 0, scale: 0.5 }}
                 animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.8 }}
-                className="relative w-full h-full"
+                exit={{ opacity: 0, scale: 0.5 }}
+                transition={{ duration: 0.15, ease: "easeOut" }}
+                className="absolute inset-0 flex items-center justify-center"
               >
-                <Image src="/logo.webp" alt="iScoreCloud" fill className="object-contain p-1" priority />
+                {/* 💡 修正6: 元凶だった `p-1` を削除し、背景色が枠線のように見えてしまう隙間を完全に埋める */}
+                <Image src="/logo.webp" alt="iScoreCloud" fill className="object-contain" priority />
               </motion.div>
             )}
           </AnimatePresence>
