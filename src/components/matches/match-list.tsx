@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { format, differenceInSeconds, intervalToDuration } from "date-fns";
-import { Edit2, Calendar, MapPin, Trophy, Trash2, ChevronDown, ChevronUp, Swords, BookOpen, ClipboardList } from "lucide-react";
+import { Edit2, Calendar, MapPin, Trophy, Trash2, ChevronDown, ChevronUp, Swords, BookOpen, ClipboardList, Clock } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Match } from "@/types/match";
@@ -35,9 +35,18 @@ const formatScoreDisplay = ({ score, isBottom, isInningFinal, isHomeWinning }: F
   return score;
 };
 
-// 🌟 新規追加：カウントダウン用サブコンポーネント
+// 安全に日付をフォーマットするヘルパー（パース失敗時は元の文字列を返す）
+const formatSafeDate = (dateStr: string, fmt: string) => {
+  try {
+    return format(new Date(dateStr), fmt);
+  } catch (e) {
+    return dateStr;
+  }
+};
+
+// 🌟 カウントダウン用サブコンポーネント（幅固定＆tabular-nums）
 function MatchCountdown({ date }: { date: string }) {
-  const [timeLeft, setTimeLeft] = useState("");
+  const [timeLeft, setTimeLeft] = useState("00:00:00");
 
   useEffect(() => {
     const update = () => {
@@ -49,17 +58,29 @@ function MatchCountdown({ date }: { date: string }) {
         setTimeLeft("START");
         return;
       }
+      
       const duration = intervalToDuration({ start: now, end: target });
-      setTimeLeft(
-        `${duration.days ? duration.days + 'd ' : ''}${String(duration.hours).padStart(2, '0')}:${String(duration.minutes).padStart(2, '0')}:${String(duration.seconds).padStart(2, '0')}`
-      );
+      
+      // 日数がある場合は「1d 00:00:00」のように表示
+      const d = duration.days ? `${duration.days}d ` : "";
+      const h = String(duration.hours || 0).padStart(2, '0');
+      const m = String(duration.minutes || 0).padStart(2, '0');
+      const s = String(duration.seconds || 0).padStart(2, '0');
+      
+      setTimeLeft(`${d}${h}:${m}:${s}`);
     };
-    update();
+    
+    update(); // 初回実行
     const interval = setInterval(update, 1000);
     return () => clearInterval(interval);
   }, [date]);
 
-  return <span className="font-mono text-xs font-black text-primary">{timeLeft}</span>;
+  return (
+    // 💡 tabular-nums で数字の幅を固定し、ガタつきを防止
+    <span className="font-mono text-xs sm:text-sm font-black text-primary tabular-nums tracking-tight">
+      {timeLeft}
+    </span>
+  );
 }
 
 export function MatchList({ matches, isLoading, onDelete }: MatchListProps) {
@@ -193,7 +214,6 @@ export function MatchList({ matches, isLoading, onDelete }: MatchListProps) {
   return (
     <div className="space-y-3 overflow-x-hidden px-1 pb-1">
       {matches.map((match) => {
-        // 🌟 新規追加：未来の試合かどうかの判定
         const isFuture = new Date(match.date) > new Date();
 
         const isWin = match.myScore > match.opponentScore;
@@ -271,22 +291,26 @@ export function MatchList({ matches, isLoading, onDelete }: MatchListProps) {
                       )}>
                         {match.matchType === 'official' ? '公式戦' : '練習試合'}
                       </span>
-                      <span className="text-xs sm:text-sm font-bold text-muted-foreground flex items-center gap-1">
-                        <Calendar className="h-3.5 w-3.5" /> {match.date}
+                      {/* 🌟 修正：上段に大会名を表示（練習試合の場合は「練習試合」等を優先表示） */}
+                      <span className="text-xs sm:text-sm font-bold text-muted-foreground truncate">
+                        {match.tournamentName || (match.matchType === 'official' ? "大会名未登録" : "練習試合")}
                       </span>
                     </div>
-                    <h3 className="text-lg sm:text-xl font-black truncate text-foreground mb-1">vs {match.opponent}</h3>
-                    {match.matchType === 'official' && (
-                      <p className="text-xs font-bold text-amber-600 flex items-center gap-1 mt-0.5 truncate">
-                        <Trophy className="h-3.5 w-3.5 shrink-0" /> {match.tournamentName || "大会名未登録"}
-                      </p>
-                    )}
-                    <p className="text-xs font-bold text-muted-foreground flex items-center gap-1 mt-1 truncate">
-                      <MapPin className="h-3.5 w-3.5 shrink-0" /> {match.surfaceDetails || "球場未設定"}
+
+                    <h3 className="text-lg sm:text-xl font-black truncate text-foreground mb-1">
+                      vs {match.opponent}
+                    </h3>
+                    
+                    {/* 🌟 修正：下段にカレンダーアイコン＋「月/日 時:分」と、マップアイコン＋「球場」をセットで表示 */}
+                    <p className="text-[11px] sm:text-xs font-bold text-muted-foreground flex items-center gap-1.5 mt-1 truncate">
+                      <Calendar className="h-3.5 w-3.5 shrink-0" />
+                      <span>{formatSafeDate(match.date, "MM/dd HH:mm")}</span>
+                      <span className="text-border">|</span>
+                      <MapPin className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate">{match.surfaceDetails || "球場未設定"}</span>
                     </p>
                   </div>
 
-                  {/* 🌟 変更箇所：右側の結果表示エリア */}
                   <div className="flex flex-col items-center gap-1.5 shrink-0">
                     {!isFuture && (
                       <div className="w-14 text-center">
@@ -297,8 +321,9 @@ export function MatchList({ matches, isLoading, onDelete }: MatchListProps) {
                     )}
                     
                     {isFuture ? (
-                      <div className="px-3 py-1.5 bg-primary/10 rounded-xl border border-primary/20 text-center min-w-[80px]">
-                        <p className="text-[9px] font-black text-primary/70 uppercase leading-none mb-0.5">Countdown</p>
+                      // 🌟 修正：カウントダウン枠を min-w-[85px] にし、レイアウトがガタつかないように固定
+                      <div className="px-1 py-1.5 bg-primary/10 rounded-xl border border-primary/20 text-center min-w-[85px] flex flex-col items-center justify-center">
+                        <p className="text-[8px] font-black text-primary/70 uppercase leading-none mb-0.5">START IN</p>
                         <MatchCountdown date={match.date} />
                       </div>
                     ) : (
@@ -318,10 +343,9 @@ export function MatchList({ matches, isLoading, onDelete }: MatchListProps) {
                   </div>
                 </div>
 
-                {/* 🌟 復元：ユーザー様の元の美しい展開コードを1行も変えずに完全復元 */}
-                {isExpanded && (
+                {isExpanded && !isFuture && (
                   <div className="mt-4 pt-2 animate-in fade-in slide-in-from-top-2 duration-300">
-                    <div className="w-full overflow-hidden rounded-xl border border-border bg-card shadow-sm flex flex-col">
+                    <div className="w-full overflow-hidden rounded-xl border border-border bg-card shadow-sm flex flex-col pointer-events-auto">
                       <div className="overflow-x-auto">
                         <table className="w-full text-center whitespace-nowrap">
                           <thead className="bg-primary/5 border-b border-border/50">
@@ -364,7 +388,6 @@ export function MatchList({ matches, isLoading, onDelete }: MatchListProps) {
                         </table>
                       </div>
                       
-                      {/* 💡 現場至上主義: デュアルアクション導線（横並びボタン） */}
                       <div className="p-3 border-t border-border/50 bg-muted/20 flex gap-2">
                         <Button
                           onClick={(e) => {
