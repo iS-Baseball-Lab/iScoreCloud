@@ -1,4 +1,4 @@
-// src/app/(protected)/team/page.tsx
+// filepath: src/app/(protected)/team/page.tsx
 "use client";
 
 import React, { useEffect, useState } from "react";
@@ -166,10 +166,11 @@ export default function TeamProfilePage() {
   if (isLoading) return <div className="flex h-[60vh] items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
   if (!team) return <div className="p-20 text-center text-muted-foreground">チームが選択されていません</div>;
 
-  const canManage = team.myRole === 'ADMIN' || team.myRole === 'MANAGER' || team.isFounder;
+  // 💡 ロール判定を大文字・小文字の揺れに強く修正
+  const normalizedRole = team.myRole?.toUpperCase() || "";
+  const canManage = normalizedRole === 'ADMIN' || normalizedRole === 'MANAGER' || team.isFounder;
 
   return (
-    // 🌟 修正1: bg-background を撤去し、bg-transparent に変更！これで魔法のグラデーション背景が復活します！
     <div className="w-full animate-in fade-in duration-500 bg-transparent min-h-screen">
 
       {/* 1. ヒーローセクション */}
@@ -208,16 +209,19 @@ export default function TeamProfilePage() {
                 <Trophy className="h-3.5 w-3.5" />
                 {team.teamType === 'regular' ? '一般チーム' : team.teamType || "TEAM"}
               </span>
-              {team.year && (
+              
+              {/* 🌟 修正ポイント：0がレンダリングされる罠を回避 */}
+              {team.year ? (
                 <span className="flex items-center gap-1.5 text-[10px] sm:text-xs font-bold bg-white/60 dark:bg-zinc-800/60 backdrop-blur-sm text-foreground border border-border/50 px-3 py-1 rounded-full shadow-sm">
                   <Calendar className="h-3.5 w-3.5" /> Est. {team.year}
                 </span>
-              )}
-              {team.tier && (
+              ) : null}
+
+              {team.tier ? (
                 <span className="flex items-center gap-1.5 text-[10px] sm:text-xs font-bold bg-white/60 dark:bg-zinc-800/60 backdrop-blur-sm text-foreground border border-border/50 px-3 py-1 rounded-full uppercase tracking-wider shadow-sm">
                   <Shield className="h-3.5 w-3.5" /> Tier: {team.tier}
                 </span>
-              )}
+              ) : null}
             </div>
           </div>
         </div>
@@ -227,7 +231,6 @@ export default function TeamProfilePage() {
 
           <div className="lg:col-span-7 space-y-8">
 
-            {/* 🌟 修正2: rounded-[40px] を撤廃し、テーマに追従する `rounded-3xl` に変更！ */}
             <Card className="p-0 gap-0 bg-white/50 dark:bg-zinc-900/50 backdrop-blur-xl border-border/40 rounded-3xl overflow-hidden shadow-sm hover:shadow-md transition-all">
               <CardContent className="p-6 sm:p-10 flex flex-col items-center space-y-8">
 
@@ -256,7 +259,6 @@ export default function TeamProfilePage() {
               </CardContent>
             </Card>
 
-            {/* 🌟 修正3: こちらも `rounded-3xl` に変更 */}
             <div className="p-8 rounded-3xl bg-white/50 dark:bg-zinc-900/50 backdrop-blur-md border border-border/40 shadow-sm space-y-6">
               <h3 className="text-xs font-black flex items-center gap-2 text-muted-foreground uppercase tracking-wider">
                 <Info className="h-4 w-4" /> Club Identity
@@ -292,7 +294,6 @@ export default function TeamProfilePage() {
 
           <div className="lg:col-span-5 space-y-6">
 
-            {/* 🌟 修正4: こちらも `rounded-3xl` に変更 */}
             <div className="p-8 rounded-3xl bg-primary/5 dark:bg-primary/10 border border-primary/20 shadow-sm group backdrop-blur-md">
               <span className="text-xs font-black text-muted-foreground uppercase tracking-widest mb-1 block">Active Roster</span>
               <div className="flex items-baseline gap-1.5 mt-1">
@@ -302,7 +303,6 @@ export default function TeamProfilePage() {
             </div>
 
             <div className="space-y-3">
-              {/* 🌟 修正5: ボタンの角丸は `rounded-2xl`（親より少し小さめ）に設定し、アイコンは `rounded-xl` に連動 */}
               <button onClick={() => router.push('/team/players')} className="flex items-center gap-5 p-6 rounded-2xl bg-white/50 dark:bg-zinc-900/50 backdrop-blur-md border border-border/40 hover:border-primary/40 hover:bg-white/80 dark:hover:bg-zinc-800/80 transition-all group shadow-sm text-left w-full">
                 <div className="p-4 rounded-xl bg-muted dark:bg-zinc-800 group-hover:bg-primary/10 group-hover:text-primary transition-colors shrink-0">
                   <Users className="h-6 w-6" />
@@ -325,6 +325,7 @@ export default function TeamProfilePage() {
                 <ChevronRight className="h-5 w-5 text-muted-foreground/30 group-hover:text-primary transition-all group-hover:translate-x-1" />
               </button>
 
+              {/* 💡 権限がある人(canManage)だけに表示される設定ボタン */}
               {canManage && (
                 <button onClick={() => router.push('/settings/team/roles')} className="flex items-center gap-5 p-6 rounded-2xl bg-white/50 dark:bg-zinc-900/50 backdrop-blur-md border border-border/40 hover:border-primary/40 hover:bg-white/80 dark:hover:bg-zinc-800/80 transition-all group shadow-sm text-left w-full">
                   <div className="p-4 rounded-xl bg-muted dark:bg-zinc-800 group-hover:bg-primary/10 group-hover:text-primary transition-colors shrink-0">
