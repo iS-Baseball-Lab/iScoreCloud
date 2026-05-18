@@ -1,14 +1,15 @@
 // filepath: src/lib/roles.ts
 
-// 💡 7つのロールを厳密に定義（値は小文字で統一）
+// 💡 8つのロールを厳密に定義（値は小文字で統一）
 export const ROLES = {
   ADMIN: "admin",       // IT管理者
   MANAGER: "manager",   // 代表・監督
   COACH: "coach",       // コーチ
   SCORER: "scorer",     // スコアラー
-  STAFF: "staff",       // 保護者・スタッフ
+  STAFF: "staff",       // スタッフ（マネージャーや用具係など）
+  PARENT: "parent",     // 🔥 新設：保護者（選手サポート・内部データ閲覧）
   PLAYER: "player",     // 選手
-  VIEWER: "viewer",     // OB・関係者
+  VIEWER: "viewer",     // OB・ファン・関係者
   PENDING: "pending",   // 認証待ちの仮ユーザー（デフォルト）
 } as const;
 
@@ -21,7 +22,7 @@ export type Role = typeof ROLES[keyof typeof ROLES];
  */
 export interface CustomRoleSetting {
   role: string;         // 'manager', 'coach' などのシステムロールキー
-  customLabel: string;  // '総監督', '代表', '保護者会' などのカスタム呼称
+  customLabel: string;  // '総監督', '代表', '父母会長' などのカスタム呼称
 }
 
 // 💡 チームがカスタム設定していない場合のシステムデフォルトの日本語呼称
@@ -31,6 +32,7 @@ export const DEFAULT_ROLE_LABELS: Record<Role, string> = {
   [ROLES.COACH]: "コーチ",
   [ROLES.SCORER]: "スコアラー",
   [ROLES.STAFF]: "スタッフ",
+  [ROLES.PARENT]: "保護者", // 🌟 保護者のデフォルト呼称
   [ROLES.PLAYER]: "選手",
   [ROLES.VIEWER]: "閲覧者",
   [ROLES.PENDING]: "承認待ち",
@@ -62,7 +64,6 @@ export function resolveRoleLabel(
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // 💡 各アクションに対する権限チェック用のヘルパー関数
-// （既存のロジックは完全維持。文字列の揺れ防止のため型安全に強化）
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 // 0. チームに承認されたメンバーか？（pending以外ならOK）
@@ -91,9 +92,17 @@ export const canEditScore = (role?: string | null): boolean => {
   return (r === ROLES.ADMIN || r === ROLES.MANAGER || r === ROLES.COACH || r === ROLES.SCORER);
 };
 
-// 4. チーム内部情報の閲覧（スタッフ以上）ができるか
+// 4. チーム内部情報の閲覧（スタッフ・保護者以上）ができるか
 export const canViewInternalData = (role?: string | null): boolean => {
   if (!role) return false;
   const r = role.toLowerCase();
-  return (r === ROLES.ADMIN || r === ROLES.MANAGER || r === ROLES.COACH || r === ROLES.SCORER || r === ROLES.STAFF);
+  // 🌟 内部スケジュールや連絡網、選手データは「保護者」も見れるように追加！
+  return (
+    r === ROLES.ADMIN || 
+    r === ROLES.MANAGER || 
+    r === ROLES.COACH || 
+    r === ROLES.SCORER || 
+    r === ROLES.STAFF ||
+    r === ROLES.PARENT
+  );
 };
