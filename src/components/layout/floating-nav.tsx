@@ -33,7 +33,9 @@ export function FloatingNav() {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
             onClick={() => setIsOpen(false)}
-            className="fixed inset-0 bg-background/70 z-[-1]"
+            // 🌟 真犯人逮捕：backdrop-blur-sm を完全撤去！
+            // 代わりに bg-zinc-950/80 (少し濃いグレーの半透明) を使い、バグなく美しい暗幕を作ります。
+            className="fixed inset-0 bg-zinc-950/80 z-[-1]"
           />
         )}
       </AnimatePresence>
@@ -76,23 +78,22 @@ export function FloatingNav() {
         <button
           onClick={() => setIsOpen(!isOpen)}
           className={cn(
-            // 🌟 修正: clip-pathをbutton側ではなく、内部のレンダリング要素全てに適用させるための構造に変更
-            "relative flex items-center justify-center rounded-full overflow-hidden active:scale-95 z-50 transition-all duration-300 ease-out",
+            // 🌟 修正：不要になった複雑なハック (clip-path等) を削除し、最もクリーンな形に。
+            "relative flex items-center justify-center rounded-full active:scale-95 z-50 transition-all duration-300 ease-out",
             isOpen
               ? "w-14 h-14 bg-white dark:bg-zinc-800 shadow-[0_8px_30px_rgb(0,0,0,0.12)] border border-border/50"
-              : "w-24 h-24 bg-primary shadow-2xl shadow-primary/50 border-none outline-none ring-0"
+              : "w-24 h-24 bg-primary shadow-2xl shadow-primary/50"
           )}
         >
-          <AnimatePresence mode="popLayout">
+          <AnimatePresence mode="wait">
             {isOpen ? (
               <motion.div
                 key="close"
                 initial={{ opacity: 0, scale: 0.5, rotate: -90 }}
                 animate={{ opacity: 1, scale: 1, rotate: 0 }}
                 exit={{ opacity: 0, scale: 0.5, rotate: 90 }}
-                transition={{ duration: 0.2, ease: "easeOut" }}
-                // 🌟 修正: containerに rounded-full と overflow-hidden をこれでもかと強制する
-                className="absolute inset-0 flex items-center justify-center rounded-full overflow-hidden"
+                transition={{ duration: 0.15, ease: "easeOut" }}
+                className="absolute inset-0 flex items-center justify-center"
               >
                 <X className="w-6 h-6 text-muted-foreground stroke-[3]" />
               </motion.div>
@@ -102,9 +103,8 @@ export function FloatingNav() {
                 initial={{ opacity: 0, scale: 0.5 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.5 }}
-                transition={{ duration: 0.2, ease: "easeOut" }}
-                // 🌟 修正: ロゴ側も同様に強制
-                className="absolute inset-0 flex items-center justify-center rounded-full overflow-hidden"
+                transition={{ duration: 0.15, ease: "easeOut" }}
+                className="absolute inset-0 flex items-center justify-center"
               >
                 <Image src="/logo.webp" alt="iScore" fill className="object-contain pointer-events-none" priority />
               </motion.div>
