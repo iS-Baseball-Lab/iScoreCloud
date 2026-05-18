@@ -24,7 +24,6 @@ export function FloatingNav() {
   ];
 
   return (
-    // 🌟 修正1: bottom-10 から bottom-6 に下げ、指が届きやすい定位置へ
     <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100]">
       <AnimatePresence>
         {isOpen && (
@@ -58,18 +57,9 @@ export function FloatingNav() {
                 className="absolute"
               >
                 <Link href={item.href} className="relative flex items-center justify-center active:scale-95 transition-transform">
-                  {isActive && (
-                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                      <motion.div
-                        className="absolute w-full h-full rounded-full bg-primary/40"
-                        animate={{ scale: [1, 1.4], opacity: [0.6, 0] }}
-                        transition={{ repeat: Infinity, duration: 1.5 }}
-                      />
-                    </div>
-                  )}
+                  {/* 🌟 修正1: 無限ループでカクつきの原因になっていた波紋アニメーションを完全撤去！ */}
                   <div className={cn(
                     "w-16 h-16 rounded-full flex flex-col items-center justify-center gap-1 border-[3px] transition-colors relative z-10",
-                    // 🌟 修正2: サブボタンにも shadow-xl を追加して浮き上がらせる
                     isActive 
                       ? "bg-primary border-primary text-primary-foreground shadow-xl shadow-primary/30" 
                       : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-xl shadow-black/10"
@@ -84,15 +74,12 @@ export function FloatingNav() {
         </AnimatePresence>
 
         {/* ⚾️ センターボタン */}
-        {/* 🌟 修正3: `motion.button` から `layout` プロパティを削除し、ネイティブCSSの transition-all を活用。
-            これで四角形になるバグが完全に消滅します。 */}
         <button
           onClick={() => setIsOpen(!isOpen)}
           className={cn(
-            "relative rounded-full flex items-center justify-center active:scale-95 z-50 transition-all duration-300 ease-out",
+            "relative flex items-center justify-center rounded-full overflow-hidden isolate active:scale-95 z-50 transition-all duration-300 ease-out",
             isOpen
               ? "w-14 h-14 bg-white dark:bg-zinc-800 shadow-[0_8px_30px_rgb(0,0,0,0.12)] border border-border/50"
-              // 🌟 修正4: shadow-2xl と shadow-primary/50 を組み合わせて、強烈な「浮いてる感（立体感）」を演出
               : "w-24 h-24 bg-primary shadow-2xl shadow-primary/50 border-none outline-none ring-0"
           )}
         >
@@ -104,7 +91,7 @@ export function FloatingNav() {
                 animate={{ opacity: 1, scale: 1, rotate: 0 }}
                 exit={{ opacity: 0, scale: 0.5, rotate: 90 }}
                 transition={{ duration: 0.15, ease: "easeOut" }}
-                className="absolute inset-0 flex items-center justify-center rounded-full"
+                className="absolute inset-0 flex items-center justify-center rounded-full overflow-hidden bg-transparent"
               >
                 <X className="w-6 h-6 text-muted-foreground stroke-[3]" />
               </motion.div>
@@ -115,7 +102,7 @@ export function FloatingNav() {
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.5 }}
                 transition={{ duration: 0.15, ease: "easeOut" }}
-                className="absolute inset-0 flex items-center justify-center rounded-full"
+                className="absolute inset-0 flex items-center justify-center rounded-full overflow-hidden bg-transparent"
               >
                 <Image src="/logo.webp" alt="iScore" fill className="object-contain" priority />
               </motion.div>
