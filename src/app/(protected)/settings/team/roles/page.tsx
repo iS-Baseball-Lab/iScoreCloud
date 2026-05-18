@@ -5,14 +5,14 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Loader2, RefreshCw, Users, Settings2, ShieldAlert } from "lucide-react";
+import { Loader2, RefreshCw, Users, Settings2, ShieldAlert, Clock } from "lucide-react";
 
 // 💡 共通レイアウト
 import { SectionHeader } from "@/components/layout/SectionHeader";
 import { EmptyState } from "@/components/layout/EmptyState";
 
-// 💡 確立したロール定義 & 権限ヘルパー関数のインポート
-import { canManageTeam, type CustomRoleSetting } from "@/lib/roles";
+// 🌟 ROLES と resolveRoleLabel を追加インポート
+import { canManageTeam, resolveRoleLabel, ROLES, type CustomRoleSetting } from "@/lib/roles";
 
 // 💡 共有機能コンポーネント
 import { TeamMemberSummaryCards } from "@/components/features/teams/team-member-summary-cards";
@@ -20,6 +20,18 @@ import { TeamInviteCard } from "@/components/features/teams/team-invite-card";
 import { TeamMemberCard, type TeamMember } from "@/components/features/teams/team-member-card";
 import { TeamMemberRemoveModal } from "@/components/features/teams/team-member-remove-modal";
 import { TeamRoleSettingsModal } from "@/components/features/teams/team-role-settings-modal";
+
+// 🌟 表示させたいロールの順番を定義
+const ROLE_DISPLAY_ORDER = [
+  ROLES.PENDING,
+  ROLES.MANAGER,
+  ROLES.COACH,
+  ROLES.SCORER,
+  ROLES.STAFF,
+  ROLES.PARENT,
+  ROLES.PLAYER,
+  ROLES.VIEWER,
+];
 
 export default function TeamMembersPage() {
   const router = useRouter();
@@ -32,14 +44,17 @@ export default function TeamMembersPage() {
   const [roleSettings, setRoleSettings] = useState<CustomRoleSetting[]>([]);
   
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [isRoleSettingsOpen, setIsRoleSettingsOpen] = useState(false);
   const [removeTarget, setRemoveTarget] = useState<TeamMember | null>(null);
   const [isRemoving, setIsRemoving] = useState(false);
   const [filter, setFilter] = useState<string>("all");
 
   // ─── データの取得 ───
-  const fetchMembers = useCallback(async (tid: string) => {
-    setIsLoading(true);
+  const fetchMembers = useCallback(async (tid: string, silent = false) => {
+    if (!silent) setIsLoading(true);
+    else setIsRefreshing(true);
+
     try {
       const res = await fetch(`/api/teams/${tid}/members`);
       if (!res.ok) throw new Error();
@@ -57,6 +72,7 @@ export default function TeamMembersPage() {
       toast.error("メンバー情報の取得に失敗しました");
     } finally {
       setIsLoading(false);
+      setIsRefreshing(false);
     }
   }, []);
 
@@ -100,7 +116,7 @@ export default function TeamMembersPage() {
     init();
   }, [router, fetchMembers]);
 
-  // ─── ロール変更 ───
+  // ─── ロール変更（＋自動承認） ───
   const handleRoleChange = async (memberId: string, newRole: string) => {
     if (!teamId) return;
     try {
@@ -113,9 +129,9 @@ export default function TeamMembersPage() {
       if (!json.success) throw new Error(json.error);
 
       setMembers(prev => prev.map(m =>
-        m.memberId === memberId ? { ...m, role: newRole } : m
+        m.memberId === memberId ? { ...m, role: newRole, status: "active" } : m
       ));
-      toast.success("ロールを変更しました");
+      toast.success("メンバーの権限を更新しました");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "ロールの変更に失敗しました");
     }
@@ -133,10 +149,13 @@ export default function TeamMembersPage() {
       if (!json.success) throw new Error(json.error);
 
       setMembers(prev => prev.filter(m => m.memberId !== removeTarget.memberId));
-      toast.success(`${removeTarget.name} さんをチームから除名しました`);
+      
+      const isRejecting = removeTarget.status === "pending";
+      toast.success(isRejecting ? "参加申請を拒否しました" : `${removeTarget.name} さんをチームから除名しました`);
+      
       setRemoveTarget(null);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "除名処理に失敗しました");
+      toast.error(e instanceof Error ? e.message : "処理に失敗しました");
     } finally {
       setIsRemoving(false);
     }
@@ -150,8 +169,17 @@ export default function TeamMembersPage() {
   const filteredMembers = members.filter(m => {
     if (filter === "pending") return m.status === "pending";
     if (filter === "manager") return m.status === "active" && m.role.toLowerCase() === "manager";
-    return true;
+    return true; // all
   });
+
+  // 🌟 filteredMembers をロールごとにグループ化する処理
+  const groupedMembers = ROLE_DISPLAY_ORDER.reduce((acc, roleKey) => {
+    const membersInRole = filteredMembers.filter(m => m.role.toLowerCase() === roleKey);
+    if (membersInRole.length > 0) {
+      acc.push({ role: roleKey, members: membersInRole });
+    }
+    return acc;
+  }, [] as { role: string; members: TeamMember[] }[]);
 
   // 権限チェック
   const canManage = canManageTeam(myRole);
@@ -189,7 +217,7 @@ export default function TeamMembersPage() {
           <SectionHeader 
             title="メンバー管理" 
             subtitle="MEMBERS" 
-            showPulse={true} 
+            showPulse={pendingMembers.length > 0}
           />
           
           <div className="flex items-center justify-between bg-card p-3 rounded-[var(--radius-xl)] border border-border shadow-sm">
@@ -205,20 +233,21 @@ export default function TeamMembersPage() {
                   onClick={() => setIsRoleSettingsOpen(true)}
                   size="sm"
                   variant="outline"
-                  className="h-9 px-3 rounded-[var(--radius-lg)] font-black gap-1.5 border-border shadow-sm"
+                  className="h-9 px-3 rounded-[var(--radius-lg)] font-black gap-1.5 border-border shadow-sm hidden sm:flex"
                 >
                   <Settings2 className="h-4 w-4" />
                   呼称設定
                 </Button>
               )}
               <Button 
-                onClick={() => fetchMembers(teamId)} 
+                onClick={() => fetchMembers(teamId, true)} 
+                disabled={isRefreshing}
                 variant="ghost"
                 size="sm" 
-                className="h-9 w-9 p-0 rounded-[var(--radius-lg)]"
+                className="h-9 w-9 p-0 rounded-[var(--radius-lg)] active:scale-95 transition-transform"
                 title="情報を更新"
               >
-                <RefreshCw className="h-4 w-4" />
+                <RefreshCw className={`h-4 w-4 ${isRefreshing ? "animate-spin text-primary" : "text-muted-foreground"}`} />
               </Button>
             </div>
           </div>
@@ -233,31 +262,47 @@ export default function TeamMembersPage() {
           onFilterChange={setFilter}
         />
 
-        {/* ━━ 招待コード (🌟 teamIdをそのまま渡すため、100%確実に表示・コピーできます！) ━━ */}
+        {/* ━━ 招待コード ━━ */}
         {canManage && <TeamInviteCard inviteCode={teamId} />}
 
-        {/* ━━ メンバーリスト ━━ */}
-        <div className="space-y-3">
+        {/* ━━ メンバーリスト (🌟 グループごとにレンダリング) ━━ */}
+        <div className="space-y-8 pt-2">
           {filteredMembers.length === 0 ? (
             <EmptyState 
-              icon={Users} 
-              title="メンバーが見つかりません" 
-              description="登録されているユーザーはいません。" 
+              icon={filter === "pending" ? Clock : Users} 
+              title={filter === "pending" ? "承認待ちのメンバーはいません" : "メンバーが見つかりません"} 
+              description={filter === "pending" ? "現在、チームへの参加申請をおこなっているユーザーはいません。" : "条件に一致するユーザーはいません。"} 
               className="mt-4"
             />
           ) : (
-            [...filteredMembers]
-              .sort((a, b) => (a.status === "pending" ? -1 : 1))
-              .map(member => (
-                <TeamMemberCard
-                  key={member.memberId}
-                  member={member}
-                  myUserId={myUserId}
-                  myRole={myRole}
-                  onRoleChange={handleRoleChange}
-                  onRemove={setRemoveTarget}
-                />
-              ))
+            groupedMembers.map(group => (
+              <div key={group.role} className="space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-500">
+                {/* 🌟 セクションヘッダー：カスタム呼称にも対応！ */}
+                <div className="flex items-center gap-2 px-1">
+                  <div className={`w-1.5 h-4 rounded-full ${group.role === ROLES.PENDING ? "bg-orange-500" : "bg-primary"}`} />
+                  <h3 className="text-sm font-black text-foreground tracking-tight">
+                    {resolveRoleLabel(group.role, roleSettings)}
+                  </h3>
+                  <span className="text-[10px] font-bold text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
+                    {group.members.length}
+                  </span>
+                </div>
+                
+                {/* 🌟 そのロールに属するメンバーのリスト */}
+                <div className="grid gap-3">
+                  {group.members.map(member => (
+                    <TeamMemberCard
+                      key={member.memberId}
+                      member={member}
+                      myUserId={myUserId}
+                      myRole={myRole}
+                      onRoleChange={handleRoleChange}
+                      onRemove={setRemoveTarget}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))
           )}
         </div>
       </div>
@@ -277,7 +322,7 @@ export default function TeamMembersPage() {
           onOpenChange={setIsRoleSettingsOpen}
           teamId={teamId}
           initialSettings={roleSettings}
-          onSaveSuccess={() => fetchMembers(teamId)}
+          onSaveSuccess={() => fetchMembers(teamId, true)}
         />
       )}
     </div>
