@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   ChevronLeft, Users, Loader2, ChevronRight, Wand2,
-  Shield, Swords, Save, UserMinus, UserCheck
+  Shield, Swords, Save, UserMinus, UserCheck, CheckCircle2
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -21,7 +21,6 @@ const POSITIONS = [
   { id: "9", label: "9 右", color: "bg-cyan-500" }, { id: "DH", label: "DH 指", color: "bg-zinc-500" }
 ];
 
-// 💡 実際のデータベース構成に合わせた型定義
 interface Player {
   id: string;
   name: string;
@@ -38,10 +37,7 @@ export default function LineupPage() {
   const [teamPlayers, setTeamPlayers] = useState<Player[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // スタメン以外のメンバーの出欠状態を管理するステート（デフォルトは全員'bench'）
   const [attendance, setAttendance] = useState<Record<string, "bench" | "absent">>({});
-
-  // モーダル用
   const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
   const [templateName, setTemplateName] = useState("");
 
@@ -52,11 +48,9 @@ export default function LineupPage() {
     Array.from({ length: 9 }, (_, i) => ({ order: i + 1, position: "", name: "", uniformNumber: "" }))
   );
 
-  // ─── 🌟 実際の選手データをバックエンドから取得 ───
   useEffect(() => {
     const fetchPlayers = async () => {
       try {
-        // 💡 URLパラメータにない場合はlocalStorageから選択中のチームIDを補完
         const targetTeamId = urlTeamId || localStorage.getItem("iscore_selectedTeamId");
         if (!targetTeamId) {
           toast.error("チーム情報が特定できませんでした");
@@ -70,7 +64,6 @@ export default function LineupPage() {
         const data = await res.json() as Player[];
         setTeamPlayers(data || []);
         
-        // 全員を一旦「控え（bench）」として初期化
         const initialAttendance: Record<string, "bench" | "absent"> = {};
         data.forEach(p => { 
           initialAttendance[p.id] = "bench"; 
@@ -88,14 +81,12 @@ export default function LineupPage() {
     fetchPlayers();
   }, [urlTeamId]);
 
-  // 排他制御ロジック（すでに選ばれているポジション・選手は選べないようにする）
   const getDisabledPositions = (lineup: any[], currentIndex: number) =>
     lineup.filter((_, i) => i !== currentIndex).map(p => p.position).filter(Boolean);
   
   const getDisabledPlayers = (lineup: any[], currentIndex: number) =>
     lineup.filter((_, i) => i !== currentIndex).map(p => p.playerId).filter(Boolean);
 
-  // テンプレート保存
   const saveTemplate = () => {
     if (!templateName) return toast.error("名前を入力してください");
     toast.success(`「${templateName}」を保存しました（モック）`);
@@ -110,17 +101,11 @@ export default function LineupPage() {
     })));
   };
 
-  // スタメンに選ばれている選手のIDリスト
   const startingPlayerIds = myLineup.map(p => p.playerId).filter(Boolean);
-  
-  // スタメンから漏れた残りの選手リスト
   const remainingPlayers = teamPlayers.filter(p => !startingPlayerIds.includes(p.id));
-  
-  // 人数カウント
   const benchCount = remainingPlayers.filter(p => attendance[p.id] !== "absent").length;
   const absentCount = remainingPlayers.filter(p => attendance[p.id] === "absent").length;
 
-  // ─── 🌟 ロード中の画面 ───
   if (isLoading) {
     return (
       <div className="flex h-[60vh] items-center justify-center">
@@ -205,9 +190,29 @@ export default function LineupPage() {
               const disabledPos = getDisabledPositions(activeTab === "myTeam" ? myLineup : opponentLineup, index);
               const disabledPlayers = activeTab === "myTeam" ? getDisabledPlayers(myLineup, index) : [];
 
+              // 🌟 ここがポイント：守備位置と選手名の両方が埋まっているかチェック
+              const isCompleted = activeTab === "myTeam" 
+                ? Boolean(player.position && player.playerId)
+                : Boolean(player.position && player.name.trim());
+
               return (
-                <div key={index} className="flex items-center gap-2 bg-card/50 border-2 border-border/40 p-2 rounded-2xl shadow-xs focus-within:border-primary/50 transition-colors">
-                  <div className="w-8 text-center font-black text-primary/40 italic">{index + 1}</div>
+                <div 
+                  key={index} 
+                  className={cn(
+                    "flex items-center gap-2 p-2 rounded-2xl transition-all duration-300 focus-within:border-primary/50",
+                    // 🌟 埋まっていればソリッドな背景と影、未入力なら半透明の点線枠
+                    isCompleted
+                      ? "bg-white dark:bg-zinc-800 border-2 border-primary/30 shadow-md opacity-100"
+                      : "bg-card/40 border-2 border-border/50 border-dashed opacity-80"
+                  )}
+                >
+                  {/* 打順番号（完了時は色が濃くなる） */}
+                  <div className={cn(
+                    "w-8 text-center font-black italic transition-colors flex items-center justify-center",
+                    isCompleted ? "text-primary" : "text-primary/40"
+                  )}>
+                    {index + 1}
+                  </div>
 
                   <select
                     value={player.position}
@@ -245,7 +250,10 @@ export default function LineupPage() {
                         list[index].uniformNumber = selectedPlayer ? (selectedPlayer.uniformNumber || "") : "";
                         setMyLineup(list);
                       }}
-                      className="flex-1 h-11 bg-transparent border-none font-bold text-sm focus:outline-none cursor-pointer"
+                      className={cn(
+                        "flex-1 h-11 bg-transparent border-none font-bold text-sm focus:outline-none cursor-pointer transition-colors",
+                        isCompleted ? "text-foreground" : "text-muted-foreground"
+                      )}
                     >
                       <option value="">選手を選択...</option>
                       {teamPlayers.map(p => (
@@ -261,7 +269,10 @@ export default function LineupPage() {
                   ) : (
                     <Input
                       placeholder="相手選手名"
-                      className="flex-1 h-11 border-none bg-transparent font-bold focus-visible:ring-0"
+                      className={cn(
+                        "flex-1 h-11 border-none bg-transparent font-bold focus-visible:ring-0 transition-colors",
+                        isCompleted ? "text-foreground" : "text-muted-foreground"
+                      )}
                       value={player.name}
                       onChange={(e) => {
                         const list = [...opponentLineup];
@@ -269,6 +280,13 @@ export default function LineupPage() {
                         setOpponentLineup(list);
                       }}
                     />
+                  )}
+
+                  {/* 🌟 完了チェックマーク（埋まると右端にフワッと表示されます） */}
+                  {isCompleted && (
+                    <div className="w-8 flex justify-center animate-in zoom-in duration-300">
+                      <CheckCircle2 className="w-5 h-5 text-primary" />
+                    </div>
                   )}
                 </div>
               );
