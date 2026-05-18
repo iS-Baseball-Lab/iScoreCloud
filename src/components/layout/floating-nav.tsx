@@ -33,7 +33,7 @@ export function FloatingNav() {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
             onClick={() => setIsOpen(false)}
-            className="fixed inset-0 bg-background/70 backdrop-blur-sm z-[-1]"
+            className="fixed inset-0 bg-background/70 z-[-1]"
           />
         )}
       </AnimatePresence>
