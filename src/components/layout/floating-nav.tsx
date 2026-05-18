@@ -15,8 +15,6 @@ export function FloatingNav() {
 
   useEffect(() => setIsOpen(false), [pathname]);
 
-  // 🌟 修正1: 角度を扇状（アーチ型）に美しく配置。
-  // -160度(左) から 35度ずつ進み、-20度(右) で終わる完璧なシンメトリー
   const menuItems = [
     { icon: Users, label: "TEAM", href: "/team", angle: -160 },
     { icon: UserSquare2, label: "PLAYER", href: "/players", angle: -125 },
@@ -26,7 +24,8 @@ export function FloatingNav() {
   ];
 
   return (
-    <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[100]">
+    // 🌟 修正1: bottom-10 から bottom-6 に下げ、指が届きやすい定位置へ
+    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100]">
       <AnimatePresence>
         {isOpen && (
           <motion.div
@@ -44,7 +43,6 @@ export function FloatingNav() {
         <AnimatePresence>
           {isOpen && menuItems.map((item, index) => {
             const isActive = pathname === item.href;
-            // 🌟 修正2: 半径を100から115に広げ、親指が自然に届くアーチの大きさに
             const RADIUS = 115;
             const radian = (item.angle * Math.PI) / 180;
             const x = Math.cos(radian) * RADIUS;
@@ -56,7 +54,6 @@ export function FloatingNav() {
                 initial={{ scale: 0, x: 0, y: 0 }}
                 animate={{ scale: 1, x, y }}
                 exit={{ scale: 0, x: 0, y: 0 }}
-                // 🌟 修正3: delay を index * 0.02 に増やし、扇子がパラッと開くような心地よい順次表示に
                 transition={{ type: "spring", stiffness: 650, damping: 28, delay: index * 0.02 }}
                 className="absolute"
               >
@@ -70,10 +67,12 @@ export function FloatingNav() {
                       />
                     </div>
                   )}
-                  {/* 🌟 修正4: ボタンサイズを w-16 h-16 に微調整し、アーチにピッタリ収まる黄金比に */}
                   <div className={cn(
-                    "w-16 h-16 rounded-full flex flex-col items-center justify-center gap-1 shadow-2xl border-[3px] transition-colors relative z-10",
-                    isActive ? "bg-primary border-primary text-primary-foreground" : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100"
+                    "w-16 h-16 rounded-full flex flex-col items-center justify-center gap-1 border-[3px] transition-colors relative z-10",
+                    // 🌟 修正2: サブボタンにも shadow-xl を追加して浮き上がらせる
+                    isActive 
+                      ? "bg-primary border-primary text-primary-foreground shadow-xl shadow-primary/30" 
+                      : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-xl shadow-black/10"
                   )}>
                     <item.icon className="w-6 h-6 stroke-[2.5]" />
                     <span className="text-[8px] font-black uppercase tracking-tighter">{item.label}</span>
@@ -85,16 +84,17 @@ export function FloatingNav() {
         </AnimatePresence>
 
         {/* ⚾️ センターボタン */}
-        <motion.button
-          layout
+        {/* 🌟 修正3: `motion.button` から `layout` プロパティを削除し、ネイティブCSSの transition-all を活用。
+            これで四角形になるバグが完全に消滅します。 */}
+        <button
           onClick={() => setIsOpen(!isOpen)}
           className={cn(
-            "relative rounded-full flex items-center justify-center active:scale-95 z-50 overflow-hidden",
+            "relative rounded-full flex items-center justify-center active:scale-95 z-50 transition-all duration-300 ease-out",
             isOpen
-              ? "w-14 h-14 bg-white dark:bg-zinc-800 shadow-md border border-border/50"
-              : "w-24 h-24 bg-primary shadow-xl border-none outline-none ring-0"
+              ? "w-14 h-14 bg-white dark:bg-zinc-800 shadow-[0_8px_30px_rgb(0,0,0,0.12)] border border-border/50"
+              // 🌟 修正4: shadow-2xl と shadow-primary/50 を組み合わせて、強烈な「浮いてる感（立体感）」を演出
+              : "w-24 h-24 bg-primary shadow-2xl shadow-primary/50 border-none outline-none ring-0"
           )}
-          transition={{ type: "spring", stiffness: 700, damping: 25 }}
         >
           <AnimatePresence>
             {isOpen ? (
@@ -104,7 +104,7 @@ export function FloatingNav() {
                 animate={{ opacity: 1, scale: 1, rotate: 0 }}
                 exit={{ opacity: 0, scale: 0.5, rotate: 90 }}
                 transition={{ duration: 0.15, ease: "easeOut" }}
-                className="absolute inset-0 flex items-center justify-center"
+                className="absolute inset-0 flex items-center justify-center rounded-full"
               >
                 <X className="w-6 h-6 text-muted-foreground stroke-[3]" />
               </motion.div>
@@ -115,13 +115,13 @@ export function FloatingNav() {
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.5 }}
                 transition={{ duration: 0.15, ease: "easeOut" }}
-                className="absolute inset-0 flex items-center justify-center"
+                className="absolute inset-0 flex items-center justify-center rounded-full"
               >
                 <Image src="/logo.webp" alt="iScore" fill className="object-contain" priority />
               </motion.div>
             )}
           </AnimatePresence>
-        </motion.button>
+        </button>
       </div>
     </div>
   );
