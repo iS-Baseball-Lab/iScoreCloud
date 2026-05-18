@@ -39,7 +39,7 @@ export const handleJoinTeam = async (c: Context) => {
       userId: session.user.id,
       role: 'pending',
       status: 'pending',
-      joinedAt: Math.floor(Date.now() / 1000) as any // 🔥 ここが超重要！
+      joinedAt: new Date()
     })
 
     return c.json({ success: true, message: '参加申請を送信しました！' })
