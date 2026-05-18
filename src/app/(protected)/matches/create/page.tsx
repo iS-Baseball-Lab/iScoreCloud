@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Users, Calendar, Clock, MapPin, Trophy, CalendarPlus, PlayCircle, Loader2 } from "lucide-react";
+import { ArrowLeft, Users, Calendar, Clock, MapPin, Trophy, CalendarPlus, PlayCircle, ClipboardList, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -14,7 +14,7 @@ import { TournamentSelector } from "@/components/features/matches/tournament-sel
 import { QuickScoreForm } from "@/components/features/matches/match-score-board";
 import { SectionHeader } from "@/components/layout/SectionHeader";
 
-// ━━━ 型定義 (APIレスポンスのany排除) ━━━
+// ━━━ 型定義 ━━━
 interface Tournament { 
   id: string; 
   name: string; 
@@ -32,12 +32,22 @@ function CreateMatchContent() {
   const router = useRouter();
   const { currentTeam } = useTeam();
   const searchParams = useSearchParams();
-  const mode = searchParams.get("mode") || "real";
+  const mode = (searchParams.get("mode") || "real") as "real" | "live" | "quick";
+
+  const getPageInfo = () => {
+    switch (mode) {
+      case "live": return { ja: "試合記録開始", en: "START LIVE", icon: <PlayCircle className="h-5 w-5" />, btn: "試合を記録開始" };
+      case "quick": return { ja: "クイックスコア", en: "QUICK SCORE", icon: <ClipboardList className="h-5 w-5" />, btn: "スコアを保存" };
+      default: return { ja: "試合予定作成", en: "NEW SCHEDULE", icon: <CalendarPlus className="h-5 w-5" />, btn: "予定を登録" };
+    }
+  };
+
+  const pageInfo = getPageInfo();
 
   const [isLoading, setIsLoading] = useState(false);
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
 
-  // フォーム基本ステート
+  // フォームステート
   const [opponent, setOpponent] = useState("");
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [time, setTime] = useState("");
@@ -47,7 +57,6 @@ function CreateMatchContent() {
   const [isNewTournament, setIsNewTournament] = useState(false);
   const [battingOrder, setBattingOrder] = useState<'first' | 'second'>("first");
   
-  // スコアステート
   const [inningCount, setInningCount] = useState(7);
   const [myScore, setMyScore] = useState("");
   const [opponentScore, setOpponentScore] = useState("");
@@ -60,9 +69,7 @@ function CreateMatchContent() {
         const res = await fetch("/api/tournaments");
         const data = await res.json();
         if (Array.isArray(data)) setTournaments(data as Tournament[]);
-      } catch (err) { 
-        console.error("大会データの取得に失敗しました", err); 
-      }
+      } catch (err) { console.error(err); }
     };
     fetchTournaments();
   }, []);
@@ -80,6 +87,8 @@ function CreateMatchContent() {
 
     setIsLoading(true);
     try {
+      const statusMap = { real: "scheduled", live: "started", quick: "finished" };
+      
       const res = await fetch("/api/matches/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -92,7 +101,7 @@ function CreateMatchContent() {
           battingOrder,
           innings: inningCount,
           surfaceDetails: venue,
-          status: mode === "real" ? "scheduled" : "finished",
+          status: statusMap[mode],
           myScore: myScore ? Number(myScore) : 0,
           opponentScore: opponentScore ? Number(opponentScore) : 0,
           myInningScores: myInnings.map(v => v ? Number(v) : 0),
@@ -101,10 +110,14 @@ function CreateMatchContent() {
       });
 
       const result = (await res.json()) as CreateMatchResponse;
-      if (!result.success) throw new Error(result.error || "試合の保存に失敗しました");
+      if (!result.success) throw new Error(result.error || "保存に失敗しました");
 
-      toast.success(mode === "real" ? "試合予定を登録しました！" : "試合結果を保存しました");
-      router.push("/dashboard");
+      toast.success(`${pageInfo.ja}を完了しました！`);
+      if (mode === "live" && result.matchId) {
+        router.push(`/matches/${result.matchId}/live`);
+      } else {
+        router.push("/dashboard");
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "接続エラーが発生しました");
     } finally {
@@ -126,14 +139,9 @@ function CreateMatchContent() {
           <ArrowLeft className="h-4 w-4" />
           戻る
         </Button>
-        <SectionHeader 
-          title={mode === "real" ? "試合予定作成" : "クイックスコア登録"} 
-          subtitle={mode === "real" ? "NEW SCHEDULE" : "QUICK SCORE"} 
-          showPulse={false} 
-        />
+        <SectionHeader title={pageInfo.ja} subtitle={pageInfo.en} showPulse={false} />
       </div>
 
-      {/* ━━ フォームコンテンツ（ソリッド背景で視認性確保） ━━ */}
       <form onSubmit={handleSubmit} className="space-y-6">
         <Card className="rounded-3xl border border-border bg-card shadow-sm">
           <CardContent className="p-5 space-y-5">
@@ -148,7 +156,7 @@ function CreateMatchContent() {
               <div className="space-y-1.5"><label className="text-[10px] font-black uppercase text-muted-foreground flex items-center gap-1.5"><Clock className="h-3.5 w-3.5" /> Time</label>
                 <Input type="time" value={time} onChange={e => setTime(e.target.value)} className="h-11 rounded-2xl text-sm font-bold bg-background border-border" /></div>
               <div className="space-y-1.5"><label className="text-[10px] font-black uppercase text-muted-foreground flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5" /> Venue</label>
-                <Input placeholder="球場名など" value={venue} onChange={e => setVenue(e.target.value)} className="h-11 rounded-2xl text-sm font-bold bg-background border-border" /></div>
+                <Input placeholder="球場名" value={venue} onChange={e => setVenue(e.target.value)} className="h-11 rounded-2xl text-sm font-bold bg-background border-border" /></div>
               <div className="space-y-1.5"><label className="text-[10px] font-black uppercase text-muted-foreground flex items-center gap-1.5"><Trophy className="h-3.5 w-3.5" /> Type</label>
                 <div className="flex gap-1.5">
                   <Button type="button" variant={matchType === 'official' ? 'default' : 'outline'} onClick={() => setMatchType('official')} className={cn("flex-1 h-11 px-0 rounded-2xl text-[10px] font-bold border-border bg-background hover:bg-muted", matchType === 'official' && "bg-amber-600 hover:bg-amber-700 text-white border-transparent")}>公式</Button>
@@ -160,20 +168,8 @@ function CreateMatchContent() {
             {matchType === 'official' && (
               <div className="space-y-2 animate-in slide-in-from-top-2 duration-300">
                 <label className="text-[10px] font-black uppercase text-amber-600 flex items-center gap-1.5"><Trophy className="h-3.5 w-3.5" /> Tournament</label>
-                <TournamentSelector 
-                  tournaments={tournaments} 
-                  value={tournamentName} 
-                  isNew={isNewTournament} 
-                  onSelect={(name, createNew) => { 
-                    setTournamentName(name); 
-                    setIsNewTournament(createNew); 
-                  }} 
-                />
-                {isNewTournament && (
-                  <div className="animate-in slide-in-from-top-1 duration-200">
-                    <Input autoFocus value={tournamentName} onChange={e => setTournamentName(e.target.value)} placeholder="大会名を入力" className="h-11 rounded-2xl text-sm font-bold bg-amber-500/10 border-amber-500/30 text-amber-900 dark:text-amber-100" />
-                  </div>
-                )}
+                <TournamentSelector tournaments={tournaments} value={tournamentName} isNew={isNewTournament} onSelect={(name, createNew) => { setTournamentName(name); setIsNewTournament(createNew); }} />
+                {isNewTournament && <div className="animate-in slide-in-from-top-1 duration-200"><Input autoFocus value={tournamentName} onChange={e => setTournamentName(e.target.value)} placeholder="大会名" className="h-11 rounded-2xl text-sm font-bold bg-amber-500/10 border-amber-500/30" /></div>}
               </div>
             )}
 
@@ -194,9 +190,9 @@ function CreateMatchContent() {
         )}
 
         <div className="pt-2">
-          <Button type="submit" disabled={isLoading} className="w-full h-14 rounded-2xl text-sm font-black uppercase flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-shadow">
-            {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : (mode === "real" ? <CalendarPlus className="h-5 w-5" /> : <PlayCircle className="h-5 w-5" />)}
-            {isLoading ? "保存中..." : (mode === "real" ? "予定を登録する" : "試合結果を保存する")}
+          <Button type="submit" disabled={isLoading} className="w-full h-14 rounded-2xl text-sm font-black uppercase flex items-center justify-center gap-2 shadow-md">
+            {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : pageInfo.icon}
+            {isLoading ? "処理中..." : pageInfo.btn}
           </Button>
         </div>
       </form>
