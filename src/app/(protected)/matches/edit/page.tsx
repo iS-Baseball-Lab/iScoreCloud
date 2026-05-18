@@ -212,9 +212,15 @@ function MatchEditContent() {
           setMatchStatus(m.status || "scheduled");
 
           if (m.date) {
-            const [d, t] = m.date.split(" ");
-            setDate(d || "");
-            setTime(t || "");
+            // 🌟 修正: 空白や "T" で分割し、後ろに秒数(:00)がついていても "HH:mm" の5文字だけを正確に抜き出す
+            const parts = m.date.trim().split(/[ T]/);
+            setDate(parts[0] || "");
+            
+            if (parts[1]) {
+              setTime(parts[1].slice(0, 5)); // "14:30:00" -> "14:30"
+            } else {
+              setTime("");
+            }
           }
 
           // 2. イニングスコア取得
@@ -294,7 +300,8 @@ function MatchEditContent() {
         body: JSON.stringify({
           opponent,
           tournamentName: matchType === 'official' ? tournamentName : "",
-          date: `${date} ${time}`,
+          // 🌟 修正: timeが空の場合は余計な空白を入れず、日付だけを送信する
+          date: time ? `${date} ${time}` : date,
           matchType,
           battingOrder,
           location: venue,
