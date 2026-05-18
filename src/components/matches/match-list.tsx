@@ -62,7 +62,7 @@ function MatchCountdown({ date }: { date: string }) {
       const duration = intervalToDuration({ start: now, end: target });
       
       // 日数がある場合は「1d 00:00:00」のように表示
-      const d = duration.days ? `${duration.days}d ` : "";
+      const d = duration.days ? `${duration.days}日 ` : "";
       const h = String(duration.hours || 0).padStart(2, '0');
       const m = String(duration.minutes || 0).padStart(2, '0');
       const s = String(duration.seconds || 0).padStart(2, '0');
