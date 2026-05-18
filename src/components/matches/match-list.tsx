@@ -1,3 +1,4 @@
+// filepath: src/components/matches/match-list.tsx
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
@@ -9,6 +10,12 @@ import { cn } from "@/lib/utils";
 import { Match } from "@/types/match";
 import { EmptyState } from "@/components/layout/EmptyState";
 import { Button } from "@/components/ui/button";
+
+interface MatchListProps {
+  matches: Match[];
+  isLoading: boolean;
+  onDelete?: (id: string) => void;
+}
 
 // 現場仕様：スコアのフォーマット関数
 interface FormatScoreProps {
@@ -28,7 +35,7 @@ const formatScoreDisplay = ({ score, isBottom, isInningFinal, isHomeWinning }: F
   return score;
 };
 
-// カウントダウン用サブコンポーネント
+// 🌟 新規追加：カウントダウン用サブコンポーネント
 function MatchCountdown({ date }: { date: string }) {
   const [timeLeft, setTimeLeft] = useState("");
 
@@ -60,6 +67,7 @@ export function MatchList({ matches, isLoading, onDelete }: MatchListProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [teamFullName, setTeamFullName] = useState("");
 
+  // ━━ スワイプ操作の状態管理 ━━
   const [swipeId, setSwipeId] = useState<string | null>(null);
   const [offsetX, setOffsetX] = useState(0);
   const touchStartX = useRef<number | null>(null);
@@ -88,109 +96,306 @@ export function MatchList({ matches, isLoading, onDelete }: MatchListProps) {
   if (isLoading) {
     return (
       <div className="space-y-3 px-1">
-        {[1, 2, 3].map((i) => <div key={i} className="h-28 w-full rounded-2xl bg-muted/50 animate-pulse" />)}
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="h-28 w-full rounded-2xl bg-muted/50 animate-pulse" />
+        ))}
       </div>
     );
   }
 
   if (!matches || matches.length === 0) {
-    return <EmptyState icon={Swords} title="試合データがありません" description="No match data recorded yet" />;
+    return (
+      <EmptyState
+        icon={Swords}
+        title="試合データがありません"
+        description="No match data recorded yet"
+      />
+    );
   }
 
-  // ━━ ハンドラ類 ━━
   const handleTouchStart = (e: React.TouchEvent, id: string) => {
     touchStartX.current = e.touches[0].clientX;
     touchStartY.current = e.touches[0].clientY;
-    setSwipeId(id);
-    startOffsetX.current = swipeId === id ? offsetX : 0;
+    
+    if (swipeId !== id) {
+      setOffsetX(0);
+      setSwipeId(id);
+      startOffsetX.current = 0;
+    } else {
+      startOffsetX.current = offsetX;
+    }
     isVerticalScroll.current = false;
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
-    if (touchStartX.current === null || isVerticalScroll.current) return;
-    const diffX = e.touches[0].clientX - touchStartX.current;
-    if (Math.abs(e.touches[0].clientY - (touchStartY.current || 0)) > 10) { isVerticalScroll.current = true; return; }
-    setOffsetX(Math.max(Math.min(startOffsetX.current + diffX, ACTION_WIDTH), -ACTION_WIDTH));
+    if (touchStartX.current === null || touchStartY.current === null || isVerticalScroll.current) return;
+
+    const currentX = e.touches[0].clientX;
+    const currentY = e.touches[0].clientY;
+    const diffX = currentX - touchStartX.current;
+    const diffY = currentY - touchStartY.current;
+
+    if (Math.abs(diffY) > Math.abs(diffX) && Math.abs(diffY) > 5) {
+      isVerticalScroll.current = true;
+      setOffsetX(0);
+      return;
+    }
+
+    if (expandedId === swipeId) {
+      return;
+    }
+
+    let newOffsetX = startOffsetX.current + diffX;
+    if (newOffsetX > ACTION_WIDTH) newOffsetX = ACTION_WIDTH;
+    if (newOffsetX < -ACTION_WIDTH) newOffsetX = -ACTION_WIDTH;
+
+    setOffsetX(newOffsetX);
   };
 
   const handleTouchEnd = () => {
-    if (Math.abs(offsetX) > ACTION_WIDTH / 2) setOffsetX(offsetX > 0 ? ACTION_WIDTH : -ACTION_WIDTH);
-    else { setOffsetX(0); setSwipeId(null); }
+    touchStartX.current = null;
+    touchStartY.current = null;
+
+    if (offsetX > ACTION_WIDTH / 2) {
+      setOffsetX(ACTION_WIDTH);
+    } else if (offsetX < -ACTION_WIDTH / 2) {
+      setOffsetX(-ACTION_WIDTH);
+    } else {
+      setOffsetX(0);
+      setSwipeId(null);
+    }
+  };
+
+  const handleCardClick = (id: string) => {
+    if (swipeId === id && offsetX !== 0) {
+      setOffsetX(0);
+      setTimeout(() => setSwipeId(null), 200);
+      return;
+    }
+    setExpandedId(expandedId === id ? null : id);
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("本当にこの試合を削除しますか？")) return;
+    try {
+      const res = await fetch(`/api/matches/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        toast.success("試合を削除しました");
+        if (onDelete) onDelete(id);
+      } else {
+        throw new Error();
+      }
+    } catch (error) {
+      toast.error("削除エラーが発生しました");
+    }
   };
 
   return (
     <div className="space-y-3 overflow-x-hidden px-1 pb-1">
       {matches.map((match) => {
+        // 🌟 新規追加：未来の試合かどうかの判定
         const isFuture = new Date(match.date) > new Date();
+
+        const isWin = match.myScore > match.opponentScore;
+        const isLoss = match.myScore < match.opponentScore;
+        const isDraw = match.myScore === match.opponentScore;
         const isExpanded = expandedId === match.id;
         const isSwiping = swipeId === match.id;
+        const currentOffset = isSwiping ? offsetX : 0;
+
         const firstScore = match.battingOrder === 'first' ? match.myScore : match.opponentScore;
-        const secondScore = match.battingOrder === 'second' ? match.myScore : match.opponentScore;
-        const topScores = match.battingOrder === 'first' ? (match.myInningScores || []) : (match.opponentInningScores || []);
-        const bottomScores = match.battingOrder === 'second' ? (match.myInningScores || []) : (match.opponentInningScores || []);
+        const secondScore = match.battingOrder === 'first' ? match.opponentScore : match.myScore;
+        const inningCount = match.innings || 7;
+
+        const myScores = match.myInningScores || [];
+        const oppScores = match.opponentInningScores || [];
+
+        const topScores = match.battingOrder === 'first' ? myScores : oppScores;
+        const bottomScores = match.battingOrder === 'second' ? myScores : oppScores;
+        const isHomeWinning = secondScore > firstScore;
 
         return (
-          <div key={match.id} className={cn("group relative overflow-hidden rounded-[20px] border", isExpanded ? "border-primary/40" : "border-border/50")}>
-            <div className={cn("absolute inset-0 z-0 flex transition-opacity", isSwiping && Math.abs(offsetX) > 0 ? "opacity-100" : "opacity-0 pointer-events-none")}>
-              <button onClick={() => router.push(`/matches/edit?id=${match.id}`)} className="w-[75px] bg-blue-500 text-white flex flex-col items-center justify-center">
-                <Edit2 className="h-5 w-5 mb-1" /><span className="text-[10px] font-black">編集</span>
-              </button>
-              <button onClick={() => { if(confirm("削除しますか？")) onDelete?.(match.id); }} className="ml-auto w-[75px] bg-rose-500 text-white flex flex-col items-center justify-center">
-                <Trash2 className="h-5 w-5 mb-1" /><span className="text-[10px] font-black">削除</span>
-              </button>
+          <div key={match.id} className={cn(
+            "group relative overflow-hidden transition-all duration-200 ease-out",
+            "rounded-[var(--radius-2xl)] border",
+            isExpanded
+              ? "border-primary/40 shadow-sm shadow-primary/5"
+              : "border-border/50 shadow-sm"
+          )}>
+            
+            <div className={cn(
+              "absolute inset-0 z-0 transition-opacity duration-150 bg-transparent",
+              (isSwiping && Math.abs(offsetX) > 0) ? "opacity-100" : "opacity-0 pointer-events-none"
+            )}>
+              <div className="absolute top-0 left-0 h-full w-[75px]">
+                <button
+                  onClick={(e) => { e.stopPropagation(); router.push(`/matches/edit?id=${match.id}`); }}
+                  className="flex flex-col items-center justify-center w-full h-full bg-blue-500 text-white active:bg-blue-600 transition-colors"
+                >
+                  <Edit2 className="h-5 w-5 mb-1" />
+                  <span className="text-[10px] font-black uppercase tracking-wider">編集</span>
+                </button>
+              </div>
+
+              <div className="absolute top-0 right-0 h-full w-[75px]">
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleDelete(match.id); setOffsetX(0); }}
+                  className="flex flex-col items-center justify-center w-full h-full bg-rose-500 text-white active:bg-rose-600 transition-colors"
+                >
+                  <Trash2 className="h-5 w-5 mb-1" />
+                  <span className="text-[10px] font-black uppercase tracking-wider">削除</span>
+                </button>
+              </div>
             </div>
 
             <div
               onTouchStart={(e) => handleTouchStart(e, match.id)}
-              onTouchMove={handleTouchMove}
+              onTouchMove={(e) => handleTouchMove(e)}
               onTouchEnd={handleTouchEnd}
-              style={{ transform: `translateX(${isSwiping ? offsetX : 0}px)` }}
-              className={cn("relative z-10 transition-transform duration-200", isExpanded ? "bg-primary/5" : "bg-card")}
+              style={{ transform: `translateX(${currentOffset}px)`, touchAction: "pan-y" }}
+              className={cn(
+                "relative z-10 h-full transition-transform duration-200 ease-out",
+                isExpanded ? "bg-primary/5 dark:bg-primary/10" : "bg-card"
+              )}
             >
-              <div className="p-4 cursor-pointer" onClick={() => setExpandedId(isExpanded ? null : match.id)}>
-                <div className="flex items-center justify-between gap-4">
+              <div
+                className="p-4 sm:p-5 cursor-pointer"
+                onClick={() => handleCardClick(match.id)}
+              >
+                <div className="flex items-center justify-between gap-4 pointer-events-none">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1.5">
-                      <span className={cn("text-[10px] font-black px-1.5 py-0.5 rounded", match.matchType === 'official' ? "bg-amber-500/10 text-amber-600" : "bg-emerald-500/10 text-emerald-600")}>
+                      <span className={cn(
+                        "w-16 text-center text-[10px] sm:text-xs font-black px-1.5 py-0.5 rounded shadow-sm",
+                        match.matchType === 'official' ? "bg-amber-500/10 text-amber-600 border border-amber-500/20" : "bg-emerald-500/10 text-emerald-600 border border-emerald-500/20"
+                      )}>
                         {match.matchType === 'official' ? '公式戦' : '練習試合'}
                       </span>
-                      <span className="text-xs font-bold text-muted-foreground">{match.date}</span>
+                      <span className="text-xs sm:text-sm font-bold text-muted-foreground flex items-center gap-1">
+                        <Calendar className="h-3.5 w-3.5" /> {match.date}
+                      </span>
                     </div>
-                    <h3 className="text-lg font-black truncate">vs {match.opponent}</h3>
+                    <h3 className="text-lg sm:text-xl font-black truncate text-foreground mb-1">vs {match.opponent}</h3>
+                    {match.matchType === 'official' && (
+                      <p className="text-xs font-bold text-amber-600 flex items-center gap-1 mt-0.5 truncate">
+                        <Trophy className="h-3.5 w-3.5 shrink-0" /> {match.tournamentName || "大会名未登録"}
+                      </p>
+                    )}
+                    <p className="text-xs font-bold text-muted-foreground flex items-center gap-1 mt-1 truncate">
+                      <MapPin className="h-3.5 w-3.5 shrink-0" /> {match.surfaceDetails || "球場未設定"}
+                    </p>
                   </div>
 
+                  {/* 🌟 変更箇所：右側の結果表示エリア */}
                   <div className="flex flex-col items-center gap-1.5 shrink-0">
                     {!isFuture && (
-                       <div className="w-14 text-center">
-                         {match.myScore > match.opponentScore && <span className="block w-full bg-blue-600 text-white text-[10px] font-black py-0.5 rounded">WIN</span>}
-                         {match.myScore < match.opponentScore && <span className="block w-full bg-rose-600 text-white text-[10px] font-black py-0.5 rounded">LOSE</span>}
-                       </div>
+                      <div className="w-14 text-center">
+                        {isWin && <span className="block w-full bg-blue-600 text-white text-[11px] font-black py-0.5 rounded shadow-sm">WIN</span>}
+                        {isLoss && <span className="block w-full bg-rose-600 text-white text-[11px] font-black py-0.5 rounded shadow-sm">LOSE</span>}
+                        {isDraw && <span className="block w-full bg-zinc-500 text-white text-[11px] font-black py-0.5 rounded shadow-sm">DRAW</span>}
+                      </div>
                     )}
                     
                     {isFuture ? (
                       <div className="px-3 py-1.5 bg-primary/10 rounded-xl border border-primary/20 text-center min-w-[80px]">
-                        <p className="text-[9px] font-black text-primary/70 uppercase">Starts in</p>
+                        <p className="text-[9px] font-black text-primary/70 uppercase leading-none mb-0.5">Countdown</p>
                         <MatchCountdown date={match.date} />
                       </div>
                     ) : (
                       <div className="flex items-center gap-2 px-3 py-1.5 bg-primary/5 rounded-xl border border-primary/20">
-                        <span className="text-xl font-black">{firstScore} - {secondScore}</span>
+                        <div className="text-center w-7">
+                          <p className="text-[9px] font-black text-primary/70 uppercase leading-none">先</p>
+                          <span className="text-xl font-black tabular-nums leading-none text-foreground">{firstScore}</span>
+                        </div>
+                        <span className="text-sm font-black text-primary/30">-</span>
+                        <div className="text-center w-7">
+                          <p className="text-[9px] font-black text-primary/70 uppercase leading-none">後</p>
+                          <span className="text-xl font-black tabular-nums leading-none text-foreground">{secondScore}</span>
+                        </div>
                       </div>
                     )}
+                    {isExpanded ? <ChevronUp className="h-4 w-4 text-primary mt-1" /> : <ChevronDown className="h-4 w-4 text-muted-foreground/50 mt-1" />}
                   </div>
                 </div>
 
-                {isExpanded && !isFuture && (
-                  <div className="mt-4 pt-2 border-t border-border/20">
-                     <div className="text-xs font-bold text-center text-muted-foreground pb-2">スコア詳細エリア</div>
-                     <div className="flex gap-2">
-                        <Button onClick={(e) => { e.stopPropagation(); router.push(`/matches/${match.id}/scorebook`); }} variant="outline" className="flex-1 h-10 text-xs font-black"><BookOpen className="h-4 w-4 mr-2" />スコアブック</Button>
-                        <Button onClick={(e) => { e.stopPropagation(); router.push(`/matches/${match.id}`); }} className="flex-1 h-10 text-xs font-black"><ClipboardList className="h-4 w-4 mr-2" />詳細</Button>
-                     </div>
+                {/* 🌟 復元：ユーザー様の元の美しい展開コードを1行も変えずに完全復元 */}
+                {isExpanded && (
+                  <div className="mt-4 pt-2 animate-in fade-in slide-in-from-top-2 duration-300">
+                    <div className="w-full overflow-hidden rounded-xl border border-border bg-card shadow-sm flex flex-col">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-center whitespace-nowrap">
+                          <thead className="bg-primary/5 border-b border-border/50">
+                            <tr>
+                              <th className="py-2 px-3 text-left font-normal text-muted-foreground text-xs w-20 md:w-32">TEAM</th>
+                              {Array.from({ length: inningCount }).map((_, i) => (
+                                <th key={i} className="py-2 px-1 sm:px-2 text-sm md:text-base font-semibold text-foreground">{i + 1}</th>
+                              ))}
+                              <th className="py-2 px-3 text-sm md:text-base font-bold text-primary">R</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-border/50 text-xs sm:text-sm font-medium tabular-nums">
+                            <tr>
+                              <td className="py-2 px-3 text-left">
+                                <div className="w-16 truncate md:w-auto md:whitespace-normal">
+                                  {match.battingOrder === 'first' ? (teamFullName || "自チーム") : (match.opponent || "相手")}
+                                </div>
+                              </td>
+                              {Array.from({ length: inningCount }).map((_, i) => (
+                                <td key={`top-${i}`} className="py-2 text-muted-foreground">
+                                  {formatScoreDisplay({ score: topScores[i], isBottom: false, isInningFinal: i === inningCount - 1, isHomeWinning })}
+                                </td>
+                              ))}
+                              <td className="py-2 px-3 font-bold text-primary">{firstScore}</td>
+                            </tr>
+                            <tr>
+                              <td className="py-2 px-3 text-left">
+                                <div className="w-16 truncate md:w-auto md:whitespace-normal">
+                                  {match.battingOrder === 'second' ? (teamFullName || "自チーム") : (match.opponent || "相手")}
+                                </div>
+                              </td>
+                              {Array.from({ length: inningCount }).map((_, i) => (
+                                <td key={`bottom-${i}`} className="py-2 text-foreground font-semibold">
+                                  {formatScoreDisplay({ score: bottomScores[i], isBottom: true, isInningFinal: i === inningCount - 1, isHomeWinning })}
+                                </td>
+                              ))}
+                              <td className="py-2 px-3 font-bold text-primary">{secondScore}</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                      
+                      {/* 💡 現場至上主義: デュアルアクション導線（横並びボタン） */}
+                      <div className="p-3 border-t border-border/50 bg-muted/20 flex gap-2">
+                        <Button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            router.push(`/matches/${match.id}/scorebook`);
+                          }}
+                          variant="outline"
+                          className="flex-1 h-11 rounded-[var(--radius-lg)] font-black gap-1.5 shadow-sm text-xs sm:text-sm bg-card border-border hover:bg-primary/5 hover:text-primary transition-colors"
+                        >
+                          <BookOpen className="h-4 w-4 text-primary" strokeWidth={2.5} />
+                          スコアブック
+                        </Button>
+
+                        <Button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            router.push(`/matches/${match.id}`);
+                          }}
+                          className="flex-1 h-11 rounded-[var(--radius-lg)] font-black gap-1.5 shadow-sm text-xs sm:text-sm"
+                        >
+                          <ClipboardList className="h-4 w-4" strokeWidth={2.5} />
+                          試合明細
+                        </Button>
+                      </div>
+
+                    </div>
                   </div>
                 )}
               </div>
             </div>
+
           </div>
         );
       })}
