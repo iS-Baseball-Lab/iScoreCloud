@@ -132,15 +132,20 @@ export default function DashboardPage() {
     return matches.find(m => m.status === 'live');
   }, [matches]);
 
-  // 💡 2. 予定されている試合 (SCHEDULED) を抽出
-  const upcomingMatches = useMemo(() =>
-    matches.filter(m => m.status === 'scheduled')
-    , [matches]);
+  // 💡 2. 予定されている試合 (SCHEDULED) を抽出し、昇順（近い未来が上）でソート
+  const upcomingMatches = useMemo(() => {
+    return matches
+      .filter(m => m.status === 'scheduled')
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  }, [matches]);
 
-  // 💡 3. 完了した試合 (FINISHED) を結果リスト用に抽出
-  const finishedMatches = useMemo(() =>
-    matches.filter(m => m.status === 'finished').slice(0, 3)
-    , [matches]);
+  // 💡 3. 完了した試合 (FINISHED) を抽出、降順（最新の過去が上）でソートし、最新3件を取得
+  const finishedMatches = useMemo(() => {
+    return matches
+      .filter(m => m.status === 'finished')
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .slice(0, 3);
+  }, [matches]);
 
   // 💡 4. 統計計算 (完了した試合のみ)
   const stats = useMemo(() => {
