@@ -237,6 +237,7 @@ export default function PlayerRosterPage() {
                     playerName: player.name,
                     uniformNumber: player.uniformNumber
                   });
+                  if (player.nameKana) params.append("nameKana", player.nameKana);
                   router.push(`/players/detail?${params.toString()}`);
                 }} 
               />

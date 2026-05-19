@@ -11,7 +11,7 @@ import { PlayerFormData, PositionKey } from "@/types/player";
 import { POSITION_LABELS } from "./constants";
 
 export const EMPTY_FORM: PlayerFormData = {
-  name: "", uniformNumber: "", primaryPosition: "", throws: "", bats: "",
+  name: "", nameKana: "", uniformNumber: "", primaryPosition: "", throws: "", bats: "",
 };
 
 interface PlayerFormProps {
@@ -39,6 +39,10 @@ export function PlayerForm({ initial = EMPTY_FORM, onSubmit, onCancel, isSubmitt
           <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">氏名 *</Label>
           <Input value={form.name} onChange={set("name")} placeholder="山田 太郎" required className="h-12 rounded-[var(--radius-xl)] font-bold" />
         </div>
+      </div>
+      <div className="space-y-1.5">
+        <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">よみがな</Label>
+        <Input value={form.nameKana || ""} onChange={set("nameKana")} placeholder="やまだ たろう" className="h-12 rounded-[var(--radius-xl)] font-bold" />
       </div>
       <div className="space-y-1.5">
         <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">守備位置</Label>

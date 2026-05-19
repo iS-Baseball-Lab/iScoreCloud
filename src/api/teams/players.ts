@@ -12,6 +12,7 @@ app.get('/:teamId/players', async (c) => {
         id,
         team_id        AS teamId,
         name,
+        name_kana      AS nameKana,
         uniform_number AS uniformNumber,
         primary_position AS primaryPosition,
         throws,
@@ -36,12 +37,13 @@ app.post('/:teamId/players', async (c) => {
   const playerId = crypto.randomUUID();
   try {
     await c.env.DB.prepare(
-      `INSERT INTO players (id, team_id, name, uniform_number, primary_position, throws, bats, is_active)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 1)`
+      `INSERT INTO players (id, team_id, name, name_kana, uniform_number, primary_position, throws, bats, is_active)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`
     ).bind(
       playerId,
       teamId,
       body.name,
+      body.nameKana ?? null,
       body.uniformNumber,
       body.primaryPosition ?? null,
       body.throws ?? null,
@@ -61,10 +63,11 @@ app.patch('/:teamId/players/:playerId', async (c) => {
   try {
     await c.env.DB.prepare(
       `UPDATE players
-       SET name = ?, uniform_number = ?, primary_position = ?, throws = ?, bats = ?, is_active = ?
+       SET name = ?, name_kana = ?, uniform_number = ?, primary_position = ?, throws = ?, bats = ?, is_active = ?
        WHERE id = ? AND team_id = ?`
     ).bind(
       body.name,
+      body.nameKana ?? null,
       body.uniformNumber,
       body.primaryPosition ?? null,
       body.throws ?? null,

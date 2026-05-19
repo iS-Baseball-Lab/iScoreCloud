@@ -34,6 +34,7 @@ function PlayerDetailContent() {
     
     const teamId = searchParams.get("teamId");
     const playerName = searchParams.get("playerName");
+    const nameKana = searchParams.get("nameKana");
     const uniformNumber = searchParams.get("uniformNumber") || "--";
 
     const [isLoading, setIsLoading] = useState(true);
@@ -158,6 +159,11 @@ function PlayerDetailContent() {
                             <div className="inline-flex items-center rounded-full px-3 py-1 text-[10px] sm:text-xs font-black bg-white/20 text-white uppercase tracking-[0.2em] border border-white/20 shadow-sm">
                                 2026 Season
                             </div>
+                            {nameKana && (
+                                <div className="text-xs sm:text-sm font-black text-white/80 tracking-widest mb-1 drop-shadow-sm">
+                                    {nameKana}
+                                </div>
+                            )}
                             <div className="flex items-baseline justify-center sm:justify-start gap-3 sm:gap-4">
                                 <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black tracking-tighter drop-shadow-md leading-none">
                                     {playerName}

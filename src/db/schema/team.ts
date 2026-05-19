@@ -49,6 +49,7 @@ export const players = sqliteTable('players', {
   id: text('id').primaryKey(),
   teamId: text('team_id').notNull().references(() => teams.id, { onDelete: 'cascade' }),
   name: text('name').notNull(), // 選手名（スコアブック印字用）
+  nameKana: text('name_kana'), // 選手名のよみがな（フリガナ）
   uniformNumber: text('uniform_number').notNull(), // 背番号 (00や監督の30番等も考慮し文字列)
   nickname: text('nickname'), // アプリ内のタイムライン実況で呼ぶ愛称
   primaryPosition: text('primary_position'), // メインポジション（例: '1'(投), '2'(捕)）
