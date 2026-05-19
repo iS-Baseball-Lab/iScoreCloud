@@ -1,0 +1,1 @@
+ALTER TABLE `matches` ADD `bench_side` text DEFAULT 'unknown' NOT NULL;
