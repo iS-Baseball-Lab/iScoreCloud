@@ -7,7 +7,8 @@ import { ChevronLeft, Swords, Loader2, ChevronRight, Calendar, Activity, Trophy 
 import { Button } from "@/components/ui/button";
 import { MatchList } from "@/components/matches/match-list";
 import { toast } from "sonner";
-import { Match } from "@/types/match";
+import { Match, MatchStatus } from "@/types/match";
+import { cn } from "@/lib/utils";
 
 export default function AllMatchesPage() {
   const router = useRouter();
