@@ -27,7 +27,7 @@ function CreateMatchContent() {
 
   const getPageInfo = () => {
     switch (mode) {
-      case "live": return { ja: "試合記録開始", en: "START LIVE", icon: <PlayCircle className="h-5 w-5" />, btn: "試合を記録開始" };
+      case "live": return { ja: "試合記録開始", en: "START LIVE", icon: <PlayCircle className="h-5 w-5" />, btn: "スタメン登録へ進む" };
       case "quick": return { ja: "クイックスコア", en: "QUICK SCORE", icon: <ClipboardList className="h-5 w-5" />, btn: "スコアを保存" };
       default: return { ja: "試合予定作成", en: "NEW SCHEDULE", icon: <CalendarPlus className="h-5 w-5" />, btn: "予定を登録" };
     }
@@ -103,7 +103,7 @@ function CreateMatchContent() {
       if (!result.success) throw new Error(result.error || "保存に失敗しました");
 
       toast.success(`${pageInfo.ja}を完了しました！`);
-      mode === "live" ? router.push(`/matches/${result.matchId}/live`) : router.push("/dashboard");
+      mode === "live" ? router.push(`/matches/lineup?id=${result.matchId}&teamId=${currentTeam.id}`) : router.push("/dashboard");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "保存エラー");
     } finally {
