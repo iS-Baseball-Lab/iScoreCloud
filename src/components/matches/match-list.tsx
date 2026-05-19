@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { format, differenceInSeconds, intervalToDuration } from "date-fns";
-import { Edit2, Calendar, MapPin, Trophy, Trash2, ChevronDown, ChevronUp, Swords, BookOpen, ClipboardList, Clock } from "lucide-react";
+import { Edit2, Calendar, MapPin, Trophy, Trash2, ChevronDown, ChevronUp, Swords, BookOpen, ClipboardList, Clock, PlayCircle } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Match } from "@/types/match";
@@ -389,28 +389,43 @@ export function MatchList({ matches, isLoading, onDelete }: MatchListProps) {
                       </div>
                       
                       <div className="p-3 border-t border-border/50 bg-muted/20 flex gap-2">
-                        <Button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            router.push(`/matches/${match.id}/scorebook`);
-                          }}
-                          variant="outline"
-                          className="flex-1 h-11 rounded-[var(--radius-lg)] font-black gap-1.5 shadow-sm text-xs sm:text-sm bg-card border-border hover:bg-primary/5 hover:text-primary transition-colors"
-                        >
-                          <BookOpen className="h-4 w-4 text-primary" strokeWidth={2.5} />
-                          スコアブック
-                        </Button>
+                        {match.status === 'live' ? (
+                          <Button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              router.push(`/matches/score?id=${match.id}`);
+                            }}
+                            className="flex-1 h-11 rounded-[var(--radius-lg)] font-black gap-1.5 shadow-sm text-xs sm:text-sm bg-primary text-primary-foreground hover:scale-[1.02] transition-transform shadow-[0_0_15px_rgba(var(--primary),0.2)]"
+                          >
+                            <PlayCircle className="h-4 w-4" strokeWidth={2.5} />
+                            ライブスコアへ進む
+                          </Button>
+                        ) : (
+                          <>
+                            <Button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                router.push(`/matches/${match.id}/scorebook`);
+                              }}
+                              variant="outline"
+                              className="flex-1 h-11 rounded-[var(--radius-lg)] font-black gap-1.5 shadow-sm text-xs sm:text-sm bg-card border-border hover:bg-primary/5 hover:text-primary transition-colors"
+                            >
+                              <BookOpen className="h-4 w-4 text-primary" strokeWidth={2.5} />
+                              スコアブック
+                            </Button>
 
-                        <Button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            router.push(`/matches/${match.id}`);
-                          }}
-                          className="flex-1 h-11 rounded-[var(--radius-lg)] font-black gap-1.5 shadow-sm text-xs sm:text-sm"
-                        >
-                          <ClipboardList className="h-4 w-4" strokeWidth={2.5} />
-                          試合明細
-                        </Button>
+                            <Button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                router.push(`/matches/${match.id}`);
+                              }}
+                              className="flex-1 h-11 rounded-[var(--radius-lg)] font-black gap-1.5 shadow-sm text-xs sm:text-sm"
+                            >
+                              <ClipboardList className="h-4 w-4" strokeWidth={2.5} />
+                              試合明細
+                            </Button>
+                          </>
+                        )}
                       </div>
 
                     </div>
