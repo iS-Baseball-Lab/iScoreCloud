@@ -49,7 +49,7 @@ export default function LineupPage() {
   );
 
   useEffect(() => {
-    const fetchPlayers = async () => {
+    const fetchData = async () => {
       try {
         const targetTeamId = urlTeamId || localStorage.getItem("iscore_selectedTeamId");
         if (!targetTeamId) {
@@ -58,28 +58,43 @@ export default function LineupPage() {
           return;
         }
 
-        const res = await fetch(`/api/teams/${targetTeamId}/players`, { cache: "no-store" });
-        if (!res.ok) throw new Error("選手データの取得に失敗しました");
-        
-        const data = await res.json() as Player[];
-        setTeamPlayers(data || []);
+        const [playersRes, lineupsRes] = await Promise.all([
+          fetch(`/api/teams/${targetTeamId}/players`, { cache: "no-store" }),
+          matchId ? fetch(`/api/matches/${matchId}/lineups`, { cache: "no-store" }) : Promise.resolve(null)
+        ]);
+
+        if (!playersRes.ok) throw new Error("選手データの取得に失敗しました");
+        const playersData = await playersRes.json() as Player[];
+        setTeamPlayers(playersData || []);
         
         const initialAttendance: Record<string, "bench" | "absent"> = {};
-        data.forEach(p => { 
+        playersData.forEach(p => { 
           initialAttendance[p.id] = "bench"; 
         });
         setAttendance(initialAttendance);
 
+        if (lineupsRes && lineupsRes.ok) {
+          const lineupsData = await lineupsRes.json() as any;
+          if (lineupsData.success && lineupsData.lineups) {
+            if (lineupsData.lineups.myLineup?.length > 0) {
+              setMyLineup(lineupsData.lineups.myLineup);
+            }
+            if (lineupsData.lineups.opponentLineup?.length > 0) {
+              setOpponentLineup(lineupsData.lineups.opponentLineup);
+            }
+          }
+        }
+
       } catch (error) {
         console.error(error);
-        toast.error("選手情報の読み込みに失敗しました");
+        toast.error("データの読み込みに失敗しました");
       } finally {
         setIsLoading(false);
       }
     };
 
-    fetchPlayers();
-  }, [urlTeamId]);
+    fetchData();
+  }, [urlTeamId, matchId]);
 
   const getDisabledPositions = (lineup: any[], currentIndex: number) =>
     lineup.filter((_, i) => i !== currentIndex).map(p => p.position).filter(Boolean);
@@ -99,6 +114,30 @@ export default function LineupPage() {
       position: (i + 1).toString(),
       name: `相手打者 ${i + 1}`
     })));
+  };
+
+  const handlePlayBall = async () => {
+    if (!matchId) {
+      router.push("/matches");
+      return;
+    }
+    
+    setIsLoading(true);
+    try {
+      const res = await fetch(`/api/matches/${matchId}/lineups`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ myLineup, opponentLineup })
+      });
+      
+      if (!res.ok) throw new Error("Failed to save lineups");
+      
+      router.push(`/matches/score?id=${matchId}`);
+    } catch (error) {
+      console.error(error);
+      toast.error("スタメンの保存に失敗しました");
+      setIsLoading(false);
+    }
   };
 
   const startingPlayerIds = myLineup.map(p => p.playerId).filter(Boolean);
@@ -387,7 +426,7 @@ export default function LineupPage() {
         {/* プレイボールボタン */}
         <div className="pt-8">
           <Button
-            onClick={() => router.push(`/matches/score?id=${matchId}`)}
+            onClick={handlePlayBall}
             className="w-full h-20 rounded-full text-xl font-black uppercase tracking-[0.3em] shadow-sm shadow-primary/30 active:scale-95 transition-all"
           >
             PLAYBALL

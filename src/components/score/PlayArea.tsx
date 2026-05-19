@@ -101,7 +101,15 @@ export function PlayArea() {
           <div className="absolute inset-0 bg-primary/20 rounded-full blur-3xl scale-[3]" />
           <div className="relative bg-card/40 dark:bg-black/40 backdrop-blur-2xl border border-white/10 rounded-full px-5 py-2 flex flex-col items-center gap-0.5 shadow-2xl">
             <span className="text-[7px] font-black text-primary/60 uppercase tracking-[0.2em]">Pitcher</span>
-            <span className="text-[10px] font-black italic text-foreground tracking-tighter">#18 SATOH</span>
+            <span className="text-[10px] font-black text-foreground tracking-tighter">
+              {(() => {
+                const defenseLineup = state.isTop 
+                  ? (state.isGuestFirst ? state.opponentLineup : state.myLineup)
+                  : (state.isGuestFirst ? state.myLineup : state.opponentLineup);
+                const pitcher = defenseLineup?.find(p => p.position === "1");
+                return pitcher?.name || "未設定";
+              })()}
+            </span>
           </div>
         </div>
       </div>
@@ -109,9 +117,17 @@ export function PlayArea() {
       <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 w-full text-center pointer-events-none">
         <div className="inline-flex flex-col items-center gap-1">
           <div className="bg-primary px-4 py-1 rounded-full shadow-[0_0_15px_rgba(var(--primary),0.4)]">
-            <span className="text-[10px] font-black italic text-primary-foreground tracking-widest uppercase">Batter Up</span>
+            <span className="text-[10px] font-black text-primary-foreground tracking-widest uppercase">Batter Up</span>
           </div>
-          <p className="text-[12px] font-black italic text-foreground mt-1">#51 SUZUKI</p>
+          <p className="text-[12px] font-black text-foreground mt-1">
+            {(() => {
+              const offenseLineup = state.isTop 
+                ? (state.isGuestFirst ? state.myLineup : state.opponentLineup)
+                : (state.isGuestFirst ? state.opponentLineup : state.myLineup);
+              const batter = offenseLineup?.find(p => p.order === 1); // 簡易的に1番打者を表示（本来は打順計算が必要）
+              return batter?.name || "未設定";
+            })()}
+          </p>
         </div>
       </div>
 

@@ -93,17 +93,21 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // 🚀 3. 試合初期化 (DBからStateへの完全復元)[span_3](start_span)[span_3](end_span)
+  // 🚀 3. 試合初期化 (DBからStateへの完全復元)
   const initMatch = useCallback(async (matchId: string) => {
     setIsLoading(true);
     try {
-      const res = await fetch(`/api/matches/${matchId}`);
-      const data = (await res.json()) as MatchResponse;
+      const [matchRes, lineupsRes] = await Promise.all([
+        fetch(`/api/matches/${matchId}`),
+        fetch(`/api/matches/${matchId}/lineups`)
+      ]);
+      const data = (await matchRes.json()) as MatchResponse;
+      const lineupsData = await lineupsRes.json() as any;
       
       if (data.success && data.match) {
         const m = data.match;
         
-        // 🌟 D1に保存されたJSON文字列をパースして復元[span_4](start_span)[span_4](end_span)
+        // 🌟 D1に保存されたJSON文字列をパースして復元
         const restoredMyInningScores = typeof m.myInningScores === 'string' ? JSON.parse(m.myInningScores) : [];
         const restoredOpponentInningScores = typeof m.opponentInningScores === 'string' ? JSON.parse(m.opponentInningScores) : [];
 
@@ -123,7 +127,9 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
           maxInnings: m.innings || 7,
           isGuestFirst: m.battingOrder === 'first',
           status: m.status as any,
-          // 💡 ここで権限判定を行う（例: チーム所属チェック）[span_5](start_span)[span_5](end_span)
+          myLineup: lineupsData?.lineups?.myLineup || [],
+          opponentLineup: lineupsData?.lineups?.opponentLineup || [],
+          // 💡 ここで権限判定を行う（例: チーム所属チェック）
           isScorer: true, // 開発中は一旦true。実際は管理者かどうかを判定
         }));
       }

@@ -50,6 +50,10 @@ export interface ScoreState {
   maxInnings: number;
   isGuestFirst: boolean;
 
+  // スタメン情報
+  myLineup?: any[];
+  opponentLineup?: any[];
+
   // 選手情報
   batterId: string | null;
   pitcherId: string | null;

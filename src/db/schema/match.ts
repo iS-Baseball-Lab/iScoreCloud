@@ -82,6 +82,10 @@ export const matches = sqliteTable("matches", {
   myInningScores: text("my_inning_scores").default('[]'),
   opponentInningScores: text("opponent_inning_scores").default('[]'),
 
+  // JSON文字列でスタメンを保持（相手チームはダミーの可能性があるためJSONで完結させる）
+  myLineup: text("my_lineup").default('[]'),
+  opponentLineup: text("opponent_lineup").default('[]'),
+
   weather: text("weather"),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(strftime('%s', 'now'))`),
 }, (table) => ({

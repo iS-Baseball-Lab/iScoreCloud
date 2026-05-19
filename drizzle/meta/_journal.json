@@ -57,6 +57,13 @@
       "when": 1779162427219,
       "tag": "0007_thin_sally_floyd",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1779178043286,
+      "tag": "0008_thin_luminals",
+      "breakpoints": true
     }
   ]
 }

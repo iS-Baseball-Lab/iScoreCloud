@@ -157,6 +157,26 @@ export const MatchService = {
     }).where(eq(matches.id, matchId));
   },
 
+  // 6.5 スタメン情報の取得と保存
+  async getMatchLineups(db: DrizzleDB, matchId: string) {
+    const match = await db.select({
+      myLineup: matches.myLineup,
+      opponentLineup: matches.opponentLineup
+    }).from(matches).where(eq(matches.id, matchId)).get();
+    
+    return {
+      myLineup: JSON.parse(match?.myLineup || '[]'),
+      opponentLineup: JSON.parse(match?.opponentLineup || '[]')
+    };
+  },
+
+  async saveMatchLineups(db: DrizzleDB, matchId: string, myLineup: any[], opponentLineup: any[]) {
+    await db.update(matches).set({
+      myLineup: JSON.stringify(myLineup),
+      opponentLineup: JSON.stringify(opponentLineup)
+    }).where(eq(matches.id, matchId));
+  },
+
   // 7. スコア結果の保存
   async finishMatch(db: DrizzleDB, matchId: string, body: FinishMatchBody): Promise<void> {
     await db.update(matches).set({

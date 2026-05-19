@@ -81,7 +81,7 @@ export function Scoreboard() {
           
           {/* 中央：対戦相手 */}
           <div className="flex-none px-2 text-sm md:text-base font-black text-foreground tracking-widest whitespace-nowrap">
-            <span className="text-xs text-muted-foreground mr-1 font-bold italic">vs</span>
+            <span className="text-xs text-muted-foreground mr-1 font-bold">vs</span>
             {state.opponentTeamName || "相手チーム"}
           </div>
           
