@@ -68,17 +68,32 @@ export function Scoreboard() {
       <div className="flex flex-col rounded-lg overflow-hidden border border-zinc-300 dark:border-zinc-700 shadow-sm">
 
         {/* 🚀 ヘッダー：大会名・対戦相手・球場 */}
-        <div className="flex items-center justify-between p-3 border-b border-zinc-300 dark:border-zinc-700 bg-muted/40 text-[9px] font-black text-zinc-500 uppercase tracking-widest">
-          <div className="flex-1 truncate text-left">{state.tournamentName || (state.matchType === 'practice' ? '練習試合' : '大会未設定')}</div>
-          <div className="flex-none px-4 text-sm font-black text-foreground tracking-widest normal-case">vs {state.opponentTeamName || "相手チーム"}</div>
-          <div className="flex-1 flex justify-end items-center gap-2">
-            <span className="truncate">{state.venueName || "球場未設定"}</span>
+        <div className="flex items-center justify-between px-3 py-1.5 border-b border-zinc-300 dark:border-zinc-700 bg-muted/40">
+          {/* 左側：大会名・球場（2段コンパクト表示） */}
+          <div className="flex-1 flex flex-col items-start overflow-hidden pr-2">
+            <span className="text-[8px] font-black text-zinc-500 uppercase tracking-widest truncate w-full">
+              {state.tournamentName || (state.matchType === 'practice' ? '練習試合' : '大会未設定')}
+            </span>
+            <span className="text-[10px] font-bold text-zinc-600 dark:text-zinc-400 truncate w-full leading-tight">
+              {state.venueName || "球場未設定"}
+            </span>
+          </div>
+          
+          {/* 中央：対戦相手 */}
+          <div className="flex-none px-2 text-sm md:text-base font-black text-foreground tracking-widest whitespace-nowrap">
+            <span className="text-xs text-muted-foreground mr-1 font-bold italic">vs</span>
+            {state.opponentTeamName || "相手チーム"}
+          </div>
+          
+          {/* 右側：スタメン設定ボタン */}
+          <div className="flex-1 flex justify-end items-center pl-2">
             <button 
               onClick={() => window.location.href = `/matches/lineup?id=${state.matchId}`}
-              className="p-1.5 bg-primary/20 text-primary rounded-full hover:bg-primary/30 transition-colors shadow-sm"
+              className="flex items-center gap-1 px-2 py-1 bg-primary/10 text-primary rounded-full hover:bg-primary/20 transition-colors shadow-sm"
               title="スタメン設定"
             >
               <Users className="w-3.5 h-3.5" strokeWidth={2.5} />
+              <span className="text-[9px] font-black hidden sm:inline">スタメン</span>
             </button>
           </div>
         </div>
