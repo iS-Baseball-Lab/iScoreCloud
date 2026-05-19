@@ -63,6 +63,8 @@ export const MatchService = {
       date: matches.date,
       matchType: matches.matchType,
       battingOrder: matches.battingOrder,
+      benchSide: matches.benchSide,
+      status: matches.status,
       surfaceDetails: matches.surfaceDetails,
       innings: matches.innings,
       tournamentName: tournaments.name,

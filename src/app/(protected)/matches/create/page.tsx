@@ -72,6 +72,8 @@ function CreateMatchContent() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...formState,
+          date: formState.time ? `${formState.date} ${formState.time}` : formState.date,
+          surfaceDetails: formState.venue,
           teamId: currentTeam.id,
           status: statusMap[mode],
           myScore: myScore ? Number(myScore) : 0,
