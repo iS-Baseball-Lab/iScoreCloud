@@ -3,17 +3,15 @@
 
 import React, { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Save, MapPin, Calendar, Users, Trophy, Loader2, Clock, Trash2, AlertCircle } from "lucide-react";
+import { ArrowLeft, Save, Loader2, Trash2, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
-import { TournamentSelector } from "@/components/features/matches/tournament-selector";
+import { MatchBasicForm, MatchFormState } from "@/components/features/matches/match-basic-form";
 import { FinishedScoreBoard } from "@/components/features/matches/match-score-board";
 import { SectionHeader } from "@/components/layout/SectionHeader";
 
-// ━━━ 型定義 (APIレスポンスのany排除) ━━━
+// ━━━ 型定義 ━━━
 interface Tournament { 
   id: string; 
   name: string; 
@@ -26,6 +24,7 @@ interface MatchData {
   tournamentName?: string;
   matchType?: 'official' | 'practice';
   battingOrder?: 'first' | 'second';
+  benchSide?: '1B' | '3B' | 'unknown';
   surfaceDetails?: string;
   innings?: number;
   status?: string;
@@ -54,7 +53,7 @@ interface DeleteResponse {
   error?: string;
 }
 
-// ━━━ コンポーネント ━━━
+// ━━━ 削除確認モーダル ━━━
 interface DeleteConfirmModalProps { 
   isDeleting: boolean; 
   onConfirm: () => void; 
@@ -87,27 +86,33 @@ function DeleteConfirmModal({ isDeleting, onConfirm, onCancel }: DeleteConfirmMo
   );
 }
 
+// ━━━ メインコンテンツ ━━━
 function MatchEditContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const matchId = searchParams.get("id");
 
-  const [opponent, setOpponent] = useState("");
-  const [tournamentName, setTournamentName] = useState("");
-  const [isNewTournament, setIsNewTournament] = useState(false);
-  const [date, setDate] = useState("");
-  const [time, setTime] = useState("");
-  const [matchType, setMatchType] = useState<'official' | 'practice'>("practice");
-  const [battingOrder, setBattingOrder] = useState<'first' | 'second'>("first");
-  const [venue, setVenue] = useState("");
-  const [matchStatus, setMatchStatus] = useState<string>("scheduled");
+  // 統合フォームステート
+  const [formState, setFormState] = useState<MatchFormState>({
+    opponent: "",
+    date: "",
+    time: "",
+    venue: "",
+    matchType: 'practice',
+    tournamentName: "",
+    battingOrder: 'first',
+    benchSide: 'unknown',
+    inningCount: 7,
+  });
 
-  const [inningCount, setInningCount] = useState(7);
+  const [matchStatus, setMatchStatus] = useState<string>("scheduled");
+  const [teamName, setTeamName] = useState("自チーム");
   const [myInnings, setMyInnings] = useState<string[]>([]);
   const [opponentInnings, setOpponentInnings] = useState<string[]>([]);
 
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
-  const [teamName, setTeamName] = useState("自チーム");
+  const [isNewTournament, setIsNewTournament] = useState(false);
+  
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -123,21 +128,31 @@ function MatchEditContent() {
 
         if (data.success && data.match) {
           const m = data.match;
-          setOpponent(m.opponent || "");
-          setTournamentName(m.tournamentName || "");
-          setMatchType(m.matchType || "practice");
-          setBattingOrder(m.battingOrder || "first");
-          setVenue(m.surfaceDetails || "");
-          setInningCount(m.innings || 7);
-          setMatchStatus(m.status || "scheduled");
-
+          
+          let parsedDate = "";
+          let parsedTime = "";
           if (m.date) {
-            // 🌟 時刻クリアバグ対策: 秒数をカットして正確に「HH:mm」にする
             const parts = m.date.trim().split(/[ T]/);
-            setDate(parts[0] || "");
-            setTime(parts[1] ? parts[1].slice(0, 5) : "");
+            parsedDate = parts[0] || "";
+            parsedTime = parts[1] ? parts[1].slice(0, 5) : "";
           }
 
+          // DBのデータを安全にフォームステートへ流し込む
+          setFormState({
+            opponent: m.opponent || "",
+            date: parsedDate,
+            time: parsedTime,
+            venue: m.surfaceDetails || "",
+            matchType: m.matchType || 'practice',
+            tournamentName: m.tournamentName || "",
+            battingOrder: m.battingOrder || 'first',
+            benchSide: m.benchSide || 'unknown',
+            inningCount: (m.innings as 6 | 7 | 9) || 7,
+          });
+
+          setMatchStatus(m.status || "scheduled");
+
+          // スコアボード用イニングデータの取得
           const inningsRes = await fetch(`/api/matches/${matchId}/innings`);
           if (inningsRes.ok) {
             const inningsData = (await inningsRes.json()) as InningData[];
@@ -178,8 +193,8 @@ function MatchEditContent() {
   const opponentTotalScore = opponentInnings.reduce((sum, val) => sum + (parseInt(val) || 0), 0);
 
   const handleUpdate = async () => {
-    if (!opponent) { toast.error("対戦相手を入力してください"); return; }
-    if (matchType === 'official' && !tournamentName) { toast.error("大会名を選択または入力してください"); return; }
+    if (!formState.opponent) { toast.error("対戦相手を入力してください"); return; }
+    if (formState.matchType === 'official' && !formState.tournamentName) { toast.error("大会名を選択または入力してください"); return; }
     setIsSubmitting(true);
 
     try {
@@ -187,19 +202,17 @@ function MatchEditContent() {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          opponent,
-          tournamentName: matchType === 'official' ? tournamentName : "",
-          date: time ? `${date} ${time}` : date,
-          matchType,
-          battingOrder,
-          location: venue,
-          innings: inningCount,
+          ...formState,
+          tournamentName: formState.matchType === 'official' ? formState.tournamentName : "",
+          date: formState.time ? `${formState.date} ${formState.time}` : formState.date,
+          location: formState.venue, // DBのスキーマに合わせてマッピング
+          innings: formState.inningCount, // DBのスキーマに合わせてマッピング
         }),
       });
       const data = (await res.json()) as MatchResponse;
       if (!data.success) throw new Error(data.error || "試合の更新に失敗しました");
 
-      // 🌟 状態維持バグ修正: 完了済みの試合の時だけスコアボードを保存
+      // 完了済みの試合の時だけスコアボードを保存
       if (matchStatus === 'finished') {
         await fetch(`/api/matches/${matchId}/finish`, {
           method: "PATCH",
@@ -240,57 +253,43 @@ function MatchEditContent() {
         <SectionHeader title="試合編集" subtitle="EDIT MATCH" showPulse={false} />
       </div>
 
-      {/* ━━ フォームコンテンツ（ソリッド背景で視認性確保） ━━ */}
       <div className="space-y-6">
+        {/* 共通フォームの呼び出し */}
         <Card className="rounded-3xl border border-border bg-card shadow-sm">
-          <CardContent className="p-5 space-y-5">
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-black uppercase text-muted-foreground flex items-center gap-1.5"><Users className="h-3.5 w-3.5" /> Opponent</label>
-              <Input value={opponent} onChange={e => setOpponent(e.target.value)} className="h-11 rounded-2xl text-sm font-bold bg-background border-border" />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5"><label className="text-[10px] font-black uppercase text-muted-foreground flex items-center gap-1.5"><Calendar className="h-3.5 w-3.5" /> Date</label>
-                <Input type="date" value={date} onChange={e => setDate(e.target.value)} className="h-11 rounded-2xl text-sm font-bold bg-background border-border" /></div>
-              <div className="space-y-1.5"><label className="text-[10px] font-black uppercase text-muted-foreground flex items-center gap-1.5"><Clock className="h-3.5 w-3.5" /> Time</label>
-                <Input type="time" value={time} onChange={e => setTime(e.target.value)} className="h-11 rounded-2xl text-sm font-bold bg-background border-border" /></div>
-              <div className="space-y-1.5"><label className="text-[10px] font-black uppercase text-muted-foreground flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5" /> Venue</label>
-                <Input value={venue} onChange={e => setVenue(e.target.value)} className="h-11 rounded-2xl text-sm font-bold bg-background border-border" /></div>
-              <div className="space-y-1.5"><label className="text-[10px] font-black uppercase text-muted-foreground flex items-center gap-1.5"><Trophy className="h-3.5 w-3.5" /> Type</label>
-                <div className="flex gap-1.5">
-                  <Button type="button" variant={matchType === 'official' ? 'default' : 'outline'} onClick={() => setMatchType('official')} className={cn("flex-1 h-11 px-0 rounded-2xl text-[10px] font-bold border-border bg-background hover:bg-muted", matchType === 'official' && "bg-amber-600 hover:bg-amber-700 text-white border-transparent")}>公式</Button>
-                  <Button type="button" variant={matchType === 'practice' ? 'default' : 'outline'} onClick={() => setMatchType('practice')} className={cn("flex-1 h-11 px-0 rounded-2xl text-[10px] font-bold border-border bg-background hover:bg-muted", matchType === 'practice' && "bg-emerald-600 hover:bg-emerald-700 text-white border-transparent")}>練習</Button>
-                </div>
-              </div>
-            </div>
-
-            {matchType === 'official' && (
-              <div className="space-y-2 animate-in slide-in-from-top-2 duration-300">
-                <label className="text-[10px] font-black uppercase text-amber-600 flex items-center gap-1.5"><Trophy className="h-3.5 w-3.5" /> Tournament</label>
-                <TournamentSelector tournaments={tournaments} value={tournamentName} isNew={isNewTournament} onSelect={(name, createNew) => { setTournamentName(name); setIsNewTournament(createNew); }} />
-                {isNewTournament && <div className="animate-in slide-in-from-top-1 duration-200"><Input autoFocus value={tournamentName} onChange={e => setTournamentName(e.target.value)} placeholder="大会名を入力" className="h-11 rounded-2xl text-sm font-bold bg-amber-500/10 border-amber-500/30 text-amber-900 dark:text-amber-100" /></div>}
-              </div>
-            )}
-
-            <div className="pt-2">
-              <div className="flex items-center p-1 bg-muted rounded-2xl border border-border">
-                <button onClick={() => setBattingOrder('first')} className={cn("flex-1 h-9 text-[10px] sm:text-xs font-black rounded-xl transition-all", battingOrder === 'first' ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground")}>先攻 (Top)</button>
-                <button onClick={() => setBattingOrder('second')} className={cn("flex-1 h-9 text-[10px] sm:text-xs font-black rounded-xl transition-all", battingOrder === 'second' ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground")}>後攻 (Bottom)</button>
-              </div>
-            </div>
+          <CardContent className="p-5">
+            <MatchBasicForm 
+              state={formState} 
+              setState={setFormState} 
+              tournaments={tournaments} 
+              isNewTournament={isNewTournament} 
+              setIsNewTournament={setIsNewTournament} 
+            />
           </CardContent>
         </Card>
 
+        {/* 試合完了時のみスコアボードを表示 */}
         {matchStatus === 'finished' && (
           <FinishedScoreBoard
-            inningCount={inningCount} battingOrder={battingOrder} teamName={teamName} opponentName={opponent}
-            myInnings={myInnings} setMyInnings={setMyInnings} opponentInnings={opponentInnings} setOpponentInnings={setOpponentInnings}
+            inningCount={formState.inningCount} 
+            battingOrder={formState.battingOrder} 
+            teamName={teamName} 
+            opponentName={formState.opponent}
+            myInnings={myInnings} setMyInnings={setMyInnings} 
+            opponentInnings={opponentInnings} setOpponentInnings={setOpponentInnings}
             myTotalScore={myTotalScore} opponentTotalScore={opponentTotalScore}
-            onAddInning={() => { setInningCount(p => p + 1); setMyInnings(p => [...p, ""]); setOpponentInnings(p => [...p, ""]); }}
-            onRemoveInning={() => { if (inningCount <= 1) return; setInningCount(p => p - 1); setMyInnings(p => p.slice(0, -1)); setOpponentInnings(p => p.slice(0, -1)); }}
+            onAddInning={() => { 
+              setFormState(p => ({ ...p, inningCount: (p.inningCount + 1) as 6|7|9 })); 
+              setMyInnings(p => [...p, ""]); setOpponentInnings(p => [...p, ""]); 
+            }}
+            onRemoveInning={() => { 
+              if (formState.inningCount <= 1) return; 
+              setFormState(p => ({ ...p, inningCount: (p.inningCount - 1) as 6|7|9 })); 
+              setMyInnings(p => p.slice(0, -1)); setOpponentInnings(p => p.slice(0, -1)); 
+            }}
           />
         )}
 
+        {/* アクションボタン */}
         <div className="space-y-3 pt-2">
           <Button onClick={handleUpdate} disabled={isSubmitting} className="w-full h-14 rounded-2xl text-sm font-black uppercase flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-shadow">
             {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
