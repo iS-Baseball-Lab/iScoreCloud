@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Save, Loader2, Trash2, AlertCircle } from "lucide-react";
+import { ArrowLeft, Save, Loader2, Trash2, AlertCircle, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "sonner";
@@ -298,6 +298,12 @@ function MatchEditContent() {
             {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             試合情報を更新
           </Button>
+          
+          <Button variant="outline" onClick={() => router.push(`/matches/lineup?id=${matchId}&teamId=${currentTeam?.id}`)} className="w-full h-14 rounded-2xl text-sm font-black uppercase flex items-center justify-center gap-2 shadow-sm border-primary/20 text-primary hover:bg-primary/5">
+            <Users className="h-5 w-5" />
+            スタメン設定へ進む
+          </Button>
+
           <Button variant="outline" onClick={() => setShowDeleteModal(true)} className="w-full h-12 rounded-2xl text-xs font-bold text-destructive border-destructive/20 hover:bg-destructive/10 flex items-center justify-center gap-2">
             <Trash2 className="h-4 w-4" />
             この試合を削除する
