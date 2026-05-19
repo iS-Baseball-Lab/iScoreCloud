@@ -68,6 +68,12 @@ export const MatchService = {
       surfaceDetails: matches.surfaceDetails,
       innings: matches.innings,
       tournamentName: tournaments.name,
+      myScore: matches.myScore,
+      opponentScore: matches.opponentScore,
+      myInningScores: matches.myInningScores,
+      opponentInningScores: matches.opponentInningScores,
+      currentInning: matches.currentInning,
+      isBottom: matches.isBottom,
     })
       .from(matches)
       .leftJoin(tournaments, eq(matches.tournamentId, tournaments.id))

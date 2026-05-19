@@ -22,6 +22,7 @@ export interface ScoreState {
   tournamentName?: string;
   venueName?: string;
   opponentTeamName?: string;
+  matchType?: string;
 
   // カウント・状況
   inning: number;
@@ -75,8 +76,9 @@ export interface MatchResponse {
     isBottom: boolean;
     innings: number;
     opponent: string;
-    venue?: string;
-    tournament?: string;
+    surfaceDetails?: string;
+    tournamentName?: string;
+    matchType?: string;
   };
 }
 
