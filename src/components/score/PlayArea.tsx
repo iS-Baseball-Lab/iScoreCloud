@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { User } from "lucide-react";
 
 export function PlayArea() {
-  const { state, updateRunners } = useScore();
+  const { state, updateRunners, recordInPlay } = useScore();
   const { runners } = state;
 
   // 🌟 究極ポイント：ベースを叩いて状況を操作する
@@ -81,10 +81,19 @@ export function PlayArea() {
       <Base baseNum={3} isRunner={!!runners.base3} />
 
       {/* 🏠 ホームベース（戻り値：得点への意志） */}
-      <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 w-12 h-12 flex flex-col items-center group active:scale-90 transition-transform cursor-pointer">
-        <div className="w-9 h-6 bg-white dark:bg-zinc-100 border-2 border-muted-foreground/30 shadow-lg" />
+      <button 
+        onClick={() => {
+          recordInPlay("得点", 1, 0, 0);
+          if (runners.base3) {
+            updateRunners({ ...runners, base3: null });
+          }
+          if (window.navigator.vibrate) window.navigator.vibrate(20);
+        }}
+        className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 w-12 h-12 flex flex-col items-center group active:scale-90 transition-transform cursor-pointer outline-none"
+      >
+        <div className="w-9 h-6 bg-white dark:bg-zinc-100 border-2 border-muted-foreground/30 shadow-[0_0_15px_rgba(255,255,255,0.3)]" />
         <div className="w-0 h-0 border-l-[18px] border-l-transparent border-r-[18px] border-r-transparent border-t-[14px] border-t-white dark:border-t-zinc-100 relative -mt-[2px]" />
-      </div>
+      </button>
 
       {/* 投球・打者情報（浮遊感のあるモダンなバッジ） */}
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">

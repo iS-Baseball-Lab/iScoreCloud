@@ -38,7 +38,7 @@ export function PlayLog({ limit = 3 }: PlayLogProps) {
         // 簡易的な判定ロジック
         const isScore = log.description.includes("得点") || log.description.includes("SCORE");
         const isOut = log.description.includes("三振") || log.description.includes("アウト");
-        const isHit = log.description.includes("安打") || log.description.includes("単打") || log.description.includes("HIT");
+        const isHit = log.description.includes("安打") || log.description.includes("塁打") || log.description.includes("単打") || log.description.includes("HIT");
 
         return (
           <div

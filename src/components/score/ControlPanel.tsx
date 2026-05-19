@@ -6,7 +6,7 @@ import { useScore } from "@/contexts/ScoreContext";
 import { cn } from "@/lib/utils";
 
 export function ControlPanel() {
-  const { state, recordPitch, recordInPlay, changeInning, isSyncing } = useScore();
+  const { state, recordPitch, recordInPlay, changeInning, finishMatch, isSyncing } = useScore();
 
   useEffect(() => {
     const className = "hide-global-fab";
@@ -59,21 +59,27 @@ export function ControlPanel() {
         </button>
       </div>
 
-      {/* 🚀 2段目：打球結果 (🌟 動的得点振分けロジック) */}
+      {/* 🚀 2段目：打球結果 (全種類の安打) */}
       <div className="grid grid-cols-4 gap-2 h-[35%] shrink-0">
         <button type="button" onClick={() => recordInPlay("単打", 0, 1, 0)}
-          className="col-span-2 h-full bg-zinc-950 dark:bg-zinc-100 text-white dark:text-black rounded-3xl flex flex-col items-center justify-center shadow-xl active:scale-95 transition-all">
-          <span className="text-3xl font-black italic tracking-tighter">HIT</span>
+          className="h-full bg-blue-600 text-white rounded-3xl flex flex-col items-center justify-center shadow-xl active:scale-95 transition-all">
+          <span className="text-2xl font-black italic tracking-tighter">1B</span>
+          <span className="text-[10px] font-bold opacity-80 mt-0.5">単打</span>
         </button>
-
-        <button type="button" 
-          onClick={() => {
-            recordInPlay("得点", 1, 0, 0);
-          }}
-          className="col-span-2 h-full bg-blue-700 text-white rounded-3xl flex flex-col items-center justify-center shadow-xl border-b-4 border-blue-900 active:scale-95 transition-all"
-        >
-          <span className="text-xl font-black italic leading-none">SCORE</span>
-          <span className="text-3xl font-black mt-1">+1</span>
+        <button type="button" onClick={() => recordInPlay("二塁打", 0, 1, 0)}
+          className="h-full bg-blue-600 text-white rounded-3xl flex flex-col items-center justify-center shadow-xl active:scale-95 transition-all">
+          <span className="text-2xl font-black italic tracking-tighter">2B</span>
+          <span className="text-[10px] font-bold opacity-80 mt-0.5">二塁打</span>
+        </button>
+        <button type="button" onClick={() => recordInPlay("三塁打", 0, 1, 0)}
+          className="h-full bg-blue-600 text-white rounded-3xl flex flex-col items-center justify-center shadow-xl active:scale-95 transition-all">
+          <span className="text-2xl font-black italic tracking-tighter">3B</span>
+          <span className="text-[10px] font-bold opacity-80 mt-0.5">三塁打</span>
+        </button>
+        <button type="button" onClick={() => recordInPlay("本塁打", 0, 1, 0)}
+          className="h-full bg-rose-600 text-white rounded-3xl flex flex-col items-center justify-center shadow-xl border-b-4 border-rose-800 active:scale-95 transition-all">
+          <span className="text-2xl font-black italic tracking-tighter">HR</span>
+          <span className="text-[10px] font-bold opacity-80 mt-0.5">本塁打</span>
         </button>
       </div>
 
@@ -82,8 +88,16 @@ export function ControlPanel() {
         <button onClick={() => recordPitch("foul")} className="h-full rounded-2xl border-2 border-zinc-200 dark:border-zinc-800 font-black text-[10px] uppercase">Foul</button>
         <button onClick={() => recordInPlay("エラー", 0, 0, 1)} className="h-full rounded-2xl border-2 border-zinc-200 dark:border-zinc-800 font-black text-[10px] uppercase">Error</button>
         <button onClick={changeInning} disabled={isSyncing}
-          className="col-span-2 h-full bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 rounded-2xl text-[12px] font-black uppercase tracking-[0.3em] active:bg-zinc-300">
+          className="h-full bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 rounded-2xl text-[10px] sm:text-[12px] font-black uppercase tracking-widest active:bg-zinc-300">
           Change
+        </button>
+        <button onClick={() => {
+            if(window.confirm("試合を終了し、結果を確定しますか？")) {
+              finishMatch();
+            }
+          }} disabled={isSyncing}
+          className="h-full bg-rose-500/10 text-rose-600 dark:text-rose-400 border-2 border-rose-500/20 rounded-2xl text-[9px] sm:text-[10px] font-black uppercase tracking-widest active:bg-rose-500/20 leading-tight">
+          Game<br/>Set
         </button>
       </div>
     </div>

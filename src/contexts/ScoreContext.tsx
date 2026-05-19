@@ -208,15 +208,26 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
       let nextRunners = { ...prev.runners };
       let actualRbi = rbi;
 
-      if (result === "単打") {
-        if (prev.runners.base3) {
-          actualRbi += 1; // 3塁ランナーが自動生還
+      if (["単打", "二塁打", "三塁打", "本塁打"].includes(result)) {
+        if (result === "本塁打") {
+          actualRbi += 1; // バッター生還
+          if (prev.runners.base1) actualRbi += 1;
+          if (prev.runners.base2) actualRbi += 1;
+          if (prev.runners.base3) actualRbi += 1;
+          nextRunners = { base1: null, base2: null, base3: null };
+        } else if (result === "三塁打") {
+          if (prev.runners.base1) actualRbi += 1;
+          if (prev.runners.base2) actualRbi += 1;
+          if (prev.runners.base3) actualRbi += 1;
+          nextRunners = { base1: null, base2: null, base3: "player-id-placeholder" };
+        } else if (result === "二塁打") {
+          if (prev.runners.base2) actualRbi += 1;
+          if (prev.runners.base3) actualRbi += 1;
+          nextRunners = { base1: null, base2: "player-id-placeholder", base3: prev.runners.base1 };
+        } else if (result === "単打") {
+          if (prev.runners.base3) actualRbi += 1;
+          nextRunners = { base1: "player-id-placeholder", base2: prev.runners.base1, base3: prev.runners.base2 };
         }
-        nextRunners = {
-          base1: "player-id-placeholder", // バッターが1塁へ
-          base2: prev.runners.base1,      // 1塁ランナーが2塁へ
-          base3: prev.runners.base2,      // 2塁ランナーが3塁へ
-        };
       }
 
       // スコアラーが攻撃か守備かに基づいて配列を更新
