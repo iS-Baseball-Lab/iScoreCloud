@@ -3,7 +3,7 @@
 import React, { useState, useRef } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Calendar, Target, Activity, Trophy, Pencil, Trash2, ChevronRight } from "lucide-react";
+import { Calendar, Target, Activity, Trophy, Edit2, Trash2, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tournament } from "@/types/tournament";
 import { getTournamentStatus, getPeriodLabel } from "./utils";
@@ -23,7 +23,7 @@ export function TournamentCard({ t, onEdit, onDelete }: TournamentCardProps) {
     const touchStartY = useRef<number | null>(null);
     const startOffsetX = useRef<number>(0);
     const isVerticalScroll = useRef<boolean>(false);
-    const ACTION_WIDTH = 150; // Edit + Delete = 75px + 75px
+    const ACTION_WIDTH = 75; // Edit & Delete each take 75px on opposite sides
 
     const handleTouchStart = (e: React.TouchEvent) => {
         touchStartX.current = e.touches[0].clientX;
@@ -46,7 +46,7 @@ export function TournamentCard({ t, onEdit, onDelete }: TournamentCardProps) {
         }
 
         let newOffsetX = startOffsetX.current + diffX;
-        if (newOffsetX > 0) newOffsetX = 0; // Swipe left only
+        if (newOffsetX > ACTION_WIDTH) newOffsetX = ACTION_WIDTH;
         if (newOffsetX < -ACTION_WIDTH) newOffsetX = -ACTION_WIDTH;
         
         setOffsetX(newOffsetX);
@@ -55,7 +55,10 @@ export function TournamentCard({ t, onEdit, onDelete }: TournamentCardProps) {
     const handleTouchEnd = () => {
         touchStartX.current = null;
         touchStartY.current = null;
-        if (offsetX < -ACTION_WIDTH / 2) {
+        
+        if (offsetX > ACTION_WIDTH / 2) {
+            setOffsetX(ACTION_WIDTH);
+        } else if (offsetX < -ACTION_WIDTH / 2) {
             setOffsetX(-ACTION_WIDTH);
         } else {
             setOffsetX(0);
@@ -74,25 +77,30 @@ export function TournamentCard({ t, onEdit, onDelete }: TournamentCardProps) {
             "relative bg-transparent border-none shadow-none rounded-[var(--radius-2xl)] overflow-hidden",
             "group transition-all duration-300",
         )}>
-            {/* 🌟 スワイプ背面のアクションボタン群 */}
+            {/* 🌟 スワイプ背面のアクションボタン群 (試合一覧と同じ仕様) */}
             <div className={cn(
-                "absolute inset-0 z-0 flex justify-end transition-opacity duration-150 bg-transparent rounded-[var(--radius-2xl)] overflow-hidden",
+                "absolute inset-0 z-0 transition-opacity duration-150 bg-transparent rounded-[var(--radius-2xl)] overflow-hidden",
                 Math.abs(offsetX) > 0 ? "opacity-100" : "opacity-0 pointer-events-none"
             )}>
-                <div className="flex h-full w-[150px]">
+                {/* 編集ボタン (左スワイプで出現) */}
+                <div className="absolute top-0 left-0 h-full w-[75px]">
                     <button
                         onClick={() => { setOffsetX(0); onEdit(t); }}
-                        className="flex-1 flex flex-col items-center justify-center gap-1.5 bg-zinc-500 text-white font-black text-xs hover:bg-zinc-600 active:bg-zinc-700 transition-colors"
+                        className="flex flex-col items-center justify-center w-full h-full bg-blue-500 text-white active:bg-blue-600 transition-colors"
                     >
-                        <Pencil className="h-5 w-5" strokeWidth={2.5} />
-                        編集
+                        <Edit2 className="h-5 w-5 mb-1" />
+                        <span className="text-[10px] font-black uppercase tracking-wider">編集</span>
                     </button>
+                </div>
+
+                {/* 削除ボタン (右スワイプで出現) */}
+                <div className="absolute top-0 right-0 h-full w-[75px]">
                     <button
                         onClick={() => { setOffsetX(0); onDelete(t); }}
-                        className="flex-1 flex flex-col items-center justify-center gap-1.5 bg-rose-600 text-white font-black text-xs hover:bg-rose-700 active:bg-rose-800 transition-colors"
+                        className="flex flex-col items-center justify-center w-full h-full bg-rose-500 text-white active:bg-rose-600 transition-colors"
                     >
-                        <Trash2 className="h-5 w-5" strokeWidth={2.5} />
-                        削除
+                        <Trash2 className="h-5 w-5 mb-1" />
+                        <span className="text-[10px] font-black uppercase tracking-wider">削除</span>
                     </button>
                 </div>
             </div>
@@ -103,13 +111,13 @@ export function TournamentCard({ t, onEdit, onDelete }: TournamentCardProps) {
                     "relative z-10 w-full h-full bg-card border border-border/50 shadow-sm rounded-[var(--radius-2xl)] overflow-hidden transition-transform duration-200 ease-out",
                     status === "ongoing" && "ring-1 ring-primary/20",
                 )}
-                style={{ transform: `translateX(${offsetX}px)` }}
+                style={{ transform: `translateX(${offsetX}px)`, touchAction: "pan-y" }}
                 onTouchStart={handleTouchStart}
                 onTouchMove={handleTouchMove}
                 onTouchEnd={handleTouchEnd}
             >
                 <CardContent className="p-0">
-                    <div className="flex items-stretch">
+                    <div className="flex items-stretch cursor-pointer">
                         <div className={cn("w-16 shrink-0 flex flex-col items-center justify-center gap-1.5 py-4", sc.accent)}>
                             {sc.icon}
                             <span className="text-[8px] font-black tracking-widest uppercase leading-none" style={{ writingMode: "vertical-rl" }}>
