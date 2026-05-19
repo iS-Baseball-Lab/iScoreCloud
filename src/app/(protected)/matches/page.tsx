@@ -9,6 +9,7 @@ import { MatchList } from "@/components/matches/match-list";
 import { toast } from "sonner";
 import { Match, MatchStatus } from "@/types/match";
 import { cn } from "@/lib/utils";
+import { SectionHeader } from "@/components/layout/SectionHeader";
 
 export default function AllMatchesPage() {
   const router = useRouter();
@@ -53,20 +54,33 @@ export default function AllMatchesPage() {
     return isFuture ? "scheduled" : "finished";
   };
 
-  const filteredMatches = matches.filter(m => getMatchStatus(m) === activeTab);
+  const filteredMatches = matches
+    .filter(m => getMatchStatus(m) === activeTab)
+    .sort((a, b) => {
+      if (activeTab === "scheduled") {
+        // 予定の場合は昇順（近い未来から先に表示）
+        return a.date.localeCompare(b.date);
+      }
+      // それ以外は降順（直近の過去から先に表示）
+      return b.date.localeCompare(a.date);
+    });
   const totalPages = Math.ceil(filteredMatches.length / itemsPerPage);
   const paginatedMatches = filteredMatches.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   return (
     <div className="min-h-screen bg-transparent p-4 sm:p-6 max-w-4xl mx-auto pb-24">
-      <div className="flex items-center gap-4 mb-8">
-        <Button variant="ghost" size="icon" onClick={() => router.back()} className="rounded-full bg-white/50 dark:bg-zinc-900/50 border border-border/40 h-10 w-10">
-          <ChevronLeft className="h-5 w-5" />
+      {/* ━━ トップ：戻るボタン & SectionHeader ━━ */}
+      <div className="space-y-4 mb-6">
+        <Button 
+          variant="outline" 
+          size="sm" 
+          onClick={() => router.back()}
+          className="h-10 px-4 rounded-[var(--radius-xl)] font-black gap-2 shadow-sm border-border bg-card text-foreground hover:bg-muted"
+        >
+          <ChevronLeft className="h-4 w-4" />
+          戻る
         </Button>
-        <h1 className="text-2xl font-black tracking-tight flex items-center gap-3">
-          <Swords className="h-6 w-6 text-primary" />
-          Match History
-        </h1>
+        <SectionHeader title="試合一覧" subtitle="MATCH HISTORY" showPulse={false} />
       </div>
 
       {/* 🌟 3つのステータス切り替えタブ */}

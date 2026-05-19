@@ -3,6 +3,8 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { SectionHeader } from "@/components/layout/SectionHeader";
 import { Flame, Zap, ArrowLeft, Plus, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Tournament, TournamentFormData } from "@/types/tournament";
@@ -129,25 +131,38 @@ export default function TournamentMapContent() {
             )}
 
             <div className="max-w-2xl mx-auto px-4 pt-6 space-y-6">
-                <div className="flex items-end justify-between gap-3">
-                    <div>
-                        <div className="flex items-center gap-2 mb-1.5">
-                            <button onClick={() => router.back()} className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-muted transition-colors text-muted-foreground">
-                                <ArrowLeft className="h-4 w-4" />
-                            </button>
-                            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground flex items-center gap-1.5">
-                                Tournaments
-                            </span>
-                        </div>
-                        <h1 className="text-2xl font-black tracking-tighter text-foreground">
-                            大会・イベント
-                        </h1>
+                {/* ━━ ページヘッダー ━━ */}
+                <div className="space-y-4">
+                    <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => router.back()}
+                        className="h-10 px-4 rounded-[var(--radius-xl)] font-black gap-2 shadow-sm border-border bg-card text-foreground hover:bg-muted"
+                    >
+                        <ArrowLeft className="h-4 w-4" />
+                        戻る
+                    </Button>
+                    <SectionHeader 
+                        title="大会・イベント" 
+                        subtitle="TOURNAMENTS" 
+                        showPulse={false} 
+                    />
+                    
+                    <div className="flex items-center justify-between bg-card p-3 rounded-[var(--radius-xl)] border border-border shadow-sm">
+                        <p className="text-sm font-black text-foreground flex items-center gap-1.5">
+                            <Zap className="h-4 w-4 text-primary" />
+                            {tournaments.length}
+                            <span className="text-xs font-bold text-muted-foreground">大会登録中</span>
+                        </p>
+                        <Button 
+                            onClick={() => setIsAddOpen(true)} 
+                            size="sm" 
+                            className="h-9 px-4 rounded-[var(--radius-lg)] font-black gap-2"
+                        >
+                            <Plus className="h-4 w-4" strokeWidth={2.5} />
+                            大会追加
+                        </Button>
                     </div>
-                    <button onClick={() => setIsAddOpen(true)} className="h-11 px-4 bg-primary text-primary-foreground rounded-[var(--radius-xl)] font-black text-sm flex items-center gap-2 shadow-sm hover:opacity-90 active:scale-95 transition-all">
-                        <Plus className="h-4 w-4" />
-                        <span className="hidden sm:inline">大会を追加</span>
-                        <span className="sm:hidden">追加</span>
-                    </button>
                 </div>
 
                 <div className="space-y-3">
