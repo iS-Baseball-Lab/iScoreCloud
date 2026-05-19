@@ -113,23 +113,6 @@ export default function TournamentMapContent() {
 
     return (
         <div className="min-h-screen pb-28 animate-in fade-in duration-400">
-            {tournaments.length > 0 && (
-                <div className="w-full bg-primary/5 border-b border-border/40 h-9 flex items-center overflow-hidden">
-                    {[0, 1].map(i => (
-                        <div key={i} className="flex animate-[marquee_30s_linear_infinite] whitespace-nowrap gap-16 shrink-0 pr-16">
-                            {tournaments.filter(t => getTournamentStatus(t) === "ongoing").map(t => (
-                                <span key={t.id} className="text-[11px] font-bold text-primary flex items-center gap-2">
-                                    <Flame className="h-3 w-3 shrink-0" /> 参戦中: {t.name}
-                                </span>
-                            ))}
-                            <span className="text-[11px] font-bold text-muted-foreground flex items-center gap-2">
-                                <Zap className="h-3 w-3 shrink-0" /> 登録大会数: {tournaments.length}件
-                            </span>
-                        </div>
-                    ))}
-                </div>
-            )}
-
             <div className="max-w-2xl mx-auto px-4 pt-6 space-y-6">
                 {/* ━━ ページヘッダー ━━ */}
                 <div className="space-y-4">

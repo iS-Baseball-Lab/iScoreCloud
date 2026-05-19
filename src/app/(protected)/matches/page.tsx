@@ -11,6 +11,16 @@ import { Match, MatchStatus } from "@/types/match";
 import { cn } from "@/lib/utils";
 import { SectionHeader } from "@/components/layout/SectionHeader";
 
+// ステータスを推論・補完する関数（古いデータ対応）
+const getMatchStatus = (m: Match): MatchStatus => {
+  if (m.status === "live") return "live";
+  if (m.status === "finished") return "finished";
+  
+  // DBにステータスがない・不完全な場合のフォールバック
+  const isFuture = new Date(m.date) > new Date();
+  return isFuture ? "scheduled" : "finished";
+};
+
 export default function AllMatchesPage() {
   const router = useRouter();
   const [matches, setMatches] = useState<Match[]>([]);
@@ -33,7 +43,18 @@ export default function AllMatchesPage() {
         const res = await fetch(`/api/matches?teamId=${teamId}`);
         if (res.ok) {
           const data = await res.json();
-          setMatches(Array.isArray(data) ? (data as Match[]).sort((a, b) => b.date.localeCompare(a.date)) : []);
+          const loadedMatches = Array.isArray(data) ? (data as Match[]).sort((a, b) => b.date.localeCompare(a.date)) : [];
+          setMatches(loadedMatches);
+
+          if (loadedMatches.length > 0) {
+            if (loadedMatches.some(m => getMatchStatus(m) === "live")) {
+              setActiveTab("live");
+            } else if (loadedMatches.some(m => getMatchStatus(m) === "scheduled")) {
+              setActiveTab("scheduled");
+            } else {
+              setActiveTab("finished");
+            }
+          }
         }
       } catch (error) {
         toast.error("データの読み込みに失敗しました");
@@ -44,15 +65,7 @@ export default function AllMatchesPage() {
     fetchMatches();
   }, []);
 
-  // ステータスを推論・補完する関数（古いデータ対応）
-  const getMatchStatus = (m: Match): MatchStatus => {
-    if (m.status === "live") return "live";
-    if (m.status === "finished") return "finished";
-    
-    // DBにステータスがない・不完全な場合のフォールバック
-    const isFuture = new Date(m.date) > new Date();
-    return isFuture ? "scheduled" : "finished";
-  };
+  // getMatchStatus is now outside the component
 
   const filteredMatches = matches
     .filter(m => getMatchStatus(m) === activeTab)
