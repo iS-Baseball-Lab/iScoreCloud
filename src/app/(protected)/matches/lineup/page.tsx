@@ -82,6 +82,9 @@ export default function LineupPage() {
             if (lineupsData.lineups.opponentLineup?.length > 0) {
               setOpponentLineup(lineupsData.lineups.opponentLineup);
             }
+            if (Object.keys(lineupsData.lineups.myAttendance || {}).length > 0) {
+              setAttendance(lineupsData.lineups.myAttendance);
+            }
           }
         }
 
@@ -127,7 +130,7 @@ export default function LineupPage() {
       const res = await fetch(`/api/matches/${matchId}/lineups`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ myLineup, opponentLineup })
+        body: JSON.stringify({ myLineup, opponentLineup, myAttendance: attendance })
       });
       
       if (!res.ok) throw new Error("Failed to save lineups");

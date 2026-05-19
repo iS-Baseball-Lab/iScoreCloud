@@ -53,7 +53,7 @@ app.get("/:id/lineups", async (c) => {
 app.put("/:id/lineups", async (c) => {
   try {
     const body = await c.req.json();
-    await MatchService.saveMatchLineups(drizzle(c.env.DB), c.req.param("id"), body.myLineup || [], body.opponentLineup || []);
+    await MatchService.saveMatchLineups(drizzle(c.env.DB), c.req.param("id"), body.myLineup || [], body.opponentLineup || [], body.myAttendance || {});
     return c.json({ success: true });
   } catch (error) {
     return c.json({ success: false, error: "Failed to save lineups" }, 500);

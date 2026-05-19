@@ -1,0 +1,1 @@
+ALTER TABLE `matches` ADD `my_attendance` text DEFAULT '{}';

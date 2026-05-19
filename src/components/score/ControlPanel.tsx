@@ -33,7 +33,7 @@ export function ControlPanel() {
               <div key={i} className={cn("w-4.5 h-4.5 rounded-full border-2", i <= state.balls ? "bg-emerald-500 border-emerald-300 shadow-[0_0_15px_#10b981]" : "bg-emerald-950/20 border-emerald-600/30")} />
             ))}
           </div>
-          <span className="text-4xl font-black italic text-emerald-800 dark:text-emerald-300">B</span>
+          <span className="text-4xl font-black text-emerald-800 dark:text-emerald-300">B</span>
         </button>
 
         {/* Strike */}
@@ -44,7 +44,7 @@ export function ControlPanel() {
               <div key={i} className={cn("w-4.5 h-4.5 rounded-full border-2", i <= state.strikes ? "bg-amber-400 border-amber-200 shadow-[0_0_15px_#fbbf24]" : "bg-amber-950/20 border-amber-500/30")} />
             ))}
           </div>
-          <span className="text-4xl font-black italic text-amber-800 dark:text-amber-300">S</span>
+          <span className="text-4xl font-black text-amber-800 dark:text-amber-300">S</span>
         </button>
 
         {/* Out */}
@@ -55,7 +55,7 @@ export function ControlPanel() {
               <div key={i} className={cn("w-4.5 h-4.5 rounded-full border-2", i <= state.outs ? "bg-rose-500 border-rose-300 shadow-[0_0_15px_#f43f5e]" : "bg-rose-950/20 border-rose-600/30")} />
             ))}
           </div>
-          <span className="text-4xl font-black italic text-rose-800 dark:text-rose-300">O</span>
+          <span className="text-4xl font-black text-rose-800 dark:text-rose-300">O</span>
         </button>
       </div>
 
@@ -63,22 +63,22 @@ export function ControlPanel() {
       <div className="grid grid-cols-4 gap-2 h-[35%] shrink-0">
         <button type="button" onClick={() => recordInPlay("単打", 0, 1, 0)}
           className="h-full bg-blue-600 text-white rounded-3xl flex flex-col items-center justify-center shadow-xl active:scale-95 transition-all">
-          <span className="text-2xl font-black italic tracking-tighter">1B</span>
+          <span className="text-2xl font-black tracking-tighter">1B</span>
           <span className="text-[10px] font-bold opacity-80 mt-0.5">単打</span>
         </button>
         <button type="button" onClick={() => recordInPlay("二塁打", 0, 1, 0)}
           className="h-full bg-blue-600 text-white rounded-3xl flex flex-col items-center justify-center shadow-xl active:scale-95 transition-all">
-          <span className="text-2xl font-black italic tracking-tighter">2B</span>
+          <span className="text-2xl font-black tracking-tighter">2B</span>
           <span className="text-[10px] font-bold opacity-80 mt-0.5">二塁打</span>
         </button>
         <button type="button" onClick={() => recordInPlay("三塁打", 0, 1, 0)}
           className="h-full bg-blue-600 text-white rounded-3xl flex flex-col items-center justify-center shadow-xl active:scale-95 transition-all">
-          <span className="text-2xl font-black italic tracking-tighter">3B</span>
+          <span className="text-2xl font-black tracking-tighter">3B</span>
           <span className="text-[10px] font-bold opacity-80 mt-0.5">三塁打</span>
         </button>
         <button type="button" onClick={() => recordInPlay("本塁打", 0, 1, 0)}
           className="h-full bg-rose-600 text-white rounded-3xl flex flex-col items-center justify-center shadow-xl border-b-4 border-rose-800 active:scale-95 transition-all">
-          <span className="text-2xl font-black italic tracking-tighter">HR</span>
+          <span className="text-2xl font-black tracking-tighter">HR</span>
           <span className="text-[10px] font-bold opacity-80 mt-0.5">本塁打</span>
         </button>
       </div>
@@ -97,7 +97,7 @@ export function ControlPanel() {
             }
           }} disabled={isSyncing}
           className="h-full bg-rose-500/10 text-rose-600 dark:text-rose-400 border-2 border-rose-500/20 rounded-2xl text-[9px] sm:text-[10px] font-black uppercase tracking-widest active:bg-rose-500/20 leading-tight">
-          Game<br/>Set
+          試合<br/>終了
         </button>
       </div>
     </div>

@@ -93,7 +93,7 @@ export function Scoreboard() {
               title="スタメン設定"
             >
               <Users className="w-3.5 h-3.5" strokeWidth={2.5} />
-              <span className="text-[9px] font-black hidden sm:inline">スタメン</span>
+              <span className="text-[9px] font-black inline">スタメン</span>
             </button>
           </div>
         </div>
@@ -144,7 +144,7 @@ export function Scoreboard() {
               </thead>
               <tbody>
                 {/* 先攻行 (Guest) */}
-                <tr className={cn("border-b border-border/50 h-10", state.isTop ? "bg-primary/5" : "")}>
+                <tr className={cn("border-b border-border/50 h-8", state.isTop ? "bg-primary/5" : "")}>
                   <td className="text-center font-black text-[13px]">
                     <span className={state.isTop ? "text-primary" : "text-foreground/40"}>先</span>
                   </td>
@@ -160,7 +160,7 @@ export function Scoreboard() {
                   <td className="text-center text-sm text-muted-foreground/40 font-bold">{guestErrors ?? 0}</td>
                 </tr>
                 {/* 後攻行 (Home) */}
-                <tr className={cn("h-10", !state.isTop ? "bg-primary/5" : "")}>
+                <tr className={cn("h-8", !state.isTop ? "bg-primary/5" : "")}>
                   <td className="text-center font-black text-[13px]">
                     <span className={!state.isTop ? "text-primary" : "text-foreground/40"}>後</span>
                   </td>
@@ -181,7 +181,7 @@ export function Scoreboard() {
         </div>
 
         {/* 🚀 下段 (回数・攻守・BSOカウント) */}
-        <div className="flex items-center justify-between px-3 h-16 bg-muted/5">
+        <div className="flex items-center justify-between px-3 h-12 bg-muted/5">
           <div className="flex items-center text-primary h-full">
             <div className="flex items-end pb-1.5">
               <span className={cn("text-4xl leading-none", numberStyle)}>{state.inning}</span>

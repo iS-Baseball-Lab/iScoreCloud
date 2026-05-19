@@ -161,19 +161,22 @@ export const MatchService = {
   async getMatchLineups(db: DrizzleDB, matchId: string) {
     const match = await db.select({
       myLineup: matches.myLineup,
-      opponentLineup: matches.opponentLineup
+      opponentLineup: matches.opponentLineup,
+      myAttendance: matches.myAttendance
     }).from(matches).where(eq(matches.id, matchId)).get();
     
     return {
       myLineup: JSON.parse(match?.myLineup || '[]'),
-      opponentLineup: JSON.parse(match?.opponentLineup || '[]')
+      opponentLineup: JSON.parse(match?.opponentLineup || '[]'),
+      myAttendance: JSON.parse(match?.myAttendance || '{}')
     };
   },
 
-  async saveMatchLineups(db: DrizzleDB, matchId: string, myLineup: any[], opponentLineup: any[]) {
+  async saveMatchLineups(db: DrizzleDB, matchId: string, myLineup: any[], opponentLineup: any[], myAttendance: any = {}) {
     await db.update(matches).set({
       myLineup: JSON.stringify(myLineup),
-      opponentLineup: JSON.stringify(opponentLineup)
+      opponentLineup: JSON.stringify(opponentLineup),
+      myAttendance: JSON.stringify(myAttendance)
     }).where(eq(matches.id, matchId));
   },
 
