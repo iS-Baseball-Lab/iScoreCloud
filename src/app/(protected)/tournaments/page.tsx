@@ -1,3 +1,4 @@
+// src/app/(protected)/tournaments/page.tsx
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
@@ -116,15 +117,6 @@ export default function TournamentMapContent() {
             <div className="max-w-2xl mx-auto px-4 pt-6 space-y-6">
                 {/* ━━ ページヘッダー ━━ */}
                 <div className="space-y-4">
-                    <Button 
-                        variant="outline" 
-                        size="sm" 
-                        onClick={() => router.back()}
-                        className="h-10 px-4 rounded-[var(--radius-xl)] font-black gap-2 shadow-sm border-border bg-card text-foreground hover:bg-muted"
-                    >
-                        <ArrowLeft className="h-4 w-4" />
-                        戻る
-                    </Button>
                     <SectionHeader 
                         title="大会・イベント" 
                         subtitle="TOURNAMENTS" 
