@@ -42,6 +42,8 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
     batterId: null,
     pitcherId: null,
     pitchCount: 0,
+    myBattingIndex: 0,
+    opponentBattingIndex: 0,
     logs: [],
   });
 
@@ -92,8 +94,21 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
           runners: updatedState.runners,
           myHits: updatedState.myHits,
           opponentHits: updatedState.opponentHits,
+          opponentHits: updatedState.opponentHits,
           myErrors: updatedState.myErrors,
           opponentErrors: updatedState.opponentErrors,
+          newAtBat: actionNote.includes("チェンジ") || actionNote.includes("三振") || actionNote.includes("フォアボール") || actionNote.includes("アウト") || actionNote.includes("安") || actionNote.includes("打") || actionNote.includes("エラー") || actionNote.includes("犠") ? {
+            inning: updatedState.inning,
+            isTop: updatedState.isTop,
+            batterId: updatedState.batterId,
+            pitcherId: updatedState.pitcherId,
+            result: actionNote
+          } : null,
+          newPlayLog: {
+            inningText: `${updatedState.inning}回${updatedState.isTop ? "表" : "裏"}`,
+            resultType: "play",
+            description: actionNote,
+          }
         }),
       });
       const data = await res.json() as { success: boolean, data?: { status: string } };
@@ -153,6 +168,8 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
           opponentHits: m.opponentHits ?? 0,
           myErrors: m.myErrors ?? 0,
           opponentErrors: m.opponentErrors ?? 0,
+          myBattingIndex: 0,
+          opponentBattingIndex: 0,
           // 💡 ここで権限判定を行う（例: チーム所属チェック）
           isScorer: true, // 開発中は一旦true。実際は管理者かどうかを判定
         }));
@@ -206,6 +223,25 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
         isInningChange = true;
       }
 
+      // 打席完了時に打順を進める
+      let newMyBattingIndex = prev.myBattingIndex;
+      let newOpponentBattingIndex = prev.opponentBattingIndex;
+      
+      if (isAtBatEnd) {
+        const isMyAttack = (prev.isTop && prev.isGuestFirst) || (!prev.isTop && !prev.isGuestFirst);
+        if (isMyAttack) {
+          newMyBattingIndex = (prev.myBattingIndex + 1) % Math.max(9, prev.myLineup?.length || 9);
+        } else {
+          newOpponentBattingIndex = (prev.opponentBattingIndex + 1) % Math.max(9, prev.opponentLineup?.length || 9);
+        }
+      }
+
+      // 現在のバッターIDを解決
+      const isNextMyAttack = (isInningChange ? !prev.isTop : prev.isTop) === prev.isGuestFirst ? false : true;
+      const currentLineup = isNextMyAttack ? prev.myLineup : prev.opponentLineup;
+      const currentIndex = isNextMyAttack ? newMyBattingIndex : newOpponentBattingIndex;
+      const nextBatterId = currentLineup && currentLineup.length > currentIndex ? currentLineup[currentIndex]?.playerId || null : null;
+
       const next = pushHistory(prev, {
         balls: isAtBatEnd ? 0 : newBalls,
         strikes: isAtBatEnd ? 0 : newStrikes,
@@ -213,6 +249,9 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
         isTop: isInningChange ? !prev.isTop : prev.isTop,
         inning: isInningChange && !prev.isTop ? prev.inning + 1 : prev.inning,
         runners: isInningChange ? { base1: null, base2: null, base3: null } : prev.runners,
+        myBattingIndex: newMyBattingIndex,
+        opponentBattingIndex: newOpponentBattingIndex,
+        batterId: nextBatterId,
         logs: appendLog(isInningChange ? `${description} (チェンジ)` : description, prev),
       });
 
@@ -221,19 +260,14 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
-  // 🚀 5. 得点・インプレイ記録 (イニング配列の更新)[span_8](start_span)[span_8](end_span)
+  // 🚀 5. 得点・インプレイ記録 (イニング配列の更新)
   const recordInPlay = async (result: string, rbi: number, hits: number, errors: number) => {
     setState(prev => {
       if (!prev.isScorer) return prev;
 
       const currentIdx = prev.inning - 1;
-      const updatedOpponentScores = [...prev.opponentInningScores];
-      const updatedMyScores = [...prev.myInningScores];
-
-      // 🌟 自チームが攻撃中かどうかの判定（isGuestFirst を使用）
       const isMyAttack = (prev.isTop && prev.isGuestFirst) || (!prev.isTop && !prev.isGuestFirst);
-
-      // 🌟 自動進塁ロジック
+      
       let nextRunners = { ...prev.runners };
       let actualRbi = rbi;
 
@@ -259,7 +293,16 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      // スコアラーが攻撃か守備かに基づいて配列を更新
+      const newMyScore = isMyAttack ? prev.myScore + actualRbi : prev.myScore;
+      const newOpponentScore = !isMyAttack ? prev.opponentScore + actualRbi : prev.opponentScore;
+      const newMyHits = isMyAttack ? prev.myHits + hits : prev.myHits;
+      const newOpponentHits = !isMyAttack ? prev.opponentHits + hits : prev.opponentHits;
+      const newMyErrors = !isMyAttack ? prev.myErrors + errors : prev.myErrors;
+      const newOpponentErrors = isMyAttack ? prev.opponentErrors + errors : prev.opponentErrors;
+      
+      const updatedMyScores = [...prev.myInningScores];
+      const updatedOpponentScores = [...prev.opponentInningScores];
+
       if (!isMyAttack) {
         while (updatedOpponentScores.length <= currentIdx) updatedOpponentScores.push(0);
         updatedOpponentScores[currentIdx] += actualRbi;
@@ -268,18 +311,42 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
         updatedMyScores[currentIdx] += actualRbi;
       }
 
+      const newOuts = prev.outs + (result.includes("アウト") || result.includes("犠") || result.includes("ゴロ") || result.includes("飛") || result.includes("直") || result.includes("併殺") ? 1 : 0);
+      const isAtBatEnd = true;
+      const isInningChange = newOuts >= 3;
+
+      let newMyBattingIndex = prev.myBattingIndex;
+      let newOpponentBattingIndex = prev.opponentBattingIndex;
+      if (isMyAttack) {
+        newMyBattingIndex = (prev.myBattingIndex + 1) % Math.max(9, prev.myLineup?.length || 9);
+      } else {
+        newOpponentBattingIndex = (prev.opponentBattingIndex + 1) % Math.max(9, prev.opponentLineup?.length || 9);
+      }
+
+      const nextIsMyAttack = (isInningChange ? !prev.isTop : prev.isTop) === prev.isGuestFirst ? false : true;
+      const currentLineup = nextIsMyAttack ? prev.myLineup : prev.opponentLineup;
+      const currentIndex = nextIsMyAttack ? newMyBattingIndex : newOpponentBattingIndex;
+      const nextBatterId = currentLineup && currentLineup.length > currentIndex ? currentLineup[currentIndex]?.playerId || null : null;
+
       const next = pushHistory(prev, {
-        opponentScore: !isMyAttack ? prev.opponentScore + actualRbi : prev.opponentScore,
-        myScore: isMyAttack ? prev.myScore + actualRbi : prev.myScore,
-        opponentHits: !isMyAttack ? prev.opponentHits + hits : prev.opponentHits,
-        myHits: isMyAttack ? prev.myHits + hits : prev.myHits,
-        opponentErrors: isMyAttack ? prev.opponentErrors + errors : prev.opponentErrors,
-        myErrors: !isMyAttack ? prev.myErrors + errors : prev.myErrors,
-        opponentInningScores: updatedOpponentScores,
+        myScore: newMyScore,
+        opponentScore: newOpponentScore,
         myInningScores: updatedMyScores,
-        balls: 0, strikes: 0,
-        runners: nextRunners,
-        logs: appendLog(`${result}${actualRbi > 0 ? ` (${actualRbi}得点)` : ''}`, prev),
+        opponentInningScores: updatedOpponentScores,
+        myHits: newMyHits,
+        opponentHits: newOpponentHits,
+        myErrors: newMyErrors,
+        opponentErrors: newOpponentErrors,
+        balls: 0,
+        strikes: 0,
+        outs: isInningChange ? 0 : newOuts,
+        runners: isInningChange ? { base1: null, base2: null, base3: null } : nextRunners,
+        isTop: isInningChange ? !prev.isTop : prev.isTop,
+        inning: isInningChange && !prev.isTop ? prev.inning + 1 : prev.inning,
+        myBattingIndex: newMyBattingIndex,
+        opponentBattingIndex: newOpponentBattingIndex,
+        batterId: nextBatterId,
+        logs: appendLog(isInningChange ? `${result} (チェンジ)` : result, prev),
       });
 
       syncWithBackend(next, result);
@@ -327,11 +394,32 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
   // 🚀 9. 試合の終了
   const finishMatch = async () => {
     setState(prev => {
-      const next = { ...prev, status: 'finished' };
+      const next = pushHistory(prev, { status: "finished", logs: appendLog("試合終了", prev) });
       syncWithBackend(next, "試合終了");
       return next;
     });
   };
+
+  const substitutePlayer = useCallback((team: 'my' | 'opponent', orderIndex: number, newPlayerId: string, newPlayerName: string) => {
+    setState(prev => {
+      if (!prev.isScorer) return prev;
+      
+      const isMyTeam = team === 'my';
+      const lineup = isMyTeam ? [...(prev.myLineup || [])] : [...(prev.opponentLineup || [])];
+      
+      if (lineup[orderIndex]) {
+        lineup[orderIndex] = { ...lineup[orderIndex], playerId: newPlayerId, playerName: newPlayerName };
+      } else {
+        lineup[orderIndex] = { playerId: newPlayerId, playerName: newPlayerName, battingOrder: orderIndex + 1 };
+      }
+
+      return {
+        ...prev,
+        myLineup: isMyTeam ? lineup : prev.myLineup,
+        opponentLineup: !isMyTeam ? lineup : prev.opponentLineup,
+      };
+    });
+  }, []);
 
   // 🚀 10. 試合設定の更新
   const updateMatchSettings = (settings: Partial<ScoreState>) => {
@@ -340,9 +428,20 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <ScoreContext.Provider value={{
-      state, isLoading, isSyncing, initMatch, recordPitch, recordInPlay,
-      changeInning, undo, isScorer: state.isScorer,
-      updateRunners, resetBatter, finishMatch, updateMatchSettings
+      state,
+      isLoading,
+      isSyncing,
+      isScorer: state.isScorer,
+      initMatch,
+      recordPitch,
+      recordInPlay,
+      changeInning,
+      updateRunners,
+      resetBatter,
+      undo,
+      finishMatch,
+      updateMatchSettings,
+      substitutePlayer
     }}>
       {children}
     </ScoreContext.Provider>

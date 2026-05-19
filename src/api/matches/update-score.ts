@@ -6,8 +6,9 @@
 
 import { Hono } from 'hono';
 import { drizzle } from 'drizzle-orm/d1';
-import { matches } from '@/db/schema/match'; // 🌟 スキーマインポート
+import { matches } from '@/db/schema/match';
 import { teams } from '@/db/schema/team';
+import { atBats, playLogs } from '@/db/schema/score';
 import { eq } from 'drizzle-orm';
 import { sendLinePushMessage } from '@/lib/line/push';
 import { formatMatchLineReport } from '@/lib/utils/format-sns';
@@ -42,7 +43,9 @@ matchesApi.post('/update-score', async (c) => {
       myHits,
       opponentHits,
       myErrors,
-      opponentErrors
+      opponentErrors,
+      newAtBat,
+      newPlayLog
     } = body;
 
     // 2. 現在の試合状況をDBからロード（規定イニング数やチームIDを知るため）
@@ -56,7 +59,6 @@ matchesApi.post('/update-score', async (c) => {
     }
 
     // 3. 【美学】サヨナラ勝ち判定
-    // 入力されたスコアと、DBにある規定回数（innings）を照合
     const isWalkOff = checkWalkOff({
       myScore,
       opponentScore,
@@ -66,29 +68,53 @@ matchesApi.post('/update-score', async (c) => {
       battingOrder: currentMatch.battingOrder as 'first' | 'second'
     });
 
-    // 🌟 判定結果に基づき status を決定
     const newStatus = (requestedStatus === 'finished' || isWalkOff) ? 'finished' : 'live';
 
-    // 4. D1 データベースの更新
-    await db.update(matches)
-      .set({
-        myScore,
-        opponentScore,
-        currentInning: inning,
-        isBottom: !!isBottom,
-        status: newStatus,
-        myInningScores: JSON.stringify(myInningScores || []),
-        opponentInningScores: JSON.stringify(opponentInningScores || []),
-        balls: balls ?? 0,
-        strikes: strikes ?? 0,
-        outs: outs ?? 0,
-        runners: JSON.stringify(runners || { base1: null, base2: null, base3: null }),
-        myHits: myHits ?? 0,
-        opponentHits: opponentHits ?? 0,
-        myErrors: myErrors ?? 0,
-        opponentErrors: opponentErrors ?? 0
-      })
-      .where(eq(matches.id, matchId));
+    // 4. トランザクション処理 (matches, at_bats, play_logs のアトミック更新)
+    await db.batch([
+      db.update(matches)
+        .set({
+          myScore,
+          opponentScore,
+          currentInning: inning,
+          isBottom: !!isBottom,
+          status: newStatus,
+          myInningScores: JSON.stringify(myInningScores || []),
+          opponentInningScores: JSON.stringify(opponentInningScores || []),
+          balls: balls ?? 0,
+          strikes: strikes ?? 0,
+          outs: outs ?? 0,
+          runners: JSON.stringify(runners || { base1: null, base2: null, base3: null }),
+          myHits: myHits ?? 0,
+          opponentHits: opponentHits ?? 0,
+          myErrors: myErrors ?? 0,
+          opponentErrors: opponentErrors ?? 0
+        })
+        .where(eq(matches.id, matchId)),
+      
+      // 打席完了時のログ記録
+      ...(newAtBat ? [
+        db.insert(atBats).values({
+          id: crypto.randomUUID(),
+          matchId,
+          inning: newAtBat.inning,
+          isTop: newAtBat.isTop,
+          batterId: newAtBat.batterId,
+          pitcherId: newAtBat.pitcherId,
+          result: newAtBat.result
+        })
+      ] : []),
+      
+      ...(newPlayLog ? [
+        db.insert(playLogs).values({
+          id: crypto.randomUUID(),
+          matchId,
+          inningText: newPlayLog.inningText,
+          resultType: newPlayLog.resultType,
+          description: newPlayLog.description
+        })
+      ] : [])
+    ]);
 
     // 5. LINE速報の射出（設定が有効な場合のみ）
     const teamData = await db.select()

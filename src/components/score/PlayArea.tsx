@@ -114,20 +114,39 @@ export function PlayArea() {
         </div>
       </div>
 
-      <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 w-full text-center pointer-events-none">
+      <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 w-full text-center">
         <div className="inline-flex flex-col items-center gap-1">
           <div className="bg-primary px-4 py-1 rounded-full shadow-[0_0_15px_rgba(var(--primary),0.4)]">
             <span className="text-[10px] font-black text-primary-foreground tracking-widest uppercase">Batter Up</span>
           </div>
-          <p className="text-[12px] font-black text-foreground mt-1">
-            {(() => {
-              const offenseLineup = state.isTop 
-                ? (state.isGuestFirst ? state.myLineup : state.opponentLineup)
-                : (state.isGuestFirst ? state.opponentLineup : state.myLineup);
-              const batter = offenseLineup?.find(p => p.order === 1); // 簡易的に1番打者を表示（本来は打順計算が必要）
-              return batter?.name || "未設定";
-            })()}
-          </p>
+          <div className="flex items-center gap-2 mt-1">
+            <p className="text-[12px] font-black text-foreground">
+              {(() => {
+                const isMyAttack = (state.isTop && state.isGuestFirst) || (!state.isTop && !state.isGuestFirst);
+                const offenseLineup = isMyAttack ? state.myLineup : state.opponentLineup;
+                const index = isMyAttack ? state.myBattingIndex : state.opponentBattingIndex;
+                const batter = offenseLineup && offenseLineup.length > index ? offenseLineup[index] : null;
+                return batter ? `${index + 1}番 ${batter.playerName || batter.name || "名称未設定"}` : `${index + 1}番 (未設定)`;
+              })()}
+            </p>
+            {state.isScorer && (
+              <button
+                type="button"
+                className="pointer-events-auto bg-muted hover:bg-muted/80 text-[9px] font-bold px-2 py-0.5 rounded-full"
+                onClick={() => {
+                  const isMyAttack = (state.isTop && state.isGuestFirst) || (!state.isTop && !state.isGuestFirst);
+                  const index = isMyAttack ? state.myBattingIndex : state.opponentBattingIndex;
+                  const newName = window.prompt("代打の選手名を入力してください");
+                  if (newName) {
+                    const newId = `sub-${Date.now()}`;
+                    state.substitutePlayer?.(isMyAttack ? 'my' : 'opponent', index, newId, newName);
+                  }
+                }}
+              >
+                代打
+              </button>
+            )}
+          </div>
         </div>
       </div>
 

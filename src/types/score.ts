@@ -58,6 +58,8 @@ export interface ScoreState {
   batterId: string | null;
   pitcherId: string | null;
   pitchCount: number;
+  myBattingIndex: number;
+  opponentBattingIndex: number;
 
   status: string;
   isScorer: boolean;
@@ -117,4 +119,5 @@ export interface ScoreContextType {
   undo: () => void;
   finishMatch: () => Promise<void>;
   updateMatchSettings: (settings: Partial<ScoreState>) => void;
+  substitutePlayer: (team: 'my' | 'opponent', orderIndex: number, newPlayerId: string, newPlayerName: string) => void;
 }
