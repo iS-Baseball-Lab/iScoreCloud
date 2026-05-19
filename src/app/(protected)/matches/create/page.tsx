@@ -51,7 +51,7 @@ function CreateMatchContent() {
   const [isLoading, setIsLoading] = useState(false);
   const [tournaments, setTournaments] = useState<any[]>([]);
   const [isNewTournament, setIsNewTournament] = useState(false);
-  
+
   // スコア用ステート (Quickモード専用)
   const [myScore, setMyScore] = useState("");
   const [opponentScore, setOpponentScore] = useState("");
@@ -82,7 +82,7 @@ function CreateMatchContent() {
     setIsLoading(true);
     try {
       const statusMap = { real: "scheduled", live: "started", quick: "finished" };
-      
+
       const res = await fetch("/api/matches/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -112,12 +112,12 @@ function CreateMatchContent() {
   };
 
   return (
-    <div className="min-h-screen bg-background p-4 sm:p-6 flex flex-col animate-in fade-in duration-300 max-w-lg mx-auto pb-32">
+    <div className="min-h-screen p-4 sm:p-6 flex flex-col animate-in fade-in duration-300 max-w-lg mx-auto pb-32">
       {/* ━━ トップ：戻るボタン & SectionHeader ━━ */}
       <div className="space-y-4 mb-6">
-        <Button 
-          variant="outline" 
-          size="sm" 
+        <Button
+          variant="outline"
+          size="sm"
           onClick={() => router.back()}
           className="h-10 px-4 rounded-[var(--radius-xl)] font-black gap-2 shadow-sm border-border bg-card text-foreground hover:bg-muted"
         >
@@ -130,22 +130,22 @@ function CreateMatchContent() {
       <form onSubmit={handleSubmit} className="space-y-6">
         <Card className="rounded-3xl border border-border bg-card shadow-sm">
           <CardContent className="p-5">
-            <MatchBasicForm 
-              state={formState} 
-              setState={setFormState} 
-              tournaments={tournaments} 
-              isNewTournament={isNewTournament} 
-              setIsNewTournament={setIsNewTournament} 
+            <MatchBasicForm
+              state={formState}
+              setState={setFormState}
+              tournaments={tournaments}
+              isNewTournament={isNewTournament}
+              setIsNewTournament={setIsNewTournament}
             />
           </CardContent>
         </Card>
 
         {mode === "quick" && (
           <QuickScoreForm
-            inningCount={formState.inningCount} 
-            myScore={myScore} setMyScore={setMyScore} 
+            inningCount={formState.inningCount}
+            myScore={myScore} setMyScore={setMyScore}
             opponentScore={opponentScore} setOpponentScore={setOpponentScore}
-            myInnings={myInnings} setMyInnings={setMyInnings} 
+            myInnings={myInnings} setMyInnings={setMyInnings}
             opponentInnings={opponentInnings} setOpponentInnings={setOpponentInnings}
           />
         )}

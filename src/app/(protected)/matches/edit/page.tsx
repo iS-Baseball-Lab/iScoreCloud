@@ -13,11 +13,11 @@ import { SectionHeader } from "@/components/layout/SectionHeader";
 import { useTeam } from "@/contexts/TeamContext";
 
 // ━━━ 型定義 ━━━
-interface Tournament { 
-  id: string; 
-  name: string; 
-  season: string; 
-  organizer: string | null; 
+interface Tournament {
+  id: string;
+  name: string;
+  season: string;
+  organizer: string | null;
 }
 
 interface MatchData {
@@ -55,10 +55,10 @@ interface DeleteResponse {
 }
 
 // ━━━ 削除確認モーダル ━━━
-interface DeleteConfirmModalProps { 
-  isDeleting: boolean; 
-  onConfirm: () => void; 
-  onCancel: () => void; 
+interface DeleteConfirmModalProps {
+  isDeleting: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
 }
 
 function DeleteConfirmModal({ isDeleting, onConfirm, onCancel }: DeleteConfirmModalProps) {
@@ -114,7 +114,7 @@ function MatchEditContent() {
 
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [isNewTournament, setIsNewTournament] = useState(false);
-  
+
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -130,7 +130,7 @@ function MatchEditContent() {
 
         if (data.success && data.match) {
           const m = data.match;
-          
+
           let parsedDate = "";
           let parsedTime = "";
           if (m.date) {
@@ -184,8 +184,8 @@ function MatchEditContent() {
         const tData = await tRes.json();
         if (Array.isArray(tData)) setTournaments(tData as Tournament[]);
 
-      } catch (error) { 
-        toast.error("データの読み込みに失敗しました"); 
+      } catch (error) {
+        toast.error("データの読み込みに失敗しました");
       }
       finally { setIsLoading(false); }
     };
@@ -231,8 +231,8 @@ function MatchEditContent() {
 
       toast.success("試合情報を更新しました！");
       router.back();
-    } catch (error) { 
-      toast.error(error instanceof Error ? error.message : "更新に失敗しました"); 
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "更新に失敗しました");
     }
     finally { setIsSubmitting(false); }
   };
@@ -240,13 +240,13 @@ function MatchEditContent() {
   if (isLoading) return <div className="flex h-screen items-center justify-center bg-background"><Loader2 className="animate-spin h-8 w-8 text-primary" /></div>;
 
   return (
-    <div className="min-h-screen bg-background p-4 sm:p-6 flex flex-col animate-in fade-in duration-300 max-w-lg mx-auto pb-32">
-      
+    <div className="min-h-screen p-4 sm:p-6 flex flex-col animate-in fade-in duration-300 max-w-lg mx-auto pb-32">
+
       {/* ━━ トップ：戻るボタン & SectionHeader ━━ */}
       <div className="space-y-4 mb-6">
-        <Button 
-          variant="outline" 
-          size="sm" 
+        <Button
+          variant="outline"
+          size="sm"
           onClick={() => router.back()}
           className="h-10 px-4 rounded-[var(--radius-xl)] font-black gap-2 shadow-sm border-border bg-card text-foreground hover:bg-muted"
         >
@@ -260,12 +260,12 @@ function MatchEditContent() {
         {/* 共通フォームの呼び出し */}
         <Card className="rounded-3xl border border-border bg-card shadow-sm">
           <CardContent className="p-5">
-            <MatchBasicForm 
-              state={formState} 
-              setState={setFormState} 
-              tournaments={tournaments} 
-              isNewTournament={isNewTournament} 
-              setIsNewTournament={setIsNewTournament} 
+            <MatchBasicForm
+              state={formState}
+              setState={setFormState}
+              tournaments={tournaments}
+              isNewTournament={isNewTournament}
+              setIsNewTournament={setIsNewTournament}
             />
           </CardContent>
         </Card>
@@ -273,21 +273,21 @@ function MatchEditContent() {
         {/* 試合完了時のみスコアボードを表示 */}
         {matchStatus === 'finished' && (
           <FinishedScoreBoard
-            inningCount={formState.inningCount} 
-            battingOrder={formState.battingOrder} 
-            teamName={teamName} 
+            inningCount={formState.inningCount}
+            battingOrder={formState.battingOrder}
+            teamName={teamName}
             opponentName={formState.opponent}
-            myInnings={myInnings} setMyInnings={setMyInnings} 
+            myInnings={myInnings} setMyInnings={setMyInnings}
             opponentInnings={opponentInnings} setOpponentInnings={setOpponentInnings}
             myTotalScore={myTotalScore} opponentTotalScore={opponentTotalScore}
-            onAddInning={() => { 
-              setFormState(p => ({ ...p, inningCount: (p.inningCount + 1) as 6|7|9 })); 
-              setMyInnings(p => [...p, ""]); setOpponentInnings(p => [...p, ""]); 
+            onAddInning={() => {
+              setFormState(p => ({ ...p, inningCount: (p.inningCount + 1) as 6 | 7 | 9 }));
+              setMyInnings(p => [...p, ""]); setOpponentInnings(p => [...p, ""]);
             }}
-            onRemoveInning={() => { 
-              if (formState.inningCount <= 1) return; 
-              setFormState(p => ({ ...p, inningCount: (p.inningCount - 1) as 6|7|9 })); 
-              setMyInnings(p => p.slice(0, -1)); setOpponentInnings(p => p.slice(0, -1)); 
+            onRemoveInning={() => {
+              if (formState.inningCount <= 1) return;
+              setFormState(p => ({ ...p, inningCount: (p.inningCount - 1) as 6 | 7 | 9 }));
+              setMyInnings(p => p.slice(0, -1)); setOpponentInnings(p => p.slice(0, -1));
             }}
           />
         )}
@@ -306,25 +306,25 @@ function MatchEditContent() {
       </div>
 
       {showDeleteModal && (
-        <DeleteConfirmModal 
-          isDeleting={isDeleting} 
-          onConfirm={async () => { 
-            if (!matchId) return; 
-            setIsDeleting(true); 
-            try { 
-              const res = await fetch(`/api/matches/${matchId}`, { method: "DELETE" }); 
-              const d = (await res.json()) as DeleteResponse; 
-              if (!d.success) throw new Error(d.error || "削除に失敗しました"); 
-              toast.success("試合を削除しました"); 
-              router.push("/dashboard"); 
-            } catch (error) { 
-              toast.error(error instanceof Error ? error.message : "削除に失敗しました"); 
-            } finally { 
-              setIsDeleting(false); 
-              setShowDeleteModal(false); 
-            } 
-          }} 
-          onCancel={() => setShowDeleteModal(false)} 
+        <DeleteConfirmModal
+          isDeleting={isDeleting}
+          onConfirm={async () => {
+            if (!matchId) return;
+            setIsDeleting(true);
+            try {
+              const res = await fetch(`/api/matches/${matchId}`, { method: "DELETE" });
+              const d = (await res.json()) as DeleteResponse;
+              if (!d.success) throw new Error(d.error || "削除に失敗しました");
+              toast.success("試合を削除しました");
+              router.push("/dashboard");
+            } catch (error) {
+              toast.error(error instanceof Error ? error.message : "削除に失敗しました");
+            } finally {
+              setIsDeleting(false);
+              setShowDeleteModal(false);
+            }
+          }}
+          onCancel={() => setShowDeleteModal(false)}
         />
       )}
     </div>
