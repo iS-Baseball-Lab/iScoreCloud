@@ -14,17 +14,7 @@ export default function SettingsPage() {
       <div className="max-w-2xl mx-auto space-y-8">
         
         {/* ヘッダーエリア */}
-        <div className="flex items-center gap-3">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => router.back()}
-            className="h-10 w-10 rounded-full bg-card border border-border/50 shadow-sm hover:bg-muted"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-          <SectionHeader title="アプリ設定" subtitle="SETTINGS" showPulse={false} />
-        </div>
+        <SectionHeader title="アプリ設定" subtitle="SETTINGS" showPulse={false} />
 
         {/* 開発中プレースホルダー */}
         <div className="bg-card border border-border rounded-[var(--radius-xl)] p-12 shadow-sm flex flex-col items-center justify-center text-center space-y-4">
