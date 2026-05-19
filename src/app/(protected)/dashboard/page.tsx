@@ -1,7 +1,7 @@
 // filepath: `src/app/(protected)/dashboard/page.tsx`
 "use client";
 
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   ChevronRight,
@@ -13,7 +13,8 @@ import {
   MapPin,
   CalendarDays,
   CalendarPlus,
-  PlayCircle
+  PlayCircle,
+  RefreshCw
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MatchList } from "@/components/matches/match-list";
@@ -43,6 +44,7 @@ export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [mounted, setMounted] = useState(false);
+  const [isWeatherLoading, setIsWeatherLoading] = useState(false);
 
   // 1. マウント管理 & 時計タイマー
   useEffect(() => {
@@ -64,34 +66,78 @@ export default function DashboardPage() {
     checkAdmin();
   }, [router]);
 
-  // 3. 天気・位置情報取得
-  useEffect(() => {
-    const fetchWeatherAndLocation = async (lat: number, lon: number) => {
-      try {
-        const res = await fetch(
-          `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code,wind_speed_10m,wind_direction_10m`
-        );
-        if (res.ok) {
-          const data = (await res.json()) as OpenMeteoResponse;
-          setWeather({
-            temp: Math.round(data.current.temperature_2m),
-            weatherCode: data.current.weather_code,
-            windDir: data.current.wind_direction_10m,
-            windSpd: Math.round(data.current.wind_speed_10m),
-          });
+  // 3. 天気・位置情報取得 (キャッシュ機構付き ＋ 手動更新対応)
+  const refreshWeather = useCallback((force = false) => {
+    const CACHE_KEY = "iscore_weather_cache";
+    const CACHE_DURATION = 30 * 60 * 1000; // 30分
+
+    if (!force) {
+      // まずキャッシュを確認
+      const cachedData = localStorage.getItem(CACHE_KEY);
+      if (cachedData) {
+        try {
+          const parsed = JSON.parse(cachedData);
+          if (Date.now() - parsed.cachedAt < CACHE_DURATION) {
+            // キャッシュが有効ならそれを使う
+            setWeather(parsed.weather);
+            setLocationName(parsed.locationName);
+            return; // APIコールとGPS起動を完全にスキップ
+          }
+        } catch (e) {
+          console.error("Cache parse error", e);
         }
-        const name = await reverseGeocode(lat, lon);
-        setLocationName(name);
-      } catch (e) { console.error("Weather error", e); }
-    };
+      }
+    }
 
     if ("geolocation" in navigator) {
+      setIsWeatherLoading(true);
       navigator.geolocation.getCurrentPosition(
-        (pos) => fetchWeatherAndLocation(pos.coords.latitude, pos.coords.longitude),
-        () => console.warn("Geolocation access denied")
+        async (pos) => {
+          try {
+            const lat = pos.coords.latitude;
+            const lon = pos.coords.longitude;
+            const res = await fetch(
+              `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code,wind_speed_10m,wind_direction_10m`
+            );
+            let newWeather = null;
+            if (res.ok) {
+              const data = (await res.json()) as OpenMeteoResponse;
+              newWeather = {
+                temp: Math.round(data.current.temperature_2m),
+                weatherCode: data.current.weather_code,
+                windDir: data.current.wind_direction_10m,
+                windSpd: Math.round(data.current.wind_speed_10m),
+              };
+              setWeather(newWeather);
+            }
+            const newLocationName = await reverseGeocode(lat, lon);
+            setLocationName(newLocationName);
+
+            // キャッシュに保存
+            if (newWeather && newLocationName) {
+              localStorage.setItem(CACHE_KEY, JSON.stringify({
+                weather: newWeather,
+                locationName: newLocationName,
+                cachedAt: Date.now()
+              }));
+            }
+          } catch (e) {
+            console.error("Weather error", e);
+          } finally {
+            setIsWeatherLoading(false);
+          }
+        },
+        () => {
+          console.warn("Geolocation access denied");
+          setIsWeatherLoading(false);
+        }
       );
     }
   }, []);
+
+  useEffect(() => {
+    refreshWeather(false);
+  }, [refreshWeather]);
 
   // 4. 試合データ取得 (iscore_selectedTeamId 対応)
   useEffect(() => {
@@ -193,13 +239,23 @@ export default function DashboardPage() {
       </section>
 
         {/* 現在地表示 */}
-        <div className="flex justify-center px-1">
-          <div className="flex items-center gap-2 py-3.5 px-10 rounded-3xl bg-primary/10 border border-primary/20 text-primary shadow-sm transition-all cursor-default">
+        <div className="flex justify-center px-1 relative max-w-sm mx-auto">
+          <div className="flex items-center gap-2 py-3.5 px-10 rounded-3xl bg-primary/10 border border-primary/20 text-primary shadow-sm transition-all cursor-default w-full justify-center">
             <MapPin className="h-4 w-4 animate-pulse" />
             <span className="text-sm sm:text-base font-black tracking-tight">
-              現在地：{locationName || "取得中..."}
+              現在地：{locationName || (isWeatherLoading ? "取得中..." : "未取得")}
             </span>
           </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => refreshWeather(true)}
+            disabled={isWeatherLoading}
+            className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full hover:bg-primary/20 text-primary"
+            title="天気と位置情報を手動更新"
+          >
+            <RefreshCw className={cn("h-4 w-4", isWeatherLoading && "animate-spin")} />
+          </Button>
         </div>
 
         {/* --- 2. 環境ウィジェット --- */}
