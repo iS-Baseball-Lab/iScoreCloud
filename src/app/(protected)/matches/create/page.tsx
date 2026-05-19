@@ -49,7 +49,7 @@ function CreateMatchContent() {
   });
 
   const [isLoading, setIsLoading] = useState(false);
-  const [tournaments, setTournaments] = useState([]);
+  const [tournaments, setTournaments] = useState<any[]>([]);
   const [isNewTournament, setIsNewTournament] = useState(false);
   
   // スコア用ステート (Quickモード専用)
@@ -57,6 +57,19 @@ function CreateMatchContent() {
   const [opponentScore, setOpponentScore] = useState("");
   const [myInnings, setMyInnings] = useState<string[]>(Array(7).fill(""));
   const [opponentInnings, setOpponentInnings] = useState<string[]>(Array(7).fill(""));
+
+  useEffect(() => {
+    const fetchTournaments = async () => {
+      try {
+        const res = await fetch("/api/tournaments");
+        const data = await res.json();
+        if (Array.isArray(data)) setTournaments(data as any[]);
+      } catch (error) {
+        console.error("Failed to fetch tournaments:", error);
+      }
+    };
+    fetchTournaments();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
