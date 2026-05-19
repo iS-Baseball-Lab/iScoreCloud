@@ -60,6 +60,13 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
     return [newEntry, ...s.logs].slice(0, 50);
   }, []);
 
+  // 🚀 1.5 履歴管理ラッパー
+  const pushHistory = useCallback((prev: ScoreState, nextPartial: Partial<ScoreState>): ScoreState => {
+    const { history, ...stateWithoutHistory } = prev;
+    const newHistory = [...(history || []), stateWithoutHistory as ScoreState].slice(-30);
+    return { ...prev, ...nextPartial, history: newHistory } as ScoreState;
+  }, []);
+
   // 🚀 2. バックエンド同期 (D1 + LINE速報連動)
   const syncWithBackend = useCallback(async (updatedState: ScoreState, actionNote: string) => {
     if (!updatedState.isScorer) return; // 🌟 スコアラー以外は同期をスキップ
@@ -182,8 +189,7 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
         isInningChange = true;
       }
 
-      const next = {
-        ...prev,
+      const next = pushHistory(prev, {
         balls: isAtBatEnd ? 0 : newBalls,
         strikes: isAtBatEnd ? 0 : newStrikes,
         outs: isInningChange ? 0 : newOuts,
@@ -191,7 +197,7 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
         inning: isInningChange && !prev.isTop ? prev.inning + 1 : prev.inning,
         runners: isInningChange ? { base1: null, base2: null, base3: null } : prev.runners,
         logs: appendLog(isInningChange ? `${description} (チェンジ)` : description, prev),
-      };
+      });
 
       if (isAtBatEnd || result === "out") syncWithBackend(next, description);
       return next;
@@ -245,8 +251,7 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
         updatedMyScores[currentIdx] += actualRbi;
       }
 
-      const next = {
-        ...prev,
+      const next = pushHistory(prev, {
         opponentScore: !isMyAttack ? prev.opponentScore + actualRbi : prev.opponentScore,
         myScore: isMyAttack ? prev.myScore + actualRbi : prev.myScore,
         opponentHits: !isMyAttack ? prev.opponentHits + hits : prev.opponentHits,
@@ -258,7 +263,7 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
         balls: 0, strikes: 0,
         runners: nextRunners,
         logs: appendLog(`${result}${actualRbi > 0 ? ` (${actualRbi}得点)` : ''}`, prev),
-      };
+      });
 
       syncWithBackend(next, result);
       return next;
@@ -269,18 +274,29 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
   const changeInning = () => {
     setState(prev => {
       if (!prev.isScorer) return prev;
-      const next = {
-        ...prev,
+      const next = pushHistory(prev, {
         isTop: !prev.isTop,
         inning: prev.isTop ? prev.inning : prev.inning + 1,
         balls: 0, strikes: 0, outs: 0,
         runners: { base1: null, base2: null, base3: null },
-      };
+      });
       syncWithBackend(next, "イニング交代");
       return next;
     });
   };
-
+  // 🚀 6.5 操作の取り消し (UNDO)
+  const undo = useCallback(() => {
+    setState(prev => {
+      if (!prev.isScorer || !prev.history || prev.history.length === 0) return prev;
+      
+      const newHistory = [...prev.history];
+      const previousState = newHistory.pop()!;
+      const next = { ...previousState, history: newHistory };
+      
+      syncWithBackend(next, "操作取消 (UNDO)");
+      return next;
+    });
+  }, [syncWithBackend]);
   // 🚀 7. ランナー状態の更新
   const updateRunners = (runners: { base1: string | null; base2: string | null; base3: string | null }) => {
     setState(prev => ({ ...prev, runners }));
@@ -308,7 +324,7 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
   return (
     <ScoreContext.Provider value={{
       state, isLoading, isSyncing, initMatch, recordPitch, recordInPlay,
-      changeInning, isScorer: state.isScorer,
+      changeInning, undo, isScorer: state.isScorer,
       updateRunners, resetBatter, finishMatch, updateMatchSettings
     }}>
       {children}

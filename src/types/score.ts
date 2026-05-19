@@ -62,7 +62,9 @@ export interface ScoreState {
   status: string;
   isScorer: boolean;
 
+  // ログ・履歴
   logs: PlayLogEntry[];
+  history?: ScoreState[];
 }
 
 /** 🔌 API レスポンス用 */
@@ -104,6 +106,7 @@ export interface ScoreContextType {
   changeInning: () => void;
   updateRunners: (runners: { base1: string | null; base2: string | null; base3: string | null }) => void;
   resetBatter: (playerId: string | null) => void;
+  undo: () => void;
   finishMatch: () => Promise<void>;
   updateMatchSettings: (settings: Partial<ScoreState>) => void;
 }

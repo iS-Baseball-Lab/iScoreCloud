@@ -47,7 +47,7 @@ export function PlayLog({ limit = 3 }: PlayLogProps) {
               "relative flex items-center gap-3 transition-all duration-300",
               // 💡 通知の代わり：最新の1件だけブランドカラーで強力に強調
               isLatest 
-                ? "bg-primary text-primary-foreground px-4 py-2.5 rounded-[20px] shadow-lg animate-in fade-in slide-in-from-bottom-2 scale-[1.02] z-10" 
+                ? "bg-primary text-primary-foreground px-4 py-2.5 rounded-[20px] shadow-lg animate-in fade-in slide-in-from-bottom-2 scale-100 z-10" 
                 : "bg-muted/40 text-foreground/60 px-4 py-2 rounded-[18px] border border-border/20 opacity-60"
             )}
           >

@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   ChevronLeft, Users, Loader2, ChevronRight, Wand2,
-  Shield, Swords, Save, UserMinus, UserCheck, CheckCircle2
+  Shield, Swords, Save, UserMinus, UserCheck, CheckCircle2,
+  FolderOpen, ChevronDown
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -203,9 +204,13 @@ export default function LineupPage() {
         <div className="flex justify-between items-center px-1">
           {activeTab === "myTeam" ? (
             <div className="flex gap-2 w-full">
-              <select className="flex-1 h-12 bg-card/50 border-2 border-border/40 rounded-2xl px-4 text-xs font-black focus:outline-none">
-                <option>📂 テンプレート読込</option>
-              </select>
+              <div className="relative flex-1">
+                <FolderOpen className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-primary/60 pointer-events-none" />
+                <select className="w-full h-12 bg-card/50 border-2 border-border/40 rounded-2xl pl-10 pr-8 text-xs font-black focus:outline-none appearance-none cursor-pointer hover:bg-muted/50 transition-colors">
+                  <option>テンプレート読込</option>
+                </select>
+                <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+              </div>
               <Button variant="outline" onClick={() => setIsTemplateModalOpen(true)} className="h-12 rounded-2xl border-2 border-primary/20 text-primary font-black px-6">
                 <Save className="w-4 h-4 mr-2" /> 保存
               </Button>
@@ -430,10 +435,10 @@ export default function LineupPage() {
         <div className="pt-8">
           <Button
             onClick={handlePlayBall}
-            className="w-full h-20 rounded-full text-xl font-black uppercase tracking-[0.3em] shadow-sm shadow-primary/30 active:scale-95 transition-all"
+            className="w-full h-16 rounded-2xl text-lg font-black tracking-widest shadow-sm shadow-primary/30 active:scale-95 transition-all"
           >
-            PLAYBALL
-            <ChevronRight className="ml-2 h-8 w-8" />
+            保存してスコア画面へ
+            <ChevronRight className="ml-2 h-6 w-6" />
           </Button>
         </div>
       </div>

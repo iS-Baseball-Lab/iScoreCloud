@@ -6,7 +6,7 @@ import { useScore } from "@/contexts/ScoreContext";
 import { cn } from "@/lib/utils";
 
 export function ControlPanel() {
-  const { state, recordPitch, recordInPlay, changeInning, finishMatch, isSyncing } = useScore();
+  const { state, recordPitch, recordInPlay, undo, finishMatch, isSyncing } = useScore();
 
   useEffect(() => {
     const className = "hide-global-fab";
@@ -87,9 +87,9 @@ export function ControlPanel() {
       <div className="flex-1 grid grid-cols-4 gap-2 min-h-0 text-zinc-500">
         <button onClick={() => recordPitch("foul")} className="h-full rounded-2xl border-2 border-zinc-200 dark:border-zinc-800 font-black text-[10px] uppercase">Foul</button>
         <button onClick={() => recordInPlay("エラー", 0, 0, 1)} className="h-full rounded-2xl border-2 border-zinc-200 dark:border-zinc-800 font-black text-[10px] uppercase">Error</button>
-        <button onClick={changeInning} disabled={isSyncing}
+        <button onClick={undo} disabled={isSyncing}
           className="h-full bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 rounded-2xl text-[10px] sm:text-[12px] font-black uppercase tracking-widest active:bg-zinc-300">
-          Change
+          Undo
         </button>
         <button onClick={() => {
             if(window.confirm("試合を終了し、結果を確定しますか？")) {
@@ -97,7 +97,7 @@ export function ControlPanel() {
             }
           }} disabled={isSyncing}
           className="h-full bg-rose-500/10 text-rose-600 dark:text-rose-400 border-2 border-rose-500/20 rounded-2xl text-[9px] sm:text-[10px] font-black uppercase tracking-widest active:bg-rose-500/20 leading-tight">
-          試合<br/>終了
+          試合終了
         </button>
       </div>
     </div>
