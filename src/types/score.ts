@@ -85,6 +85,14 @@ export interface MatchResponse {
     surfaceDetails?: string;
     tournamentName?: string;
     matchType?: string;
+    balls?: number;
+    strikes?: number;
+    outs?: number;
+    runners?: any;
+    myHits?: number;
+    opponentHits?: number;
+    myErrors?: number;
+    opponentErrors?: number;
   };
 }
 

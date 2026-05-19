@@ -32,7 +32,17 @@ matchesApi.post('/update-score', async (c) => {
       inning,
       isBottom,
       action,
-      status: requestedStatus
+      status: requestedStatus,
+      myInningScores,
+      opponentInningScores,
+      balls,
+      strikes,
+      outs,
+      runners,
+      myHits,
+      opponentHits,
+      myErrors,
+      opponentErrors
     } = body;
 
     // 2. 現在の試合状況をDBからロード（規定イニング数やチームIDを知るため）
@@ -67,7 +77,16 @@ matchesApi.post('/update-score', async (c) => {
         currentInning: inning,
         isBottom: !!isBottom,
         status: newStatus,
-        // 必要に応じてイニング得点（JSON）の更新ロジックをここに追加
+        myInningScores: JSON.stringify(myInningScores || []),
+        opponentInningScores: JSON.stringify(opponentInningScores || []),
+        balls: balls ?? 0,
+        strikes: strikes ?? 0,
+        outs: outs ?? 0,
+        runners: JSON.stringify(runners || { base1: null, base2: null, base3: null }),
+        myHits: myHits ?? 0,
+        opponentHits: opponentHits ?? 0,
+        myErrors: myErrors ?? 0,
+        opponentErrors: opponentErrors ?? 0
       })
       .where(eq(matches.id, matchId));
 

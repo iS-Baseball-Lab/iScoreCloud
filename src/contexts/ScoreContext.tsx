@@ -86,6 +86,14 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
           myInningScores: updatedState.myInningScores, // 🌟 配列をそのまま送信（API側でstringify）
           opponentInningScores: updatedState.opponentInningScores,
           status: updatedState.status,
+          balls: updatedState.balls,
+          strikes: updatedState.strikes,
+          outs: updatedState.outs,
+          runners: updatedState.runners,
+          myHits: updatedState.myHits,
+          opponentHits: updatedState.opponentHits,
+          myErrors: updatedState.myErrors,
+          opponentErrors: updatedState.opponentErrors,
         }),
       });
       const data = await res.json() as { success: boolean, data?: { status: string } };
@@ -137,6 +145,14 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
           status: m.status as any,
           myLineup: lineupsData?.lineups?.myLineup || [],
           opponentLineup: lineupsData?.lineups?.opponentLineup || [],
+          balls: m.balls ?? 0,
+          strikes: m.strikes ?? 0,
+          outs: m.outs ?? 0,
+          runners: typeof m.runners === 'string' ? JSON.parse(m.runners) : (m.runners || { base1: null, base2: null, base3: null }),
+          myHits: m.myHits ?? 0,
+          opponentHits: m.opponentHits ?? 0,
+          myErrors: m.myErrors ?? 0,
+          opponentErrors: m.opponentErrors ?? 0,
           // 💡 ここで権限判定を行う（例: チーム所属チェック）
           isScorer: true, // 開発中は一旦true。実際は管理者かどうかを判定
         }));

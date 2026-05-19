@@ -74,6 +74,14 @@ export const MatchService = {
       opponentInningScores: matches.opponentInningScores,
       currentInning: matches.currentInning,
       isBottom: matches.isBottom,
+      balls: matches.balls,
+      strikes: matches.strikes,
+      outs: matches.outs,
+      runners: matches.runners,
+      myHits: matches.myHits,
+      opponentHits: matches.opponentHits,
+      myErrors: matches.myErrors,
+      opponentErrors: matches.opponentErrors,
     })
       .from(matches)
       .leftJoin(tournaments, eq(matches.tournamentId, tournaments.id))

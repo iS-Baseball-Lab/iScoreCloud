@@ -82,6 +82,16 @@ export const matches = sqliteTable("matches", {
   myInningScores: text("my_inning_scores").default('[]'),
   opponentInningScores: text("opponent_inning_scores").default('[]'),
 
+  // 🌟 試合の詳細状況（BSO、ランナー、ヒット、エラー）
+  balls: integer("balls").notNull().default(0),
+  strikes: integer("strikes").notNull().default(0),
+  outs: integer("outs").notNull().default(0),
+  runners: text("runners").default('{"base1":null,"base2":null,"base3":null}'),
+  myHits: integer("my_hits").notNull().default(0),
+  opponentHits: integer("opponent_hits").notNull().default(0),
+  myErrors: integer("my_errors").notNull().default(0),
+  opponentErrors: integer("opponent_errors").notNull().default(0),
+
   // JSON文字列でスタメンを保持（相手チームはダミーの可能性があるためJSONで完結させる）
   myLineup: text("my_lineup").default('[]'),
   opponentLineup: text("opponent_lineup").default('[]'),
