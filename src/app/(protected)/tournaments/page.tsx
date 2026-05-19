@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { Flame, Zap, ArrowLeft, Plus, Loader2 } from "lucide-react";
+import { Flame, Zap, ArrowLeft, Plus, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Tournament, TournamentFormData } from "@/types/tournament";
 import { TournamentCard } from "@/components/features/tournaments/tournament-card";

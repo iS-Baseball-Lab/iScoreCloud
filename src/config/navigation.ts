@@ -25,7 +25,7 @@ export const MAIN_NAV_ITEMS: NavItem[] = [
 ];
 
 export const BOTTOM_NAV_ITEMS: NavItem[] = [
-  { name: "大会管理", href: "/tournaments/register", icon: PlusSquare, show: true },
+  { name: "大会管理", href: "/tournaments", icon: PlusSquare, show: true },
   { name: "参加申請", href: "/teams/requests", icon: UserCheck, show: true },
   { name: "設定", href: "/settings", icon: Settings, show: true },
 ];

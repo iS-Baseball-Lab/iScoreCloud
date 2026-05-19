@@ -103,7 +103,7 @@ export function MobileDrawer({ isOpen, onClose, onNavigate, onLogout }: Extended
             <p className="text-[10px] font-black text-muted-foreground/60 uppercase tracking-[0.2em] px-4">Administration</p>
             <div className="grid grid-cols-1 gap-2">
               {[
-                { name: "大会管理", href: "/tournaments/register", icon: PlusSquare },
+                { name: "大会管理", href: "/tournaments", icon: PlusSquare },
                 { name: "参加申請", href: "/teams/requests", icon: UserCheck },
                 { name: "設定", href: "/settings", icon: Settings },
               ].map((item) => (
