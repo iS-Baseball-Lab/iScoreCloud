@@ -62,6 +62,7 @@ export interface Membership {
   organizationId?: string;
   role: string;
   roleLabel: string;
+  status: string;
   isMainTeam: boolean;
 }
 

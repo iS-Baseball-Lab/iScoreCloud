@@ -23,7 +23,7 @@ export const handleJoinTeam = async (c: Context) => {
 
   try {
     const team = await db.select().from(teams).where(eq(teams.id, targetTeamId)).get()
-    if (!team) return c.json({ success: false, error: '無効な招待コードです' }, 444)
+    if (!team) return c.json({ success: false, error: '無効な招待コードです' }, 404)
 
     const existing = await db.select().from(teamMembers).where(and(eq(teamMembers.teamId, targetTeamId), eq(teamMembers.userId, session.user.id))).get()
     if (existing) {
@@ -43,9 +43,9 @@ export const handleJoinTeam = async (c: Context) => {
     })
 
     return c.json({ success: true, message: '参加申請を送信しました！' })
-  } catch (e: any) { 
+  } catch (e: any) {
     console.error("[iScore API Error] チーム参加申請でエラー:", e.message);
-    return c.json({ success: false, error: '申請処理に失敗しました', details: e.message }, 500) 
+    return c.json({ success: false, error: '申請処理に失敗しました', details: e.message }, 500)
   }
 }
 
@@ -84,7 +84,7 @@ export const handleGetMembers = async (c: Context) => {
     } catch (sqlError) {
       console.warn("[iScore Warning] team_role_settings テーブルが未作成です。")
     }
-  
+
     // ① まずは安全に確実に取れる情報だけをクエリする
     const { results } = await c.env.DB.prepare(`
       SELECT
@@ -134,7 +134,7 @@ export const handleGetMembers = async (c: Context) => {
       joinedAt: row.joinedAt,
       name: row.name,
       avatarUrl: row.avatarUrl,
-      authProviders: providersMap[row.userId] || [], 
+      authProviders: providersMap[row.userId] || [],
     }))
 
     return c.json({ success: true, members: formattedMembers, inviteCode: teamId, roleSettings })
@@ -182,7 +182,7 @@ export const handlePatchMemberRole = async (c: Context) => {
   const session = await auth.api.getSession({ headers: c.req.raw.headers })
   if (!session) return c.json({ error: 'Unauthorized' }, 401)
 
-  const teamId   = c.req.param('id')
+  const teamId = c.req.param('id')
   const memberId = c.req.param('memberId')
   const { role } = await c.req.json<{ role: string }>()
   const db = drizzle(c.env.DB)
@@ -196,9 +196,9 @@ export const handlePatchMemberRole = async (c: Context) => {
 
     // 💡 ロール変更と同時に、status を 'active' に強制昇格させる
     await db.update(teamMembers)
-      .set({ 
+      .set({
         role: role.toLowerCase(),
-        status: 'active' 
+        status: 'active'
       })
       .where(and(eq(teamMembers.id, memberId), eq(teamMembers.teamId, teamId)))
 
@@ -212,7 +212,7 @@ export const handleRemoveMember = async (c: Context) => {
   const session = await auth.api.getSession({ headers: c.req.raw.headers })
   if (!session) return c.json({ error: 'Unauthorized' }, 401)
 
-  const teamId   = c.req.param('id')
+  const teamId = c.req.param('id')
   const memberId = c.req.param('memberId')
   const db = drizzle(c.env.DB)
 

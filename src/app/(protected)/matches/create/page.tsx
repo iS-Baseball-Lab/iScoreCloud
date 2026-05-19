@@ -43,7 +43,7 @@ function CreateMatchContent() {
     venue: "",
     matchType: 'practice' as 'official' | 'practice',
     tournamentName: "",
-    battingOrder: 'first' as 'first' | 'second',
+    battingOrder: 'unknown' as 'unknown' | 'first' | 'second',
     benchSide: 'unknown' as 'unknown' | '1B' | '3B',
     inningCount: 7 as 6 | 7 | 9,
   });
