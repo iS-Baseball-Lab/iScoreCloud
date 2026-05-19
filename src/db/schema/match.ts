@@ -55,11 +55,14 @@ export const matches = sqliteTable("matches", {
   matchType: text("match_type").notNull(), // 'official', 'practice'
   battingOrder: text("batting_order").notNull(), // 'first'(先攻), 'second'(後攻)
 
-  // 🌟 追加：現在の試合進行状況（LINE速報の心臓部）
+  // 🌟 追加：ベンチ位置（1塁側 / 3塁側 / 未定）当日グラウンドで決まるケースに対応！
+  benchSide: text("bench_side", { enum: ["unknown", "1B", "3B"] }).notNull().default("unknown"),
+
+  // 🌟 現在の試合進行状況（LINE速報の心臓部）
   currentInning: integer("current_inning").notNull().default(1),
   isBottom: integer("is_bottom", { mode: "boolean" }).notNull().default(false), // false: 表, true: 裏
 
-  // 🌟 追加：特別ルール・決着フラグ
+  // 🌟 特別ルール・決着フラグ
   isTiebreaker: integer("is_tiebreaker", { mode: "boolean" }).notNull().default(false),
   isColdGame: integer("is_cold_game", { mode: "boolean" }).notNull().default(false),
 
