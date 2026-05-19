@@ -59,6 +59,7 @@ export interface Membership {
   teamId: string;
   teamName: string;
   organizationName: string;
+  organizationCategory?: string;
   organizationId?: string;
   role: string;
   roleLabel: string;

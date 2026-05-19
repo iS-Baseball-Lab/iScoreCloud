@@ -29,6 +29,23 @@ export function TournamentForm({ initial = EMPTY_FORM, onSubmit, onCancel, isSub
                 <Input value={form.name} onChange={set("name")} placeholder="第○○回 春季市民野球大会" required className="h-11 rounded-[var(--radius-xl)] font-bold" />
             </div>
 
+            <div className="space-y-1.5">
+                <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">対象カテゴリ *</Label>
+                <select
+                    value={form.category}
+                    onChange={(e: any) => setForm(prev => ({ ...prev, category: e.target.value }))}
+                    className="flex h-11 w-full rounded-[var(--radius-xl)] border border-input bg-background px-3 py-2 text-sm font-bold ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    required
+                >
+                    <option value="other">その他</option>
+                    <option value="gakudo">🧢 学童野球（少年野球）</option>
+                    <option value="junior">⚾️ 中学野球（シニア・ボーイズ等）</option>
+                    <option value="high">🏫 高校野球</option>
+                    <option value="university">🎓 大学野球</option>
+                    <option value="adult">🍺 一般・草野球</option>
+                </select>
+            </div>
+
             <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                     <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">年度 *</Label>

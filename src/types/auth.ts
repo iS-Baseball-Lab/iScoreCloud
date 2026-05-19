@@ -28,6 +28,8 @@ export interface UserTeamMembership {
   roleId: string;      // どの役割 ID か
   roleLabel: string;   // 表示用の役割名
   isMainTeam: boolean;
+  organizationName?: string;
+  organizationCategory?: string;
 }
 
 export interface UserSession {

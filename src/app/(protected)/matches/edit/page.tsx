@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { MatchBasicForm, MatchFormState } from "@/components/features/matches/match-basic-form";
 import { FinishedScoreBoard } from "@/components/features/matches/match-score-board";
 import { SectionHeader } from "@/components/layout/SectionHeader";
+import { useTeam } from "@/contexts/TeamContext";
 
 // ━━━ 型定義 ━━━
 interface Tournament { 
@@ -89,6 +90,7 @@ function DeleteConfirmModal({ isDeleting, onConfirm, onCancel }: DeleteConfirmMo
 // ━━━ メインコンテンツ ━━━
 function MatchEditContent() {
   const router = useRouter();
+  const { currentTeam } = useTeam();
   const searchParams = useSearchParams();
   const matchId = searchParams.get("id");
 
@@ -177,7 +179,8 @@ function MatchEditContent() {
           if (current) setTeamName(current.name);
         }
 
-        const tRes = await fetch("/api/tournaments");
+        const categoryParam = currentTeam?.organizationCategory ? `?category=${currentTeam.organizationCategory}` : '';
+        const tRes = await fetch(`/api/tournaments${categoryParam}`);
         const tData = await tRes.json();
         if (Array.isArray(tData)) setTournaments(tData as Tournament[]);
 
@@ -187,7 +190,7 @@ function MatchEditContent() {
       finally { setIsLoading(false); }
     };
     fetchAllData();
-  }, [matchId, router]);
+  }, [matchId, router, currentTeam]);
 
   const myTotalScore = myInnings.reduce((sum, val) => sum + (parseInt(val) || 0), 0);
   const opponentTotalScore = opponentInnings.reduce((sum, val) => sum + (parseInt(val) || 0), 0);

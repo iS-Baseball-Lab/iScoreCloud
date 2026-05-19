@@ -2,6 +2,7 @@ import { Tournament, TournamentFormData } from "@/types/tournament";
 
 export const EMPTY_FORM: TournamentFormData = {
     name: "",
+    category: "other",
     season: String(new Date().getFullYear()),
     organizer: "",
     startDate: "",

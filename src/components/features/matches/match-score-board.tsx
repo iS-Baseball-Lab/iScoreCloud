@@ -93,7 +93,7 @@ export function QuickScoreForm({
 // ━━ ② FINISHED SCORE 用（編集時の野球風ランニングスコアボード） ━━
 interface FinishedScoreBoardProps {
   inningCount: number;
-  battingOrder: "first" | "second";
+  battingOrder: "unknown" | "first" | "second";
   teamName: string;
   opponentName: string;
   myInnings: string[];
@@ -142,18 +142,18 @@ export function FinishedScoreBoard({
           {/* 先攻の行 */}
           <div className="flex items-center gap-2">
             <div className="w-20 font-black text-xs truncate text-muted-foreground">
-              {battingOrder === 'first' ? teamName : opponentName}
+              {battingOrder === 'second' ? opponentName : teamName}
             </div>
             <div className="flex-1 flex gap-1.5">
               {Array.from({ length: inningCount }).map((_, i) => (
                 <Input
                   key={`top-${i}`} type="text" placeholder="-"
-                  value={battingOrder === 'first' ? (myInnings[i] || "") : (opponentInnings[i] || "")}
+                  value={battingOrder === 'second' ? (opponentInnings[i] || "") : (myInnings[i] || "")}
                   onChange={(e) => {
-                    if (battingOrder === 'first') {
-                      const next = [...myInnings]; next[i] = e.target.value; setMyInnings(next);
-                    } else {
+                    if (battingOrder === 'second') {
                       const next = [...opponentInnings]; next[i] = e.target.value; setOpponentInnings(next);
+                    } else {
+                      const next = [...myInnings]; next[i] = e.target.value; setMyInnings(next);
                     }
                   }}
                   className="w-8 h-8 p-0 text-center font-bold text-xs rounded-lg bg-muted/40 border-0"
@@ -161,7 +161,7 @@ export function FinishedScoreBoard({
               ))}
             </div>
             <div className="w-8 text-center font-black text-sm text-primary tabular-nums">
-              {battingOrder === 'first' ? myTotalScore : opponentTotalScore}
+              {battingOrder === 'second' ? opponentTotalScore : myTotalScore}
             </div>
           </div>
 

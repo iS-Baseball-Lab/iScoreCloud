@@ -18,8 +18,11 @@ app.get('/', async (c) => {
     if (!session) return c.json({ error: 'Unauthorized' }, 401)
 
     const db = drizzle(c.env.DB)
+    const category = c.req.query('category')
     try {
-        const results = await db.select().from(tournaments).orderBy(desc(tournaments.createdAt))
+        const results = category && category !== 'all'
+            ? await db.select().from(tournaments).where(eq(tournaments.category, category)).orderBy(desc(tournaments.createdAt))
+            : await db.select().from(tournaments).orderBy(desc(tournaments.createdAt));
         return c.json(results)
     } catch (e) {
         return c.json({ error: '大会の取得に失敗しました' }, 500)
@@ -43,6 +46,7 @@ app.post('/', async (c) => {
         await db.insert(tournaments).values({
             id: tournamentId,
             name: body.name,
+            category: body.category ?? 'other',
             season: body.season ?? String(new Date().getFullYear()),
             organizer: body.organizer ?? null,
             bracketUrl: body.bracketUrl ?? null,
@@ -75,6 +79,7 @@ app.patch('/:id', async (c) => {
     try {
         await db.update(tournaments).set({
             name: body.name,
+            category: body.category ?? 'other',
             season: body.season,
             organizer: body.organizer ?? null,
             bracketUrl: body.bracketUrl ?? null,

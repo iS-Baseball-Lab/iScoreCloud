@@ -1,6 +1,7 @@
 export interface Tournament {
     id: string;
     name: string;
+    category: string;
     season: string;
     organizer: string | null;
     bracketUrl: string | null;
@@ -14,6 +15,7 @@ export interface Tournament {
 
 export interface TournamentFormData {
     name: string;
+    category: string;
     season: string;
     organizer: string;
     startDate: string;

@@ -38,6 +38,7 @@ app.get('/me', async (c) => {
         teamId: teams.id,
         teamName: teams.name,
         organizationName: organizations.name,
+        organizationCategory: organizations.category,
         role: teamMembers.role,
         status: teamMembers.status,
       })
@@ -51,6 +52,7 @@ app.get('/me', async (c) => {
         teamId: t.teamId,
         teamName: t.teamName,
         organizationName: t.organizationName ?? t.teamName,
+        organizationCategory: t.organizationCategory ?? 'other',
         role: t.role,
         roleLabel: getRoleLabel(t.role),
         status: t.status,

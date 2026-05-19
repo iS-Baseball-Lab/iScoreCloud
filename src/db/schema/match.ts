@@ -15,6 +15,7 @@ import { teams, players } from "./team";
 export const tournaments = sqliteTable("tournaments", {
   id: text("id").primaryKey(),
   name: text("name").notNull(), // 例: "第15回 関東秋季大会"
+  category: text("category").notNull().default('other'), // 学童、中学、草野球などのカテゴリ
   season: text("season").notNull(), // 例: "2026"
   organizer: text("organizer"), // 主催者・連盟名
   bracketUrl: text("bracket_url"), // 公式のトーナメント表（Webページ）へのリンク

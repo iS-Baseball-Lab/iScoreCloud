@@ -9,9 +9,11 @@ import { Tournament, TournamentFormData } from "@/types/tournament";
 import { TournamentCard } from "@/components/features/tournaments/tournament-card";
 import { TournamentForm } from "@/components/features/tournaments/tournament-form";
 import { EMPTY_FORM, getTournamentStatus } from "@/components/features/tournaments/utils";
+import { useTeam } from "@/contexts/TeamContext";
 
 export default function TournamentMapContent() {
     const router = useRouter();
+    const { currentTeam } = useTeam();
     const [tournaments, setTournaments] = useState<Tournament[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
@@ -23,7 +25,8 @@ export default function TournamentMapContent() {
     const fetchTournaments = useCallback(async () => {
         setIsLoading(true);
         try {
-            const res = await fetch("/api/tournaments");
+            const categoryParam = currentTeam?.organizationCategory ? `?category=${currentTeam.organizationCategory}` : '';
+            const res = await fetch(`/api/tournaments${categoryParam}`);
             if (!res.ok) throw new Error();
             const data = await res.json() as Tournament[];
             setTournaments(Array.isArray(data) ? data : []);
@@ -34,7 +37,11 @@ export default function TournamentMapContent() {
         }
     }, []);
 
-    useEffect(() => { fetchTournaments(); }, [fetchTournaments]);
+    useEffect(() => {
+        if (currentTeam !== undefined) {
+            fetchTournaments();
+        }
+    }, [fetchTournaments, currentTeam]);
 
     const handleAdd = async (data: TournamentFormData) => {
         setIsSubmitting(true);
@@ -160,6 +167,7 @@ export default function TournamentMapContent() {
                     <div className="space-y-4">
                         <h2 className="text-xl font-black tracking-tight text-foreground">新規大会の登録</h2>
                         <TournamentForm 
+                            initial={{ ...EMPTY_FORM, category: currentTeam?.organizationCategory || "other" }}
                             onSubmit={handleAdd} 
                             onCancel={() => setIsAddOpen(false)} 
                             isSubmitting={isSubmitting} 
@@ -178,6 +186,7 @@ export default function TournamentMapContent() {
                                 initial={{
                                     name: editTarget.name,
                                     season: editTarget.season,
+                                    category: editTarget.category,
                                     organizer: editTarget.organizer || "",
                                     startDate: editTarget.startDate || "",
                                     endDate: editTarget.endDate || "",

@@ -20,6 +20,7 @@ interface AuthResponse {
 interface Membership extends UserTeamMembership {
   organizationName: string;
   role: string;
+  status: string;
 }
 
 export function Header() {
@@ -48,7 +49,7 @@ export function Header() {
           // 💡 初期ロード時に Context が空なら、ユーザーの優先チームをセット
           if (!currentTeam && json.data.memberships && json.data.memberships.length > 0) {
             const mainTeam = json.data.memberships.find(m => m.isMainTeam) || json.data.memberships[0];
-            selectTeam({ id: mainTeam.teamId, name: mainTeam.teamName });
+            selectTeam({ id: mainTeam.teamId, name: mainTeam.teamName, organizationCategory: mainTeam.organizationCategory });
           }
         }
       } catch (error) {
@@ -65,7 +66,7 @@ export function Header() {
   const handleTeamSwitch = (teamId: string, orgId?: string) => {
     const target = user?.memberships?.find(m => m.teamId === teamId);
     if (target) {
-      selectTeam({ id: target.teamId, name: target.teamName });
+      selectTeam({ id: target.teamId, name: target.teamName, organizationCategory: target.organizationCategory });
     }
     if (orgId) localStorage.setItem("iscore_selectedOrgId", orgId);
 
@@ -79,6 +80,7 @@ export function Header() {
     ...m,
     organizationName: (m as any).organizationName || "個人チーム", // 💡 プロパティがない場合はデフォルト値を補完
     role: (m as any).role || "MEMBER",
+    status: (m as any).status || "active",
   }));
 
   // 🌟 変換後のリストからアクティブなチームを抽出

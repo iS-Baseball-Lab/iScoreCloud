@@ -6,6 +6,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 interface Team {
   id: string;
   name: string;
+  organizationCategory?: string;
 }
 
 interface TeamContextType {
@@ -18,6 +19,7 @@ const TeamContext = createContext<TeamContextType | undefined>(undefined);
 
 const STORAGE_KEY = "iscore_selectedTeamId";
 const NAME_STORAGE_KEY = "iscore_selectedTeamName";
+const CATEGORY_STORAGE_KEY = "iscore_selectedTeamCategory";
 
 export function TeamProvider({ children }: { children: React.ReactNode }) {
   const [currentTeam, setCurrentTeam] = useState<Team | null>(null);
@@ -27,9 +29,10 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const savedId = localStorage.getItem(STORAGE_KEY);
     const savedName = localStorage.getItem(NAME_STORAGE_KEY);
+    const savedCategory = localStorage.getItem(CATEGORY_STORAGE_KEY) || undefined;
 
     if (savedId && savedName) {
-      setCurrentTeam({ id: savedId, name: savedName });
+      setCurrentTeam({ id: savedId, name: savedName, organizationCategory: savedCategory });
     }
     setIsLoading(false);
   }, []);
@@ -39,6 +42,7 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
     setCurrentTeam(team);
     localStorage.setItem(STORAGE_KEY, team.id);
     localStorage.setItem(NAME_STORAGE_KEY, team.name);
+    localStorage.setItem(CATEGORY_STORAGE_KEY, team.organizationCategory || "");
   }, []);
 
   return (

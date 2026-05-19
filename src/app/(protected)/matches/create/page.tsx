@@ -61,15 +61,18 @@ function CreateMatchContent() {
   useEffect(() => {
     const fetchTournaments = async () => {
       try {
-        const res = await fetch("/api/tournaments");
+        const categoryParam = currentTeam?.organizationCategory ? `?category=${currentTeam.organizationCategory}` : '';
+        const res = await fetch(`/api/tournaments${categoryParam}`);
         const data = await res.json();
         if (Array.isArray(data)) setTournaments(data as any[]);
       } catch (error) {
         console.error("Failed to fetch tournaments:", error);
       }
     };
-    fetchTournaments();
-  }, []);
+    if (currentTeam !== undefined) {
+      fetchTournaments();
+    }
+  }, [currentTeam]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
