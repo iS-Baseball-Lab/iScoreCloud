@@ -2,16 +2,16 @@
 
 import React from "react";
 import { useRouter } from "next/navigation";
-import { LogOut, User, Settings, HelpCircle, ShieldCheck, ChevronRight, UserCircle2, Loader2, Users } from "lucide-react";
-import { authClient, useSession } from "@/lib/auth-client";
+import { 
+  LogOut, User, Settings, HelpCircle, ChevronRight, 
+  LayoutDashboard, Users, Contact, CalendarCheck, Trophy, FileText, Shield
+} from "lucide-react";
+import { authClient } from "@/lib/auth-client";
 import { toast } from "sonner";
 import { SectionHeader } from "@/components/layout/SectionHeader";
-import { useTeam } from "@/contexts/TeamContext";
 
 export default function MenuPage() {
   const router = useRouter();
-  const { data: session, isPending } = useSession();
-  const { currentTeam } = useTeam();
 
   const handleLogout = async () => {
     await authClient.signOut();
@@ -28,10 +28,21 @@ export default function MenuPage() {
       ],
     },
     {
+      title: "機能",
+      items: [
+        { icon: LayoutDashboard, label: "ダッシュボード", href: "/dashboard" },
+        { icon: Users, label: "チーム情報", href: "/teams" },
+        { icon: Contact, label: "選手名簿", href: "/players" },
+        { icon: CalendarCheck, label: "出欠管理", href: "/attendance" },
+        { icon: Trophy, label: "大会・イベント", href: "/tournaments" },
+      ],
+    },
+    {
       title: "サポート",
       items: [
         { icon: HelpCircle, label: "使い方・マニュアル", href: "/help" },
-        { icon: ShieldCheck, label: "プライバシーポリシー", href: "/privacy" },
+        { icon: FileText, label: "利用規約", href: "/terms" },
+        { icon: Shield, label: "プライバシーポリシー", href: "/privacy" },
       ],
     },
   ];
@@ -43,37 +54,6 @@ export default function MenuPage() {
         {/* ━━ ページヘッダー ━━ */}
         <SectionHeader title="メニュー" subtitle="MENU" showPulse={false} />
 
-        {/* ━━ ユーザープロフィールカード ━━ */}
-        <div className="bg-card border border-border rounded-[32px] p-5 sm:p-6 shadow-sm flex items-center gap-5">
-          <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center shrink-0 border-2 border-primary/20">
-            {session?.user?.image ? (
-              <img src={session.user.image} alt="User Avatar" className="h-full w-full rounded-full object-cover" />
-            ) : (
-              <UserCircle2 className="h-8 w-8 text-primary" />
-            )}
-          </div>
-          <div className="flex-1 min-w-0">
-            {isPending ? (
-              <Loader2 className="h-5 w-5 animate-spin text-primary/40" />
-            ) : (
-              <>
-                <h2 className="text-xl font-black text-foreground truncate mb-1">
-                  {session?.user?.name || "ユーザー"}
-                </h2>
-                <div className="flex flex-col gap-1.5 items-start">
-                  <p className="text-[11px] font-bold text-muted-foreground truncate w-full">
-                    {session?.user?.email}
-                  </p>
-                  <p className="text-[10px] font-black text-primary bg-primary/10 inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full">
-                    <Users className="h-3 w-3" />
-                    {currentTeam ? currentTeam.name : "チーム未選択"}
-                  </p>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-
         {/* ━━ メニュー項目リスト ━━ */}
         <div className="space-y-6">
           {menuSections.map((section) => (
@@ -81,7 +61,7 @@ export default function MenuPage() {
               <p className="text-[11px] font-black text-muted-foreground/60 uppercase tracking-widest px-4">
                 {section.title}
               </p>
-              <div className="bg-card border border-border rounded-[24px] overflow-hidden shadow-sm">
+              <div className="bg-card border border-border rounded-[var(--radius-xl)] overflow-hidden shadow-sm">
                 {section.items.map((item, index) => (
                   <button
                     key={item.label}
@@ -108,7 +88,7 @@ export default function MenuPage() {
         <div className="pt-4">
           <button
             onClick={handleLogout}
-            className="w-full h-14 bg-card border-2 border-destructive/20 hover:bg-destructive/5 hover:border-destructive/30 rounded-[24px] flex items-center justify-center gap-3 text-destructive active:scale-[0.98] transition-all shadow-sm"
+            className="w-full h-14 bg-card border-2 border-destructive/20 hover:bg-destructive/5 hover:border-destructive/30 rounded-[var(--radius-xl)] flex items-center justify-center gap-3 text-destructive active:scale-[0.98] transition-all shadow-sm"
           >
             <LogOut className="w-5 h-5" />
             <span className="font-black text-sm">ログアウト</span>

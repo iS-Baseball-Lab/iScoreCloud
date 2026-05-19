@@ -106,7 +106,7 @@ export function Header() {
           />
           <div className="flex flex-col justify-center">
             <h1 className="text-xl sm:text-3xl font-black italic tracking-tighter text-foreground leading-none group-hover:text-primary transition-colors duration-300">
-              iScoreCloud
+              iScore<span className="text-primary">Cloud</span>
             </h1>
           </div>
         </Link>
