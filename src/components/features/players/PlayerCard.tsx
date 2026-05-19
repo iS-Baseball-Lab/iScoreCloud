@@ -170,13 +170,13 @@ export function PlayerCard({ player, onEdit, onDelete, onDetail }: PlayerCardPro
                 </span>
               )}
             </div>
-            {player.nameKana && (
-              <p className="text-[9px] font-black text-muted-foreground/80 leading-none truncate mb-0.5">
-                {player.nameKana}
-              </p>
-            )}
-            <p className="text-[1.05rem] font-black tracking-tight text-foreground leading-none truncate mb-1">
+            <p className="text-[1.05rem] font-black tracking-tight text-foreground leading-none truncate mb-1 flex items-baseline">
               {player.name}
+              {player.nameKana && (
+                <span className="text-[10px] font-bold text-muted-foreground/80 ml-1">
+                  （{player.nameKana}）
+                </span>
+              )}
             </p>
             {(throwsLabel || batsLabel) && (
               <p className="text-[10px] font-bold text-muted-foreground leading-none">
