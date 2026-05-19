@@ -1,4 +1,4 @@
-// filepath: `src/components/score/ControlPanel.tsx`
+// filepath: src/components/score/ControlPanel.tsx
 "use client";
 
 import { useEffect } from "react";
@@ -52,27 +52,27 @@ export function ControlPanel() {
         </button>
       </div>
 
-      {/* 🚀 2段目：打球結果 (全種類の安打) */}
+      {/* 🚀 2段目：打球結果 (右手親指のアクセスを考慮し、右から単打・二・三・本塁打の順に配置) */}
       <div className="grid grid-cols-4 gap-2 h-[35%] shrink-0">
-        <button type="button" onClick={() => recordInPlay("単打", 0, 1, 0)}
-          className="h-full bg-blue-600 text-white rounded-3xl flex flex-col items-center justify-center shadow-xl active:scale-95 transition-all">
-          <span className="text-2xl font-black tracking-tighter">1B</span>
-          <span className="text-[10px] font-bold opacity-80 mt-0.5">単打</span>
-        </button>
-        <button type="button" onClick={() => recordInPlay("二塁打", 0, 1, 0)}
-          className="h-full bg-blue-600 text-white rounded-3xl flex flex-col items-center justify-center shadow-xl active:scale-95 transition-all">
-          <span className="text-2xl font-black tracking-tighter">2B</span>
-          <span className="text-[10px] font-bold opacity-80 mt-0.5">二塁打</span>
+        <button type="button" onClick={() => recordInPlay("本塁打", 0, 1, 0)}
+          className="h-full bg-rose-600 text-white rounded-3xl flex flex-col items-center justify-center shadow-xl border-b-4 border-rose-800 active:scale-95 transition-all">
+          <span className="text-2xl font-black tracking-tighter">HR</span>
+          <span className="text-[10px] font-bold opacity-80 mt-0.5">本塁打</span>
         </button>
         <button type="button" onClick={() => recordInPlay("三塁打", 0, 1, 0)}
           className="h-full bg-blue-600 text-white rounded-3xl flex flex-col items-center justify-center shadow-xl active:scale-95 transition-all">
           <span className="text-2xl font-black tracking-tighter">3B</span>
           <span className="text-[10px] font-bold opacity-80 mt-0.5">三塁打</span>
         </button>
-        <button type="button" onClick={() => recordInPlay("本塁打", 0, 1, 0)}
-          className="h-full bg-rose-600 text-white rounded-3xl flex flex-col items-center justify-center shadow-xl border-b-4 border-rose-800 active:scale-95 transition-all">
-          <span className="text-2xl font-black tracking-tighter">HR</span>
-          <span className="text-[10px] font-bold opacity-80 mt-0.5">本塁打</span>
+        <button type="button" onClick={() => recordInPlay("二塁打", 0, 1, 0)}
+          className="h-full bg-blue-600 text-white rounded-3xl flex flex-col items-center justify-center shadow-xl active:scale-95 transition-all">
+          <span className="text-2xl font-black tracking-tighter">2B</span>
+          <span className="text-[10px] font-bold opacity-80 mt-0.5">二塁打</span>
+        </button>
+        <button type="button" onClick={() => recordInPlay("単打", 0, 1, 0)}
+          className="h-full bg-blue-600 text-white rounded-3xl flex flex-col items-center justify-center shadow-xl active:scale-95 transition-all">
+          <span className="text-2xl font-black tracking-tighter">1B</span>
+          <span className="text-[10px] font-bold opacity-80 mt-0.5">単打</span>
         </button>
       </div>
 
