@@ -173,7 +173,7 @@ export function PlayerCard({ player, onEdit, onDelete, onDetail }: PlayerCardPro
             <p className="text-[1.05rem] font-black tracking-tight text-foreground leading-none truncate mb-1 flex items-baseline">
               {player.name}
               {player.nameKana && (
-                <span className="text-[10px] font-bold text-muted-foreground/80 ml-1">
+                <span className="font-bold text-muted-foreground/80 ml-1">
                   （{player.nameKana}）
                 </span>
               )}
