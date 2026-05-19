@@ -204,19 +204,34 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
       // 🌟 自チームが攻撃中かどうかの判定（isGuestFirst を使用）
       const isMyAttack = (prev.isTop && prev.isGuestFirst) || (!prev.isTop && !prev.isGuestFirst);
 
+      // 🌟 自動進塁ロジック
+      let nextRunners = { ...prev.runners };
+      let actualRbi = rbi;
+
+      if (result === "単打") {
+        if (prev.runners.base3) {
+          actualRbi += 1; // 3塁ランナーが自動生還
+        }
+        nextRunners = {
+          base1: "player-id-placeholder", // バッターが1塁へ
+          base2: prev.runners.base1,      // 1塁ランナーが2塁へ
+          base3: prev.runners.base2,      // 2塁ランナーが3塁へ
+        };
+      }
+
       // スコアラーが攻撃か守備かに基づいて配列を更新
       if (!isMyAttack) {
         while (updatedOpponentScores.length <= currentIdx) updatedOpponentScores.push(0);
-        updatedOpponentScores[currentIdx] += rbi;
+        updatedOpponentScores[currentIdx] += actualRbi;
       } else {
         while (updatedMyScores.length <= currentIdx) updatedMyScores.push(0);
-        updatedMyScores[currentIdx] += rbi;
+        updatedMyScores[currentIdx] += actualRbi;
       }
 
       const next = {
         ...prev,
-        opponentScore: !isMyAttack ? prev.opponentScore + rbi : prev.opponentScore,
-        myScore: isMyAttack ? prev.myScore + rbi : prev.myScore,
+        opponentScore: !isMyAttack ? prev.opponentScore + actualRbi : prev.opponentScore,
+        myScore: isMyAttack ? prev.myScore + actualRbi : prev.myScore,
         opponentHits: !isMyAttack ? prev.opponentHits + hits : prev.opponentHits,
         myHits: isMyAttack ? prev.myHits + hits : prev.myHits,
         opponentErrors: isMyAttack ? prev.opponentErrors + errors : prev.opponentErrors,
@@ -224,7 +239,8 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
         opponentInningScores: updatedOpponentScores,
         myInningScores: updatedMyScores,
         balls: 0, strikes: 0,
-        logs: appendLog(`${result}${rbi > 0 ? ` (${rbi}得点)` : ''}`, prev),
+        runners: nextRunners,
+        logs: appendLog(`${result}${actualRbi > 0 ? ` (${actualRbi}得点)` : ''}`, prev),
       };
 
       syncWithBackend(next, result);
