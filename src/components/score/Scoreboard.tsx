@@ -4,6 +4,7 @@
 import { useState, useRef } from "react";
 import { useScore } from "@/contexts/ScoreContext";
 import { cn } from "@/lib/utils";
+import { Users } from "lucide-react";
 
 export function Scoreboard() {
   // 💡 Contextから最新の状態と関数を取得
@@ -70,7 +71,16 @@ export function Scoreboard() {
         <div className="flex items-center justify-between p-3 border-b border-zinc-300 dark:border-zinc-700 bg-muted/40 text-[9px] font-black text-zinc-500 uppercase tracking-widest">
           <div className="flex-1 truncate text-left">{state.tournamentName || (state.matchType === 'practice' ? '練習試合' : '大会未設定')}</div>
           <div className="flex-none px-4 text-sm font-black text-foreground tracking-widest normal-case">vs {state.opponentTeamName || "相手チーム"}</div>
-          <div className="flex-1 truncate text-right">{state.venueName || "球場未設定"}</div>
+          <div className="flex-1 flex justify-end items-center gap-2">
+            <span className="truncate">{state.venueName || "球場未設定"}</span>
+            <button 
+              onClick={() => window.location.href = `/matches/lineup?id=${state.matchId}`}
+              className="p-1.5 bg-primary/20 text-primary rounded-full hover:bg-primary/30 transition-colors shadow-sm"
+              title="スタメン設定"
+            >
+              <Users className="w-3.5 h-3.5" strokeWidth={2.5} />
+            </button>
+          </div>
         </div>
 
         {/* 🚀 メイン掲示板 */}
