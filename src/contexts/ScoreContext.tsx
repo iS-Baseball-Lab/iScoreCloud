@@ -193,8 +193,11 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
       const updatedOpponentScores = [...prev.opponentInningScores];
       const updatedMyScores = [...prev.myInningScores];
 
-      // スコアラーが先攻か後攻かに基づいて配列を更新
-      if (prev.isTop) {
+      // 🌟 自チームが攻撃中かどうかの判定（isGuestFirst を使用）
+      const isMyAttack = (prev.isTop && prev.isGuestFirst) || (!prev.isTop && !prev.isGuestFirst);
+
+      // スコアラーが攻撃か守備かに基づいて配列を更新
+      if (!isMyAttack) {
         while (updatedOpponentScores.length <= currentIdx) updatedOpponentScores.push(0);
         updatedOpponentScores[currentIdx] += rbi;
       } else {
@@ -204,14 +207,16 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
 
       const next = {
         ...prev,
-        opponentScore: prev.isTop ? prev.opponentScore + rbi : prev.opponentScore,
-        myScore: !prev.isTop ? prev.myScore + rbi : prev.myScore,
-        opponentHits: prev.isTop ? prev.opponentHits + hits : prev.opponentHits,
-        myHits: !prev.isTop ? prev.myHits + hits : prev.myHits,
+        opponentScore: !isMyAttack ? prev.opponentScore + rbi : prev.opponentScore,
+        myScore: isMyAttack ? prev.myScore + rbi : prev.myScore,
+        opponentHits: !isMyAttack ? prev.opponentHits + hits : prev.opponentHits,
+        myHits: isMyAttack ? prev.myHits + hits : prev.myHits,
+        opponentErrors: isMyAttack ? prev.opponentErrors + errors : prev.opponentErrors,
+        myErrors: !isMyAttack ? prev.myErrors + errors : prev.myErrors,
         opponentInningScores: updatedOpponentScores,
         myInningScores: updatedMyScores,
         balls: 0, strikes: 0,
-        logs: appendLog(`${result} (${rbi}打点)`, prev),
+        logs: appendLog(`${result}${rbi > 0 ? ` (${rbi}得点)` : ''}`, prev),
       };
 
       syncWithBackend(next, result);

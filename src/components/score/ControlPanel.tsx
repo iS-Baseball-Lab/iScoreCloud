@@ -61,18 +61,14 @@ export function ControlPanel() {
 
       {/* 🚀 2段目：打球結果 (🌟 動的得点振分けロジック) */}
       <div className="grid grid-cols-4 gap-2 h-[35%] shrink-0">
-        <button type="button" onClick={() => recordInPlay("単打", 0, [{ runnerId: "current", fromBase: 0, toBase: 1 }])}
+        <button type="button" onClick={() => recordInPlay("単打", 0, 1, 0)}
           className="col-span-2 h-full bg-zinc-950 dark:bg-zinc-100 text-white dark:text-black rounded-3xl flex flex-col items-center justify-center shadow-xl active:scale-95 transition-all">
           <span className="text-3xl font-black italic tracking-tighter">HIT</span>
         </button>
 
         <button type="button" 
           onClick={() => {
-            // 🌟 ここが重要！
-            // state.isTop (表) なら、今の攻撃チーム (GUEST側) に得点を入れる
-            // recordInPlay の第4引数がチーム指定なら、isTopに基づいて 1 or 0 を送る
-            const currentAttackTeam = state.isTop ? 1 : 0; 
-            recordInPlay("得点", 1, [], currentAttackTeam);
+            recordInPlay("得点", 1, 0, 0);
           }}
           className="col-span-2 h-full bg-blue-700 text-white rounded-3xl flex flex-col items-center justify-center shadow-xl border-b-4 border-blue-900 active:scale-95 transition-all"
         >
@@ -83,8 +79,8 @@ export function ControlPanel() {
 
       {/* 🚀 3段目：サブアクション */}
       <div className="flex-1 grid grid-cols-4 gap-2 min-h-0 text-zinc-500">
-        <button onClick={() => recordInPlay("ファウル", 0, [])} className="h-full rounded-2xl border-2 border-zinc-200 dark:border-zinc-800 font-black text-[10px] uppercase">Foul</button>
-        <button onClick={() => recordInPlay("エラー", 0, [])} className="h-full rounded-2xl border-2 border-zinc-200 dark:border-zinc-800 font-black text-[10px] uppercase">Error</button>
+        <button onClick={() => recordPitch("foul")} className="h-full rounded-2xl border-2 border-zinc-200 dark:border-zinc-800 font-black text-[10px] uppercase">Foul</button>
+        <button onClick={() => recordInPlay("エラー", 0, 0, 1)} className="h-full rounded-2xl border-2 border-zinc-200 dark:border-zinc-800 font-black text-[10px] uppercase">Error</button>
         <button onClick={changeInning} disabled={isSyncing}
           className="col-span-2 h-full bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 rounded-2xl text-[12px] font-black uppercase tracking-[0.3em] active:bg-zinc-300">
           Change
