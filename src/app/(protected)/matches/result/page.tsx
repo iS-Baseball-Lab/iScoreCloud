@@ -87,8 +87,14 @@ function MatchResultContent() {
 
       {/* 💡 アクションヘッダー */}
       <div className="max-w-4xl mx-auto px-6 pt-8 mb-8 flex items-center justify-between">
-        <Button variant="ghost" size="icon" onClick={() => router.back()} className="rounded-full">
-          <ChevronLeft className="h-6 w-6" />
+        <Button 
+          variant="outline" 
+          size="sm" 
+          onClick={() => router.back()}
+          className="h-10 px-4 rounded-[var(--radius-xl)] font-black gap-2 shadow-sm border-border bg-card text-foreground hover:bg-muted"
+        >
+          <ChevronLeft className="h-4 w-4" />
+          戻る
         </Button>
         <div className="flex gap-3">
           <Button variant="outline" size="icon" className="rounded-full border-2 border-border/40"><Share2 className="h-4 w-4" /></Button>

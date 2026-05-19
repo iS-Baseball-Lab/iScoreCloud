@@ -100,8 +100,14 @@ function PlayerDetailContent() {
     if (!playerName) {
         return (
             <div className="max-w-2xl mx-auto px-4 pt-6 space-y-6">
-                <Button variant="outline" size="sm" onClick={() => router.back()} className="h-10 px-4 rounded-[var(--radius-xl)] font-black gap-2 shadow-sm">
-                    <ArrowLeft className="h-4 w-4" /> 戻る
+                <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => router.back()}
+                    className="h-10 px-4 rounded-[var(--radius-xl)] font-black gap-2 shadow-sm border-border bg-card text-foreground hover:bg-muted"
+                >
+                    <ArrowLeft className="h-4 w-4" />
+                    戻る
                 </Button>
                 <EmptyState icon={UserCircle} title="選手情報が指定されていません" description="名簿一覧から再度選択してください" />
             </div>

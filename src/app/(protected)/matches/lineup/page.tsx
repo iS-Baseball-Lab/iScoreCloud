@@ -121,13 +121,18 @@ export default function LineupPage() {
     <div className="w-full animate-in fade-in duration-500 min-h-screen pb-24">
       <div className="max-w-2xl mx-auto px-4 pt-8 space-y-8">
 
-        {/* ヘッダー */}
-        <div className="flex items-center justify-between">
-          <Button variant="ghost" size="icon" onClick={() => router.back()} className="rounded-full">
-            <ChevronLeft className="h-6 w-6" />
+        {/* ━━ トップ：戻るボタン & SectionHeader ━━ */}
+        <div className="space-y-4 mb-6">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={() => router.back()}
+            className="h-10 px-4 rounded-[var(--radius-xl)] font-black gap-2 shadow-sm border-border bg-card text-foreground hover:bg-muted"
+          >
+            <ChevronLeft className="h-4 w-4" />
+            戻る
           </Button>
           <SectionHeader title="スタメン登録" subtitle="Lineup Setup" showPulse />
-          <div className="w-10" />
         </div>
 
         {/* タブ切り替え */}
@@ -191,7 +196,7 @@ export default function LineupPage() {
               const disabledPlayers = activeTab === "myTeam" ? getDisabledPlayers(myLineup, index) : [];
 
               const isCompleted = activeTab === "myTeam" 
-                ? Boolean(player.position && player.playerId)
+                ? Boolean(player.position && (player as typeof myLineup[0]).playerId)
                 : Boolean(player.position && player.name.trim());
 
               return (
@@ -237,7 +242,7 @@ export default function LineupPage() {
 
                   {activeTab === "myTeam" ? (
                     <select 
-                      value={player.playerId || ""}
+                      value={(player as typeof myLineup[0]).playerId || ""}
                       onChange={(e) => {
                         const list = [...myLineup];
                         const selectedId = e.target.value;

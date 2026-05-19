@@ -113,9 +113,16 @@ function CreateMatchContent() {
 
   return (
     <div className="min-h-screen bg-background p-4 sm:p-6 flex flex-col animate-in fade-in duration-300 max-w-lg mx-auto pb-32">
+      {/* ━━ トップ：戻るボタン & SectionHeader ━━ */}
       <div className="space-y-4 mb-6">
-        <Button variant="outline" size="sm" onClick={() => router.back()} className="h-10 px-4 rounded-[var(--radius-xl)] font-black gap-2 shadow-sm border-border bg-card text-foreground hover:bg-muted">
-          <ArrowLeft className="h-4 w-4" /> 戻る
+        <Button 
+          variant="outline" 
+          size="sm" 
+          onClick={() => router.back()}
+          className="h-10 px-4 rounded-[var(--radius-xl)] font-black gap-2 shadow-sm border-border bg-card text-foreground hover:bg-muted"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          戻る
         </Button>
         <SectionHeader title={pageInfo.ja} subtitle={pageInfo.en} showPulse={false} />
       </div>

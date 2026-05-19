@@ -3,7 +3,7 @@
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronLeft, Swords, Loader2, ChevronRight } from "lucide-react";
+import { ChevronLeft, Swords, Loader2, ChevronRight, Calendar, Activity, Trophy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MatchList } from "@/components/matches/match-list";
 import { toast } from "sonner";
@@ -13,8 +13,14 @@ export default function AllMatchesPage() {
   const router = useRouter();
   const [matches, setMatches] = useState<Match[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<MatchStatus>("scheduled");
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
+
+  const handleTabChange = (tab: MatchStatus) => {
+    setActiveTab(tab);
+    setCurrentPage(1);
+  };
 
   useEffect(() => {
     const fetchMatches = async () => {
@@ -36,8 +42,19 @@ export default function AllMatchesPage() {
     fetchMatches();
   }, []);
 
-  const totalPages = Math.ceil(matches.length / itemsPerPage);
-  const paginatedMatches = matches.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  // ステータスを推論・補完する関数（古いデータ対応）
+  const getMatchStatus = (m: Match): MatchStatus => {
+    if (m.status === "live") return "live";
+    if (m.status === "finished") return "finished";
+    
+    // DBにステータスがない・不完全な場合のフォールバック
+    const isFuture = new Date(m.date) > new Date();
+    return isFuture ? "scheduled" : "finished";
+  };
+
+  const filteredMatches = matches.filter(m => getMatchStatus(m) === activeTab);
+  const totalPages = Math.ceil(filteredMatches.length / itemsPerPage);
+  const paginatedMatches = filteredMatches.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   return (
     <div className="min-h-screen bg-transparent p-4 sm:p-6 max-w-4xl mx-auto pb-24">
@@ -49,6 +66,37 @@ export default function AllMatchesPage() {
           <Swords className="h-6 w-6 text-primary" />
           Match History
         </h1>
+      </div>
+
+      {/* 🌟 3つのステータス切り替えタブ */}
+      <div className="flex bg-muted/30 p-1.5 rounded-3xl border border-border/40 shadow-inner mb-6">
+        <button
+          onClick={() => handleTabChange("scheduled")}
+          className={cn(
+            "flex-1 py-3 text-sm sm:text-base font-black rounded-2xl transition-all flex items-center justify-center gap-2",
+            activeTab === "scheduled" ? "bg-amber-500 text-white shadow-sm" : "text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <Calendar className="w-4 h-4 sm:w-5 sm:h-5" /> 予定
+        </button>
+        <button
+          onClick={() => handleTabChange("live")}
+          className={cn(
+            "flex-1 py-3 text-sm sm:text-base font-black rounded-2xl transition-all flex items-center justify-center gap-2",
+            activeTab === "live" ? "bg-rose-500 text-white shadow-sm" : "text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <Activity className="w-4 h-4 sm:w-5 sm:h-5" /> 進行中
+        </button>
+        <button
+          onClick={() => handleTabChange("finished")}
+          className={cn(
+            "flex-1 py-3 text-sm sm:text-base font-black rounded-2xl transition-all flex items-center justify-center gap-2",
+            activeTab === "finished" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <Trophy className="w-4 h-4 sm:w-5 sm:h-5" /> 終了
+        </button>
       </div>
 
       <MatchList matches={paginatedMatches} isLoading={isLoading} />
