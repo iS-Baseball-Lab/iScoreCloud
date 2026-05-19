@@ -74,12 +74,13 @@ export function TournamentCard({ t, onEdit, onDelete }: TournamentCardProps) {
 
     return (
         <Card className={cn(
-            "relative bg-transparent border-none shadow-none rounded-[var(--radius-2xl)] overflow-hidden",
-            "group transition-all duration-300",
+            "group relative overflow-hidden transition-all duration-200 ease-out",
+            "rounded-[var(--radius-2xl)] border border-border/50 shadow-sm",
+            status === "ongoing" && "ring-1 ring-primary/20"
         )}>
             {/* 🌟 スワイプ背面のアクションボタン群 (試合一覧と同じ仕様) */}
             <div className={cn(
-                "absolute inset-0 z-0 transition-opacity duration-150 bg-transparent rounded-[var(--radius-2xl)] overflow-hidden",
+                "absolute inset-0 z-0 transition-opacity duration-150 bg-transparent",
                 Math.abs(offsetX) > 0 ? "opacity-100" : "opacity-0 pointer-events-none"
             )}>
                 {/* 編集ボタン (左スワイプで出現) */}
@@ -108,8 +109,7 @@ export function TournamentCard({ t, onEdit, onDelete }: TournamentCardProps) {
             {/* 🌟 フォアグラウンド（カード本体） */}
             <div
                 className={cn(
-                    "relative z-10 w-full h-full bg-card border border-border/50 shadow-sm rounded-[var(--radius-2xl)] overflow-hidden transition-transform duration-200 ease-out",
-                    status === "ongoing" && "ring-1 ring-primary/20",
+                    "relative z-10 h-full transition-transform duration-200 ease-out bg-card",
                 )}
                 style={{ transform: `translateX(${offsetX}px)`, touchAction: "pan-y" }}
                 onTouchStart={handleTouchStart}

@@ -4,7 +4,7 @@ import React from "react";
 import { useRouter } from "next/navigation";
 import { 
   LogOut, User, Settings, HelpCircle, ChevronRight, 
-  LayoutDashboard, Users, Contact, CalendarCheck, Trophy, FileText, Shield
+  LayoutDashboard, Users, Contact, CalendarCheck, Trophy, FileText, Shield, Zap
 } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 import { toast } from "sonner";
@@ -28,13 +28,19 @@ export default function MenuPage() {
       ],
     },
     {
-      title: "機能",
+      title: "メイン機能",
       items: [
         { icon: LayoutDashboard, label: "ダッシュボード", href: "/dashboard" },
         { icon: Users, label: "チーム情報", href: "/teams" },
         { icon: Contact, label: "選手名簿", href: "/players" },
         { icon: CalendarCheck, label: "出欠管理", href: "/attendance" },
         { icon: Trophy, label: "大会・イベント", href: "/tournaments" },
+      ],
+    },
+    {
+      title: "支援機能",
+      items: [
+        { icon: Zap, label: "試合速報ジェネレーター", href: "/news-generator" },
       ],
     },
     {
