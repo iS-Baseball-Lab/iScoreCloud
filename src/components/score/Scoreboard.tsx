@@ -52,6 +52,16 @@ export function Scoreboard() {
 
   const numberStyle = "font-black tabular-nums tracking-tighter";
 
+  // 🌟 先攻（上段）と後攻（下段）のスコアマッピング
+  const guestInningScores = state.isGuestFirst ? state.myInningScores : state.opponentInningScores;
+  const homeInningScores = state.isGuestFirst ? state.opponentInningScores : state.myInningScores;
+  const guestScore = state.isGuestFirst ? state.myScore : state.opponentScore;
+  const homeScore = state.isGuestFirst ? state.opponentScore : state.myScore;
+  const guestHits = state.isGuestFirst ? state.myHits : state.opponentHits;
+  const homeHits = state.isGuestFirst ? state.opponentHits : state.myHits;
+  const guestErrors = state.isGuestFirst ? state.myErrors : state.opponentErrors;
+  const homeErrors = state.isGuestFirst ? state.opponentErrors : state.myErrors;
+
   return (
     <div className="w-full bg-background select-none font-sans p-1">
       <div className="flex flex-col rounded-lg overflow-hidden border border-zinc-300 dark:border-zinc-700 shadow-sm">
@@ -108,37 +118,37 @@ export function Scoreboard() {
                 </tr>
               </thead>
               <tbody>
-                {/* 先攻行 (opponentInningScores を参照) */}
+                {/* 先攻行 (Guest) */}
                 <tr className={cn("border-b border-border/50 h-10", state.isTop ? "bg-primary/5" : "")}>
                   <td className="text-center font-black text-[13px]">
                     <span className={state.isTop ? "text-primary" : "text-foreground/40"}>先</span>
                   </td>
                   {innings.map(i => (
                     <td key={i} className={cn("text-center text-lg px-0.5", numberStyle, state.inning === i && state.isTop ? "text-primary font-bold underline underline-offset-4" : "text-foreground/80")}>
-                      {state.opponentInningScores[i - 1] ?? (i <= state.inning && (state.isTop || i < state.inning) ? "0" : "-")}
+                      {guestInningScores[i - 1] ?? (i <= state.inning && (state.isTop || i < state.inning) ? "0" : "-")}
                     </td>
                   ))}
                   <td className={cn("text-center text-xl font-black tabular-nums tracking-tighter", state.isTop ? "bg-primary/10 text-primary" : "bg-muted/40 text-foreground")}>
-                    {state.opponentScore}
+                    {guestScore}
                   </td>
-                  <td className="text-center text-sm text-muted-foreground/40 font-bold">{state.opponentHits ?? 0}</td>
-                  <td className="text-center text-sm text-muted-foreground/40 font-bold">{state.opponentErrors ?? 0}</td>
+                  <td className="text-center text-sm text-muted-foreground/40 font-bold">{guestHits ?? 0}</td>
+                  <td className="text-center text-sm text-muted-foreground/40 font-bold">{guestErrors ?? 0}</td>
                 </tr>
-                {/* 後攻行 (myInningScores を参照) */}
+                {/* 後攻行 (Home) */}
                 <tr className={cn("h-10", !state.isTop ? "bg-primary/5" : "")}>
                   <td className="text-center font-black text-[13px]">
                     <span className={!state.isTop ? "text-primary" : "text-foreground/40"}>後</span>
                   </td>
                   {innings.map(i => (
                     <td key={i} className={cn("text-center text-lg px-0.5", numberStyle, state.inning === i && !state.isTop ? "text-primary font-bold underline underline-offset-4" : "text-foreground/80")}>
-                      {state.myInningScores[i - 1] ?? (i <= state.inning && (!state.isTop || i < state.inning) ? "0" : "-")}
+                      {homeInningScores[i - 1] ?? (i <= state.inning && (!state.isTop || i < state.inning) ? "0" : "-")}
                     </td>
                   ))}
                   <td className={cn("text-center text-xl font-black tabular-nums tracking-tighter", !state.isTop ? "bg-primary/10 text-primary" : "bg-muted/40 text-foreground")}>
-                    {state.myScore}
+                    {homeScore}
                   </td>
-                  <td className="text-center text-sm text-muted-foreground/40 font-bold">{state.myHits ?? 0}</td>
-                  <td className="text-center text-sm text-muted-foreground/40 font-bold">{state.myErrors ?? 0}</td>
+                  <td className="text-center text-sm text-muted-foreground/40 font-bold">{homeHits ?? 0}</td>
+                  <td className="text-center text-sm text-muted-foreground/40 font-bold">{homeErrors ?? 0}</td>
                 </tr>
               </tbody>
             </table>

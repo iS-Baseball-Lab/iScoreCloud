@@ -171,12 +171,20 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
         isAtBatEnd = true;
       }
 
+      let isInningChange = false;
+      if (newOuts >= 3) {
+        isInningChange = true;
+      }
+
       const next = {
         ...prev,
         balls: isAtBatEnd ? 0 : newBalls,
         strikes: isAtBatEnd ? 0 : newStrikes,
-        outs: newOuts,
-        logs: appendLog(description, prev),
+        outs: isInningChange ? 0 : newOuts,
+        isTop: isInningChange ? !prev.isTop : prev.isTop,
+        inning: isInningChange && !prev.isTop ? prev.inning + 1 : prev.inning,
+        runners: isInningChange ? { base1: null, base2: null, base3: null } : prev.runners,
+        logs: appendLog(isInningChange ? `${description} (チェンジ)` : description, prev),
       };
 
       if (isAtBatEnd || result === "out") syncWithBackend(next, description);
