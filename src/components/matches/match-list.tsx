@@ -419,7 +419,7 @@ export function MatchList({ matches, isLoading, onDelete }: MatchListProps) {
                             <Button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                router.push(`/matches/score?id=${match.id}`);
+                                router.push(`/matches/result?id=${match.id}`);
                               }}
                               variant="outline"
                               className="flex-1 h-11 rounded-[var(--radius-lg)] font-black gap-1.5 shadow-sm text-xs sm:text-sm bg-card border-border hover:bg-primary/5 hover:text-primary transition-colors"
@@ -445,7 +445,7 @@ export function MatchList({ matches, isLoading, onDelete }: MatchListProps) {
                             <Button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                router.push(`/matches/score?id=${match.id}`);
+                                router.push(`/matches/result?id=${match.id}`);
                               }}
                               className="flex-1 h-11 rounded-[var(--radius-lg)] font-black gap-1.5 shadow-sm text-xs sm:text-sm"
                             >
