@@ -361,7 +361,7 @@ export default function DashboardPage() {
 
         {/* --- 3. スコア入力選択 (Real / Quick) --- */}
         <section>
-          <ScoreTypeSelector />
+          <ScoreTypeSelector liveMatchId={liveMatch?.id} />
         </section>
 
         {/* --- 4. チーム成績 (SEASON STANDINGS) --- */}

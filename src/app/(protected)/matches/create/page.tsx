@@ -81,7 +81,7 @@ function CreateMatchContent() {
 
     setIsLoading(true);
     try {
-      const statusMap = { real: "scheduled", live: "started", quick: "finished" };
+      const statusMap = { real: "scheduled", live: "live", quick: "finished" };
 
       const res = await fetch("/api/matches/create", {
         method: "POST",
