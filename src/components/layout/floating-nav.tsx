@@ -6,7 +6,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "motion/react";
-import { LayoutDashboard, Users, Trophy, MoreHorizontal, UserSquare2, X } from "lucide-react";
+import { LayoutDashboard, Users, Trophy, MoreHorizontal, UserSquare2, X, CalendarCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export function FloatingNav() {
@@ -16,11 +16,12 @@ export function FloatingNav() {
   useEffect(() => setIsOpen(false), [pathname]);
 
   const menuItems = [
-    { icon: Users, label: "TEAM", href: "/team", angle: -160 },
-    { icon: UserSquare2, label: "PLAYER", href: "/players", angle: -125 },
-    { icon: LayoutDashboard, label: "HOME", href: "/dashboard", angle: -90 },
-    { icon: Trophy, label: "EVENT", href: "/tournaments", angle: -55 },
-    { icon: MoreHorizontal, label: "MENU", href: "/menu", angle: -20 },
+    { icon: Users, label: "TEAM", href: "/team", angle: -165 },
+    { icon: UserSquare2, label: "PLAYER", href: "/players", angle: -135 },
+    { icon: CalendarCheck, label: "ATTEND", href: "/attendance", angle: -105 },
+    { icon: LayoutDashboard, label: "HOME", href: "/dashboard", angle: -75 },
+    { icon: Trophy, label: "EVENT", href: "/tournaments", angle: -45 },
+    { icon: MoreHorizontal, label: "MENU", href: "/menu", angle: -15 },
   ];
 
   return (
