@@ -7,7 +7,7 @@
 "use client";
 
 import React, { useEffect, useState, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { ScoreProvider, useScore } from "@/contexts/ScoreContext";
 import { Scoreboard } from "@/components/score/Scoreboard";
 import { ControlPanel } from "@/components/score/ControlPanel";
@@ -18,6 +18,7 @@ import { Loader2 } from "lucide-react";
 
 function ScorePageContent() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const matchId = searchParams.get("id");
   const { initMatch, state, isLoading, isScorer } = useScore(); // Contextから権限と状態を取得[span_4](start_span)[span_4](end_span)
   const [isReady, setIsReady] = useState(false);
@@ -117,17 +118,17 @@ function ScorePageContent() {
       {state.status === 'finished' && (
         <div className="absolute inset-0 z-[200] bg-background/95 backdrop-blur-md flex items-center justify-center animate-in fade-in duration-700">
           <div className="text-center">
-            <div className="inline-block px-6 py-2 bg-primary text-primary-foreground font-black text-sm uppercase tracking-[0.3em] mb-4">
-              Match Result
-            </div>
-            <h2 className="text-6xl font-black italic text-foreground tracking-tighter animate-bounce">
-              GAME SET
+            <h2 className="text-5xl font-black text-foreground mb-4">
+              試合終了
             </h2>
+            <p className="text-xl font-bold text-muted-foreground mb-12">
+              お疲れさまでした
+            </p>
             <button 
-              onClick={() => window.history.back()}
-              className="mt-12 px-8 py-3 bg-secondary text-secondary-foreground rounded-full font-bold text-sm"
+              onClick={() => router.push('/dashboard')}
+              className="px-8 py-3 bg-primary text-primary-foreground rounded-full font-bold text-sm shadow-sm"
             >
-              試合一覧へ戻る
+              ダッシュボードへ戻る
             </button>
           </div>
         </div>

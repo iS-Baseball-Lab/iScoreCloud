@@ -85,6 +85,7 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
           action: actionNote,
           myInningScores: updatedState.myInningScores, // 🌟 配列をそのまま送信（API側でstringify）
           opponentInningScores: updatedState.opponentInningScores,
+          status: updatedState.status,
         }),
       });
       const data = await res.json() as { success: boolean, data?: { status: string } };

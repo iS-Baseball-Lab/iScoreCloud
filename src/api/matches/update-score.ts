@@ -31,7 +31,8 @@ matchesApi.post('/update-score', async (c) => {
       opponentScore,
       inning,
       isBottom,
-      action
+      action,
+      status: requestedStatus
     } = body;
 
     // 2. 現在の試合状況をDBからロード（規定イニング数やチームIDを知るため）
@@ -56,7 +57,7 @@ matchesApi.post('/update-score', async (c) => {
     });
 
     // 🌟 判定結果に基づき status を決定
-    const newStatus = isWalkOff ? 'finished' : 'live';
+    const newStatus = (requestedStatus === 'finished' || isWalkOff) ? 'finished' : 'live';
 
     // 4. D1 データベースの更新
     await db.update(matches)
