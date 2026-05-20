@@ -24,31 +24,33 @@ export function ControlPanel() {
     <div className="h-full w-full flex flex-col gap-1.5 p-0 select-none items-stretch">
       
       {/* 🚀 1段目：BSO (日本式配色 ＋ 太枠 ＋ 濃色背景) */}
-      <div className="grid grid-cols-4 gap-1.5 h-[46%] shrink-0">
+      <div className="grid grid-cols-4 gap-1.5 h-[35%] shrink-0">
         {/* Ball */}
         <button type="button" onClick={() => recordPitch("ball")} disabled={isSyncing}
-          className="h-full w-full flex flex-col items-center justify-center gap-0.5 border-2 border-emerald-600/50 bg-emerald-100 dark:bg-emerald-900/40 rounded-2xl active:bg-emerald-600 transition-all shadow-sm">
-          <span className="text-3xl font-black text-emerald-800 dark:text-emerald-300 leading-none mt-1">B</span>
+          className="h-full bg-emerald-600 text-white rounded-2xl flex flex-col items-center justify-center shadow-md border-b-2 border-emerald-800 active:scale-95 transition-all">
+          <span className="text-xl font-black tracking-tighter leading-none">B</span>
+          <span className="text-[9px] font-bold opacity-80 mt-0.5">ボール</span>
         </button>
 
         {/* Strike (見逃し) */}
         <button type="button" onClick={() => recordPitch("strike")} disabled={isSyncing}
-          className="h-full w-full flex flex-col items-center justify-center gap-0.5 border-2 border-amber-500/50 bg-amber-100 dark:bg-amber-900/40 rounded-2xl active:bg-amber-500 transition-all shadow-sm">
-          <span className="text-3xl font-black text-amber-800 dark:text-amber-300 leading-none mt-1">S</span>
-          <span className="text-[9px] font-bold text-amber-900/60 dark:text-amber-200/60 leading-none">見逃</span>
+          className="h-full bg-amber-500 text-white rounded-2xl flex flex-col items-center justify-center shadow-md border-b-2 border-amber-700 active:scale-95 transition-all">
+          <span className="text-xl font-black tracking-tighter leading-none">S</span>
+          <span className="text-[9px] font-bold opacity-80 mt-0.5">見逃</span>
         </button>
 
         {/* Strike (空振り) */}
         <button type="button" onClick={() => recordPitch("swinging_strike")} disabled={isSyncing}
-          className="h-full w-full flex flex-col items-center justify-center gap-0.5 border-2 border-amber-500/50 bg-amber-100 dark:bg-amber-900/40 rounded-2xl active:bg-amber-500 transition-all shadow-sm">
-          <span className="text-3xl font-black text-amber-800 dark:text-amber-300 leading-none mt-1">S</span>
-          <span className="text-[9px] font-bold text-amber-900/60 dark:text-amber-200/60 leading-none">空振</span>
+          className="h-full bg-amber-500 text-white rounded-2xl flex flex-col items-center justify-center shadow-md border-b-2 border-amber-700 active:scale-95 transition-all">
+          <span className="text-xl font-black tracking-tighter leading-none">S</span>
+          <span className="text-[9px] font-bold opacity-80 mt-0.5">空振</span>
         </button>
 
         {/* Out */}
         <button type="button" onClick={() => recordPitch("out")} disabled={isSyncing}
-          className="h-full w-full flex flex-col items-center justify-center gap-0.5 border-2 border-rose-600/50 bg-rose-100 dark:bg-rose-900/40 rounded-2xl active:bg-rose-600 transition-all shadow-sm">
-          <span className="text-3xl font-black text-rose-800 dark:text-rose-300 leading-none mt-1">O</span>
+          className="h-full bg-rose-600 text-white rounded-2xl flex flex-col items-center justify-center shadow-md border-b-2 border-rose-800 active:scale-95 transition-all">
+          <span className="text-xl font-black tracking-tighter leading-none">O</span>
+          <span className="text-[9px] font-bold opacity-80 mt-0.5">アウト</span>
         </button>
       </div>
 

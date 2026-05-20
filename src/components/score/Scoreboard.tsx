@@ -144,8 +144,8 @@ export function Scoreboard() {
               </thead>
               <tbody>
                 {/* 先攻行 (Guest) */}
-                <tr className={cn("border-b border-border/50 h-8", state.isTop ? "bg-primary/5" : "")}>
-                  <td className="text-center font-black text-[13px]">
+                <tr className={cn("border-b border-border/50 h-6", state.isTop ? "bg-primary/5" : "")}>
+                  <td className="text-center font-black text-[12px]">
                     <span className={state.isTop ? "text-primary" : "text-foreground/40"}>先</span>
                   </td>
                   {innings.map(i => (
@@ -160,8 +160,8 @@ export function Scoreboard() {
                   <td className="text-center text-sm text-muted-foreground/40 font-bold">{guestErrors ?? 0}</td>
                 </tr>
                 {/* 後攻行 (Home) */}
-                <tr className={cn("h-8", !state.isTop ? "bg-primary/5" : "")}>
-                  <td className="text-center font-black text-[13px]">
+                <tr className={cn("h-6", !state.isTop ? "bg-primary/5" : "")}>
+                  <td className="text-center font-black text-[12px]">
                     <span className={!state.isTop ? "text-primary" : "text-foreground/40"}>後</span>
                   </td>
                   {innings.map(i => (
@@ -181,13 +181,13 @@ export function Scoreboard() {
         </div>
 
         {/* 🚀 下段 (回数・攻守・BSOカウント) */}
-        <div className="flex items-center justify-between px-3 h-12 bg-muted/5">
+        <div className="flex items-center justify-between px-3 h-10 bg-muted/5">
           <div className="flex items-center text-primary h-full">
-            <div className="flex items-end pb-1.5">
-              <span className={cn("text-4xl leading-none", numberStyle)}>{state.inning}</span>
-              <div className="flex items-center gap-1 ml-2 mb-[3px]">
-                <span className="text-[18px] font-black leading-none">回</span>
-                <span className="text-[18px] font-black leading-none">{state.isTop ? "表" : "裏"}</span>
+            <div className="flex items-end pb-1">
+              <span className={cn("text-3xl leading-none", numberStyle)}>{state.inning}</span>
+              <div className="flex items-center gap-1 ml-2 mb-[2px]">
+                <span className="text-[14px] font-black leading-none">回</span>
+                <span className="text-[14px] font-black leading-none">{state.isTop ? "表" : "裏"}</span>
               </div>
             </div>
             <div className="mx-4 h-5 w-[1px] bg-muted-foreground/20" />
@@ -202,17 +202,17 @@ export function Scoreboard() {
             </div>
           </div>
 
-          <div className="flex gap-6 h-full items-center">
+          <div className="flex gap-4 h-full items-center">
             {[
               { label: 'B', color: 'bg-emerald-500 shadow-[0_0_12px_#10b981]', count: state.balls, max: 3, textColor: 'text-emerald-600' },
               { label: 'S', color: 'bg-amber-400 shadow-[0_0_12px_#fbbf24]', count: state.strikes, max: 2, textColor: 'text-amber-600' },
               { label: 'O', color: 'bg-rose-500 shadow-[0_0_12px_#f43f5e]', count: state.outs, max: 2, textColor: 'text-rose-600' }
             ].map(type => (
-              <div key={type.label} className="flex flex-col items-center gap-1.5">
+              <div key={type.label} className="flex flex-row items-center gap-1.5">
                 <span className={cn("text-sm font-black leading-none", type.textColor)}>{type.label}</span>
                 <div className="flex gap-1.5">
                   {Array.from({ length: type.max }).map((_, i) => (
-                    <div key={i} className={cn("w-4 h-4 rounded-full border transition-all duration-300", i < type.count ? type.color + " border-transparent" : "bg-zinc-900 border-zinc-800 shadow-inner")} />
+                    <div key={i} className={cn("w-3.5 h-3.5 rounded-full border transition-all duration-300", i < type.count ? type.color + " border-transparent" : "bg-zinc-900 border-zinc-800 shadow-inner")} />
                   ))}
                 </div>
               </div>
