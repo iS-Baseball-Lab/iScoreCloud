@@ -14,7 +14,7 @@ import { ControlPanel } from "@/components/score/ControlPanel";
 import { PlayArea } from "@/components/score/PlayArea";
 import { PlayLog } from "@/components/score/PlayLog";
 import { cn } from "@/lib/utils";
-import { Loader2 } from "lucide-react";
+import { Loader2, ChevronUp } from "lucide-react";
 
 function ScorePageContent() {
   const searchParams = useSearchParams();
@@ -22,6 +22,7 @@ function ScorePageContent() {
   const matchId = searchParams.get("id");
   const { initMatch, state, isLoading, isScorer } = useScore(); // Contextから権限と状態を取得[span_4](start_span)[span_4](end_span)
   const [isReady, setIsReady] = useState(false);
+  const [isLogExpanded, setIsLogExpanded] = useState(false);
 
   // 🚀 現場復元ロジック
   useEffect(() => {
@@ -74,15 +75,30 @@ function ScorePageContent() {
           </div>
         </div>
 
-        {/* 最近のプレイログ：操作パネルとの視覚的な繋ぎ */}
-        <div className="w-full px-4 shrink-0 h-[100px] mb-1">
-          <div className="h-full bg-secondary/30 rounded-[24px] border border-border/40 p-2 shadow-inner flex flex-col">
-            <div className="flex items-center gap-1.5 mb-1 px-1">
-              <div className="w-1.5 h-1.5 rounded-full bg-primary" />
-              <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Recent Actions</span>
+        {/* 最近のプレイログ：操作パネルとの視覚的な繋ぎ / 引き出し式シート */}
+        <div className={cn(
+          "absolute bottom-0 w-full px-4 mb-1 transition-all duration-300 z-50",
+          isLogExpanded ? "h-[90%]" : "h-[100px]"
+        )}>
+          <div 
+            className="h-full bg-card/95 backdrop-blur-md rounded-[24px] border border-border p-2 shadow-[0_-5px_20px_rgba(0,0,0,0.1)] flex flex-col"
+          >
+            {/* ハンドル部分（タップで開閉） */}
+            <div 
+              className="flex justify-between items-center mb-1 px-2 py-1 cursor-pointer"
+              onClick={() => setIsLogExpanded(!isLogExpanded)}
+            >
+              <div className="flex items-center gap-1.5">
+                <div className="w-1.5 h-1.5 rounded-full bg-primary" />
+                <span className="text-[12px] font-black tracking-widest text-foreground">プレイログ</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="text-[9px] font-bold text-muted-foreground">{isLogExpanded ? "閉じる" : "すべて見る"}</span>
+                <ChevronUp className={cn("w-4 h-4 text-muted-foreground transition-transform", isLogExpanded && "rotate-180")} />
+              </div>
             </div>
-            <div className="flex-1 overflow-hidden">
-              <PlayLog limit={3} />
+            <div className={cn("flex-1", isLogExpanded ? "overflow-y-auto pr-1 pb-2" : "overflow-hidden")}>
+              <PlayLog limit={isLogExpanded ? undefined : 3} />
             </div>
           </div>
         </div>
