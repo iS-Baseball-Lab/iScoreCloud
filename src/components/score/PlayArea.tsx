@@ -138,7 +138,7 @@ export function PlayArea() {
       </div>
 
       {/* 🚀 ダイヤモンドエリア */}
-      <div className="relative w-full max-w-[210px] aspect-square mx-auto mt-12 mb-4">
+      <div className="relative w-full max-w-[250px] aspect-square mx-auto mt-12 mb-4">
         {/* 🏟 ダイヤモンド（土のライン） */}
         <div className="absolute inset-4 border-[3px] border-dashed border-primary/20 dark:border-white/10 rotate-45 rounded-sm shadow-inner" />
 
@@ -179,9 +179,9 @@ export function PlayArea() {
             "4": { label: "2B", posClass: "top-[25%] right-[20%]" },
             "5": { label: "3B", posClass: "top-[60%] left-[-10px]" },
             "6": { label: "SS", posClass: "top-[25%] left-[20%]" },
-            "7": { label: "LF", posClass: "top-[-15%] left-[5%]" },
+            "7": { label: "LF", posClass: "top-[-5%] left-[-10%]" },
             "8": { label: "CF", posClass: "top-[-20%] left-1/2 -translate-x-1/2" },
-            "9": { label: "RF", posClass: "top-[-15%] right-[5%]" },
+            "9": { label: "RF", posClass: "top-[-5%] right-[-10%]" },
           };
 
           return Object.entries(positions).map(([posNum, { label, posClass }]) => {

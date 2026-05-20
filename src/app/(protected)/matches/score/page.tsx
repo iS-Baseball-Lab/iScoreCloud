@@ -68,20 +68,20 @@ function ScorePageContent() {
         "flex-1 relative flex flex-col items-center justify-between z-10 py-1 transition-all duration-1000",
         isReady ? "opacity-100 scale-100" : "opacity-0 scale-95"
       )}>
-        {/* 野球盤（ランナー状況）：アスペクト比を維持して中央配置 */}
-        <div className="w-full flex-1 flex items-center justify-center min-h-0">
-          <div className="h-full max-h-[260px] aspect-square">
+        {/* 野球盤（ランナー状況）：上寄せに配置 */}
+        <div className="w-full flex-1 flex flex-col items-center justify-start pt-2 min-h-0">
+          <div className="w-full">
             <PlayArea />
           </div>
         </div>
 
         {/* 最近のプレイログ：操作パネルとの視覚的な繋ぎ / 引き出し式シート */}
         <div className={cn(
-          "absolute bottom-0 w-full px-4 mb-1 transition-all duration-300 z-50",
+          "absolute bottom-0 w-full px-4 transition-all duration-300 z-50",
           isLogExpanded ? "h-[90%]" : "h-[100px]"
         )}>
           <div 
-            className="h-full bg-background/20 dark:bg-background/20 backdrop-blur-[2px] rounded-[24px] border border-border/30 p-2 shadow-[0_-5px_20px_rgba(0,0,0,0.1)] flex flex-col"
+            className="h-full bg-background/20 dark:bg-background/20 backdrop-blur-[2px] rounded-t-3xl border border-border/30 border-b-0 p-2 shadow-[0_-5px_20px_rgba(0,0,0,0.1)] flex flex-col"
           >
             {/* ハンドル部分（タップで開閉） */}
             <div 
@@ -98,7 +98,7 @@ function ScorePageContent() {
               </div>
             </div>
             <div className={cn("flex-1", isLogExpanded ? "overflow-y-auto pr-1 pb-2" : "overflow-hidden")}>
-              <PlayLog limit={isLogExpanded ? undefined : 3} />
+              <PlayLog limit={isLogExpanded ? 100 : 3} />
             </div>
           </div>
         </div>
