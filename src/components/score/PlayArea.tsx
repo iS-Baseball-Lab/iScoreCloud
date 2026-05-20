@@ -138,7 +138,7 @@ export function PlayArea() {
       </div>
 
       {/* 🚀 ダイヤモンドエリア */}
-      <div className="relative w-full max-w-[210px] aspect-square mx-auto mt-2 mb-4">
+      <div className="relative w-full max-w-[210px] aspect-square mx-auto mt-12 mb-4">
         {/* 🏟 ダイヤモンド（土のライン） */}
         <div className="absolute inset-4 border-[3px] border-dashed border-primary/20 dark:border-white/10 rotate-45 rounded-sm shadow-inner" />
 

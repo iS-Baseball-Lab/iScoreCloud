@@ -81,7 +81,7 @@ function ScorePageContent() {
           isLogExpanded ? "h-[90%]" : "h-[100px]"
         )}>
           <div 
-            className="h-full bg-card/40 backdrop-blur-sm rounded-[24px] border border-border/50 p-2 shadow-[0_-5px_20px_rgba(0,0,0,0.2)] flex flex-col"
+            className="h-full bg-background/20 dark:bg-background/20 backdrop-blur-[2px] rounded-[24px] border border-border/30 p-2 shadow-[0_-5px_20px_rgba(0,0,0,0.1)] flex flex-col"
           >
             {/* ハンドル部分（タップで開閉） */}
             <div 
