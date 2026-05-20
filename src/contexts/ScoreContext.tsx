@@ -128,12 +128,14 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
   const initMatch = useCallback(async (matchId: string) => {
     setIsLoading(true);
     try {
-      const [matchRes, lineupsRes] = await Promise.all([
+      const [matchRes, lineupsRes, logsRes] = await Promise.all([
         fetch(`/api/matches/${matchId}`),
-        fetch(`/api/matches/${matchId}/lineups`)
+        fetch(`/api/matches/${matchId}/lineups`),
+        fetch(`/api/matches/${matchId}/logs`)
       ]);
       const data = (await matchRes.json()) as MatchResponse;
       const lineupsData = await lineupsRes.json() as any;
+      const logsData = await logsRes.json() as any;
       
       if (data.success && data.match) {
         const m = data.match;
@@ -141,6 +143,9 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
         // 🌟 D1に保存されたJSON文字列をパースして復元
         const restoredMyInningScores = typeof m.myInningScores === 'string' ? JSON.parse(m.myInningScores) : [];
         const restoredOpponentInningScores = typeof m.opponentInningScores === 'string' ? JSON.parse(m.opponentInningScores) : [];
+        
+        // ログの復元
+        const restoredLogs = logsData?.success && Array.isArray(logsData.logs) ? logsData.logs : [];
 
         setState(prev => ({
           ...prev,
@@ -170,6 +175,7 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
           opponentErrors: m.opponentErrors ?? 0,
           myBattingIndex: 0,
           opponentBattingIndex: 0,
+          logs: restoredLogs, // 🌟 プレイログを復元
           // 💡 ここで権限判定を行う（例: チーム所属チェック）
           isScorer: true, // 開発中は一旦true。実際は管理者かどうかを判定
         }));

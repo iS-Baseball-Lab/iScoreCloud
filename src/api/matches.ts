@@ -50,6 +50,15 @@ app.get("/:id/lineups", async (c) => {
   }
 });
 
+app.get("/:id/logs", async (c) => {
+  try {
+    const logs = await MatchService.getPlayLogs(drizzle(c.env.DB), c.req.param("id"));
+    return c.json({ success: true, logs });
+  } catch (error) {
+    return c.json({ success: false, error: "Failed to fetch play logs" }, 500);
+  }
+});
+
 app.put("/:id/lineups", async (c) => {
   try {
     const body = await c.req.json();

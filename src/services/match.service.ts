@@ -1,6 +1,7 @@
 // src/services/match.service.ts
 import { eq, desc } from "drizzle-orm";
 import { matches, tournaments } from "@/db/schema/match";
+import { playLogs } from "@/db/schema/score";
 import type {
   DrizzleDB,
   CreateMatchBody,
@@ -199,8 +200,27 @@ export const MatchService = {
     }).where(eq(matches.id, matchId));
   },
 
-  // 8. 試合の削除
-  async deleteMatch(db: DrizzleDB, matchId: string): Promise<void> {
+  // 7. 試合削除
+  async deleteMatch(db: DrizzleDB, matchId: string) {
     await db.delete(matches).where(eq(matches.id, matchId));
   },
+
+  // 8. プレイログの取得
+  async getPlayLogs(db: DrizzleDB, matchId: string) {
+    const logs = await db.select()
+      .from(playLogs)
+      .where(eq(playLogs.matchId, matchId))
+      .orderBy(desc(playLogs.createdAt))
+      .limit(50)
+      .all();
+    
+    // PlayLogEntry 型に合わせる
+    return logs.map(log => ({
+      id: log.id,
+      description: log.description,
+      inning: parseInt(log.inningText) || 1,
+      isTop: log.inningText.includes("表"),
+      timestamp: log.createdAt.getTime(),
+    }));
+  }
 };
