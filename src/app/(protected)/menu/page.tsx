@@ -3,7 +3,7 @@
 import React from "react";
 import { useRouter } from "next/navigation";
 import { 
-  LogOut, User, Settings, HelpCircle, ChevronRight, 
+  LogOut, User, Settings, HelpCircle, ChevronRight, Activity, Calendar,
   LayoutDashboard, Users, Contact, CalendarCheck, Trophy, FileText, Shield, Zap
 } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
@@ -30,8 +30,9 @@ export default function MenuPage() {
     {
       title: "試合・スコア機能",
       items: [
-        { icon: LayoutDashboard, label: "試合予定登録", href: "/matches/create?mode=real" },
-        { icon: Users, label: "ライブスコア", href: "/matches/create?mode=live" },
+        { icon: LayoutDashboard, label: "試合一覧", href: "/matches" },
+        { icon: Calendar, label: "試合予定登録", href: "/matches/create?mode=real" },
+        { icon: Activity, label: "ライブスコア", href: "/matches/create?mode=live" },
         { icon: Contact, label: "クイックスコア", href: "/matches/create?mode=quick" },
       ],
     },
