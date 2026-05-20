@@ -25,6 +25,7 @@ export default function MenuPage() {
       items: [
         { icon: User, label: "プロフィール設定", href: "/profile" },
         { icon: Settings, label: "アプリ設定", href: "/settings" },
+        { icon: Settings, label: "チーム参加申請", href: "/settings" },
       ],
     },
     {
