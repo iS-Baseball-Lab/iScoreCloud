@@ -29,8 +29,9 @@ export default function MenuPage() {
       ],
     },
     {
-      title: "試合・スコア機能",
+      title: "試合・スコア",
       items: [
+        { icon: LayoutDashboard, label: "ダッシュボード", href: "/dashboard" },
         { icon: LayoutDashboard, label: "試合一覧", href: "/matches" },
         { icon: Calendar, label: "試合予定登録", href: "/matches/create?mode=real" },
         { icon: Activity, label: "ライブスコア", href: "/matches/create?mode=live" },
@@ -38,18 +39,23 @@ export default function MenuPage() {
       ],
     },
     {
-      title: "メイン機能",
+      title: "チーム・選手",
       items: [
-        { icon: LayoutDashboard, label: "ダッシュボード", href: "/dashboard" },
-        { icon: Users, label: "チーム情報", href: "/teams" },
+        { icon: Users, label: "チーム編成", href: "/teams" },
+        { icon: Users, label: "チーム情報", href: "/team" },
         { icon: Contact, label: "選手名簿", href: "/players" },
-        { icon: CalendarCheck, label: "出欠管理", href: "/attendance" },
+      ],
+    },
+    {
+      title: "大会・球場",
+      items: [
         { icon: Trophy, label: "大会・イベント", href: "/tournaments" },
       ],
     },
     {
       title: "支援機能",
       items: [
+        { icon: CalendarCheck, label: "出欠管理", href: "/attendance" },
         { icon: Zap, label: "試合速報ジェネレーター", href: "/news-generator" },
       ],
     },
