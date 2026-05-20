@@ -70,7 +70,7 @@ export function PlayArea() {
   };
 
   return (
-    <div className="relative w-full max-w-[280px] aspect-square mx-auto my-8">
+    <div className="relative w-full max-w-[220px] aspect-square mx-auto mt-16 mb-4">
 
       {/* 🏟 ダイヤモンド（土のライン） */}
       <div className="absolute inset-4 border-[3px] border-dashed border-primary/20 dark:border-white/10 rotate-45 rounded-sm shadow-inner" />
@@ -119,20 +119,6 @@ export function PlayArea() {
 
           return Object.entries(positions).map(([posNum, { label, posClass }]) => {
             const player = defenseLineup.find(p => p.position === posNum);
-            if (posNum === "1") {
-              // ピッチャーは特別に中央で目立たせる
-              return (
-                <div key={posNum} className={`absolute ${posClass} flex flex-col items-center z-30`}>
-                  <div className="absolute inset-0 bg-white/20 rounded-full blur-3xl scale-[3]" />
-                  <div className="relative bg-white border border-black/10 dark:border-white/20 rounded-full px-5 py-2 flex flex-col items-center gap-0.5 shadow-2xl">
-                    <span className="text-[7px] font-black text-black/60 uppercase tracking-[0.2em]">{label}</span>
-                    <span className="text-[10px] font-black text-black tracking-tighter">
-                      {player?.playerName || player?.name || "未設定"}
-                    </span>
-                  </div>
-                </div>
-              );
-            }
 
             // 野手の表示
             return (
@@ -149,40 +135,61 @@ export function PlayArea() {
         })()}
       </div>
 
-      <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 w-full text-center">
-        <div className="inline-flex flex-col items-center gap-1">
-          <div className="bg-primary px-4 py-1 rounded-full shadow-[0_0_15px_rgba(var(--primary),0.4)]">
-            <span className="text-[10px] font-black text-primary-foreground tracking-widest uppercase">Batter Up</span>
-          </div>
-          <div className="flex items-center gap-2 mt-1">
-            <p className="text-[12px] font-black text-foreground">
-              {(() => {
-                const isMyAttack = (state.isTop && state.isGuestFirst) || (!state.isTop && !state.isGuestFirst);
-                const offenseLineup = isMyAttack ? state.myLineup : state.opponentLineup;
-                const index = isMyAttack ? state.myBattingIndex : state.opponentBattingIndex;
-                const batter = offenseLineup && offenseLineup.length > index ? offenseLineup[index] : null;
-                return batter ? `${index + 1}番 ${batter.playerName || batter.name || "名称未設定"}` : `${index + 1}番 (未設定)`;
-              })()}
-            </p>
-            {state.isScorer && (
-              <button
-                type="button"
-                className="pointer-events-auto bg-muted hover:bg-muted/80 text-[9px] font-bold px-2 py-0.5 rounded-full"
-                onClick={() => {
-                  const isMyAttack = (state.isTop && state.isGuestFirst) || (!state.isTop && !state.isGuestFirst);
-                  const index = isMyAttack ? state.myBattingIndex : state.opponentBattingIndex;
-                  const newName = window.prompt("代打の選手名を入力してください");
-                  if (newName) {
-                    const newId = `sub-${Date.now()}`;
-                    state.substitutePlayer?.(isMyAttack ? 'my' : 'opponent', index, newId, newName);
-                  }
-                }}
-              >
-                代打
-              </button>
-            )}
-          </div>
-        </div>
+      <div className="absolute -top-16 left-1/2 -translate-x-1/2 w-[120%] text-center">
+        {(() => {
+          const isMyAttack = (state.isTop && state.isGuestFirst) || (!state.isTop && !state.isGuestFirst);
+          const offenseLineup = isMyAttack ? state.myLineup : state.opponentLineup;
+          const index = isMyAttack ? state.myBattingIndex : state.opponentBattingIndex;
+          const batter = offenseLineup && offenseLineup.length > index ? offenseLineup[index] : null;
+          const batterName = batter ? (batter.playerName || batter.name || "名称未設定") : "(未設定)";
+          
+          const searchPrefix = `${index + 1}番`;
+          const previousLogs = state.logs.filter(l => l.description.startsWith(searchPrefix) && l.isTop === state.isTop);
+          let prevResult = "前打席: データなし";
+          if (previousLogs.length > 0) {
+            const desc = previousLogs[0].description;
+            const parts = desc.split(/[:：]/);
+            prevResult = parts.length > 1 ? `前打席: ${parts[1].trim()}` : `前打席: ${desc}`;
+          }
+
+          const nextIndex = (index + 1) % (offenseLineup?.length || 9);
+          const nextBatter = offenseLineup && offenseLineup.length > nextIndex ? offenseLineup[nextIndex] : null;
+          const nextBatterName = nextBatter ? (nextBatter.playerName || nextBatter.name || "未設定") : "(未設定)";
+
+          return (
+            <div className="inline-flex flex-col items-center w-full gap-0.5">
+              <div className="text-[10px] font-bold text-muted-foreground bg-muted/30 px-2 py-0.5 rounded-full mb-1">
+                {prevResult}
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="bg-primary px-4 py-1 rounded-full shadow-[0_0_15px_rgba(var(--primary),0.4)]">
+                  <span className="text-[10px] font-black text-primary-foreground tracking-widest uppercase">Batter Up</span>
+                </div>
+                <p className="text-[14px] font-black text-foreground">
+                  {`${index + 1}番 ${batterName}`}
+                </p>
+                {state.isScorer && (
+                  <button
+                    type="button"
+                    className="pointer-events-auto bg-muted hover:bg-muted/80 text-[9px] font-bold px-2 py-0.5 rounded-full"
+                    onClick={() => {
+                      const newName = window.prompt("代打の選手名を入力してください");
+                      if (newName) {
+                        const newId = `sub-${Date.now()}`;
+                        state.substitutePlayer?.(isMyAttack ? 'my' : 'opponent', index, newId, newName);
+                      }
+                    }}
+                  >
+                    代打
+                  </button>
+                )}
+              </div>
+              <div className="text-[9px] font-bold text-muted-foreground mt-0.5">
+                NEXT: {nextIndex + 1}番 {nextBatterName}
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
     </div>
