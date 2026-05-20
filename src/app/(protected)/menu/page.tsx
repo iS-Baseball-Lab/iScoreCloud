@@ -28,6 +28,14 @@ export default function MenuPage() {
       ],
     },
     {
+      title: "試合・スコア機能",
+      items: [
+        { icon: LayoutDashboard, label: "試合予定登録", href: "/matches/create?mode=real" },
+        { icon: Users, label: "ライブスコア", href: "/matches/create?mode=live" },
+        { icon: Contact, label: "クイックスコア", href: "/matches/create?mode=quick" },
+      ],
+    },
+    {
       title: "メイン機能",
       items: [
         { icon: LayoutDashboard, label: "ダッシュボード", href: "/dashboard" },
