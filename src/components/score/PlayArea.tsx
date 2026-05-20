@@ -123,10 +123,10 @@ export function PlayArea() {
               // ピッチャーは特別に中央で目立たせる
               return (
                 <div key={posNum} className={`absolute ${posClass} flex flex-col items-center z-30`}>
-                  <div className="absolute inset-0 bg-primary/20 rounded-full blur-3xl scale-[3]" />
-                  <div className="relative bg-card/40 dark:bg-black/40 backdrop-blur-2xl border border-white/10 rounded-full px-5 py-2 flex flex-col items-center gap-0.5 shadow-2xl">
-                    <span className="text-[7px] font-black text-primary/60 uppercase tracking-[0.2em]">{label}</span>
-                    <span className="text-[10px] font-black text-foreground tracking-tighter">
+                  <div className="absolute inset-0 bg-white/20 rounded-full blur-3xl scale-[3]" />
+                  <div className="relative bg-white border border-black/10 dark:border-white/20 rounded-full px-5 py-2 flex flex-col items-center gap-0.5 shadow-2xl">
+                    <span className="text-[7px] font-black text-black/60 uppercase tracking-[0.2em]">{label}</span>
+                    <span className="text-[10px] font-black text-black tracking-tighter">
                       {player?.playerName || player?.name || "未設定"}
                     </span>
                   </div>
@@ -137,9 +137,9 @@ export function PlayArea() {
             // 野手の表示
             return (
               <div key={posNum} className={`absolute ${posClass} flex flex-col items-center z-10`}>
-                <div className="bg-background/80 dark:bg-zinc-900/80 backdrop-blur-sm border border-muted-foreground/20 rounded-md px-1.5 py-0.5 flex flex-col items-center min-w-[36px] shadow-sm">
-                  <span className="text-[6px] font-bold text-muted-foreground">{label}</span>
-                  <span className="text-[8px] font-bold text-foreground truncate max-w-[48px]">
+                <div className="bg-white border border-black/10 dark:border-white/20 rounded-md px-1.5 py-0.5 flex flex-col items-center min-w-[36px] shadow-sm">
+                  <span className="text-[6px] font-bold text-black/60">{label}</span>
+                  <span className="text-[8px] font-bold text-black truncate max-w-[48px]">
                     {player?.playerName || player?.name || "-"}
                   </span>
                 </div>
