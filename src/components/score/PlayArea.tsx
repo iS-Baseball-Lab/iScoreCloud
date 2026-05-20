@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { User } from "lucide-react";
 
 export function PlayArea() {
-  const { state, updateRunners, recordInPlay } = useScore();
+  const { state, updateRunners, recordInPlay, substitutePlayer } = useScore();
   const { runners } = state;
 
   // 🌟 究極ポイント：ベースを叩いて状況を操作する
@@ -135,7 +135,7 @@ export function PlayArea() {
         })()}
       </div>
 
-      <div className="absolute -top-16 left-1/2 -translate-x-1/2 w-[120%] text-center">
+      <div className="absolute -top-12 left-1/2 -translate-x-1/2 w-[120%] text-center">
         {(() => {
           const isMyAttack = (state.isTop && state.isGuestFirst) || (!state.isTop && !state.isGuestFirst);
           const offenseLineup = isMyAttack ? state.myLineup : state.opponentLineup;
@@ -145,11 +145,11 @@ export function PlayArea() {
           
           const searchPrefix = `${index + 1}番`;
           const previousLogs = state.logs.filter(l => l.description.startsWith(searchPrefix) && l.isTop === state.isTop);
-          let prevResult = "前打席: データなし";
+          let prevResult = "データなし";
           if (previousLogs.length > 0) {
             const desc = previousLogs[0].description;
             const parts = desc.split(/[:：]/);
-            prevResult = parts.length > 1 ? `前打席: ${parts[1].trim()}` : `前打席: ${desc}`;
+            prevResult = parts.length > 1 ? parts[1].trim() : desc;
           }
 
           const nextIndex = (index + 1) % (offenseLineup?.length || 9);
@@ -157,26 +157,29 @@ export function PlayArea() {
           const nextBatterName = nextBatter ? (nextBatter.playerName || nextBatter.name || "未設定") : "(未設定)";
 
           return (
-            <div className="inline-flex flex-col items-center w-full gap-0.5">
-              <div className="text-[10px] font-bold text-muted-foreground bg-muted/30 px-2 py-0.5 rounded-full mb-1">
-                {prevResult}
+            <div className="flex items-center justify-center w-full gap-1 px-1">
+              {/* 前打席 */}
+              <div className="flex-1 flex justify-end min-w-0">
+                <span className="text-[8px] font-bold text-muted-foreground bg-muted/30 px-1.5 py-0.5 rounded-full truncate max-w-full border border-border/50">
+                  前: {prevResult}
+                </span>
               </div>
-              <div className="flex items-center gap-2">
-                <div className="bg-primary px-4 py-1 rounded-full shadow-[0_0_15px_rgba(var(--primary),0.4)]">
-                  <span className="text-[10px] font-black text-primary-foreground tracking-widest uppercase">Batter Up</span>
-                </div>
-                <p className="text-[14px] font-black text-foreground">
+
+              {/* 現在のバッター */}
+              <div className="shrink-0 flex items-center gap-1 bg-primary px-3 py-1 rounded-full shadow-[0_0_15px_rgba(var(--primary),0.3)]">
+                <span className="text-[9px] font-black text-primary-foreground/80 uppercase tracking-wider">Bat</span>
+                <span className="text-[12px] font-black text-primary-foreground">
                   {`${index + 1}番 ${batterName}`}
-                </p>
+                </span>
                 {state.isScorer && (
                   <button
                     type="button"
-                    className="pointer-events-auto bg-muted hover:bg-muted/80 text-[9px] font-bold px-2 py-0.5 rounded-full"
+                    className="pointer-events-auto ml-1 bg-white/20 hover:bg-white/30 text-primary-foreground text-[8px] font-bold px-1.5 py-0.5 rounded transition-colors"
                     onClick={() => {
                       const newName = window.prompt("代打の選手名を入力してください");
                       if (newName) {
                         const newId = `sub-${Date.now()}`;
-                        state.substitutePlayer?.(isMyAttack ? 'my' : 'opponent', index, newId, newName);
+                        substitutePlayer?.(isMyAttack ? 'my' : 'opponent', index, newId, newName);
                       }
                     }}
                   >
@@ -184,8 +187,12 @@ export function PlayArea() {
                   </button>
                 )}
               </div>
-              <div className="text-[9px] font-bold text-muted-foreground mt-0.5">
-                NEXT: {nextIndex + 1}番 {nextBatterName}
+
+              {/* NEXTバッター */}
+              <div className="flex-1 flex justify-start min-w-0">
+                <span className="text-[8px] font-bold text-muted-foreground bg-muted/30 px-1.5 py-0.5 rounded-full truncate max-w-full border border-border/50">
+                  次: {nextBatterName}
+                </span>
               </div>
             </div>
           );
