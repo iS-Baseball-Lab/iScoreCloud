@@ -4,7 +4,8 @@ import React from "react";
 import { useRouter } from "next/navigation";
 import { 
   LogOut, User, Settings, HelpCircle, ChevronRight, Activity, Calendar,
-  LayoutDashboard, Users, Contact, CalendarCheck, Trophy, FileText, Shield, Zap
+  LayoutDashboard, Users, Contact, CalendarCheck, Trophy, FileText, Shield, Zap,
+  UserPlus, ScrollText, CalendarPlus, Timer, ShieldCheck
 } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 import { toast } from "sonner";
@@ -25,24 +26,24 @@ export default function MenuPage() {
       items: [
         { icon: User, label: "プロフィール設定", href: "/profile" },
         { icon: Settings, label: "アプリ設定", href: "/settings" },
-        { icon: Settings, label: "チーム参加申請", href: "/settings" },
+        { icon: UserPlus, label: "チーム参加申請", href: "/settings" },
       ],
     },
     {
       title: "試合・スコア",
       items: [
         { icon: LayoutDashboard, label: "ダッシュボード", href: "/dashboard" },
-        { icon: LayoutDashboard, label: "試合一覧", href: "/matches" },
-        { icon: Calendar, label: "試合予定登録", href: "/matches/create?mode=real" },
+        { icon: ScrollText, label: "試合一覧", href: "/matches" },
+        { icon: CalendarPlus, label: "試合予定登録", href: "/matches/create?mode=real" },
         { icon: Activity, label: "ライブスコア", href: "/matches/create?mode=live" },
-        { icon: Contact, label: "クイックスコア", href: "/matches/create?mode=quick" },
+        { icon: Timer, label: "クイックスコア", href: "/matches/create?mode=quick" },
       ],
     },
     {
       title: "チーム・選手",
       items: [
         { icon: Users, label: "チーム編成", href: "/teams" },
-        { icon: Users, label: "チーム情報", href: "/team" },
+        { icon: Shield, label: "チーム情報", href: "/team" },
         { icon: Contact, label: "選手名簿", href: "/players" },
       ],
     },
@@ -64,7 +65,7 @@ export default function MenuPage() {
       items: [
         { icon: HelpCircle, label: "使い方・マニュアル", href: "/help" },
         { icon: FileText, label: "利用規約", href: "/terms" },
-        { icon: Shield, label: "プライバシーポリシー", href: "/privacy" },
+        { icon: ShieldCheck, label: "プライバシーポリシー", href: "/privacy" },
       ],
     },
   ];
