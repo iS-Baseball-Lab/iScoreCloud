@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { 
   LogOut, User, Settings, HelpCircle, ChevronRight, Activity, Calendar,
   LayoutDashboard, Users, Contact, CalendarCheck, Trophy, FileText, Shield, Zap,
-  UserPlus, ScrollText, CalendarPlus, Timer, ShieldCheck, MapPin
+  UserPlus, ScrollText, CalendarPlus, Timer, ShieldCheck, MapPin, BookOpen
 } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 import { toast } from "sonner";
@@ -40,7 +40,7 @@ export default function MenuPage() {
         { icon: CalendarPlus, label: "試合予定登録", href: "/matches/create?mode=real" },
         { icon: Activity, label: "ライブスコア入力", href: "/matches/create?mode=live" },
         { icon: Timer, label: "クイックスコア入力", href: "/matches/create?mode=quick" },
-        { icon: ScrollText, label: "スコアブック", href: "/scorebook" },
+        { icon: BookOpen, label: "スコアブック", href: "/matches/scorebook" },
       ],
     },
     {
