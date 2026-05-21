@@ -197,7 +197,7 @@ export function PlayArea() {
       </div>
 
       {/* 🚀 ダイヤモンドエリア */}
-      <div className="relative w-full max-w-[250px] aspect-square mx-auto mt-12 mb-10">
+      <div className="relative w-full max-w-[250px] aspect-square mx-auto mt-12 mb-6">
         {/* 🏟 ダイヤモンド（土のライン） */}
         <div className="absolute inset-4 border-[3px] border-dashed border-primary/20 dark:border-white/10 rotate-45 rounded-sm shadow-inner" />
 
@@ -206,20 +206,15 @@ export function PlayArea() {
         <Base baseNum={2} isRunner={!!runners.base2} />
         <Base baseNum={3} isRunner={!!runners.base3} />
 
-        {/* 🏠 ホームベース（戻り値：得点への意志） */}
-        <button 
-          onClick={() => {
-            recordInPlay("得点", 1, 0, 0);
-            if (runners.base3) {
-              recordRunnerAction(3, "clear");
-            }
-            if (window.navigator.vibrate) window.navigator.vibrate(20);
-          }}
-          className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 w-12 h-12 flex flex-col items-center group active:scale-90 transition-transform cursor-pointer outline-none z-20"
-        >
-          <div className="w-9 h-6 bg-white dark:bg-zinc-100 border-2 border-muted-foreground/30 shadow-[0_0_15px_rgba(255,255,255,0.3)]" />
-          <div className="w-0 h-0 border-l-[18px] border-l-transparent border-r-[18px] border-r-transparent border-t-[14px] border-t-white dark:border-t-zinc-100 relative -mt-[2px]" />
-        </button>
+        {/* 🏠 ホームベース（静的装飾 / 完璧なSVG五角形リアル比率） */}
+        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 w-10 h-10 flex items-center justify-center pointer-events-none z-20">
+          <svg viewBox="0 0 100 100" className="w-8 h-8 drop-shadow-[0_2px_6px_rgba(0,0,0,0.15)] dark:drop-shadow-[0_2px_6px_rgba(255,255,255,0.1)]">
+            <polygon
+              points="0,0 100,0 100,50 50,100 0,50"
+              className="fill-white dark:fill-zinc-100 stroke-zinc-400 dark:stroke-zinc-600 stroke-[6]"
+            />
+          </svg>
+        </div>
 
         {/* 守備位置の表示 */}
         <div className="absolute inset-0 pointer-events-none">
@@ -233,7 +228,7 @@ export function PlayArea() {
             // ポジション番号と座標のマッピング
             const positions: Record<string, { label: string, posClass: string }> = {
               "1": { label: "P", posClass: "top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" },
-              "2": { label: "C", posClass: "bottom-[-45px] left-1/2 -translate-x-1/2" },
+              "2": { label: "C", posClass: "bottom-[22px] left-1/2 -translate-x-1/2" },
               "3": { label: "1B", posClass: "top-[60%] right-[-10px]" },
               "4": { label: "2B", posClass: "top-[25%] right-[20%]" },
               "5": { label: "3B", posClass: "top-[60%] left-[-10px]" },
@@ -281,7 +276,7 @@ export function PlayArea() {
 
       {/* 🚀 走者配置（代走アサイン）モーダル */}
       {isAssignModalOpen && selectedBase && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-[100] animate-in fade-in duration-200">
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-[200] animate-in fade-in duration-200">
           <div className="bg-zinc-950 border border-zinc-800 rounded-2xl w-full max-w-md overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.8)]">
             
             {/* ヘッダー */}

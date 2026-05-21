@@ -76,7 +76,7 @@ export function RunnerActionModal({
   ] as const;
 
   return (
-    <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-[100] animate-in fade-in duration-200">
+    <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-[200] animate-in fade-in duration-200">
       <div className="bg-zinc-950 border border-zinc-800 rounded-2xl w-full max-w-md overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.8)]">
         
         {/* モーダルヘッダー */}

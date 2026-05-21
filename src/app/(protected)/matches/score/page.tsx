@@ -77,8 +77,8 @@ function ScorePageContent() {
 
         {/* 最近のプレイログ：操作パネルとの視覚的な繋ぎ / 引き出し式シート */}
         <div className={cn(
-          "absolute bottom-0 w-full px-4 transition-all duration-300 z-50",
-          isLogExpanded ? "h-[90%]" : "h-[100px]"
+          "absolute bottom-0 w-full px-4 transition-all duration-300",
+          isLogExpanded ? "h-[90%] z-50" : "h-[100px] z-30"
         )}>
           <div 
             className="h-full bg-background/20 dark:bg-background/20 backdrop-blur-[2px] rounded-t-3xl border border-border/30 border-b-0 p-2 shadow-[0_-5px_20px_rgba(0,0,0,0.1)] flex flex-col"
@@ -110,7 +110,8 @@ function ScorePageContent() {
         "shrink-0 z-40 bg-card border-t border-border px-2 pt-2 pb-2 shadow-[0_-15px_50px_rgba(0,0,0,0.2)]",
         "h-[22dvh] min-h-[160px]",
         isReady ? "translate-y-0" : "translate-y-full transition-none",
-        "transition-transform duration-700 ease-out"
+        "transition-all duration-700 ease-out",
+        isLogExpanded && "pointer-events-none opacity-20 scale-95 origin-bottom"
       )}>
         <div className="max-w-md mx-auto h-full w-full flex flex-col justify-center">
           {isScorer ? (
