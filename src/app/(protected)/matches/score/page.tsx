@@ -52,10 +52,10 @@ function ScorePageContent() {
   }
 
   return (
-    <div className="fixed inset-0 z-[100] bg-background h-[100dvh] w-full flex flex-col overflow-hidden select-none">
+    <div className="fixed inset-0 bg-background h-[100dvh] w-full flex flex-col overflow-hidden select-none">
       
       {/* 1. 【上部：スコアボード】(約18%) 
-          直射日光下でもスコアがハッキリ見えるよう、背景はソリッドに。[span_6](start_span)[span_6](end_span) */}
+          直射日光下でもスコアがハッキリ見えるよう、背景はソリッドに。 */}
       <header className={cn(
         "shrink-0 z-30 transition-transform duration-700 bg-card border-b border-border/50",
         isReady ? "translate-y-0" : "-translate-y-full"
@@ -65,7 +65,8 @@ function ScorePageContent() {
 
       {/* 2. 【中央：プレイ表示エリア】(約50%) */}
       <main className={cn(
-        "flex-1 relative flex flex-col items-center justify-between z-10 py-1 transition-all duration-1000",
+        "flex-1 relative flex flex-col items-center justify-between py-1 transition-all duration-1000",
+        isLogExpanded ? "z-50" : "z-10",
         isReady ? "opacity-100 scale-100" : "opacity-0 scale-95"
       )}>
         {/* 野球盤（ランナー状況）：上寄せに配置 */}

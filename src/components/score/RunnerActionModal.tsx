@@ -1,7 +1,8 @@
 // filepath: src/components/score/RunnerActionModal.tsx
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { X, Trophy, AlertTriangle, Play, HelpCircle } from "lucide-react";
 
@@ -22,7 +23,15 @@ export function RunnerActionModal({
   playerName,
   onSelectAction,
 }: RunnerActionModalProps) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    return () => setMounted(false);
+  }, []);
+
   if (!isOpen) return null;
+  if (!mounted) return null;
 
   const actions = [
     {
@@ -75,7 +84,7 @@ export function RunnerActionModal({
     },
   ] as const;
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-[200] animate-in fade-in duration-200">
       <div className="bg-zinc-950 border border-zinc-800 rounded-2xl w-full max-w-md overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.8)]">
         
@@ -127,6 +136,7 @@ export function RunnerActionModal({
         </div>
 
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

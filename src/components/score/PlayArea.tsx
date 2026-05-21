@@ -2,6 +2,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { useScore } from "@/contexts/ScoreContext";
 import { cn } from "@/lib/utils";
 import { RunnerActionModal } from "./RunnerActionModal";
@@ -17,6 +18,12 @@ export function PlayArea() {
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [benchPlayers, setBenchPlayers] = useState<any[]>([]);
   const [customPlayerName, setCustomPlayerName] = useState("");
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    return () => setMounted(false);
+  }, []);
 
   const isMyAttack = (state.isTop && state.isGuestFirst) || (!state.isTop && !state.isGuestFirst);
   const offenseLineup = isMyAttack ? state.myLineup : state.opponentLineup;
@@ -275,7 +282,7 @@ export function PlayArea() {
       )}
 
       {/* 🚀 走者配置（代走アサイン）モーダル */}
-      {isAssignModalOpen && selectedBase && (
+      {isAssignModalOpen && selectedBase && mounted && createPortal(
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-[200] animate-in fade-in duration-200">
           <div className="bg-zinc-950 border border-zinc-800 rounded-2xl w-full max-w-md overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.8)]">
             
@@ -376,7 +383,8 @@ export function PlayArea() {
             </div>
 
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
     </div>
