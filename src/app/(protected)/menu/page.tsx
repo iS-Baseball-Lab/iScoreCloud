@@ -38,8 +38,9 @@ export default function MenuPage() {
         { icon: LayoutDashboard, label: "ダッシュボード", href: "/dashboard" },
         { icon: ScrollText, label: "試合一覧", href: "/matches" },
         { icon: CalendarPlus, label: "試合予定登録", href: "/matches/create?mode=real" },
-        { icon: Activity, label: "ライブスコア", href: "/matches/create?mode=live" },
-        { icon: Timer, label: "クイックスコア", href: "/matches/create?mode=quick" },
+        { icon: Activity, label: "ライブスコア入力", href: "/matches/create?mode=live" },
+        { icon: Timer, label: "クイックスコア入力", href: "/matches/create?mode=quick" },
+        { icon: ScrollText, label: "スコアブック", href: "/scorebook" },
       ],
     },
     {
