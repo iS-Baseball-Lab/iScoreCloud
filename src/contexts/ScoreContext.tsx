@@ -51,8 +51,13 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
   const [isSyncing, setIsSyncing] = useState(false);
 
   // 🚀 1. 内部用：ログ記録ヘルパー
-  const appendLog = useCallback((description: string, s: ScoreState): PlayLogEntry[] => {
-    const bsoSuffix = ` [B:${s.balls}, S:${s.strikes}, O:${s.outs}]`;
+  const appendLog = useCallback((
+    description: string,
+    s: ScoreState,
+    overrideBso?: { balls: number; strikes: number; outs: number }
+  ): PlayLogEntry[] => {
+    const bso = overrideBso || { balls: s.balls, strikes: s.strikes, outs: s.outs };
+    const bsoSuffix = ` [B:${bso.balls}, S:${bso.strikes}, O:${bso.outs}]`;
     const fullDesc = description.includes("[B:") ? description : `${description}${bsoSuffix}`;
     const newEntry: PlayLogEntry = {
       id: crypto.randomUUID(),
@@ -320,7 +325,7 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
         myBattingIndex: newMyBattingIndex,
         opponentBattingIndex: newOpponentBattingIndex,
         batterId: nextBatterId,
-        logs: appendLog(fullLogText, prev),
+        logs: appendLog(fullLogText, prev, { balls: newBalls, strikes: newStrikes, outs: newOuts }),
       });
 
       // 毎球同期する！ (打席未完了なら skipLineReport = true)
@@ -451,7 +456,7 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
         myBattingIndex: newMyBattingIndex,
         opponentBattingIndex: newOpponentBattingIndex,
         batterId: nextBatterId,
-        logs: appendLog(fullLogText, prev),
+        logs: appendLog(fullLogText, prev, { balls: prev.balls, strikes: prev.strikes, outs: newOuts }),
       });
 
       syncWithBackend(next, fullLogText);
@@ -608,7 +613,7 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
         runners: isInningChange ? { base1: null, base2: null, base3: null } : nextRunners,
         isTop: isInningChange ? !prev.isTop : prev.isTop,
         inning: isInningChange && !prev.isTop ? prev.inning + 1 : prev.inning,
-        logs: appendLog(logFinalText, prev)
+        logs: appendLog(logFinalText, prev, { balls: prev.balls, strikes: prev.strikes, outs: newOuts })
       });
 
       syncWithBackend(next, logFinalText);

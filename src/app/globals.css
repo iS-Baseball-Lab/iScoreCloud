@@ -319,3 +319,21 @@
     background-attachment: fixed;
   }
 }
+
+/* =======================================================
+   ⚾️ 9. CUSTOM UTILITY ANIMATIONS (PLAYLOG SLIDE-IN)
+   ======================================================= */
+@keyframes playlog-slide-in-right {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.animate-playlog-slide-in {
+  animation: playlog-slide-in-right 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}

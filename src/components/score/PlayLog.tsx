@@ -59,9 +59,9 @@ export function PlayLog({ limit = 3 }: PlayLogProps) {
             key={log.id}
             className={cn(
               "relative flex items-center gap-3 transition-all duration-300",
-              // 💡 通知の代わり：最新の1件だけブランドカラーで強力に強調
+              // 💡 ユーザー要望: 先頭行を右からスライドインする極上のアニメーションに変更
               isLatest 
-                ? "bg-primary text-primary-foreground px-4 py-2.5 rounded-[20px] shadow-lg animate-in fade-in slide-in-from-bottom-2 scale-100 z-10" 
+                ? "bg-primary text-primary-foreground px-4 py-2.5 rounded-[20px] shadow-lg animate-playlog-slide-in z-10" 
                 : "bg-muted/40 text-foreground/60 px-4 py-2 rounded-[18px] border border-border/20 opacity-60"
             )}
           >
@@ -86,61 +86,74 @@ export function PlayLog({ limit = 3 }: PlayLogProps) {
               {isOut && <Circle className="h-2 w-2 fill-rose-500 text-rose-500 shrink-0" />}
             </div>
 
-            {/* BSO または 時間(フォールバック) */}
+            {/* BSO または 時間(フォールバック) - 💡 極上横型カプセルスコアボードデザイン */}
             {bso ? (
               <div className={cn(
-                "flex flex-col gap-[2px] shrink-0 text-[8px] font-black leading-none rounded-lg p-1 min-w-[45px] items-start justify-center",
-                isLatest ? "bg-white/10" : "bg-zinc-950/20 border border-zinc-800/40"
+                "flex items-center gap-2 shrink-0 rounded-full px-2.5 py-1 text-[9px] font-extrabold tracking-tighter shadow-sm transition-all duration-300",
+                isLatest 
+                  ? "bg-white/15 text-white border border-white/20" 
+                  : "bg-zinc-950/45 dark:bg-zinc-950/60 text-foreground border border-zinc-800/40"
               )}>
                 {/* Ball */}
                 <div className="flex gap-1 items-center">
-                  <span className={cn("text-[7px] font-extrabold w-2", isLatest ? "text-white" : "text-emerald-400")}>B</span>
+                  <span className={cn(isLatest ? "text-white" : "text-emerald-400 font-extrabold text-[8px]")}>B</span>
                   <div className="flex gap-0.5">
                     {[1, 2, 3].map((num) => (
                       <div
                         key={num}
                         className={cn(
-                          "w-1.5 h-1.5 rounded-full border",
-                          isLatest ? "border-white/20" : "border-emerald-500/30",
-                          num <= bso.balls 
-                            ? (isLatest ? "bg-white" : "bg-emerald-500 shadow-[0_0_3px_rgba(16,185,129,0.8)]") 
-                            : "bg-zinc-950/40"
+                          "w-1.5 h-1.5 rounded-full border transition-all duration-300",
+                          isLatest 
+                            ? (num <= bso.balls ? "bg-white border-white" : "bg-white/10 border-white/20") 
+                            : (num <= bso.balls 
+                                ? "bg-emerald-400 border-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.9)]" 
+                                : "bg-zinc-800 border-zinc-700/50")
                         )}
                       />
                     ))}
                   </div>
                 </div>
+
+                {/* Divider */}
+                <span className={cn("opacity-25 text-[8px] font-light", isLatest ? "text-white" : "text-zinc-600")}>|</span>
+
                 {/* Strike */}
                 <div className="flex gap-1 items-center">
-                  <span className={cn("text-[7px] font-extrabold w-2", isLatest ? "text-white" : "text-amber-400")}>S</span>
+                  <span className={cn(isLatest ? "text-white" : "text-amber-400 font-extrabold text-[8px]")}>S</span>
                   <div className="flex gap-0.5">
                     {[1, 2].map((num) => (
                       <div
                         key={num}
                         className={cn(
-                          "w-1.5 h-1.5 rounded-full border",
-                          isLatest ? "border-white/20" : "border-amber-500/30",
-                          num <= bso.strikes 
-                            ? (isLatest ? "bg-white" : "bg-amber-400 shadow-[0_0_3px_rgba(251,191,36,0.8)]") 
-                            : "bg-zinc-950/40"
+                          "w-1.5 h-1.5 rounded-full border transition-all duration-300",
+                          isLatest 
+                            ? (num <= bso.strikes ? "bg-white border-white" : "bg-white/10 border-white/20") 
+                            : (num <= bso.strikes 
+                                ? "bg-amber-400 border-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.9)]" 
+                                : "bg-zinc-800 border-zinc-700/50")
                         )}
                       />
                     ))}
                   </div>
                 </div>
+
+                {/* Divider */}
+                <span className={cn("opacity-25 text-[8px] font-light", isLatest ? "text-white" : "text-zinc-600")}>|</span>
+
                 {/* Out */}
                 <div className="flex gap-1 items-center">
-                  <span className={cn("text-[7px] font-extrabold w-2", isLatest ? "text-white" : "text-rose-500")}>O</span>
+                  <span className={cn(isLatest ? "text-white" : "text-rose-500 font-extrabold text-[8px]")}>O</span>
                   <div className="flex gap-0.5">
                     {[1, 2].map((num) => (
                       <div
                         key={num}
                         className={cn(
-                          "w-1.5 h-1.5 rounded-full border",
-                          isLatest ? "border-white/20" : "border-rose-500/30",
-                          num <= bso.outs 
-                            ? (isLatest ? "bg-white" : "bg-rose-500 shadow-[0_0_3px_rgba(244,63,94,0.8)]") 
-                            : "bg-zinc-950/40"
+                          "w-1.5 h-1.5 rounded-full border transition-all duration-300",
+                          isLatest 
+                            ? (num <= bso.outs ? "bg-white border-white" : "bg-white/10 border-white/20") 
+                            : (num <= bso.outs 
+                                ? "bg-rose-500 border-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.9)]" 
+                                : "bg-zinc-800 border-zinc-700/50")
                         )}
                       />
                     ))}
