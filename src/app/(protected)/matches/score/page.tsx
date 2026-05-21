@@ -82,7 +82,7 @@ function ScorePageContent() {
           isLogExpanded ? "h-[90%] z-50" : "h-[100px] z-30"
         )}>
           <div 
-            className="h-full bg-background/20 dark:bg-background/20 backdrop-blur-[2px] rounded-t-3xl border border-border/30 border-b-0 p-2 shadow-[0_-5px_20px_rgba(0,0,0,0.1)] flex flex-col"
+            className="h-full bg-white/95 dark:bg-zinc-950/80 backdrop-blur-md rounded-t-3xl border border-border/30 border-b-0 p-3 shadow-[0_-8px_30px_rgba(0,0,0,0.08)] flex flex-col"
           >
             {/* ハンドル部分（タップで開閉） */}
             <div 
@@ -106,13 +106,13 @@ function ScorePageContent() {
       </main>
 
       {/* 3. 【下部：操作パネル or 観戦通知】(約32%) 🌟 ここがスコアラーの主戦場 🌟
-          脱・グラスモーフィズム：操作ミスを防ぐため透過を抑え、ボタンのコントラストを最大化。[span_7](start_span)[span_7](end_span) */}
+          脱・グラスモーフィズム：操作ミスを防ぐため透過を抑え、ボタンのコントラストを最大化。 */}
       <footer className={cn(
         "shrink-0 z-40 bg-card border-t border-border px-2 pt-2 pb-2 shadow-[0_-15px_50px_rgba(0,0,0,0.2)]",
         "h-[22dvh] min-h-[160px]",
         isReady ? "translate-y-0" : "translate-y-full transition-none",
         "transition-all duration-700 ease-out",
-        isLogExpanded && "pointer-events-none opacity-20 scale-95 origin-bottom"
+        isLogExpanded && "opacity-95"
       )}>
         <div className="max-w-md mx-auto h-full w-full flex flex-col justify-center">
           {isScorer ? (

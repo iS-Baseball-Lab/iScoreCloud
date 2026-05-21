@@ -154,6 +154,62 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
         // ログの復元
         const restoredLogs = logsData?.success && Array.isArray(logsData.logs) ? logsData.logs : [];
 
+        // 🌟 プレイログを解析して打順（myBattingIndex, opponentBattingIndex）を復元
+        let myBattingIndex = 0;
+        let opponentBattingIndex = 0;
+        let foundMy = false;
+        let foundOpponent = false;
+
+        const isGuestFirst = m.battingOrder === 'first';
+        const myLineup = lineupsData?.lineups?.myLineup || [];
+        const opponentLineup = lineupsData?.lineups?.opponentLineup || [];
+
+        // 打席完了の判定用正規表現（安打、四死球、アウト、エラー、犠打飛、併殺などの完了系キーワード）
+        const atBatEndRegex = /三振|フォアボール|デッドボール|アウト|単打|二塁打|三塁打|本塁打|安|二|三|本|ゴロ|飛|直|犠|失|エラー|併殺/;
+
+        for (const log of restoredLogs) {
+          if (foundMy && foundOpponent) break;
+
+          const matchObj = log.description.match(/^(\d+)番/);
+          if (!matchObj) continue;
+
+          const batterOrder = parseInt(matchObj[1], 10);
+          const isAtBatEnd = atBatEndRegex.test(log.description);
+          
+          // log.isTop が true で isGuestFirst が true ➔ 表で先攻なので自チームの攻撃
+          // log.isTop が false で isGuestFirst が false ➔ 裏で後攻なので自チームの攻撃
+          const isMyAttackLog = log.isTop === isGuestFirst;
+
+          if (isMyAttackLog && !foundMy) {
+            const lineupLength = myLineup.length || 9;
+            const maxIndex = Math.max(9, lineupLength);
+            if (isAtBatEnd) {
+              myBattingIndex = (batterOrder) % maxIndex;
+            } else {
+              myBattingIndex = (batterOrder - 1) % maxIndex;
+            }
+            foundMy = true;
+          } else if (!isMyAttackLog && !foundOpponent) {
+            const lineupLength = opponentLineup.length || 9;
+            const maxIndex = Math.max(9, lineupLength);
+            if (isAtBatEnd) {
+              opponentBattingIndex = (batterOrder) % maxIndex;
+            } else {
+              opponentBattingIndex = (batterOrder - 1) % maxIndex;
+            }
+            foundOpponent = true;
+          }
+        }
+
+        // 現在のバッターIDを解決
+        const isTop = !m.isBottom;
+        const isMyAttack = (isTop && isGuestFirst) || (!isTop && !isGuestFirst);
+        const currentLineup = isMyAttack ? myLineup : opponentLineup;
+        const currentIndex = isMyAttack ? myBattingIndex : opponentBattingIndex;
+        const batterId = currentLineup && currentLineup.length > currentIndex
+          ? currentLineup[currentIndex]?.playerId || currentLineup[currentIndex]?.id || null
+          : null;
+
         setState(prev => ({
           ...prev,
           matchId: m.id,
@@ -163,16 +219,16 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
           venueName: m.surfaceDetails,
           matchType: m.matchType,
           inning: m.currentInning || 1,
-          isTop: !m.isBottom,
+          isTop,
           myScore: m.myScore || 0,
           opponentScore: m.opponentScore || 0,
           myInningScores: restoredMyInningScores,
           opponentInningScores: restoredOpponentInningScores,
           maxInnings: m.innings || 7,
-          isGuestFirst: m.battingOrder === 'first',
+          isGuestFirst,
           status: m.status as any,
-          myLineup: lineupsData?.lineups?.myLineup || [],
-          opponentLineup: lineupsData?.lineups?.opponentLineup || [],
+          myLineup,
+          opponentLineup,
           balls: m.balls ?? 0,
           strikes: m.strikes ?? 0,
           outs: m.outs ?? 0,
@@ -181,8 +237,9 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
           opponentHits: m.opponentHits ?? 0,
           myErrors: m.myErrors ?? 0,
           opponentErrors: m.opponentErrors ?? 0,
-          myBattingIndex: 0,
-          opponentBattingIndex: 0,
+          myBattingIndex,
+          opponentBattingIndex,
+          batterId,
           logs: restoredLogs, // 🌟 プレイログを復元
           // 💡 ここで権限判定を行う（例: チーム所属チェック）
           isScorer: true, // 開発中は一旦true。実際は管理者かどうかを判定
