@@ -13,24 +13,18 @@ export default function TeamJoinPage() {
     <div className="min-h-screen p-4 sm:p-6 pt-8 pb-32 animate-in fade-in duration-400">
       <div className="max-w-2xl mx-auto space-y-8">
         
-        {/* ヘッダー */}
-        <div className="flex items-start gap-4">
-          <Button
-            variant="ghost"
-            size="icon"
+        {/* ━━ トップ：戻るボタン & SectionHeader ━━ */}
+        <div className="space-y-4">
+          <Button 
+            variant="outline" 
+            size="sm" 
             onClick={() => router.back()}
-            className="h-10 w-10 rounded-full bg-card/60 border border-border/40 hover:bg-muted shrink-0 mt-1"
+            className="h-10 px-4 rounded-[var(--radius-xl)] font-black gap-2 shadow-sm border-border bg-card text-foreground hover:bg-muted"
           >
-            <ChevronLeft className="h-5 w-5" />
+            <ChevronLeft className="h-4 w-4" />
+            戻る
           </Button>
-          <div className="flex-1 min-w-0">
-            <h1 className="text-3xl sm:text-4xl font-black italic tracking-tighter uppercase text-foreground leading-none">
-              Join Team
-            </h1>
-            <p className="text-sm font-bold text-muted-foreground mt-1 truncate">
-              チームへの参加申請
-            </p>
-          </div>
+          <SectionHeader title="チーム参加申請" subtitle="JOIN TEAM" showPulse={false} />
         </div>
 
         {/* コンテンツ */}
