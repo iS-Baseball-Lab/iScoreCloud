@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { 
   LogOut, User, Settings, HelpCircle, ChevronRight, Activity, Calendar,
   LayoutDashboard, Users, Contact, CalendarCheck, Trophy, FileText, Shield, Zap,
-  UserPlus, ScrollText, CalendarPlus, Timer, ShieldCheck
+  UserPlus, ScrollText, CalendarPlus, Timer, ShieldCheck, MapPin
 } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 import { toast } from "sonner";
@@ -16,7 +16,7 @@ export default function MenuPage() {
 
   const handleLogout = async () => {
     await authClient.signOut();
-    toast.success("スタジアムから退出しました。お疲れ様でした！");
+    toast.success("iScoreCloudから退出しました。お疲れ様でした！");
     window.location.href = "/"; // 強制的にトップ（未ログイン状態）へリダイレクト
   };
 
@@ -51,6 +51,7 @@ export default function MenuPage() {
       title: "大会・球場",
       items: [
         { icon: Trophy, label: "大会・イベント", href: "/tournaments" },
+        { icon: MapPin, label: "球場・グラウンド", href: "/tournaments" },
       ],
     },
     {
