@@ -197,7 +197,7 @@ export function PlayArea() {
       </div>
 
       {/* 🚀 ダイヤモンドエリア */}
-      <div className="relative w-full max-w-[250px] aspect-square mx-auto mt-12 mb-4">
+      <div className="relative w-full max-w-[250px] aspect-square mx-auto mt-12 mb-10">
         {/* 🏟 ダイヤモンド（土のライン） */}
         <div className="absolute inset-4 border-[3px] border-dashed border-primary/20 dark:border-white/10 rotate-45 rounded-sm shadow-inner" />
 
@@ -233,7 +233,7 @@ export function PlayArea() {
             // ポジション番号と座標のマッピング
             const positions: Record<string, { label: string, posClass: string }> = {
               "1": { label: "P", posClass: "top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" },
-              "2": { label: "C", posClass: "bottom-[-5px] left-1/2 -translate-x-1/2" },
+              "2": { label: "C", posClass: "bottom-[-45px] left-1/2 -translate-x-1/2" },
               "3": { label: "1B", posClass: "top-[60%] right-[-10px]" },
               "4": { label: "2B", posClass: "top-[25%] right-[20%]" },
               "5": { label: "3B", posClass: "top-[60%] left-[-10px]" },
