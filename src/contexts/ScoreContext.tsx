@@ -165,7 +165,7 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
         const opponentLineup = lineupsData?.lineups?.opponentLineup || [];
 
         // 打席完了の判定用正規表現（安打、四死球、アウト、エラー、犠打飛、併殺などの完了系キーワード）
-        const atBatEndRegex = /三振|フォアボール|デッドボール|アウト|単打|二塁打|三塁打|本塁打|安|二|三|本|ゴロ|飛|直|犠|失|エラー|併殺/;
+        const atBatEndRegex = /三振|フォアボール|デッドボール|アウト|単打|二塁打|三塁打|本塁打|安|二|三|本|ゴロ|飛|直|犠|失|エラー|併殺|1B|2B|3B|HR|GO|FO|LO|SO|E|FC|DP|SH|SF|ERR|OUT|SAC/;
 
         for (const log of restoredLogs) {
           if (foundMy && foundOpponent) break;

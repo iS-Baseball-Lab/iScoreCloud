@@ -108,7 +108,7 @@ function ScorePageContent() {
       {/* 3. 【下部：操作パネル or 観戦通知】(約32%) 🌟 ここがスコアラーの主戦場 🌟
           脱・グラスモーフィズム：操作ミスを防ぐため透過を抑え、ボタンのコントラストを最大化。 */}
       <footer className={cn(
-        "shrink-0 z-40 bg-card border-t border-border px-2 pt-2 pb-2 shadow-[0_-15px_50px_rgba(0,0,0,0.2)]",
+        "shrink-0 z-[60] bg-card border-t border-border px-2 pt-2 pb-2 shadow-[0_-15px_50px_rgba(0,0,0,0.2)]",
         "h-[22dvh] min-h-[160px]",
         isReady ? "translate-y-0" : "translate-y-full transition-none",
         "transition-all duration-700 ease-out",

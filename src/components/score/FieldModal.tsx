@@ -11,16 +11,8 @@ import { useScore } from "@/contexts/ScoreContext";
  * 3. 整理: 打点 (RBI) 入力と結果選択を1つのフローに集約。
  * 4. 規則: 影なし。角丸40px。border-border/40。
  */
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Minus, Plus, Check, Target } from "lucide-react";
+import { createPortal } from "react-dom";
+import { Minus, Plus, Check, Target, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface FieldModalProps {
@@ -37,6 +29,12 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
   const [selectedPos, setSelectedPos] = useState<string | null>(null);
   const [hitType, setHitType] = useState<string>("GO"); // GO: Ground Out, 1B: Single, etc.
   const [rbi, setRbi] = useState(0);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    return () => setMounted(false);
+  }, []);
 
   // Reset modal state on open
   useEffect(() => {
@@ -107,54 +105,89 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
     setRbi(0);
   };
 
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md bg-background/60 backdrop-blur-3xl border-border/40 rounded-[40px] shadow-none p-8 gap-8 animate-in zoom-in-95 duration-300">
-        <DialogHeader>
-          <div className="flex items-center gap-2 mb-2">
-            <Badge variant="outline" className="border-primary/30 text-primary bg-primary/5 rounded-full px-3 py-0.5 text-[9px] font-black tracking-widest uppercase">In Play Action</Badge>
-          </div>
-          <DialogTitle className="text-3xl font-black italic tracking-tighter uppercase italic leading-none">打球結果<span className="text-primary">記録</span></DialogTitle>
-        </DialogHeader>
+  if (!open || !mounted) return null;
 
-        <div className="space-y-8">
-          {/* 1. ポジション選択 (野球の配置を意識したグリッド) */}
-          <div className="space-y-4">
-            <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] px-2 flex items-center gap-2">
-              <Target className="h-3 w-3 text-primary" /> Select Field Position
-            </p>
+  const getResultStyle = (resId: string) => {
+    const isActive = hitType === resId;
+    if (resId === '1B' || resId === '2B' || resId === '3B') {
+      return isActive
+        ? "bg-emerald-500 border-emerald-500 text-white"
+        : "bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-400 hover:bg-emerald-100/50 dark:hover:bg-emerald-950/30";
+    }
+    if (resId === 'HR') {
+      return isActive
+        ? "bg-primary border-primary text-primary-foreground"
+        : "bg-primary/5 dark:bg-primary/10 border border-primary/10 dark:border-primary/20 text-primary hover:bg-primary/10 dark:hover:bg-primary/20";
+    }
+    if (resId === 'E') {
+      return isActive
+        ? "bg-rose-500 border-rose-500 text-white"
+        : "bg-rose-50/50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-400 hover:bg-rose-100/50 dark:hover:bg-rose-950/30";
+    }
+    // GO, FO, SH, SF などその他
+    return isActive
+      ? "bg-zinc-200 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-950 dark:text-white"
+      : "bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800";
+  };
+
+  return createPortal(
+    <div className="fixed inset-0 bg-black/60 dark:bg-black/80 flex items-center justify-center p-4 z-[200] animate-in fade-in duration-200">
+      <div className="bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl w-full max-w-md overflow-hidden shadow-[0_10px_50px_rgba(0,0,0,0.1)] dark:shadow-[0_10px_50px_rgba(0,0,0,0.5)] flex flex-col max-h-[90vh]">
+        
+        {/* モーダルヘッダー */}
+        <div className="bg-zinc-50 dark:bg-zinc-900 px-5 py-4 flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800">
+          <div>
+            <span className="text-xs font-black text-primary uppercase tracking-widest">In Play Action</span>
+            <h3 className="text-base font-black text-zinc-900 dark:text-white mt-0.5">
+              打球結果記録
+            </h3>
+          </div>
+          <button
+            onClick={() => onOpenChange(false)}
+            className="p-1.5 rounded-full hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* コンテンツエリア */}
+        <div className="p-5 overflow-y-auto space-y-6 flex-1">
+          
+          {/* 1. ポジション選択 */}
+          <div className="space-y-2">
+            <label className="text-[10px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-[0.2em] px-1 flex items-center gap-1.5">
+              <Target className="h-3.5 w-3.5 text-primary" /> Select Field Position
+            </label>
             <div className="grid grid-cols-3 gap-2">
               {positions.map((pos) => (
                 <button
                   key={pos.id}
                   onClick={() => setSelectedPos(pos.id === selectedPos ? null : pos.id)}
                   className={cn(
-                    "h-16 rounded-2xl border-2 font-black italic text-lg transition-all active:scale-95 flex flex-col items-center justify-center relative overflow-hidden group",
+                    "h-14 rounded-xl border font-black italic text-base transition-all active:scale-95 flex flex-col items-center justify-center relative overflow-hidden group",
                     selectedPos === pos.id
                       ? "bg-primary border-primary text-primary-foreground"
-                      : "bg-muted/20 border-border/20 text-muted-foreground hover:bg-muted/40"
+                      : "bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-555 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-900 hover:border-zinc-300 dark:hover:border-zinc-700 text-zinc-700 dark:text-white"
                   )}
                 >
-                  <span className="text-[10px] opacity-40 group-hover:opacity-100 transition-opacity uppercase">{pos.name}</span>
-                  <span className="text-xl leading-none">{pos.id}</span>
+                  <span className="text-[8px] opacity-60 group-hover:opacity-100 transition-opacity uppercase leading-none">{pos.name}</span>
+                  <span className="text-lg leading-none mt-0.5">{pos.id}</span>
                 </button>
               ))}
             </div>
           </div>
 
           {/* 2. 結果種別 */}
-          <div className="space-y-4">
-            <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] px-2">Result Type</p>
+          <div className="space-y-2">
+            <label className="text-[10px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-[0.2em] px-1">Result Type</label>
             <div className="flex flex-wrap gap-2">
               {results.map((res) => (
                 <button
                   key={res.id}
                   onClick={() => handleHitTypeSelect(res.id)}
                   className={cn(
-                    "px-6 py-3 rounded-full border-2 font-black text-sm tracking-tight transition-all active:scale-95",
-                    hitType === res.id
-                      ? (res.id === 'HR' ? "bg-primary border-primary text-primary-foreground" : "bg-card border-primary text-primary")
-                      : "bg-muted/10 border-border/20 text-muted-foreground opacity-60"
+                    "px-4 py-2 rounded-xl border font-black text-xs tracking-tight transition-all active:scale-95",
+                    getResultStyle(res.id)
                   )}
                 >
                   {res.label}
@@ -164,40 +197,44 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
           </div>
 
           {/* 3. 打点入力 */}
-          <div className="bg-muted/20 p-6 rounded-[32px] border border-border/20 flex items-center justify-between">
-            <div className="space-y-1">
-              <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">RBI (打点)</p>
-              <p className="text-2xl font-black italic text-foreground tracking-tighter">TOTAL RUNS</p>
+          <div className="bg-zinc-50 dark:bg-zinc-900 p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
+            <div className="space-y-0.5">
+              <p className="text-[9px] font-black text-zinc-400 dark:text-zinc-500 uppercase tracking-widest">RBI (打点)</p>
+              <p className="text-base font-black italic text-zinc-900 dark:text-white tracking-tight">TOTAL RUNS</p>
             </div>
-            <div className="flex items-center gap-6">
+            <div className="flex items-center gap-4">
               <button
                 onClick={() => setRbi(Math.max(0, rbi - 1))}
-                className="h-12 w-12 rounded-full border-2 border-border/40 flex items-center justify-center hover:bg-muted/50 active:scale-90 transition-all"
+                className="h-10 w-10 rounded-full border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-white bg-white dark:bg-zinc-950 hover:bg-zinc-100 dark:hover:bg-zinc-900 active:scale-90 transition-all flex items-center justify-center shadow-sm"
               >
-                <Minus className="h-5 w-5" />
+                <Minus className="h-4.5 w-4.5" />
               </button>
-              <span className="text-4xl font-black tabular-nums italic text-primary w-8 text-center">{rbi}</span>
+              <span className="text-3xl font-black tabular-nums italic text-primary w-8 text-center">{rbi}</span>
               <button
                 onClick={() => setRbi(Math.min(4, rbi + 1))}
-                className="h-12 w-12 rounded-full border-2 border-border/40 flex items-center justify-center hover:bg-muted/50 active:scale-90 transition-all"
+                className="h-10 w-10 rounded-full border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-white bg-white dark:bg-zinc-950 hover:bg-zinc-100 dark:hover:bg-zinc-900 active:scale-90 transition-all flex items-center justify-center shadow-sm"
               >
-                <Plus className="h-5 w-5" />
+                <Plus className="h-4.5 w-4.5" />
               </button>
             </div>
           </div>
+
         </div>
 
-        <DialogFooter className="sm:justify-center">
-          <Button
+        {/* モーダルフッター */}
+        <div className="bg-zinc-50 dark:bg-zinc-900 px-5 py-4 border-t border-zinc-100 dark:border-zinc-800">
+          <button
             onClick={handleConfirm}
             disabled={!hitType}
-            className="w-full h-16 rounded-[24px] bg-primary text-primary-foreground font-black text-xl shadow-lg shadow-primary/10 hover:bg-primary/90 transition-all active:scale-95 flex items-center justify-center gap-3"
+            className="w-full h-12 rounded-xl bg-primary text-primary-foreground font-black text-sm tracking-wide disabled:opacity-50 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
           >
-            <Check className="h-6 w-6 stroke-[3px]" />
+            <Check className="h-5 w-5 stroke-[3px]" />
             {selectedPos ? "RECORD PLAY" : "QUICK RECORD"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          </button>
+        </div>
+
+      </div>
+    </div>,
+    document.body
   );
 }
