@@ -1,0 +1,56 @@
+"use client";
+
+import React from "react";
+import { useRouter } from "next/navigation";
+import { SectionHeader } from "@/components/layout/SectionHeader";
+import { MapPin, ChevronLeft } from "lucide-react";
+import { Button } from "@/components/ui/button";
+
+export default function GroundsPage() {
+  const router = useRouter();
+
+  return (
+    <div className="min-h-screen p-4 sm:p-6 pt-8 pb-32 animate-in fade-in duration-400">
+      <div className="max-w-2xl mx-auto space-y-8">
+        
+        {/* ヘッダー */}
+        <div className="flex items-start gap-4">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => router.back()}
+            className="h-10 w-10 rounded-full bg-card/60 border border-border/40 hover:bg-muted shrink-0 mt-1"
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </Button>
+          <div className="flex-1 min-w-0">
+            <h1 className="text-3xl sm:text-4xl font-black italic tracking-tighter uppercase text-foreground leading-none">
+              Grounds
+            </h1>
+            <p className="text-sm font-bold text-muted-foreground mt-1 truncate">
+              球場・グラウンド一覧
+            </p>
+          </div>
+        </div>
+
+        {/* コンテンツ */}
+        <div className="flex flex-col items-center justify-center p-12 text-center bg-card border border-border rounded-3xl shadow-sm">
+          <div className="h-16 w-16 bg-primary/10 text-primary rounded-full flex items-center justify-center mb-6">
+            <MapPin className="h-8 w-8" />
+          </div>
+          <h2 className="text-xl font-black mb-2">現在開発中です</h2>
+          <p className="text-sm font-bold text-muted-foreground mb-8">
+            よく使う球場やグラウンドの情報を<br/>登録・管理できる機能を追加予定です。
+          </p>
+          <Button
+            onClick={() => router.back()}
+            className="rounded-full font-bold px-8 h-12 bg-primary text-primary-foreground hover:bg-primary/90"
+          >
+            メニューに戻る
+          </Button>
+        </div>
+
+      </div>
+    </div>
+  );
+}

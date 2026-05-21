@@ -29,7 +29,7 @@ export default function MenuPage() {
       items: [
         { icon: User, label: "プロフィール設定", href: "/profile" },
         { icon: Settings, label: "アプリ設定", href: "/settings" },
-        { icon: UserPlus, label: "チーム参加申請", href: "/settings" },
+        { icon: UserPlus, label: "チーム参加申請", href: "/teams/join" },
       ],
     },
     {
@@ -55,7 +55,7 @@ export default function MenuPage() {
       title: "大会・球場",
       items: [
         { icon: Trophy, label: "大会・イベント", href: "/tournaments" },
-        { icon: MapPin, label: "球場・グラウンド", href: "/tournaments" },
+        { icon: MapPin, label: "球場・グラウンド", href: "/grounds" },
       ],
     },
     {
