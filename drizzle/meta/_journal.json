@@ -78,6 +78,13 @@
       "when": 1779181420034,
       "tag": "0010_mean_mystique",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1779377283994,
+      "tag": "0011_light_rattler",
+      "breakpoints": true
     }
   ]
 }

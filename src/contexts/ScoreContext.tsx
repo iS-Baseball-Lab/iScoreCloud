@@ -70,7 +70,7 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   // 🚀 2. バックエンド同期 (D1 + LINE速報連動)
-  const syncWithBackend = useCallback(async (updatedState: ScoreState, actionNote: string) => {
+  const syncWithBackend = useCallback(async (updatedState: ScoreState, actionNote: string, skipLineReport = false) => {
     if (!updatedState.isScorer) return; // 🌟 スコアラー以外は同期をスキップ
 
     setIsSyncing(true);
@@ -85,6 +85,7 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
           inning: updatedState.inning,
           isBottom: !updatedState.isTop,
           action: actionNote,
+          skipLineReport, // 🌟 追加
           myInningScores: updatedState.myInningScores, // 🌟 配列をそのまま送信（API側でstringify）
           opponentInningScores: updatedState.opponentInningScores,
           status: updatedState.status,
@@ -93,7 +94,6 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
           outs: updatedState.outs,
           runners: updatedState.runners,
           myHits: updatedState.myHits,
-          opponentHits: updatedState.opponentHits,
           opponentHits: updatedState.opponentHits,
           myErrors: updatedState.myErrors,
           opponentErrors: updatedState.opponentErrors,
@@ -261,7 +261,8 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
         logs: appendLog(isInningChange ? `${description} (チェンジ)` : description, prev),
       });
 
-      if (isAtBatEnd || result === "out") syncWithBackend(next, description);
+      // 毎球同期する！ (打席未完了なら skipLineReport = true)
+      syncWithBackend(next, isInningChange ? `${description} (チェンジ)` : description, !isAtBatEnd);
       return next;
     });
   };
@@ -389,7 +390,12 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
   }, [syncWithBackend]);
   // 🚀 7. ランナー状態の更新
   const updateRunners = (runners: { base1: string | null; base2: string | null; base3: string | null }) => {
-    setState(prev => ({ ...prev, runners }));
+    setState(prev => {
+      if (!prev.isScorer) return prev;
+      const next = pushHistory(prev, { runners });
+      syncWithBackend(next, "走者状況変更", true);
+      return next;
+    });
   };
 
   // 🚀 8. 打者のリセット

@@ -45,7 +45,8 @@ matchesApi.post('/update-score', async (c) => {
       myErrors,
       opponentErrors,
       newAtBat,
-      newPlayLog
+      newPlayLog,
+      skipLineReport // 🌟 追加
     } = body;
 
     // 2. 現在の試合状況をDBからロード（規定イニング数やチームIDを知るため）
@@ -116,13 +117,28 @@ matchesApi.post('/update-score', async (c) => {
       ] : [])
     ]);
 
-    // 5. LINE速報の射出（設定が有効な場合のみ）
+    // 5. LINE速報の射出（タイミングフィルタリングを実装）
     const teamData = await db.select()
       .from(teams)
       .where(eq(teams.id, currentMatch.teamId))
       .get();
 
-    if (teamData?.lineGroupId && teamData.isAutoReportEnabled) {
+    const isPlayball = currentMatch.status === 'scheduled' && newStatus === 'live';
+    const isGameSet = currentMatch.status !== 'finished' && newStatus === 'finished';
+    const isInningChange = (currentMatch.currentInning !== inning || currentMatch.isBottom !== !!isBottom) && !isPlayball && !isGameSet;
+
+    let shouldNotify = false;
+    if (teamData?.lineGroupId && teamData.isAutoReportEnabled && !skipLineReport) {
+      if (isPlayball && teamData.reportPlayballEnabled) {
+        shouldNotify = true;
+      } else if (isGameSet && teamData.reportGameSetEnabled) {
+        shouldNotify = true;
+      } else if (isInningChange && teamData.reportInningEnabled) {
+        shouldNotify = true;
+      }
+    }
+
+    if (shouldNotify && teamData?.lineGroupId) {
       // LINE用のホーム/アウェイ スコア並び順を調整
       const isMyTeamHome = currentMatch.battingOrder === 'second';
       const scoresForLine = {

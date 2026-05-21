@@ -14,6 +14,9 @@ export interface Team {
   name: string;
   lineGroupId?: string;
   isAutoReportEnabled: boolean;
+  reportPlayballEnabled: boolean;
+  reportInningEnabled: boolean;
+  reportGameSetEnabled: boolean;
 }
 
 export interface Match {

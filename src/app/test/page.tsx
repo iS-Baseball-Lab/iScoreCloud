@@ -17,12 +17,21 @@ export default function LineIntegrationTestPage() {
   const testTeamId = "test-team-001";
 
   // --- 既存の保存処理 ---
-  const handleSave = async (settings: { lineGroupId: string; isAutoReportEnabled: boolean }) => {
+  const handleSave = async (settings: { 
+    lineGroupId: string; 
+    isAutoReportEnabled: boolean;
+    reportPlayballEnabled: boolean;
+    reportInningEnabled: boolean;
+    reportGameSetEnabled: boolean;
+  }) => {
     setStatus("⏳ D1へ送信中...");
     const payload: TeamSettingsUpdatePayload = {
       teamId: testTeamId,
       lineGroupId: settings.lineGroupId,
       isAutoReportEnabled: settings.isAutoReportEnabled,
+      reportPlayballEnabled: settings.reportPlayballEnabled,
+      reportInningEnabled: settings.reportInningEnabled,
+      reportGameSetEnabled: settings.reportGameSetEnabled,
     };
 
     try {

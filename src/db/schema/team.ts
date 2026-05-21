@@ -37,6 +37,12 @@ export const teams = sqliteTable('teams', {
   lineGroupId: text('line_group_id'),
   /** 💡 自動速報の有効化フラグ (0:無効, 1:有効) */
   isAutoReportEnabled: integer('is_auto_report_enabled', { mode: 'boolean' }).default(false),
+  /** 💡 プレイボール時の通知 (0:無効, 1:有効) */
+  reportPlayballEnabled: integer('report_playball_enabled', { mode: 'boolean' }).notNull().default(true),
+  /** 💡 イニング毎の通知 (0:無効, 1:有効) */
+  reportInningEnabled: integer('report_inning_enabled', { mode: 'boolean' }).notNull().default(true),
+  /** 💡 試合終了時の通知 (0:無効, 1:有効) */
+  reportGameSetEnabled: integer('report_game_set_enabled', { mode: 'boolean' }).notNull().default(true),
   createdBy: text('created_by').notNull().references(() => user.id),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(strftime('%s', 'now'))`),
 });
