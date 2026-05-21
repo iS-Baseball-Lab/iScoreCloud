@@ -174,11 +174,23 @@ export const MatchService = {
       opponentLineup: matches.opponentLineup,
       myAttendance: matches.myAttendance
     }).from(matches).where(eq(matches.id, matchId)).get();
+
+    const safeParse = (str: string | null | undefined, fallback: any) => {
+      if (!str || typeof str !== 'string') return fallback;
+      const trimmed = str.trim();
+      if (!trimmed || trimmed === '""' || trimmed === "''") return fallback;
+      try {
+        return JSON.parse(trimmed);
+      } catch (e) {
+        console.error(`Failed to parse JSON string: "${str}". Fallback to:`, fallback, e);
+        return fallback;
+      }
+    };
     
     return {
-      myLineup: JSON.parse(match?.myLineup || '[]'),
-      opponentLineup: JSON.parse(match?.opponentLineup || '[]'),
-      myAttendance: JSON.parse(match?.myAttendance || '{}')
+      myLineup: safeParse(match?.myLineup, []),
+      opponentLineup: safeParse(match?.opponentLineup, []),
+      myAttendance: safeParse(match?.myAttendance, {})
     };
   },
 

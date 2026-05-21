@@ -65,6 +65,7 @@ app.put("/:id/lineups", async (c) => {
     await MatchService.saveMatchLineups(drizzle(c.env.DB), c.req.param("id"), body.myLineup || [], body.opponentLineup || [], body.myAttendance || {});
     return c.json({ success: true });
   } catch (error) {
+    console.error("Error in PUT /api/matches/:id/lineups:", error);
     return c.json({ success: false, error: "Failed to save lineups" }, 500);
   }
 });

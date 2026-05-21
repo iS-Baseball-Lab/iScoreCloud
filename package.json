@@ -67,6 +67,6 @@
     "preview": "npm run build && npx wrangler dev",
     "db:exec": "wrangler d1 execute i-score-db",
     "db:mig:remote": "wrangler d1 migrations apply i-score-db --remote",
-    "db:mig:local": "wrangler d1 migrations apply i^score-db --local"
+    "db:mig:local": "wrangler d1 migrations apply i-score-db --local"
   }
 }
