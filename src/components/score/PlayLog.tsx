@@ -31,14 +31,28 @@ export function PlayLog({ limit = 3 }: PlayLogProps) {
     );
   }
 
+  const parseLogDescription = (desc: string) => {
+    const bsoMatch = desc.match(/\s\[B:(\d+),\s*S:(\d+),\s*O:(\d+)\]$/);
+    if (bsoMatch) {
+      const balls = parseInt(bsoMatch[1], 10);
+      const strikes = parseInt(bsoMatch[2], 10);
+      const outs = parseInt(bsoMatch[3], 10);
+      const cleanDesc = desc.replace(/\s\[B:\d+,\s*S:\d+,\s*O:\d+\]$/, "");
+      return { cleanDesc, bso: { balls, strikes, outs } };
+    }
+    return { cleanDesc: desc, bso: null };
+  };
+
   return (
     <div className="flex flex-col gap-1.5 h-full overflow-hidden">
       {displayLogs.map((log, index) => {
         const isLatest = index === 0;
+        const { cleanDesc, bso } = parseLogDescription(log.description);
+        
         // 簡易的な判定ロジック
-        const isScore = log.description.includes("得点") || log.description.includes("SCORE");
-        const isOut = log.description.includes("三振") || log.description.includes("アウト");
-        const isHit = log.description.includes("安打") || log.description.includes("塁打") || log.description.includes("単打") || log.description.includes("HIT");
+        const isScore = cleanDesc.includes("得点") || cleanDesc.includes("SCORE");
+        const isOut = cleanDesc.includes("三振") || cleanDesc.includes("アウト");
+        const isHit = cleanDesc.includes("安打") || cleanDesc.includes("塁打") || cleanDesc.includes("単打") || cleanDesc.includes("HIT");
 
         return (
           <div
@@ -65,17 +79,79 @@ export function PlayLog({ limit = 3 }: PlayLogProps) {
                 "font-black tracking-tighter truncate",
                 limit === 1 ? "text-[14px]" : "text-[12px]"
               )}>
-                {log.description}
+                {cleanDesc}
               </span>
               {isHit && <ArrowUpRight className="h-3 w-3 text-blue-400 shrink-0" />}
               {isScore && <Trophy className="h-3 w-3 text-yellow-400 shrink-0" />}
               {isOut && <Circle className="h-2 w-2 fill-rose-500 text-rose-500 shrink-0" />}
             </div>
 
-            {/* 時間 */}
-            <span className="text-[8px] font-mono opacity-40 shrink-0">
-              {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-            </span>
+            {/* BSO または 時間(フォールバック) */}
+            {bso ? (
+              <div className={cn(
+                "flex flex-col gap-[2px] shrink-0 text-[8px] font-black leading-none rounded-lg p-1 min-w-[45px] items-start justify-center",
+                isLatest ? "bg-white/10" : "bg-zinc-950/20 border border-zinc-800/40"
+              )}>
+                {/* Ball */}
+                <div className="flex gap-1 items-center">
+                  <span className={cn("text-[7px] font-extrabold w-2", isLatest ? "text-white" : "text-emerald-400")}>B</span>
+                  <div className="flex gap-0.5">
+                    {[1, 2, 3].map((num) => (
+                      <div
+                        key={num}
+                        className={cn(
+                          "w-1.5 h-1.5 rounded-full border",
+                          isLatest ? "border-white/20" : "border-emerald-500/30",
+                          num <= bso.balls 
+                            ? (isLatest ? "bg-white" : "bg-emerald-500 shadow-[0_0_3px_rgba(16,185,129,0.8)]") 
+                            : "bg-zinc-950/40"
+                        )}
+                      />
+                    ))}
+                  </div>
+                </div>
+                {/* Strike */}
+                <div className="flex gap-1 items-center">
+                  <span className={cn("text-[7px] font-extrabold w-2", isLatest ? "text-white" : "text-amber-400")}>S</span>
+                  <div className="flex gap-0.5">
+                    {[1, 2].map((num) => (
+                      <div
+                        key={num}
+                        className={cn(
+                          "w-1.5 h-1.5 rounded-full border",
+                          isLatest ? "border-white/20" : "border-amber-500/30",
+                          num <= bso.strikes 
+                            ? (isLatest ? "bg-white" : "bg-amber-400 shadow-[0_0_3px_rgba(251,191,36,0.8)]") 
+                            : "bg-zinc-950/40"
+                        )}
+                      />
+                    ))}
+                  </div>
+                </div>
+                {/* Out */}
+                <div className="flex gap-1 items-center">
+                  <span className={cn("text-[7px] font-extrabold w-2", isLatest ? "text-white" : "text-rose-500")}>O</span>
+                  <div className="flex gap-0.5">
+                    {[1, 2].map((num) => (
+                      <div
+                        key={num}
+                        className={cn(
+                          "w-1.5 h-1.5 rounded-full border",
+                          isLatest ? "border-white/20" : "border-rose-500/30",
+                          num <= bso.outs 
+                            ? (isLatest ? "bg-white" : "bg-rose-500 shadow-[0_0_3px_rgba(244,63,94,0.8)]") 
+                            : "bg-zinc-950/40"
+                        )}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <span className="text-[8px] font-mono opacity-40 shrink-0">
+                {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            )}
           </div>
         );
       })}

@@ -52,9 +52,11 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
 
   // 🚀 1. 内部用：ログ記録ヘルパー
   const appendLog = useCallback((description: string, s: ScoreState): PlayLogEntry[] => {
+    const bsoSuffix = ` [B:${s.balls}, S:${s.strikes}, O:${s.outs}]`;
+    const fullDesc = description.includes("[B:") ? description : `${description}${bsoSuffix}`;
     const newEntry: PlayLogEntry = {
       id: crypto.randomUUID(),
-      description,
+      description: fullDesc,
       inning: s.inning,
       isTop: s.isTop,
       timestamp: Date.now(),
@@ -107,7 +109,7 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
           newPlayLog: {
             inningText: `${updatedState.inning}回${updatedState.isTop ? "表" : "裏"}`,
             resultType: "play",
-            description: actionNote,
+            description: updatedState.logs[0]?.description || actionNote,
           }
         }),
       });
