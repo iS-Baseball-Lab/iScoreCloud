@@ -5,13 +5,12 @@ import { useEffect, useState } from "react";
 import { useScore } from "@/contexts/ScoreContext";
 import { cn } from "@/lib/utils";
 import { FieldModal } from "./FieldModal";
-import { SubstitutionModal } from "./SubstitutionModal";
 import type { BaseAdvance } from "@/types/score";
 
 export function ControlPanel() {
   const { state, recordPitch, recordInPlay, undo, finishMatch, isSyncing } = useScore();
   const [fieldOpen, setFieldOpen] = useState(false);
-  const [subOpen, setSubOpen] = useState(false);
+  const [defaultHitType, setDefaultHitType] = useState<string>("1B");
 
   useEffect(() => {
     const className = "hide-global-fab";
@@ -25,34 +24,65 @@ export function ControlPanel() {
     };
   }, []);
 
+  const openFieldWithPreset = (hitType: string) => {
+    setDefaultHitType(hitType);
+    setFieldOpen(true);
+  };
+
   const handleFieldResult = (rawResult: string, rbi: number, advances?: BaseAdvance[]) => {
-    const [pos, hit] = rawResult.split("-");
-    
-    // ポジションマッピング (1-9)
-    const posMap: Record<string, string> = {
-      "1": "投", "2": "捕", "3": "一", "4": "二", "5": "三",
-      "6": "遊", "7": "左", "8": "中", "9": "右"
-    };
+    let mappedString = "";
+    let isHit = false;
+    let isError = false;
 
-    // 結果種別マッピング
-    const hitMap: Record<string, string> = {
-      "GO": "ゴロ",
-      "FO": "飛",
-      "1B": "安",
-      "2B": "二",
-      "3B": "三",
-      "HR": "本",
-      "SH": "犠打",
-      "SF": "犠飛",
-      "E": "失"
-    };
+    if (rawResult.includes("-")) {
+      const [pos, hit] = rawResult.split("-");
+      
+      // ポジションマッピング (1-9)
+      const posMap: Record<string, string> = {
+        "1": "投", "2": "捕", "3": "一", "4": "二", "5": "三",
+        "6": "遊", "7": "左", "8": "中", "9": "右"
+      };
 
-    const posChar = posMap[pos] || pos;
-    const hitChar = hitMap[hit] || hit;
-    const mappedString = `${posChar}${hitChar}`;
+      // 結果種別マッピング
+      const hitMap: Record<string, string> = {
+        "GO": "ゴロ",
+        "FO": "飛",
+        "1B": "安",
+        "2B": "二",
+        "3B": "三",
+        "HR": "本",
+        "SH": "犠打",
+        "SF": "犠飛",
+        "E": "失"
+      };
 
-    const hitsCount = ["1B", "2B", "3B", "HR"].includes(hit) ? 1 : 0;
-    const errorsCount = hit === "E" ? 1 : 0;
+      const posChar = posMap[pos] || pos;
+      const hitChar = hitMap[hit] || hit;
+      mappedString = `${posChar}${hitChar}`;
+
+      isHit = ["1B", "2B", "3B", "HR"].includes(hit);
+      isError = hit === "E";
+    } else {
+      // クイック記録（守備位置なし）
+      const hitType = rawResult;
+      const quickMap: Record<string, string> = {
+        "GO": "ゴロ",
+        "FO": "飛球",
+        "1B": "単打",
+        "2B": "二塁打",
+        "3B": "三塁打",
+        "HR": "本塁打",
+        "SH": "犠打",
+        "SF": "犠飛",
+        "E": "エラー"
+      };
+      mappedString = quickMap[hitType] || hitType;
+      isHit = ["1B", "2B", "3B", "HR"].includes(hitType);
+      isError = hitType === "E";
+    }
+
+    const hitsCount = isHit ? 1 : 0;
+    const errorsCount = isError ? 1 : 0;
 
     recordInPlay(mappedString, rbi, hitsCount, errorsCount);
     setFieldOpen(false);
@@ -61,8 +91,8 @@ export function ControlPanel() {
   return (
     <div className="h-full w-full flex flex-col gap-1.5 p-0 select-none items-stretch">
       
-      {/* 🚀 1段目 (BSO)：高さ 28% */}
-      <div className="grid grid-cols-4 gap-1.5 h-[28%] shrink-0">
+      {/* 🚀 1段目 (BSO)：高さ 38% */}
+      <div className="grid grid-cols-4 gap-1.5 h-[38%] shrink-0">
         {/* Ball */}
         <button 
           type="button" 
@@ -108,11 +138,11 @@ export function ControlPanel() {
         </button>
       </div>
 
-      {/* 🚀 2段目 (クイック安打)：高さ 28% */}
-      <div className="grid grid-cols-4 gap-1.5 h-[28%] shrink-0">
+      {/* 🚀 2段目 (安打モーダル連動)：高さ 38% */}
+      <div className="grid grid-cols-4 gap-1.5 h-[38%] shrink-0">
         <button 
           type="button" 
-          onClick={() => recordInPlay("本塁打", 0, 1, 0)} 
+          onClick={() => openFieldWithPreset("HR")} 
           disabled={isSyncing}
           className="h-full bg-rose-600 text-white rounded-2xl flex flex-col items-center justify-center shadow-md border-b-2 border-rose-800 active:scale-95 transition-all"
         >
@@ -121,7 +151,7 @@ export function ControlPanel() {
         </button>
         <button 
           type="button" 
-          onClick={() => recordInPlay("三塁打", 0, 1, 0)} 
+          onClick={() => openFieldWithPreset("3B")} 
           disabled={isSyncing}
           className="h-full bg-blue-600 text-white rounded-2xl flex flex-col items-center justify-center shadow-md border-b-2 border-blue-800 active:scale-95 transition-all"
         >
@@ -130,7 +160,7 @@ export function ControlPanel() {
         </button>
         <button 
           type="button" 
-          onClick={() => recordInPlay("二塁打", 0, 1, 0)} 
+          onClick={() => openFieldWithPreset("2B")} 
           disabled={isSyncing}
           className="h-full bg-blue-600 text-white rounded-2xl flex flex-col items-center justify-center shadow-md border-b-2 border-blue-800 active:scale-95 transition-all"
         >
@@ -139,7 +169,7 @@ export function ControlPanel() {
         </button>
         <button 
           type="button" 
-          onClick={() => recordInPlay("単打", 0, 1, 0)} 
+          onClick={() => openFieldWithPreset("1B")} 
           disabled={isSyncing}
           className="h-full bg-blue-600 text-white rounded-2xl flex flex-col items-center justify-center shadow-md border-b-2 border-blue-800 active:scale-95 transition-all"
         >
@@ -148,30 +178,8 @@ export function ControlPanel() {
         </button>
       </div>
 
-      {/* 🚀 3段目 (モーダルトリガー)：高さ 24% */}
-      <div className="grid grid-cols-4 gap-1.5 h-[24%] shrink-0">
-        <button 
-          type="button" 
-          onClick={() => setFieldOpen(true)} 
-          disabled={isSyncing}
-          className="col-span-2 h-full bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl flex items-center justify-center gap-2 shadow-md border-b-2 border-indigo-800 active:scale-95 transition-all font-black text-sm"
-        >
-          <span>⚾</span>
-          <span>詳細打撃</span>
-        </button>
-        <button 
-          type="button" 
-          onClick={() => setSubOpen(true)} 
-          disabled={isSyncing}
-          className="col-span-2 h-full bg-teal-600 hover:bg-teal-700 text-white rounded-2xl flex items-center justify-center gap-2 shadow-md border-b-2 border-teal-800 active:scale-95 transition-all font-black text-sm"
-        >
-          <span>🔄</span>
-          <span>選手交代</span>
-        </button>
-      </div>
-
-      {/* 🚀 4段目 (ユーティリティ)：高さ 20% */}
-      <div className="flex-1 grid grid-cols-5 gap-1.5 min-h-0 text-zinc-500 h-[20%]">
+      {/* 🚀 3段目 (ユーティリティ)：高さ 24% */}
+      <div className="flex-1 grid grid-cols-5 gap-1.5 min-h-0 text-zinc-500 h-[24%]">
         <button 
           onClick={() => recordPitch("foul")} 
           disabled={isSyncing}
@@ -187,7 +195,7 @@ export function ControlPanel() {
           HBP
         </button>
         <button 
-          onClick={() => recordInPlay("エラー", 0, 0, 1)} 
+          onClick={() => openFieldWithPreset("E")} 
           disabled={isSyncing}
           className="h-full rounded-2xl border-2 border-zinc-200 dark:border-zinc-800 font-black text-[10px] uppercase active:bg-zinc-100 dark:active:bg-zinc-900 transition-colors"
         >
@@ -218,10 +226,7 @@ export function ControlPanel() {
         open={fieldOpen} 
         onOpenChange={setFieldOpen} 
         onResult={handleFieldResult} 
-      />
-      <SubstitutionModal 
-        open={subOpen} 
-        onOpenChange={setSubOpen} 
+        defaultHitType={defaultHitType}
       />
     </div>
   );

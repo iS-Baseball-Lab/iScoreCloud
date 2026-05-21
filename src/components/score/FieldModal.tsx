@@ -27,9 +27,10 @@ export interface FieldModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onResult: (result: string, rbi: number, advances: BaseAdvance[]) => void;
+  defaultHitType?: string;
 }
 
-export function FieldModal({ open, onOpenChange, onResult }: FieldModalProps) {
+export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: FieldModalProps) {
   const { state } = useScore();
   const { runners } = state;
 
@@ -41,10 +42,11 @@ export function FieldModal({ open, onOpenChange, onResult }: FieldModalProps) {
   useEffect(() => {
     if (open) {
       setSelectedPos(null);
-      setHitType("GO");
-      setRbi(0);
+      const initialHit = defaultHitType || "GO";
+      setHitType(initialHit);
+      setRbi(calculateDefaultRbi(initialHit));
     }
-  }, [open]);
+  }, [open, defaultHitType]);
 
   const calculateDefaultRbi = (type: string) => {
     const r1 = runners?.base1 ? 1 : 0;
@@ -96,8 +98,9 @@ export function FieldModal({ open, onOpenChange, onResult }: FieldModalProps) {
   ];
 
   const handleConfirm = () => {
-    if (!selectedPos || !hitType) return;
-    onResult(`${selectedPos}-${hitType}`, rbi, []);
+    if (!hitType) return;
+    const resultString = selectedPos ? `${selectedPos}-${hitType}` : hitType;
+    onResult(resultString, rbi, []);
     // Reset
     setSelectedPos(null);
     setHitType("GO");
@@ -124,7 +127,7 @@ export function FieldModal({ open, onOpenChange, onResult }: FieldModalProps) {
               {positions.map((pos) => (
                 <button
                   key={pos.id}
-                  onClick={() => setSelectedPos(pos.id)}
+                  onClick={() => setSelectedPos(pos.id === selectedPos ? null : pos.id)}
                   className={cn(
                     "h-16 rounded-2xl border-2 font-black italic text-lg transition-all active:scale-95 flex flex-col items-center justify-center relative overflow-hidden group",
                     selectedPos === pos.id
@@ -187,10 +190,11 @@ export function FieldModal({ open, onOpenChange, onResult }: FieldModalProps) {
         <DialogFooter className="sm:justify-center">
           <Button
             onClick={handleConfirm}
-            disabled={!selectedPos}
-            className="w-full h-16 rounded-[24px] bg-primary text-primary-foreground font-black text-xl shadow-lg shadow-primary/10 hover:bg-primary/90 transition-all active:scale-95 flex items-center gap-3"
+            disabled={!hitType}
+            className="w-full h-16 rounded-[24px] bg-primary text-primary-foreground font-black text-xl shadow-lg shadow-primary/10 hover:bg-primary/90 transition-all active:scale-95 flex items-center justify-center gap-3"
           >
-            <Check className="h-6 w-6 stroke-[3px]" /> RECORD PLAY
+            <Check className="h-6 w-6 stroke-[3px]" />
+            {selectedPos ? "RECORD PLAY" : "QUICK RECORD"}
           </Button>
         </DialogFooter>
       </DialogContent>

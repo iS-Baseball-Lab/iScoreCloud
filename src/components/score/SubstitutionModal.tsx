@@ -27,7 +27,19 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import type { Player } from "@/types/player";
 
-export function SubstitutionModal({ open, onOpenChange }: { open: boolean, onOpenChange: (open: boolean) => void }) {
+export interface SubstitutionModalProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  initialTab?: 'my' | 'opponent';
+  initialSlotIndex?: number | null;
+}
+
+export function SubstitutionModal({
+  open,
+  onOpenChange,
+  initialTab,
+  initialSlotIndex
+}: SubstitutionModalProps) {
   const { state, substitutePlayer } = useScore();
   const [activeTab, setActiveTab] = useState<'my' | 'opponent'>('my');
   const [selectedSlotIndex, setSelectedSlotIndex] = useState<number | null>(null);
@@ -76,16 +88,41 @@ export function SubstitutionModal({ open, onOpenChange }: { open: boolean, onOpe
     }
   }, [open, state.teamId, activeTab]);
 
-  // モーダルが閉じられた際の状態クリア
+  // モーダルオープン時の初期値プリセットと、クローズ時の状態クリア
   useEffect(() => {
-    if (!open) {
+    if (open) {
+      if (initialTab) {
+        setActiveTab(initialTab);
+      }
+      if (initialSlotIndex !== undefined) {
+        setSelectedSlotIndex(initialSlotIndex);
+        
+        // プリセット用
+        if (initialSlotIndex !== null) {
+          const tab = initialTab || 'my';
+          const lineupList = tab === 'my' ? state.myLineup || [] : state.opponentLineup || [];
+          const slot = lineupList[initialSlotIndex];
+          if (slot) {
+            setCustomName("");
+            setCustomNumber("");
+            setCustomPosition(slot.position !== "-" && slot.position ? slot.position : "DH");
+          } else {
+            setCustomName("");
+            setCustomNumber("");
+            setCustomPosition("DH");
+          }
+        }
+      } else {
+        setSelectedSlotIndex(null);
+      }
+    } else {
       setSelectedSlotIndex(null);
       setSearchQuery("");
       setCustomName("");
       setCustomNumber("");
       setCustomPosition("DH");
     }
-  }, [open]);
+  }, [open, initialTab, initialSlotIndex, state.myLineup, state.opponentLineup]);
 
   const lineup = activeTab === 'my' ? state.myLineup || [] : state.opponentLineup || [];
   

@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 import { useScore } from "@/contexts/ScoreContext";
 import { cn } from "@/lib/utils";
 import { RunnerActionModal } from "./RunnerActionModal";
+import { SubstitutionModal } from "./SubstitutionModal";
 import { X, UserPlus, Check, User } from "lucide-react";
 
 export function PlayArea() {
@@ -19,6 +20,11 @@ export function PlayArea() {
   const [benchPlayers, setBenchPlayers] = useState<any[]>([]);
   const [customPlayerName, setCustomPlayerName] = useState("");
   const [mounted, setMounted] = useState(false);
+
+  // 選手交代モーダル状態管理
+  const [subOpen, setSubOpen] = useState(false);
+  const [subInitialTab, setSubInitialTab] = useState<'my' | 'opponent'>('my');
+  const [subInitialSlot, setSubInitialSlot] = useState<number | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -69,6 +75,31 @@ export function PlayArea() {
       setIsAssignModalOpen(true);
       setCustomPlayerName("");
     }
+    
+    if (window.navigator.vibrate) window.navigator.vibrate(10);
+  };
+
+  const handleFielderClick = (posNum: string) => {
+    if (!state.isScorer) return;
+
+    // 1. 守備チームの特定
+    const defenseLineup = state.isTop 
+      ? (state.isGuestFirst ? state.opponentLineup : state.myLineup)
+      : (state.isGuestFirst ? state.myLineup : state.opponentLineup);
+    
+    if (!defenseLineup) return;
+
+    // 2. 自チームか相手チームか
+    const isMyDefense = defenseLineup === state.myLineup;
+    const team = isMyDefense ? 'my' : 'opponent';
+
+    // 3. このポジションの選手が lineup 配列のどのインデックス（0〜8）にいるか探す
+    const slotIndex = defenseLineup.findIndex(p => p.position === posNum);
+
+    // 4. モーダルを開く
+    setSubInitialTab(team);
+    setSubInitialSlot(slotIndex !== -1 ? slotIndex : null);
+    setSubOpen(true);
     
     if (window.navigator.vibrate) window.navigator.vibrate(10);
   };
@@ -224,7 +255,7 @@ export function PlayArea() {
         </div>
 
         {/* 守備位置の表示 */}
-        <div className="absolute inset-0 pointer-events-none">
+        <div className="absolute inset-0 pointer-events-none z-10">
           {(() => {
             const defenseLineup = state.isTop 
               ? (state.isGuestFirst ? state.opponentLineup : state.myLineup)
@@ -248,16 +279,25 @@ export function PlayArea() {
             return Object.entries(positions).map(([posNum, { label, posClass }]) => {
               const player = defenseLineup.find((p) => p.position === posNum);
 
-              // 野手の表示
+              // 野手の表示（ボタン化して pointer-events-auto を設定しタップ可能にする）
               return (
-                <div key={posNum} className={`absolute ${posClass} flex flex-col items-center z-10`}>
-                  <div className="bg-white border border-black/10 dark:border-white/20 rounded-md px-1.5 py-0.5 flex flex-col items-center min-w-[36px] shadow-sm">
-                    <span className="text-[6px] font-bold text-black/60">{label}</span>
-                    <span className="text-[8px] font-bold text-black truncate max-w-[48px]">
-                      {player?.playerName || player?.name || "-"}
-                    </span>
-                  </div>
-                </div>
+                <button
+                  key={posNum}
+                  type="button"
+                  onClick={() => handleFielderClick(posNum)}
+                  disabled={!state.isScorer}
+                  className={cn(
+                    `absolute ${posClass} flex flex-col items-center z-10`,
+                    "pointer-events-auto",
+                    "bg-white dark:bg-zinc-950 border border-black/10 dark:border-white/20 rounded-md px-1.5 py-0.5 min-w-[36px] shadow-sm text-center select-none outline-none",
+                    state.isScorer && "hover:bg-zinc-100 dark:hover:bg-zinc-900 active:scale-95 cursor-pointer transition-all"
+                  )}
+                >
+                  <span className="text-[6px] font-bold text-black/60 dark:text-zinc-400 leading-tight">{label}</span>
+                  <span className="text-[8px] font-bold text-black dark:text-white truncate max-w-[48px] leading-tight">
+                    {player?.playerName || player?.name || "-"}
+                  </span>
+                </button>
               );
             });
           })()}
@@ -283,14 +323,14 @@ export function PlayArea() {
 
       {/* 🚀 走者配置（代走アサイン）モーダル */}
       {isAssignModalOpen && selectedBase && mounted && createPortal(
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-[200] animate-in fade-in duration-200">
-          <div className="bg-zinc-950 border border-zinc-800 rounded-2xl w-full max-w-md overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.8)]">
+        <div className="fixed inset-0 bg-black/60 dark:bg-black/80 flex items-center justify-center p-4 z-[200] animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl w-full max-w-md overflow-hidden shadow-[0_10px_50px_rgba(0,0,0,0.1)] dark:shadow-[0_10px_50px_rgba(0,0,0,0.5)]">
             
             {/* ヘッダー */}
-            <div className="bg-zinc-900 px-5 py-4 flex items-center justify-between border-b border-zinc-800">
+            <div className="bg-zinc-50 dark:bg-zinc-900 px-5 py-4 flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800">
               <div>
                 <span className="text-xs font-black text-primary uppercase tracking-widest">Assign Base Runner</span>
-                <h3 className="text-base font-black text-white mt-0.5">
+                <h3 className="text-base font-black text-zinc-900 dark:text-white mt-0.5">
                   {selectedBase}塁に走者をアサイン
                 </h3>
               </div>
@@ -299,7 +339,7 @@ export function PlayArea() {
                   setIsAssignModalOpen(false);
                   setSelectedBase(null);
                 }}
-                className="p-1.5 rounded-full hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors"
+                className="p-1.5 rounded-full hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -310,14 +350,14 @@ export function PlayArea() {
               
               {/* 1. 手動自由入力 */}
               <div className="space-y-1.5">
-                <label className="text-[10px] font-black text-zinc-400 uppercase tracking-wider">自由入力 (即席走者/ゲスト)</label>
+                <label className="text-[10px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">自由入力 (即席走者/ゲスト)</label>
                 <div className="flex gap-2">
                   <input
                     type="text"
                     value={customPlayerName}
                     onChange={(e) => setCustomPlayerName(e.target.value)}
                     placeholder="走者名を入力 (例: 佐藤)"
-                    className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-primary transition-colors"
+                    className="flex-1 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:border-primary transition-colors"
                   />
                   <button
                     onClick={handleCustomAssignRunner}
@@ -329,19 +369,19 @@ export function PlayArea() {
                 </div>
               </div>
 
-              <div className="border-t border-zinc-800 my-4" />
+              <div className="border-t border-zinc-100 dark:border-zinc-800 my-4" />
 
               {/* 2. スタメンから選択 */}
               <div className="space-y-2">
-                <label className="text-[10px] font-black text-zinc-400 uppercase tracking-wider">スタメン選手から選択</label>
+                <label className="text-[10px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">スタメン選手から選択</label>
                 <div className="grid grid-cols-2 gap-2">
                   {offenseLineup?.map((player) => (
                     <button
                       key={player.playerId || player.id}
                       onClick={() => handleAssignRunner(player.playerId || player.id)}
-                      className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-white rounded-xl px-3 py-2.5 text-xs font-bold text-left flex flex-col justify-center transition-all active:scale-[0.98]"
+                      className="bg-zinc-50 dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 text-zinc-900 dark:text-white rounded-xl px-3 py-2.5 text-xs font-bold text-left flex flex-col justify-center transition-all active:scale-[0.98]"
                     >
-                      <span className="text-[9px] text-zinc-500">{player.battingOrder}番 ({player.position})</span>
+                      <span className="text-[9px] text-zinc-400 dark:text-zinc-500">{player.battingOrder}番 ({player.position})</span>
                       <span className="truncate mt-0.5">{player.playerName || player.name}</span>
                     </button>
                   ))}
@@ -351,13 +391,13 @@ export function PlayArea() {
               {/* 3. ベンチメンバーから選択 (代走用) */}
               {benchPlayers.length > 0 && (
                 <div className="space-y-2 pt-2">
-                  <label className="text-[10px] font-black text-zinc-400 uppercase tracking-wider">ベンチメンバー (代走) から選択</label>
+                  <label className="text-[10px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">ベンチメンバー (代走) から選択</label>
                   <div className="grid grid-cols-2 gap-2">
                     {benchPlayers.map((player) => (
                       <button
                         key={player.id}
                         onClick={() => handleAssignRunner(player.id)}
-                        className="bg-primary/10 hover:bg-primary/20 border border-primary/20 hover:border-primary/30 text-white rounded-xl px-3 py-2.5 text-xs font-bold text-left flex flex-col justify-center transition-all active:scale-[0.98]"
+                        className="bg-primary/5 dark:bg-primary/10 hover:bg-primary/10 dark:hover:bg-primary/20 border border-primary/10 dark:border-primary/20 hover:border-primary/20 dark:hover:border-primary/30 text-primary dark:text-white rounded-xl px-3 py-2.5 text-xs font-bold text-left flex flex-col justify-center transition-all active:scale-[0.98]"
                       >
                         <span className="text-[9px] text-primary/80">背番号 #{player.uniformNumber || "-"}</span>
                         <span className="truncate mt-0.5">{player.name || player.playerName}</span>
@@ -370,13 +410,13 @@ export function PlayArea() {
             </div>
 
             {/* フッター */}
-            <div className="bg-zinc-900 px-4 py-3 flex justify-end border-t border-zinc-800">
+            <div className="bg-zinc-50 dark:bg-zinc-900 px-4 py-3 flex justify-end border-t border-zinc-100 dark:border-zinc-800">
               <button
                 onClick={() => {
                   setIsAssignModalOpen(false);
                   setSelectedBase(null);
                 }}
-                className="px-5 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-black tracking-wider transition-colors active:scale-95"
+                className="px-5 py-2 rounded-lg bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-900 dark:text-white text-xs font-black tracking-wider transition-colors active:scale-95"
               >
                 キャンセル
               </button>
@@ -385,6 +425,16 @@ export function PlayArea() {
           </div>
         </div>,
         document.body
+      )}
+
+      {/* 🚀 選手交代モーダル (野手タップからプリセット起動) */}
+      {subOpen && mounted && (
+        <SubstitutionModal
+          open={subOpen}
+          onOpenChange={setSubOpen}
+          initialTab={subInitialTab}
+          initialSlotIndex={subInitialSlot}
+        />
       )}
 
     </div>
