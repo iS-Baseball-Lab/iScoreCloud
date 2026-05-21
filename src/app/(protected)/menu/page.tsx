@@ -54,7 +54,7 @@ export default function MenuPage() {
       ],
     },
     {
-      title: "支援機能",
+      title: "支援・その他",
       items: [
         { icon: CalendarCheck, label: "出欠管理", href: "/attendance" },
         { icon: Zap, label: "試合速報ジェネレーター", href: "/news-generator" },
