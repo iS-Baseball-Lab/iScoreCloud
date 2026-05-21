@@ -1,3 +1,4 @@
+// filepath: src/app/menu/page.tsx
 "use client";
 
 import React from "react";
@@ -17,7 +18,9 @@ export default function MenuPage() {
   const handleLogout = async () => {
     await authClient.signOut();
     toast.success("iScoreCloudから退出しました。お疲れ様でした！");
-    window.location.href = "/"; // 強制的にトップ（未ログイン状態）へリダイレクト
+    // 現場のUXを守るため、window.locationではなくNext.js標準ルーターを使用
+    router.push("/");
+    router.refresh();
   };
 
   const menuSections = [
@@ -82,9 +85,21 @@ export default function MenuPage() {
         <div className="space-y-6">
           {menuSections.map((section) => (
             <div key={section.title} className="space-y-3">
-              <p className="text-[11px] font-black text-muted-foreground/60 uppercase tracking-widest px-4">
-                {section.title}
-              </p>
+              
+              {/* ━━ カスタマイズされた見出し（画像ベース） ━━ */}
+              <div className="flex items-center gap-2 px-1">
+                {/* 縦線のアクセント */}
+                <div className="w-1.5 h-4 bg-primary rounded-full shadow-sm" />
+                {/* 見出しテキスト */}
+                <h3 className="font-black text-sm text-foreground tracking-wide">
+                  {section.title}
+                </h3>
+                {/* 項目数をバッジとして表示（画像に合わせたスタイル） */}
+                <span className="flex items-center justify-center bg-muted text-muted-foreground text-[10px] font-bold px-2 py-0.5 rounded-full border border-border/50">
+                  {section.items.length}
+                </span>
+              </div>
+              
               <div className="bg-card border border-border rounded-[var(--radius-xl)] overflow-hidden shadow-sm">
                 {section.items.map((item, index) => (
                   <button
