@@ -60,6 +60,7 @@ export const MatchService = {
   async getMatchById(db: DrizzleDB, matchId: string) {
     return await db.select({
       id: matches.id,
+      teamId: matches.teamId,
       opponent: matches.opponent,
       date: matches.date,
       matchType: matches.matchType,

@@ -1,8 +1,9 @@
 // src/components/score/FieldModal.tsx
 "use client";
 
-import { useState } from "react";
-import type { BaseAdvance } from "@/contexts/ScoreContext";
+import { useState, useEffect } from "react";
+import type { BaseAdvance } from "@/types/score";
+import { useScore } from "@/contexts/ScoreContext";
 /**
  * 💡 打球結果記録モーダル (究極UI版)
  * 1. 意匠: bg-background/60 と backdrop-blur-2xl による極上の透過感。
@@ -29,9 +30,46 @@ export interface FieldModalProps {
 }
 
 export function FieldModal({ open, onOpenChange, onResult }: FieldModalProps) {
+  const { state } = useScore();
+  const { runners } = state;
+
   const [selectedPos, setSelectedPos] = useState<string | null>(null);
   const [hitType, setHitType] = useState<string>("GO"); // GO: Ground Out, 1B: Single, etc.
   const [rbi, setRbi] = useState(0);
+
+  // Reset modal state on open
+  useEffect(() => {
+    if (open) {
+      setSelectedPos(null);
+      setHitType("GO");
+      setRbi(0);
+    }
+  }, [open]);
+
+  const calculateDefaultRbi = (type: string) => {
+    const r1 = runners?.base1 ? 1 : 0;
+    const r2 = runners?.base2 ? 1 : 0;
+    const r3 = runners?.base3 ? 1 : 0;
+    const runnersCount = r1 + r2 + r3;
+
+    switch (type) {
+      case "HR":
+        return runnersCount + 1;
+      case "3B":
+        return runnersCount;
+      case "2B":
+        return r2 + r3;
+      case "1B":
+        return r3;
+      default:
+        return 0;
+    }
+  };
+
+  const handleHitTypeSelect = (type: string) => {
+    setHitType(type);
+    setRbi(calculateDefaultRbi(type));
+  };
 
   const positions = [
     { id: "1", label: "P", name: "投手" },
@@ -106,7 +144,7 @@ export function FieldModal({ open, onOpenChange, onResult }: FieldModalProps) {
               {results.map((res) => (
                 <button
                   key={res.id}
-                  onClick={() => setHitType(res.id)}
+                  onClick={() => handleHitTypeSelect(res.id)}
                   className={cn(
                     "px-6 py-3 rounded-full border-2 font-black text-sm tracking-tight transition-all active:scale-95",
                     hitType === res.id

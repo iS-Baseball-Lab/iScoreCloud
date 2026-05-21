@@ -150,6 +150,7 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
         setState(prev => ({
           ...prev,
           matchId: m.id,
+          teamId: m.teamId,
           opponentTeamName: m.opponent,
           tournamentName: m.tournamentName,
           venueName: m.surfaceDetails,
@@ -233,8 +234,8 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
       let newMyBattingIndex = prev.myBattingIndex;
       let newOpponentBattingIndex = prev.opponentBattingIndex;
       
+      const isMyAttack = (prev.isTop && prev.isGuestFirst) || (!prev.isTop && !prev.isGuestFirst);
       if (isAtBatEnd) {
-        const isMyAttack = (prev.isTop && prev.isGuestFirst) || (!prev.isTop && !prev.isGuestFirst);
         if (isMyAttack) {
           newMyBattingIndex = (prev.myBattingIndex + 1) % Math.max(9, prev.myLineup?.length || 9);
         } else {
@@ -248,6 +249,15 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
       const currentIndex = isNextMyAttack ? newMyBattingIndex : newOpponentBattingIndex;
       const nextBatterId = currentLineup && currentLineup.length > currentIndex ? currentLineup[currentIndex]?.playerId || null : null;
 
+      // 💡 プレイログ用のテキスト整形（打順と打者名を prepending）
+      const batter = isMyAttack ? prev.myLineup?.[prev.myBattingIndex] : prev.opponentLineup?.[prev.opponentBattingIndex];
+      const batterName = batter ? (batter.playerName || batter.name || "打者") : "打者";
+      const batterOrder = isMyAttack ? prev.myBattingIndex + 1 : prev.opponentBattingIndex + 1;
+      const batterPrefix = `${batterOrder}番 ${batterName}: `;
+
+      const logText = isInningChange ? `${description} (チェンジ)` : description;
+      const fullLogText = `${batterPrefix}${logText}`;
+
       const next = pushHistory(prev, {
         balls: isAtBatEnd ? 0 : newBalls,
         strikes: isAtBatEnd ? 0 : newStrikes,
@@ -258,11 +268,11 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
         myBattingIndex: newMyBattingIndex,
         opponentBattingIndex: newOpponentBattingIndex,
         batterId: nextBatterId,
-        logs: appendLog(isInningChange ? `${description} (チェンジ)` : description, prev),
+        logs: appendLog(fullLogText, prev),
       });
 
       // 毎球同期する！ (打席未完了なら skipLineReport = true)
-      syncWithBackend(next, isInningChange ? `${description} (チェンジ)` : description, !isAtBatEnd);
+      syncWithBackend(next, fullLogText, !isAtBatEnd);
       return next;
     });
   };
@@ -278,7 +288,9 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
       let nextRunners = { ...prev.runners };
       let actualRbi = rbi;
 
+      // 💡 クイックボタンと詳細打球記録の分岐
       if (["単打", "二塁打", "三塁打", "本塁打"].includes(result)) {
+        actualRbi = 0; // 自動算出のためリセット
         if (result === "本塁打") {
           actualRbi += 1; // バッター生還
           if (prev.runners.base1) actualRbi += 1;
@@ -296,6 +308,23 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
           nextRunners = { base1: null, base2: "player-id-placeholder", base3: prev.runners.base1 };
         } else if (result === "単打") {
           if (prev.runners.base3) actualRbi += 1;
+          nextRunners = { base1: "player-id-placeholder", base2: prev.runners.base1, base3: prev.runners.base2 };
+        }
+      } else {
+        // 詳細記録 (例: "右安", "左二", "遊ゴロ" 等)
+        // actualRbi はモーダルから渡されたものをそのまま使用
+        const isHR = result.endsWith("本");
+        const is3B = result.endsWith("三");
+        const is2B = result.endsWith("二");
+        const is1B = result.endsWith("安");
+
+        if (isHR) {
+          nextRunners = { base1: null, base2: null, base3: null };
+        } else if (is3B) {
+          nextRunners = { base1: null, base2: null, base3: "player-id-placeholder" };
+        } else if (is2B) {
+          nextRunners = { base1: null, base2: "player-id-placeholder", base3: prev.runners.base1 };
+        } else if (is1B) {
           nextRunners = { base1: "player-id-placeholder", base2: prev.runners.base1, base3: prev.runners.base2 };
         }
       }
@@ -318,22 +347,37 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
         updatedMyScores[currentIdx] += actualRbi;
       }
 
-      const newOuts = prev.outs + (result.includes("アウト") || result.includes("犠") || result.includes("ゴロ") || result.includes("飛") || result.includes("直") || result.includes("併殺") ? 1 : 0);
-      const isAtBatEnd = true;
+      // 💡 得点や盗塁など、打席完了ではない非打席プレイの判定
+      const isNotAtBat = ["得点", "盗塁", "暴投", "ボーク", "守備交代", "走者状況変更"].includes(result);
+      const isAtBatEnd = !isNotAtBat;
+
+      const newOuts = prev.outs + (isAtBatEnd && (result.includes("アウト") || result.includes("犠") || result.includes("ゴロ") || result.includes("飛") || result.includes("直") || result.includes("併殺")) ? 1 : 0);
       const isInningChange = newOuts >= 3;
 
       let newMyBattingIndex = prev.myBattingIndex;
       let newOpponentBattingIndex = prev.opponentBattingIndex;
-      if (isMyAttack) {
-        newMyBattingIndex = (prev.myBattingIndex + 1) % Math.max(9, prev.myLineup?.length || 9);
-      } else {
-        newOpponentBattingIndex = (prev.opponentBattingIndex + 1) % Math.max(9, prev.opponentLineup?.length || 9);
+      
+      if (isAtBatEnd) {
+        if (isMyAttack) {
+          newMyBattingIndex = (prev.myBattingIndex + 1) % Math.max(9, prev.myLineup?.length || 9);
+        } else {
+          newOpponentBattingIndex = (prev.opponentBattingIndex + 1) % Math.max(9, prev.opponentLineup?.length || 9);
+        }
       }
 
       const nextIsMyAttack = (isInningChange ? !prev.isTop : prev.isTop) === prev.isGuestFirst ? false : true;
       const currentLineup = nextIsMyAttack ? prev.myLineup : prev.opponentLineup;
       const currentIndex = nextIsMyAttack ? newMyBattingIndex : newOpponentBattingIndex;
       const nextBatterId = currentLineup && currentLineup.length > currentIndex ? currentLineup[currentIndex]?.playerId || null : null;
+
+      // 💡 プレイログ用のテキスト整形（打順と打者名を prepending）
+      const batter = isMyAttack ? prev.myLineup?.[prev.myBattingIndex] : prev.opponentLineup?.[prev.opponentBattingIndex];
+      const batterName = batter ? (batter.playerName || batter.name || "打者") : "打者";
+      const batterOrder = isMyAttack ? prev.myBattingIndex + 1 : prev.opponentBattingIndex + 1;
+      const batterPrefix = isNotAtBat ? "" : `${batterOrder}番 ${batterName}: `;
+
+      const logText = isInningChange ? `${result} (チェンジ)` : result;
+      const fullLogText = `${batterPrefix}${logText}`;
 
       const next = pushHistory(prev, {
         myScore: newMyScore,
@@ -353,10 +397,10 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
         myBattingIndex: newMyBattingIndex,
         opponentBattingIndex: newOpponentBattingIndex,
         batterId: nextBatterId,
-        logs: appendLog(isInningChange ? `${result} (チェンジ)` : result, prev),
+        logs: appendLog(fullLogText, prev),
       });
 
-      syncWithBackend(next, result);
+      syncWithBackend(next, fullLogText);
       return next;
     });
   };
@@ -412,26 +456,80 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
-  const substitutePlayer = useCallback((team: 'my' | 'opponent', orderIndex: number, newPlayerId: string, newPlayerName: string) => {
+  const substitutePlayer = useCallback((
+    team: 'my' | 'opponent',
+    orderIndex: number,
+    newPlayerId: string,
+    newPlayerName: string,
+    uniformNumber?: string,
+    position?: string
+  ) => {
     setState(prev => {
       if (!prev.isScorer) return prev;
       
       const isMyTeam = team === 'my';
       const lineup = isMyTeam ? [...(prev.myLineup || [])] : [...(prev.opponentLineup || [])];
       
+      const oldPlayerName = lineup[orderIndex]?.playerName || lineup[orderIndex]?.name || "未設定";
+
       if (lineup[orderIndex]) {
-        lineup[orderIndex] = { ...lineup[orderIndex], playerId: newPlayerId, playerName: newPlayerName };
+        lineup[orderIndex] = {
+          ...lineup[orderIndex],
+          playerId: newPlayerId,
+          playerName: newPlayerName,
+          name: newPlayerName, // backup name field
+          uniformNumber: uniformNumber !== undefined ? uniformNumber : lineup[orderIndex].uniformNumber,
+          position: position !== undefined ? position : lineup[orderIndex].position,
+        };
       } else {
-        lineup[orderIndex] = { playerId: newPlayerId, playerName: newPlayerName, battingOrder: orderIndex + 1 };
+        lineup[orderIndex] = {
+          playerId: newPlayerId,
+          playerName: newPlayerName,
+          name: newPlayerName,
+          battingOrder: orderIndex + 1,
+          uniformNumber: uniformNumber || "",
+          position: position || "",
+        };
       }
 
-      return {
+      // Check if substituted player is the active batter
+      const isMyAttack = (prev.isTop && prev.isGuestFirst) || (!prev.isTop && !prev.isGuestFirst);
+      let nextBatterId = prev.batterId;
+      if (isMyTeam === isMyAttack && orderIndex === (isMyTeam ? prev.myBattingIndex : prev.opponentBattingIndex)) {
+        nextBatterId = newPlayerId;
+      }
+
+      const teamLabel = isMyTeam ? "自チーム" : "相手チーム";
+      const logText = `選手交代[${teamLabel}]: ${orderIndex + 1}番 ${oldPlayerName} ➔ ${newPlayerName}`;
+      const updatedLogs = appendLog(logText, prev);
+
+      const next = {
         ...prev,
         myLineup: isMyTeam ? lineup : prev.myLineup,
         opponentLineup: !isMyTeam ? lineup : prev.opponentLineup,
+        batterId: nextBatterId,
+        logs: updatedLogs,
       };
+
+      // Sync updated lineups to database!
+      if (prev.matchId) {
+        fetch(`/api/matches/${prev.matchId}/lineups`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            myLineup: next.myLineup,
+            opponentLineup: next.opponentLineup,
+            myAttendance: {}
+          }),
+        }).catch(err => console.error("Error syncing lineups:", err));
+
+        // Sync to update score state history/D1 logs
+        syncWithBackend(next, logText);
+      }
+
+      return next;
     });
-  }, []);
+  }, [appendLog, syncWithBackend]);
 
   // 🚀 10. 試合設定の更新
   const updateMatchSettings = (settings: Partial<ScoreState>) => {

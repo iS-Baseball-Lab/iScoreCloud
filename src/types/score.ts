@@ -19,6 +19,7 @@ export interface PlayLogEntry {
 /** 🏟️ 試合の全状態（State） */
 export interface ScoreState {
   matchId: string;
+  teamId?: string; // 🌟 Added
   tournamentName?: string;
   venueName?: string;
   opponentTeamName?: string;
@@ -74,6 +75,7 @@ export interface MatchResponse {
   success: boolean;
   match?: {
     id: string;
+    teamId?: string; // 🌟 Added
     status: string;
     myScore: number;
     opponentScore: number;
@@ -119,5 +121,12 @@ export interface ScoreContextType {
   undo: () => void;
   finishMatch: () => Promise<void>;
   updateMatchSettings: (settings: Partial<ScoreState>) => void;
-  substitutePlayer: (team: 'my' | 'opponent', orderIndex: number, newPlayerId: string, newPlayerName: string) => void;
+  substitutePlayer: (
+    team: 'my' | 'opponent',
+    orderIndex: number,
+    newPlayerId: string,
+    newPlayerName: string,
+    uniformNumber?: string,
+    position?: string
+  ) => void;
 }
