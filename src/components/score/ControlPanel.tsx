@@ -91,17 +91,17 @@ export function ControlPanel() {
   return (
     <div className="h-full w-full flex flex-col gap-1.5 p-0 select-none items-stretch">
       
-      {/* 🚀 1段目 (BSO)：高さ 38% */}
+      {/* 🚀 1段目 (アウト・ストライク・ボール)：高さ 38% */}
       <div className="grid grid-cols-4 gap-1.5 h-[38%] shrink-0">
-        {/* Ball */}
+        {/* Out */}
         <button 
           type="button" 
-          onClick={() => recordPitch("ball")} 
+          onClick={() => recordPitch("out")} 
           disabled={isSyncing}
-          className="h-full bg-emerald-600 text-white rounded-2xl flex flex-col items-center justify-center shadow-md border-b-2 border-emerald-800 active:scale-95 transition-all"
+          className="h-full bg-rose-600 text-white rounded-2xl flex flex-col items-center justify-center shadow-md border-b-2 border-rose-800 active:scale-95 transition-all"
         >
-          <span className="text-xl font-black tracking-tighter leading-none">B</span>
-          <span className="text-[9px] font-bold opacity-80 mt-0.5">ボール</span>
+          <span className="text-xl font-black tracking-tighter leading-none">O</span>
+          <span className="text-[9px] font-bold opacity-80 mt-0.5">アウト</span>
         </button>
 
         {/* Strike (見逃し) */}
@@ -126,15 +126,15 @@ export function ControlPanel() {
           <span className="text-[9px] font-bold opacity-80 mt-0.5">空振</span>
         </button>
 
-        {/* Out */}
+        {/* Ball */}
         <button 
           type="button" 
-          onClick={() => recordPitch("out")} 
+          onClick={() => recordPitch("ball")} 
           disabled={isSyncing}
-          className="h-full bg-rose-600 text-white rounded-2xl flex flex-col items-center justify-center shadow-md border-b-2 border-rose-800 active:scale-95 transition-all"
+          className="h-full bg-emerald-600 text-white rounded-2xl flex flex-col items-center justify-center shadow-md border-b-2 border-emerald-800 active:scale-95 transition-all"
         >
-          <span className="text-xl font-black tracking-tighter leading-none">O</span>
-          <span className="text-[9px] font-bold opacity-80 mt-0.5">アウト</span>
+          <span className="text-xl font-black tracking-tighter leading-none">B</span>
+          <span className="text-[9px] font-bold opacity-80 mt-0.5">ボール</span>
         </button>
       </div>
 
