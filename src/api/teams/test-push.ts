@@ -29,7 +29,7 @@ testPush.post('/test-push', async (c) => {
       team.name, // チーム名
       "テスト相手",
       { home: 3, away: 2 },
-      "5回裏",
+      { number: 5, isBottom: true },
       "iScoreCloud 疎通テスト送信です！⚾️",
       'live'
     );

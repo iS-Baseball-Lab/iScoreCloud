@@ -188,10 +188,10 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // 🚀 4. 投球・アウト記録 (野球脳ロジック)[span_6](start_span)[span_6](end_span)
-  const recordPitch = async (result: "ball" | "strike" | "foul" | "swinging_strike" | "out") => {
+  // 🚀 4. 投球・アウト記録 (野球脳ロジック)
+  const recordPitch = async (result: "ball" | "strike" | "foul" | "swinging_strike" | "out" | "hbp") => {
     setState(prev => {
-      if (!prev.isScorer) return prev; // 🌟 観戦者は操作不可[span_7](start_span)[span_7](end_span)
+      if (!prev.isScorer) return prev; // 🌟 観戦者は操作不可
 
       let newStrikes = prev.strikes;
       let newBalls = prev.balls;
@@ -211,10 +211,14 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
       } else if (result === "foul") {
         if (newStrikes < 2) newStrikes++;
         description = "ファウル";
+      } else if (result === "hbp") {
+        description = "デッドボール";
       }
 
       let isAtBatEnd = false;
-      if (newStrikes >= 3) {
+      if (result === "hbp") {
+        isAtBatEnd = true;
+      } else if (newStrikes >= 3) {
         newOuts++;
         description = "三振";
         isAtBatEnd = true;
@@ -230,11 +234,54 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
         isInningChange = true;
       }
 
+      const isMyAttack = (prev.isTop && prev.isGuestFirst) || (!prev.isTop && !prev.isGuestFirst);
+
+      // 四死球時の自動進塁＆押し出しロジック
+      let nextRunners = { ...prev.runners };
+      let actualRbi = 0;
+      const batter = isMyAttack ? prev.myLineup?.[prev.myBattingIndex] : prev.opponentLineup?.[prev.opponentBattingIndex];
+      const batterId = batter?.playerId || batter?.id || "player-id-placeholder";
+
+      if (isAtBatEnd && (result === "hbp" || newBalls >= 4)) {
+        if (!prev.runners.base1) {
+          nextRunners.base1 = batterId;
+        } else if (!prev.runners.base2) {
+          nextRunners.base2 = prev.runners.base1;
+          nextRunners.base1 = batterId;
+        } else if (!prev.runners.base3) {
+          nextRunners.base3 = prev.runners.base2;
+          nextRunners.base2 = prev.runners.base1;
+          nextRunners.base1 = batterId;
+        } else {
+          // 満塁押し出し！
+          actualRbi = 1;
+          nextRunners.base3 = prev.runners.base2;
+          nextRunners.base2 = prev.runners.base1;
+          nextRunners.base1 = batterId;
+        }
+      }
+
+      // 得点計算
+      const newMyScore = isMyAttack ? prev.myScore + actualRbi : prev.myScore;
+      const newOpponentScore = !isMyAttack ? prev.opponentScore + actualRbi : prev.opponentScore;
+      const updatedMyScores = [...prev.myInningScores];
+      const updatedOpponentScores = [...prev.opponentInningScores];
+      const currentIdx = prev.inning - 1;
+
+      if (actualRbi > 0) {
+        if (!isMyAttack) {
+          while (updatedOpponentScores.length <= currentIdx) updatedOpponentScores.push(0);
+          updatedOpponentScores[currentIdx] += actualRbi;
+        } else {
+          while (updatedMyScores.length <= currentIdx) updatedMyScores.push(0);
+          updatedMyScores[currentIdx] += actualRbi;
+        }
+      }
+
       // 打席完了時に打順を進める
       let newMyBattingIndex = prev.myBattingIndex;
       let newOpponentBattingIndex = prev.opponentBattingIndex;
       
-      const isMyAttack = (prev.isTop && prev.isGuestFirst) || (!prev.isTop && !prev.isGuestFirst);
       if (isAtBatEnd) {
         if (isMyAttack) {
           newMyBattingIndex = (prev.myBattingIndex + 1) % Math.max(9, prev.myLineup?.length || 9);
@@ -250,7 +297,6 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
       const nextBatterId = currentLineup && currentLineup.length > currentIndex ? currentLineup[currentIndex]?.playerId || null : null;
 
       // 💡 プレイログ用のテキスト整形（打順と打者名を prepending）
-      const batter = isMyAttack ? prev.myLineup?.[prev.myBattingIndex] : prev.opponentLineup?.[prev.opponentBattingIndex];
       const batterName = batter ? (batter.playerName || batter.name || "打者") : "打者";
       const batterOrder = isMyAttack ? prev.myBattingIndex + 1 : prev.opponentBattingIndex + 1;
       const batterPrefix = `${batterOrder}番 ${batterName}: `;
@@ -259,12 +305,16 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
       const fullLogText = `${batterPrefix}${logText}`;
 
       const next = pushHistory(prev, {
+        myScore: newMyScore,
+        opponentScore: newOpponentScore,
+        myInningScores: updatedMyScores,
+        opponentInningScores: updatedOpponentScores,
         balls: isAtBatEnd ? 0 : newBalls,
         strikes: isAtBatEnd ? 0 : newStrikes,
         outs: isInningChange ? 0 : newOuts,
         isTop: isInningChange ? !prev.isTop : prev.isTop,
         inning: isInningChange && !prev.isTop ? prev.inning + 1 : prev.inning,
-        runners: isInningChange ? { base1: null, base2: null, base3: null } : prev.runners,
+        runners: isInningChange ? { base1: null, base2: null, base3: null } : nextRunners,
         myBattingIndex: newMyBattingIndex,
         opponentBattingIndex: newOpponentBattingIndex,
         batterId: nextBatterId,
@@ -288,6 +338,9 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
       let nextRunners = { ...prev.runners };
       let actualRbi = rbi;
 
+      const batter = isMyAttack ? prev.myLineup?.[prev.myBattingIndex] : prev.opponentLineup?.[prev.opponentBattingIndex];
+      const batterId = batter?.playerId || batter?.id || "player-id-placeholder";
+
       // 💡 クイックボタンと詳細打球記録の分岐
       if (["単打", "二塁打", "三塁打", "本塁打"].includes(result)) {
         actualRbi = 0; // 自動算出のためリセット
@@ -301,14 +354,14 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
           if (prev.runners.base1) actualRbi += 1;
           if (prev.runners.base2) actualRbi += 1;
           if (prev.runners.base3) actualRbi += 1;
-          nextRunners = { base1: null, base2: null, base3: "player-id-placeholder" };
+          nextRunners = { base1: null, base2: null, base3: batterId };
         } else if (result === "二塁打") {
           if (prev.runners.base2) actualRbi += 1;
           if (prev.runners.base3) actualRbi += 1;
-          nextRunners = { base1: null, base2: "player-id-placeholder", base3: prev.runners.base1 };
+          nextRunners = { base1: null, base2: batterId, base3: prev.runners.base1 };
         } else if (result === "単打") {
           if (prev.runners.base3) actualRbi += 1;
-          nextRunners = { base1: "player-id-placeholder", base2: prev.runners.base1, base3: prev.runners.base2 };
+          nextRunners = { base1: batterId, base2: prev.runners.base1, base3: prev.runners.base2 };
         }
       } else {
         // 詳細記録 (例: "右安", "左二", "遊ゴロ" 等)
@@ -321,11 +374,11 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
         if (isHR) {
           nextRunners = { base1: null, base2: null, base3: null };
         } else if (is3B) {
-          nextRunners = { base1: null, base2: null, base3: "player-id-placeholder" };
+          nextRunners = { base1: null, base2: null, base3: batterId };
         } else if (is2B) {
-          nextRunners = { base1: null, base2: "player-id-placeholder", base3: prev.runners.base1 };
+          nextRunners = { base1: null, base2: batterId, base3: prev.runners.base1 };
         } else if (is1B) {
-          nextRunners = { base1: "player-id-placeholder", base2: prev.runners.base1, base3: prev.runners.base2 };
+          nextRunners = { base1: batterId, base2: prev.runners.base1, base3: prev.runners.base2 };
         }
       }
 
@@ -371,7 +424,6 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
       const nextBatterId = currentLineup && currentLineup.length > currentIndex ? currentLineup[currentIndex]?.playerId || null : null;
 
       // 💡 プレイログ用のテキスト整形（打順と打者名を prepending）
-      const batter = isMyAttack ? prev.myLineup?.[prev.myBattingIndex] : prev.opponentLineup?.[prev.opponentBattingIndex];
       const batterName = batter ? (batter.playerName || batter.name || "打者") : "打者";
       const batterOrder = isMyAttack ? prev.myBattingIndex + 1 : prev.opponentBattingIndex + 1;
       const batterPrefix = isNotAtBat ? "" : `${batterOrder}番 ${batterName}: `;
@@ -401,6 +453,163 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
       });
 
       syncWithBackend(next, fullLogText);
+      return next;
+    });
+  };
+
+  // 🚀 5.5 走者個別アクション（盗塁、牽制死、進塁など）の記録
+  const recordRunnerAction = async (
+    baseNum: 1 | 2 | 3,
+    action: "steal_success" | "steal_out" | "pickoff_out" | "wp_advance" | "pb_advance" | "balk_advance" | "error_advance" | "clear",
+    assignPlayerId?: string
+  ) => {
+    setState(prev => {
+      if (!prev.isScorer) return prev;
+
+      const key = `base${baseNum}` as keyof typeof prev.runners;
+      const runnerId = prev.runners[key];
+
+      // ランナーがいないのにアクションを起こした（配置する場合）
+      if (!runnerId && assignPlayerId) {
+        const nextRunners = { ...prev.runners, [key]: assignPlayerId };
+        
+        // 選手名を取得
+        const isMyAttack = (prev.isTop && prev.isGuestFirst) || (!prev.isTop && !prev.isGuestFirst);
+        const offenseLineup = isMyAttack ? prev.myLineup : prev.opponentLineup;
+        const player = offenseLineup?.find(p => p.playerId === assignPlayerId || p.id === assignPlayerId);
+        let playerName = player?.playerName || player?.name || "走者";
+        if (!player && assignPlayerId && assignPlayerId.startsWith("custom-")) {
+          playerName = assignPlayerId.split("-")[1];
+        }
+
+        const logText = `${baseNum}塁走者として ${playerName} を配置`;
+        const next = pushHistory(prev, {
+          runners: nextRunners,
+          logs: appendLog(logText, prev)
+        });
+        syncWithBackend(next, logText, true);
+        return next;
+      }
+
+      if (!runnerId) return prev; // ランナーがいない場合は何もしない
+
+      // 選手名を取得
+      const isMyAttack = (prev.isTop && prev.isGuestFirst) || (!prev.isTop && !prev.isGuestFirst);
+      const offenseLineup = isMyAttack ? prev.myLineup : prev.opponentLineup;
+      const player = offenseLineup?.find(p => p.playerId === runnerId || p.id === runnerId);
+      let playerName = player?.playerName || player?.name || "走者";
+      if (!player && runnerId && runnerId.startsWith("custom-")) {
+        playerName = runnerId.split("-")[1];
+      }
+
+      let nextRunners = { ...prev.runners };
+      let newOuts = prev.outs;
+      let actualRbi = 0;
+      let logText = "";
+
+      if (action === "clear") {
+        nextRunners[key] = null;
+        const next = pushHistory(prev, { runners: nextRunners });
+        syncWithBackend(next, `${baseNum}塁走者解除`, true);
+        return next;
+      }
+
+      // 各アクションの処理
+      if (action === "steal_success") {
+        nextRunners[key] = null;
+        if (baseNum === 3) {
+          actualRbi = 1;
+          logText = `${baseNum}塁走者 ${playerName}: 盗塁成功により本塁生還`;
+        } else {
+          const nextKey = `base${baseNum + 1}` as keyof typeof prev.runners;
+          nextRunners[nextKey] = runnerId;
+          logText = `${baseNum}塁走者 ${playerName}: 盗塁成功`;
+        }
+      } else if (action === "steal_out") {
+        nextRunners[key] = null;
+        newOuts++;
+        logText = `${baseNum}塁走者 ${playerName}: 盗塁死`;
+      } else if (action === "pickoff_out") {
+        nextRunners[key] = null;
+        newOuts++;
+        logText = `${baseNum}塁走者 ${playerName}: 牽制死`;
+      } else if (action === "wp_advance") {
+        nextRunners[key] = null;
+        if (baseNum === 3) {
+          actualRbi = 1;
+          logText = `${baseNum}塁走者 ${playerName}: 暴投により本塁生還`;
+        } else {
+          const nextKey = `base${baseNum + 1}` as keyof typeof prev.runners;
+          nextRunners[nextKey] = runnerId;
+          logText = `${baseNum}塁走者 ${playerName}: 暴投で進塁`;
+        }
+      } else if (action === "pb_advance") {
+        nextRunners[key] = null;
+        if (baseNum === 3) {
+          actualRbi = 1;
+          logText = `${baseNum}塁走者 ${playerName}: 捕逸により本塁生還`;
+        } else {
+          const nextKey = `base${baseNum + 1}` as keyof typeof prev.runners;
+          nextRunners[nextKey] = runnerId;
+          logText = `${baseNum}塁走者 ${playerName}: 捕逸で進塁`;
+        }
+      } else if (action === "balk_advance") {
+        nextRunners[key] = null;
+        if (baseNum === 3) {
+          actualRbi = 1;
+          logText = `${baseNum}塁走者 ${playerName}: ボークにより本塁生還`;
+        } else {
+          const nextKey = `base${baseNum + 1}` as keyof typeof prev.runners;
+          nextRunners[nextKey] = runnerId;
+          logText = `${baseNum}塁走者 ${playerName}: ボークで進塁`;
+        }
+      } else if (action === "error_advance") {
+        nextRunners[key] = null;
+        if (baseNum === 3) {
+          actualRbi = 1;
+          logText = `${baseNum}塁走者 ${playerName}: エラーにより本塁生還`;
+        } else {
+          const nextKey = `base${baseNum + 1}` as keyof typeof prev.runners;
+          nextRunners[nextKey] = runnerId;
+          logText = `${baseNum}塁走者 ${playerName}: エラーで進塁`;
+        }
+      }
+
+      // アウト数によるチェンジ判定
+      const isInningChange = newOuts >= 3;
+
+      // 得点計算
+      const newMyScore = isMyAttack ? prev.myScore + actualRbi : prev.myScore;
+      const newOpponentScore = !isMyAttack ? prev.opponentScore + actualRbi : prev.opponentScore;
+      const updatedMyScores = [...prev.myInningScores];
+      const updatedOpponentScores = [...prev.opponentInningScores];
+      const currentIdx = prev.inning - 1;
+
+      if (actualRbi > 0) {
+        if (!isMyAttack) {
+          while (updatedOpponentScores.length <= currentIdx) updatedOpponentScores.push(0);
+          updatedOpponentScores[currentIdx] += actualRbi;
+        } else {
+          while (updatedMyScores.length <= currentIdx) updatedMyScores.push(0);
+          updatedMyScores[currentIdx] += actualRbi;
+        }
+      }
+
+      const logFinalText = isInningChange ? `${logText} (チェンジ)` : logText;
+
+      const next = pushHistory(prev, {
+        myScore: newMyScore,
+        opponentScore: newOpponentScore,
+        myInningScores: updatedMyScores,
+        opponentInningScores: updatedOpponentScores,
+        outs: isInningChange ? 0 : newOuts,
+        runners: isInningChange ? { base1: null, base2: null, base3: null } : nextRunners,
+        isTop: isInningChange ? !prev.isTop : prev.isTop,
+        inning: isInningChange && !prev.isTop ? prev.inning + 1 : prev.inning,
+        logs: appendLog(logFinalText, prev)
+      });
+
+      syncWithBackend(next, logFinalText);
       return next;
     });
   };
@@ -545,6 +754,7 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
       initMatch,
       recordPitch,
       recordInPlay,
+      recordRunnerAction,
       changeInning,
       updateRunners,
       resetBatter,

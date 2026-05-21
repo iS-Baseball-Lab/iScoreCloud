@@ -63,3 +63,30 @@ export function formatMatchLineReport(
     `#iScoreCloud #Matches`
   );
 }
+
+/**
+ * 💡 LINE レポート生成用（簡易文字列インプット版、URIエンコード済み）
+ */
+export function formatMatchLineLog(
+  homeTeamName: string,
+  awayTeamName: string,
+  scores: { home: number; away: number },
+  inning: string,
+  action: string,
+  isWalkOff: boolean = false
+): string {
+  const homeScoreStr = isWalkOff ? `${scores.home}x` : `${scores.home}`;
+  const awayScoreStr = `${scores.away}`;
+  const isFinished = action.includes("試合終了") || inning.includes("試合終了");
+  const title = isFinished ? "【iScoreCloud 試合終了】" : "【iScoreCloud 速報】";
+  const emoji = isFinished ? "⏹️" : "⚾️";
+
+  return encodeURIComponent(
+    `${title}\n` +
+    `${emoji} ${homeTeamName} ${homeScoreStr} - ${awayScoreStr} ${awayTeamName}\n` +
+    `------------------\n` +
+    `状況: ${inning}\n` +
+    `${action}\n\n` +
+    `#iScoreCloud #Matches`
+  );
+}

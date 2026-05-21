@@ -49,7 +49,7 @@ export function TestDataGenerator() {
       });
 
       if (!res.ok) {
-        const errorData = await res.json();
+        const errorData = (await res.json()) as any;
         throw new Error(errorData.message || "更新に失敗しました");
       }
 

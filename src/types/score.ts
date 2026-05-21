@@ -107,13 +107,18 @@ export interface ScoreContextType {
   isSyncing: boolean;
   isScorer: boolean;
   initMatch: (matchId: string) => Promise<void>;
-  recordPitch: (result: "ball" | "strike" | "foul" | "swinging_strike" | "out") => Promise<void>;
+  recordPitch: (result: "ball" | "strike" | "foul" | "swinging_strike" | "out" | "hbp") => Promise<void>;
   recordInPlay: (
     result: string,
     rbi: number,
     hits: number,
     errors: number,
     advances?: BaseAdvance[]
+  ) => Promise<void>;
+  recordRunnerAction: (
+    baseNum: 1 | 2 | 3,
+    action: "steal_success" | "steal_out" | "pickoff_out" | "wp_advance" | "pb_advance" | "balk_advance" | "error_advance" | "clear",
+    assignPlayerId?: string
   ) => Promise<void>;
   changeInning: () => void;
   updateRunners: (runners: { base1: string | null; base2: string | null; base3: string | null }) => void;

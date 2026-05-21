@@ -90,6 +90,8 @@ export function FieldModal({ open, onOpenChange, onResult }: FieldModalProps) {
     { id: "2B", label: "二塁打", color: "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400" },
     { id: "3B", label: "三塁打", color: "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400" },
     { id: "HR", label: "本塁打", color: "bg-primary text-primary-foreground" },
+    { id: "SH", label: "犠打", color: "bg-zinc-500/10" },
+    { id: "SF", label: "犠飛", color: "bg-zinc-500/10" },
     { id: "E", label: "失策", color: "bg-red-500/20 text-red-600 dark:text-red-400" },
   ];
 

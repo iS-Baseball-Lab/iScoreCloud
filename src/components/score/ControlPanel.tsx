@@ -6,6 +6,7 @@ import { useScore } from "@/contexts/ScoreContext";
 import { cn } from "@/lib/utils";
 import { FieldModal } from "./FieldModal";
 import { SubstitutionModal } from "./SubstitutionModal";
+import type { BaseAdvance } from "@/types/score";
 
 export function ControlPanel() {
   const { state, recordPitch, recordInPlay, undo, finishMatch, isSyncing } = useScore();
@@ -24,7 +25,7 @@ export function ControlPanel() {
     };
   }, []);
 
-  const handleFieldResult = (rawResult: string, rbi: number) => {
+  const handleFieldResult = (rawResult: string, rbi: number, advances?: BaseAdvance[]) => {
     const [pos, hit] = rawResult.split("-");
     
     // ポジションマッピング (1-9)
@@ -41,6 +42,8 @@ export function ControlPanel() {
       "2B": "二",
       "3B": "三",
       "HR": "本",
+      "SH": "犠打",
+      "SF": "犠飛",
       "E": "失"
     };
 
@@ -168,13 +171,20 @@ export function ControlPanel() {
       </div>
 
       {/* 🚀 4段目 (ユーティリティ)：高さ 20% */}
-      <div className="flex-1 grid grid-cols-4 gap-1.5 min-h-0 text-zinc-500 h-[20%]">
+      <div className="flex-1 grid grid-cols-5 gap-1.5 min-h-0 text-zinc-500 h-[20%]">
         <button 
           onClick={() => recordPitch("foul")} 
           disabled={isSyncing}
           className="h-full rounded-2xl border-2 border-zinc-200 dark:border-zinc-800 font-black text-[10px] uppercase active:bg-zinc-100 dark:active:bg-zinc-900 transition-colors"
         >
           Foul
+        </button>
+        <button 
+          onClick={() => recordPitch("hbp")} 
+          disabled={isSyncing}
+          className="h-full rounded-2xl border-2 border-amber-500/30 text-amber-600 dark:text-amber-400 font-black text-[10px] uppercase active:bg-amber-500/10 transition-colors"
+        >
+          HBP
         </button>
         <button 
           onClick={() => recordInPlay("エラー", 0, 0, 1)} 
