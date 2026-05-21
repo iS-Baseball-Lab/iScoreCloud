@@ -59,10 +59,10 @@ export function PlayLog({ limit = 3 }: PlayLogProps) {
             key={log.id}
             className={cn(
               "relative flex items-center gap-3 transition-all duration-300",
-              // 💡 ユーザー要望: 先頭行を右からスライドインする極上のアニメーションに変更
+              // 💡 ユーザー要望: 先頭行をメタリックグラデーション&境界光彩でプレミアム化し、通常行もガラス調ダークで灰色のチープさを払拭
               isLatest 
-                ? "bg-primary text-primary-foreground px-4 py-2.5 rounded-[20px] shadow-lg animate-playlog-slide-in z-10" 
-                : "bg-muted/40 text-foreground/60 px-4 py-2 rounded-[18px] border border-border/20 opacity-60"
+                ? "bg-gradient-to-r from-primary/95 to-primary/80 text-primary-foreground px-4 py-2.5 rounded-[20px] shadow-lg shadow-primary/20 border border-white/10 animate-playlog-slide-in z-10" 
+                : "bg-zinc-100/50 dark:bg-zinc-900/30 text-foreground/75 px-4 py-2 rounded-[18px] border border-zinc-200/55 dark:border-zinc-800/30 opacity-75 hover:opacity-100 hover:scale-[1.005] transition-all"
             )}
           >
             {/* イニング (例: 1T) */}
@@ -86,28 +86,26 @@ export function PlayLog({ limit = 3 }: PlayLogProps) {
               {isOut && <Circle className="h-2 w-2 fill-rose-500 text-rose-500 shrink-0" />}
             </div>
 
-            {/* BSO または 時間(フォールバック) - 💡 極上横型カプセルスコアボードデザイン */}
+            {/* BSO または 時間(フォールバック) - 💡 極上漆黒バックスクリーン風カプセルデザイン */}
             {bso ? (
               <div className={cn(
-                "flex items-center gap-2 shrink-0 rounded-full px-2.5 py-1 text-[9px] font-extrabold tracking-tighter shadow-sm transition-all duration-300",
+                "flex items-center gap-2 shrink-0 rounded-full px-2.5 py-1 text-[9px] font-extrabold tracking-tighter shadow-md transition-all duration-300",
                 isLatest 
-                  ? "bg-white/15 text-white border border-white/20" 
-                  : "bg-zinc-950/45 dark:bg-zinc-950/60 text-foreground border border-zinc-800/40"
+                  ? "bg-black/35 text-white border border-white/15" 
+                  : "bg-zinc-950/70 border border-zinc-200/20 dark:border-zinc-800/50 text-foreground"
               )}>
                 {/* Ball */}
                 <div className="flex gap-1 items-center">
-                  <span className={cn(isLatest ? "text-white" : "text-emerald-400 font-extrabold text-[8px]")}>B</span>
+                  <span className="text-emerald-500 font-extrabold text-[8px]">B</span>
                   <div className="flex gap-0.5">
                     {[1, 2, 3].map((num) => (
                       <div
                         key={num}
                         className={cn(
                           "w-1.5 h-1.5 rounded-full border transition-all duration-300",
-                          isLatest 
-                            ? (num <= bso.balls ? "bg-white border-white" : "bg-white/10 border-white/20") 
-                            : (num <= bso.balls 
-                                ? "bg-emerald-400 border-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.9)]" 
-                                : "bg-zinc-800 border-zinc-700/50")
+                          num <= bso.balls 
+                            ? "bg-emerald-500 border-emerald-500 shadow-[0_0_8px_#10b981]" 
+                            : "bg-zinc-900 border-zinc-800/60"
                         )}
                       />
                     ))}
@@ -115,22 +113,20 @@ export function PlayLog({ limit = 3 }: PlayLogProps) {
                 </div>
 
                 {/* Divider */}
-                <span className={cn("opacity-25 text-[8px] font-light", isLatest ? "text-white" : "text-zinc-600")}>|</span>
+                <span className="opacity-20 text-[8px] font-light text-zinc-500">|</span>
 
                 {/* Strike */}
                 <div className="flex gap-1 items-center">
-                  <span className={cn(isLatest ? "text-white" : "text-amber-400 font-extrabold text-[8px]")}>S</span>
+                  <span className="text-amber-400 font-extrabold text-[8px]">S</span>
                   <div className="flex gap-0.5">
                     {[1, 2].map((num) => (
                       <div
                         key={num}
                         className={cn(
                           "w-1.5 h-1.5 rounded-full border transition-all duration-300",
-                          isLatest 
-                            ? (num <= bso.strikes ? "bg-white border-white" : "bg-white/10 border-white/20") 
-                            : (num <= bso.strikes 
-                                ? "bg-amber-400 border-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.9)]" 
-                                : "bg-zinc-800 border-zinc-700/50")
+                          num <= bso.strikes 
+                            ? "bg-amber-400 border-amber-400 shadow-[0_0_8px_#fbbf24]" 
+                            : "bg-zinc-900 border-zinc-800/60"
                         )}
                       />
                     ))}
@@ -138,22 +134,20 @@ export function PlayLog({ limit = 3 }: PlayLogProps) {
                 </div>
 
                 {/* Divider */}
-                <span className={cn("opacity-25 text-[8px] font-light", isLatest ? "text-white" : "text-zinc-600")}>|</span>
+                <span className="opacity-20 text-[8px] font-light text-zinc-500">|</span>
 
                 {/* Out */}
                 <div className="flex gap-1 items-center">
-                  <span className={cn(isLatest ? "text-white" : "text-rose-500 font-extrabold text-[8px]")}>O</span>
+                  <span className="text-rose-500 font-extrabold text-[8px]">O</span>
                   <div className="flex gap-0.5">
                     {[1, 2].map((num) => (
                       <div
                         key={num}
                         className={cn(
                           "w-1.5 h-1.5 rounded-full border transition-all duration-300",
-                          isLatest 
-                            ? (num <= bso.outs ? "bg-white border-white" : "bg-white/10 border-white/20") 
-                            : (num <= bso.outs 
-                                ? "bg-rose-500 border-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.9)]" 
-                                : "bg-zinc-800 border-zinc-700/50")
+                          num <= bso.outs 
+                            ? "bg-rose-500 border-rose-500 shadow-[0_0_8px_#f43f5e]" 
+                            : "bg-zinc-900 border-zinc-800/60"
                         )}
                       />
                     ))}
