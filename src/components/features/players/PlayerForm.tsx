@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2 } from "lucide-react";
+import { Loader2, User } from "lucide-react";
 import { PlayerFormData, PositionKey } from "@/types/player";
 import { POSITION_LABELS } from "./constants";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -30,8 +30,8 @@ export function PlayerForm({ initial = EMPTY_FORM, onSubmit, onCancel, isSubmitt
       <div className="flex flex-col items-center justify-center py-2 space-y-2 bg-muted/30 rounded-[var(--radius-xl)] border border-dashed border-border p-3">
         <Avatar className="h-16 w-16 border border-border shadow-sm bg-background flex items-center justify-center">
           <AvatarImage src={form.profileImageUrl || ""} alt="アバタープレビュー" className="object-cover" />
-          <AvatarFallback className="font-black text-xl bg-primary/10 text-primary">
-            {form.name ? form.name.slice(0, 2).toUpperCase() : "?"}
+          <AvatarFallback className="flex items-center justify-center bg-primary/10 text-primary">
+            <User className="h-8 w-8" strokeWidth={2.5} />
           </AvatarFallback>
         </Avatar>
         <div className="flex flex-wrap justify-center gap-1.5">

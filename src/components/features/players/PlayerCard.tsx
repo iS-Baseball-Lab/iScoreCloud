@@ -163,8 +163,8 @@ export function PlayerCard({ player, onEdit, onDelete, onDetail }: PlayerCardPro
           <div className="pl-3.5 flex items-center shrink-0">
             <Avatar className="h-10 w-10 border border-border shadow-sm bg-muted flex items-center justify-center">
               <AvatarImage src={player.profileImageUrl ?? ""} alt={player.name} className="object-cover" />
-              <AvatarFallback className={cn("font-black text-xs flex items-center justify-center", colors.accentText, colors.accent)}>
-                {player.name.slice(0, 2).toUpperCase()}
+              <AvatarFallback className={cn("flex items-center justify-center", colors.accentText, colors.accent)}>
+                <User className="h-5 w-5" strokeWidth={2.5} />
               </AvatarFallback>
             </Avatar>
           </div>
