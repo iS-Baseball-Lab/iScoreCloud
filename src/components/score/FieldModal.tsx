@@ -12,7 +12,7 @@ import { useScore } from "@/contexts/ScoreContext";
  * 4. 規則: 影なし。角丸40px。border-border/40。
  */
 import { createPortal } from "react-dom";
-import { Minus, Plus, Check, Target, X } from "lucide-react";
+import { Minus, Plus, Check, Target, X, ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface FieldModalProps {
@@ -29,6 +29,7 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
   const [selectedPos, setSelectedPos] = useState<string | null>(null);
   const [hitType, setHitType] = useState<string>("GO"); // GO: Ground Out, 1B: Single, etc.
   const [rbi, setRbi] = useState(0);
+  const [showRbiDetail, setShowRbiDetail] = useState(false);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -43,6 +44,7 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
       const initialHit = defaultHitType || "GO";
       setHitType(initialHit);
       setRbi(calculateDefaultRbi(initialHit));
+      setShowRbiDetail(false);
     }
   }, [open, defaultHitType]);
 
@@ -196,27 +198,51 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
             </div>
           </div>
 
-          {/* 3. 打点入力 */}
-          <div className="bg-zinc-50 dark:bg-zinc-900 p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
-            <div className="space-y-0.5">
-              <p className="text-[9px] font-black text-zinc-400 dark:text-zinc-500 uppercase tracking-widest">RBI (打点)</p>
-              <p className="text-base font-black italic text-zinc-900 dark:text-white tracking-tight">TOTAL RUNS</p>
-            </div>
-            <div className="flex items-center gap-4">
-              <button
-                onClick={() => setRbi(Math.max(0, rbi - 1))}
-                className="h-10 w-10 rounded-full border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-white bg-white dark:bg-zinc-950 hover:bg-zinc-100 dark:hover:bg-zinc-900 active:scale-90 transition-all flex items-center justify-center shadow-sm"
-              >
-                <Minus className="h-4.5 w-4.5" />
-              </button>
-              <span className="text-3xl font-black tabular-nums italic text-primary w-8 text-center">{rbi}</span>
-              <button
-                onClick={() => setRbi(Math.min(4, rbi + 1))}
-                className="h-10 w-10 rounded-full border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-white bg-white dark:bg-zinc-950 hover:bg-zinc-100 dark:hover:bg-zinc-900 active:scale-90 transition-all flex items-center justify-center shadow-sm"
-              >
-                <Plus className="h-4.5 w-4.5" />
-              </button>
-            </div>
+          {/* 3. 打点手動調整（アコーディオン仕様） */}
+          <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden bg-zinc-50/50 dark:bg-zinc-900/30">
+            <button
+              type="button"
+              onClick={() => setShowRbiDetail(!showRbiDetail)}
+              className="w-full px-4 py-3 flex items-center justify-between text-left transition-colors hover:bg-zinc-100/50 dark:hover:bg-zinc-800/40"
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-black text-primary uppercase tracking-widest bg-primary/10 dark:bg-primary/20 px-2 py-0.5 rounded animate-in zoom-in duration-200">
+                  RBI: {rbi}点
+                </span>
+                <span className="text-xs font-black text-zinc-700 dark:text-zinc-300">
+                  打点を手動調整する
+                </span>
+              </div>
+              <div className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 transition-colors">
+                {showRbiDetail ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              </div>
+            </button>
+
+            {showRbiDetail && (
+              <div className="p-4 bg-white dark:bg-zinc-950 border-t border-zinc-200 dark:border-zinc-800 flex items-center justify-between animate-in slide-in-from-top-2 duration-250">
+                <div className="space-y-0.5">
+                  <p className="text-[9px] font-black text-zinc-400 dark:text-zinc-500 uppercase tracking-widest">RBI (打点)</p>
+                  <p className="text-sm font-black italic text-zinc-900 dark:text-white tracking-tight">TOTAL RUNS</p>
+                </div>
+                <div className="flex items-center gap-4">
+                  <button
+                    type="button"
+                    onClick={() => setRbi(Math.max(0, rbi - 1))}
+                    className="h-10 w-10 rounded-full border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-white bg-white dark:bg-zinc-950 hover:bg-zinc-100 dark:hover:bg-zinc-900 active:scale-90 transition-all flex items-center justify-center shadow-sm"
+                  >
+                    <Minus className="h-4.5 w-4.5" />
+                  </button>
+                  <span className="text-3xl font-black tabular-nums italic text-primary w-8 text-center">{rbi}</span>
+                  <button
+                    type="button"
+                    onClick={() => setRbi(Math.min(4, rbi + 1))}
+                    className="h-10 w-10 rounded-full border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-white bg-white dark:bg-zinc-950 hover:bg-zinc-100 dark:hover:bg-zinc-900 active:scale-90 transition-all flex items-center justify-center shadow-sm"
+                  >
+                    <Plus className="h-4.5 w-4.5" />
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
         </div>
