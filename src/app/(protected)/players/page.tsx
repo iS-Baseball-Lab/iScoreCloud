@@ -270,6 +270,7 @@ export default function PlayerRosterPage() {
                 name: editTarget.name, uniformNumber: editTarget.uniformNumber,
                 primaryPosition: editTarget.primaryPosition ?? "",
                 throws: editTarget.throws ?? "", bats: editTarget.bats ?? "",
+                profileImageUrl: editTarget.profileImageUrl ?? "",
               }}
               onSubmit={handleEdit} onCancel={() => setEditTarget(null)} isSubmitting={isSubmitting} submitLabel="更新する"
             />

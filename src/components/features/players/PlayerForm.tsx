@@ -1,7 +1,3 @@
-// src/components/features/players/PlayerForm.tsx
-"use client";
-/* 💡 選手追加・編集フォーム */
-
 import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,9 +5,10 @@ import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
 import { PlayerFormData, PositionKey } from "@/types/player";
 import { POSITION_LABELS } from "./constants";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 export const EMPTY_FORM: PlayerFormData = {
-  name: "", nameKana: "", uniformNumber: "", primaryPosition: "", throws: "", bats: "",
+  name: "", nameKana: "", uniformNumber: "", primaryPosition: "", throws: "", bats: "", profileImageUrl: "",
 };
 
 interface PlayerFormProps {
@@ -29,7 +26,52 @@ export function PlayerForm({ initial = EMPTY_FORM, onSubmit, onCancel, isSubmitt
 
   return (
     <form onSubmit={async (e) => { e.preventDefault(); await onSubmit(form); }} className="space-y-4 pt-1">
-      {/* フォーム内容は元のまま移植（省略せず完全な状態） */}
+      {/* 👤 アバタープレビューと簡易生成 */}
+      <div className="flex flex-col items-center justify-center py-2 space-y-2 bg-muted/30 rounded-[var(--radius-xl)] border border-dashed border-border p-3">
+        <Avatar className="h-16 w-16 border border-border shadow-sm bg-background flex items-center justify-center">
+          <AvatarImage src={form.profileImageUrl || ""} alt="アバタープレビュー" className="object-cover" />
+          <AvatarFallback className="font-black text-xl bg-primary/10 text-primary">
+            {form.name ? form.name.slice(0, 2).toUpperCase() : "?"}
+          </AvatarFallback>
+        </Avatar>
+        <div className="flex flex-wrap justify-center gap-1.5">
+          <Button
+            type="button"
+            variant="outline"
+            className="text-[10px] h-7 px-2.5 rounded-lg font-bold"
+            onClick={() => {
+              const seed = form.name || Math.random().toString(36).substring(7);
+              const url = `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(seed)}`;
+              setForm(prev => ({ ...prev, profileImageUrl: url }));
+            }}
+          >
+            アバター生成 (Pop)
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="text-[10px] h-7 px-2.5 rounded-lg font-bold"
+            onClick={() => {
+              const seed = form.name || Math.random().toString(36).substring(7);
+              const url = `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(seed)}`;
+              setForm(prev => ({ ...prev, profileImageUrl: url }));
+            }}
+          >
+            アバター生成 (Bot)
+          </Button>
+          {form.profileImageUrl && (
+            <Button
+              type="button"
+              variant="ghost"
+              className="text-[10px] h-7 px-2 rounded-lg font-bold text-destructive hover:bg-destructive/10"
+              onClick={() => setForm(prev => ({ ...prev, profileImageUrl: "" }))}
+            >
+              クリア
+            </Button>
+          )}
+        </div>
+      </div>
+
       <div className="grid grid-cols-3 gap-3">
         <div className="space-y-1.5">
           <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">背番号 *</Label>
@@ -43,6 +85,15 @@ export function PlayerForm({ initial = EMPTY_FORM, onSubmit, onCancel, isSubmitt
       <div className="space-y-1.5">
         <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">よみがな</Label>
         <Input value={form.nameKana || ""} onChange={set("nameKana")} placeholder="やまだ たろう" className="h-12 rounded-[var(--radius-xl)] font-bold" />
+      </div>
+      <div className="space-y-1.5">
+        <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">アバター画像URL</Label>
+        <Input 
+          value={form.profileImageUrl || ""} 
+          onChange={(e) => setForm(prev => ({ ...prev, profileImageUrl: e.target.value }))} 
+          placeholder="https://example.com/avatar.png (省略時は頭文字表示)" 
+          className="h-12 rounded-[var(--radius-xl)] font-bold text-xs" 
+        />
       </div>
       <div className="space-y-1.5">
         <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">守備位置</Label>

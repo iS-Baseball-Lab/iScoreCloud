@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { Player, PositionKey } from "@/types/player";
 import { getCategory, POSITION_COLOR, POSITION_LABELS } from "./constants";
 import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 interface PlayerCardProps {
   player: Player;
@@ -158,7 +159,17 @@ export function PlayerCard({ player, onEdit, onDelete, onDetail }: PlayerCardPro
             )}
           </div>
 
-          <div className="flex-1 px-3.5 py-3 min-w-0 flex flex-col justify-center gap-0.5 pointer-events-none">
+          {/* 👤 アバター表示 */}
+          <div className="pl-3.5 flex items-center shrink-0">
+            <Avatar className="h-10 w-10 border border-border shadow-sm bg-muted flex items-center justify-center">
+              <AvatarImage src={player.profileImageUrl ?? ""} alt={player.name} className="object-cover" />
+              <AvatarFallback className={cn("font-black text-xs flex items-center justify-center", colors.accentText, colors.accent)}>
+                {player.name.slice(0, 2).toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
+          </div>
+
+          <div className="flex-1 pl-3 pr-3.5 py-3 min-w-0 flex flex-col justify-center gap-0.5 pointer-events-none">
             <div className="flex items-center gap-1.5 flex-wrap">
               <span className={cn("inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-md border", colors.badge)}>
                 <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", colors.dot)} />
