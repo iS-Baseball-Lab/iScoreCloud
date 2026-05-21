@@ -37,6 +37,8 @@ export default function LineupPage() {
   const [activeTab, setActiveTab] = useState<"myTeam" | "opponent">("myTeam");
   const [teamPlayers, setTeamPlayers] = useState<Player[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [templates, setTemplates] = useState<any[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
 
   const [attendance, setAttendance] = useState<Record<string, "bench" | "absent">>({});
   const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
@@ -59,9 +61,10 @@ export default function LineupPage() {
           return;
         }
 
-        const [playersRes, lineupsRes] = await Promise.all([
+        const [playersRes, lineupsRes, templatesRes] = await Promise.all([
           fetch(`/api/teams/${targetTeamId}/players`, { cache: "no-store" }),
-          matchId ? fetch(`/api/matches/${matchId}/lineups`, { cache: "no-store" }) : Promise.resolve(null)
+          matchId ? fetch(`/api/matches/${matchId}/lineups`, { cache: "no-store" }) : Promise.resolve(null),
+          fetch(`/api/teams/${targetTeamId}/lineup-templates`, { cache: "no-store" })
         ]);
 
         if (!playersRes.ok) throw new Error("選手データの取得に失敗しました");
@@ -89,6 +92,11 @@ export default function LineupPage() {
           }
         }
 
+        if (templatesRes && templatesRes.ok) {
+          const templatesData = await templatesRes.json() as any[];
+          setTemplates(templatesData || []);
+        }
+
       } catch (error) {
         console.error(error);
         toast.error("データの読み込みに失敗しました");
@@ -106,10 +114,82 @@ export default function LineupPage() {
   const getDisabledPlayers = (lineup: any[], currentIndex: number) =>
     lineup.filter((_, i) => i !== currentIndex).map(p => p.playerId).filter(Boolean);
 
-  const saveTemplate = () => {
+  const saveTemplate = async () => {
     if (!templateName) return toast.error("名前を入力してください");
-    toast.success(`「${templateName}」を保存しました（モック）`);
-    setIsTemplateModalOpen(false);
+    
+    try {
+      const targetTeamId = urlTeamId || localStorage.getItem("iscore_selectedTeamId");
+      if (!targetTeamId) {
+        toast.error("チーム情報が特定できませんでした");
+        return;
+      }
+
+      const res = await fetch(`/api/teams/${targetTeamId}/lineup-templates`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: templateName,
+          lineupData: myLineup
+        })
+      });
+
+      if (!res.ok) throw new Error("保存に失敗しました");
+
+      toast.success(`「${templateName}」を保存しました`);
+      setIsTemplateModalOpen(false);
+      setTemplateName("");
+
+      // テンプレート一覧を再取得
+      const templatesRes = await fetch(`/api/teams/${targetTeamId}/lineup-templates`, { cache: "no-store" });
+      if (templatesRes.ok) {
+        const templatesData = await templatesRes.json() as any[];
+        setTemplates(templatesData || []);
+      }
+    } catch (error) {
+      console.error(error);
+      toast.error("テンプレートの保存に失敗しました");
+    }
+  };
+
+  const handleLoadTemplate = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const templateId = e.target.value;
+    setSelectedTemplateId(templateId);
+    if (!templateId) return;
+
+    const template = templates.find(t => t.id === templateId);
+    if (!template) return;
+
+    try {
+      let lineupData = template.lineupData;
+      if (typeof lineupData === "string") {
+        lineupData = JSON.parse(lineupData);
+      }
+
+      if (Array.isArray(lineupData)) {
+        const restored = lineupData.map((item: any) => {
+          const player = teamPlayers.find(p => p.id === item.playerId);
+          return {
+            order: item.order,
+            position: item.position || "",
+            playerId: item.playerId || "",
+            name: player ? player.name : (item.name || ""),
+            uniformNumber: player ? (player.uniformNumber || "") : (item.uniformNumber || "")
+          };
+        });
+
+        // 9つの要素を保証
+        const fullLineup = Array.from({ length: 9 }, (_, i) => {
+          const found = restored.find(r => r.order === i + 1);
+          return found || { order: i + 1, position: "", playerId: "", name: "", uniformNumber: "" };
+        });
+
+        setMyLineup(fullLineup);
+        toast.success(`テンプレート「${template.name}」を適用しました`);
+      }
+    } catch (error) {
+      console.error(error);
+      toast.error("テンプレートの読み込みに失敗しました");
+    }
   };
 
   const handleFillDummyOpponent = () => {
@@ -206,8 +286,15 @@ export default function LineupPage() {
             <div className="flex gap-2 w-full">
               <div className="relative flex-1">
                 <FolderOpen className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-primary/60 pointer-events-none" />
-                <select className="w-full h-12 bg-card/50 border-2 border-border/40 rounded-2xl pl-10 pr-8 text-xs font-black focus:outline-none appearance-none cursor-pointer hover:bg-muted/50 transition-colors">
-                  <option>テンプレート読込</option>
+                <select
+                  value={selectedTemplateId}
+                  onChange={handleLoadTemplate}
+                  className="w-full h-12 bg-card/50 border-2 border-border/40 rounded-2xl pl-10 pr-8 text-xs font-black focus:outline-none appearance-none cursor-pointer hover:bg-muted/50 transition-colors"
+                >
+                  <option value="">テンプレート読込</option>
+                  {templates.map(t => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
                 </select>
                 <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
               </div>
