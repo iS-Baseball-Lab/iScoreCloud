@@ -226,7 +226,7 @@ export function PlayArea() {
         {isRunner && (
           <div className={cn(
             "absolute text-[10px] font-black px-1.5 py-0.5 rounded shadow-md z-30 whitespace-nowrap animate-in fade-in transition-all duration-300",
-            "bg-rose-600 text-white border border-rose-500",
+            "bg-primary text-primary-foreground border border-primary/20",
             "dark:bg-black dark:border-primary/50 dark:text-primary",
             baseNum === 2
               ? "top-8 slide-in-from-top-1" // 2塁は下側に下げてベース下角と重ねる
@@ -242,14 +242,14 @@ export function PlayArea() {
         >
           {/* ランナーがいる時の波紋エフェクト */}
           {isRunner && (
-            <div className="absolute inset-0 rounded-full bg-rose-600/20 dark:bg-primary/20 animate-ping" />
+            <div className="absolute inset-0 rounded-full bg-primary/20 animate-ping" />
           )}
 
           <div
             className={cn(
               "w-8 h-8 sm:w-10 sm:h-10 rotate-45 rounded-sm border-2 transition-all duration-500",
               isRunner
-                ? "bg-rose-600 border-rose-600 shadow-[0_0_20px_rgba(225,29,72,0.6)] scale-110 dark:bg-primary dark:border-primary dark:shadow-[0_0_20px_rgba(var(--primary),0.6)]"
+                ? "bg-primary border-primary shadow-[0_0_20px_color-mix(in_srgb,var(--primary)_40%,transparent)] scale-110 dark:bg-primary dark:border-primary dark:shadow-[0_0_20px_color-mix(in_srgb,var(--primary)_60%,transparent)]"
                 : "bg-white dark:bg-zinc-900 border-zinc-300 dark:border-white/10 opacity-90"
             )}
           >
