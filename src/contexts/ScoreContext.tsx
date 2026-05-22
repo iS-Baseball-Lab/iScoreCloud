@@ -470,7 +470,7 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
       const isNotAtBat = ["得点", "盗塁", "暴投", "ボーク", "守備交代", "走者状況変更"].includes(result);
       const isAtBatEnd = !isNotAtBat;
 
-      const newOuts = prev.outs + (isAtBatEnd && (result.includes("アウト") || result.includes("犠") || result.includes("ゴロ") || result.includes("飛") || result.includes("直") || result.includes("併殺")) ? 1 : 0);
+      const newOuts = prev.outs + (isAtBatEnd && (result.includes("アウト") || result.includes("犠") || result.includes("ゴロ") || result.includes("飛") || result.includes("直") || result.includes("併殺") || result.includes("三振")) ? 1 : 0);
       const isInningChange = newOuts >= 3;
 
       let newMyBattingIndex = prev.myBattingIndex;

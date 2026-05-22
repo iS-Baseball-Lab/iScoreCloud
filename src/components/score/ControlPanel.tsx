@@ -5,11 +5,13 @@ import { useEffect, useState } from "react";
 import { useScore } from "@/contexts/ScoreContext";
 import { cn } from "@/lib/utils";
 import { FieldModal } from "./FieldModal";
+import { OutDetailModal } from "./OutDetailModal";
 import type { BaseAdvance } from "@/types/score";
 
 export function ControlPanel() {
   const { state, recordPitch, recordInPlay, undo, finishMatch, isSyncing } = useScore();
   const [fieldOpen, setFieldOpen] = useState(false);
+  const [outOpen, setOutOpen] = useState(false);
   const [defaultHitType, setDefaultHitType] = useState<string>("1B");
 
   useEffect(() => {
@@ -27,6 +29,51 @@ export function ControlPanel() {
   const openFieldWithPreset = (hitType: string) => {
     setDefaultHitType(hitType);
     setFieldOpen(true);
+  };
+
+  const handleOutResult = (rawResult: string, rbi: number) => {
+    let mappedString = "";
+
+    if (rawResult.includes("-")) {
+      const [pos, outType] = rawResult.split("-");
+      
+      const posMap: Record<string, string> = {
+        "1": "投", "2": "捕", "3": "一", "4": "二", "5": "三",
+        "6": "遊", "7": "左", "8": "中", "9": "右"
+      };
+
+      const outMap: Record<string, string> = {
+        "GO": "ゴロ",
+        "FO": "飛",
+        "LO": "直",
+        "SO_K": "空振り三振",
+        "SO_M": "見逃し三振",
+        "SH": "犠打",
+        "SF": "犠飛",
+        "DP": "併殺",
+        "UN": "アウト"
+      };
+
+      const posChar = posMap[pos] || pos;
+      const outChar = outMap[outType] || outType;
+      mappedString = `${posChar}${outChar}`;
+    } else {
+      const outType = rawResult;
+      const quickMap: Record<string, string> = {
+        "GO": "ゴロアウト",
+        "FO": "フライアウト",
+        "LO": "ライナー",
+        "SO_K": "空振り三振",
+        "SO_M": "見逃し三振",
+        "SH": "犠打",
+        "SF": "犠飛",
+        "DP": "併殺打",
+        "UN": "アウト"
+      };
+      mappedString = quickMap[outType] || outType;
+    }
+
+    recordInPlay(mappedString, rbi, 0, 0);
   };
 
   const handleFieldResult = (rawResult: string, rbi: number, advances?: BaseAdvance[]) => {
@@ -96,7 +143,7 @@ export function ControlPanel() {
         {/* Out */}
         <button 
           type="button" 
-          onClick={() => recordPitch("out")} 
+          onClick={() => setOutOpen(true)} 
           disabled={isSyncing}
           className="h-full bg-rose-600 text-white rounded-2xl flex flex-col items-center justify-center shadow-md border-b-2 border-rose-800 active:scale-95 transition-all"
         >
@@ -227,6 +274,11 @@ export function ControlPanel() {
         onOpenChange={setFieldOpen} 
         onResult={handleFieldResult} 
         defaultHitType={defaultHitType}
+      />
+      <OutDetailModal 
+        open={outOpen} 
+        onOpenChange={setOutOpen} 
+        onResult={handleOutResult} 
       />
     </div>
   );
