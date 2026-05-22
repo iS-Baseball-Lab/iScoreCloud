@@ -1,10 +1,11 @@
+// filepath: src/app/(protected)/news-generator/page.tsx
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { 
   ArrowLeft, Copy, Check, Send, Sparkles, RotateCcw, 
-  Calendar, Users, Trophy, ChevronRight, Volume2, Gamepad2, FileText, Activity
+  Users, Trophy, ChevronRight, FileText, Activity
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -14,16 +15,16 @@ import { SectionHeader } from "@/components/layout/SectionHeader";
 // ⚾️ ポジションマッピング
 const getPositionLabel = (posId: string) => {
   const mapping: Record<string, string> = {
-    "1": "投",
-    "2": "捕",
-    "3": "一",
-    "4": "二",
-    "5": "三",
-    "6": "遊",
-    "7": "左",
-    "8": "中",
-    "9": "右",
-    "DH": "指"
+    "1": "1", // 投 ➜ 番号表記に統一
+    "2": "2", // 捕
+    "3": "3", // 一
+    "4": "4", // 二
+    "5": "5", // 三
+    "6": "6", // 遊
+    "7": "7", // 左
+    "8": "8", // 中
+    "9": "9", // 右
+    "DH": "D", // 指
   };
   return mapping[posId] || "打";
 };
@@ -51,7 +52,14 @@ export default function NewsGeneratorPage() {
   const [editedText, setEditedText] = useState<string>("");
   const [copied, setCopied] = useState(false);
 
-  // 手動追記フィールド
+  // 手動追記・カスタマイズフィールド
+  const [matchName, setMatchName] = useState("OP戦");
+  const [venueName, setVenueName] = useState("");
+  const [opponentName, setOpponentName] = useState("");
+  const [startTime, setStartTime] = useState("");
+  const [endTime, setEndTime] = useState("");
+  const [reporterName, setReporterName] = useState("");
+
   const [lineupComment, setLineupComment] = useState("");
   const [selectedInningIndex, setSelectedInningIndex] = useState<number>(0);
   const [inningComment, setInningComment] = useState("");
@@ -66,7 +74,15 @@ export default function NewsGeneratorPage() {
     const storedName = localStorage.getItem("iscore_selectedTeamName");
     if (storedId) setTeamId(storedId);
     if (storedName) setTeamName(storedName);
+
+    const storedReporter = localStorage.getItem("iscore_reporterName");
+    if (storedReporter) setReporterName(storedReporter);
   }, []);
+
+  const handleReporterChange = (name: string) => {
+    setReporterName(name);
+    localStorage.setItem("iscore_reporterName", name);
+  };
 
   useEffect(() => {
     if (!teamId) return;
@@ -151,6 +167,21 @@ export default function NewsGeneratorPage() {
     fetchDetails();
   }, [selectedMatchId]);
 
+  // 試合ロード時に初期パラメータをセット
+  useEffect(() => {
+    if (matchDetail) {
+      setOpponentName(matchDetail.opponent || "");
+      setVenueName(matchDetail.surfaceDetails || matchDetail.venueName || "");
+      
+      const type = matchDetail.matchType === "official" ? "公式戦" : "OP戦";
+      const tournament = matchDetail.tournamentName ? `（${matchDetail.tournamentName}）` : "";
+      setMatchName(`${type}${tournament}`);
+      
+      setStartTime(matchDetail.startTime || "");
+      setEndTime(matchDetail.endTime || "");
+    }
+  }, [matchDetail]);
+
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   // 試合のソート・フィルタリング（予定試合は除外、進行中優先）
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -214,223 +245,531 @@ export default function NewsGeneratorPage() {
   const selectedInningOption = inningOptions[selectedInningIndex];
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  // スコアボードテキストの動的生成
+  // 🏟️ スコアボードテキストの動的生成 (スペース揃え等幅仕様)
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   const generateScoreTableText = (
-    inningLimit: number,
-    isBottomLimit: boolean,
     match: any,
-    name: string
+    name: string,
+    isFinal: boolean,
+    inningLimit?: number,
+    isBottomLimit?: boolean
   ) => {
     const isFirst = match.battingOrder === "first";
-    const firstTeamName = isFirst ? name : match.opponent;
-    const secondTeamName = isFirst ? match.opponent : name;
+    const firstTeamRaw = isFirst ? name : match.opponent;
+    const secondTeamRaw = isFirst ? match.opponent : name;
     
     const firstScores = isFirst ? match.myInningScores : match.opponentInningScores;
     const secondScores = isFirst ? match.opponentInningScores : match.myInningScores;
     
-    // 表示用の文字幅調整
-    const maxLen = Math.max(firstTeamName.length, secondTeamName.length);
-    const padName = (str: string) => str.padEnd(maxLen + 2, ' ');
+    // アマチュア・草野球の標準規定回（7回）を最低枠として確保
+    const regulationInnings = 7;
+    let inningCount = Math.max(firstScores.length, secondScores.length, regulationInnings);
+    if (!isFinal && inningLimit) {
+      inningCount = Math.max(inningLimit, regulationInnings);
+    }
     
-    let firstTeamLine = `${padName(firstTeamName)} |`;
-    let secondTeamLine = `${padName(secondTeamName)} |`;
-    
-    let firstTotal = 0;
-    let secondTotal = 0;
-    
-    for (let i = 1; i <= inningLimit; i++) {
-      // 先攻のi回得点
-      const score1 = firstScores[i - 1];
-      if (score1 !== undefined) {
-        firstTeamLine += ` ${score1}`;
-        firstTotal += score1;
-      } else {
-        firstTeamLine += " -";
+    // チーム名整形（全角2文字なら間に全角スペースを挟んで幅を合わせる）
+    const formatTeamName = (teamName: string) => {
+      let formatted = teamName.trim();
+      if (formatted.length === 2) {
+        formatted = `${formatted[0]}　${formatted[1]}`;
       }
       
-      // 後攻のi回得点
-      if (i === inningLimit && !isBottomLimit) {
-        secondTeamLine += " -";
-      } else {
-        const score2 = secondScores[i - 1];
-        if (score2 !== undefined) {
-          secondTeamLine += ` ${score2}`;
-          secondTotal += score2;
-        } else {
-          secondTeamLine += " -";
+      // 全角半角を考慮して幅をパディング
+      const getVisualLength = (str: string) => {
+        let len = 0;
+        for (let i = 0; i < str.length; i++) {
+          len += str.charCodeAt(i) > 255 ? 2 : 1;
         }
+        return len;
+      };
+      
+      const padRight = (str: string, targetLen: number) => {
+        let currentLen = getVisualLength(str);
+        let padded = str;
+        while (currentLen < targetLen) {
+          padded += " ";
+          currentLen++;
+        }
+        return padded;
+      };
+      return padRight(formatted, 10);
+    };
+
+    const padFirst = formatTeamName(firstTeamRaw);
+    const padSecond = formatTeamName(secondTeamRaw);
+
+    // ヘッダー作成
+    let header = "          "; // 10文字スペース
+    for (let i = 1; i <= inningCount; i++) {
+      if (i >= 10) {
+        header += `${i}`;
+      } else {
+        header += ` ${i}`;
       }
     }
-    
-    firstTeamLine += ` | 計 ${firstTotal}`;
-    secondTeamLine += ` | 計 ${secondTotal}`;
-    
-    return `${firstTeamLine}\n${secondTeamLine}`;
-  };
+    header += " 計";
 
-  const generateFinalScoreTableText = (match: any, name: string) => {
-    const isFirst = match.battingOrder === "first";
-    const firstTeamName = isFirst ? name : match.opponent;
-    const secondTeamName = isFirst ? match.opponent : name;
-    
-    const firstScores = isFirst ? match.myInningScores : match.opponentInningScores;
-    const secondScores = isFirst ? match.opponentInningScores : match.myInningScores;
-    
-    const maxLen = Math.max(firstTeamName.length, secondTeamName.length);
-    const padName = (str: string) => str.padEnd(maxLen + 2, ' ');
-    
-    const inningCount = Math.max(firstScores.length, secondScores.length, 1);
-    
-    let firstTeamLine = `${padName(firstTeamName)} |`;
-    let secondTeamLine = `${padName(secondTeamName)} |`;
-    
+    let firstLine = padFirst;
+    let secondLine = padSecond;
     let firstTotal = 0;
     let secondTotal = 0;
-    
-    if (isFirst) {
-      firstTotal = match.myScore;
-      secondTotal = match.opponentScore;
-    } else {
-      firstTotal = match.opponentScore;
-      secondTotal = match.myScore;
-    }
 
     for (let i = 1; i <= inningCount; i++) {
+      // 先攻得点
       const score1 = firstScores[i - 1];
-      firstTeamLine += score1 !== undefined ? ` ${score1}` : " -";
-      
+      const hasScore1 = score1 !== undefined && score1 !== null && (!inningLimit || i <= inningLimit);
+      if (hasScore1) {
+        firstLine += ` ${score1}`;
+        firstTotal += score1;
+      } else {
+        firstLine += "  ";
+      }
+
+      // 後攻得点
+      const isCurrentInningUnfinishedBottom = !isFinal && inningLimit && i === inningLimit && !isBottomLimit;
       const score2 = secondScores[i - 1];
-      secondTeamLine += score2 !== undefined ? ` ${score2}` : " -";
+      const hasScore2 = score2 !== undefined && score2 !== null && (!inningLimit || i <= inningLimit) && !isCurrentInningUnfinishedBottom;
+      if (hasScore2) {
+        secondLine += ` ${score2}`;
+        secondTotal += score2;
+      } else {
+        secondLine += "  ";
+      }
     }
-    
-    firstTeamLine += ` | 計 ${firstTotal}`;
-    secondTeamLine += ` | 計 ${secondTotal}`;
-    
-    return `${firstTeamLine}\n${secondTeamLine}`;
+
+    // 計の付与
+    const total1 = isFinal ? (isFirst ? match.myScore : match.opponentScore) : firstTotal;
+    const total2 = isFinal ? (isFirst ? match.opponentScore : match.myScore) : secondTotal;
+
+    const formatTotal = (total: number | string | undefined | null) => {
+      const t = total !== undefined && total !== null ? String(total) : "";
+      if (t.length === 0) return "   ";
+      if (t.length === 1) return `  ${t}`;
+      if (t.length === 2) return ` ${t}`;
+      return t;
+    };
+
+    firstLine += formatTotal(total1);
+    secondLine += formatTotal(total2);
+
+    return `${header}\n${firstLine}\n${secondLine}`;
   };
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  // スタメン・プレイログ整形
+  // 📋 スタメン選手・交代の追記追跡ロジック
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  const generateLineupText = (lineup: any[]) => {
+  const generateLineupListText = (lineup: any[], teamLabel: "my" | "opponent", isFirst: boolean) => {
     if (!lineup || lineup.length === 0) return "（スタメン未登録）";
     
+    // 各打順スロットの選手名初期値
+    const slotPlayers = lineup.map(p => p.name || p.playerName || "（未登録）");
+
+    // ログから選手交代を走査してマージ
+    const sortedLogs = [...playLogs].sort((a, b) => a.timestamp - b.timestamp);
+    
+    sortedLogs.forEach(log => {
+      // 例: "選手交代[自チーム]: 6番 近藤 ➔ 石塚"
+      if (log.description.includes("選手交代")) {
+        const match = log.description.match(/選手交代\[(.+?)\]:\s*(\d+)番\s*(.+?)\s*➔\s*(.+)/);
+        if (match) {
+          const team = match[1];
+          const order = parseInt(match[2], 10) - 1; // 0-indexed
+          const newName = match[4].trim();
+          
+          const isMyTeamSubstitute = team === "自チーム";
+          const isTargetTeam = teamLabel === "my" ? isMyTeamSubstitute : !isMyTeamSubstitute;
+          
+          if (isTargetTeam && order >= 0 && order < slotPlayers.length) {
+            const innText = `(${log.inning}${log.isTop ? "表" : "裏"})`;
+            slotPlayers[order] += `→${newName}${innText}`;
+          }
+        }
+      }
+    });
+
     return lineup.map((player, index) => {
       const order = index + 1;
       const posLabel = getPositionLabel(player.position);
-      const uniform = player.uniformNumber ? ` #${player.uniformNumber}` : "";
-      const name = player.name || "（未登録）";
-      return `${order}.(${posLabel}) ${name}${uniform}`;
+      return `${order}.${posLabel} ${slotPlayers[index]}`;
     }).join("\n");
+  };
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // 📝 プレイログのパース ＆ アウト数「●」自動整形ロジック
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  const generateDetailPlayLogsText = (
+    logs: any[], 
+    isEnd: boolean, 
+    limitInning?: number, 
+    limitIsBottom?: boolean
+  ) => {
+    const isFirst = matchDetail.battingOrder === "first";
+    
+    // 時系列（古い順）にソート
+    const sortedLogs = [...logs].sort((a, b) => a.timestamp - b.timestamp);
+    
+    // 範囲外のログをフィルター
+    const targetLogs = sortedLogs.filter(log => {
+      if (limitInning) {
+        if (log.inning < limitInning) return true;
+        if (log.inning === limitInning) {
+          if (!limitIsBottom) return log.isTop;
+          return true;
+        }
+        return false;
+      }
+      return true;
+    });
+
+    // イニングごとにグループ化
+    const groups: Record<string, { inning: number; isTop: boolean; logs: any[] }> = {};
+    const groupKeys: string[] = [];
+
+    targetLogs.forEach(log => {
+      const key = `${log.inning}-${log.isTop}`;
+      if (!groups[key]) {
+        groups[key] = { inning: log.inning, isTop: log.isTop, logs: [] };
+        groupKeys.push(key);
+      }
+      groups[key].logs.push(log);
+    });
+
+    let outputText = "⚾️プレイボール⚾️\n";
+
+    groupKeys.forEach(key => {
+      const group = groups[key];
+      const inningHeader = `${group.inning}回${group.isTop ? "表" : "裏"}`;
+      outputText += `${inningHeader}\n`;
+
+      let inningOuts = 0;
+      let currentAtBat: any = null;
+      const atBats: any[] = [];
+
+      const isMyTeamAttack = group.isTop === isFirst;
+      const inningScores = isMyTeamAttack ? matchDetail.myInningScores : matchDetail.opponentInningScores;
+      const inningScore = inningScores[group.inning - 1] !== undefined ? inningScores[group.inning - 1] : 0;
+
+      group.logs.forEach(log => {
+        const desc = log.description;
+        const cleanDesc = desc.replace(/\s*\[B:\d+,\s*S:\d+,\s*O:\d+\]$/, "").trim();
+
+        // 交代系ログ
+        if (
+          cleanDesc.includes("選手交代") || 
+          cleanDesc.includes("イニング交代") || 
+          cleanDesc.includes("チェンジ") || 
+          cleanDesc === "プレイボール" || 
+          cleanDesc === "試合終了" || 
+          cleanDesc === "ゲームセット"
+        ) {
+          if (cleanDesc.includes("選手交代")) {
+            const matchSub = cleanDesc.match(/選手交代\[(.+?)\]:\s*(\d+)番\s*(.+?)\s*➔\s*(.+)/);
+            if (matchSub) {
+              const team = matchSub[1];
+              const oldName = matchSub[3].trim();
+              const newName = matchSub[4].trim();
+              
+              // 投手交代かどうかチェック
+              const isPitcherSub = log.description.includes("投手") || 
+                lineups?.myLineup?.find((p: any) => (p.name === oldName || p.playerName === oldName) && p.position === "1") ||
+                lineups?.opponentLineup?.find((p: any) => (p.name === oldName || p.playerName === oldName) && p.position === "1");
+              
+              const subLabel = isPitcherSub ? "投手交代" : "選手交代";
+              const subText = `${subLabel} ${oldName}→${newName}`;
+
+              if (currentAtBat) {
+                currentAtBat.plays.push(subText);
+                currentAtBat.outsAtPlay.push(inningOuts);
+                currentAtBat.isOutsInc.push(false);
+              } else {
+                atBats.push({ isEvent: true, text: subText });
+              }
+            }
+          }
+          return;
+        }
+
+        // 打席ログの開始（例: "1番 小松: 中飛" もしくは "1番 : 空三振"）
+        const atBatMatch = cleanDesc.match(/^(\d+)番\s*([^:]+?)\s*:\s*(.+)$/);
+        const atBatMatchNoName = cleanDesc.match(/^(\d+)番\s*:\s*(.+)$/);
+
+        if (atBatMatch || atBatMatchNoName) {
+          const order = parseInt(atBatMatch ? atBatMatch[1] : atBatMatchNoName![1], 10);
+          const name = atBatMatch ? atBatMatch[2].trim() : "";
+          const play = atBatMatch ? atBatMatch[3].trim() : atBatMatchNoName![2].trim();
+
+          const isOut = (
+            play.includes("アウト") || 
+            play.includes("三振") || 
+            play.includes("ゴロ") || 
+            play.includes("飛") || 
+            play.includes("直") || 
+            play.includes("併殺") || 
+            play.includes("犠") || 
+            play.includes("封殺") || 
+            (play.includes("死") && !play.includes("デッド") && !play.includes("死球"))
+          );
+
+          if (isOut) {
+            inningOuts = Math.min(3, inningOuts + 1);
+          }
+
+          currentAtBat = {
+            isEvent: false,
+            batterOrder: order,
+            batterName: name,
+            plays: [play],
+            outsAtPlay: [inningOuts],
+            isOutsInc: [isOut]
+          };
+          atBats.push(currentAtBat);
+        } else {
+          // 走者アクション（打席ブロックに結合）
+          if (currentAtBat) {
+            let playText = cleanDesc;
+            
+            // 状態フラグ
+            let isOutAction = false;
+            if (playText.includes("盗塁死")) {
+              isOutAction = true;
+              inningOuts = Math.min(3, inningOuts + 1);
+            }
+            if (playText.includes("牽制死")) {
+              isOutAction = true;
+              inningOuts = Math.min(3, inningOuts + 1);
+            }
+            if (playText.includes("走塁死")) {
+              isOutAction = true;
+              inningOuts = Math.min(3, inningOuts + 1);
+            }
+
+            // 部分置換
+            playText = playText.replace("盗塁成功", "盗塁");
+            playText = playText.replace("暴投", "投暴投");
+            playText = playText.replace("パスボール", "捕逸");
+
+            currentAtBat.plays.push(playText);
+            currentAtBat.outsAtPlay.push(inningOuts);
+            currentAtBat.isOutsInc.push(isOutAction);
+          }
+        }
+      });
+
+      // 整形出力
+      atBats.forEach(ab => {
+        if (ab.isEvent) {
+          outputText += `${ab.text}\n`;
+        } else {
+          let line = `${ab.batterOrder}.`;
+          
+          // 自チームの攻撃イニングのみ名前を表示する
+          if (isMyTeamAttack && ab.batterName && ab.batterName !== "打者") {
+            line += `${ab.batterName} `;
+          }
+
+          const formattedPlays = ab.plays.map((play: string, idx: number) => {
+            let p = play;
+            const outs = ab.outsAtPlay[idx];
+            const outDots = "●".repeat(outs);
+            
+            // 表記のクリーンアップ（より詳細な野球用語の置換）
+            p = p.replace("空振り三振", "空三振");
+            p = p.replace("見逃し三振", "見三振");
+            
+            p = p.replace("ライト前安打", "右前安");
+            p = p.replace("レフト前安打", "左前安");
+            p = p.replace("センター前安打", "中前安");
+            
+            p = p.replace("ライト前適時安打", "右前適時安打");
+            p = p.replace("レフト前適時安打", "左前適時安打");
+            p = p.replace("センター前適時安打", "中前適時安打");
+            
+            p = p.replace("ライト前適時二塁打", "右前適時2塁打");
+            p = p.replace("レフト前適時二塁打", "左前適時2塁打");
+            p = p.replace("センター前適時二塁打", "中前適時2塁打");
+            
+            p = p.replace("ライト前適時三塁打", "右前適時3塁打");
+            p = p.replace("レフト前適時三塁打", "左前適時3塁打");
+            p = p.replace("センター前適時三塁打", "中前適時3塁打");
+
+            p = p.replace("ライト線二塁打", "右線2塁打");
+            p = p.replace("レフト線二塁打", "左線2塁打");
+            
+            p = p.replace("ライト中安", "右中安");
+            p = p.replace("レフト中安", "左中安");
+            p = p.replace("ライト前安", "右前安");
+            p = p.replace("レフト前安", "左前安");
+            p = p.replace("センター前安", "中前安");
+            p = p.replace("ライト中二塁打", "右中2塁打");
+            p = p.replace("レフト中二塁打", "左中2塁打");
+            
+            p = p.replace("二塁打", "2塁打");
+            p = p.replace("三塁打", "3塁打");
+            
+            p = p.replace("タイムリー", "適時");
+            p = p.replace("フォアボール", "四球");
+            p = p.replace("デッドボール", "死球");
+
+            const isOutPlay = (
+              ab.isOutsInc[idx] || 
+              p.includes("三振") || 
+              p.includes("ゴロ") || 
+              p.includes("飛") || 
+              p.includes("直") || 
+              p.includes("アウト") || 
+              p.includes("封殺") || 
+              p.includes("走塁死") || 
+              p.includes("盗塁死") || 
+              p.includes("牽制死") ||
+              p.includes("併殺")
+            );
+
+            // 進塁情報の判定
+            let baseInfo = "";
+            const baseMatch = p.match(/(1|2|3)塁|1•2|2•3|1•3|満塁/);
+            if (baseMatch) {
+              baseInfo = baseMatch[0].includes("塁") ? baseMatch[0] : `${baseMatch[0]}塁`;
+              p = p.replace(baseMatch[0], "").replace("塁", "").trim();
+            } else {
+              // 明示的な進塁先がない場合
+              const isOnlyPlay = ab.plays.length === 1;
+              if (idx === 0 && isOnlyPlay && !isOutPlay) {
+                if (p.includes("安") || p.includes("単打") || p.includes("四球") || p.includes("死球") || p.includes("失") || p.includes("野選")) {
+                  baseInfo = "1塁";
+                } else if (p.includes("二塁打") || p.includes("二")) {
+                  baseInfo = "2塁";
+                } else if (p.includes("三塁打") || p.includes("三")) {
+                  baseInfo = "3塁";
+                }
+              }
+            }
+
+            // RBI（打点）情報の抽出
+            let runInfo = "";
+            const rbiMatch = p.match(/(\d+)点/);
+            if (rbiMatch) {
+              runInfo = ` ${rbiMatch[1]}点`;
+              p = p.replace(rbiMatch[0], "").trim();
+            }
+
+            // 最後のプレイではない、かつアウトでもなく、進塁情報もない中間的なプレイの場合
+            const isMiddleAction = idx < ab.plays.length - 1 && !isOutPlay && !baseInfo;
+            if (isMiddleAction) {
+              return `${p}${runInfo}`;
+            }
+
+            // 通常のフォーマット出力
+            if (baseInfo) {
+              return `${p}${runInfo} ${outDots}${baseInfo}`;
+            } else {
+              if (isOutPlay) {
+                return `${p}${runInfo}${outDots}`;
+              } else {
+                return `${p}${runInfo} ${outDots}`;
+              }
+            }
+          });
+
+          line += formattedPlays.join(" ");
+          outputText += `${line}\n`;
+        }
+      });
+
+      outputText += `得点${inningScore}\n\n`;
+    });
+
+    if (isEnd) {
+      outputText += "ゲームセット\n";
+    }
+
+    return outputText;
   };
 
   const getResultLabel = (match: any) => {
     const my = match.myScore;
     const opp = match.opponentScore;
-    if (my > opp) return "勝利 🎉";
+    if (my > opp) return "勝利";
     if (my < opp) return "惜敗";
     return "引き分け";
   };
 
-  const getKeyEvents = (logs: any[]) => {
-    const keyKeywords = ["得点", "先制", "追加", "タイムリー", "適時打", "ホームラン", "本塁打", "ヒット", "安打", "三塁打", "二塁打", "スクイズ", "押し出し", "エラー", "失策"];
-    return logs
-      .filter(log => keyKeywords.some(keyword => log.description.includes(keyword)))
-      .map(log => `・${log.inning}回${log.isTop ? "表" : "裏"}：${log.description}`);
-  };
-
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  // 速報テキストの自動生成
+  // 速報テキストの自動生成 (メモ化)
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   const generatedText = useMemo(() => {
     if (!matchDetail) return "";
 
-    const dateStr = new Date(matchDetail.date).toLocaleDateString("ja-JP", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      weekday: "short"
-    });
+    const dateObj = new Date(matchDetail.date);
+    const month = dateObj.getMonth() + 1;
+    const date = dateObj.getDate();
+    const weekday = ["日", "月", "火", "水", "木", "金", "土"][dateObj.getDay()];
+    const dateHeader = `${month}月${date}日（${weekday}）`;
 
+    const matchHeader = `⚾️${matchName}\n対 ${opponentName} @${venueName}`;
+    
+    // 開始・終了時間の調整（未設定の場合はその行を出力しない）
+    const timeHeader = [
+      startTime ? `開始時間　${startTime}` : "",
+      endTime ? `終了時間    ${endTime}` : ""
+    ].filter(Boolean).join("\n");
+
+    const isFirst = matchDetail.battingOrder === "first";
+    const myAttackLabel = isFirst ? "先攻" : "後攻";
+    const opponentAttackLabel = isFirst ? "後攻" : "先攻";
+    
+    const myLineupText = generateLineupListText(lineups?.myLineup, "my", isFirst);
+    const oppLineupText = generateLineupListText(lineups?.opponentLineup, "opponent", !isFirst);
+    
+    // A. スタメン速報
     if (newsType === "lineup") {
-      const isFirst = matchDetail.battingOrder === "first";
-      const myAttackLabel = isFirst ? "先攻" : "後攻";
-      const opponentAttackLabel = isFirst ? "後攻" : "先攻";
-      
-      const myLineupText = generateLineupText(lineups?.myLineup);
-      const oppLineupText = generateLineupText(lineups?.opponentLineup);
-      
-      return `【スタメン発表】
-本日行われる vs ${matchDetail.opponent} のスターティングラインナップです！
-試合開始に向けて気合十分！熱いご声援をよろしくお願いいたします！🔥
+      return `${dateHeader}
+${matchHeader}
 
-📅 試合日: ${dateStr}
-
-◆ ${teamName}（${myAttackLabel}）
+◆ ${teamName} スタメン（${myAttackLabel}）
 ${myLineupText}
 
-◆ ${matchDetail.opponent}（${opponentAttackLabel}）
+◆ ${opponentName} スタメン（${opponentAttackLabel}）
 ${oppLineupText}
 ${lineupComment ? `\n💬 コメント:\n${lineupComment}\n` : ""}
 #草野球 #スタメン発表 #iScoreCloud`;
     }
 
+    // B. イニング速報 または C. 試合終了速報
+    const isEnd = newsType === "end";
+    const limitInning = isEnd ? undefined : selectedInningOption?.inning;
+    const limitIsBottom = isEnd ? undefined : selectedInningOption?.isBottom;
+
+    const scoreTable = generateScoreTableText(matchDetail, teamName, isEnd, limitInning, limitIsBottom);
+    const detailLogs = generateDetailPlayLogsText(playLogs, isEnd, limitInning, limitIsBottom);
+    
+    const footer = reporterName ? `\n速報　${reporterName}` : "";
+    const lineupSection = myLineupText ? `${myLineupText}\n` : "";
+
     if (newsType === "inning") {
-      if (!selectedInningOption) return "表示するイニングがありません。試合のプレイデータを入力してください。";
-      const { inning, isBottom } = selectedInningOption;
-      const scoreTable = generateScoreTableText(inning, isBottom, matchDetail, teamName);
-      
-      // イニング制限に基づいてログをフィルタリング
-      const sortedLogs = [...playLogs]
-        .filter(log => {
-          if (log.inning < inning) return true;
-          if (log.inning === inning) {
-            if (!isBottom) return log.isTop;
-            return true;
-          }
-          return false;
-        })
-        .sort((a, b) => a.timestamp - b.timestamp);
+      return `${dateHeader}
+${matchHeader}
+${timeHeader ? `${timeHeader}\n` : ""}${scoreTable}
 
-      const keyEvents = getKeyEvents(sortedLogs);
-      const keyEventsText = keyEvents.length > 0 
-        ? keyEvents.join("\n") 
-        : "・緊迫した展開が続いています！";
-
-      return `【経過速報】vs ${matchDetail.opponent}
-${inning}回${isBottom ? "裏" : "表"}終了時点の途中経過をお知らせします！
-
-📅 試合日: ${dateStr}
-
-◆ スコア
-${scoreTable}
-
-◆ 試合経過
-${keyEventsText}
-${inningComment ? `\n💬 戦況解説:\n${inningComment}\n` : ""}
-#草野球 #試合速報 #途中経過 #iScoreCloud`;
+${lineupSection}
+${detailLogs}${inningComment ? `\n💬 戦況解説:\n${inningComment}\n` : ""}${footer}`;
     }
 
     if (newsType === "end") {
-      const scoreTable = generateFinalScoreTableText(matchDetail, teamName);
-      const resultLabel = getResultLabel(matchDetail);
+      return `${dateHeader}
+${matchHeader}
+${timeHeader ? `${timeHeader}\n` : ""}${scoreTable}
 
-      return `【試合終了】vs ${matchDetail.opponent}
-本日の試合は ${matchDetail.myScore} - ${matchDetail.opponentScore} で【${resultLabel}】となりました！
-
-📅 試合日: ${dateStr}
-
-◆ スコアボード
-${scoreTable}
-${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : ""}${summaryText ? `\n📝 戦評・総括:\n${summaryText}\n` : ""}
-本日も選手への温かいご声援をいただき、本当にありがとうございました！
-
-#草野球 #試合終了 #ゲームセット #iScoreCloud`;
+${lineupSection}
+${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : ""}${summaryText ? `\n📝 戦評・総括:\n${summaryText}\n` : ""}${footer}`;
     }
 
     return "";
-  }, [matchDetail, lineups, playLogs, newsType, lineupComment, selectedInningOption, inningComment, heroPlayer, summaryText, teamName]);
+  }, [
+    matchDetail, lineups, playLogs, newsType, lineupComment,
+    selectedInningOption, inningComment, heroPlayer, summaryText,
+    teamName, matchName, venueName, opponentName, startTime, endTime, reporterName
+  ]);
 
   // generatedTextが変わったとき、editedTextに反映
   useEffect(() => {
@@ -463,13 +802,13 @@ ${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : ""}${summaryTe
 
   return (
     <div className="min-h-screen p-4 sm:p-6 pt-8 pb-32 animate-in fade-in duration-400 bg-zinc-950 text-foreground relative overflow-hidden">
-      {/* 🔮 背景の美しいすりガラスグラデーションオーブ */}
+      {/* 🔮 背景のオーブ */}
       <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-primary/10 rounded-full blur-[120px] pointer-events-none" />
       <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-emerald-500/5 rounded-full blur-[120px] pointer-events-none" />
 
       <div className="max-w-7xl mx-auto space-y-6 relative z-10">
         
-        {/* ヘッダーエリア */}
+        {/* ヘッダー */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div className="flex items-center gap-3">
             <Button
@@ -483,7 +822,6 @@ ${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : ""}${summaryTe
             <SectionHeader title="試合速報ジェネレーター" subtitle="NEWS GENERATOR" showPulse={false} />
           </div>
           
-          {/* 自チーム表示 */}
           <div className="px-4 py-1.5 rounded-full bg-primary/15 border border-primary/20 backdrop-blur-md self-start sm:self-center">
             <span className="text-xs font-black text-primary tracking-wider">
               🏟️ ACTIVE TEAM: {teamName}
@@ -568,11 +906,11 @@ ${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : ""}${summaryTe
                   )}
                   <h3 className="text-xs font-black text-primary tracking-widest mb-1.5">SELECTED MATCH</h3>
                   <div className="text-base font-black text-white flex items-center gap-2">
-                    {teamName} <span className="text-zinc-500">vs</span> {matchDetail.opponent}
+                    {teamName} <span className="text-zinc-500">vs</span> {opponentName}
                   </div>
                   <div className="mt-2 text-xs font-bold text-zinc-400 flex flex-wrap gap-x-4 gap-y-1">
                     <span>📅 {new Date(matchDetail.date).toLocaleDateString("ja-JP")}</span>
-                    <span>🏟️ {matchDetail.surfaceDetails || "グラウンド未設定"}</span>
+                    <span>🏟️ {venueName || "グラウンド未設定"}</span>
                     <span>⚾️ {matchDetail.matchType === "official" ? "公式戦" : "練習試合"}</span>
                   </div>
                 </div>
@@ -609,8 +947,71 @@ ${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : ""}${summaryTe
               <div className="bg-zinc-900/60 backdrop-blur-md border border-white/5 p-5 rounded-[var(--radius-xl)] space-y-4">
                 <div className="flex items-center gap-2 border-b border-white/5 pb-2.5 mb-2">
                   <Sparkles className="h-4 w-4 text-primary animate-pulse" />
-                  <h4 className="text-xs font-black text-white tracking-wider">速報テキストのカスタマイズ</h4>
+                  <h4 className="text-xs font-black text-white tracking-wider">速報パラメータの調整</h4>
                 </div>
+
+                {/* 基本情報の手動調整 */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="block text-[9.5px] font-black text-zinc-400 uppercase">試合名/大会名</label>
+                    <input
+                      type="text"
+                      value={matchName}
+                      onChange={(e) => setMatchName(e.target.value)}
+                      className="w-full h-9 bg-black/40 border border-white/10 text-white text-xs px-3 rounded-lg outline-none focus:border-primary/50"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="block text-[9.5px] font-black text-zinc-400 uppercase">球場名</label>
+                    <input
+                      type="text"
+                      value={venueName}
+                      onChange={(e) => setVenueName(e.target.value)}
+                      className="w-full h-9 bg-black/40 border border-white/10 text-white text-xs px-3 rounded-lg outline-none focus:border-primary/50"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="block text-[9.5px] font-black text-zinc-400 uppercase">対戦相手</label>
+                    <input
+                      type="text"
+                      value={opponentName}
+                      onChange={(e) => setOpponentName(e.target.value)}
+                      className="w-full h-9 bg-black/40 border border-white/10 text-white text-xs px-3 rounded-lg outline-none focus:border-primary/50"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="block text-[9.5px] font-black text-zinc-400 uppercase">速報担当者</label>
+                    <input
+                      type="text"
+                      value={reporterName}
+                      onChange={(e) => handleReporterChange(e.target.value)}
+                      placeholder="例: 赤羽  橋本"
+                      className="w-full h-9 bg-black/40 border border-white/10 text-white text-xs px-3 rounded-lg outline-none focus:border-primary/50"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="block text-[9.5px] font-black text-zinc-400 uppercase">開始時間</label>
+                    <input
+                      type="text"
+                      value={startTime}
+                      onChange={(e) => setStartTime(e.target.value)}
+                      placeholder="例: 15:20"
+                      className="w-full h-9 bg-black/40 border border-white/10 text-white text-xs px-3 rounded-lg outline-none focus:border-primary/50"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="block text-[9.5px] font-black text-zinc-400 uppercase">終了時間</label>
+                    <input
+                      type="text"
+                      value={endTime}
+                      onChange={(e) => setEndTime(e.target.value)}
+                      placeholder="例: 17:01"
+                      className="w-full h-9 bg-black/40 border border-white/10 text-white text-xs px-3 rounded-lg outline-none focus:border-primary/50"
+                    />
+                  </div>
+                </div>
+
+                <div className="border-t border-white/5 my-2" />
 
                 {/* --- A. スタメン速報用の設定 --- */}
                 {newsType === "lineup" && (
@@ -735,7 +1136,7 @@ ${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : ""}${summaryTe
                   <textarea
                     value={editedText}
                     onChange={(e) => setEditedText(e.target.value)}
-                    className="w-full min-h-[380px] bg-black/40 border border-white/5 focus:border-primary/30 text-white text-sm p-4 rounded-2xl outline-none font-mono resize-y leading-relaxed transition-all focus:ring-1 focus:ring-primary/20"
+                    className="w-full min-h-[480px] bg-black/40 border border-white/5 focus:border-primary/30 text-white text-sm p-4 rounded-2xl outline-none font-mono resize-y leading-relaxed transition-all focus:ring-1 focus:ring-primary/20"
                     placeholder="試合を選択すると、ここに自動生成された速報テキストが表示され、自由に手直し・編集ができます。"
                   />
                 )}
@@ -760,7 +1161,6 @@ ${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : ""}${summaryTe
                   </Button>
                 </div>
 
-                {/* フットノート */}
                 <p className="text-[10px] font-bold text-zinc-500 text-center">
                   ※ LINE共有ボタンを押すと、LINEアプリが開き、編集したテキストをフレンドやグループへ直接送信できます。
                 </p>
