@@ -44,8 +44,8 @@ export function PlayLog({ limit = 3 }: PlayLogProps) {
   };
 
   return (
-    {/* 💡 ユーザー要望: スクロール可能にしつつ、スクロールバーは隠して最下部の見切れを防止 (pb-2) */}
     <div className="flex flex-col gap-1.5 h-full overflow-y-auto pb-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+      {/* 💡 ユーザー要望: スクロール可能にしつつ、スクロールバーは隠して最下部の見切れを防止 (pb-2) */}
       {displayLogs.map((log, index) => {
         const isLatest = index === 0;
         const { cleanDesc, bso } = parseLogDescription(log.description);
