@@ -29,6 +29,9 @@ export function PlayArea() {
   // 打席履歴トグル用 ('current' | 'next' | null)
   const [activeHistory, setActiveHistory] = useState<'current' | 'next' | null>(null);
 
+  // 投手投球数ポップアップ
+  const [showPitcherInningCounts, setShowPitcherInningCounts] = useState(false);
+
   useEffect(() => {
     setMounted(true);
     return () => setMounted(false);
@@ -105,6 +108,51 @@ export function PlayArea() {
       }
     }
     return count;
+  };
+
+  const getPitcherInningCounts = () => {
+    const defenseLineup = state.isTop 
+      ? (state.isGuestFirst ? state.opponentLineup : state.myLineup)
+      : (state.isGuestFirst ? state.myLineup : state.opponentLineup);
+    
+    const result: { inning: number; count: number }[] = [];
+    if (!defenseLineup) return result;
+    
+    const pitcherSlot = defenseLineup.findIndex((p) => p.position === "1");
+    const isMyDefense = defenseLineup === state.myLineup;
+    const defendingTeamLabel = isMyDefense ? "自チーム" : "相手チーム";
+    
+    const countsMap: Record<number, number> = {};
+    
+    for (const log of state.logs) {
+      // 投手交代のログがあれば、それ以前の投球はカウントしない
+      if (pitcherSlot !== -1) {
+        if (
+          log.description.includes("選手交代") &&
+          log.description.includes(defendingTeamLabel) &&
+          log.description.includes(`${pitcherSlot + 1}番`)
+        ) {
+          break;
+        }
+      }
+      
+      // 該当ピッチャーが投げるイニング（表/裏が一致するログ）
+      if (log.isTop === state.isTop) {
+        const desc = log.description;
+        if (
+          /^\d+番\s/.test(desc) &&
+          !desc.includes("盗塁") &&
+          !desc.includes("進塁") &&
+          !desc.includes("選手交代")
+        ) {
+          countsMap[log.inning] = (countsMap[log.inning] || 0) + 1;
+        }
+      }
+    }
+    
+    return Object.entries(countsMap)
+      .map(([inn, cnt]) => ({ inning: parseInt(inn, 10), count: cnt }))
+      .sort((a, b) => a.inning - b.inning);
   };
 
   const handleBaseClick = (baseNum: 1 | 2 | 3) => {
@@ -222,7 +270,7 @@ export function PlayArea() {
     <div className="w-full flex flex-col items-center justify-center">
 
       {/* 🚀 バッター情報 (ダイヤモンドの上部に通常フローで配置) */}
-      <div className="w-full max-w-[340px] px-2 text-center z-50 mb-6">
+      <div className="w-full max-w-[380px] sm:max-w-[420px] px-2 text-center z-50 mb-6">
         {(() => {
           const index = isMyAttack ? state.myBattingIndex : state.opponentBattingIndex;
           const batter = offenseLineup && offenseLineup.length > index ? offenseLineup[index] : null;
@@ -239,7 +287,7 @@ export function PlayArea() {
           const nextPreviousLogs = state.logs.filter((l) => l.description.startsWith(nextSearchPrefix) && l.isTop === state.isTop);
 
           return (
-            <div className="grid grid-cols-2 gap-3 w-full max-w-[340px] mx-auto select-none">
+            <div className="grid grid-cols-2 gap-3 w-full max-w-[380px] sm:max-w-[420px] mx-auto select-none">
               
               {/* 1. 現在のバッター */}
               <div className="relative w-full">
@@ -273,7 +321,7 @@ export function PlayArea() {
 
                   {/* 中段: 打者情報 */}
                   <div className="flex items-center gap-1 mt-4 max-w-full px-1 justify-center">
-                    <span className="text-[13px] font-black truncate max-w-[110px]">
+                    <span className="text-[13px] font-black truncate">
                       {`${index + 1}番 ${batterName}`}
                     </span>
                     <ChevronDown className={cn("w-3.5 h-3.5 text-primary-foreground/80 transition-transform duration-300", activeHistory === 'current' && "rotate-180")} />
@@ -356,7 +404,7 @@ export function PlayArea() {
 
                   {/* 中段: 打者情報 */}
                   <div className="flex items-center gap-1 mt-4 max-w-full px-1 justify-center">
-                    <span className="text-[13px] font-black truncate max-w-[120px]">
+                    <span className="text-[13px] font-black truncate">
                       {`${nextIndex + 1}番 ${nextBatterName}`}
                     </span>
                     <ChevronDown className={cn("w-3.5 h-3.5 text-zinc-500 dark:text-zinc-400 transition-transform duration-300", activeHistory === 'next' && "rotate-180")} />
@@ -488,23 +536,86 @@ export function PlayArea() {
                     disabled={!state.isScorer}
                     className={cn(
                       "pointer-events-auto text-center select-none outline-none",
-                      "bg-white dark:bg-zinc-950 border border-black/10 dark:border-white/20 rounded-md px-1.5 py-0.5 min-w-[36px] shadow-sm",
+                      "bg-white dark:bg-zinc-950 border border-black/10 dark:border-white/20 rounded-md px-2 py-0.5 min-w-[44px] shadow-sm",
                       state.isScorer && "hover:bg-zinc-100 dark:hover:bg-zinc-900 active:scale-95 cursor-pointer transition-all"
                     )}
                   >
-                    <span className="text-[6px] font-bold text-black/60 dark:text-zinc-400 leading-tight block">
+                    <span className="text-[7.5px] font-black text-black/60 dark:text-zinc-400 leading-tight block">
                       {label}
                     </span>
-                    <span className="text-[8px] font-bold text-black dark:text-white max-w-[48px] truncate leading-tight block">
+                    <span className="text-[9.5px] font-black text-black dark:text-white max-w-[58px] truncate leading-tight block">
                       {player?.playerName || player?.name || "-"}
                     </span>
                   </button>
 
                   {/* 投球数は枠（ボタン）の外側に綺麗に表示する */}
                   {isPitcher && (
-                    <span className="pointer-events-none text-[8px] font-black text-primary bg-primary/10 dark:bg-primary/20 px-1.5 py-0.5 rounded-full mt-1.5 leading-none shrink-0 border border-primary/20 shadow-sm animate-in fade-in slide-in-from-top-1">
-                      {pitchCount}球
-                    </span>
+                    <div className="relative mt-1">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowPitcherInningCounts(!showPitcherInningCounts);
+                        }}
+                        className="pointer-events-auto text-[10px] font-black text-primary bg-primary/15 dark:bg-primary/25 hover:bg-primary/30 dark:hover:bg-primary/35 px-2 py-0.5 rounded-full leading-none shrink-0 border border-primary/30 dark:border-primary/40 shadow-sm active:scale-95 transition-all select-none whitespace-nowrap cursor-pointer animate-in fade-in slide-in-from-top-1"
+                      >
+                        {pitchCount}球
+                      </button>
+
+                      {/* イニング毎の投球数ポップアップ */}
+                      {showPitcherInningCounts && (
+                        <>
+                          {/* 背景クリック保護シールド */}
+                          <div 
+                            className="fixed inset-0 z-50 cursor-default" 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setShowPitcherInningCounts(false);
+                            }}
+                          />
+                          <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-40 bg-zinc-950/95 dark:bg-black/95 border border-primary/30 rounded-2xl shadow-xl z-[60] p-3 text-left backdrop-blur-md animate-in fade-in slide-in-from-top-2 duration-200 pointer-events-auto">
+                            <div className="flex items-center justify-between border-b border-primary/20 pb-1.5 mb-1.5">
+                              <span className="text-[9px] font-black text-primary uppercase tracking-wider">
+                                イニング別投球数
+                              </span>
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setShowPitcherInningCounts(false);
+                                }}
+                                className="text-zinc-400 hover:text-white p-0.5 rounded-full hover:bg-white/10"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </div>
+                            
+                            {/* イニング別投球数一覧 */}
+                            {getPitcherInningCounts().length > 0 ? (
+                              <div className="space-y-1 max-h-32 overflow-y-auto pr-1">
+                                {getPitcherInningCounts().map(({ inning, count }) => (
+                                  <div 
+                                    key={inning} 
+                                    className="flex items-center justify-between py-1 px-2 rounded-lg bg-white/5 dark:bg-zinc-900/50 border border-white/5 text-[10px] font-bold text-zinc-300"
+                                  >
+                                    <span className="text-primary">{inning}回{state.isTop ? "表" : "裏"}</span>
+                                    <span className="text-zinc-100 font-extrabold">{count}球</span>
+                                  </div>
+                                ))}
+                                {/* 合計表示 */}
+                                <div className="flex items-center justify-between py-1 px-2 rounded-lg bg-primary/10 dark:bg-primary/20 border border-primary/20 text-[10px] font-black text-primary/90 mt-1.5">
+                                  <span>合計</span>
+                                  <span className="text-primary font-black">{pitchCount}球</span>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="py-2 text-center text-zinc-500 text-[10px]">
+                                投球データがありません
+                              </div>
+                            )}
+                          </div>
+                        </>
+                      )}
+                    </div>
                   )}
                 </div>
               );

@@ -161,7 +161,7 @@ export function PlayLog({ limit = 3 }: PlayLogProps) {
               "relative flex items-center gap-3 transition-all duration-300",
               isLatest 
                 ? "bg-primary/15 dark:bg-primary/25 text-black dark:text-black px-2.5 py-1 rounded-lg border border-primary/40 dark:border-primary/50 shadow-sm animate-playlog-slide-in z-10" 
-                : "bg-primary/5 dark:bg-primary/10 text-muted-foreground/70 px-2.5 py-0.5 rounded-lg border border-primary/10 dark:border-primary/15 opacity-50 hover:opacity-90 hover:scale-[1.002]"
+                : "bg-primary/5 dark:bg-primary/10 text-zinc-800 dark:text-zinc-200 px-2.5 py-0.5 rounded-lg border border-primary/10 dark:border-primary/15 opacity-90 hover:opacity-100 hover:scale-[1.002]"
             )}
           >
             {/* イニング */}
@@ -176,7 +176,7 @@ export function PlayLog({ limit = 3 }: PlayLogProps) {
             <div className="flex-1 min-w-0 flex items-center gap-1.5">
               <span className={cn(
                 "font-bold tracking-tight truncate",
-                isLatest ? "text-black dark:text-black" : "text-muted-foreground/60 dark:text-zinc-500",
+                isLatest ? "text-black dark:text-black" : "text-zinc-700 dark:text-zinc-300",
                 limit === 1 ? "text-[14px]" : "text-[13px]"
               )}>
                 {cleanDesc}
@@ -252,7 +252,7 @@ export function PlayLog({ limit = 3 }: PlayLogProps) {
             ) : (
               <span className={cn(
                 "text-[9px] font-mono shrink-0",
-                isLatest ? "text-black/60 dark:text-black/60" : "opacity-40"
+                isLatest ? "text-black/60 dark:text-black/60" : "text-zinc-500/80 dark:text-zinc-400/80"
               )}>
                 {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </span>
