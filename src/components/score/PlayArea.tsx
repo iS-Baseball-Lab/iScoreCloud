@@ -7,7 +7,7 @@ import { useScore } from "@/contexts/ScoreContext";
 import { cn } from "@/lib/utils";
 import { RunnerActionModal } from "./RunnerActionModal";
 import { SubstitutionModal } from "./SubstitutionModal";
-import { X, UserPlus, Check, User } from "lucide-react";
+import { X, UserPlus, Check, User, ChevronDown } from "lucide-react";
 
 export function PlayArea() {
   const { state, updateRunners, recordInPlay, recordRunnerAction, substitutePlayer } = useScore();
@@ -25,6 +25,9 @@ export function PlayArea() {
   const [subOpen, setSubOpen] = useState(false);
   const [subInitialTab, setSubInitialTab] = useState<'my' | 'opponent'>('my');
   const [subInitialSlot, setSubInitialSlot] = useState<number | null>(null);
+
+  // 打席履歴トグル用
+  const [showBatterHistory, setShowBatterHistory] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -60,6 +63,48 @@ export function PlayArea() {
     }
     const player = offenseLineup?.find((p) => p.playerId === runnerId || p.id === runnerId);
     return player?.playerName || player?.name || "走者";
+  };
+
+  const getPitcherCount = () => {
+    const defenseLineup = state.isTop 
+      ? (state.isGuestFirst ? state.opponentLineup : state.myLineup)
+      : (state.isGuestFirst ? state.myLineup : state.opponentLineup);
+    
+    if (!defenseLineup) return 0;
+    
+    const pitcherSlot = defenseLineup.findIndex((p) => p.position === "1");
+    const isMyDefense = defenseLineup === state.myLineup;
+    const defendingTeamLabel = isMyDefense ? "自チーム" : "相手チーム";
+    
+    let count = 0;
+    for (const log of state.logs) {
+      // 投手交代のログがあれば、それ以前の投球はカウントしない
+      if (pitcherSlot !== -1) {
+        if (
+          log.description.includes("選手交代") &&
+          log.description.includes(defendingTeamLabel) &&
+          log.description.includes(`${pitcherSlot + 1}番`)
+        ) {
+          break;
+        }
+      }
+      
+      // 現在のイニング表裏と同じ（＝同じチームが守備している時のログ）
+      if (log.isTop === state.isTop) {
+        const desc = log.description;
+        // 打席のプレイ（投球・打球）を表すログかどうか判定
+        // 「X番 」で始まり、盗塁・進塁・選手交代を含まないもの
+        if (
+          /^\d+番\s/.test(desc) &&
+          !desc.includes("盗塁") &&
+          !desc.includes("進塁") &&
+          !desc.includes("選手交代")
+        ) {
+          count++;
+        }
+      }
+    }
+    return count;
   };
 
   const handleBaseClick = (baseNum: 1 | 2 | 3) => {
@@ -129,9 +174,14 @@ export function PlayArea() {
 
     return (
       <div className={cn("absolute z-20 flex flex-col items-center", positions[baseNum])}>
-        {/* ランナー名の表示（ベースの上部または横に重ねる） */}
+        {/* ランナー名の表示（ベースの上部または下部に重ねる） */}
         {isRunner && (
-          <div className="absolute -top-7 bg-zinc-950 dark:bg-black border border-primary/40 dark:border-primary/50 text-[10px] font-black px-1.5 py-0.5 rounded shadow-md z-30 whitespace-nowrap animate-in fade-in slide-in-from-bottom-1 text-primary">
+          <div className={cn(
+            "absolute bg-zinc-950 dark:bg-black border border-primary/40 dark:border-primary/50 text-[10px] font-black px-1.5 py-0.5 rounded shadow-md z-30 whitespace-nowrap animate-in fade-in text-primary",
+            baseNum === 2
+              ? "top-8 slide-in-from-top-1" // 2塁は下側に下げてベース下角と重ねる
+              : "-top-3.5 slide-in-from-bottom-1" // 1・3塁は少し下げてベース上角と重ねる
+          )}>
             {name}
           </div>
         )}
@@ -201,25 +251,88 @@ export function PlayArea() {
               </div>
 
               {/* 現在のバッター */}
-              <div className="shrink-0 flex items-center gap-1.5 bg-primary px-3 py-1.5 rounded-full shadow-lg shadow-primary/20">
-                <span className="text-[10px] font-black text-primary-foreground/80 uppercase tracking-wider">Bat</span>
-                <span className="text-[13px] font-black text-primary-foreground">
-                  {`${index + 1}番 ${batterName}`}
-                </span>
-                {state.isScorer && (
-                  <button
-                    type="button"
-                    className="pointer-events-auto ml-1 bg-white/20 hover:bg-white/30 text-primary-foreground text-[9px] font-bold px-1.5 py-0.5 rounded transition-colors"
-                    onClick={() => {
-                      const newName = window.prompt("代打の選手名を入力してください");
-                      if (newName) {
-                        const newId = `sub-${Date.now()}`;
-                        substitutePlayer?.(isMyAttack ? 'my' : 'opponent', index, newId, newName);
-                      }
-                    }}
-                  >
-                    代打
-                  </button>
+              <div className="relative shrink-0">
+                <div 
+                  onClick={() => setShowBatterHistory(!showBatterHistory)}
+                  className="flex items-center gap-1.5 bg-primary px-3 py-1.5 rounded-full shadow-lg shadow-primary/20 cursor-pointer hover:bg-primary/90 transition-all select-none"
+                >
+                  <span className="text-[10px] font-black text-primary-foreground/80 uppercase tracking-wider">Bat</span>
+                  <span className="text-[13px] font-black text-primary-foreground">
+                    {`${index + 1}番 ${batterName}`}
+                  </span>
+                  <ChevronDown className={cn("w-3.5 h-3.5 text-primary-foreground/80 transition-transform duration-300", showBatterHistory && "rotate-180")} />
+                  
+                  {state.isScorer && (
+                    <button
+                      type="button"
+                      className="pointer-events-auto ml-1 bg-white/20 hover:bg-white/30 text-primary-foreground text-[9px] font-bold px-1.5 py-0.5 rounded transition-colors"
+                      onClick={(e) => {
+                        e.stopPropagation(); // ドロップダウンを開くのを防ぐ
+                        setSubInitialTab(isMyAttack ? 'my' : 'opponent');
+                        setSubInitialSlot(index);
+                        setSubOpen(true);
+                      }}
+                    >
+                      代打
+                    </button>
+                  )}
+                </div>
+
+                {/* ドロップダウン履歴 */}
+                {showBatterHistory && (
+                  <>
+                    {/* Click outside shield */}
+                    <div 
+                      className="fixed inset-0 z-50 cursor-default" 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowBatterHistory(false);
+                      }}
+                    />
+                    <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-64 bg-zinc-950/95 dark:bg-black/95 border border-primary/30 rounded-2xl shadow-xl z-[60] p-3 text-left backdrop-blur-md animate-in fade-in slide-in-from-top-2 duration-200">
+                      <div className="flex items-center justify-between border-b border-primary/20 pb-2 mb-2">
+                        <span className="text-[10px] font-black text-primary uppercase tracking-wider">
+                          {batterName}の打席履歴 ({previousLogs.length}打席)
+                        </span>
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setShowBatterHistory(false);
+                          }}
+                          className="text-zinc-400 hover:text-white p-0.5 rounded-full hover:bg-white/10"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                      
+                      {previousLogs.length > 0 ? (
+                        <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+                          {previousLogs.map((log, logIdx) => {
+                            const parts = log.description.split(/[:：]/);
+                            const rawResult = parts.length > 1 ? parts[1].trim() : log.description;
+                            const cleanResult = rawResult.replace(/\s*\[B:\d+,\s*S:\d+,\s*O:\d+\]\s*$/, "");
+                            
+                            return (
+                              <div 
+                                key={log.id} 
+                                className="flex items-center justify-between py-1.5 px-2 rounded-lg bg-white/5 dark:bg-zinc-900/50 border border-white/5 text-[11px] font-medium text-zinc-300 hover:bg-white/10 dark:hover:bg-zinc-900/80 transition-colors"
+                              >
+                                <span className="font-bold text-primary/80 shrink-0 mr-2">{log.inning}回{log.isTop ? "表" : "裏"}</span>
+                                <span className="truncate text-zinc-100 font-semibold flex-1">{cleanResult}</span>
+                                <span className="text-[9px] text-zinc-500 font-bold shrink-0 ml-2">
+                                  第{previousLogs.length - logIdx}打席
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="py-4 text-center text-zinc-500 text-[11px]">
+                          今試合の打席履歴はありません
+                        </div>
+                      )}
+                    </div>
+                  </>
                 )}
               </div>
 
@@ -267,17 +380,20 @@ export function PlayArea() {
             const positions: Record<string, { label: string, posClass: string }> = {
               "1": { label: "P", posClass: "top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" },
               "2": { label: "C", posClass: "bottom-[22px] left-1/2 -translate-x-1/2" },
-              "3": { label: "1B", posClass: "top-[60%] right-[-10px]" },
+              "3": { label: "1B", posClass: "top-[65%] right-0 translate-x-1/2" }, // 1塁ベースの真下
               "4": { label: "2B", posClass: "top-[25%] right-[20%]" },
-              "5": { label: "3B", posClass: "top-[60%] left-[-10px]" },
+              "5": { label: "3B", posClass: "top-[65%] left-0 -translate-x-1/2" }, // 3塁ベースの真下
               "6": { label: "SS", posClass: "top-[25%] left-[20%]" },
               "7": { label: "LF", posClass: "top-[-5%] left-[-10%]" },
               "8": { label: "CF", posClass: "top-[-20%] left-1/2 -translate-x-1/2" },
               "9": { label: "RF", posClass: "top-[-5%] right-[-10%]" },
             };
 
+            const pitchCount = getPitcherCount();
+
             return Object.entries(positions).map(([posNum, { label, posClass }]) => {
               const player = defenseLineup.find((p) => p.position === posNum);
+              const isPitcher = posNum === "1";
 
               // 野手の表示（ボタン化して pointer-events-auto を設定しタップ可能にする）
               return (
@@ -288,15 +404,30 @@ export function PlayArea() {
                   disabled={!state.isScorer}
                   className={cn(
                     `absolute ${posClass} flex flex-col items-center z-10`,
-                    "pointer-events-auto",
-                    "bg-white dark:bg-zinc-950 border border-black/10 dark:border-white/20 rounded-md px-1.5 py-0.5 min-w-[36px] shadow-sm text-center select-none outline-none",
-                    state.isScorer && "hover:bg-zinc-100 dark:hover:bg-zinc-900 active:scale-95 cursor-pointer transition-all"
+                    "pointer-events-auto text-center select-none outline-none",
+                    isPitcher 
+                      ? "bg-primary/5 dark:bg-primary/10 border border-primary/40 dark:border-primary/50 rounded-lg px-2 py-1 min-w-[56px] shadow-[0_2px_8px_rgba(var(--primary),0.15)] ring-1 ring-primary/20"
+                      : "bg-white dark:bg-zinc-950 border border-black/10 dark:border-white/20 rounded-md px-1.5 py-0.5 min-w-[36px] shadow-sm",
+                    state.isScorer && (isPitcher ? "hover:bg-primary/10 dark:hover:bg-primary/20" : "hover:bg-zinc-100 dark:hover:bg-zinc-900") + " active:scale-95 cursor-pointer transition-all"
                   )}
                 >
-                  <span className="text-[6px] font-bold text-black/60 dark:text-zinc-400 leading-tight">{label}</span>
-                  <span className="text-[8px] font-bold text-black dark:text-white truncate max-w-[48px] leading-tight">
+                  <span className={cn(
+                    "font-bold leading-tight",
+                    isPitcher ? "text-[8px] text-primary" : "text-[6px] text-black/60 dark:text-zinc-400"
+                  )}>
+                    {label}
+                  </span>
+                  <span className={cn(
+                    "font-bold truncate leading-tight",
+                    isPitcher ? "text-[10px] text-zinc-900 dark:text-white max-w-[52px] mt-0.5" : "text-[8px] text-black dark:text-white max-w-[48px]"
+                  )}>
                     {player?.playerName || player?.name || "-"}
                   </span>
+                  {isPitcher && (
+                    <span className="text-[8px] font-black text-primary bg-primary/10 dark:bg-primary/20 px-1.5 py-0.5 rounded-full mt-1.5 leading-none shrink-0 border border-primary/20 shadow-sm">
+                      {pitchCount}球
+                    </span>
+                  )}
                 </button>
               );
             });
