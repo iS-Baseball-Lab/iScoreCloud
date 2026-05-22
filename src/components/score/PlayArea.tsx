@@ -26,8 +26,8 @@ export function PlayArea() {
   const [subInitialTab, setSubInitialTab] = useState<'my' | 'opponent'>('my');
   const [subInitialSlot, setSubInitialSlot] = useState<number | null>(null);
 
-  // 打席履歴トグル用
-  const [showBatterHistory, setShowBatterHistory] = useState(false);
+  // 打席履歴トグル用 ('current' | 'next' | null)
+  const [activeHistory, setActiveHistory] = useState<'current' | 'next' | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -230,66 +230,68 @@ export function PlayArea() {
           
           const searchPrefix = `${index + 1}番`;
           const previousLogs = state.logs.filter((l) => l.description.startsWith(searchPrefix) && l.isTop === state.isTop);
-          let prevResult = "データなし";
-          if (previousLogs.length > 0) {
-            const desc = previousLogs[0].description;
-            const parts = desc.split(/[:：]/);
-            prevResult = parts.length > 1 ? parts[1].trim() : desc;
-          }
 
           const nextIndex = (index + 1) % (offenseLineup?.length || 9);
           const nextBatter = offenseLineup && offenseLineup.length > nextIndex ? offenseLineup[nextIndex] : null;
           const nextBatterName = nextBatter ? (nextBatter.playerName || nextBatter.name || "未設定") : "(未設定)";
 
-          return (
-            <div className="flex items-center justify-center w-full gap-1">
-              {/* 前打席 */}
-              <div className="flex-1 flex justify-end min-w-0">
-                <span className="text-[9px] font-bold text-muted-foreground bg-muted/40 px-2 py-0.5 rounded-full truncate max-w-full border border-border/50">
-                  前: {prevResult}
-                </span>
-              </div>
+          const nextSearchPrefix = `${nextIndex + 1}番`;
+          const nextPreviousLogs = state.logs.filter((l) => l.description.startsWith(nextSearchPrefix) && l.isTop === state.isTop);
 
-              {/* 現在のバッター */}
-              <div className="relative shrink-0">
+          return (
+            <div className="grid grid-cols-2 gap-3 w-full max-w-[340px] mx-auto select-none">
+              
+              {/* 1. 現在のバッター */}
+              <div className="relative w-full">
                 <div 
-                  onClick={() => setShowBatterHistory(!showBatterHistory)}
-                  className="flex items-center gap-1.5 bg-primary px-3 py-1.5 rounded-full shadow-lg shadow-primary/20 cursor-pointer hover:bg-primary/90 transition-all select-none"
-                >
-                  <span className="text-[10px] font-black text-primary-foreground/80 uppercase tracking-wider">Bat</span>
-                  <span className="text-[13px] font-black text-primary-foreground">
-                    {`${index + 1}番 ${batterName}`}
-                  </span>
-                  <ChevronDown className={cn("w-3.5 h-3.5 text-primary-foreground/80 transition-transform duration-300", showBatterHistory && "rotate-180")} />
-                  
-                  {state.isScorer && (
-                    <button
-                      type="button"
-                      className="pointer-events-auto ml-1 bg-white/20 hover:bg-white/30 text-primary-foreground text-[9px] font-bold px-1.5 py-0.5 rounded transition-colors"
-                      onClick={(e) => {
-                        e.stopPropagation(); // ドロップダウンを開くのを防ぐ
-                        setSubInitialTab(isMyAttack ? 'my' : 'opponent');
-                        setSubInitialSlot(index);
-                        setSubOpen(true);
-                      }}
-                    >
-                      代打
-                    </button>
+                  onClick={() => setActiveHistory(activeHistory === 'current' ? null : 'current')}
+                  className={cn(
+                    "w-full flex flex-col items-center justify-center bg-primary text-primary-foreground p-2 rounded-2xl shadow-md border border-primary/10 cursor-pointer hover:bg-primary/95 transition-all select-none h-16 relative",
+                    activeHistory === 'current' && "ring-2 ring-primary-foreground/30"
                   )}
+                >
+                  {/* 上段ラベルと代打ボタン */}
+                  <div className="w-full flex items-center justify-between px-1 absolute top-1.5 left-0">
+                    <span className="text-[8px] font-black text-primary-foreground/70 uppercase tracking-widest bg-white/10 px-1.5 py-0.5 rounded leading-none">
+                      Bat
+                    </span>
+                    {state.isScorer && (
+                      <button
+                        type="button"
+                        className="pointer-events-auto bg-white/20 hover:bg-white/30 text-primary-foreground text-[8px] font-black px-1.5 py-0.5 rounded transition-colors leading-none"
+                        onClick={(e) => {
+                          e.stopPropagation(); // ドロップダウンを開くのを防ぐ
+                          setSubInitialTab(isMyAttack ? 'my' : 'opponent');
+                          setSubInitialSlot(index);
+                          setSubOpen(true);
+                        }}
+                      >
+                        代打
+                      </button>
+                    )}
+                  </div>
+
+                  {/* 中段: 打者情報 */}
+                  <div className="flex items-center gap-1 mt-4 max-w-full px-1 justify-center">
+                    <span className="text-[13px] font-black truncate max-w-[110px]">
+                      {`${index + 1}番 ${batterName}`}
+                    </span>
+                    <ChevronDown className={cn("w-3.5 h-3.5 text-primary-foreground/80 transition-transform duration-300", activeHistory === 'current' && "rotate-180")} />
+                  </div>
                 </div>
 
-                {/* ドロップダウン履歴 */}
-                {showBatterHistory && (
+                {/* ドロップダウン履歴 (現在のバッター用) */}
+                {activeHistory === 'current' && (
                   <>
                     {/* Click outside shield */}
                     <div 
                       className="fixed inset-0 z-50 cursor-default" 
                       onClick={(e) => {
                         e.stopPropagation();
-                        setShowBatterHistory(false);
+                        setActiveHistory(null);
                       }}
                     />
-                    <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-64 bg-zinc-950/95 dark:bg-black/95 border border-primary/30 rounded-2xl shadow-xl z-[60] p-3 text-left backdrop-blur-md animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="absolute top-full left-0 mt-2 w-64 bg-zinc-950/95 dark:bg-black/95 border border-primary/30 rounded-2xl shadow-xl z-[60] p-3 text-left backdrop-blur-md animate-in fade-in slide-in-from-top-2 duration-200">
                       <div className="flex items-center justify-between border-b border-primary/20 pb-2 mb-2">
                         <span className="text-[10px] font-black text-primary uppercase tracking-wider">
                           {batterName}の打席履歴 ({previousLogs.length}打席)
@@ -297,7 +299,7 @@ export function PlayArea() {
                         <button 
                           onClick={(e) => {
                             e.stopPropagation();
-                            setShowBatterHistory(false);
+                            setActiveHistory(null);
                           }}
                           className="text-zinc-400 hover:text-white p-0.5 rounded-full hover:bg-white/10"
                         >
@@ -336,12 +338,89 @@ export function PlayArea() {
                 )}
               </div>
 
-              {/* NEXTバッター */}
-              <div className="flex-1 flex justify-start min-w-0">
-                <span className="text-[9px] font-bold text-muted-foreground bg-muted/40 px-2 py-0.5 rounded-full truncate max-w-full border border-border/50">
-                  次: {nextBatterName}
-                </span>
+              {/* 2. ネクストバッター */}
+              <div className="relative w-full">
+                <div 
+                  onClick={() => setActiveHistory(activeHistory === 'next' ? null : 'next')}
+                  className={cn(
+                    "w-full flex flex-col items-center justify-center bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-800 dark:text-zinc-100 p-2 rounded-2xl shadow-sm cursor-pointer hover:bg-zinc-200 dark:hover:bg-zinc-800/80 transition-all select-none h-16 relative",
+                    activeHistory === 'next' && "ring-2 ring-primary/30"
+                  )}
+                >
+                  {/* 上段ラベル */}
+                  <div className="w-full flex items-center justify-start px-1 absolute top-1.5 left-0">
+                    <span className="text-[8px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest bg-zinc-200/50 dark:bg-zinc-800/50 px-1.5 py-0.5 rounded leading-none border border-zinc-300/30 dark:border-zinc-700/30">
+                      Next
+                    </span>
+                  </div>
+
+                  {/* 中段: 打者情報 */}
+                  <div className="flex items-center gap-1 mt-4 max-w-full px-1 justify-center">
+                    <span className="text-[13px] font-black truncate max-w-[120px]">
+                      {`${nextIndex + 1}番 ${nextBatterName}`}
+                    </span>
+                    <ChevronDown className={cn("w-3.5 h-3.5 text-zinc-500 dark:text-zinc-400 transition-transform duration-300", activeHistory === 'next' && "rotate-180")} />
+                  </div>
+                </div>
+
+                {/* ドロップダウン履歴 (ネクストバッター用) */}
+                {activeHistory === 'next' && (
+                  <>
+                    {/* Click outside shield */}
+                    <div 
+                      className="fixed inset-0 z-50 cursor-default" 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActiveHistory(null);
+                      }}
+                    />
+                    <div className="absolute top-full right-0 mt-2 w-64 bg-zinc-950/95 dark:bg-black/95 border border-primary/30 rounded-2xl shadow-xl z-[60] p-3 text-left backdrop-blur-md animate-in fade-in slide-in-from-top-2 duration-200">
+                      <div className="flex items-center justify-between border-b border-primary/20 pb-2 mb-2">
+                        <span className="text-[10px] font-black text-primary uppercase tracking-wider">
+                          {nextBatterName}の打席履歴 ({nextPreviousLogs.length}打席)
+                        </span>
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveHistory(null);
+                          }}
+                          className="text-zinc-400 hover:text-white p-0.5 rounded-full hover:bg-white/10"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                      
+                      {nextPreviousLogs.length > 0 ? (
+                        <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+                          {nextPreviousLogs.map((log, logIdx) => {
+                            const parts = log.description.split(/[:：]/);
+                            const rawResult = parts.length > 1 ? parts[1].trim() : log.description;
+                            const cleanResult = rawResult.replace(/\s*\[B:\d+,\s*S:\d+,\s*O:\d+\]\s*$/, "");
+                            
+                            return (
+                              <div 
+                                key={log.id} 
+                                className="flex items-center justify-between py-1.5 px-2 rounded-lg bg-white/5 dark:bg-zinc-900/50 border border-white/5 text-[11px] font-medium text-zinc-300 hover:bg-white/10 dark:hover:bg-zinc-900/80 transition-colors"
+                              >
+                                <span className="font-bold text-primary/80 shrink-0 mr-2">{log.inning}回{log.isTop ? "表" : "裏"}</span>
+                                <span className="truncate text-zinc-100 font-semibold flex-1">{cleanResult}</span>
+                                <span className="text-[9px] text-zinc-500 font-bold shrink-0 ml-2">
+                                  第{nextPreviousLogs.length - logIdx}打席
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="py-4 text-center text-zinc-500 text-[11px]">
+                          今試合の打席履歴はありません
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
               </div>
+
             </div>
           );
         })()}
