@@ -226,7 +226,7 @@ export function PlayArea() {
         {isRunner && (
           <div className={cn(
             "absolute text-[10px] font-black px-1.5 py-0.5 rounded shadow-md z-30 whitespace-nowrap animate-in fade-in transition-all duration-300",
-            "bg-primary text-primary-foreground border border-primary/20",
+            "bg-white text-primary border border-primary",
             "dark:bg-black dark:border-primary/50 dark:text-primary",
             baseNum === 2
               ? "top-8 slide-in-from-top-1" // 2塁は下側に下げてベース下角と重ねる
