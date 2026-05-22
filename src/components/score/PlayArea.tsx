@@ -488,7 +488,7 @@ export function PlayArea() {
         <Base baseNum={3} isRunner={!!runners.base3} />
 
         {/* 🏠 ホームベース（静的装飾 / 完璧なSVG五角形リアル比率） */}
-        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 w-10 h-10 flex items-center justify-center pointer-events-none z-20">
+        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 w-10 h-10 flex items-center justify-center pointer-events-none z-5">
           <svg viewBox="0 0 100 100" className="w-8 h-8 drop-shadow-[0_2px_6px_rgba(0,0,0,0.15)] dark:drop-shadow-[0_2px_6px_rgba(255,255,255,0.1)]">
             <polygon
               points="0,0 100,0 100,50 50,100 0,50"
@@ -498,7 +498,7 @@ export function PlayArea() {
         </div>
 
         {/* 守備位置の表示 */}
-        <div className="absolute inset-0 pointer-events-none z-10">
+        <div className={cn("absolute inset-0 pointer-events-none", showPitcherInningCounts ? "z-40" : "z-10")}>
           {(() => {
             const defenseLineup = state.isTop 
               ? (state.isGuestFirst ? state.opponentLineup : state.myLineup)
@@ -511,9 +511,9 @@ export function PlayArea() {
               "1": { label: "P", posClass: "top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" },
               "2": { label: "C", posClass: "bottom-[22px] left-1/2 -translate-x-1/2" },
               "3": { label: "1B", posClass: "top-[65%] right-0 translate-x-1/2" }, // 1塁ベースの真下
-              "4": { label: "2B", posClass: "top-[25%] right-[20%]" },
+              "4": { label: "2B", posClass: "top-[18%] right-[16%]" },
               "5": { label: "3B", posClass: "top-[65%] left-0 -translate-x-1/2" }, // 3塁ベースの真下
-              "6": { label: "SS", posClass: "top-[25%] left-[20%]" },
+              "6": { label: "SS", posClass: "top-[18%] left-[16%]" },
               "7": { label: "LF", posClass: "top-[-5%] left-[-10%]" },
               "8": { label: "CF", posClass: "top-[-20%] left-1/2 -translate-x-1/2" },
               "9": { label: "RF", posClass: "top-[-5%] right-[-10%]" },
@@ -530,7 +530,8 @@ export function PlayArea() {
                 <div
                   key={posNum}
                   className={cn(
-                    `absolute ${posClass} flex flex-col items-center z-10 text-center select-none`
+                    `absolute ${posClass} flex flex-col items-center text-center select-none`,
+                    isPitcher && showPitcherInningCounts ? "z-50" : "z-10"
                   )}
                 >
                   <button
@@ -560,7 +561,7 @@ export function PlayArea() {
                           e.stopPropagation();
                           setShowPitcherInningCounts(!showPitcherInningCounts);
                         }}
-                        className="pointer-events-auto text-[10px] font-black text-primary bg-primary/15 dark:bg-primary/25 hover:bg-primary/30 dark:hover:bg-primary/35 px-2 py-0.5 rounded-full leading-none shrink-0 border border-primary/30 dark:border-primary/40 shadow-sm active:scale-95 transition-all select-none whitespace-nowrap cursor-pointer animate-in fade-in slide-in-from-top-1"
+                        className="pointer-events-auto text-[11.5px] font-black text-primary bg-primary/15 dark:bg-primary/25 hover:bg-primary/30 dark:hover:bg-primary/35 px-2.5 py-1 rounded-full leading-none shrink-0 border border-primary/30 dark:border-primary/40 shadow-sm active:scale-95 transition-all select-none whitespace-nowrap cursor-pointer animate-in fade-in slide-in-from-top-1"
                       >
                         {pitchCount}球
                       </button>
@@ -576,7 +577,7 @@ export function PlayArea() {
                               setShowPitcherInningCounts(false);
                             }}
                           />
-                          <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-40 bg-zinc-950/95 dark:bg-black/95 border border-primary/30 rounded-2xl shadow-xl z-[60] p-3 text-left backdrop-blur-md animate-in fade-in slide-in-from-top-2 duration-200 pointer-events-auto">
+                          <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-[220px] bg-zinc-950/95 dark:bg-black/95 border border-primary/30 rounded-2xl shadow-xl z-[60] p-3 text-left backdrop-blur-md animate-in fade-in slide-in-from-top-2 duration-200 pointer-events-auto">
                             <div className="flex items-center justify-between border-b border-primary/20 pb-1.5 mb-1.5">
                               <span className="text-[9px] font-black text-primary uppercase tracking-wider">
                                 イニング別投球数
@@ -594,18 +595,20 @@ export function PlayArea() {
                             
                             {/* イニング別投球数一覧 */}
                             {getPitcherInningCounts().length > 0 ? (
-                              <div className="space-y-1 max-h-32 overflow-y-auto pr-1">
-                                {getPitcherInningCounts().map(({ inning, count }) => (
-                                  <div 
-                                    key={inning} 
-                                    className="flex items-center justify-between py-1 px-2 rounded-lg bg-white/5 dark:bg-zinc-900/50 border border-white/5 text-[10px] font-bold text-zinc-300"
-                                  >
-                                    <span className="text-primary">{inning}回{state.isTop ? "表" : "裏"}</span>
-                                    <span className="text-zinc-100 font-extrabold">{count}球</span>
-                                  </div>
-                                ))}
+                              <div className="flex flex-col gap-2">
+                                <div className="flex flex-row flex-wrap gap-1.5 max-h-32 overflow-y-auto pr-1">
+                                  {getPitcherInningCounts().map(({ inning, count }) => (
+                                    <div 
+                                      key={inning} 
+                                      className="flex items-center gap-1.5 py-1 px-2 rounded-lg bg-white/5 dark:bg-zinc-900/50 border border-white/5 text-[10px] font-bold text-zinc-300 whitespace-nowrap"
+                                    >
+                                      <span className="text-primary">{inning}回</span>
+                                      <span className="text-zinc-100 font-extrabold">{count}球</span>
+                                    </div>
+                                  ))}
+                                </div>
                                 {/* 合計表示 */}
-                                <div className="flex items-center justify-between py-1 px-2 rounded-lg bg-primary/10 dark:bg-primary/20 border border-primary/20 text-[10px] font-black text-primary/90 mt-1.5">
+                                <div className="flex items-center justify-between py-1 px-2.5 rounded-lg bg-primary/10 dark:bg-primary/20 border border-primary/20 text-[10px] font-black text-primary/90 mt-0.5">
                                   <span>合計</span>
                                   <span className="text-primary font-black">{pitchCount}球</span>
                                 </div>
