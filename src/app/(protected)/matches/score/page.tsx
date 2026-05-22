@@ -14,7 +14,7 @@ import { ControlPanel } from "@/components/score/ControlPanel";
 import { PlayArea } from "@/components/score/PlayArea";
 import { PlayLog } from "@/components/score/PlayLog";
 import { cn } from "@/lib/utils";
-import { Loader2, ChevronUp } from "lucide-react";
+import { Loader2, ChevronUp, History } from "lucide-react";
 
 function ScorePageContent() {
   const searchParams = useSearchParams();
@@ -90,7 +90,7 @@ function ScorePageContent() {
               onClick={() => setIsLogExpanded(!isLogExpanded)}
             >
               <div className="flex items-center gap-1.5">
-                <div className="w-1.5 h-1.5 rounded-full bg-primary" />
+                <History className="w-4 h-4 text-primary shrink-0" />
                 <span className="text-[13.5px] font-black tracking-widest text-foreground">プレイログ</span>
               </div>
               <div className="flex items-center gap-1">

@@ -323,17 +323,17 @@
 /* =======================================================
    ⚾️ 9. CUSTOM UTILITY ANIMATIONS (PLAYLOG SLIDE-IN)
    ======================================================= */
-@keyframes playlog-slide-in-right {
+@keyframes playlog-slide-in-top {
   from {
-    transform: translateX(100%);
+    transform: translateY(-20px);
     opacity: 0;
   }
   to {
-    transform: translateX(0);
+    transform: translateY(0);
     opacity: 1;
   }
 }
 
 .animate-playlog-slide-in {
-  animation: playlog-slide-in-right 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: playlog-slide-in-top 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }

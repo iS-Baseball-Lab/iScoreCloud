@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { 
-  ArrowLeft, Copy, Check, Send, Sparkles, RotateCcw, 
+  Copy, Check, Send, Sparkles, RotateCcw, 
   Users, Trophy, ChevronRight, FileText, Activity
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -267,8 +267,9 @@ export default function NewsGeneratorPage() {
   const selectedInningOption = inningOptions[selectedInningIndex];
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  // 🏟️ スコアボードテキストの動的生成 (スペース揃え等幅仕様)
+  // 🏟️ スコアボードテキストの動的生成 (プロポーショナルフォント最適化仕様)
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // 🏟️ スコアボードテキストの動的生成 (プロポーショナルフォント最適化仕様)
   const generateScoreTableText = (
     match: any,
     isFinal: boolean,
@@ -289,60 +290,44 @@ export default function NewsGeneratorPage() {
       inningCount = Math.max(inningLimit, regulationInnings);
     }
     
-    // チーム名整形（全角2文字なら間に全角スペースを挟んで幅を合わせる）
+    // チーム名整形（全角2文字なら間に全角スペースを挟んで全角3文字相当にする）
     const formatTeamName = (teamName: string) => {
       let formatted = teamName.trim();
       if (formatted.length === 2) {
         formatted = `${formatted[0]}　${formatted[1]}`;
       }
-      
-      // 全角半角を考慮して幅をパディング
-      const getVisualLength = (str: string) => {
-        let len = 0;
-        for (let i = 0; i < str.length; i++) {
-          len += str.charCodeAt(i) > 255 ? 2 : 1;
-        }
-        return len;
-      };
-      
-      const padRight = (str: string, targetLen: number) => {
-        let currentLen = getVisualLength(str);
-        let padded = str;
-        while (currentLen < targetLen) {
-          padded += " ";
-          currentLen++;
-        }
-        return padded;
-      };
-      return padRight(formatted, 10);
+      return formatted;
     };
 
-    const padFirst = formatTeamName(firstTeamRaw);
-    const padSecond = formatTeamName(secondTeamRaw);
+    const firstTeamFormatted = formatTeamName(firstTeamRaw);
+    const secondTeamFormatted = formatTeamName(secondTeamRaw);
 
-    // ヘッダー作成
-    let header = "          "; // 10文字スペース
+    // ヘッダー作成 (左側は半角15スペース固定)
+    let header = "               ";
     for (let i = 1; i <= inningCount; i++) {
-      if (i >= 10) {
-        header += `${i}`;
-      } else {
-        header += ` ${i}`;
-      }
+      header += `${i} `;
     }
-    header += " 計";
+    // 末尾のスペースをカットして計を追加
+    header = header.trimEnd() + " 計";
 
-    let firstLine = padFirst;
-    let secondLine = padSecond;
+    // 得点行の作成 (チーム名の後ろは半角4スペース固定)
+    let firstLine = firstTeamFormatted + "    ";
+    let secondLine = secondTeamFormatted + "    ";
+    
     let firstTotal = 0;
     let secondTotal = 0;
+    
+    let dispCount1 = 0;
+    let dispCount2 = 0;
 
     for (let i = 1; i <= inningCount; i++) {
       // 先攻得点
       const score1 = firstScores[i - 1];
       const hasScore1 = score1 !== undefined && score1 !== null && (!inningLimit || i <= inningLimit);
       if (hasScore1) {
-        firstLine += ` ${score1}`;
+        firstLine += `${score1} `;
         firstTotal += score1;
+        dispCount1++;
       } else {
         firstLine += "  ";
       }
@@ -352,27 +337,24 @@ export default function NewsGeneratorPage() {
       const score2 = secondScores[i - 1];
       const hasScore2 = score2 !== undefined && score2 !== null && (!inningLimit || i <= inningLimit) && !isCurrentInningUnfinishedBottom;
       if (hasScore2) {
-        secondLine += ` ${score2}`;
+        secondLine += `${score2} `;
         secondTotal += score2;
+        dispCount2++;
       } else {
         secondLine += "  ";
       }
     }
 
-    // 計の付与
+    // 計の付与 (プロポーショナルフォント幅に合わせた動的スペース補正)
     const total1 = isFinal ? (isFirst ? match.myScore : match.opponentScore) : firstTotal;
     const total2 = isFinal ? (isFirst ? match.opponentScore : match.myScore) : secondTotal;
 
-    const formatTotal = (total: number | string | undefined | null) => {
-      const t = total !== undefined && total !== null ? String(total) : "";
-      if (t.length === 0) return "   ";
-      if (t.length === 1) return `  ${t}`;
-      if (t.length === 2) return ` ${t}`;
-      return t;
-    };
+    // 実表示数に応じた最適なスペース補正数を計算
+    const firstTotalSpCount = Math.max(1, 3 - (dispCount1 - 6) * 2);
+    const secondTotalSpCount = Math.max(1, 6 - (dispCount2 - 6) * 2);
 
-    firstLine += formatTotal(total1);
-    secondLine += formatTotal(total2);
+    firstLine = firstLine.trimEnd() + " ".repeat(firstTotalSpCount) + (total1 !== undefined && total1 !== null ? total1 : "0");
+    secondLine = secondLine.trimEnd() + " ".repeat(secondTotalSpCount) + (total2 !== undefined && total2 !== null ? total2 : "0");
 
     return `${header}\n${firstLine}\n${secondLine}`;
   };
@@ -851,7 +833,7 @@ ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : "
         </div>
 
         {/* 1. 試合の選択エリア (最上部) */}
-        <div className="bg-white/90 dark:bg-zinc-900/60 backdrop-blur-md border border-zinc-200 dark:border-white/5 p-5 rounded-2xl shadow-sm dark:shadow-2xl transition-all">
+        <div className="bg-white dark:bg-zinc-900/60 border border-zinc-200 dark:border-white/5 p-5 rounded-2xl shadow-md dark:shadow-2xl transition-all">
           <label className="block text-[11px] font-black text-primary dark:text-primary tracking-widest uppercase mb-2.5">
             🏟️ 試合の選択（予定試合を除く・進行中を優先）
           </label>
@@ -893,7 +875,7 @@ ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : "
 
         {/* 試合未選択時のプレースホルダー */}
         {!selectedMatchId && (
-          <div className="bg-white/80 dark:bg-zinc-900/40 border border-zinc-200/80 dark:border-white/5 backdrop-blur-md rounded-[var(--radius-xl)] p-12 text-center flex flex-col items-center justify-center space-y-4 shadow-sm dark:shadow-md">
+          <div className="bg-white border border-zinc-200 dark:bg-zinc-900/40 dark:border-white/5 backdrop-blur-md rounded-[var(--radius-xl)] p-12 text-center flex flex-col items-center justify-center space-y-4 shadow-md dark:shadow-none">
             <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center">
               <Activity className="h-8 w-8 text-primary animate-pulse" />
             </div>
@@ -918,7 +900,7 @@ ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : "
                   <div className="h-4 bg-zinc-200/50 dark:bg-white/5 w-3/4 rounded" />
                 </div>
               ) : matchDetail ? (
-                <div className="bg-white/80 dark:bg-zinc-900/60 backdrop-blur-md border border-zinc-200/80 dark:border-white/5 p-5 rounded-[var(--radius-xl)] shadow-sm dark:shadow-md relative overflow-hidden">
+                <div className="bg-white border border-zinc-200 dark:bg-zinc-900/60 dark:border-white/5 p-5 rounded-[var(--radius-xl)] shadow-md dark:shadow-none relative overflow-hidden">
                   {matchDetail.status === "live" && (
                     <div className="absolute top-4 right-4 flex items-center gap-1.5 bg-red-500/10 border border-red-500/30 text-red-500 text-[10px] font-black tracking-wider px-2 py-0.5 rounded-full">
                       <span className="h-1.5 w-1.5 bg-red-500 rounded-full animate-ping" />
@@ -938,7 +920,7 @@ ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : "
               ) : null}
 
               {/* 速報タイプのタブ切り替え */}
-              <div className="bg-white/80 dark:bg-zinc-900/60 backdrop-blur-md border border-zinc-200/80 dark:border-white/5 p-2 rounded-[var(--radius-xl)] shadow-sm dark:shadow-md flex gap-1">
+              <div className="bg-white border border-zinc-200 dark:bg-zinc-900/60 dark:border-white/5 p-2 rounded-[var(--radius-xl)] shadow-md dark:shadow-none flex gap-1">
                 {[
                   { id: "lineup", label: "スタメン速報", icon: Users },
                   { id: "inning", label: "イニング速報", icon: Activity },
@@ -965,7 +947,7 @@ ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : "
               </div>
 
               {/* 手動補足・パラメータ入力エリア */}
-              <div className="bg-white/80 dark:bg-zinc-900/60 backdrop-blur-md border border-zinc-200/80 dark:border-white/5 p-5 rounded-[var(--radius-xl)] shadow-sm dark:shadow-md space-y-4">
+              <div className="bg-white border border-zinc-200 dark:bg-zinc-900/60 dark:border-white/5 p-5 rounded-[var(--radius-xl)] shadow-md dark:shadow-none space-y-4">
                 <div className="flex items-center gap-2 border-b border-zinc-100 dark:border-white/5 pb-2.5 mb-2">
                   <Sparkles className="h-4 w-4 text-primary animate-pulse" />
                   <h4 className="text-xs font-black text-zinc-900 dark:text-white tracking-wider">速報パラメータの調整</h4>
@@ -979,7 +961,7 @@ ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : "
                       type="text"
                       value={matchName}
                       onChange={(e) => setMatchName(e.target.value)}
-                      className="w-full h-10 bg-zinc-50 dark:bg-black/40 border border-zinc-200 dark:border-white/10 text-zinc-900 dark:text-white text-xs px-3 rounded-lg outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all font-bold"
+                      className="w-full h-10 bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 text-zinc-900 dark:text-white text-xs px-3 rounded-xl outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-bold shadow-sm"
                     />
                   </div>
                   <div className="space-y-1.5">
@@ -988,7 +970,7 @@ ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : "
                       type="text"
                       value={venueName}
                       onChange={(e) => setVenueName(e.target.value)}
-                      className="w-full h-10 bg-zinc-50 dark:bg-black/40 border border-zinc-200 dark:border-white/10 text-zinc-900 dark:text-white text-xs px-3 rounded-lg outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all font-bold"
+                      className="w-full h-10 bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 text-zinc-900 dark:text-white text-xs px-3 rounded-xl outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-bold shadow-sm"
                     />
                   </div>
                   <div className="space-y-1.5">
@@ -997,7 +979,7 @@ ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : "
                       type="text"
                       value={opponentName}
                       onChange={(e) => setOpponentName(e.target.value)}
-                      className="w-full h-10 bg-zinc-50 dark:bg-black/40 border border-zinc-200 dark:border-white/10 text-zinc-900 dark:text-white text-xs px-3 rounded-lg outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all font-bold"
+                      className="w-full h-10 bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 text-zinc-900 dark:text-white text-xs px-3 rounded-xl outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-bold shadow-sm"
                     />
                   </div>
                   <div className="space-y-1.5">
@@ -1007,7 +989,7 @@ ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : "
                       value={reporterName}
                       onChange={(e) => handleReporterChange(e.target.value)}
                       placeholder="例: 赤羽  橋本"
-                      className="w-full h-10 bg-zinc-50 dark:bg-black/40 border border-zinc-200 dark:border-white/10 text-zinc-900 dark:text-white text-xs px-3 rounded-lg outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-bold"
+                      className="w-full h-10 bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 text-zinc-900 dark:text-white text-xs px-3 rounded-xl outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-bold shadow-sm"
                     />
                   </div>
                   <div className="space-y-1.5">
@@ -1017,7 +999,7 @@ ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : "
                       value={startTime}
                       onChange={(e) => setStartTime(e.target.value)}
                       placeholder="例: 15:20"
-                      className="w-full h-10 bg-zinc-50 dark:bg-black/40 border border-zinc-200 dark:border-white/10 text-zinc-900 dark:text-white text-xs px-3 rounded-lg outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-bold"
+                      className="w-full h-10 bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 text-zinc-900 dark:text-white text-xs px-3 rounded-xl outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-bold shadow-sm"
                     />
                   </div>
                   <div className="space-y-1.5">
@@ -1027,7 +1009,7 @@ ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : "
                       value={endTime}
                       onChange={(e) => setEndTime(e.target.value)}
                       placeholder="例: 17:01"
-                      className="w-full h-10 bg-zinc-50 dark:bg-black/40 border border-zinc-200 dark:border-white/10 text-zinc-900 dark:text-white text-xs px-3 rounded-lg outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-bold"
+                      className="w-full h-10 bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 text-zinc-900 dark:text-white text-xs px-3 rounded-xl outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-bold shadow-sm"
                     />
                   </div>
                 </div>
@@ -1047,7 +1029,7 @@ ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : "
                           value={firstTeamDisp}
                           onChange={(e) => setFirstTeamDisp(e.target.value)}
                           placeholder="例: 逗　子"
-                          className="w-full h-10 bg-zinc-50 dark:bg-black/40 border border-zinc-200 dark:border-white/10 text-zinc-900 dark:text-white text-xs px-3 rounded-lg outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-mono font-bold"
+                          className="w-full h-10 bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 text-zinc-900 dark:text-white text-xs px-3 rounded-xl outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-mono font-bold shadow-sm"
                         />
                       </div>
                       <div className="space-y-1.5">
@@ -1057,7 +1039,7 @@ ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : "
                           value={secondTeamDisp}
                           onChange={(e) => setSecondTeamDisp(e.target.value)}
                           placeholder="例: 川　中"
-                          className="w-full h-10 bg-zinc-50 dark:bg-black/40 border border-zinc-200 dark:border-white/10 text-zinc-900 dark:text-white text-xs px-3 rounded-lg outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-mono font-bold"
+                          className="w-full h-10 bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 text-zinc-900 dark:text-white text-xs px-3 rounded-xl outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-mono font-bold shadow-sm"
                         />
                       </div>
                     </div>
@@ -1075,7 +1057,7 @@ ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : "
                         value={lineupComment}
                         onChange={(e) => setLineupComment(e.target.value)}
                         placeholder="例：新戦力の山田を1番に抜擢！打線のつながりで勝利を目指します。"
-                        className="w-full min-h-[90px] bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 focus:border-primary dark:focus:border-primary/50 focus:ring-2 focus:ring-primary/10 text-zinc-900 dark:text-white text-xs p-3 rounded-xl outline-none resize-none transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-bold"
+                        className="w-full min-h-[90px] bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 focus:border-primary focus:ring-2 focus:ring-primary/10 text-zinc-900 dark:text-white text-xs p-3 rounded-xl outline-none resize-none transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-bold shadow-sm"
                       />
                     </div>
                   </div>
@@ -1097,7 +1079,7 @@ ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : "
                           <select
                             value={selectedInningIndex}
                             onChange={(e) => setSelectedInningIndex(Number(e.target.value))}
-                            className="w-full h-11 bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 hover:border-zinc-300 dark:hover:border-white/20 focus:border-primary dark:focus:border-primary/50 focus:ring-2 focus:ring-primary/10 text-zinc-900 dark:text-white font-bold text-xs px-4 rounded-xl outline-none transition-all cursor-pointer appearance-none shadow-sm"
+                            className="w-full h-11 bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 hover:border-zinc-300 dark:hover:border-white/20 focus:border-primary focus:ring-2 focus:ring-primary/10 text-zinc-900 dark:text-white font-bold text-xs px-4 rounded-xl outline-none transition-all cursor-pointer appearance-none shadow-sm"
                           >
                             {inningOptions.map((opt, idx) => (
                               <option key={idx} value={idx} className="bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white">
@@ -1120,7 +1102,7 @@ ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : "
                         value={inningComment}
                         onChange={(e) => setInningComment(e.target.value)}
                         placeholder="例：山田が先制の2ランを放ちリードする展開。先発佐藤も要所を締め好投中。"
-                        className="w-full min-h-[95px] bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 focus:border-primary dark:focus:border-primary/50 focus:ring-2 focus:ring-primary/10 text-zinc-900 dark:text-white text-xs p-3 rounded-xl outline-none resize-none transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-bold"
+                        className="w-full min-h-[95px] bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 focus:border-primary focus:ring-2 focus:ring-primary/10 text-zinc-900 dark:text-white text-xs p-3 rounded-xl outline-none resize-none transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-bold shadow-sm"
                       />
                     </div>
                   </div>
@@ -1138,7 +1120,7 @@ ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : "
                         value={heroPlayer}
                         onChange={(e) => setHeroPlayer(e.target.value)}
                         placeholder="例：山田選手 (先制の2ランを含む3打点の大活躍！)"
-                        className="w-full h-11 bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 focus:border-primary dark:focus:border-primary/50 focus:ring-2 focus:ring-primary/10 text-zinc-900 dark:text-white text-xs px-4 rounded-xl outline-none transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-bold"
+                        className="w-full h-11 bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 focus:border-primary focus:ring-2 focus:ring-primary/10 text-zinc-900 dark:text-white text-xs px-4 rounded-xl outline-none transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-bold shadow-sm"
                       />
                     </div>
 
@@ -1150,7 +1132,7 @@ ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : "
                         value={summaryText}
                         onChange={(e) => setSummaryText(e.target.value)}
                         placeholder="例：初回、3番山田の右越え2ランで先制。中盤に追いつかれるも、5回に相手の失策の間に勝ち越しに成功。投げては先発佐藤が7回2失点の力投で見事完投勝利を飾った。"
-                        className="w-full min-h-[130px] bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 focus:border-primary dark:focus:border-primary/50 focus:ring-2 focus:ring-primary/10 text-zinc-900 dark:text-white text-xs p-3 rounded-xl outline-none resize-none transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-bold"
+                        className="w-full min-h-[130px] bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 focus:border-primary focus:ring-2 focus:ring-primary/10 text-zinc-900 dark:text-white text-xs p-3 rounded-xl outline-none resize-none transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-bold shadow-sm"
                       />
                     </div>
                   </div>
@@ -1161,7 +1143,7 @@ ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : "
             {/* 👉 右カラム: テキストエディタ ＆ アクション */}
             <div className="lg:col-span-7 space-y-6">
               
-              <div className="bg-white/90 dark:bg-zinc-900/60 backdrop-blur-md border border-zinc-200 dark:border-white/5 p-5 rounded-2xl shadow-sm dark:shadow-2xl space-y-4 relative">
+              <div className="bg-white border border-zinc-200 dark:bg-zinc-900/60 dark:border-white/5 p-5 rounded-2xl shadow-md dark:shadow-none space-y-4 relative">
                 
                 {/* ツールバー */}
                 <div className="flex items-center justify-between border-b border-zinc-100 dark:border-white/5 pb-3">

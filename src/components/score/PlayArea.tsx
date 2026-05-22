@@ -225,7 +225,9 @@ export function PlayArea() {
         {/* ランナー名の表示（ベースの上部または下部に重ねる） */}
         {isRunner && (
           <div className={cn(
-            "absolute bg-zinc-950 dark:bg-black border border-primary/40 dark:border-primary/50 text-[10px] font-black px-1.5 py-0.5 rounded shadow-md z-30 whitespace-nowrap animate-in fade-in text-primary",
+            "absolute text-[10px] font-black px-1.5 py-0.5 rounded shadow-md z-30 whitespace-nowrap animate-in fade-in transition-all duration-300",
+            "bg-rose-600 text-white border border-rose-500",
+            "dark:bg-black dark:border-primary/50 dark:text-primary",
             baseNum === 2
               ? "top-8 slide-in-from-top-1" // 2塁は下側に下げてベース下角と重ねる
               : "-top-3.5 slide-in-from-bottom-1" // 1・3塁は少し下げてベース上角と重ねる
@@ -240,15 +242,15 @@ export function PlayArea() {
         >
           {/* ランナーがいる時の波紋エフェクト */}
           {isRunner && (
-            <div className="absolute inset-0 rounded-full bg-primary/20 animate-ping" />
+            <div className="absolute inset-0 rounded-full bg-rose-600/20 dark:bg-primary/20 animate-ping" />
           )}
 
           <div
             className={cn(
               "w-8 h-8 sm:w-10 sm:h-10 rotate-45 rounded-sm border-2 transition-all duration-500",
               isRunner
-                ? "bg-primary border-primary shadow-[0_0_20px_rgba(var(--primary),0.6)] scale-110"
-                : "bg-background dark:bg-zinc-900 border-muted-foreground/30 dark:border-white/10 opacity-80"
+                ? "bg-rose-600 border-rose-600 shadow-[0_0_20px_rgba(225,29,72,0.6)] scale-110 dark:bg-primary dark:border-primary dark:shadow-[0_0_20px_rgba(var(--primary),0.6)]"
+                : "bg-white dark:bg-zinc-900 border-zinc-300 dark:border-white/10 opacity-90"
             )}
           >
             {/* ベース内部のデザイン */}
