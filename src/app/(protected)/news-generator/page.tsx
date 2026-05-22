@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { 
   Copy, Check, Sparkles, RotateCcw, 
-  Users, Trophy, ChevronRight, FileText, Activity, Zap
+  Users, Trophy, ChevronRight, FileText, Activity
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -814,7 +814,7 @@ ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : "
   };
 
   return (
-    <div className="min-h-screen p-4 sm:p-6 pt-8 pb-32 animate-in fade-in duration-400 bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 relative overflow-hidden">
+    <div className="min-h-screen p-4 sm:p-6 pt-8 pb-32 animate-in fade-in duration-400 bg-transparent text-zinc-900 dark:text-zinc-100 relative overflow-hidden">
       {/* 🔮 背景のオーブ */}
       <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-primary/5 dark:bg-primary/10 rounded-full blur-[120px] pointer-events-none" />
       <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-emerald-500/5 rounded-full blur-[120px] pointer-events-none" />
@@ -823,9 +823,6 @@ ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : "
         
         {/* ヘッダー */}
         <div className="flex flex-col items-center justify-center text-center gap-3">
-          <div className="h-14 w-14 rounded-full bg-primary/10 flex items-center justify-center mb-1 shadow-sm">
-            <Zap className="h-7 w-7 text-primary" />
-          </div>
           <SectionHeader title="試合速報ジェネレーター" subtitle="NEWS GENERATOR" showPulse={false} />
         </div>
 
@@ -1186,22 +1183,22 @@ ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : "
                 <div className="flex flex-col sm:flex-row gap-4 pt-2">
                   <Button
                     onClick={handleCopy}
-                    className="flex-1 rounded-[24px] font-black text-sm sm:text-base h-16 gap-3 active:scale-95 transition-all bg-white hover:bg-zinc-50 dark:bg-zinc-950 border-2 border-zinc-300 dark:border-zinc-800 dark:hover:bg-zinc-900 text-zinc-900 dark:text-white shadow-md"
+                    className="flex-1 rounded-[24px] font-black text-base sm:text-lg h-20 gap-3.5 active:scale-95 transition-all bg-white hover:bg-zinc-50 dark:bg-zinc-950 border-2 border-zinc-300 dark:border-zinc-800 dark:hover:bg-zinc-900 text-zinc-900 dark:text-white shadow-md flex items-center justify-center"
                     variant="outline"
                   >
                     {copied ? (
-                      <Check className="h-6 w-6 text-emerald-500 shrink-0 animate-in zoom-in-50 duration-200" />
+                      <Check className="h-8 w-8 text-emerald-500 shrink-0 animate-in zoom-in-50 duration-200" />
                     ) : (
-                      <Copy className="h-6 w-6 shrink-0" />
+                      <Copy className="h-8 w-8 shrink-0" />
                     )}
                     {copied ? "コピーしました！" : "クリップボードにコピー"}
                   </Button>
 
                   <Button
                     onClick={handleLineShare}
-                    className="flex-1 rounded-[24px] font-black text-sm sm:text-base h-16 gap-3 bg-[#06C755] hover:bg-[#05b34c] hover:shadow-lg hover:shadow-emerald-500/20 text-white active:scale-95 transition-all shadow-md flex items-center justify-center"
+                    className="flex-1 rounded-[24px] font-black text-base sm:text-lg h-20 gap-3.5 bg-[#06C755] hover:bg-[#05b34c] hover:shadow-lg hover:shadow-emerald-500/20 text-white active:scale-95 transition-all shadow-md flex items-center justify-center"
                   >
-                    <div className="relative h-10 w-10 shrink-0">
+                    <div className="relative h-12 w-12 shrink-0">
                       <Image src="/line-logo.png" alt="LINE" fill className="object-contain" />
                     </div>
                     LINEで共有・転送
