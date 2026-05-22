@@ -66,6 +66,10 @@ export default function NewsGeneratorPage() {
   const [heroPlayer, setHeroPlayer] = useState("");
   const [summaryText, setSummaryText] = useState("");
 
+  // 🏟️ スコアボード表示用チーム名の手動調整用
+  const [firstTeamDisp, setFirstTeamDisp] = useState("");
+  const [secondTeamDisp, setSecondTeamDisp] = useState("");
+
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   // チーム情報と試合一覧のロード
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -167,6 +171,17 @@ export default function NewsGeneratorPage() {
     fetchDetails();
   }, [selectedMatchId]);
 
+  // チーム名のスコアボード用初期整形ヘルパー (例: 逗子S -> 逗子 -> 逗　子)
+  const getInitialDispName = (nameStr: string) => {
+    let formatted = nameStr.trim();
+    // 末尾の特定の余分な文字をトリムする (S, シニア, クラブ, A, B など、野球チーム名の典型的な末尾)
+    formatted = formatted.replace(/(S|シニア|クラブ|ジュニア|A|B|C)$/i, "").trim();
+    if (formatted.length === 2) {
+      formatted = `${formatted[0]}　${formatted[1]}`;
+    }
+    return formatted;
+  };
+
   // 試合ロード時に初期パラメータをセット
   useEffect(() => {
     if (matchDetail) {
@@ -179,8 +194,15 @@ export default function NewsGeneratorPage() {
       
       setStartTime(matchDetail.startTime || "");
       setEndTime(matchDetail.endTime || "");
+
+      // スコアボード用表示名の初期設定
+      const isFirst = matchDetail.battingOrder === "first";
+      const fName = isFirst ? teamName : (matchDetail.opponent || "");
+      const sName = isFirst ? (matchDetail.opponent || "") : teamName;
+      setFirstTeamDisp(getInitialDispName(fName));
+      setSecondTeamDisp(getInitialDispName(sName));
     }
-  }, [matchDetail]);
+  }, [matchDetail, teamName]);
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   // 試合のソート・フィルタリング（予定試合は除外、進行中優先）
@@ -249,14 +271,13 @@ export default function NewsGeneratorPage() {
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   const generateScoreTableText = (
     match: any,
-    name: string,
     isFinal: boolean,
     inningLimit?: number,
     isBottomLimit?: boolean
   ) => {
     const isFirst = match.battingOrder === "first";
-    const firstTeamRaw = isFirst ? name : match.opponent;
-    const secondTeamRaw = isFirst ? match.opponent : name;
+    const firstTeamRaw = firstTeamDisp || (isFirst ? teamName : match.opponent);
+    const secondTeamRaw = secondTeamDisp || (isFirst ? match.opponent : teamName);
     
     const firstScores = isFirst ? match.myInningScores : match.opponentInningScores;
     const secondScores = isFirst ? match.opponentInningScores : match.myInningScores;
@@ -660,13 +681,24 @@ export default function NewsGeneratorPage() {
             }
 
             // 通常のフォーマット出力
+            // 走者アクション（盗塁、暴投、牽制など）かどうかの判定
+            const isRunnerAction = p.includes("盗塁") || p.includes("投暴投") || p.includes("捕逸") || p.includes("牽制");
+
+            if (isRunnerAction) {
+              // 走者アクションの時は、直前のプレイ名とアウトドット・塁情報の間にスペースを入れない (例: 盗塁2塁, 投暴投●●2塁)
+              return `${p}${runInfo}${outDots}${baseInfo}`;
+            }
+
+            // 通常の打者アクション
             if (baseInfo) {
               return `${p}${runInfo} ${outDots}${baseInfo}`;
             } else {
               if (isOutPlay) {
+                // 単一のアウトプレイで塁情報がない場合（例: 中飛●、二ゴロ●●）はスペースなしで結合
                 return `${p}${runInfo}${outDots}`;
               } else {
-                return `${p}${runInfo} ${outDots}`;
+                // アウトでも進塁情報もないが、アウトドットがある場合はスペース付きで結合。なければそのまま。
+                return outDots ? `${p}${runInfo} ${outDots}` : `${p}${runInfo}`;
               }
             }
           });
@@ -678,10 +710,6 @@ export default function NewsGeneratorPage() {
 
       outputText += `得点${inningScore}\n\n`;
     });
-
-    if (isEnd) {
-      outputText += "ゲームセット\n";
-    }
 
     return outputText;
   };
@@ -725,7 +753,7 @@ export default function NewsGeneratorPage() {
     if (newsType === "lineup") {
       return `${dateHeader}
 ${matchHeader}
-
+${timeHeader ? `${timeHeader}\n` : ""}
 ◆ ${teamName} スタメン（${myAttackLabel}）
 ${myLineupText}
 
@@ -740,7 +768,7 @@ ${lineupComment ? `\n💬 コメント:\n${lineupComment}\n` : ""}
     const limitInning = isEnd ? undefined : selectedInningOption?.inning;
     const limitIsBottom = isEnd ? undefined : selectedInningOption?.isBottom;
 
-    const scoreTable = generateScoreTableText(matchDetail, teamName, isEnd, limitInning, limitIsBottom);
+    const scoreTable = generateScoreTableText(matchDetail, isEnd, limitInning, limitIsBottom);
     const detailLogs = generateDetailPlayLogsText(playLogs, isEnd, limitInning, limitIsBottom);
     
     const footer = reporterName ? `\n速報　${reporterName}` : "";
@@ -768,7 +796,8 @@ ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : "
   }, [
     matchDetail, lineups, playLogs, newsType, lineupComment,
     selectedInningOption, inningComment, heroPlayer, summaryText,
-    teamName, matchName, venueName, opponentName, startTime, endTime, reporterName
+    teamName, matchName, venueName, opponentName, startTime, endTime, reporterName,
+    firstTeamDisp, secondTeamDisp
   ]);
 
   // generatedTextが変わったとき、editedTextに反映
@@ -801,9 +830,9 @@ ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : "
   };
 
   return (
-    <div className="min-h-screen p-4 sm:p-6 pt-8 pb-32 animate-in fade-in duration-400 bg-zinc-950 text-foreground relative overflow-hidden">
+    <div className="min-h-screen p-4 sm:p-6 pt-8 pb-32 animate-in fade-in duration-400 bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 relative overflow-hidden">
       {/* 🔮 背景のオーブ */}
-      <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-primary/10 rounded-full blur-[120px] pointer-events-none" />
+      <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-primary/5 dark:bg-primary/10 rounded-full blur-[120px] pointer-events-none" />
       <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-emerald-500/5 rounded-full blur-[120px] pointer-events-none" />
 
       <div className="max-w-7xl mx-auto space-y-6 relative z-10">
@@ -811,18 +840,10 @@ ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : "
         {/* ヘッダー */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div className="flex items-center gap-3">
-            <Button
-              onClick={() => router.back()}
-              variant="outline"
-              size="icon"
-              className="rounded-full bg-white/5 border-white/10 text-white hover:bg-white/10 hover:border-white/20 active:scale-95"
-            >
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
             <SectionHeader title="試合速報ジェネレーター" subtitle="NEWS GENERATOR" showPulse={false} />
           </div>
           
-          <div className="px-4 py-1.5 rounded-full bg-primary/15 border border-primary/20 backdrop-blur-md self-start sm:self-center">
+          <div className="px-4 py-1.5 rounded-full bg-primary/10 dark:bg-primary/15 border border-primary/20 backdrop-blur-md self-start sm:self-center">
             <span className="text-xs font-black text-primary tracking-wider">
               🏟️ ACTIVE TEAM: {teamName}
             </span>
@@ -830,14 +851,14 @@ ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : "
         </div>
 
         {/* 1. 試合の選択エリア (最上部) */}
-        <div className="bg-zinc-900/60 dark:bg-black/40 backdrop-blur-md border border-white/5 p-4 rounded-[var(--radius-xl)] shadow-lg">
-          <label className="block text-xs font-black text-primary tracking-widest uppercase mb-2">
-            試合の選択（予定試合を除く・進行中を優先）
+        <div className="bg-white/90 dark:bg-zinc-900/60 backdrop-blur-md border border-zinc-200 dark:border-white/5 p-5 rounded-2xl shadow-sm dark:shadow-2xl transition-all">
+          <label className="block text-[11px] font-black text-primary dark:text-primary tracking-widest uppercase mb-2.5">
+            🏟️ 試合の選択（予定試合を除く・進行中を優先）
           </label>
           {loadingMatches ? (
-            <div className="h-12 bg-white/5 animate-pulse rounded-xl" />
+            <div className="h-12 bg-zinc-200/50 dark:bg-white/5 animate-pulse rounded-xl" />
           ) : sortedMatches.length === 0 ? (
-            <div className="text-center py-4 text-sm font-bold text-muted-foreground border border-dashed border-white/10 rounded-xl">
+            <div className="text-center py-8 text-sm font-bold text-zinc-400 dark:text-muted-foreground border border-dashed border-zinc-200 dark:border-white/10 rounded-xl bg-zinc-50/50 dark:bg-transparent">
               速報可能な試合（進行中・終了）が見つかりません。
             </div>
           ) : (
@@ -845,9 +866,9 @@ ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : "
               <select
                 value={selectedMatchId}
                 onChange={(e) => setSelectedMatchId(e.target.value)}
-                className="w-full h-12 bg-black/40 border border-white/10 hover:border-white/20 focus:border-primary/50 text-white font-bold text-sm px-4 rounded-xl outline-none transition-all cursor-pointer appearance-none"
+                className="w-full h-12 bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 hover:border-zinc-300 dark:hover:border-white/20 focus:border-primary dark:focus:border-primary/50 focus:ring-2 focus:ring-primary/10 text-zinc-900 dark:text-white font-bold text-sm px-4 rounded-xl outline-none transition-all cursor-pointer appearance-none shadow-sm"
               >
-                <option value="">-- 速報を作成する試合を選択してください --</option>
+                <option value="" className="bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white">-- 速報を作成する試合を選択してください --</option>
                 {sortedMatches.map((m) => {
                   const dateStr = new Date(m.date).toLocaleDateString("ja-JP", {
                     month: "2-digit",
@@ -857,13 +878,13 @@ ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : "
                   const statusLabel = isLive ? "🔴 [進行中]" : "🟢 [終了]";
                   
                   return (
-                    <option key={m.id} value={m.id}>
+                    <option key={m.id} value={m.id} className="bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white">
                       {statusLabel} {dateStr} vs {m.opponent} ({m.myScore} - {m.opponentScore})
                     </option>
                   );
                 })}
               </select>
-              <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-400">
+              <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-400 dark:text-zinc-500">
                 <ChevronRight className="h-4 w-4 rotate-90" />
               </div>
             </div>
@@ -872,12 +893,12 @@ ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : "
 
         {/* 試合未選択時のプレースホルダー */}
         {!selectedMatchId && (
-          <div className="bg-zinc-900/40 border border-white/5 backdrop-blur-md rounded-[var(--radius-xl)] p-12 text-center flex flex-col items-center justify-center space-y-4">
+          <div className="bg-white/80 dark:bg-zinc-900/40 border border-zinc-200/80 dark:border-white/5 backdrop-blur-md rounded-[var(--radius-xl)] p-12 text-center flex flex-col items-center justify-center space-y-4 shadow-sm dark:shadow-md">
             <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center">
               <Activity className="h-8 w-8 text-primary animate-pulse" />
             </div>
-            <h3 className="text-base font-black text-white">速報を作成する試合を選択してください</h3>
-            <p className="text-xs font-bold text-zinc-400 max-w-sm">
+            <h3 className="text-base font-black text-zinc-900 dark:text-white">速報を作成する試合を選択してください</h3>
+            <p className="text-xs font-bold text-zinc-500 dark:text-zinc-400 max-w-sm">
               上部の試合セレクターから、現在進行中の試合、または過去に終了した試合を選択すると、スタメン・イニング・終了速報の作成が行えます。
             </p>
           </div>
@@ -885,19 +906,19 @@ ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : "
 
         {/* 試合選択後の編集エリア */}
         {selectedMatchId && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start animate-in fade-in duration-300">
             
             {/* 👈 左カラム: 速報設定 & 手動補足 */}
             <div className="lg:col-span-5 space-y-6">
               
               {/* 試合概要カード */}
               {loadingDetails ? (
-                <div className="bg-zinc-900/60 p-6 rounded-[var(--radius-xl)] animate-pulse space-y-4">
-                  <div className="h-6 bg-white/5 w-1/2 rounded" />
-                  <div className="h-4 bg-white/5 w-3/4 rounded" />
+                <div className="bg-white/80 dark:bg-zinc-900/60 p-6 rounded-[var(--radius-xl)] border border-zinc-200/80 dark:border-white/5 animate-pulse space-y-4">
+                  <div className="h-6 bg-zinc-200/50 dark:bg-white/5 w-1/2 rounded" />
+                  <div className="h-4 bg-zinc-200/50 dark:bg-white/5 w-3/4 rounded" />
                 </div>
               ) : matchDetail ? (
-                <div className="bg-zinc-900/60 backdrop-blur-md border border-white/5 p-5 rounded-[var(--radius-xl)] relative overflow-hidden">
+                <div className="bg-white/80 dark:bg-zinc-900/60 backdrop-blur-md border border-zinc-200/80 dark:border-white/5 p-5 rounded-[var(--radius-xl)] shadow-sm dark:shadow-md relative overflow-hidden">
                   {matchDetail.status === "live" && (
                     <div className="absolute top-4 right-4 flex items-center gap-1.5 bg-red-500/10 border border-red-500/30 text-red-500 text-[10px] font-black tracking-wider px-2 py-0.5 rounded-full">
                       <span className="h-1.5 w-1.5 bg-red-500 rounded-full animate-ping" />
@@ -905,10 +926,10 @@ ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : "
                     </div>
                   )}
                   <h3 className="text-xs font-black text-primary tracking-widest mb-1.5">SELECTED MATCH</h3>
-                  <div className="text-base font-black text-white flex items-center gap-2">
-                    {teamName} <span className="text-zinc-500">vs</span> {opponentName}
+                  <div className="text-base font-black text-zinc-900 dark:text-white flex items-center gap-2">
+                    {teamName} <span className="text-zinc-400 dark:text-zinc-500">vs</span> {opponentName}
                   </div>
-                  <div className="mt-2 text-xs font-bold text-zinc-400 flex flex-wrap gap-x-4 gap-y-1">
+                  <div className="mt-2 text-xs font-bold text-zinc-500 dark:text-zinc-400 flex flex-wrap gap-x-4 gap-y-1">
                     <span>📅 {new Date(matchDetail.date).toLocaleDateString("ja-JP")}</span>
                     <span>🏟️ {venueName || "グラウンド未設定"}</span>
                     <span>⚾️ {matchDetail.matchType === "official" ? "公式戦" : "練習試合"}</span>
@@ -917,7 +938,7 @@ ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : "
               ) : null}
 
               {/* 速報タイプのタブ切り替え */}
-              <div className="bg-zinc-900/60 backdrop-blur-md border border-white/5 p-2 rounded-[var(--radius-xl)] flex gap-1">
+              <div className="bg-white/80 dark:bg-zinc-900/60 backdrop-blur-md border border-zinc-200/80 dark:border-white/5 p-2 rounded-[var(--radius-xl)] shadow-sm dark:shadow-md flex gap-1">
                 {[
                   { id: "lineup", label: "スタメン速報", icon: Users },
                   { id: "inning", label: "イニング速報", icon: Activity },
@@ -933,7 +954,7 @@ ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : "
                         "flex-1 flex flex-col sm:flex-row items-center justify-center gap-1.5 py-3 sm:py-2.5 rounded-xl font-black text-[11px] sm:text-xs transition-all duration-300",
                         isActive
                           ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20 scale-100"
-                          : "text-zinc-400 hover:text-white hover:bg-white/5 active:scale-95"
+                          : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-white/5 active:scale-95"
                       )}
                     >
                       <Icon className="h-3.5 w-3.5" />
@@ -944,87 +965,117 @@ ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : "
               </div>
 
               {/* 手動補足・パラメータ入力エリア */}
-              <div className="bg-zinc-900/60 backdrop-blur-md border border-white/5 p-5 rounded-[var(--radius-xl)] space-y-4">
-                <div className="flex items-center gap-2 border-b border-white/5 pb-2.5 mb-2">
+              <div className="bg-white/80 dark:bg-zinc-900/60 backdrop-blur-md border border-zinc-200/80 dark:border-white/5 p-5 rounded-[var(--radius-xl)] shadow-sm dark:shadow-md space-y-4">
+                <div className="flex items-center gap-2 border-b border-zinc-100 dark:border-white/5 pb-2.5 mb-2">
                   <Sparkles className="h-4 w-4 text-primary animate-pulse" />
-                  <h4 className="text-xs font-black text-white tracking-wider">速報パラメータの調整</h4>
+                  <h4 className="text-xs font-black text-zinc-900 dark:text-white tracking-wider">速報パラメータの調整</h4>
                 </div>
 
                 {/* 基本情報の手動調整 */}
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
-                    <label className="block text-[9.5px] font-black text-zinc-400 uppercase">試合名/大会名</label>
+                    <label className="block text-[10.5px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">試合名/大会名</label>
                     <input
                       type="text"
                       value={matchName}
                       onChange={(e) => setMatchName(e.target.value)}
-                      className="w-full h-9 bg-black/40 border border-white/10 text-white text-xs px-3 rounded-lg outline-none focus:border-primary/50"
+                      className="w-full h-10 bg-zinc-50 dark:bg-black/40 border border-zinc-200 dark:border-white/10 text-zinc-900 dark:text-white text-xs px-3 rounded-lg outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all font-bold"
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="block text-[9.5px] font-black text-zinc-400 uppercase">球場名</label>
+                    <label className="block text-[10.5px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">球場名</label>
                     <input
                       type="text"
                       value={venueName}
                       onChange={(e) => setVenueName(e.target.value)}
-                      className="w-full h-9 bg-black/40 border border-white/10 text-white text-xs px-3 rounded-lg outline-none focus:border-primary/50"
+                      className="w-full h-10 bg-zinc-50 dark:bg-black/40 border border-zinc-200 dark:border-white/10 text-zinc-900 dark:text-white text-xs px-3 rounded-lg outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all font-bold"
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="block text-[9.5px] font-black text-zinc-400 uppercase">対戦相手</label>
+                    <label className="block text-[10.5px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">対戦相手</label>
                     <input
                       type="text"
                       value={opponentName}
                       onChange={(e) => setOpponentName(e.target.value)}
-                      className="w-full h-9 bg-black/40 border border-white/10 text-white text-xs px-3 rounded-lg outline-none focus:border-primary/50"
+                      className="w-full h-10 bg-zinc-50 dark:bg-black/40 border border-zinc-200 dark:border-white/10 text-zinc-900 dark:text-white text-xs px-3 rounded-lg outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all font-bold"
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="block text-[9.5px] font-black text-zinc-400 uppercase">速報担当者</label>
+                    <label className="block text-[10.5px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">速報担当者</label>
                     <input
                       type="text"
                       value={reporterName}
                       onChange={(e) => handleReporterChange(e.target.value)}
                       placeholder="例: 赤羽  橋本"
-                      className="w-full h-9 bg-black/40 border border-white/10 text-white text-xs px-3 rounded-lg outline-none focus:border-primary/50"
+                      className="w-full h-10 bg-zinc-50 dark:bg-black/40 border border-zinc-200 dark:border-white/10 text-zinc-900 dark:text-white text-xs px-3 rounded-lg outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-bold"
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="block text-[9.5px] font-black text-zinc-400 uppercase">開始時間</label>
+                    <label className="block text-[10.5px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">開始時間</label>
                     <input
                       type="text"
                       value={startTime}
                       onChange={(e) => setStartTime(e.target.value)}
                       placeholder="例: 15:20"
-                      className="w-full h-9 bg-black/40 border border-white/10 text-white text-xs px-3 rounded-lg outline-none focus:border-primary/50"
+                      className="w-full h-10 bg-zinc-50 dark:bg-black/40 border border-zinc-200 dark:border-white/10 text-zinc-900 dark:text-white text-xs px-3 rounded-lg outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-bold"
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="block text-[9.5px] font-black text-zinc-400 uppercase">終了時間</label>
+                    <label className="block text-[10.5px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">終了時間</label>
                     <input
                       type="text"
                       value={endTime}
                       onChange={(e) => setEndTime(e.target.value)}
                       placeholder="例: 17:01"
-                      className="w-full h-9 bg-black/40 border border-white/10 text-white text-xs px-3 rounded-lg outline-none focus:border-primary/50"
+                      className="w-full h-10 bg-zinc-50 dark:bg-black/40 border border-zinc-200 dark:border-white/10 text-zinc-900 dark:text-white text-xs px-3 rounded-lg outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-bold"
                     />
                   </div>
                 </div>
 
-                <div className="border-t border-white/5 my-2" />
+                {/* スコア用表示名の手動調整 (イニング・終了速報時のみ表示) */}
+                {newsType !== "lineup" && (
+                  <div className="space-y-3 pt-1 animate-in fade-in duration-300">
+                    <div className="border-t border-zinc-100 dark:border-white/5 my-2" />
+                    <label className="block text-[10.5px] font-black text-zinc-500 dark:text-zinc-400 tracking-wider uppercase">
+                      🏟️ スコアボードチーム名（等幅スペース調整用）
+                    </label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500">先攻表示名（全角2文字はスペース推奨）</span>
+                        <input
+                          type="text"
+                          value={firstTeamDisp}
+                          onChange={(e) => setFirstTeamDisp(e.target.value)}
+                          placeholder="例: 逗　子"
+                          className="w-full h-10 bg-zinc-50 dark:bg-black/40 border border-zinc-200 dark:border-white/10 text-zinc-900 dark:text-white text-xs px-3 rounded-lg outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-mono font-bold"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500">後攻表示名（全角2文字はスペース推奨）</span>
+                        <input
+                          type="text"
+                          value={secondTeamDisp}
+                          onChange={(e) => setSecondTeamDisp(e.target.value)}
+                          placeholder="例: 川　中"
+                          className="w-full h-10 bg-zinc-50 dark:bg-black/40 border border-zinc-200 dark:border-white/10 text-zinc-900 dark:text-white text-xs px-3 rounded-lg outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-mono font-bold"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* --- A. スタメン速報用の設定 --- */}
                 {newsType === "lineup" && (
                   <div className="space-y-3 animate-in fade-in duration-300">
                     <div>
-                      <label className="block text-[10px] font-black text-zinc-400 tracking-wider uppercase mb-1.5">
-                        監督コメント・意気込みなどの一言 (自由に入力)
+                      <label className="block text-[10.5px] font-black text-zinc-500 dark:text-zinc-400 tracking-wider uppercase mb-1.5">
+                        💬 監督コメント・意気込みなどの一言 (自由に入力)
                       </label>
                       <textarea
                         value={lineupComment}
                         onChange={(e) => setLineupComment(e.target.value)}
                         placeholder="例：新戦力の山田を1番に抜擢！打線のつながりで勝利を目指します。"
-                        className="w-full min-h-[80px] bg-black/40 border border-white/10 focus:border-primary/50 text-white text-xs p-3 rounded-xl outline-none resize-none transition-all placeholder:text-zinc-600"
+                        className="w-full min-h-[90px] bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 focus:border-primary dark:focus:border-primary/50 focus:ring-2 focus:ring-primary/10 text-zinc-900 dark:text-white text-xs p-3 rounded-xl outline-none resize-none transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-bold"
                       />
                     </div>
                   </div>
@@ -1034,11 +1085,11 @@ ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : "
                 {newsType === "inning" && (
                   <div className="space-y-4 animate-in fade-in duration-300">
                     <div>
-                      <label className="block text-[10px] font-black text-zinc-400 tracking-wider uppercase mb-1.5">
-                        速報に含めるイニングの選択
+                      <label className="block text-[10.5px] font-black text-zinc-500 dark:text-zinc-400 tracking-wider uppercase mb-1.5">
+                        ⚾️ 速報に含めるイニングの選択
                       </label>
                       {inningOptions.length === 0 ? (
-                        <div className="text-xs font-bold text-zinc-500 py-2">
+                        <div className="text-xs font-bold text-zinc-400 py-2">
                           進行中のイニングデータが存在しません。イニングスコアを入力してください。
                         </div>
                       ) : (
@@ -1046,15 +1097,15 @@ ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : "
                           <select
                             value={selectedInningIndex}
                             onChange={(e) => setSelectedInningIndex(Number(e.target.value))}
-                            className="w-full h-11 bg-black/40 border border-white/10 hover:border-white/20 focus:border-primary/50 text-white font-bold text-xs px-4 rounded-xl outline-none transition-all cursor-pointer appearance-none"
+                            className="w-full h-11 bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 hover:border-zinc-300 dark:hover:border-white/20 focus:border-primary dark:focus:border-primary/50 focus:ring-2 focus:ring-primary/10 text-zinc-900 dark:text-white font-bold text-xs px-4 rounded-xl outline-none transition-all cursor-pointer appearance-none shadow-sm"
                           >
                             {inningOptions.map((opt, idx) => (
-                              <option key={idx} value={idx}>
+                              <option key={idx} value={idx} className="bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white">
                                 {opt.label}まで表示する
                               </option>
                             ))}
                           </select>
-                          <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-400">
+                          <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-400 dark:text-zinc-500">
                             <ChevronRight className="h-4 w-4 rotate-90" />
                           </div>
                         </div>
@@ -1062,14 +1113,14 @@ ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : "
                     </div>
 
                     <div>
-                      <label className="block text-[10px] font-black text-zinc-400 tracking-wider uppercase mb-1.5">
-                        戦況解説・追加コメント (自由に入力)
+                      <label className="block text-[10.5px] font-black text-zinc-500 dark:text-zinc-400 tracking-wider uppercase mb-1.5">
+                        💬 戦況解説・追加コメント (自由に入力)
                       </label>
                       <textarea
                         value={inningComment}
                         onChange={(e) => setInningComment(e.target.value)}
                         placeholder="例：山田が先制の2ランを放ちリードする展開。先発佐藤も要所を締め好投中。"
-                        className="w-full min-h-[80px] bg-black/40 border border-white/10 focus:border-primary/50 text-white text-xs p-3 rounded-xl outline-none resize-none transition-all placeholder:text-zinc-600"
+                        className="w-full min-h-[95px] bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 focus:border-primary dark:focus:border-primary/50 focus:ring-2 focus:ring-primary/10 text-zinc-900 dark:text-white text-xs p-3 rounded-xl outline-none resize-none transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-bold"
                       />
                     </div>
                   </div>
@@ -1079,27 +1130,27 @@ ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : "
                 {newsType === "end" && (
                   <div className="space-y-4 animate-in fade-in duration-300">
                     <div>
-                      <label className="block text-[10px] font-black text-zinc-400 tracking-wider uppercase mb-1.5">
-                        本日のヒーロー・活躍した選手
+                      <label className="block text-[10.5px] font-black text-zinc-500 dark:text-zinc-400 tracking-wider uppercase mb-1.5">
+                        🏅 本日のヒーロー・活躍した選手
                       </label>
                       <input
                         type="text"
                         value={heroPlayer}
                         onChange={(e) => setHeroPlayer(e.target.value)}
                         placeholder="例：山田選手 (先制の2ランを含む3打点の大活躍！)"
-                        className="w-full h-11 bg-black/40 border border-white/10 focus:border-primary/50 text-white text-xs px-4 rounded-xl outline-none transition-all placeholder:text-zinc-600"
+                        className="w-full h-11 bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 focus:border-primary dark:focus:border-primary/50 focus:ring-2 focus:ring-primary/10 text-zinc-900 dark:text-white text-xs px-4 rounded-xl outline-none transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-bold"
                       />
                     </div>
 
                     <div>
-                      <label className="block text-[10px] font-black text-zinc-400 tracking-wider uppercase mb-1.5">
-                        戦評・総括
+                      <label className="block text-[10.5px] font-black text-zinc-500 dark:text-zinc-400 tracking-wider uppercase mb-1.5">
+                        📝 戦評・総括
                       </label>
                       <textarea
                         value={summaryText}
                         onChange={(e) => setSummaryText(e.target.value)}
                         placeholder="例：初回、3番山田の右越え2ランで先制。中盤に追いつかれるも、5回に相手の失策の間に勝ち越しに成功。投げては先発佐藤が7回2失点の力投で見事完投勝利を飾った。"
-                        className="w-full min-h-[120px] bg-black/40 border border-white/10 focus:border-primary/50 text-white text-xs p-3 rounded-xl outline-none resize-none transition-all placeholder:text-zinc-600"
+                        className="w-full min-h-[130px] bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 focus:border-primary dark:focus:border-primary/50 focus:ring-2 focus:ring-primary/10 text-zinc-900 dark:text-white text-xs p-3 rounded-xl outline-none resize-none transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-bold"
                       />
                     </div>
                   </div>
@@ -1110,19 +1161,19 @@ ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : "
             {/* 👉 右カラム: テキストエディタ ＆ アクション */}
             <div className="lg:col-span-7 space-y-6">
               
-              <div className="bg-zinc-900/60 backdrop-blur-md border border-white/5 p-5 rounded-[var(--radius-xl)] space-y-4 relative">
+              <div className="bg-white/90 dark:bg-zinc-900/60 backdrop-blur-md border border-zinc-200 dark:border-white/5 p-5 rounded-2xl shadow-sm dark:shadow-2xl space-y-4 relative">
                 
                 {/* ツールバー */}
-                <div className="flex items-center justify-between border-b border-white/5 pb-3">
+                <div className="flex items-center justify-between border-b border-zinc-100 dark:border-white/5 pb-3">
                   <div className="flex items-center gap-2">
                     <FileText className="h-4 w-4 text-primary" />
-                    <h4 className="text-xs font-black text-white tracking-wider">速報テキスト（編集・手直し可能）</h4>
+                    <h4 className="text-xs font-black text-zinc-900 dark:text-white tracking-wider">📝 速報テキスト（編集・手直し可能）</h4>
                   </div>
                   
                   <button
                     onClick={handleResetText}
                     title="自動生成されたテキストにリセットする"
-                    className="flex items-center gap-1 text-[10px] font-black text-zinc-400 hover:text-white transition-colors px-2.5 py-1 rounded-full bg-white/5 hover:bg-white/10 border border-white/5 active:scale-95"
+                    className="flex items-center gap-1 text-[10px] font-black text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white transition-colors px-2.5 py-1.5 rounded-full bg-zinc-100 dark:bg-white/5 hover:bg-zinc-200 dark:hover:bg-white/10 border border-zinc-200 dark:border-white/5 active:scale-95 animate-in fade-in duration-300"
                   >
                     <RotateCcw className="h-3 w-3" />
                     自動生成から復元
@@ -1131,12 +1182,12 @@ ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : "
 
                 {/* エディターエリア */}
                 {loadingDetails ? (
-                  <div className="w-full h-[360px] bg-black/20 animate-pulse rounded-2xl" />
+                  <div className="w-full h-[360px] bg-zinc-100 dark:bg-black/20 animate-pulse rounded-2xl" />
                 ) : (
                   <textarea
                     value={editedText}
                     onChange={(e) => setEditedText(e.target.value)}
-                    className="w-full min-h-[480px] bg-black/40 border border-white/5 focus:border-primary/30 text-white text-sm p-4 rounded-2xl outline-none font-mono resize-y leading-relaxed transition-all focus:ring-1 focus:ring-primary/20"
+                    className="w-full min-h-[480px] bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 focus:border-primary dark:focus:border-primary/50 focus:ring-2 focus:ring-primary/10 text-zinc-900 dark:text-white text-[13px] sm:text-sm p-4 rounded-2xl outline-none font-mono resize-y leading-relaxed transition-all focus:ring-1 focus:ring-primary/20 shadow-inner"
                     placeholder="試合を選択すると、ここに自動生成された速報テキストが表示され、自由に手直し・編集ができます。"
                   />
                 )}
@@ -1145,7 +1196,7 @@ ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : "
                 <div className="flex flex-col sm:flex-row gap-3 pt-2">
                   <Button
                     onClick={handleCopy}
-                    className="flex-1 rounded-full font-black text-xs h-11 gap-2 active:scale-95 transition-transform"
+                    className="flex-1 rounded-full font-black text-xs h-11 gap-2 active:scale-95 transition-all bg-white hover:bg-zinc-50 dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-800 dark:hover:bg-zinc-900 text-zinc-900 dark:text-white shadow-sm"
                     variant="outline"
                   >
                     {copied ? <Check className="h-4 w-4 text-emerald-500" /> : <Copy className="h-4 w-4" />}
@@ -1154,14 +1205,14 @@ ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : "
 
                   <Button
                     onClick={handleLineShare}
-                    className="flex-1 rounded-full font-black text-xs h-11 gap-2 bg-[#06C755] hover:bg-[#05b34c] text-white active:scale-95 transition-transform shadow-lg shadow-emerald-950/20"
+                    className="flex-1 rounded-full font-black text-xs h-11 gap-2 bg-[#06C755] hover:bg-[#05b34c] hover:shadow-lg hover:shadow-emerald-500/20 text-white active:scale-95 transition-all shadow-md"
                   >
                     <Send className="h-4 w-4" />
                     LINEで共有・転送
                   </Button>
                 </div>
 
-                <p className="text-[10px] font-bold text-zinc-500 text-center">
+                <p className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 text-center">
                   ※ LINE共有ボタンを押すと、LINEアプリが開き、編集したテキストをフレンドやグループへ直接送信できます。
                 </p>
               </div>
