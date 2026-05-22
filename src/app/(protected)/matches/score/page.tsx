@@ -65,7 +65,7 @@ function ScorePageContent() {
 
       {/* 2. 【中央：プレイ表示エリア】(約50%) */}
       <main className={cn(
-        "flex-1 relative flex flex-col items-center justify-between py-1 transition-all duration-1000",
+        "flex-1 relative flex flex-col items-center justify-between pt-1 pb-0 transition-all duration-1000",
         isLogExpanded ? "z-50" : "z-10",
         isReady ? "opacity-100 scale-100" : "opacity-0 scale-95"
       )}>
@@ -82,7 +82,7 @@ function ScorePageContent() {
           isLogExpanded ? "h-[90%] z-50" : "h-[100px] z-30"
         )}>
           <div 
-            className="h-full bg-white/95 dark:bg-zinc-950/80 backdrop-blur-md rounded-t-3xl border border-border/30 border-b-0 p-3 shadow-[0_-8px_30px_rgba(0,0,0,0.08)] flex flex-col"
+            className="h-full bg-white/20 dark:bg-zinc-950/20 backdrop-blur-[2px] rounded-t-3xl border border-border/20 border-b-0 pt-3 px-3 pb-0 shadow-[0_-8px_30px_rgba(0,0,0,0.04)] flex flex-col"
           >
             {/* ハンドル部分（タップで開閉） */}
             <div 
@@ -91,14 +91,14 @@ function ScorePageContent() {
             >
               <div className="flex items-center gap-1.5">
                 <div className="w-1.5 h-1.5 rounded-full bg-primary" />
-                <span className="text-[12px] font-black tracking-widest text-foreground">プレイログ</span>
+                <span className="text-[13.5px] font-black tracking-widest text-foreground">プレイログ</span>
               </div>
               <div className="flex items-center gap-1">
-                <span className="text-[9px] font-bold text-muted-foreground">{isLogExpanded ? "閉じる" : "すべて見る"}</span>
-                <ChevronUp className={cn("w-4 h-4 text-muted-foreground transition-transform", isLogExpanded && "rotate-180")} />
+                <span className="text-sm font-black text-muted-foreground hover:text-foreground transition-colors">{isLogExpanded ? "閉じる" : "すべて見る"}</span>
+                <ChevronUp className={cn("w-4.5 h-4.5 text-muted-foreground transition-transform", isLogExpanded && "rotate-180")} />
               </div>
             </div>
-            <div className={cn("flex-1", isLogExpanded ? "overflow-y-auto pr-1 pb-2" : "overflow-hidden")}>
+            <div className={cn("flex-1", isLogExpanded ? "overflow-y-auto pr-1 pb-0" : "overflow-hidden")}>
               <PlayLog limit={isLogExpanded ? 100 : 3} />
             </div>
           </div>

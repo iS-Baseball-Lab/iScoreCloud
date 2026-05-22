@@ -5,7 +5,7 @@
 
 import React, { useMemo } from "react";
 import { useScore } from "@/contexts/ScoreContext";
-import { History, Trophy, ArrowUpRight, Circle } from "lucide-react";
+import { History, Trophy, ArrowUpRight, Circle, ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface PlayLogProps {
@@ -15,20 +15,74 @@ interface PlayLogProps {
 export function PlayLog({ limit = 3 }: PlayLogProps) {
   const { state } = useScore();
 
-  const displayLogs = useMemo(() => {
-    return limit ? state.logs.slice(0, limit) : state.logs;
-  }, [state.logs, limit]);
+  // イニング境界の区切りを含めた、表示用アイテムの配列を生成する
+  const displayItems = useMemo(() => {
+    const list: any[] = [];
+    if (state.logs.length === 0) return list;
 
-  if (displayLogs.length === 0) {
-    return (
-      <div className="h-full flex items-center justify-center opacity-30">
-        <div className="text-center">
-          <History className="h-6 w-6 mx-auto mb-1 stroke-[1px]" />
-          <p className="text-[8px] font-black uppercase tracking-widest">Ready</p>
-        </div>
-      </div>
-    );
-  }
+    // 表示するログをスライス
+    const targetLogs = limit ? state.logs.slice(0, limit) : state.logs;
+
+    for (let i = 0; i < targetLogs.length; i++) {
+      const currentLog = targetLogs[i];
+      const nextLog = targetLogs[i + 1]; // 時系列では古い方（logsは降順）
+
+      // 1. まずそのログ自体を追加
+      list.push({
+        type: "log",
+        data: currentLog,
+      });
+
+      // 2. イニングの区切りを判定
+      // logs は降順（最新が先頭）なので、currentLog から nextLog に移る時、
+      // イニングが戻る（＝古いイニングになる）タイミングでセパレーターを挟む。
+      if (nextLog && (currentLog.inning !== nextLog.inning || currentLog.isTop !== nextLog.isTop)) {
+        list.push({
+          type: "separator",
+          id: `sep-${currentLog.id}`,
+          label: `${currentLog.inning}回${currentLog.isTop ? "表" : "裏"}`,
+        });
+      }
+    }
+
+    // 3. 一番古いログ（配列の最後）の下に、「プレイボール」と「最初のイニング」の区切りを挿入する
+    if (!limit || targetLogs.length < limit || (targetLogs[targetLogs.length - 1]?.inning === 1 && targetLogs[targetLogs.length - 1]?.isTop)) {
+      const lastLog = targetLogs[targetLogs.length - 1];
+      if (lastLog) {
+        // 最初のイニング（1回表）のセパレーター
+        list.push({
+          type: "separator",
+          id: `sep-start-${lastLog.id}`,
+          label: `${lastLog.inning}回${lastLog.isTop ? "表" : "裏"}`,
+        });
+        // プレイボール
+        list.push({
+          type: "separator",
+          id: "sep-playball",
+          label: "プレイボール",
+        });
+      }
+    }
+
+    // 4. 最新ログが「試合終了」でなく、ステータスが finished の場合は、一番上に「試合終了」を表示したい
+    if (state.status === "finished" && (!limit || limit > 3)) {
+      const hasGameSetLog = targetLogs.some(l => l.description.includes("試合終了"));
+      if (!hasGameSetLog) {
+        list.unshift({
+          type: "separator",
+          id: "sep-gameset",
+          label: "試合終了",
+        });
+      }
+    }
+
+    return list;
+  }, [state.logs, limit, state.status]);
+
+  const isSeparatorText = (text: string) => {
+    const clean = text.trim();
+    return clean === "プレイボール" || clean === "試合終了" || clean === "ゲームセット" || clean === "コールドゲーム" || clean === "ノーゲーム" || clean === "イニング交代";
+  };
 
   const parseLogDescription = (desc: string) => {
     const bsoMatch = desc.match(/\s\[B:(\d+),\s*S:(\d+),\s*O:(\d+)\]$/);
@@ -42,12 +96,60 @@ export function PlayLog({ limit = 3 }: PlayLogProps) {
     return { cleanDesc: desc, bso: null };
   };
 
+  if (displayItems.length === 0) {
+    return (
+      <div className="h-full flex items-center justify-center opacity-30">
+        <div className="text-center">
+          <History className="h-6 w-6 mx-auto mb-1 stroke-[1px]" />
+          <p className="text-[8px] font-black uppercase tracking-widest">Ready</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex flex-col gap-1.5 h-full overflow-y-auto pb-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-      {displayLogs.map((log, index) => {
-        const isLatest = index === 0;
+    <div className="flex flex-col gap-1.5 h-full overflow-y-auto pb-0.5 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+      {displayItems.map((item) => {
+        if (item.type === "separator") {
+          return (
+            <div
+              key={item.id}
+              className="w-full flex items-center justify-center py-2 animate-playlog-slide-in"
+            >
+              <div className="flex items-center gap-3 w-full max-w-xs justify-center px-4">
+                <div className="h-[1px] flex-1 bg-gradient-to-r from-transparent to-zinc-500/20" />
+                <span className="text-[10px] font-black tracking-widest text-zinc-500 dark:text-zinc-400 uppercase select-none shrink-0">
+                  {item.label}
+                </span>
+                <div className="h-[1px] flex-1 bg-gradient-to-l from-transparent to-zinc-500/20" />
+              </div>
+            </div>
+          );
+        }
+
+        // type === "log" の場合
+        const log = item.data;
         const { cleanDesc, bso } = parseLogDescription(log.description);
-        
+
+        // ログエントリ自体がセパレーターにふさわしいテキストの場合
+        if (isSeparatorText(cleanDesc)) {
+          return (
+            <div
+              key={log.id}
+              className="w-full flex items-center justify-center py-2 animate-playlog-slide-in"
+            >
+              <div className="flex items-center gap-3 w-full max-w-xs justify-center px-4">
+                <div className="h-[1px] flex-1 bg-gradient-to-r from-transparent to-zinc-500/20" />
+                <span className="text-[10px] font-black tracking-widest text-zinc-500 dark:text-zinc-400 uppercase select-none shrink-0">
+                  {cleanDesc}
+                </span>
+                <div className="h-[1px] flex-1 bg-gradient-to-l from-transparent to-zinc-500/20" />
+              </div>
+            </div>
+          );
+        }
+
+        const isLatest = state.logs[0]?.id === log.id;
         const isScore = cleanDesc.includes("得点") || cleanDesc.includes("SCORE");
         const isOut = cleanDesc.includes("三振") || cleanDesc.includes("アウト");
         const isHit = cleanDesc.includes("安打") || cleanDesc.includes("塁打") || cleanDesc.includes("単打") || cleanDesc.includes("HIT");
@@ -57,13 +159,12 @@ export function PlayLog({ limit = 3 }: PlayLogProps) {
             key={log.id}
             className={cn(
               "relative flex items-center gap-3 transition-all duration-300",
-              // 🔥 影とブラーを排除し、純粋な透過カラーのみを設定
               isLatest 
-                ? "bg-black/50 text-white px-4 py-2.5 rounded-[20px] border border-white/10 animate-playlog-slide-in z-10" 
-                : "bg-black/20 text-foreground/90 px-4 py-2 rounded-[18px] border border-zinc-500/10 opacity-90 hover:opacity-100 hover:scale-[1.005]"
+                ? "bg-black/40 dark:bg-black/50 text-white px-2.5 py-1 rounded-lg border border-white/10 animate-playlog-slide-in z-10" 
+                : "bg-black/10 dark:bg-white/5 text-foreground/80 px-2.5 py-0.5 rounded-lg border border-zinc-500/5 opacity-80 hover:opacity-100 hover:scale-[1.002]"
             )}
           >
-            {/* イニング (例: 1T) - 🔥斜体(italic)を削除！ */}
+            {/* イニング */}
             <div className={cn(
               "flex items-center justify-center min-w-[28px] h-5 rounded-full text-[9px] font-black",
               isLatest ? "bg-white/20 text-white" : "bg-black/10 dark:bg-white/10 text-foreground/80"
@@ -88,7 +189,7 @@ export function PlayLog({ limit = 3 }: PlayLogProps) {
             {/* BSO */}
             {bso ? (
               <div className={cn(
-                "flex items-center gap-2 shrink-0 rounded-full px-2 py-1.5 text-[10px] font-extrabold tracking-tighter transition-all duration-300",
+                "flex items-center gap-2 shrink-0 rounded-full px-2 py-1 text-[10px] font-extrabold tracking-tighter transition-all duration-300",
                 isLatest 
                   ? "bg-black/50 text-white" 
                   : "bg-black/10 dark:bg-white/10 text-foreground"
