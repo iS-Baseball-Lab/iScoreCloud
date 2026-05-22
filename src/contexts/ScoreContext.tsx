@@ -112,7 +112,9 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
             result: actionNote
           } : null,
           newPlayLog: {
-            inningText: `${updatedState.inning}回${updatedState.isTop ? "表" : "裏"}`,
+            inningText: updatedState.logs[0]
+              ? `${updatedState.logs[0].inning}回${updatedState.logs[0].isTop ? "表" : "裏"}`
+              : `${updatedState.inning}回${updatedState.isTop ? "表" : "裏"}`,
             resultType: "play",
             description: updatedState.logs[0]?.description || actionNote,
           }

@@ -188,15 +188,10 @@ export function PlayLog({ limit = 3 }: PlayLogProps) {
 
             {/* BSO */}
             {bso ? (
-              <div className={cn(
-                "flex items-center gap-2 shrink-0 rounded-full px-2 py-1 text-[10px] font-extrabold tracking-tighter transition-all duration-300",
-                isLatest 
-                  ? "bg-black/50 text-white" 
-                  : "bg-black/10 dark:bg-white/10 text-foreground"
-              )}>
+              <div className="flex items-center gap-1.5 shrink-0 text-[10px] font-black tracking-tighter select-none">
                 {/* Ball */}
                 <div className="flex gap-0.5 items-center">
-                  <span className="text-emerald-500 font-extrabold text-[10px] mr-0.5">B</span>
+                  <span className="text-emerald-500 font-black text-[9px] mr-0.5">B</span>
                   <div className="flex gap-[2px]">
                     {[1, 2, 3].map((num) => (
                       <div
@@ -204,8 +199,8 @@ export function PlayLog({ limit = 3 }: PlayLogProps) {
                         className={cn(
                           "w-1.5 h-1.5 rounded-full transition-all duration-300",
                           num <= bso.balls 
-                            ? "bg-emerald-500" 
-                            : "bg-emerald-950/30 dark:bg-emerald-900/40"
+                            ? "bg-emerald-500 shadow-[0_0_4px_rgba(16,185,129,0.5)]" 
+                            : "bg-emerald-950/20 dark:bg-emerald-900/30"
                         )}
                       />
                     ))}
@@ -213,11 +208,11 @@ export function PlayLog({ limit = 3 }: PlayLogProps) {
                 </div>
 
                 {/* Divider */}
-                <span className="opacity-30 text-[8px] font-light text-zinc-500 px-0.5">|</span>
+                <span className="opacity-20 text-[8px] font-light text-zinc-500 px-0.5">|</span>
 
                 {/* Strike */}
                 <div className="flex gap-0.5 items-center">
-                  <span className="text-amber-400 font-extrabold text-[10px] mr-0.5">S</span>
+                  <span className="text-amber-400 font-black text-[9px] mr-0.5">S</span>
                   <div className="flex gap-[2px]">
                     {[1, 2].map((num) => (
                       <div
@@ -225,8 +220,8 @@ export function PlayLog({ limit = 3 }: PlayLogProps) {
                         className={cn(
                           "w-1.5 h-1.5 rounded-full transition-all duration-300",
                           num <= bso.strikes 
-                            ? "bg-amber-400" 
-                            : "bg-amber-950/30 dark:bg-amber-900/40"
+                            ? "bg-amber-400 shadow-[0_0_4px_rgba(251,191,36,0.5)]" 
+                            : "bg-amber-950/20 dark:bg-amber-900/30"
                         )}
                       />
                     ))}
@@ -234,11 +229,11 @@ export function PlayLog({ limit = 3 }: PlayLogProps) {
                 </div>
 
                 {/* Divider */}
-                <span className="opacity-30 text-[8px] font-light text-zinc-500 px-0.5">|</span>
+                <span className="opacity-20 text-[8px] font-light text-zinc-500 px-0.5">|</span>
 
                 {/* Out */}
                 <div className="flex gap-0.5 items-center">
-                  <span className="text-rose-500 font-extrabold text-[10px] mr-0.5">O</span>
+                  <span className="text-rose-500 font-black text-[9px] mr-0.5">O</span>
                   <div className="flex gap-[2px]">
                     {[1, 2].map((num) => (
                       <div
@@ -246,8 +241,8 @@ export function PlayLog({ limit = 3 }: PlayLogProps) {
                         className={cn(
                           "w-1.5 h-1.5 rounded-full transition-all duration-300",
                           num <= bso.outs 
-                            ? "bg-rose-500" 
-                            : "bg-rose-950/30 dark:bg-rose-900/40"
+                            ? "bg-rose-500 shadow-[0_0_4px_rgba(239,68,68,0.5)]" 
+                            : "bg-rose-950/20 dark:bg-rose-900/30"
                         )}
                       />
                     ))}

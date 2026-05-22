@@ -78,15 +78,15 @@ function ScorePageContent() {
 
         {/* 最近のプレイログ：操作パネルとの視覚的な繋ぎ / 引き出し式シート */}
         <div className={cn(
-          "absolute bottom-0 w-full px-4 transition-all duration-300",
+          "absolute bottom-0 w-full px-2 transition-all duration-300",
           isLogExpanded ? "h-[90%] z-50" : "h-[100px] z-30"
         )}>
           <div 
-            className="h-full bg-white/20 dark:bg-zinc-950/20 backdrop-blur-[2px] rounded-t-3xl border border-border/20 border-b-0 pt-3 px-3 pb-0 shadow-[0_-8px_30px_rgba(0,0,0,0.04)] flex flex-col"
+            className="h-full bg-white/10 dark:bg-black/10 backdrop-blur-[3px] rounded-t-3xl border border-zinc-300/60 dark:border-zinc-800/60 border-b-0 pt-2 px-2 pb-0 shadow-[0_-8px_30px_rgba(0,0,0,0.06)] flex flex-col"
           >
             {/* ハンドル部分（タップで開閉） */}
             <div 
-              className="flex justify-between items-center mb-1 px-2 py-1 cursor-pointer"
+              className="flex justify-between items-center mb-1 px-2 py-0.5 cursor-pointer"
               onClick={() => setIsLogExpanded(!isLogExpanded)}
             >
               <div className="flex items-center gap-1.5">
