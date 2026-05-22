@@ -270,7 +270,7 @@ export function PlayArea() {
     <div className="w-full flex flex-col items-center justify-center">
 
       {/* 🚀 バッター情報 (ダイヤモンドの上部に通常フローで配置) */}
-      <div className="w-full max-w-[380px] sm:max-w-[420px] px-2 text-center z-50 mb-6">
+      <div className="w-full max-w-[480px] sm:max-w-[520px] px-2 text-center z-50 mb-6">
         {(() => {
           const index = isMyAttack ? state.myBattingIndex : state.opponentBattingIndex;
           const batter = offenseLineup && offenseLineup.length > index ? offenseLineup[index] : null;
@@ -287,26 +287,36 @@ export function PlayArea() {
           const nextPreviousLogs = state.logs.filter((l) => l.description.startsWith(nextSearchPrefix) && l.isTop === state.isTop);
 
           return (
-            <div className="grid grid-cols-2 gap-3 w-full max-w-[380px] sm:max-w-[420px] mx-auto select-none">
+            <div className="grid grid-cols-2 gap-3 w-full max-w-[480px] sm:max-w-[520px] mx-auto select-none">
               
               {/* 1. 現在のバッター */}
               <div className="relative w-full">
                 <div 
                   onClick={() => setActiveHistory(activeHistory === 'current' ? null : 'current')}
                   className={cn(
-                    "w-full flex flex-col items-center justify-center bg-primary text-primary-foreground p-2 rounded-2xl shadow-md border border-primary/10 cursor-pointer hover:bg-primary/95 transition-all select-none h-16 relative",
+                    "w-full flex flex-row items-center justify-between px-3 bg-primary text-primary-foreground rounded-2xl shadow-md border border-primary/10 cursor-pointer hover:bg-primary/95 transition-all select-none h-12 relative",
                     activeHistory === 'current' && "ring-2 ring-primary-foreground/30"
                   )}
                 >
-                  {/* 上段ラベルと代打ボタン */}
-                  <div className="w-full flex items-center justify-between px-1 absolute top-1.5 left-0">
-                    <span className="text-[8px] font-black text-primary-foreground/70 uppercase tracking-widest bg-white/10 px-1.5 py-0.5 rounded leading-none">
-                      Bat
+                  {/* 左: Bat ラベル */}
+                  <span className="text-[8px] font-black text-primary-foreground/80 uppercase tracking-widest bg-white/15 px-1.5 py-0.5 rounded leading-none shrink-0">
+                    Bat
+                  </span>
+
+                  {/* 中央: 打者情報 */}
+                  <div className="flex items-center gap-1 min-w-0 justify-center flex-1 mx-2">
+                    <span className="text-[12px] sm:text-[13px] font-black truncate">
+                      {`${index + 1}番 ${batterName}`}
                     </span>
+                    <ChevronDown className={cn("w-3.5 h-3.5 text-primary-foreground/80 transition-transform duration-300 shrink-0", activeHistory === 'current' && "rotate-180")} />
+                  </div>
+
+                  {/* 右: 代打ボタン */}
+                  <div className="shrink-0 w-8 flex justify-end">
                     {state.isScorer && (
                       <button
                         type="button"
-                        className="pointer-events-auto bg-white/20 hover:bg-white/30 text-primary-foreground text-[8px] font-black px-1.5 py-0.5 rounded transition-colors leading-none"
+                        className="pointer-events-auto bg-white/20 hover:bg-white/30 text-primary-foreground text-[8.5px] font-black px-1.5 py-1 rounded transition-colors leading-none"
                         onClick={(e) => {
                           e.stopPropagation(); // ドロップダウンを開くのを防ぐ
                           setSubInitialTab(isMyAttack ? 'my' : 'opponent');
@@ -317,14 +327,6 @@ export function PlayArea() {
                         代打
                       </button>
                     )}
-                  </div>
-
-                  {/* 中段: 打者情報 */}
-                  <div className="flex items-center gap-1 mt-4 max-w-full px-1 justify-center">
-                    <span className="text-[13px] font-black truncate">
-                      {`${index + 1}番 ${batterName}`}
-                    </span>
-                    <ChevronDown className={cn("w-3.5 h-3.5 text-primary-foreground/80 transition-transform duration-300", activeHistory === 'current' && "rotate-180")} />
                   </div>
                 </div>
 
@@ -391,24 +393,25 @@ export function PlayArea() {
                 <div 
                   onClick={() => setActiveHistory(activeHistory === 'next' ? null : 'next')}
                   className={cn(
-                    "w-full flex flex-col items-center justify-center bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-800 dark:text-zinc-100 p-2 rounded-2xl shadow-sm cursor-pointer hover:bg-zinc-200 dark:hover:bg-zinc-800/80 transition-all select-none h-16 relative",
+                    "w-full flex flex-row items-center justify-between px-3 bg-zinc-100 dark:bg-zinc-900 border border-primary/30 dark:border-primary/45 text-zinc-800 dark:text-zinc-100 rounded-2xl shadow-sm cursor-pointer hover:bg-zinc-200 dark:hover:bg-zinc-800/80 transition-all select-none h-12 relative",
                     activeHistory === 'next' && "ring-2 ring-primary/30"
                   )}
                 >
-                  {/* 上段ラベル */}
-                  <div className="w-full flex items-center justify-start px-1 absolute top-1.5 left-0">
-                    <span className="text-[8px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest bg-zinc-200/50 dark:bg-zinc-800/50 px-1.5 py-0.5 rounded leading-none border border-zinc-300/30 dark:border-zinc-700/30">
-                      Next
-                    </span>
-                  </div>
+                  {/* 左: Next ラベル */}
+                  <span className="text-[8px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest bg-zinc-200/50 dark:bg-zinc-800/50 px-1.5 py-0.5 rounded leading-none border border-zinc-300/30 dark:border-zinc-700/30 shrink-0">
+                    Next
+                  </span>
 
-                  {/* 中段: 打者情報 */}
-                  <div className="flex items-center gap-1 mt-4 max-w-full px-1 justify-center">
-                    <span className="text-[13px] font-black truncate">
+                  {/* 中央: 打者情報 */}
+                  <div className="flex items-center gap-1 min-w-0 justify-center flex-1 mx-2">
+                    <span className="text-[12px] sm:text-[13px] font-black truncate">
                       {`${nextIndex + 1}番 ${nextBatterName}`}
                     </span>
-                    <ChevronDown className={cn("w-3.5 h-3.5 text-zinc-500 dark:text-zinc-400 transition-transform duration-300", activeHistory === 'next' && "rotate-180")} />
+                    <ChevronDown className={cn("w-3.5 h-3.5 text-zinc-500 dark:text-zinc-400 transition-transform duration-300 shrink-0", activeHistory === 'next' && "rotate-180")} />
                   </div>
+
+                  {/* 右: レイアウト調整用スペーサー */}
+                  <div className="w-8 shrink-0" />
                 </div>
 
                 {/* ドロップダウン履歴 (ネクストバッター用) */}

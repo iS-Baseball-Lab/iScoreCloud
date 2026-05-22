@@ -5,7 +5,7 @@
 
 import React, { useMemo } from "react";
 import { useScore } from "@/contexts/ScoreContext";
-import { History, Trophy, ArrowUpRight, Circle, ChevronDown, ChevronUp } from "lucide-react";
+import { History, Trophy, ArrowUpRight, Circle, ChevronDown, ChevronUp, XCircle, Activity } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface PlayLogProps {
@@ -160,7 +160,7 @@ export function PlayLog({ limit = 3 }: PlayLogProps) {
             className={cn(
               "relative flex items-center gap-3 transition-all duration-300",
               isLatest 
-                ? "bg-primary/15 dark:bg-primary/25 text-black dark:text-black px-2.5 py-1 rounded-lg border border-primary/40 dark:border-primary/50 shadow-sm animate-playlog-slide-in z-10" 
+                ? "bg-primary/15 dark:bg-primary/25 text-black dark:text-white px-2.5 py-1 rounded-lg border border-primary/40 dark:border-primary/50 shadow-sm animate-playlog-slide-in z-10" 
                 : "bg-primary/5 dark:bg-primary/10 text-zinc-800 dark:text-zinc-200 px-2.5 py-0.5 rounded-lg border border-primary/10 dark:border-primary/15 opacity-90 hover:opacity-100 hover:scale-[1.002]"
             )}
           >
@@ -173,17 +173,25 @@ export function PlayLog({ limit = 3 }: PlayLogProps) {
             </div>
 
             {/* 説明 */}
-            <div className="flex-1 min-w-0 flex items-center gap-1.5">
+            <div className="flex-1 min-w-0 flex items-center gap-2">
+              {/* 文字列の左に、そのプレイ内容に応じたアイコンを表示 */}
+              {isScore ? (
+                <Trophy className="h-4 w-4 text-yellow-500 shrink-0" />
+              ) : isHit ? (
+                <ArrowUpRight className="h-4 w-4 text-blue-500 dark:text-blue-400 shrink-0 stroke-[2.5]" />
+              ) : isOut ? (
+                <XCircle className="h-4 w-4 text-rose-500 shrink-0 stroke-[2.5]" />
+              ) : (
+                <Activity className="h-4 w-4 text-zinc-400 dark:text-zinc-500 shrink-0 stroke-[2]" />
+              )}
+
               <span className={cn(
                 "font-bold tracking-tight truncate",
-                isLatest ? "text-black dark:text-black" : "text-zinc-700 dark:text-zinc-300",
+                isLatest ? "text-black dark:text-white" : "text-zinc-700 dark:text-zinc-300",
                 limit === 1 ? "text-[14px]" : "text-[13px]"
               )}>
                 {cleanDesc}
               </span>
-              {isHit && <ArrowUpRight className="h-3 w-3 text-blue-400 shrink-0" />}
-              {isScore && <Trophy className="h-3 w-3 text-yellow-400 shrink-0" />}
-              {isOut && <Circle className="h-2 w-2 fill-rose-500 text-rose-500 shrink-0" />}
             </div>
 
             {/* BSO */}
@@ -252,7 +260,7 @@ export function PlayLog({ limit = 3 }: PlayLogProps) {
             ) : (
               <span className={cn(
                 "text-[9px] font-mono shrink-0",
-                isLatest ? "text-black/60 dark:text-black/60" : "text-zinc-500/80 dark:text-zinc-400/80"
+                isLatest ? "text-black/60 dark:text-white/60" : "text-zinc-500/80 dark:text-zinc-400/80"
               )}>
                 {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </span>
