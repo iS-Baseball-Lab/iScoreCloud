@@ -160,14 +160,14 @@ export function PlayLog({ limit = 3 }: PlayLogProps) {
             className={cn(
               "relative flex items-center gap-3 transition-all duration-300",
               isLatest 
-                ? "bg-black/40 dark:bg-black/50 text-white px-2.5 py-1 rounded-lg border border-white/10 animate-playlog-slide-in z-10" 
-                : "bg-black/10 dark:bg-white/5 text-foreground/80 px-2.5 py-0.5 rounded-lg border border-zinc-500/5 opacity-80 hover:opacity-100 hover:scale-[1.002]"
+                ? "bg-primary/15 dark:bg-primary/25 text-zinc-900 dark:text-white px-2.5 py-1 rounded-lg border border-primary/40 dark:border-primary/50 shadow-sm animate-playlog-slide-in z-10" 
+                : "bg-primary/5 dark:bg-primary/10 text-foreground/80 px-2.5 py-0.5 rounded-lg border border-primary/10 dark:border-primary/15 opacity-80 hover:opacity-100 hover:scale-[1.002]"
             )}
           >
             {/* イニング */}
             <div className={cn(
-              "flex items-center justify-center min-w-[28px] h-5 rounded-full text-[9px] font-black",
-              isLatest ? "bg-white/20 text-white" : "bg-black/10 dark:bg-white/10 text-foreground/80"
+              "flex items-center justify-center min-w-[28px] h-5 rounded-full text-[9px] font-black shrink-0",
+              isLatest ? "bg-primary text-primary-foreground shadow-sm" : "bg-primary/10 dark:bg-primary/20 text-primary"
             )}>
               {log.inning}{log.isTop ? "T" : "B"}
             </div>

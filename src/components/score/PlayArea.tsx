@@ -397,38 +397,37 @@ export function PlayArea() {
 
               // 野手の表示（ボタン化して pointer-events-auto を設定しタップ可能にする）
               return (
-                <button
+                <div
                   key={posNum}
-                  type="button"
-                  onClick={() => handleFielderClick(posNum)}
-                  disabled={!state.isScorer}
                   className={cn(
-                    `absolute ${posClass} flex flex-col items-center z-10`,
-                    "pointer-events-auto text-center select-none outline-none",
-                    isPitcher 
-                      ? "bg-primary/5 dark:bg-primary/10 border border-primary/40 dark:border-primary/50 rounded-lg px-2 py-1 min-w-[56px] shadow-[0_2px_8px_rgba(var(--primary),0.15)] ring-1 ring-primary/20"
-                      : "bg-white dark:bg-zinc-950 border border-black/10 dark:border-white/20 rounded-md px-1.5 py-0.5 min-w-[36px] shadow-sm",
-                    state.isScorer && (isPitcher ? "hover:bg-primary/10 dark:hover:bg-primary/20" : "hover:bg-zinc-100 dark:hover:bg-zinc-900") + " active:scale-95 cursor-pointer transition-all"
+                    `absolute ${posClass} flex flex-col items-center z-10 text-center select-none`
                   )}
                 >
-                  <span className={cn(
-                    "font-bold leading-tight",
-                    isPitcher ? "text-[8px] text-primary" : "text-[6px] text-black/60 dark:text-zinc-400"
-                  )}>
-                    {label}
-                  </span>
-                  <span className={cn(
-                    "font-bold truncate leading-tight",
-                    isPitcher ? "text-[10px] text-zinc-900 dark:text-white max-w-[52px] mt-0.5" : "text-[8px] text-black dark:text-white max-w-[48px]"
-                  )}>
-                    {player?.playerName || player?.name || "-"}
-                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleFielderClick(posNum)}
+                    disabled={!state.isScorer}
+                    className={cn(
+                      "pointer-events-auto text-center select-none outline-none",
+                      "bg-white dark:bg-zinc-950 border border-black/10 dark:border-white/20 rounded-md px-1.5 py-0.5 min-w-[36px] shadow-sm",
+                      state.isScorer && "hover:bg-zinc-100 dark:hover:bg-zinc-900 active:scale-95 cursor-pointer transition-all"
+                    )}
+                  >
+                    <span className="text-[6px] font-bold text-black/60 dark:text-zinc-400 leading-tight block">
+                      {label}
+                    </span>
+                    <span className="text-[8px] font-bold text-black dark:text-white max-w-[48px] truncate leading-tight block">
+                      {player?.playerName || player?.name || "-"}
+                    </span>
+                  </button>
+
+                  {/* 投球数は枠（ボタン）の外側に綺麗に表示する */}
                   {isPitcher && (
-                    <span className="text-[8px] font-black text-primary bg-primary/10 dark:bg-primary/20 px-1.5 py-0.5 rounded-full mt-1.5 leading-none shrink-0 border border-primary/20 shadow-sm">
+                    <span className="pointer-events-none text-[8px] font-black text-primary bg-primary/10 dark:bg-primary/20 px-1.5 py-0.5 rounded-full mt-1.5 leading-none shrink-0 border border-primary/20 shadow-sm animate-in fade-in slide-in-from-top-1">
                       {pitchCount}球
                     </span>
                   )}
-                </button>
+                </div>
               );
             });
           })()}
