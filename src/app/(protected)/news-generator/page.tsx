@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { 
   Copy, Check, Sparkles, RotateCcw, 
-  Users, Trophy, ChevronRight, FileText, Activity
+  Users, Trophy, ChevronRight, FileText, Activity, Zap
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -66,6 +66,7 @@ export default function NewsGeneratorPage() {
   const [inningComment, setInningComment] = useState("");
   const [heroPlayer, setHeroPlayer] = useState("");
   const [summaryText, setSummaryText] = useState("");
+  const [isParamExpanded, setIsParamExpanded] = useState<boolean>(true);
 
   // 🏟️ スコアボード表示用チーム名の手動調整用
   const [firstTeamDisp, setFirstTeamDisp] = useState("");
@@ -821,16 +822,11 @@ ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : "
       <div className="max-w-7xl mx-auto space-y-6 relative z-10">
         
         {/* ヘッダー */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <SectionHeader title="試合速報ジェネレーター" subtitle="NEWS GENERATOR" showPulse={false} />
+        <div className="flex flex-col items-center justify-center text-center gap-3">
+          <div className="h-14 w-14 rounded-full bg-primary/10 flex items-center justify-center mb-1 shadow-sm">
+            <Zap className="h-7 w-7 text-primary" />
           </div>
-          
-          <div className="px-4 py-1.5 rounded-full bg-primary/10 dark:bg-primary/15 border border-primary/20 backdrop-blur-md self-start sm:self-center">
-            <span className="text-xs font-black text-primary tracking-wider">
-              🏟️ ACTIVE TEAM: {teamName}
-            </span>
-          </div>
+          <SectionHeader title="試合速報ジェネレーター" subtitle="NEWS GENERATOR" showPulse={false} />
         </div>
 
         {/* 1. 試合の選択エリア (最上部) */}
@@ -948,11 +944,20 @@ ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : "
               </div>
 
               {/* 手動補足・パラメータ入力エリア */}
-              <div className="bg-white border border-zinc-200 dark:bg-zinc-900/60 dark:border-white/5 p-5 rounded-[var(--radius-xl)] shadow-md dark:shadow-none space-y-4">
-                <div className="flex items-center gap-2 border-b border-zinc-100 dark:border-white/5 pb-2.5 mb-2">
-                  <Sparkles className="h-4 w-4 text-primary animate-pulse" />
-                  <h4 className="text-xs font-black text-zinc-900 dark:text-white tracking-wider">速報パラメータの調整</h4>
+              <div className="bg-white border border-zinc-200 dark:bg-zinc-900/60 dark:border-white/5 p-5 rounded-[var(--radius-xl)] shadow-md dark:shadow-none space-y-4 transition-all duration-300">
+                <div 
+                  onClick={() => setIsParamExpanded(!isParamExpanded)}
+                  className="flex items-center justify-between gap-2 border-b border-zinc-100 dark:border-white/5 pb-2.5 mb-2 cursor-pointer group select-none"
+                >
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="h-4 w-4 text-primary animate-pulse" />
+                    <h4 className="text-xs font-black text-zinc-900 dark:text-white tracking-wider group-hover:text-primary transition-colors">速報パラメータの調整</h4>
+                  </div>
+                  <ChevronRight className={cn("h-4 w-4 text-zinc-400 dark:text-zinc-500 transition-transform duration-300", isParamExpanded && "rotate-90")} />
                 </div>
+
+                {isParamExpanded && (
+                  <div className="space-y-4 animate-in fade-in duration-300">
 
                 {/* 基本情報の手動調整 */}
                 <div className="grid grid-cols-2 gap-3">
@@ -1138,6 +1143,8 @@ ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : "
                     </div>
                   </div>
                 )}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1176,21 +1183,25 @@ ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : "
                 )}
 
                 {/* アクションボタン群 */}
-                <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                <div className="flex flex-col sm:flex-row gap-4 pt-2">
                   <Button
                     onClick={handleCopy}
-                    className="flex-1 rounded-full font-black text-xs h-11 gap-2 active:scale-95 transition-all bg-white hover:bg-zinc-50 dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-800 dark:hover:bg-zinc-900 text-zinc-900 dark:text-white shadow-sm"
+                    className="flex-1 rounded-[24px] font-black text-sm sm:text-base h-16 gap-3 active:scale-95 transition-all bg-white hover:bg-zinc-50 dark:bg-zinc-950 border-2 border-zinc-300 dark:border-zinc-800 dark:hover:bg-zinc-900 text-zinc-900 dark:text-white shadow-md"
                     variant="outline"
                   >
-                    {copied ? <Check className="h-4 w-4 text-emerald-500" /> : <Copy className="h-4 w-4" />}
+                    {copied ? (
+                      <Check className="h-6 w-6 text-emerald-500 shrink-0 animate-in zoom-in-50 duration-200" />
+                    ) : (
+                      <Copy className="h-6 w-6 shrink-0" />
+                    )}
                     {copied ? "コピーしました！" : "クリップボードにコピー"}
                   </Button>
 
                   <Button
                     onClick={handleLineShare}
-                    className="flex-1 rounded-full font-black text-xs h-11 gap-2 bg-[#06C755] hover:bg-[#05b34c] hover:shadow-lg hover:shadow-emerald-500/20 text-white active:scale-95 transition-all shadow-md flex items-center justify-center"
+                    className="flex-1 rounded-[24px] font-black text-sm sm:text-base h-16 gap-3 bg-[#06C755] hover:bg-[#05b34c] hover:shadow-lg hover:shadow-emerald-500/20 text-white active:scale-95 transition-all shadow-md flex items-center justify-center"
                   >
-                    <div className="relative h-6 w-6 shrink-0">
+                    <div className="relative h-10 w-10 shrink-0">
                       <Image src="/line-logo.png" alt="LINE" fill className="object-contain" />
                     </div>
                     LINEで共有・転送
