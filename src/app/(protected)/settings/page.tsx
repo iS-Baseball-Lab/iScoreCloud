@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Wrench, SendHorizontal, AlertCircle, ArrowLeft } from "lucide-react";
+import { Wrench, SendHorizontal, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SectionHeader } from "@/components/layout/SectionHeader";
 import { useTeam } from "@/contexts/TeamContext";
@@ -130,14 +130,6 @@ export default function SettingsPage() {
         {/* ヘッダーエリア */}
         <div className="flex items-center justify-between">
           <SectionHeader title="アプリ設定" subtitle="SETTINGS" showPulse={false} />
-          <Button
-            variant="outline"
-            onClick={() => router.back()}
-            className="rounded-full font-bold gap-2 px-4 h-10 border-2 active:scale-95 transition-all"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            戻る
-          </Button>
         </div>
 
         {isTeamLoading || isLoadingSettings ? (

@@ -3,8 +3,9 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { 
-  Copy, Check, Send, Sparkles, RotateCcw, 
+  Copy, Check, Sparkles, RotateCcw, 
   Users, Trophy, ChevronRight, FileText, Activity
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -1187,9 +1188,11 @@ ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : "
 
                   <Button
                     onClick={handleLineShare}
-                    className="flex-1 rounded-full font-black text-xs h-11 gap-2 bg-[#06C755] hover:bg-[#05b34c] hover:shadow-lg hover:shadow-emerald-500/20 text-white active:scale-95 transition-all shadow-md"
+                    className="flex-1 rounded-full font-black text-xs h-11 gap-2 bg-[#06C755] hover:bg-[#05b34c] hover:shadow-lg hover:shadow-emerald-500/20 text-white active:scale-95 transition-all shadow-md flex items-center justify-center"
                   >
-                    <Send className="h-4 w-4" />
+                    <div className="relative h-6 w-6 shrink-0">
+                      <Image src="/line-logo.png" alt="LINE" fill className="object-contain" />
+                    </div>
                     LINEで共有・転送
                   </Button>
                 </div>
