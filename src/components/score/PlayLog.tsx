@@ -1,4 +1,4 @@
-// filepath: `src/components/score/PlayLog.tsx`
+// filepath: src/components/score/PlayLog.tsx
 /* 💡 Contextのstate.logsを直接参照し、入力の瞬間(0秒)でフィードバックを返す。 */
 
 "use client";
@@ -44,7 +44,8 @@ export function PlayLog({ limit = 3 }: PlayLogProps) {
   };
 
   return (
-    <div className="flex flex-col gap-1.5 h-full overflow-hidden">
+    {/* 💡 ユーザー要望: スクロール可能にしつつ、スクロールバーは隠して最下部の見切れを防止 (pb-2) */}
+    <div className="flex flex-col gap-1.5 h-full overflow-y-auto pb-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
       {displayLogs.map((log, index) => {
         const isLatest = index === 0;
         const { cleanDesc, bso } = parseLogDescription(log.description);
@@ -59,25 +60,27 @@ export function PlayLog({ limit = 3 }: PlayLogProps) {
             key={log.id}
             className={cn(
               "relative flex items-center gap-3 transition-all duration-300",
-              // 💡 ユーザー要望: 通常行の背景色をライトモードで美しく見せるために上品な白（bg-white/80 + shadow-sm）へブラッシュアップ
+              // 💡 ユーザー要望: プレイエリアが透けて見えるように透過度とブラー(backdrop-blur)を調整
               isLatest 
-                ? "bg-gradient-to-r from-primary/95 to-primary/80 text-primary-foreground px-4 py-2.5 rounded-[20px] shadow-lg shadow-primary/20 border border-white/10 animate-playlog-slide-in z-10" 
-                : "bg-white/80 dark:bg-zinc-900/40 text-foreground/80 px-4 py-2 rounded-[18px] border border-zinc-200/60 dark:border-zinc-800/30 opacity-75 hover:opacity-100 hover:scale-[1.005] shadow-sm dark:shadow-none transition-all"
+                ? "bg-gradient-to-r from-primary/85 to-primary/65 backdrop-blur-md text-white px-4 py-2.5 rounded-[20px] shadow-lg shadow-primary/20 border border-white/20 animate-playlog-slide-in z-10" 
+                : "bg-background/60 backdrop-blur-sm text-foreground/80 px-4 py-2 rounded-[18px] border border-border/50 opacity-80 hover:opacity-100 hover:scale-[1.005] shadow-sm transition-all"
             )}
           >
             {/* イニング (例: 1T) */}
             <div className={cn(
               "flex items-center justify-center min-w-[28px] h-5 rounded-full text-[9px] font-black italic border",
-              isLatest ? "bg-white/20 border-white/30" : "bg-background border-border"
+              isLatest ? "bg-white/20 border-white/30 text-white" : "bg-background/80 border-border text-foreground/70"
             )}>
               {log.inning}{log.isTop ? "T" : "B"}
             </div>
 
-            {/* 説明 - 💡 ユーザー要望: 極太(font-black)から中太(font-medium)へ変更し、通常表示で可読性を大幅向上 */}
+            {/* 説明 */}
             <div className="flex-1 min-w-0 flex items-center gap-1.5">
               <span className={cn(
-                "font-medium tracking-tight truncate text-foreground",
-                limit === 1 ? "text-[14px]" : "text-[12px]"
+                "font-bold tracking-tight truncate",
+                // 💡 ユーザー要望: 一行目の文字色を強制的に白にして視認性を確保
+                isLatest ? "text-white drop-shadow-md" : "text-foreground",
+                limit === 1 ? "text-[14px]" : "text-[13px]"
               )}>
                 {cleanDesc}
               </span>
@@ -86,23 +89,23 @@ export function PlayLog({ limit = 3 }: PlayLogProps) {
               {isOut && <Circle className="h-2 w-2 fill-rose-500 text-rose-500 shrink-0" />}
             </div>
 
-            {/* BSO または 時間(フォールバック) - 💡 ユーザー要望: 横幅をさらに縮め、メインテキスト領域を最大化 */}
+            {/* BSO または 時間(フォールバック) - 💡 ユーザー要望: BSO全体を一回り大きくしてグラウンドでの視認性を劇的向上 */}
             {bso ? (
               <div className={cn(
-                "flex items-center gap-1 shrink-0 rounded-full px-1.5 py-0.5 text-[8px] font-extrabold tracking-tighter shadow-sm transition-all duration-300",
+                "flex items-center gap-1.5 shrink-0 rounded-full px-2 py-1 text-[10px] font-extrabold tracking-tighter shadow-sm transition-all duration-300",
                 isLatest 
-                  ? "bg-black/40 text-white border border-white/10" 
+                  ? "bg-black/50 text-white border border-white/20" 
                   : "bg-zinc-950/80 border border-zinc-200/10 dark:border-zinc-800/40 text-foreground"
               )}>
                 {/* Ball */}
                 <div className="flex gap-0.5 items-center">
-                  <span className="text-emerald-500 font-extrabold text-[8px]">B</span>
-                  <div className="flex gap-[1px]">
+                  <span className="text-emerald-500 font-extrabold text-[10px]">B</span>
+                  <div className="flex gap-[2px]">
                     {[1, 2, 3].map((num) => (
                       <div
                         key={num}
                         className={cn(
-                          "w-1 h-1 rounded-full border-[0.5px] transition-all duration-300",
+                          "w-1.5 h-1.5 rounded-full border-[0.5px] transition-all duration-300",
                           num <= bso.balls 
                             ? "bg-emerald-500 border-emerald-500 shadow-[0_0_4px_#10b981]" 
                             : "bg-zinc-900 border-zinc-800/60"
@@ -113,17 +116,17 @@ export function PlayLog({ limit = 3 }: PlayLogProps) {
                 </div>
 
                 {/* Divider */}
-                <span className="opacity-15 text-[7px] font-light text-zinc-500">|</span>
+                <span className="opacity-30 text-[8px] font-light text-zinc-500">|</span>
 
                 {/* Strike */}
                 <div className="flex gap-0.5 items-center">
-                  <span className="text-amber-400 font-extrabold text-[8px]">S</span>
-                  <div className="flex gap-[1px]">
+                  <span className="text-amber-400 font-extrabold text-[10px]">S</span>
+                  <div className="flex gap-[2px]">
                     {[1, 2].map((num) => (
                       <div
                         key={num}
                         className={cn(
-                          "w-1 h-1 rounded-full border-[0.5px] transition-all duration-300",
+                          "w-1.5 h-1.5 rounded-full border-[0.5px] transition-all duration-300",
                           num <= bso.strikes 
                             ? "bg-amber-400 border-amber-400 shadow-[0_0_4px_#fbbf24]" 
                             : "bg-zinc-900 border-zinc-800/60"
@@ -134,17 +137,17 @@ export function PlayLog({ limit = 3 }: PlayLogProps) {
                 </div>
 
                 {/* Divider */}
-                <span className="opacity-15 text-[7px] font-light text-zinc-500">|</span>
+                <span className="opacity-30 text-[8px] font-light text-zinc-500">|</span>
 
                 {/* Out */}
                 <div className="flex gap-0.5 items-center">
-                  <span className="text-rose-500 font-extrabold text-[8px]">O</span>
-                  <div className="flex gap-[1px]">
+                  <span className="text-rose-500 font-extrabold text-[10px]">O</span>
+                  <div className="flex gap-[2px]">
                     {[1, 2].map((num) => (
                       <div
                         key={num}
                         className={cn(
-                          "w-1 h-1 rounded-full border-[0.5px] transition-all duration-300",
+                          "w-1.5 h-1.5 rounded-full border-[0.5px] transition-all duration-300",
                           num <= bso.outs 
                             ? "bg-rose-500 border-rose-500 shadow-[0_0_4px_#f43f5e]" 
                             : "bg-zinc-900 border-zinc-800/60"
@@ -155,7 +158,7 @@ export function PlayLog({ limit = 3 }: PlayLogProps) {
                 </div>
               </div>
             ) : (
-              <span className="text-[8px] font-mono opacity-40 shrink-0">
+              <span className="text-[9px] font-mono opacity-60 shrink-0">
                 {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </span>
             )}
