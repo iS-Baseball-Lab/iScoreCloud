@@ -1,7 +1,7 @@
 // filepath: src/app/(protected)/matches/lineup/page.tsx
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,11 +28,19 @@ interface Player {
   uniformNumber: string | null;
 }
 
-export default function LineupPage() {
+function LineupPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const matchId = searchParams.get("id");
   const urlTeamId = searchParams.get("teamId");
+
+  const getTeamId = () => {
+    const id = urlTeamId;
+    if (!id || id === "undefined" || id === "null") {
+      return localStorage.getItem("iscore_selectedTeamId") || "";
+    }
+    return id;
+  };
 
   const [activeTab, setActiveTab] = useState<"myTeam" | "opponent">("myTeam");
   const [teamPlayers, setTeamPlayers] = useState<Player[]>([]);
@@ -54,7 +62,7 @@ export default function LineupPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const targetTeamId = urlTeamId || localStorage.getItem("iscore_selectedTeamId");
+        const targetTeamId = getTeamId();
         if (!targetTeamId) {
           toast.error("チーム情報が特定できませんでした");
           setIsLoading(false);
@@ -118,7 +126,7 @@ export default function LineupPage() {
     if (!templateName) return toast.error("名前を入力してください");
     
     try {
-      const targetTeamId = urlTeamId || localStorage.getItem("iscore_selectedTeamId");
+      const targetTeamId = getTeamId();
       if (!targetTeamId) {
         toast.error("チーム情報が特定できませんでした");
         return;
@@ -553,5 +561,20 @@ export default function LineupPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function LineupPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex h-[60vh] items-center justify-center bg-background">
+        <div className="text-center space-y-3">
+          <Loader2 className="h-8 w-8 animate-spin text-primary/40 mx-auto" />
+          <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.3em]">Loading Lineup...</p>
+        </div>
+      </div>
+    }>
+      <LineupPageContent />
+    </Suspense>
   );
 }
