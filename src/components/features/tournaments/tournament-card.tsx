@@ -2,7 +2,6 @@
 "use client";
 
 import React, { useState, useRef } from "react";
-import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Calendar, Target, Activity, Trophy, Edit2, Trash2, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -74,19 +73,20 @@ export function TournamentCard({ t, onEdit, onDelete }: TournamentCardProps) {
     const sc = statusConfig[status];
 
     return (
-        <Card className={cn(
-            "group relative overflow-hidden transition-all duration-200 ease-out isolate", // 💡 isolateを追加してiOSの描画バグを抑制
-            "rounded-[var(--radius-2xl)] border border-border/50 shadow-sm",
+        /* 🔥 Cardコンポーネントを廃止し、ピュアなdivに変更。Cardが持っていたスタイルをここに完全集約 */
+        <div className={cn(
+            "group relative overflow-hidden transition-all duration-200 ease-out isolate",
+            "rounded-[var(--radius-2xl)] border border-border/50 bg-card text-card-foreground shadow-sm",
             status === "ongoing" && "ring-1 ring-primary/20"
         )}>
-            {/* 🌟 スワイプ背面のアクションボタン群 (試合一覧と同じ仕様) */}
+            {/* 🌟 スワイプ背面のアクションボタン群 */}
             <div className={cn(
                 "absolute inset-0 z-0 transition-opacity duration-150 bg-transparent",
                 Math.abs(offsetX) > 0 ? "opacity-100" : "opacity-0 pointer-events-none"
             )}>
                 {/* 編集ボタン (左スワイプで出現) */}
-                {/* 💡 top/bottom/leftを1px内側に入れ、外枠を侵食しないように隔離。さらに角丸を明示。 */}
-                <div className="absolute top-[1px] bottom-[1px] left-[1px] h-[calc(100%-2px)] w-[75px] overflow-hidden rounded-l-[var(--radius-2xl)]">
+                {/* 🔥 inset-y-0 で縦幅を親のdivと完全に100%同期 */}
+                <div className="absolute inset-y-0 left-0 w-[75px] overflow-hidden rounded-l-[var(--radius-2xl)]">
                     <button
                         onClick={() => { setOffsetX(0); onEdit(t); }}
                         className="flex flex-col items-center justify-center w-full h-full bg-blue-500 text-white active:bg-blue-600 transition-colors"
@@ -97,8 +97,8 @@ export function TournamentCard({ t, onEdit, onDelete }: TournamentCardProps) {
                 </div>
 
                 {/* 削除ボタン (右スワイプで出現) */}
-                {/* 💡 同様に1px内側に隔離し、右側の角丸を明示。 */}
-                <div className="absolute top-[1px] bottom-[1px] right-[1px] h-[calc(100%-2px)] w-[75px] overflow-hidden rounded-r-[var(--radius-2xl)]">
+                {/* 🔥 同様に inset-y-0 で縦幅を完全同期 */}
+                <div className="absolute inset-y-0 right-0 w-[75px] overflow-hidden rounded-r-[var(--radius-2xl)]">
                     <button
                         onClick={() => { setOffsetX(0); onDelete(t); }}
                         className="flex flex-col items-center justify-center w-full h-full bg-rose-500 text-white active:bg-rose-600 transition-colors"
@@ -110,76 +110,72 @@ export function TournamentCard({ t, onEdit, onDelete }: TournamentCardProps) {
             </div>
 
             {/* 🌟 フォアグラウンド（カード本体） */}
-            {/* 💡 動くコンテナ自体にも rounded-[var(--radius-2xl)] を適応して、動いている最中の角丸を死守 */}
             <div
-                className={cn(
-                    "relative z-10 h-full transition-transform duration-200 ease-out bg-card rounded-[var(--radius-2xl)]",
-                )}
+                className="relative z-10 h-full transition-transform duration-200 ease-out bg-card rounded-[var(--radius-2xl)]"
                 style={{ transform: `translateX(${offsetX}px)`, touchAction: "pan-y" }}
                 onTouchStart={handleTouchStart}
                 onTouchMove={handleTouchMove}
                 onTouchEnd={handleTouchEnd}
             >
-                <CardContent className="p-0">
-                    <div className="flex items-stretch cursor-pointer min-h-[110px]">
-                        {/* ステータスバッジ（左側） - 💡 ここにも左側の角丸を明示して貫通を防ぐ */}
-                        <div className={cn("w-14 sm:w-16 shrink-0 flex flex-col items-center justify-center gap-1.5 py-4 rounded-l-[var(--radius-2xl)]", sc.accent)}>
-                            {sc.icon}
-                            <span className="text-[9px] font-black tracking-widest uppercase leading-none" style={{ writingMode: "vertical-rl" }}>
-                                {sc.label}
-                            </span>
+                {/* 🔥 CardContentも廃止し、ピュアな構造に */}
+                <div className="flex items-stretch cursor-pointer min-h-[110px]">
+                    {/* ステータスバッジ（左側） */}
+                    <div className={cn("w-14 sm:w-16 shrink-0 flex flex-col items-center justify-center gap-1.5 py-4 rounded-l-[var(--radius-2xl)]", sc.accent)}>
+                        {sc.icon}
+                        <span className="text-[9px] font-black tracking-widest uppercase leading-none" style={{ writingMode: "vertical-rl" }}>
+                            {sc.label}
+                        </span>
+                    </div>
+
+                    {/* メインテキストエリア（中央） */}
+                    <div className="flex-1 px-4 py-3 min-w-0 flex flex-col justify-center space-y-1.5 pointer-events-none">
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <Badge className="bg-muted text-muted-foreground border-none text-[9px] font-black px-2 py-0.5 rounded-md">
+                                {t.season}年度
+                            </Badge>
+                            {t.organizer && <span className="text-[10px] font-bold text-muted-foreground">{t.organizer}</span>}
                         </div>
 
-                        {/* メインテキストエリア（中央） */}
-                        <div className="flex-1 px-4 py-3 min-w-0 flex flex-col justify-center space-y-1.5 pointer-events-none">
-                            <div className="flex items-center gap-2 flex-wrap">
-                                <Badge className="bg-muted text-muted-foreground border-none text-[9px] font-black px-2 py-0.5 rounded-md">
-                                    {t.season}年度
-                                </Badge>
-                                {t.organizer && <span className="text-[10px] font-bold text-muted-foreground">{t.organizer}</span>}
-                            </div>
+                        <h3 className="text-base font-black tracking-tight text-card-foreground leading-snug line-clamp-2">
+                            {t.name}
+                        </h3>
 
-                            <h3 className="text-base font-black tracking-tight text-card-foreground leading-snug line-clamp-2">
-                                {t.name}
-                            </h3>
-
-                            <div className="flex flex-wrap items-center gap-3">
+                        <div className="flex flex-wrap items-center gap-3">
+                            <span className="text-[10px] font-bold text-muted-foreground flex items-center gap-1">
+                                <Calendar className="h-3 w-3" />{period}
+                            </span>
+                            {t.timeLimit && (
                                 <span className="text-[10px] font-bold text-muted-foreground flex items-center gap-1">
-                                    <Calendar className="h-3 w-3" />{period}
+                                    <Target className="h-3 w-3" />{t.timeLimit}
                                 </span>
-                                {t.timeLimit && (
-                                    <span className="text-[10px] font-bold text-muted-foreground flex items-center gap-1">
-                                        <Target className="h-3 w-3" />{t.timeLimit}
-                                    </span>
-                                )}
-                            </div>
-
-                            {(t.coldGameRule || t.tiebreakerRule) && (
-                                <div className="flex flex-wrap gap-1.5 pt-0.5">
-                                    {t.coldGameRule && <span className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-muted/60 text-muted-foreground border border-border/50">コールド: {t.coldGameRule}</span>}
-                                    {t.tiebreakerRule && <span className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-muted/60 text-muted-foreground border border-border/50">TB: {t.tiebreakerRule}</span>}
-                                </div>
                             )}
                         </div>
 
-                        {/* 🌟 組み合わせ表リンクのみ前面に残す */}
-                        {t.bracketUrl && (
-                            <div className="flex flex-col items-center justify-center gap-0.5 px-3 py-3 border-l border-border/40 shrink-0 bg-muted/10 rounded-r-[var(--radius-2xl)]">
-                                <a 
-                                    href={t.bracketUrl} 
-                                    target="_blank" 
-                                    rel="noopener noreferrer" 
-                                    className="w-10 h-10 flex items-center justify-center rounded-[var(--radius-lg)] text-muted-foreground hover:text-card-foreground hover:bg-muted active:scale-90 transition-all pointer-events-auto" 
-                                    title="組み合わせ表"
-                                    onClick={(e) => e.stopPropagation()}
-                                >
-                                    <ChevronRight className="h-5 w-5" strokeWidth={2.5} />
-                                </a>
+                        {(t.coldGameRule || t.tiebreakerRule) && (
+                            <div className="flex flex-wrap gap-1.5 pt-0.5">
+                                {t.coldGameRule && <span className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-muted/60 text-muted-foreground border border-border/50">コールド: {t.coldGameRule}</span>}
+                                {t.tiebreakerRule && <span className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-muted/60 text-muted-foreground border border-border/50">TB: {t.tiebreakerRule}</span>}
                             </div>
                         )}
                     </div>
-                </CardContent>
+
+                    {/* 組み合わせ表リンク（右側） */}
+                    {t.bracketUrl && (
+                        <div className="flex flex-col items-center justify-center gap-0.5 px-3 py-3 border-l border-border/40 shrink-0 bg-muted/10 rounded-r-[var(--radius-2xl)]">
+                            <a 
+                                href={t.bracketUrl} 
+                                target="_blank" 
+                                rel="noopener noreferrer" 
+                                className="w-10 h-10 flex items-center justify-center rounded-[var(--radius-lg)] text-muted-foreground hover:text-card-foreground hover:bg-muted active:scale-90 transition-all pointer-events-auto" 
+                                title="組み合わせ表"
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                <ChevronRight className="h-5 w-5" strokeWidth={2.5} />
+                            </a>
+                        </div>
+                    )}
+                </div>
             </div>
-        </Card>
+        </div>
     );
 }
