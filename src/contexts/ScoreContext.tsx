@@ -810,7 +810,7 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
   // 🚀 5.5 走者個別アクション（盗塁、牽制死、進塁など）の記録
   const recordRunnerAction = async (
     baseNum: 1 | 2 | 3,
-    action: "steal_success" | "steal_out" | "pickoff_out" | "wp_advance" | "pb_advance" | "balk_advance" | "error_advance" | "clear",
+    action: "steal_success" | "steal_out" | "pickoff_out" | "pickoff_safe" | "wp_advance" | "pb_advance" | "balk_advance" | "error_advance" | "clear",
     assignPlayerId?: string
   ) => {
     setState(prev => {
@@ -883,6 +883,8 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
         nextRunners[key] = null;
         newOuts++;
         logText = `${baseNum}塁走者 ${playerName}: 牽制死`;
+      } else if (action === "pickoff_safe") {
+        logText = `${baseNum}塁走者 ${playerName}: 牽制球 (セーフ)`;
       } else if (action === "wp_advance") {
         nextRunners[key] = null;
         if (baseNum === 3) {

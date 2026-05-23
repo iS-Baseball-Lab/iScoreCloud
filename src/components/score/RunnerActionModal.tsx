@@ -12,7 +12,7 @@ interface RunnerActionModalProps {
   baseNum: 1 | 2 | 3;
   playerName: string;
   onSelectAction: (
-    action: "steal_success" | "steal_out" | "pickoff_out" | "wp_advance" | "pb_advance" | "balk_advance" | "error_advance" | "clear"
+    action: "steal_success" | "steal_out" | "pickoff_out" | "pickoff_safe" | "wp_advance" | "pb_advance" | "balk_advance" | "error_advance" | "clear"
   ) => void;
 }
 
@@ -51,6 +51,12 @@ export function RunnerActionModal({
       label: "🎯 牽制死",
       desc: "牽制球でタッチアウト",
       color: "bg-rose-50/50 dark:bg-rose-950/20 hover:bg-rose-100 dark:hover:bg-rose-950/30 border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300",
+    },
+    {
+      id: "pickoff_safe",
+      label: "⚾️ 牽制球 (セーフ)",
+      desc: "牽制球を投げました（走者セーフ）",
+      color: "bg-blue-50/50 dark:bg-blue-950/20 hover:bg-blue-100 dark:hover:bg-blue-950/30 border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-300",
     },
     {
       id: "wp_advance",

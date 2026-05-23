@@ -122,7 +122,7 @@ export interface ScoreContextType {
   ) => Promise<void>;
   recordRunnerAction: (
     baseNum: 1 | 2 | 3,
-    action: "steal_success" | "steal_out" | "pickoff_out" | "wp_advance" | "pb_advance" | "balk_advance" | "error_advance" | "clear",
+    action: "steal_success" | "steal_out" | "pickoff_out" | "pickoff_safe" | "wp_advance" | "pb_advance" | "balk_advance" | "error_advance" | "clear",
     assignPlayerId?: string
   ) => Promise<void>;
   changeInning: () => void;
