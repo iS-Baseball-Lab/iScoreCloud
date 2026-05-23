@@ -267,9 +267,12 @@ export default function PlayerRosterPage() {
           {editTarget && (
             <PlayerForm
               initial={{
-                name: editTarget.name, uniformNumber: editTarget.uniformNumber,
+                name: editTarget.name,
+                nameKana: editTarget.nameKana ?? "",
+                uniformNumber: editTarget.uniformNumber,
                 primaryPosition: editTarget.primaryPosition ?? "",
-                throws: editTarget.throws ?? "", bats: editTarget.bats ?? "",
+                throws: editTarget.throws ?? "",
+                bats: editTarget.bats ?? "",
                 profileImageUrl: editTarget.profileImageUrl ?? "",
               }}
               onSubmit={handleEdit} onCancel={() => setEditTarget(null)} isSubmitting={isSubmitting} submitLabel="更新する"
