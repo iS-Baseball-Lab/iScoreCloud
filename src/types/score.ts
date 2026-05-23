@@ -98,6 +98,10 @@ export interface MatchResponse {
     opponentHits?: number;
     myErrors?: number;
     opponentErrors?: number;
+    locked_by_user_id?: string | null;
+    locked_by_user_name?: string | null;
+    locked_at?: number | null;
+    lock_expires_at?: number | null;
   };
 }
 
@@ -138,4 +142,5 @@ export interface ScoreContextType {
   acquireLock: () => Promise<boolean>;
   releaseLock: () => Promise<void>;
   forceAcquireLock: () => Promise<void>;
+  refreshMatch: (matchId: string) => Promise<void>;
 }

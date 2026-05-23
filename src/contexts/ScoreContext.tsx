@@ -289,6 +289,127 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  // 🚀 3.2 試合データのサイレント更新 (閲覧者用ポーリング)
+  const refreshMatch = useCallback(async (matchId: string) => {
+    try {
+      const [matchRes, lineupsRes, logsRes] = await Promise.all([
+        fetch(`/api/matches/${matchId}`),
+        fetch(`/api/matches/${matchId}/lineups`),
+        fetch(`/api/matches/${matchId}/logs`)
+      ]);
+      const data = (await matchRes.json()) as MatchResponse;
+      const lineupsData = await lineupsRes.json() as any;
+      const logsData = await logsRes.json() as any;
+      
+      if (data.success && data.match) {
+        const m = data.match;
+        
+        // D1に保存されたJSON文字列をパースして復元
+        const restoredMyInningScores = typeof m.myInningScores === 'string' ? JSON.parse(m.myInningScores) : [];
+        const restoredOpponentInningScores = typeof m.opponentInningScores === 'string' ? JSON.parse(m.opponentInningScores) : [];
+        
+        // ログの復元
+        const restoredLogs = logsData?.success && Array.isArray(logsData.logs) ? logsData.logs : [];
+
+        // ロック状態を最新にする
+        const userId = getOrCreateUserId();
+        let isScorer = false;
+        let lockedBy = null;
+
+        if (m.locked_by_user_id) {
+          lockedBy = {
+            userId: m.locked_by_user_id,
+            userName: m.locked_by_user_name || "スコアラー"
+          };
+          isScorer = m.locked_by_user_id === userId;
+        }
+
+        // プレイログを解析して打順を復元
+        let myBattingIndex = 0;
+        let opponentBattingIndex = 0;
+        let foundMy = false;
+        let foundOpponent = false;
+
+        const isGuestFirst = m.battingOrder === 'first';
+        const myLineup = lineupsData?.lineups?.myLineup || [];
+        const opponentLineup = lineupsData?.lineups?.opponentLineup || [];
+        const atBatEndRegex = /三振|フォアボール|デッドボール|アウト|単打|二塁打|三塁打|本塁打|安|二|三|本|ゴロ|飛|直|犠|失|エラー|併殺|1B|2B|3B|HR|GO|FO|LO|SO|E|FC|DP|SH|SF|ERR|OUT|SAC/;
+
+        for (const log of restoredLogs) {
+          if (foundMy && foundOpponent) break;
+
+          const matchObj = log.description.match(/^(\d+)番/);
+          if (!matchObj) continue;
+
+          const batterOrder = parseInt(matchObj[1], 10);
+          const isAtBatEnd = atBatEndRegex.test(log.description);
+          const isMyAttackLog = log.isTop === isGuestFirst;
+
+          if (isMyAttackLog && !foundMy) {
+            const lineupLength = myLineup.length || 9;
+            const maxIndex = Math.max(9, lineupLength);
+            if (isAtBatEnd) {
+              myBattingIndex = (batterOrder) % maxIndex;
+            } else {
+              myBattingIndex = (batterOrder - 1) % maxIndex;
+            }
+            foundMy = true;
+          } else if (!isMyAttackLog && !foundOpponent) {
+            const lineupLength = opponentLineup.length || 9;
+            const maxIndex = Math.max(9, lineupLength);
+            if (isAtBatEnd) {
+              opponentBattingIndex = (batterOrder) % maxIndex;
+            } else {
+              opponentBattingIndex = (batterOrder - 1) % maxIndex;
+            }
+            foundOpponent = true;
+          }
+        }
+
+        const isTop = !m.isBottom;
+        const isMyAttack = (isTop && isGuestFirst) || (!isTop && !isGuestFirst);
+        const currentLineup = isMyAttack ? myLineup : opponentLineup;
+        const currentIndex = isMyAttack ? myBattingIndex : opponentBattingIndex;
+        const batterId = currentLineup && currentLineup.length > currentIndex
+          ? currentLineup[currentIndex]?.playerId || currentLineup[currentIndex]?.id || null
+          : null;
+
+        setState(prev => {
+          // 自分がスコアラーの場合は、入力中の状態が上書きされないように早期リターン
+          if (prev.isScorer) return prev;
+
+          return {
+            ...prev,
+            inning: m.currentInning || 1,
+            isTop,
+            myScore: m.myScore || 0,
+            opponentScore: m.opponentScore || 0,
+            myInningScores: restoredMyInningScores,
+            opponentInningScores: restoredOpponentInningScores,
+            maxInnings: m.innings || 7,
+            status: m.status as any,
+            balls: m.balls ?? 0,
+            strikes: m.strikes ?? 0,
+            outs: m.outs ?? 0,
+            runners: typeof m.runners === 'string' ? JSON.parse(m.runners) : (m.runners || { base1: null, base2: null, base3: null }),
+            myHits: m.myHits ?? 0,
+            opponentHits: m.opponentHits ?? 0,
+            myErrors: m.myErrors ?? 0,
+            opponentErrors: m.opponentErrors ?? 0,
+            myBattingIndex,
+            opponentBattingIndex,
+            batterId,
+            logs: restoredLogs,
+            lockedBy,
+            isScorer, // 他の人がスコアラーになった場合の権限変更を反映
+          };
+        });
+      }
+    } catch (error) {
+      console.error("Silent refresh error:", error);
+    }
+  }, []);
+
   // 🚀 3.5 ロックの取得 (API経由)
   const acquireLock = useCallback(async (): Promise<boolean> => {
     if (typeof window === "undefined" || !state.matchId) return false;
@@ -974,6 +1095,38 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
     setState(prev => ({ ...prev, ...settings }));
   };
 
+  // 🚀 11. 閲覧者（観戦モード）向け：試合データのスマートポーリング
+  useEffect(() => {
+    // 試合IDがあり、自分がスコアラーではなく、試合が進行中の場合のみポーリングを動かす
+    if (!state.matchId || state.isScorer || state.status !== 'live') return;
+
+    let intervalId: NodeJS.Timeout;
+
+    const runPolling = async () => {
+      // 画面がアクティブ（表示中）のときのみリクエストを投げる (現場仕様: バッテリー＆通信量保護)
+      if (document.visibilityState === 'visible') {
+        await refreshMatch(state.matchId);
+      }
+    };
+
+    // 4秒間隔でスマートポーリングを実行
+    intervalId = setInterval(runPolling, 4000);
+
+    // 画面のタブ切り替え時にも即座にフェッチするイベントハンドラー
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refreshMatch(state.matchId);
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [state.matchId, state.isScorer, state.status, refreshMatch]);
+
   return (
     <ScoreContext.Provider value={{
       state,
@@ -993,7 +1146,8 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
       substitutePlayer,
       acquireLock,
       releaseLock,
-      forceAcquireLock
+      forceAcquireLock,
+      refreshMatch
     }}>
       {children}
     </ScoreContext.Provider>
