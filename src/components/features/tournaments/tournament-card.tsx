@@ -75,7 +75,7 @@ export function TournamentCard({ t, onEdit, onDelete }: TournamentCardProps) {
 
     return (
         <Card className={cn(
-            "group relative overflow-hidden transition-all duration-200 ease-out",
+            "group relative overflow-hidden transition-all duration-200 ease-out isolate", // 💡 isolateを追加してiOSの描画バグを抑制
             "rounded-[var(--radius-2xl)] border border-border/50 shadow-sm",
             status === "ongoing" && "ring-1 ring-primary/20"
         )}>
@@ -85,7 +85,8 @@ export function TournamentCard({ t, onEdit, onDelete }: TournamentCardProps) {
                 Math.abs(offsetX) > 0 ? "opacity-100" : "opacity-0 pointer-events-none"
             )}>
                 {/* 編集ボタン (左スワイプで出現) */}
-                <div className="absolute top-0 left-0 h-full w-[75px]">
+                {/* 💡 top/bottom/leftを1px内側に入れ、外枠を侵食しないように隔離。さらに角丸を明示。 */}
+                <div className="absolute top-[1px] bottom-[1px] left-[1px] h-[calc(100%-2px)] w-[75px] overflow-hidden rounded-l-[var(--radius-2xl)]">
                     <button
                         onClick={() => { setOffsetX(0); onEdit(t); }}
                         className="flex flex-col items-center justify-center w-full h-full bg-blue-500 text-white active:bg-blue-600 transition-colors"
@@ -96,7 +97,8 @@ export function TournamentCard({ t, onEdit, onDelete }: TournamentCardProps) {
                 </div>
 
                 {/* 削除ボタン (右スワイプで出現) */}
-                <div className="absolute top-0 right-0 h-full w-[75px]">
+                {/* 💡 同様に1px内側に隔離し、右側の角丸を明示。 */}
+                <div className="absolute top-[1px] bottom-[1px] right-[1px] h-[calc(100%-2px)] w-[75px] overflow-hidden rounded-r-[var(--radius-2xl)]">
                     <button
                         onClick={() => { setOffsetX(0); onDelete(t); }}
                         className="flex flex-col items-center justify-center w-full h-full bg-rose-500 text-white active:bg-rose-600 transition-colors"
@@ -108,9 +110,10 @@ export function TournamentCard({ t, onEdit, onDelete }: TournamentCardProps) {
             </div>
 
             {/* 🌟 フォアグラウンド（カード本体） */}
+            {/* 💡 動くコンテナ自体にも rounded-[var(--radius-2xl)] を適応して、動いている最中の角丸を死守 */}
             <div
                 className={cn(
-                    "relative z-10 h-full transition-transform duration-200 ease-out bg-card",
+                    "relative z-10 h-full transition-transform duration-200 ease-out bg-card rounded-[var(--radius-2xl)]",
                 )}
                 style={{ transform: `translateX(${offsetX}px)`, touchAction: "pan-y" }}
                 onTouchStart={handleTouchStart}
@@ -119,15 +122,15 @@ export function TournamentCard({ t, onEdit, onDelete }: TournamentCardProps) {
             >
                 <CardContent className="p-0">
                     <div className="flex items-stretch cursor-pointer min-h-[110px]">
-                        {/* ステータスバッジ（左側） */}
-                        <div className={cn("w-14 sm:w-16 shrink-0 flex flex-col items-center justify-center gap-1.5 py-4", sc.accent)}>
+                        {/* ステータスバッジ（左側） - 💡 ここにも左側の角丸を明示して貫通を防ぐ */}
+                        <div className={cn("w-14 sm:w-16 shrink-0 flex flex-col items-center justify-center gap-1.5 py-4 rounded-l-[var(--radius-2xl)]", sc.accent)}>
                             {sc.icon}
                             <span className="text-[9px] font-black tracking-widest uppercase leading-none" style={{ writingMode: "vertical-rl" }}>
                                 {sc.label}
                             </span>
                         </div>
 
-                        {/* メインテキストエリア（中央） 🔥 flex-col justify-center を追加して上下中央揃えに！ */}
+                        {/* メインテキストエリア（中央） */}
                         <div className="flex-1 px-4 py-3 min-w-0 flex flex-col justify-center space-y-1.5 pointer-events-none">
                             <div className="flex items-center gap-2 flex-wrap">
                                 <Badge className="bg-muted text-muted-foreground border-none text-[9px] font-black px-2 py-0.5 rounded-md">
@@ -161,7 +164,7 @@ export function TournamentCard({ t, onEdit, onDelete }: TournamentCardProps) {
 
                         {/* 🌟 組み合わせ表リンクのみ前面に残す */}
                         {t.bracketUrl && (
-                            <div className="flex flex-col items-center justify-center gap-0.5 px-3 py-3 border-l border-border/40 shrink-0 bg-muted/10">
+                            <div className="flex flex-col items-center justify-center gap-0.5 px-3 py-3 border-l border-border/40 shrink-0 bg-muted/10 rounded-r-[var(--radius-2xl)]">
                                 <a 
                                     href={t.bracketUrl} 
                                     target="_blank" 
