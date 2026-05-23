@@ -38,6 +38,7 @@ interface UseNewsTextProps {
   summaryText: string;
   firstTeamDisp: string;
   secondTeamDisp: string;
+  showSurnameOnly: boolean; // 🌟 苗字のみ出力オプション
 }
 
 export function useNewsText({
@@ -58,7 +59,8 @@ export function useNewsText({
   heroPlayer,
   summaryText,
   firstTeamDisp,
-  secondTeamDisp
+  secondTeamDisp,
+  showSurnameOnly
 }: UseNewsTextProps) {
 
   // 🏟️ スコアボードテキストの動的生成 (プロポーショナルフォント最適化仕様)
@@ -183,7 +185,19 @@ export function useNewsText({
     return lineup.map((player, index) => {
       const order = index + 1;
       const posLabel = getPositionLabel(player.position);
-      return `${order}.${posLabel} ${slotPlayers[index]}`;
+      const rawName = slotPlayers[index];
+      
+      // 🌟 苗字のみ出力オプション対応
+      const formattedFullName = rawName.split("→").map((nPart: string) => {
+        const innMatch = nPart.match(/\((.+?)\)/);
+        let nameOnly = nPart.replace(/\((.+?)\)/, "");
+        if (showSurnameOnly) {
+          nameOnly = nameOnly.split(/[\s　]+/)[0];
+        }
+        return innMatch ? `${nameOnly}${innMatch[0]}` : nameOnly;
+      }).join("→");
+
+      return `${order}.${posLabel} ${formattedFullName}`;
     }).join("\n");
   };
 
@@ -260,13 +274,24 @@ export function useNewsText({
               const oldName = matchSub[3].trim();
               const newName = matchSub[4].trim();
               
+              const isMyTeamSubstitute = team === "自チーム";
+              
+              // 🌟 相手チームの選手交代・選手名は出力しない
+              if (!isMyTeamSubstitute) {
+                return;
+              }
+
               // 投手交代かどうかチェック
               const isPitcherSub = log.description.includes("投手") || 
                 lineups?.myLineup?.find((p: any) => (p.name === oldName || p.playerName === oldName) && p.position === "1") ||
                 lineups?.opponentLineup?.find((p: any) => (p.name === oldName || p.playerName === oldName) && p.position === "1");
               
               const subLabel = isPitcherSub ? "投手交代" : "選手交代";
-              const subText = `${subLabel} ${oldName}→${newName}`;
+              
+              // 🌟 苗字のみ出力オプション対応
+              const formattedOld = showSurnameOnly ? oldName.split(/[\s　]+/)[0] : oldName;
+              const formattedNew = showSurnameOnly ? newName.split(/[\s　]+/)[0] : newName;
+              const subText = `${subLabel} ${formattedOld}→${formattedNew}`;
 
               if (currentAtBat) {
                 currentAtBat.plays.push(subText);
@@ -400,8 +425,10 @@ export function useNewsText({
         } else {
           let line = `${ab.batterOrder}.`;
           
+          // 🌟 苗字のみ出力オプション対応
           if (isMyTeamAttack && ab.batterName && ab.batterName !== "打者") {
-            line += `${ab.batterName} `;
+            const formattedName = showSurnameOnly ? ab.batterName.split(/[\s　]+/)[0] : ab.batterName;
+            line += `${formattedName} `;
           }
 
           const formattedPlays = ab.plays.map((play: string, idx: number) => {
@@ -536,21 +563,16 @@ export function useNewsText({
 
     const isFirst = matchDetail.battingOrder === "first";
     const myAttackLabel = isFirst ? "先攻" : "後攻";
-    const opponentAttackLabel = isFirst ? "後攻" : "先攻";
     
     const myLineupText = lineups?.myLineup ? generateLineupListText(lineups.myLineup, "my", isFirst) : "";
-    const oppLineupText = lineups?.opponentLineup ? generateLineupListText(lineups.opponentLineup, "opponent", !isFirst) : "";
     
-    // A. スタメン速報
+    // A. スタメン速報 (自チームのみ出力するように変更)
     if (newsType === "lineup") {
       return `${dateHeader}
 ${matchHeader}
 ${timeHeader ? `${timeHeader}\n` : ""}
 ◆ ${teamName} スタメン（${myAttackLabel}）
 ${myLineupText}
-Custom System: Insomnia Scorer
-◆ ${opponentName} スタメン（${opponentAttackLabel}）
-${oppLineupText}
 ${lineupComment ? `\n💬 コメント:\n${lineupComment}\n` : ""}
 #草野球 #スタメン発表 #iScoreCloud`;
     }
@@ -589,7 +611,7 @@ ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : "
     matchDetail, lineups, playLogs, newsType, lineupComment,
     selectedInningOption, inningComment, heroPlayer, summaryText,
     teamName, matchName, venueName, opponentName, startTime, endTime, reporterName,
-    firstTeamDisp, secondTeamDisp
+    firstTeamDisp, secondTeamDisp, showSurnameOnly
   ]);
 
   return {

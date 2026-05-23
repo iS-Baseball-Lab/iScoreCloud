@@ -54,6 +54,10 @@ interface NewsParameterPanelProps {
   setHeroPlayer: (val: string) => void;
   summaryText: string;
   setSummaryText: (val: string) => void;
+
+  // 🌟 苗字のみ出力オプション
+  showSurnameOnly: boolean;
+  setShowSurnameOnly: (val: boolean) => void;
 }
 
 export function NewsParameterPanel({
@@ -87,7 +91,9 @@ export function NewsParameterPanel({
   heroPlayer,
   setHeroPlayer,
   summaryText,
-  setSummaryText
+  setSummaryText,
+  showSurnameOnly,
+  setShowSurnameOnly
 }: NewsParameterPanelProps) {
   return (
     <div className="space-y-6">
@@ -133,6 +139,29 @@ export function NewsParameterPanel({
 
         {isParamExpanded && (
           <div className="space-y-4 animate-in fade-in duration-300">
+            {/* 🌟 苗字のみ出力オプション */}
+            <div className="flex items-center justify-between p-3.5 bg-zinc-50 dark:bg-black/20 border border-zinc-200/50 dark:border-white/5 rounded-xl shadow-sm select-none">
+              <div className="space-y-0.5">
+                <span className="text-xs font-black text-zinc-800 dark:text-zinc-200">👤 選手名を苗字のみにする</span>
+                <p className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500">スタメンやプレイログの選手名を苗字だけで出力します</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowSurnameOnly(!showSurnameOnly)}
+                className={cn(
+                  "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary/20",
+                  showSurnameOnly ? "bg-primary" : "bg-zinc-200 dark:bg-zinc-700"
+                )}
+              >
+                <span
+                  className={cn(
+                    "pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
+                    showSurnameOnly ? "translate-x-5" : "translate-x-0"
+                  )}
+                />
+              </button>
+            </div>
+
             {/* 基本情報の手動調整 */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
