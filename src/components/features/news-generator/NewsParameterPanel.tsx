@@ -1,0 +1,325 @@
+// filepath: src/components/features/news-generator/NewsParameterPanel.tsx
+import React from "react";
+import { 
+  Sparkles, ChevronRight, Users, Trophy, Activity 
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+
+interface InningOption {
+  label: string;
+  inning: number;
+  isBottom: boolean;
+}
+
+interface NewsParameterPanelProps {
+  // tab state
+  newsType: "lineup" | "inning" | "end";
+  setNewsType: (type: "lineup" | "inning" | "end") => void;
+
+  // accordion state
+  isParamExpanded: boolean;
+  setIsParamExpanded: (expanded: boolean) => void;
+
+  // basic fields
+  matchName: string;
+  setMatchName: (val: string) => void;
+  venueName: string;
+  setVenueName: (val: string) => void;
+  opponentName: string;
+  setOpponentName: (val: string) => void;
+  reporterName: string;
+  handleReporterChange: (val: string) => void;
+  startTime: string;
+  setStartTime: (val: string) => void;
+  endTime: string;
+  setEndTime: (val: string) => void;
+
+  // score display names
+  firstTeamDisp: string;
+  setFirstTeamDisp: (val: string) => void;
+  secondTeamDisp: string;
+  setSecondTeamDisp: (val: string) => void;
+
+  // comments & hero (newsType specific)
+  lineupComment: string;
+  setLineupComment: (val: string) => void;
+
+  inningOptions: InningOption[];
+  selectedInningIndex: number;
+  setSelectedInningIndex: (idx: number) => void;
+  inningComment: string;
+  setInningComment: (val: string) => void;
+
+  heroPlayer: string;
+  setHeroPlayer: (val: string) => void;
+  summaryText: string;
+  setSummaryText: (val: string) => void;
+}
+
+export function NewsParameterPanel({
+  newsType,
+  setNewsType,
+  isParamExpanded,
+  setIsParamExpanded,
+  matchName,
+  setMatchName,
+  venueName,
+  setVenueName,
+  opponentName,
+  setOpponentName,
+  reporterName,
+  handleReporterChange,
+  startTime,
+  setStartTime,
+  endTime,
+  setEndTime,
+  firstTeamDisp,
+  setFirstTeamDisp,
+  secondTeamDisp,
+  setSecondTeamDisp,
+  lineupComment,
+  setLineupComment,
+  inningOptions,
+  selectedInningIndex,
+  setSelectedInningIndex,
+  inningComment,
+  setInningComment,
+  heroPlayer,
+  setHeroPlayer,
+  summaryText,
+  setSummaryText
+}: NewsParameterPanelProps) {
+  return (
+    <div className="space-y-6">
+      {/* 🏟️ 速報タイプのタブ切り替え */}
+      <div className="bg-white border border-zinc-200 dark:bg-zinc-900/60 dark:border-white/5 p-2 rounded-[var(--radius-xl)] shadow-md dark:shadow-none flex gap-1">
+        {[
+          { id: "lineup", label: "スタメン速報", icon: Users },
+          { id: "inning", label: "イニング速報", icon: Activity },
+          { id: "end", label: "試合終了速報", icon: Trophy }
+        ].map((tab) => {
+          const Icon = tab.icon;
+          const isActive = newsType === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setNewsType(tab.id as any)}
+              className={cn(
+                "flex-1 flex flex-col sm:flex-row items-center justify-center gap-1.5 py-3 sm:py-2.5 rounded-xl font-black text-[11px] sm:text-xs transition-all duration-300",
+                isActive
+                  ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20 scale-100"
+                  : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-white/5 active:scale-95"
+              )}
+            >
+              <Icon className="h-3.5 w-3.5" />
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* 🏟️ 手動補足・パラメータ入力エリア */}
+      <div className="bg-white border border-zinc-200 dark:bg-zinc-900/60 dark:border-white/5 p-5 rounded-[var(--radius-xl)] shadow-md dark:shadow-none space-y-4 transition-all duration-300">
+        <div 
+          onClick={() => setIsParamExpanded(!isParamExpanded)}
+          className="flex items-center justify-between gap-2 border-b border-zinc-100 dark:border-white/5 pb-2.5 mb-2 cursor-pointer group select-none"
+        >
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-primary animate-pulse" />
+            <h4 className="text-xs font-black text-zinc-900 dark:text-white tracking-wider group-hover:text-primary transition-colors">速報パラメータの調整</h4>
+          </div>
+          <ChevronRight className={cn("h-4 w-4 text-zinc-400 dark:text-zinc-500 transition-transform duration-300", isParamExpanded && "rotate-90")} />
+        </div>
+
+        {isParamExpanded && (
+          <div className="space-y-4 animate-in fade-in duration-300">
+            {/* 基本情報の手動調整 */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="block text-[10.5px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">試合名/大会名</label>
+                <input
+                  type="text"
+                  value={matchName}
+                  onChange={(e) => setMatchName(e.target.value)}
+                  className="w-full h-10 bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 text-zinc-900 dark:text-white text-xs px-3 rounded-xl outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-bold shadow-sm"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="block text-[10.5px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">球場名</label>
+                <input
+                  type="text"
+                  value={venueName}
+                  onChange={(e) => setVenueName(e.target.value)}
+                  className="w-full h-10 bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 text-zinc-900 dark:text-white text-xs px-3 rounded-xl outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-bold shadow-sm"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="block text-[10.5px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">対戦相手</label>
+                <input
+                  type="text"
+                  value={opponentName}
+                  onChange={(e) => setOpponentName(e.target.value)}
+                  className="w-full h-10 bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 text-zinc-900 dark:text-white text-xs px-3 rounded-xl outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-bold shadow-sm"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="block text-[10.5px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">速報担当者</label>
+                <input
+                  type="text"
+                  value={reporterName}
+                  onChange={(e) => handleReporterChange(e.target.value)}
+                  placeholder="例: 赤羽  橋本"
+                  className="w-full h-10 bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 text-zinc-900 dark:text-white text-xs px-3 rounded-xl outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-bold shadow-sm"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="block text-[10.5px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">開始時間</label>
+                <input
+                  type="text"
+                  value={startTime}
+                  onChange={(e) => setStartTime(e.target.value)}
+                  placeholder="例: 15:20"
+                  className="w-full h-10 bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 text-zinc-900 dark:text-white text-xs px-3 rounded-xl outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-bold shadow-sm"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="block text-[10.5px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">終了時間</label>
+                <input
+                  type="text"
+                  value={endTime}
+                  onChange={(e) => setEndTime(e.target.value)}
+                  placeholder="例: 17:01"
+                  className="w-full h-10 bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 text-zinc-900 dark:text-white text-xs px-3 rounded-xl outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-bold shadow-sm"
+                />
+              </div>
+            </div>
+
+            {/* スコア用表示名の手動調整 (イニング・終了速報時のみ表示) */}
+            {newsType !== "lineup" && (
+              <div className="space-y-3 pt-1 animate-in fade-in duration-300">
+                <div className="border-t border-zinc-100 dark:border-white/5 my-2" />
+                <label className="block text-[10.5px] font-black text-zinc-500 dark:text-zinc-400 tracking-wider uppercase">
+                  🏟️ スコアボードチーム名（等幅スペース調整用）
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500">先攻表示名（全角2文字はスペース推奨）</span>
+                    <input
+                      type="text"
+                      value={firstTeamDisp}
+                      onChange={(e) => setFirstTeamDisp(e.target.value)}
+                      placeholder="例: 逗　子"
+                      className="w-full h-10 bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 text-zinc-900 dark:text-white text-xs px-3 rounded-xl outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-mono font-bold shadow-sm"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500">後攻表示名（全角2文字はスペース推奨）</span>
+                    <input
+                      type="text"
+                      value={secondTeamDisp}
+                      onChange={(e) => setSecondTeamDisp(e.target.value)}
+                      placeholder="例: 川　中"
+                      className="w-full h-10 bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 text-zinc-900 dark:text-white text-xs px-3 rounded-xl outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-mono font-bold shadow-sm"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* --- A. スタメン速報用の設定 --- */}
+            {newsType === "lineup" && (
+              <div className="space-y-3 animate-in fade-in duration-300">
+                <div>
+                  <label className="block text-[10.5px] font-black text-zinc-500 dark:text-zinc-400 tracking-wider uppercase mb-1.5">
+                    💬 監督コメント・意気込みなどの一言 (自由に入力)
+                  </label>
+                  <textarea
+                    value={lineupComment}
+                    onChange={(e) => setLineupComment(e.target.value)}
+                    placeholder="例：新戦力の山田を1番に抜擢！打線のつながりで勝利を目指します。"
+                    className="w-full min-h-[90px] bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 focus:border-primary focus:ring-2 focus:ring-primary/10 text-zinc-900 dark:text-white text-xs p-3 rounded-xl outline-none resize-none transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-bold shadow-sm"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* --- B. イニング速報用の設定 --- */}
+            {newsType === "inning" && (
+              <div className="space-y-4 animate-in fade-in duration-300">
+                <div>
+                  <label className="block text-[10.5px] font-black text-zinc-500 dark:text-zinc-400 tracking-wider uppercase mb-1.5">
+                    ⚾️ 速報に含めるイニングの選択
+                  </label>
+                  {inningOptions.length === 0 ? (
+                    <div className="text-xs font-bold text-zinc-400 py-2">
+                      進行中のイニングデータが存在しません。イニングスコアを入力してください。
+                    </div>
+                  ) : (
+                    <div className="relative">
+                      <select
+                        value={selectedInningIndex}
+                        onChange={(e) => setSelectedInningIndex(Number(e.target.value))}
+                        className="w-full h-11 bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 hover:border-zinc-300 dark:hover:border-white/20 focus:border-primary focus:ring-2 focus:ring-primary/10 text-zinc-900 dark:text-white font-bold text-xs px-4 rounded-xl outline-none transition-all cursor-pointer appearance-none shadow-sm"
+                      >
+                        {inningOptions.map((opt, idx) => (
+                          <option key={idx} value={idx} className="bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white">
+                            {opt.label}まで表示する
+                          </option>
+                        ))}
+                      </select>
+                      <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-400 dark:text-zinc-500">
+                        <ChevronRight className="h-4 w-4 rotate-90" />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-[10.5px] font-black text-zinc-500 dark:text-zinc-400 tracking-wider uppercase mb-1.5">
+                    💬 戦況解説・追加コメント (自由に入力)
+                  </label>
+                  <textarea
+                    value={inningComment}
+                    onChange={(e) => setInningComment(e.target.value)}
+                    placeholder="例：山田が先制の2ランを放ちリードする展開。先発佐藤も要所を締め好投中。"
+                    className="w-full min-h-[95px] bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 focus:border-primary focus:ring-2 focus:ring-primary/10 text-zinc-900 dark:text-white text-xs p-3 rounded-xl outline-none resize-none transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-bold shadow-sm"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* --- C. 試合終了速報用の設定 --- */}
+            {newsType === "end" && (
+              <div className="space-y-4 animate-in fade-in duration-300">
+                <div>
+                  <label className="block text-[10.5px] font-black text-zinc-500 dark:text-zinc-400 tracking-wider uppercase mb-1.5">
+                    🏅 本日のヒーロー・活躍した選手
+                  </label>
+                  <input
+                    type="text"
+                    value={heroPlayer}
+                    onChange={(e) => setHeroPlayer(e.target.value)}
+                    placeholder="例：山田選手 (先制の2ランを含む3打点の大活躍！)"
+                    className="w-full h-11 bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 focus:border-primary focus:ring-2 focus:ring-primary/10 text-zinc-900 dark:text-white text-xs px-4 rounded-xl outline-none transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-bold shadow-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10.5px] font-black text-zinc-500 dark:text-zinc-400 tracking-wider uppercase mb-1.5">
+                    📝 戦評・総括
+                  </label>
+                  <textarea
+                    value={summaryText}
+                    onChange={(e) => setSummaryText(e.target.value)}
+                    placeholder="例：初回、3番山田の右越え2ランで先制。中盤に追いつかれるも、5回に相手の失策の間に勝ち越しに成功。投げては先発佐藤が7回2失点の力投で見事完投勝利を飾った。"
+                    className="w-full min-h-[130px] bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 focus:border-primary focus:ring-2 focus:ring-primary/10 text-zinc-900 dark:text-white text-xs p-3 rounded-xl outline-none resize-none transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-bold shadow-sm"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
