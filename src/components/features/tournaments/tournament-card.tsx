@@ -1,3 +1,4 @@
+// filepath: src/components/features/tournaments/tournament-card.tsx
 "use client";
 
 import React, { useState, useRef } from "react";
@@ -117,15 +118,17 @@ export function TournamentCard({ t, onEdit, onDelete }: TournamentCardProps) {
                 onTouchEnd={handleTouchEnd}
             >
                 <CardContent className="p-0">
-                    <div className="flex items-stretch cursor-pointer">
-                        <div className={cn("w-16 shrink-0 flex flex-col items-center justify-center gap-1.5 py-4", sc.accent)}>
+                    <div className="flex items-stretch cursor-pointer min-h-[110px]">
+                        {/* ステータスバッジ（左側） */}
+                        <div className={cn("w-14 sm:w-16 shrink-0 flex flex-col items-center justify-center gap-1.5 py-4", sc.accent)}>
                             {sc.icon}
-                            <span className="text-[8px] font-black tracking-widest uppercase leading-none" style={{ writingMode: "vertical-rl" }}>
+                            <span className="text-[9px] font-black tracking-widest uppercase leading-none" style={{ writingMode: "vertical-rl" }}>
                                 {sc.label}
                             </span>
                         </div>
 
-                        <div className="flex-1 px-5 py-4 min-w-0 space-y-1.5 pointer-events-none">
+                        {/* メインテキストエリア（中央） 🔥 flex-col justify-center を追加して上下中央揃えに！ */}
+                        <div className="flex-1 px-4 py-3 min-w-0 flex flex-col justify-center space-y-1.5 pointer-events-none">
                             <div className="flex items-center gap-2 flex-wrap">
                                 <Badge className="bg-muted text-muted-foreground border-none text-[9px] font-black px-2 py-0.5 rounded-md">
                                     {t.season}年度
@@ -156,7 +159,7 @@ export function TournamentCard({ t, onEdit, onDelete }: TournamentCardProps) {
                             )}
                         </div>
 
-                        {/* 🌟 組み合わせ表リンクのみ前面に残す（PC操作用にも） */}
+                        {/* 🌟 組み合わせ表リンクのみ前面に残す */}
                         {t.bracketUrl && (
                             <div className="flex flex-col items-center justify-center gap-0.5 px-3 py-3 border-l border-border/40 shrink-0 bg-muted/10">
                                 <a 
