@@ -77,6 +77,7 @@ function CreateMatchContent() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formState.opponent) { toast.error("対戦相手を入力してください"); return; }
+    if (formState.battingOrder === "unknown") { toast.error("先攻・後攻（Order）を選択してください"); return; }
     if (!currentTeam?.id) { toast.error("操作するチームを選択してください"); return; }
 
     setIsLoading(true);
@@ -88,6 +89,7 @@ function CreateMatchContent() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...formState,
+          innings: formState.inningCount, // 💡 イニング数のキー名をAPIと統一！
           date: formState.time ? `${formState.date} ${formState.time}` : formState.date,
           surfaceDetails: formState.venue,
           teamId: currentTeam.id,
