@@ -94,7 +94,8 @@ export const handleGetMembers = async (c: Context) => {
         tm.status,
         tm.joined_at AS joinedAt,
         u.name,
-        u.image      AS avatarUrl
+        u.image      AS avatarUrl,
+        u.email      AS email
       FROM team_members tm
       JOIN user u ON tm.user_id = u.id
       WHERE tm.team_id = ?
@@ -134,6 +135,7 @@ export const handleGetMembers = async (c: Context) => {
       joinedAt: row.joinedAt,
       name: row.name,
       avatarUrl: row.avatarUrl,
+      email: row.email,
       authProviders: providersMap[row.userId] || [],
     }))
 

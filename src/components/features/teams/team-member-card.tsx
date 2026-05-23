@@ -17,6 +17,7 @@ export interface TeamMember {
   role: string;
   status: "active" | "pending";
   joinedAt: number | null;
+  email?: string | null; // 🌟 追加
 }
 
 const ROLE_CONFIG: Record<string, { label: string; desc: string; color: string; bg: string; icon: React.ReactNode; }> = {

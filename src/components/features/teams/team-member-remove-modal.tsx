@@ -40,7 +40,7 @@ export function TeamMemberRemoveModal({ member, isRemoving, onConfirm, onCancel 
             </Avatar>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-black text-foreground truncate">{member.name}</p>
-              <p className="text-[11px] text-muted-foreground truncate font-medium mt-0.5">{member.email}</p>
+              <p className="text-[11px] text-muted-foreground truncate font-medium mt-0.5">{member.email || "メールアドレス非公開"}</p>
             </div>
           </div>
         )}

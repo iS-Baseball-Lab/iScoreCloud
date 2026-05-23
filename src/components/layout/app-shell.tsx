@@ -1,37 +1,21 @@
+// filepath: src/components/layout/app-shell.tsx
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import React from "react";
+import { usePathname } from "next/navigation";
 import { Header } from "@/components/layout/header";
 import { FloatingNav } from "@/components/layout/floating-nav";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const router = useRouter();
-  const [activeTab, setActiveTab] = useState("dashboard");
-
-  useEffect(() => {
-    if (pathname?.startsWith("/team")) setActiveTab("team");
-    else if (pathname?.startsWith("/players")) setActiveTab("players");
-    else if (pathname?.startsWith("/tournaments/map")) setActiveTab("map");
-    else if (pathname?.startsWith("/dashboard")) setActiveTab("dashboard");
-  }, [pathname]);
-
-  const handleNavigate = (path: string, tabId: string) => {
-    setActiveTab(tabId);
-    router.push(path);
-  };
-
-  const handleOpenDrawer = () => {
-    console.log("Drawer open");
-  };
 
   const isAuthPage = pathname === "/" || pathname?.startsWith("/login") || pathname?.startsWith("/register");
 
   if (isAuthPage) {
     return <>{children}</>;
   }
-// ⚾️ 独自性：スコア入力ページかどうかを判定
+
+  // ⚾️ 独自性：スコア入力ページかどうかを判定
   // このページは「戦場」なので、ナビゲーションは一切不要！
   const isScorePage = pathname?.startsWith("/matches/score");
 
@@ -40,21 +24,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
   
   return (
-    // 🔥 修正ポイント: bg-background を bg-transparent に変更！
-    // これにより、globals.css の背景がバッチリ透けて見えます！
+    // 🔥 bg-background を bg-transparent に変更！
+    // globals.css の美しいグラデーション背景が綺麗に透けて見えます！
     <div className="relative min-h-screen flex flex-col bg-transparent">
-
       <Header />
 
       <main className="flex-1 w-full relative">
         {children}
       </main>
 
-      <FloatingNav
-        activeTab={activeTab}
-        onNavigate={handleNavigate}
-        onOpenDrawer={handleOpenDrawer}
-      />
+      {/* 自己完結した FloatingNav をシンプルに呼び出し */}
+      <FloatingNav />
     </div>
   );
 }
