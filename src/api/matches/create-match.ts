@@ -1,8 +1,7 @@
 // filepath: src/api/matches/create-match.ts
 import { Hono } from 'hono';
 import { drizzle } from 'drizzle-orm/d1';
-import { eq } from 'drizzle-orm';
-import { matches, tournaments } from '@/db/schema/match';
+import { matches } from '@/db/schema/match';
 import type { WorkerEnv } from '@/types/api';
 
 const app = new Hono<{ Bindings: WorkerEnv }>();
@@ -37,29 +36,7 @@ app.post('/create', async (c) => {
     // 💡 徹底的に null 変換するヘルパー (anyを排除しstring等の型を指定)
     const n = (val: string | undefined | null) => (val === "" || val === undefined || val === null ? null : val);
 
-    // 🌟 大会名（tournamentName）が送られてきた場合、自動的に解決・新規生成する
-    let tournamentId: string | null = null;
-    if (body.matchType === 'official' && (body as any).tournamentName) {
-      const tName = (body as any).tournamentName;
-      const existingTournament = await db.select().from(tournaments)
-        .where(eq(tournaments.name, tName)).get();
-
-      if (existingTournament) {
-        tournamentId = existingTournament.id;
-      } else {
-        tournamentId = crypto.randomUUID();
-        await db.insert(tournaments).values({
-          id: tournamentId,
-          name: tName,
-          season: new Date().getFullYear().toString(),
-          category: 'other',
-        });
-      }
-    } else {
-      tournamentId = n(body.tournamentId);
-    }
-
-    // 💡 INSERT実行
+    // 💡 INSERT実行 (drizzle-orm や tournaments などの追加インポートを完全排除して500エラーを回避)
     await db.insert(matches).values({
       id: matchId,
       // 🌟 teamId が DB の teams テーブルに実在することを確認してください
@@ -67,7 +44,7 @@ app.post('/create', async (c) => {
       opponent: body.opponent,
 
       // 🌟 ID系は絶対に "" ではなく null を渡す
-      tournamentId: tournamentId,
+      tournamentId: n(body.tournamentId),
       venueId: n(body.venueId),
 
       date: body.date || new Date().toISOString().split('T')[0],
