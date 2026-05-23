@@ -1,7 +1,7 @@
 // filepath: src/components/features/news-generator/NewsParameterPanel.tsx
-import React from "react";
+import React, { useState } from "react";
 import { 
-  Sparkles, ChevronRight, Users, Trophy, Activity 
+  Sparkles, ChevronRight, ChevronDown, Zap, Users, Trophy, Activity 
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -95,6 +95,8 @@ export function NewsParameterPanel({
   showSurnameOnly,
   setShowSurnameOnly
 }: NewsParameterPanelProps) {
+  const [isInningDropdownOpen, setIsInningDropdownOpen] = useState(false);
+
   return (
     <div className="space-y-6">
       {/* 🏟️ 速報タイプのタブ切り替え */}
@@ -285,20 +287,57 @@ export function NewsParameterPanel({
                     </div>
                   ) : (
                     <div className="relative">
-                      <select
-                        value={selectedInningIndex}
-                        onChange={(e) => setSelectedInningIndex(Number(e.target.value))}
-                        className="w-full h-11 bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 hover:border-zinc-300 dark:hover:border-white/20 focus:border-primary focus:ring-2 focus:ring-primary/10 text-zinc-900 dark:text-white font-bold text-xs px-4 rounded-xl outline-none transition-all cursor-pointer appearance-none shadow-sm"
+                      {/* トリガーボタン */}
+                      <button
+                        type="button"
+                        onClick={() => setIsInningDropdownOpen(!isInningDropdownOpen)}
+                        className={cn(
+                          "w-full h-11 bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 hover:border-zinc-300 dark:hover:border-white/20 text-zinc-900 dark:text-white font-bold text-xs px-4 rounded-xl outline-none transition-all flex items-center justify-between shadow-sm cursor-pointer",
+                          isInningDropdownOpen && "border-primary dark:border-primary/50 ring-2 ring-primary/10"
+                        )}
                       >
-                        {inningOptions.map((opt, idx) => (
-                          <option key={idx} value={idx} className="bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white">
-                            {opt.label}まで表示する
-                          </option>
-                        ))}
-                      </select>
-                      <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-400 dark:text-zinc-500">
-                        <ChevronRight className="h-4 w-4 rotate-90" />
-                      </div>
+                        <div className="flex items-center gap-2">
+                          <Activity className="h-4 w-4 text-primary shrink-0 animate-pulse" />
+                          <span>{inningOptions[selectedInningIndex]?.label}まで表示する</span>
+                        </div>
+                        <ChevronDown className={cn("h-4 w-4 text-zinc-400 dark:text-zinc-500 transition-transform duration-300 shrink-0", isInningDropdownOpen && "rotate-180")} />
+                      </button>
+
+                      {/* 背面オーバーレイ（クリックで閉じる） */}
+                      {isInningDropdownOpen && (
+                        <div 
+                          className="fixed inset-0 z-40 bg-transparent" 
+                          onClick={() => setIsInningDropdownOpen(false)}
+                        />
+                      )}
+
+                      {/* ドロップダウンメニュー */}
+                      {isInningDropdownOpen && (
+                        <div className="absolute left-0 right-0 mt-1.5 z-50 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-md border border-zinc-200 dark:border-white/10 rounded-xl shadow-lg max-h-60 overflow-y-auto p-1.5 animate-in fade-in slide-in-from-top-2 duration-200">
+                          {inningOptions.map((opt, idx) => {
+                            const isSelected = idx === selectedInningIndex;
+                            return (
+                              <button
+                                key={idx}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedInningIndex(idx);
+                                  setIsInningDropdownOpen(false);
+                                }}
+                                className={cn(
+                                  "w-full text-left px-3 py-2.5 rounded-lg font-bold text-xs flex items-center justify-between transition-colors cursor-pointer",
+                                  isSelected 
+                                    ? "bg-primary/10 text-primary" 
+                                    : "text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-white/5"
+                                )}
+                              >
+                                <span>{opt.label}まで表示する</span>
+                                {isSelected && <Zap className="h-3.5 w-3.5 text-primary animate-pulse" />}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
