@@ -224,7 +224,6 @@ export const MatchService = {
       .from(playLogs)
       .where(eq(playLogs.matchId, matchId))
       .orderBy(desc(playLogs.createdAt))
-      .limit(50)
       .all();
     
     // PlayLogEntry 型に合わせる
