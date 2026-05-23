@@ -20,7 +20,7 @@ export function ProtectedClientLayout({
     const checkAuth = async () => {
       try {
         const res = await fetch("/api/auth/me");
-        const json = await res.json();
+        const json = (await res.json()) as any;
 
         // 1. 未ログインならログイン画面へ弾く
         if (!json.success || !json.data) {

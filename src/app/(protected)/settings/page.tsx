@@ -33,7 +33,7 @@ export default function SettingsPage() {
       setIsLoadingSettings(true);
       try {
         const res = await fetch(`/api/teams/${currentTeam.id}/line-settings`);
-        const data = await res.json();
+        const data = (await res.json()) as any;
         if (data.success && data.data) {
           setLineSettings(data.data);
         } else {
@@ -104,7 +104,7 @@ export default function SettingsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ teamId: currentTeam.id }),
       });
-      const data = await res.json();
+      const data = (await res.json()) as any;
 
       if (data.success) {
         setStatus("🎉 LINE着弾成功！スマホを確認してください！");
