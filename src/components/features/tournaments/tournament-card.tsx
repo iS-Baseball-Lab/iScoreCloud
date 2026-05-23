@@ -73,20 +73,26 @@ export function TournamentCard({ t, onEdit, onDelete }: TournamentCardProps) {
     const sc = statusConfig[status];
 
     return (
-        /* 🔥 Cardコンポーネントを廃止し、ピュアなdivに変更。Cardが持っていたスタイルをここに完全集約 */
-        <div className={cn(
-            "group relative overflow-hidden transition-all duration-200 ease-out isolate",
-            "rounded-[var(--radius-2xl)] border border-border/50 bg-card text-card-foreground shadow-sm",
-            status === "ongoing" && "ring-1 ring-primary/20"
-        )}>
+        <div 
+            className={cn(
+                "group relative overflow-hidden transition-all duration-200 ease-out isolate",
+                "rounded-[var(--radius-2xl)] border border-border/50 bg-card text-card-foreground shadow-sm",
+                status === "ongoing" && "ring-1 ring-primary/20"
+            )}
+            /* 🔥 【最強のiOS対策】transform移動時に親のoverflow-hiddenが一瞬外れるバグを完全封殺するマスクハック */
+            style={{ 
+                WebkitMaskImage: "-webkit-linear-gradient(white, white)", 
+                maskImage: "linear-gradient(white, white)" 
+            }}
+        >
             {/* 🌟 スワイプ背面のアクションボタン群 */}
             <div className={cn(
                 "absolute inset-0 z-0 transition-opacity duration-150 bg-transparent",
                 Math.abs(offsetX) > 0 ? "opacity-100" : "opacity-0 pointer-events-none"
             )}>
                 {/* 編集ボタン (左スワイプで出現) */}
-                {/* 🔥 inset-y-0 で縦幅を親のdivと完全に100%同期 */}
-                <div className="absolute inset-y-0 left-0 w-[75px] overflow-hidden rounded-l-[var(--radius-2xl)]">
+                {/* 💡 個別の角丸を完全削除。親のマスクにクリップを委ねることで、隙間やチラつきを根絶 */}
+                <div className="absolute inset-y-0 left-0 w-[75px] overflow-hidden">
                     <button
                         onClick={() => { setOffsetX(0); onEdit(t); }}
                         className="flex flex-col items-center justify-center w-full h-full bg-blue-500 text-white active:bg-blue-600 transition-colors"
@@ -97,8 +103,7 @@ export function TournamentCard({ t, onEdit, onDelete }: TournamentCardProps) {
                 </div>
 
                 {/* 削除ボタン (右スワイプで出現) */}
-                {/* 🔥 同様に inset-y-0 で縦幅を完全同期 */}
-                <div className="absolute inset-y-0 right-0 w-[75px] overflow-hidden rounded-r-[var(--radius-2xl)]">
+                <div className="absolute inset-y-0 right-0 w-[75px] overflow-hidden">
                     <button
                         onClick={() => { setOffsetX(0); onDelete(t); }}
                         className="flex flex-col items-center justify-center w-full h-full bg-rose-500 text-white active:bg-rose-600 transition-colors"
@@ -110,17 +115,17 @@ export function TournamentCard({ t, onEdit, onDelete }: TournamentCardProps) {
             </div>
 
             {/* 🌟 フォアグラウンド（カード本体） */}
+            {/* 💡 移動するコンテナ側の個別角丸も排除！これでスライドした境界線が常に美しく直線で背面ボタンと重なります */}
             <div
-                className="relative z-10 h-full transition-transform duration-200 ease-out bg-card rounded-[var(--radius-2xl)]"
+                className="relative z-10 h-full transition-transform duration-200 ease-out bg-card"
                 style={{ transform: `translateX(${offsetX}px)`, touchAction: "pan-y" }}
                 onTouchStart={handleTouchStart}
                 onTouchMove={handleTouchMove}
                 onTouchEnd={handleTouchEnd}
             >
-                {/* 🔥 CardContentも廃止し、ピュアな構造に */}
                 <div className="flex items-stretch cursor-pointer min-h-[110px]">
                     {/* ステータスバッジ（左側） */}
-                    <div className={cn("w-14 sm:w-16 shrink-0 flex flex-col items-center justify-center gap-1.5 py-4 rounded-l-[var(--radius-2xl)]", sc.accent)}>
+                    <div className={cn("w-14 sm:w-16 shrink-0 flex flex-col items-center justify-center gap-1.5 py-4", sc.accent)}>
                         {sc.icon}
                         <span className="text-[9px] font-black tracking-widest uppercase leading-none" style={{ writingMode: "vertical-rl" }}>
                             {sc.label}
@@ -161,7 +166,7 @@ export function TournamentCard({ t, onEdit, onDelete }: TournamentCardProps) {
 
                     {/* 組み合わせ表リンク（右側） */}
                     {t.bracketUrl && (
-                        <div className="flex flex-col items-center justify-center gap-0.5 px-3 py-3 border-l border-border/40 shrink-0 bg-muted/10 rounded-r-[var(--radius-2xl)]">
+                        <div className="flex flex-col items-center justify-center gap-0.5 px-3 py-3 border-l border-border/40 shrink-0 bg-muted/10">
                             <a 
                                 href={t.bracketUrl} 
                                 target="_blank" 
