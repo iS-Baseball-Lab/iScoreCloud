@@ -68,6 +68,7 @@ export interface ScoreState {
   // ログ・履歴
   logs: PlayLogEntry[];
   history?: ScoreState[];
+  lockedBy?: { userId: string; userName: string } | null;
 }
 
 /** 🔌 API レスポンス用 */
@@ -134,4 +135,7 @@ export interface ScoreContextType {
     uniformNumber?: string,
     position?: string
   ) => void;
+  acquireLock: () => Promise<boolean>;
+  releaseLock: () => Promise<void>;
+  forceAcquireLock: () => Promise<void>;
 }

@@ -10,7 +10,7 @@ import { SubstitutionModal } from "./SubstitutionModal";
 import { X, UserPlus, Check, User, ChevronDown } from "lucide-react";
 
 export function PlayArea() {
-  const { state, updateRunners, recordInPlay, recordRunnerAction, substitutePlayer } = useScore();
+  const { state, updateRunners, recordInPlay, recordRunnerAction, substitutePlayer, forceAcquireLock } = useScore();
   const { runners } = state;
 
   // モーダル・アサイン用状態管理
@@ -270,6 +270,29 @@ export function PlayArea() {
 
   return (
     <div className="w-full flex flex-col items-center justify-center">
+
+      {/* 🔒 閲覧専用モード警告バナー */}
+      {!state.isScorer && state.lockedBy && (
+        <div className="w-full max-w-[480px] sm:max-w-[520px] mb-4 px-2 select-none animate-in fade-in slide-in-from-top-3 duration-300 z-50">
+          <div className="flex items-center justify-between gap-3 px-4 py-3 bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/30 rounded-2xl shadow-lg backdrop-blur-md">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="flex h-2.5 w-2.5 relative shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
+              </span>
+              <span className="text-xs font-black text-amber-700 dark:text-amber-300 truncate">
+                {state.lockedBy.userName}さんが入力中 (閲覧専用)
+              </span>
+            </div>
+            <button
+              onClick={forceAcquireLock}
+              className="px-3 py-1 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white text-[10px] font-black rounded-lg transition-all shadow-md shrink-0 cursor-pointer"
+            >
+              編集権限を取得
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 🚀 バッター情報 (ダイヤモンドの上部に通常フローで配置) */}
       <div className="w-full max-w-[480px] sm:max-w-[520px] px-2 text-center z-50 mb-6">

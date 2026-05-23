@@ -14,6 +14,7 @@ import matchesRoute from './api/matches'
 import createMatchRoute from '@/api/matches/create-match';
 import updateMatchRoute from './api/matches/update-match';
 import matchesApi from './api/matches/update-score';
+import lockRoute from './api/matches/lock';
 import webhookRoute from './api/matches/webhook'
 import adminRoute from './api/admin'
 import imagesRouter from './api/images'
@@ -35,6 +36,7 @@ app.route('/api/matches', matchesRoute)
 app.route('/api/matches', createMatchRoute)
 app.route('/api/matches', updateMatchRoute)
 app.route('/api/matches', matchesApi)
+app.route('/api/matches', lockRoute)
 app.route('/api/matches/webhook', webhookRoute)
 app.route('/api/admin', adminRoute)
 app.route('/api/images', imagesRouter)

@@ -14,6 +14,8 @@ export function ControlPanel() {
   const [outOpen, setOutOpen] = useState(false);
   const [defaultHitType, setDefaultHitType] = useState<string>("1B");
 
+  const isDisabled = isSyncing || !state.isScorer;
+
   useEffect(() => {
     const className = "hide-global-fab";
     if (typeof document !== "undefined") {
@@ -144,7 +146,7 @@ export function ControlPanel() {
         <button 
           type="button" 
           onClick={() => setOutOpen(true)} 
-          disabled={isSyncing}
+          disabled={isDisabled}
           className="h-full bg-rose-600 text-white rounded-2xl flex flex-col items-center justify-center shadow-md border-b-2 border-rose-800 active:scale-95 transition-all"
         >
           <span className="text-xl font-black tracking-tighter leading-none">O</span>
@@ -155,7 +157,7 @@ export function ControlPanel() {
         <button 
           type="button" 
           onClick={() => recordPitch("strike")} 
-          disabled={isSyncing}
+          disabled={isDisabled}
           className="h-full bg-amber-500 text-white rounded-2xl flex flex-col items-center justify-center shadow-md border-b-2 border-amber-700 active:scale-95 transition-all"
         >
           <span className="text-xl font-black tracking-tighter leading-none">S</span>
@@ -166,7 +168,7 @@ export function ControlPanel() {
         <button 
           type="button" 
           onClick={() => recordPitch("swinging_strike")} 
-          disabled={isSyncing}
+          disabled={isDisabled}
           className="h-full bg-amber-500 text-white rounded-2xl flex flex-col items-center justify-center shadow-md border-b-2 border-amber-700 active:scale-95 transition-all"
         >
           <span className="text-xl font-black tracking-tighter leading-none">S</span>
@@ -177,7 +179,7 @@ export function ControlPanel() {
         <button 
           type="button" 
           onClick={() => recordPitch("ball")} 
-          disabled={isSyncing}
+          disabled={isDisabled}
           className="h-full bg-emerald-600 text-white rounded-2xl flex flex-col items-center justify-center shadow-md border-b-2 border-emerald-800 active:scale-95 transition-all"
         >
           <span className="text-xl font-black tracking-tighter leading-none">B</span>
@@ -190,7 +192,7 @@ export function ControlPanel() {
         <button 
           type="button" 
           onClick={() => openFieldWithPreset("HR")} 
-          disabled={isSyncing}
+          disabled={isDisabled}
           className="h-full bg-rose-600 text-white rounded-2xl flex flex-col items-center justify-center shadow-md border-b-2 border-rose-800 active:scale-95 transition-all"
         >
           <span className="text-xl font-black tracking-tighter leading-none">HR</span>
@@ -199,7 +201,7 @@ export function ControlPanel() {
         <button 
           type="button" 
           onClick={() => openFieldWithPreset("3B")} 
-          disabled={isSyncing}
+          disabled={isDisabled}
           className="h-full bg-blue-600 text-white rounded-2xl flex flex-col items-center justify-center shadow-md border-b-2 border-blue-800 active:scale-95 transition-all"
         >
           <span className="text-xl font-black tracking-tighter leading-none">3B</span>
@@ -208,7 +210,7 @@ export function ControlPanel() {
         <button 
           type="button" 
           onClick={() => openFieldWithPreset("2B")} 
-          disabled={isSyncing}
+          disabled={isDisabled}
           className="h-full bg-blue-600 text-white rounded-2xl flex flex-col items-center justify-center shadow-md border-b-2 border-blue-800 active:scale-95 transition-all"
         >
           <span className="text-xl font-black tracking-tighter leading-none">2B</span>
@@ -217,7 +219,7 @@ export function ControlPanel() {
         <button 
           type="button" 
           onClick={() => openFieldWithPreset("1B")} 
-          disabled={isSyncing}
+          disabled={isDisabled}
           className="h-full bg-blue-600 text-white rounded-2xl flex flex-col items-center justify-center shadow-md border-b-2 border-blue-800 active:scale-95 transition-all"
         >
           <span className="text-xl font-black tracking-tighter leading-none">1B</span>
@@ -229,28 +231,28 @@ export function ControlPanel() {
       <div className="flex-1 grid grid-cols-5 gap-1.5 min-h-0 text-zinc-500 h-[24%]">
         <button 
           onClick={() => recordPitch("foul")} 
-          disabled={isSyncing}
+          disabled={isDisabled}
           className="h-full rounded-2xl border-2 border-zinc-200 dark:border-zinc-800 font-black text-[10px] uppercase active:bg-zinc-100 dark:active:bg-zinc-900 transition-colors"
         >
           Foul
         </button>
         <button 
           onClick={() => recordPitch("hbp")} 
-          disabled={isSyncing}
+          disabled={isDisabled}
           className="h-full rounded-2xl border-2 border-amber-500/30 text-amber-600 dark:text-amber-400 font-black text-[10px] uppercase active:bg-amber-500/10 transition-colors"
         >
           HBP
         </button>
         <button 
           onClick={() => openFieldWithPreset("E")} 
-          disabled={isSyncing}
+          disabled={isDisabled}
           className="h-full rounded-2xl border-2 border-zinc-200 dark:border-zinc-800 font-black text-[10px] uppercase active:bg-zinc-100 dark:active:bg-zinc-900 transition-colors"
         >
           Error
         </button>
         <button 
           onClick={undo} 
-          disabled={isSyncing}
+          disabled={isDisabled}
           className="h-full bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 rounded-2xl text-[10px] sm:text-[12px] font-black uppercase tracking-widest active:bg-zinc-300 transition-colors"
         >
           Undo
@@ -261,7 +263,7 @@ export function ControlPanel() {
               finishMatch();
             }
           }} 
-          disabled={isSyncing}
+          disabled={isDisabled}
           className="h-full bg-rose-500/10 text-rose-600 dark:text-rose-400 border-2 border-rose-500/20 rounded-2xl text-[9px] sm:text-[10px] font-black uppercase tracking-widest active:bg-rose-500/20 leading-tight transition-colors"
         >
           試合終了

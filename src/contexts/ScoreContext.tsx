@@ -7,7 +7,7 @@
 
 "use client";
 
-import React, { createContext, useContext, useState, useCallback } from "react";
+import React, { createContext, useContext, useState, useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import {
   ScoreState,
@@ -17,6 +17,21 @@ import {
 } from "@/types/score";
 
 const ScoreContext = createContext<ScoreContextType | undefined>(undefined);
+
+const getOrCreateUserId = () => {
+  if (typeof window === "undefined") return "server-side";
+  let id = localStorage.getItem("iscore_device_userId");
+  if (!id) {
+    id = `user-${crypto.randomUUID()}`;
+    localStorage.setItem("iscore_device_userId", id);
+  }
+  return id;
+};
+
+const getUserName = () => {
+  if (typeof window === "undefined") return "スコアラー";
+  return localStorage.getItem("iscore_reporterName") || "スコアラー";
+};
 
 export function ScoreProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<ScoreState>({
@@ -45,6 +60,7 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
     myBattingIndex: 0,
     opponentBattingIndex: 0,
     logs: [],
+    lockedBy: null,
   });
 
   const [isLoading, setIsLoading] = useState(true);
@@ -156,6 +172,25 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
         // ログの復元
         const restoredLogs = logsData?.success && Array.isArray(logsData.logs) ? logsData.logs : [];
 
+        // 🌟 ロック状態の判定と初期取得
+        const userId = getOrCreateUserId();
+        const userName = getUserName();
+        let isScorer = false;
+        let lockedBy = null;
+
+        try {
+          const lockRes = await fetch(`/api/matches/${matchId}/lock`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ userId, userName })
+          });
+          const lockData = await lockRes.json() as { success: boolean; lockedBy?: { userId: string; userName: string } };
+          isScorer = lockData.success;
+          lockedBy = lockData.lockedBy || null;
+        } catch (e) {
+          console.error("Initial lock acquire error:", e);
+        }
+
         // 🌟 プレイログを解析して打順（myBattingIndex, opponentBattingIndex）を復元
         let myBattingIndex = 0;
         let opponentBattingIndex = 0;
@@ -243,8 +278,8 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
           opponentBattingIndex,
           batterId,
           logs: restoredLogs, // 🌟 プレイログを復元
-          // 💡 ここで権限判定を行う（例: チーム所属チェック）
-          isScorer: true, // 開発中は一旦true。実際は管理者かどうかを判定
+          isScorer,
+          lockedBy,
         }));
       }
     } catch (error) {
@@ -253,6 +288,134 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
       setIsLoading(false);
     }
   }, []);
+
+  // 🚀 3.5 ロックの取得 (API経由)
+  const acquireLock = useCallback(async (): Promise<boolean> => {
+    if (typeof window === "undefined" || !state.matchId) return false;
+    
+    const userId = getOrCreateUserId();
+    const userName = getUserName();
+    
+    try {
+      const res = await fetch(`/api/matches/${state.matchId}/lock`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, userName })
+      });
+      const data = await res.json() as { success: boolean; lockedBy?: { userId: string; userName: string } };
+      
+      if (data.success) {
+        setState(prev => ({ 
+          ...prev, 
+          isScorer: true, 
+          lockedBy: { userId, userName } 
+        }));
+        return true;
+      } else {
+        setState(prev => ({ 
+          ...prev, 
+          isScorer: false, 
+          lockedBy: data.lockedBy || null 
+        }));
+        return false;
+      }
+    } catch (e) {
+      console.error("Acquire Lock Error:", e);
+      return false;
+    }
+  }, [state.matchId]);
+
+  // 🚀 3.6 ロックの解放
+  const releaseLock = useCallback(async () => {
+    if (typeof window === "undefined" || !state.matchId) return;
+    
+    const userId = getOrCreateUserId();
+    
+    try {
+      await fetch(`/api/matches/${state.matchId}/lock`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId })
+      });
+      setState(prev => ({ 
+        ...prev, 
+        isScorer: false, 
+        lockedBy: null 
+      }));
+    } catch (e) {
+      console.error("Release Lock Error:", e);
+    }
+  }, [state.matchId]);
+
+  // 🚀 3.7 強制ロック取得
+  const forceAcquireLock = useCallback(async () => {
+    if (typeof window === "undefined" || !state.matchId) return;
+    
+    const userId = getOrCreateUserId();
+    const userName = getUserName();
+    
+    try {
+      const res = await fetch(`/api/matches/${state.matchId}/lock/force`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, userName })
+      });
+      const data = await res.json() as { success: boolean };
+      if (data.success) {
+        toast.success("編集権限を強制取得しました");
+        setState(prev => ({ 
+          ...prev, 
+          isScorer: true, 
+          lockedBy: { userId, userName } 
+        }));
+      }
+    } catch (e) {
+      console.error("Force Acquire Lock Error:", e);
+      toast.error("編集権限の取得に失敗しました");
+    }
+  }, [state.matchId]);
+
+  // 🚀 3.8 ハートビートの自動定期実行
+  useEffect(() => {
+    if (!state.matchId || !state.isScorer) return;
+    
+    const userId = getOrCreateUserId();
+    
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/matches/${state.matchId}/lock/heartbeat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId })
+        });
+        const data = await res.json() as { success: boolean };
+        if (!data.success) {
+          toast.warning("別のスコアラーに編集権限が移行したため、閲覧モードになりました");
+          setState(prev => ({ ...prev, isScorer: false, lockedBy: null }));
+          clearInterval(interval);
+        }
+      } catch (e) {
+        console.error("Heartbeat Error:", e);
+      }
+    }, 10000); // 10秒おき
+    
+    return () => clearInterval(interval);
+  }, [state.matchId, state.isScorer]);
+
+  // 🚀 3.9 画面退出時の自動ロック解放
+  useEffect(() => {
+    return () => {
+      if (state.matchId && state.isScorer) {
+        const userId = getOrCreateUserId();
+        fetch(`/api/matches/${state.matchId}/lock`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId }),
+          keepalive: true
+        }).catch(err => console.error("Unmount Release Lock Error:", err));
+      }
+    };
+  }, [state.matchId, state.isScorer]);
 
   // 🚀 4. 投球・アウト記録 (野球脳ロジック)
   const recordPitch = async (result: "ball" | "strike" | "foul" | "swinging_strike" | "out" | "hbp") => {
@@ -827,7 +990,10 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
       undo,
       finishMatch,
       updateMatchSettings,
-      substitutePlayer
+      substitutePlayer,
+      acquireLock,
+      releaseLock,
+      forceAcquireLock
     }}>
       {children}
     </ScoreContext.Provider>

@@ -98,6 +98,10 @@ export const matches = sqliteTable("matches", {
   myAttendance: text("my_attendance").default('{}'),
 
   weather: text("weather"),
+  lockedByUserId: text("locked_by_user_id"),
+  lockedByUserName: text("locked_by_user_name"),
+  lockedAt: integer("locked_at", { mode: "timestamp" }),
+  lockExpiresAt: integer("lock_expires_at", { mode: "timestamp" }),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(strftime('%s', 'now'))`),
 }, (table) => ({
   teamIdx: index("idx_matches_team_id").on(table.teamId),

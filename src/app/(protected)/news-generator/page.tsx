@@ -520,15 +520,34 @@ export default function NewsGeneratorPage() {
             inningOuts = Math.min(3, inningOuts + 1);
           }
 
-          currentAtBat = {
-            isEvent: false,
-            batterOrder: order,
-            batterName: name,
-            plays: [play],
-            outsAtPlay: [inningOuts],
-            isOutsInc: [isOut]
-          };
-          atBats.push(currentAtBat);
+          // 💡 途中経過の投球（ボール、空振り、ストライク、ファウル）であるか判定
+          const isPitch = (
+            play === "ボール" || 
+            play === "空振り" || 
+            play === "見逃しストライク" || 
+            play === "ファウル"
+          );
+
+          // すでに同じ打者の打席が直前にあれば使い回す、なければ新規作成
+          const lastAtBat = atBats.length > 0 ? atBats[atBats.length - 1] : null;
+          if (lastAtBat && !lastAtBat.isEvent && lastAtBat.batterOrder === order) {
+            currentAtBat = lastAtBat;
+            if (!isPitch) {
+              currentAtBat.plays.push(play);
+              currentAtBat.outsAtPlay.push(inningOuts);
+              currentAtBat.isOutsInc.push(isOut);
+            }
+          } else {
+            currentAtBat = {
+              isEvent: false,
+              batterOrder: order,
+              batterName: name,
+              plays: isPitch ? [] : [play],
+              outsAtPlay: isPitch ? [] : [inningOuts],
+              isOutsInc: isPitch ? [] : [isOut]
+            };
+            atBats.push(currentAtBat);
+          }
         } else {
           // 走者アクション（打席ブロックに結合）
           if (currentAtBat) {
@@ -549,10 +568,38 @@ export default function NewsGeneratorPage() {
               inningOuts = Math.min(3, inningOuts + 1);
             }
 
-            // 部分置換
-            playText = playText.replace("盗塁成功", "盗塁");
-            playText = playText.replace("暴投", "投暴投");
-            playText = playText.replace("パスボール", "捕逸");
+            // 💡 走者アクションの冗長な「〇塁走者 選手名: 」をトリムし、進塁先を推測してスマートに埋め込む
+            const runnerActionMatch = playText.match(/^(\d+)塁走者\s*[^:]+?\s*:\s*(.+)$/);
+            if (runnerActionMatch) {
+              const startBase = parseInt(runnerActionMatch[1], 10);
+              const actionContent = runnerActionMatch[2].trim();
+              
+              let cleanAction = actionContent
+                .replace("盗塁成功", "盗塁")
+                .replace("暴投", "投暴投")
+                .replace("パスボール", "捕逸")
+                .replace("ボーク", "ボーク")
+                .replace("エラー", "失策進塁")
+                .replace("で進塁", "")
+                .replace("により本塁生還", "")
+                .trim();
+              
+              const destBase = startBase + 1;
+              if (destBase <= 3) {
+                if (!cleanAction.includes("塁")) {
+                  cleanAction += `${destBase}塁`;
+                }
+              } else {
+                if (!cleanAction.includes("本塁") && !cleanAction.includes("1点") && !cleanAction.includes("得点")) {
+                  cleanAction += " 本塁生還";
+                }
+              }
+              playText = cleanAction;
+            } else {
+              playText = playText.replace("盗塁成功", "盗塁");
+              playText = playText.replace("暴投", "投暴投");
+              playText = playText.replace("パスボール", "捕逸");
+            }
 
             currentAtBat.plays.push(playText);
             currentAtBat.outsAtPlay.push(inningOuts);
