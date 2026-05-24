@@ -89,6 +89,7 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
   const pushHistory = useCallback((prev: ScoreState, nextPartial: Partial<ScoreState>): ScoreState => {
     const { history, ...stateWithoutHistory } = prev;
     const newHistory = [...(history || []), stateWithoutHistory as ScoreState].slice(-30);
+    console.log("[pushHistory] prevHistoryLength:", history?.length || 0, "newHistoryLength:", newHistory.length);
     return { ...prev, ...nextPartial, history: newHistory } as ScoreState;
   }, []);
 
@@ -1046,7 +1047,7 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
   // 🚀 6.5 操作の取り消し (UNDO)
   const undo = useCallback(() => {
     setState(prev => {
-      console.log("[UNDO Clicked] isScorer:", prev.isScorer, "historyLength:", prev.history?.length);
+      console.log("[UNDO Clicked] isScorer:", prev.isScorer, "historyLength:", prev.history?.length, "historyArray:", prev.history);
       
       if (!prev.isScorer) {
         toast.warning("編集権限がないため、UNDOは実行できません。");
