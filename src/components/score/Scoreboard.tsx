@@ -28,12 +28,12 @@ export function Scoreboard() {
   const attackStatusText = isMyAttack ? "攻撃" : "守備";
 
   const handleTouchStart = (e: React.TouchEvent) => {
-    if (!isPreGame) return;
+    if (!state.isScorer || !isPreGame) return; // 🌟 編集権限がある場合のみスワイプを許可
     startX.current = e.touches[0].clientX;
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
-    if (!isPreGame) return;
+    if (!state.isScorer || !isPreGame) return;
     const move = e.touches[0].clientX - startX.current;
     if (move > 0) {
       // 🌟 最大スライド幅を 80px に制限
@@ -42,6 +42,10 @@ export function Scoreboard() {
   };
 
   const handleTouchEnd = () => {
+    if (!state.isScorer || !isPreGame) {
+      setOffsetX(0);
+      return;
+    }
     // 🌟 60px以上スライドして離したら「先攻・後攻」を切り替えて確定
     if (offsetX >= 60) {
       updateMatchSettings({ isGuestFirst: !state.isGuestFirst });
