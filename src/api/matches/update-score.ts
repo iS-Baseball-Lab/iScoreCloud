@@ -47,7 +47,9 @@ matchesApi.post('/update-score', async (c) => {
       newAtBat,
       newPlayLog,
       skipLineReport,
-      history
+      history,
+      isUndo, // 🌟 追加
+      isAtBatUndo // 🌟 追加
     } = body;
 
     // 2. 現在の試合状況をDBからロード（規定イニング数やチームIDを知るため）
@@ -93,8 +95,8 @@ matchesApi.post('/update-score', async (c) => {
       console.error("Failed to save UNDO history in update-score:", historyErr);
     }
 
-    // 4. トランザクション処理 (matches, at_bats, play_logs のアトミック更新)
-    await db.batch([
+    // 4. トランザクション処理 (matches, at_bats, play_logs のアトミック更新/取り消し)
+    const batchPromises = [
       db.update(matches)
         .set({
           myScore,
@@ -113,31 +115,66 @@ matchesApi.post('/update-score', async (c) => {
           myErrors: myErrors ?? 0,
           opponentErrors: opponentErrors ?? 0
         })
-        .where(eq(matches.id, matchId)),
-      
-      // 打席完了時のログ記録
-      ...(newAtBat ? [
-        db.insert(atBats).values({
-          id: crypto.randomUUID(),
-          matchId,
-          inning: newAtBat.inning,
-          isTop: newAtBat.isTop,
-          batterId: newAtBat.batterId,
-          pitcherId: newAtBat.pitcherId,
-          result: newAtBat.result
-        })
-      ] : []),
-      
-      ...(newPlayLog ? [
-        db.insert(playLogs).values({
-          id: crypto.randomUUID(),
-          matchId,
-          inningText: newPlayLog.inningText,
-          resultType: newPlayLog.resultType,
-          description: newPlayLog.description
-        })
-      ] : [])
-    ]);
+        .where(eq(matches.id, matchId))
+    ];
+
+    if (isUndo) {
+      // 🌟 UNDOの時は最新のプレイログを1件削除
+      batchPromises.push(
+        db.run(sql`
+          DELETE FROM play_logs 
+          WHERE id = (
+            SELECT id FROM play_logs 
+            WHERE match_id = ${matchId} 
+            ORDER BY created_at DESC 
+            LIMIT 1
+          )
+        `) as any
+      );
+
+      // 🌟 さらに打席の取り消しであれば、最新の打席も1件削除
+      if (isAtBatUndo) {
+        batchPromises.push(
+          db.run(sql`
+            DELETE FROM at_bats 
+            WHERE id = (
+              SELECT id FROM at_bats 
+              WHERE match_id = ${matchId} 
+              ORDER BY created_at DESC 
+              LIMIT 1
+            )
+          `) as any
+        );
+      }
+    } else {
+      // 通常の更新時は新規ログ/打席を挿入
+      if (newAtBat) {
+        batchPromises.push(
+          db.insert(atBats).values({
+            id: crypto.randomUUID(),
+            matchId,
+            inning: newAtBat.inning,
+            isTop: newAtBat.isTop,
+            batterId: newAtBat.batterId,
+            pitcherId: newAtBat.pitcherId,
+            result: newAtBat.result
+          }) as any
+        );
+      }
+      if (newPlayLog) {
+        batchPromises.push(
+          db.insert(playLogs).values({
+            id: crypto.randomUUID(),
+            matchId,
+            inningText: newPlayLog.inningText,
+            resultType: newPlayLog.resultType,
+            description: newPlayLog.description
+          }) as any
+        );
+      }
+    }
+
+    await db.batch(batchPromises as any);
 
     // 5. LINE速報の射出（タイミングフィルタリングを実装）
     const teamData = await db.select()

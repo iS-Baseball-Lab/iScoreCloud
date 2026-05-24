@@ -93,11 +93,17 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   // 🚀 2. バックエンド同期 (D1 + LINE速報連動)
-  const syncWithBackend = useCallback(async (updatedState: ScoreState, actionNote: string, skipLineReport = false) => {
+  const syncWithBackend = useCallback(async (
+    updatedState: ScoreState, 
+    actionNote: string, 
+    skipLineReport = false,
+    isAtBatUndo = false // 🌟 追加
+  ) => {
     if (!updatedState.isScorer) return; // 🌟 スコアラー以外は同期をスキップ
 
     setIsSyncing(true);
     try {
+      const isUndo = actionNote === "操作取消 (UNDO)";
       const res = await fetch("/api/matches/update-score", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -121,14 +127,16 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
           myErrors: updatedState.myErrors,
           opponentErrors: updatedState.opponentErrors,
           history: updatedState.history, // 🌟 データベースにやり直し用履歴を同期！
-          newAtBat: actionNote.includes("チェンジ") || actionNote.includes("三振") || actionNote.includes("フォアボール") || actionNote.includes("アウト") || actionNote.includes("安") || actionNote.includes("打") || actionNote.includes("エラー") || actionNote.includes("犠") ? {
+          isUndo, // 🌟 追加
+          isAtBatUndo, // 🌟 追加
+          newAtBat: isUndo ? null : (actionNote.includes("チェンジ") || actionNote.includes("三振") || actionNote.includes("フォアボール") || actionNote.includes("アウト") || actionNote.includes("安") || actionNote.includes("打") || actionNote.includes("エラー") || actionNote.includes("犠") ? {
             inning: updatedState.inning,
             isTop: updatedState.isTop,
             batterId: updatedState.batterId,
             pitcherId: updatedState.pitcherId,
             result: actionNote
-          } : null,
-          newPlayLog: {
+          } : null),
+          newPlayLog: isUndo ? null : {
             inningText: updatedState.logs[0]
               ? `${updatedState.logs[0].inning}回${updatedState.logs[0].isTop ? "表" : "裏"}`
               : `${updatedState.inning}回${updatedState.isTop ? "表" : "裏"}`,
@@ -1042,9 +1050,15 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
       
       const newHistory = [...prev.history];
       const previousState = newHistory.pop()!;
+      
+      // 取り消される前の最新ログ（prev.logs[0]）が打席完了だったかを判定
+      const lastLogDesc = prev.logs[0]?.description || "";
+      const atBatEndRegex = /三振|フォアボール|デッドボール|アウト|単打|二塁打|三塁打|本塁打|安|二|三|本|ゴロ|飛|直|犠|失|エラー|併殺|1B|2B|3B|HR|GO|FO|LO|SO|E|FC|DP|SH|SF|ERR|OUT|SAC/;
+      const isAtBatUndo = atBatEndRegex.test(lastLogDesc);
+      
       const next = { ...previousState, history: newHistory };
       
-      syncWithBackend(next, "操作取消 (UNDO)");
+      syncWithBackend(next, "操作取消 (UNDO)", true, isAtBatUndo);
       return next;
     });
   }, [syncWithBackend]);
