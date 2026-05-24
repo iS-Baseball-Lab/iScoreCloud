@@ -496,13 +496,15 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
     }
   }, [state.matchId]);
 
-  // 🚀 3.8 ハートビートの自動定期実行
+  // 🚀 3.8 ハートビートの自動定期実行（スリープ復帰時の即時救済付き）
   useEffect(() => {
     if (!state.matchId || !state.isScorer) return;
     
     const userId = getOrCreateUserId();
-    
-    const interval = setInterval(async () => {
+    let interval: NodeJS.Timeout;
+
+    // 💡 現場至上主義：ハートビートの実行関数をカプセル化
+    const sendHeartbeat = async () => {
       try {
         const res = await fetch(`/api/matches/${state.matchId}/lock/heartbeat`, {
           method: "POST",
@@ -518,9 +520,24 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
       } catch (e) {
         console.error("Heartbeat Error:", e);
       }
-    }, 10000); // 10秒おき
+    };
+
+    // 10秒おきの定期実行
+    interval = setInterval(sendHeartbeat, 10000);
+
+    // 💡 現場至上主義：スマホの省電力・スリープから復帰した瞬間に即座にハートビートを投げる
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        sendHeartbeat();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
     
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [state.matchId, state.isScorer]);
 
   // 🚀 3.9 画面退出時の自動ロック解放

@@ -119,6 +119,7 @@ app.post('/:id/lock/heartbeat', async (c) => {
       .select({
         id: matches.id,
         lockedByUserId: matches.lockedByUserId,
+        lockedByUserName: matches.lockedByUserName,
         lockExpiresAt: matches.lockExpiresAt,
       })
       .from(matches)
@@ -133,14 +134,32 @@ app.post('/:id/lock/heartbeat', async (c) => {
     const isOwner = match.lockedByUserId === userId;
     const isAlive = match.lockExpiresAt && new Date(match.lockExpiresAt) > now;
 
+    // 💡 現場至上主義：他の誰かにロックを有効期限付きで奪われているか判定
+    const isStolen = match.lockedByUserId !== userId && match.lockExpiresAt && new Date(match.lockExpiresAt) > now;
+
     if (isOwner && isAlive) {
-      const expiresAt = new Date(Date.now() + 30000); // 30秒後に延長
+      // 1. 正常に生存信号が継続している場合：30秒延長
+      const expiresAt = new Date(Date.now() + 30000);
       await db
         .update(matches)
         .set({ lockExpiresAt: expiresAt })
         .where(eq(matches.id, matchId));
 
       return c.json({ success: true, expiresAt: expiresAt.toISOString() });
+    } else if (isOwner && !isAlive && !isStolen) {
+      // 2. スリープ復帰時救済ルート：自分が所有者のまま期限切れになり、誰にも奪われていない場合 ➔ サイレント再取得＆30秒延長
+      const expiresAt = new Date(Date.now() + 30000);
+      await db
+        .update(matches)
+        .set({
+          lockedByUserId: userId,
+          lockedByUserName: match.lockedByUserName || "スコアラー",
+          lockedAt: now,
+          lockExpiresAt: expiresAt,
+        })
+        .where(eq(matches.id, matchId));
+
+      return c.json({ success: true, expiresAt: expiresAt.toISOString(), recovered: true });
     }
 
     return c.json({ success: false, error: "ロックを保持していません" }, 403);
