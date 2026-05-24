@@ -1,7 +1,7 @@
 // filepath: src/components/score/Scoreboard.tsx
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useScore } from "@/contexts/ScoreContext";
 import { cn } from "@/lib/utils";
 import { Users } from "lucide-react";
@@ -11,6 +11,8 @@ export function Scoreboard() {
   const { state, updateMatchSettings } = useScore();
   const [offsetX, setOffsetX] = useState(0);
   const startX = useRef(0);
+  const [isHeaderExpanded, setIsHeaderExpanded] = useState(false);
+  const autoCloseTimer = useRef<NodeJS.Timeout | null>(null);
 
   // 💡 maxInningsがない場合のフォールバック（型定義に合わせて安全に参照）
   const displayInningsCount = Math.max(state.maxInnings || 7, state.inning);
@@ -22,10 +24,32 @@ export function Scoreboard() {
     state.outs === 0 && state.balls === 0 && state.strikes === 0;
 
   // 🌟 自チームが攻撃中かどうかの判定（isGuestFirst を使用）
-  // 表(isTop) かつ 先攻(isGuestFirst) ＝ 攻撃
-  // 裏(!isTop) かつ 後攻(!isGuestFirst) ＝ 攻撃
   const isMyAttack = (state.isTop && state.isGuestFirst) || (!state.isTop && !state.isGuestFirst);
   const attackStatusText = isMyAttack ? "攻撃" : "守備";
+
+  const toggleHeader = () => {
+    setIsHeaderExpanded(prev => {
+      const next = !prev;
+      if (autoCloseTimer.current) {
+        clearTimeout(autoCloseTimer.current);
+        autoCloseTimer.current = null;
+      }
+      if (next) {
+        autoCloseTimer.current = setTimeout(() => {
+          setIsHeaderExpanded(false);
+        }, 5000);
+      }
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    return () => {
+      if (autoCloseTimer.current) {
+        clearTimeout(autoCloseTimer.current);
+      }
+    };
+  }, []);
 
   const handleTouchStart = (e: React.TouchEvent) => {
     if (!state.isScorer || !isPreGame) return; // 🌟 編集権限がある場合のみスワイプを許可
@@ -71,33 +95,53 @@ export function Scoreboard() {
     <div className="w-full bg-background select-none font-sans p-1">
       <div className="flex flex-col rounded-lg overflow-hidden border border-zinc-300 dark:border-zinc-700 shadow-sm">
 
-        {/* 🚀 ヘッダー：大会名・対戦相手・球場 */}
-        <div className="flex items-center justify-between px-3 py-1.5 border-b border-zinc-300 dark:border-zinc-700 bg-muted/40">
-          {/* 左側：大会名・球場（2段コンパクト表示） */}
-          <div className="flex-1 flex flex-col items-start overflow-hidden pr-2">
-            <span className="text-[8px] font-black text-zinc-500 uppercase tracking-widest truncate w-full">
-              {state.tournamentName || (state.matchType === 'practice' ? '練習試合' : '大会未設定')}
-            </span>
-            <span className="text-[10px] font-bold text-zinc-600 dark:text-zinc-400 truncate w-full leading-tight">
-              {state.venueName || "球場未設定"}
-            </span>
+        {/* 🚀 アコーディオン・スマートヘッダー：大会名・球場（小画面で折りたたみ可能） */}
+        <div 
+          className={cn(
+            "flex items-center justify-between px-3 bg-muted/20 border-b border-zinc-200 dark:border-zinc-800 transition-all duration-300 ease-in-out select-none",
+            "h-6 opacity-100", // 通常画面時のサイズ
+            "[@media(max-height:700px)]:h-0 [@media(max-height:700px)]:opacity-0 [@media(max-height:700px)]:border-b-0 overflow-hidden", // 小画面時の折りたたみ
+            isHeaderExpanded && "[@media(max-height:700px)]:h-6 [@media(max-height:700px)]:opacity-100 [@media(max-height:700px)]:border-b" // 小画面時の展開
+          )}
+        >
+          <span className="text-[8px] font-black text-zinc-500 uppercase tracking-widest truncate">
+            🏆 {state.tournamentName || (state.matchType === 'practice' ? '練習試合' : '大会未設定')}
+          </span>
+          <span className="text-[9px] font-bold text-zinc-650 dark:text-zinc-400 truncate">
+            📍 {state.venueName || "球場未設定"}
+          </span>
+        </div>
+
+        {/* 🚀 ヘッダーメイン行：対戦相手・スタメンボタン */}
+        <div className="flex items-center justify-between px-3 py-1 border-b border-zinc-300 dark:border-zinc-700 bg-muted/40 h-8 shrink-0">
+          {/* 左側：小画面でのタップ指示ラベル */}
+          <div className="flex-1 flex items-center pr-2 [@media(min-height:701px)]:hidden">
+            <button
+              onClick={toggleHeader}
+              className="text-[8px] font-black text-primary/80 bg-primary/10 border border-primary/20 rounded px-1.5 py-0.5 active:scale-95 transition-all select-none"
+            >
+              {isHeaderExpanded ? "閉じる" : "詳細情報"}
+            </button>
           </div>
-          
-          {/* 中央：対戦相手 */}
-          <div className="flex-none px-2 text-sm md:text-base font-black text-foreground tracking-widest whitespace-nowrap">
-            <span className="text-xs text-muted-foreground mr-1 font-bold">vs</span>
+
+          {/* 中央：対戦相手（タップで開閉可能） */}
+          <div 
+            onClick={toggleHeader}
+            className="flex-none px-2 text-xs md:text-sm font-black text-foreground tracking-widest whitespace-nowrap cursor-pointer hover:opacity-85 active:scale-[0.98] transition-all select-none"
+          >
+            <span className="text-[9px] text-muted-foreground mr-1 font-bold">vs</span>
             {state.opponentTeamName || "相手チーム"}
           </div>
-          
+
           {/* 右側：スタメン設定ボタン */}
           <div className="flex-1 flex justify-end items-center pl-2">
             <button 
               onClick={() => window.location.href = `/matches/lineup?id=${state.matchId}`}
-              className="flex items-center gap-1 px-2 py-1 bg-primary/10 text-primary rounded-full hover:bg-primary/20 transition-colors shadow-sm"
+              className="flex items-center gap-1 px-2 py-0.5 bg-primary/10 text-primary rounded-full hover:bg-primary/20 transition-colors shadow-sm active:scale-[0.98]"
               title="スタメン設定"
             >
-              <Users className="w-3.5 h-3.5" strokeWidth={2.5} />
-              <span className="text-[9px] font-black inline">スタメン</span>
+              <Users className="w-3 h-3" strokeWidth={2.5} />
+              <span className="text-[8px] font-black inline">スタメン</span>
             </button>
           </div>
         </div>
@@ -139,45 +183,45 @@ export function Scoreboard() {
                     </div>
                   </th>
                   {innings.map(i => (
-                    <th key={i} className={cn("py-2 text-base px-1", numberStyle, state.inning === i ? "bg-primary text-primary-foreground" : "")}>{i}</th>
+                    <th key={i} className={cn("py-2 [@media(max-height:700px)]:py-0.5 text-base [@media(max-height:700px)]:text-xs px-1", numberStyle, state.inning === i ? "bg-primary text-primary-foreground" : "")}>{i}</th>
                   ))}
-                  <th className={cn("w-8 bg-muted/50 text-center text-base", numberStyle)}>R</th>
+                  <th className={cn("w-8 bg-muted/50 text-center text-base [@media(max-height:700px)]:text-xs", numberStyle)}>R</th>
                   <th className={cn("w-8 bg-muted/20 text-center text-xs opacity-50", numberStyle)}>H</th>
                   <th className={cn("w-8 bg-muted/20 text-center text-xs opacity-50", numberStyle)}>E</th>
                 </tr>
               </thead>
               <tbody>
                 {/* 先攻行 (Guest) */}
-                <tr className={cn("border-b border-border/50 h-6", state.isTop ? "bg-primary/5" : "")}>
-                  <td className="text-center font-black text-[12px]">
+                <tr className={cn("border-b border-border/50 h-6 [@media(max-height:700px)]:h-5", state.isTop ? "bg-primary/5" : "")}>
+                  <td className="text-center font-black text-[12px] [@media(max-height:700px)]:text-[10px]">
                     <span className={state.isTop ? "text-primary" : "text-foreground/40"}>先</span>
                   </td>
                   {innings.map(i => (
-                    <td key={i} className={cn("text-center text-lg px-0.5", numberStyle, state.inning === i && state.isTop ? "text-primary font-bold underline underline-offset-4" : "text-foreground/80")}>
+                    <td key={i} className={cn("text-center text-lg [@media(max-height:700px)]:text-sm px-0.5", numberStyle, state.inning === i && state.isTop ? "text-primary font-bold underline underline-offset-4" : "text-foreground/80")}>
                       {guestInningScores[i - 1] ?? (i <= state.inning && (state.isTop || i < state.inning) ? "0" : "-")}
                     </td>
                   ))}
-                  <td className={cn("text-center text-xl font-black tabular-nums tracking-tighter", state.isTop ? "bg-primary/10 text-primary" : "bg-muted/40 text-foreground")}>
+                  <td className={cn("text-center text-xl [@media(max-height:700px)]:text-base font-black tabular-nums tracking-tighter", state.isTop ? "bg-primary/10 text-primary" : "bg-muted/40 text-foreground")}>
                     {guestScore}
                   </td>
-                  <td className="text-center text-sm text-muted-foreground/40 font-bold">{guestHits ?? 0}</td>
-                  <td className="text-center text-sm text-muted-foreground/40 font-bold">{guestErrors ?? 0}</td>
+                  <td className="text-center text-sm [@media(max-height:700px)]:text-[11px] text-muted-foreground/40 font-bold">{guestHits ?? 0}</td>
+                  <td className="text-center text-sm [@media(max-height:700px)]:text-[11px] text-muted-foreground/40 font-bold">{guestErrors ?? 0}</td>
                 </tr>
                 {/* 後攻行 (Home) */}
-                <tr className={cn("h-6", !state.isTop ? "bg-primary/5" : "")}>
-                  <td className="text-center font-black text-[12px]">
+                <tr className={cn("h-6 [@media(max-height:700px)]:h-5", !state.isTop ? "bg-primary/5" : "")}>
+                  <td className="text-center font-black text-[12px] [@media(max-height:700px)]:text-[10px]">
                     <span className={!state.isTop ? "text-primary" : "text-foreground/40"}>後</span>
                   </td>
                   {innings.map(i => (
-                    <td key={i} className={cn("text-center text-lg px-0.5", numberStyle, state.inning === i && !state.isTop ? "text-primary font-bold underline underline-offset-4" : "text-foreground/80")}>
+                    <td key={i} className={cn("text-center text-lg [@media(max-height:700px)]:text-sm px-0.5", numberStyle, state.inning === i && !state.isTop ? "text-primary font-bold underline underline-offset-4" : "text-foreground/80")}>
                       {homeInningScores[i - 1] ?? (i <= state.inning && (!state.isTop || i < state.inning) ? "0" : "-")}
                     </td>
                   ))}
-                  <td className={cn("text-center text-xl font-black tabular-nums tracking-tighter", !state.isTop ? "bg-primary/10 text-primary" : "bg-muted/40 text-foreground")}>
+                  <td className={cn("text-center text-xl [@media(max-height:700px)]:text-base font-black tabular-nums tracking-tighter", !state.isTop ? "bg-primary/10 text-primary" : "bg-muted/40 text-foreground")}>
                     {homeScore}
                   </td>
-                  <td className="text-center text-sm text-muted-foreground/40 font-bold">{homeHits ?? 0}</td>
-                  <td className="text-center text-sm text-muted-foreground/40 font-bold">{homeErrors ?? 0}</td>
+                  <td className="text-center text-sm [@media(max-height:700px)]:text-[11px] text-muted-foreground/40 font-bold">{homeHits ?? 0}</td>
+                  <td className="text-center text-sm [@media(max-height:700px)]:text-[11px] text-muted-foreground/40 font-bold">{homeErrors ?? 0}</td>
                 </tr>
               </tbody>
             </table>
@@ -185,20 +229,20 @@ export function Scoreboard() {
         </div>
 
         {/* 🚀 下段 (回数・攻守・BSOカウント) */}
-        <div className="flex items-center justify-between px-3 h-10 bg-muted/5">
+        <div className="flex items-center justify-between px-3 h-10 [@media(max-height:700px)]:h-7.5 bg-muted/5">
           <div className="flex items-center text-primary h-full">
-            <div className="flex items-end pb-1">
-              <span className={cn("text-3xl leading-none", numberStyle)}>{state.inning}</span>
-              <div className="flex items-center gap-1 ml-2 mb-[2px]">
-                <span className="text-[14px] font-black leading-none">回</span>
-                <span className="text-[14px] font-black leading-none">{state.isTop ? "表" : "裏"}</span>
+            <div className="flex items-end pb-1 [@media(max-height:700px)]:pb-0.5">
+              <span className={cn("text-3xl [@media(max-height:700px)]:text-xl leading-none", numberStyle)}>{state.inning}</span>
+              <div className="flex items-center gap-1 ml-2 mb-[2px] [@media(max-height:700px)]:ml-1 [@media(max-height:700px)]:mb-0">
+                <span className="text-[14px] [@media(max-height:700px)]:text-[11px] font-black leading-none">回</span>
+                <span className="text-[14px] [@media(max-height:700px)]:text-[11px] font-black leading-none">{state.isTop ? "表" : "裏"}</span>
               </div>
             </div>
-            <div className="mx-4 h-5 w-[1px] bg-muted-foreground/20" />
+            <div className="mx-4 [@media(max-height:700px)]:mx-2 h-5 [@media(max-height:700px)]:h-4 w-[1px] bg-muted-foreground/20" />
 
             <div className="flex items-center h-full">
               <span className={cn(
-                "text-[14px] font-black px-3 py-1.5 rounded-md shadow-sm min-w-[65px] text-center tracking-widest leading-none flex items-center justify-center",
+                "text-[14px] [@media(max-height:700px)]:text-[10px] px-3 py-1.5 [@media(max-height:700px)]:px-2 [@media(max-height:700px)]:py-0.5 rounded-md shadow-sm min-w-[65px] [@media(max-height:700px)]:min-w-[45px] text-center tracking-widest leading-none flex items-center justify-center",
                 isMyAttack ? "bg-primary text-primary-foreground" : "bg-zinc-800 text-zinc-100"
               )}>
                 {attackStatusText}
@@ -206,17 +250,17 @@ export function Scoreboard() {
             </div>
           </div>
 
-          <div className="flex gap-4 h-full items-center">
+          <div className="flex gap-4 [@media(max-height:700px)]:gap-2 h-full items-center">
             {[
-              { label: 'B', color: 'bg-emerald-500 shadow-[0_0_12px_#10b981]', count: state.balls, max: 3, textColor: 'text-emerald-600' },
-              { label: 'S', color: 'bg-amber-400 shadow-[0_0_12px_#fbbf24]', count: state.strikes, max: 2, textColor: 'text-amber-600' },
-              { label: 'O', color: 'bg-rose-500 shadow-[0_0_12px_#f43f5e]', count: state.outs, max: 2, textColor: 'text-rose-600' }
+              { label: 'B', color: 'bg-emerald-500 shadow-[0_0_12px_#10b981] [@media(max-height:700px)]:shadow-none', count: state.balls, max: 3, textColor: 'text-emerald-600' },
+              { label: 'S', color: 'bg-amber-400 shadow-[0_0_12px_#fbbf24] [@media(max-height:700px)]:shadow-none', count: state.strikes, max: 2, textColor: 'text-amber-600' },
+              { label: 'O', color: 'bg-rose-500 shadow-[0_0_12px_#f43f5e] [@media(max-height:700px)]:shadow-none', count: state.outs, max: 2, textColor: 'text-rose-600' }
             ].map(type => (
-              <div key={type.label} className="flex flex-row items-center gap-1.5">
-                <span className={cn("text-sm font-black leading-none", type.textColor)}>{type.label}</span>
-                <div className="flex gap-1.5">
+              <div key={type.label} className="flex flex-row items-center gap-1.5 [@media(max-height:700px)]:gap-1">
+                <span className={cn("text-sm [@media(max-height:700px)]:text-[11px] font-black leading-none", type.textColor)}>{type.label}</span>
+                <div className="flex gap-1.5 [@media(max-height:700px)]:gap-1">
                   {Array.from({ length: type.max }).map((_, i) => (
-                    <div key={i} className={cn("w-3.5 h-3.5 rounded-full border transition-all duration-300", i < type.count ? type.color + " border-transparent" : "bg-zinc-900 border-zinc-800 shadow-inner")} />
+                    <div key={i} className={cn("w-3.5 h-3.5 [@media(max-height:700px)]:w-2.5 [@media(max-height:700px)]:h-2.5 rounded-full border transition-all duration-300", i < type.count ? type.color + " border-transparent" : "bg-zinc-900 border-zinc-800 shadow-inner")} />
                   ))}
                 </div>
               </div>

@@ -77,9 +77,10 @@ function ScorePageContent() {
         </div>
 
         {/* 最近のプレイログ：操作パネルとの視覚的な繋ぎ / 引き出し式シート */}
+        {/* 最近のプレイログ：操作パネルとの視覚的な繋ぎ / 引き出し式シート */}
         <div className={cn(
           "absolute bottom-0 w-full px-2 transition-all duration-300",
-          isLogExpanded ? "h-[90%] z-50" : (!isScorer ? "h-[180px] z-30" : "h-[100px] z-30")
+          isLogExpanded ? "h-[90%] z-50" : (!isScorer ? "h-[180px] z-30" : "h-[100px] [@media(max-height:700px)]:h-[36px] z-30")
         )}>
           <div 
             className="h-full bg-white/10 dark:bg-black/10 backdrop-blur-[3px] rounded-t-3xl border border-zinc-300/60 dark:border-zinc-800/60 border-b-0 pt-2 px-2 pb-0 shadow-[0_-8px_30px_rgba(0,0,0,0.06)] flex flex-col"
@@ -109,7 +110,7 @@ function ScorePageContent() {
           脱・グラスモーフィズム：操作ミスを防ぐため透過を抑え、ボタンのコントラストを最大化。 */}
       <footer className={cn(
         "shrink-0 z-[60] bg-card border-t border-border px-2 pt-2 pb-2 shadow-[0_-15px_50px_rgba(0,0,0,0.2)]",
-        isScorer ? "h-[22dvh] min-h-[160px]" : "h-[10dvh] min-h-[80px]",
+        isScorer ? "h-[22dvh] min-h-[160px] [@media(max-height:700px)]:min-h-[135px] [@media(max-height:600px)]:min-h-[120px]" : "h-[10dvh] min-h-[80px]",
         isReady ? "translate-y-0" : "translate-y-full transition-none",
         "transition-all duration-700 ease-out",
         isLogExpanded && "opacity-95"

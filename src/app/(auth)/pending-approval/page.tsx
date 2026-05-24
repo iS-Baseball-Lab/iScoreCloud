@@ -43,30 +43,70 @@ export default function PendingApprovalPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false); // 💡 ログアウト中のローディング状態
   const [isLoading, setIsLoading] = useState(true);
+  const [isChecking, setIsChecking] = useState(false); // 💡 ステータス手動確認中のローディング
 
-  // ─── 初期状態のチェック（既に申請中かどうか） ───
-  useEffect(() => {
-    const checkStatus = async () => {
-      try {
-        const res = await fetch("/api/auth/me");
-        if (!res.ok) throw new Error("ネットワークエラー");
+  // ─── ステータスの確認と自動ダッシュボード遷移 ───
+  const checkStatus = async (showToast = false) => {
+    if (showToast) setIsChecking(true);
+    try {
+      const res = await fetch("/api/auth/me");
+      if (!res.ok) throw new Error("ネットワークエラー");
 
-        const json = (await res.json()) as AuthMeResponse;
+      const json = (await res.json()) as AuthMeResponse;
 
-        if (json.success && json.data?.memberships) {
-          const hasPending = json.data.memberships.some(m => m.status === "pending");
-          if (hasPending) {
-            setView("pending");
+      if (json.success && json.data?.memberships) {
+        const memberships = json.data.memberships;
+        const hasActive = memberships.some(m => m.status === "active");
+        const hasPending = memberships.some(m => m.status === "pending");
+
+        // 🌟 承認されている場合、ログアウト不要で即座にダッシュボードへ遷移！
+        if (hasActive) {
+          toast.success("チームへの参加が承認されました！ダッシュボードに遷移します。");
+          if (typeof window !== "undefined") {
+            localStorage.setItem("iscore_auth_cache_active", "true");
+          }
+          router.replace("/");
+          return;
+        }
+
+        if (hasPending) {
+          setView("pending");
+          if (showToast) {
+            toast.info("まだ申請承認待ちの状態です。承認されるまでしばらくお待ちください。");
+          }
+        } else {
+          setView("input");
+          if (showToast) {
+            toast.warning("参加申請が見つかりませんでした。もう一度招待コードを入力してください。");
           }
         }
-      } catch (error) {
-        console.error("ステータス確認エラー:", error);
-      } finally {
-        setIsLoading(false);
       }
-    };
-    checkStatus();
-  }, []);
+    } catch (error) {
+      console.error("ステータス確認エラー:", error);
+      if (showToast) {
+        toast.error("ステータス確認に失敗しました。接続環境をお確かめください。");
+      }
+    } finally {
+      if (showToast) setIsChecking(false);
+      setIsLoading(false);
+    }
+  };
+
+  // ─── 初期チェック ＆ 自動ステータス確認ポーリング（現場の利便性向上） ───
+  useEffect(() => {
+    // 初回マウント時チェック
+    checkStatus(false);
+
+    // 💡 10秒間隔のサイレント自動ポーリングで承認をリアルタイム検知！
+    const interval = setInterval(() => {
+      // 承認待ち画面かつブラウザがアクティブな時のみポーリングを実行し、無駄なギガ・パケット消費を削減
+      if (view === "pending" && document.visibilityState === "visible") {
+        checkStatus(false);
+      }
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [view]);
 
   // ─── チーム参加申請処理 ───
   const handleJoin = async (e: React.FormEvent) => {
@@ -89,6 +129,8 @@ export default function PendingApprovalPage() {
 
       toast.success(json.message || "チームへの参加申請を送信しました！");
       setView("pending");
+      // 💡 申請完了直後にステータスをもう一度バックグラウンド同期
+      checkStatus(false);
 
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "参加申請に失敗しました。");
@@ -217,11 +259,14 @@ export default function PendingApprovalPage() {
 
             <div className="pt-4 space-y-3">
               <Button
-                onClick={() => window.location.reload()}
-                disabled={isLoggingOut}
+                onClick={() => checkStatus(true)}
+                disabled={isLoggingOut || isChecking}
                 variant="outline"
-                className="w-full h-12 rounded-[var(--radius-xl)] font-black border-border shadow-sm"
+                className="w-full h-12 rounded-[var(--radius-xl)] font-black border-border shadow-sm flex items-center justify-center gap-2"
               >
+                {isChecking ? (
+                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground/60" />
+                ) : null}
                 ステータスを更新
               </Button>
 

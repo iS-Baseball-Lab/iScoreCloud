@@ -295,7 +295,7 @@ export function PlayArea() {
       )}
 
       {/* 🚀 バッター情報 (ダイヤモンドの上部に通常フローで配置) */}
-      <div className="w-full max-w-[480px] sm:max-w-[520px] px-2 text-center z-50 mb-6">
+      <div className="w-full max-w-[480px] sm:max-w-[520px] px-2 text-center z-50 mb-6 [@media(max-height:700px)]:mb-2">
         {(() => {
           const index = isMyAttack ? state.myBattingIndex : state.opponentBattingIndex;
           const batter = offenseLineup && offenseLineup.length > index ? offenseLineup[index] : null;
@@ -312,28 +312,28 @@ export function PlayArea() {
           const nextPreviousLogs = state.logs.filter((l) => l.description.startsWith(nextSearchPrefix) && l.isTop === state.isTop);
 
           return (
-            <div className="grid grid-cols-2 gap-3 w-full max-w-[480px] sm:max-w-[520px] mx-auto select-none">
+            <div className="grid grid-cols-2 gap-3 [@media(max-height:700px)]:gap-2 w-full max-w-[480px] sm:max-w-[520px] mx-auto select-none">
               
               {/* 1. 現在のバッター */}
               <div className="relative w-full">
                 <div 
                   onClick={() => setActiveHistory(activeHistory === 'current' ? null : 'current')}
                   className={cn(
-                    "w-full flex flex-row items-center justify-between px-3 bg-primary text-primary-foreground rounded-2xl shadow-md border border-primary/10 cursor-pointer hover:bg-primary/95 transition-all select-none h-12 relative",
+                    "w-full flex flex-row items-center justify-between px-3 [@media(max-height:700px)]:px-2 bg-primary text-primary-foreground rounded-2xl shadow-md border border-primary/10 cursor-pointer hover:bg-primary/95 transition-all select-none h-12 [@media(max-height:700px)]:h-9 relative",
                     activeHistory === 'current' && "ring-2 ring-primary-foreground/30"
                   )}
                 >
                   {/* 左: Bat ラベル */}
-                  <span className="text-[8px] font-black text-primary-foreground/80 uppercase tracking-widest bg-white/15 px-1.5 py-0.5 rounded leading-none shrink-0">
+                  <span className="text-[8px] [@media(max-height:700px)]:text-[7px] font-black text-primary-foreground/80 uppercase tracking-widest bg-white/15 px-1.5 py-0.5 [@media(max-height:700px)]:px-1 [@media(max-height:700px)]:py-0.5 rounded leading-none shrink-0">
                     Bat
                   </span>
 
                   {/* 中央: 打者情報 */}
                   <div className="flex items-center gap-1 min-w-0 justify-center flex-1 mx-2">
-                    <span className="text-[12px] sm:text-[13px] font-black truncate">
+                    <span className="text-[12px] sm:text-[13px] [@media(max-height:700px)]:text-[10px] font-black truncate">
                       {`${index + 1}番 ${batterName}`}
                     </span>
-                    <ChevronDown className={cn("w-3.5 h-3.5 text-primary-foreground/80 transition-transform duration-300 shrink-0", activeHistory === 'current' && "rotate-180")} />
+                    <ChevronDown className={cn("w-3.5 h-3.5 [@media(max-height:700px)]:w-2.5 [@media(max-height:700px)]:h-2.5 text-primary-foreground/80 transition-transform duration-300 shrink-0", activeHistory === 'current' && "rotate-180")} />
                   </div>
 
                   {/* 右: 代打ボタン */}
@@ -341,7 +341,7 @@ export function PlayArea() {
                     {state.isScorer && (
                       <button
                         type="button"
-                        className="pointer-events-auto bg-white/20 hover:bg-white/30 text-primary-foreground text-[8.5px] font-black px-1.5 py-1 rounded transition-colors leading-none"
+                        className="pointer-events-auto bg-white/20 hover:bg-white/30 text-primary-foreground text-[8.5px] [@media(max-height:700px)]:text-[7.5px] font-black px-1.5 py-1 [@media(max-height:700px)]:px-1 [@media(max-height:700px)]:py-0.5 rounded transition-colors leading-none"
                         onClick={(e) => {
                           e.stopPropagation(); // ドロップダウンを開くのを防ぐ
                           setSubInitialTab(isMyAttack ? 'my' : 'opponent');
@@ -418,21 +418,21 @@ export function PlayArea() {
                 <div 
                   onClick={() => setActiveHistory(activeHistory === 'next' ? null : 'next')}
                   className={cn(
-                    "w-full flex flex-row items-center justify-between px-3 bg-zinc-100 dark:bg-zinc-900 border border-primary/30 dark:border-primary/45 text-zinc-800 dark:text-zinc-100 rounded-2xl shadow-sm cursor-pointer hover:bg-zinc-200 dark:hover:bg-zinc-800/80 transition-all select-none h-12 relative",
+                    "w-full flex flex-row items-center justify-between px-3 [@media(max-height:700px)]:px-2 bg-zinc-100 dark:bg-zinc-900 border border-primary/30 dark:border-primary/45 text-zinc-800 dark:text-zinc-100 rounded-2xl shadow-sm cursor-pointer hover:bg-zinc-200 dark:hover:bg-zinc-800/80 transition-all select-none h-12 [@media(max-height:700px)]:h-9 relative",
                     activeHistory === 'next' && "ring-2 ring-primary/30"
                   )}
                 >
                   {/* 左: Next ラベル */}
-                  <span className="text-[8px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest bg-zinc-200/50 dark:bg-zinc-800/50 px-1.5 py-0.5 rounded leading-none border border-zinc-300/30 dark:border-zinc-700/30 shrink-0">
+                  <span className="text-[8px] [@media(max-height:700px)]:text-[7px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest bg-zinc-200/50 dark:bg-zinc-800/50 px-1.5 py-0.5 [@media(max-height:700px)]:px-1 [@media(max-height:700px)]:py-0.5 rounded leading-none border border-zinc-300/30 dark:border-zinc-700/30 shrink-0">
                     Next
                   </span>
 
                   {/* 中央: 打者情報 */}
                   <div className="flex items-center gap-1 min-w-0 justify-center flex-1 mx-2">
-                    <span className="text-[12px] sm:text-[13px] font-black truncate">
+                    <span className="text-[12px] sm:text-[13px] [@media(max-height:700px)]:text-[10px] font-black truncate">
                       {`${nextIndex + 1}番 ${nextBatterName}`}
                     </span>
-                    <ChevronDown className={cn("w-3.5 h-3.5 text-zinc-500 dark:text-zinc-400 transition-transform duration-300 shrink-0", activeHistory === 'next' && "rotate-180")} />
+                    <ChevronDown className={cn("w-3.5 h-3.5 [@media(max-height:700px)]:w-2.5 [@media(max-height:700px)]:h-2.5 text-zinc-500 dark:text-zinc-400 transition-transform duration-300 shrink-0", activeHistory === 'next' && "rotate-180")} />
                   </div>
 
                   {/* 右: レイアウト調整用スペーサー */}
@@ -503,7 +503,7 @@ export function PlayArea() {
       </div>
 
       {/* 🚀 ダイヤモンドエリア */}
-      <div className="relative w-full max-w-[250px] aspect-square mx-auto mt-12 mb-6">
+      <div className="relative w-full max-w-[var(--diamond-size)] aspect-square mx-auto mt-12 mb-6 [@media(max-height:700px)]:mt-4 [@media(max-height:700px)]:mb-2">
         {/* 🏟 ダイヤモンド（土のライン） */}
         <div className="absolute inset-4 border-[3px] border-dashed border-primary/20 dark:border-white/10 rotate-45 rounded-sm shadow-inner" />
 
@@ -534,7 +534,7 @@ export function PlayArea() {
             // ポジション番号と座標のマッピング
             const positions: Record<string, { label: string, posClass: string }> = {
               "1": { label: "P", posClass: "top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" },
-              "2": { label: "C", posClass: "bottom-[22px] left-1/2 -translate-x-1/2" },
+              "2": { label: "C", posClass: "bottom-[8%] left-1/2 -translate-x-1/2" },
               "3": { label: "1B", posClass: "top-[65%] right-0 translate-x-1/2" }, // 1塁ベースの真下
               "4": { label: "2B", posClass: "top-[18%] right-[16%]" },
               "5": { label: "3B", posClass: "top-[65%] left-0 -translate-x-1/2" }, // 3塁ベースの真下

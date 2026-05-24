@@ -337,3 +337,28 @@
 .animate-playlog-slide-in {
   animation: playlog-slide-in-top 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
+
+/* =======================================================
+   ⚾️ 10. RESPONSIVE VIEWPORT DIAMOND SCALING FOR SCORING SCREEN
+   ======================================================= */
+:root {
+  --diamond-size: 250px;
+}
+
+@media (max-height: 750px) {
+  :root {
+    --diamond-size: 215px;
+  }
+}
+
+@media (max-height: 660px) {
+  :root {
+    --diamond-size: 185px;
+  }
+}
+
+@media (max-height: 580px) {
+  :root {
+    --diamond-size: 155px;
+  }
+}
