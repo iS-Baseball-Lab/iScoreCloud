@@ -8,7 +8,7 @@ import { Hono } from 'hono';
 import { drizzle } from 'drizzle-orm/d1';
 import { matches } from '@/db/schema/match';
 import { teams } from '@/db/schema/team';
-import { atBats, playLogs } from '@/db/schema/score';
+import { atBats, playLogs, matchUndoHistories } from '@/db/schema/score';
 import { eq, sql } from 'drizzle-orm';
 import { sendLinePushMessage } from '@/lib/line/push';
 import { formatMatchLineReport } from '@/lib/utils/format-sns';
@@ -76,20 +76,20 @@ matchesApi.post('/update-score', async (c) => {
 
     // 🌟 現場至上主義：UNDO履歴のデータベース保存処理（共同編集者間での完全共有）
     try {
-      // 履歴用テーブルをオンデマンドで自動構築（マイグレーション不要）
-      await db.run(sql`
-        CREATE TABLE IF NOT EXISTS match_undo_histories (
-          match_id TEXT PRIMARY KEY,
-          history_json TEXT NOT NULL,
-          updated_at INTEGER NOT NULL
-        );
-      `);
-
       if (history && Array.isArray(history)) {
-        await db.run(sql`
-          INSERT OR REPLACE INTO match_undo_histories (match_id, history_json, updated_at)
-          VALUES (${matchId}, ${JSON.stringify(history)}, ${Date.now()});
-        `);
+        await db.insert(matchUndoHistories)
+          .values({
+            matchId,
+            historyJson: JSON.stringify(history),
+            updatedAt: Date.now()
+          })
+          .onConflictDoUpdate({
+            target: matchUndoHistories.matchId,
+            set: {
+              historyJson: JSON.stringify(history),
+              updatedAt: Date.now()
+            }
+          });
       }
     } catch (historyErr) {
       console.error("Failed to save UNDO history in update-score:", historyErr);

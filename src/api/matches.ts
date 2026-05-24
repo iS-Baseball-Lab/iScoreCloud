@@ -2,7 +2,8 @@
 import { Hono } from "hono";
 import { drizzle } from "drizzle-orm/d1";
 import { MatchService } from "@/services/match.service";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
+import { matchUndoHistories } from "@/db/schema/score";
 
 const app = new Hono<{ Bindings: { DB: D1Database } }>();
 
@@ -38,16 +39,16 @@ app.get("/:id/undo-history", async (c) => {
   const matchId = c.req.param("id");
 
   try {
-    const row = await db.run(sql`
-      SELECT history_json FROM match_undo_histories WHERE match_id = ${matchId}
-    `);
+    const result = await db.select({
+      historyJson: matchUndoHistories.historyJson
+    })
+    .from(matchUndoHistories)
+    .where(eq(matchUndoHistories.matchId, matchId))
+    .get();
     
-    const result = row.results?.[0] as { history_json?: string } | undefined;
-    const historyJson = result?.history_json || "[]";
-    
+    const historyJson = result?.historyJson || "[]";
     return c.json({ success: true, history: JSON.parse(historyJson) });
   } catch (error) {
-    // テーブルが未作成の初期段階は、エラーでコケずに空履歴を返す
     return c.json({ success: true, history: [] });
   }
 });

@@ -77,3 +77,13 @@ export const playLogs = sqliteTable("play_logs", {
 }, (table) => ({
     matchIdx: index("idx_play_logs_match_id").on(table.matchId),
 }));
+
+// ==========================================
+// 🔄 UNDO履歴（Undo Histories）テーブル
+// 共同編集者間でUNDO履歴を同期・共有するための専用ストア
+// ==========================================
+export const matchUndoHistories = sqliteTable("match_undo_histories", {
+    matchId: text("match_id").primaryKey().references(() => matches.id, { onDelete: "cascade" }),
+    historyJson: text("history_json").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+});
