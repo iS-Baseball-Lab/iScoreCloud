@@ -6,7 +6,8 @@ import { useRouter } from "next/navigation";
 import { 
   LogOut, User, Settings, HelpCircle, ChevronRight, Activity, Calendar,
   LayoutDashboard, Users, Contact, CalendarCheck, Trophy, FileText, Shield, Zap,
-  UserPlus, ScrollText, CalendarPlus, Timer, ShieldCheck, MapPin, BookOpen
+  UserPlus, ScrollText, CalendarPlus, Timer, ShieldCheck, MapPin, BookOpen,
+  History // 🔥 プレイログ用のアイコンを追加
 } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 import { toast } from "sonner";
@@ -18,7 +19,6 @@ export default function MenuPage() {
   const handleLogout = async () => {
     await authClient.signOut();
     toast.success("iScoreCloudから退出しました。お疲れ様でした！");
-    // 現場のUXを守るため、window.locationではなくNext.js標準ルーターを使用
     router.push("/");
     router.refresh();
   };
@@ -41,6 +41,7 @@ export default function MenuPage() {
         { icon: Activity, label: "ライブスコア入力", href: "/matches/create?mode=live" },
         { icon: Timer, label: "クイックスコア入力", href: "/matches/create?mode=quick" },
         { icon: BookOpen, label: "スコアブック", href: "/matches/scorebook" },
+        { icon: History, label: "プレイログ", href: "/play-logs" }, // 🔥 スコアブックのすぐ下に配置
       ],
     },
     {
@@ -95,7 +96,7 @@ export default function MenuPage() {
                 <h3 className="font-black text-sm text-foreground tracking-wide">
                   {section.title}
                 </h3>
-                {/* 項目数をバッジとして表示（画像に合わせたスタイル） */}
+                {/* 項目数をバッジとして表示 */}
                 <span className="flex items-center justify-center bg-muted text-muted-foreground text-[10px] font-bold px-2 py-0.5 rounded-full border border-border/50">
                   {section.items.length}
                 </span>
