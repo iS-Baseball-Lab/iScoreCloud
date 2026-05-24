@@ -247,6 +247,22 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
           ? currentLineup[currentIndex]?.playerId || currentLineup[currentIndex]?.id || null
           : null;
 
+        // 🌟 ローカルストレージから UNDO 履歴を復元
+        let restoredHistory: any[] = [];
+        if (typeof window !== "undefined") {
+          try {
+            const localHist = localStorage.getItem(`iscore_history_${matchId}`);
+            if (localHist) {
+              const parsed = JSON.parse(localHist);
+              if (Array.isArray(parsed)) {
+                restoredHistory = parsed;
+              }
+            }
+          } catch (e) {
+            console.error("Failed to restore UNDO history from localStorage:", e);
+          }
+        }
+
         setState(prev => ({
           ...prev,
           matchId: m.id,
@@ -280,6 +296,7 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
           logs: restoredLogs, // 🌟 プレイログを復元
           isScorer,
           lockedBy,
+          history: restoredHistory, // 🌟 履歴の完全復元！
         }));
       }
     } catch (error) {
@@ -554,6 +571,17 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
       }
     };
   }, [state.matchId, state.isScorer]);
+
+  // 🚀 3.92 UNDO用履歴（history）のローカルストレージへの自動同期 (スリープ復帰/リロード時救済)
+  useEffect(() => {
+    if (!state.matchId || !state.isScorer || !state.history) return;
+    
+    try {
+      localStorage.setItem(`iscore_history_${state.matchId}`, JSON.stringify(state.history));
+    } catch (e) {
+      console.error("Failed to save UNDO history to localStorage:", e);
+    }
+  }, [state.matchId, state.isScorer, state.history]);
 
   // 🚀 4. 投球・アウト記録 (野球脳ロジック)
   const recordPitch = async (result: "ball" | "strike" | "foul" | "swinging_strike" | "out" | "hbp") => {
