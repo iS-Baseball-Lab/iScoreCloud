@@ -2,6 +2,7 @@
 import { Hono } from "hono";
 import { drizzle } from "drizzle-orm/d1";
 import { MatchService } from "@/services/match.service";
+import { sql } from "drizzle-orm";
 
 const app = new Hono<{ Bindings: { DB: D1Database } }>();
 
@@ -29,6 +30,25 @@ app.get("/:id", async (c) => {
     return c.json({ success: true, match: matchData });
   } catch (error) {
     return c.json({ success: false, error: "Failed to fetch match" }, 500);
+  }
+});
+
+app.get("/:id/undo-history", async (c) => {
+  const db = drizzle(c.env.DB);
+  const matchId = c.req.param("id");
+
+  try {
+    const row = await db.run(sql`
+      SELECT history_json FROM match_undo_histories WHERE match_id = ${matchId}
+    `);
+    
+    const result = row.results?.[0] as { history_json?: string } | undefined;
+    const historyJson = result?.history_json || "[]";
+    
+    return c.json({ success: true, history: JSON.parse(historyJson) });
+  } catch (error) {
+    // テーブルが未作成の初期段階は、エラーでコケずに空履歴を返す
+    return c.json({ success: true, history: [] });
   }
 });
 

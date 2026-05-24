@@ -9,7 +9,7 @@ import { drizzle } from 'drizzle-orm/d1';
 import { matches } from '@/db/schema/match';
 import { teams } from '@/db/schema/team';
 import { atBats, playLogs } from '@/db/schema/score';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { sendLinePushMessage } from '@/lib/line/push';
 import { formatMatchLineReport } from '@/lib/utils/format-sns';
 import { checkWalkOff } from '@/lib/utils/score-logic';
@@ -46,7 +46,8 @@ matchesApi.post('/update-score', async (c) => {
       opponentErrors,
       newAtBat,
       newPlayLog,
-      skipLineReport // 🌟 追加
+      skipLineReport,
+      history
     } = body;
 
     // 2. 現在の試合状況をDBからロード（規定イニング数やチームIDを知るため）
@@ -70,6 +71,27 @@ matchesApi.post('/update-score', async (c) => {
     });
 
     const newStatus = (requestedStatus === 'finished' || isWalkOff) ? 'finished' : 'live';
+
+    // 🌟 現場至上主義：UNDO履歴のデータベース保存処理（共同編集者間での完全共有）
+    try {
+      // 履歴用テーブルをオンデマンドで自動構築（マイグレーション不要）
+      await db.run(sql`
+        CREATE TABLE IF NOT EXISTS match_undo_histories (
+          match_id TEXT PRIMARY KEY,
+          history_json TEXT NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
+      `);
+
+      if (history && Array.isArray(history)) {
+        await db.run(sql`
+          INSERT OR REPLACE INTO match_undo_histories (match_id, history_json, updated_at)
+          VALUES (${matchId}, ${JSON.stringify(history)}, ${Date.now()});
+        `);
+      }
+    } catch (historyErr) {
+      console.error("Failed to save UNDO history in update-score:", historyErr);
+    }
 
     // 4. トランザクション処理 (matches, at_bats, play_logs のアトミック更新)
     await db.batch([

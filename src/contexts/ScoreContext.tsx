@@ -120,6 +120,7 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
           opponentHits: updatedState.opponentHits,
           myErrors: updatedState.myErrors,
           opponentErrors: updatedState.opponentErrors,
+          history: updatedState.history, // 🌟 データベースにやり直し用履歴を同期！
           newAtBat: actionNote.includes("チェンジ") || actionNote.includes("三振") || actionNote.includes("フォアボール") || actionNote.includes("アウト") || actionNote.includes("安") || actionNote.includes("打") || actionNote.includes("エラー") || actionNote.includes("犠") ? {
             inning: updatedState.inning,
             isTop: updatedState.isTop,
@@ -153,14 +154,16 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
   const initMatch = useCallback(async (matchId: string) => {
     setIsLoading(true);
     try {
-      const [matchRes, lineupsRes, logsRes] = await Promise.all([
+      const [matchRes, lineupsRes, logsRes, undoRes] = await Promise.all([
         fetch(`/api/matches/${matchId}`),
         fetch(`/api/matches/${matchId}/lineups`),
-        fetch(`/api/matches/${matchId}/logs`)
+        fetch(`/api/matches/${matchId}/logs`),
+        fetch(`/api/matches/${matchId}/undo-history`)
       ]);
       const data = (await matchRes.json()) as MatchResponse;
       const lineupsData = await lineupsRes.json() as any;
       const logsData = await logsRes.json() as any;
+      const undoData = await undoRes.json() as any;
       
       if (data.success && data.match) {
         const m = data.match;
@@ -247,9 +250,11 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
           ? currentLineup[currentIndex]?.playerId || currentLineup[currentIndex]?.id || null
           : null;
 
-        // 🌟 ローカルストレージから UNDO 履歴を復元
+        // 🌟 D1の履歴とローカルストレージ履歴のハイブリッド復元
         let restoredHistory: any[] = [];
-        if (typeof window !== "undefined") {
+        if (undoData && undoData.success && Array.isArray(undoData.history) && undoData.history.length > 0) {
+          restoredHistory = undoData.history;
+        } else if (typeof window !== "undefined") {
           try {
             const localHist = localStorage.getItem(`iscore_history_${matchId}`);
             if (localHist) {
@@ -309,14 +314,16 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
   // 🚀 3.2 試合データのサイレント更新 (閲覧者用ポーリング)
   const refreshMatch = useCallback(async (matchId: string) => {
     try {
-      const [matchRes, lineupsRes, logsRes] = await Promise.all([
+      const [matchRes, lineupsRes, logsRes, undoRes] = await Promise.all([
         fetch(`/api/matches/${matchId}`),
         fetch(`/api/matches/${matchId}/lineups`),
-        fetch(`/api/matches/${matchId}/logs`)
+        fetch(`/api/matches/${matchId}/logs`),
+        fetch(`/api/matches/${matchId}/undo-history`)
       ]);
       const data = (await matchRes.json()) as MatchResponse;
       const lineupsData = await lineupsRes.json() as any;
       const logsData = await logsRes.json() as any;
+      const undoData = await undoRes.json() as any;
       
       if (data.success && data.match) {
         const m = data.match;
@@ -395,6 +402,8 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
           // 自分がスコアラーの場合は、入力中の状態が上書きされないように早期リターン
           if (prev.isScorer) return prev;
 
+          const restoredHistory = undoData && undoData.success && Array.isArray(undoData.history) ? undoData.history : [];
+
           return {
             ...prev,
             inning: m.currentInning || 1,
@@ -419,6 +428,7 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
             logs: restoredLogs,
             lockedBy,
             isScorer, // 他の人がスコアラーになった場合の権限変更を反映
+            history: restoredHistory, // 🌟 共同UNDO履歴の同期！
           };
         });
       }
