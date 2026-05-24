@@ -27,6 +27,9 @@ export function LogoutButton({ className, variant = "outline" }: LogoutButtonPro
     try {
       // 本物のログアウト処理を実行
       await signOut();
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("iscore_auth_cache_active");
+      }
       router.push("/");
       router.refresh();
     } catch (error) {

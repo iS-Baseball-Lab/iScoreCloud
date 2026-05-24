@@ -20,12 +20,30 @@ export function ProtectedClientLayout({
     const checkAuth = async () => {
       try {
         const res = await fetch("/api/auth/me");
+        
+        // 💡 サーバーが明示的に未認証（401等）を返した場合はログイン画面へ
+        if (res.status === 401) {
+          if (typeof window !== "undefined") {
+            localStorage.removeItem("iscore_auth_cache_active");
+          }
+          router.replace("/login");
+          return;
+        }
+
         const json = (await res.json()) as any;
 
         // 1. 未ログインならログイン画面へ弾く
         if (!json.success || !json.data) {
+          if (typeof window !== "undefined") {
+            localStorage.removeItem("iscore_auth_cache_active");
+          }
           router.replace("/login");
           return;
+        }
+
+        // 💡 ログイン成功時にローカルへ認証キャッシュを保存（電波不良時の救済用）
+        if (typeof window !== "undefined") {
+          localStorage.setItem("iscore_auth_cache_active", "true");
         }
 
         const memberships = json.data.memberships || [];
@@ -35,7 +53,7 @@ export function ProtectedClientLayout({
         // 🌟 2. 承認済みのチームがなく、申請中（Pending）のチームがある場合は強制送還！
         if (!hasActive && hasPending) {
           router.replace("/pending-approval");
-          return; // 👈 ここで止めるので isAuthorized は false のまま
+          return;
         }
 
         // 🌟 3. どのチームにも属していない（新規ユーザー）場合も入力画面へ
@@ -48,7 +66,21 @@ export function ProtectedClientLayout({
         setIsAuthorized(true);
         
       } catch (error) {
-        console.error("認証チェックエラー:", error);
+        console.error("認証チェックエラー (電波不良・オフラインの可能性あり):", error);
+
+        // 💡 現場至上主義：電波不良やオフラインによる通信エラー時、
+        // 過去にログイン成功実績（localStorage）がある、またはオフライン状態であればスルーさせて入力を継続！
+        if (typeof window !== "undefined") {
+          const hasAuthCache = localStorage.getItem("iscore_auth_cache_active") === "true";
+          const isOffline = !navigator.onLine;
+
+          if (hasAuthCache || isOffline) {
+            console.warn("ネットワーク切断を検知したため、オフライン・キャッシュ認証を適用して動作を継続します。");
+            setIsAuthorized(true);
+            return;
+          }
+        }
+
         router.replace("/login");
       }
     };
