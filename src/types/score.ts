@@ -130,6 +130,7 @@ export interface ScoreContextType {
   resetBatter: (playerId: string | null) => void;
   undo: () => void;
   finishMatch: () => Promise<void>;
+  resetMatch: () => Promise<boolean>; // 🌟 追加
   updateMatchSettings: (settings: Partial<ScoreState>) => void;
   substitutePlayer: (
     team: 'my' | 'opponent',

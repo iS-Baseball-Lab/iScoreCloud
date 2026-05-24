@@ -1055,7 +1055,15 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
       }
       
       if (!prev.history || prev.history.length === 0) {
-        toast.info("取り消す操作履歴がありません。");
+        // 🌟 現場仕様：履歴がない過去の試合でも、中途半端なデータを全クリアできるようリセットを提案！
+        if (typeof window !== "undefined") {
+          const forceClear = window.confirm("過去の操作履歴データがありません。\n中途半端なデータを完全にクリアして、1回表（最初）から綺麗にやり直しますか？");
+          if (forceClear) {
+            setTimeout(() => {
+              resetMatch();
+            }, 100);
+          }
+        }
         return prev;
       }
       
@@ -1097,6 +1105,46 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
       return next;
     });
   };
+
+  // 🚀 9.2 試合データのリセット (全クリア)
+  const resetMatch = useCallback(async (): Promise<boolean> => {
+    if (!state.matchId || !state.isScorer) return false;
+    
+    if (typeof window !== "undefined") {
+      const confirm1 = window.confirm("⚠️ 試合データをリセットしますか？\nこれまでに記録したすべてのスコア、カウント、プレイログが完全に削除されます。");
+      if (!confirm1) return false;
+      
+      const confirm2 = window.confirm("🔥 【最終確認】本当に宜しいですか？\nこの操作は絶対に取り消すことができません。");
+      if (!confirm2) return false;
+    }
+    
+    setIsSyncing(true);
+    try {
+      const res = await fetch(`/api/matches/${state.matchId}/reset`, {
+        method: "POST",
+      });
+      const data = await res.json() as { success: boolean };
+      if (data.success) {
+        toast.success("試合データを完全にリセットしました");
+        // 履歴のローカルキャッシュも削除
+        if (typeof window !== "undefined") {
+          localStorage.removeItem(`iscore_history_${state.matchId}`);
+        }
+        // ステートを再構築して再ロード
+        await initMatch(state.matchId);
+        return true;
+      } else {
+        toast.error("リセットに失敗しました");
+        return false;
+      }
+    } catch (e) {
+      console.error("[Reset Match Error]:", e);
+      toast.error("通信エラーが発生しました");
+      return false;
+    } finally {
+      setIsSyncing(false);
+    }
+  }, [state.matchId, state.isScorer, initMatch]);
 
   const substitutePlayer = useCallback((
     team: 'my' | 'opponent',
@@ -1225,6 +1273,7 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
       resetBatter,
       undo,
       finishMatch,
+      resetMatch, // 🌟 追加
       updateMatchSettings,
       substitutePlayer,
       acquireLock,

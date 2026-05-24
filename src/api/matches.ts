@@ -3,7 +3,8 @@ import { Hono } from "hono";
 import { drizzle } from "drizzle-orm/d1";
 import { MatchService } from "@/services/match.service";
 import { eq, sql } from "drizzle-orm";
-import { matchUndoHistories } from "@/db/schema/score";
+import { matchUndoHistories, atBats, playLogs } from "@/db/schema/score";
+import { matches } from "@/db/schema/match";
 
 const app = new Hono<{ Bindings: { DB: D1Database } }>();
 
@@ -116,6 +117,44 @@ app.patch("/:id/finish", async (c) => {
     return c.json({ success: true });
   } catch (error) {
     return c.json({ success: false, error: "Failed to save scores" }, 500);
+  }
+});
+
+app.post("/:id/reset", async (c) => {
+  const db = drizzle(c.env.DB);
+  const matchId = c.req.param("id");
+
+  try {
+    // 試合の関連テーブルを一括クリア＆ matches レコードの 0 リセット
+    await db.batch([
+      db.delete(playLogs).where(eq(playLogs.matchId, matchId)) as any,
+      db.delete(atBats).where(eq(atBats.matchId, matchId)) as any,
+      db.delete(matchUndoHistories).where(eq(matchUndoHistories.matchId, matchId)) as any,
+      db.update(matches)
+        .set({
+          myScore: 0,
+          opponentScore: 0,
+          currentInning: 1,
+          isBottom: false,
+          balls: 0,
+          strikes: 0,
+          outs: 0,
+          runners: JSON.stringify({ base1: null, base2: null, base3: null }),
+          myInningScores: "[]",
+          opponentInningScores: "[]",
+          myHits: 0,
+          opponentHits: 0,
+          myErrors: 0,
+          opponentErrors: 0,
+          status: "live"
+        })
+        .where(eq(matches.id, matchId)) as any
+    ]);
+
+    return c.json({ success: true });
+  } catch (error) {
+    console.error("Failed to reset match:", error);
+    return c.json({ success: false, error: "Failed to reset match" }, 500);
   }
 });
 
