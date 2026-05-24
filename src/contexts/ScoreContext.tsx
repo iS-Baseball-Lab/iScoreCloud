@@ -1044,71 +1044,41 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
       return next;
     });
   };
-  // 🚀 6.5 操作の取り消し (UNDO)
-  const undo = useCallback(() => {
-    setState(prev => {
-      console.log("[UNDO Clicked] isScorer:", prev.isScorer, "historyLength:", prev.history?.length, "historyArray:", prev.history);
-      
-      if (!prev.isScorer) {
-        toast.warning("編集権限がないため、UNDOは実行できません。");
-        return prev;
-      }
-      
-      if (!prev.history || prev.history.length === 0) {
-        // 🌟 現場仕様：履歴がない過去の試合でも、中途半端なデータを全クリアできるようリセットを提案！
-        if (typeof window !== "undefined") {
-          const forceClear = window.confirm("過去の操作履歴データがありません。\n中途半端なデータを完全にクリアして、1回表（最初）から綺麗にやり直しますか？");
-          if (forceClear) {
-            setTimeout(() => {
-              resetMatch();
-            }, 100);
-          }
-        }
-        return prev;
-      }
-      
-      const newHistory = [...prev.history];
-      const previousState = newHistory.pop()!;
-      
-      // 取り消される前の最新ログ（prev.logs[0]）が打席完了だったかを判定
-      const lastLogDesc = prev.logs[0]?.description || "";
-      const atBatEndRegex = /三振|フォアボール|デッドボール|アウト|単打|二塁打|三塁打|本塁打|安|二|三|本|ゴロ|飛|直|犠|失|エラー|併殺|1B|2B|3B|HR|GO|FO|LO|SO|E|FC|DP|SH|SF|ERR|OUT|SAC/;
-      const isAtBatUndo = atBatEndRegex.test(lastLogDesc);
-      
-      const next = { ...previousState, history: newHistory };
-      
-      toast.success(`操作を取り消しました: ${lastLogDesc}`);
-      syncWithBackend(next, "操作取消 (UNDO)", true, isAtBatUndo);
-      return next;
-    });
-  }, [syncWithBackend]);
-  // 🚀 7. ランナー状態の更新
-  const updateRunners = (runners: { base1: string | null; base2: string | null; base3: string | null }) => {
-    setState(prev => {
-      if (!prev.isScorer) return prev;
-      const next = pushHistory(prev, { runners });
-      syncWithBackend(next, "走者状況変更", true);
-      return next;
-    });
-  };
-
-  // 🚀 8. 打者のリセット
-  const resetBatter = (playerId: string | null) => {
-    setState(prev => ({ ...prev, batterId: playerId }));
-  };
-
-  // 🚀 9. 試合の終了
-  const finishMatch = async () => {
-    setState(prev => {
-      const next = pushHistory(prev, { status: "finished", logs: appendLog("試合終了", prev) });
-      syncWithBackend(next, "試合終了");
-      return next;
-    });
-  };
 
   // 🚀 9.2 試合データのリセット (全クリア)
   const resetMatch = useCallback(async (): Promise<boolean> => {
-    if (!state.matchId || !state.isScorer) return false;
+    if (!state.matchId) return false;
+    
+    // 🌟 現場仕様：自分がスコアラーではない場合、自動でロック（編集権限）を強制取得してリセットを進める！
+    let isCurrentlyScorer = state.isScorer;
+    if (!isCurrentlyScorer) {
+      const userId = getOrCreateUserId();
+      const userName = getUserName();
+      try {
+        const lockRes = await fetch(`/api/matches/${state.matchId}/lock/force`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId, userName })
+        });
+        const lockData = await lockRes.json() as { success: boolean };
+        if (lockData.success) {
+          isCurrentlyScorer = true;
+          // ステートも更新
+          setState(prev => ({ 
+            ...prev, 
+            isScorer: true, 
+            lockedBy: { userId, userName } 
+          }));
+        } else {
+          toast.error("リセット権限（編集権限）の取得に失敗しました");
+          return false;
+        }
+      } catch (e) {
+        console.error("Auto lock acquire error before reset:", e);
+        toast.error("リセット権限の取得に失敗しました");
+        return false;
+      }
+    }
     
     if (typeof window !== "undefined") {
       const confirm1 = window.confirm("⚠️ 試合データをリセットしますか？\nこれまでに記録したすべてのスコア、カウント、プレイログが完全に削除されます。");
@@ -1145,6 +1115,71 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
       setIsSyncing(false);
     }
   }, [state.matchId, state.isScorer, initMatch]);
+
+  // 🚀 6.5 操作の取り消し (UNDO)
+  const undo = useCallback(async () => {
+    const isScorer = state.isScorer;
+    const historyLength = state.history?.length || 0;
+    
+    console.log("[UNDO Clicked Outside] isScorer:", isScorer, "historyLength:", historyLength);
+    
+    if (!isScorer) {
+      toast.warning("編集権限がないため、UNDOは実行できません。");
+      return;
+    }
+    
+    if (historyLength === 0) {
+      // 🌟 現場仕様：履歴がない過去の試合でも、中途半端なデータを全クリアできるようリセットを提案！
+      if (typeof window !== "undefined") {
+        const forceClear = window.confirm("過去の操作履歴データがありません。\n中途半端なデータを完全にクリアして、1回表（最初）から綺麗にやり直しますか？");
+        if (forceClear) {
+          await resetMatch();
+        }
+      }
+      return;
+    }
+    
+    setState(prev => {
+      if (!prev.history || prev.history.length === 0) return prev;
+      
+      const newHistory = [...prev.history];
+      const previousState = newHistory.pop()!;
+      
+      // 取り消される前の最新ログ（prev.logs[0]）が打席完了だったかを判定
+      const lastLogDesc = prev.logs[0]?.description || "";
+      const atBatEndRegex = /三振|フォアボール|デッドボール|アウト|単打|二塁打|三塁打|本塁打|安|二|三|本|ゴロ|飛|直|犠|失|エラー|併殺|1B|2B|3B|HR|GO|FO|LO|SO|E|FC|DP|SH|SF|ERR|OUT|SAC/;
+      const isAtBatUndo = atBatEndRegex.test(lastLogDesc);
+      
+      const next = { ...previousState, history: newHistory };
+      
+      toast.success(`操作を取り消しました: ${lastLogDesc}`);
+      syncWithBackend(next, "操作取消 (UNDO)", true, isAtBatUndo);
+      return next;
+    });
+  }, [state.isScorer, state.history, resetMatch, syncWithBackend]);
+  // 🚀 7. ランナー状態の更新
+  const updateRunners = (runners: { base1: string | null; base2: string | null; base3: string | null }) => {
+    setState(prev => {
+      if (!prev.isScorer) return prev;
+      const next = pushHistory(prev, { runners });
+      syncWithBackend(next, "走者状況変更", true);
+      return next;
+    });
+  };
+
+  // 🚀 8. 打者のリセット
+  const resetBatter = (playerId: string | null) => {
+    setState(prev => ({ ...prev, batterId: playerId }));
+  };
+
+  // 🚀 9. 試合の終了
+  const finishMatch = async () => {
+    setState(prev => {
+      const next = pushHistory(prev, { status: "finished", logs: appendLog("試合終了", prev) });
+      syncWithBackend(next, "試合終了");
+      return next;
+    });
+  };
 
   const substitutePlayer = useCallback((
     team: 'my' | 'opponent',
