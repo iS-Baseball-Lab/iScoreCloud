@@ -1046,7 +1046,17 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
   // 🚀 6.5 操作の取り消し (UNDO)
   const undo = useCallback(() => {
     setState(prev => {
-      if (!prev.isScorer || !prev.history || prev.history.length === 0) return prev;
+      console.log("[UNDO Clicked] isScorer:", prev.isScorer, "historyLength:", prev.history?.length);
+      
+      if (!prev.isScorer) {
+        toast.warning("編集権限がないため、UNDOは実行できません。");
+        return prev;
+      }
+      
+      if (!prev.history || prev.history.length === 0) {
+        toast.info("取り消す操作履歴がありません。");
+        return prev;
+      }
       
       const newHistory = [...prev.history];
       const previousState = newHistory.pop()!;
@@ -1058,6 +1068,7 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
       
       const next = { ...previousState, history: newHistory };
       
+      toast.success(`操作を取り消しました: ${lastLogDesc}`);
       syncWithBackend(next, "操作取消 (UNDO)", true, isAtBatUndo);
       return next;
     });
