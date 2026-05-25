@@ -26,7 +26,7 @@ export function NewsPreviewCard({
   copied
 }: NewsPreviewCardProps) {
   return (
-    <div className="bg-white border border-zinc-200 dark:bg-zinc-900/60 dark:border-white/5 p-5 rounded-2xl shadow-md dark:shadow-none space-y-4 relative">
+    <div className="bg-white border border-zinc-200 dark:bg-zinc-900/60 dark:border-white/5 p-5 rounded-2xl shadow-sm dark:shadow-none space-y-4 relative">
       {/* ツールバー */}
       <div className="flex items-center justify-between border-b border-zinc-100 dark:border-white/5 pb-3">
         <div className="flex items-center gap-2">
@@ -60,7 +60,7 @@ export function NewsPreviewCard({
       <div className="flex flex-col sm:flex-row gap-4 pt-2">
         <Button
           onClick={handleCopy}
-          className="flex-1 rounded-[24px] font-black text-base sm:text-lg h-20 gap-3.5 active:scale-95 transition-all bg-white hover:bg-zinc-50 dark:bg-zinc-950 border-2 border-zinc-300 dark:border-zinc-800 dark:hover:bg-zinc-900 text-zinc-900 dark:text-white shadow-md flex items-center justify-center"
+          className="flex-1 rounded-[24px] font-black text-base sm:text-lg h-20 gap-3.5 active:scale-95 transition-all bg-white hover:bg-zinc-50 dark:bg-zinc-950 border-2 border-zinc-300 dark:border-zinc-800 dark:hover:bg-zinc-900 text-zinc-900 dark:text-white shadow-sm flex items-center justify-center"
           variant="outline"
         >
           {copied ? (
@@ -73,7 +73,7 @@ export function NewsPreviewCard({
 
         <Button
           onClick={handleLineShare}
-          className="flex-1 rounded-[24px] font-black text-base sm:text-lg h-20 gap-3.5 bg-[#06C755] hover:bg-[#05b34c] hover:shadow-lg hover:shadow-emerald-500/20 text-white active:scale-95 transition-all shadow-md flex items-center justify-center"
+          className="flex-1 rounded-[24px] font-black text-base sm:text-lg h-20 gap-3.5 bg-[#06C755] hover:bg-[#05b34c] hover:shadow-lg hover:shadow-emerald-500/20 text-white active:scale-95 transition-all shadow-sm flex items-center justify-center"
         >
           <div className="relative h-12 w-12 shrink-0">
             <Image src="/line-logo.png" alt="LINE" fill className="object-contain" />

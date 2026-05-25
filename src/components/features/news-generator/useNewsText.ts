@@ -31,7 +31,6 @@ interface UseNewsTextProps {
   startTime: string;
   endTime: string;
   reporterName: string;
-  lineupComment: string;
   inningComment: string;
   selectedInningOption: { label: string; inning: number; isBottom: boolean } | null;
   heroPlayer: string;
@@ -53,7 +52,6 @@ export function useNewsText({
   startTime,
   endTime,
   reporterName,
-  lineupComment,
   inningComment,
   selectedInningOption,
   heroPlayer,
@@ -573,7 +571,6 @@ ${matchHeader}
 ${timeHeader ? `${timeHeader}\n` : ""}
 ◆ ${teamName} スタメン（${myAttackLabel}）
 ${myLineupText}
-${lineupComment ? `\n💬 コメント:\n${lineupComment}\n` : ""}
 #草野球 #スタメン発表 #iScoreCloud`;
     }
 
@@ -608,7 +605,7 @@ ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : "
 
     return "";
   }, [
-    matchDetail, lineups, playLogs, newsType, lineupComment,
+    matchDetail, lineups, playLogs, newsType,
     selectedInningOption, inningComment, heroPlayer, summaryText,
     teamName, matchName, venueName, opponentName, startTime, endTime, reporterName,
     firstTeamDisp, secondTeamDisp, showSurnameOnly

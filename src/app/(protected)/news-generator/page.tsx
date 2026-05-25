@@ -42,7 +42,6 @@ export default function NewsGeneratorPage() {
   const [endTime, setEndTime] = useState("");
   const [reporterName, setReporterName] = useState("");
 
-  const [lineupComment, setLineupComment] = useState("");
   const [selectedInningIndex, setSelectedInningIndex] = useState<number>(0);
   const [inningComment, setInningComment] = useState("");
   const [heroPlayer, setHeroPlayer] = useState("");
@@ -278,7 +277,6 @@ export default function NewsGeneratorPage() {
     startTime,
     endTime,
     reporterName,
-    lineupComment,
     inningComment,
     selectedInningOption,
     heroPlayer,
@@ -331,7 +329,7 @@ export default function NewsGeneratorPage() {
         </div>
 
         {/* 1. 試合の選択エリア (最上部) */}
-        <div className="bg-white dark:bg-zinc-900/60 border border-zinc-200 dark:border-white/5 p-5 rounded-2xl shadow-md dark:shadow-2xl transition-all relative">
+        <div className="bg-white dark:bg-zinc-900/60 border border-zinc-200 dark:border-white/5 p-5 rounded-2xl shadow-sm dark:shadow-none transition-all relative">
           <label className="flex items-center gap-1.5 text-[11px] font-black text-primary dark:text-primary tracking-widest uppercase mb-2.5">
             <Calendar className="h-3.5 w-3.5" />
             試合の選択（予定試合を除く・進行中を優先）
@@ -491,7 +489,7 @@ export default function NewsGeneratorPage() {
 
         {/* 試合未選択時のプレースホルダー */}
         {!selectedMatchId && (
-          <div className="bg-white border border-zinc-200 dark:bg-zinc-900/40 dark:border-white/5 backdrop-blur-md rounded-[var(--radius-xl)] p-12 text-center flex flex-col items-center justify-center space-y-4 shadow-md dark:shadow-none">
+          <div className="bg-white border border-zinc-200 dark:bg-zinc-900/40 dark:border-white/5 backdrop-blur-md rounded-[var(--radius-xl)] p-12 text-center flex flex-col items-center justify-center space-y-4 shadow-sm dark:shadow-none">
             <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center">
               <Zap className="h-8 w-8 text-primary animate-pulse" />
             </div>
@@ -527,8 +525,6 @@ export default function NewsGeneratorPage() {
               setFirstTeamDisp={setFirstTeamDisp}
               secondTeamDisp={secondTeamDisp}
               setSecondTeamDisp={setSecondTeamDisp}
-              lineupComment={lineupComment}
-              setLineupComment={setLineupComment}
               inningOptions={inningOptions}
               selectedInningIndex={selectedInningIndex}
               setSelectedInningIndex={setSelectedInningIndex}

@@ -41,10 +41,6 @@ interface NewsParameterPanelProps {
   secondTeamDisp: string;
   setSecondTeamDisp: (val: string) => void;
 
-  // comments & hero (newsType specific)
-  lineupComment: string;
-  setLineupComment: (val: string) => void;
-
   inningOptions: InningOption[];
   selectedInningIndex: number;
   setSelectedInningIndex: (idx: number) => void;
@@ -82,8 +78,6 @@ export function NewsParameterPanel({
   setFirstTeamDisp,
   secondTeamDisp,
   setSecondTeamDisp,
-  lineupComment,
-  setLineupComment,
   inningOptions,
   selectedInningIndex,
   setSelectedInningIndex,
@@ -101,8 +95,8 @@ export function NewsParameterPanel({
   return (
     <div className="space-y-6">
       
-      {/* 🚀 1. 速報パラメータの設定欄 (アコーディオン。デフォルト閉) */}
-      <div className="bg-white border border-zinc-200 dark:bg-zinc-900/60 dark:border-white/5 p-5 rounded-[var(--radius-xl)] shadow-md dark:shadow-none space-y-4 transition-all duration-300">
+      {/* 🚀 1. 速報パラメータの設定欄 (アコーディオン。デフォルト閉。薄い影 shadow-sm) */}
+      <div className="bg-white border border-zinc-200 dark:bg-zinc-900/60 dark:border-white/5 p-5 rounded-[var(--radius-xl)] shadow-sm dark:shadow-none space-y-4 transition-all duration-300">
         <div 
           onClick={() => setIsParamExpanded(!isParamExpanded)}
           className="flex items-center justify-between gap-2 cursor-pointer group select-none"
@@ -124,7 +118,7 @@ export function NewsParameterPanel({
                 <User className="h-4 w-4 text-zinc-500 shrink-0 mt-0.5" />
                 <div className="space-y-0.5 min-w-0">
                   <span className="text-xs font-black text-zinc-800 dark:text-zinc-200 block">選手名を苗字のみにする</span>
-                  <p className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 leading-tight">スタメンやプレイログの選手名を苗字だけで出力します</p>
+                  <p className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 leading-tight">スタメンやプレイログ of 選手名を苗字だけで出力します</p>
                 </div>
               </div>
               <button
@@ -241,8 +235,8 @@ export function NewsParameterPanel({
         )}
       </div>
 
-      {/* 🚀 2. 速報タイプのタブ切り替え */}
-      <div className="bg-white border border-zinc-200 dark:bg-zinc-900/60 dark:border-white/5 p-2 rounded-[var(--radius-xl)] shadow-md dark:shadow-none flex gap-1">
+      {/* 🚀 2. 速報タイプのタブ切り替え (薄い影 shadow-sm) */}
+      <div className="bg-white border border-zinc-200 dark:bg-zinc-900/60 dark:border-white/5 p-2 rounded-[var(--radius-xl)] shadow-sm dark:shadow-none flex gap-1">
         {[
           { id: "lineup", label: "スタメン速報", icon: Users },
           { id: "inning", label: "イニング速報", icon: Activity },
@@ -257,7 +251,7 @@ export function NewsParameterPanel({
               className={cn(
                 "flex-1 flex flex-col sm:flex-row items-center justify-center gap-1.5 py-3 sm:py-2.5 rounded-xl font-black text-[11px] sm:text-xs transition-all duration-300 cursor-pointer",
                 isActive
-                  ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20 scale-100"
+                  ? "bg-primary text-primary-foreground shadow-sm shadow-primary/10 scale-100"
                   : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-white/5 active:scale-95"
               )}
             >
@@ -268,143 +262,127 @@ export function NewsParameterPanel({
         })}
       </div>
 
-      {/* 🚀 3. タイプ別の詳細手動コメント入力欄 (常に表示) */}
-      <div className="bg-white border border-zinc-200 dark:bg-zinc-900/60 dark:border-white/5 p-5 rounded-[var(--radius-xl)] shadow-md dark:shadow-none space-y-4">
-        
-        {/* --- A. スタメン速報用の設定 --- */}
-        {newsType === "lineup" && (
-          <div className="space-y-3 animate-in fade-in duration-300">
-            <div>
-              <label className="flex items-center gap-1.5 text-[10.5px] font-black text-zinc-500 dark:text-zinc-400 tracking-wider uppercase mb-1.5">
-                <MessageSquare className="h-3.5 w-3.5 text-primary" />
-                監督コメント・意気込みなどの一言 (自由に入力)
-              </label>
-              <textarea
-                value={lineupComment}
-                onChange={(e) => setLineupComment(e.target.value)}
-                placeholder="例：新戦力の山田を1番に抜擢！打線のつながりで勝利を目指します。"
-                className="w-full min-h-[90px] bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 focus:border-primary focus:ring-2 focus:ring-primary/10 text-zinc-900 dark:text-white text-xs p-3 rounded-xl outline-none resize-none transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-bold shadow-sm"
-              />
-            </div>
-          </div>
-        )}
+      {/* 🚀 3. タイプ別の詳細手動コメント入力欄 (イニング・終了速報時のみ表示、薄い影 shadow-sm) */}
+      {newsType !== "lineup" && (
+        <div className="bg-white border border-zinc-200 dark:bg-zinc-900/60 dark:border-white/5 p-5 rounded-[var(--radius-xl)] shadow-sm dark:shadow-none space-y-4">
+          
+          {/* --- B. イニング速報用の設定 --- */}
+          {newsType === "inning" && (
+            <div className="space-y-4 animate-in fade-in duration-300">
+              <div>
+                <label className="flex items-center gap-1.5 text-[10.5px] font-black text-zinc-500 dark:text-zinc-400 tracking-wider uppercase mb-1.5">
+                  <Activity className="h-3.5 w-3.5 text-primary" />
+                  速報に含めるイニングの選択
+                </label>
+                {inningOptions.length === 0 ? (
+                  <div className="text-xs font-bold text-zinc-400 py-2">
+                    進行中のイニングデータが存在しません。イニングスコアを入力してください。
+                  </div>
+                ) : (
+                  <div className="relative">
+                    {/* トリガーボタン */}
+                    <button
+                      type="button"
+                      onClick={() => setIsInningDropdownOpen(!isInningDropdownOpen)}
+                      className={cn(
+                        "w-full h-11 bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 hover:border-zinc-300 dark:hover:border-white/20 text-zinc-900 dark:text-white font-bold text-xs px-4 rounded-xl outline-none transition-all flex items-center justify-between shadow-sm cursor-pointer",
+                        isInningDropdownOpen && "border-primary dark:border-primary/50 ring-2 ring-primary/10"
+                      )}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Activity className="h-4 w-4 text-primary shrink-0 animate-pulse" />
+                        <span>{inningOptions[selectedInningIndex]?.label}まで表示する</span>
+                      </div>
+                      <ChevronDown className={cn("h-4 w-4 text-zinc-400 dark:text-zinc-500 transition-transform duration-300 shrink-0", isInningDropdownOpen && "rotate-180")} />
+                    </button>
 
-        {/* --- B. イニング速報用の設定 --- */}
-        {newsType === "inning" && (
-          <div className="space-y-4 animate-in fade-in duration-300">
-            <div>
-              <label className="flex items-center gap-1.5 text-[10.5px] font-black text-zinc-500 dark:text-zinc-400 tracking-wider uppercase mb-1.5">
-                <Activity className="h-3.5 w-3.5 text-primary" />
-                速報に含めるイニングの選択
-              </label>
-              {inningOptions.length === 0 ? (
-                <div className="text-xs font-bold text-zinc-400 py-2">
-                  進行中のイニングデータが存在しません。イニングスコアを入力してください。
-                </div>
-              ) : (
-                <div className="relative">
-                  {/* トリガーボタン */}
-                  <button
-                    type="button"
-                    onClick={() => setIsInningDropdownOpen(!isInningDropdownOpen)}
-                    className={cn(
-                      "w-full h-11 bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 hover:border-zinc-300 dark:hover:border-white/20 text-zinc-900 dark:text-white font-bold text-xs px-4 rounded-xl outline-none transition-all flex items-center justify-between shadow-sm cursor-pointer",
-                      isInningDropdownOpen && "border-primary dark:border-primary/50 ring-2 ring-primary/10"
+                    {/* 背面オーバーレイ（クリックで閉じる） */}
+                    {isInningDropdownOpen && (
+                      <div 
+                        className="fixed inset-0 z-40 bg-transparent" 
+                        onClick={() => setIsInningDropdownOpen(false)}
+                      />
                     )}
-                  >
-                    <div className="flex items-center gap-2">
-                      <Activity className="h-4 w-4 text-primary shrink-0 animate-pulse" />
-                      <span>{inningOptions[selectedInningIndex]?.label}まで表示する</span>
-                    </div>
-                    <ChevronDown className={cn("h-4 w-4 text-zinc-400 dark:text-zinc-500 transition-transform duration-300 shrink-0", isInningDropdownOpen && "rotate-180")} />
-                  </button>
 
-                  {/* 背面オーバーレイ（クリックで閉じる） */}
-                  {isInningDropdownOpen && (
-                    <div 
-                      className="fixed inset-0 z-40 bg-transparent" 
-                      onClick={() => setIsInningDropdownOpen(false)}
-                    />
-                  )}
+                    {/* ドロップダウンメニュー */}
+                    {isInningDropdownOpen && (
+                      <div className="absolute left-0 right-0 mt-1.5 z-50 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-md border border-zinc-200 dark:border-white/10 rounded-xl shadow-lg max-h-60 overflow-y-auto p-1.5 animate-in fade-in slide-in-from-top-2 duration-200">
+                        {inningOptions.map((opt, idx) => {
+                          const isSelected = idx === selectedInningIndex;
+                          return (
+                            <button
+                              key={idx}
+                              type="button"
+                              onClick={() => {
+                                setSelectedInningIndex(idx);
+                                setIsInningDropdownOpen(false);
+                              }}
+                              className={cn(
+                                "w-full text-left px-3 py-2.5 rounded-lg font-bold text-xs flex items-center justify-between transition-colors cursor-pointer",
+                                isSelected 
+                                  ? "bg-primary/10 text-primary" 
+                                  : "text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-white/5"
+                              )}
+                            >
+                              <span>{opt.label}まで表示する</span>
+                              {isSelected && <Zap className="h-3.5 w-3.5 text-primary animate-pulse" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
 
-                  {/* ドロップダウンメニュー */}
-                  {isInningDropdownOpen && (
-                    <div className="absolute left-0 right-0 mt-1.5 z-50 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-md border border-zinc-200 dark:border-white/10 rounded-xl shadow-lg max-h-60 overflow-y-auto p-1.5 animate-in fade-in slide-in-from-top-2 duration-200">
-                      {inningOptions.map((opt, idx) => {
-                        const isSelected = idx === selectedInningIndex;
-                        return (
-                          <button
-                            key={idx}
-                            type="button"
-                            onClick={() => {
-                              setSelectedInningIndex(idx);
-                              setIsInningDropdownOpen(false);
-                            }}
-                            className={cn(
-                              "w-full text-left px-3 py-2.5 rounded-lg font-bold text-xs flex items-center justify-between transition-colors cursor-pointer",
-                              isSelected 
-                                ? "bg-primary/10 text-primary" 
-                                : "text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-white/5"
-                            )}
-                          >
-                            <span>{opt.label}まで表示する</span>
-                            {isSelected && <Zap className="h-3.5 w-3.5 text-primary animate-pulse" />}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
+              <div>
+                <label className="flex items-center gap-1.5 text-[10.5px] font-black text-zinc-500 dark:text-zinc-400 tracking-wider uppercase mb-1.5">
+                  <MessageSquare className="h-3.5 w-3.5 text-primary" />
+                  戦況解説・追加コメント (自由に入力)
+                </label>
+                <textarea
+                  value={inningComment}
+                  onChange={(e) => setInningComment(e.target.value)}
+                  placeholder="例：山田が先制の2ランを放ちリードする展開。先発佐藤も要所を締め好投中。"
+                  className="w-full min-h-[95px] bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 focus:border-primary focus:ring-2 focus:ring-primary/10 text-zinc-900 dark:text-white text-xs p-3 rounded-xl outline-none resize-none transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-bold shadow-sm"
+                />
+              </div>
             </div>
+          )}
 
-            <div>
-              <label className="flex items-center gap-1.5 text-[10.5px] font-black text-zinc-500 dark:text-zinc-400 tracking-wider uppercase mb-1.5">
-                <MessageSquare className="h-3.5 w-3.5 text-primary" />
-                戦況解説・追加コメント (自由に入力)
-              </label>
-              <textarea
-                value={inningComment}
-                onChange={(e) => setInningComment(e.target.value)}
-                placeholder="例：山田が先制の2ランを放ちリードする展開。先発佐藤も要所を締め好投中。"
-                className="w-full min-h-[95px] bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 focus:border-primary focus:ring-2 focus:ring-primary/10 text-zinc-900 dark:text-white text-xs p-3 rounded-xl outline-none resize-none transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-bold shadow-sm"
-              />
-            </div>
-          </div>
-        )}
+          {/* --- C. 試合終了速報用の設定 --- */}
+          {newsType === "end" && (
+            <div className="space-y-4 animate-in fade-in duration-300">
+              <div>
+                <label className="flex items-center gap-1.5 text-[10.5px] font-black text-zinc-500 dark:text-zinc-400 tracking-wider uppercase mb-1.5">
+                  <Award className="h-3.5 w-3.5 text-primary" />
+                  本日のヒーロー・活躍した選手
+                </label>
+                <input
+                  type="text"
+                  value={heroPlayer}
+                  onChange={(e) => setHeroPlayer(e.target.value)}
+                  placeholder="例：山田選手 (先制の2ランを含む3打点の大活躍！)"
+                  className="w-full h-11 bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 focus:border-primary focus:ring-2 focus:ring-primary/10 text-zinc-900 dark:text-white text-xs px-4 rounded-xl outline-none transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-bold shadow-sm"
+                />
+              </div>
 
-        {/* --- C. 試合終了速報用の設定 --- */}
-        {newsType === "end" && (
-          <div className="space-y-4 animate-in fade-in duration-300">
-            <div>
-              <label className="flex items-center gap-1.5 text-[10.5px] font-black text-zinc-500 dark:text-zinc-400 tracking-wider uppercase mb-1.5">
-                <Award className="h-3.5 w-3.5 text-primary" />
-                本日のヒーロー・活躍した選手
-              </label>
-              <input
-                type="text"
-                value={heroPlayer}
-                onChange={(e) => setHeroPlayer(e.target.value)}
-                placeholder="例：山田選手 (先制の2ランを含む3打点の大活躍！)"
-                className="w-full h-11 bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 focus:border-primary focus:ring-2 focus:ring-primary/10 text-zinc-900 dark:text-white text-xs px-4 rounded-xl outline-none transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-bold shadow-sm"
-              />
+              <div>
+                <label className="flex items-center gap-1.5 text-[10.5px] font-black text-zinc-500 dark:text-zinc-400 tracking-wider uppercase mb-1.5">
+                  <FileText className="h-3.5 w-3.5 text-primary" />
+                  戦評・総括
+                </label>
+                <textarea
+                  value={summaryText}
+                  onChange={(e) => setSummaryText(e.target.value)}
+                  placeholder="例：初回、3番山田の右越え2ランで先制。中盤に追いつかれるも、5回に相手の失策の間に勝ち越しに成功。投げては先発佐藤が7回2失点の力投で見見事完投勝利を飾った。"
+                  className="w-full min-h-[130px] bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 focus:border-primary focus:ring-2 focus:ring-primary/10 text-zinc-900 dark:text-white text-xs p-3 rounded-xl outline-none resize-none transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-bold shadow-sm"
+                />
+              </div>
             </div>
-
-            <div>
-              <label className="flex items-center gap-1.5 text-[10.5px] font-black text-zinc-500 dark:text-zinc-400 tracking-wider uppercase mb-1.5">
-                <FileText className="h-3.5 w-3.5 text-primary" />
-                戦評・総括
-              </label>
-              <textarea
-                value={summaryText}
-                onChange={(e) => setSummaryText(e.target.value)}
-                placeholder="例：初回、3番山田の右越え2ランで先制。中盤に追いつかれるも、5回に相手の失策の間に勝ち越しに成功。投げては先発佐藤が7回2失点の力投で見事完投勝利を飾った。"
-                className="w-full min-h-[130px] bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 focus:border-primary focus:ring-2 focus:ring-primary/10 text-zinc-900 dark:text-white text-xs p-3 rounded-xl outline-none resize-none transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-bold shadow-sm"
-              />
-            </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
     </div>
   );
