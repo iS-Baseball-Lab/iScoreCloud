@@ -13,7 +13,8 @@ import {
   ScoreState,
   ScoreContextType,
   MatchResponse,
-  PlayLogEntry
+  PlayLogEntry,
+  BaseAdvance
 } from "@/types/score";
 
 const ScoreContext = createContext<ScoreContextType | undefined>(undefined);
@@ -70,7 +71,8 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
   const appendLog = useCallback((
     description: string,
     s: ScoreState,
-    overrideBso?: { balls: number; strikes: number; outs: number }
+    overrideBso?: { balls: number; strikes: number; outs: number },
+    coordinate?: { x: number; y: number } // 🌟 将来のスプレーチャート用座標
   ): PlayLogEntry[] => {
     const bso = overrideBso || { balls: s.balls, strikes: s.strikes, outs: s.outs };
     const bsoSuffix = ` [B:${bso.balls}, S:${bso.strikes}, O:${bso.outs}]`;
@@ -81,6 +83,7 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
       inning: s.inning,
       isTop: s.isTop,
       timestamp: Date.now(),
+      ...(coordinate ? { coordinate } : {}) // 🌟 座標データを保存
     };
     return [newEntry, ...s.logs].slice(0, 50);
   }, []);
@@ -742,7 +745,14 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
   };
 
   // 🚀 5. 得点・インプレイ記録 (イニング配列の更新)
-  const recordInPlay = async (result: string, rbi: number, hits: number, errors: number) => {
+  const recordInPlay = async (
+    result: string,
+    rbi: number,
+    hits: number,
+    errors: number,
+    advances?: BaseAdvance[],
+    coordinate?: { x: number; y: number } // 🌟 将来のスプレーチャート用座標
+  ) => {
     setState(prev => {
       if (!prev.isScorer) return prev;
 
@@ -863,7 +873,7 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
         myBattingIndex: newMyBattingIndex,
         opponentBattingIndex: newOpponentBattingIndex,
         batterId: nextBatterId,
-        logs: appendLog(fullLogText, prev, { balls: prev.balls, strikes: prev.strikes, outs: newOuts }),
+        logs: appendLog(fullLogText, prev, { balls: prev.balls, strikes: prev.strikes, outs: newOuts }, coordinate),
       });
 
       syncWithBackend(next, fullLogText);

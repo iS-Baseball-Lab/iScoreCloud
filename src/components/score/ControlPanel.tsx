@@ -78,54 +78,66 @@ export function ControlPanel() {
     recordInPlay(mappedString, rbi, 0, 0);
   };
 
-  const handleFieldResult = (rawResult: string, rbi: number, advances?: BaseAdvance[]) => {
+  const handleFieldResult = (
+    rawResult: string,
+    rbi: number,
+    advances?: BaseAdvance[],
+    coordinate?: { x: number; y: number }
+  ) => {
     let mappedString = "";
     let isHit = false;
     let isError = false;
 
     if (rawResult.includes("-")) {
-      const [pos, hit] = rawResult.split("-");
-      
-      // ポジションマッピング (1-9)
+      const parts = rawResult.split("-");
+      const pos = parts[0];
+      const hit = parts[parts.length - 1]; // 最後の要素が必ず結果種別 (1B, 2B, 3B, HR, E, FC など)
+      const trajectory = parts.length === 3 ? parts[1] : null;
+
+      // ポジションマッピング (1-9 ＋ 間エリア)
       const posMap: Record<string, string> = {
         "1": "投", "2": "捕", "3": "一", "4": "二", "5": "三",
-        "6": "遊", "7": "左", "8": "中", "9": "右"
+        "6": "遊", "7": "左", "8": "中", "9": "右",
+        "78": "左中", "89": "右中", "56": "三遊", "46": "二遊", "34": "一二"
+      };
+
+      // 打球性質マッピング
+      const trajMap: Record<string, string> = {
+        "GO": "ゴロ", "FO": "飛", "LO": "直"
       };
 
       // 結果種別マッピング
       const hitMap: Record<string, string> = {
-        "GO": "ゴロ",
-        "FO": "飛",
-        "1B": "安",
-        "2B": "二",
-        "3B": "三",
-        "HR": "本",
-        "SH": "犠打",
-        "SF": "犠飛",
-        "E": "失"
+        "1B": "安", "2B": "二", "3B": "三", "HR": "本", "E": "失", "FC": "選",
+        "GO": "ゴロ", "FO": "飛", "SH": "犠打", "SF": "犠飛" // 互換性維持
       };
 
       const posChar = posMap[pos] || pos;
+      const trajChar = trajectory ? (trajMap[trajectory] || "") : "";
       const hitChar = hitMap[hit] || hit;
-      mappedString = `${posChar}${hitChar}`;
+      mappedString = `${posChar}${trajChar}${hitChar}`;
 
       isHit = ["1B", "2B", "3B", "HR"].includes(hit);
       isError = hit === "E";
     } else {
       // クイック記録（守備位置なし）
-      const hitType = rawResult;
+      const parts = rawResult.split("-");
+      const hitType = parts[parts.length - 1];
+      const trajectory = parts.length === 2 ? parts[0] : null;
+
       const quickMap: Record<string, string> = {
-        "GO": "ゴロ",
-        "FO": "飛球",
-        "1B": "単打",
-        "2B": "二塁打",
-        "3B": "三塁打",
-        "HR": "本塁打",
-        "SH": "犠打",
-        "SF": "犠飛",
-        "E": "エラー"
+        "1B": "単打", "2B": "二塁打", "3B": "三塁打", "HR": "本塁打", "E": "エラー", "FC": "野選",
+        "GO": "ゴロ", "FO": "飛球", "SH": "犠打", "SF": "犠飛" // 互換性
       };
-      mappedString = quickMap[hitType] || hitType;
+
+      const trajMap: Record<string, string> = {
+        "GO": "ゴロ", "FO": "フライ", "LO": "ライナー"
+      };
+
+      const trajPrefix = trajectory ? (trajMap[trajectory] || "") : "";
+      const hitText = quickMap[hitType] || hitType;
+      mappedString = trajPrefix ? `${trajPrefix}${hitText}` : hitText;
+
       isHit = ["1B", "2B", "3B", "HR"].includes(hitType);
       isError = hitType === "E";
     }
@@ -133,7 +145,7 @@ export function ControlPanel() {
     const hitsCount = isHit ? 1 : 0;
     const errorsCount = isError ? 1 : 0;
 
-    recordInPlay(mappedString, rbi, hitsCount, errorsCount);
+    recordInPlay(mappedString, rbi, hitsCount, errorsCount, undefined, coordinate);
     setFieldOpen(false);
   };
 

@@ -14,6 +14,7 @@ export interface PlayLogEntry {
   inning: number;
   isTop: boolean;
   timestamp: number;
+  coordinate?: { x: number; y: number }; // 🌟 将来のスプレーチャート用座標
 }
 
 /** 🏟️ 試合の全状態（State） */
@@ -118,7 +119,8 @@ export interface ScoreContextType {
     rbi: number,
     hits: number,
     errors: number,
-    advances?: BaseAdvance[]
+    advances?: BaseAdvance[],
+    coordinate?: { x: number; y: number } // 🌟 将来のスプレーチャート用座標
   ) => Promise<void>;
   recordRunnerAction: (
     baseNum: 1 | 2 | 3,
