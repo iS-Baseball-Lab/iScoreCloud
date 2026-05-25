@@ -554,10 +554,7 @@ export function useNewsText({
 
     const matchHeader = `⚾️${matchName}\n対 ${opponentName} @${venueName}`;
     
-    const timeHeader = [
-      startTime ? `開始時間　${startTime}` : "",
-      endTime ? `終了時間    ${endTime}` : ""
-    ].filter(Boolean).join("\n");
+    const timeHeader = `開始時間　${startTime || ""}\n終了時間    ${endTime || ""}`;
 
     const isFirst = matchDetail.battingOrder === "first";
     const myAttackLabel = isFirst ? "先攻" : "後攻";
@@ -568,7 +565,7 @@ export function useNewsText({
     if (newsType === "lineup") {
       return `${dateHeader}
 ${matchHeader}
-${timeHeader ? `${timeHeader}\n` : ""}
+${timeHeader}
 ◆ ${teamName} スタメン（${myAttackLabel}）
 ${myLineupText}${reporterName ? `\n\n速報　${reporterName}` : ""}`;
     }
@@ -587,7 +584,8 @@ ${myLineupText}${reporterName ? `\n\n速報　${reporterName}` : ""}`;
     if (newsType === "inning") {
       return `${dateHeader}
 ${matchHeader}
-${timeHeader ? `${timeHeader}\n` : ""}${scoreTable}
+${timeHeader}
+${scoreTable}
 
 ${lineupSection}
 ${detailLogs}${inningComment ? `\n💬 戦況解説:\n${inningComment}\n` : ""}${footer}`;
@@ -596,7 +594,8 @@ ${detailLogs}${inningComment ? `\n💬 戦況解説:\n${inningComment}\n` : ""}$
     if (newsType === "end") {
       return `${dateHeader}
 ${matchHeader}
-${timeHeader ? `${timeHeader}\n` : ""}${scoreTable}
+${timeHeader}
+${scoreTable}
 
 ${lineupSection}
 ${detailLogs}${heroPlayer ? `\n🏅 本日のヒーロー:\n${heroPlayer}\n` : ""}${summaryText ? `\n📝 戦評・総括:\n${summaryText}\n` : ""}${footer}`;
