@@ -295,7 +295,7 @@ export function PlayArea() {
       )}
 
       {/* 🚀 バッター情報 (ダイヤモンドの上部に通常フローで配置 - スリムスケーリング版) */}
-      <div className="w-full max-w-[340px] px-2 text-center z-50 mb-4 [@media(max-height:700px)]:mb-2">
+      <div className="w-full max-w-[480px] sm:max-w-[520px] px-2 text-center z-50 mb-4 [@media(max-height:700px)]:mb-2">
         {(() => {
           const index = isMyAttack ? state.myBattingIndex : state.opponentBattingIndex;
           const batter = offenseLineup && offenseLineup.length > index ? offenseLineup[index] : null;
@@ -312,7 +312,7 @@ export function PlayArea() {
           const nextPreviousLogs = state.logs.filter((l) => l.description.startsWith(nextSearchPrefix) && l.isTop === state.isTop);
 
           return (
-            <div className="grid grid-cols-2 gap-2 w-full mx-auto select-none">
+            <div className="grid grid-cols-2 gap-2 w-full max-w-[480px] sm:max-w-[520px] mx-auto select-none">
               
               {/* 1. 現在のバッター */}
               <div className="relative w-full">

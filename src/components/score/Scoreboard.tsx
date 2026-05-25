@@ -1,18 +1,16 @@
 // filepath: src/components/score/Scoreboard.tsx
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 import { useScore } from "@/contexts/ScoreContext";
 import { cn } from "@/lib/utils";
-import { Users, Trophy, MapPin } from "lucide-react";
+import { Users, Trophy } from "lucide-react";
 
 export function Scoreboard() {
   // 💡 Contextから最新の状態と関数を取得
   const { state, updateMatchSettings } = useScore();
   const [offsetX, setOffsetX] = useState(0);
   const startX = useRef(0);
-  const [isHeaderExpanded, setIsHeaderExpanded] = useState(false);
-  const autoCloseTimer = useRef<NodeJS.Timeout | null>(null);
 
   // 💡 maxInningsがない場合のフォールバック（型定義に合わせて安全に参照）
   const displayInningsCount = Math.max(state.maxInnings || 7, state.inning);
@@ -27,29 +25,7 @@ export function Scoreboard() {
   const isMyAttack = (state.isTop && state.isGuestFirst) || (!state.isTop && !state.isGuestFirst);
   const attackStatusText = isMyAttack ? "攻撃" : "守備";
 
-  const toggleHeader = () => {
-    setIsHeaderExpanded(prev => {
-      const next = !prev;
-      if (autoCloseTimer.current) {
-        clearTimeout(autoCloseTimer.current);
-        autoCloseTimer.current = null;
-      }
-      if (next) {
-        autoCloseTimer.current = setTimeout(() => {
-          setIsHeaderExpanded(false);
-        }, 5000);
-      }
-      return next;
-    });
-  };
 
-  useEffect(() => {
-    return () => {
-      if (autoCloseTimer.current) {
-        clearTimeout(autoCloseTimer.current);
-      }
-    };
-  }, []);
 
   const handleTouchStart = (e: React.TouchEvent) => {
     if (!state.isScorer || !isPreGame) return; // 🌟 編集権限がある場合のみスワイプを許可
@@ -95,36 +71,14 @@ export function Scoreboard() {
     <div className="w-full bg-background select-none font-sans p-1">
       <div className="flex flex-col rounded-lg overflow-hidden border border-zinc-300 dark:border-zinc-700 shadow-sm">
 
-        {/* 🚀 ヘッダーメイン行：対戦相手・スタメンボタン (アコーディオン詳細をインラインに統合) */}
+        {/* 🚀 ヘッダーメイン行：対戦相手・スタメンボタン */}
         <div className="flex items-center justify-between px-3 py-1.5 border-b border-zinc-300 dark:border-zinc-700 bg-muted/40 h-10 shrink-0">
           
-          {/* 左側：大会名・球場（2段コンパクト表示 ＆ 小画面タップ展開） */}
-          <div 
-            onClick={toggleHeader}
-            className="flex-1 flex items-center gap-1.5 overflow-hidden pr-2 cursor-pointer select-none h-full"
-          >
+          {/* 左側：大会名 */}
+          <div className="flex-1 flex items-center gap-1.5 overflow-hidden pr-2 cursor-default select-none h-full">
             <Trophy className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-            
-            <div className={cn(
-              "flex flex-col items-start justify-center transition-all duration-300",
-              "[@media(max-height:700px)]:max-w-0 [@media(max-height:700px)]:opacity-0 overflow-hidden",
-              isHeaderExpanded && "[@media(max-height:700px)]:max-w-[140px] [@media(max-height:700px)]:opacity-100"
-            )}>
-              <span className="text-[8px] font-black text-zinc-500 uppercase tracking-widest truncate w-full">
-                {state.tournamentName || (state.matchType === 'practice' ? '練習試合' : '大会未設定')}
-              </span>
-              <span className="text-[9px] font-bold text-zinc-600 dark:text-zinc-400 truncate w-full leading-none flex items-center gap-0.5 mt-0.5">
-                <MapPin className="w-2.5 h-2.5 text-rose-500 shrink-0" />
-                {state.venueName || "球場未設定"}
-              </span>
-            </div>
-
-            {/* 小画面でのみ表示されるタップ指示バッジ */}
-            <span className={cn(
-              "inline-flex items-center text-[7.5px] font-black text-primary bg-primary/10 border border-primary/20 rounded px-1 py-0.5 [@media(min-height:701px)]:hidden transition-all duration-300 shrink-0",
-              isHeaderExpanded && "max-w-0 opacity-0 px-0 py-0 border-none overflow-hidden"
-            )}>
-              詳細 ▾
+            <span className="text-[9px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest truncate">
+              {state.tournamentName || (state.matchType === 'practice' ? '練習試合' : '大会未設定')}
             </span>
           </div>
 

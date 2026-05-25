@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
-import { ChevronRight, ChevronDown, Zap } from "lucide-react";
+import { ChevronRight, ChevronDown, Zap, Calendar } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { SectionHeader } from "@/components/layout/SectionHeader";
@@ -47,7 +47,7 @@ export default function NewsGeneratorPage() {
   const [inningComment, setInningComment] = useState("");
   const [heroPlayer, setHeroPlayer] = useState("");
   const [summaryText, setSummaryText] = useState("");
-  const [isParamExpanded, setIsParamExpanded] = useState<boolean>(true);
+  const [isParamExpanded, setIsParamExpanded] = useState<boolean>(false);
 
   // 🏟️ スコアボード表示用チーム名の手動調整用
   const [firstTeamDisp, setFirstTeamDisp] = useState("");
@@ -332,8 +332,9 @@ export default function NewsGeneratorPage() {
 
         {/* 1. 試合の選択エリア (最上部) */}
         <div className="bg-white dark:bg-zinc-900/60 border border-zinc-200 dark:border-white/5 p-5 rounded-2xl shadow-md dark:shadow-2xl transition-all relative">
-          <label className="block text-[11px] font-black text-primary dark:text-primary tracking-widest uppercase mb-2.5">
-            🏟️ 試合の選択（予定試合を除く・進行中を優先）
+          <label className="flex items-center gap-1.5 text-[11px] font-black text-primary dark:text-primary tracking-widest uppercase mb-2.5">
+            <Calendar className="h-3.5 w-3.5" />
+            試合の選択（予定試合を除く・進行中を優先）
           </label>
           {loadingMatches ? (
             <div className="h-14 bg-zinc-200/50 dark:bg-white/5 animate-pulse rounded-xl" />
@@ -503,88 +504,54 @@ export default function NewsGeneratorPage() {
 
         {/* 試合選択後の編集エリア */}
         {selectedMatchId && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start animate-in fade-in duration-300">
-            
-            {/* 👈 左カラム: 速報設定 & 手動補足 */}
-            <div className="lg:col-span-5 space-y-6">
-              
-              {/* 試合概要カード */}
-              {loadingDetails ? (
-                <div className="bg-white/80 dark:bg-zinc-900/60 p-6 rounded-[var(--radius-xl)] border border-zinc-200/80 dark:border-white/5 animate-pulse space-y-4">
-                  <div className="h-6 bg-zinc-200/50 dark:bg-white/5 w-1/2 rounded" />
-                  <div className="h-4 bg-zinc-200/50 dark:bg-white/5 w-3/4 rounded" />
-                </div>
-              ) : matchDetail ? (
-                <div className="bg-white border border-zinc-200 dark:bg-zinc-900/60 dark:border-white/5 p-5 rounded-[var(--radius-xl)] shadow-md dark:shadow-none relative overflow-hidden">
-                  {matchDetail.status === "live" && (
-                    <div className="absolute top-4 right-4 flex items-center gap-1.5 bg-red-500/10 border border-red-500/30 text-red-500 text-[10px] font-black tracking-wider px-2 py-0.5 rounded-full">
-                      <span className="h-1.5 w-1.5 bg-red-500 rounded-full animate-ping" />
-                      LIVE 進行中
-                    </div>
-                  )}
-                  <h3 className="text-xs font-black text-primary tracking-widest mb-1.5">SELECTED MATCH</h3>
-                  <div className="text-base font-black text-zinc-900 dark:text-white flex items-center gap-2">
-                    {teamName} <span className="text-zinc-400 dark:text-zinc-500">vs</span> {opponentName}
-                  </div>
-                  <div className="mt-2 text-xs font-bold text-zinc-500 dark:text-zinc-400 flex flex-wrap gap-x-4 gap-y-1">
-                    <span>📅 {new Date(matchDetail.date).toLocaleDateString("ja-JP")}</span>
-                    <span>🏟️ {venueName || "グラウンド未設定"}</span>
-                    <span>⚾️ {matchDetail.matchType === "official" ? "公式戦" : "練習試合"}</span>
-                  </div>
-                </div>
-              ) : null}
+          <div className="max-w-3xl mx-auto space-y-6 animate-in fade-in duration-300">
+            {/* 速報パラメータパネル (折りたたみ式 & 速報タイプ切り替え内包) */}
+            <NewsParameterPanel
+              newsType={newsType}
+              setNewsType={setNewsType}
+              isParamExpanded={isParamExpanded}
+              setIsParamExpanded={setIsParamExpanded}
+              matchName={matchName}
+              setMatchName={setMatchName}
+              venueName={venueName}
+              setVenueName={setVenueName}
+              opponentName={opponentName}
+              setOpponentName={setOpponentName}
+              reporterName={reporterName}
+              handleReporterChange={handleReporterChange}
+              startTime={startTime}
+              setStartTime={setStartTime}
+              endTime={endTime}
+              setEndTime={setEndTime}
+              firstTeamDisp={firstTeamDisp}
+              setFirstTeamDisp={setFirstTeamDisp}
+              secondTeamDisp={secondTeamDisp}
+              setSecondTeamDisp={setSecondTeamDisp}
+              lineupComment={lineupComment}
+              setLineupComment={setLineupComment}
+              inningOptions={inningOptions}
+              selectedInningIndex={selectedInningIndex}
+              setSelectedInningIndex={setSelectedInningIndex}
+              inningComment={inningComment}
+              setInningComment={setInningComment}
+              heroPlayer={heroPlayer}
+              setHeroPlayer={setHeroPlayer}
+              summaryText={summaryText}
+              setSummaryText={setSummaryText}
+              showSurnameOnly={showSurnameOnly}
+              setShowSurnameOnly={setShowSurnameOnly}
+            />
 
-              {/* 速報パラメータパネル (折りたたみ式 & 速報タイプ切り替え内包) */}
-              <NewsParameterPanel
-                newsType={newsType}
-                setNewsType={setNewsType}
-                isParamExpanded={isParamExpanded}
-                setIsParamExpanded={setIsParamExpanded}
-                matchName={matchName}
-                setMatchName={setMatchName}
-                venueName={venueName}
-                setVenueName={setVenueName}
-                opponentName={opponentName}
-                setOpponentName={setOpponentName}
-                reporterName={reporterName}
-                handleReporterChange={handleReporterChange}
-                startTime={startTime}
-                setStartTime={setStartTime}
-                endTime={endTime}
-                setEndTime={setEndTime}
-                firstTeamDisp={firstTeamDisp}
-                setFirstTeamDisp={setFirstTeamDisp}
-                secondTeamDisp={secondTeamDisp}
-                setSecondTeamDisp={setSecondTeamDisp}
-                lineupComment={lineupComment}
-                setLineupComment={setLineupComment}
-                inningOptions={inningOptions}
-                selectedInningIndex={selectedInningIndex}
-                setSelectedInningIndex={setSelectedInningIndex}
-                inningComment={inningComment}
-                setInningComment={setInningComment}
-                heroPlayer={heroPlayer}
-                setHeroPlayer={setHeroPlayer}
-                summaryText={summaryText}
-                setSummaryText={setSummaryText}
-                showSurnameOnly={showSurnameOnly}
-                setShowSurnameOnly={setShowSurnameOnly}
-              />
-            </div>
-
-            {/* 👉 右カラム: テキストエディタ ＆ アクション */}
-            <div className="lg:col-span-7 space-y-6">
-              <NewsPreviewCard
-                editedText={editedText}
-                setEditedText={setEditedText}
-                loadingDetails={loadingDetails}
-                handleResetText={handleResetText}
-                handleCopy={handleCopy}
-                handleLineShare={handleLineShare}
-                copied={copied}
-              />
-            </div>
-
+            {/* 速報テキストプレビュー ＆ アクション */}
+            <NewsPreviewCard
+              editedText={editedText}
+              setEditedText={setEditedText}
+              loadingDetails={loadingDetails}
+              handleResetText={handleResetText}
+              handleCopy={handleCopy}
+              handleLineShare={handleLineShare}
+              copied={copied}
+            />
           </div>
         )}
 

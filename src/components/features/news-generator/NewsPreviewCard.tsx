@@ -31,7 +31,7 @@ export function NewsPreviewCard({
       <div className="flex items-center justify-between border-b border-zinc-100 dark:border-white/5 pb-3">
         <div className="flex items-center gap-2">
           <FileText className="h-4 w-4 text-primary" />
-          <h4 className="text-xs font-black text-zinc-900 dark:text-white tracking-wider">📝 速報テキスト（編集・手直し可能）</h4>
+          <h4 className="text-xs font-black text-zinc-900 dark:text-white tracking-wider">速報テキスト（編集・手直し可能）</h4>
         </div>
         
         <button
