@@ -1,11 +1,11 @@
-// src/components/layout/user-profile-menu.tsx
+// filepath: src/components/layout/user-profile-menu.tsx
 "use client";
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
-// 🌟 修正: 密度切り替え用のアイコン（Smartphone, Maximize）を追加インポート
-import { BellRing, LogOut, Settings, Sun, Moon, Monitor, Square, AppWindow, Circle, Smartphone, Maximize } from "lucide-react";
+// 🌟 修正: ultra用に「縮小」を意味する Shrink アイコンを追加
+import { BellRing, LogOut, Settings, Sun, Moon, Monitor, Square, AppWindow, Circle, Smartphone, Maximize, Shrink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -17,7 +17,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { UserSession } from "@/types/auth";
-// 🌟 追加: DensityProviderからフックをインポート
 import { useDensity } from "@/components/providers/density-provider";
 import type { Density } from "@/components/providers/density-provider";
 
@@ -43,8 +42,9 @@ const APPEARANCES = [
   { id: "system", icon: Monitor, label: "System" },
 ];
 
-// 🌟 追加: Density（密度）の選択肢を定義
+// 🌟 修正: ultraを追加し、サイズが小さい順（高密度順）に並び替えて直感的な動線に
 const DENSITIES = [
+  { id: "ultra", icon: Shrink, label: "Ultra" },
   { id: "compact", icon: Smartphone, label: "Compact" },
   { id: "standard", icon: Monitor, label: "Standard" },
   { id: "comfortable", icon: Maximize, label: "Comfort" },
@@ -59,7 +59,6 @@ interface UserProfileMenuProps {
 export function UserProfileMenu({ user, isLoading, onLogout }: UserProfileMenuProps) {
   const router = useRouter();
   const { theme, setTheme } = useTheme();
-  // 🌟 追加: 密度の状態を取得・更新するフック
   const { density, setDensity } = useDensity();
 
   const [activeThemeColor, setActiveThemeColor] = useState<string>("blue");
@@ -149,7 +148,7 @@ export function UserProfileMenu({ user, isLoading, onLogout }: UserProfileMenuPr
 
         <DropdownMenuSeparator className="bg-border/50 my-1" />
 
-        {/* 🌟 テーマ・UI設定エリア */}
+        {/* テーマ・UI設定エリア */}
         <div className="px-2 py-3 space-y-6">
 
           {/* 🎨 カラーテーマ */}
@@ -211,7 +210,7 @@ export function UserProfileMenu({ user, isLoading, onLogout }: UserProfileMenuPr
                 return (
                   <button
                     key={d.id}
-                    // 💡 anyキャストで型エラーを回避しつつ安全に更新
+                    // 安全・確実: Asキャストを用いて厳格にDensity型としてハンドリング
                     onClick={(e) => { e.preventDefault(); setDensity(d.id as Density); }}
                     className={cn(
                       "flex-1 flex flex-col items-center justify-center py-2.5 gap-1.5 rounded-xl border transition-all active:scale-95",
