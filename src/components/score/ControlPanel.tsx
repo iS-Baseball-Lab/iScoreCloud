@@ -140,17 +140,17 @@ export function ControlPanel() {
   return (
     <div className="h-full w-full flex flex-col gap-1.5 p-0 select-none items-stretch">
       
-      {/* 🚀 1段目 (アウト・ストライク・ボール)：高さ 38% */}
+      {/* 🚀 1段目 (投球・カウント用基本アクション)：高さ 38% */}
       <div className="grid grid-cols-4 gap-1.5 h-[38%] shrink-0">
-        {/* Out */}
+        {/* Ball */}
         <button 
           type="button" 
-          onClick={() => setOutOpen(true)} 
+          onClick={() => recordPitch("ball")} 
           disabled={isDisabled}
-          className="h-full bg-rose-600 text-white rounded-2xl flex flex-col items-center justify-center shadow-md border-b-2 border-rose-800 active:scale-95 transition-all"
+          className="h-full bg-emerald-600 text-white rounded-2xl flex flex-col items-center justify-center shadow-sm border-b-2 border-emerald-800 active:scale-95 transition-all cursor-pointer"
         >
-          <span className="text-xl font-black tracking-tighter leading-none">O</span>
-          <span className="text-[9px] font-bold opacity-80 mt-0.5">アウト</span>
+          <span className="text-xl font-black tracking-tighter leading-none">B</span>
+          <span className="text-[9px] font-bold opacity-80 mt-0.5">ボール</span>
         </button>
 
         {/* Strike (見逃し) */}
@@ -158,7 +158,7 @@ export function ControlPanel() {
           type="button" 
           onClick={() => recordPitch("strike")} 
           disabled={isDisabled}
-          className="h-full bg-amber-500 text-white rounded-2xl flex flex-col items-center justify-center shadow-md border-b-2 border-amber-700 active:scale-95 transition-all"
+          className="h-full bg-amber-500 text-white rounded-2xl flex flex-col items-center justify-center shadow-sm border-b-2 border-amber-700 active:scale-95 transition-all cursor-pointer"
         >
           <span className="text-xl font-black tracking-tighter leading-none">S</span>
           <span className="text-[9px] font-bold opacity-80 mt-0.5">見逃</span>
@@ -169,94 +169,82 @@ export function ControlPanel() {
           type="button" 
           onClick={() => recordPitch("swinging_strike")} 
           disabled={isDisabled}
-          className="h-full bg-amber-500 text-white rounded-2xl flex flex-col items-center justify-center shadow-md border-b-2 border-amber-700 active:scale-95 transition-all"
+          className="h-full bg-amber-500 text-white rounded-2xl flex flex-col items-center justify-center shadow-sm border-b-2 border-amber-700 active:scale-95 transition-all cursor-pointer"
         >
           <span className="text-xl font-black tracking-tighter leading-none">S</span>
           <span className="text-[9px] font-bold opacity-80 mt-0.5">空振</span>
         </button>
 
-        {/* Ball */}
+        {/* Foul */}
         <button 
           type="button" 
-          onClick={() => recordPitch("ball")} 
+          onClick={() => recordPitch("foul")} 
           disabled={isDisabled}
-          className="h-full bg-emerald-600 text-white rounded-2xl flex flex-col items-center justify-center shadow-md border-b-2 border-emerald-800 active:scale-95 transition-all"
+          className="h-full bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 border border-zinc-200 dark:border-zinc-700 rounded-2xl flex flex-col items-center justify-center shadow-sm active:scale-95 transition-all cursor-pointer"
         >
-          <span className="text-xl font-black tracking-tighter leading-none">B</span>
-          <span className="text-[9px] font-bold opacity-80 mt-0.5">ボール</span>
+          <span className="text-xl font-black tracking-tighter leading-none">F</span>
+          <span className="text-[9px] font-bold opacity-80 mt-0.5">ファウル</span>
         </button>
       </div>
 
-      {/* 🚀 2段目 (安打モーダル連動)：高さ 38% */}
+      {/* 🚀 2段目 (主要プレイ結果アクション - 特大サイズ)：高さ 38% */}
       <div className="grid grid-cols-4 gap-1.5 h-[38%] shrink-0">
-        <button 
-          type="button" 
-          onClick={() => openFieldWithPreset("HR")} 
-          disabled={isDisabled}
-          className="h-full bg-rose-600 text-white rounded-2xl flex flex-col items-center justify-center shadow-md border-b-2 border-rose-800 active:scale-95 transition-all"
-        >
-          <span className="text-xl font-black tracking-tighter leading-none">HR</span>
-          <span className="text-[9px] font-bold opacity-80 mt-0.5">本塁打</span>
-        </button>
-        <button 
-          type="button" 
-          onClick={() => openFieldWithPreset("3B")} 
-          disabled={isDisabled}
-          className="h-full bg-blue-600 text-white rounded-2xl flex flex-col items-center justify-center shadow-md border-b-2 border-blue-800 active:scale-95 transition-all"
-        >
-          <span className="text-xl font-black tracking-tighter leading-none">3B</span>
-          <span className="text-[9px] font-bold opacity-80 mt-0.5">三塁打</span>
-        </button>
-        <button 
-          type="button" 
-          onClick={() => openFieldWithPreset("2B")} 
-          disabled={isDisabled}
-          className="h-full bg-blue-600 text-white rounded-2xl flex flex-col items-center justify-center shadow-md border-b-2 border-blue-800 active:scale-95 transition-all"
-        >
-          <span className="text-xl font-black tracking-tighter leading-none">2B</span>
-          <span className="text-[9px] font-bold opacity-80 mt-0.5">二塁打</span>
-        </button>
+        {/* 打球 (インプレイ) */}
         <button 
           type="button" 
           onClick={() => openFieldWithPreset("1B")} 
           disabled={isDisabled}
-          className="h-full bg-blue-600 text-white rounded-2xl flex flex-col items-center justify-center shadow-md border-b-2 border-blue-800 active:scale-95 transition-all"
+          className="col-span-3 h-full bg-blue-600 hover:bg-blue-700 text-white rounded-2xl flex flex-col items-center justify-center shadow-sm border-b-2 border-blue-800 active:scale-95 transition-all cursor-pointer"
         >
-          <span className="text-xl font-black tracking-tighter leading-none">1B</span>
-          <span className="text-[9px] font-bold opacity-80 mt-0.5">単打</span>
+          <span className="text-xl font-black tracking-widest leading-none">打球 (インプレイ)</span>
+          <span className="text-[9px] font-bold opacity-80 mt-1">安打・ゴロ・飛球などを記録</span>
+        </button>
+
+        {/* アウト詳細 (O) */}
+        <button 
+          type="button" 
+          onClick={() => setOutOpen(true)} 
+          disabled={isDisabled}
+          className="col-span-1 h-full bg-rose-600 hover:bg-rose-700 text-white rounded-2xl flex flex-col items-center justify-center shadow-sm border-b-2 border-rose-800 active:scale-95 transition-all cursor-pointer"
+        >
+          <span className="text-xl font-black tracking-tighter leading-none">O</span>
+          <span className="text-[9px] font-bold opacity-80 mt-0.5">アウト詳細</span>
         </button>
       </div>
 
-      {/* 🚀 3段目 (ユーティリティ)：高さ 24% */}
-      <div className="flex-1 grid grid-cols-5 gap-1.5 min-h-0 text-zinc-500 h-[24%]">
-        <button 
-          onClick={() => recordPitch("foul")} 
-          disabled={isDisabled}
-          className="h-full rounded-2xl border-2 border-zinc-200 dark:border-zinc-800 font-black text-[10px] uppercase active:bg-zinc-100 dark:active:bg-zinc-900 transition-colors"
-        >
-          Foul
-        </button>
+      {/* 🚀 3段目 (特殊出塁 & ユーティリティ)：高さ 24% */}
+      <div className="flex-1 grid grid-cols-4 gap-1.5 min-h-0 text-zinc-500 h-[24%]">
+        {/* 四死球 */}
         <button 
           onClick={() => recordPitch("hbp")} 
           disabled={isDisabled}
-          className="h-full rounded-2xl border-2 border-amber-500/30 text-amber-600 dark:text-amber-400 font-black text-[10px] uppercase active:bg-amber-500/10 transition-colors"
+          className="h-full rounded-2xl border-2 border-amber-500/30 text-amber-600 dark:text-amber-400 font-black text-[10px] sm:text-xs active:bg-amber-500/10 transition-all cursor-pointer flex flex-col items-center justify-center gap-0.5 leading-none"
         >
-          HBP
+          <span className="font-bold">四死球</span>
+          <span className="text-[7.5px] opacity-70">HBP / WALK</span>
         </button>
+
+        {/* 失策 (Error) */}
         <button 
           onClick={() => openFieldWithPreset("E")} 
           disabled={isDisabled}
-          className="h-full rounded-2xl border-2 border-zinc-200 dark:border-zinc-800 font-black text-[10px] uppercase active:bg-zinc-100 dark:active:bg-zinc-900 transition-colors"
+          className="h-full rounded-2xl border-2 border-zinc-200 dark:border-zinc-800 font-black text-[10px] sm:text-xs text-zinc-700 dark:text-zinc-300 active:bg-zinc-100 dark:active:bg-zinc-900 transition-all cursor-pointer flex flex-col items-center justify-center gap-0.5 leading-none"
         >
-          Error
+          <span className="font-bold">失策</span>
+          <span className="text-[7.5px] opacity-70">ERROR</span>
         </button>
+
+        {/* Undo */}
         <button 
           onClick={undo} 
           disabled={isDisabled}
-          className="h-full bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 rounded-2xl text-[10px] sm:text-[12px] font-black uppercase tracking-widest active:bg-zinc-300 transition-colors"
+          className="h-full bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 rounded-2xl text-[10px] sm:text-xs font-black active:bg-zinc-300 transition-all cursor-pointer flex flex-col items-center justify-center gap-0.5 leading-none"
         >
-          Undo
+          <span className="font-bold">戻す</span>
+          <span className="text-[7.5px] opacity-70">UNDO</span>
         </button>
+
+        {/* 試合終了 */}
         <button 
           onClick={() => {
             if(window.confirm("試合を終了し、結果を確定しますか？")) {
@@ -264,9 +252,10 @@ export function ControlPanel() {
             }
           }} 
           disabled={isDisabled}
-          className="h-full bg-rose-500/10 text-rose-600 dark:text-rose-400 border-2 border-rose-500/20 rounded-2xl text-[9px] sm:text-[10px] font-black uppercase tracking-widest active:bg-rose-500/20 leading-tight transition-colors"
+          className="h-full bg-rose-50/50 hover:bg-rose-100/50 dark:bg-rose-950/20 dark:hover:bg-rose-950/30 text-rose-600 dark:text-rose-400 border-2 border-rose-500/20 rounded-2xl text-[10px] sm:text-xs font-black active:bg-rose-500/20 transition-all cursor-pointer flex flex-col items-center justify-center gap-0.5 leading-tight"
         >
-          試合終了
+          <span className="font-bold">試合終了</span>
+          <span className="text-[7.5px] opacity-70">FINISH</span>
         </button>
       </div>
 
