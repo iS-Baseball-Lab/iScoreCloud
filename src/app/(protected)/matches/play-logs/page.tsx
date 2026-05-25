@@ -4,7 +4,21 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Edit2, Trash2, History } from "lucide-react";
-import { PlayLog } from "@/types/play-log";
+interface PlayLog {
+  id: string;
+  gameId: string;
+  gameTitle: string;
+  inning: number;
+  topBottom: "top" | "bottom";
+  batterName: string;
+  pitcherName: string;
+  balls: number;
+  strikes: number;
+  outs: number;
+  result: string;
+  description: string;
+  createdAt: string;
+}
 
 // ダミーデータ
 const MOCK_PLAY_LOGS: PlayLog[] = [

@@ -4,7 +4,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useScore } from "@/contexts/ScoreContext";
 import { cn } from "@/lib/utils";
-import { Users } from "lucide-react";
+import { Users, Trophy, MapPin } from "lucide-react";
 
 export function Scoreboard() {
   // 💡 Contextから最新の状態と関数を取得
@@ -95,40 +95,41 @@ export function Scoreboard() {
     <div className="w-full bg-background select-none font-sans p-1">
       <div className="flex flex-col rounded-lg overflow-hidden border border-zinc-300 dark:border-zinc-700 shadow-sm">
 
-        {/* 🚀 アコーディオン・スマートヘッダー：大会名・球場（小画面で折りたたみ可能） */}
-        <div 
-          className={cn(
-            "flex items-center justify-between px-3 bg-muted/20 border-b border-zinc-200 dark:border-zinc-800 transition-all duration-300 ease-in-out select-none",
-            "h-6 opacity-100", // 通常画面時のサイズ
-            "[@media(max-height:700px)]:h-0 [@media(max-height:700px)]:opacity-0 [@media(max-height:700px)]:border-b-0 overflow-hidden", // 小画面時の折りたたみ
-            isHeaderExpanded && "[@media(max-height:700px)]:h-6 [@media(max-height:700px)]:opacity-100 [@media(max-height:700px)]:border-b" // 小画面時の展開
-          )}
-        >
-          <span className="text-[8px] font-black text-zinc-500 uppercase tracking-widest truncate">
-            🏆 {state.tournamentName || (state.matchType === 'practice' ? '練習試合' : '大会未設定')}
-          </span>
-          <span className="text-[9px] font-bold text-zinc-650 dark:text-zinc-400 truncate">
-            📍 {state.venueName || "球場未設定"}
-          </span>
-        </div>
-
-        {/* 🚀 ヘッダーメイン行：対戦相手・スタメンボタン */}
-        <div className="flex items-center justify-between px-3 py-1 border-b border-zinc-300 dark:border-zinc-700 bg-muted/40 h-8 shrink-0">
-          {/* 左側：小画面でのタップ指示ラベル */}
-          <div className="flex-1 flex items-center pr-2 [@media(min-height:701px)]:hidden">
-            <button
-              onClick={toggleHeader}
-              className="text-[8px] font-black text-primary/80 bg-primary/10 border border-primary/20 rounded px-1.5 py-0.5 active:scale-95 transition-all select-none"
-            >
-              {isHeaderExpanded ? "閉じる" : "詳細情報"}
-            </button>
-          </div>
-
-          {/* 中央：対戦相手（タップで開閉可能） */}
+        {/* 🚀 ヘッダーメイン行：対戦相手・スタメンボタン (アコーディオン詳細をインラインに統合) */}
+        <div className="flex items-center justify-between px-3 py-1.5 border-b border-zinc-300 dark:border-zinc-700 bg-muted/40 h-10 shrink-0">
+          
+          {/* 左側：大会名・球場（2段コンパクト表示 ＆ 小画面タップ展開） */}
           <div 
             onClick={toggleHeader}
-            className="flex-none px-2 text-xs md:text-sm font-black text-foreground tracking-widest whitespace-nowrap cursor-pointer hover:opacity-85 active:scale-[0.98] transition-all select-none"
+            className="flex-1 flex items-center gap-1.5 overflow-hidden pr-2 cursor-pointer select-none h-full"
           >
+            <Trophy className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+            
+            <div className={cn(
+              "flex flex-col items-start justify-center transition-all duration-300",
+              "[@media(max-height:700px)]:max-w-0 [@media(max-height:700px)]:opacity-0 overflow-hidden",
+              isHeaderExpanded && "[@media(max-height:700px)]:max-w-[140px] [@media(max-height:700px)]:opacity-100"
+            )}>
+              <span className="text-[8px] font-black text-zinc-500 uppercase tracking-widest truncate w-full">
+                {state.tournamentName || (state.matchType === 'practice' ? '練習試合' : '大会未設定')}
+              </span>
+              <span className="text-[9px] font-bold text-zinc-600 dark:text-zinc-400 truncate w-full leading-none flex items-center gap-0.5 mt-0.5">
+                <MapPin className="w-2.5 h-2.5 text-rose-500 shrink-0" />
+                {state.venueName || "球場未設定"}
+              </span>
+            </div>
+
+            {/* 小画面でのみ表示されるタップ指示バッジ */}
+            <span className={cn(
+              "inline-flex items-center text-[7.5px] font-black text-primary bg-primary/10 border border-primary/20 rounded px-1 py-0.5 [@media(min-height:701px)]:hidden transition-all duration-300 shrink-0",
+              isHeaderExpanded && "max-w-0 opacity-0 px-0 py-0 border-none overflow-hidden"
+            )}>
+              詳細 ▾
+            </span>
+          </div>
+
+          {/* 中央：対戦相手 */}
+          <div className="flex-none px-2 text-xs md:text-sm font-black text-foreground tracking-widest whitespace-nowrap select-none">
             <span className="text-[9px] text-muted-foreground mr-1 font-bold">vs</span>
             {state.opponentTeamName || "相手チーム"}
           </div>
@@ -137,7 +138,7 @@ export function Scoreboard() {
           <div className="flex-1 flex justify-end items-center pl-2">
             <button 
               onClick={() => window.location.href = `/matches/lineup?id=${state.matchId}`}
-              className="flex items-center gap-1 px-2 py-0.5 bg-primary/10 text-primary rounded-full hover:bg-primary/20 transition-colors shadow-sm active:scale-[0.98]"
+              className="flex items-center gap-1.5 px-2.5 py-1 bg-primary/10 text-primary rounded-full hover:bg-primary/20 transition-colors shadow-sm active:scale-[0.98]"
               title="スタメン設定"
             >
               <Users className="w-3 h-3" strokeWidth={2.5} />

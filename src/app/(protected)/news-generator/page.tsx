@@ -67,6 +67,15 @@ export default function NewsGeneratorPage() {
 
     const storedReporter = localStorage.getItem("iscore_reporterName");
     if (storedReporter) setReporterName(storedReporter);
+
+    // 💡 クエリパラメータから試合IDを読み込み、自動選択
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const qMatchId = params.get("matchId") || params.get("id");
+      if (qMatchId) {
+        setSelectedMatchId(qMatchId);
+      }
+    }
   }, []);
 
   const handleReporterChange = (name: string) => {
