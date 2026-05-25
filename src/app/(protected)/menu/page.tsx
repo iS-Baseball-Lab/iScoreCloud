@@ -41,7 +41,7 @@ export default function MenuPage() {
         { icon: Activity, label: "ライブスコア入力", href: "/matches/create?mode=live" },
         { icon: Timer, label: "クイックスコア入力", href: "/matches/create?mode=quick" },
         { icon: BookOpen, label: "スコアブック", href: "/matches/scorebook" },
-        { icon: History, label: "プレイログ", href: "/play-logs" }, // 🔥 スコアブックのすぐ下に配置
+        { icon: History, label: "プレイログ", href: "/matches/play-logs" }, // 🔥 スコアブックのすぐ下に配置
       ],
     },
     {
