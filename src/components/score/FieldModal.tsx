@@ -22,7 +22,7 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
   const [selectedPos, setSelectedPos] = useState<string | null>(null);
   const [hitType, setHitType] = useState<string>("1B"); // デフォルトを単打 (1B) に変更
   const [course, setCourse] = useState<"front" | "line" | "over" | null>(null); // 前, 線際, オーバー
-  const [trajectory, setTrajectory] = useState<"GO" | "FO" | "LO" | null>(null); // ゴロ, フライ, ライナー
+  const [trajectory, setTrajectory] = useState<"GO" | "FO" | "LO" | "BUNT" | null>(null); // ゴロ, フライ, ライナー, バント
   const [rbi, setRbi] = useState(0);
   const [showRbiDetail, setShowRbiDetail] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -110,11 +110,12 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
     { id: "FC", label: "野選", color: "bg-zinc-500/10" },
   ];
 
-  // 打球の性質 (ゴロ, フライ, ライナー)
+  // 打球の性質 (ゴロ, フライ, ライナー, バント)
   const trajectories = [
     { id: "GO", label: "ゴロ" },
     { id: "FO", label: "フライ" },
     { id: "LO", label: "ライナー" },
+    { id: "BUNT", label: "バント" },
   ] as const;
 
   // 打球コースの修飾オプション (前, 線際, オーバー)

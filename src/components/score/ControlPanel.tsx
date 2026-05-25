@@ -126,7 +126,7 @@ export function ControlPanel() {
 
       // 打球性質マッピング
       const trajMap: Record<string, string> = {
-        "GO": "ゴロ", "FO": "飛", "LO": "直"
+        "GO": "ゴロ", "FO": "飛", "LO": "直", "BUNT": "バ"
       };
 
       // 結果種別マッピング
@@ -173,7 +173,7 @@ export function ControlPanel() {
       };
 
       const trajMap: Record<string, string> = {
-        "GO": "ゴロ", "FO": "フライ", "LO": "ライナー"
+        "GO": "ゴロ", "FO": "フライ", "LO": "ライナー", "BUNT": "バント"
       };
 
       const coursePrefix = course ? (courseMap[course] || "") : "";
