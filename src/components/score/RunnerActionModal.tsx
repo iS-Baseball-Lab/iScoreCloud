@@ -12,7 +12,7 @@ interface RunnerActionModalProps {
   baseNum: 1 | 2 | 3;
   playerName: string;
   onSelectAction: (
-    action: "steal_success" | "steal_out" | "pickoff_out" | "pickoff_safe" | "wp_advance" | "pb_advance" | "balk_advance" | "error_advance" | "clear"
+    action: "steal_success" | "steal_out" | "pickoff_out" | "pickoff_safe" | "wp_advance" | "pb_advance" | "balk_advance" | "error_advance" | "hit_advance" | "clear"
   ) => void;
 }
 
@@ -34,6 +34,12 @@ export function RunnerActionModal({
   if (!mounted) return null;
 
   const actions = [
+    {
+      id: "hit_advance",
+      label: "🏃‍♂️ 進塁 (打球・その他)",
+      desc: "打球や犠打、野手選択などのプレイで次の塁へ進みます",
+      color: "bg-blue-50/50 dark:bg-blue-950/20 hover:bg-blue-100 dark:hover:bg-blue-950/30 border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-300",
+    },
     {
       id: "steal_success",
       label: "🏃‍♂️ 盗塁成功",
