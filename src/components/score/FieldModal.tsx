@@ -73,29 +73,29 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
     setRbi(calculateDefaultRbi(type));
   };
 
-  // 🏟️ 野球場の各エリアボタンの定義 (left, top は % 位置)
+  // 🏟️ 野球場の各エリアボタンの定義 (left, top は % 位置。精密幾何学グラフィックと100%同期)
   const fieldAreas = [
     // 外野
-    { id: "7", label: "左", name: "左翼", x: 15, y: 18 },
-    { id: "78", label: "左中", name: "左中間", x: 32, y: 13 },
-    { id: "8", label: "中", name: "中堅", x: 50, y: 11 },
-    { id: "89", label: "右中", name: "右中間", x: 68, y: 13 },
-    { id: "9", label: "右", name: "右翼", x: 85, y: 18 },
+    { id: "7", label: "左", name: "左翼", x: 20, y: 25 },
+    { id: "78", label: "左中", name: "左中間", x: 35, y: 18 },
+    { id: "8", label: "中", name: "中堅", x: 50, y: 15 },
+    { id: "89", label: "右中", name: "右中間", x: 65, y: 18 },
+    { id: "9", label: "右", name: "右翼", x: 80, y: 25 },
     
     // 内野の間
-    { id: "56", label: "三遊", name: "三遊間", x: 31, y: 46 },
-    { id: "46", label: "二遊", name: "二遊間", x: 50, y: 39 },
-    { id: "34", label: "一二", name: "一二間", x: 69, y: 46 },
+    { id: "56", label: "三遊", name: "三遊間", x: 30, y: 52 },
+    { id: "46", label: "二遊", name: "二遊間", x: 50, y: 45 },
+    { id: "34", label: "一二", name: "一二間", x: 70, y: 52 },
     
     // 内野守備
-    { id: "5", label: "三", name: "三塁", x: 21, y: 61 },
-    { id: "6", label: "遊", name: "遊撃", x: 39, y: 51 },
-    { id: "4", label: "二", name: "二塁", x: 61, y: 51 },
-    { id: "3", label: "一", name: "一塁", x: 79, y: 61 },
+    { id: "5", label: "三", name: "三塁", x: 25, y: 68 },
+    { id: "6", label: "遊", name: "遊撃", x: 38, y: 58 },
+    { id: "4", label: "二", name: "二塁", x: 62, y: 58 },
+    { id: "3", label: "一", name: "一塁", x: 75, y: 68 },
     
     // バッテリー
-    { id: "1", label: "投", name: "投手", x: 50, y: 64 },
-    { id: "2", label: "捕", name: "捕手", x: 50, y: 88 },
+    { id: "1", label: "投", name: "投手", x: 50, y: 68 },
+    { id: "2", label: "捕", name: "捕手", x: 50, y: 86 },
   ];
 
   // 結果種別 (Safe Results Only - ゴロアウトや犠打などのアウト系は排除)
@@ -199,28 +199,33 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
             
             <div className="relative w-full aspect-square border border-zinc-100 dark:border-zinc-800/80 rounded-2xl bg-emerald-50/10 dark:bg-zinc-900/10 overflow-hidden shadow-inner">
               
-              {/* 美しい野球場グラフィック (SVG背景) */}
+              {/* 美しい野球場グラフィック (幾何学的に精密なSVG背景) */}
               <svg viewBox="0 0 200 200" className="absolute inset-0 w-full h-full select-none pointer-events-none">
-                {/* 外野の芝生 */}
-                <path d="M 30,170 A 100,100 0 0,1 170,170 L 100,170 Z" className="fill-emerald-500/15 dark:fill-emerald-950/20 stroke-emerald-500/20 dark:stroke-emerald-800/20 stroke-1" />
-                <path d="M 45,150 A 80,80 0 0,1 155,150 L 100,170 Z" className="fill-emerald-500/5 dark:fill-emerald-900/10" />
+                {/* 外野の芝生 (ホーム 100,170 を中心とする半径 140 の美しい扇形) */}
+                <path d="M 1,71 A 140,140 0 0,1 199,71 L 100,170 Z" className="fill-emerald-500/15 dark:fill-emerald-950/20 stroke-emerald-500/25 dark:stroke-emerald-800/30 stroke-[1.5]" />
                 
-                {/* 内野の芝生 */}
-                <path d="M 65,135 L 100,100 L 135,135 L 100,170 Z" className="fill-amber-500/15 dark:fill-amber-950/25 stroke-amber-500/30 dark:stroke-amber-800/20 stroke-1" />
+                {/* 内野の土・ダイヤモンド (ホーム 100,170 を中心とする半径 78 の扇形) */}
+                <path d="M 45,115 A 78,78 0 0,1 155,115 L 100,170 Z" className="fill-amber-500/10 dark:fill-amber-950/20 stroke-amber-500/20 dark:stroke-amber-800/15 stroke-1" />
                 
-                {/* 内野ダイヤモンド (白線) */}
-                <polygon points="100,170 145,135 100,100 55,135" className="fill-none stroke-zinc-300 dark:stroke-zinc-800 stroke-[1.5] stroke-dasharray-[2]" />
+                {/* 内野ダイヤモンド白線 (45度傾斜でベースと完璧に合致) */}
+                <polygon points="100,170 128,142 100,114 72,142" className="fill-none stroke-zinc-300 dark:stroke-zinc-800 stroke-[1.5] stroke-dasharray-[2]" />
                 
-                {/* ホームプレート、マウンド、ベース */}
-                <circle cx="100" cy="170" r="3" className="fill-white stroke-zinc-400 stroke-[0.5]" />
-                <circle cx="100" cy="135" r="4.5" className="fill-zinc-300 dark:fill-zinc-800 stroke-zinc-400 dark:stroke-zinc-700 stroke-[0.5]" />
-                <rect x="142" y="132" width="6" height="6" className="fill-white stroke-zinc-400 stroke-[0.5] rotate-45" />
-                <rect x="97" y="97" width="6" height="6" className="fill-white stroke-zinc-400 stroke-[0.5] rotate-45" />
-                <rect x="52" y="132" width="6" height="6" className="fill-white stroke-zinc-400 stroke-[0.5] rotate-45" />
+                {/* マウンド */}
+                <circle cx="100" cy="142" r="5" className="fill-amber-500/5 dark:fill-amber-950/10 stroke-zinc-300 dark:stroke-zinc-700 stroke-[0.5]" />
                 
-                {/* バッターボックスとファウルライン */}
-                <line x1="100" y1="170" x2="15" y2="85" className="stroke-zinc-300 dark:stroke-zinc-800 stroke-[1]" />
-                <line x1="100" y1="170" x2="185" y2="85" className="stroke-zinc-300 dark:stroke-zinc-800 stroke-[1]" />
+                {/* 各ベース (SVGのtransform属性を使って完璧に45度回転させてマッピング) */}
+                {/* 本塁 */}
+                <polygon points="100,173 103,170 100,167 97,170" className="fill-white stroke-zinc-400 stroke-[0.5]" />
+                {/* 一塁 */}
+                <rect x="125.5" y="139.5" width="5" height="5" transform="rotate(45, 128, 142)" className="fill-white stroke-zinc-400 stroke-[0.5]" />
+                {/* 二塁 */}
+                <rect x="97.5" y="111.5" width="5" height="5" transform="rotate(45, 100, 114)" className="fill-white stroke-zinc-400 stroke-[0.5]" />
+                {/* 三塁 */}
+                <rect x="69.5" y="139.5" width="5" height="5" transform="rotate(45, 72, 142)" className="fill-white stroke-zinc-400 stroke-[0.5]" />
+                
+                {/* 外野フェンスポールへの45度ファウルライン */}
+                <line x1="100" y1="170" x2="1" y2="71" className="stroke-zinc-300 dark:stroke-zinc-800 stroke-[1.5]" />
+                <line x1="100" y1="170" x2="199" y2="71" className="stroke-zinc-300 dark:stroke-zinc-800 stroke-[1.5]" />
               </svg>
 
               {/* 物理配置された打球エリアバッジボタン */}
