@@ -828,7 +828,14 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
       const isNotAtBat = ["得点", "盗塁", "暴投", "ボーク", "守備交代", "走者状況変更"].includes(result);
       const isAtBatEnd = !isNotAtBat;
 
-      const newOuts = prev.outs + (isAtBatEnd && (result.includes("アウト") || result.includes("犠") || result.includes("ゴロ") || result.includes("飛") || result.includes("直") || result.includes("併殺") || result.includes("三振")) ? 1 : 0);
+      // 💡 安打・出塁系であるかどうかの判定 (アウトカウントの誤加算防止)
+      const isHit = result.endsWith("安") || result.endsWith("二") || result.endsWith("三") || result.endsWith("本") || 
+                    ["単打", "二塁打", "三塁打", "本塁打"].includes(result);
+      const isError = result.endsWith("失") || result === "エラー";
+      const isFieldersChoice = result.endsWith("選") || result === "野選";
+      const isSafe = isHit || isError || isFieldersChoice;
+
+      const newOuts = prev.outs + (isAtBatEnd && !isSafe && (result.includes("アウト") || result.includes("犠") || result.includes("ゴロ") || result.includes("飛") || result.includes("直") || result.includes("併殺") || result.includes("三振")) ? 1 : 0);
       const isInningChange = newOuts >= 3;
 
       let newMyBattingIndex = prev.myBattingIndex;
