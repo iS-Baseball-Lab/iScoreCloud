@@ -37,7 +37,10 @@ export function ControlPanel() {
     let mappedString = "";
 
     if (rawResult.includes("-")) {
-      const [pos, outType] = rawResult.split("-");
+      const parts = rawResult.split("-");
+      const pos = parts[0];
+      const outType = parts[parts.length - 1];
+      const isFoul = parts.includes("FOUL");
       
       const posMap: Record<string, string> = {
         "1": "投", "2": "捕", "3": "一", "4": "二", "5": "三",
@@ -57,8 +60,11 @@ export function ControlPanel() {
       };
 
       const posChar = posMap[pos] || pos;
+      const foulChar = isFoul ? "邪" : "";
       const outChar = outMap[outType] || outType;
-      mappedString = `${posChar}${outChar}`;
+      
+      // ポジション + 邪 + 飛/直 などの順に結合 (例: 捕邪飛)
+      mappedString = `${posChar}${foulChar}${outChar}`;
     } else {
       const outType = rawResult;
       const quickMap: Record<string, string> = {
