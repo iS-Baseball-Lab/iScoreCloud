@@ -182,9 +182,13 @@ export default function NewsGeneratorPage() {
       setOpponentName(matchDetail.opponent || "");
       setVenueName(matchDetail.surfaceDetails || matchDetail.venueName || "");
       
-      const type = matchDetail.matchType === "official" ? "公式戦" : "OP戦";
-      const tournament = matchDetail.tournamentName ? `（${matchDetail.tournamentName}）` : "";
-      setMatchName(`${type}${tournament}`);
+      if (matchDetail.matchType === "official") {
+        setMatchName(matchDetail.tournamentName || "公式戦");
+      } else {
+        const type = "OP戦";
+        const tournament = matchDetail.tournamentName ? `（${matchDetail.tournamentName}）` : "";
+        setMatchName(`${type}${tournament}`);
+      }
       
       setStartTime(matchDetail.startTime || "");
       setEndTime(matchDetail.endTime || "");

@@ -1,7 +1,7 @@
 // filepath: src/components/features/news-generator/NewsParameterPanel.tsx
 import React, { useState } from "react";
 import { 
-  Sparkles, ChevronRight, ChevronDown, Zap, Users, Trophy, Activity,
+  ChevronRight, ChevronDown, Zap, Users, Trophy, Activity,
   User, MessageSquare, Award, FileText, Settings, Shield
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -95,6 +95,21 @@ export function NewsParameterPanel({
   return (
     <div className="space-y-6">
       
+      {/* 🚀 常時表示の「速報担当者」入力カード (薄い影 shadow-sm) */}
+      <div className="bg-white border border-zinc-200 dark:bg-zinc-900/60 dark:border-white/5 p-5 rounded-[var(--radius-xl)] shadow-sm dark:shadow-none space-y-3">
+        <label className="flex items-center gap-1.5 text-[10.5px] font-black text-zinc-500 dark:text-zinc-400 tracking-wider uppercase">
+          <User className="h-3.5 w-3.5 text-primary" />
+          速報担当者
+        </label>
+        <input
+          type="text"
+          value={reporterName}
+          onChange={(e) => handleReporterChange(e.target.value)}
+          placeholder="例: 赤羽  橋本"
+          className="w-full h-10 bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 text-zinc-900 dark:text-white text-xs px-3 rounded-xl outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-bold shadow-sm"
+        />
+      </div>
+
       {/* 🚀 1. 速報パラメータの設定欄 (アコーディオン。デフォルト閉。薄い影 shadow-sm) */}
       <div className="bg-white border border-zinc-200 dark:bg-zinc-900/60 dark:border-white/5 p-5 rounded-[var(--radius-xl)] shadow-sm dark:shadow-none space-y-4 transition-all duration-300">
         <div 
@@ -150,15 +165,6 @@ export function NewsParameterPanel({
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="block text-[10.5px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">球場名</label>
-                <input
-                  type="text"
-                  value={venueName}
-                  onChange={(e) => setVenueName(e.target.value)}
-                  className="w-full h-10 bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 text-zinc-900 dark:text-white text-xs px-3 rounded-xl outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-bold shadow-sm"
-                />
-              </div>
-              <div className="space-y-1.5">
                 <label className="block text-[10.5px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">対戦相手</label>
                 <input
                   type="text"
@@ -167,16 +173,18 @@ export function NewsParameterPanel({
                   className="w-full h-10 bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 text-zinc-900 dark:text-white text-xs px-3 rounded-xl outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-bold shadow-sm"
                 />
               </div>
-              <div className="space-y-1.5">
-                <label className="block text-[10.5px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">速報担当者</label>
+              
+              {/* 球場名 (1カラム幅 full-width にしてバランス調整) */}
+              <div className="space-y-1.5 col-span-2">
+                <label className="block text-[10.5px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">球場名</label>
                 <input
                   type="text"
-                  value={reporterName}
-                  onChange={(e) => handleReporterChange(e.target.value)}
-                  placeholder="例: 赤羽  橋本"
-                  className="w-full h-10 bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 text-zinc-900 dark:text-white text-xs px-3 rounded-xl outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-bold shadow-sm"
+                  value={venueName}
+                  onChange={(e) => setVenueName(e.target.value)}
+                  className="w-full h-10 bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 text-zinc-900 dark:text-white text-xs px-3 rounded-xl outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-bold shadow-sm"
                 />
               </div>
+              
               <div className="space-y-1.5">
                 <label className="block text-[10.5px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">開始時間</label>
                 <input
@@ -375,7 +383,7 @@ export function NewsParameterPanel({
                 <textarea
                   value={summaryText}
                   onChange={(e) => setSummaryText(e.target.value)}
-                  placeholder="例：初回、3番山田の右越え2ランで先制。中盤に追いつかれるも、5回に相手の失策の間に勝ち越しに成功。投げては先発佐藤が7回2失点の力投で見見事完投勝利を飾った。"
+                  placeholder="例：初回、3番山田の右越え2ランで先制。中盤に追いつかれるも、5回に相手の失策の間に勝ち越しに成功。投げては先発佐藤が7回2失点の力投で見事完投勝利を飾った。"
                   className="w-full min-h-[130px] bg-white dark:bg-black/40 border border-zinc-200 dark:border-white/10 focus:border-primary focus:ring-2 focus:ring-primary/10 text-zinc-900 dark:text-white text-xs p-3 rounded-xl outline-none resize-none transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-bold shadow-sm"
                 />
               </div>

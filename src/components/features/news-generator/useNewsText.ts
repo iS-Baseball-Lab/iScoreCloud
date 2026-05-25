@@ -570,8 +570,7 @@ export function useNewsText({
 ${matchHeader}
 ${timeHeader ? `${timeHeader}\n` : ""}
 ◆ ${teamName} スタメン（${myAttackLabel}）
-${myLineupText}
-#草野球 #スタメン発表 #iScoreCloud`;
+${myLineupText}${reporterName ? `\n\n速報　${reporterName}` : ""}`;
     }
 
     // B. イニング速報 または C. 試合終了速報
