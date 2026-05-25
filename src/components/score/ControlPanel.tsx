@@ -92,13 +92,30 @@ export function ControlPanel() {
       const parts = rawResult.split("-");
       const pos = parts[0];
       const hit = parts[parts.length - 1]; // 最後の要素が必ず結果種別 (1B, 2B, 3B, HR, E, FC など)
-      const trajectory = parts.length === 3 ? parts[1] : null;
+      
+      let course: string | null = null;
+      let trajectory: string | null = null;
+
+      // 中間の modifier をスキャン
+      const modifiers = parts.slice(1, parts.length - 1);
+      for (const mod of modifiers) {
+        if (["front", "line", "over"].includes(mod)) {
+          course = mod;
+        } else if (["GO", "FO", "LO"].includes(mod)) {
+          trajectory = mod;
+        }
+      }
 
       // ポジションマッピング (1-9 ＋ 間エリア)
       const posMap: Record<string, string> = {
         "1": "投", "2": "捕", "3": "一", "4": "二", "5": "三",
         "6": "遊", "7": "左", "8": "中", "9": "右",
         "78": "左中", "89": "右中", "56": "三遊", "46": "二遊", "34": "一二"
+      };
+
+      // コースマッピング
+      const courseMap: Record<string, string> = {
+        "front": "前", "line": "線", "over": "越"
       };
 
       // 打球性質マッピング
@@ -113,30 +130,52 @@ export function ControlPanel() {
       };
 
       const posChar = posMap[pos] || pos;
+      const courseChar = course ? (courseMap[course] || "") : "";
       const trajChar = trajectory ? (trajMap[trajectory] || "") : "";
       const hitChar = hitMap[hit] || hit;
-      mappedString = `${posChar}${trajChar}${hitChar}`;
+      
+      // 日本語の正しいマッピング順序: [守備位置] + [コース] + [性質] + [結果]
+      mappedString = `${posChar}${courseChar}${trajChar}${hitChar}`;
 
       isHit = ["1B", "2B", "3B", "HR"].includes(hit);
       isError = hit === "E";
     } else {
       // クイック記録（守備位置なし）
+      // 例: "front-GO-1B" や "LO-1B", "1B" など
       const parts = rawResult.split("-");
       const hitType = parts[parts.length - 1];
-      const trajectory = parts.length === 2 ? parts[0] : null;
+      
+      let course: string | null = null;
+      let trajectory: string | null = null;
+
+      const modifiers = parts.slice(0, parts.length - 1);
+      for (const mod of modifiers) {
+        if (["front", "line", "over"].includes(mod)) {
+          course = mod;
+        } else if (["GO", "FO", "LO"].includes(mod)) {
+          trajectory = mod;
+        }
+      }
 
       const quickMap: Record<string, string> = {
         "1B": "単打", "2B": "二塁打", "3B": "三塁打", "HR": "本塁打", "E": "エラー", "FC": "野選",
         "GO": "ゴロ", "FO": "飛球", "SH": "犠打", "SF": "犠飛" // 互換性
       };
 
+      const courseMap: Record<string, string> = {
+        "front": "前", "line": "線", "over": "越"
+      };
+
       const trajMap: Record<string, string> = {
         "GO": "ゴロ", "FO": "フライ", "LO": "ライナー"
       };
 
+      const coursePrefix = course ? (courseMap[course] || "") : "";
       const trajPrefix = trajectory ? (trajMap[trajectory] || "") : "";
       const hitText = quickMap[hitType] || hitType;
-      mappedString = trajPrefix ? `${trajPrefix}${hitText}` : hitText;
+
+      // クイック記録の日本語順序: 例 "前" + "ライナー" + "単打" = "前ライナー単打"
+      mappedString = `${coursePrefix}${trajPrefix}${hitText}`;
 
       isHit = ["1B", "2B", "3B", "HR"].includes(hitType);
       isError = hitType === "E";

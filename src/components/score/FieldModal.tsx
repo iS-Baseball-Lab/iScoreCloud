@@ -21,6 +21,7 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
 
   const [selectedPos, setSelectedPos] = useState<string | null>(null);
   const [hitType, setHitType] = useState<string>("1B"); // デフォルトを単打 (1B) に変更
+  const [course, setCourse] = useState<"front" | "line" | "over" | null>(null); // 前, 線際, オーバー
   const [trajectory, setTrajectory] = useState<"GO" | "FO" | "LO" | null>(null); // ゴロ, フライ, ライナー
   const [rbi, setRbi] = useState(0);
   const [showRbiDetail, setShowRbiDetail] = useState(false);
@@ -38,6 +39,7 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
   useEffect(() => {
     if (open) {
       setSelectedPos(null);
+      setCourse(null);
       setTrajectory(null);
       setCoordinate(null);
       
@@ -115,29 +117,30 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
     { id: "LO", label: "ライナー" },
   ] as const;
 
+  // 打球コースの修飾オプション (前, 線際, オーバー)
+  const courses = [
+    { id: "front", label: "前 (ポテン)" },
+    { id: "line", label: "線際" },
+    { id: "over", label: "オーバー" },
+  ] as const;
+
   const handleConfirm = () => {
     if (!hitType) return;
     
-    // 文字列の組み立て: pos-hit または pos-trajectory-hit 形式
-    let resultString = "";
-    if (selectedPos) {
-      if (trajectory) {
-        resultString = `${selectedPos}-${trajectory}-${hitType}`;
-      } else {
-        resultString = `${selectedPos}-${hitType}`;
-      }
-    } else {
-      if (trajectory) {
-        resultString = `${trajectory}-${hitType}`;
-      } else {
-        resultString = hitType;
-      }
-    }
+    // 文字列の組み立て: selectedPos - course - trajectory - hitType を必要な分だけハイフン接続
+    const parts: string[] = [];
+    if (selectedPos) parts.push(selectedPos);
+    if (course) parts.push(course);
+    if (trajectory) parts.push(trajectory);
+    parts.push(hitType);
+    
+    const resultString = parts.join("-");
 
     onResult(resultString, rbi, [], coordinate || undefined);
     
     // リセット
     setSelectedPos(null);
+    setCourse(null);
     setTrajectory(null);
     setCoordinate(null);
     setRbi(0);
@@ -315,6 +318,45 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
                 className={cn(
                   "h-9 rounded-xl border font-black text-[11px] tracking-tight transition-all active:scale-95 cursor-pointer flex items-center justify-center",
                   trajectory === null
+                    ? "bg-primary/10 border-primary/20 text-primary"
+                    : "bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-400 dark:text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                )}
+              >
+                指定なし
+              </button>
+            </div>
+          </div>
+
+          {/* 3.5. 打球コースの選択 (前, 線際, オーバー) */}
+          <div className="space-y-1.5">
+            <label className="text-[9.5px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest px-1">打球コース（オプション）</label>
+            <div className="grid grid-cols-4 gap-2">
+              {courses.map((c) => {
+                const isActive = course === c.id;
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => setCourse(isActive ? null : c.id)}
+                    className={cn(
+                      "h-9 rounded-xl border font-black text-[11px] tracking-tight transition-all active:scale-95 cursor-pointer flex items-center justify-center",
+                      isActive
+                        ? "bg-zinc-800 dark:bg-zinc-200 border-zinc-800 dark:border-zinc-200 text-white dark:text-zinc-950 shadow-sm"
+                        : "bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                    )}
+                  >
+                    {c.label}
+                  </button>
+                );
+              })}
+              
+              {/* 指定なしボタン */}
+              <button
+                type="button"
+                onClick={() => setCourse(null)}
+                className={cn(
+                  "h-9 rounded-xl border font-black text-[11px] tracking-tight transition-all active:scale-95 cursor-pointer flex items-center justify-center",
+                  course === null
                     ? "bg-primary/10 border-primary/20 text-primary"
                     : "bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-400 dark:text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
                 )}
