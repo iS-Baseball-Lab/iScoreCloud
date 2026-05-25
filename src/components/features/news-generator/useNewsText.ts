@@ -75,78 +75,89 @@ export function useNewsText({
     const firstScores = isFirst ? match.myInningScores : match.opponentInningScores;
     const secondScores = isFirst ? match.opponentInningScores : match.myInningScores;
     
-    // アマチュア・草野球の標準規定回（7回）を最低枠として確保
     const regulationInnings = 7;
     let inningCount = Math.max(firstScores.length, secondScores.length, regulationInnings);
     if (!isFinal && inningLimit) {
       inningCount = Math.max(inningLimit, regulationInnings);
     }
     
-    // チーム名整形（全角2文字なら間に全角スペースを挟んで全角3文字相当にする）
-    const formatTeamName = (teamName: string) => {
-      let formatted = teamName.trim();
+    const getDisplayWidth = (str: string) => {
+      let width = 0;
+      for (let i = 0; i < str.length; i++) {
+        const code = str.charCodeAt(i);
+        if ((code >= 0x3000 && code <= 0x9FFF) || (code >= 0xFF00 && code <= 0xFFEF)) {
+          width += 2;
+        } else {
+          width += 1;
+        }
+      }
+      return width;
+    };
+
+    const formatTeamName = (nameStr: string) => {
+      let formatted = nameStr.trim();
       if (formatted.length === 2) {
         formatted = `${formatted[0]}　${formatted[1]}`;
       }
       return formatted;
     };
 
-    const firstTeamFormatted = formatTeamName(firstTeamRaw);
-    const secondTeamFormatted = formatTeamName(secondTeamRaw);
+    const padTeamName = (nameStr: string) => {
+      const formatted = formatTeamName(nameStr);
+      const width = getDisplayWidth(formatted);
+      if (width < 12) {
+        return formatted + " ".repeat(12 - width);
+      }
+      return formatted;
+    };
 
-    // ヘッダー作成 (左側は半角15スペース固定)
-    let header = "               ";
+    const padEndWithDisplayWidth = (str: string, targetWidth: number, padChar = " ") => {
+      const currentWidth = getDisplayWidth(str);
+      if (currentWidth < targetWidth) {
+        return str + padChar.repeat(targetWidth - currentWidth);
+      }
+      return str;
+    };
+
+    let header = "               "; // 15 spaces
     for (let i = 1; i <= inningCount; i++) {
       header += `${i} `;
     }
-    // 末尾のスペースをカットして計を追加
     header = header.trimEnd() + " 計";
 
-    // 得点行の作成 (チーム名の後ろは半角4スペース固定)
-    let firstLine = firstTeamFormatted + "    ";
-    let secondLine = secondTeamFormatted + "    ";
+    let firstLine = padTeamName(firstTeamRaw) + "   ";
+    let secondLine = padTeamName(secondTeamRaw) + "   ";
     
     let firstTotal = 0;
     let secondTotal = 0;
     
-    let dispCount1 = 0;
-    let dispCount2 = 0;
-
     for (let i = 1; i <= inningCount; i++) {
-      // 先攻得点
       const score1 = firstScores[i - 1];
       const hasScore1 = score1 !== undefined && score1 !== null && (!inningLimit || i <= inningLimit);
       if (hasScore1) {
         firstLine += `${score1} `;
         firstTotal += score1;
-        dispCount1++;
       } else {
         firstLine += "  ";
       }
 
-      // 後攻得点
       const isCurrentInningUnfinishedBottom = !isFinal && inningLimit && i === inningLimit && !isBottomLimit;
       const score2 = secondScores[i - 1];
       const hasScore2 = score2 !== undefined && score2 !== null && (!inningLimit || i <= inningLimit) && !isCurrentInningUnfinishedBottom;
       if (hasScore2) {
         secondLine += `${score2} `;
         secondTotal += score2;
-        dispCount2++;
       } else {
         secondLine += "  ";
       }
     }
 
-    // 計の付与 (プロポーショナルフォント幅に合わせた動的スペース補正)
     const total1 = isFinal ? (isFirst ? match.myScore : match.opponentScore) : firstTotal;
     const total2 = isFinal ? (isFirst ? match.opponentScore : match.myScore) : secondTotal;
 
-    // 実表示数に応じた最適なスペース補正数を計算
-    const firstTotalSpCount = Math.max(1, 3 - (dispCount1 - 6) * 2);
-    const secondTotalSpCount = Math.max(1, 6 - (dispCount2 - 6) * 2);
-
-    firstLine = firstLine.trimEnd() + " ".repeat(firstTotalSpCount) + (total1 !== undefined && total1 !== null ? total1 : "0");
-    secondLine = secondLine.trimEnd() + " ".repeat(secondTotalSpCount) + (total2 !== undefined && total2 !== null ? total2 : "0");
+    const headerPrefixWidth = getDisplayWidth(header.substring(0, header.indexOf("計")));
+    firstLine = padEndWithDisplayWidth(firstLine, headerPrefixWidth) + (total1 !== undefined && total1 !== null ? total1 : "0");
+    secondLine = padEndWithDisplayWidth(secondLine, headerPrefixWidth) + (total2 !== undefined && total2 !== null ? total2 : "0");
 
     return `${header}\n${firstLine}\n${secondLine}`;
   };
