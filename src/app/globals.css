@@ -271,20 +271,21 @@
    ⚾️ 7. DENSITY THEMES (DISPLAY SIZE)
    ======================================================= */
 @layer base {
-
   /* 標準モード (Pixel 10 Proなどの標準画面向け) */
   :root {
     font-size: 16px;
   }
-
   /* コンパクトモード (情報量重視 / 小画面向け) */
   [data-density="compact"] {
     font-size: 14px;
   }
-
   /* ゆったりモード (タブレット / シニア向け) */
   [data-density="comfortable"] {
     font-size: 18px;
+  }
+  /* ウルトラ・コンパクトモード (iPhone SEなどの極小画面 / ベンチでの限界詰め込み向け) */
+  [data-density="ultra"] {
+    font-size: 12px;
   }
 }
 
