@@ -337,11 +337,11 @@ export function PlayArea() {
                   </div>
 
                   {/* 右: 代打ボタン */}
-                  <div className="shrink-0 w-6 flex justify-end">
+                  <div className="shrink-0 w-11 flex justify-end">
                     {state.isScorer && (
                       <button
                         type="button"
-                        className="pointer-events-auto bg-white/20 hover:bg-white/30 text-primary-foreground text-[8px] [@media(max-height:700px)]:text-[7px] font-black px-1.5 py-0.5 rounded transition-colors leading-none"
+                        className="pointer-events-auto bg-white/20 hover:bg-white/30 text-primary-foreground text-[8px] [@media(max-height:700px)]:text-[7px] font-black px-1.5 py-0.5 rounded transition-colors leading-none whitespace-nowrap"
                         onClick={(e) => {
                           e.stopPropagation(); // ドロップダウンを開くのを防ぐ
                           setSubInitialTab(isMyAttack ? 'my' : 'opponent');
@@ -436,7 +436,7 @@ export function PlayArea() {
                   </div>
 
                   {/* 右: レイアウト調整用スペーサー */}
-                  <div className="w-6 shrink-0" />
+                  <div className="w-11 shrink-0" />
                 </div>
 
                 {/* ドロップダウン履歴 (ネクストバッター用) */}
