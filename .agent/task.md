@@ -1,0 +1,78 @@
+# ⚾️ バッターカード横幅復元、スコア上部球場非表示 ＆ 試合速報ジェネレーター・レイアウト再構造化 進捗管理
+
+- [x] **1. Scoreboard.tsx のスマートヘッダー簡素化 ＆ 破損修復**
+  - [x] `src/components/score/Scoreboard.tsx` の return JSX の構文エラー・余計なタグ残骸のクリーンアップ
+  - [x] ヘッダー左側から `venueName` (球場名) の削除、大会名のみを表示する `h-10` ヘッダーへリファクタリング
+  - [x] 不要になった `isHeaderExpanded`, `toggleHeader`, `autoCloseTimer` などのローカル状態のクリーンアップ
+- [x] **2. 試合速報ジェネレーター (page.tsx) の1カラムレイアウト化 & 初期状態調整**
+  - [x] `src/app/(protected)/news-generator/page.tsx` 内の `isParamExpanded` の初期状態を `false` に変更
+  - [x] 重複している「選択した試合の概要（SELECTED MATCH）」カード (lines 511-535) を完全に削除
+  - [x] `grid grid-cols-1 lg:grid-cols-12` による左右2分割から、`max-w-3xl mx-auto space-y-6` の美しい1カラムレイアウトへのリファクタリング
+  - [x] `page.tsx` 内の残存絵文字の排除と `lucide-react` アイコンへの置き換え
+- [x] **3. NewsParameterPanel.tsx の要素レンダリング順序整理 ＆ Lucideアイコン統一**
+  - [x] レンダリング順序を「1.速報パラメータアコーディオン ➜ 2.速報タイプのタブ ➜ 3.手動コメント詳細入力フォーム」へ並び替え
+  - [x] `NewsParameterPanel.tsx` 内のすべての絵文字（👤, 🏟️, 💬, ⚾️, 🏅, 📝）を Lucide アイコン（`User`, `Activity`, `MessageSquare`, `Award`, `FileText`等）に置換・統一
+- [x] **4. ビルド確認と型安全性の検証**
+  - [x] `npx tsc --noEmit` を実行し、TypeScript のビルドエラーが 0 件であることを確認
+- [x] **5. walkthrough.md の作成・更新**
+  - [x] 完了した内容、テスト結果、構造比較を `walkthrough.md` にまとめる
+- [x] **6. フォローアップ：監督コメント不要化 ＆ 影の薄く（shadow-sm）化**
+  - [x] `page.tsx`, `NewsParameterPanel.tsx`, `useNewsText.ts` から `lineupComment` を完全削除
+  - [x] `NewsParameterPanel.tsx` で `newsType === "lineup"` の時は詳細入力カード全体を美しく非表示にする対応
+  - [x] `page.tsx`, `NewsParameterPanel.tsx`, `NewsPreviewCard.tsx` 内の `shadow-md`/`shadow-lg` を `shadow-sm` へ変更し、極めて薄く上品な影に調整
+- [x] **7. フォローアップ2：公式戦大会名のみ化、速報担当常時表示、ハッシュタグ廃止**
+  - [x] `page.tsx` で公式戦の場合に `matchName` を大会名のみに初期化するよう修正
+  - [x] `NewsParameterPanel.tsx` の「速報担当者」入力欄をアコーディオン外に引き出し、常時表示の最上部カードへ昇格
+  - [x] アコーディオン内のグリッド項目から重複する「速報担当者」を削除し、球場名を `col-span-2` 全幅にする美しい新グリッドレイアウトを実装
+  - [x] `useNewsText.ts` からスタメン速報最下行のハッシュタグを削除し、すべての速報の最下行に `速報　[担当名]` を追加
+- [x] **8. フォローアップ3：開始時間と終了時間を空でも出力する修正**
+  - [x] `useNewsText.ts` で開始時間と終了時間が未入力（空）の場合でも、ラベル「開始時間　」「終了時間    」を常に出力に含めるように修正
+- [x] **9. 【最新追加】速報担当のプレースホルダーを「佐藤 祖一」に調整**
+  - [x] `NewsParameterPanel.tsx` の常時表示されている「速報担当者」入力欄のプレースホルダーを `例: 佐藤 祖一` に変更
+- [x] **10. 【最新追加】試合選択エリアの横幅統一**
+  - [x] `page.tsx` 内の「1. 試合の選択エリア」と「試合未選択時のプレースホルダー」カードに `max-w-3xl mx-auto w-full` を適用し、下のテキストエリア等と幅を統一
+- [x] **11. 【最新追加】イニング速報スコア集計（合計点「計」）のズレ根本解決**
+  - [x] `useNewsText.ts` の `generateScoreTableText` をリファクタリング。表示文字幅を正しく計算する `getDisplayWidth` を自作
+  - [x] チーム名を常に最大12半角文字幅相当にパディングする `padTeamName` を適用
+  - [x] 表示幅ベースでパディングを補完する `padEndWithDisplayWidth` を実装し、ヘッダーに記述された「計」の正確な表示幅位置（`header.indexOf("計")`）から算出したアライメント位置に合計得点をピタッと結合
+  - [x] `npx tsc --noEmit` のチェックが100%パスすることを確認
+- [x] **12. 【最新追加】スコア記録コントロールパネルの大ブラッシュアップ（3段プレミアムUI化）**
+  - [x] `ControlPanel.tsx` の1段目を「B (ボール), 見逃, 空振, Foul」の4ボタン化
+  - [x] 2段目を特大「打球 (インプレイ)」(コルの3つ分) ＆「アウト詳細」(コルの1つ分) に整理
+  - [x] 3段目を「四死球, 失策, Undo, 試合終了」の4ボタン化
+  - [x] 各ボタンのアクション、引数、カラーリング、スタイル調整
+  - [x] 型安全性のチェックとビルド検証 (`npx tsc --noEmit`)
+- [x] **13. 【最新追加】走者アクションモーダルのブラッシュアップ（「打球・その他で進塁」の新設）**
+  - [x] `score.ts` に `hit_advance` アクションタイプを追加
+  - [x] `ScoreContext.tsx` に `hit_advance` の走者移動・ログ自動記述ロジックを実装
+  - [x] `RunnerActionModal.tsx` に `🏃‍♂️ 進塁 (打球・その他)` ボタンを最上部に追加
+  - [x] 全体で `npx tsc --noEmit` のチェックが100%パスすることを確認
+- [x] **14. 【最新追加】インプレイ打球結果モーダル (FieldModal) の再設計 ＆ SVG野球場グラフィカルUI大刷新**
+  - [x] `score.ts` の `recordInPlay` と `PlayLogEntry` の型定義に将来のスプレーチャート用座標 `coordinate?: { x: number; y: number }` を追加
+  - [x] `ScoreContext.tsx` の `recordInPlay` に `coordinate` 座標メタデータを受け取り履歴データとして保存・蓄積するロジックを実装
+  - [x] `ControlPanel.tsx` の `handleFieldResult` を拡張し、新打球方向（左中, 右中, 三遊, 二遊, 一二）および打球性質（ゴロ, 飛, 直）を含んだ 3つのパーツ（例: 78-LO-2B）を正確にマッピング解析できるようにリファクタリング
+  - [x] `FieldModal.tsx` を全面刷新！
+    - [x] 不要なアウト系ボタンを排除し、safe results (1B, 2B, 3B, HR, E, FC) のみに整理
+    - [x] 新しく `trajectory` (ゴロ、フライ、ライナー) のボタングループを追加
+    - [x] テキストによる守備位置ボタンを排除し、野球場を美しく描画した **プレミアムSVG野球場グラフィックUI** を実装
+    - [x] グラウンドタップにより、左中間 `"78"` や右中間 `"89"`、三遊間 `"56"`、二遊間 `"46"`、一二間 `"34"` を自動検知し、タップ座標 `(x, y)` を記録して赤い鼓動ピンマークをプロットするインタラクティブなUIを実装
+  - [x] 型安全性のチェックとビルド検証 (`npx tsc --noEmit`)
+- [x] **15. 【最新追加】打球コーストッピング機能（前、線際、オーバー）の新設 ＆ 日本式スコア完全再現**
+  - [x] `FieldModal.tsx` に `course` (ポテン前: front, 一三塁線際: line, 頭上越え: over) の状態およびトグルボタングループUIを新設
+  - [x] `FieldModal.tsx` の結果文字列の組み立て (`handleConfirm`) に `course` 属性をハイフン接続で付与するよう拡張 (例: `9-line-LO-1B`)
+  - [x] `ControlPanel.tsx` の `handleFieldResult` 文字列パーサーを拡張し、4つ（または複数）のハイフン分割要素から `course` を正しく検知
+  - [x] 検出された `course` を日本語マッピング（`front` ➜ `"前"`, `line` ➜ `"線"`, `over` ➜ `"越"`) し、守備方向の直後、打球性質/安打結果の前に美しく挿入
+  - [x] 型安全性のチェックとビルド検証 (`npx tsc --noEmit`)
+- [x] **16. 【最新追加】アウト詳細モーダル大刷新（SVG野球場化 ＆ ファウルアウト「邪」トグル新設）**
+  - [x] `OutDetailModal.tsx` に `coordinate` 状態およびタップ位置追跡ロジックを追加
+  - [x] `OutDetailModal.tsx` に `isFoul` (ファウル/邪) の状態とトグルUIを追加 (フライ/ライナーと連動)
+  - [x] `OutDetailModal.tsx` に美しい精密「SVG野球場グラフィックUI」を実装し、1〜9の基本守備位置ボタンを物理配置
+  - [x] `OutDetailModal.tsx` の結果文字列の組み立て (`handleConfirm`) に `"FOUL"` 属性をハイフン接続で付与するよう拡張 (例: `2-FOUL-FO`)
+  - [x] `ControlPanel.tsx` の `handleOutResult` 文字列パーサーを拡張し、ハイフン接続要素から `"FOUL"` 修飾子を正しく検出・マッピング (`FOUL` ➜ `"邪"`) するようリファクタリング
+  - [x] 型安全性のチェックとビルド検証 (`npx tsc --noEmit`)
+- [x] **17. 【最新追加】インプレイモーダルへの「バント」性質オプション追加（バント安打・バント野選対応）**
+  - [x] `FieldModal.tsx` の `trajectory` 状態の型定義を `"GO" | "FO" | "LO" | "BUNT" | null` に拡張
+  - [x] `FieldModal.tsx` の `trajectories` 配列に `"BUNT"` (バント) オプションを追加
+  - [x] `ControlPanel.tsx` の `handleFieldResult` 内の `trajMap` に `"BUNT": "バ"` をマッピング
+  - [x] `ControlPanel.tsx` のクイック記録用の `trajMap` に `"BUNT": "バント"` をマッピング
+  - [x] 型安全性のチェックとビルド検証 (`npx tsc --noEmit`)
