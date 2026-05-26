@@ -151,7 +151,7 @@ export default function PendingApprovalPage() {
       router.push("/login");
     } catch (error) {
       // 通信エラーなどのフォールバック処理として、強制的に画面を切り替えて安全を担保
-      window.location.href = "/login";
+      router.push("/login");
     } finally {
       setIsLoggingOut(false);
     }

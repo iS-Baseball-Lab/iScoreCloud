@@ -2,11 +2,13 @@
 "use client";
 
 import { useState, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { useScore } from "@/contexts/ScoreContext";
 import { cn } from "@/lib/utils";
 import { Users, Trophy } from "lucide-react";
 
 export function Scoreboard() {
+  const router = useRouter();
   // 💡 Contextから最新の状態と関数を取得
   const { state, updateMatchSettings } = useScore();
   const [offsetX, setOffsetX] = useState(0);
@@ -91,7 +93,11 @@ export function Scoreboard() {
           {/* 右側：スタメン設定ボタン */}
           <div className="flex-1 flex justify-end items-center pl-2">
             <button 
-              onClick={() => window.location.href = `/matches/lineup?id=${state.matchId}`}
+              onClick={() => {
+                if (state.matchId) {
+                  router.push(`/matches/lineup?id=${state.matchId}`);
+                }
+              }}
               className="flex items-center gap-1.5 px-2.5 py-1 bg-primary/10 text-primary rounded-full hover:bg-primary/20 transition-colors shadow-sm active:scale-[0.98]"
               title="スタメン設定"
             >

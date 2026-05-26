@@ -4,10 +4,11 @@
 import { Button } from "@/components/ui/button";
 import { DatabaseZap, Loader2 } from "lucide-react";
 import { useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 
 export function TestDataGenerator() {
+  const router = useRouter();
   const [isGenerating, setIsGenerating] = useState(false);
   const searchParams = useSearchParams();
   const matchId = searchParams.get("id");
@@ -67,9 +68,10 @@ export function TestDataGenerator() {
       toast.dismiss(loadingToast);
       toast.success("注入成功！再読み込みします...");
       
-      // 💡 3. 少し長めに待ってからリロード
+      // 💡 3. 少し長めに待ってから状態を更新して遷移
       setTimeout(() => {
-        window.location.href = `/matches/score?id=${matchId}&t=${Date.now()}`; // キャッシュ回避
+        router.push(`/matches/score?id=${matchId}&t=${Date.now()}`);
+        router.refresh();
       }, 1000);
       
     } catch (e: any) {

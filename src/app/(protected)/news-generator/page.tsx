@@ -6,6 +6,7 @@ import { ChevronRight, ChevronDown, Zap, Calendar } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { SectionHeader } from "@/components/layout/SectionHeader";
+import { useSearchParams } from "next/navigation";
 
 // 新しいカスタムフックと分割したコンポーネントをインポート
 import { useNewsText } from "@/components/features/news-generator/useNewsText";
@@ -13,6 +14,8 @@ import { NewsParameterPanel } from "@/components/features/news-generator/NewsPar
 import { NewsPreviewCard } from "@/components/features/news-generator/NewsPreviewCard";
 
 export default function NewsGeneratorPage() {
+  const searchParams = useSearchParams();
+
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   // 状態管理
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -68,14 +71,11 @@ export default function NewsGeneratorPage() {
     if (storedReporter) setReporterName(storedReporter);
 
     // 💡 クエリパラメータから試合IDを読み込み、自動選択
-    if (typeof window !== "undefined") {
-      const params = new URLSearchParams(window.location.search);
-      const qMatchId = params.get("matchId") || params.get("id");
-      if (qMatchId) {
-        setSelectedMatchId(qMatchId);
-      }
+    const qMatchId = searchParams.get("matchId") || searchParams.get("id");
+    if (qMatchId) {
+      setSelectedMatchId(qMatchId);
     }
-  }, []);
+  }, [searchParams]);
 
   const handleReporterChange = (name: string) => {
     setReporterName(name);

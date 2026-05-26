@@ -70,8 +70,9 @@ export function Header() {
     }
     if (orgId) localStorage.setItem("iscore_selectedOrgId", orgId);
 
-    // 💡 チーム切り替え時は状態をリセットするためリロードを伴う遷移
-    window.location.href = "/dashboard";
+    // 💡 チーム切り替え時は状態をリセットしつつ遷移
+    router.push("/dashboard");
+    router.refresh();
   };
 
   // 🌟 型の不整合を解消するマッピングロジック
