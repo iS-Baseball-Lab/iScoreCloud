@@ -124,12 +124,14 @@ export function SubstitutionModal({
 
   const lineup = activeTab === 'my' ? state.myLineup || [] : state.opponentLineup || [];
   
-  // 1〜9番のスロットを確実に生成
-  const slots = Array.from({ length: 9 }, (_, i) => {
+  // スタメンのスロットを動的に生成（1〜9番＋EDH/DH投手などの追加枠）
+  const maxSlots = Math.max(9, lineup.length);
+  const slots = Array.from({ length: maxSlots }, (_, i) => {
     const p = lineup[i];
+    const isDHPH = p?.order === 0;
     return {
       index: i,
-      battingOrder: i + 1,
+      battingOrder: isDHPH ? 0 : (i + 1), // order: 0 の場合は 0（投枠）、それ以外は通常の打順番号
       playerId: p?.playerId || "",
       playerName: p?.playerName || p?.name || "未設定",
       uniformNumber: p?.uniformNumber || "-",
@@ -284,8 +286,8 @@ export function SubstitutionModal({
                   >
                     <div className="flex items-center gap-4">
                       {/* 打順番号 */}
-                      <div className="h-10 w-10 rounded-full bg-primary/5 dark:bg-primary/10 border border-primary/10 dark:border-primary/20 text-primary flex items-center justify-center font-black italic">
-                        {slot.battingOrder}
+                      <div className="h-10 w-10 rounded-full bg-primary/5 dark:bg-primary/10 border border-primary/10 dark:border-primary/20 text-primary flex items-center justify-center font-black italic text-xs">
+                        {slot.battingOrder === 0 ? "投" : slot.battingOrder}
                       </div>
                       
                       <div>
@@ -322,7 +324,7 @@ export function SubstitutionModal({
                 <div>
                   <span className="text-[9px] font-black text-primary uppercase tracking-widest">SUBSTITUTING SLOT</span>
                   <p className="text-lg font-black italic leading-none text-zinc-900 dark:text-white mt-1">
-                    {selectedSlotIndex + 1}番 {activeSlot ? getPositionLabel(activeSlot.position) : ""}
+                    {activeSlot && activeSlot.battingOrder === 0 ? "投 (打順なし)" : `${selectedSlotIndex + 1}番`} {activeSlot ? getPositionLabel(activeSlot.position) : ""}
                   </p>
                   <p className="text-sm font-bold text-zinc-500 dark:text-zinc-400 mt-0.5">
                     現在の選手: {activeSlot ? activeSlot.playerName : "未設定"}

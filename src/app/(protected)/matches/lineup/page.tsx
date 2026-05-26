@@ -59,41 +59,40 @@ function LineupPageContent() {
     Array.from({ length: 9 }, (_, i) => ({ order: i + 1, position: "", name: "", uniformNumber: "" }))
   );
 
-  // 🌟 DH（指名打者）制における10人スタメン（守備専門投手）の自動追加・削除ロジック
-  // 投手は「打順を持たない」ため、order: 0 としてデータ設計し、野球のルールと整合させます
-  useEffect(() => {
-    const hasDH = myLineup.slice(0, 9).some(p => p.position === "DH");
-    const hasOrder0 = myLineup.some(p => p.order === 0);
+  // 🌟 EDH（全員打撃）に対応するためのスタメン動的追加・削除ハンドラー
+  const handleAddBatter = (type: "myTeam" | "opponent") => {
+    if (type === "myTeam") {
+      setMyLineup(prev => [
+        ...prev,
+        { order: prev.length + 1, position: "", playerId: "", name: "", uniformNumber: "" }
+      ]);
+      toast.success("打撃スタメン枠を追加しました");
+    } else {
+      setOpponentLineup(prev => [
+        ...prev,
+        { order: prev.length + 1, position: "", name: "", uniformNumber: "" }
+      ]);
+      toast.success("相手チームの打撃枠を追加しました");
+    }
+  };
 
-    if (hasDH && !hasOrder0) {
+  const handleRemoveBatter = (type: "myTeam" | "opponent", targetIndex: number) => {
+    if (type === "myTeam") {
+      if (myLineup.length <= 9) return;
       setMyLineup(prev => {
-        if (prev.some(p => p.order === 0)) return prev;
-        return [
-          ...prev.slice(0, 9),
-          { order: 0, position: "1", playerId: "", name: "", uniformNumber: "" }
-        ];
+        const filtered = prev.filter((_, i) => i !== targetIndex);
+        return filtered.map((p, idx) => ({ ...p, order: idx + 1 }));
       });
-    } else if (!hasDH && hasOrder0) {
-      setMyLineup(prev => prev.filter(p => p.order !== 0 && p.order !== 10));
-    }
-  }, [myLineup]);
-
-  useEffect(() => {
-    const hasDH = opponentLineup.slice(0, 9).some(p => p.position === "DH");
-    const hasOrder0 = opponentLineup.some(p => p.order === 0);
-
-    if (hasDH && !hasOrder0) {
+      toast.success("打撃スタメン枠を削除しました");
+    } else {
+      if (opponentLineup.length <= 9) return;
       setOpponentLineup(prev => {
-        if (prev.some(p => p.order === 0)) return prev;
-        return [
-          ...prev.slice(0, 9),
-          { order: 0, position: "1", name: "", uniformNumber: "" }
-        ];
+        const filtered = prev.filter((_, i) => i !== targetIndex);
+        return filtered.map((p, idx) => ({ ...p, order: idx + 1 }));
       });
-    } else if (!hasDH && hasOrder0) {
-      setOpponentLineup(prev => prev.filter(p => p.order !== 0 && p.order !== 10));
+      toast.success("相手チームの打撃枠を削除しました");
     }
-  }, [opponentLineup]);
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -153,7 +152,10 @@ function LineupPageContent() {
   }, [urlTeamId, matchId]);
 
   const getDisabledPositions = (lineup: any[], currentIndex: number) =>
-    lineup.filter((_, i) => i !== currentIndex).map(p => p.position).filter(Boolean);
+    lineup
+      .filter((_, i) => i !== currentIndex)
+      .map(p => p.position)
+      .filter(pos => pos && pos !== "DH"); // 🌟 DH (指名打者 / エキストラ指名打者) は全員打撃(EDH)のために重複選択を許可する
   
   const getDisabledPlayers = (lineup: any[], currentIndex: number) =>
     lineup.filter((_, i) => i !== currentIndex).map(p => p.playerId).filter(Boolean);
@@ -221,17 +223,19 @@ function LineupPageContent() {
           };
         });
 
-        // 🌟 10人スタメン（DHあり）に対応するため、order 1〜9 を構成した上で、打順を持たない投手 (order: 0) があれば最後尾に追加
-        const fullLineup = Array.from({ length: 9 }, (_, i) => {
+        // 🌟 テンプレートから10人以上のスタメン（EDH）をそのまま動的に復元
+        const maxOrder = Math.max(9, ...restored.map((r: any) => r.order));
+        const fullLineup = Array.from({ length: maxOrder }, (_, i) => {
           const found = restored.find((r: any) => r.order === i + 1);
           return found || { order: i + 1, position: "", playerId: "", name: "", uniformNumber: "" };
         });
 
-        const dhPitcher = restored.find((r: any) => r.order === 0 || r.order === 10); // 互換性のため旧10も考慮
+        // 互換性維持: もし旧データの order: 0 (打席なし投手) が保存されていれば、それも末尾に打撃順枠として復元する
+        const dhPitcher = restored.find((r: any) => r.order === 0);
         if (dhPitcher) {
           fullLineup.push({
-            order: 0,
-            position: "1",
+            order: fullLineup.length + 1,
+            position: dhPitcher.position || "1",
             playerId: dhPitcher.playerId || "",
             name: dhPitcher.name || "",
             uniformNumber: dhPitcher.uniformNumber || ""
@@ -388,8 +392,6 @@ function LineupPageContent() {
                 ? Boolean(player.position && (player as typeof myLineup[0]).playerId)
                 : Boolean(player.position && player.name.trim());
 
-              const isDHPH = player.order === 0 || player.order === 10; // 🌟 DH制における打順なしの投手専用枠か判定 (0または旧10をサポート)
-
               return (
                 <div 
                   key={index} 
@@ -397,21 +399,18 @@ function LineupPageContent() {
                     "flex items-center gap-2 p-2 rounded-2xl transition-all duration-300 focus-within:border-primary/50",
                     isCompleted
                       ? "bg-white dark:bg-zinc-800 border-2 border-primary/30 shadow-md opacity-100"
-                      : "bg-card/40 border-2 border-border/50 border-dashed opacity-80",
-                    isDHPH && "border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-900/30"
+                      : "bg-card/40 border-2 border-border/50 border-dashed opacity-80"
                   )}
                 >
                   <div className={cn(
                     "w-8 text-center font-black italic transition-colors flex items-center justify-center text-xs",
-                    isCompleted ? "text-primary" : "text-primary/40",
-                    isDHPH && "text-zinc-500 font-extrabold not-italic"
+                    isCompleted ? "text-primary" : "text-primary/40"
                   )}>
-                    {isDHPH ? "投" : index + 1}
+                    {index + 1}
                   </div>
 
                   <select
                     value={player.position}
-                    disabled={isDHPH} // 🌟 10人目の投手枠は守備位置「投」で固定
                     onChange={(e) => {
                       if (activeTab === "myTeam") {
                         const list = [...myLineup];
@@ -425,8 +424,7 @@ function LineupPageContent() {
                     }}
                     className={cn(
                       "w-14 h-11 rounded-xl text-white font-black text-xs appearance-none text-center shadow-sm cursor-pointer",
-                      POSITIONS.find(p => p.id === player.position)?.color || "bg-zinc-300 dark:bg-zinc-700",
-                      isDHPH && "bg-red-500 text-white cursor-default" // 投手カラー固定
+                      POSITIONS.find(p => p.id === player.position)?.color || "bg-zinc-300 dark:bg-zinc-700"
                     )}
                   >
                     <option value="">守備</option>
@@ -492,11 +490,16 @@ function LineupPageContent() {
                     />
                   )}
 
-                  {/* 🌟 DH制の投手であることを示す補助ラベル */}
-                  {isDHPH && (
-                    <span className="text-[9px] font-black bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 px-2 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 shrink-0">
-                      DH投手 (打順なし)
-                    </span>
+                  {/* 10人目（インデックス9）以降の場合に削除ボタンを配置 */}
+                  {index >= 9 && (
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveBatter(activeTab, index)}
+                      className="p-2 rounded-xl text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 active:scale-95 transition-all shrink-0 ml-1 cursor-pointer"
+                      title="この打順枠を削除"
+                    >
+                      <UserMinus className="w-4 h-4" />
+                    </button>
                   )}
 
                   {isCompleted && (
@@ -507,6 +510,18 @@ function LineupPageContent() {
                 </div>
               );
             })}
+            
+            {/* 🌟 打撃枠の動的追加ボタン */}
+            <div className="pt-2 px-1">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => handleAddBatter(activeTab)}
+                className="w-full h-12 rounded-2xl border-2 border-dashed border-primary/30 text-primary font-black flex items-center justify-center gap-2 hover:bg-primary/5 active:scale-[0.98] transition-all cursor-pointer"
+              >
+                ➕ 打順（バッター）を追加
+              </Button>
+            </div>
           </div>
 
           {/* 【セクション2】ベンチ・欠席メンバー（自チームタブのみ表示） */}

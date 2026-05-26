@@ -294,18 +294,18 @@ export function PlayArea() {
         </div>
       )}
 
-      {/* 🚀 バッター情報 (ダイヤモンドの上部に通常フローで配置 - スリムスケーリング版) */}
       <div className="w-full max-w-[480px] sm:max-w-[520px] px-2 text-center z-50 mb-4 [@media(max-height:700px)]:mb-2">
         {(() => {
+          const offenseBatters = offenseLineup?.filter((p: any) => p.order > 0) || [];
           const index = isMyAttack ? state.myBattingIndex : state.opponentBattingIndex;
-          const batter = offenseLineup && offenseLineup.length > index ? offenseLineup[index] : null;
+          const batter = offenseBatters && offenseBatters.length > index ? offenseBatters[index] : null;
           const batterName = batter ? (batter.playerName || batter.name || "名称未設定") : "(未設定)";
           
           const searchPrefix = `${index + 1}番`;
           const previousLogs = state.logs.filter((l) => l.description.startsWith(searchPrefix) && l.isTop === state.isTop);
 
-          const nextIndex = (index + 1) % (offenseLineup?.length || 9);
-          const nextBatter = offenseLineup && offenseLineup.length > nextIndex ? offenseLineup[nextIndex] : null;
+          const nextIndex = (index + 1) % Math.max(9, offenseBatters.length || 9);
+          const nextBatter = offenseBatters && offenseBatters.length > nextIndex ? offenseBatters[nextIndex] : null;
           const nextBatterName = nextBatter ? (nextBatter.playerName || nextBatter.name || "未設定") : "(未設定)";
 
           const nextSearchPrefix = `${nextIndex + 1}番`;
@@ -726,16 +726,20 @@ export function PlayArea() {
               <div className="space-y-2">
                 <label className="text-[10px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">スタメン選手から選択</label>
                 <div className="grid grid-cols-2 gap-2">
-                  {offenseLineup?.map((player) => (
-                    <button
-                      key={player.playerId || player.id}
-                      onClick={() => handleAssignRunner(player.playerId || player.id)}
-                      className="bg-zinc-50 dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 text-zinc-900 dark:text-white rounded-xl px-3 py-2.5 text-xs font-bold text-left flex flex-col justify-center transition-all active:scale-[0.98]"
-                    >
-                      <span className="text-[9px] text-zinc-400 dark:text-zinc-500">{player.battingOrder}番 ({player.position})</span>
-                      <span className="truncate mt-0.5">{player.playerName || player.name}</span>
-                    </button>
-                  ))}
+                  {offenseLineup?.map((player, idx) => {
+                    const isDHPH = player.order === 0 || player.battingOrder === 0;
+                    const orderLabel = isDHPH ? "投 (打順なし)" : `${player.order || player.battingOrder || (idx + 1)}番`;
+                    return (
+                      <button
+                        key={player.playerId || player.id}
+                        onClick={() => handleAssignRunner(player.playerId || player.id)}
+                        className="bg-zinc-50 dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 text-zinc-900 dark:text-white rounded-xl px-3 py-2.5 text-xs font-bold text-left flex flex-col justify-center transition-all active:scale-[0.98]"
+                      >
+                        <span className="text-[9px] text-zinc-400 dark:text-zinc-500">{orderLabel} ({player.position})</span>
+                        <span className="truncate mt-0.5">{player.playerName || player.name}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 

@@ -233,7 +233,8 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
           const isMyAttackLog = log.isTop === isGuestFirst;
 
           if (isMyAttackLog && !foundMy) {
-            const maxIndex = 9; // 🌟 DH制の10人投手枠があっても、打順は常に9人で循環
+            const battersCount = myLineup.filter((p: any) => p.order > 0).length || 9;
+            const maxIndex = Math.max(9, battersCount); // 🌟 EDH制など10人以上の打撃枠があっても、打撃対象の選手数に基づいて動的に循環
             if (isAtBatEnd) {
               myBattingIndex = (batterOrder) % maxIndex;
             } else {
@@ -241,7 +242,8 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
             }
             foundMy = true;
           } else if (!isMyAttackLog && !foundOpponent) {
-            const maxIndex = 9; // 🌟 DH制の10人投手枠があっても、打順は常に9人で循環
+            const battersCount = opponentLineup.filter((p: any) => p.order > 0).length || 9;
+            const maxIndex = Math.max(9, battersCount); // 🌟 EDH制など10人以上の打撃枠があっても、打撃対象の選手数に基づいて動的に循環
             if (isAtBatEnd) {
               opponentBattingIndex = (batterOrder) % maxIndex;
             } else {
@@ -380,7 +382,8 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
           const isMyAttackLog = log.isTop === isGuestFirst;
 
           if (isMyAttackLog && !foundMy) {
-            const maxIndex = 9; // 🌟 DH制の10人投手枠があっても、打順は常に9人で循環
+            const battersCount = myLineup.filter((p: any) => p.order > 0).length || 9;
+            const maxIndex = Math.max(9, battersCount); // 🌟 EDH制など10人以上の打撃枠があっても、打撃対象の選手数に基づいて動的に循環
             if (isAtBatEnd) {
               myBattingIndex = (batterOrder) % maxIndex;
             } else {
@@ -388,7 +391,8 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
             }
             foundMy = true;
           } else if (!isMyAttackLog && !foundOpponent) {
-            const maxIndex = 9; // 🌟 DH制の10人投手枠があっても、打順は常に9人で循環
+            const battersCount = opponentLineup.filter((p: any) => p.order > 0).length || 9;
+            const maxIndex = Math.max(9, battersCount); // 🌟 EDH制など10人以上の打撃枠があっても、打撃対象の選手数に基づいて動的に循環
             if (isAtBatEnd) {
               opponentBattingIndex = (batterOrder) % maxIndex;
             } else {
@@ -697,9 +701,11 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
       
       if (isAtBatEnd) {
         if (isMyAttack) {
-          newMyBattingIndex = (prev.myBattingIndex + 1) % 9; // 🌟 10人目の投手は打席に立たないため、打順進行は常に9人循環
+          const battersCount = prev.myLineup?.filter((p: any) => p.order > 0).length || 9;
+          newMyBattingIndex = (prev.myBattingIndex + 1) % Math.max(9, battersCount); // 🌟 EDH（全員打撃）など打者人数に応じて動的に打撃順を循環させる
         } else {
-          newOpponentBattingIndex = (prev.opponentBattingIndex + 1) % 9; // 🌟 10人目の投手は打席に立たないため、打順進行は常に9人循環
+          const battersCount = prev.opponentLineup?.filter((p: any) => p.order > 0).length || 9;
+          newOpponentBattingIndex = (prev.opponentBattingIndex + 1) % Math.max(9, battersCount); // 🌟 EDH（全員打撃）など打者人数に応じて動的に打撃順を循環させる
         }
       }
 
@@ -839,9 +845,11 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
       
       if (isAtBatEnd) {
         if (isMyAttack) {
-          newMyBattingIndex = (prev.myBattingIndex + 1) % 9; // 🌟 10人目の投手は打席に立たないため、打順進行は常に9人循環
+          const battersCount = prev.myLineup?.filter((p: any) => p.order > 0).length || 9;
+          newMyBattingIndex = (prev.myBattingIndex + 1) % Math.max(9, battersCount); // 🌟 EDH（全員打撃）など打者人数に応じて動的に打撃順を循環させる
         } else {
-          newOpponentBattingIndex = (prev.opponentBattingIndex + 1) % 9; // 🌟 10人目の投手は打席に立たないため、打順進行は常に9人循環
+          const battersCount = prev.opponentLineup?.filter((p: any) => p.order > 0).length || 9;
+          newOpponentBattingIndex = (prev.opponentBattingIndex + 1) % Math.max(9, battersCount); // 🌟 EDH（全員打撃）など打者人数に応じて動的に打撃順を循環させる
         }
       }
 
