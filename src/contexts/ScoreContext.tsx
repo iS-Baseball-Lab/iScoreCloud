@@ -892,7 +892,8 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
   const recordRunnerAction = async (
     baseNum: 1 | 2 | 3,
     action: "steal_success" | "steal_out" | "pickoff_out" | "pickoff_safe" | "wp_advance" | "pb_advance" | "balk_advance" | "error_advance" | "hit_advance" | "clear",
-    assignPlayerId?: string
+    assignPlayerId?: string,
+    targetBase?: 2 | 3 | 4
   ) => {
     setState(prev => {
       if (!prev.isScorer) return prev;
@@ -946,25 +947,27 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
       }
 
       // 各アクションの処理
+      const destBase = targetBase || (baseNum === 3 ? 4 : (baseNum + 1) as 2 | 3 | 4);
+
       if (action === "steal_success") {
         nextRunners[key] = null;
-        if (baseNum === 3) {
+        if (destBase === 4) {
           actualRbi = 1;
           logText = `${baseNum}塁走者 ${playerName}: 盗塁成功により本塁生還`;
         } else {
-          const nextKey = `base${baseNum + 1}` as keyof typeof prev.runners;
+          const nextKey = `base${destBase}` as keyof typeof prev.runners;
           nextRunners[nextKey] = runnerId;
-          logText = `${baseNum}塁走者 ${playerName}: 盗塁成功`;
+          logText = `${baseNum}塁走者 ${playerName}: 盗塁成功で${destBase}塁へ進塁`;
         }
       } else if (action === "hit_advance") {
         nextRunners[key] = null;
-        if (baseNum === 3) {
+        if (destBase === 4) {
           actualRbi = 1;
           logText = `${baseNum}塁走者 ${playerName}: 打球により本塁生還`;
         } else {
-          const nextKey = `base${baseNum + 1}` as keyof typeof prev.runners;
+          const nextKey = `base${destBase}` as keyof typeof prev.runners;
           nextRunners[nextKey] = runnerId;
-          logText = `${baseNum}塁走者 ${playerName}: 打球で進塁`;
+          logText = `${baseNum}塁走者 ${playerName}: 打球で${destBase}塁へ進塁`;
         }
       } else if (action === "steal_out") {
         nextRunners[key] = null;
@@ -978,43 +981,43 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
         logText = `${baseNum}塁走者 ${playerName}: 牽制球 (セーフ)`;
       } else if (action === "wp_advance") {
         nextRunners[key] = null;
-        if (baseNum === 3) {
+        if (destBase === 4) {
           actualRbi = 1;
           logText = `${baseNum}塁走者 ${playerName}: 暴投により本塁生還`;
         } else {
-          const nextKey = `base${baseNum + 1}` as keyof typeof prev.runners;
+          const nextKey = `base${destBase}` as keyof typeof prev.runners;
           nextRunners[nextKey] = runnerId;
-          logText = `${baseNum}塁走者 ${playerName}: 暴投で進塁`;
+          logText = `${baseNum}塁走者 ${playerName}: 暴投で${destBase}塁へ進塁`;
         }
       } else if (action === "pb_advance") {
         nextRunners[key] = null;
-        if (baseNum === 3) {
+        if (destBase === 4) {
           actualRbi = 1;
           logText = `${baseNum}塁走者 ${playerName}: 捕逸により本塁生還`;
         } else {
-          const nextKey = `base${baseNum + 1}` as keyof typeof prev.runners;
+          const nextKey = `base${destBase}` as keyof typeof prev.runners;
           nextRunners[nextKey] = runnerId;
-          logText = `${baseNum}塁走者 ${playerName}: 捕逸で進塁`;
+          logText = `${baseNum}塁走者 ${playerName}: 捕逸で${destBase}塁へ進塁`;
         }
       } else if (action === "balk_advance") {
         nextRunners[key] = null;
-        if (baseNum === 3) {
+        if (destBase === 4) {
           actualRbi = 1;
           logText = `${baseNum}塁走者 ${playerName}: ボークにより本塁生還`;
         } else {
-          const nextKey = `base${baseNum + 1}` as keyof typeof prev.runners;
+          const nextKey = `base${destBase}` as keyof typeof prev.runners;
           nextRunners[nextKey] = runnerId;
-          logText = `${baseNum}塁走者 ${playerName}: ボークで進塁`;
+          logText = `${baseNum}塁走者 ${playerName}: ボークで${destBase}塁へ進塁`;
         }
       } else if (action === "error_advance") {
         nextRunners[key] = null;
-        if (baseNum === 3) {
+        if (destBase === 4) {
           actualRbi = 1;
           logText = `${baseNum}塁走者 ${playerName}: エラーにより本塁生還`;
         } else {
-          const nextKey = `base${baseNum + 1}` as keyof typeof prev.runners;
+          const nextKey = `base${destBase}` as keyof typeof prev.runners;
           nextRunners[nextKey] = runnerId;
-          logText = `${baseNum}塁走者 ${playerName}: エラーで進塁`;
+          logText = `${baseNum}塁走者 ${playerName}: エラーで${destBase}塁へ進塁`;
         }
       }
 

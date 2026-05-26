@@ -666,8 +666,8 @@ export function PlayArea() {
           }}
           baseNum={selectedBase}
           playerName={getRunnerName(runners[`base${selectedBase}` as keyof typeof runners])}
-          onSelectAction={(action) => {
-            recordRunnerAction(selectedBase, action);
+          onSelectAction={(action, targetBase) => {
+            recordRunnerAction(selectedBase, action, undefined, targetBase);
           }}
         />
       )}

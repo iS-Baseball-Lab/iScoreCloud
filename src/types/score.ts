@@ -125,7 +125,8 @@ export interface ScoreContextType {
   recordRunnerAction: (
     baseNum: 1 | 2 | 3,
     action: "steal_success" | "steal_out" | "pickoff_out" | "pickoff_safe" | "wp_advance" | "pb_advance" | "balk_advance" | "error_advance" | "hit_advance" | "clear",
-    assignPlayerId?: string
+    assignPlayerId?: string,
+    targetBase?: 2 | 3 | 4
   ) => Promise<void>;
   changeInning: () => void;
   updateRunners: (runners: { base1: string | null; base2: string | null; base3: string | null }) => void;
