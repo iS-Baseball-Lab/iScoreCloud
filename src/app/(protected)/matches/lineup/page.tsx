@@ -59,6 +59,41 @@ function LineupPageContent() {
     Array.from({ length: 9 }, (_, i) => ({ order: i + 1, position: "", name: "", uniformNumber: "" }))
   );
 
+  // 🌟 DH（指名打者）制における10人スタメン（守備専門投手）の自動追加・削除ロジック
+  useEffect(() => {
+    const hasDH = myLineup.slice(0, 9).some(p => p.position === "DH");
+    const hasOrder10 = myLineup.some(p => p.order === 10);
+
+    if (hasDH && !hasOrder10) {
+      setMyLineup(prev => {
+        if (prev.some(p => p.order === 10)) return prev;
+        return [
+          ...prev.slice(0, 9),
+          { order: 10, position: "1", playerId: "", name: "", uniformNumber: "" }
+        ];
+      });
+    } else if (!hasDH && hasOrder10) {
+      setMyLineup(prev => prev.slice(0, 9));
+    }
+  }, [myLineup]);
+
+  useEffect(() => {
+    const hasDH = opponentLineup.slice(0, 9).some(p => p.position === "DH");
+    const hasOrder10 = opponentLineup.some(p => p.order === 10);
+
+    if (hasDH && !hasOrder10) {
+      setOpponentLineup(prev => {
+        if (prev.some(p => p.order === 10)) return prev;
+        return [
+          ...prev.slice(0, 9),
+          { order: 10, position: "1", name: "", uniformNumber: "" }
+        ];
+      });
+    } else if (!hasDH && hasOrder10) {
+      setOpponentLineup(prev => prev.slice(0, 9));
+    }
+  }, [opponentLineup]);
+
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -185,9 +220,10 @@ function LineupPageContent() {
           };
         });
 
-        // 9つの要素を保証
-        const fullLineup = Array.from({ length: 9 }, (_, i) => {
-          const found = restored.find(r => r.order === i + 1);
+        // 🌟 10人スタメン（DHあり）に対応するため、データに含まれる最大orderを基に配列を構成
+        const maxOrder = Math.max(9, ...restored.map((r: any) => r.order));
+        const fullLineup = Array.from({ length: maxOrder }, (_, i) => {
+          const found = restored.find((r: any) => r.order === i + 1);
           return found || { order: i + 1, position: "", playerId: "", name: "", uniformNumber: "" };
         });
 
@@ -341,6 +377,8 @@ function LineupPageContent() {
                 ? Boolean(player.position && (player as typeof myLineup[0]).playerId)
                 : Boolean(player.position && player.name.trim());
 
+              const isDHPH = player.order === 10; // 🌟 DH制における打順なしの投手専用枠か判定
+
               return (
                 <div 
                   key={index} 
@@ -348,18 +386,21 @@ function LineupPageContent() {
                     "flex items-center gap-2 p-2 rounded-2xl transition-all duration-300 focus-within:border-primary/50",
                     isCompleted
                       ? "bg-white dark:bg-zinc-800 border-2 border-primary/30 shadow-md opacity-100"
-                      : "bg-card/40 border-2 border-border/50 border-dashed opacity-80"
+                      : "bg-card/40 border-2 border-border/50 border-dashed opacity-80",
+                    isDHPH && "border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-900/30"
                   )}
                 >
                   <div className={cn(
-                    "w-8 text-center font-black italic transition-colors flex items-center justify-center",
-                    isCompleted ? "text-primary" : "text-primary/40"
+                    "w-8 text-center font-black italic transition-colors flex items-center justify-center text-xs",
+                    isCompleted ? "text-primary" : "text-primary/40",
+                    isDHPH && "text-zinc-500 font-extrabold not-italic"
                   )}>
-                    {index + 1}
+                    {isDHPH ? "投" : index + 1}
                   </div>
 
                   <select
                     value={player.position}
+                    disabled={isDHPH} // 🌟 10人目の投手枠は守備位置「投」で固定
                     onChange={(e) => {
                       if (activeTab === "myTeam") {
                         const list = [...myLineup];
@@ -373,7 +414,8 @@ function LineupPageContent() {
                     }}
                     className={cn(
                       "w-14 h-11 rounded-xl text-white font-black text-xs appearance-none text-center shadow-sm cursor-pointer",
-                      POSITIONS.find(p => p.id === player.position)?.color || "bg-zinc-300 dark:bg-zinc-700"
+                      POSITIONS.find(p => p.id === player.position)?.color || "bg-zinc-300 dark:bg-zinc-700",
+                      isDHPH && "bg-red-500 text-white cursor-default" // 投手カラー固定
                     )}
                   >
                     <option value="">守備</option>
@@ -437,6 +479,13 @@ function LineupPageContent() {
                         setOpponentLineup(list);
                       }}
                     />
+                  )}
+
+                  {/* 🌟 DH制の投手であることを示す補助ラベル */}
+                  {isDHPH && (
+                    <span className="text-[9px] font-black bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 px-2 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 shrink-0">
+                      DH投手 (打順なし)
+                    </span>
                   )}
 
                   {isCompleted && (
