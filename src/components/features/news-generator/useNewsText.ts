@@ -443,7 +443,6 @@ export function useNewsText({
           const formattedPlays = ab.plays.map((play: string, idx: number) => {
             let p = play;
             const outs = ab.outsAtPlay[idx];
-            const outDots = "●".repeat(outs);
             
             p = p.replace("空振り三振", "空三振");
             p = p.replace("見逃し三振", "見三振");
@@ -495,6 +494,8 @@ export function useNewsText({
               p.includes("牽制死") ||
               p.includes("併殺")
             );
+
+            const outDots = isOutPlay ? "●".repeat(outs) : "";
 
             let baseInfo = "";
             const baseMatch = p.match(/(1|2|3)塁|1•2|2•3|1•3|満塁/);
