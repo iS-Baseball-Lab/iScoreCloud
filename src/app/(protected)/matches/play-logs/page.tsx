@@ -1,24 +1,13 @@
-// filepath: src/app/matches/play-logs/page.tsx
+// filepath: src/app/(protected)/matches/play-logs/page.tsx
 "use client";
 
-import { useState } from "react";
-import Link from "next/link";
-import { Edit2, Trash2, History } from "lucide-react";
-interface PlayLog {
-  id: string;
-  gameId: string;
-  gameTitle: string;
-  inning: number;
-  topBottom: "top" | "bottom";
-  batterName: string;
-  pitcherName: string;
-  balls: number;
-  strikes: number;
-  outs: number;
-  result: string;
-  description: string;
-  createdAt: string;
-}
+import React, { useState } from "react";
+import { useRouter } from "next/navigation";
+import { ChevronLeft, History } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { SectionHeader } from "@/components/layout/SectionHeader";
+import { EmptyState } from "@/components/layout/EmptyState";
+import { PlayLogCard, PlayLog } from "@/components/matches/PlayLogCard";
 
 // ダミーデータ
 const MOCK_PLAY_LOGS: PlayLog[] = [
@@ -34,110 +23,66 @@ const MOCK_PLAY_LOGS: PlayLog[] = [
     strikes: 1,
     outs: 1,
     result: "レフト前ヒット",
-    description: "高めのストレートをジャストミート",
+    description: "高めのストレートをジャストミートし、三遊間を鋭く抜けるレフト前安打。ランナー進塁。",
     createdAt: "2026-05-25 10:30",
   },
 ];
 
 export default function PlayLogsPage() {
+  const router = useRouter();
   const [logs, setLogs] = useState<PlayLog[]>(MOCK_PLAY_LOGS);
 
-  if (logs.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] p-6 text-center bg-background">
-        <div className="p-4 bg-muted rounded-full mb-4">
-          <History className="w-12 h-12 text-muted-foreground" />
-        </div>
-        <h3 className="text-xl font-black mb-2">プレイログがありません</h3>
-        <Link href="/matches" className="px-6 py-3 bg-primary text-primary-foreground font-bold rounded-[var(--radius-xl)] shadow-md">
-          試合一覧へ戻る
-        </Link>
-      </div>
-    );
-  }
+  const handleEdit = (id: string) => {
+    router.push(`/matches/play-logs/edit?id=${id}`);
+  };
+
+  const handleDelete = (id: string) => {
+    setLogs(prev => prev.filter(log => log.id !== id));
+  };
 
   return (
-    <div className="p-4 space-y-4 max-w-md mx-auto bg-background min-h-screen pb-24">
-      <div>
-        <span className="text-xs font-black text-muted-foreground tracking-wider block uppercase">PLAY LOGS</span>
-        <h1 className="text-2xl font-black text-foreground">プレイログ閲覧</h1>
-      </div>
-
-      <div className="space-y-3">
-        {logs.map((log) => (
-          <div
-            key={log.id}
-            className="relative overflow-hidden border border-border bg-card shadow-sm"
-            style={{
-              borderRadius: "16px",
-              WebkitMaskImage: "-webkit-linear-gradient(white, white)",
-              maskImage: "linear-gradient(white, white)",
-            }}
+    <div className="min-h-screen pb-28 animate-in fade-in duration-400">
+      <div className="max-w-md mx-auto px-4 pt-6 space-y-6">
+        
+        {/* ━━ 戻るボタン & セクションヘッダー ━━ */}
+        <div className="space-y-4">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={() => router.back()}
+            className="h-10 px-4 rounded-[var(--radius-xl)] font-black gap-2 shadow-sm border-border bg-card text-foreground hover:bg-muted"
           >
-            {/* 背面アクションボタン */}
-            <div className="absolute inset-y-0 right-0 flex items-center pr-2 gap-1 z-0">
-              {/* 🔥 クエリパラメータ形式（?id=xxx）に変更 */}
-              <Link
-                href={`/matches/play-logs/edit?id=${log.id}`}
-                className="p-3 bg-blue-600 text-white rounded-xl flex items-center justify-center"
-              >
-                <Edit2 className="w-5 h-5" />
-              </Link>
-              <button
-                onClick={() => setLogs(logs.filter((l) => l.id !== log.id))}
-                className="p-3 bg-destructive text-destructive-foreground rounded-xl flex items-center justify-center"
-              >
-                <Trash2 className="w-5 h-5" />
-              </button>
-            </div>
+            <ChevronLeft className="h-4 w-4" />
+            戻る
+          </Button>
+          <SectionHeader 
+            title="プレイログ一覧" 
+            subtitle="PLAY LOGS" 
+            showPulse={false} 
+          />
+        </div>
 
-            {/* 前面カード本体 */}
-            <div className="relative z-10 bg-card p-4 border-b border-border transition-transform duration-200 active:translate-x-[-96px] rounded-none">
-              <div className="flex justify-between items-start mb-2">
-                <div className="flex items-center gap-2">
-                  <span className="bg-foreground text-background font-black text-xs px-2 py-0.5 rounded">
-                    {log.inning}回{log.topBottom === "top" ? "表" : "裏"}
-                  </span>
-                  <span className="text-sm font-bold text-muted-foreground">{log.gameTitle}</span>
-                </div>
-                <span className="text-xs text-muted-foreground font-mono">{log.createdAt}</span>
-              </div>
+        {/* ━━ ログカードリスト ━━ */}
+        <div className="grid grid-cols-1 gap-3">
+          {logs.length === 0 ? (
+            <EmptyState 
+              icon={History} 
+              title="プレイログがありません" 
+              description="試合中に入力された打席結果のログがここに表示されます" 
+              className="mt-4"
+            />
+          ) : (
+            logs.map(log => (
+              <PlayLogCard 
+                key={log.id} 
+                log={log} 
+                onEdit={handleEdit} 
+                onDelete={handleDelete} 
+              />
+            ))
+          )}
+        </div>
 
-              <div className="flex justify-between items-center my-3">
-                <div>
-                  <div className="text-xs text-muted-foreground">投手: {log.pitcherName} vs 打者:</div>
-                  <div className="text-lg font-black text-foreground">{log.batterName}</div>
-                </div>
-                <div className="text-right">
-                  <div className="text-xs text-muted-foreground">結果</div>
-                  <div className="text-lg font-black text-primary">{log.result}</div>
-                </div>
-              </div>
-
-              {/* BSO・フラット表示 */}
-              <div className="flex items-center gap-4 bg-muted/50 p-2 rounded-xl border border-border/50">
-                <div className="flex items-center gap-1">
-                  <span className="text-xs font-black w-4 text-yellow-500">B</span>
-                  {Array.from({ length: 3 }).map((_, i) => (
-                    <div key={i} className={`w-2.5 h-2.5 rounded-full ${i < log.balls ? "bg-yellow-500" : "bg-neutral-700"}`} />
-                  ))}
-                </div>
-                <div className="flex items-center gap-1">
-                  <span className="text-xs font-black w-4 text-red-500">S</span>
-                  {Array.from({ length: 2 }).map((_, i) => (
-                    <div key={i} className={`w-2.5 h-2.5 rounded-full ${i < log.strikes ? "bg-red-500" : "bg-neutral-700"}`} />
-                  ))}
-                </div>
-                <div className="flex items-center gap-1">
-                  <span className="text-xs font-black w-4 text-blue-500">O</span>
-                  {Array.from({ length: 2 }).map((_, i) => (
-                    <div key={i} className={`w-2.5 h-2.5 rounded-full ${i < log.outs ? "bg-blue-500" : "bg-neutral-700"}`} />
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        ))}
       </div>
     </div>
   );
