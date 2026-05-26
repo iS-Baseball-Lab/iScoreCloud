@@ -60,37 +60,38 @@ function LineupPageContent() {
   );
 
   // 🌟 DH（指名打者）制における10人スタメン（守備専門投手）の自動追加・削除ロジック
+  // 投手は「打順を持たない」ため、order: 0 としてデータ設計し、野球のルールと整合させます
   useEffect(() => {
     const hasDH = myLineup.slice(0, 9).some(p => p.position === "DH");
-    const hasOrder10 = myLineup.some(p => p.order === 10);
+    const hasOrder0 = myLineup.some(p => p.order === 0);
 
-    if (hasDH && !hasOrder10) {
+    if (hasDH && !hasOrder0) {
       setMyLineup(prev => {
-        if (prev.some(p => p.order === 10)) return prev;
+        if (prev.some(p => p.order === 0)) return prev;
         return [
           ...prev.slice(0, 9),
-          { order: 10, position: "1", playerId: "", name: "", uniformNumber: "" }
+          { order: 0, position: "1", playerId: "", name: "", uniformNumber: "" }
         ];
       });
-    } else if (!hasDH && hasOrder10) {
-      setMyLineup(prev => prev.slice(0, 9));
+    } else if (!hasDH && hasOrder0) {
+      setMyLineup(prev => prev.filter(p => p.order !== 0 && p.order !== 10));
     }
   }, [myLineup]);
 
   useEffect(() => {
     const hasDH = opponentLineup.slice(0, 9).some(p => p.position === "DH");
-    const hasOrder10 = opponentLineup.some(p => p.order === 10);
+    const hasOrder0 = opponentLineup.some(p => p.order === 0);
 
-    if (hasDH && !hasOrder10) {
+    if (hasDH && !hasOrder0) {
       setOpponentLineup(prev => {
-        if (prev.some(p => p.order === 10)) return prev;
+        if (prev.some(p => p.order === 0)) return prev;
         return [
           ...prev.slice(0, 9),
-          { order: 10, position: "1", name: "", uniformNumber: "" }
+          { order: 0, position: "1", name: "", uniformNumber: "" }
         ];
       });
-    } else if (!hasDH && hasOrder10) {
-      setOpponentLineup(prev => prev.slice(0, 9));
+    } else if (!hasDH && hasOrder0) {
+      setOpponentLineup(prev => prev.filter(p => p.order !== 0 && p.order !== 10));
     }
   }, [opponentLineup]);
 
@@ -220,12 +221,22 @@ function LineupPageContent() {
           };
         });
 
-        // 🌟 10人スタメン（DHあり）に対応するため、データに含まれる最大orderを基に配列を構成
-        const maxOrder = Math.max(9, ...restored.map((r: any) => r.order));
-        const fullLineup = Array.from({ length: maxOrder }, (_, i) => {
+        // 🌟 10人スタメン（DHあり）に対応するため、order 1〜9 を構成した上で、打順を持たない投手 (order: 0) があれば最後尾に追加
+        const fullLineup = Array.from({ length: 9 }, (_, i) => {
           const found = restored.find((r: any) => r.order === i + 1);
           return found || { order: i + 1, position: "", playerId: "", name: "", uniformNumber: "" };
         });
+
+        const dhPitcher = restored.find((r: any) => r.order === 0 || r.order === 10); // 互換性のため旧10も考慮
+        if (dhPitcher) {
+          fullLineup.push({
+            order: 0,
+            position: "1",
+            playerId: dhPitcher.playerId || "",
+            name: dhPitcher.name || "",
+            uniformNumber: dhPitcher.uniformNumber || ""
+          });
+        }
 
         setMyLineup(fullLineup);
         toast.success(`テンプレート「${template.name}」を適用しました`);
@@ -377,7 +388,7 @@ function LineupPageContent() {
                 ? Boolean(player.position && (player as typeof myLineup[0]).playerId)
                 : Boolean(player.position && player.name.trim());
 
-              const isDHPH = player.order === 10; // 🌟 DH制における打順なしの投手専用枠か判定
+              const isDHPH = player.order === 0 || player.order === 10; // 🌟 DH制における打順なしの投手専用枠か判定 (0または旧10をサポート)
 
               return (
                 <div 
