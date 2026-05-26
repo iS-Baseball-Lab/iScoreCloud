@@ -3,37 +3,110 @@
 
 import React, { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ChevronLeft, Save } from "lucide-react";
+import { ChevronLeft, Save, Loader2, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SectionHeader } from "@/components/layout/SectionHeader";
+import { toast } from "sonner";
 
-// クエリパラメータを読み込むコアフォームコンポーネント
 function EditLogForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  
-  // 🔥 クエリパラメータ '?id=xxx' から値を取得
   const logId = searchParams.get("id");
 
-  const [result, setResult] = useState("");
-  const [description, setDescription] = useState("");
+  const [log, setLog] = useState<any>(null);
+  const [value, setValue] = useState("");
+  const [prefix, setPrefix] = useState("");
+  const [suffix, setSuffix] = useState("");
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     if (!logId) return;
 
-    // TODO: 本来はココで Workers API (D1) から logId を使って最新データを取得
-    setResult("レフト前ヒット");
-    setDescription("高めのストレートをジャストミートし、三遊間を鋭く抜けるレフト前安打。ランナー進塁。");
-    setIsLoading(false);
+    const fetchLog = async () => {
+      try {
+        const res = await fetch(`/api/matches/logs/${logId}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && data.log) {
+            setLog(data.log);
+            const desc = data.log.description || "";
+            
+            // 1. Extract BSO suffix if present
+            const bsoMatch = desc.match(/\s\[B:(\d+),\s*S:(\d+),\s*O:(\d+)\]$/);
+            let extractedSuffix = "";
+            let cleanDesc = desc;
+            if (bsoMatch) {
+              extractedSuffix = bsoMatch[0]; // e.g. " [B:2, S:1, O:1]"
+              cleanDesc = desc.replace(/\s\[B:\d+,\s*S:\d+,\s*O:\d+\]$/, "");
+            }
+            setSuffix(extractedSuffix);
+
+            // 2. Extract batter prefix if present (e.g. "10番 佐藤: ")
+            const batterMatch = cleanDesc.match(/^(\d+番\s*[^:]+):\s*(.*)$/);
+            if (batterMatch) {
+              setPrefix(`${batterMatch[1]}: `);
+              setValue(batterMatch[2]);
+            } else {
+              setPrefix("");
+              setValue(cleanDesc);
+            }
+          } else {
+            toast.error("ログが見つかりませんでした");
+          }
+        } else {
+          toast.error("ログの読み込みに失敗しました");
+        }
+      } catch (err) {
+        console.error("Error fetching play log:", err);
+        toast.error("通信エラーが発生しました");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchLog();
   }, [logId]);
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    // TODO: Cloudflare Workers への PUT 送信処理
-    alert(`プレイログ(ID: ${logId})を更新しました！🔥`);
-    router.push("/matches/play-logs");
+    if (!logId) return;
+
+    // Rebuild the final description string to maintain structural compatibility
+    const finalDescription = `${prefix}${value}${suffix}`;
+
+    try {
+      const res = await fetch(`/api/matches/logs/${logId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          description: finalDescription,
+          resultType: log?.resultType || "play",
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          toast.success("プレイログを保存しました！🔥");
+          // Safely navigate back or to play-logs list with active match ID
+          if (log?.matchId) {
+            router.push(`/matches/play-logs?matchId=${log.matchId}`);
+          } else {
+            router.push("/matches/play-logs");
+          }
+        } else {
+          toast.error("保存処理に失敗しました");
+        }
+      } else {
+        toast.error("通信エラーが発生しました");
+      }
+    } catch (err) {
+      console.error("Error saving log:", err);
+      toast.error("保存に失敗しました");
+    }
   };
 
   if (!logId) {
@@ -46,8 +119,9 @@ function EditLogForm() {
 
   if (isLoading) {
     return (
-      <div className="p-12 text-center">
-        <span className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.3em] animate-pulse">Loading...</span>
+      <div className="p-12 text-center flex flex-col items-center gap-3">
+        <Loader2 className="w-6 h-6 animate-spin text-primary" />
+        <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider animate-pulse">Loading play log...</span>
       </div>
     );
   }
@@ -55,34 +129,46 @@ function EditLogForm() {
   return (
     <form onSubmit={handleSave} className="space-y-6 bg-card border border-border/50 p-5 rounded-[var(--radius-2xl)] shadow-sm">
       
+      {/* 状況表示 */}
+      {log && (
+        <div className="bg-muted/30 border border-border/40 p-4 rounded-xl space-y-2 pointer-events-none">
+          <div className="flex justify-between items-center text-xs font-black text-zinc-500">
+            <span className="bg-foreground text-background px-2 py-0.5 rounded-sm">
+              {log.inningText || "イニング不明"}
+            </span>
+            <span className="font-mono">{new Date(log.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+          </div>
+          {prefix && (
+            <div className="pt-1">
+              <span className="text-[10px] font-black text-primary uppercase tracking-widest block">BATTER</span>
+              <span className="text-base font-black italic text-zinc-900 dark:text-white">{prefix.replace(/:\s*$/, "")}</span>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* 打席結果入力 */}
       <div className="space-y-2">
-        <label className="text-xs font-black text-muted-foreground tracking-wider uppercase pl-1">打席結果</label>
+        <label className="text-xs font-black text-muted-foreground tracking-wider uppercase pl-1">打席結果・メモ内容</label>
         <Input
           type="text"
-          value={result}
-          onChange={(e) => setResult(e.target.value)}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
           placeholder="例：レフト前ヒット"
           className="rounded-[var(--radius-xl)]"
           required
         />
-      </div>
-
-      {/* 詳細・メモ入力 */}
-      <div className="space-y-2">
-        <label className="text-xs font-black text-muted-foreground tracking-wider uppercase pl-1">詳細・メモ</label>
-        <textarea
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          placeholder="プレイの具体的な内容や状況などをメモできます"
-          className="block w-full rounded-[var(--radius-xl)] border border-border/60 bg-muted/20 px-4 py-3 text-base font-bold shadow-xs transition-all duration-300 placeholder:text-muted-foreground/50 focus-visible:outline-none focus-visible:border-primary focus-visible:ring-4 focus-visible:ring-primary/20 focus-visible:bg-background focus-visible:shadow-md disabled:cursor-not-allowed disabled:opacity-50 min-h-[120px]"
-        />
+        {suffix && (
+          <p className="text-[10px] text-zinc-400 font-bold pl-1">
+            ※スコアコンテキスト {suffix} は自動的に保持されます
+          </p>
+        )}
       </div>
 
       {/* 保存ボタン */}
       <Button
         type="submit"
-        className="w-full h-14 bg-primary text-primary-foreground font-black rounded-[var(--radius-xl)] shadow-md flex items-center justify-center gap-2 text-base active:scale-[0.98] transition-transform"
+        className="w-full h-14 bg-primary text-primary-foreground font-black rounded-[var(--radius-xl)] shadow-md flex items-center justify-center gap-2 text-base active:scale-[0.98] transition-transform cursor-pointer"
       >
         <Save className="w-5 h-5" strokeWidth={2.5} />
         <span>ログを保存する</span>
@@ -91,7 +177,6 @@ function EditLogForm() {
   );
 }
 
-// ページコンポーネント全体（SuspenseでラップしてNext.jsのエラーを防止）
 export default function PlayLogEditPage() {
   const router = useRouter();
 
@@ -117,21 +202,16 @@ export default function PlayLogEditPage() {
           />
         </div>
 
-        {/* useSearchParamsを使うためSuspenseでラップ 🔥 */}
         <Suspense fallback={
-          <div className="p-12 text-center">
-            <span className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.3em] animate-pulse">Loading...</span>
+          <div className="p-12 text-center flex flex-col items-center gap-3">
+            <Loader2 className="w-6 h-6 animate-spin text-primary" />
+            <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider animate-pulse">Loading form...</span>
           </div>
         }>
-          <EditFormWrap />
+          <EditLogForm />
         </Suspense>
 
       </div>
     </div>
   );
-}
-
-// 命名のバッティングを避けるためのラッパー
-function EditFormWrap() {
-  return <EditLogForm />;
 }

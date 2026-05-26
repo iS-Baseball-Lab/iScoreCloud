@@ -158,6 +158,61 @@ app.post("/:id/reset", async (c) => {
   }
 });
 
+app.get("/logs/:logId", async (c) => {
+  const db = drizzle(c.env.DB);
+  const logId = c.req.param("logId");
+
+  try {
+    const log = await db.select().from(playLogs).where(eq(playLogs.id, logId)).get();
+    if (!log) {
+      return c.json({ success: false, error: "Play log not found" }, 404);
+    }
+    const formattedLog = {
+      id: log.id,
+      matchId: log.matchId,
+      inningText: log.inningText,
+      resultType: log.resultType,
+      description: log.description,
+      createdAt: log.createdAt instanceof Date ? log.createdAt.getTime() : new Date(log.createdAt).getTime(),
+    };
+    return c.json({ success: true, log: formattedLog });
+  } catch (error) {
+    return c.json({ success: false, error: "Failed to fetch play log" }, 500);
+  }
+});
+
+app.put("/logs/:logId", async (c) => {
+  const db = drizzle(c.env.DB);
+  const logId = c.req.param("logId");
+
+  try {
+    const body = await c.req.json();
+    await db.update(playLogs)
+      .set({
+        description: body.description,
+        resultType: body.resultType || "play",
+      })
+      .where(eq(playLogs.id, logId));
+    return c.json({ success: true });
+  } catch (error) {
+    console.error("Error updating play log:", error);
+    return c.json({ success: false, error: "Failed to update play log" }, 500);
+  }
+});
+
+app.delete("/logs/:logId", async (c) => {
+  const db = drizzle(c.env.DB);
+  const logId = c.req.param("logId");
+
+  try {
+    await db.delete(playLogs).where(eq(playLogs.id, logId));
+    return c.json({ success: true });
+  } catch (error) {
+    console.error("Error deleting play log:", error);
+    return c.json({ success: false, error: "Failed to delete play log" }, 500);
+  }
+});
+
 app.delete("/:id", async (c) => {
   try {
     await MatchService.deleteMatch(drizzle(c.env.DB), c.req.param("id"));

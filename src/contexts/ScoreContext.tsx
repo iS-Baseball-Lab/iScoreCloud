@@ -257,9 +257,10 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
         const isTop = !m.isBottom;
         const isMyAttack = (isTop && isGuestFirst) || (!isTop && !isGuestFirst);
         const currentLineup = isMyAttack ? myLineup : opponentLineup;
+        const currentBatters = currentLineup?.filter((p: any) => p.order > 0) || [];
         const currentIndex = isMyAttack ? myBattingIndex : opponentBattingIndex;
-        const batterId = currentLineup && currentLineup.length > currentIndex
-          ? currentLineup[currentIndex]?.playerId || currentLineup[currentIndex]?.id || null
+        const batterId = currentBatters.length > currentIndex
+          ? currentBatters[currentIndex]?.playerId || currentBatters[currentIndex]?.id || null
           : null;
 
         // 🌟 D1の履歴とローカルストレージ履歴のハイブリッド復元
@@ -405,9 +406,10 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
         const isTop = !m.isBottom;
         const isMyAttack = (isTop && isGuestFirst) || (!isTop && !isGuestFirst);
         const currentLineup = isMyAttack ? myLineup : opponentLineup;
+        const currentBatters = currentLineup?.filter((p: any) => p.order > 0) || [];
         const currentIndex = isMyAttack ? myBattingIndex : opponentBattingIndex;
-        const batterId = currentLineup && currentLineup.length > currentIndex
-          ? currentLineup[currentIndex]?.playerId || currentLineup[currentIndex]?.id || null
+        const batterId = currentBatters.length > currentIndex
+          ? currentBatters[currentIndex]?.playerId || currentBatters[currentIndex]?.id || null
           : null;
 
         setState(prev => {
@@ -656,7 +658,10 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
       // 四死球時の自動進塁＆押し出しロジック
       let nextRunners = { ...prev.runners };
       let actualRbi = 0;
-      const batter = isMyAttack ? prev.myLineup?.[prev.myBattingIndex] : prev.opponentLineup?.[prev.opponentBattingIndex];
+      const offenseBatters = isMyAttack
+        ? prev.myLineup?.filter((p: any) => p.order > 0) || []
+        : prev.opponentLineup?.filter((p: any) => p.order > 0) || [];
+      const batter = offenseBatters[isMyAttack ? prev.myBattingIndex : prev.opponentBattingIndex];
       const batterId = batter?.playerId || batter?.id || "player-id-placeholder";
 
       if (isAtBatEnd && (result === "hbp" || newBalls >= 4)) {
@@ -712,8 +717,9 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
       // 現在のバッターIDを解決
       const isNextMyAttack = (isInningChange ? !prev.isTop : prev.isTop) === prev.isGuestFirst ? false : true;
       const currentLineup = isNextMyAttack ? prev.myLineup : prev.opponentLineup;
+      const nextBatters = currentLineup?.filter((p: any) => p.order > 0) || [];
       const currentIndex = isNextMyAttack ? newMyBattingIndex : newOpponentBattingIndex;
-      const nextBatterId = currentLineup && currentLineup.length > currentIndex ? currentLineup[currentIndex]?.playerId || null : null;
+      const nextBatterId = nextBatters.length > currentIndex ? nextBatters[currentIndex]?.playerId || null : null;
 
       // 💡 プレイログ用のテキスト整形（打順と打者名を prepending）
       const batterName = batter ? (batter.playerName || batter.name || "打者") : "打者";
@@ -764,7 +770,10 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
       let nextRunners = { ...prev.runners };
       let actualRbi = rbi;
 
-      const batter = isMyAttack ? prev.myLineup?.[prev.myBattingIndex] : prev.opponentLineup?.[prev.opponentBattingIndex];
+      const offenseBatters = isMyAttack
+        ? prev.myLineup?.filter((p: any) => p.order > 0) || []
+        : prev.opponentLineup?.filter((p: any) => p.order > 0) || [];
+      const batter = offenseBatters[isMyAttack ? prev.myBattingIndex : prev.opponentBattingIndex];
       const batterId = batter?.playerId || batter?.id || "player-id-placeholder";
 
       // 💡 クイックボタンと詳細打球記録の分岐
@@ -855,8 +864,9 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
 
       const nextIsMyAttack = (isInningChange ? !prev.isTop : prev.isTop) === prev.isGuestFirst ? false : true;
       const currentLineup = nextIsMyAttack ? prev.myLineup : prev.opponentLineup;
+      const nextBatters = currentLineup?.filter((p: any) => p.order > 0) || [];
       const currentIndex = nextIsMyAttack ? newMyBattingIndex : newOpponentBattingIndex;
-      const nextBatterId = currentLineup && currentLineup.length > currentIndex ? currentLineup[currentIndex]?.playerId || null : null;
+      const nextBatterId = nextBatters.length > currentIndex ? nextBatters[currentIndex]?.playerId || null : null;
 
       // 💡 プレイログ用のテキスト整形（打順と打者名を prepending）
       const batterName = batter ? (batter.playerName || batter.name || "打者") : "打者";
@@ -1254,12 +1264,14 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
       // Check if substituted player is the active batter
       const isMyAttack = (prev.isTop && prev.isGuestFirst) || (!prev.isTop && !prev.isGuestFirst);
       let nextBatterId = prev.batterId;
-      if (isMyTeam === isMyAttack && orderIndex === (isMyTeam ? prev.myBattingIndex : prev.opponentBattingIndex)) {
+      if (isMyTeam === isMyAttack && lineup[orderIndex]?.playerId === prev.batterId) {
         nextBatterId = newPlayerId;
       }
 
       const teamLabel = isMyTeam ? "自チーム" : "相手チーム";
-      const logText = `選手交代[${teamLabel}]: ${orderIndex + 1}番 ${oldPlayerName} ➔ ${newPlayerName}`;
+      const isDHPH = lineup[orderIndex]?.order === 0;
+      const orderLabel = isDHPH ? "投" : `${orderIndex + 1}番`;
+      const logText = `選手交代[${teamLabel}]: ${orderLabel} ${oldPlayerName} ➔ ${newPlayerName}`;
       const updatedLogs = appendLog(logText, prev);
 
       const next = {

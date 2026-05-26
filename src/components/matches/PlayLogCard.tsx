@@ -21,6 +21,75 @@ export interface PlayLog {
   createdAt: string;
 }
 
+export function parseD1PlayLog(
+  d1Log: {
+    id: string;
+    description: string;
+    inning: number;
+    isTop: boolean;
+    timestamp: number;
+  },
+  gameTitle: string
+): PlayLog {
+  const desc = d1Log.description || "";
+  
+  const bsoMatch = desc.match(/\s\[B:(\d+),\s*S:(\d+),\s*O:(\d+)\]$/);
+  let balls = 0;
+  let strikes = 0;
+  let outs = 0;
+  let cleanDesc = desc;
+  if (bsoMatch) {
+    balls = parseInt(bsoMatch[1], 10);
+    strikes = parseInt(bsoMatch[2], 10);
+    outs = parseInt(bsoMatch[3], 10);
+    cleanDesc = desc.replace(/\s\[B:\d+,\s*S:\d+,\s*O:\d+\]$/, "");
+  }
+
+  const batterMatch = cleanDesc.match(/^(\d+)番\s*([^:]+):\s*(.*)$/);
+  
+  let batterName = "打者";
+  let result = "打席完了";
+  let detailDesc = cleanDesc;
+
+  if (batterMatch) {
+    const order = batterMatch[1];
+    const name = batterMatch[2];
+    const playResult = batterMatch[3];
+    batterName = `${order}番 ${name}`;
+    result = playResult;
+    detailDesc = playResult;
+  } else if (cleanDesc.startsWith("選手交代")) {
+    batterName = "選手交代";
+    result = "交代";
+    detailDesc = cleanDesc;
+  } else if (cleanDesc === "試合終了") {
+    batterName = "試合終了";
+    result = "ゲームセット";
+    detailDesc = cleanDesc;
+  }
+
+  const dateObj = new Date(d1Log.timestamp);
+  const formattedDate = isNaN(dateObj.getTime())
+    ? ""
+    : `${dateObj.getMonth() + 1}/${dateObj.getDate()} ${String(dateObj.getHours()).padStart(2, "0")}:${String(dateObj.getMinutes()).padStart(2, "0")}`;
+
+  return {
+    id: d1Log.id,
+    gameId: "",
+    gameTitle: gameTitle,
+    inning: d1Log.inning,
+    topBottom: d1Log.isTop ? "top" : "bottom",
+    batterName: batterName,
+    pitcherName: "投手",
+    balls: balls,
+    strikes: strikes,
+    outs: outs,
+    result: result,
+    description: detailDesc,
+    createdAt: formattedDate,
+  };
+}
+
 interface PlayLogCardProps {
   log: PlayLog;
   onEdit: (id: string) => void;
