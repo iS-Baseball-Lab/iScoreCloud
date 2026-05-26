@@ -131,8 +131,8 @@ function ScorePageContent() {
               
               <button
                 onClick={() => {
-                  if (typeof window !== "undefined" && matchId) {
-                    window.location.href = `/news-generator?matchId=${matchId}`;
+                  if (matchId) {
+                    router.push(`/news-generator?matchId=${matchId}`);
                   }
                 }}
                 className="flex items-center gap-1 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white text-[10px] font-black rounded-xl transition-all shadow-md shrink-0 cursor-pointer"
