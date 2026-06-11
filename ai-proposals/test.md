@@ -1,0 +1,1 @@
+iS Baseball Lab Agentの接続テスト、大成功！
