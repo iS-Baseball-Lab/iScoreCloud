@@ -1,31 +1,23 @@
-name: 🤖 Issue Driven AI Agent
-
+name: Issue Driven AI Agent
 on:
   issues:
     types: [opened, edited]
-
-# 🔑 リポジトリへの書き込みとPR作成の権限をActionsに強制付与
 permissions:
   contents: write
   pull-requests: write
   issues: write
-
 jobs:
   run-agent:
-    # 💡 Issueのタイトルに「🤖」または「[AI]」が含まれている時だけ起動
     if: contains(github.event.issue.title, '🤖') || contains(github.event.issue.title, '[AI]')
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout Code
+      - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Setup Node.js
+      - name: Node
         uses: actions/setup-node@v4
         with:
           node-version: 22
-
-      - name: 🧠 Process with Gemini 3.5
+      - name: Gemini
         id: ai
         uses: actions/github-script@v7
         env:
@@ -34,74 +26,30 @@ jobs:
           script: |
             const fs = require('fs');
             const instruction = context.payload.issue.body;
-            console.log(`=== 📥 ユーザーからの指示を受信 ===\n${instruction}\n`);
-
-            // 🔍 【100%確実なパス自動解析】
-            // 本物のディスクを直接見に行けるため、src構成か通常構成かを一瞬で完璧に判別します！
-            let filePath = "app/page.tsx";
-            if (fs.existsSync("src/app/page.tsx")) {
-              filePath = "src/app/page.tsx";
-            }
-            
-            // 指示文の空気読みルーティング
-            if (instruction.includes("layout") || instruction.includes("レイアウト")) {
-              filePath = fs.existsSync("src/app/layout.tsx") ? "src/app/layout.tsx" : "app/layout.tsx";
-            } else if (instruction.includes("global") || instruction.includes("css") || instruction.includes("スタイル")) {
-              filePath = fs.existsSync("src/app/globals.css") ? "src/app/globals.css" : "app/globals.css";
-            }
-
-            console.log(`🎯 対象ファイルを特定しました: "${filePath}"`);
-            
-            // 現在のテンプレートコードをクリーンに読み込み
+            let filePath = fs.existsSync("src/app/page.tsx") ? "src/app/page.tsx" : "app/page.tsx";
+            if (instruction.includes("layout")) filePath = fs.existsSync("src/app/layout.tsx") ? "src/app/layout.tsx" : "app/layout.tsx";
+            if (instruction.includes("global")) filePath = fs.existsSync("src/app/globals.css") ? "src/app/globals.css" : "app/globals.css";
             const currentContent = fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf8') : "";
-            console.log(`📄 現在のファイルの読み込みに成功しました（文字数: ${currentContent.length}文字）`);
-
-            // 最新世代 Gemini 3.5 への特大プロンプト
-            const systemInstruction = `あなたは佐藤さんの優秀な専属AIエンジニア『iS Baseball Lab Agent』です。
-            対象ファイル「${filePath}」に対する修正コードを生成してください。
-            元のコードのインポート文やフォント設定、重要なレイアウト構造は絶対に消さずに残したまま、指示された部分だけをピンポイントで書き換えてください。
-            出力は必ず以下のJSONフォーマットのみにしてください。
-
-            【出力JSONフォーマット】
-            {
-              "newContent": "修正後のファイル全体の全コード",
-              "commitMessage": "コミットメッセージ（例: fix: サイトタイトルの変更）",
-              "prTitle": "PRのタイトル"
-            }`;
-
-            const prompt = `【現在のコード】:\n${currentContent}\n\n【指示】:\n${instruction}`;
-            const geminiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=' + process.env.GEMINI_API_KEY;
-            
-            console.log("⚡ Gemini 3.5 を起動中...（コンテキスト解析中）");
+            const systemInstruction = `あなたは佐藤さんの専属AIエンジニアです。対象ファイル「${filePath}」に対する修正コードを生成してください。元のインポートやレイアウトは絶対残し、指示部分だけ変更してください。出力はJSONフォーマットのみ。{"newContent": "修正後の全コード", "commitMessage": "コミットメッセージ", "prTitle": "PRタイトル"}`;
+            const geminiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=' + process.env.GEMINI_API_KEY;
             const response = await fetch(geminiUrl, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                contents: [{ parts: [{ text: `${systemInstruction}\n\n${prompt}` }] }],
+                contents: [{ parts: [{ text: `${systemInstruction}\n\nユーザー指示:\n${instruction}\n\n現在のコード:\n${currentContent}` }] }],
                 generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 8192 }
               })
             });
-
             const data = await response.json();
-            if (data.error) throw new Error(`Gemini API Error: ${data.error.message}`);
-            
+            if (data.error) throw new Error(data.error.message);
             let rawText = data.candidates[0].content.parts[0].text.trim();
-            if (rawText.startsWith("```")) {
-              rawText = rawText.replace(/^```json?\s*/i, "").replace(/```$/, "").trim();
-            }
-            
+            if (rawText.startsWith("```")) rawText = rawText.replace(/^```json?\s*/i, "").replace(/```$/, "").trim();
             const aiJson = JSON.parse(rawText);
-            
-            // 💾 ローカルのファイルを Gemini 3.5 のコードで安全に上書き
             fs.writeFileSync(filePath, aiJson.newContent, 'utf8');
-            console.log(`✏️ ファイルの上書きが完了しました: ${filePath}`);
-
-            // 後続のPR作成ステップにデータを安全に引き渡す
-            core.setOutput('pr_title', aiJson.prTitle || `🤖 [AI-Patch] ${context.payload.issue.title}`);
-            core.setOutput('commit_message', aiJson.commitMessage || 'chore: auto-code by AI');
-            core.setOutput('branch_name', `ai-issue-patch-${context.payload.issue.number}`);
-
-      - name: 🚀 Create Pull Request
+            core.setOutput('pr_title', aiJson.prTitle || `🤖 [AI] ${context.payload.issue.title}`);
+            core.setOutput('commit_message', aiJson.commitMessage || 'chore: auto-code');
+            core.setOutput('branch_name', `ai-patch-${context.payload.issue.number}`);
+      - name: PR
         uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -110,8 +58,3 @@ jobs:
           branch: ${{ steps.ai.outputs.branch_name }}
           base: main
           delete-branch: true
-          body: |
-            📱 GitHub Issue #${{ github.event.issue.number }} から自動生成されたPRです。
-            
-            【元の指示】
-            ${{ github.event.issue.body }}
