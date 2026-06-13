@@ -271,13 +271,13 @@ export function ControlPanel() {
 
       {/* 🚀 3段目 (特殊出塁 & ユーティリティ)：高さ 24% */}
       <div className="flex-1 grid grid-cols-4 gap-1.5 min-h-0 text-zinc-500 h-[24%]">
-        {/* 四死球 */}
+        {/* 死球 */}
         <button 
           onClick={() => recordPitch("hbp")} 
           disabled={isDisabled}
           className="h-full rounded-2xl border-2 border-amber-500/30 text-amber-600 dark:text-amber-400 font-black text-[10px] sm:text-xs active:bg-amber-500/10 transition-all cursor-pointer flex flex-col items-center justify-center gap-0.5 leading-none"
         >
-          <span className="font-bold">四死球</span>
+          <span className="font-bold">死球</span>
           <span className="text-[7.5px] opacity-70">HBP / WALK</span>
         </button>
 
