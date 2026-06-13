@@ -267,6 +267,12 @@ export function useNewsText({
         const desc = log.description;
         const cleanDesc = desc.replace(/\s*\[B:\d+,\s*S:\d+,\s*O:\d+\]$/, "").trim();
 
+        // 💡 ログから正確なアウト数をパースする
+        const bsoMatch = desc.match(/\[B:\d+,\s*S:\d+,\s*O:(\d+)\]$/);
+        const logOuts = bsoMatch ? parseInt(bsoMatch[1], 10) : inningOuts;
+        const isOutInc = logOuts > inningOuts;
+        inningOuts = logOuts;
+
         // 交代系ログ
         if (
           cleanDesc.includes("選手交代") || 
@@ -323,22 +329,6 @@ export function useNewsText({
           const name = atBatMatch ? atBatMatch[2].trim() : "";
           const play = atBatMatch ? atBatMatch[3].trim() : atBatMatchNoName![2].trim();
 
-          const isOut = (
-            play.includes("アウト") || 
-            play.includes("三振") || 
-            play.includes("ゴロ") || 
-            play.includes("飛") || 
-            play.includes("直") || 
-            play.includes("併殺") || 
-            play.includes("犠") || 
-            play.includes("封殺") || 
-            (play.includes("死") && !play.includes("デッド") && !play.includes("死球"))
-          );
-
-          if (isOut) {
-            inningOuts = Math.min(3, inningOuts + 1);
-          }
-
           // 💡 途中経過の投球（ボール、空振り、ストライク、ファウル）であるか判定
           const isPitch = (
             play === "ボール" || 
@@ -354,7 +344,7 @@ export function useNewsText({
             if (!isPitch) {
               currentAtBat.plays.push(play);
               currentAtBat.outsAtPlay.push(inningOuts);
-              currentAtBat.isOutsInc.push(isOut);
+              currentAtBat.isOutsInc.push(isOutInc);
             }
           } else {
             currentAtBat = {
@@ -363,7 +353,7 @@ export function useNewsText({
               batterName: name,
               plays: isPitch ? [] : [play],
               outsAtPlay: isPitch ? [] : [inningOuts],
-              isOutsInc: isPitch ? [] : [isOut]
+              isOutsInc: isPitch ? [] : [isOutInc]
             };
             atBats.push(currentAtBat);
           }
@@ -372,21 +362,6 @@ export function useNewsText({
           if (currentAtBat) {
             let playText = cleanDesc;
             
-            // 状態フラグ
-            let isOutAction = false;
-            if (playText.includes("盗塁死")) {
-              isOutAction = true;
-              inningOuts = Math.min(3, inningOuts + 1);
-            }
-            if (playText.includes("牽制死")) {
-              isOutAction = true;
-              inningOuts = Math.min(3, inningOuts + 1);
-            }
-            if (playText.includes("走塁死")) {
-              isOutAction = true;
-              inningOuts = Math.min(3, inningOuts + 1);
-            }
-
             // 💡 走者アクションの冗長な「〇塁走者 選手名: 」をトリムし、進塁先を推測してスマートに埋め込む
             const runnerActionMatch = playText.match(/^(\d+)塁走者\s*[^:]+?\s*:\s*(.+)$/);
             if (runnerActionMatch) {
@@ -422,7 +397,7 @@ export function useNewsText({
 
             currentAtBat.plays.push(playText);
             currentAtBat.outsAtPlay.push(inningOuts);
-            currentAtBat.isOutsInc.push(isOutAction);
+            currentAtBat.isOutsInc.push(isOutInc);
           }
         }
       });
