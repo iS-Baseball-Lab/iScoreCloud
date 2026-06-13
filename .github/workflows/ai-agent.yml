@@ -29,12 +29,19 @@ jobs:
           script: |
             const fs = require('fs');
             const instruction = context.payload.issue.body;
+            
+            // 🔍 ディスクを直接見てsrc構成か通常構成かを自動判定
             let filePath = fs.existsSync("src/app/page.tsx") ? "src/app/page.tsx" : "app/page.tsx";
             if (instruction.includes("layout")) filePath = fs.existsSync("src/app/layout.tsx") ? "src/app/layout.tsx" : "app/layout.tsx";
             if (instruction.includes("global")) filePath = fs.existsSync("src/app/globals.css") ? "src/app/globals.css" : "app/globals.css";
+            
             const currentContent = fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf8') : "";
+            
             const systemInstruction = `あなたは佐藤さんの専属AIエンジニアです。対象ファイル「${filePath}」に対する修正コードを生成してください。元のインポートやレイアウトは絶対残し、指示部分だけ変更してください。出力はJSONフォーマットのみ。{"newContent": "修正後の全コード", "commitMessage": "コミットメッセージ", "prTitle": "PRタイトル"}`;
-            const geminiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=' + process.env.GEMINI_API_KEY;
+            
+            // 🚀 【確実ルート】確実にAPIが通る gemini-3.5-flash を指定！最大トークン8192で長文も完走します。
+            const geminiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=' + process.env.GEMINI_API_KEY;
+            
             const response = await fetch(geminiUrl, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -43,15 +50,20 @@ jobs:
                 generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 8192 }
               })
             });
+            
             const data = await response.json();
             if (data.error) throw new Error(data.error.message);
+            
             let rawText = data.candidates[0].content.parts[0].text.trim();
             if (rawText.startsWith("```")) rawText = rawText.replace(/^```json?\s*/i, "").replace(/```$/, "").trim();
+            
             const aiJson = JSON.parse(rawText);
             fs.writeFileSync(filePath, aiJson.newContent, 'utf8');
+            
             core.setOutput('pr_title', aiJson.prTitle || `🤖 [AI] ${context.payload.issue.title}`);
-            core.setOutput('commit_message', aiJson.commitMessage || 'chore: auto-code');
+            core.setOutput('commit_message', aiJson.commitMessage || 'chore: auto-code by AI');
             core.setOutput('branch_name', `ai-patch-${context.payload.issue.number}`);
+            
       - name: PR
         uses: peter-evans/create-pull-request@v6
         with:
