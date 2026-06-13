@@ -863,6 +863,10 @@ function getNormalizedAtBatResult(actionNote: string): string {
       let nextRunners = { ...prev.runners };
       let actualRbi = rbi;
 
+      // 💡 得点や盗塁など、打席完了ではない非打席プレイの判定
+      const isNotAtBat = ["得点", "盗塁", "暴投", "ボーク", "守備交代", "走者状況変更"].includes(result);
+      const isAtBatEnd = !isNotAtBat;
+
       const offenseBatters = isMyAttack
         ? prev.myLineup?.filter((p: any) => p.order > 0) || []
         : prev.opponentLineup?.filter((p: any) => p.order > 0) || [];
@@ -897,7 +901,7 @@ function getNormalizedAtBatResult(actionNote: string): string {
         const isHR = result.endsWith("本");
         const is3B = result.endsWith("三");
         const is2B = result.endsWith("二");
-        const is1B = result.endsWith("安");
+        const is1B = result.endsWith("安") || result.endsWith("失") || result.endsWith("選") || result === "エラー" || result === "野選";
 
         if (isHR) {
           nextRunners = { base1: null, base2: null, base3: null };
@@ -913,6 +917,23 @@ function getNormalizedAtBatResult(actionNote: string): string {
       // 💡 詳細記録（アウト等）において、打点が発生し、3塁に走者がいる場合は生還したとみなして消去
       if (actualRbi > 0 && prev.runners.base3) {
         nextRunners.base3 = null;
+      }
+
+      // 💡 犠打（送りバント）の場合、塁上のランナーをそれぞれ1つずつ安全に進塁させる（3塁走者は生還＝消去）
+      const isSacrificeBunt = (result.includes("犠打") || (result.includes("犠") && !result.includes("飛"))) && isAtBatEnd;
+      if (isSacrificeBunt) {
+        const tempRunners = { ...nextRunners };
+        tempRunners.base3 = null;
+        tempRunners.base2 = null;
+        tempRunners.base1 = null;
+
+        if (nextRunners.base2) {
+          tempRunners.base3 = nextRunners.base2;
+        }
+        if (nextRunners.base1) {
+          tempRunners.base2 = nextRunners.base1;
+        }
+        nextRunners = tempRunners;
       }
 
       const newMyScore = isMyAttack ? prev.myScore + actualRbi : prev.myScore;
@@ -933,9 +954,7 @@ function getNormalizedAtBatResult(actionNote: string): string {
         updatedMyScores[currentIdx] += actualRbi;
       }
 
-      // 💡 得点や盗塁など、打席完了ではない非打席プレイの判定
-      const isNotAtBat = ["得点", "盗塁", "暴投", "ボーク", "守備交代", "走者状況変更"].includes(result);
-      const isAtBatEnd = !isNotAtBat;
+      // (定義は関数上部に移動されました)
 
       // 💡 安打・出塁系であるかどうかの判定 (アウトカウントの誤加算防止)
       const isHit = result.endsWith("安") || result.endsWith("二") || result.endsWith("三") || result.endsWith("本") || 
@@ -944,7 +963,19 @@ function getNormalizedAtBatResult(actionNote: string): string {
       const isFieldersChoice = result.endsWith("選") || result === "野選";
       const isSafe = isHit || isError || isFieldersChoice;
 
-      const newOuts = prev.outs + (isAtBatEnd && !isSafe && (result.includes("アウト") || result.includes("犠") || result.includes("ゴロ") || result.includes("飛") || result.includes("直") || result.includes("併殺") || result.includes("三振")) ? 1 : 0);
+      // 💡 併殺で+2、野選・通常アウトで+1のアウトカウント加算処理
+      let addedOuts = 0;
+      if (isAtBatEnd) {
+        if (result.includes("併殺")) {
+          addedOuts = 2;
+        } else if (isFieldersChoice) {
+          addedOuts = 1;
+        } else if (!isSafe && (result.includes("アウト") || result.includes("犠") || result.includes("ゴロ") || result.includes("飛") || result.includes("直") || result.includes("三振"))) {
+          addedOuts = 1;
+        }
+      }
+
+      const newOuts = prev.outs + addedOuts;
       const isInningChange = newOuts >= 3;
 
       let newMyBattingIndex = prev.myBattingIndex;
