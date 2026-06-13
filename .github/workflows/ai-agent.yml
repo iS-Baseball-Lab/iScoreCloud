@@ -1,0 +1,63 @@
+name: Issue Driven AI Agent
+on:
+  issues:
+    types: [opened, edited]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  run-agent:
+    if: contains(github.event.issue.title, '🤖') || contains(github.event.issue.title, '[AI]')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Gemini
+        id: ai
+        uses: actions/github-script@v7
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        with:
+          script: |
+            const fs = require('fs');
+            const instruction = context.payload.issue.body;
+            let filePath = fs.existsSync("src/app/page.tsx") ? "src/app/page.tsx" : "app/page.tsx";
+            if (instruction.includes("layout")) filePath = fs.existsSync("src/app/layout.tsx") ? "src/app/layout.tsx" : "app/layout.tsx";
+            if (instruction.includes("global")) filePath = fs.existsSync("src/app/globals.css") ? "src/app/globals.css" : "app/globals.css";
+            const currentContent = fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf8') : "";
+            const systemInstruction = `あなたは佐藤さんの専属AIエンジニアです。対象ファイル「${filePath}」に対する修正コードを生成してください。元のインポートやレイアウトは絶対残し、指示部分だけ変更してください。出力はJSONフォーマットのみ。{"newContent": "修正後の全コード", "commitMessage": "コミットメッセージ", "prTitle": "PRタイトル"}`;
+            const geminiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=' + process.env.GEMINI_API_KEY;
+            const response = await fetch(geminiUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents: [{ parts: [{ text: `${systemInstruction}\n\nユーザー指示:\n${instruction}\n\n現在のコード:\n${currentContent}` }] }],
+                generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 8192 }
+              })
+            });
+            const data = await response.json();
+            if (data.error) throw new Error(data.error.message);
+            let rawText = data.candidates[0].content.parts[0].text.trim();
+            if (rawText.startsWith("```")) rawText = rawText.replace(/^```json?\s*/i, "").replace(/```$/, "").trim();
+            const aiJson = JSON.parse(rawText);
+            fs.writeFileSync(filePath, aiJson.newContent, 'utf8');
+            core.setOutput('pr_title', aiJson.prTitle || `🤖 [AI] ${context.payload.issue.title}`);
+            core.setOutput('commit_message', aiJson.commitMessage || 'chore: auto-code');
+            core.setOutput('branch_name', `ai-patch-${context.payload.issue.number}`);
+      - name: PR
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: ${{ steps.ai.outputs.commit_message }}
+          title: ${{ steps.ai.outputs.pr_title }}
+          branch: ${{ steps.ai.outputs.branch_name }}
+          base: main
+          delete-branch: true
