@@ -2,6 +2,43 @@
 import { useMemo } from "react";
 import type { PlayLogEntry } from "@/types/score";
 
+// 💡 一括自動進塁ログをスマートに縮小化するヘルパー
+const shrinkAllAdvanceLog = (desc: string, showSurnameOnly: boolean): string => {
+  const bsoMatch = desc.match(/\s*(\[B:\d+,\s*S:\d+,\s*O:\d+\])$/);
+  const suffix = bsoMatch ? bsoMatch[1] : "";
+  const mainDesc = bsoMatch ? desc.replace(suffix, "").trim() : desc.trim();
+
+  const actionMatch = mainDesc.match(/^(暴投|捕逸|ボーク)により全走者が自動進塁\s*\((.+)\)$/);
+  if (!actionMatch) return desc;
+
+  const actionName = actionMatch[1];
+  const detailsStr = actionMatch[2]; // "2塁走者 山田 が3塁進塁, 1塁走者 田中 が2塁進塁"
+  
+  const parts = detailsStr.split(",").map(part => part.trim());
+  const formattedParts = parts.map(part => {
+    // 例: "3塁走者 高橋 が本塁生還"
+    if (part.includes("本塁生還")) {
+      const nameMatch = part.match(/\d+塁走者\s+(.+?)\s+が/);
+      if (nameMatch) {
+        let name = nameMatch[1];
+        if (showSurnameOnly) name = name.split(/[\s　]+/)[0];
+        return `${name}生還`;
+      }
+    }
+    // 例: "2塁走者 山田 が3塁進塁" -> 山田3塁
+    const baseMatch = part.match(/\d+塁走者\s+(.+?)\s+が(\d+)塁/);
+    if (baseMatch) {
+      let name = baseMatch[1];
+      const destBase = baseMatch[2];
+      if (showSurnameOnly) name = name.split(/[\s　]+/)[0];
+      return `${name}${destBase}塁`;
+    }
+    return part;
+  });
+
+  return `${actionName}(${formattedParts.join(", ")})${suffix ? " " + suffix : ""}`;
+};
+
 // ⚾️ ポジションマッピング
 const getPositionLabel = (posId: string) => {
   const mapping: Record<string, string> = {
@@ -264,7 +301,13 @@ export function useNewsText({
       const inningScore = inningScores[group.inning - 1] !== undefined ? inningScores[group.inning - 1] : 0;
 
       group.logs.forEach(log => {
-        const desc = log.description;
+        let desc = log.description;
+
+        // 💡 一括自動進塁ログをスマートに縮小化
+        if (desc.includes("により全走者が自動進塁")) {
+          desc = shrinkAllAdvanceLog(desc, showSurnameOnly);
+        }
+
         const cleanDesc = desc.replace(/\s*\[B:\d+,\s*S:\d+,\s*O:\d+\]$/, "").trim();
 
         // 💡 ログから正確なアウト数をパースする
@@ -369,8 +412,10 @@ export function useNewsText({
               const actionContent = runnerActionMatch[2].trim();
               
               let cleanAction = actionContent
+                .replace("打球により本塁生還", "本塁生還")
+                .replace("打球で", "")
                 .replace("盗塁成功", "盗塁")
-                .replace("暴投", "投暴投")
+                .replace("暴投", "暴投")
                 .replace("パスボール", "捕逸")
                 .replace("ボーク", "ボーク")
                 .replace("エラー", "失策進塁")
@@ -379,11 +424,11 @@ export function useNewsText({
                 .trim();
               
               const destBase = startBase + 1;
-              if (destBase <= 3) {
+              if (destBase <= 3 && !cleanAction.includes("本塁") && !cleanAction.includes("生還")) {
                 if (!cleanAction.includes("塁")) {
                   cleanAction += `${destBase}塁`;
                 }
-              } else {
+              } else if (destBase > 3 || cleanAction.includes("本塁") || cleanAction.includes("生還")) {
                 if (!cleanAction.includes("本塁") && !cleanAction.includes("1点") && !cleanAction.includes("得点")) {
                   cleanAction += " 本塁生還";
                 }
@@ -391,7 +436,7 @@ export function useNewsText({
               playText = cleanAction;
             } else {
               playText = playText.replace("盗塁成功", "盗塁");
-              playText = playText.replace("暴投", "投暴投");
+              playText = playText.replace("暴投", "暴投");
               playText = playText.replace("パスボール", "捕逸");
             }
 
