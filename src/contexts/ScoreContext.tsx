@@ -96,6 +96,29 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
     return { ...prev, ...nextPartial, history: newHistory } as ScoreState;
   }, []);
 
+// 💡 実況テキスト（actionNote）から、スタッツ集計用の英語正規化コードにマッピングするヘルパー
+function getNormalizedAtBatResult(actionNote: string): string {
+  const cleanNote = actionNote.includes(":") 
+    ? actionNote.split(":").slice(1).join(":").trim() 
+    : actionNote.trim();
+
+  if (cleanNote.includes("三振")) return "strikeout";
+  if (cleanNote.includes("フォアボール") || cleanNote.includes("デッドボール") || cleanNote.includes("四球") || cleanNote.includes("死球")) return "walk";
+  if (cleanNote.includes("本塁打") || cleanNote.includes("本")) return "home_run";
+  if (cleanNote.includes("三塁打") || cleanNote.includes("三")) return "triple";
+  if (cleanNote.includes("二塁打") || cleanNote.includes("二")) return "double";
+  if (cleanNote.includes("単打") || cleanNote.includes("安") || cleanNote.includes("ヒット")) return "single";
+  if (cleanNote.includes("併殺") || cleanNote.includes("ダブルプレー")) return "double_play";
+  if (cleanNote.includes("ゴロ")) return "groundout";
+  if (cleanNote.includes("飛") || cleanNote.includes("直") || cleanNote.includes("ライナー") || cleanNote.includes("フライ")) return "flyout";
+  if (cleanNote.includes("犠")) return "sacrifice"; 
+  if (cleanNote.includes("失") || cleanNote.includes("エラー")) return "groundout"; 
+  if (cleanNote.includes("選") || cleanNote.includes("野選")) return "groundout"; 
+  if (cleanNote.includes("アウト")) return "groundout"; 
+  
+  return "groundout"; 
+}
+
   // 🚀 2. バックエンド同期 (D1 + LINE速報連動)
   const syncWithBackend = useCallback(async (
     updatedState: ScoreState, 
@@ -138,7 +161,7 @@ export function ScoreProvider({ children }: { children: React.ReactNode }) {
             isTop: updatedState.isTop,
             batterId: updatedState.batterId,
             pitcherId: updatedState.pitcherId,
-            result: actionNote
+            result: getNormalizedAtBatResult(actionNote)
           } : null),
           newPlayLog: isUndo ? null : {
             inningText: updatedState.logs[0]

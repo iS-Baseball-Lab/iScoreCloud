@@ -23,11 +23,24 @@ function EditLogForm() {
   useEffect(() => {
     if (!logId) return;
 
+    interface LogResponse {
+      success: boolean;
+      log?: {
+        id: string;
+        matchId: string;
+        inningText: string;
+        resultType: string;
+        description: string;
+        createdAt: string | number | Date;
+      };
+      error?: string;
+    }
+
     const fetchLog = async () => {
       try {
         const res = await fetch(`/api/matches/logs/${logId}`);
         if (res.ok) {
-          const data = await res.json();
+          const data = (await res.json()) as LogResponse;
           if (data.success && data.log) {
             setLog(data.log);
             const desc = data.log.description || "";
@@ -88,7 +101,7 @@ function EditLogForm() {
       });
 
       if (res.ok) {
-        const data = await res.json();
+        const data = (await res.json()) as { success: boolean };
         if (data.success) {
           toast.success("プレイログを保存しました！🔥");
           // Safely navigate back or to play-logs list with active match ID

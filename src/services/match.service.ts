@@ -1,7 +1,7 @@
 // src/services/match.service.ts
-import { eq, desc } from "drizzle-orm";
-import { matches, tournaments } from "@/db/schema/match";
-import { playLogs } from "@/db/schema/score";
+import { eq, desc, sql } from "drizzle-orm";
+import { matches, tournaments, matchLineups } from "@/db/schema/match";
+import { playLogs, atBats, baseAdvances, matchUndoHistories } from "@/db/schema/score";
 import type {
   DrizzleDB,
   CreateMatchBody,
@@ -215,7 +215,15 @@ export const MatchService = {
 
   // 7. 試合削除
   async deleteMatch(db: DrizzleDB, matchId: string) {
-    await db.delete(matches).where(eq(matches.id, matchId));
+    await db.batch([
+      db.run(sql`DELETE FROM pitches WHERE at_bat_id IN (SELECT id FROM at_bats WHERE match_id = ${matchId})`) as any,
+      db.delete(baseAdvances).where(eq(baseAdvances.matchId, matchId)) as any,
+      db.delete(atBats).where(eq(atBats.matchId, matchId)) as any,
+      db.delete(playLogs).where(eq(playLogs.matchId, matchId)) as any,
+      db.delete(matchUndoHistories).where(eq(matchUndoHistories.matchId, matchId)) as any,
+      db.delete(matchLineups).where(eq(matchLineups.matchId, matchId)) as any,
+      db.delete(matches).where(eq(matches.id, matchId)) as any,
+    ]);
   },
 
   // 8. プレイログの取得

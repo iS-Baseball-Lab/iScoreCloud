@@ -78,7 +78,7 @@ function PlayLogsContent() {
       try {
         const res = await fetch(`/api/matches/${selectedMatchId}/logs`);
         if (res.ok) {
-          const data = await res.json();
+          const data = (await res.json()) as { success: boolean; logs: any[] };
           if (data.success && Array.isArray(data.logs)) {
             const selectedMatch = matches.find((m) => m.id === selectedMatchId);
             const gameTitle = selectedMatch
@@ -126,7 +126,7 @@ function PlayLogsContent() {
       });
 
       if (res.ok) {
-        const data = await res.json();
+        const data = (await res.json()) as { success: boolean };
         if (data.success) {
           setLogs((prev) => prev.filter((log) => log.id !== id));
           toast.success("プレイログを削除しました");
