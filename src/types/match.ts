@@ -37,6 +37,7 @@ export interface Match {
   battingOrder: BattingOrder;
   surfaceDetails?: string;
   tournamentName?: string;
+  venueName?: string;
   innings?: number;
   myInningScores?: (number | null)[];
   opponentInningScores?: (number | null)[];

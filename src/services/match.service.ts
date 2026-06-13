@@ -1,6 +1,6 @@
 // src/services/match.service.ts
 import { eq, desc, sql } from "drizzle-orm";
-import { matches, tournaments, matchLineups } from "@/db/schema/match";
+import { matches, tournaments, venues, matchLineups } from "@/db/schema/match";
 import { playLogs, atBats, baseAdvances, matchUndoHistories } from "@/db/schema/score";
 import type {
   DrizzleDB,
@@ -28,6 +28,7 @@ export const MatchService = {
       battingOrder: matches.battingOrder,
       surfaceDetails: matches.surfaceDetails,
       tournamentName: tournaments.name,
+      venueName: venues.name,
       innings: matches.innings,
       myInningScores: matches.myInningScores,
       opponentInningScores: matches.opponentInningScores,
@@ -40,6 +41,7 @@ export const MatchService = {
     })
       .from(matches)
       .leftJoin(tournaments, eq(matches.tournamentId, tournaments.id))
+      .leftJoin(venues, eq(matches.venueId, venues.id))
       .where(eq(matches.teamId, teamId))
       .orderBy(desc(matches.date))
       .all();
@@ -70,6 +72,7 @@ export const MatchService = {
       surfaceDetails: matches.surfaceDetails,
       innings: matches.innings,
       tournamentName: tournaments.name,
+      venueName: venues.name,
       myScore: matches.myScore,
       opponentScore: matches.opponentScore,
       myInningScores: matches.myInningScores,
@@ -87,6 +90,7 @@ export const MatchService = {
     })
       .from(matches)
       .leftJoin(tournaments, eq(matches.tournamentId, tournaments.id))
+      .leftJoin(venues, eq(matches.venueId, venues.id))
       .where(eq(matches.id, matchId))
       .get();
   },

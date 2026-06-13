@@ -161,6 +161,8 @@ export interface MatchRow {
   opponentInningScores: number[]; // JSON.parse 後の配列として定義
 
   weather: string | null;
+  tournamentName?: string | null;
+  venueName?: string | null;
 }
 
 /**
