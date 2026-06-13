@@ -80,7 +80,7 @@ function ScorePageContent() {
         {/* 最近のプレイログ：操作パネルとの視覚的な繋ぎ / 引き出し式シート */}
         <div className={cn(
           "absolute bottom-0 w-full px-2 transition-all duration-300",
-          isLogExpanded ? "h-[90%] z-50" : (!isScorer ? "h-[180px] z-30" : "h-[100px] [@media(max-height:700px)]:h-[36px] z-30")
+          isLogExpanded ? "h-[90%] z-50" : ((!isScorer || state.status === 'finished') ? "h-[180px] z-30" : "h-[100px] [@media(max-height:700px)]:h-[36px] z-30")
         )}>
           <div 
             className="h-full bg-white/10 dark:bg-black/10 backdrop-blur-[3px] rounded-t-3xl border border-zinc-300/60 dark:border-zinc-800/60 border-b-0 pt-2 px-2 pb-0 shadow-[0_-8px_30px_rgba(0,0,0,0.06)] flex flex-col"
@@ -100,23 +100,55 @@ function ScorePageContent() {
               </div>
             </div>
             <div className={cn("flex-1", isLogExpanded ? "overflow-y-auto pr-1 pb-0" : "overflow-hidden")}>
-              <PlayLog limit={isLogExpanded ? 100 : (!isScorer ? 6 : 3)} />
+              <PlayLog limit={isLogExpanded ? 100 : ((!isScorer || state.status === 'finished') ? 6 : 3)} />
             </div>
           </div>
         </div>
       </main>
 
-      {/* 3. 【下部：操作パネル or 観戦通知】🌟 ここがスコアラーの主戦場 🌟
+      {/* 3. 【下部：操作パネル or 観戦・閲覧通知】🌟 ここがスコアラーの主戦場 🌟
           脱・グラスモーフィズム：操作ミスを防ぐため透過を抑え、ボタンのコントラストを最大化。 */}
       <footer className={cn(
         "shrink-0 z-[60] bg-card border-t border-border px-2 pt-2 pb-2 shadow-[0_-15px_50px_rgba(0,0,0,0.2)]",
-        isScorer ? "h-[22dvh] min-h-[160px] [@media(max-height:700px)]:min-h-[135px] [@media(max-height:600px)]:min-h-[120px]" : "h-[10dvh] min-h-[80px]",
+        (isScorer && state.status !== 'finished') ? "h-[22dvh] min-h-[160px] [@media(max-height:700px)]:min-h-[135px] [@media(max-height:600px)]:min-h-[120px]" : "h-[10dvh] min-h-[80px]",
         isReady ? "translate-y-0" : "translate-y-full transition-none",
         "transition-all duration-700 ease-out",
         isLogExpanded && "opacity-95"
       )}>
         <div className="max-w-md mx-auto h-full w-full flex flex-col justify-center">
-          {isScorer ? (
+          {state.status === 'finished' ? (
+            // 試合終了（閲覧モード）用の表示
+            <div className="py-2 px-4 bg-zinc-100 dark:bg-zinc-800/50 rounded-2xl border border-zinc-200 dark:border-zinc-800/80 flex items-center justify-between gap-3 w-full animate-in fade-in zoom-in duration-500">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="relative flex h-2 w-2 shrink-0">
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-zinc-400 dark:bg-zinc-500"></span>
+                </span>
+                <span className="text-xs font-black text-foreground tracking-wider uppercase truncate">試合終了（閲覧モード）</span>
+              </div>
+              
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={() => router.push("/matches")}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-card border border-border hover:bg-muted active:scale-95 text-foreground text-[10px] font-black rounded-xl transition-all shadow-sm cursor-pointer"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  戻る
+                </button>
+
+                <button
+                  onClick={() => {
+                    if (matchId) {
+                      router.push(`/news-generator?matchId=${matchId}`);
+                    }
+                  }}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white text-[10px] font-black rounded-xl transition-all shadow-md shrink-0 cursor-pointer"
+                >
+                  <Zap className="w-3.5 h-3.5" />
+                  速報を作成
+                </button>
+              </div>
+            </div>
+          ) : isScorer ? (
             <ControlPanel /> // スコアラーには特大の入力ボタンを提供
           ) : (
             // 観戦者（ReadOnly）向け：操作パネルの代わりにコンパクトな速報モードとジェネレーターへの導線を表示
@@ -154,26 +186,6 @@ function ScorePageContent() {
           )}
         </div>
       </footer>
-
-      {/* 4. 【ゲームセット演出】 */}
-      {state.status === 'finished' && (
-        <div className="absolute inset-0 z-[200] bg-background/95 backdrop-blur-md flex items-center justify-center animate-in fade-in duration-700">
-          <div className="text-center">
-            <h2 className="text-5xl font-black text-foreground mb-4">
-              試合終了
-            </h2>
-            <p className="text-xl font-bold text-muted-foreground mb-12">
-              お疲れさまでした
-            </p>
-            <button 
-              onClick={() => router.push('/dashboard')}
-              className="px-8 py-3 bg-primary text-primary-foreground rounded-full font-bold text-sm shadow-sm"
-            >
-              ダッシュボードへ戻る
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
