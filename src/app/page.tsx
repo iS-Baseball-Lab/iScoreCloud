@@ -50,7 +50,9 @@ export default function LandingPage() {
     const systemThemeMedia = window.matchMedia("(prefers-color-scheme: dark)");
 
     const savedTheme = localStorage.getItem("iscore-theme") as Theme | null;
-    if (savedTheme) {
+    const activeTheme = savedTheme || theme;
+
+    if (savedTheme && savedTheme !== theme) {
       setTheme(savedTheme);
     }
 
@@ -63,7 +65,19 @@ export default function LandingPage() {
       }
     };
 
-    applyTheme(savedTheme || theme);
+    applyTheme(activeTheme);
+
+    const handleSystemThemeChange = (e: MediaQueryListEvent) => {
+      if ((savedTheme || theme) === "system") {
+        root.classList.remove("light", "dark");
+        root.classList.add(e.matches ? "dark" : "light");
+      }
+    };
+
+    systemThemeMedia.addEventListener("change", handleSystemThemeChange);
+    return () => {
+      systemThemeMedia.removeEventListener("change", handleSystemThemeChange);
+    };
   }, [theme]);
 
   const handleThemeChange = (newTheme: Theme) => {
@@ -110,7 +124,7 @@ export default function LandingPage() {
               animate={p.type === "h" ? { x: "200%" } : p.type === "v" ? { y: "200%" } : { x: "150%", y: "150%", opacity: [0, 1, 0] }}
               transition={{ duration: p.duration, repeat: Infinity, ease: "circIn", delay: p.delay }}
               className={cn(
-                "absolute blur-[1px] shadow-[0_0_12px_rgba(var(--primary),0.7)]",
+                "absolute blur-[1px] shadow-[0_0_12px_hsl(var(--primary)/0.7)]",
                 p.type === "h" ? "h-[1.5px] w-64 bg-gradient-to-r from-transparent via-primary/80 to-transparent" :
                   p.type === "v" ? "w-[1.5px] h-64 bg-gradient-to-b from-transparent via-primary/80 to-transparent" :
                     "w-48 h-[1px] bg-gradient-to-br from-transparent via-primary/60 to-transparent rotate-45"
@@ -126,7 +140,7 @@ export default function LandingPage() {
       {/* 🌟 固定ヘッダー（iScoreCloudへ名称変更） */}
       <header className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 md:px-12 h-20 transition-all duration-300 bg-background/20 backdrop-blur-md border-b border-border/30">
         <Link href="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
-          <img src="/logo.webp" alt="iScoreCloud Logo" className="h-10 w-10 object-contain drop-shadow-sm" />
+          <Image src="/logo.webp" alt="iScoreCloud Logo" width={40} height={40} className="h-10 w-10 object-contain drop-shadow-sm" priority />
           <span className="text-3xl font-black italic tracking-tighter text-foreground">
             iScore<span className="text-primary italic">Cloud</span>
           </span>
@@ -173,7 +187,7 @@ export default function LandingPage() {
       <footer className="relative z-10 w-full border-t border-border/40 bg-background/60 backdrop-blur-md py-12 mt-auto text-center md:text-left">
         <div className="max-w-5xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2 opacity-80">
-            <img src="/logo.webp" alt="Logo" className="h-6 w-6 grayscale" />
+            <Image src="/logo.webp" alt="Logo" width={24} height={24} className="h-6 w-6 grayscale" />
             <span className="text-xl font-black italic tracking-tighter text-foreground">iScoreCloud</span>
           </div>
           <p className="text-sm text-muted-foreground font-medium italic">© {new Date().getFullYear()} iS Baseball Lab. FIELD LOGIC PROTOCOL.</p>
