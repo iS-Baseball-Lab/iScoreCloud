@@ -2,16 +2,20 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useScore } from "@/contexts/ScoreContext";
 import { cn } from "@/lib/utils";
 import { FieldModal } from "./FieldModal";
 import { OutDetailModal } from "./OutDetailModal";
+import { FinishConfirmModal } from "./FinishConfirmModal";
 import type { BaseAdvance } from "@/types/score";
 
 export function ControlPanel() {
+  const router = useRouter();
   const { state, recordPitch, recordInPlay, undo, finishMatch, isSyncing } = useScore();
   const [fieldOpen, setFieldOpen] = useState(false);
   const [outOpen, setOutOpen] = useState(false);
+  const [finishModalOpen, setFinishModalOpen] = useState(false);
   const [defaultHitType, setDefaultHitType] = useState<string>("1B");
 
   const isDisabled = isSyncing || !state.isScorer;
@@ -303,11 +307,7 @@ export function ControlPanel() {
 
         {/* 試合終了 */}
         <button 
-          onClick={() => {
-            if(window.confirm("試合を終了し、結果を確定しますか？")) {
-              finishMatch();
-            }
-          }} 
+          onClick={() => setFinishModalOpen(true)} 
           disabled={isDisabled}
           className="h-full bg-rose-50/50 hover:bg-rose-100/50 dark:bg-rose-950/20 dark:hover:bg-rose-950/30 text-rose-600 dark:text-rose-400 border-2 border-rose-500/20 rounded-2xl text-[10px] sm:text-xs font-black active:bg-rose-500/20 transition-all cursor-pointer flex flex-col items-center justify-center gap-0.5 leading-tight"
         >
@@ -317,6 +317,12 @@ export function ControlPanel() {
       </div>
 
       {/* モーダル群 */}
+      <FinishConfirmModal
+        open={finishModalOpen}
+        onOpenChange={setFinishModalOpen}
+        onConfirmFinish={finishMatch}
+        onReturnToDashboard={() => router.push("/dashboard")}
+      />
       <FieldModal 
         open={fieldOpen} 
         onOpenChange={setFieldOpen} 
