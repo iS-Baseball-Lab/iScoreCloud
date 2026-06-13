@@ -14,7 +14,7 @@ import { ControlPanel } from "@/components/score/ControlPanel";
 import { PlayArea } from "@/components/score/PlayArea";
 import { PlayLog } from "@/components/score/PlayLog";
 import { cn } from "@/lib/utils";
-import { Loader2, ChevronUp, History, Zap } from "lucide-react";
+import { Loader2, ChevronUp, History, Zap, ArrowLeft } from "lucide-react";
 
 function ScorePageContent() {
   const searchParams = useSearchParams();
@@ -129,17 +129,27 @@ function ScorePageContent() {
                 <span className="text-xs font-black text-foreground tracking-wider uppercase truncate">ライブ観戦中</span>
               </div>
               
-              <button
-                onClick={() => {
-                  if (matchId) {
-                    router.push(`/news-generator?matchId=${matchId}`);
-                  }
-                }}
-                className="flex items-center gap-1 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white text-[10px] font-black rounded-xl transition-all shadow-md shrink-0 cursor-pointer"
-              >
-                <Zap className="w-3.5 h-3.5" />
-                速報を作成
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={() => router.push("/dashboard")}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-card border border-border hover:bg-muted active:scale-95 text-foreground text-[10px] font-black rounded-xl transition-all shadow-sm cursor-pointer"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  戻る
+                </button>
+
+                <button
+                  onClick={() => {
+                    if (matchId) {
+                      router.push(`/news-generator?matchId=${matchId}`);
+                    }
+                  }}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white text-[10px] font-black rounded-xl transition-all shadow-md shrink-0 cursor-pointer"
+                >
+                  <Zap className="w-3.5 h-3.5" />
+                  速報を作成
+                </button>
+              </div>
             </div>
           )}
         </div>
