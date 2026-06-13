@@ -16,18 +16,27 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Node
+
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Gemini
+          cache: 'npm' # ⚡ 2回目以降のビルドを高速化
+
+      # 🏗️ 【超重要】AIが書いたコードを実際にテストするため、事前に依存関係をインストール
+      - name: Install Dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Gemini Self-Healing Loop
         id: ai
         uses: actions/github-script@v7
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          # 💡 もしNext.jsのビルドに環境変数（NextAuthやClerk等）が必要なら、ここに足してください
         with:
           script: |
             const fs = require('fs');
+            const { execSync } = require('child_process');
             const instruction = context.payload.issue.body;
             
             // 🔍 ディスクを直接見てsrc構成か通常構成かを自動判定
@@ -37,34 +46,76 @@ jobs:
             
             const currentContent = fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf8') : "";
             
-            const systemInstruction = `あなたは佐藤さんの専属AIエンジニアです。対象ファイル「${filePath}」に対する修正コードを生成してください。元のインポートやレイアウトは絶対残し、指示部分だけ変更してください。出力はJSONフォーマットのみ。{"newContent": "修正後の全コード", "commitMessage": "コミットメッセージ", "prTitle": "PRタイトル"}`;
+            const systemInstruction = `あなたは佐藤さんの優秀な専属AIエンジニアです。対象ファイル「${filePath}」に対する修正コードを生成してください。元のインポート文や設定は絶対に維持し、指示された部分だけをピンポイントで書き換えてください。
+            【超重要】解説やMarkdownの枠（\`\`\`）などは一切不要です。修正後のファイル全体の全ソースコード「のみ」をそのまま出力してください。`;
             
-            // 🚀 【確実ルート】確実にAPIが通る gemini-3.5-flash を指定！最大トークン8192で長文も完走します。
             const geminiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=' + process.env.GEMINI_API_KEY;
             
-            const response = await fetch(geminiUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                contents: [{ parts: [{ text: `${systemInstruction}\n\nユーザー指示:\n${instruction}\n\n現在のコード:\n${currentContent}` }] }],
-                generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 8192 }
-              })
-            });
+            let attempts = 0;
+            const maxAttempts = 3; // 🔄 最大3回まで自律修復ループを回す
+            let success = false;
+            let lastErrorLog = "";
             
-            const data = await response.json();
-            if (data.error) throw new Error(data.error.message);
+            while (attempts < maxAttempts) {
+              attempts++;
+              console.log(`\n🔄 [🤖 Self-Healing] 修正・検証サイクル [${attempts}/${maxAttempts}] を開始します...`);
+              
+              let promptText = "";
+              if (attempts === 1) {
+                promptText = `${systemInstruction}\n\nユーザー指示:\n${instruction}\n\n現在のコード:\n${currentContent}`;
+              } else {
+                console.log("⚠️ 前のビルドエラーを元に、Geminiへ再修正を依頼中...");
+                promptText = `${systemInstruction}\n\nユーザー指示:\n${instruction}\n\n【⚠️ 超重要：前回の修正でビルドエラーが発生しました。以下のエラーログを徹底的に分析し、型定義エラーやインポートの欠落、構文ミスを完全に修正した全コードを出力してください】\n\n■ 発生したエラーログ:\n${lastErrorLog}\n\n■ 修正対象の現在のコード:\n${fs.readFileSync(filePath, 'utf8')}`;
+              }
+              
+              // Gemini API 呼び出し
+              const response = await fetch(geminiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  contents: [{ parts: [{ text: promptText }] }],
+                  generationConfig: { maxOutputTokens: 8192 }
+                })
+              });
+              
+              const data = await response.json();
+              if (data.error) throw new Error(`Gemini API Error: ${data.error.message}`);
+              
+              let rawText = data.candidates[0].content.parts[0].text.trim();
+              if (rawText.startsWith("```")) {
+                rawText = rawText.replace(/^```[a-zA-Z0-9]*\s*/, "").replace(/```$/, "").trim();
+              }
+              
+              // 💾 ファイルに一旦書き込み
+              fs.writeFileSync(filePath, rawText, 'utf8');
+              
+              // 🏗️ 本物のコンパイラ（npm run build）をぶち当てて実力テスト！
+              try {
+                console.log("⚙️  コンパイルテストを実行中... (npm run build)");
+                execSync('npm run build', { stdio: 'pipe' });
+                
+                console.log("✅【コンパイル成功】エラーなし！完璧なコードが完成しました！");
+                success = true;
+                break; // 完璧ならループを即脱出！
+              } catch (error) {
+                console.log(`❌ [サイクル ${attempts}] ビルドエラーを検知しました。次のおかわり修正へ進みます。`);
+                lastErrorLog = (error.stdout ? error.stdout.toString() : "") + "\n" + (error.stderr ? error.stderr.toString() : "");
+                // ログが長すぎる場合は末尾3000文字にカット（Geminiのパンク防止）
+                if (lastErrorLog.length > 3000) {
+                  lastErrorLog = lastErrorLog.substring(lastErrorLog.length - 3000);
+                }
+              }
+            }
             
-            let rawText = data.candidates[0].content.parts[0].text.trim();
-            if (rawText.startsWith("```")) rawText = rawText.replace(/^```json?\s*/i, "").replace(/```$/, "").trim();
+            if (!success) {
+              throw new Error(`❌ [Self-Healing Failed] ${maxAttempts}回挑戦しましたが、ビルドエラーを解消できませんでした。生ログを確認してください。`);
+            }
             
-            const aiJson = JSON.parse(rawText);
-            fs.writeFileSync(filePath, aiJson.newContent, 'utf8');
-            
-            core.setOutput('pr_title', aiJson.prTitle || `🤖 [AI] ${context.payload.issue.title}`);
-            core.setOutput('commit_message', aiJson.commitMessage || 'chore: auto-code by AI');
+            core.setOutput('pr_title', `🤖 [AI-Compiled] ${context.payload.issue.title}`);
+            core.setOutput('commit_message', 'fix: self-healed auto code compilation passed');
             core.setOutput('branch_name', `ai-patch-${context.payload.issue.number}`);
             
-      - name: PR
+      - name: Create Pull Request
         uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
