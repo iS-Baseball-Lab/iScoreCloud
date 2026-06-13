@@ -5,6 +5,7 @@ import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { Minus, Plus, Check, Target, X, ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useScore } from "@/contexts/ScoreContext";
 
 export interface OutDetailModalProps {
   open: boolean;
@@ -13,6 +14,7 @@ export interface OutDetailModalProps {
 }
 
 export function OutDetailModal({ open, onOpenChange, onResult }: OutDetailModalProps) {
+  const { state } = useScore();
   const [selectedPos, setSelectedPos] = useState<string | null>(null);
   const [outType, setOutType] = useState<string>("GO");
   const [isFoul, setIsFoul] = useState(false);
@@ -39,6 +41,16 @@ export function OutDetailModal({ open, onOpenChange, onResult }: OutDetailModalP
       setShowRbiDetail(false);
     }
   }, [open]);
+
+  // 犠牲フライ（SF）が選ばれ、3塁走者がいる場合は自動で打点1を設定
+  useEffect(() => {
+    if (outType === "SF" && state.runners.base3) {
+      setRbi(1);
+      setShowRbiDetail(true);
+    } else if (outType === "SF" && !state.runners.base3) {
+      setRbi(0);
+    }
+  }, [outType, state.runners.base3]);
 
   // 🏟️ 野球場の各エリアボタンの定義 (1-9基本ポジション。精密幾何学グラフィックと100%同期)
   const fieldPositions = [

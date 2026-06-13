@@ -910,6 +910,11 @@ function getNormalizedAtBatResult(actionNote: string): string {
         }
       }
 
+      // 💡 詳細記録（アウト等）において、打点が発生し、3塁に走者がいる場合は生還したとみなして消去
+      if (actualRbi > 0 && prev.runners.base3) {
+        nextRunners.base3 = null;
+      }
+
       const newMyScore = isMyAttack ? prev.myScore + actualRbi : prev.myScore;
       const newOpponentScore = !isMyAttack ? prev.opponentScore + actualRbi : prev.opponentScore;
       const newMyHits = isMyAttack ? prev.myHits + hits : prev.myHits;
