@@ -1,7 +1,8 @@
 // filepath: src/components/score/FinishConfirmModal.tsx
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { AlertCircle, Home, CheckCircle2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -18,10 +19,18 @@ export function FinishConfirmModal({
   onConfirmFinish,
   onReturnToDashboard,
 }: FinishConfirmModalProps) {
-  if (!open) return null;
+  const [mounted, setMounted] = useState(false);
 
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in duration-200">
+  useEffect(() => {
+    setMounted(true);
+    return () => setMounted(false);
+  }, []);
+
+  if (!open) return null;
+  if (!mounted) return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-black/60 dark:bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="w-full max-w-sm bg-card rounded-3xl border border-border shadow-2xl p-6 space-y-6 animate-in slide-in-from-bottom-4 duration-300">
         
         {/* ヘッダー */}
@@ -88,6 +97,7 @@ export function FinishConfirmModal({
         </div>
 
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
