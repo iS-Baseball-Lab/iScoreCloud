@@ -46,6 +46,11 @@ export default function DashboardPage() {
   const [mounted, setMounted] = useState(false);
   const [isWeatherLoading, setIsWeatherLoading] = useState(false);
 
+  // 自チーム名の取得
+  const myTeamName = useMemo(() => {
+    return currentTeam?.name || (typeof window !== "undefined" ? localStorage.getItem("iscore_selectedTeamName") : null) || "自チーム";
+  }, [currentTeam?.name]);
+
   // 1. マウント管理 & 時計タイマー
   useEffect(() => {
     setMounted(true);
@@ -326,20 +331,27 @@ export default function DashboardPage() {
                   <span className="text-primary font-black tracking-widest text-sm uppercase">Live Now Scoring</span>
                 </div>
 
-                <div className="flex items-center gap-8 sm:gap-16">
-                  <div className="text-center">
-                    <p className="text-[10px] font-black text-zinc-500 uppercase mb-2">My Team</p>
-                    <p className="text-5xl font-black text-[bg-card dark:] tabular-nums">{liveMatch.myScore}</p>
+                <div className="flex items-center gap-8 sm:gap-12 lg:gap-16">
+                  <div className="text-center min-w-[80px] max-w-[150px] sm:max-w-[200px]">
+                    <p className="text-[10px] font-black text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-1">My Team</p>
+                    <p className="text-sm sm:text-base font-black text-foreground truncate mb-2" title={myTeamName}>
+                      {myTeamName}
+                    </p>
+                    <p className="text-5xl font-black text-foreground tabular-nums">{liveMatch.myScore}</p>
                   </div>
-                  <div className="flex flex-col items-center">
-                    <span className="text-zinc-700 font-black text-2xl">VS</span>
-                    <span className="bg-primary/20 text-primary text-[10px] font-black px-3 py-1 rounded-full mt-2 uppercase tracking-tighter">
+                  <div className="flex flex-col items-center shrink-0">
+                    <span className="text-zinc-400 dark:text-zinc-600 font-black text-xl tracking-widest">VS</span>
+                    <span className="bg-primary/20 text-primary text-[10px] font-black px-3 py-1.5 rounded-full mt-2 uppercase tracking-tighter flex items-center gap-1 shadow-sm">
+                      <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
                       {liveMatch.currentInning}回{liveMatch.isBottom ? "裏" : "表"}
                     </span>
                   </div>
-                  <div className="text-center">
-                    <p className="text-[10px] font-black text-zinc-500 uppercase mb-2">Opponent</p>
-                    <p className="text-5xl font-black text-[bg-card dark:] tabular-nums">{liveMatch.opponentScore}</p>
+                  <div className="text-center min-w-[80px] max-w-[150px] sm:max-w-[200px]">
+                    <p className="text-[10px] font-black text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-1">Opponent</p>
+                    <p className="text-sm sm:text-base font-black text-foreground truncate mb-2" title={liveMatch.opponent}>
+                      {liveMatch.opponent || "相手チーム"}
+                    </p>
+                    <p className="text-5xl font-black text-foreground tabular-nums">{liveMatch.opponentScore}</p>
                   </div>
                 </div>
 
@@ -349,7 +361,7 @@ export default function DashboardPage() {
                 </Button>
               </div>
 
-              <div className="mt-6 pt-6 border-t border-white/5 flex justify-between items-center text-zinc-500">
+              <div className="mt-6 pt-6 border-t border-border/40 flex justify-between items-center text-zinc-500">
                 <span className="text-sm font-bold">{liveMatch.tournament || "公式戦"}</span>
                 <span className="text-sm font-bold flex items-center gap-2">
                   <MapPin className="h-3 w-3" /> {liveMatch.venue || "球場未設定"}
