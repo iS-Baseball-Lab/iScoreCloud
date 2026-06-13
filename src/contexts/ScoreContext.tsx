@@ -7,8 +7,9 @@
 
 "use client";
 
-import React, { createContext, useContext, useState, useCallback, useEffect } from "react";
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from "react";
 import { toast } from "sonner";
+import { authClient } from "@/lib/auth-client";
 import {
   ScoreState,
   ScoreContextType,
@@ -35,6 +36,7 @@ const getUserName = () => {
 };
 
 export function ScoreProvider({ children }: { children: React.ReactNode }) {
+  const { data: session } = authClient.useSession();
   const [state, setState] = useState<ScoreState>({
     matchId: "",
     inning: 1,
@@ -211,8 +213,8 @@ function getNormalizedAtBatResult(actionNote: string): string {
         const restoredLogs = logsData?.success && Array.isArray(logsData.logs) ? logsData.logs : [];
 
         // 🌟 ロック状態の判定と初期取得
-        const userId = getOrCreateUserId();
-        const userName = getUserName();
+        const userId = session?.user?.id || getOrCreateUserId();
+        const userName = session?.user?.name || getUserName();
         let isScorer = false;
         let lockedBy = null;
 
@@ -345,7 +347,7 @@ function getNormalizedAtBatResult(actionNote: string): string {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [session]);
 
   // 🚀 3.2 試合データのサイレント更新 (閲覧者用ポーリング)
   const refreshMatch = useCallback(async (matchId: string) => {
@@ -372,7 +374,7 @@ function getNormalizedAtBatResult(actionNote: string): string {
         const restoredLogs = logsData?.success && Array.isArray(logsData.logs) ? logsData.logs : [];
 
         // ロック状態を最新にする
-        const userId = getOrCreateUserId();
+        const userId = session?.user?.id || getOrCreateUserId();
         let isScorer = false;
         let lockedBy = null;
 
@@ -472,14 +474,14 @@ function getNormalizedAtBatResult(actionNote: string): string {
     } catch (error) {
       console.error("Silent refresh error:", error);
     }
-  }, []);
+  }, [session]);
 
   // 🚀 3.5 ロックの取得 (API経由)
   const acquireLock = useCallback(async (): Promise<boolean> => {
     if (typeof window === "undefined" || !state.matchId) return false;
     
-    const userId = getOrCreateUserId();
-    const userName = getUserName();
+    const userId = session?.user?.id || getOrCreateUserId();
+    const userName = session?.user?.name || getUserName();
     
     try {
       const res = await fetch(`/api/matches/${state.matchId}/lock`, {
@@ -508,13 +510,13 @@ function getNormalizedAtBatResult(actionNote: string): string {
       console.error("Acquire Lock Error:", e);
       return false;
     }
-  }, [state.matchId]);
+  }, [state.matchId, session]);
 
   // 🚀 3.6 ロックの解放
   const releaseLock = useCallback(async () => {
     if (typeof window === "undefined" || !state.matchId) return;
     
-    const userId = getOrCreateUserId();
+    const userId = session?.user?.id || getOrCreateUserId();
     
     try {
       await fetch(`/api/matches/${state.matchId}/lock`, {
@@ -530,14 +532,14 @@ function getNormalizedAtBatResult(actionNote: string): string {
     } catch (e) {
       console.error("Release Lock Error:", e);
     }
-  }, [state.matchId]);
+  }, [state.matchId, session]);
 
   // 🚀 3.7 強制ロック取得
   const forceAcquireLock = useCallback(async () => {
     if (typeof window === "undefined" || !state.matchId) return;
     
-    const userId = getOrCreateUserId();
-    const userName = getUserName();
+    const userId = session?.user?.id || getOrCreateUserId();
+    const userName = session?.user?.name || getUserName();
     
     try {
       const res = await fetch(`/api/matches/${state.matchId}/lock/force`, {
@@ -558,13 +560,13 @@ function getNormalizedAtBatResult(actionNote: string): string {
       console.error("Force Acquire Lock Error:", e);
       toast.error("編集権限の取得に失敗しました");
     }
-  }, [state.matchId]);
+  }, [state.matchId, session]);
 
   // 🚀 3.8 ハートビートの自動定期実行（スリープ復帰時の即時救済付き）
   useEffect(() => {
     if (!state.matchId || !state.isScorer) return;
     
-    const userId = getOrCreateUserId();
+    const userId = session?.user?.id || getOrCreateUserId();
     let interval: NodeJS.Timeout;
 
     // 💡 現場至上主義：ハートビートの実行関数をカプセル化
@@ -602,13 +604,13 @@ function getNormalizedAtBatResult(actionNote: string): string {
       clearInterval(interval);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [state.matchId, state.isScorer]);
+  }, [state.matchId, state.isScorer, session]);
 
   // 🚀 3.9 画面退出時の自動ロック解放
   useEffect(() => {
     return () => {
       if (state.matchId && state.isScorer) {
-        const userId = getOrCreateUserId();
+        const userId = session?.user?.id || getOrCreateUserId();
         fetch(`/api/matches/${state.matchId}/lock`, {
           method: "DELETE",
           headers: { "Content-Type": "application/json" },
@@ -617,7 +619,75 @@ function getNormalizedAtBatResult(actionNote: string): string {
         }).catch(err => console.error("Unmount Release Lock Error:", err));
       }
     };
-  }, [state.matchId, state.isScorer]);
+  }, [state.matchId, state.isScorer, session]);
+
+  // 🚀 3.91 セッションロード完了に伴うロックIDの移行処理
+  const lastUserIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!state.matchId) return;
+
+    const currentUserId = session?.user?.id || getOrCreateUserId();
+    const currentUserName = session?.user?.name || getUserName();
+
+    if (lastUserIdRef.current === null) {
+      lastUserIdRef.current = currentUserId;
+      return;
+    }
+
+    if (lastUserIdRef.current !== currentUserId) {
+      const oldUserId = lastUserIdRef.current;
+      lastUserIdRef.current = currentUserId;
+
+      const migrateLock = async () => {
+        try {
+          const res = await fetch(`/api/matches/${state.matchId}`);
+          const data = await res.json() as MatchResponse;
+          if (data.success && data.match) {
+            const m = data.match;
+
+            if (m.locked_by_user_id === oldUserId) {
+              const lockRes = await fetch(`/api/matches/${state.matchId}/lock`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ userId: currentUserId, userName: currentUserName })
+              });
+              const lockData = await lockRes.json() as { success: boolean; lockedBy?: { userId: string; userName: string } };
+              
+              if (lockData.success) {
+                setState(prev => ({
+                  ...prev,
+                  isScorer: true,
+                  lockedBy: { userId: currentUserId, userName: currentUserName }
+                }));
+                toast.success("ログイン情報に合わせて編集権限を更新しました");
+                return;
+              }
+            }
+
+            let isScorer = false;
+            let lockedBy = null;
+            if (m.locked_by_user_id) {
+              lockedBy = {
+                userId: m.locked_by_user_id,
+                userName: m.locked_by_user_name || "スコアラー"
+              };
+              isScorer = m.locked_by_user_id === currentUserId;
+            }
+            setState(prev => ({
+              ...prev,
+              isScorer,
+              lockedBy
+            }));
+          }
+        } catch (e) {
+          console.error("Lock migration error:", e);
+        }
+      };
+
+      migrateLock();
+    }
+  }, [session, state.matchId]);
 
   // 🚀 3.92 UNDO用履歴（history）のローカルストレージへの自動同期 (スリープ復帰/リロード時救済)
   useEffect(() => {

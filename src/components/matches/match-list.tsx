@@ -411,10 +411,20 @@ export function MatchList({ matches, isLoading, onDelete }: MatchListProps) {
                                 e.stopPropagation();
                                 router.push(`/matches/lineup?id=${match.id}`);
                               }}
-                              className="flex-1 h-11 rounded-[var(--radius-lg)] font-black gap-1.5 shadow-sm text-xs sm:text-sm bg-primary text-primary-foreground hover:scale-[1.02] transition-transform shadow-[0_0_15px_rgba(var(--primary),0.2)]"
+                              className="flex-1 h-11 rounded-[var(--radius-lg)] font-black gap-1.5 shadow-sm text-[10px] sm:text-xs bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-900 dark:text-zinc-100 border border-zinc-200 dark:border-zinc-700 transition-colors"
                             >
                               <Users className="h-4 w-4" strokeWidth={2.5} />
-                              スタメン設定
+                              スタメン
+                            </Button>
+                            <Button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                router.push(`/matches/score?id=${match.id}`);
+                              }}
+                              className="flex-1 h-11 rounded-[var(--radius-lg)] font-black gap-1.5 shadow-sm text-[10px] sm:text-xs bg-primary text-primary-foreground hover:scale-[1.02] transition-transform shadow-[0_0_15px_rgba(var(--primary),0.2)]"
+                            >
+                              <PlayCircle className="h-4 w-4" strokeWidth={2.5} />
+                              ライブ入力
                             </Button>
                             <Button
                               onClick={(e) => {
@@ -422,7 +432,7 @@ export function MatchList({ matches, isLoading, onDelete }: MatchListProps) {
                                 router.push(`/matches/result?id=${match.id}`);
                               }}
                               variant="outline"
-                              className="flex-1 h-11 rounded-[var(--radius-lg)] font-black gap-1.5 shadow-sm text-xs sm:text-sm bg-card border-border hover:bg-primary/5 hover:text-primary transition-colors"
+                              className="flex-1 h-11 rounded-[var(--radius-lg)] font-black gap-1.5 shadow-sm text-[10px] sm:text-xs bg-card border-border hover:bg-primary/5 hover:text-primary transition-colors"
                             >
                               <ClipboardList className="h-4 w-4 text-primary" strokeWidth={2.5} />
                               試合明細
@@ -436,18 +446,27 @@ export function MatchList({ matches, isLoading, onDelete }: MatchListProps) {
                                 router.push(`/matches/scorebook?id=${match.id}`);
                               }}
                               variant="outline"
-                              className="flex-1 h-11 rounded-[var(--radius-lg)] font-black gap-1.5 shadow-sm text-xs sm:text-sm bg-card border-border hover:bg-primary/5 hover:text-primary transition-colors"
+                              className="flex-1 h-11 rounded-[var(--radius-lg)] font-black gap-1.5 shadow-sm text-[10px] sm:text-xs bg-card border-border hover:bg-primary/5 hover:text-primary transition-colors"
                             >
                               <BookOpen className="h-4 w-4 text-primary" strokeWidth={2.5} />
                               スコアブック
                             </Button>
-
+                            <Button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                router.push(`/matches/score?id=${match.id}`);
+                              }}
+                              className="flex-1 h-11 rounded-[var(--radius-lg)] font-black gap-1.5 shadow-sm text-[10px] sm:text-xs bg-primary text-primary-foreground hover:scale-[1.02] transition-transform shadow-[0_0_15px_rgba(var(--primary),0.2)]"
+                            >
+                              <PlayCircle className="h-4 w-4" strokeWidth={2.5} />
+                              ライブスコア
+                            </Button>
                             <Button
                               onClick={(e) => {
                                 e.stopPropagation();
                                 router.push(`/matches/result?id=${match.id}`);
                               }}
-                              className="flex-1 h-11 rounded-[var(--radius-lg)] font-black gap-1.5 shadow-sm text-xs sm:text-sm"
+                              className="flex-1 h-11 rounded-[var(--radius-lg)] font-black gap-1.5 shadow-sm text-[10px] sm:text-xs bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-900 dark:text-zinc-100 border border-zinc-200 dark:border-zinc-700 transition-colors"
                             >
                               <ClipboardList className="h-4 w-4" strokeWidth={2.5} />
                               試合明細
