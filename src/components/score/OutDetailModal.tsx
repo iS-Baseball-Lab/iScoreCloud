@@ -10,7 +10,7 @@ import { useScore } from "@/contexts/ScoreContext";
 export interface OutDetailModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onResult: (result: string, rbi: number) => void;
+  onResult: (result: string, rbi: number, outRunnerBase?: 1 | 2 | 3 | null) => void;
 }
 
 export function OutDetailModal({ open, onOpenChange, onResult }: OutDetailModalProps) {
@@ -21,6 +21,7 @@ export function OutDetailModal({ open, onOpenChange, onResult }: OutDetailModalP
   const [rbi, setRbi] = useState(0);
   const [showRbiDetail, setShowRbiDetail] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [outRunnerBase, setOutRunnerBase] = useState<1 | 2 | 3 | null>(null);
 
   // スプレーチャート用・タップピン表示用座標
   const [coordinate, setCoordinate] = useState<{ x: number; y: number } | null>(null);
@@ -39,8 +40,16 @@ export function OutDetailModal({ open, onOpenChange, onResult }: OutDetailModalP
       setIsFoul(false);
       setRbi(0);
       setShowRbiDetail(false);
+      setOutRunnerBase(null);
     }
   }, [open]);
+
+  // DP以外の時はアウト走者選択をリセット
+  useEffect(() => {
+    if (outType !== "DP") {
+      setOutRunnerBase(null);
+    }
+  }, [outType]);
 
   // 犠牲フライ（SF）が選ばれ、3塁走者がいる場合は自動で打点1を設定
   useEffect(() => {
@@ -82,6 +91,18 @@ export function OutDetailModal({ open, onOpenChange, onResult }: OutDetailModalP
     { id: "UN", label: "その他アウト", color: "bg-zinc-500/10" },
   ];
 
+  const getPlayerName = (runnerId: string | null) => {
+    if (!runnerId) return "";
+    const isMyAttack = (state.isTop && state.isGuestFirst) || (!state.isTop && !state.isGuestFirst);
+    const lineup = isMyAttack ? state.myLineup : state.opponentLineup;
+    const player = lineup?.find((p: any) => p.playerId === runnerId || p.id === runnerId);
+    let name = player?.playerName || player?.name || "走者";
+    if (!player && runnerId.startsWith("custom-")) {
+      name = runnerId.split("-")[1];
+    }
+    return name;
+  };
+
   const handleConfirm = () => {
     if (!outType) return;
     
@@ -93,7 +114,7 @@ export function OutDetailModal({ open, onOpenChange, onResult }: OutDetailModalP
     parts.push(outType);
 
     const resultString = parts.join("-");
-    onResult(resultString, rbi);
+    onResult(resultString, rbi, outRunnerBase);
     onOpenChange(false);
   };
 
@@ -276,6 +297,70 @@ export function OutDetailModal({ open, onOpenChange, onResult }: OutDetailModalP
             </div>
           )}
 
+          {/* 併殺（DP）が選択された際のアウト走者選択UI */}
+          {outType === "DP" && (
+            <div className="space-y-1.5 p-3 rounded-xl border border-rose-500/20 bg-rose-500/5 animate-in slide-in-from-top-2 duration-200">
+              <label className="text-[9.5px] font-black text-rose-600 dark:text-rose-400 uppercase tracking-widest px-1">
+                併殺によりアウトになった走者 (必須)
+              </label>
+              <div className="flex flex-col gap-1.5 mt-1">
+                {state.runners.base1 && (
+                  <button
+                    key="runner-1"
+                    type="button"
+                    onClick={() => setOutRunnerBase(1)}
+                    className={cn(
+                      "h-9 rounded-xl border text-[11px] font-bold flex items-center justify-between px-3 active:scale-95 transition-all cursor-pointer",
+                      outRunnerBase === 1
+                        ? "bg-rose-600 border-rose-600 text-white shadow-sm"
+                        : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300"
+                    )}
+                  >
+                    <span>1塁走者: {getPlayerName(state.runners.base1)}</span>
+                    <span className="text-[8px] opacity-70">2塁でアウト</span>
+                  </button>
+                )}
+                {state.runners.base2 && (
+                  <button
+                    key="runner-2"
+                    type="button"
+                    onClick={() => setOutRunnerBase(2)}
+                    className={cn(
+                      "h-9 rounded-xl border text-[11px] font-bold flex items-center justify-between px-3 active:scale-95 transition-all cursor-pointer",
+                      outRunnerBase === 2
+                        ? "bg-rose-600 border-rose-600 text-white shadow-sm"
+                        : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300"
+                    )}
+                  >
+                    <span>2塁走者: {getPlayerName(state.runners.base2)}</span>
+                    <span className="text-[8px] opacity-70">3塁でアウト</span>
+                  </button>
+                )}
+                {state.runners.base3 && (
+                  <button
+                    key="runner-3"
+                    type="button"
+                    onClick={() => setOutRunnerBase(3)}
+                    className={cn(
+                      "h-9 rounded-xl border text-[11px] font-bold flex items-center justify-between px-3 active:scale-95 transition-all cursor-pointer",
+                      outRunnerBase === 3
+                        ? "bg-rose-600 border-rose-600 text-white shadow-sm"
+                        : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300"
+                    )}
+                  >
+                    <span>3塁走者: {getPlayerName(state.runners.base3)}</span>
+                    <span className="text-[8px] opacity-70">本塁でアウト</span>
+                  </button>
+                )}
+                {!state.runners.base1 && !state.runners.base2 && !state.runners.base3 && (
+                  <p className="text-[10px] text-zinc-400 dark:text-zinc-500 italic p-1">
+                    塁上に走者がいません
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* 3. 打点手動調整（アコーディオン仕様） */}
           <div className="border border-zinc-100 dark:border-zinc-800/80 rounded-xl overflow-hidden bg-zinc-50/50 dark:bg-zinc-900/30">
             <button
@@ -329,7 +414,7 @@ export function OutDetailModal({ open, onOpenChange, onResult }: OutDetailModalP
         <div className="bg-zinc-50 dark:bg-zinc-900 px-5 py-3 border-t border-zinc-100 dark:border-zinc-800">
           <button
             onClick={handleConfirm}
-            disabled={!outType}
+            disabled={!outType || (outType === "DP" && (!!state.runners.base1 || !!state.runners.base2 || !!state.runners.base3) && !outRunnerBase)}
             className="w-full h-11 rounded-xl bg-primary text-primary-foreground font-black text-xs tracking-wide disabled:opacity-50 transition-all active:scale-[0.98] flex items-center justify-center gap-1.5 cursor-pointer"
           >
             <Check className="h-4.5 w-4.5 stroke-[3px]" />

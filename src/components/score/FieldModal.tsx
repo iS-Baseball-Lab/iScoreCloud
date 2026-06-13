@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 export interface FieldModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onResult: (result: string, rbi: number, advances: BaseAdvance[], coordinate?: { x: number; y: number }) => void;
+  onResult: (result: string, rbi: number, advances: BaseAdvance[], coordinate?: { x: number; y: number }, outRunnerBase?: 1 | 2 | 3 | null) => void;
   defaultHitType?: string;
 }
 
@@ -26,6 +26,7 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
   const [rbi, setRbi] = useState(0);
   const [showRbiDetail, setShowRbiDetail] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [outRunnerBase, setOutRunnerBase] = useState<1 | 2 | 3 | null>(null);
   
   // スプレーチャート用座標 (パーセンテージベース)
   const [coordinate, setCoordinate] = useState<{ x: number; y: number } | null>(null);
@@ -47,8 +48,16 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
       setHitType(initialHit);
       setRbi(calculateDefaultRbi(initialHit));
       setShowRbiDetail(false);
+      setOutRunnerBase(null);
     }
   }, [open, defaultHitType]);
+
+  // FC以外の時はアウト走者選択をリセット
+  useEffect(() => {
+    if (hitType !== "FC") {
+      setOutRunnerBase(null);
+    }
+  }, [hitType]);
 
   const calculateDefaultRbi = (type: string) => {
     const r1 = runners?.base1 ? 1 : 0;
@@ -125,6 +134,18 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
     { id: "over", label: "オーバー" },
   ] as const;
 
+  const getPlayerName = (runnerId: string | null) => {
+    if (!runnerId) return "";
+    const isMyAttack = (state.isTop && state.isGuestFirst) || (!state.isTop && !state.isGuestFirst);
+    const lineup = isMyAttack ? state.myLineup : state.opponentLineup;
+    const player = lineup?.find((p: any) => p.playerId === runnerId || p.id === runnerId);
+    let name = player?.playerName || player?.name || "走者";
+    if (!player && runnerId.startsWith("custom-")) {
+      name = runnerId.split("-")[1];
+    }
+    return name;
+  };
+
   const handleConfirm = () => {
     if (!hitType) return;
     
@@ -137,7 +158,7 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
     
     const resultString = parts.join("-");
 
-    onResult(resultString, rbi, [], coordinate || undefined);
+    onResult(resultString, rbi, [], coordinate || undefined, outRunnerBase);
     
     // リセット
     setSelectedPos(null);
@@ -145,6 +166,7 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
     setTrajectory(null);
     setCoordinate(null);
     setRbi(0);
+    setOutRunnerBase(null);
   };
 
   const getResultStyle = (resId: string) => {
@@ -367,6 +389,70 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
             </div>
           </div>
 
+          {/* 野選（FC）が選択された際のアウト走者選択UI */}
+          {hitType === "FC" && (
+            <div className="space-y-1.5 p-3 rounded-xl border border-rose-500/20 bg-rose-500/5 animate-in slide-in-from-top-2 duration-200">
+              <label className="text-[9.5px] font-black text-rose-600 dark:text-rose-400 uppercase tracking-widest px-1">
+                野選によりアウトになった走者 (必須)
+              </label>
+              <div className="flex flex-col gap-1.5 mt-1">
+                {state.runners.base1 && (
+                  <button
+                    key="fc-runner-1"
+                    type="button"
+                    onClick={() => setOutRunnerBase(1)}
+                    className={cn(
+                      "h-9 rounded-xl border text-[11px] font-bold flex items-center justify-between px-3 active:scale-95 transition-all cursor-pointer",
+                      outRunnerBase === 1
+                        ? "bg-rose-600 border-rose-600 text-white shadow-sm"
+                        : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300"
+                    )}
+                  >
+                    <span>1塁走者: {getPlayerName(state.runners.base1)}</span>
+                    <span className="text-[8px] opacity-70">2塁でアウト</span>
+                  </button>
+                )}
+                {state.runners.base2 && (
+                  <button
+                    key="fc-runner-2"
+                    type="button"
+                    onClick={() => setOutRunnerBase(2)}
+                    className={cn(
+                      "h-9 rounded-xl border text-[11px] font-bold flex items-center justify-between px-3 active:scale-95 transition-all cursor-pointer",
+                      outRunnerBase === 2
+                        ? "bg-rose-600 border-rose-600 text-white shadow-sm"
+                        : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300"
+                    )}
+                  >
+                    <span>2塁走者: {getPlayerName(state.runners.base2)}</span>
+                    <span className="text-[8px] opacity-70">3塁でアウト</span>
+                  </button>
+                )}
+                {state.runners.base3 && (
+                  <button
+                    key="fc-runner-3"
+                    type="button"
+                    onClick={() => setOutRunnerBase(3)}
+                    className={cn(
+                      "h-9 rounded-xl border text-[11px] font-bold flex items-center justify-between px-3 active:scale-95 transition-all cursor-pointer",
+                      outRunnerBase === 3
+                        ? "bg-rose-600 border-rose-600 text-white shadow-sm"
+                        : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300"
+                    )}
+                  >
+                    <span>3塁走者: {getPlayerName(state.runners.base3)}</span>
+                    <span className="text-[8px] opacity-70">本塁でアウト</span>
+                  </button>
+                )}
+                {!state.runners.base1 && !state.runners.base2 && !state.runners.base3 && (
+                  <p className="text-[10px] text-zinc-400 dark:text-zinc-500 italic p-1">
+                    塁上に走者がいません
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* 4. 打点手動調整（アコーディオン仕様） */}
           <div className="border border-zinc-100 dark:border-zinc-800/80 rounded-xl overflow-hidden bg-zinc-50/50 dark:bg-zinc-900/30">
             <button
@@ -420,7 +506,7 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
         <div className="bg-zinc-50 dark:bg-zinc-900 px-5 py-3 border-t border-zinc-100 dark:border-zinc-800">
           <button
             onClick={handleConfirm}
-            disabled={!hitType}
+            disabled={!hitType || (hitType === "FC" && (!!state.runners.base1 || !!state.runners.base2 || !!state.runners.base3) && !outRunnerBase)}
             className="w-full h-11 rounded-xl bg-primary text-primary-foreground font-black text-xs tracking-wide disabled:opacity-50 transition-all active:scale-[0.98] flex items-center justify-center gap-1.5 cursor-pointer"
           >
             <Check className="h-4.5 w-4.5 stroke-[3px]" />

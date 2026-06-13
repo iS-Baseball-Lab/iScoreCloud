@@ -852,7 +852,8 @@ function getNormalizedAtBatResult(actionNote: string): string {
     hits: number,
     errors: number,
     advances?: BaseAdvance[],
-    coordinate?: { x: number; y: number } // 🌟 将来のスプレーチャート用座標
+    coordinate?: { x: number; y: number }, // 🌟 将来のスプレーチャート用座標
+    outRunnerBase?: 1 | 2 | 3 | null
   ) => {
     setState(prev => {
       if (!prev.isScorer) return prev;
@@ -919,6 +920,12 @@ function getNormalizedAtBatResult(actionNote: string): string {
         } else if (is1B) {
           nextRunners = { base1: batterId, base2: prev.runners.base1, base3: prev.runners.base2 };
         }
+      }
+
+      // 💡 野選(FC)や併殺(DP)など、モーダルで指定されたアウト走者のクリア処理
+      if (outRunnerBase) {
+        const key = `base${outRunnerBase}` as keyof typeof nextRunners;
+        nextRunners[key] = null;
       }
 
       // 💡 アウトプレイ（!isSafe）におけるランナー進塁・生還ロジックの整理

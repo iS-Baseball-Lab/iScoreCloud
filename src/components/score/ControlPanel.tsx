@@ -37,7 +37,7 @@ export function ControlPanel() {
     setFieldOpen(true);
   };
 
-  const handleOutResult = (rawResult: string, rbi: number) => {
+  const handleOutResult = (rawResult: string, rbi: number, outRunnerBase?: 1 | 2 | 3 | null) => {
     let mappedString = "";
 
     if (rawResult.includes("-")) {
@@ -85,14 +85,15 @@ export function ControlPanel() {
       mappedString = quickMap[outType] || outType;
     }
 
-    recordInPlay(mappedString, rbi, 0, 0);
+    recordInPlay(mappedString, rbi, 0, 0, undefined, undefined, outRunnerBase);
   };
 
   const handleFieldResult = (
     rawResult: string,
     rbi: number,
     advances?: BaseAdvance[],
-    coordinate?: { x: number; y: number }
+    coordinate?: { x: number; y: number },
+    outRunnerBase?: 1 | 2 | 3 | null
   ) => {
     let mappedString = "";
     let isHit = false;
@@ -194,7 +195,7 @@ export function ControlPanel() {
     const hitsCount = isHit ? 1 : 0;
     const errorsCount = isError ? 1 : 0;
 
-    recordInPlay(mappedString, rbi, hitsCount, errorsCount, undefined, coordinate);
+    recordInPlay(mappedString, rbi, hitsCount, errorsCount, undefined, coordinate, outRunnerBase);
     setFieldOpen(false);
   };
 

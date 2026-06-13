@@ -120,7 +120,8 @@ export interface ScoreContextType {
     hits: number,
     errors: number,
     advances?: BaseAdvance[],
-    coordinate?: { x: number; y: number } // 🌟 将来のスプレーチャート用座標
+    coordinate?: { x: number; y: number }, // 🌟 将来のスプレーチャート用座標
+    outRunnerBase?: 1 | 2 | 3 | null
   ) => Promise<void>;
   recordRunnerAction: (
     baseNum: 1 | 2 | 3,
