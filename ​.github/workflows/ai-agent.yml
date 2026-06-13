@@ -2,7 +2,7 @@ name: Issue Driven AI Agent
 on:
   issues:
     types: [opened, edited]
-  workflow_dispatch: # 🚀 これでActions画面に名前が強制浮上します！
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -39,8 +39,8 @@ jobs:
             
             const systemInstruction = `あなたは佐藤さんの専属AIエンジニアです。対象ファイル「${filePath}」に対する修正コードを生成してください。元のインポートやレイアウトは絶対残し、指示部分だけ変更してください。出力はJSONフォーマットのみ。{"newContent": "修正後の全コード", "commitMessage": "コミットメッセージ", "prTitle": "PRタイトル"}`;
             
-            // 🧠 佐藤さんの最強アセット「Gemini 1.5 Pro」を召喚（時間制限なしの無制限フルパワー！）
-            const geminiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=' + process.env.GEMINI_API_KEY;
+            // 🚀 【確実ルート】確実にAPIが通る gemini-3.5-flash を指定！最大トークン8192で長文も完走します。
+            const geminiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=' + process.env.GEMINI_API_KEY;
             
             const response = await fetch(geminiUrl, {
               method: 'POST',
@@ -54,4 +54,22 @@ jobs:
             const data = await response.json();
             if (data.error) throw new Error(data.error.message);
             
-            let rawText = data.candidates
+            let rawText = data.candidates[0].content.parts[0].text.trim();
+            if (rawText.startsWith("```")) rawText = rawText.replace(/^```json?\s*/i, "").replace(/```$/, "").trim();
+            
+            const aiJson = JSON.parse(rawText);
+            fs.writeFileSync(filePath, aiJson.newContent, 'utf8');
+            
+            core.setOutput('pr_title', aiJson.prTitle || `🤖 [AI] ${context.payload.issue.title}`);
+            core.setOutput('commit_message', aiJson.commitMessage || 'chore: auto-code by AI');
+            core.setOutput('branch_name', `ai-patch-${context.payload.issue.number}`);
+            
+      - name: PR
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: ${{ steps.ai.outputs.commit_message }}
+          title: ${{ steps.ai.outputs.pr_title }}
+          branch: ${{ steps.ai.outputs.branch_name }}
+          base: main
+          delete-branch: true
