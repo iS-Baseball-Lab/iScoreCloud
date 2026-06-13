@@ -267,13 +267,34 @@ function LineupPageContent() {
     
     setIsLoading(true);
     try {
+      // 🌟 相手チームのスタメンが未入力の箇所を自動でダミー補完する
+      let hasDummyAdded = false;
+      const filledOpponentLineup = opponentLineup.map((p) => {
+        const hasName = p.name && p.name.trim() !== "";
+        const hasPos = p.position && p.position !== "";
+        
+        if (!hasName || !hasPos) {
+          hasDummyAdded = true;
+        }
+
+        return {
+          ...p,
+          name: hasName ? p.name : `相手打者 ${p.order}`,
+          position: hasPos ? p.position : (p.order <= 9 ? p.order.toString() : "DH")
+        };
+      });
+
       const res = await fetch(`/api/matches/${matchId}/lineups`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ myLineup, opponentLineup, myAttendance: attendance })
+        body: JSON.stringify({ myLineup, opponentLineup: filledOpponentLineup, myAttendance: attendance })
       });
       
       if (!res.ok) throw new Error("Failed to save lineups");
+
+      if (hasDummyAdded) {
+        toast.success("未入力の相手スタメンにダミー選手を自動追加しました");
+      }
       
       router.push(`/matches/score?id=${matchId}`);
     } catch (error) {
