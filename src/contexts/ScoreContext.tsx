@@ -1052,6 +1052,18 @@ function getNormalizedAtBatResult(actionNote: string): string {
     setState(prev => {
       if (!prev.isScorer) return prev;
 
+      const getRunnerNameById = (id: string | null) => {
+        if (!id) return "走者";
+        const isMyAttack = (prev.isTop && prev.isGuestFirst) || (!prev.isTop && !prev.isGuestFirst);
+        const offenseLineup = isMyAttack ? prev.myLineup : prev.opponentLineup;
+        const p = offenseLineup?.find((x: any) => x.playerId === id || x.id === id);
+        let name = p?.playerName || p?.name || "走者";
+        if (!p && id.startsWith("custom-")) {
+          name = id.split("-")[1];
+        }
+        return name;
+      };
+
       const key = `base${baseNum}` as keyof typeof prev.runners;
       const runnerId = prev.runners[key];
 
@@ -1060,13 +1072,7 @@ function getNormalizedAtBatResult(actionNote: string): string {
         const nextRunners = { ...prev.runners, [key]: assignPlayerId };
         
         // 選手名を取得
-        const isMyAttack = (prev.isTop && prev.isGuestFirst) || (!prev.isTop && !prev.isGuestFirst);
-        const offenseLineup = isMyAttack ? prev.myLineup : prev.opponentLineup;
-        const player = offenseLineup?.find(p => p.playerId === assignPlayerId || p.id === assignPlayerId);
-        let playerName = player?.playerName || player?.name || "走者";
-        if (!player && assignPlayerId && assignPlayerId.startsWith("custom-")) {
-          playerName = assignPlayerId.split("-")[1];
-        }
+        const playerName = getRunnerNameById(assignPlayerId);
 
         const logText = `${baseNum}塁走者として ${playerName} を配置`;
         const next = pushHistory(prev, {
@@ -1080,14 +1086,9 @@ function getNormalizedAtBatResult(actionNote: string): string {
       if (!runnerId) return prev; // ランナーがいない場合は何もしない
 
       // 選手名を取得
-      const isMyAttack = (prev.isTop && prev.isGuestFirst) || (!prev.isTop && !prev.isGuestFirst);
-      const offenseLineup = isMyAttack ? prev.myLineup : prev.opponentLineup;
-      const player = offenseLineup?.find(p => p.playerId === runnerId || p.id === runnerId);
-      let playerName = player?.playerName || player?.name || "走者";
-      if (!player && runnerId && runnerId.startsWith("custom-")) {
-        playerName = runnerId.split("-")[1];
-      }
+      const playerName = getRunnerNameById(runnerId);
 
+      const isMyAttack = (prev.isTop && prev.isGuestFirst) || (!prev.isTop && !prev.isGuestFirst);
       let nextRunners = { ...prev.runners };
       let newOuts = prev.outs;
       let actualRbi = 0;
@@ -1133,36 +1134,36 @@ function getNormalizedAtBatResult(actionNote: string): string {
         logText = `${baseNum}塁走者 ${playerName}: 牽制死`;
       } else if (action === "pickoff_safe") {
         logText = `${baseNum}塁走者 ${playerName}: 牽制球 (セーフ)`;
-      } else if (action === "wp_advance") {
-        nextRunners[key] = null;
-        if (destBase === 4) {
-          actualRbi = 1;
-          logText = `${baseNum}塁走者 ${playerName}: 暴投により本塁生還`;
-        } else {
-          const nextKey = `base${destBase}` as keyof typeof prev.runners;
-          nextRunners[nextKey] = runnerId;
-          logText = `${baseNum}塁走者 ${playerName}: 暴投で${destBase}塁へ進塁`;
+      } else if (action === "wp_advance" || action === "pb_advance" || action === "balk_advance") {
+        const actionName = action === "wp_advance" ? "暴投" : action === "pb_advance" ? "捕逸" : "ボーク";
+        const details: string[] = [];
+
+        // 一斉進塁処理：3塁 -> 本塁, 2塁 -> 3塁, 1塁 -> 2塁 へそれぞれ進む
+        const tempRunners = { ...prev.runners };
+        nextRunners.base1 = null;
+        nextRunners.base2 = null;
+        nextRunners.base3 = null;
+
+        // 3塁走者 -> 本塁生還
+        if (tempRunners.base3) {
+          const runner3Name = getRunnerNameById(tempRunners.base3);
+          actualRbi = 1; // 一斉進塁中に得点があった場合は加算
+          details.push(`3塁走者 ${runner3Name} が本塁生還`);
         }
-      } else if (action === "pb_advance") {
-        nextRunners[key] = null;
-        if (destBase === 4) {
-          actualRbi = 1;
-          logText = `${baseNum}塁走者 ${playerName}: 捕逸により本塁生還`;
-        } else {
-          const nextKey = `base${destBase}` as keyof typeof prev.runners;
-          nextRunners[nextKey] = runnerId;
-          logText = `${baseNum}塁走者 ${playerName}: 捕逸で${destBase}塁へ進塁`;
+        // 2塁走者 -> 3塁へ進塁
+        if (tempRunners.base2) {
+          const runner2Name = getRunnerNameById(tempRunners.base2);
+          nextRunners.base3 = tempRunners.base2;
+          details.push(`2塁走者 ${runner2Name} が3塁進塁`);
         }
-      } else if (action === "balk_advance") {
-        nextRunners[key] = null;
-        if (destBase === 4) {
-          actualRbi = 1;
-          logText = `${baseNum}塁走者 ${playerName}: ボークにより本塁生還`;
-        } else {
-          const nextKey = `base${destBase}` as keyof typeof prev.runners;
-          nextRunners[nextKey] = runnerId;
-          logText = `${baseNum}塁走者 ${playerName}: ボークで${destBase}塁へ進塁`;
+        // 1塁走者 -> 2塁へ進塁
+        if (tempRunners.base1) {
+          const runner1Name = getRunnerNameById(tempRunners.base1);
+          nextRunners.base2 = tempRunners.base1;
+          details.push(`1塁走者 ${runner1Name} が2塁進塁`);
         }
+
+        logText = `${actionName}により全走者が自動進塁 (${details.join(", ")})`;
       } else if (action === "error_advance") {
         nextRunners[key] = null;
         if (destBase === 4) {
