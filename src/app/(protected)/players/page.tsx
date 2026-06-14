@@ -90,7 +90,8 @@ export default function TeamRosterAndGroupPage() {
   // ━━ グループ（Groups）関連状態 ━━
   const [groups, setGroups] = useState<Group[]>([]);
   const [groupMembers, setGroupMembers] = useState<GroupMember[]>([]);
-  const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const selectedGroup = groups.find(g => g.id === selectedGroupId) || null;
   const [isAddGroupOpen, setIsAddGroupOpen] = useState(false);
   const [parentGroupId, setParentGroupId] = useState<string | null>(null);
   const [editGroupTarget, setEditGroupTarget] = useState<Group | null>(null);
@@ -127,7 +128,7 @@ export default function TeamRosterAndGroupPage() {
       const data = (await res.json()) as Player[];
       setPlayers(Array.isArray(data) ? data : []);
     } catch {
-      toast.error("選手名簿の取得に失敗しました");
+      toast.error("名簿データの取得に失敗しました");
     }
   }, []);
 
@@ -152,16 +153,11 @@ export default function TeamRosterAndGroupPage() {
       if (data.success) {
         setGroups(data.groups || []);
         setGroupMembers(data.members || []);
-        // 選択中のグループ情報を再同期
-        if (selectedGroup) {
-          const updated = (data.groups as Group[]).find(g => g.id === selectedGroup.id);
-          setSelectedGroup(updated || null);
-        }
       }
     } catch {
       toast.error("グループ一覧の取得に失敗しました");
     }
-  }, [selectedGroup]);
+  }, []);
 
   const fetchAllData = useCallback(async (tid: string) => {
     setIsLoading(true);
@@ -453,8 +449,8 @@ export default function TeamRosterAndGroupPage() {
       });
       if (!res.ok) throw new Error();
       toast.success("グループを削除しました");
-      if (selectedGroup?.id === deleteGroupTarget.id) {
-        setSelectedGroup(null);
+      if (selectedGroupId === deleteGroupTarget.id) {
+        setSelectedGroupId(null);
       }
       setDeleteGroupTarget(null);
       await fetchGroups(teamId);
@@ -571,7 +567,7 @@ export default function TeamRosterAndGroupPage() {
     return (
       <div className="flex flex-col gap-1.5 w-full">
         {childGroups.map(g => {
-          const isSelected = selectedGroup?.id === g.id;
+          const isSelected = selectedGroupId === g.id;
           return (
             <div key={g.id} className="w-full flex flex-col">
               <div 
@@ -582,7 +578,7 @@ export default function TeamRosterAndGroupPage() {
                     ? "bg-primary/5 border-primary/20 text-primary"
                     : "bg-card hover:bg-zinc-50 border-border dark:hover:bg-zinc-900"
                 )}
-                onClick={() => setSelectedGroup(g)}
+                onClick={() => setSelectedGroupId(g.id)}
               >
                 <div className="flex items-center gap-2 min-w-0">
                   <ChevronRight className={cn("h-4 w-4 shrink-0 transition-transform text-muted-foreground", isSelected && "text-primary rotate-90")} />

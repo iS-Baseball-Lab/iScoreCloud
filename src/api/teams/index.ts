@@ -114,7 +114,24 @@ app.patch('/:id', async (c) => {
     const member = await db.select().from(teamMembers).where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, session.user.id))).get()
     if (userRole !== 'SYSTEM_ADMIN' && (!member || !canManageTeam(member.role))) return c.json({ error: '権限がありません' }, 403)
 
-    await db.update(teams).set({ name: body.name, year: body.year, tier: body.tier, teamType: body.teamType }).where(eq(teams.id, teamId))
+    await db.update(teams).set({ 
+      name: body.name, 
+      year: body.year, 
+      tier: body.tier, 
+      teamType: body.teamType,
+      managerName: body.managerName !== undefined ? body.managerName : undefined,
+      homeGround: body.homeGround !== undefined ? body.homeGround : undefined
+    }).where(eq(teams.id, teamId))
+
+    if (body.description !== undefined) {
+      const teamObj = await db.select({ organizationId: teams.organizationId }).from(teams).where(eq(teams.id, teamId)).get()
+      if (teamObj && teamObj.organizationId) {
+        await db.update(organizations).set({
+          description: body.description
+        }).where(eq(organizations.id, teamObj.organizationId))
+      }
+    }
+
     return c.json({ success: true })
   } catch (e) { return c.json({ success: false, error: 'Failed to update team' }, 500) }
 })

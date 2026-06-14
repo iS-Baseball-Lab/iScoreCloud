@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 
 interface Team {
   id: string;
@@ -90,6 +92,55 @@ export default function TeamProfilePage() {
     avgRuns: 0, teamAvg: ".000", teamHR: "0"
   });
   const [isLoading, setIsLoading] = useState(true);
+
+  // ━━ チーム編集モーダルの状態 ━━
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editFormName, setEditFormName] = useState("");
+  const [editFormManagerName, setEditFormManagerName] = useState("");
+  const [editFormHomeGround, setEditFormHomeGround] = useState("");
+  const [editFormYear, setEditFormYear] = useState<number>(2026);
+  const [editFormTier, setEditFormTier] = useState("");
+  const [editFormDescription, setEditFormDescription] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const openEditModal = () => {
+    if (!team) return;
+    setEditFormName(team.name || "");
+    setEditFormManagerName(team.managerName || "");
+    setEditFormHomeGround(team.homeGround || "");
+    setEditFormYear(Number(team.year) || new Date().getFullYear());
+    setEditFormTier(team.tier || "");
+    setEditFormDescription(team.description || "");
+    setIsEditModalOpen(true);
+  };
+
+  const handleEditTeam = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!team) return;
+    setIsSubmitting(true);
+    try {
+      const res = await fetch(`/api/teams/${team.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: editFormName.trim(),
+          managerName: editFormManagerName.trim(),
+          homeGround: editFormHomeGround.trim(),
+          year: editFormYear,
+          tier: editFormTier.trim(),
+          description: editFormDescription.trim()
+        })
+      });
+      if (!res.ok) throw new Error();
+      toast.success("チーム情報を更新しました");
+      setIsEditModalOpen(false);
+      window.location.reload();
+    } catch {
+      toast.error("情報の更新に失敗しました");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   useEffect(() => {
     const fetchTeamData = async () => {
@@ -257,9 +308,22 @@ export default function TeamProfilePage() {
             </Card>
 
             <div className="p-8 rounded-3xl bg-white/50 dark:bg-zinc-900/50 backdrop-blur-md border border-border/40 shadow-sm space-y-6">
-              <h3 className="text-xs font-black flex items-center gap-2 text-muted-foreground uppercase tracking-wider">
-                <Info className="h-4 w-4" /> Club Identity
-              </h3>
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-black flex items-center gap-2 text-muted-foreground uppercase tracking-wider">
+                  <Info className="h-4 w-4" /> Club Identity
+                </h3>
+                {canManage === true ? (
+                  <Button
+                    onClick={openEditModal}
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 text-[11px] font-black border border-border/60 hover:bg-zinc-50 dark:hover:bg-zinc-900 rounded-lg gap-1 px-3"
+                  >
+                    <Settings className="h-3.5 w-3.5" />
+                    編集する
+                  </Button>
+                ) : null}
+              </div>
 
               {team.description ? (
                 <p className="text-lg font-bold text-foreground leading-relaxed italic border-l-4 border-primary pl-4">
@@ -298,24 +362,24 @@ export default function TeamProfilePage() {
             </div>
 
             <div className="space-y-3">
-              <button onClick={() => router.push('/team/players')} className="flex items-center gap-5 p-6 rounded-2xl bg-white/50 dark:bg-zinc-900/50 backdrop-blur-md border border-border/40 hover:border-primary/40 hover:bg-white/80 dark:hover:bg-zinc-800/80 transition-all group shadow-sm text-left w-full cursor-pointer">
+              <button onClick={() => router.push('/players')} className="flex items-center gap-5 p-6 rounded-2xl bg-white/50 dark:bg-zinc-900/50 backdrop-blur-md border border-border/40 hover:border-primary/40 hover:bg-white/80 dark:hover:bg-zinc-800/80 transition-all group shadow-sm text-left w-full cursor-pointer">
                 <div className="p-4 rounded-xl bg-muted dark:bg-zinc-800 group-hover:bg-primary/10 group-hover:text-primary transition-colors shrink-0">
                   <Users className="h-6 w-6" />
                 </div>
                 <div className="flex-1">
-                  <p className="text-sm font-black uppercase tracking-widest text-foreground">選手名簿</p>
-                  <p className="text-[9px] font-bold text-muted-foreground uppercase">Squad List</p>
+                  <p className="text-sm font-black uppercase tracking-widest text-foreground">名簿・組織管理</p>
+                  <p className="text-[9px] font-bold text-muted-foreground uppercase">Members & Groups</p>
                 </div>
                 <ChevronRight className="h-5 w-5 text-muted-foreground/30 group-hover:text-primary transition-all group-hover:translate-x-1" />
               </button>
 
-              <button onClick={() => router.push('/team/stats')} className="flex items-center gap-5 p-6 rounded-2xl bg-white/50 dark:bg-zinc-900/50 backdrop-blur-md border border-border/40 hover:border-primary/40 hover:bg-white/80 dark:hover:bg-zinc-800/80 transition-all group shadow-sm text-left w-full cursor-pointer">
+              <button onClick={() => router.push('/matches')} className="flex items-center gap-5 p-6 rounded-2xl bg-white/50 dark:bg-zinc-900/50 backdrop-blur-md border border-border/40 hover:border-primary/40 hover:bg-white/80 dark:hover:bg-zinc-800/80 transition-all group shadow-sm text-left w-full cursor-pointer">
                 <div className="p-4 rounded-xl bg-muted dark:bg-zinc-800 group-hover:bg-primary/10 group-hover:text-primary transition-colors shrink-0">
                   <BarChart3 className="h-6 w-6" />
                 </div>
                 <div className="flex-1">
-                  <p className="text-sm font-black uppercase tracking-widest text-foreground">通算成績</p>
-                  <p className="text-[9px] font-bold text-muted-foreground uppercase">Team Analytics</p>
+                  <p className="text-sm font-black uppercase tracking-widest text-foreground">試合結果・スコア</p>
+                  <p className="text-[9px] font-bold text-muted-foreground uppercase">Match Results</p>
                 </div>
                 <ChevronRight className="h-5 w-5 text-muted-foreground/30 group-hover:text-primary transition-all group-hover:translate-x-1" />
               </button>
@@ -339,6 +403,64 @@ export default function TeamProfilePage() {
         </div>
 
       </div>
+
+      {/* チーム情報編集ダイアログ */}
+      <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
+        <DialogContent onInteractOutside={(e) => e.preventDefault()} className="rounded-[var(--radius-2xl)] bg-card border-border sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-black text-xl">チームプロフィールの編集</DialogTitle>
+            <DialogDescription className="text-xs font-bold text-muted-foreground">
+              チームの基本情報やスローガンを修正します。
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleEditTeam} className="space-y-4 pt-3">
+            <div className="space-y-1">
+              <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">チーム名 (必須)</label>
+              <Input value={editFormName} onChange={e => setEditFormName(e.target.value)} required className="h-11 rounded-xl" />
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">監督名</label>
+                <Input value={editFormManagerName} onChange={e => setEditFormManagerName(e.target.value)} placeholder="未設定" className="h-11 rounded-xl" />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">本拠地グラウンド</label>
+                <Input value={editFormHomeGround} onChange={e => setEditFormHomeGround(e.target.value)} placeholder="未設定" className="h-11 rounded-xl" />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">創設年度 (西暦)</label>
+                <Input type="number" value={editFormYear} onChange={e => setEditFormYear(Number(e.target.value))} required className="h-11 rounded-xl" />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">Tier / 階層</label>
+                <Input value={editFormTier} onChange={e => setEditFormTier(e.target.value)} placeholder="例: A, B, 1軍" className="h-11 rounded-xl" />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">スローガン / チーム紹介文</label>
+              <textarea 
+                value={editFormDescription} 
+                onChange={e => setEditFormDescription(e.target.value)} 
+                placeholder="スローガンや紹介文を入力してください。"
+                rows={3}
+                className="w-full rounded-xl border border-border/60 bg-muted/20 px-4 py-2.5 text-base font-bold shadow-xs transition-all duration-300 focus-visible:outline-none focus-visible:border-primary focus-visible:ring-4 focus-visible:ring-primary/20 focus-visible:bg-background resize-none"
+              />
+            </div>
+
+            <div className="flex gap-3 pt-3">
+              <Button type="button" variant="outline" onClick={() => setIsEditModalOpen(false)} className="flex-1 h-12 rounded-xl font-black">キャンセル</Button>
+              <Button type="submit" disabled={isSubmitting} className="flex-1 h-12 rounded-xl font-black">
+                {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "保存する"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

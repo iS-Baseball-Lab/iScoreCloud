@@ -41,7 +41,7 @@ export function BottomNavigation({ activeTab, onNavigate, onOpenDrawer }: Bottom
             className={cn("flex flex-col items-center justify-center w-full h-full gap-1 transition-all", activeTab === 'players' ? "text-primary scale-105" : "text-muted-foreground opacity-50")}
           >
             <Users2 className={cn("h-5 w-5", activeTab === 'players' ? "stroke-[2.5px]" : "stroke-[2px]")} />
-            <span className="text-[9px] font-black tracking-tighter">選手名簿</span>
+            <span className="text-[9px] font-black tracking-tighter">名簿管理</span>
           </button>
         </div>
 
