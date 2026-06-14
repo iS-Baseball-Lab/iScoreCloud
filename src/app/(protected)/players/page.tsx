@@ -53,6 +53,7 @@ interface GroupMember {
   playerId: string | null;
   teamMemberId: string | null;
   role: string;
+  systemRole?: string;
   name: string;
   type: 'player' | 'staff' | 'parent' | 'other';
   uniformNumber: string | null;
@@ -100,6 +101,13 @@ export default function TeamRosterAndGroupPage() {
   const [selectedAddMemberType, setSelectedAddMemberType] = useState<"player" | "other">("player");
   const [selectedAddMemberId, setSelectedAddMemberId] = useState<string>("");
   const [addGroupMemberRole, setAddGroupMemberRole] = useState<string>("");
+  const [addGroupMemberSystemRole, setAddGroupMemberSystemRole] = useState<string>("");
+
+  // グループメンバーの編集用
+  const [isEditGroupMemberOpen, setIsEditGroupMemberOpen] = useState(false);
+  const [editingGroupMember, setEditingGroupMember] = useState<GroupMember | null>(null);
+  const [editGroupMemberRole, setEditGroupMemberRole] = useState("");
+  const [editGroupMemberSystemRole, setEditGroupMemberSystemRole] = useState("");
 
   // Member 登録フォーム用状態
   const [memberFormName, setMemberFormName] = useState("");
@@ -470,7 +478,8 @@ export default function TeamRosterAndGroupPage() {
         body: JSON.stringify({
           playerId: isPlayer ? selectedAddMemberId : null,
           teamMemberId: !isPlayer ? selectedAddMemberId : null,
-          role: addGroupMemberRole || null
+          role: addGroupMemberRole || null,
+          systemRole: !isPlayer ? (addGroupMemberSystemRole || null) : null
         })
       });
       if (!res.ok) {
@@ -480,7 +489,36 @@ export default function TeamRosterAndGroupPage() {
       toast.success("グループにメンバーを追加しました");
       setIsAddGroupMemberOpen(false);
       setSelectedAddMemberId("");
-      setAddGroupMemberRole("");
+      addGroupMemberRole && setAddGroupMemberRole("");
+      addGroupMemberSystemRole && setAddGroupMemberSystemRole("");
+      await fetchGroups(teamId);
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleEditGroupMember = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!teamId || !selectedGroup || !editingGroupMember) return;
+    setIsSubmitting(true);
+    try {
+      const res = await fetch(`/api/teams/${teamId}/groups/${selectedGroup.id}/members/${editingGroupMember.relationId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          role: editGroupMemberRole || null,
+          systemRole: editingGroupMember.type !== "player" ? (editGroupMemberSystemRole || null) : null
+        })
+      });
+      if (!res.ok) {
+        const err = (await res.json()) as { error?: string };
+        throw new Error(err.error || "役割の更新に失敗しました");
+      }
+      toast.success("グループメンバーの役割を更新しました");
+      setIsEditGroupMemberOpen(false);
+      setEditingGroupMember(null);
       await fetchGroups(teamId);
     } catch (err: any) {
       toast.error(err.message);
@@ -973,25 +1011,27 @@ export default function TeamRosterAndGroupPage() {
                                   役割: {m.role}
                                 </span>
                               )}
+                              {m.systemRole && m.type !== 'player' && (
+                                <span className="text-[9px] font-bold px-2 py-0.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-full shrink-0">
+                                  権限: {
+                                    m.systemRole === 'manager' ? '監督・代表' :
+                                    m.systemRole === 'coach' ? 'コーチ' :
+                                    m.systemRole === 'scorer' ? 'スコアラー' :
+                                    m.systemRole === 'staff' ? 'スタッフ' :
+                                    m.systemRole === 'parent' ? '保護者' : m.systemRole
+                                  }
+                                </span>
+                              )}
                             </div>
                           </div>
 
                           <div className="flex items-center gap-1">
                             <Button
                               onClick={() => {
-                                const newRole = prompt(`${m.name} 様のグループ役割を設定します:`, m.role);
-                                if (newRole !== null) {
-                                  fetch(`/api/teams/${teamId}/groups/${selectedGroup.id}/members/${m.relationId}`, {
-                                    method: "PATCH",
-                                    headers: { "Content-Type": "application/json" },
-                                    body: JSON.stringify({ role: newRole })
-                                  }).then(res => {
-                                    if (res.ok) {
-                                      toast.success("役割を更新しました");
-                                      fetchGroups(teamId);
-                                    }
-                                  });
-                                }
+                                setEditingGroupMember(m);
+                                setEditGroupMemberRole(m.role || "");
+                                setEditGroupMemberSystemRole(m.systemRole || "");
+                                setIsEditGroupMemberOpen(true);
                               }}
                               size="icon"
                               variant="ghost"
@@ -1372,10 +1412,65 @@ export default function TeamRosterAndGroupPage() {
               <Input value={addGroupMemberRole} onChange={e => setAddGroupMemberRole(e.target.value)} placeholder="例: 会長、会計、車当番、カメラ" className="h-11 rounded-xl" />
             </div>
 
+            {/* グループ内システムロール選択 (選手以外のみ) */}
+            {selectedAddMemberType === "other" && (
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">割り当てるシステム権限（任意）</label>
+                <Select value={addGroupMemberSystemRole} onChange={(e: any) => setAddGroupMemberSystemRole(e.target.value)} className="h-11 rounded-xl bg-card">
+                  <option value="">権限を変更しない (現在のまま)</option>
+                  <option value="manager">監督・代表者 (フルアクセス)</option>
+                  <option value="coach">コーチ (チーム管理・編集)</option>
+                  <option value="scorer">スコアラー (スコア入力)</option>
+                  <option value="staff">スタッフ</option>
+                  <option value="parent">保護者 (閲覧のみ)</option>
+                </Select>
+              </div>
+            )}
+
             <div className="flex gap-3 pt-3">
-              <Button type="button" variant="outline" onClick={() => setIsAddGroupMemberOpen(false)} className="flex-1 h-12 rounded-xl font-black">キャンセル</Button>
+              <Button type="button" variant="outline" onClick={() => { setIsAddGroupMemberOpen(false); setAddGroupMemberSystemRole(""); }} className="flex-1 h-12 rounded-xl font-black">キャンセル</Button>
               <Button type="submit" disabled={isSubmitting || !selectedAddMemberId} className="flex-1 h-12 rounded-xl font-black">
                 {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "追加する"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* グループメンバー役割・権限編集ダイアログ */}
+      <Dialog open={isEditGroupMemberOpen} onOpenChange={(open) => !open && setIsEditGroupMemberOpen(false)}>
+        <DialogContent onInteractOutside={(e) => e.preventDefault()} className="rounded-[var(--radius-2xl)] bg-card border-border sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-black text-xl">メンバー役割と権限の編集</DialogTitle>
+            <DialogDescription className="text-xs font-bold text-muted-foreground">
+              グループ「{selectedGroup?.name}」における「{editingGroupMember?.name}」様の役割とシステム権限を修正します。
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleEditGroupMember} className="space-y-4 pt-3">
+            <div className="space-y-1">
+              <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">グループ内での役割（任意）</label>
+              <Input value={editGroupMemberRole} onChange={e => setEditGroupMemberRole(e.target.value)} placeholder="例: 会長、会計、車当番" className="h-11 rounded-xl" />
+            </div>
+
+            {/* システムロール選択 (選手以外のみ) */}
+            {editingGroupMember?.type !== "player" && (
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">割り当てるシステム権限（任意）</label>
+                <Select value={editGroupMemberSystemRole} onChange={(e: any) => setEditGroupMemberSystemRole(e.target.value)} className="h-11 rounded-xl bg-card">
+                  <option value="">権限を変更しない (現在のまま)</option>
+                  <option value="manager">監督・代表者 (フルアクセス)</option>
+                  <option value="coach">コーチ (チーム管理・編集)</option>
+                  <option value="scorer">スコアラー (スコア入力)</option>
+                  <option value="staff">スタッフ</option>
+                  <option value="parent">保護者 (閲覧のみ)</option>
+                </Select>
+              </div>
+            )}
+
+            <div className="flex gap-3 pt-3">
+              <Button type="button" variant="outline" onClick={() => setIsEditGroupMemberOpen(false)} className="flex-1 h-12 rounded-xl font-black">キャンセル</Button>
+              <Button type="submit" disabled={isSubmitting} className="flex-1 h-12 rounded-xl font-black">
+                {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "保存する"}
               </Button>
             </div>
           </form>

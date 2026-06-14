@@ -148,6 +148,7 @@ export const teamGroupMembers = sqliteTable('team_group_members', {
   playerId: text('player_id').references(() => players.id, { onDelete: 'cascade' }),       // 選手ID (Nullable)
   teamMemberId: text('team_member_id').references(() => teamMembers.id, { onDelete: 'cascade' }), // 選手以外ID (Nullable)
   role: text('role'),                                 // グループ内での役割 (例: "会計", "車当番", "ヘッドコーチ")
+  systemRole: text('system_role'),                    // システムロール (例: "manager", "scorer")
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(strftime('%s', 'now'))`),
 }, (table) => ({
   groupIdx: index("idx_tg_members_group_id").on(table.groupId),

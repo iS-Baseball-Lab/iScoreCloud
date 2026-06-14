@@ -37,6 +37,7 @@ app.get('/:teamId/groups', async (c) => {
         tgm.player_id        AS playerId,
         tgm.team_member_id   AS teamMemberId,
         tgm.role             AS role,
+        tgm.system_role      AS systemRole,
         -- 選手の場合の名前
         p.name               AS playerName,
         p.uniform_number     AS playerUniformNumber,
@@ -59,6 +60,7 @@ app.get('/:teamId/groups', async (c) => {
         playerId: m.playerId,
         teamMemberId: m.teamMemberId,
         role: m.role || "",
+        systemRole: m.systemRole || "",
         name: isPlayer ? m.playerName : (m.otherName || "名前なし"),
         type: isPlayer ? "player" : (m.otherMemberType || "other"),
         uniformNumber: isPlayer ? m.playerUniformNumber : null,
@@ -177,10 +179,11 @@ app.post('/:teamId/groups/:groupId/members', async (c) => {
 
   const teamId = c.req.param('teamId')
   const groupId = c.req.param('groupId')
-  const { playerId, teamMemberId, role } = await c.req.json<{
+  const { playerId, teamMemberId, role, systemRole } = await c.req.json<{
     playerId?: string | null;
     teamMemberId?: string | null;
     role?: string | null;
+    systemRole?: string | null;
   }>()
   const db = drizzle(c.env.DB)
 
@@ -214,8 +217,16 @@ app.post('/:teamId/groups/:groupId/members', async (c) => {
       groupId,
       playerId: playerId || null,
       teamMemberId: teamMemberId || null,
-      role: role?.trim() || null
+      role: role?.trim() || null,
+      systemRole: systemRole || null
     })
+
+    // 💡 チームメンバーのシステムロールと連動同期 (選手以外のスタッフ・保護者のみ)
+    if (teamMemberId && systemRole) {
+      await db.update(teamMembers)
+        .set({ role: systemRole })
+        .where(eq(teamMembers.id, teamMemberId))
+    }
 
     return c.json({ success: true, relationId })
   } catch (e: any) {
@@ -232,7 +243,7 @@ app.patch('/:teamId/groups/:groupId/members/:relationId', async (c) => {
   const teamId = c.req.param('teamId')
   const groupId = c.req.param('groupId')
   const relationId = c.req.param('relationId')
-  const { role } = await c.req.json<{ role: string | null }>()
+  const { role, systemRole } = await c.req.json<{ role: string | null; systemRole?: string | null }>()
   const db = drizzle(c.env.DB)
 
   try {
@@ -244,8 +255,21 @@ app.patch('/:teamId/groups/:groupId/members/:relationId', async (c) => {
     }
 
     await db.update(teamGroupMembers)
-      .set({ role: role?.trim() || null })
+      .set({ 
+        role: role?.trim() || null,
+        systemRole: systemRole !== undefined ? (systemRole || null) : undefined
+      })
       .where(and(eq(teamGroupMembers.id, relationId), eq(teamGroupMembers.groupId, groupId)))
+
+    // 💡 チームメンバーのシステムロールと連動同期
+    if (systemRole) {
+      const rel = await db.select().from(teamGroupMembers).where(eq(teamGroupMembers.id, relationId)).get()
+      if (rel && rel.teamMemberId) {
+        await db.update(teamMembers)
+          .set({ role: systemRole })
+          .where(eq(teamMembers.id, rel.teamMemberId))
+      }
+    }
 
     return c.json({ success: true })
   } catch (e: any) {

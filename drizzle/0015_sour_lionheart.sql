@@ -1,0 +1,1 @@
+ALTER TABLE `team_group_members` ADD `system_role` text;
