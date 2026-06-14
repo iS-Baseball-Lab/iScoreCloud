@@ -85,19 +85,24 @@ export const handleGetMembers = async (c: Context) => {
       console.warn("[iScore Warning] team_role_settings テーブルが未作成です。")
     }
 
-    // ① まずは安全に確実に取れる情報だけをクエリする
+    // ① まずは安全に確実に取れる情報だけをクエリする (LEFT JOIN に変更してアカウントなしメンバーに対応)
     const { results } = await c.env.DB.prepare(`
       SELECT
-        tm.id        AS memberId,
-        tm.user_id   AS userId,
+        tm.id              AS memberId,
+        tm.user_id         AS userId,
         tm.role,
         tm.status,
-        tm.joined_at AS joinedAt,
-        u.name,
-        u.image      AS avatarUrl,
-        u.email      AS email
+        tm.joined_at       AS joinedAt,
+        tm.name            AS memberName,
+        tm.name_kana       AS nameKana,
+        tm.member_type     AS memberType,
+        tm.phone,
+        tm.email           AS memberEmail,
+        u.name             AS userName,
+        u.image            AS avatarUrl,
+        u.email            AS userEmail
       FROM team_members tm
-      JOIN user u ON tm.user_id = u.id
+      LEFT JOIN user u ON tm.user_id = u.id
       WHERE tm.team_id = ?
       ORDER BY
         CASE tm.status WHEN 'pending' THEN 0 ELSE 1 END,
@@ -133,10 +138,13 @@ export const handleGetMembers = async (c: Context) => {
       role: row.role,
       status: row.status,
       joinedAt: row.joinedAt,
-      name: row.name,
+      name: row.memberName || row.userName || "名前なし",
+      nameKana: row.nameKana,
       avatarUrl: row.avatarUrl,
-      email: row.email,
-      authProviders: providersMap[row.userId] || [],
+      email: row.memberEmail || row.userEmail || "",
+      memberType: row.memberType,
+      phone: row.phone,
+      authProviders: row.userId ? (providersMap[row.userId] || []) : [],
     }))
 
     return c.json({ success: true, members: formattedMembers, inviteCode: teamId, roleSettings })
@@ -231,4 +239,101 @@ export const handleRemoveMember = async (c: Context) => {
     await db.delete(teamMembers).where(and(eq(teamMembers.id, memberId), eq(teamMembers.teamId, teamId)))
     return c.json({ success: true })
   } catch (e: any) { return c.json({ success: false, error: 'Failed', details: e.message }, 500) }
+}
+
+/** 🌟 アカウント無しの新規メンバー（スタッフ・保護者）登録 */
+export const handleCreateMember = async (c: Context) => {
+  const auth = getAuth(c.env.DB, c.env)
+  const session = await auth.api.getSession({ headers: c.req.raw.headers })
+  if (!session) return c.json({ error: 'Unauthorized' }, 401)
+
+  const teamId = c.req.param('id')
+  const { name, nameKana, memberType, phone, email } = await c.req.json<{
+    name: string;
+    nameKana?: string;
+    memberType: 'staff' | 'parent' | 'other';
+    phone?: string;
+    email?: string;
+  }>()
+  const db = drizzle(c.env.DB)
+
+  try {
+    const myMembership = await db.select().from(teamMembers).where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, session.user.id))).get()
+    const isAdmin = (session.user as AuthUser).role === 'SYSTEM_ADMIN' || (session.user as AuthUser).role === 'admin'
+    if (!isAdmin && (!myMembership || !canManageTeam(myMembership.role))) {
+      return c.json({ error: '権限がありません' }, 403)
+    }
+
+    if (!name || !name.trim()) {
+      return c.json({ error: '名前は必須です' }, 400)
+    }
+
+    await db.insert(teamMembers).values({
+      id: crypto.randomUUID(),
+      teamId,
+      userId: null, // アカウント未紐付け
+      name: name.trim(),
+      nameKana: nameKana?.trim() || null,
+      memberType: memberType || 'parent',
+      phone: phone?.trim() || null,
+      email: email?.trim() || null,
+      role: 'player', // アプリ内の権限はデフォルト player
+      status: 'active'
+    })
+
+    return c.json({ success: true })
+  } catch (e: any) {
+    return c.json({ success: false, error: '登録に失敗しました', details: e.message }, 500)
+  }
+}
+
+/** 🌟 メンバー情報の更新 (およびログインユーザーとの紐付け) */
+export const handleUpdateMemberInfo = async (c: Context) => {
+  const auth = getAuth(c.env.DB, c.env)
+  const session = await auth.api.getSession({ headers: c.req.raw.headers })
+  if (!session) return c.json({ error: 'Unauthorized' }, 401)
+
+  const teamId = c.req.param('id')
+  const memberId = c.req.param('memberId')
+  const { name, nameKana, memberType, phone, email, userId } = await c.req.json<{
+    name?: string;
+    nameKana?: string;
+    memberType?: 'staff' | 'parent' | 'other';
+    phone?: string;
+    email?: string;
+    userId?: string | null;
+  }>()
+  const db = drizzle(c.env.DB)
+
+  try {
+    const myMembership = await db.select().from(teamMembers).where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, session.user.id))).get()
+    const isAdmin = (session.user as AuthUser).role === 'SYSTEM_ADMIN' || (session.user as AuthUser).role === 'admin'
+    if (!isAdmin && (!myMembership || !canManageTeam(myMembership.role))) {
+      return c.json({ error: '権限がありません' }, 403)
+    }
+
+    // もし別のログインユーザーと紐付ける場合、すでにそのユーザーがこのチームに二重登録されていないか検証
+    if (userId) {
+      const duplicate = await db.select().from(teamMembers)
+        .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, userId))).get()
+      if (duplicate && duplicate.id !== memberId) {
+        return c.json({ error: '指定されたユーザーはすでにチームに登録されています。重複登録はできません。' }, 400)
+      }
+    }
+
+    await db.update(teamMembers)
+      .set({
+        name: name !== undefined ? (name?.trim() || null) : undefined,
+        nameKana: nameKana !== undefined ? (nameKana?.trim() || null) : undefined,
+        memberType: memberType || undefined,
+        phone: phone !== undefined ? (phone?.trim() || null) : undefined,
+        email: email !== undefined ? (email?.trim() || null) : undefined,
+        userId: userId !== undefined ? userId : undefined,
+      })
+      .where(and(eq(teamMembers.id, memberId), eq(teamMembers.teamId, teamId)))
+
+    return c.json({ success: true })
+  } catch (e: any) {
+    return c.json({ success: false, error: '更新に失敗しました', details: e.message }, 500)
+  }
 }

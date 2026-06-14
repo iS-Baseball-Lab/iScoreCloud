@@ -20,7 +20,6 @@ export const organizations = sqliteTable("organizations", {
 
 // ==========================================
 // 🧢 チーム（年度ごと・階層ごとの編成）テーブル
-// 現場の声：「去年のAチームと今年のAチームは別物として管理したい」
 // ==========================================
 export const teams = sqliteTable('teams', {
   id: text('id').primaryKey(),
@@ -32,16 +31,10 @@ export const teams = sqliteTable('teams', {
   homeGround: text('home_ground'), // 普段よく使う練習場所やグラウンド
   tier: text('tier'), // 'A', 'B', '1軍', '2軍' などの階層
   teamType: text('team_type').default('regular'), // 'regular'(公式用), 'practice'(練習用)
-  // 🌟 LINE 連携用の追加カラム
-  /** 💡 Webhook で取得したグループ固有の ID */
   lineGroupId: text('line_group_id'),
-  /** 💡 自動速報の有効化フラグ (0:無効, 1:有効) */
   isAutoReportEnabled: integer('is_auto_report_enabled', { mode: 'boolean' }).default(false),
-  /** 💡 プレイボール時の通知 (0:無効, 1:有効) */
   reportPlayballEnabled: integer('report_playball_enabled', { mode: 'boolean' }).notNull().default(true),
-  /** 💡 イニング毎の通知 (0:無効, 1:有効) */
   reportInningEnabled: integer('report_inning_enabled', { mode: 'boolean' }).notNull().default(true),
-  /** 💡 試合終了時の通知 (0:無効, 1:有効) */
   reportGameSetEnabled: integer('report_game_set_enabled', { mode: 'boolean' }).notNull().default(true),
   createdBy: text('created_by').notNull().references(() => user.id),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(strftime('%s', 'now'))`),
@@ -49,38 +42,36 @@ export const teams = sqliteTable('teams', {
 
 // ==========================================
 // 👤 選手名簿（ロースター）テーブル
-// チームに所属する全選手のデータベース
 // ==========================================
 export const players = sqliteTable('players', {
   id: text('id').primaryKey(),
   teamId: text('team_id').notNull().references(() => teams.id, { onDelete: 'cascade' }),
-  name: text('name').notNull(), // 選手名（スコアブック印字用）
-  nameKana: text('name_kana'), // 選手名のよみがな（フリガナ）
-  uniformNumber: text('uniform_number').notNull(), // 背番号 (00や監督の30番等も考慮し文字列)
-  nickname: text('nickname'), // アプリ内のタイムライン実況で呼ぶ愛称
-  primaryPosition: text('primary_position'), // メインポジション（例: '1'(投), '2'(捕)）
-  subPositions: text('sub_positions', { mode: 'json' }).$type<string[]>(), // 守れるサブポジの配列（交代UIでサジェストする用）
+  name: text('name').notNull(), // 選手名
+  nameKana: text('name_kana'), // 選手名のよみがな
+  uniformNumber: text('uniform_number').notNull(), // 背番号
+  nickname: text('nickname'), 
+  primaryPosition: text('primary_position'), // メインポジション
+  subPositions: text('sub_positions', { mode: 'json' }).$type<string[]>(), 
   throws: text('throws'), // 'R'(右投), 'L'(左投)
   bats: text('bats'),     // 'R'(右打), 'L'(左打), 'B'(両打)
-  height: integer('height'), // 身長(cm)
-  weight: integer('weight'), // 体重(kg)
-  profileImageUrl: text('profile_image_url'), // 選手アイコン画像
-  notes: text('notes'), // 「肩痛い」「代走のみ」など、監督・スコアラー向け秘密のメモ
-  isActive: integer('is_active', { mode: 'boolean' }).default(true), // 今日来ているか、ケガで休んでいないか（UIの表示切替用）
+  height: integer('height'), 
+  weight: integer('weight'), 
+  profileImageUrl: text('profile_image_url'), 
+  notes: text('notes'), 
+  isActive: integer('is_active', { mode: 'boolean' }).default(true), 
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(strftime('%s', 'now'))`),
 }, (table) => ({
-  teamIdx: index("idx_players_team_id").on(table.teamId), // チームの選手一覧を開く時の爆速化インデックス
+  teamIdx: index("idx_players_team_id").on(table.teamId),
 }));
 
 // ==========================================
 // 📋 スタメンテンプレート（事前オーダー保存）テーブル
-// 現場の声：「試合前のメンバー登録を10秒で終わらせたい！」
 // ==========================================
 export const lineupTemplates = sqliteTable("lineup_templates", {
   id: text("id").primaryKey(),
   teamId: text('team_id').notNull().references(() => teams.id, { onDelete: 'cascade' }),
-  name: text("name").notNull(), // 例: "Aチーム ベストメンバー", "全員打ち練習用"
-  lineupData: text("lineup_data", { mode: "json" }).notNull(), // JSON配列で一括保存 [{playerId:"x", order:1, pos:"8"}, ...]
+  name: text("name").notNull(), 
+  lineupData: text("lineup_data", { mode: "json" }).notNull(), 
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(strftime('%s', 'now'))`),
 }, (table) => ({
   teamIdx: index("idx_lineup_templates_team_id").on(table.teamId),
@@ -88,17 +79,13 @@ export const lineupTemplates = sqliteTable("lineup_templates", {
 
 // ==========================================
 // 🏢 組織メンバー（権限管理）テーブル
-// クラブ全体を管理するオーナーや総監督などの権限を管理
 // ==========================================
 export const organizationMembers = sqliteTable("organization_members", {
   id: text("id").primaryKey(),
   organizationId: text("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
-  userId: text("user_id").notNull().references(() => user.id), // Authユーザー
-  role: text("role").notNull(), // 例: 'OWNER' (代表), 'ADMIN' (総監督), 'MEMBER' (保護者/選手)
-
-  // 🔥 ここを追加！（'active': 承認済み/参加中, 'pending': 参加申請中）
+  userId: text("user_id").notNull().references(() => user.id), 
+  role: text("role").notNull(), 
   status: text("status").notNull().default("active"),
-
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(strftime('%s', 'now'))`),
 }, (table) => ({
   orgIdx: index("idx_org_members_org_id").on(table.organizationId),
@@ -106,18 +93,22 @@ export const organizationMembers = sqliteTable("organization_members", {
 }));
 
 // ==========================================
-// 🤝 チーム所属（メンバー・権限）テーブル
-// ※ players(選手名簿)とは異なり、「アプリのユーザー」がどのチームの編集権限を持つかを管理
+// 🤝 チーム所属メンバー（名簿 & 権限テーブル）
 // ==========================================
 export const teamMembers = sqliteTable('team_members', {
   id: text('id').primaryKey(),
   teamId: text('team_id').notNull().references(() => teams.id, { onDelete: 'cascade' }),
-  userId: text('user_id').notNull().references(() => user.id), // Authユーザー
-  role: text('role').notNull(), // 例: 'MANAGER'(監督・スコアラー), 'PLAYER'(閲覧のみ)
-
-  // 🔥 ここを追加！（'active': 承認済み/参加中, 'pending': 参加申請中）
+  userId: text('user_id').references(() => user.id), // 💡 Nullable (アカウント未紐付けのメンバー対応)
+  
+  // 💡 名簿管理用の追加カラム
+  name: text('name'),                                // 名前
+  nameKana: text('name_kana'),                       // フリガナ
+  memberType: text('member_type').notNull().default('parent'), // 'staff' | 'parent' | 'other'
+  phone: text('phone'),                              // 電話番号
+  email: text('email'),                              // メールアドレス
+  
+  role: text('role').notNull().default('player'), // 例: 'MANAGER'(監督・スコアラー), 'PLAYER'(閲覧のみ), 'pending'(申請中)
   status: text("status").notNull().default("active"),
-
   joinedAt: integer('joined_at', { mode: 'timestamp' }).notNull().default(sql`(strftime('%s', 'now'))`),
 }, (table) => ({
   teamIdx: index("idx_team_members_team_id").on(table.teamId),
@@ -132,4 +123,34 @@ export const teamRoleSettings = sqliteTable('team_role_settings', {
 }, (table) => ({
   // 1つのチーム内で1つのロールに対して設定は1つのみ
   teamRoleIdx: uniqueIndex('team_role_idx').on(table.teamId, table.role),
+}));
+
+// ==========================================
+// 👥 チーム内グループ（親子・階層構造対応）
+// ==========================================
+export const teamGroups = sqliteTable('team_groups', {
+  id: text('id').primaryKey(),
+  teamId: text('team_id').notNull().references(() => teams.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),                      // グループ名 (例: "保護者会")
+  parentId: text('parent_id').references((): any => teamGroups.id, { onDelete: 'cascade' }), // 親グループID (階層構造用)
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(strftime('%s', 'now'))`),
+}, (table) => ({
+  teamIdx: index("idx_team_groups_team_id").on(table.teamId),
+  parentIdx: index("idx_team_groups_parent_id").on(table.parentId),
+}));
+
+// ==========================================
+// 🔗 グループ所属メンバーと役割（選手・その他メンバー両対応）
+// ==========================================
+export const teamGroupMembers = sqliteTable('team_group_members', {
+  id: text('id').primaryKey(),
+  groupId: text('group_id').notNull().references(() => teamGroups.id, { onDelete: 'cascade' }),
+  playerId: text('player_id').references(() => players.id, { onDelete: 'cascade' }),       // 選手ID (Nullable)
+  teamMemberId: text('team_member_id').references(() => teamMembers.id, { onDelete: 'cascade' }), // 選手以外ID (Nullable)
+  role: text('role'),                                 // グループ内での役割 (例: "会計", "車当番", "ヘッドコーチ")
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(strftime('%s', 'now'))`),
+}, (table) => ({
+  groupIdx: index("idx_tg_members_group_id").on(table.groupId),
+  playerIdx: index("idx_tg_members_player_id").on(table.playerId),
+  teamMemberIdx: index("idx_tg_members_team_member_id").on(table.teamMemberId),
 }));

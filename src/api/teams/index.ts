@@ -14,13 +14,16 @@ import {
   handleGetMembers, 
   handlePutRoleSettings, 
   handlePatchMemberRole, 
-  handleRemoveMember 
+  handleRemoveMember,
+  handleCreateMember,
+  handleUpdateMemberInfo
 } from './members'
 
 // 他の子ルーターのインポート
 import playersApp from './players'
 import statsApp from './stats'
 import lineupsApp from './lineups'
+import groupsApp from './groups' // 👥 新規：親子グループ管理ルート
 
 const app = new Hono<{ Bindings: WorkerEnv }>()
 
@@ -30,7 +33,9 @@ const app = new Hono<{ Bindings: WorkerEnv }>()
 app.post('/join', handleJoinTeam)
 app.get('/search/:id', handleSearchTeam)
 app.get('/:id/members', handleGetMembers)
-  app.put('/:id/roles/settings', handlePutRoleSettings)
+app.post('/:id/members', handleCreateMember) // 💡 新規：アカウントなしメンバー登録
+app.patch('/:id/members/:memberId/info', handleUpdateMemberInfo) // 💡 新規：メンバー情報更新 & アカウント紐付け
+app.put('/:id/roles/settings', handlePutRoleSettings)
 app.patch('/:id/members/:memberId', handlePatchMemberRole)
 app.delete('/:id/members/:memberId', handleRemoveMember)
 
@@ -38,6 +43,7 @@ app.delete('/:id/members/:memberId', handleRemoveMember)
 app.route('/', playersApp)
 app.route('/', statsApp)
 app.route('/', lineupsApp)
+app.route('/', groupsApp) // 👥 新規マウント：親子グループ管理ルート
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // チーム本体の基本CRUD
