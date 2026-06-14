@@ -974,14 +974,34 @@ function getNormalizedAtBatResult(actionNote: string): string {
 
       // (定義は関数上部に移動されました)
 
-      // 💡 併殺で+2、野選・通常アウトで+1のアウトカウント加算処理
+      // 💡 アウトカウントの加算処理
       let addedOuts = 0;
       if (isAtBatEnd) {
-        if (result.includes("併殺")) {
+        const isBatterOut = !isSafe && (
+          result.includes("アウト") || 
+          result.includes("犠") || 
+          result.includes("ゴロ") || 
+          result.includes("飛") || 
+          result.includes("直") || 
+          result.includes("三振") ||
+          result.includes("FO") ||
+          result.includes("LO") ||
+          result.includes("GO") ||
+          result.includes("SO") ||
+          result.includes("SF") ||
+          result.includes("SH") ||
+          result.includes("DP") ||
+          result.includes("UN") ||
+          result.includes("併殺")
+        );
+
+        if (result.includes("併殺") || (outRunnerBase && isBatterOut)) {
           addedOuts = 2;
         } else if (isFieldersChoice) {
           addedOuts = 1;
-        } else if (!isSafe && (result.includes("アウト") || result.includes("犠") || result.includes("ゴロ") || result.includes("飛") || result.includes("直") || result.includes("三振"))) {
+        } else if (isBatterOut) {
+          addedOuts = 1;
+        } else if (isSafe && outRunnerBase) {
           addedOuts = 1;
         }
       }
@@ -1013,7 +1033,16 @@ function getNormalizedAtBatResult(actionNote: string): string {
       const batterOrder = isMyAttack ? prev.myBattingIndex + 1 : prev.opponentBattingIndex + 1;
       const batterPrefix = isNotAtBat ? "" : `${batterOrder}番 ${batterName}: `;
 
-      const logText = isInningChange ? `${result} (チェンジ)` : result;
+      let displayResult = result;
+      if (outRunnerBase && !result.includes("併殺")) {
+        const baseName = outRunnerBase === 3 ? "3" : outRunnerBase === 2 ? "2" : "1";
+        const destName = outRunnerBase === 3 ? "本" : outRunnerBase === 2 ? "3" : "2";
+        const isBatterOut = !isSafe;
+        const outLabel = isBatterOut ? "併殺" : "走者アウト";
+        displayResult = `${result} (${outLabel}:${baseName}塁走者${destName}塁死)`;
+      }
+
+      const logText = isInningChange ? `${displayResult} (チェンジ)` : displayResult;
       const fullLogText = `${batterPrefix}${logText}`;
 
       const next = pushHistory(prev, {

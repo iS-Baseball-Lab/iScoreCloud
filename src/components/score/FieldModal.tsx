@@ -52,12 +52,7 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
     }
   }, [open, defaultHitType]);
 
-  // FC以外の時はアウト走者選択をリセット
-  useEffect(() => {
-    if (hitType !== "FC") {
-      setOutRunnerBase(null);
-    }
-  }, [hitType]);
+
 
   const calculateDefaultRbi = (type: string) => {
     const r1 = runners?.base1 ? 1 : 0;
@@ -390,17 +385,17 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
           </div>
 
           {/* 野選（FC）が選択された際のアウト走者選択UI */}
-          {hitType === "FC" && (
+          {(state.runners.base1 || state.runners.base2 || state.runners.base3) && (
             <div className="space-y-1.5 p-3 rounded-xl border border-rose-500/20 bg-rose-500/5 animate-in slide-in-from-top-2 duration-200">
               <label className="text-[9.5px] font-black text-rose-600 dark:text-rose-400 uppercase tracking-widest px-1">
-                野選によりアウトになった走者 (必須)
+                {hitType === "FC" ? "野選によりアウトになった走者 (必須)" : "走者アウト / 進塁死 (任意)"}
               </label>
               <div className="flex flex-col gap-1.5 mt-1">
                 {state.runners.base1 && (
                   <button
                     key="fc-runner-1"
                     type="button"
-                    onClick={() => setOutRunnerBase(1)}
+                    onClick={() => setOutRunnerBase(outRunnerBase === 1 ? null : 1)}
                     className={cn(
                       "h-9 rounded-xl border text-[11px] font-bold flex items-center justify-between px-3 active:scale-95 transition-all cursor-pointer",
                       outRunnerBase === 1
@@ -416,7 +411,7 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
                   <button
                     key="fc-runner-2"
                     type="button"
-                    onClick={() => setOutRunnerBase(2)}
+                    onClick={() => setOutRunnerBase(outRunnerBase === 2 ? null : 2)}
                     className={cn(
                       "h-9 rounded-xl border text-[11px] font-bold flex items-center justify-between px-3 active:scale-95 transition-all cursor-pointer",
                       outRunnerBase === 2
@@ -432,7 +427,7 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
                   <button
                     key="fc-runner-3"
                     type="button"
-                    onClick={() => setOutRunnerBase(3)}
+                    onClick={() => setOutRunnerBase(outRunnerBase === 3 ? null : 3)}
                     className={cn(
                       "h-9 rounded-xl border text-[11px] font-bold flex items-center justify-between px-3 active:scale-95 transition-all cursor-pointer",
                       outRunnerBase === 3
@@ -443,11 +438,6 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
                     <span>3塁走者: {getPlayerName(state.runners.base3)}</span>
                     <span className="text-[8px] opacity-70">本塁でアウト</span>
                   </button>
-                )}
-                {!state.runners.base1 && !state.runners.base2 && !state.runners.base3 && (
-                  <p className="text-[10px] text-zinc-400 dark:text-zinc-500 italic p-1">
-                    塁上に走者がいません
-                  </p>
                 )}
               </div>
             </div>
