@@ -119,6 +119,7 @@ export default function TeamRosterAndGroupPage() {
 
   // Group フォーム用状態
   const [groupFormName, setGroupFormName] = useState("");
+  const [groupFormParentId, setGroupFormParentId] = useState<string | null>(null);
 
   // ━━ データ取得処理 ━━
   const fetchPlayers = useCallback(async (tid: string) => {
@@ -426,15 +427,17 @@ export default function TeamRosterAndGroupPage() {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: groupFormName.trim()
+          name: groupFormName.trim(),
+          parentId: groupFormParentId || null
         })
       });
       if (!res.ok) throw new Error();
-      toast.success("グループ名を変更しました");
+      toast.success("グループ情報を更新しました");
       setEditGroupTarget(null);
+      setGroupFormParentId(null);
       await fetchGroups(teamId);
     } catch {
-      toast.error("グループ名の変更に失敗しました");
+      toast.error("グループ情報の更新に失敗しました");
     } finally {
       setIsSubmitting(false);
     }
@@ -595,7 +598,7 @@ export default function TeamRosterAndGroupPage() {
                     <FolderPlus className="h-3.5 w-3.5" />
                   </button>
                   <button 
-                    onClick={(e) => { e.stopPropagation(); setGroupFormName(g.name); setEditGroupTarget(g); }}
+                    onClick={(e) => { e.stopPropagation(); setGroupFormName(g.name); setGroupFormParentId(g.parentId); setEditGroupTarget(g); }}
                     className="p-1 rounded hover:bg-zinc-150 dark:hover:bg-zinc-800 text-muted-foreground hover:text-foreground transition-colors"
                   >
                     <Edit2 className="h-3.5 w-3.5" />
@@ -967,7 +970,16 @@ export default function TeamRosterAndGroupPage() {
                   <div className="flex items-center justify-between pb-3 border-b border-border">
                     <div>
                       <span className="text-[9px] font-black uppercase text-primary tracking-widest">Selected Group</span>
-                      <h4 className="font-black text-base text-foreground mt-0.5">{selectedGroup.name}</h4>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <h4 className="font-black text-base text-foreground">{selectedGroup.name}</h4>
+                        <button 
+                          onClick={() => { setGroupFormName(selectedGroup.name); setGroupFormParentId(selectedGroup.parentId); setEditGroupTarget(selectedGroup); }}
+                          className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                          title="グループ情報を編集"
+                        >
+                          <Edit2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     </div>
                     <Button 
                       onClick={() => setIsAddGroupMemberOpen(true)}
@@ -1292,20 +1304,37 @@ export default function TeamRosterAndGroupPage() {
       </Dialog>
 
       {/* グループ編集ダイアログ */}
-      <Dialog open={!!editGroupTarget} onOpenChange={(open) => !open && setEditGroupTarget(null)}>
+      <Dialog open={!!editGroupTarget} onOpenChange={(open) => { if (!open) { setEditGroupTarget(null); setGroupFormParentId(null); } }}>
         <DialogContent onInteractOutside={(e) => e.preventDefault()} className="rounded-[var(--radius-2xl)] bg-card border-border sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="font-black text-xl">グループ名の変更</DialogTitle>
-            <DialogDescription className="text-xs font-bold text-muted-foreground">グループ名を修正します。</DialogDescription>
+            <DialogTitle className="font-black text-xl">グループ情報の編集</DialogTitle>
+            <DialogDescription className="text-xs font-bold text-muted-foreground">グループ名や所属する階層を変更します。</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleEditGroup} className="space-y-4 pt-3">
             <div className="space-y-1">
-              <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">グループ名</label>
+              <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">グループ名 (必須)</label>
               <Input value={groupFormName} onChange={e => setGroupFormName(e.target.value)} required className="h-11 rounded-xl" />
             </div>
 
+            <div className="space-y-1">
+              <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">所属する親グループ</label>
+              <Select 
+                value={groupFormParentId || ""} 
+                onChange={(e: any) => setGroupFormParentId(e.target.value || null)}
+                className="h-11 rounded-xl bg-card"
+              >
+                <option value="">親グループなし (最上位)</option>
+                {groups
+                  .filter(g => g.id !== editGroupTarget?.id && g.parentId !== editGroupTarget?.id) // 循環防止
+                  .map(g => (
+                    <option key={g.id} value={g.id}>{g.name}</option>
+                  ))
+                }
+              </Select>
+            </div>
+
             <div className="flex gap-3 pt-3">
-              <Button type="button" variant="outline" onClick={() => setEditGroupTarget(null)} className="flex-1 h-12 rounded-xl font-black">キャンセル</Button>
+              <Button type="button" variant="outline" onClick={() => { setEditGroupTarget(null); setGroupFormParentId(null); }} className="flex-1 h-12 rounded-xl font-black">キャンセル</Button>
               <Button type="submit" disabled={isSubmitting} className="flex-1 h-12 rounded-xl font-black">
                 {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "保存する"}
               </Button>
