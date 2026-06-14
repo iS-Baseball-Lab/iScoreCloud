@@ -218,186 +218,279 @@ export function OutDetailModal({ open, onOpenChange, onResult }: OutDetailModalP
           
           {/* 1. 結果種別の選択 */}
           <div className="space-y-1.5">
-            <label className="text-[9.5px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest px-1">① アウト種別（起点）</label>
-            <div className="grid grid-cols-3 gap-2">
-              {outTypes.map((res) => (
-                <button
-                  key={res.id}
-                  type="button"
-                  onClick={() => {
-                    setOutType(res.id);
-                    if (res.id !== "FO" && res.id !== "LO") {
-                      setIsFoul(false);
-                    }
-                  }}
-                  className={cn(
-                    "h-10 rounded-xl border font-black text-[11px] tracking-tight transition-all active:scale-95 cursor-pointer flex items-center justify-center text-center leading-tight p-1",
-                    getOutStyle(res.id)
-                  )}
-                >
-                  {res.label}
-                </button>
-              ))}
+            <label className="text-[10px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest px-1">
+              ① アウト種別（起点）
+            </label>
+            <div className="p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/30">
+              <div className="grid grid-cols-3 gap-2">
+                {outTypes.map((res) => (
+                  <button
+                    key={res.id}
+                    type="button"
+                    onClick={() => {
+                      setOutType(res.id);
+                      if (res.id !== "FO" && res.id !== "LO") {
+                        setIsFoul(false);
+                      }
+                    }}
+                    className={cn(
+                      "h-10 rounded-xl border font-black text-[11px] tracking-tight transition-all active:scale-95 cursor-pointer flex items-center justify-center text-center leading-tight p-1",
+                      getOutStyle(res.id)
+                    )}
+                  >
+                    {res.label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
           {/* 2. 走者状況・進退設定 */}
-          <div className="space-y-1.5 p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/30">
-            <label className="text-[9.5px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest px-1">
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest px-1">
               ② 走者状況・進退設定
             </label>
-            
-            {!state.runners.base1 && !state.runners.base2 && !state.runners.base3 ? (
-              <div className="text-center py-2 text-xs font-bold text-zinc-400 dark:text-zinc-500">
-                走者なし
-              </div>
-            ) : (
-              <div className="flex flex-col gap-3 mt-1">
-                {/* 3塁走者 */}
-                {state.runners.base3 && (
-                  <div className="flex flex-col gap-1.5 border-b border-zinc-100 dark:border-zinc-800/80 pb-2.5 last:border-0 last:pb-0">
-                    <div className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex justify-between">
-                      <span>3塁走者: {getPlayerName(state.runners.base3)}</span>
+            <div className="p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/30">
+              {!state.runners.base1 && !state.runners.base2 && !state.runners.base3 ? (
+                <div className="text-center py-2 text-xs font-bold text-zinc-400 dark:text-zinc-500">
+                  走者なし
+                </div>
+              ) : (
+                <div className="flex flex-col gap-3 mt-1">
+                  {/* 3塁走者 */}
+                  {state.runners.base3 && (
+                    <div className="flex flex-col gap-1.5 border-b border-zinc-100 dark:border-zinc-800/80 pb-2.5 last:border-0 last:pb-0">
+                      <div className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex justify-between">
+                        <span>3塁走者: {getPlayerName(state.runners.base3)}</span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setDestinations(prev => ({ ...prev, base3: 3 }))}
+                          className={cn(
+                            "h-8 rounded-lg text-[10px] font-bold border transition-all active:scale-95 cursor-pointer",
+                            destinations.base3 === 3
+                              ? "bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-900 border-zinc-800 dark:border-zinc-200"
+                              : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400"
+                          )}
+                        >
+                          3塁残留
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDestinations(prev => ({ ...prev, base3: 4 }));
+                            setRbi(prev => Math.min(4, prev + 1));
+                            setShowRbiDetail(true);
+                          }}
+                          className={cn(
+                            "h-8 rounded-lg text-[10px] font-bold border transition-all active:scale-95 cursor-pointer",
+                            destinations.base3 === 4
+                              ? "bg-emerald-600 border-emerald-600 text-white"
+                              : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400"
+                          )}
+                        >
+                          本塁生還
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDestinations(prev => ({ ...prev, base3: "out" }));
+                            setOutRunnerBase(3);
+                          }}
+                          className={cn(
+                            "h-8 rounded-lg text-[10px] font-bold border transition-all active:scale-95 cursor-pointer",
+                            destinations.base3 === "out"
+                              ? "bg-rose-600 border-rose-600 text-white"
+                              : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400"
+                          )}
+                        >
+                          アウト
+                        </button>
+                      </div>
                     </div>
-                    <div className="grid grid-cols-3 gap-1">
-                      <button
-                        type="button"
-                        onClick={() => setDestinations(prev => ({ ...prev, base3: 3 }))}
-                        className={cn(
-                          "h-8 rounded-lg text-[10px] font-bold border transition-all active:scale-95 cursor-pointer",
-                          destinations.base3 === 3
-                            ? "bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-900 border-zinc-800 dark:border-zinc-200"
-                            : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400"
-                        )}
-                      >
-                        3塁残留
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setDestinations(prev => ({ ...prev, base3: 4 }));
-                          setRbi(prev => Math.min(4, prev + 1));
-                          setShowRbiDetail(true);
-                        }}
-                        className={cn(
-                          "h-8 rounded-lg text-[10px] font-bold border transition-all active:scale-95 cursor-pointer",
-                          destinations.base3 === 4
-                            ? "bg-emerald-600 border-emerald-600 text-white"
-                            : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400"
-                        )}
-                      >
-                        本塁生還
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setDestinations(prev => ({ ...prev, base3: "out" }));
-                          setOutRunnerBase(3);
-                        }}
-                        className={cn(
-                          "h-8 rounded-lg text-[10px] font-bold border transition-all active:scale-95 cursor-pointer",
-                          destinations.base3 === "out"
-                            ? "bg-rose-600 border-rose-600 text-white"
-                            : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400"
-                        )}
-                      >
-                        アウト
-                      </button>
-                    </div>
-                  </div>
-                )}
+                  )}
 
-                {/* 2塁走者 */}
-                {state.runners.base2 && (
-                  <div className="flex flex-col gap-1.5 border-b border-zinc-100 dark:border-zinc-800/80 pb-2.5 last:border-0 last:pb-0">
-                    <div className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex justify-between">
-                      <span>2塁走者: {getPlayerName(state.runners.base2)}</span>
+                  {/* 2塁走者 */}
+                  {state.runners.base2 && (
+                    <div className="flex flex-col gap-1.5 border-b border-zinc-100 dark:border-zinc-800/80 pb-2.5 last:border-0 last:pb-0">
+                      <div className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex justify-between">
+                        <span>2塁走者: {getPlayerName(state.runners.base2)}</span>
+                      </div>
+                      <div className="grid grid-cols-4 gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setDestinations(prev => ({ ...prev, base2: 2 }))}
+                          className={cn(
+                            "h-8 rounded-lg text-[10px] font-bold border transition-all active:scale-95 cursor-pointer",
+                            destinations.base2 === 2
+                              ? "bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-900 border-zinc-800 dark:border-zinc-200"
+                              : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400"
+                          )}
+                        >
+                          2塁残留
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDestinations(prev => ({ ...prev, base2: 3 }))}
+                          className={cn(
+                            "h-8 rounded-lg text-[10px] font-bold border transition-all active:scale-95 cursor-pointer",
+                            destinations.base2 === 3
+                              ? "bg-blue-600 border-blue-600 text-white"
+                              : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400"
+                          )}
+                        >
+                          3塁進塁
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDestinations(prev => ({ ...prev, base2: 4 }));
+                            setRbi(prev => Math.min(4, prev + 1));
+                            setShowRbiDetail(true);
+                          }}
+                          className={cn(
+                            "h-8 rounded-lg text-[10px] font-bold border transition-all active:scale-95 cursor-pointer",
+                            destinations.base2 === 4
+                              ? "bg-emerald-600 border-emerald-600 text-white"
+                              : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400"
+                          )}
+                        >
+                          本塁生還
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDestinations(prev => ({ ...prev, base2: "out" }));
+                            setOutRunnerBase(2);
+                          }}
+                          className={cn(
+                            "h-8 rounded-lg text-[10px] font-bold border transition-all active:scale-95 cursor-pointer",
+                            destinations.base2 === "out"
+                              ? "bg-rose-600 border-rose-600 text-white"
+                              : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400"
+                          )}
+                        >
+                          アウト
+                        </button>
+                      </div>
                     </div>
-                    <div className="grid grid-cols-4 gap-1">
-                      <button
-                        type="button"
-                        onClick={() => setDestinations(prev => ({ ...prev, base2: 2 }))}
-                        className={cn(
-                          "h-8 rounded-lg text-[10px] font-bold border transition-all active:scale-95 cursor-pointer",
-                          destinations.base2 === 2
-                            ? "bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-900 border-zinc-800 dark:border-zinc-200"
-                            : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400"
-                        )}
-                      >
-                        2塁残留
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setDestinations(prev => ({ ...prev, base2: 3 }))}
-                        className={cn(
-                          "h-8 rounded-lg text-[10px] font-bold border transition-all active:scale-95 cursor-pointer",
-                          destinations.base2 === 3
-                            ? "bg-blue-600 border-blue-600 text-white"
-                            : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400"
-                        )}
-                      >
-                        3塁進塁
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setDestinations(prev => ({ ...prev, base2: 4 }));
-                          setRbi(prev => Math.min(4, prev + 1));
-                          setShowRbiDetail(true);
-                        }}
-                        className={cn(
-                          "h-8 rounded-lg text-[10px] font-bold border transition-all active:scale-95 cursor-pointer",
-                          destinations.base2 === 4
-                            ? "bg-emerald-600 border-emerald-600 text-white"
-                            : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400"
-                        )}
-                      >
-                        本塁生還
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setDestinations(prev => ({ ...prev, base2: "out" }));
-                          setOutRunnerBase(2);
-                        }}
-                        className={cn(
-                          "h-8 rounded-lg text-[10px] font-bold border transition-all active:scale-95 cursor-pointer",
-                          destinations.base2 === "out"
-                            ? "bg-rose-600 border-rose-600 text-white"
-                            : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400"
-                        )}
-                      >
-                        アウト
-                      </button>
-                    </div>
-                  </div>
-                )}
+                  )}
 
-                {/* 1塁走者 */}
-                {state.runners.base1 && (
-                  <div className="flex flex-col gap-1.5 border-b border-zinc-100 dark:border-zinc-800/80 pb-2.5 last:border-0 last:pb-0">
-                    <div className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex justify-between">
-                      <span>1塁走者: {getPlayerName(state.runners.base1)}</span>
+                  {/* 1塁走者 */}
+                  {state.runners.base1 && (
+                    <div className="flex flex-col gap-1.5 border-b border-zinc-100 dark:border-zinc-800/80 pb-2.5 last:border-0 last:pb-0">
+                      <div className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex justify-between">
+                        <span>1塁走者: {getPlayerName(state.runners.base1)}</span>
+                      </div>
+                      <div className="grid grid-cols-5 gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setDestinations(prev => ({ ...prev, base1: 1 }))}
+                          className={cn(
+                            "h-8 rounded-lg text-[9px] font-bold border transition-all active:scale-95 cursor-pointer",
+                            destinations.base1 === 1
+                              ? "bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-900 border-zinc-800 dark:border-zinc-200"
+                              : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400"
+                          )}
+                        >
+                          1塁残留
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDestinations(prev => ({ ...prev, base1: 2 }))}
+                          className={cn(
+                            "h-8 rounded-lg text-[9px] font-bold border transition-all active:scale-95 cursor-pointer",
+                            destinations.base1 === 2
+                              ? "bg-blue-600 border-blue-600 text-white"
+                              : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400"
+                          )}
+                        >
+                          2塁進塁
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDestinations(prev => ({ ...prev, base1: 3 }))}
+                          className={cn(
+                            "h-8 rounded-lg text-[9px] font-bold border transition-all active:scale-95 cursor-pointer",
+                            destinations.base1 === 3
+                              ? "bg-blue-600 border-blue-600 text-white"
+                              : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400"
+                          )}
+                        >
+                          3塁進塁
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDestinations(prev => ({ ...prev, base1: 4 }));
+                            setRbi(prev => Math.min(4, prev + 1));
+                            setShowRbiDetail(true);
+                          }}
+                          className={cn(
+                            "h-8 rounded-lg text-[9px] font-bold border transition-all active:scale-95 cursor-pointer",
+                            destinations.base1 === 4
+                              ? "bg-emerald-600 border-emerald-600 text-white"
+                              : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400"
+                          )}
+                        >
+                          本塁生還
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDestinations(prev => ({ ...prev, base1: "out" }));
+                            setOutRunnerBase(1);
+                          }}
+                          className={cn(
+                            "h-8 rounded-lg text-[9px] font-bold border transition-all active:scale-95 cursor-pointer",
+                            destinations.base1 === "out"
+                              ? "bg-rose-600 border-rose-600 text-white"
+                              : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400"
+                          )}
+                        >
+                          アウト
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* 打者走者 */}
+                  <div className="flex flex-col gap-1.5 pt-1">
+                    <div className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
+                      <span>打者走者</span>
                     </div>
                     <div className="grid grid-cols-5 gap-1">
                       <button
                         type="button"
-                        onClick={() => setDestinations(prev => ({ ...prev, base1: 1 }))}
+                        onClick={() => setDestinations(prev => ({ ...prev, batter: "out" }))}
                         className={cn(
-                          "h-8 rounded-lg text-[9px] font-bold border transition-all active:scale-95 cursor-pointer",
-                          destinations.base1 === 1
-                            ? "bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-900 border-zinc-800 dark:border-zinc-200"
+                          "h-8 rounded-lg text-[9.5px] font-bold border transition-all active:scale-95 cursor-pointer",
+                          destinations.batter === "out"
+                            ? "bg-rose-600 border-rose-600 text-white"
                             : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400"
                         )}
                       >
-                        1塁残留
+                        アウト
                       </button>
                       <button
                         type="button"
-                        onClick={() => setDestinations(prev => ({ ...prev, base1: 2 }))}
+                        onClick={() => setDestinations(prev => ({ ...prev, batter: 1 }))}
                         className={cn(
-                          "h-8 rounded-lg text-[9px] font-bold border transition-all active:scale-95 cursor-pointer",
-                          destinations.base1 === 2
+                          "h-8 rounded-lg text-[9.5px] font-bold border transition-all active:scale-95 cursor-pointer",
+                          destinations.batter === 1
+                            ? "bg-blue-600 border-blue-600 text-white"
+                            : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400"
+                        )}
+                      >
+                        1塁出塁
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDestinations(prev => ({ ...prev, batter: 2 }))}
+                        className={cn(
+                          "h-8 rounded-lg text-[9.5px] font-bold border transition-all active:scale-95 cursor-pointer",
+                          destinations.batter === 2
                             ? "bg-blue-600 border-blue-600 text-white"
                             : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400"
                         )}
@@ -406,10 +499,10 @@ export function OutDetailModal({ open, onOpenChange, onResult }: OutDetailModalP
                       </button>
                       <button
                         type="button"
-                        onClick={() => setDestinations(prev => ({ ...prev, base1: 3 }))}
+                        onClick={() => setDestinations(prev => ({ ...prev, batter: 3 }))}
                         className={cn(
-                          "h-8 rounded-lg text-[9px] font-bold border transition-all active:scale-95 cursor-pointer",
-                          destinations.base1 === 3
+                          "h-8 rounded-lg text-[9.5px] font-bold border transition-all active:scale-95 cursor-pointer",
+                          destinations.batter === 3
                             ? "bg-blue-600 border-blue-600 text-white"
                             : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400"
                         )}
@@ -419,283 +512,205 @@ export function OutDetailModal({ open, onOpenChange, onResult }: OutDetailModalP
                       <button
                         type="button"
                         onClick={() => {
-                          setDestinations(prev => ({ ...prev, base1: 4 }));
+                          setDestinations(prev => ({ ...prev, batter: 4 }));
                           setRbi(prev => Math.min(4, prev + 1));
                           setShowRbiDetail(true);
                         }}
                         className={cn(
-                          "h-8 rounded-lg text-[9px] font-bold border transition-all active:scale-95 cursor-pointer",
-                          destinations.base1 === 4
+                          "h-8 rounded-lg text-[9.5px] font-bold border transition-all active:scale-95 cursor-pointer",
+                          destinations.batter === 4
                             ? "bg-emerald-600 border-emerald-600 text-white"
                             : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400"
                         )}
                       >
                         本塁生還
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setDestinations(prev => ({ ...prev, base1: "out" }));
-                          setOutRunnerBase(1);
-                        }}
-                        className={cn(
-                          "h-8 rounded-lg text-[9px] font-bold border transition-all active:scale-95 cursor-pointer",
-                          destinations.base1 === "out"
-                            ? "bg-rose-600 border-rose-600 text-white"
-                            : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400"
-                        )}
-                      >
-                        アウト
-                      </button>
                     </div>
                   </div>
-                )}
-                
-                {/* 打者走者 */}
-                <div className="flex flex-col gap-1.5 pt-1">
-                  <div className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
-                    <span>打者走者</span>
-                  </div>
-                  <div className="grid grid-cols-5 gap-1">
-                    <button
-                      type="button"
-                      onClick={() => setDestinations(prev => ({ ...prev, batter: "out" }))}
-                      className={cn(
-                        "h-8 rounded-lg text-[9.5px] font-bold border transition-all active:scale-95 cursor-pointer",
-                        destinations.batter === "out"
-                          ? "bg-rose-600 border-rose-600 text-white"
-                          : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400"
-                      )}
-                    >
-                      アウト
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setDestinations(prev => ({ ...prev, batter: 1 }))}
-                      className={cn(
-                        "h-8 rounded-lg text-[9.5px] font-bold border transition-all active:scale-95 cursor-pointer",
-                        destinations.batter === 1
-                          ? "bg-blue-600 border-blue-600 text-white"
-                          : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400"
-                      )}
-                    >
-                      1塁出塁
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setDestinations(prev => ({ ...prev, batter: 2 }))}
-                      className={cn(
-                        "h-8 rounded-lg text-[9.5px] font-bold border transition-all active:scale-95 cursor-pointer",
-                        destinations.batter === 2
-                          ? "bg-blue-600 border-blue-600 text-white"
-                          : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400"
-                      )}
-                    >
-                      2塁進塁
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setDestinations(prev => ({ ...prev, batter: 3 }))}
-                      className={cn(
-                        "h-8 rounded-lg text-[9.5px] font-bold border transition-all active:scale-95 cursor-pointer",
-                        destinations.batter === 3
-                          ? "bg-blue-600 border-blue-600 text-white"
-                          : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400"
-                      )}
-                    >
-                      3塁進塁
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDestinations(prev => ({ ...prev, batter: 4 }));
-                        setRbi(prev => Math.min(4, prev + 1));
-                        setShowRbiDetail(true);
-                      }}
-                      className={cn(
-                        "h-8 rounded-lg text-[9.5px] font-bold border transition-all active:scale-95 cursor-pointer",
-                        destinations.batter === 4
-                          ? "bg-emerald-600 border-emerald-600 text-white"
-                          : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400"
-                      )}
-                    >
-                      本塁生還
-                    </button>
-                  </div>
-                </div>
 
-              </div>
-            )}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* 3. プレミアムSVG野球場グラフィックUI (順路ガイド線 ＋ タップ順バッジ付き) */}
-          <div className="space-y-2">
-            <label className="text-[9.5px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest px-1 flex items-center gap-1.5">
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest px-1 flex items-center gap-1.5">
               <Target className="h-3.5 w-3.5 text-primary" />
               ③ 守備位置をタップ (複数タップで 6-4-3 などの経路を記録)
             </label>
             
-            <div className="relative w-full aspect-square border border-zinc-100 dark:border-zinc-800/80 rounded-2xl bg-emerald-50/10 dark:bg-zinc-900/10 overflow-hidden shadow-inner">
-              
-              {/* 美しい野球場グラフィック */}
-              <svg viewBox="0 0 200 200" className="absolute inset-0 w-full h-full select-none pointer-events-none">
-                {/* 外野の芝生 */}
-                <path d="M 1,71 A 140,140 0 0,1 199,71 L 100,170 Z" className="fill-emerald-500/15 dark:fill-emerald-950/20 stroke-emerald-500/25 dark:stroke-emerald-800/30 stroke-[1.5]" />
+            <div className="p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/30">
+              <div className="relative w-full aspect-square border border-zinc-100 dark:border-zinc-800/80 rounded-2xl bg-emerald-50/10 dark:bg-zinc-900/10 overflow-hidden">
                 
-                {/* 内野の土・ダイヤモンド */}
-                <path d="M 45,115 A 78,78 0 0,1 155,115 L 100,170 Z" className="fill-amber-500/10 dark:fill-amber-950/20 stroke-amber-500/20 dark:stroke-amber-800/15 stroke-1" />
-                
-                {/* 内野ダイヤモンド白線 */}
-                <polygon points="100,170 128,142 100,114 72,142" className="fill-none stroke-zinc-300 dark:stroke-zinc-800 stroke-[1.5] stroke-dasharray-[2]" />
-                
-                {/* マウンド */}
-                <circle cx="100" cy="142" r="5" className="fill-amber-500/5 dark:fill-amber-950/10 stroke-zinc-300 dark:stroke-zinc-700 stroke-[0.5]" />
-                
-                {/* 各ベース */}
-                <polygon points="100,173 103,170 100,167 97,170" className="fill-white stroke-zinc-400 stroke-[0.5]" />
-                <rect x="125.5" y="139.5" width="5" height="5" transform="rotate(45, 128, 142)" className="fill-white stroke-zinc-400 stroke-[0.5]" />
-                <rect x="97.5" y="111.5" width="5" height="5" transform="rotate(45, 100, 114)" className="fill-white stroke-zinc-400 stroke-[0.5]" />
-                <rect x="69.5" y="139.5" width="5" height="5" transform="rotate(45, 72, 142)" className="fill-white stroke-zinc-400 stroke-[0.5]" />
-                
-                {/* 外野フェンスポールへのファウルライン */}
-                <line x1="100" y1="170" x2="1" y2="71" className="stroke-zinc-300 dark:stroke-zinc-800 stroke-[1.5]" />
-                <line x1="100" y1="170" x2="199" y2="71" className="stroke-zinc-300 dark:stroke-zinc-800 stroke-[1.5]" />
+                {/* 美しい野球場グラフィック */}
+                <svg viewBox="0 0 200 200" className="absolute inset-0 w-full h-full select-none pointer-events-none">
+                  {/* 外野の芝生 */}
+                  <path d="M 1,71 A 140,140 0 0,1 199,71 L 100,170 Z" className="fill-emerald-500/15 dark:fill-emerald-950/20 stroke-emerald-500/25 dark:stroke-emerald-800/30 stroke-[1.5]" />
+                  
+                  {/* 内野の土・ダイヤモンド */}
+                  <path d="M 45,115 A 78,78 0 0,1 155,115 L 100,170 Z" className="fill-amber-500/10 dark:fill-amber-950/20 stroke-amber-500/20 dark:stroke-amber-800/15 stroke-1" />
+                  
+                  {/* 内野ダイヤモンド白線 */}
+                  <polygon points="100,170 128,142 100,114 72,142" className="fill-none stroke-zinc-300 dark:stroke-zinc-800 stroke-[1.5] stroke-dasharray-[2]" />
+                  
+                  {/* マウンド */}
+                  <circle cx="100" cy="142" r="5" className="fill-amber-500/5 dark:fill-amber-950/10 stroke-zinc-300 dark:stroke-zinc-700 stroke-[0.5]" />
+                  
+                  {/* 各ベース */}
+                  <polygon points="100,173 103,170 100,167 97,170" className="fill-white stroke-zinc-400 stroke-[0.5]" />
+                  <rect x="125.5" y="139.5" width="5" height="5" transform="rotate(45, 128, 142)" className="fill-white stroke-zinc-400 stroke-[0.5]" />
+                  <rect x="97.5" y="111.5" width="5" height="5" transform="rotate(45, 100, 114)" className="fill-white stroke-zinc-400 stroke-[0.5]" />
+                  <rect x="69.5" y="139.5" width="5" height="5" transform="rotate(45, 72, 142)" className="fill-white stroke-zinc-400 stroke-[0.5]" />
+                  
+                  {/* 外野フェンスポールへのファウルライン */}
+                  <line x1="100" y1="170" x2="1" y2="71" className="stroke-zinc-300 dark:stroke-zinc-800 stroke-[1.5]" />
+                  <line x1="100" y1="170" x2="199" y2="71" className="stroke-zinc-300 dark:stroke-zinc-800 stroke-[1.5]" />
 
-                {/* 🔴 守備経路の動的ガイドライン (複数野手タップを結ぶライン) */}
-                {selectedPosList.length > 1 && (
-                  <polyline
-                    points={selectedPosList.map(posId => {
-                      const p = fieldPositions.find(x => x.id === posId);
-                      return p ? `${p.x * 2},${p.y * 2}` : "";
-                    }).filter(Boolean).join(" ")}
-                    className="fill-none stroke-rose-500/80 stroke-[4.5] stroke-linecap-round stroke-linejoin-round"
-                    style={{ filter: "drop-shadow(0px 2px 4px rgba(244,63,94,0.3))" }}
-                  />
-                )}
-              </svg>
+                  {/* 🔴 守備経路の動的ガイドライン (複数野手タップを結ぶライン) */}
+                  {selectedPosList.length > 1 && (
+                    <polyline
+                      points={selectedPosList.map(posId => {
+                        const p = fieldPositions.find(x => x.id === posId);
+                        return p ? `${p.x * 2},${p.y * 2}` : "";
+                      }).filter(Boolean).join(" ")}
+                      className="fill-none stroke-rose-500/80 stroke-[4.5] stroke-linecap-round stroke-linejoin-round"
+                    />
+                  )}
+                </svg>
 
-              {/* 物理配置されたポジションバッジボタン */}
-              {fieldPositions.map((pos) => {
-                const isActive = selectedPosList.includes(pos.id);
-                const tapOrderIndex = selectedPosList.indexOf(pos.id);
-                const displayLabel = pos.label === "right" ? "右" : pos.label;
-                
-                return (
-                  <button
-                    key={pos.id}
-                    type="button"
-                    onClick={() => handlePosTap(pos.id, pos.x, pos.y)}
-                    style={{ left: `${pos.x}%`, top: `${pos.y}%` }}
-                    className={cn(
-                      "absolute -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full text-[9.5px] font-black tracking-tighter flex flex-col items-center justify-center shadow-sm select-none transition-all duration-300 active:scale-90 cursor-pointer border",
-                      isActive
-                        ? "bg-rose-600 border-rose-600 text-white scale-110 z-30 shadow-md ring-2 ring-rose-500/20"
-                        : "bg-white/90 border-zinc-200/80 text-zinc-800 hover:bg-zinc-150 hover:border-zinc-300 dark:bg-zinc-950/90 dark:border-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-900"
-                    )}
+                {/* 物理配置されたポジションバッジボタン */}
+                {fieldPositions.map((pos) => {
+                  const isActive = selectedPosList.includes(pos.id);
+                  const tapOrderIndex = selectedPosList.indexOf(pos.id);
+                  const displayLabel = pos.label === "right" ? "右" : pos.label;
+                  
+                  return (
+                    <button
+                      key={pos.id}
+                      type="button"
+                      onClick={() => handlePosTap(pos.id, pos.x, pos.y)}
+                      style={{ left: `${pos.x}%`, top: `${pos.y}%` }}
+                      className={cn(
+                        "absolute -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full text-[9.5px] font-black tracking-tighter flex flex-col items-center justify-center shadow-sm select-none transition-all duration-300 active:scale-90 cursor-pointer border",
+                        isActive
+                          ? "bg-rose-600 border-rose-600 text-white scale-110 z-30 shadow-md ring-2 ring-rose-500/20"
+                          : "bg-white/90 border-zinc-200/80 text-zinc-800 hover:bg-zinc-150 hover:border-zinc-300 dark:bg-zinc-950/90 dark:border-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                      )}
+                    >
+                      <span>{displayLabel}</span>
+
+                      {/* 🔴 タップ順序バッジのオーバーレイ */}
+                      {isActive && (
+                        <span className="absolute -top-1.5 -right-1.5 bg-rose-600 dark:bg-rose-500 text-white text-[8px] font-black w-4.5 h-4.5 rounded-full flex items-center justify-center border border-white dark:border-zinc-950 shadow-sm animate-scale-in">
+                          {tapOrderIndex + 1}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+
+                {/* 🎯 最新のタップ位置にキーフレームアニメーション光を描画 */}
+                {selectedPosList.length > 0 && coordinate && (
+                  <div
+                    style={{ left: `${coordinate.x}%`, top: `${coordinate.y}%` }}
+                    className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-none z-10 flex items-center justify-center w-8 h-8"
                   >
-                    <span>{displayLabel}</span>
-
-                    {/* 🔴 タップ順序バッジのオーバーレイ */}
-                    {isActive && (
-                      <span className="absolute -top-1.5 -right-1.5 bg-rose-600 dark:bg-rose-500 text-white text-[8px] font-black w-4.5 h-4.5 rounded-full flex items-center justify-center border border-white dark:border-zinc-950 shadow-sm animate-scale-in">
-                        {tapOrderIndex + 1}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-
-              {/* 🎯 最新のタップ位置にアニメーション光を描画 */}
-              {selectedPosList.length > 0 && coordinate && (
-                <div
-                  style={{ left: `${coordinate.x}%`, top: `${coordinate.y}%` }}
-                  className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-none z-10 flex items-center justify-center w-8 h-8"
-                >
-                  <span className="absolute h-6 w-6 rounded-full bg-rose-500 opacity-35 animate-ping" />
-                  <span className="relative h-2 w-2 rounded-full bg-rose-600 ring-2 ring-white shadow-md shadow-rose-600/30" />
-                </div>
-              )}
+                    <span className="absolute h-6 w-6 rounded-full bg-rose-500 opacity-35 animate-ping" />
+                    <span className="relative h-2 w-2 rounded-full bg-rose-600 ring-2 ring-white shadow-md shadow-rose-600/30" />
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
           {/* 4. ファウルエリアでの捕球トグル (フライ/ライナー選択時のみ) */}
           {(outType === "FO" || outType === "LO") && (
             <div className="space-y-1.5 animate-in slide-in-from-top-2 duration-200">
-              <label className="text-[9.5px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest px-1">④ 打球エリア</label>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsFoul(false)}
-                  className={cn(
-                    "h-9 rounded-xl border font-black text-[11px] tracking-tight transition-all active:scale-95 cursor-pointer flex items-center justify-center",
-                    !isFoul
-                      ? "bg-primary/10 border-primary/20 text-primary"
-                      : "bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                  )}
-                >
-                  フェアグラウンド
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsFoul(true)}
-                  className={cn(
-                    "h-9 rounded-xl border font-black text-[11px] tracking-tight transition-all active:scale-95 cursor-pointer flex items-center justify-center",
-                    isFoul
-                      ? "bg-rose-600 border-rose-600 text-white shadow-sm"
-                      : "bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                  )}
-                >
-                  ファウルエリア（邪飛・邪直）
-                </button>
+              <label className="text-[10px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest px-1">
+                ④ 打球エリア
+              </label>
+              <div className="p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/30">
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsFoul(false)}
+                    className={cn(
+                      "h-9 rounded-xl border font-black text-[11px] tracking-tight transition-all active:scale-95 cursor-pointer flex items-center justify-center",
+                      !isFoul
+                        ? "bg-primary/10 border-primary/20 text-primary"
+                        : "bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                    )}
+                  >
+                    フェアグラウンド
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsFoul(true)}
+                    className={cn(
+                      "h-9 rounded-xl border font-black text-[11px] tracking-tight transition-all active:scale-95 cursor-pointer flex items-center justify-center",
+                      isFoul
+                        ? "bg-rose-600 border-rose-600 text-white shadow-sm"
+                        : "bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                    )}
+                  >
+                    ファウルエリア（邪飛・邪直）
+                  </button>
+                </div>
               </div>
             </div>
           )}
 
           {/* 5. 打点手動調整 */}
-          <div className="border border-zinc-100 dark:border-zinc-800/80 rounded-xl overflow-hidden bg-zinc-50/50 dark:bg-zinc-900/30">
-            <button
-              type="button"
-              onClick={() => setShowRbiDetail(!showRbiDetail)}
-              className="w-full px-4 py-2.5 flex items-center justify-between text-left transition-colors hover:bg-zinc-100/50 dark:hover:bg-zinc-800/40"
-            >
-              <div className="flex items-center gap-2">
-                <span className="text-[9px] font-black text-primary uppercase tracking-widest bg-primary/10 dark:bg-primary/20 px-2 py-0.5 rounded">
-                  打点: {rbi}点
-                </span>
-                <span className="text-xs font-black text-zinc-700 dark:text-zinc-300">
-                  打点を手動調整する
-                </span>
-              </div>
-              <div className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 transition-colors">
-                {showRbiDetail ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-              </div>
-            </button>
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest px-1">
+              ⑤ 打点手動調整
+            </label>
+            <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/30 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setShowRbiDetail(!showRbiDetail)}
+                className="w-full px-4 py-2.5 flex items-center justify-between text-left transition-colors hover:bg-zinc-100/50 dark:hover:bg-zinc-800/40 bg-transparent border-none"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-[9px] font-black text-primary uppercase tracking-widest bg-primary/10 dark:bg-primary/20 px-2 py-0.5 rounded">
+                    打点: {rbi}点
+                  </span>
+                  <span className="text-xs font-black text-zinc-700 dark:text-zinc-300">
+                    打点を手動調整する
+                  </span>
+                </div>
+                <div className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 transition-colors">
+                  {showRbiDetail ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                </div>
+              </button>
 
-            {showRbiDetail && (
-              <div className="p-3 bg-white dark:bg-zinc-950 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between animate-in slide-in-from-top-2 duration-200">
-                <div className="space-y-0.5">
-                  <p className="text-[8px] font-black text-zinc-400 dark:text-zinc-500 uppercase tracking-widest">RBI (打点)</p>
-                  <p className="text-xs font-black italic text-zinc-900 dark:text-white tracking-tight">TOTAL RUNS</p>
+              {showRbiDetail && (
+                <div className="p-3 bg-white dark:bg-zinc-950 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between animate-in slide-in-from-top-2 duration-200">
+                  <div className="space-y-0.5">
+                    <p className="text-[8px] font-black text-zinc-400 dark:text-zinc-500 uppercase tracking-widest">RBI (打点)</p>
+                    <p className="text-xs font-black italic text-zinc-900 dark:text-white tracking-tight">TOTAL RUNS</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setRbi(Math.max(0, rbi - 1))}
+                      className="h-8 w-8 rounded-full border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-white bg-white dark:bg-zinc-950 hover:bg-zinc-100 dark:hover:bg-zinc-900 active:scale-90 transition-all flex items-center justify-center shadow-sm cursor-pointer"
+                    >
+                      <Minus className="h-3.5 w-3.5" />
+                    </button>
+                    <span className="text-xl font-black tabular-nums italic text-primary w-6 text-center">{rbi}</span>
+                    <button
+                      type="button"
+                      onClick={() => setRbi(Math.min(4, rbi + 1))}
+                      className="h-8 w-8 rounded-full border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-white bg-white dark:bg-zinc-950 hover:bg-zinc-100 dark:hover:bg-zinc-900 active:scale-90 transition-all flex items-center justify-center shadow-sm cursor-pointer"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setRbi(Math.max(0, rbi - 1))}
-                    className="h-8 w-8 rounded-full border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-white bg-white dark:bg-zinc-950 hover:bg-zinc-100 dark:hover:bg-zinc-900 active:scale-90 transition-all flex items-center justify-center shadow-sm cursor-pointer"
-                  >
-                    <Minus className="h-3.5 w-3.5" />
-                  </button>
-                  <span className="text-xl font-black tabular-nums italic text-primary w-6 text-center">{rbi}</span>
-                  <button
-                    type="button"
-                    onClick={() => setRbi(Math.min(4, rbi + 1))}
-                    className="h-8 w-8 rounded-full border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-white bg-white dark:bg-zinc-950 hover:bg-zinc-100 dark:hover:bg-zinc-900 active:scale-90 transition-all flex items-center justify-center shadow-sm cursor-pointer"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
 
         </div>
