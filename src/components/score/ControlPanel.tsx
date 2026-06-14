@@ -80,7 +80,7 @@ export function ControlPanel() {
 
       const resultMap: Record<string, string> = {
         "1B": "安", "2B": "二", "3B": "三", "HR": "本", "E": "失", "FC": "選",
-        "GO": "ゴロ", "FO": "飛", "LO": "直", "SO_K": "空振り三振", "SO_M": "見逃し三振",
+        "GO": "ゴロ", "FO": "飛", "LO": "直", "SO_K": "空振り三振", "SO_M": "見逃し三振", "SO_SF": "振り逃げ",
         "SH": "犠打", "SF": "犠飛", "DP": "併殺", "UN": "アウト"
       };
 
@@ -92,7 +92,7 @@ export function ControlPanel() {
       const trajChar = trajectory ? (trajMap[trajectory] || "") : "";
       const resultChar = resultMap[resultType] || resultType;
 
-      if (["GO", "FO", "LO", "SO_K", "SO_M", "SH", "SF", "DP", "UN"].includes(resultType)) {
+      if (["GO", "FO", "LO", "SO_K", "SO_M", "SO_SF", "SH", "SF", "DP", "UN"].includes(resultType)) {
         mappedString = `${posChar}${foulChar}${resultChar}`;
       } else {
         mappedString = `${posChar}${courseChar}${trajChar}${resultChar}`;
@@ -101,7 +101,7 @@ export function ControlPanel() {
       const quickMap: Record<string, string> = {
         "1B": "単打", "2B": "二塁打", "3B": "三塁打", "HR": "本塁打", "E": "エラー", "FC": "野選",
         "GO": "ゴロアウト", "FO": "フライアウト", "LO": "ライナー",
-        "SO_K": "空振り三振", "SO_M": "見逃し三振", "SH": "犠打", "SF": "犠飛", "DP": "併殺打", "UN": "アウト"
+        "SO_K": "空振り三振", "SO_M": "見逃し三振", "SO_SF": "振り逃げ", "SH": "犠打", "SF": "犠飛", "DP": "併殺打", "UN": "アウト"
       };
       mappedString = quickMap[rawResult] || rawResult;
     }

@@ -62,6 +62,7 @@ export function PlayResultModal({ open, onOpenChange, onResult, defaultHitType }
     { id: "LO", label: "ライナー", type: "out", color: "bg-zinc-500/10" },
     { id: "SO_K", label: "空振り三振", type: "out", color: "bg-rose-500/10 text-rose-800 dark:text-rose-400" },
     { id: "SO_M", label: "見逃し三振", type: "out", color: "bg-rose-500/10 text-rose-800 dark:text-rose-400" },
+    { id: "SO_SF", label: "振り逃げ", type: "out", color: "bg-rose-500/10 text-rose-800 dark:text-rose-400" },
     { id: "SH", label: "犠打（バント）", type: "out", color: "bg-zinc-500/10" },
     { id: "SF", label: "犠飛", type: "out", color: "bg-zinc-500/10" },
     { id: "DP", label: "併殺打", type: "out", color: "bg-red-600/10 border-red-500/20 text-red-500 dark:text-red-400" },
@@ -188,7 +189,7 @@ export function PlayResultModal({ open, onOpenChange, onResult, defaultHitType }
         if (runners.base2) newDest.base2 = 4;
         if (runners.base3) newDest.base3 = 4;
         newDest.batter = 2;
-      } else if (playResult === "1B" || playResult === "E") {
+      } else if (playResult === "1B" || playResult === "E" || playResult === "SO_SF") {
         if (runners.base1) newDest.base1 = 2;
         if (runners.base2) newDest.base2 = 3;
         if (runners.base3) newDest.base3 = 4;
@@ -264,13 +265,13 @@ export function PlayResultModal({ open, onOpenChange, onResult, defaultHitType }
     
     const isOut = ["GO", "FO", "LO", "SO_K", "SO_M", "SH", "SF", "DP", "UN"].includes(playResult);
 
-    if (course && !["SO_K", "SO_M", "DP", "UN"].includes(playResult)) {
+    if (course && !["SO_K", "SO_M", "SO_SF", "DP", "UN"].includes(playResult)) {
       parts.push(course);
     }
     if (isFoul && ["FO", "LO"].includes(playResult)) {
       parts.push("FOUL");
     }
-    if (trajectory && !["SO_K", "SO_M", "DP", "UN"].includes(playResult)) {
+    if (trajectory && !["SO_K", "SO_M", "SO_SF", "DP", "UN"].includes(playResult)) {
       parts.push(trajectory);
     }
     parts.push(playResult);
