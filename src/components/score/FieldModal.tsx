@@ -1,4 +1,4 @@
-// src/components/score/FieldModal.tsx
+// filepath: src/components/score/FieldModal.tsx
 "use client";
 
 import { useState, useEffect } from "react";
@@ -19,8 +19,8 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
   const { state } = useScore();
   const { runners } = state;
 
-  const [selectedPos, setSelectedPos] = useState<string | null>(null);
-  const [hitType, setHitType] = useState<string>("1B"); // デフォルトを単打 (1B) に変更
+  const [selectedPosList, setSelectedPosList] = useState<string[]>([]);
+  const [hitType, setHitType] = useState<string>("1B"); // デフォルトを単打 (1B)
   const [course, setCourse] = useState<"front" | "line" | "over" | null>(null); // 前, 線際, オーバー
   const [trajectory, setTrajectory] = useState<"GO" | "FO" | "LO" | "BUNT" | null>(null); // ゴロ, フライ, ライナー, バント
   const [rbi, setRbi] = useState(0);
@@ -39,20 +39,18 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
   // モーダルオープン時のリセット
   useEffect(() => {
     if (open) {
-      setSelectedPos(null);
+      setSelectedPosList([]);
       setCourse(null);
       setTrajectory(null);
       setCoordinate(null);
       
-      const initialHit = defaultHitType === "E" ? "E" : "1B"; // E以外ならデフォルト単打 (1B)
+      const initialHit = defaultHitType === "E" ? "E" : "1B";
       setHitType(initialHit);
       setRbi(calculateDefaultRbi(initialHit));
       setShowRbiDetail(false);
       setOutRunnerBase(null);
     }
   }, [open, defaultHitType]);
-
-
 
   const calculateDefaultRbi = (type: string) => {
     const r1 = runners?.base1 ? 1 : 0;
@@ -79,42 +77,42 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
     setRbi(calculateDefaultRbi(type));
   };
 
-  // 🏟️ 野球場の各エリアボタンの定義 (left, top は % 位置。精密幾何学グラフィックと100%同期)
+  // 🏟️ 野球場の各エリアボタンの定義 (誤タップを防ぐため内野と間エリアを広げて再配置)
   const fieldAreas = [
     // 外野
-    { id: "7", label: "左", name: "左翼", x: 20, y: 25 },
-    { id: "78", label: "左中", name: "左中間", x: 35, y: 18 },
-    { id: "8", label: "中", name: "中堅", x: 50, y: 15 },
-    { id: "89", label: "右中", name: "右中間", x: 65, y: 18 },
-    { id: "9", label: "右", name: "右翼", x: 80, y: 25 },
+    { id: "7", label: "左", name: "左翼", x: 18, y: 22 },
+    { id: "78", label: "左中", name: "左中間", x: 34, y: 14 },
+    { id: "8", label: "中", name: "中堅", x: 50, y: 10 },
+    { id: "89", label: "右中", name: "右中間", x: 66, y: 14 },
+    { id: "9", label: "右", name: "右翼", x: 82, y: 22 },
     
     // 内野の間
-    { id: "56", label: "三遊", name: "三遊間", x: 30, y: 52 },
-    { id: "46", label: "二遊", name: "二遊間", x: 50, y: 45 },
-    { id: "34", label: "一二", name: "一二間", x: 70, y: 52 },
+    { id: "56", label: "三遊", name: "三遊間", x: 26, y: 48 },
+    { id: "46", label: "二遊", name: "二遊間", x: 50, y: 40 },
+    { id: "34", label: "一二", name: "一二間", x: 74, y: 48 },
     
     // 内野守備
-    { id: "5", label: "三", name: "三塁", x: 25, y: 68 },
-    { id: "6", label: "遊", name: "遊撃", x: 38, y: 58 },
-    { id: "4", label: "二", name: "二塁", x: 62, y: 58 },
-    { id: "3", label: "一", name: "一塁", x: 75, y: 68 },
+    { id: "5", label: "三", name: "三塁", x: 20, y: 68 },
+    { id: "6", label: "遊", name: "遊撃", x: 35, y: 54 },
+    { id: "4", label: "二", name: "二塁", x: 65, y: 54 },
+    { id: "3", label: "一", name: "一塁", x: 80, y: 68 },
     
     // バッテリー
-    { id: "1", label: "投", name: "投手", x: 50, y: 68 },
-    { id: "2", label: "捕", name: "捕手", x: 50, y: 86 },
+    { id: "1", label: "投", name: "投手", x: 50, y: 66 },
+    { id: "2", label: "捕", name: "捕手", x: 50, y: 90 },
   ];
 
-  // 結果種別 (Safe Results Only - ゴロアウトや犠打などのアウト系は排除)
+  // 結果種別
   const results = [
     { id: "1B", label: "単打", color: "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400" },
     { id: "2B", label: "二塁打", color: "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400" },
     { id: "3B", label: "三塁打", color: "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400" },
     { id: "HR", label: "本塁打", color: "bg-primary text-primary-foreground" },
-    { id: "E", label: "失策", color: "bg-red-50/20 text-red-600 dark:text-red-400" },
+    { id: "E", label: "失策", color: "bg-rose-50/20 text-rose-600 dark:text-rose-400" },
     { id: "FC", label: "野選", color: "bg-zinc-500/10" },
   ];
 
-  // 打球の性質 (ゴロ, フライ, ライナー, バント)
+  // 打球の性質
   const trajectories = [
     { id: "GO", label: "ゴロ" },
     { id: "FO", label: "フライ" },
@@ -122,7 +120,7 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
     { id: "BUNT", label: "バント" },
   ] as const;
 
-  // 打球コースの修飾オプション (前, 線際, オーバー)
+  // 打球コース
   const courses = [
     { id: "front", label: "前 (ポテン)" },
     { id: "line", label: "線際" },
@@ -141,12 +139,23 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
     return name;
   };
 
+  const handlePosTap = (id: string, x: number, y: number) => {
+    setSelectedPosList(prev => {
+      if (prev.includes(id)) {
+        return prev.filter(item => item !== id);
+      }
+      return [...prev, id];
+    });
+    setCoordinate({ x, y });
+  };
+
   const handleConfirm = () => {
     if (!hitType) return;
     
-    // 文字列の組み立て: selectedPos - course - trajectory - hitType を必要な分だけハイフン接続
     const parts: string[] = [];
-    if (selectedPos) parts.push(selectedPos);
+    if (selectedPosList.length > 0) {
+      parts.push(selectedPosList.join(">"));
+    }
     if (course) parts.push(course);
     if (trajectory) parts.push(trajectory);
     parts.push(hitType);
@@ -156,7 +165,7 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
     onResult(resultString, rbi, [], coordinate || undefined, outRunnerBase);
     
     // リセット
-    setSelectedPos(null);
+    setSelectedPosList([]);
     setCourse(null);
     setTrajectory(null);
     setCoordinate(null);
@@ -208,87 +217,12 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
           </button>
         </div>
 
-        {/* コンテンツエリア */}
-        <div className="p-4 overflow-y-auto space-y-4 flex-1">
+        {/* コンテンツエリア (究極の操作性を求めた並び順: 結果 -> 走者 -> グラフィック -> オプション) */}
+        <div className="p-4 overflow-y-auto space-y-5 flex-1">
           
-          {/* 1. プレミアムSVG野球場グラフィックUI */}
-          <div className="space-y-2">
-            <label className="text-[9.5px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest px-1 flex items-center gap-1.5">
-              <Target className="h-3.5 w-3.5 text-primary" />
-              打球の落下地点 / 飛んだ方向をタップ
-            </label>
-            
-            <div className="relative w-full aspect-square border border-zinc-100 dark:border-zinc-800/80 rounded-2xl bg-emerald-50/10 dark:bg-zinc-900/10 overflow-hidden shadow-inner">
-              
-              {/* 美しい野球場グラフィック (幾何学的に精密なSVG背景) */}
-              <svg viewBox="0 0 200 200" className="absolute inset-0 w-full h-full select-none pointer-events-none">
-                {/* 外野の芝生 (ホーム 100,170 を中心とする半径 140 の美しい扇形) */}
-                <path d="M 1,71 A 140,140 0 0,1 199,71 L 100,170 Z" className="fill-emerald-500/15 dark:fill-emerald-950/20 stroke-emerald-500/25 dark:stroke-emerald-800/30 stroke-[1.5]" />
-                
-                {/* 内野の土・ダイヤモンド (ホーム 100,170 を中心とする半径 78 の扇形) */}
-                <path d="M 45,115 A 78,78 0 0,1 155,115 L 100,170 Z" className="fill-amber-500/10 dark:fill-amber-950/20 stroke-amber-500/20 dark:stroke-amber-800/15 stroke-1" />
-                
-                {/* 内野ダイヤモンド白線 (45度傾斜でベースと完璧に合致) */}
-                <polygon points="100,170 128,142 100,114 72,142" className="fill-none stroke-zinc-300 dark:stroke-zinc-800 stroke-[1.5] stroke-dasharray-[2]" />
-                
-                {/* マウンド */}
-                <circle cx="100" cy="142" r="5" className="fill-amber-500/5 dark:fill-amber-950/10 stroke-zinc-300 dark:stroke-zinc-700 stroke-[0.5]" />
-                
-                {/* 各ベース (SVGのtransform属性を使って完璧に45度回転させてマッピング) */}
-                {/* 本塁 */}
-                <polygon points="100,173 103,170 100,167 97,170" className="fill-white stroke-zinc-400 stroke-[0.5]" />
-                {/* 一塁 */}
-                <rect x="125.5" y="139.5" width="5" height="5" transform="rotate(45, 128, 142)" className="fill-white stroke-zinc-400 stroke-[0.5]" />
-                {/* 二塁 */}
-                <rect x="97.5" y="111.5" width="5" height="5" transform="rotate(45, 100, 114)" className="fill-white stroke-zinc-400 stroke-[0.5]" />
-                {/* 三塁 */}
-                <rect x="69.5" y="139.5" width="5" height="5" transform="rotate(45, 72, 142)" className="fill-white stroke-zinc-400 stroke-[0.5]" />
-                
-                {/* 外野フェンスポールへの45度ファウルライン */}
-                <line x1="100" y1="170" x2="1" y2="71" className="stroke-zinc-300 dark:stroke-zinc-800 stroke-[1.5]" />
-                <line x1="100" y1="170" x2="199" y2="71" className="stroke-zinc-300 dark:stroke-zinc-800 stroke-[1.5]" />
-              </svg>
-
-              {/* 物理配置された打球エリアバッジボタン */}
-              {fieldAreas.map((area) => {
-                const isActive = selectedPos === area.id;
-                return (
-                  <button
-                    key={area.id}
-                    type="button"
-                    onClick={() => {
-                      setSelectedPos(area.id === selectedPos ? null : area.id);
-                      setCoordinate({ x: area.x, y: area.y });
-                    }}
-                    style={{ left: `${area.x}%`, top: `${area.y}%` }}
-                    className={cn(
-                      "absolute -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full text-[9px] font-black tracking-tighter flex flex-col items-center justify-center shadow-sm select-none transition-all duration-300 active:scale-90 cursor-pointer border",
-                      isActive
-                        ? "bg-primary border-primary text-primary-foreground scale-110 z-30 shadow-md ring-2 ring-primary/20"
-                        : "bg-white/90 border-zinc-200/80 text-zinc-800 hover:bg-zinc-150 hover:border-zinc-300 dark:bg-zinc-950/90 dark:border-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-900"
-                    )}
-                  >
-                    <span>{area.label}</span>
-                  </button>
-                );
-              })}
-
-              {/* 🎯 タップ位置にアニメーションする光る赤いピンプロットを描画 */}
-              {selectedPos && coordinate && (
-                <div
-                  style={{ left: `${coordinate.x}%`, top: `${coordinate.y}%` }}
-                  className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-none z-10 flex items-center justify-center w-8 h-8"
-                >
-                  <span className="absolute h-6 w-6 rounded-full bg-rose-500 opacity-35 animate-ping" />
-                  <span className="relative h-2 w-2 rounded-full bg-rose-600 ring-2 ring-white shadow-md shadow-rose-600/30" />
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* 2. 結果種別の選択 */}
+          {/* 1. 結果種別の選択 */}
           <div className="space-y-1.5">
-            <label className="text-[9.5px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest px-1">結果</label>
+            <label className="text-[9.5px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest px-1">① 安打・エラー結果（起点）</label>
             <div className="grid grid-cols-3 gap-2">
               {results.map((res) => (
                 <button
@@ -306,89 +240,11 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
             </div>
           </div>
 
-          {/* 3. 打球性質の選択 (ゴロ, フライ, ライナー) */}
-          <div className="space-y-1.5">
-            <label className="text-[9.5px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest px-1">打球の性質（オプション）</label>
-            <div className="grid grid-cols-4 gap-2">
-              {trajectories.map((traj) => {
-                const isActive = trajectory === traj.id;
-                return (
-                  <button
-                    key={traj.id}
-                    type="button"
-                    onClick={() => setTrajectory(isActive ? null : traj.id)}
-                    className={cn(
-                      "h-9 rounded-xl border font-black text-[11px] tracking-tight transition-all active:scale-95 cursor-pointer flex items-center justify-center",
-                      isActive
-                        ? "bg-zinc-800 dark:bg-zinc-200 border-zinc-800 dark:border-zinc-200 text-white dark:text-zinc-950 shadow-sm"
-                        : "bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                    )}
-                  >
-                    {traj.label}
-                  </button>
-                );
-              })}
-              
-              {/* 指定なしボタン */}
-              <button
-                type="button"
-                onClick={() => setTrajectory(null)}
-                className={cn(
-                  "h-9 rounded-xl border font-black text-[11px] tracking-tight transition-all active:scale-95 cursor-pointer flex items-center justify-center",
-                  trajectory === null
-                    ? "bg-primary/10 border-primary/20 text-primary"
-                    : "bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-400 dark:text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                )}
-              >
-                指定なし
-              </button>
-            </div>
-          </div>
-
-          {/* 3.5. 打球コースの選択 (前, 線際, オーバー) */}
-          <div className="space-y-1.5">
-            <label className="text-[9.5px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest px-1">打球コース（オプション）</label>
-            <div className="grid grid-cols-4 gap-2">
-              {courses.map((c) => {
-                const isActive = course === c.id;
-                return (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => setCourse(isActive ? null : c.id)}
-                    className={cn(
-                      "h-9 rounded-xl border font-black text-[11px] tracking-tight transition-all active:scale-95 cursor-pointer flex items-center justify-center",
-                      isActive
-                        ? "bg-zinc-800 dark:bg-zinc-200 border-zinc-800 dark:border-zinc-200 text-white dark:text-zinc-950 shadow-sm"
-                        : "bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                    )}
-                  >
-                    {c.label}
-                  </button>
-                );
-              })}
-              
-              {/* 指定なしボタン */}
-              <button
-                type="button"
-                onClick={() => setCourse(null)}
-                className={cn(
-                  "h-9 rounded-xl border font-black text-[11px] tracking-tight transition-all active:scale-95 cursor-pointer flex items-center justify-center",
-                  course === null
-                    ? "bg-primary/10 border-primary/20 text-primary"
-                    : "bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-400 dark:text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                )}
-              >
-                指定なし
-              </button>
-            </div>
-          </div>
-
-          {/* 野選（FC）が選択された際のアウト走者選択UI */}
+          {/* 2. 走者アウト / 進塁死の選択UI (走者がいる場合は常に表示、トグル解除対応) */}
           {(state.runners.base1 || state.runners.base2 || state.runners.base3) && (
             <div className="space-y-1.5 p-3 rounded-xl border border-rose-500/20 bg-rose-500/5 animate-in slide-in-from-top-2 duration-200">
               <label className="text-[9.5px] font-black text-rose-600 dark:text-rose-400 uppercase tracking-widest px-1">
-                {hitType === "FC" ? "野選によりアウトになった走者 (必須)" : "走者アウト / 進塁死 (任意)"}
+                ② {hitType === "FC" ? "野選によりアウトになった走者 (必須)" : "走者アウト / 進塁死 (任意)"}
               </label>
               <div className="flex flex-col gap-1.5 mt-1">
                 {state.runners.base1 && (
@@ -443,7 +299,149 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
             </div>
           )}
 
-          {/* 4. 打点手動調整（アコーディオン仕様） */}
+          {/* 3. プレミアムSVG野球場グラフィックUI (順路ガイド線 ＋ タップ順バッジ付き) */}
+          <div className="space-y-2">
+            <label className="text-[9.5px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest px-1 flex items-center gap-1.5">
+              <Target className="h-3.5 w-3.5 text-primary" />
+              ③ 打球の飛んだ方向 / 守備位置をタップ (複数で連携プレー記録)
+            </label>
+            
+            <div className="relative w-full aspect-square border border-zinc-100 dark:border-zinc-800/80 rounded-2xl bg-emerald-50/10 dark:bg-zinc-900/10 overflow-hidden shadow-inner">
+              
+              {/* 美しい野球場グラフィック */}
+              <svg viewBox="0 0 200 200" className="absolute inset-0 w-full h-full select-none pointer-events-none">
+                {/* 外野の芝生 */}
+                <path d="M 1,71 A 140,140 0 0,1 199,71 L 100,170 Z" className="fill-emerald-500/15 dark:fill-emerald-950/20 stroke-emerald-500/25 dark:stroke-emerald-800/30 stroke-[1.5]" />
+                
+                {/* 内野の土・ダイヤモンド */}
+                <path d="M 45,115 A 78,78 0 0,1 155,115 L 100,170 Z" className="fill-amber-500/10 dark:fill-amber-950/20 stroke-amber-500/20 dark:stroke-amber-800/15 stroke-1" />
+                
+                {/* 内野ダイヤモンド白線 */}
+                <polygon points="100,170 128,142 100,114 72,142" className="fill-none stroke-zinc-300 dark:stroke-zinc-800 stroke-[1.5] stroke-dasharray-[2]" />
+                
+                {/* マウンド */}
+                <circle cx="100" cy="142" r="5" className="fill-amber-500/5 dark:fill-amber-950/10 stroke-zinc-300 dark:stroke-zinc-700 stroke-[0.5]" />
+                
+                {/* 各ベース */}
+                <polygon points="100,173 103,170 100,167 97,170" className="fill-white stroke-zinc-400 stroke-[0.5]" />
+                <rect x="125.5" y="139.5" width="5" height="5" transform="rotate(45, 128, 142)" className="fill-white stroke-zinc-400 stroke-[0.5]" />
+                <rect x="97.5" y="111.5" width="5" height="5" transform="rotate(45, 100, 114)" className="fill-white stroke-zinc-400 stroke-[0.5]" />
+                <rect x="69.5" y="139.5" width="5" height="5" transform="rotate(45, 72, 142)" className="fill-white stroke-zinc-400 stroke-[0.5]" />
+                
+                {/* 外野フェンスポールへのファウルライン */}
+                <line x1="100" y1="170" x2="1" y2="71" className="stroke-zinc-300 dark:stroke-zinc-800 stroke-[1.5]" />
+                <line x1="100" y1="170" x2="199" y2="71" className="stroke-zinc-300 dark:stroke-zinc-800 stroke-[1.5]" />
+
+                {/* 🔴 守備経路の動的ガイドライン (複数野手タップを結ぶライン) */}
+                {selectedPosList.length > 1 && (
+                  <polyline
+                    points={selectedPosList.map(posId => {
+                      const p = fieldAreas.find(x => x.id === posId);
+                      return p ? `${p.x * 2},${p.y * 2}` : "";
+                    }).filter(Boolean).join(" ")}
+                    className="fill-none stroke-rose-500/80 stroke-[4.5] stroke-linecap-round stroke-linejoin-round"
+                    style={{ filter: "drop-shadow(0px 2px 4px rgba(244,63,94,0.3))" }}
+                  />
+                )}
+              </svg>
+
+              {/* 物理配置された打球エリアバッジボタン */}
+              {fieldAreas.map((area) => {
+                const isActive = selectedPosList.includes(area.id);
+                const tapOrderIndex = selectedPosList.indexOf(area.id);
+                
+                return (
+                  <button
+                    key={area.id}
+                    type="button"
+                    onClick={() => handlePosTap(area.id, area.x, area.y)}
+                    style={{ left: `${area.x}%`, top: `${area.y}%` }}
+                    className={cn(
+                      "absolute -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full text-[9.5px] font-black tracking-tighter flex flex-col items-center justify-center shadow-sm select-none transition-all duration-300 active:scale-90 cursor-pointer border",
+                      isActive
+                        ? "bg-rose-600 border-rose-600 text-white scale-110 z-30 shadow-md ring-2 ring-rose-500/20"
+                        : "bg-white/90 border-zinc-200/80 text-zinc-800 hover:bg-zinc-150 hover:border-zinc-300 dark:bg-zinc-950/90 dark:border-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                    )}
+                  >
+                    <span>{area.label}</span>
+
+                    {/* 🔴 タップ順序バッジのオーバーレイ */}
+                    {isActive && (
+                      <span className="absolute -top-1.5 -right-1.5 bg-rose-600 dark:bg-rose-500 text-white text-[8px] font-black w-4.5 h-4.5 rounded-full flex items-center justify-center border border-white dark:border-zinc-950 shadow-sm animate-scale-in">
+                        {tapOrderIndex + 1}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+
+              {/* 🎯 最新のタップ位置にアニメーション光を描画 */}
+              {selectedPosList.length > 0 && coordinate && (
+                <div
+                  style={{ left: `${coordinate.x}%`, top: `${coordinate.y}%` }}
+                  className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-none z-10 flex items-center justify-center w-8 h-8"
+                >
+                  <span className="absolute h-6 w-6 rounded-full bg-rose-500 opacity-35 animate-ping" />
+                  <span className="relative h-2 w-2 rounded-full bg-rose-600 ring-2 ring-white shadow-md shadow-rose-600/30" />
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* 4. 打球の性質と打球コース (オプション) */}
+          <div className="grid grid-cols-2 gap-4">
+            {/* 4.1. 打球性質の選択 */}
+            <div className="space-y-1.5">
+              <label className="text-[9.5px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest px-1">④ 打球性質</label>
+              <div className="grid grid-cols-2 gap-1.5">
+                {trajectories.map((traj) => {
+                  const isActive = trajectory === traj.id;
+                  return (
+                    <button
+                      key={traj.id}
+                      type="button"
+                      onClick={() => setTrajectory(isActive ? null : traj.id)}
+                      className={cn(
+                        "h-9 rounded-xl border font-black text-[10.5px] tracking-tight transition-all active:scale-95 cursor-pointer flex items-center justify-center",
+                        isActive
+                          ? "bg-zinc-850 dark:bg-zinc-200 border-zinc-850 dark:border-zinc-200 text-white dark:text-zinc-950 shadow-sm"
+                          : "bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                      )}
+                    >
+                      {traj.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 4.2. 打球コースの選択 */}
+            <div className="space-y-1.5">
+              <label className="text-[9.5px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest px-1">⑤ コース</label>
+              <div className="grid grid-cols-2 gap-1.5">
+                {courses.map((c) => {
+                  const isActive = course === c.id;
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => setCourse(isActive ? null : c.id)}
+                      className={cn(
+                        "h-9 rounded-xl border font-black text-[10.5px] tracking-tight transition-all active:scale-95 cursor-pointer flex items-center justify-center",
+                        isActive
+                          ? "bg-zinc-850 dark:bg-zinc-200 border-zinc-850 dark:border-zinc-200 text-white dark:text-zinc-950 shadow-sm"
+                          : "bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                      )}
+                    >
+                      {c.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* 5. 打点手動調整 */}
           <div className="border border-zinc-100 dark:border-zinc-800/80 rounded-xl overflow-hidden bg-zinc-50/50 dark:bg-zinc-900/30">
             <button
               type="button"
@@ -500,7 +498,7 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
             className="w-full h-11 rounded-xl bg-primary text-primary-foreground font-black text-xs tracking-wide disabled:opacity-50 transition-all active:scale-[0.98] flex items-center justify-center gap-1.5 cursor-pointer"
           >
             <Check className="h-4.5 w-4.5 stroke-[3px]" />
-            {selectedPos ? "RECORD PLAY" : "QUICK RECORD"}
+            {selectedPosList.length > 0 ? "RECORD PLAY" : "QUICK RECORD"}
           </button>
         </div>
 

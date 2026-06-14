@@ -924,8 +924,42 @@ function getNormalizedAtBatResult(actionNote: string): string {
 
       // 💡 野選(FC)や併殺(DP)など、モーダルで指定されたアウト走者のクリア処理
       if (outRunnerBase) {
-        const key = `base${outRunnerBase}` as keyof typeof nextRunners;
-        nextRunners[key] = null;
+        let clearKey: keyof typeof nextRunners | null = null;
+        
+        // 1. 打撃結果が進塁を伴う場合、走者の「進塁先」をクリアする
+        const isHR = result.endsWith("本") || result === "本塁打";
+        const is3B = result.endsWith("三") || result === "三塁打";
+        const is2B = result.endsWith("二") || result === "二塁打";
+        const is1B = !isHR && !is3B && !is2B && (
+          result.endsWith("安") || result.endsWith("失") || result.endsWith("選") || 
+          ["単打", "エラー", "野選"].includes(result) ||
+          result.includes("安") || result.includes("失") || result.includes("選")
+        );
+
+        if (is1B) {
+          if (outRunnerBase === 1) clearKey = "base2"; // 1塁走者が2塁でアウト
+          else if (outRunnerBase === 2) clearKey = "base3"; // 2塁走者が3塁でアウト
+          else if (outRunnerBase === 3) {
+            // 3塁走者が本塁でアウトの場合、得点加算を防ぐ
+            if (actualRbi > 0) actualRbi = Math.max(0, actualRbi - 1);
+          }
+        } else if (is2B) {
+          if (outRunnerBase === 1) clearKey = "base3"; // 1塁走者が3塁でアウト
+          else if (outRunnerBase === 2) {
+            // 2塁走者が本塁でアウト
+            if (actualRbi > 0) actualRbi = Math.max(0, actualRbi - 1);
+          }
+        } else {
+          // 進塁を伴わないアウトプレイなどの場合は、元の塁のキーをクリア
+          clearKey = `base${outRunnerBase}` as keyof typeof nextRunners;
+          if (outRunnerBase === 3 && actualRbi > 0) {
+            actualRbi = Math.max(0, actualRbi - 1);
+          }
+        }
+
+        if (clearKey) {
+          nextRunners[clearKey] = null;
+        }
       }
 
       // 💡 アウトプレイ（!isSafe）におけるランナー進塁・生還ロジックの整理

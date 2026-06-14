@@ -1,4 +1,4 @@
-// src/components/score/OutDetailModal.tsx
+// filepath: src/components/score/OutDetailModal.tsx
 "use client";
 
 import { useState, useEffect } from "react";
@@ -15,7 +15,7 @@ export interface OutDetailModalProps {
 
 export function OutDetailModal({ open, onOpenChange, onResult }: OutDetailModalProps) {
   const { state } = useScore();
-  const [selectedPos, setSelectedPos] = useState<string | null>(null);
+  const [selectedPosList, setSelectedPosList] = useState<string[]>([]);
   const [outType, setOutType] = useState<string>("GO");
   const [isFoul, setIsFoul] = useState(false);
   const [rbi, setRbi] = useState(0);
@@ -34,7 +34,7 @@ export function OutDetailModal({ open, onOpenChange, onResult }: OutDetailModalP
   // Reset modal state on open
   useEffect(() => {
     if (open) {
-      setSelectedPos(null);
+      setSelectedPosList([]);
       setCoordinate(null);
       setOutType("GO");
       setIsFoul(false);
@@ -61,22 +61,22 @@ export function OutDetailModal({ open, onOpenChange, onResult }: OutDetailModalP
     }
   }, [outType, state.runners.base3]);
 
-  // 🏟️ 野球場の各エリアボタンの定義 (1-9基本ポジション。精密幾何学グラフィックと100%同期)
+  // 🏟️ 野球場の各エリアボタンの定義 (1-9基本ポジション。誤タップを防ぐため内野を広げて配置)
   const fieldPositions = [
     // 外野
-    { id: "7", label: "左", name: "左翼", x: 20, y: 25 },
-    { id: "8", label: "中", name: "中堅", x: 50, y: 15 },
-    { id: "9", label: "right", name: "右翼", x: 80, y: 25 },
+    { id: "7", label: "左", name: "左翼", x: 18, y: 22 },
+    { id: "8", label: "中", name: "中堅", x: 50, y: 10 },
+    { id: "9", label: "右", name: "右翼", x: 82, y: 22 },
     
     // 内野守備
-    { id: "5", label: "三", name: "三塁", x: 25, y: 68 },
-    { id: "6", label: "遊", name: "遊撃", x: 38, y: 58 },
-    { id: "4", label: "二", name: "二塁", x: 62, y: 58 },
-    { id: "3", label: "一", name: "一塁", x: 75, y: 68 },
+    { id: "5", label: "三", name: "三塁", x: 20, y: 68 },
+    { id: "6", label: "遊", name: "遊撃", x: 35, y: 54 },
+    { id: "4", label: "二", name: "二塁", x: 65, y: 54 },
+    { id: "3", label: "一", name: "一塁", x: 80, y: 68 },
     
     // バッテリー
-    { id: "1", label: "投", name: "投手", x: 50, y: 68 },
-    { id: "2", label: "捕", name: "捕手", x: 50, y: 86 },
+    { id: "1", label: "投", name: "投手", x: 50, y: 66 },
+    { id: "2", label: "捕", name: "捕手", x: 50, y: 90 },
   ];
 
   const outTypes = [
@@ -87,7 +87,7 @@ export function OutDetailModal({ open, onOpenChange, onResult }: OutDetailModalP
     { id: "SO_M", label: "見逃し三振", color: "bg-rose-50/50 dark:bg-rose-950/20 text-rose-800 dark:text-rose-400" },
     { id: "SH", label: "犠打（バント）", color: "bg-zinc-500/10" },
     { id: "SF", label: "犠牲フライ", color: "bg-zinc-500/10" },
-    { id: "DP", label: "併殺打", color: "bg-red-50/50 dark:bg-red-950/20 text-red-800 dark:text-red-400" },
+    { id: "DP", label: "併殺打", color: "bg-red-600/10 border-red-500/20 text-red-500 dark:text-red-400" },
     { id: "UN", label: "その他アウト", color: "bg-zinc-500/10" },
   ];
 
@@ -103,11 +103,23 @@ export function OutDetailModal({ open, onOpenChange, onResult }: OutDetailModalP
     return name;
   };
 
+  const handlePosTap = (id: string, x: number, y: number) => {
+    setSelectedPosList(prev => {
+      if (prev.includes(id)) {
+        return prev.filter(item => item !== id);
+      }
+      return [...prev, id];
+    });
+    setCoordinate({ x, y });
+  };
+
   const handleConfirm = () => {
     if (!outType) return;
     
     const parts: string[] = [];
-    if (selectedPos) parts.push(selectedPos);
+    if (selectedPosList.length > 0) {
+      parts.push(selectedPosList.join(">"));
+    }
     if (isFoul && (outType === "FO" || outType === "LO")) {
       parts.push("FOUL");
     }
@@ -157,90 +169,12 @@ export function OutDetailModal({ open, onOpenChange, onResult }: OutDetailModalP
           </button>
         </div>
 
-        {/* コンテンツエリア */}
-        <div className="p-4 overflow-y-auto space-y-4 flex-1">
+        {/* コンテンツエリア (究極の操作性を求めた並び順: 結果 -> 走者 -> グラフィック -> オプション) */}
+        <div className="p-4 overflow-y-auto space-y-5 flex-1">
           
-          {/* 1. プレミアムSVG野球場グラフィックUI */}
-          <div className="space-y-2">
-            <label className="text-[9.5px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest px-1 flex items-center gap-1.5">
-              <Target className="h-3.5 w-3.5 text-primary" />
-              アウトをとった守備位置をタップ (任意)
-            </label>
-            
-            <div className="relative w-full aspect-square border border-zinc-100 dark:border-zinc-800/80 rounded-2xl bg-emerald-50/10 dark:bg-zinc-900/10 overflow-hidden shadow-inner">
-              
-              {/* 美しい野球場グラフィック (幾何学的に精密なSVG背景) */}
-              <svg viewBox="0 0 200 200" className="absolute inset-0 w-full h-full select-none pointer-events-none">
-                {/* 外野の芝生 (ホーム 100,170 を中心とする半径 140 の美しい扇形) */}
-                <path d="M 1,71 A 140,140 0 0,1 199,71 L 100,170 Z" className="fill-emerald-500/15 dark:fill-emerald-950/20 stroke-emerald-500/25 dark:stroke-emerald-800/30 stroke-[1.5]" />
-                
-                {/* 内野の土・ダイヤモンド (ホーム 100,170 を中心とする半径 78 の扇形) */}
-                <path d="M 45,115 A 78,78 0 0,1 155,115 L 100,170 Z" className="fill-amber-500/10 dark:fill-amber-950/20 stroke-amber-500/20 dark:stroke-amber-800/15 stroke-1" />
-                
-                {/* 内野ダイヤモンド白線 (45度傾斜でベースと完璧に合致) */}
-                <polygon points="100,170 128,142 100,114 72,142" className="fill-none stroke-zinc-300 dark:stroke-zinc-800 stroke-[1.5] stroke-dasharray-[2]" />
-                
-                {/* マウンド */}
-                <circle cx="100" cy="142" r="5" className="fill-amber-500/5 dark:fill-amber-950/10 stroke-zinc-300 dark:stroke-zinc-700 stroke-[0.5]" />
-                
-                {/* 各ベース */}
-                {/* 本塁 */}
-                <polygon points="100,173 103,170 100,167 97,170" className="fill-white stroke-zinc-400 stroke-[0.5]" />
-                {/* 一塁 */}
-                <rect x="125.5" y="139.5" width="5" height="5" transform="rotate(45, 128, 142)" className="fill-white stroke-zinc-400 stroke-[0.5]" />
-                {/* 二塁 */}
-                <rect x="97.5" y="111.5" width="5" height="5" transform="rotate(45, 100, 114)" className="fill-white stroke-zinc-400 stroke-[0.5]" />
-                {/* 三塁 */}
-                <rect x="69.5" y="139.5" width="5" height="5" transform="rotate(45, 72, 142)" className="fill-white stroke-zinc-400 stroke-[0.5]" />
-                
-                {/* 外野フェンスポールへの45度ファウルライン */}
-                <line x1="100" y1="170" x2="1" y2="71" className="stroke-zinc-300 dark:stroke-zinc-800 stroke-[1.5]" />
-                <line x1="100" y1="170" x2="199" y2="71" className="stroke-zinc-300 dark:stroke-zinc-800 stroke-[1.5]" />
-              </svg>
-
-              {/* 物理配置されたポジションバッジボタン */}
-              {fieldPositions.map((pos) => {
-                const isActive = selectedPos === pos.id;
-                // ラベルマッピング
-                const displayLabel = pos.label === "right" ? "右" : pos.label;
-                
-                return (
-                  <button
-                    key={pos.id}
-                    type="button"
-                    onClick={() => {
-                      setSelectedPos(pos.id === selectedPos ? null : pos.id);
-                      setCoordinate({ x: pos.x, y: pos.y });
-                    }}
-                    style={{ left: `${pos.x}%`, top: `${pos.y}%` }}
-                    className={cn(
-                      "absolute -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full text-[9px] font-black tracking-tighter flex flex-col items-center justify-center shadow-sm select-none transition-all duration-300 active:scale-90 cursor-pointer border",
-                      isActive
-                        ? "bg-primary border-primary text-primary-foreground scale-110 z-30 shadow-md ring-2 ring-primary/20"
-                        : "bg-white/90 border-zinc-200/80 text-zinc-800 hover:bg-zinc-150 hover:border-zinc-300 dark:bg-zinc-950/90 dark:border-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-900"
-                    )}
-                  >
-                    <span>{displayLabel}</span>
-                  </button>
-                );
-              })}
-
-              {/* 🎯 タップ位置にアニメーションする光る赤いピンプロットを描画 */}
-              {selectedPos && coordinate && (
-                <div
-                  style={{ left: `${coordinate.x}%`, top: `${coordinate.y}%` }}
-                  className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-none z-10 flex items-center justify-center w-8 h-8"
-                >
-                  <span className="absolute h-6 w-6 rounded-full bg-rose-500 opacity-35 animate-ping" />
-                  <span className="relative h-2 w-2 rounded-full bg-rose-600 ring-2 ring-white shadow-md shadow-rose-600/30" />
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* 2. アウト種別の選択 */}
+          {/* 1. 結果種別の選択 */}
           <div className="space-y-1.5">
-            <label className="text-[9.5px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest px-1">アウト種別</label>
+            <label className="text-[9.5px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest px-1">① アウト種別（起点）</label>
             <div className="grid grid-cols-3 gap-2">
               {outTypes.map((res) => (
                 <button
@@ -248,7 +182,6 @@ export function OutDetailModal({ open, onOpenChange, onResult }: OutDetailModalP
                   type="button"
                   onClick={() => {
                     setOutType(res.id);
-                    // フライ/ライナー以外になったらファウルを強制オフ
                     if (res.id !== "FO" && res.id !== "LO") {
                       setIsFoul(false);
                     }
@@ -264,44 +197,11 @@ export function OutDetailModal({ open, onOpenChange, onResult }: OutDetailModalP
             </div>
           </div>
 
-          {/* 2.5. ファウルエリアでの捕球（邪）のトグル (フライ/ライナー選択時のみ表示) */}
-          {(outType === "FO" || outType === "LO") && (
-            <div className="space-y-1.5 animate-in slide-in-from-top-2 duration-200">
-              <label className="text-[9.5px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest px-1">打球エリア（ファウルグラウンド判定）</label>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsFoul(false)}
-                  className={cn(
-                    "h-9 rounded-xl border font-black text-[11px] tracking-tight transition-all active:scale-95 cursor-pointer flex items-center justify-center",
-                    !isFoul
-                      ? "bg-primary/10 border-primary/20 text-primary"
-                      : "bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                  )}
-                >
-                  フェアグラウンド
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsFoul(true)}
-                  className={cn(
-                    "h-9 rounded-xl border font-black text-[11px] tracking-tight transition-all active:scale-95 cursor-pointer flex items-center justify-center",
-                    isFoul
-                      ? "bg-rose-600 border-rose-600 text-white shadow-sm"
-                      : "bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                  )}
-                >
-                  ファウルエリア（邪飛・邪直）
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* 併殺（DP）が選択された際のアウト走者選択UI */}
+          {/* 2. 併殺・走者アウトの選択UI (走者がいる場合は常に表示、トグル解除対応) */}
           {(state.runners.base1 || state.runners.base2 || state.runners.base3) && (
             <div className="space-y-1.5 p-3 rounded-xl border border-rose-500/20 bg-rose-500/5 animate-in slide-in-from-top-2 duration-200">
               <label className="text-[9.5px] font-black text-rose-600 dark:text-rose-400 uppercase tracking-widest px-1">
-                {outType === "DP" ? "併殺によりアウトになった走者 (必須)" : "併殺・走者アウト (任意)"}
+                ② {outType === "DP" ? "併殺によりアウトになった走者 (必須)" : "併殺・走者アウト (任意)"}
               </label>
               <div className="flex flex-col gap-1.5 mt-1">
                 {state.runners.base1 && (
@@ -356,7 +256,130 @@ export function OutDetailModal({ open, onOpenChange, onResult }: OutDetailModalP
             </div>
           )}
 
-          {/* 3. 打点手動調整（アコーディオン仕様） */}
+          {/* 3. プレミアムSVG野球場グラフィックUI (順路ガイド線 ＋ タップ順バッジ付き) */}
+          <div className="space-y-2">
+            <label className="text-[9.5px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest px-1 flex items-center gap-1.5">
+              <Target className="h-3.5 w-3.5 text-primary" />
+              ③ 守備位置をタップ (複数タップで 6-4-3 などの経路を記録)
+            </label>
+            
+            <div className="relative w-full aspect-square border border-zinc-100 dark:border-zinc-800/80 rounded-2xl bg-emerald-50/10 dark:bg-zinc-900/10 overflow-hidden shadow-inner">
+              
+              {/* 美しい野球場グラフィック */}
+              <svg viewBox="0 0 200 200" className="absolute inset-0 w-full h-full select-none pointer-events-none">
+                {/* 外野の芝生 */}
+                <path d="M 1,71 A 140,140 0 0,1 199,71 L 100,170 Z" className="fill-emerald-500/15 dark:fill-emerald-950/20 stroke-emerald-500/25 dark:stroke-emerald-800/30 stroke-[1.5]" />
+                
+                {/* 内野の土・ダイヤモンド */}
+                <path d="M 45,115 A 78,78 0 0,1 155,115 L 100,170 Z" className="fill-amber-500/10 dark:fill-amber-950/20 stroke-amber-500/20 dark:stroke-amber-800/15 stroke-1" />
+                
+                {/* 内野ダイヤモンド白線 */}
+                <polygon points="100,170 128,142 100,114 72,142" className="fill-none stroke-zinc-300 dark:stroke-zinc-800 stroke-[1.5] stroke-dasharray-[2]" />
+                
+                {/* マウンド */}
+                <circle cx="100" cy="142" r="5" className="fill-amber-500/5 dark:fill-amber-950/10 stroke-zinc-300 dark:stroke-zinc-700 stroke-[0.5]" />
+                
+                {/* 各ベース */}
+                <polygon points="100,173 103,170 100,167 97,170" className="fill-white stroke-zinc-400 stroke-[0.5]" />
+                <rect x="125.5" y="139.5" width="5" height="5" transform="rotate(45, 128, 142)" className="fill-white stroke-zinc-400 stroke-[0.5]" />
+                <rect x="97.5" y="111.5" width="5" height="5" transform="rotate(45, 100, 114)" className="fill-white stroke-zinc-400 stroke-[0.5]" />
+                <rect x="69.5" y="139.5" width="5" height="5" transform="rotate(45, 72, 142)" className="fill-white stroke-zinc-400 stroke-[0.5]" />
+                
+                {/* 外野フェンスポールへのファウルライン */}
+                <line x1="100" y1="170" x2="1" y2="71" className="stroke-zinc-300 dark:stroke-zinc-800 stroke-[1.5]" />
+                <line x1="100" y1="170" x2="199" y2="71" className="stroke-zinc-300 dark:stroke-zinc-800 stroke-[1.5]" />
+
+                {/* 🔴 守備経路の動的ガイドライン (複数野手タップを結ぶライン) */}
+                {selectedPosList.length > 1 && (
+                  <polyline
+                    points={selectedPosList.map(posId => {
+                      const p = fieldPositions.find(x => x.id === posId);
+                      return p ? `${p.x * 2},${p.y * 2}` : "";
+                    }).filter(Boolean).join(" ")}
+                    className="fill-none stroke-rose-500/80 stroke-[4.5] stroke-linecap-round stroke-linejoin-round"
+                    style={{ filter: "drop-shadow(0px 2px 4px rgba(244,63,94,0.3))" }}
+                  />
+                )}
+              </svg>
+
+              {/* 物理配置されたポジションバッジボタン */}
+              {fieldPositions.map((pos) => {
+                const isActive = selectedPosList.includes(pos.id);
+                const tapOrderIndex = selectedPosList.indexOf(pos.id);
+                const displayLabel = pos.label === "right" ? "右" : pos.label;
+                
+                return (
+                  <button
+                    key={pos.id}
+                    type="button"
+                    onClick={() => handlePosTap(pos.id, pos.x, pos.y)}
+                    style={{ left: `${pos.x}%`, top: `${pos.y}%` }}
+                    className={cn(
+                      "absolute -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full text-[9.5px] font-black tracking-tighter flex flex-col items-center justify-center shadow-sm select-none transition-all duration-300 active:scale-90 cursor-pointer border",
+                      isActive
+                        ? "bg-rose-600 border-rose-600 text-white scale-110 z-30 shadow-md ring-2 ring-rose-500/20"
+                        : "bg-white/90 border-zinc-200/80 text-zinc-800 hover:bg-zinc-150 hover:border-zinc-300 dark:bg-zinc-950/90 dark:border-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                    )}
+                  >
+                    <span>{displayLabel}</span>
+
+                    {/* 🔴 タップ順序バッジのオーバーレイ */}
+                    {isActive && (
+                      <span className="absolute -top-1.5 -right-1.5 bg-rose-600 dark:bg-rose-500 text-white text-[8px] font-black w-4.5 h-4.5 rounded-full flex items-center justify-center border border-white dark:border-zinc-950 shadow-sm animate-scale-in">
+                        {tapOrderIndex + 1}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+
+              {/* 🎯 最新のタップ位置にアニメーション光を描画 */}
+              {selectedPosList.length > 0 && coordinate && (
+                <div
+                  style={{ left: `${coordinate.x}%`, top: `${coordinate.y}%` }}
+                  className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-none z-10 flex items-center justify-center w-8 h-8"
+                >
+                  <span className="absolute h-6 w-6 rounded-full bg-rose-500 opacity-35 animate-ping" />
+                  <span className="relative h-2 w-2 rounded-full bg-rose-600 ring-2 ring-white shadow-md shadow-rose-600/30" />
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* 4. ファウルエリアでの捕球トグル (フライ/ライナー選択時のみ) */}
+          {(outType === "FO" || outType === "LO") && (
+            <div className="space-y-1.5 animate-in slide-in-from-top-2 duration-200">
+              <label className="text-[9.5px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest px-1">④ 打球エリア</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsFoul(false)}
+                  className={cn(
+                    "h-9 rounded-xl border font-black text-[11px] tracking-tight transition-all active:scale-95 cursor-pointer flex items-center justify-center",
+                    !isFoul
+                      ? "bg-primary/10 border-primary/20 text-primary"
+                      : "bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                  )}
+                >
+                  フェアグラウンド
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsFoul(true)}
+                  className={cn(
+                    "h-9 rounded-xl border font-black text-[11px] tracking-tight transition-all active:scale-95 cursor-pointer flex items-center justify-center",
+                    isFoul
+                      ? "bg-rose-600 border-rose-600 text-white shadow-sm"
+                      : "bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                  )}
+                >
+                  ファウルエリア（邪飛・邪直）
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* 5. 打点手動調整 */}
           <div className="border border-zinc-100 dark:border-zinc-800/80 rounded-xl overflow-hidden bg-zinc-50/50 dark:bg-zinc-900/30">
             <button
               type="button"
@@ -413,7 +436,7 @@ export function OutDetailModal({ open, onOpenChange, onResult }: OutDetailModalP
             className="w-full h-11 rounded-xl bg-primary text-primary-foreground font-black text-xs tracking-wide disabled:opacity-50 transition-all active:scale-[0.98] flex items-center justify-center gap-1.5 cursor-pointer"
           >
             <Check className="h-4.5 w-4.5 stroke-[3px]" />
-            {selectedPos ? "RECORD OUT" : "QUICK RECORD OUT"}
+            {selectedPosList.length > 0 ? "RECORD OUT" : "QUICK RECORD OUT"}
           </button>
         </div>
 

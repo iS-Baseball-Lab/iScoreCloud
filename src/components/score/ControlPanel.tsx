@@ -63,7 +63,9 @@ export function ControlPanel() {
         "UN": "アウト"
       };
 
-      const posChar = posMap[pos] || pos;
+      const posChar = pos.includes(">")
+        ? pos.split(">").map(p => posMap[p] || p).join("-")
+        : (posMap[pos] || pos);
       const foulChar = isFoul ? "邪" : "";
       const outChar = outMap[outType] || outType;
       
@@ -140,7 +142,9 @@ export function ControlPanel() {
         "GO": "ゴロ", "FO": "飛", "SH": "犠打", "SF": "犠飛" // 互換性維持
       };
 
-      const posChar = posMap[pos] || pos;
+      const posChar = pos.includes(">")
+        ? pos.split(">").map(p => posMap[p] || p).join("-")
+        : (posMap[pos] || pos);
       const courseChar = course ? (courseMap[course] || "") : "";
       const trajChar = trajectory ? (trajMap[trajectory] || "") : "";
       const hitChar = hitMap[hit] || hit;
