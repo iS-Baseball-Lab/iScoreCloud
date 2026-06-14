@@ -15,7 +15,8 @@ import {
   ScoreContextType,
   MatchResponse,
   PlayLogEntry,
-  BaseAdvance
+  BaseAdvance,
+  RunnerDestinations
 } from "@/types/score";
 
 const ScoreContext = createContext<ScoreContextType | undefined>(undefined);
@@ -853,7 +854,8 @@ function getNormalizedAtBatResult(actionNote: string): string {
     errors: number,
     advances?: BaseAdvance[],
     coordinate?: { x: number; y: number }, // 🌟 将来のスプレーチャート用座標
-    outRunnerBase?: 1 | 2 | 3 | null
+    outRunnerBase?: 1 | 2 | 3 | null,
+    runnerDestinations?: RunnerDestinations
   ) => {
     setState(prev => {
       if (!prev.isScorer) return prev;
@@ -863,6 +865,8 @@ function getNormalizedAtBatResult(actionNote: string): string {
       
       let nextRunners = { ...prev.runners };
       let actualRbi = rbi;
+      let addedOuts = 0;
+      let displayResult = result;
 
       // 💡 得点や盗塁など、打席完了ではない非打席プレイの判定
       const isNotAtBat = ["得点", "盗塁", "暴投", "ボーク", "守備交代", "走者状況変更"].includes(result);
@@ -870,9 +874,9 @@ function getNormalizedAtBatResult(actionNote: string): string {
 
       // 💡 安打・出塁系であるかどうかの判定 (アウトカウントの誤加算防止)
       const isHit = result.endsWith("安") || result.endsWith("二") || result.endsWith("三") || result.endsWith("本") || 
-                    ["単打", "二塁打", "三塁打", "本塁打"].includes(result);
-      const isError = result.endsWith("失") || result === "エラー";
-      const isFieldersChoice = result.endsWith("選") || result === "野選";
+                    ["単打", "二塁打", "三塁打", "本塁打"].includes(result) || result.includes("安") || result.includes("二") || result.includes("三") || result.includes("本");
+      const isError = result.endsWith("失") || result === "エラー" || result.includes("失");
+      const isFieldersChoice = result.endsWith("選") || result === "野選" || result.includes("選");
       const isSafe = isHit || isError || isFieldersChoice;
 
       const offenseBatters = isMyAttack
@@ -881,108 +885,228 @@ function getNormalizedAtBatResult(actionNote: string): string {
       const batter = offenseBatters[isMyAttack ? prev.myBattingIndex : prev.opponentBattingIndex];
       const batterId = batter?.playerId || batter?.id || "player-id-placeholder";
 
-      // 💡 クイックボタンと詳細打球記録の分岐
-      if (["単打", "二塁打", "三塁打", "本塁打"].includes(result)) {
-        actualRbi = 0; // 自動算出のためリセット
-        if (result === "本塁打") {
-          actualRbi += 1; // バッター生還
-          if (prev.runners.base1) actualRbi += 1;
-          if (prev.runners.base2) actualRbi += 1;
-          if (prev.runners.base3) actualRbi += 1;
-          nextRunners = { base1: null, base2: null, base3: null };
-        } else if (result === "三塁打") {
-          if (prev.runners.base1) actualRbi += 1;
-          if (prev.runners.base2) actualRbi += 1;
-          if (prev.runners.base3) actualRbi += 1;
-          nextRunners = { base1: null, base2: null, base3: batterId };
-        } else if (result === "二塁打") {
-          if (prev.runners.base2) actualRbi += 1;
-          if (prev.runners.base3) actualRbi += 1;
-          nextRunners = { base1: null, base2: batterId, base3: prev.runners.base1 };
-        } else if (result === "単打") {
-          if (prev.runners.base3) actualRbi += 1;
-          nextRunners = { base1: batterId, base2: prev.runners.base1, base3: prev.runners.base2 };
+      if (runnerDestinations && isAtBatEnd) {
+        // 🌟 究極の入力モード：UIから直接指示された走者の進退先を使用
+        nextRunners = { base1: null, base2: null, base3: null };
+        let runsScored = 0;
+        let outsCount = 0;
+
+        // 打者
+        if (runnerDestinations.batter) {
+          if (runnerDestinations.batter === "out") {
+            outsCount++;
+          } else if (runnerDestinations.batter === 4) {
+            runsScored++;
+          } else {
+            const destKey = `base${runnerDestinations.batter}` as keyof typeof nextRunners;
+            nextRunners[destKey] = batterId;
+          }
+        }
+
+        // 1塁走者
+        if (prev.runners.base1 && runnerDestinations.base1) {
+          if (runnerDestinations.base1 === "out") {
+            outsCount++;
+          } else if (runnerDestinations.base1 === 4) {
+            runsScored++;
+          } else {
+            const destKey = `base${runnerDestinations.base1}` as keyof typeof nextRunners;
+            nextRunners[destKey] = prev.runners.base1;
+          }
+        }
+
+        // 2塁走者
+        if (prev.runners.base2 && runnerDestinations.base2) {
+          if (runnerDestinations.base2 === "out") {
+            outsCount++;
+          } else if (runnerDestinations.base2 === 4) {
+            runsScored++;
+          } else {
+            const destKey = `base${runnerDestinations.base2}` as keyof typeof nextRunners;
+            nextRunners[destKey] = prev.runners.base2;
+          }
+        }
+
+        // 3塁走者
+        if (prev.runners.base3 && runnerDestinations.base3) {
+          if (runnerDestinations.base3 === "out") {
+            outsCount++;
+          } else if (runnerDestinations.base3 === 4) {
+            runsScored++;
+          } else {
+            const destKey = `base${runnerDestinations.base3}` as keyof typeof nextRunners;
+            nextRunners[destKey] = prev.runners.base3;
+          }
+        }
+
+        addedOuts = outsCount;
+        actualRbi = runsScored; // 得点した走者数をそのまま打点とする
+
+        // 💡 プレイログ用のテキスト整形（走者の生還・死の状況を詳細に自動追記）
+        const outDetails: string[] = [];
+        const runDetails: string[] = [];
+        
+        if (runnerDestinations.base1 === "out") outDetails.push("1塁走者死");
+        else if (runnerDestinations.base1 === 4) runDetails.push("1塁走者生還");
+        
+        if (runnerDestinations.base2 === "out") outDetails.push("2塁走者死");
+        else if (runnerDestinations.base2 === 4) runDetails.push("2塁走者生還");
+        
+        if (runnerDestinations.base3 === "out") outDetails.push("3塁走者死");
+        else if (runnerDestinations.base3 === 4) runDetails.push("3塁走者生還");
+
+        if (runnerDestinations.batter === "out" && isSafe) {
+          outDetails.push("打者走者死");
+        }
+
+        const detailParts: string[] = [];
+        if (outDetails.length > 0) {
+          const outLabel = (outsCount > 1 && !result.includes("併殺")) ? "併殺:" : "";
+          detailParts.push(`${outLabel}${outDetails.join(",")}`);
+        }
+        if (runDetails.length > 0) {
+          detailParts.push(runDetails.join(","));
+        }
+        
+        if (detailParts.length > 0) {
+          displayResult = `${result} (${detailParts.join("; ")})`;
         }
       } else {
-        // 詳細記録 (例: "右安", "左二", "遊ゴロ" 等)
-        // actualRbi はモーダルから渡されたものをそのまま使用
-        const isHR = result.endsWith("本");
-        const is3B = result.endsWith("三");
-        const is2B = result.endsWith("二");
-        const is1B = result.endsWith("安") || result.endsWith("失") || result.endsWith("選") || result === "エラー" || result === "野選";
-
-        if (isHR) {
-          nextRunners = { base1: null, base2: null, base3: null };
-        } else if (is3B) {
-          nextRunners = { base1: null, base2: null, base3: batterId };
-        } else if (is2B) {
-          nextRunners = { base1: null, base2: batterId, base3: prev.runners.base1 };
-        } else if (is1B) {
-          nextRunners = { base1: batterId, base2: prev.runners.base1, base3: prev.runners.base2 };
-        }
-      }
-
-      // 💡 野選(FC)や併殺(DP)など、モーダルで指定されたアウト走者のクリア処理
-      if (outRunnerBase) {
-        let clearKey: keyof typeof nextRunners | null = null;
-        
-        // 1. 打撃結果が進塁を伴う場合、走者の「進塁先」をクリアする
-        const isHR = result.endsWith("本") || result === "本塁打";
-        const is3B = result.endsWith("三") || result === "三塁打";
-        const is2B = result.endsWith("二") || result === "二塁打";
-        const is1B = !isHR && !is3B && !is2B && (
-          result.endsWith("安") || result.endsWith("失") || result.endsWith("選") || 
-          ["単打", "エラー", "野選"].includes(result) ||
-          result.includes("安") || result.includes("失") || result.includes("選")
-        );
-
-        if (is1B) {
-          if (outRunnerBase === 1) clearKey = "base2"; // 1塁走者が2塁でアウト
-          else if (outRunnerBase === 2) clearKey = "base3"; // 2塁走者が3塁でアウト
-          else if (outRunnerBase === 3) {
-            // 3塁走者が本塁でアウトの場合、得点加算を防ぐ
-            if (actualRbi > 0) actualRbi = Math.max(0, actualRbi - 1);
-          }
-        } else if (is2B) {
-          if (outRunnerBase === 1) clearKey = "base3"; // 1塁走者が3塁でアウト
-          else if (outRunnerBase === 2) {
-            // 2塁走者が本塁でアウト
-            if (actualRbi > 0) actualRbi = Math.max(0, actualRbi - 1);
+        // 💡 クイックボタンと詳細打球記録の分岐（後方互換用）
+        if (["単打", "二塁打", "三塁打", "本塁打"].includes(result)) {
+          actualRbi = 0; // 自動算出のためリセット
+          if (result === "本塁打") {
+            actualRbi += 1; // バッター生還
+            if (prev.runners.base1) actualRbi += 1;
+            if (prev.runners.base2) actualRbi += 1;
+            if (prev.runners.base3) actualRbi += 1;
+            nextRunners = { base1: null, base2: null, base3: null };
+          } else if (result === "三塁打") {
+            if (prev.runners.base1) actualRbi += 1;
+            if (prev.runners.base2) actualRbi += 1;
+            if (prev.runners.base3) actualRbi += 1;
+            nextRunners = { base1: null, base2: null, base3: batterId };
+          } else if (result === "二塁打") {
+            if (prev.runners.base2) actualRbi += 1;
+            if (prev.runners.base3) actualRbi += 1;
+            nextRunners = { base1: null, base2: batterId, base3: prev.runners.base1 };
+          } else if (result === "単打") {
+            if (prev.runners.base3) actualRbi += 1;
+            nextRunners = { base1: batterId, base2: prev.runners.base1, base3: prev.runners.base2 };
           }
         } else {
-          // 進塁を伴わないアウトプレイなどの場合は、元の塁のキーをクリア
-          clearKey = `base${outRunnerBase}` as keyof typeof nextRunners;
-          if (outRunnerBase === 3 && actualRbi > 0) {
-            actualRbi = Math.max(0, actualRbi - 1);
+          // 詳細記録 (例: "右安", "左二", "遊ゴロ" 等)
+          const isHR = result.endsWith("本");
+          const is3B = result.endsWith("三");
+          const is2B = result.endsWith("二");
+          const is1B = result.endsWith("安") || result.endsWith("失") || result.endsWith("選") || result === "エラー" || result === "野選";
+
+          if (isHR) {
+            nextRunners = { base1: null, base2: null, base3: null };
+          } else if (is3B) {
+            nextRunners = { base1: null, base2: null, base3: batterId };
+          } else if (is2B) {
+            nextRunners = { base1: null, base2: batterId, base3: prev.runners.base1 };
+          } else if (is1B) {
+            nextRunners = { base1: batterId, base2: prev.runners.base1, base3: prev.runners.base2 };
           }
         }
 
-        if (clearKey) {
-          nextRunners[clearKey] = null;
+        // 💡 野選(FC)や併殺(DP)など、モーダルで指定されたアウト走者のクリア処理
+        if (outRunnerBase) {
+          let clearKey: keyof typeof nextRunners | null = null;
+          
+          const isHR = result.endsWith("本") || result === "本塁打";
+          const is3B = result.endsWith("三") || result === "三塁打";
+          const is2B = result.endsWith("二") || result === "二塁打";
+          const is1B = !isHR && !is3B && !is2B && (
+            result.endsWith("安") || result.endsWith("失") || result.endsWith("選") || 
+            ["単打", "エラー", "野選"].includes(result) ||
+            result.includes("安") || result.includes("失") || result.includes("選")
+          );
+
+          if (is1B) {
+            if (outRunnerBase === 1) clearKey = "base2"; // 1塁走者が2塁でアウト
+            else if (outRunnerBase === 2) clearKey = "base3"; // 2塁走者が3塁でアウト
+            else if (outRunnerBase === 3) {
+              if (actualRbi > 0) actualRbi = Math.max(0, actualRbi - 1);
+            }
+          } else if (is2B) {
+            if (outRunnerBase === 1) clearKey = "base3"; // 1塁走者が3塁でアウト
+            else if (outRunnerBase === 2) {
+              if (actualRbi > 0) actualRbi = Math.max(0, actualRbi - 1);
+            }
+          } else {
+            clearKey = `base${outRunnerBase}` as keyof typeof nextRunners;
+            if (outRunnerBase === 3 && actualRbi > 0) {
+              actualRbi = Math.max(0, actualRbi - 1);
+            }
+          }
+
+          if (clearKey) {
+            nextRunners[clearKey] = null;
+          }
         }
-      }
 
-      // 💡 アウトプレイ（!isSafe）におけるランナー進塁・生還ロジックの整理
-      if (!isSafe) {
-        const isSacrificeBunt = (result.includes("犠打") || (result.includes("犠") && !result.includes("飛"))) && isAtBatEnd;
-        
-        if (isSacrificeBunt) {
-          // 犠打（送りバント）時の進塁処理
-          const tempRunners = { ...nextRunners };
-          tempRunners.base3 = null;
-          tempRunners.base2 = null;
-          tempRunners.base1 = null;
+        // 💡 アウトプレイ（!isSafe）におけるランナー進塁・生還ロジックの整理
+        if (!isSafe) {
+          const isSacrificeBunt = (result.includes("犠打") || (result.includes("犠") && !result.includes("飛"))) && isAtBatEnd;
+          
+          if (isSacrificeBunt) {
+            const tempRunners = { ...nextRunners };
+            tempRunners.base3 = null;
+            tempRunners.base2 = null;
+            tempRunners.base1 = null;
 
-          if (nextRunners.base2) {
-            tempRunners.base3 = nextRunners.base2;
+            if (nextRunners.base2) {
+              tempRunners.base3 = nextRunners.base2;
+            }
+            if (nextRunners.base1) {
+              tempRunners.base2 = nextRunners.base1;
+            }
+            nextRunners = tempRunners;
+          } else if (actualRbi > 0 && prev.runners.base3) {
+            nextRunners.base3 = null;
           }
-          if (nextRunners.base1) {
-            tempRunners.base2 = nextRunners.base1;
+        }
+
+        // 💡 アウトカウントの加算処理
+        if (isAtBatEnd) {
+          const isBatterOut = !isSafe && (
+            result.includes("アウト") || 
+            result.includes("犠") || 
+            result.includes("ゴロ") || 
+            result.includes("飛") || 
+            result.includes("直") || 
+            result.includes("三振") ||
+            result.includes("FO") ||
+            result.includes("LO") ||
+            result.includes("GO") ||
+            result.includes("SO") ||
+            result.includes("SF") ||
+            result.includes("SH") ||
+            result.includes("DP") ||
+            result.includes("UN") ||
+            result.includes("併殺")
+          );
+
+          if (result.includes("併殺") || (outRunnerBase && isBatterOut)) {
+            addedOuts = 2;
+          } else if (isFieldersChoice) {
+            addedOuts = 1;
+          } else if (isBatterOut) {
+            addedOuts = 1;
+          } else if (isSafe && outRunnerBase) {
+            addedOuts = 1;
           }
-          nextRunners = tempRunners;
-        } else if (actualRbi > 0 && prev.runners.base3) {
-          // 犠飛やゴロの間に得点など、打点が発生したアウトプレイ時の3塁走者生還処理
-          nextRunners.base3 = null;
+        }
+
+        if (outRunnerBase && !result.includes("併殺")) {
+          const baseName = outRunnerBase === 3 ? "3" : outRunnerBase === 2 ? "2" : "1";
+          const destName = outRunnerBase === 3 ? "本" : outRunnerBase === 2 ? "3" : "2";
+          const isBatterOut = !isSafe;
+          const outLabel = isBatterOut ? "併殺" : "走者アウト";
+          displayResult = `${result} (${outLabel}:${baseName}塁走者${destName}塁死)`;
         }
       }
 
@@ -1002,42 +1126,6 @@ function getNormalizedAtBatResult(actionNote: string): string {
       } else {
         while (updatedMyScores.length <= currentIdx) updatedMyScores.push(0);
         updatedMyScores[currentIdx] += actualRbi;
-      }
-
-      // (定義は関数上部に移動されました)
-
-      // (定義は関数上部に移動されました)
-
-      // 💡 アウトカウントの加算処理
-      let addedOuts = 0;
-      if (isAtBatEnd) {
-        const isBatterOut = !isSafe && (
-          result.includes("アウト") || 
-          result.includes("犠") || 
-          result.includes("ゴロ") || 
-          result.includes("飛") || 
-          result.includes("直") || 
-          result.includes("三振") ||
-          result.includes("FO") ||
-          result.includes("LO") ||
-          result.includes("GO") ||
-          result.includes("SO") ||
-          result.includes("SF") ||
-          result.includes("SH") ||
-          result.includes("DP") ||
-          result.includes("UN") ||
-          result.includes("併殺")
-        );
-
-        if (result.includes("併殺") || (outRunnerBase && isBatterOut)) {
-          addedOuts = 2;
-        } else if (isFieldersChoice) {
-          addedOuts = 1;
-        } else if (isBatterOut) {
-          addedOuts = 1;
-        } else if (isSafe && outRunnerBase) {
-          addedOuts = 1;
-        }
       }
 
       const newOuts = prev.outs + addedOuts;
@@ -1067,7 +1155,7 @@ function getNormalizedAtBatResult(actionNote: string): string {
       const batterOrder = isMyAttack ? prev.myBattingIndex + 1 : prev.opponentBattingIndex + 1;
       const batterPrefix = isNotAtBat ? "" : `${batterOrder}番 ${batterName}: `;
 
-      let displayResult = result;
+      displayResult = result;
       if (outRunnerBase && !result.includes("併殺")) {
         const baseName = outRunnerBase === 3 ? "3" : outRunnerBase === 2 ? "2" : "1";
         const destName = outRunnerBase === 3 ? "本" : outRunnerBase === 2 ? "3" : "2";

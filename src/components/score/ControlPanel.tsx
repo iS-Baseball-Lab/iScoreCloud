@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 import { FieldModal } from "./FieldModal";
 import { OutDetailModal } from "./OutDetailModal";
 import { FinishConfirmModal } from "./FinishConfirmModal";
-import type { BaseAdvance } from "@/types/score";
+import type { BaseAdvance, RunnerDestinations } from "@/types/score";
 
 export function ControlPanel() {
   const router = useRouter();
@@ -37,7 +37,12 @@ export function ControlPanel() {
     setFieldOpen(true);
   };
 
-  const handleOutResult = (rawResult: string, rbi: number, outRunnerBase?: 1 | 2 | 3 | null) => {
+  const handleOutResult = (
+    rawResult: string,
+    rbi: number,
+    outRunnerBase?: 1 | 2 | 3 | null,
+    runnerDestinations?: RunnerDestinations
+  ) => {
     let mappedString = "";
 
     if (rawResult.includes("-")) {
@@ -87,7 +92,7 @@ export function ControlPanel() {
       mappedString = quickMap[outType] || outType;
     }
 
-    recordInPlay(mappedString, rbi, 0, 0, undefined, undefined, outRunnerBase);
+    recordInPlay(mappedString, rbi, 0, 0, undefined, undefined, outRunnerBase, runnerDestinations);
   };
 
   const handleFieldResult = (
@@ -95,7 +100,8 @@ export function ControlPanel() {
     rbi: number,
     advances?: BaseAdvance[],
     coordinate?: { x: number; y: number },
-    outRunnerBase?: 1 | 2 | 3 | null
+    outRunnerBase?: 1 | 2 | 3 | null,
+    runnerDestinations?: RunnerDestinations
   ) => {
     let mappedString = "";
     let isHit = false;
@@ -199,7 +205,7 @@ export function ControlPanel() {
     const hitsCount = isHit ? 1 : 0;
     const errorsCount = isError ? 1 : 0;
 
-    recordInPlay(mappedString, rbi, hitsCount, errorsCount, undefined, coordinate, outRunnerBase);
+    recordInPlay(mappedString, rbi, hitsCount, errorsCount, undefined, coordinate, outRunnerBase, runnerDestinations);
     setFieldOpen(false);
   };
 

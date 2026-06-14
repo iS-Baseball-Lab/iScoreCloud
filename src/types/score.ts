@@ -7,6 +7,14 @@ export interface BaseAdvance {
   toBase: 1 | 2 | 3 | 4;
 }
 
+/** 🏃‍♂️ 各走者の進退先（ダイレクト指定用） */
+export interface RunnerDestinations {
+  base1?: 1 | 2 | 3 | 4 | "out" | null;
+  base2?: 2 | 3 | 4 | "out" | null;
+  base3?: 3 | 4 | "out" | null;
+  batter?: 1 | 2 | 3 | 4 | "out" | null;
+}
+
 /** 📝 プレイログ entry */
 export interface PlayLogEntry {
   id: string;
@@ -121,7 +129,8 @@ export interface ScoreContextType {
     errors: number,
     advances?: BaseAdvance[],
     coordinate?: { x: number; y: number }, // 🌟 将来のスプレーチャート用座標
-    outRunnerBase?: 1 | 2 | 3 | null
+    outRunnerBase?: 1 | 2 | 3 | null,
+    runnerDestinations?: RunnerDestinations
   ) => Promise<void>;
   recordRunnerAction: (
     baseNum: 1 | 2 | 3,

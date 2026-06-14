@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import type { BaseAdvance } from "@/types/score";
+import type { BaseAdvance, RunnerDestinations } from "@/types/score";
 import { useScore } from "@/contexts/ScoreContext";
 import { createPortal } from "react-dom";
 import { Minus, Plus, Check, Target, X, ChevronDown, ChevronUp } from "lucide-react";
@@ -11,7 +11,14 @@ import { cn } from "@/lib/utils";
 export interface FieldModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onResult: (result: string, rbi: number, advances: BaseAdvance[], coordinate?: { x: number; y: number }, outRunnerBase?: 1 | 2 | 3 | null) => void;
+  onResult: (
+    result: string,
+    rbi: number,
+    advances: BaseAdvance[],
+    coordinate?: { x: number; y: number },
+    outRunnerBase?: 1 | 2 | 3 | null,
+    runnerDestinations?: RunnerDestinations
+  ) => void;
   defaultHitType?: string;
 }
 
@@ -27,6 +34,7 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
   const [showRbiDetail, setShowRbiDetail] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [outRunnerBase, setOutRunnerBase] = useState<1 | 2 | 3 | null>(null);
+  const [destinations, setDestinations] = useState<RunnerDestinations>({});
   
   // スプレーチャート用座標 (パーセンテージベース)
   const [coordinate, setCoordinate] = useState<{ x: number; y: number } | null>(null);
@@ -46,35 +54,73 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
       
       const initialHit = defaultHitType === "E" ? "E" : "1B";
       setHitType(initialHit);
-      setRbi(calculateDefaultRbi(initialHit));
       setShowRbiDetail(false);
       setOutRunnerBase(null);
+
+      const initialDest: RunnerDestinations = { batter: 1 };
+      if (runners.base1) initialDest.base1 = 2;
+      if (runners.base2) initialDest.base2 = 3;
+      if (runners.base3) initialDest.base3 = 4;
+      setDestinations(initialDest);
     }
   }, [open, defaultHitType]);
 
-  const calculateDefaultRbi = (type: string) => {
-    const r1 = runners?.base1 ? 1 : 0;
-    const r2 = runners?.base2 ? 1 : 0;
-    const r3 = runners?.base3 ? 1 : 0;
-    const runnersCount = r1 + r2 + r3;
+  // 進路の自動デフォルト設定
+  useEffect(() => {
+    if (!open) return;
 
-    switch (type) {
-      case "HR":
-        return runnersCount + 1;
-      case "3B":
-        return runnersCount;
-      case "2B":
-        return r2 + r3;
-      case "1B":
-        return r3;
-      default:
-        return 0;
+    const newDest: RunnerDestinations = {};
+
+    if (hitType === "HR") {
+      if (runners.base1) newDest.base1 = 4;
+      if (runners.base2) newDest.base2 = 4;
+      if (runners.base3) newDest.base3 = 4;
+      newDest.batter = 4;
+    } else if (hitType === "3B") {
+      if (runners.base1) newDest.base1 = 4;
+      if (runners.base2) newDest.base2 = 4;
+      if (runners.base3) newDest.base3 = 4;
+      newDest.batter = 3;
+    } else if (hitType === "2B") {
+      if (runners.base1) newDest.base1 = 3;
+      if (runners.base2) newDest.base2 = 4;
+      if (runners.base3) newDest.base3 = 4;
+      newDest.batter = 2;
+    } else if (hitType === "1B" || hitType === "E") {
+      if (runners.base1) newDest.base1 = 2;
+      if (runners.base2) newDest.base2 = 3;
+      if (runners.base3) newDest.base3 = 4;
+      newDest.batter = 1;
+    } else if (hitType === "FC") {
+      if (runners.base1) newDest.base1 = 2;
+      if (runners.base2) newDest.base2 = 3;
+      if (runners.base3) newDest.base3 = 4;
+      newDest.batter = 1;
+
+      if (runners.base1) {
+        newDest.base1 = "out";
+        setOutRunnerBase(1);
+      } else if (runners.base2) {
+        newDest.base2 = "out";
+        setOutRunnerBase(2);
+      } else if (runners.base3) {
+        newDest.base3 = "out";
+        setOutRunnerBase(3);
+      }
     }
-  };
+
+    setDestinations(newDest);
+
+    let defaultRbi = 0;
+    if (newDest.base1 === 4) defaultRbi++;
+    if (newDest.base2 === 4) defaultRbi++;
+    if (newDest.base3 === 4) defaultRbi++;
+    if (newDest.batter === 4) defaultRbi++;
+    setRbi(defaultRbi);
+  }, [hitType, open, runners.base1, runners.base2, runners.base3]);
 
   const handleHitTypeSelect = (type: string) => {
     setHitType(type);
-    setRbi(calculateDefaultRbi(type));
   };
 
   // 🏟️ 野球場の各エリアボタンの定義 (誤タップを防ぐため内野と間エリアを広げて再配置)
@@ -162,7 +208,12 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
     
     const resultString = parts.join("-");
 
-    onResult(resultString, rbi, [], coordinate || undefined, outRunnerBase);
+    let finalOutRunnerBase = outRunnerBase;
+    if (destinations.base1 === "out") finalOutRunnerBase = 1;
+    else if (destinations.base2 === "out") finalOutRunnerBase = 2;
+    else if (destinations.base3 === "out") finalOutRunnerBase = 3;
+
+    onResult(resultString, rbi, [], coordinate || undefined, finalOutRunnerBase, destinations);
     
     // リセット
     setSelectedPosList([]);
@@ -171,6 +222,7 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
     setCoordinate(null);
     setRbi(0);
     setOutRunnerBase(null);
+    onOpenChange(false);
   };
 
   const getResultStyle = (resId: string) => {
@@ -240,64 +292,292 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
             </div>
           </div>
 
-          {/* 2. 走者アウト / 進塁死の選択UI (走者がいる場合は常に表示、トグル解除対応) */}
-          {(state.runners.base1 || state.runners.base2 || state.runners.base3) && (
-            <div className="space-y-1.5 p-3 rounded-xl border border-rose-500/20 bg-rose-500/5 animate-in slide-in-from-top-2 duration-200">
-              <label className="text-[9.5px] font-black text-rose-600 dark:text-rose-400 uppercase tracking-widest px-1">
-                ② {hitType === "FC" ? "野選によりアウトになった走者 (必須)" : "走者アウト / 進塁死 (任意)"}
-              </label>
-              <div className="flex flex-col gap-1.5 mt-1">
-                {state.runners.base1 && (
-                  <button
-                    key="fc-runner-1"
-                    type="button"
-                    onClick={() => setOutRunnerBase(outRunnerBase === 1 ? null : 1)}
-                    className={cn(
-                      "h-9 rounded-xl border text-[11px] font-bold flex items-center justify-between px-3 active:scale-95 transition-all cursor-pointer",
-                      outRunnerBase === 1
-                        ? "bg-rose-600 border-rose-600 text-white shadow-sm"
-                        : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300"
-                    )}
-                  >
-                    <span>1塁走者: {getPlayerName(state.runners.base1)}</span>
-                    <span className="text-[8px] opacity-70">2塁でアウト</span>
-                  </button>
-                )}
-                {state.runners.base2 && (
-                  <button
-                    key="fc-runner-2"
-                    type="button"
-                    onClick={() => setOutRunnerBase(outRunnerBase === 2 ? null : 2)}
-                    className={cn(
-                      "h-9 rounded-xl border text-[11px] font-bold flex items-center justify-between px-3 active:scale-95 transition-all cursor-pointer",
-                      outRunnerBase === 2
-                        ? "bg-rose-600 border-rose-600 text-white shadow-sm"
-                        : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300"
-                    )}
-                  >
-                    <span>2塁走者: {getPlayerName(state.runners.base2)}</span>
-                    <span className="text-[8px] opacity-70">3塁でアウト</span>
-                  </button>
-                )}
-                {state.runners.base3 && (
-                  <button
-                    key="fc-runner-3"
-                    type="button"
-                    onClick={() => setOutRunnerBase(outRunnerBase === 3 ? null : 3)}
-                    className={cn(
-                      "h-9 rounded-xl border text-[11px] font-bold flex items-center justify-between px-3 active:scale-95 transition-all cursor-pointer",
-                      outRunnerBase === 3
-                        ? "bg-rose-600 border-rose-600 text-white shadow-sm"
-                        : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300"
-                    )}
-                  >
-                    <span>3塁走者: {getPlayerName(state.runners.base3)}</span>
-                    <span className="text-[8px] opacity-70">本塁でアウト</span>
-                  </button>
-                )}
+          {/* 2. 走者状況・進退設定 */}
+          <div className="space-y-1.5 p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/30">
+            <label className="text-[9.5px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest px-1">
+              ② 走者状況・進退設定
+            </label>
+            
+            {!state.runners.base1 && !state.runners.base2 && !state.runners.base3 ? (
+              <div className="text-center py-2 text-xs font-bold text-zinc-400 dark:text-zinc-500">
+                走者なし
               </div>
-            </div>
-          )}
+            ) : (
+              <div className="flex flex-col gap-3 mt-1">
+                {/* 3塁走者 */}
+                {state.runners.base3 && (
+                  <div className="flex flex-col gap-1.5 border-b border-zinc-100 dark:border-zinc-800/80 pb-2.5 last:border-0 last:pb-0">
+                    <div className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex justify-between">
+                      <span>3塁走者: {getPlayerName(state.runners.base3)}</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setDestinations(prev => ({ ...prev, base3: 3 }))}
+                        className={cn(
+                          "h-8 rounded-lg text-[10px] font-bold border transition-all active:scale-95 cursor-pointer",
+                          destinations.base3 === 3
+                            ? "bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-900 border-zinc-800 dark:border-zinc-200"
+                            : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400"
+                        )}
+                      >
+                        3塁残留
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDestinations(prev => ({ ...prev, base3: 4 }));
+                          setRbi(prev => Math.min(4, prev + 1));
+                          setShowRbiDetail(true);
+                        }}
+                        className={cn(
+                          "h-8 rounded-lg text-[10px] font-bold border transition-all active:scale-95 cursor-pointer",
+                          destinations.base3 === 4
+                            ? "bg-emerald-600 border-emerald-600 text-white"
+                            : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400"
+                        )}
+                      >
+                        本塁生還
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDestinations(prev => ({ ...prev, base3: "out" }));
+                          setOutRunnerBase(3);
+                        }}
+                        className={cn(
+                          "h-8 rounded-lg text-[10px] font-bold border transition-all active:scale-95 cursor-pointer",
+                          destinations.base3 === "out"
+                            ? "bg-rose-600 border-rose-600 text-white"
+                            : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400"
+                        )}
+                      >
+                        アウト
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* 2塁走者 */}
+                {state.runners.base2 && (
+                  <div className="flex flex-col gap-1.5 border-b border-zinc-100 dark:border-zinc-800/80 pb-2.5 last:border-0 last:pb-0">
+                    <div className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex justify-between">
+                      <span>2塁走者: {getPlayerName(state.runners.base2)}</span>
+                    </div>
+                    <div className="grid grid-cols-4 gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setDestinations(prev => ({ ...prev, base2: 2 }))}
+                        className={cn(
+                          "h-8 rounded-lg text-[10px] font-bold border transition-all active:scale-95 cursor-pointer",
+                          destinations.base2 === 2
+                            ? "bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-900 border-zinc-800 dark:border-zinc-200"
+                            : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400"
+                        )}
+                      >
+                        2塁残留
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDestinations(prev => ({ ...prev, base2: 3 }))}
+                        className={cn(
+                          "h-8 rounded-lg text-[10px] font-bold border transition-all active:scale-95 cursor-pointer",
+                          destinations.base2 === 3
+                            ? "bg-blue-600 border-blue-600 text-white"
+                            : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400"
+                        )}
+                      >
+                        3塁進塁
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDestinations(prev => ({ ...prev, base2: 4 }));
+                          setRbi(prev => Math.min(4, prev + 1));
+                          setShowRbiDetail(true);
+                        }}
+                        className={cn(
+                          "h-8 rounded-lg text-[10px] font-bold border transition-all active:scale-95 cursor-pointer",
+                          destinations.base2 === 4
+                            ? "bg-emerald-600 border-emerald-600 text-white"
+                            : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400"
+                        )}
+                      >
+                        本塁生還
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDestinations(prev => ({ ...prev, base2: "out" }));
+                          setOutRunnerBase(2);
+                        }}
+                        className={cn(
+                          "h-8 rounded-lg text-[10px] font-bold border transition-all active:scale-95 cursor-pointer",
+                          destinations.base2 === "out"
+                            ? "bg-rose-600 border-rose-600 text-white"
+                            : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400"
+                        )}
+                      >
+                        アウト
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* 1塁走者 */}
+                {state.runners.base1 && (
+                  <div className="flex flex-col gap-1.5 border-b border-zinc-100 dark:border-zinc-800/80 pb-2.5 last:border-0 last:pb-0">
+                    <div className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex justify-between">
+                      <span>1塁走者: {getPlayerName(state.runners.base1)}</span>
+                    </div>
+                    <div className="grid grid-cols-5 gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setDestinations(prev => ({ ...prev, base1: 1 }))}
+                        className={cn(
+                          "h-8 rounded-lg text-[9px] font-bold border transition-all active:scale-95 cursor-pointer",
+                          destinations.base1 === 1
+                            ? "bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-900 border-zinc-800 dark:border-zinc-200"
+                            : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400"
+                        )}
+                      >
+                        1塁残留
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDestinations(prev => ({ ...prev, base1: 2 }))}
+                        className={cn(
+                          "h-8 rounded-lg text-[9px] font-bold border transition-all active:scale-95 cursor-pointer",
+                          destinations.base1 === 2
+                            ? "bg-blue-600 border-blue-600 text-white"
+                            : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400"
+                        )}
+                      >
+                        2塁進塁
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDestinations(prev => ({ ...prev, base1: 3 }))}
+                        className={cn(
+                          "h-8 rounded-lg text-[9px] font-bold border transition-all active:scale-95 cursor-pointer",
+                          destinations.base1 === 3
+                            ? "bg-blue-600 border-blue-600 text-white"
+                            : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400"
+                        )}
+                      >
+                        3塁進塁
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDestinations(prev => ({ ...prev, base1: 4 }));
+                          setRbi(prev => Math.min(4, prev + 1));
+                          setShowRbiDetail(true);
+                        }}
+                        className={cn(
+                          "h-8 rounded-lg text-[9px] font-bold border transition-all active:scale-95 cursor-pointer",
+                          destinations.base1 === 4
+                            ? "bg-emerald-600 border-emerald-600 text-white"
+                            : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400"
+                        )}
+                      >
+                        本塁生還
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDestinations(prev => ({ ...prev, base1: "out" }));
+                          setOutRunnerBase(1);
+                        }}
+                        className={cn(
+                          "h-8 rounded-lg text-[9px] font-bold border transition-all active:scale-95 cursor-pointer",
+                          destinations.base1 === "out"
+                            ? "bg-rose-600 border-rose-600 text-white"
+                            : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400"
+                        )}
+                      >
+                        アウト
+                      </button>
+                    </div>
+                  </div>
+                )}
+                
+                {/* 打者走者 */}
+                <div className="flex flex-col gap-1.5 pt-1">
+                  <div className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
+                    <span>打者走者</span>
+                  </div>
+                  <div className="grid grid-cols-5 gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setDestinations(prev => ({ ...prev, batter: "out" }))}
+                      className={cn(
+                        "h-8 rounded-lg text-[9.5px] font-bold border transition-all active:scale-95 cursor-pointer",
+                        destinations.batter === "out"
+                          ? "bg-rose-600 border-rose-600 text-white"
+                          : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400"
+                      )}
+                    >
+                      アウト
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDestinations(prev => ({ ...prev, batter: 1 }))}
+                      className={cn(
+                        "h-8 rounded-lg text-[9.5px] font-bold border transition-all active:scale-95 cursor-pointer",
+                        destinations.batter === 1
+                          ? "bg-blue-600 border-blue-600 text-white"
+                          : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400"
+                      )}
+                    >
+                      1塁出塁
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDestinations(prev => ({ ...prev, batter: 2 }))}
+                      className={cn(
+                        "h-8 rounded-lg text-[9.5px] font-bold border transition-all active:scale-95 cursor-pointer",
+                        destinations.batter === 2
+                          ? "bg-blue-600 border-blue-600 text-white"
+                          : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400"
+                      )}
+                    >
+                      2塁進塁
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDestinations(prev => ({ ...prev, batter: 3 }))}
+                      className={cn(
+                        "h-8 rounded-lg text-[9.5px] font-bold border transition-all active:scale-95 cursor-pointer",
+                        destinations.batter === 3
+                          ? "bg-blue-600 border-blue-600 text-white"
+                          : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400"
+                      )}
+                    >
+                      3塁進塁
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDestinations(prev => ({ ...prev, batter: 4 }));
+                        setRbi(prev => Math.min(4, prev + 1));
+                        setShowRbiDetail(true);
+                      }}
+                      className={cn(
+                        "h-8 rounded-lg text-[9.5px] font-bold border transition-all active:scale-95 cursor-pointer",
+                        destinations.batter === 4
+                          ? "bg-emerald-600 border-emerald-600 text-white"
+                          : "bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400"
+                      )}
+                    >
+                      本塁生還
+                    </button>
+                  </div>
+                </div>
+
+              </div>
+            )}
+          </div>
 
           {/* 3. プレミアムSVG野球場グラフィックUI (順路ガイド線 ＋ タップ順バッジ付き) */}
           <div className="space-y-2">
