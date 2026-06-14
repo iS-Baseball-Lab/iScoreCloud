@@ -1,4 +1,4 @@
-// filepath: src/components/score/FieldModal.tsx
+// filepath: src/components/score/PlayResultModal.tsx
 "use client";
 
 import { useState, useEffect } from "react";
@@ -8,13 +8,14 @@ import { createPortal } from "react-dom";
 import { Minus, Plus, Check, Target, X, ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export interface FieldModalProps {
+export interface PlayResultModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onResult: (
     result: string,
     rbi: number,
-    advances: BaseAdvance[],
+    hits: number,
+    errors: number,
     coordinate?: { x: number; y: number },
     outRunnerBase?: 1 | 2 | 3 | null,
     runnerDestinations?: RunnerDestinations
@@ -22,21 +23,20 @@ export interface FieldModalProps {
   defaultHitType?: string;
 }
 
-export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: FieldModalProps) {
+export function PlayResultModal({ open, onOpenChange, onResult, defaultHitType }: PlayResultModalProps) {
   const { state } = useScore();
   const { runners } = state;
 
   const [selectedPosList, setSelectedPosList] = useState<string[]>([]);
-  const [hitType, setHitType] = useState<string>("1B"); // デフォルトを単打 (1B)
-  const [course, setCourse] = useState<"front" | "line" | "over" | null>(null); // 前, 線際, オーバー
-  const [trajectory, setTrajectory] = useState<"GO" | "FO" | "LO" | "BUNT" | null>(null); // ゴロ, フライ, ライナー, バント
+  const [playResult, setPlayResult] = useState<string>("1B"); // デフォルトは単打
+  const [course, setCourse] = useState<"front" | "line" | "over" | null>(null);
+  const [trajectory, setTrajectory] = useState<"GO" | "FO" | "LO" | "BUNT" | null>(null);
+  const [isFoul, setIsFoul] = useState(false);
   const [rbi, setRbi] = useState(0);
   const [showRbiDetail, setShowRbiDetail] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [outRunnerBase, setOutRunnerBase] = useState<1 | 2 | 3 | null>(null);
   const [destinations, setDestinations] = useState<RunnerDestinations>({});
-  
-  // スプレーチャート用座標 (パーセンテージベース)
   const [coordinate, setCoordinate] = useState<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
@@ -44,86 +44,41 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
     return () => setMounted(false);
   }, []);
 
-  // モーダルオープン時のリセット
-  useEffect(() => {
-    if (open) {
-      setSelectedPosList([]);
-      setCourse(null);
-      setTrajectory(null);
-      setCoordinate(null);
-      
-      const initialHit = defaultHitType === "E" ? "E" : "1B";
-      setHitType(initialHit);
-      setShowRbiDetail(false);
-      setOutRunnerBase(null);
+  // 起点結果の選択肢定義
+  const results = [
+    // 出塁系 (緑)
+    { id: "1B", label: "単打", type: "hit", color: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
+    { id: "2B", label: "二塁打", type: "hit", color: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
+    { id: "3B", label: "三塁打", type: "hit", color: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
+    { id: "HR", label: "本塁打", type: "hit", color: "bg-primary/10 text-primary" },
+    { id: "E", label: "失策", type: "error", color: "bg-rose-500/10 text-rose-600 dark:text-rose-400" },
+    { id: "FC", label: "野選", type: "fc", color: "bg-zinc-500/10 dark:bg-zinc-800" },
 
-      const initialDest: RunnerDestinations = { batter: 1 };
-      if (runners.base1) initialDest.base1 = 2;
-      if (runners.base2) initialDest.base2 = 3;
-      if (runners.base3) initialDest.base3 = 4;
-      setDestinations(initialDest);
-    }
-  }, [open, defaultHitType]);
+    // アウト系 (灰・赤)
+    { id: "GO", label: "ゴロアウト", type: "out", color: "bg-zinc-500/10" },
+    { id: "FO", label: "フライアウト", type: "out", color: "bg-zinc-500/10" },
+    { id: "LO", label: "ライナー", type: "out", color: "bg-zinc-500/10" },
+    { id: "SO_K", label: "空振り三振", type: "out", color: "bg-rose-500/10 text-rose-800 dark:text-rose-400" },
+    { id: "SO_M", label: "見逃し三振", type: "out", color: "bg-rose-500/10 text-rose-800 dark:text-rose-400" },
+    { id: "SH", label: "犠打（バント）", type: "out", color: "bg-zinc-500/10" },
+    { id: "SF", label: "犠飛", type: "out", color: "bg-zinc-500/10" },
+    { id: "DP", label: "併殺打", type: "out", color: "bg-red-600/10 border-red-500/20 text-red-500 dark:text-red-400" },
+    { id: "UN", label: "その他アウト", type: "out", color: "bg-zinc-500/10" },
+  ];
 
-  // 進路の自動デフォルト設定
-  useEffect(() => {
-    if (!open) return;
+  const trajectories = [
+    { id: "GO", label: "ゴロ" },
+    { id: "FO", label: "フライ" },
+    { id: "LO", label: "ライナー" },
+    { id: "BUNT", label: "バント" },
+  ] as const;
 
-    const newDest: RunnerDestinations = {};
+  const courses = [
+    { id: "front", label: "前 (ポテン)" },
+    { id: "line", label: "線際" },
+    { id: "over", label: "オーバー" },
+  ] as const;
 
-    if (hitType === "HR") {
-      if (runners.base1) newDest.base1 = 4;
-      if (runners.base2) newDest.base2 = 4;
-      if (runners.base3) newDest.base3 = 4;
-      newDest.batter = 4;
-    } else if (hitType === "3B") {
-      if (runners.base1) newDest.base1 = 4;
-      if (runners.base2) newDest.base2 = 4;
-      if (runners.base3) newDest.base3 = 4;
-      newDest.batter = 3;
-    } else if (hitType === "2B") {
-      if (runners.base1) newDest.base1 = 3;
-      if (runners.base2) newDest.base2 = 4;
-      if (runners.base3) newDest.base3 = 4;
-      newDest.batter = 2;
-    } else if (hitType === "1B" || hitType === "E") {
-      if (runners.base1) newDest.base1 = 2;
-      if (runners.base2) newDest.base2 = 3;
-      if (runners.base3) newDest.base3 = 4;
-      newDest.batter = 1;
-    } else if (hitType === "FC") {
-      if (runners.base1) newDest.base1 = 2;
-      if (runners.base2) newDest.base2 = 3;
-      if (runners.base3) newDest.base3 = 4;
-      newDest.batter = 1;
-
-      if (runners.base1) {
-        newDest.base1 = "out";
-        setOutRunnerBase(1);
-      } else if (runners.base2) {
-        newDest.base2 = "out";
-        setOutRunnerBase(2);
-      } else if (runners.base3) {
-        newDest.base3 = "out";
-        setOutRunnerBase(3);
-      }
-    }
-
-    setDestinations(newDest);
-
-    let defaultRbi = 0;
-    if (newDest.base1 === 4) defaultRbi++;
-    if (newDest.base2 === 4) defaultRbi++;
-    if (newDest.base3 === 4) defaultRbi++;
-    if (newDest.batter === 4) defaultRbi++;
-    setRbi(defaultRbi);
-  }, [hitType, open, runners.base1, runners.base2, runners.base3]);
-
-  const handleHitTypeSelect = (type: string) => {
-    setHitType(type);
-  };
-
-  // 🏟️ 野球場の各エリアボタンの定義 (誤タップを防ぐため内野と間エリアを広げて再配置)
   const fieldAreas = [
     // 外野
     { id: "7", label: "左", name: "左翼", x: 18, y: 22 },
@@ -148,30 +103,122 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
     { id: "2", label: "捕", name: "捕手", x: 50, y: 90 },
   ];
 
-  // 結果種別
-  const results = [
-    { id: "1B", label: "単打", color: "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400" },
-    { id: "2B", label: "二塁打", color: "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400" },
-    { id: "3B", label: "三塁打", color: "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400" },
-    { id: "HR", label: "本塁打", color: "bg-primary text-primary-foreground" },
-    { id: "E", label: "失策", color: "bg-rose-50/20 text-rose-600 dark:text-rose-400" },
-    { id: "FC", label: "野選", color: "bg-zinc-500/10" },
-  ];
+  // モーダルオープン時のリセット
+  useEffect(() => {
+    if (open) {
+      setSelectedPosList([]);
+      setCourse(null);
+      setTrajectory(null);
+      setCoordinate(null);
+      setIsFoul(false);
+      setOutRunnerBase(null);
+      
+      const initialType = defaultHitType || "1B";
+      setPlayResult(initialType);
 
-  // 打球の性質
-  const trajectories = [
-    { id: "GO", label: "ゴロ" },
-    { id: "FO", label: "フライ" },
-    { id: "LO", label: "ライナー" },
-    { id: "BUNT", label: "バント" },
-  ] as const;
+      // destinations 初期値セット
+      const initialDest: RunnerDestinations = {};
+      const isOut = ["GO", "FO", "LO", "SO_K", "SO_M", "SH", "SF", "DP", "UN"].includes(initialType);
+      
+      if (isOut) {
+        initialDest.batter = "out";
+        if (runners.base1) initialDest.base1 = 1;
+        if (runners.base2) initialDest.base2 = 2;
+        if (runners.base3) initialDest.base3 = 3;
+      } else {
+        initialDest.batter = initialType === "HR" ? 4 : initialType === "3B" ? 3 : initialType === "2B" ? 2 : 1;
+        if (runners.base1) initialDest.base1 = initialType === "HR" ? 4 : initialType === "3B" ? 4 : initialType === "2B" ? 3 : 2;
+        if (runners.base2) initialDest.base2 = initialType === "HR" ? 4 : initialType === "3B" ? 4 : 4;
+        if (runners.base3) initialDest.base3 = 4;
+      }
+      setDestinations(initialDest);
+      setShowRbiDetail(false);
+    }
+  }, [open, defaultHitType, runners.base1, runners.base2, runners.base3]);
 
-  // 打球コース
-  const courses = [
-    { id: "front", label: "前 (ポテン)" },
-    { id: "line", label: "線際" },
-    { id: "over", label: "オーバー" },
-  ] as const;
+  // 起点結果が切り替わった際の自動進路デフォルト設定
+  useEffect(() => {
+    if (!open) return;
+
+    const newDest: RunnerDestinations = {};
+    const isOut = ["GO", "FO", "LO", "SO_K", "SO_M", "SH", "SF", "DP", "UN"].includes(playResult);
+
+    if (isOut) {
+      newDest.batter = "out";
+      if (runners.base1) newDest.base1 = 1;
+      if (runners.base2) newDest.base2 = 2;
+      if (runners.base3) newDest.base3 = 3;
+
+      if (playResult === "SF") {
+        if (runners.base3) newDest.base3 = 4;
+      } else if (playResult === "SH") {
+        if (runners.base3) newDest.base3 = 4;
+        if (runners.base2) newDest.base2 = 3;
+        if (runners.base1) newDest.base1 = 2;
+      } else if (playResult === "DP") {
+        if (runners.base1) {
+          newDest.base1 = "out";
+          setOutRunnerBase(1);
+        } else if (runners.base2) {
+          newDest.base2 = "out";
+          setOutRunnerBase(2);
+        } else if (runners.base3) {
+          newDest.base3 = "out";
+          setOutRunnerBase(3);
+        }
+      }
+    } else {
+      // 出塁系 (安打・失策・野選)
+      if (playResult === "HR") {
+        if (runners.base1) newDest.base1 = 4;
+        if (runners.base2) newDest.base2 = 4;
+        if (runners.base3) newDest.base3 = 4;
+        newDest.batter = 4;
+      } else if (playResult === "3B") {
+        if (runners.base1) newDest.base1 = 4;
+        if (runners.base2) newDest.base2 = 4;
+        if (runners.base3) newDest.base3 = 4;
+        newDest.batter = 3;
+      } else if (playResult === "2B") {
+        if (runners.base1) newDest.base1 = 3;
+        if (runners.base2) newDest.base2 = 4;
+        if (runners.base3) newDest.base3 = 4;
+        newDest.batter = 2;
+      } else if (playResult === "1B" || playResult === "E") {
+        if (runners.base1) newDest.base1 = 2;
+        if (runners.base2) newDest.base2 = 3;
+        if (runners.base3) newDest.base3 = 4;
+        newDest.batter = 1;
+      } else if (playResult === "FC") {
+        if (runners.base1) newDest.base1 = 2;
+        if (runners.base2) newDest.base2 = 3;
+        if (runners.base3) newDest.base3 = 4;
+        newDest.batter = 1;
+
+        if (runners.base1) {
+          newDest.base1 = "out";
+          setOutRunnerBase(1);
+        } else if (runners.base2) {
+          newDest.base2 = "out";
+          setOutRunnerBase(2);
+        } else if (runners.base3) {
+          newDest.base3 = "out";
+          setOutRunnerBase(3);
+        }
+      }
+    }
+
+    setDestinations(newDest);
+
+    // デフォルトRBIの計算
+    let defaultRbi = 0;
+    if (newDest.base1 === 4) defaultRbi++;
+    if (newDest.base2 === 4) defaultRbi++;
+    if (newDest.base3 === 4) defaultRbi++;
+    if (newDest.batter === 4) defaultRbi++;
+    setRbi(defaultRbi);
+    setShowRbiDetail(defaultRbi > 0);
+  }, [playResult, open, runners.base1, runners.base2, runners.base3]);
 
   const getPlayerName = (runnerId: string | null) => {
     if (!runnerId) return "";
@@ -196,24 +243,47 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
   };
 
   const handleConfirm = () => {
-    if (!hitType) return;
+    if (!playResult) return;
     
     const parts: string[] = [];
     if (selectedPosList.length > 0) {
       parts.push(selectedPosList.join(">"));
     }
-    if (course) parts.push(course);
-    if (trajectory) parts.push(trajectory);
-    parts.push(hitType);
+    
+    const isOut = ["GO", "FO", "LO", "SO_K", "SO_M", "SH", "SF", "DP", "UN"].includes(playResult);
+
+    if (course && !["SO_K", "SO_M", "DP", "UN"].includes(playResult)) {
+      parts.push(course);
+    }
+    if (isFoul && ["FO", "LO"].includes(playResult)) {
+      parts.push("FOUL");
+    }
+    if (trajectory && !["SO_K", "SO_M", "DP", "UN"].includes(playResult)) {
+      parts.push(trajectory);
+    }
+    parts.push(playResult);
     
     const resultString = parts.join("-");
+
+    const isHit = ["1B", "2B", "3B", "HR"].includes(playResult);
+    const isError = playResult === "E";
+    const hitsCount = isHit ? 1 : 0;
+    const errorsCount = isError ? 1 : 0;
 
     let finalOutRunnerBase = outRunnerBase;
     if (destinations.base1 === "out") finalOutRunnerBase = 1;
     else if (destinations.base2 === "out") finalOutRunnerBase = 2;
     else if (destinations.base3 === "out") finalOutRunnerBase = 3;
 
-    onResult(resultString, rbi, [], coordinate || undefined, finalOutRunnerBase, destinations);
+    onResult(
+      resultString,
+      rbi,
+      hitsCount,
+      errorsCount,
+      coordinate || undefined,
+      finalOutRunnerBase,
+      destinations
+    );
     
     // リセット
     setSelectedPosList([]);
@@ -222,43 +292,39 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
     setCoordinate(null);
     setRbi(0);
     setOutRunnerBase(null);
+    setIsFoul(false);
     onOpenChange(false);
   };
 
   const getResultStyle = (resId: string) => {
-    const isActive = hitType === resId;
-    if (["1B", "2B", "3B"].includes(resId)) {
-      return isActive
-        ? "bg-emerald-500 border-emerald-500 text-white"
-        : "bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-400 hover:bg-emerald-100/50 dark:hover:bg-emerald-950/30";
+    const isActive = playResult === resId;
+    const item = results.find(r => r.id === resId);
+    
+    if (isActive) {
+      if (resId === "HR") return "bg-primary border-primary text-primary-foreground shadow-sm";
+      if (item?.type === "hit") return "bg-emerald-600 border-emerald-600 text-white shadow-sm";
+      if (item?.type === "error" || resId === "DP" || resId.startsWith("SO_")) return "bg-rose-600 border-rose-600 text-white shadow-sm";
+      return "bg-zinc-800 border-zinc-800 dark:bg-zinc-200 dark:border-zinc-200 text-white dark:text-zinc-950 shadow-sm";
     }
-    if (resId === 'HR') {
-      return isActive
-        ? "bg-primary border-primary text-primary-foreground"
-        : "bg-primary/5 dark:bg-primary/10 border border-primary/10 dark:border-primary/20 text-primary hover:bg-primary/10 dark:hover:bg-primary/20";
-    }
-    if (resId === 'E') {
-      return isActive
-        ? "bg-rose-500 border-rose-500 text-white"
-        : "bg-rose-50/50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-400 hover:bg-rose-100/50 dark:hover:bg-rose-950/30";
-    }
-    return isActive
-      ? "bg-zinc-200 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-950 dark:text-white"
-      : "bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800";
+    
+    return cn(
+      "bg-zinc-50 border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800",
+      item?.color
+    );
   };
 
   if (!open || !mounted) return null;
 
   return createPortal(
     <div className="fixed inset-0 bg-black/60 dark:bg-black/80 flex items-center justify-center p-4 z-[200] animate-in fade-in duration-200">
-      <div className="bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl w-full max-w-[440px] overflow-hidden shadow-[0_10px_50px_rgba(0,0,0,0.1)] dark:shadow-[0_10px_50px_rgba(0,0,0,0.5)] flex flex-col max-h-[95vh]">
+      <div className="bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl w-full max-w-[450px] overflow-hidden shadow-[0_10px_50px_rgba(0,0,0,0.1)] dark:shadow-[0_10px_50px_rgba(0,0,0,0.5)] flex flex-col max-h-[95vh]">
         
         {/* モーダルヘッダー */}
         <div className="bg-zinc-50 dark:bg-zinc-900 px-5 py-3.5 flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800">
           <div>
-            <span className="text-[10px] font-black text-primary uppercase tracking-widest">In Play Record</span>
+            <span className="text-[10px] font-black text-primary uppercase tracking-widest">Batter & Play Action</span>
             <h3 className="text-sm font-black text-zinc-900 dark:text-white mt-0.5">
-              打球・安打結果記録
+              打撃・インプレイ結果の記録
             </h3>
           </div>
           <button
@@ -269,13 +335,13 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
           </button>
         </div>
 
-        {/* コンテンツエリア (究極の操作性を求めた並び順: 結果 -> 走者 -> グラフィック -> オプション) */}
+        {/* コンテンツエリア (統一レイアウト: タイトル -> フラット全体枠) */}
         <div className="p-4 overflow-y-auto space-y-5 flex-1">
           
-          {/* 1. 結果種別の選択 */}
+          {/* ① 結果種別の選択 */}
           <div className="space-y-1.5">
             <label className="text-[10px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest px-1">
-              ① 安打・エラー結果（起点）
+              ① 打撃結果・アウト種別（起点）
             </label>
             <div className="p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/30">
               <div className="grid grid-cols-3 gap-2">
@@ -283,9 +349,14 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
                   <button
                     key={res.id}
                     type="button"
-                    onClick={() => handleHitTypeSelect(res.id)}
+                    onClick={() => {
+                      setPlayResult(res.id);
+                      if (res.id !== "FO" && res.id !== "LO") {
+                        setIsFoul(false);
+                      }
+                    }}
                     className={cn(
-                      "h-10 rounded-xl border font-black text-[11px] tracking-tight transition-all active:scale-95 cursor-pointer flex items-center justify-center",
+                      "h-10 rounded-xl border font-black text-[11px] tracking-tight transition-all active:scale-95 cursor-pointer flex items-center justify-center text-center leading-tight p-1",
                       getResultStyle(res.id)
                     )}
                   >
@@ -296,23 +367,23 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
             </div>
           </div>
 
-          {/* 2. 走者状況・進退設定 */}
+          {/* ② 走者状況・進退設定 */}
           <div className="space-y-1.5">
             <label className="text-[10px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest px-1">
               ② 走者状況・進退設定
             </label>
             <div className="p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/30">
-              {!state.runners.base1 && !state.runners.base2 && !state.runners.base3 ? (
+              {!runners.base1 && !runners.base2 && !runners.base3 ? (
                 <div className="text-center py-2 text-xs font-bold text-zinc-400 dark:text-zinc-500">
                   走者なし
                 </div>
               ) : (
                 <div className="flex flex-col gap-3 mt-1">
                   {/* 3塁走者 */}
-                  {state.runners.base3 && (
+                  {runners.base3 && (
                     <div className="flex flex-col gap-1.5 border-b border-zinc-100 dark:border-zinc-800/80 pb-2.5 last:border-0 last:pb-0">
                       <div className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex justify-between">
-                        <span>3塁走者: {getPlayerName(state.runners.base3)}</span>
+                        <span>3塁走者: {getPlayerName(runners.base3)}</span>
                       </div>
                       <div className="grid grid-cols-3 gap-1">
                         <button
@@ -363,10 +434,10 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
                   )}
 
                   {/* 2塁走者 */}
-                  {state.runners.base2 && (
+                  {runners.base2 && (
                     <div className="flex flex-col gap-1.5 border-b border-zinc-100 dark:border-zinc-800/80 pb-2.5 last:border-0 last:pb-0">
                       <div className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex justify-between">
-                        <span>2塁走者: {getPlayerName(state.runners.base2)}</span>
+                        <span>2塁走者: {getPlayerName(runners.base2)}</span>
                       </div>
                       <div className="grid grid-cols-4 gap-1">
                         <button
@@ -429,10 +500,10 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
                   )}
 
                   {/* 1塁走者 */}
-                  {state.runners.base1 && (
+                  {runners.base1 && (
                     <div className="flex flex-col gap-1.5 border-b border-zinc-100 dark:border-zinc-800/80 pb-2.5 last:border-0 last:pb-0">
                       <div className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex justify-between">
-                        <span>1塁走者: {getPlayerName(state.runners.base1)}</span>
+                        <span>1塁走者: {getPlayerName(runners.base1)}</span>
                       </div>
                       <div className="grid grid-cols-5 gap-1">
                         <button
@@ -508,7 +579,7 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
                   
                   {/* 打者走者 */}
                   <div className="flex flex-col gap-1.5 pt-1">
-                    <div className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
+                    <div className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex justify-between">
                       <span>打者走者</span>
                     </div>
                     <div className="grid grid-cols-5 gap-1">
@@ -578,43 +649,36 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
                       </button>
                     </div>
                   </div>
-
                 </div>
               )}
             </div>
           </div>
 
-          {/* 3. プレミアムSVG野球場グラフィックUI (順路ガイド線 ＋ タップ順バッジ付き) */}
+          {/* ③ 守備位置をタップ (グラフィック) */}
           <div className="space-y-1.5">
             <label className="text-[10px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest px-1 flex items-center gap-1.5">
               <Target className="h-3.5 w-3.5 text-primary" />
-              ③ 打球の飛んだ方向 / 守備位置をタップ (複数で連携プレー記録)
+              ③ 打球の飛んだ方向 / 守備位置をタップ (複数タップで連携経路)
             </label>
-            
             <div className="p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/30">
               <div className="relative w-full aspect-square border border-zinc-100 dark:border-zinc-800/80 rounded-2xl bg-emerald-50/10 dark:bg-zinc-900/10 overflow-hidden">
                 
-                {/* 美しい野球場グラフィック */}
+                {/* 野球場グラフィック */}
                 <svg viewBox="0 0 200 200" className="absolute inset-0 w-full h-full select-none pointer-events-none">
                   {/* 外野の芝生 */}
                   <path d="M 1,71 A 140,140 0 0,1 199,71 L 100,170 Z" className="fill-emerald-500/15 dark:fill-emerald-950/20 stroke-emerald-500/25 dark:stroke-emerald-800/30 stroke-[1.5]" />
-                  
                   {/* 内野の土・ダイヤモンド */}
                   <path d="M 45,115 A 78,78 0 0,1 155,115 L 100,170 Z" className="fill-amber-500/10 dark:fill-amber-950/20 stroke-amber-500/20 dark:stroke-amber-800/15 stroke-1" />
-                  
                   {/* 内野ダイヤモンド白線 */}
                   <polygon points="100,170 128,142 100,114 72,142" className="fill-none stroke-zinc-300 dark:stroke-zinc-800 stroke-[1.5] stroke-dasharray-[2]" />
-                  
                   {/* マウンド */}
                   <circle cx="100" cy="142" r="5" className="fill-amber-500/5 dark:fill-amber-950/10 stroke-zinc-300 dark:stroke-zinc-700 stroke-[0.5]" />
-                  
                   {/* 各ベース */}
                   <polygon points="100,173 103,170 100,167 97,170" className="fill-white stroke-zinc-400 stroke-[0.5]" />
                   <rect x="125.5" y="139.5" width="5" height="5" transform="rotate(45, 128, 142)" className="fill-white stroke-zinc-400 stroke-[0.5]" />
                   <rect x="97.5" y="111.5" width="5" height="5" transform="rotate(45, 100, 114)" className="fill-white stroke-zinc-400 stroke-[0.5]" />
                   <rect x="69.5" y="139.5" width="5" height="5" transform="rotate(45, 72, 142)" className="fill-white stroke-zinc-400 stroke-[0.5]" />
-                  
-                  {/* 外野フェンスポールへのファウルライン */}
+                  {/* ファウルライン */}
                   <line x1="100" y1="170" x2="1" y2="71" className="stroke-zinc-300 dark:stroke-zinc-800 stroke-[1.5]" />
                   <line x1="100" y1="170" x2="199" y2="71" className="stroke-zinc-300 dark:stroke-zinc-800 stroke-[1.5]" />
 
@@ -634,7 +698,6 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
                 {fieldAreas.map((area) => {
                   const isActive = selectedPosList.includes(area.id);
                   const tapOrderIndex = selectedPosList.indexOf(area.id);
-                  
                   return (
                     <button
                       key={area.id}
@@ -660,7 +723,7 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
                   );
                 })}
 
-                {/* 🎯 最新のタップ位置にキーフレームアニメーション光を描画 */}
+                {/* 🎯 最新のタップ位置に光を描画 */}
                 {selectedPosList.length > 0 && coordinate && (
                   <div
                     style={{ left: `${coordinate.x}%`, top: `${coordinate.y}%` }}
@@ -674,71 +737,111 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
             </div>
           </div>
 
-          {/* 4. 打球の性質と打球コース (オプション) */}
-          <div className="grid grid-cols-2 gap-4">
-            {/* 4.1. 打球性質の選択 */}
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest px-1">
-                ④ 打球性質
-              </label>
-              <div className="p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/30">
-                <div className="grid grid-cols-2 gap-1.5">
-                  {trajectories.map((traj) => {
-                    const isActive = trajectory === traj.id;
-                    return (
-                      <button
-                        key={traj.id}
-                        type="button"
-                        onClick={() => setTrajectory(isActive ? null : traj.id)}
-                        className={cn(
-                          "h-9 rounded-xl border font-black text-[10.5px] tracking-tight transition-all active:scale-95 cursor-pointer flex items-center justify-center",
-                          isActive
-                            ? "bg-zinc-850 dark:bg-zinc-200 border-zinc-850 dark:border-zinc-200 text-white dark:text-zinc-950 shadow-sm"
-                            : "bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                        )}
-                      >
-                        {traj.label}
-                      </button>
-                    );
-                  })}
+          {/* ④ オプション：打球性質＆コース（安打系） or 打球エリア（アウト系） */}
+          {/* 安打・エラー・野選系が選ばれた場合 */}
+          {["1B", "2B", "3B", "HR", "E", "FC"].includes(playResult) && (
+            <div className="grid grid-cols-2 gap-4">
+              {/* 打球性質 */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest px-1">
+                  ④ 打球性質
+                </label>
+                <div className="p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/30">
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {trajectories.map((traj) => {
+                      const isActive = trajectory === traj.id;
+                      return (
+                        <button
+                          key={traj.id}
+                          type="button"
+                          onClick={() => setTrajectory(isActive ? null : traj.id)}
+                          className={cn(
+                            "h-9 rounded-xl border font-black text-[10.5px] tracking-tight transition-all active:scale-95 cursor-pointer flex items-center justify-center",
+                            isActive
+                              ? "bg-zinc-850 dark:bg-zinc-200 border-zinc-850 dark:border-zinc-200 text-white dark:text-zinc-950 shadow-sm"
+                              : "bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                          )}
+                        >
+                          {traj.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* コース */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest px-1">
+                  ⑤ コース
+                </label>
+                <div className="p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/30">
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {courses.map((c) => {
+                      const isActive = course === c.id;
+                      return (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => setCourse(isActive ? null : c.id)}
+                          className={cn(
+                            "h-9 rounded-xl border font-black text-[10.5px] tracking-tight transition-all active:scale-95 cursor-pointer flex items-center justify-center",
+                            isActive
+                              ? "bg-zinc-850 dark:bg-zinc-200 border-zinc-850 dark:border-zinc-200 text-white dark:text-zinc-950 shadow-sm"
+                              : "bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                          )}
+                        >
+                          {c.label}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             </div>
+          )}
 
-            {/* 4.2. 打球コースの選択 */}
-            <div className="space-y-1.5">
+          {/* フライ・ライナーアウト系が選ばれた場合 */}
+          {["FO", "LO"].includes(playResult) && (
+            <div className="space-y-1.5 animate-in slide-in-from-top-2 duration-200">
               <label className="text-[10px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest px-1">
-                ⑤ コース
+                ④ 打球エリア
               </label>
               <div className="p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/30">
-                <div className="grid grid-cols-2 gap-1.5">
-                  {courses.map((c) => {
-                    const isActive = course === c.id;
-                    return (
-                      <button
-                        key={c.id}
-                        type="button"
-                        onClick={() => setCourse(isActive ? null : c.id)}
-                        className={cn(
-                          "h-9 rounded-xl border font-black text-[10.5px] tracking-tight transition-all active:scale-95 cursor-pointer flex items-center justify-center",
-                          isActive
-                            ? "bg-zinc-850 dark:bg-zinc-200 border-zinc-850 dark:border-zinc-200 text-white dark:text-zinc-950 shadow-sm"
-                            : "bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                        )}
-                      >
-                        {c.label}
-                      </button>
-                    );
-                  })}
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsFoul(false)}
+                    className={cn(
+                      "h-9 rounded-xl border font-black text-[11px] tracking-tight transition-all active:scale-95 cursor-pointer flex items-center justify-center",
+                      !isFoul
+                        ? "bg-primary/10 border-primary/20 text-primary"
+                        : "bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                    )}
+                  >
+                    フェアグラウンド
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsFoul(true)}
+                    className={cn(
+                      "h-9 rounded-xl border font-black text-[11px] tracking-tight transition-all active:scale-95 cursor-pointer flex items-center justify-center",
+                      isFoul
+                        ? "bg-rose-600 border-rose-600 text-white shadow-sm"
+                        : "bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                    )}
+                  >
+                    ファウルエリア（邪飛・邪直）
+                  </button>
                 </div>
               </div>
             </div>
-          </div>
+          )}
 
-          {/* 6. 打点手動調整 */}
+          {/* ⑤/⑥ 打点手動調整 */}
           <div className="space-y-1.5">
             <label className="text-[10px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest px-1">
-              ⑥ 打点手動調整
+              {["1B", "2B", "3B", "HR", "E", "FC"].includes(playResult) ? "⑥" : "⑤"} 打点手動調整
             </label>
             <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/30 overflow-hidden">
               <button
@@ -793,7 +896,7 @@ export function FieldModal({ open, onOpenChange, onResult, defaultHitType }: Fie
         <div className="bg-zinc-50 dark:bg-zinc-900 px-5 py-3 border-t border-zinc-100 dark:border-zinc-800">
           <button
             onClick={handleConfirm}
-            disabled={!hitType || (hitType === "FC" && (!!state.runners.base1 || !!state.runners.base2 || !!state.runners.base3) && !outRunnerBase)}
+            disabled={!playResult || (playResult === "FC" && (!!runners.base1 || !!runners.base2 || !!runners.base3) && !outRunnerBase) || (playResult === "DP" && (!!runners.base1 || !!runners.base2 || !!runners.base3) && !outRunnerBase)}
             className="w-full h-11 rounded-xl bg-primary text-primary-foreground font-black text-xs tracking-wide disabled:opacity-50 transition-all active:scale-[0.98] flex items-center justify-center gap-1.5 cursor-pointer"
           >
             <Check className="h-4.5 w-4.5 stroke-[3px]" />
