@@ -28,6 +28,8 @@ export function PlayResultModal({ open, onOpenChange, onResult, defaultHitType }
   const { runners } = state;
 
   const [selectedPosList, setSelectedPosList] = useState<string[]>([]);
+  const [selectedArea, setSelectedArea] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"onbase" | "out">("onbase");
   const [playResult, setPlayResult] = useState<string>("1B"); // デフォルトは単打
   const [course, setCourse] = useState<"front" | "line" | "over" | null>(null);
   const [trajectory, setTrajectory] = useState<"GO" | "FO" | "LO" | "BUNT" | null>(null);
@@ -107,6 +109,7 @@ export function PlayResultModal({ open, onOpenChange, onResult, defaultHitType }
   useEffect(() => {
     if (open) {
       setSelectedPosList([]);
+      setSelectedArea(null);
       setCourse(null);
       setTrajectory(null);
       setCoordinate(null);
@@ -115,6 +118,7 @@ export function PlayResultModal({ open, onOpenChange, onResult, defaultHitType }
       
       const initialType = defaultHitType || "1B";
       setPlayResult(initialType);
+      setActiveTab(["1B", "2B", "3B", "HR", "E", "FC"].includes(initialType) ? "onbase" : "out");
 
       // destinations 初期値セット
       const initialDest: RunnerDestinations = {};
@@ -233,12 +237,18 @@ export function PlayResultModal({ open, onOpenChange, onResult, defaultHitType }
   };
 
   const handlePosTap = (id: string, x: number, y: number) => {
-    setSelectedPosList(prev => {
-      if (prev.includes(id)) {
-        return prev.filter(item => item !== id);
-      }
-      return [...prev, id];
-    });
+    const isRealFielder = ["1", "2", "3", "4", "5", "6", "7", "8", "9"].includes(id);
+
+    if (isRealFielder) {
+      setSelectedPosList(prev => {
+        if (prev.includes(id)) {
+          return prev.filter(item => item !== id);
+        }
+        return [...prev, id];
+      });
+    } else {
+      setSelectedArea(prev => prev === id ? null : id);
+    }
     setCoordinate({ x, y });
   };
 
@@ -248,6 +258,8 @@ export function PlayResultModal({ open, onOpenChange, onResult, defaultHitType }
     const parts: string[] = [];
     if (selectedPosList.length > 0) {
       parts.push(selectedPosList.join(">"));
+    } else if (selectedArea) {
+      parts.push(selectedArea);
     }
     
     const isOut = ["GO", "FO", "LO", "SO_K", "SO_M", "SH", "SF", "DP", "UN"].includes(playResult);
@@ -287,6 +299,7 @@ export function PlayResultModal({ open, onOpenChange, onResult, defaultHitType }
     
     // リセット
     setSelectedPosList([]);
+    setSelectedArea(null);
     setCourse(null);
     setTrajectory(null);
     setCoordinate(null);
@@ -339,30 +352,70 @@ export function PlayResultModal({ open, onOpenChange, onResult, defaultHitType }
         <div className="p-4 overflow-y-auto space-y-5 flex-1">
           
           {/* ① 結果種別の選択 */}
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest px-1">
-              ① 打撃結果・アウト種別（起点）
-            </label>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between px-1">
+              <label className="text-[10px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest">
+                ① 打撃結果・アウト種別（起点）
+              </label>
+              {/* フラットなタブ切り替え */}
+              <div className="flex rounded-lg border border-zinc-200 dark:border-zinc-800 p-0.5 bg-zinc-100 dark:bg-zinc-900 text-[10px] font-black">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab("onbase");
+                    setPlayResult("1B");
+                  }}
+                  className={cn(
+                    "px-3 py-1 rounded-md transition-all cursor-pointer",
+                    activeTab === "onbase"
+                      ? "bg-white dark:bg-zinc-800 text-primary shadow-xs"
+                      : "text-zinc-500 dark:text-zinc-400"
+                  )}
+                >
+                  出塁・安打
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab("out");
+                    setPlayResult("GO");
+                  }}
+                  className={cn(
+                    "px-3 py-1 rounded-md transition-all cursor-pointer",
+                    activeTab === "out"
+                      ? "bg-white dark:bg-zinc-800 text-rose-600 dark:text-rose-400 shadow-xs"
+                      : "text-zinc-500 dark:text-zinc-400"
+                  )}
+                >
+                  アウト・三振
+                </button>
+              </div>
+            </div>
             <div className="p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/30">
-              <div className="grid grid-cols-3 gap-2">
-                {results.map((res) => (
-                  <button
-                    key={res.id}
-                    type="button"
-                    onClick={() => {
-                      setPlayResult(res.id);
-                      if (res.id !== "FO" && res.id !== "LO") {
-                        setIsFoul(false);
-                      }
-                    }}
-                    className={cn(
-                      "h-10 rounded-xl border font-black text-[11px] tracking-tight transition-all active:scale-95 cursor-pointer flex items-center justify-center text-center leading-tight p-1",
-                      getResultStyle(res.id)
-                    )}
-                  >
-                    {res.label}
-                  </button>
-                ))}
+              <div className="grid grid-cols-3 gap-2 animate-in fade-in duration-200">
+                {results
+                  .filter((res) => {
+                    const isOnBase = ["1B", "2B", "3B", "HR", "E", "FC"].includes(res.id);
+                    return activeTab === "onbase" ? isOnBase : !isOnBase;
+                  })
+                  .map((res) => (
+                    <button
+                      key={res.id}
+                      type="button"
+                      onClick={() => {
+                        setPlayResult(res.id);
+                        if (res.id !== "FO" && res.id !== "LO") {
+                          setIsFoul(false);
+                        }
+                      }}
+                      className={cn(
+                        "h-10 rounded-xl border font-black text-[11px] tracking-tight transition-all active:scale-95 cursor-pointer flex items-center justify-center text-center leading-tight p-1",
+                        getResultStyle(res.id)
+                      )}
+                    >
+                      {res.label}
+                    </button>
+                  ))}
               </div>
             </div>
           </div>
@@ -696,7 +749,10 @@ export function PlayResultModal({ open, onOpenChange, onResult, defaultHitType }
 
                 {/* 物理配置された打球エリアバッジボタン */}
                 {fieldAreas.map((area) => {
-                  const isActive = selectedPosList.includes(area.id);
+                  const isRealFielder = ["1", "2", "3", "4", "5", "6", "7", "8", "9"].includes(area.id);
+                  const isActive = isRealFielder
+                    ? selectedPosList.includes(area.id)
+                    : selectedArea === area.id;
                   const tapOrderIndex = selectedPosList.indexOf(area.id);
                   return (
                     <button
@@ -707,14 +763,16 @@ export function PlayResultModal({ open, onOpenChange, onResult, defaultHitType }
                       className={cn(
                         "absolute -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full text-[9.5px] font-black tracking-tighter flex flex-col items-center justify-center shadow-sm select-none transition-all duration-300 active:scale-90 cursor-pointer border",
                         isActive
-                          ? "bg-rose-600 border-rose-600 text-white scale-110 z-30 shadow-md ring-2 ring-rose-500/20"
+                          ? isRealFielder
+                            ? "bg-rose-600 border-rose-600 text-white scale-110 z-30 shadow-md ring-2 ring-rose-500/20"
+                            : "bg-blue-600 border-blue-600 text-white scale-110 z-30 shadow-md ring-2 ring-blue-500/20"
                           : "bg-white/90 border-zinc-200/80 text-zinc-800 hover:bg-zinc-150 hover:border-zinc-300 dark:bg-zinc-950/90 dark:border-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-900"
                       )}
                     >
                       <span>{area.label}</span>
 
-                      {/* 🔴 タップ順序バッジのオーバーレイ */}
-                      {isActive && (
+                      {/* 🔴 タップ順序バッジのオーバーレイ (実在野手のみ) */}
+                      {isRealFielder && isActive && (
                         <span className="absolute -top-1.5 -right-1.5 bg-rose-600 dark:bg-rose-500 text-white text-[8px] font-black w-4.5 h-4.5 rounded-full flex items-center justify-center border border-white dark:border-zinc-950 shadow-sm animate-scale-in">
                           {tapOrderIndex + 1}
                         </span>
@@ -724,7 +782,7 @@ export function PlayResultModal({ open, onOpenChange, onResult, defaultHitType }
                 })}
 
                 {/* 🎯 最新のタップ位置に光を描画 */}
-                {selectedPosList.length > 0 && coordinate && (
+                {(selectedPosList.length > 0 || selectedArea) && coordinate && (
                   <div
                     style={{ left: `${coordinate.x}%`, top: `${coordinate.y}%` }}
                     className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-none z-10 flex items-center justify-center w-8 h-8"
@@ -758,8 +816,8 @@ export function PlayResultModal({ open, onOpenChange, onResult, defaultHitType }
                           className={cn(
                             "h-9 rounded-xl border font-black text-[10.5px] tracking-tight transition-all active:scale-95 cursor-pointer flex items-center justify-center",
                             isActive
-                              ? "bg-zinc-850 dark:bg-zinc-200 border-zinc-850 dark:border-zinc-200 text-white dark:text-zinc-950 shadow-sm"
-                              : "bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                              ? "bg-primary border-primary text-white shadow-sm"
+                              : "bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"
                           )}
                         >
                           {traj.label}
@@ -787,8 +845,8 @@ export function PlayResultModal({ open, onOpenChange, onResult, defaultHitType }
                           className={cn(
                             "h-9 rounded-xl border font-black text-[10.5px] tracking-tight transition-all active:scale-95 cursor-pointer flex items-center justify-center",
                             isActive
-                              ? "bg-zinc-850 dark:bg-zinc-200 border-zinc-850 dark:border-zinc-200 text-white dark:text-zinc-950 shadow-sm"
-                              : "bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                              ? "bg-primary border-primary text-white shadow-sm"
+                              : "bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"
                           )}
                         >
                           {c.label}
@@ -815,8 +873,8 @@ export function PlayResultModal({ open, onOpenChange, onResult, defaultHitType }
                     className={cn(
                       "h-9 rounded-xl border font-black text-[11px] tracking-tight transition-all active:scale-95 cursor-pointer flex items-center justify-center",
                       !isFoul
-                        ? "bg-primary/10 border-primary/20 text-primary"
-                        : "bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                        ? "bg-primary border-primary text-white shadow-sm"
+                        : "bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"
                     )}
                   >
                     フェアグラウンド
@@ -828,7 +886,7 @@ export function PlayResultModal({ open, onOpenChange, onResult, defaultHitType }
                       "h-9 rounded-xl border font-black text-[11px] tracking-tight transition-all active:scale-95 cursor-pointer flex items-center justify-center",
                       isFoul
                         ? "bg-rose-600 border-rose-600 text-white shadow-sm"
-                        : "bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                        : "bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"
                     )}
                   >
                     ファウルエリア（邪飛・邪直）
