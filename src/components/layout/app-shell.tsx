@@ -29,7 +29,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className="relative min-h-screen flex flex-col bg-transparent">
       <Header />
 
-      <main className="flex-1 w-full relative">
+      <main className="flex-1 w-full relative pb-36 md:pb-12">
         {children}
       </main>
 

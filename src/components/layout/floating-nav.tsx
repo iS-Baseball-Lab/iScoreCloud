@@ -11,9 +11,53 @@ import { cn } from "@/lib/utils";
 
 export function FloatingNav() {
   const [isOpen, setIsOpen] = useState(false);
+  const [visible, setVisible] = useState(true);
+  const [prevScrollY, setPrevScrollY] = useState(0);
   const pathname = usePathname();
 
   useEffect(() => setIsOpen(false), [pathname]);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const currentScrollY = window.scrollY;
+
+      // 1. 最上部付近（10px未満）は常に表示
+      if (currentScrollY < 10) {
+        setVisible(true);
+        setPrevScrollY(currentScrollY);
+        return;
+      }
+
+      // 2. メニューが開いているときはスクロールしても隠さない
+      if (isOpen) {
+        setPrevScrollY(currentScrollY);
+        return;
+      }
+
+      // 3. 最下部に到達したときはメニューにアクセスできるよう常に表示
+      const windowHeight = window.innerHeight;
+      const documentHeight = document.documentElement.scrollHeight;
+      if (windowHeight + currentScrollY >= documentHeight - 20) {
+        setVisible(true);
+        setPrevScrollY(currentScrollY);
+        return;
+      }
+
+      // 4. スクロール方向による判定
+      if (currentScrollY > prevScrollY) {
+        // 下スクロール時は非表示（スライドダウン）
+        setVisible(false);
+      } else {
+        // 上スクロール時は表示
+        setVisible(true);
+      }
+
+      setPrevScrollY(currentScrollY);
+    };
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, [prevScrollY, isOpen]);
 
   const menuItems = [
     { icon: Users, label: "TEAM", href: "/team", angle: -165 },
@@ -25,7 +69,19 @@ export function FloatingNav() {
   ];
 
   return (
-    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100]">
+    <motion.div
+      className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100]"
+      animate={{
+        y: visible ? 0 : 150,
+        opacity: visible ? 1 : 0,
+        scale: visible ? 1 : 0.9,
+      }}
+      transition={{
+        type: "spring",
+        stiffness: 260,
+        damping: 25,
+      }}
+    >
       <AnimatePresence>
         {isOpen && (
           <motion.div
@@ -60,10 +116,10 @@ export function FloatingNav() {
               >
                 <Link href={item.href} className="relative flex items-center justify-center active:scale-95 transition-transform">
                   <div className={cn(
-                    "w-16 h-16 rounded-full flex flex-col items-center justify-center gap-1 border-[3px] transition-colors relative z-10",
-                    isActive 
-                      ? "bg-primary border-primary text-primary-foreground shadow-xl shadow-black/20 dark:shadow-black/40" 
-                      : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-xl shadow-black/10"
+                     "w-16 h-16 rounded-full flex flex-col items-center justify-center gap-1 border-[3px] transition-colors relative z-10",
+                     isActive 
+                       ? "bg-primary border-primary text-primary-foreground shadow-xl shadow-black/20 dark:shadow-black/40" 
+                       : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-xl shadow-black/10"
                   )}>
                     <item.icon className="w-6 h-6 stroke-[2.5]" />
                     <span className="text-[8px] font-black uppercase tracking-tighter">{item.label}</span>
@@ -119,6 +175,6 @@ export function FloatingNav() {
           </AnimatePresence>
         </motion.button>
       </div>
-    </div>
+    </motion.div>
   );
 }
