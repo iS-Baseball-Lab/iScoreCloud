@@ -37,6 +37,7 @@ interface Member {
   email?: string;
   memberType: 'staff' | 'parent' | 'other';
   phone?: string;
+  authProviders?: string[];
 }
 
 interface Group {
@@ -267,11 +268,11 @@ export default function TeamRosterAndGroupPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: memberFormName,
-          nameKana: memberFormKana || null,
+          name: memberFormName.trim(),
+          nameKana: memberFormKana.trim() || null,
           memberType: memberFormType,
-          phone: memberFormPhone || null,
-          email: memberFormEmail || null
+          phone: memberFormPhone.trim() || null,
+          email: memberFormEmail.trim() || null
         })
       });
       if (!res.ok) {
@@ -297,11 +298,11 @@ export default function TeamRosterAndGroupPage() {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: memberFormName,
-          nameKana: memberFormKana || null,
+          name: memberFormName.trim(),
+          nameKana: memberFormKana.trim() || null,
           memberType: memberFormType,
-          phone: memberFormPhone || null,
-          email: memberFormEmail || null
+          phone: memberFormPhone.trim() || null,
+          email: memberFormEmail.trim() || null
         })
       });
       if (!res.ok) {
@@ -344,10 +345,16 @@ export default function TeamRosterAndGroupPage() {
     if (!teamId || !linkTarget || !selectedUserId) return;
     setIsSubmitting(true);
     try {
+      const selectedUser = members.find(m => m.userId === selectedUserId);
+      const userEmail = selectedUser?.email || null;
+
       const res = await fetch(`/api/teams/${teamId}/members/${linkTarget.memberId}/info`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: selectedUserId })
+        body: JSON.stringify({ 
+          userId: selectedUserId,
+          email: userEmail
+        })
       });
       if (!res.ok) {
         const err = (await res.json()) as { error?: string };
@@ -873,10 +880,41 @@ export default function TeamRosterAndGroupPage() {
 
                           {/* ユーザー紐付けバッジ */}
                           {m.userId ? (
-                            <span className="text-[8px] font-black px-2 py-0.5 rounded-sm bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center gap-0.5">
-                              <UserCheck className="h-2 w-2" />
-                              紐付け済
-                            </span>
+                            <div className="flex items-center gap-1 flex-wrap">
+                              <span className="text-[8px] font-black px-2 py-0.5 rounded-sm bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center gap-0.5">
+                                <UserCheck className="h-2 w-2" />
+                                紐付け済
+                              </span>
+                              {m.authProviders && m.authProviders.map(prov => {
+                                const p = prov.toLowerCase();
+                                if (p.includes("google")) {
+                                  return (
+                                    <span key={prov} className="text-[8px] font-black px-1.5 py-0.5 rounded-sm bg-red-500/10 text-red-600 dark:text-red-400 border border-red-200/50 dark:border-red-900/30">
+                                      Google
+                                    </span>
+                                  );
+                                }
+                                if (p.includes("line")) {
+                                  return (
+                                    <span key={prov} className="text-[8px] font-black px-1.5 py-0.5 rounded-sm bg-emerald-600/15 text-emerald-600 dark:text-emerald-400 border border-emerald-250/30 dark:border-emerald-900/30">
+                                      LINE
+                                    </span>
+                                  );
+                                }
+                                if (p.includes("microsoft") || p.includes("entra") || p.includes("azure")) {
+                                  return (
+                                    <span key={prov} className="text-[8px] font-black px-1.5 py-0.5 rounded-sm bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-250/30 dark:border-blue-900/30">
+                                      Microsoft
+                                    </span>
+                                  );
+                                }
+                                return (
+                                  <span key={prov} className="text-[8px] font-black px-1.5 py-0.5 rounded-sm bg-zinc-500/10 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-800 uppercase">
+                                    {prov}
+                                  </span>
+                                );
+                              })}
+                            </div>
                           ) : (
                             <span className="text-[8px] font-bold px-2 py-0.5 rounded-sm bg-zinc-100 dark:bg-zinc-800 text-muted-foreground">
                               未紐付け
@@ -1202,8 +1240,17 @@ export default function TeamRosterAndGroupPage() {
               <Input value={memberFormPhone} onChange={e => setMemberFormPhone(e.target.value)} placeholder="例: 090-XXXX-XXXX" className="h-11 rounded-xl" />
             </div>
             <div className="space-y-1">
-              <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">メールアドレス</label>
-              <Input value={memberFormEmail} onChange={e => setMemberFormEmail(e.target.value)} placeholder="例: sato@example.com" type="email" className="h-11 rounded-xl" />
+              <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">
+                メールアドレス {editMemberTarget?.userId && "(アカウント紐付け済のため編集不可)"}
+              </label>
+              <Input 
+                value={memberFormEmail} 
+                onChange={e => setMemberFormEmail(e.target.value)} 
+                placeholder="例: sato@example.com" 
+                type="email" 
+                className="h-11 rounded-xl bg-zinc-50 dark:bg-zinc-900/50" 
+                disabled={!!editMemberTarget?.userId}
+              />
             </div>
 
             <div className="flex gap-3 pt-3">

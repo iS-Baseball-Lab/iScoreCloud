@@ -121,7 +121,7 @@ export const handleGetMembers = async (c: Context) => {
 
       for (const row of accResults) {
         const uid = String((row as any).userId || (row as any).user_id || "");
-        const p = String((row as any).provider || "");
+        const p = String((row as any).providerId || (row as any).provider_id || (row as any).provider || "");
         if (uid && p) {
           if (!providersMap[uid]) providersMap[uid] = [];
           providersMap[uid].push(p);
