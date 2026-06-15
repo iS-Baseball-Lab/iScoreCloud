@@ -27,6 +27,7 @@ import { authClient } from "@/lib/auth-client";
 import { Match } from "@/types/match";
 import { getWindDirectionLabel, getWMOWeatherText, reverseGeocode, type OpenMeteoResponse } from "@/lib/weather";
 import { cn } from "@/lib/utils";
+import { TeamCalendar, CalendarMatch } from "@/components/features/team/TeamCalendar";
 
 interface WeatherData {
   temp: number;
@@ -39,6 +40,8 @@ export default function DashboardPage() {
   const router = useRouter();
   const { currentTeam } = useTeam(); // 💡 Contextから取得
   const [matches, setMatches] = useState<Match[]>([]);
+  const [calendarMatches, setCalendarMatches] = useState<CalendarMatch[]>([]);
+  const [canManage, setCanManage] = useState(false);
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [locationName, setLocationName] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -167,6 +170,25 @@ export default function DashboardPage() {
           if (matchArray.length > 0) {
             const sorted = matchArray.sort((a, b) => b.date.localeCompare(a.date));
             setMatches(sorted);
+          }
+        }
+
+        // カレンダーデータの取得
+        const calendarRes = await fetch(`/api/teams/${teamId}/calendar-matches`);
+        if (calendarRes.ok) {
+          const calendarData = await calendarRes.json() as CalendarMatch[];
+          setCalendarMatches(calendarData);
+        }
+
+        // 管理者権限の判定
+        const teamsRes = await fetch("/api/teams", { cache: "no-store" });
+        if (teamsRes.ok) {
+          const teamsData = await teamsRes.json() as any[];
+          const myTeamInfo = teamsData.find(t => t.id === teamId);
+          if (myTeamInfo) {
+            const userRole = myTeamInfo.myRole ? String(myTeamInfo.myRole).toUpperCase() : "";
+            const isFounder = myTeamInfo.isFounder === true || myTeamInfo.isFounder === 1;
+            setCanManage((userRole === 'ADMIN' || userRole === 'MANAGER' || isFounder) === true);
           }
         }
       } catch (error) {
@@ -413,6 +435,15 @@ export default function DashboardPage() {
               Total: {stats.total} Matches Played
             </p>
           </div>
+        </section>
+
+        {/* --- 4.5. 試合カレンダー (CALENDAR) --- */}
+        <section className="space-y-6">
+          <TeamCalendar 
+            matches={calendarMatches} 
+            canManage={canManage} 
+            teamId={currentTeam?.id || ""} 
+          />
         </section>
 
         {/* --- 5. 試合予定 (UPCOMING MATCHES) --- */}
