@@ -1,7 +1,7 @@
 // filepath: src/api/attendance/update-attendance.ts
 /* 💡 iScoreCloud 規約: 
-   1. 統一されたDBアクセス: drizzle(c.env.DB) を使用し、プロジェクト全体の記法を統一。
-   2. 現場至上主義: 選手・スタッフ・車出し情報を1つのトランザクションで確実に更新。 */
+   1. 統一されたDBアクセス: drizzle(c.env.DB) を使用。
+   2. 選手(playerId)またはスタッフ等のメンバー(memberId)に応じた動的な衝突判定を Upsert (onConflictDoUpdate) で実現。 */
 
 import { Hono } from 'hono';
 import { drizzle } from 'drizzle-orm/d1';
@@ -14,14 +14,14 @@ const app = new Hono<{ Bindings: WorkerEnv }>();
  * 📋 出欠情報 登録・更新ハンドラ
  */
 app.post('/update', async (c) => {
-  // 1. インスタンス生成を update-score.ts のスタイルに統一
   const db = drizzle(c.env.DB);
 
   try {
-    // 2. リクエストボディの取得
     const body = await c.req.json();
     const {
       eventId,
+      playerId,
+      memberId,
       userId,
       status,
       roleInEvent,
@@ -29,36 +29,71 @@ app.post('/update', async (c) => {
       comment
     } = body;
 
-    // 3. バリデーション
-    if (!eventId || !userId) {
-      return c.json({ success: false, error: "イベントIDまたはユーザーIDが不足しています。" }, 400);
+    // 💡 バリデーション: eventId と (playerId または memberId) が必要
+    if (!eventId || (!playerId && !memberId)) {
+      return c.json({ success: false, error: "イベントID、および選手IDまたはメンバーIDが不足しています。" }, 400);
     }
 
-    // 4. D1 データベースへの Upsert (挿入または更新)
-    // update-score.ts と同様のメソッドチェーンスタイル
-    const result = await db.insert(attendances)
-      .values({
-        eventId,
-        userId,
-        status,
-        roleInEvent: roleInEvent || 'player',
-        hasCar: !!hasCar,
-        comment: comment || '',
-        updatedAt: new Date(),
-      })
-      .onConflictDoUpdate({
-        target: [attendances.eventId, attendances.userId],
-        set: {
-          status,
+    const attendanceId = `attend_${crypto.randomUUID().replace(/-/g, '')}`;
+    let result;
+
+    // 💡 1. 選手(playerId)に対する出欠登録・更新
+    if (playerId) {
+      result = await db.insert(attendances)
+        .values({
+          id: attendanceId,
+          eventId,
+          playerId,
+          memberId: null,
+          userId: userId || null,
+          status: status || 'pending',
           roleInEvent: roleInEvent || 'player',
           hasCar: !!hasCar,
           comment: comment || '',
           updatedAt: new Date(),
-        }
-      })
-      .returning();
+        })
+        .onConflictDoUpdate({
+          target: [attendances.eventId, attendances.playerId],
+          set: {
+            userId: userId || null,
+            status: status || 'pending',
+            roleInEvent: roleInEvent || 'player',
+            hasCar: !!hasCar,
+            comment: comment || '',
+            updatedAt: new Date(),
+          }
+        })
+        .returning();
+    } 
+    // 💡 2. その他指導者・保護者メンバー(memberId)に対する出欠登録・更新
+    else {
+      result = await db.insert(attendances)
+        .values({
+          id: attendanceId,
+          eventId,
+          playerId: null,
+          memberId,
+          userId: userId || null,
+          status: status || 'pending',
+          roleInEvent: roleInEvent || 'player',
+          hasCar: !!hasCar,
+          comment: comment || '',
+          updatedAt: new Date(),
+        })
+        .onConflictDoUpdate({
+          target: [attendances.eventId, attendances.memberId],
+          set: {
+            userId: userId || null,
+            status: status || 'pending',
+            roleInEvent: roleInEvent || 'player',
+            hasCar: !!hasCar,
+            comment: comment || '',
+            updatedAt: new Date(),
+          }
+        })
+        .returning();
+    }
 
-    // 5. 成功レスポンス
     return c.json({
       success: true,
       data: result[0]
