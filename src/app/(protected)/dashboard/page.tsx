@@ -265,50 +265,54 @@ export default function DashboardPage() {
         
       </section>
 
-        {/* 現在地表示 */}
-        <div className="flex justify-center px-1 relative max-w-sm mx-auto">
-          <div className="flex items-center gap-2 py-3.5 px-10 rounded-3xl bg-primary/10 border border-primary/20 text-primary shadow-sm transition-all cursor-default w-full justify-center">
-            <MapPin className="h-4 w-4 animate-pulse" />
-            <span className="text-sm sm:text-base font-black tracking-tight">
-              現在地：{locationName || (isWeatherLoading ? "取得中..." : "未取得")}
-            </span>
+        {/* --- 2. 環境ステータスボード (統合ウィジェット) --- */}
+        <section className="bg-card dark:bg-zinc-900 border border-border/40 shadow-sm rounded-3xl p-6 sm:p-8 space-y-6">
+          {/* 上部ヘッダー：現在地と手動更新ボタン */}
+          <div className="flex items-center justify-between pb-4 border-b border-border/40">
+            <div className="flex items-center gap-2 text-primary">
+              <MapPin className={cn("h-4 w-4", isWeatherLoading && "animate-pulse")} />
+              <span className="text-xs sm:text-sm font-black tracking-tight">
+                現在地：{locationName || (isWeatherLoading ? "位置情報を取得中..." : "未取得")}
+              </span>
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => refreshWeather(true)}
+              disabled={isWeatherLoading}
+              className="h-8 w-8 rounded-full hover:bg-primary/10 text-primary shrink-0"
+              title="天気と位置情報を手動更新"
+            >
+              <RefreshCw className={cn("h-3.5 w-3.5", isWeatherLoading && "animate-spin")} />
+            </Button>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => refreshWeather(true)}
-            disabled={isWeatherLoading}
-            className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full hover:bg-primary/20 text-primary"
-            title="天気と位置情報を手動更新"
-          >
-            <RefreshCw className={cn("h-4 w-4", isWeatherLoading && "animate-spin")} />
-          </Button>
-        </div>
 
-        {/* --- 2. 環境ウィジェット --- */}
-        <section className="bg-card dark:bg-zinc-900 border border-border/40 shadow-sm rounded-3xl p-6 sm:p-8">
-          <div className="grid grid-cols-2 sm:flex sm:items-center sm:justify-between gap-6 sm:gap-8 text-center sm:text-left">
-            <div className="flex items-center gap-3">
+          {/* メイングリッド：時間・天気・風向・風速 */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 sm:gap-8 text-center sm:text-left">
+            {/* 時間 */}
+            <div className="flex items-center gap-3 justify-center sm:justify-start">
               <div className="p-2 sm:p-2.5 bg-primary/10 rounded-xl text-primary shrink-0"><Clock className="h-5 w-5 sm:h-6 sm:w-6" /></div>
               <div>
-                <p className="text-[bg-card dark:] font-bold text-muted-foreground uppercase">{dateString}</p>
-                <p className="text-base sm:text-xl font-black text-foreground tabular-nums leading-none mt-1.5">{timeString}</p>
+                <p className="text-[10px] font-bold text-muted-foreground uppercase">{dateString}</p>
+                <p className="text-base sm:text-lg font-black text-foreground tabular-nums leading-none mt-1">{timeString}</p>
               </div>
             </div>
-            <div className="hidden sm:block h-10 w-px bg-border/50" />
-            <div className="flex items-center gap-3">
+            
+            {/* 天気 */}
+            <div className="flex items-center gap-3 justify-center sm:justify-start">
               <div className="p-2 sm:p-2.5 bg-amber-500/10 rounded-xl text-amber-500 shrink-0"><CloudSun className="h-5 w-5 sm:h-6 sm:w-6" /></div>
               <div>
                 <p className="text-[10px] font-bold text-muted-foreground uppercase">Weather</p>
-                <p className="text-sm sm:text-lg font-black text-foreground leading-none mt-1.5">
+                <p className="text-sm sm:text-base font-black text-foreground leading-none mt-1">
                   {weather ? (
                     <>{getWMOWeatherText(weather.weatherCode)} <span className="text-muted-foreground text-xs ml-0.5">{weather.temp}°C</span></>
                   ) : "---"}
                 </p>
               </div>
             </div>
-            <div className="hidden sm:block h-10 w-px bg-border/50" />
-            <div className="flex items-center gap-3">
+
+            {/* 風向 */}
+            <div className="flex items-center gap-3 justify-center sm:justify-start">
               <div className="p-2 sm:p-2.5 bg-blue-500/10 rounded-xl text-blue-500 shrink-0">
                 <Navigation
                   className="h-5 w-5 sm:h-6 sm:w-6 transition-transform duration-700"
@@ -317,17 +321,18 @@ export default function DashboardPage() {
               </div>
               <div>
                 <p className="text-[10px] font-bold text-muted-foreground uppercase">Wind Dir</p>
-                <p className="text-sm sm:text-lg font-black text-foreground leading-none mt-1.5">
+                <p className="text-sm sm:text-base font-black text-foreground leading-none mt-1">
                   {weather ? getWindDirectionLabel(weather.windDir) : "---"}
                 </p>
               </div>
             </div>
-            <div className="hidden sm:block h-10 w-px bg-border/50" />
-            <div className="flex items-center gap-3">
+
+            {/* 風速 */}
+            <div className="flex items-center gap-3 justify-center sm:justify-start">
               <div className="p-2 sm:p-2.5 bg-teal-500/10 rounded-xl text-teal-500 shrink-0"><Wind className="h-5 w-5 sm:h-6 sm:w-6" /></div>
               <div>
                 <p className="text-[10px] font-bold text-muted-foreground uppercase">Wind Spd</p>
-                <p className="text-sm sm:text-lg font-black text-foreground leading-none mt-1.5 tabular-nums">
+                <p className="text-sm sm:text-base font-black text-foreground leading-none mt-1 tabular-nums">
                   {weather ? weather.windSpd : "--"} <span className="text-muted-foreground text-xs font-bold">m/s</span>
                 </p>
               </div>
@@ -439,6 +444,7 @@ export default function DashboardPage() {
 
         {/* --- 4.5. 試合カレンダー (CALENDAR) --- */}
         <section className="space-y-6">
+          <SectionHeader title="チームスケジュール" subtitle="Team Schedule" showPulse />
           <TeamCalendar 
             matches={calendarMatches} 
             canManage={canManage} 
