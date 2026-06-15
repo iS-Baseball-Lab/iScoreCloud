@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { TeamCalendar, CalendarMatch } from "@/components/features/team/TeamCalendar";
 
 interface Team {
   id: string;
@@ -91,6 +92,7 @@ export default function TeamProfilePage() {
     overall: initialMatchStats, official: initialMatchStats, practice: initialMatchStats,
     avgRuns: 0, teamAvg: ".000", teamHR: "0"
   });
+  const [calendarMatches, setCalendarMatches] = useState<CalendarMatch[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   // ━━ チーム編集モーダルの状態 ━━
@@ -204,6 +206,12 @@ export default function TeamProfilePage() {
             avgRuns: overall.totalGames > 0 ? Number((totalRuns / overall.totalGames).toFixed(1)) : 0,
             teamAvg, teamHR
           });
+
+          const calendarRes = await fetch(`/api/teams/${activeTeamId}/calendar-matches`, { cache: "no-store" });
+          if (calendarRes.ok) {
+            const calendarData = await calendarRes.json() as CalendarMatch[];
+            setCalendarMatches(calendarData);
+          }
         }
       } catch (error) {
         toast.error("データの読み込みに失敗しました");
@@ -350,6 +358,13 @@ export default function TeamProfilePage() {
                 </div>
               </div>
             </div>
+
+            {/* 📅 チームスケジュールカレンダー */}
+            <TeamCalendar 
+              matches={calendarMatches} 
+              canManage={canManage} 
+              teamId={team.id} 
+            />
           </div>
 
           <div className="lg:col-span-5 space-y-6">

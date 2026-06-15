@@ -95,4 +95,24 @@ app.get('/:id/all-matches', async (c) => {
   }
 });
 
+// チームの全試合予定と結果を取得するAPI（カレンダー用）
+app.get('/:id/calendar-matches', async (c) => {
+  const teamId = c.req.param('id');
+  try {
+    const { results } = await c.env.DB.prepare(`
+      SELECT m.id, m.date, m.opponent, m.my_score as myScore, m.opponent_score as opponentScore, 
+             m.match_type as matchType, m.status, m.batting_order as battingOrder,
+             v.name as venueName
+      FROM matches m
+      LEFT JOIN venues v ON m.venue_id = v.id
+      WHERE m.team_id = ?
+      ORDER BY m.date ASC, m.created_at ASC
+    `).bind(teamId).all();
+
+    return c.json(results);
+  } catch (e: any) {
+    return c.json({ error: '試合予定の取得に失敗しました', details: e.message }, 500);
+  }
+});
+
 export default app;
