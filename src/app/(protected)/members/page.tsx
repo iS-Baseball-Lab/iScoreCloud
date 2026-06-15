@@ -1,4 +1,4 @@
-// filepath: src/app/(protected)/players/page.tsx
+// filepath: src/app/(protected)/members/page.tsx
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Select } from "@/components/ui/select";
 import { 
   Search, UserPlus, Loader2, UserCircle, Users, Settings, Plus, Trash2, Edit2, 
-  ChevronRight, Link, Shield, MessageCircle, Phone, Mail, FolderPlus, UserCheck, Layers
+  ChevronRight, Link, Shield, MessageCircle, Phone, Mail, FolderPlus, UserCheck, Layers, Settings2, RefreshCw, Check, X, Info
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -17,14 +17,18 @@ import { toast } from "sonner";
 import { SectionHeader } from "@/components/layout/SectionHeader";
 import { EmptyState } from "@/components/layout/EmptyState";
 
+// 💡 既存の型定義と共通インポート
 import { Player, PlayerFormData, PosCategory } from "@/types/player";
 import { getCategory } from "@/components/features/players/constants";
 import { PlayerCard } from "@/components/features/players/PlayerCard";
 import { SummaryCard } from "@/components/features/players/SummaryCard";
 import { PlayerForm } from "@/components/features/players/PlayerForm";
 import { cn } from "@/lib/utils";
+import { canManageTeam, resolveRoleLabel, ROLES, type CustomRoleSetting } from "@/lib/roles";
+import { TeamInviteCard } from "@/components/features/teams/team-invite-card";
+import { TeamRoleSettingsModal } from "@/components/features/teams/team-role-settings-modal";
 
-// 💡 新規：スタッフ・保護者、グループ関連のインターフェース
+// 💡 拡張されたメンバー定義
 interface Member {
   memberId: string;
   userId: string | null;
@@ -60,13 +64,16 @@ interface GroupMember {
   uniformNumber: string | null;
 }
 
-export default function TeamRosterAndGroupPage() {
+export default function UnifiedMembersPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<"players" | "staff_parents" | "groups">("players");
   
   // 共通状態
   const [teamId, setTeamId] = useState<string | null>(null);
+  const [myUserId, setMyUserId] = useState("");
+  const [myRole, setMyRole] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -77,9 +84,11 @@ export default function TeamRosterAndGroupPage() {
   const [editPlayerTarget, setEditPlayerTarget] = useState<Player | null>(null);
   const [deletePlayerTarget, setDeletePlayerTarget] = useState<Player | null>(null);
 
-  // ━━ スタッフ・保護者（Members）関連状態 ━━
+  // ━━ メンバー・アカウント関連状態 ━━
   const [members, setMembers] = useState<Member[]>([]);
-  const [memberFilter, setMemberFilter] = useState<"すべて" | "staff" | "parent" | "other">("すべて");
+  const [roleSettings, setRoleSettings] = useState<CustomRoleSetting[]>([]);
+  const [isRoleSettingsOpen, setIsRoleSettingsOpen] = useState(false);
+  const [memberFilter, setMemberFilter] = useState<"すべて" | "staff" | "parent" | "other" | "pending">("すべて");
   const [isAddMemberOpen, setIsAddMemberOpen] = useState(false);
   const [editMemberTarget, setEditMemberTarget] = useState<Member | null>(null);
   const [deleteMemberTarget, setDeleteMemberTarget] = useState<Member | null>(null);
@@ -111,12 +120,13 @@ export default function TeamRosterAndGroupPage() {
   const [editGroupMemberRole, setEditGroupMemberRole] = useState("");
   const [editGroupMemberSystemRole, setEditGroupMemberSystemRole] = useState("");
 
-  // Member 登録フォーム用状態
+  // Member 登録・編集フォーム用状態
   const [memberFormName, setMemberFormName] = useState("");
   const [memberFormKana, setMemberFormKana] = useState("");
   const [memberFormType, setMemberFormType] = useState<'staff' | 'parent' | 'other'>("parent");
   const [memberFormPhone, setMemberFormPhone] = useState("");
   const [memberFormEmail, setMemberFormEmail] = useState("");
+  const [memberFormRole, setMemberFormRole] = useState(""); // システム上の役割 (MANAGER, COACH 等)
 
   // Group フォーム用状態
   const [groupFormName, setGroupFormName] = useState("");
@@ -134,16 +144,24 @@ export default function TeamRosterAndGroupPage() {
     }
   }, []);
 
-  const fetchMembers = useCallback(async (tid: string) => {
+  const fetchMembers = useCallback(async (tid: string, silent = false) => {
+    if (silent) setIsRefreshing(true);
     try {
       const res = await fetch(`/api/teams/${tid}/members`);
       if (!res.ok) throw new Error();
-      const data = (await res.json()) as { success: boolean; members?: Member[] };
+      const data = (await res.json()) as { 
+        success: boolean; 
+        members?: Member[]; 
+        roleSettings?: CustomRoleSetting[];
+      };
       if (data.success) {
         setMembers(data.members || []);
+        if (data.roleSettings) setRoleSettings(data.roleSettings);
       }
     } catch {
-      toast.error("スタッフ・保護者一覧の取得に失敗しました");
+      toast.error("メンバー一覧の取得に失敗しました");
+    } finally {
+      setIsRefreshing(false);
     }
   }, []);
 
@@ -178,8 +196,32 @@ export default function TeamRosterAndGroupPage() {
       return;
     }
     setTeamId(tid);
+
+    const initAuth = async () => {
+      try {
+        const meRes = await fetch("/api/auth/me");
+        const meJson = await meRes.json() as {
+          success: boolean;
+          data: {
+            id: string;
+            memberships: { teamId: string; role: string }[];
+          };
+        };
+        if (meJson.success && meJson.data) {
+          setMyUserId(meJson.data.id);
+          const membership = meJson.data.memberships.find(m => m.teamId === tid);
+          if (membership) setMyRole(membership.role);
+        }
+      } catch (e) {
+        console.warn("Auth check deferred.", e);
+      }
+    };
+
+    initAuth();
     fetchAllData(tid);
   }, [fetchAllData]);
+
+  const canManage = canManageTeam(myRole);
 
   // ━━ 選手 (Player) 操作 ━━
   const handleAddPlayer = async (formData: PlayerFormData) => {
@@ -240,7 +282,7 @@ export default function TeamRosterAndGroupPage() {
     }
   };
 
-  // ━━ スタッフ・保護者 (Member) 操作 ━━
+  // ━━ メンバー (Member / ログインアカウント) 操作 ━━
   const openAddMember = () => {
     setMemberFormName("");
     setMemberFormKana("");
@@ -257,6 +299,7 @@ export default function TeamRosterAndGroupPage() {
     setMemberFormType(m.memberType);
     setMemberFormPhone(m.phone || "");
     setMemberFormEmail(m.email || "");
+    setMemberFormRole(m.role || "");
   };
 
   const handleAddMember = async (e: React.FormEvent) => {
@@ -289,12 +332,14 @@ export default function TeamRosterAndGroupPage() {
     }
   };
 
+  // メンバー編集（およびシステム権限の同時変更処理）
   const handleEditMember = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!teamId || !editMemberTarget || !memberFormName.trim()) return;
     setIsSubmitting(true);
     try {
-      const res = await fetch(`/api/teams/${teamId}/members/${editMemberTarget.memberId}/info`, {
+      // 1. 基本プロファイル情報の更新
+      const resInfo = await fetch(`/api/teams/${teamId}/members/${editMemberTarget.memberId}/info`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -305,10 +350,24 @@ export default function TeamRosterAndGroupPage() {
           email: memberFormEmail.trim() || null
         })
       });
-      if (!res.ok) {
-        const err = (await res.json()) as { error?: string };
-        throw new Error(err.error || "更新に失敗しました");
+      if (!resInfo.ok) {
+        const err = (await resInfo.json()) as { error?: string };
+        throw new Error(err.error || "基本情報の更新に失敗しました");
       }
+
+      // 2. もし紐付け済みアカウントの「システム権限」が変更されていたら、権限更新APIも投げる
+      if (editMemberTarget.userId && memberFormRole && memberFormRole !== editMemberTarget.role) {
+        const resRole = await fetch(`/api/teams/${teamId}/members/${editMemberTarget.memberId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ role: memberFormRole }),
+        });
+        if (!resRole.ok) {
+          const err = (await resRole.json()) as { error?: string };
+          throw new Error(err.error || "システム権限の更新に失敗しました");
+        }
+      }
+
       toast.success(`${memberFormName} 様の情報を更新しました`);
       setEditMemberTarget(null);
       await fetchMembers(teamId);
@@ -319,6 +378,37 @@ export default function TeamRosterAndGroupPage() {
     }
   };
 
+  // 参加申請の承認・拒否
+  const handleAcceptPending = async (memberId: string, accept: boolean) => {
+    if (!teamId) return;
+    setIsSubmitting(true);
+    try {
+      if (accept) {
+        // 承認時はデフォルトの role を 'parent' として承認(active化)
+        const res = await fetch(`/api/teams/${teamId}/members/${memberId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ role: "parent" }),
+        });
+        if (!res.ok) throw new Error();
+        toast.success("申請を承認しました");
+      } else {
+        // 拒否時はメンバーの削除
+        const res = await fetch(`/api/teams/${teamId}/members/${memberId}`, {
+          method: "DELETE"
+        });
+        if (!res.ok) throw new Error();
+        toast.success("申請を却下しました");
+      }
+      await fetchMembers(teamId);
+    } catch {
+      toast.error("申請処理に失敗しました");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // メンバー除名（手動メンバー、ログインメンバー共通）
   const handleDeleteMember = async () => {
     if (!teamId || !deleteMemberTarget) return;
     setIsSubmitting(true);
@@ -328,9 +418,11 @@ export default function TeamRosterAndGroupPage() {
       });
       if (!res.ok) {
         const err = (await res.json()) as { error?: string };
-        throw new Error(err.error || "削除に失敗しました");
+        throw new Error(err.error || "除名に失敗しました");
       }
-      toast.success(`${deleteMemberTarget.name} 様をメンバーから除外しました`);
+      
+      const isRejecting = deleteMemberTarget.status === "pending";
+      toast.success(isRejecting ? "参加申請を却下しました" : `${deleteMemberTarget.name} 様をチームから除外しました`);
       setDeleteMemberTarget(null);
       await fetchMembers(teamId);
     } catch (err: any) {
@@ -558,9 +650,17 @@ export default function TeamRosterAndGroupPage() {
     return matchesSearch && (playerFilter === "すべて" || cat === playerFilter);
   });
 
+  const activeMembers = members.filter(m => m.status === "active");
+  const pendingMembers = members.filter(m => m.status === "pending");
+
   const filteredMembers = members.filter(m => {
     const matchesSearch = m.name.toLowerCase().includes(searchQuery.toLowerCase()) || (m.nameKana && m.nameKana.includes(searchQuery));
-    return matchesSearch && (memberFilter === "すべて" || m.memberType === memberFilter);
+    if (!matchesSearch) return false;
+    
+    if (memberFilter === "pending") return m.status === "pending";
+    if (m.status !== "active") return false; // 承認済みのみ
+    if (memberFilter === "すべて") return true;
+    return m.memberType === memberFilter;
   });
 
   const playerCounts = players.reduce<Record<string, number>>((acc, p) => {
@@ -595,7 +695,7 @@ export default function TeamRosterAndGroupPage() {
                   <span className="text-xs font-black tracking-tight truncate">{g.name}</span>
                 </div>
                 
-                {/* グループホバー時の管理アクション (管理者のみ想定) */}
+                {/* グループホバー時の管理アクション */}
                 <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
                   <button 
                     onClick={(e) => { e.stopPropagation(); openAddGroup(g.id); }}
@@ -655,9 +755,6 @@ export default function TeamRosterAndGroupPage() {
     );
   }
 
-  // アカウント未紐付けのメンバーリスト (紐付け候補)
-  const unlinkedUsers = members.filter(m => m.userId);
-
   return (
     <div className="min-h-screen pb-28 animate-in fade-in duration-400">
       <div className="max-w-2xl mx-auto px-4 pt-6 space-y-6">
@@ -666,11 +763,11 @@ export default function TeamRosterAndGroupPage() {
         <div className="space-y-4">
           <SectionHeader 
             title="チーム名簿・組織管理" 
-            subtitle="ROSTER & GROUPS" 
-            showPulse={true} 
+            subtitle="MEMBERS & ROSTER" 
+            showPulse={pendingMembers.length > 0} 
           />
 
-          {/* 🚀 セグメントタブ (選手 / スタッフ・保護者 / グループ) */}
+          {/* 🚀 セグメントタブ */}
           <div className="grid grid-cols-3 gap-1 p-1 bg-zinc-100 dark:bg-zinc-900 border border-border rounded-xl">
             <button
               onClick={() => { setActiveTab("players"); setSearchQuery(""); }}
@@ -694,7 +791,7 @@ export default function TeamRosterAndGroupPage() {
               )}
             >
               <UserCheck className="h-3.5 w-3.5" />
-              スタッフ・保護者
+              メンバー・権限
             </button>
             <button
               onClick={() => { setActiveTab("groups"); setSearchQuery(""); }}
@@ -777,7 +874,7 @@ export default function TeamRosterAndGroupPage() {
                         uniformNumber: player.uniformNumber
                       });
                       if (player.nameKana) params.append("nameKana", player.nameKana);
-                      router.push(`/players/detail?${params.toString()}`);
+                      router.push(`/members/detail?${params.toString()}`);
                     }} 
                   />
                 ))
@@ -786,38 +883,100 @@ export default function TeamRosterAndGroupPage() {
           </div>
         )}
 
-        {/* ━━━━━━ タブ2: スタッフ・保護者一覧 ━━━━━━ */}
+        {/* ━━━━━━ タブ2: 指導者・スタッフ・保護者（権限管理統合） ━━━━━━ */}
         {activeTab === "staff_parents" && (
           <div className="space-y-6 animate-in fade-in duration-200">
+            
+            {/* 承認待ち申請リストの統合 */}
+            {pendingMembers.length > 0 && (
+              <div className="p-4 rounded-2xl border-2 border-orange-500/30 bg-orange-500/5 space-y-3">
+                <h4 className="text-xs font-black text-orange-600 dark:text-orange-400 flex items-center gap-1.5">
+                  <Info className="h-4 w-4" />
+                  チームへの参加申請が {pendingMembers.length} 件届いています
+                </h4>
+                <div className="space-y-2">
+                  {pendingMembers.map(m => (
+                    <div key={m.memberId} className="flex items-center justify-between p-3 rounded-xl bg-card border border-border shadow-xs">
+                      <div className="min-w-0">
+                        <p className="text-sm font-black text-foreground">{m.name}</p>
+                        <p className="text-[10px] font-bold text-muted-foreground mt-0.5">{m.email || "メールなし"}</p>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {canManage ? (
+                          <>
+                            <Button
+                              onClick={() => handleAcceptPending(m.memberId, true)}
+                              size="sm"
+                              className="h-8 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[11px] gap-1 px-2.5"
+                            >
+                              <Check className="h-3.5 w-3.5" /> 承認
+                            </Button>
+                            <Button
+                              onClick={() => handleAcceptPending(m.memberId, false)}
+                              size="sm"
+                              variant="outline"
+                              className="h-8 rounded-lg border-rose-200 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/20 font-black text-[11px] gap-1 px-2.5"
+                            >
+                              <X className="h-3.5 w-3.5" /> 却下
+                            </Button>
+                          </>
+                        ) : (
+                          <span className="text-[10px] font-bold text-muted-foreground bg-muted px-2 py-1 rounded-sm">申請中</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="flex items-center justify-between bg-card p-3 rounded-[var(--radius-xl)] border border-border shadow-sm">
               <p className="text-sm font-black text-foreground flex items-center gap-1.5">
                 <UserCheck className="h-4 w-4 text-primary" />
-                {members.length}
-                <span className="text-xs font-bold text-muted-foreground">名のスタッフ・保護者</span>
+                {activeMembers.length}
+                <span className="text-xs font-bold text-muted-foreground">名のメンバーが有効中</span>
               </p>
-              <Button 
-                onClick={openAddMember} 
-                size="sm" 
-                className="h-9 px-4 rounded-[var(--radius-lg)] font-black gap-2"
-              >
-                <UserPlus className="h-4 w-4" strokeWidth={2.5} />
-                メンバー追加
-              </Button>
+              
+              <div className="flex items-center gap-2">
+                {canManage && (
+                  <Button
+                    onClick={() => setIsRoleSettingsOpen(true)}
+                    size="sm"
+                    variant="outline"
+                    className="h-9 px-3 rounded-[var(--radius-lg)] font-black gap-1.5 border-border shadow-sm"
+                  >
+                    <Settings2 className="h-4 w-4" />
+                    呼称設定
+                  </Button>
+                )}
+                <Button 
+                  onClick={openAddMember} 
+                  size="sm" 
+                  className="h-9 px-4 rounded-[var(--radius-lg)] font-black gap-2"
+                >
+                  <UserPlus className="h-4 w-4" strokeWidth={2.5} />
+                  メンバー追加
+                </Button>
+              </div>
             </div>
 
+            {/* 招待カード (canManageの場合のみ上部に配置) */}
+            {canManage && <TeamInviteCard inviteCode={teamId} />}
+
             {/* 種別フィルター */}
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-5 gap-1.5">
               {[
                 { key: "すべて", label: "すべて" },
                 { key: "staff", label: "スタッフ" },
                 { key: "parent", label: "保護者" },
-                { key: "other", label: "その他" }
+                { key: "other", label: "その他" },
+                { key: "pending", label: "申請中" }
               ].map(item => (
                 <button
                   key={item.key}
                   onClick={() => setMemberFilter(item.key as any)}
                   className={cn(
-                    "h-10 rounded-xl border text-xs font-black transition-all active:scale-95 cursor-pointer flex flex-col items-center justify-center border-border",
+                    "h-10 rounded-xl border text-[11px] font-black transition-all active:scale-95 cursor-pointer flex flex-col items-center justify-center border-border",
                     memberFilter === item.key
                       ? "bg-primary text-white border-primary shadow-xs"
                       : "bg-card text-muted-foreground hover:bg-zinc-50 dark:hover:bg-zinc-900"
@@ -839,7 +998,7 @@ export default function TeamRosterAndGroupPage() {
               />
             </div>
 
-            {/* スタッフ・保護者リスト */}
+            {/* メンバーリスト */}
             <div className="grid grid-cols-1 gap-3">
               {filteredMembers.length === 0 ? (
                 <EmptyState 
@@ -866,7 +1025,7 @@ export default function TeamRosterAndGroupPage() {
                         </div>
                         
                         <div className="flex items-center gap-2 mt-1 flex-wrap">
-                          {/* 役割バッジ */}
+                          {/* 役割種別バッジ */}
                           <span className={cn(
                             "text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded-sm",
                             m.memberType === 'staff' 
@@ -877,6 +1036,13 @@ export default function TeamRosterAndGroupPage() {
                           )}>
                             {m.memberType === 'staff' ? '指導者・スタッフ' : m.memberType === 'parent' ? '保護者' : 'その他'}
                           </span>
+
+                          {/* チーム内システム権限（カスタム呼称にも対応） */}
+                          {m.userId && (
+                            <span className="text-[8px] font-black px-2 py-0.5 rounded-sm bg-primary/10 text-primary border border-primary/20">
+                              権限: {resolveRoleLabel(m.role, roleSettings)}
+                            </span>
+                          )}
 
                           {/* ユーザー紐付けバッジ */}
                           {m.userId ? (
@@ -889,7 +1055,7 @@ export default function TeamRosterAndGroupPage() {
                                 const p = prov.toLowerCase();
                                 if (p.includes("google")) {
                                   return (
-                                    <span key={prov} className="text-[8px] font-black px-1.5 py-0.5 rounded-sm bg-red-500/10 text-red-600 dark:text-red-400 border border-red-200/50 dark:border-red-900/30">
+                                    <span key={prov} className="text-[8px] font-black px-1.5 py-0.5 rounded-sm bg-red-500/10 text-red-600 dark:text-red-400 border border-red-250/30 dark:border-red-900/30">
                                       Google
                                     </span>
                                   );
@@ -957,9 +1123,11 @@ export default function TeamRosterAndGroupPage() {
                       </Button>
                       <Button 
                         onClick={() => setDeleteMemberTarget(m)} 
+                        disabled={m.userId === myUserId} // 自分自身は除名不可
                         size="icon" 
                         variant="ghost" 
                         className="h-8 w-8 text-zinc-400 hover:text-destructive shrink-0"
+                        title={m.userId === myUserId ? "自身は除名できません" : "除名する"}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
@@ -1168,7 +1336,7 @@ export default function TeamRosterAndGroupPage() {
         </DialogContent>
       </Dialog>
 
-      {/* スタッフ・保護者追加ダイアログ */}
+      {/* メンバー追加ダイアログ */}
       <Dialog open={isAddMemberOpen} onOpenChange={setIsAddMemberOpen}>
         <DialogContent onInteractOutside={(e) => e.preventDefault()} className="rounded-[var(--radius-2xl)] bg-card border-border sm:max-w-md">
           <DialogHeader>
@@ -1193,11 +1361,11 @@ export default function TeamRosterAndGroupPage() {
               </Select>
             </div>
             <div className="space-y-1">
-              <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">電話番号 (連絡用)</label>
+              <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">電話番号 (連絡用/任意)</label>
               <Input value={memberFormPhone} onChange={e => setMemberFormPhone(e.target.value)} placeholder="例: 090-XXXX-XXXX" className="h-11 rounded-xl" />
             </div>
             <div className="space-y-1">
-              <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">メールアドレス</label>
+              <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">メールアドレス (任意)</label>
               <Input value={memberFormEmail} onChange={e => setMemberFormEmail(e.target.value)} placeholder="例: sato@example.com" type="email" className="h-11 rounded-xl" />
             </div>
 
@@ -1211,12 +1379,12 @@ export default function TeamRosterAndGroupPage() {
         </DialogContent>
       </Dialog>
 
-      {/* スタッフ・保護者編集ダイアログ */}
+      {/* メンバー編集ダイアログ (権限変更を統合) */}
       <Dialog open={!!editMemberTarget} onOpenChange={(open) => !open && setEditMemberTarget(null)}>
         <DialogContent onInteractOutside={(e) => e.preventDefault()} className="rounded-[var(--radius-2xl)] bg-card border-border sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="font-black text-xl">登録メンバーの編集</DialogTitle>
-            <DialogDescription className="text-xs font-bold text-muted-foreground">登録内容を修正します。</DialogDescription>
+            <DialogTitle className="font-black text-xl">メンバー情報の編集</DialogTitle>
+            <DialogDescription className="text-xs font-bold text-muted-foreground">登録内容やチーム権限を修正します。</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleEditMember} className="space-y-4 pt-3">
             <div className="space-y-1">
@@ -1235,8 +1403,32 @@ export default function TeamRosterAndGroupPage() {
                 <option value="other">その他メンバー</option>
               </Select>
             </div>
+            
+            {/* 紐付け済みの場合のみシステム権限ロールを編集可能にする */}
+            {editMemberTarget?.userId && (
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">
+                  チーム権限ロール {editMemberTarget.userId === myUserId && "(自身の権限は変更不可)"}
+                </label>
+                <Select 
+                  value={memberFormRole} 
+                  onChange={(e: any) => setMemberFormRole(e.target.value)} 
+                  disabled={editMemberTarget.userId === myUserId || !canManage}
+                  className="h-11 rounded-xl bg-card"
+                >
+                  <option value="manager">{resolveRoleLabel("manager", roleSettings)} (代表・監督)</option>
+                  <option value="coach">{resolveRoleLabel("coach", roleSettings)} (コーチ)</option>
+                  <option value="scorer">{resolveRoleLabel("scorer", roleSettings)} (スコアラー)</option>
+                  <option value="staff">{resolveRoleLabel("staff", roleSettings)} (スタッフ)</option>
+                  <option value="parent">{resolveRoleLabel("parent", roleSettings)} (保護者)</option>
+                  <option value="player">{resolveRoleLabel("player", roleSettings)} (選手)</option>
+                  <option value="viewer">{resolveRoleLabel("viewer", roleSettings)} (閲覧専用)</option>
+                </Select>
+              </div>
+            )}
+
             <div className="space-y-1">
-              <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">電話番号</label>
+              <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">電話番号 (任意)</label>
               <Input value={memberFormPhone} onChange={e => setMemberFormPhone(e.target.value)} placeholder="例: 090-XXXX-XXXX" className="h-11 rounded-xl" />
             </div>
             <div className="space-y-1">
@@ -1263,20 +1455,22 @@ export default function TeamRosterAndGroupPage() {
         </DialogContent>
       </Dialog>
 
-      {/* スタッフ・保護者削除ダイアログ */}
+      {/* メンバー除名・削除確認ダイアログ */}
       <Dialog open={!!deleteMemberTarget} onOpenChange={(open) => !open && setDeleteMemberTarget(null)}>
         <DialogContent onInteractOutside={(e) => e.preventDefault()} className="rounded-[var(--radius-2xl)] bg-card border-border sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="font-black text-xl text-destructive">メンバーの除外</DialogTitle>
+            <DialogTitle className="font-black text-xl text-destructive">
+              {deleteMemberTarget?.status === "pending" ? "参加申請の却下" : "メンバーの除名"}
+            </DialogTitle>
             <DialogDescription className="text-sm font-bold mt-2">
-              本当に <span className="text-foreground">{deleteMemberTarget?.name}</span> 様を名簿から除外してもよろしいですか？<br />
+              本当に <span className="text-foreground">{deleteMemberTarget?.name}</span> 様をチームから除外（却下）してもよろしいですか？<br />
               <span className="text-xs text-muted-foreground">※この操作によってグループ所属なども削除されます。</span>
             </DialogDescription>
           </DialogHeader>
           <div className="flex gap-3 pt-4">
             <Button type="button" variant="outline" onClick={() => setDeleteMemberTarget(null)} className="flex-1 h-12 rounded-[var(--radius-xl)] font-black">キャンセル</Button>
             <Button type="button" variant="destructive" onClick={handleDeleteMember} disabled={isSubmitting} className="flex-1 h-12 rounded-[var(--radius-xl)] font-black">
-              {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "除外する"}
+              {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "除外・却下する"}
             </Button>
           </div>
         </DialogContent>
@@ -1299,7 +1493,6 @@ export default function TeamRosterAndGroupPage() {
               ) : (
                 <Select value={selectedUserId} onChange={(e: any) => setSelectedUserId(e.target.value)} className="h-11 rounded-xl bg-card">
                   <option value="">ユーザーを選択...</option>
-                  {/* すでにチームメンバー(teamMembers)として登録されているログインユーザーの中で、まだ手動作成名簿メンバーに紐付いていないものをリスト */}
                   {members
                     .filter(m => m.userId && m.userId !== linkTarget?.userId)
                     .map(m => (
@@ -1419,7 +1612,6 @@ export default function TeamRosterAndGroupPage() {
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleAddGroupMember} className="space-y-4 pt-3">
-            {/* メンバータイプ選択 (選手 or スタッフ・保護者) */}
             <div className="space-y-1">
               <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">追加対象</label>
               <div className="grid grid-cols-2 gap-2 p-1 bg-zinc-100 dark:bg-zinc-900 border border-border rounded-xl">
@@ -1446,7 +1638,6 @@ export default function TeamRosterAndGroupPage() {
               </div>
             </div>
 
-            {/* メンバー選択セレクト */}
             <div className="space-y-1">
               <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">メンバーの選択</label>
               {selectedAddMemberType === "player" ? (
@@ -1461,12 +1652,12 @@ export default function TeamRosterAndGroupPage() {
                   </Select>
                 )
               ) : (
-                members.length === 0 ? (
+                activeMembers.length === 0 ? (
                   <div className="text-xs text-muted-foreground py-2 text-center">登録されているスタッフ・保護者がいません</div>
                 ) : (
                   <Select value={selectedAddMemberId} onChange={(e: any) => setSelectedAddMemberId(e.target.value)} className="h-11 rounded-xl bg-card">
                     <option value="">スタッフ・保護者を選択...</option>
-                    {members
+                    {activeMembers
                       .map(m => (
                         <option key={m.memberId} value={m.memberId}>
                           {m.name} ({m.memberType === 'staff' ? 'スタッフ' : m.memberType === 'parent' ? '保護者' : 'その他'})
@@ -1478,13 +1669,11 @@ export default function TeamRosterAndGroupPage() {
               )}
             </div>
 
-            {/* グループ内役割入力 */}
             <div className="space-y-1">
               <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">グループ内での役割（任意）</label>
               <Input value={addGroupMemberRole} onChange={e => setAddGroupMemberRole(e.target.value)} placeholder="例: 会長、会計、車当番、カメラ" className="h-11 rounded-xl" />
             </div>
 
-            {/* グループ内システムロール選択 (選手以外のみ) */}
             {selectedAddMemberType === "other" && (
               <div className="space-y-1">
                 <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">割り当てるシステム権限（任意）</label>
@@ -1524,7 +1713,6 @@ export default function TeamRosterAndGroupPage() {
               <Input value={editGroupMemberRole} onChange={e => setEditGroupMemberRole(e.target.value)} placeholder="例: 会長、会計、車当番" className="h-11 rounded-xl" />
             </div>
 
-            {/* システムロール選択 (選手以外のみ) */}
             {editingGroupMember?.type !== "player" && (
               <div className="space-y-1">
                 <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">割り当てるシステム権限（任意）</label>
@@ -1548,6 +1736,17 @@ export default function TeamRosterAndGroupPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* ━━ 役割呼称カスタマイズモーダル ━━ */}
+      {teamId && (
+        <TeamRoleSettingsModal
+          isOpen={isRoleSettingsOpen}
+          onOpenChange={setIsRoleSettingsOpen}
+          teamId={teamId}
+          initialSettings={roleSettings}
+          onSaveSuccess={() => fetchMembers(teamId, true)}
+        />
+      )}
     </div>
   );
 }

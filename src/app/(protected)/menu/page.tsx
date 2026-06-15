@@ -49,7 +49,7 @@ export default function MenuPage() {
       items: [
         { icon: Users, label: "チーム編成", href: "/teams" },
         { icon: Shield, label: "チーム情報", href: "/team" },
-        { icon: Contact, label: "名簿・組織管理", href: "/players" },
+        { icon: Contact, label: "名簿・メンバー管理", href: "/members" },
       ],
     },
     {

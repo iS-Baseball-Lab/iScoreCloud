@@ -441,7 +441,7 @@ function TeamRequestsContent() {
       {/* メンバー管理へのリンク */}
       <Button
         variant="outline"
-        onClick={() => router.push("/settings/team/roles")}
+        onClick={() => router.push("/members")}
         className="w-full rounded-2xl h-11 border-border/50 text-muted-foreground hover:bg-muted font-bold text-sm"
       >
         メンバー一覧を見る →

@@ -19,7 +19,7 @@ import { NavItem } from "@/types/navigation";
 export const MAIN_NAV_ITEMS: NavItem[] = [
   { name: "TEAM HUB", href: "/dashboard", icon: LayoutGrid, show: true, exact: true },
   { name: "チーム", href: "/team", icon: Users, show: true },
-  { name: "名簿・組織管理", href: "/players", icon: Users2, show: true },
+  { name: "名簿・メンバー管理", href: "/members", icon: Users2, show: true },
   { name: "大会マップ", href: "/tournaments/map", icon: Trophy, show: true },
   { name: "試合記録", href: "/matches/history", icon: History, show: true },
 ];

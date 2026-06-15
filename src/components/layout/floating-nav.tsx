@@ -61,7 +61,7 @@ export function FloatingNav() {
 
   const menuItems = [
     { icon: Users, label: "TEAM", href: "/team", angle: -165 },
-    { icon: UserSquare2, label: "MEMBERS", href: "/players", angle: -135 },
+    { icon: UserSquare2, label: "MEMBERS", href: "/members", angle: -135 },
     { icon: CalendarCheck, label: "ATTEND", href: "/attendance", angle: -105 },
     { icon: LayoutDashboard, label: "HOME", href: "/dashboard", angle: -75 },
     { icon: Trophy, label: "EVENT", href: "/tournaments", angle: -45 },
