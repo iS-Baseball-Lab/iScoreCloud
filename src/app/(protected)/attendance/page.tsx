@@ -551,7 +551,7 @@ export default function AttendancePage() {
                 <thead>
                   <tr className="border-b border-border/50 bg-muted/20">
                     {/* 左端：メンバー枠 */}
-                    <th className="p-4 font-black text-xs uppercase tracking-wider text-muted-foreground border-r border-border/40 bg-card sticky left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+                    <th className="p-4 font-black text-xs uppercase tracking-wider text-muted-foreground border-r border-border/40 bg-card sticky w-[45px] left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
                       メンバー ({displayRows.length}名)
                     </th>
                     
@@ -636,7 +636,7 @@ export default function AttendancePage() {
                       <tr key={`${row.type}-${row.id}`} className="hover:bg-muted/10 transition-colors">
                         
                         {/* 左端メンバー名列 */}
-                        <td className="p-4 font-bold text-sm flex items-center gap-2.5 border-r border-border/40 bg-card sticky left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] min-h-[56px]">
+                        <td className="p-4 font-bold text-sm flex items-center gap-2.5 border-r border-border/40 bg-card sticky left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] h-full min-h-[56px]">
                           {row.type === "player" ? (
                             <div className="h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0 font-black text-[10px]">
                               {row.uniformNumber ? `#${row.uniformNumber}` : "選手"}
