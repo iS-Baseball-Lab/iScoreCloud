@@ -336,8 +336,7 @@ export default function AttendancePage() {
 
     if (event.endAt) {
       const endD = new Date(event.endAt);
-      const endTimeStr = endD.toTimeString().split(" ")[0].slice(0, 5);
-      setEventEndVal(endTimeStr);
+      setEventEndVal(endD.toTimeString().split(" ")[0].slice(0, 5));
     } else {
       setEventEndVal("");
     }
@@ -559,7 +558,7 @@ export default function AttendancePage() {
         ) : (
           <div className="bg-card border border-border/40 rounded-3xl overflow-hidden shadow-sm">
             <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-left table-fixed min-w-[460px]">
+              <table className="w-full border-collapse text-left table-fixed min-w-[420px]">
                 <colgroup>
                   {/* メンバー列: スマホ 85px, PC 180px */}
                   <col className="w-[85px] sm:w-[180px]" />
@@ -684,23 +683,44 @@ export default function AttendancePage() {
                                 </p>
                               </div>
                             </div>
-                                >
-                                  {conf.label}
-                                  
-                                  {/* コメントや車のバッジ表示 */}
-                                  {(record?.comment || record?.hasCar) && (
-                                    <span className="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full bg-primary flex items-center justify-center text-[7px] text-primary-foreground border border-background shadow-sm">
-                                      {record.hasCar ? <Car className="h-2 w-2" /> : <MessageSquare className="h-2 w-2" />}
-                                    </span>
-                                  )}
-                                </button>
-                              </div>
-                            </td>
-                          );
-                        })}
+                          </td>
 
-                      </tr>
-                    ))
+                          {/* 各イベントのステータスセル */}
+                          {eventsData.map(e => {
+                            const key = row.type === "player" 
+                              ? `event_${e.id}_player_${row.id}`
+                              : `event_${e.id}_member_${row.id}`;
+                            const record = attendanceMap[key];
+                            const conf = getCellConfig(record?.status || "pending");
+                            
+                            return (
+                              <td key={e.id} className="p-2 border-r border-border/30 text-center">
+                                <div className="flex justify-center">
+                                  <button
+                                    onClick={() => row.canEdit && openAttendEditModal(e, row, record || null)}
+                                    className={cn(
+                                      "relative h-9 w-9 rounded-xl flex items-center justify-center font-black text-xs shadow-sm transition-transform active:scale-90",
+                                      conf.bg,
+                                      !row.canEdit && "cursor-default opacity-60"
+                                    )}
+                                  >
+                                    {conf.label}
+                                    
+                                    {/* コメントや車のバッジ表示 */}
+                                    {(record?.comment || record?.hasCar) && (
+                                      <span className="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full bg-primary flex items-center justify-center text-[7px] text-primary-foreground border border-background shadow-sm">
+                                        {record.hasCar ? <Car className="h-2 w-2" /> : <MessageSquare className="h-2 w-2" />}
+                                      </span>
+                                    )}
+                                  </button>
+                                </div>
+                              </td>
+                            );
+                          })}
+
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
 
