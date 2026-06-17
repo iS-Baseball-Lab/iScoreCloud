@@ -46,7 +46,7 @@ app.post('/:teamId', async (c) => {
 
   try {
     const body = await c.req.json();
-    const { title, startAt, eventType, description, location } = body;
+    const { title, startAt, endAt, eventType, description, location } = body;
 
     if (!title || !startAt) {
       return c.json({ success: false, error: "タイトルと開始日時は必須です。" }, 400);
@@ -60,6 +60,7 @@ app.post('/:teamId', async (c) => {
         teamId,
         title,
         startAt: new Date(startAt),
+        endAt: endAt ? new Date(endAt) : null,
         eventType: eventType || 'practice',
         description: description || '',
         location: location || '',
@@ -87,11 +88,12 @@ app.patch('/:teamId/:eventId', async (c) => {
 
   try {
     const body = await c.req.json();
-    const { title, startAt, eventType, description, location } = body;
+    const { title, startAt, endAt, eventType, description, location } = body;
 
     const updateFields: Partial<typeof events.$inferInsert> = {};
     if (title !== undefined) updateFields.title = title;
     if (startAt !== undefined) updateFields.startAt = new Date(startAt);
+    if (endAt !== undefined) updateFields.endAt = endAt ? new Date(endAt) : null;
     if (eventType !== undefined) updateFields.eventType = eventType;
     if (description !== undefined) updateFields.description = description;
     if (location !== undefined) updateFields.location = location;

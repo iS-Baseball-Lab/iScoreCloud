@@ -127,6 +127,13 @@
       "when": 1781700358395,
       "tag": "0017_quick_vulture",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1781702349984,
+      "tag": "0018_spotty_maverick",
+      "breakpoints": true
     }
   ]
 }

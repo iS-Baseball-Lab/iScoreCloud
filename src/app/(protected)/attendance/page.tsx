@@ -25,6 +25,7 @@ interface Event {
   teamId: string;
   title: string;
   startAt: string | number | Date;
+  endAt?: string | number | Date | null;
   eventType: "match" | "practice" | "meeting";
   description: string | null;
   location: string | null;
@@ -123,6 +124,7 @@ export default function AttendancePage() {
   const [eventTitle, setEventTitle] = useState<string>("");
   const [eventStartAt, setEventStartAt] = useState<string>("");
   const [eventStartVal, setEventStartVal] = useState<string>(""); // 時間用 hh:mm
+  const [eventEndVal, setEventEndVal] = useState<string>(""); // 終了時間用 hh:mm
   const [eventType, setEventType] = useState<"match" | "practice" | "meeting">("practice");
   const [eventLocation, setEventLocation] = useState<string>("");
   const [eventDescription, setEventDescription] = useState<string>("");
@@ -311,6 +313,7 @@ export default function AttendancePage() {
     tomorrow.setDate(tomorrow.getDate() + 1);
     setEventStartAt(tomorrow.toISOString().split("T")[0]);
     setEventStartVal("09:00");
+    setEventEndVal("");
     setEditingEvent(null);
     setIsEventModalOpen(true);
   };
@@ -330,6 +333,15 @@ export default function AttendancePage() {
     
     setEventStartAt(dateStr);
     setEventStartVal(timeStr);
+
+    if (event.endAt) {
+      const endD = new Date(event.endAt);
+      const endTimeStr = endD.toTimeString().split(" ")[0].slice(0, 5);
+      setEventEndVal(endTimeStr);
+    } else {
+      setEventEndVal("");
+    }
+
     setIsEventModalOpen(true);
   };
 
@@ -343,9 +355,11 @@ export default function AttendancePage() {
     setIsSubmitting(true);
     try {
       const combinedDateTime = `${eventStartAt}T${eventStartVal}:00`;
+      const combinedEndDateTime = eventEndVal ? `${eventStartAt}T${eventEndVal}:00` : null;
       const payload = {
         title: eventTitle.trim(),
         startAt: new Date(combinedDateTime).toISOString(),
+        endAt: combinedEndDateTime ? new Date(combinedEndDateTime).toISOString() : null,
         eventType,
         location: eventLocation.trim(),
         description: eventDescription.trim()
@@ -549,9 +563,9 @@ export default function AttendancePage() {
                 <colgroup>
                   {/* メンバー列: スマホ 85px, PC 180px */}
                   <col className="w-[85px] sm:w-[180px]" />
-                  {/* イベント列: 常に 125px */}
+                  {/* イベント列: 常に 110px */}
                   {eventsData.map(e => (
-                    <col key={e.id} className="w-[125px]" />
+                    <col key={e.id} className="w-[110px]" />
                   ))}
                 </colgroup>
                 
@@ -565,7 +579,7 @@ export default function AttendancePage() {
                     
                     {/* 右側：イベント日程列 */}
                     {eventsData.map(e => (
-                      <th key={e.id} className="p-4 border-r border-border/30 w-[140px] text-center align-top relative group">
+                      <th key={e.id} className="p-4 border-r border-border/30 text-center align-top relative group">
                         <div className="space-y-1">
                           
                           {/* 日程種別マーク & 操作ボタンのインライン化 */}
@@ -601,7 +615,7 @@ export default function AttendancePage() {
                           </div>
 
                           {/* タイトルと日付 */}
-                          <h4 className="font-black text-sm text-foreground truncate max-w-[105px] mx-auto" title={e.title}>
+                          <h4 className="font-black text-sm text-foreground truncate max-w-[85px] mx-auto" title={e.title}>
                             {e.title}
                           </h4>
                           <p className="text-[10px] font-extrabold text-muted-foreground uppercase">
@@ -609,11 +623,12 @@ export default function AttendancePage() {
                           </p>
                           <p className="text-[9px] font-bold text-muted-foreground/75 leading-none">
                             {new Date(e.startAt).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}
+                            {e.endAt && `〜${new Date(e.endAt).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}`}
                           </p>
                           
                           {/* 場所情報 */}
                           {e.location && (
-                            <p className="text-[9px] font-bold text-primary truncate max-w-[110px] mx-auto mt-1 flex items-center justify-center gap-0.5">
+                            <p className="text-[9px] font-bold text-primary truncate max-w-[100px] mx-auto mt-1 flex items-center justify-center gap-0.5">
                               <MapPin className="h-2.5 w-2.5 shrink-0" /> {e.location}
                             </p>
                           )}
@@ -642,53 +657,33 @@ export default function AttendancePage() {
                       </td>
                     </tr>
                   ) : (
-                    displayRows.map((row) => (
-                      <tr key={`${row.type}-${row.id}`} className="hover:bg-muted/10 transition-colors">
-                        
-                        {/* 左端メンバー名列 */}
-                        <td className="p-1.5 sm:p-4 font-bold text-sm border-r border-border/40 bg-card sticky left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] h-full overflow-hidden whitespace-nowrap">
-                          <div className="flex items-center gap-1 sm:gap-2.5 w-full overflow-hidden">
-                            {row.type === "player" ? (
-                              <div className="h-8 w-8 rounded-full bg-primary/10 text-primary hidden sm:flex items-center justify-center shrink-0 font-black text-[10px]">
-                                {row.uniformNumber ? `#${row.uniformNumber}` : "選"}
+                    displayRows.map((row, idx) => {
+                      const isEven = idx % 2 === 0;
+                      const rowBgClass = isEven ? "bg-muted/15 dark:bg-muted/5" : "bg-card";
+                      return (
+                        <tr key={`${row.type}-${row.id}`} className={cn("hover:bg-muted/10 transition-colors", rowBgClass)}>
+                          
+                          {/* 左端メンバー名列 */}
+                          <td className={cn("p-1.5 sm:p-4 font-bold text-sm border-r border-border/40 bg-card sticky left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] h-full overflow-hidden whitespace-nowrap", rowBgClass)}>
+                            <div className="flex items-center gap-1 sm:gap-2.5 w-full overflow-hidden">
+                              {row.type === "player" ? (
+                                <div className="h-8 w-8 rounded-full bg-primary/10 text-primary hidden sm:flex items-center justify-center shrink-0 font-black text-[10px]">
+                                  {row.uniformNumber ? `#${row.uniformNumber}` : "選"}
+                                </div>
+                              ) : (
+                                <div className="h-8 w-8 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hidden sm:flex items-center justify-center shrink-0 font-black text-[10px]">
+                                  {row.memberType === "staff" ? "指" : row.memberType === "parent" ? "保" : "他"}
+                                </div>
+                              )}
+                              <div className="min-w-0 flex-1 overflow-hidden">
+                                <p className="truncate text-foreground font-black text-[10px] sm:text-sm block overflow-hidden text-ellipsis whitespace-nowrap" title={row.name}>
+                                  {row.name}
+                                </p>
+                                <p className="text-[8px] sm:text-[9px] text-muted-foreground leading-none font-bold uppercase mt-0.5 hidden sm:block">
+                                  {row.type === "player" ? "PLAYER" : row.memberType === "staff" ? "STAFF" : "PARENT"}
+                                </p>
                               </div>
-                            ) : (
-                              <div className="h-8 w-8 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hidden sm:flex items-center justify-center shrink-0 font-black text-[10px]">
-                                {row.memberType === "staff" ? "指" : row.memberType === "parent" ? "保" : "他"}
-                              </div>
-                            )}
-                            <div className="min-w-0 flex-1 overflow-hidden">
-                              <p className="truncate text-foreground font-black text-[10px] sm:text-sm block overflow-hidden text-ellipsis whitespace-nowrap" title={row.name}>
-                                {row.name}
-                              </p>
-                              <p className="text-[8px] sm:text-[9px] text-muted-foreground leading-none font-bold uppercase mt-0.5 hidden sm:block">
-                                {row.type === "player" ? "PLAYER" : row.memberType === "staff" ? "STAFF" : "PARENT"}
-                              </p>
                             </div>
-                          </div>
-                        </td>
-
-                        {/* 各日程の出欠セル */}
-                        {eventsData.map(e => {
-                          const key = row.type === "player" 
-                            ? `event_${e.id}_player_${row.id}`
-                            : `event_${e.id}_member_${row.id}`;
-                          const record = attendanceMap[key];
-                          const status = record?.status || "pending";
-                          const conf = getCellConfig(status);
-
-                          // 出欠マス
-                          return (
-                            <td key={e.id} className="p-3 border-r border-border/30 text-center">
-                              <div className="flex items-center justify-center">
-                                <button
-                                  onClick={() => openAttendEditModal(e, row, record)}
-                                  disabled={!row.canEdit}
-                                  className={cn(
-                                    "w-10 h-10 rounded-full flex items-center justify-center font-black text-sm relative transition-all shadow-inner select-none cursor-pointer",
-                                    conf.bg,
-                                    row.canEdit ? "hover:scale-105 active:scale-95" : "cursor-default disabled:opacity-100"
-                                  )}
                                 >
                                   {conf.label}
                                   
@@ -738,17 +733,18 @@ export default function AttendancePage() {
                 />
               </div>
 
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">日付 (必須)</label>
+                <Input
+                  type="date"
+                  value={eventStartAt}
+                  onChange={e => setEventStartAt(e.target.value)}
+                  required
+                  className="h-11 rounded-xl font-bold"
+                />
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">日付 (必須)</label>
-                  <Input
-                    type="date"
-                    value={eventStartAt}
-                    onChange={e => setEventStartAt(e.target.value)}
-                    required
-                    className="h-11 rounded-xl font-bold"
-                  />
-                </div>
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">開始時間 (必須)</label>
                   <Input
@@ -756,6 +752,15 @@ export default function AttendancePage() {
                     value={eventStartVal}
                     onChange={e => setEventStartVal(e.target.value)}
                     required
+                    className="h-11 rounded-xl font-bold"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">終了時間 (任意)</label>
+                  <Input
+                    type="time"
+                    value={eventEndVal}
+                    onChange={e => setEventEndVal(e.target.value)}
                     className="h-11 rounded-xl font-bold"
                   />
                 </div>

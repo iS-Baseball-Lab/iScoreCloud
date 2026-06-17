@@ -7,6 +7,7 @@ export const events = sqliteTable("events", {
   teamId: text("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
   startAt: integer("start_at", { mode: "timestamp" }).notNull(),
+  endAt: integer("end_at", { mode: "timestamp" }),
   eventType: text("event_type").$type<"match" | "practice" | "meeting">().default("practice"),
   description: text("description"),
   location: text("location"),
