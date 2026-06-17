@@ -311,7 +311,10 @@ export default function AttendancePage() {
     setEventType("practice");
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
-    setEventStartAt(tomorrow.toISOString().split("T")[0]);
+    const year = tomorrow.getFullYear();
+    const month = String(tomorrow.getMonth() + 1).padStart(2, "0");
+    const day = String(tomorrow.getDate()).padStart(2, "0");
+    setEventStartAt(`${year}-${month}-${day}`);
     setEventStartVal("09:00");
     setEventEndVal("");
     setEditingEvent(null);
@@ -328,7 +331,10 @@ export default function AttendancePage() {
     setEventType(event.eventType);
     
     const d = new Date(event.startAt);
-    const dateStr = d.toISOString().split("T")[0];
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    const dateStr = `${year}-${month}-${day}`;
     const timeStr = d.toTimeString().split(" ")[0].slice(0, 5);
     
     setEventStartAt(dateStr);
@@ -353,12 +359,20 @@ export default function AttendancePage() {
 
     setIsSubmitting(true);
     try {
-      const combinedDateTime = `${eventStartAt}T${eventStartVal}:00`;
-      const combinedEndDateTime = eventEndVal ? `${eventStartAt}T${eventEndVal}:00` : null;
+      const [year, month, day] = eventStartAt.split("-").map(Number);
+      const [hour, minute] = eventStartVal.split(":").map(Number);
+      const startDate = new Date(year, month - 1, day, hour, minute, 0);
+
+      let endDate = null;
+      if (eventEndVal) {
+        const [endHour, endMinute] = eventEndVal.split(":").map(Number);
+        endDate = new Date(year, month - 1, day, endHour, endMinute, 0);
+      }
+
       const payload = {
         title: eventTitle.trim(),
-        startAt: new Date(combinedDateTime).toISOString(),
-        endAt: combinedEndDateTime ? new Date(combinedEndDateTime).toISOString() : null,
+        startAt: startDate.toISOString(),
+        endAt: endDate ? endDate.toISOString() : null,
         eventType,
         location: eventLocation.trim(),
         description: eventDescription.trim()

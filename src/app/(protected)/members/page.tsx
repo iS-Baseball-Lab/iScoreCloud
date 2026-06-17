@@ -1343,7 +1343,7 @@ export default function UnifiedMembersPage() {
                 throws: editPlayerTarget.throws ?? "",
                 bats: editPlayerTarget.bats ?? "",
                 profileImageUrl: editPlayerTarget.profileImageUrl ?? "",
-                joinedAt: editPlayerTarget.joinedAt ? new Date(editPlayerTarget.joinedAt * 1000).toISOString().split('T')[0] : "",
+                joinedAt: editPlayerTarget.joinedAt ? new Date(editPlayerTarget.joinedAt * 1000 - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0] : "",
               }}
               onSubmit={handleEditPlayer} onCancel={() => setEditPlayerTarget(null)} isSubmitting={isSubmitting} submitLabel="更新する"
             />
