@@ -46,7 +46,7 @@ app.post('/:teamId', async (c) => {
 
   try {
     const body = await c.req.json();
-    const { title, startAt, endAt, eventType, description, location } = body;
+    const { title, startAt, endAt, eventType, description, location, dutyGroup } = body;
 
     if (!title || !startAt) {
       return c.json({ success: false, error: "タイトルと開始日時は必須です。" }, 400);
@@ -64,6 +64,7 @@ app.post('/:teamId', async (c) => {
         eventType: eventType || 'practice',
         description: description || '',
         location: location || '',
+        dutyGroup: dutyGroup || null,
       })
       .returning();
 
@@ -88,7 +89,7 @@ app.patch('/:teamId/:eventId', async (c) => {
 
   try {
     const body = await c.req.json();
-    const { title, startAt, endAt, eventType, description, location } = body;
+    const { title, startAt, endAt, eventType, description, location, dutyGroup } = body;
 
     const updateFields: Partial<typeof events.$inferInsert> = {};
     if (title !== undefined) updateFields.title = title;
@@ -97,6 +98,7 @@ app.patch('/:teamId/:eventId', async (c) => {
     if (eventType !== undefined) updateFields.eventType = eventType;
     if (description !== undefined) updateFields.description = description;
     if (location !== undefined) updateFields.location = location;
+    if (dutyGroup !== undefined) updateFields.dutyGroup = dutyGroup;
 
     const result = await db.update(events)
       .set(updateFields)

@@ -29,6 +29,7 @@ interface Event {
   eventType: "match" | "practice" | "meeting";
   description: string | null;
   location: string | null;
+  dutyGroup?: string | null;
 }
 
 interface Player {
@@ -60,7 +61,7 @@ interface AttendanceRecord {
   playerId: string | null;
   memberId: string | null;
   userId: string | null;
-  status: "present" | "absent" | "pending" | "late";
+  status: "present" | "absent" | "pending" | "late" | "partial";
   roleInEvent: string;
   hasCar: boolean;
   comment: string;
@@ -128,9 +129,10 @@ export default function AttendancePage() {
   const [eventType, setEventType] = useState<"match" | "practice" | "meeting">("practice");
   const [eventLocation, setEventLocation] = useState<string>("");
   const [eventDescription, setEventDescription] = useState<string>("");
+  const [eventDutyGroup, setEventDutyGroup] = useState<string>(""); // 当番班
 
   // 出欠入力用フォーム状態
-  const [inputStatus, setInputStatus] = useState<"present" | "absent" | "pending" | "late">("pending");
+  const [inputStatus, setInputStatus] = useState<"present" | "absent" | "pending" | "late" | "partial">("pending");
   const [inputComment, setInputComment] = useState<string>("");
   const [inputHasCar, setInputHasCar] = useState<boolean>(false);
   const [inputRole, setInputRole] = useState<string>("player");
@@ -279,10 +281,10 @@ export default function AttendancePage() {
 
   // 各日程の出欠集計
   const eventSummaries = useMemo(() => {
-    const summaries: Record<string, { present: number; absent: number; late: number; pending: number }> = {};
+    const summaries: Record<string, { present: number; absent: number; late: number; pending: number; partial: number }> = {};
     
     eventsData.forEach(e => {
-      summaries[e.id] = { present: 0, absent: 0, late: 0, pending: 0 };
+      summaries[e.id] = { present: 0, absent: 0, late: 0, pending: 0, partial: 0 };
     });
 
     displayRows.forEach(row => {
@@ -309,6 +311,7 @@ export default function AttendancePage() {
     setEventLocation("");
     setEventDescription("");
     setEventType("practice");
+    setEventDutyGroup("");
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     const year = tomorrow.getFullYear();
@@ -329,6 +332,7 @@ export default function AttendancePage() {
     setEventLocation(event.location || "");
     setEventDescription(event.description || "");
     setEventType(event.eventType);
+    setEventDutyGroup(event.dutyGroup || "");
     
     const d = new Date(event.startAt);
     const year = d.getFullYear();
@@ -375,7 +379,8 @@ export default function AttendancePage() {
         endAt: endDate ? endDate.toISOString() : null,
         eventType,
         location: eventLocation.trim(),
-        description: eventDescription.trim()
+        description: eventDescription.trim(),
+        dutyGroup: eventDutyGroup.trim() || null
       };
 
       const url = eventModalMode === "create" 
@@ -483,7 +488,9 @@ export default function AttendancePage() {
   const getCellConfig = (status: AttendanceRecord["status"] = "pending") => {
     switch (status) {
       case "present":
-        return { label: "○", bg: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20" };
+        return { label: "◎", bg: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20" };
+      case "partial":
+        return { label: "○", bg: "bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20" };
       case "late":
         return { label: "△", bg: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20" };
       case "absent":
@@ -586,19 +593,19 @@ export default function AttendancePage() {
                 <thead>
                   <tr className="border-b border-border/50 bg-muted/20">
                     {/* 左端：メンバー枠 */}
-                    <th className="p-2 sm:p-4 font-black text-[10px] sm:text-xs uppercase tracking-wider text-muted-foreground border-r border-border/40 bg-card sticky left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+                    <th className="p-1 sm:p-2.5 font-black text-[10px] sm:text-xs uppercase tracking-wider text-muted-foreground border-r border-border/40 bg-card sticky left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
                       メンバー
                     </th>
                     
                     {/* 右側：イベント日程列 */}
                     {eventsData.map(e => (
-                      <th key={e.id} className="p-4 border-r border-border/30 text-center align-top relative group">
+                      <th key={e.id} className="p-2.5 border-r border-border/30 text-center align-top relative group">
                         <div className="space-y-1">
                           
                           {/* 日程種別マーク & 操作ボタンのインライン化 */}
-                          <div className="flex items-center justify-between gap-1 mb-1.5">
+                          <div className="flex items-center justify-between gap-1 mb-1">
                             <span className={cn(
-                              "inline-block text-[9px] font-black uppercase px-2 py-0.5 rounded-full border tracking-wider shrink-0",
+                              "inline-block text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full border tracking-wider shrink-0",
                               e.eventType === 'match' ? 'bg-primary/10 text-primary border-primary/20' : 
                               e.eventType === 'meeting' ? 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20' : 
                               'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
@@ -611,27 +618,27 @@ export default function AttendancePage() {
                               <div className="flex items-center gap-0.5 shrink-0 z-20">
                                 <button 
                                   onClick={(event) => openEditEventModal(e, event)}
-                                  className="h-5 w-5 rounded bg-background border border-border shadow-xs hover:bg-muted text-foreground flex items-center justify-center cursor-pointer"
+                                  className="h-4.5 w-4.5 rounded bg-background border border-border shadow-xs hover:bg-muted text-foreground flex items-center justify-center cursor-pointer"
                                   title="編集"
                                 >
-                                  <Edit className="h-2.5 w-2.5" />
+                                  <Edit className="h-2 w-2" />
                                 </button>
                                 <button 
                                   onClick={() => handleDeleteEvent(e.id)}
-                                  className="h-5 w-5 rounded bg-background border border-destructive/20 shadow-xs hover:bg-destructive/5 text-destructive flex items-center justify-center cursor-pointer"
+                                  className="h-4.5 w-4.5 rounded bg-background border border-destructive/20 shadow-xs hover:bg-destructive/5 text-destructive flex items-center justify-center cursor-pointer"
                                   title="削除"
                                 >
-                                  <Trash2 className="h-2.5 w-2.5" />
+                                  <Trash2 className="h-2 w-2" />
                                 </button>
                               </div>
                             )}
                           </div>
 
                           {/* タイトルと日付 */}
-                          <h4 className="font-black text-sm text-foreground truncate max-w-[85px] mx-auto" title={e.title}>
+                          <h4 className="font-black text-xs text-foreground truncate max-w-[85px] mx-auto" title={e.title}>
                             {e.title}
                           </h4>
-                          <p className="text-[10px] font-extrabold text-muted-foreground uppercase">
+                          <p className="text-[9px] font-extrabold text-muted-foreground uppercase">
                             {new Date(e.startAt).toLocaleDateString("ja-JP", { month: "short", day: "numeric", weekday: "short" })}
                           </p>
                           <p className="text-[9px] font-bold text-muted-foreground/75 leading-none">
@@ -639,18 +646,24 @@ export default function AttendancePage() {
                             {e.endAt && `〜${new Date(e.endAt).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}`}
                           </p>
                           
-                          {/* 場所情報 */}
+                          {/* 場所・当番情報 */}
+                          {e.dutyGroup && (
+                            <p className="text-[8px] font-extrabold text-indigo-600 dark:text-indigo-400 bg-indigo-500/10 px-1 py-0.5 rounded-xs inline-block truncate max-w-[100px] mt-0.5">
+                              当番: {e.dutyGroup}
+                            </p>
+                          )}
                           {e.location && (
-                            <p className="text-[9px] font-bold text-primary truncate max-w-[100px] mx-auto mt-1 flex items-center justify-center gap-0.5">
-                              <MapPin className="h-2.5 w-2.5 shrink-0" /> {e.location}
+                            <p className="text-[8px] font-bold text-primary truncate max-w-[100px] mx-auto mt-0.5 flex items-center justify-center gap-0.5">
+                              <MapPin className="h-2 w-2 shrink-0" /> {e.location}
                             </p>
                           )}
 
-                          <Separator className="my-2 opacity-50" />
+                          <Separator className="my-1.5 opacity-50" />
 
                           {/* 集計数 (伝助風) */}
-                          <div className="flex items-center justify-center gap-1.5 text-[9px] font-extrabold tracking-tighter">
-                            <span className="text-emerald-600 dark:text-emerald-400">○{eventSummaries[e.id]?.present || 0}</span>
+                          <div className="flex items-center justify-center gap-1 text-[8px] font-extrabold tracking-tighter">
+                            <span className="text-emerald-600 dark:text-emerald-400">◎{eventSummaries[e.id]?.present || 0}</span>
+                            <span className="text-sky-600 dark:text-sky-400">○{eventSummaries[e.id]?.partial || 0}</span>
                             <span className="text-amber-600 dark:text-amber-400">△{eventSummaries[e.id]?.late || 0}</span>
                             <span className="text-rose-600 dark:text-rose-400">×{eventSummaries[e.id]?.absent || 0}</span>
                           </div>
@@ -672,27 +685,28 @@ export default function AttendancePage() {
                   ) : (
                     displayRows.map((row, idx) => {
                       const isEven = idx % 2 === 0;
-                      const rowBgClass = isEven ? "bg-muted/15 dark:bg-muted/5" : "bg-card";
+                      // 奇数偶数行の背景色（不透明な色を指定して、stickyの背景が透けないようにする）
+                      const rowBgClass = isEven ? "bg-muted" : "bg-card";
                       return (
-                        <tr key={`${row.type}-${row.id}`} className={cn("hover:bg-muted/10 transition-colors", rowBgClass)}>
+                        <tr key={`${row.type}-${row.id}`} className={cn("hover:bg-muted/60 transition-colors", rowBgClass)}>
                           
                           {/* 左端メンバー名列 */}
-                          <td className={cn("p-1.5 sm:p-4 font-bold text-sm border-r border-border/40 bg-card sticky left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] h-full overflow-hidden whitespace-nowrap", rowBgClass)}>
+                          <td className={cn("p-1 sm:p-2.5 font-bold text-xs border-r border-border/40 sticky left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] h-full overflow-hidden whitespace-nowrap", rowBgClass)}>
                             <div className="flex items-center gap-1 sm:gap-2.5 w-full overflow-hidden">
                               {row.type === "player" ? (
-                                <div className="h-8 w-8 rounded-full bg-primary/10 text-primary hidden sm:flex items-center justify-center shrink-0 font-black text-[10px]">
+                                <div className="h-7 w-7 rounded-full bg-primary/10 text-primary hidden sm:flex items-center justify-center shrink-0 font-black text-[9px]">
                                   {row.uniformNumber ? `#${row.uniformNumber}` : "選"}
                                 </div>
                               ) : (
-                                <div className="h-8 w-8 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hidden sm:flex items-center justify-center shrink-0 font-black text-[10px]">
+                                <div className="h-7 w-7 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hidden sm:flex items-center justify-center shrink-0 font-black text-[9px]">
                                   {row.memberType === "staff" ? "指" : row.memberType === "parent" ? "保" : "他"}
                                 </div>
                               )}
                               <div className="min-w-0 flex-1 overflow-hidden">
-                                <p className="truncate text-foreground font-black text-[10px] sm:text-sm block overflow-hidden text-ellipsis whitespace-nowrap" title={row.name}>
+                                <p className="truncate text-foreground font-black text-[10px] sm:text-xs block overflow-hidden text-ellipsis whitespace-nowrap" title={row.name}>
                                   {row.name}
                                 </p>
-                                <p className="text-[8px] sm:text-[9px] text-muted-foreground leading-none font-bold uppercase mt-0.5 hidden sm:block">
+                                <p className="text-[7px] sm:text-[8px] text-muted-foreground leading-none font-bold uppercase mt-0.5 hidden sm:block">
                                   {row.type === "player" ? "PLAYER" : row.memberType === "staff" ? "STAFF" : "PARENT"}
                                 </p>
                               </div>
@@ -708,12 +722,12 @@ export default function AttendancePage() {
                             const conf = getCellConfig(record?.status || "pending");
                             
                             return (
-                              <td key={e.id} className="p-2 border-r border-border/30 text-center">
+                              <td key={e.id} className="p-1 sm:p-1.5 border-r border-border/30 text-center">
                                 <div className="flex justify-center">
                                   <button
                                     onClick={() => row.canEdit && openAttendEditModal(e, row, record || null)}
                                     className={cn(
-                                      "relative h-9 w-9 rounded-xl flex items-center justify-center font-black text-xs shadow-sm transition-transform active:scale-90",
+                                      "relative h-8 w-8 rounded-xl flex items-center justify-center font-black text-xs shadow-sm transition-transform active:scale-90",
                                       conf.bg,
                                       !row.canEdit && "cursor-default opacity-60"
                                     )}
@@ -821,6 +835,16 @@ export default function AttendancePage() {
               </div>
 
               <div className="space-y-1">
+                <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">当番班 (任意)</label>
+                <Input
+                  value={eventDutyGroup}
+                  onChange={e => setEventDutyGroup(e.target.value)}
+                  placeholder="例: A班、お茶当番、グラウンド担当など"
+                  className="h-11 rounded-xl font-bold"
+                />
+              </div>
+
+              <div className="space-y-1">
                 <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">詳細説明</label>
                 <textarea
                   value={eventDescription}
@@ -853,35 +877,45 @@ export default function AttendancePage() {
               <DialogDescription className="text-[10px] font-bold text-muted-foreground leading-snug">
                 {activeCell?.event.title} <br />
                 {activeCell?.event.startAt && new Date(activeCell.event.startAt).toLocaleString("ja-JP", { month: "short", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit" })}
+                {activeCell?.event.dutyGroup && ` | 当番: ${activeCell.event.dutyGroup}`}
               </DialogDescription>
             </DialogHeader>
 
             <div className="space-y-4 pt-2">
               
-              {/* 出欠の三択ボタン */}
-              <div className="grid grid-cols-3 gap-2">
+              {/* 出欠の四択ボタン */}
+              <div className="grid grid-cols-4 gap-1.5">
                 <button
                   onClick={() => setInputStatus("present")}
                   className={cn(
-                    "py-3 px-1 rounded-xl text-xs font-black border transition-all cursor-pointer",
+                    "py-2.5 px-0.5 rounded-xl text-[10px] font-black border transition-all cursor-pointer",
                     inputStatus === "present" ? "bg-emerald-500/10 border-emerald-500 text-emerald-600 dark:text-emerald-400" : "border-border hover:bg-muted"
                   )}
                 >
-                  出席 (○)
+                  出席 (◎)
+                </button>
+                <button
+                  onClick={() => setInputStatus("partial")}
+                  className={cn(
+                    "py-2.5 px-0.5 rounded-xl text-[10px] font-black border transition-all cursor-pointer",
+                    inputStatus === "partial" ? "bg-sky-500/10 border-sky-500 text-sky-600 dark:text-sky-400" : "border-border hover:bg-muted"
+                  )}
+                >
+                  早退遅 (○)
                 </button>
                 <button
                   onClick={() => setInputStatus("late")}
                   className={cn(
-                    "py-3 px-1 rounded-xl text-xs font-black border transition-all cursor-pointer",
+                    "py-2.5 px-0.5 rounded-xl text-[10px] font-black border transition-all cursor-pointer",
                     inputStatus === "late" ? "bg-amber-500/10 border-amber-500 text-amber-600 dark:text-amber-400" : "border-border hover:bg-muted"
                   )}
                 >
-                  遅刻/未定 (△)
+                  未定 (△)
                 </button>
                 <button
                   onClick={() => setInputStatus("absent")}
                   className={cn(
-                    "py-3 px-1 rounded-xl text-xs font-black border transition-all cursor-pointer",
+                    "py-2.5 px-0.5 rounded-xl text-[10px] font-black border transition-all cursor-pointer",
                     inputStatus === "absent" ? "bg-rose-500/10 border-rose-500 text-rose-600 dark:text-rose-400" : "border-border hover:bg-muted"
                   )}
                 >

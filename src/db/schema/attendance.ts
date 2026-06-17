@@ -11,6 +11,7 @@ export const events = sqliteTable("events", {
   eventType: text("event_type").$type<"match" | "practice" | "meeting">().default("practice"),
   description: text("description"),
   location: text("location"),
+  dutyGroup: text("duty_group"), // 当番班
 });
 
 export const attendances = sqliteTable("attendances", {
@@ -19,7 +20,7 @@ export const attendances = sqliteTable("attendances", {
   playerId: text("player_id").references(() => players.id, { onDelete: "cascade" }),
   memberId: text("member_id").references(() => teamMembers.id, { onDelete: "cascade" }),
   userId: text("user_id").references(() => user.id),
-  status: text("status").$type<"present" | "absent" | "pending" | "late">().default("pending"),
+  status: text("status").$type<"present" | "absent" | "pending" | "late" | "partial">().default("pending"),
   roleInEvent: text("role_in_event").default("player"),
   hasCar: integer("has_car", { mode: "boolean" }).default(false),
   comment: text("comment"),

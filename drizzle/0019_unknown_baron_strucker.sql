@@ -1,0 +1,1 @@
+ALTER TABLE `events` ADD `duty_group` text;

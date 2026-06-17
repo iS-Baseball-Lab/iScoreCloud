@@ -134,6 +134,13 @@
       "when": 1781702349984,
       "tag": "0018_spotty_maverick",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1781704146712,
+      "tag": "0019_unknown_baron_strucker",
+      "breakpoints": true
     }
   ]
 }
