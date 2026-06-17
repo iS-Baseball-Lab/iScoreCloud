@@ -855,12 +855,12 @@ export default function AttendancePage() {
                 />
               </div>
 
-              <DialogFooter className="flex gap-3 pt-3 sm:justify-start">
-                <Button type="button" variant="outline" onClick={() => setIsEventModalOpen(false)} className="flex-1 h-12 rounded-xl font-black">
-                  キャンセル
-                </Button>
-                <Button type="submit" disabled={isSubmitting} className="flex-1 h-12 rounded-xl font-black text-white">
+              <DialogFooter className="flex flex-col gap-2 w-full pt-2 sm:flex-col">
+                <Button type="submit" disabled={isSubmitting} className="w-full h-12 rounded-xl font-black text-white text-sm">
                   {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "保存する"}
+                </Button>
+                <Button type="button" variant="outline" onClick={() => setIsEventModalOpen(false)} className="w-full h-12 rounded-xl font-bold text-sm">
+                  キャンセル
                 </Button>
               </DialogFooter>
             </form>
@@ -884,42 +884,46 @@ export default function AttendancePage() {
             <div className="space-y-4 pt-2">
               
               {/* 出欠の四択ボタン */}
-              <div className="grid grid-cols-4 gap-1.5">
+              <div className="grid grid-cols-4 gap-1">
                 <button
                   onClick={() => setInputStatus("present")}
                   className={cn(
-                    "py-2.5 px-0.5 rounded-xl text-[10px] font-black border transition-all cursor-pointer",
+                    "py-2 px-0.5 rounded-xl border transition-all cursor-pointer flex flex-col items-center justify-center min-h-[52px]",
                     inputStatus === "present" ? "bg-emerald-500/10 border-emerald-500 text-emerald-600 dark:text-emerald-400" : "border-border hover:bg-muted"
                   )}
                 >
-                  出席 (◎)
+                  <span className="text-[9px] font-black leading-none">当番参加</span>
+                  <span className="text-sm font-black mt-1">◎</span>
                 </button>
                 <button
                   onClick={() => setInputStatus("partial")}
                   className={cn(
-                    "py-2.5 px-0.5 rounded-xl text-[10px] font-black border transition-all cursor-pointer",
+                    "py-2 px-0.5 rounded-xl border transition-all cursor-pointer flex flex-col items-center justify-center min-h-[52px]",
                     inputStatus === "partial" ? "bg-sky-500/10 border-sky-500 text-sky-600 dark:text-sky-400" : "border-border hover:bg-muted"
                   )}
                 >
-                  早退遅 (○)
+                  <span className="text-[9px] font-black leading-none">参加</span>
+                  <span className="text-sm font-black mt-1">○</span>
                 </button>
                 <button
                   onClick={() => setInputStatus("late")}
                   className={cn(
-                    "py-2.5 px-0.5 rounded-xl text-[10px] font-black border transition-all cursor-pointer",
+                    "py-2 px-0.5 rounded-xl border transition-all cursor-pointer flex flex-col items-center justify-center min-h-[52px]",
                     inputStatus === "late" ? "bg-amber-500/10 border-amber-500 text-amber-600 dark:text-amber-400" : "border-border hover:bg-muted"
                   )}
                 >
-                  未定 (△)
+                  <span className="text-[8px] font-bold leading-none whitespace-nowrap">試合なら</span>
+                  <span className="text-sm font-black mt-1">△</span>
                 </button>
                 <button
                   onClick={() => setInputStatus("absent")}
                   className={cn(
-                    "py-2.5 px-0.5 rounded-xl text-[10px] font-black border transition-all cursor-pointer",
+                    "py-2 px-0.5 rounded-xl border transition-all cursor-pointer flex flex-col items-center justify-center min-h-[52px]",
                     inputStatus === "absent" ? "bg-rose-500/10 border-rose-500 text-rose-600 dark:text-rose-400" : "border-border hover:bg-muted"
                   )}
                 >
-                  欠席 (×)
+                  <span className="text-[9px] font-black leading-none">不参加</span>
+                  <span className="text-sm font-black mt-1">×</span>
                 </button>
               </div>
 
@@ -948,12 +952,12 @@ export default function AttendancePage() {
               </div>
             </div>
 
-            <DialogFooter className="flex gap-2 pt-2 sm:justify-start">
-              <Button type="button" variant="outline" onClick={() => setIsAttendModalOpen(false)} className="flex-1 h-10 rounded-xl font-bold text-xs">
-                キャンセル
-              </Button>
-              <Button onClick={handleSaveAttendance} disabled={isSubmitting} className="flex-1 h-10 rounded-xl font-black text-xs text-white">
+            <DialogFooter className="flex flex-col gap-2 w-full pt-2 sm:flex-col">
+              <Button onClick={handleSaveAttendance} disabled={isSubmitting} className="w-full h-12 rounded-xl font-black text-xs text-white">
                 {isSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "登録する"}
+              </Button>
+              <Button type="button" variant="outline" onClick={() => setIsAttendModalOpen(false)} className="w-full h-12 rounded-xl font-bold text-xs">
+                キャンセル
               </Button>
             </DialogFooter>
           </DialogContent>
