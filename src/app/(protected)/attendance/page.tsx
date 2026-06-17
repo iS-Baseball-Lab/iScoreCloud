@@ -551,7 +551,7 @@ export default function AttendancePage() {
                 <thead>
                   <tr className="border-b border-border/50 bg-muted/20">
                     {/* 左端：メンバー枠 */}
-                    <th className="p-4 font-black text-xs uppercase tracking-wider text-muted-foreground border-r border-border/40 bg-card sticky w-[12px] left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+                    <th className="p-3 sm:p-4 font-black text-[10px] sm:text-xs uppercase tracking-wider text-muted-foreground border-r border-border/40 bg-card sticky left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] min-w-[100px] max-w-[110px] w-[100px] sm:min-w-[180px] sm:w-[180px]">
                       メンバー ({displayRows.length}名)
                     </th>
                     
@@ -599,17 +599,17 @@ export default function AttendancePage() {
 
                           {/* 管理者向け日程編集ボタン */}
                           {canManage && (
-                            <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5">
+                            <div className="absolute top-1 right-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity flex items-center gap-0.5">
                               <button 
                                 onClick={(event) => openEditEventModal(e, event)}
-                                className="h-5 w-5 rounded bg-background border border-border shadow-xs hover:bg-muted text-foreground flex items-center justify-center cursor-pointer"
+                                className="h-5 w-5 rounded bg-background/95 border border-border shadow-xs hover:bg-muted text-foreground flex items-center justify-center cursor-pointer"
                                 title="編集"
                               >
                                 <Edit className="h-2.5 w-2.5" />
                               </button>
                               <button 
                                 onClick={() => handleDeleteEvent(e.id)}
-                                className="h-5 w-5 rounded bg-background border border-destructive/20 shadow-xs hover:bg-destructive/5 text-destructive flex items-center justify-center cursor-pointer"
+                                className="h-5 w-5 rounded bg-background/95 border border-destructive/20 shadow-xs hover:bg-destructive/5 text-destructive flex items-center justify-center cursor-pointer"
                                 title="削除"
                               >
                                 <Trash2 className="h-2.5 w-2.5" />
@@ -636,21 +636,25 @@ export default function AttendancePage() {
                       <tr key={`${row.type}-${row.id}`} className="hover:bg-muted/10 transition-colors">
                         
                         {/* 左端メンバー名列 */}
-                        <td className="p-4 font-bold text-sm flex items-center gap-2.5 border-r border-border/40 bg-card sticky left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] h-full min-h-[56px]">
-                          {row.type === "player" ? (
-                            <div className="h-8 w-4 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0 font-black text-[10px]">
-                              {row.uniformNumber ? `#${row.uniformNumber}` : "選手"}
+                        <td className="p-2 sm:p-4 font-bold text-sm border-r border-border/40 bg-card sticky left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] min-w-[100px] max-w-[110px] w-[100px] sm:min-w-[180px] sm:w-[180px] h-full">
+                          <div className="flex items-center gap-1.5 sm:gap-2.5 w-full">
+                            {row.type === "player" ? (
+                              <div className="h-8 w-8 rounded-full bg-primary/10 text-primary hidden sm:flex items-center justify-center shrink-0 font-black text-[10px]">
+                                {row.uniformNumber ? `#${row.uniformNumber}` : "選"}
+                              </div>
+                            ) : (
+                              <div className="h-8 w-8 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hidden sm:flex items-center justify-center shrink-0 font-black text-[10px]">
+                                {row.memberType === "staff" ? "指" : row.memberType === "parent" ? "保" : "他"}
+                              </div>
+                            )}
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-foreground font-black text-[11px] sm:text-sm block" title={row.name}>
+                                {row.name}
+                              </p>
+                              <p className="text-[8px] sm:text-[9px] text-muted-foreground leading-none font-bold uppercase mt-0.5 block">
+                                {row.type === "player" ? "PLY" : row.memberType === "staff" ? "STF" : "PRT"}
+                              </p>
                             </div>
-                          ) : (
-                            <div className="h-8 w-4 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0 font-black text-[10px]">
-                              {row.memberType === "staff" ? "指" : row.memberType === "parent" ? "保" : "他"}
-                            </div>
-                          )}
-                          <div className="min-w-0">
-                            <p className="truncate text-foreground font-black text-xs sm:text-sm">{row.name}</p>
-                            <p className="text-[9px] text-muted-foreground leading-none font-bold uppercase mt-0.5">
-                              {row.type === "player" ? "PLAYER" : row.memberType === "staff" ? "STAFF" : "PARENT"}
-                            </p>
                           </div>
                         </td>
 
