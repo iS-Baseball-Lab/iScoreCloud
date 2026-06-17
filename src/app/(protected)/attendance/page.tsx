@@ -545,13 +545,21 @@ export default function AttendancePage() {
         ) : (
           <div className="bg-card border border-border/40 rounded-3xl overflow-hidden shadow-sm">
             <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-left table-fixed min-w-[600px]">
+              <table className="w-full border-collapse text-left table-fixed min-w-[460px]">
+                <colgroup>
+                  {/* メンバー列: スマホ 85px, PC 180px */}
+                  <col className="w-[85px] sm:w-[180px]" />
+                  {/* イベント列: 常に 125px */}
+                  {eventsData.map(e => (
+                    <col key={e.id} className="w-[125px]" />
+                  ))}
+                </colgroup>
                 
                 {/* ━ ヘッダー ━ */}
                 <thead>
                   <tr className="border-b border-border/50 bg-muted/20">
                     {/* 左端：メンバー枠 */}
-                    <th className="p-2 sm:p-4 font-black text-[10px] sm:text-xs uppercase tracking-wider text-muted-foreground border-r border-border/40 bg-card sticky left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] min-w-[60px] max-w-[60px] w-[60px] sm:min-w-[180px] sm:max-w-[180px] sm:w-[180px]">
+                    <th className="p-2 sm:p-4 font-black text-[10px] sm:text-xs uppercase tracking-wider text-muted-foreground border-r border-border/40 bg-card sticky left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
                       メンバー
                     </th>
                     
@@ -593,7 +601,7 @@ export default function AttendancePage() {
                           </div>
 
                           {/* タイトルと日付 */}
-                          <h4 className="font-black text-sm text-foreground truncate max-w-[120px] mx-auto" title={e.title}>
+                          <h4 className="font-black text-sm text-foreground truncate max-w-[105px] mx-auto" title={e.title}>
                             {e.title}
                           </h4>
                           <p className="text-[10px] font-extrabold text-muted-foreground uppercase">
@@ -638,7 +646,7 @@ export default function AttendancePage() {
                       <tr key={`${row.type}-${row.id}`} className="hover:bg-muted/10 transition-colors">
                         
                         {/* 左端メンバー名列 */}
-                        <td className="p-1 sm:p-4 font-bold text-sm border-r border-border/40 bg-card sticky left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] min-w-[60px] max-w-[60px] w-[60px] sm:min-w-[180px] sm:max-w-[180px] sm:w-[180px] h-full overflow-hidden whitespace-nowrap">
+                        <td className="p-1.5 sm:p-4 font-bold text-sm border-r border-border/40 bg-card sticky left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] h-full overflow-hidden whitespace-nowrap">
                           <div className="flex items-center gap-1 sm:gap-2.5 w-full overflow-hidden">
                             {row.type === "player" ? (
                               <div className="h-8 w-8 rounded-full bg-primary/10 text-primary hidden sm:flex items-center justify-center shrink-0 font-black text-[10px]">
@@ -650,7 +658,7 @@ export default function AttendancePage() {
                               </div>
                             )}
                             <div className="min-w-0 flex-1 overflow-hidden">
-                              <p className="truncate text-foreground font-black text-[11px] sm:text-sm block overflow-hidden text-ellipsis whitespace-nowrap" title={row.name}>
+                              <p className="truncate text-foreground font-black text-[10px] sm:text-sm block overflow-hidden text-ellipsis whitespace-nowrap" title={row.name}>
                                 {row.name}
                               </p>
                               <p className="text-[8px] sm:text-[9px] text-muted-foreground leading-none font-bold uppercase mt-0.5 hidden sm:block">
