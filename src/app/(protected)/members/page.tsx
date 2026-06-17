@@ -83,6 +83,7 @@ export default function UnifiedMembersPage() {
   const [isAddPlayerOpen, setIsAddPlayerOpen] = useState(false);
   const [editPlayerTarget, setEditPlayerTarget] = useState<Player | null>(null);
   const [deletePlayerTarget, setDeletePlayerTarget] = useState<Player | null>(null);
+  const [sortBy, setSortBy] = useState<"uniformNumber" | "kana" | "joinedAt">("uniformNumber");
 
   // ━━ メンバー・アカウント関連状態 ━━
   const [members, setMembers] = useState<Member[]>([]);
@@ -650,6 +651,25 @@ export default function UnifiedMembersPage() {
     return matchesSearch && (playerFilter === "すべて" || cat === playerFilter);
   });
 
+  const sortedPlayers = [...filteredPlayers].sort((a, b) => {
+    if (sortBy === "uniformNumber") {
+      const numA = parseInt(a.uniformNumber, 10) || 999;
+      const numB = parseInt(b.uniformNumber, 10) || 999;
+      return numA - numB;
+    }
+    if (sortBy === "kana") {
+      const kanaA = a.nameKana || a.name;
+      const kanaB = b.nameKana || b.name;
+      return kanaA.localeCompare(kanaB, "ja");
+    }
+    if (sortBy === "joinedAt") {
+      const dateA = a.joinedAt ?? Infinity;
+      const dateB = b.joinedAt ?? Infinity;
+      return dateA - dateB;
+    }
+    return 0;
+  });
+
   const activeMembers = members.filter(m => m.status === "active");
   const pendingMembers = members.filter(m => m.status === "pending");
 
@@ -840,27 +860,39 @@ export default function UnifiedMembersPage() {
               ))}
             </div>
 
-            {/* 検索窓 */}
-            <div className="relative">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-              <Input 
-                placeholder="選手名・背番号で検索..." 
-                value={searchQuery} 
-                onChange={(e) => setSearchQuery(e.target.value)} 
-                className="h-11 pl-10 rounded-[var(--radius-xl)] font-medium bg-card border-border" 
-              />
+            {/* 検索窓 & ソート順 */}
+            <div className="flex gap-2.5">
+              <div className="relative flex-1">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                <Input 
+                  placeholder="選手名・背番号で検索..." 
+                  value={searchQuery} 
+                  onChange={(e) => setSearchQuery(e.target.value)} 
+                  className="h-11 pl-10 rounded-[var(--radius-xl)] font-medium bg-card border-border" 
+                />
+              </div>
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as any)}
+                className="h-11 px-3 rounded-[var(--radius-xl)] bg-card border border-border font-bold text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-ring shrink-0"
+              >
+                <option value="uniformNumber">背番号順</option>
+                <option value="kana">あいうえお順</option>
+                <option value="joinedAt">入団順</option>
+                <option value="battingAverage" disabled>打率順 (将来用)</option>
+              </select>
             </div>
 
             {/* 選手リスト */}
             <div className="grid grid-cols-1 gap-3">
-              {filteredPlayers.length === 0 ? (
+              {sortedPlayers.length === 0 ? (
                 <EmptyState 
                   icon={Users} 
                   title="選手が見つかりません" 
                   description="新しい選手を追加してください" 
                 />
               ) : (
-                filteredPlayers.map(player => (
+                sortedPlayers.map(player => (
                   <PlayerCard 
                     key={player.id} 
                     player={player} 
@@ -874,6 +906,7 @@ export default function UnifiedMembersPage() {
                         uniformNumber: player.uniformNumber
                       });
                       if (player.nameKana) params.append("nameKana", player.nameKana);
+                      if (player.joinedAt) params.append("joinedAt", String(player.joinedAt));
                       router.push(`/members/detail?${params.toString()}`);
                     }} 
                   />
@@ -1310,6 +1343,7 @@ export default function UnifiedMembersPage() {
                 throws: editPlayerTarget.throws ?? "",
                 bats: editPlayerTarget.bats ?? "",
                 profileImageUrl: editPlayerTarget.profileImageUrl ?? "",
+                joinedAt: editPlayerTarget.joinedAt ? new Date(editPlayerTarget.joinedAt * 1000).toISOString().split('T')[0] : "",
               }}
               onSubmit={handleEditPlayer} onCancel={() => setEditPlayerTarget(null)} isSubmitting={isSubmitting} submitLabel="更新する"
             />

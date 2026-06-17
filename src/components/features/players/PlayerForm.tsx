@@ -8,7 +8,7 @@ import { POSITION_LABELS } from "./constants";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 export const EMPTY_FORM: PlayerFormData = {
-  name: "", nameKana: "", uniformNumber: "", primaryPosition: "", throws: "", bats: "", profileImageUrl: "",
+  name: "", nameKana: "", uniformNumber: "", primaryPosition: "", throws: "", bats: "", profileImageUrl: "", joinedAt: "",
 };
 
 interface PlayerFormProps {
@@ -93,6 +93,15 @@ export function PlayerForm({ initial = EMPTY_FORM, onSubmit, onCancel, isSubmitt
           onChange={(e) => setForm(prev => ({ ...prev, profileImageUrl: e.target.value }))} 
           placeholder="https://example.com/avatar.png (省略時は頭文字表示)" 
           className="h-12 rounded-[var(--radius-xl)] font-bold text-xs" 
+        />
+      </div>
+      <div className="space-y-1.5">
+        <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">入団日（入部日）</Label>
+        <Input 
+          type="date"
+          value={form.joinedAt || ""} 
+          onChange={set("joinedAt")} 
+          className="h-12 rounded-[var(--radius-xl)] font-bold" 
         />
       </div>
       <div className="space-y-1.5">

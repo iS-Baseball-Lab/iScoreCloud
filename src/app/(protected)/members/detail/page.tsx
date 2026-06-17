@@ -36,6 +36,16 @@ function PlayerDetailContent() {
     const playerName = searchParams.get("playerName");
     const nameKana = searchParams.get("nameKana");
     const uniformNumber = searchParams.get("uniformNumber") || "--";
+    const joinedAtParam = searchParams.get("joinedAt");
+
+    const formatJoinedAt = (joinedAtStr: string | null) => {
+        if (!joinedAtStr || joinedAtStr === "null" || joinedAtStr === "undefined") return null;
+        const ts = Number(joinedAtStr);
+        if (isNaN(ts)) return null;
+        const d = new Date(ts * 1000);
+        return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
+    };
+    const joinedAtLabel = formatJoinedAt(joinedAtParam);
 
     const [isLoading, setIsLoading] = useState(true);
     const [batterStat, setBatterStat] = useState<PlayerStats | null>(null);
@@ -156,8 +166,15 @@ function PlayerDetailContent() {
                         </div>
 
                         <div className="space-y-3 text-center sm:text-left">
-                            <div className="inline-flex items-center rounded-full px-3 py-1 text-[10px] sm:text-xs font-black bg-white/20 text-white uppercase tracking-[0.2em] border border-white/20 shadow-sm">
-                                2026 Season
+                            <div className="flex flex-wrap justify-center sm:justify-start gap-2">
+                                <div className="inline-flex items-center rounded-full px-3 py-1 text-[10px] sm:text-xs font-black bg-white/20 text-white uppercase tracking-[0.2em] border border-white/20 shadow-sm">
+                                    2026 Season
+                                </div>
+                                {joinedAtLabel && (
+                                    <div className="inline-flex items-center rounded-full px-3 py-1 text-[10px] sm:text-xs font-black bg-white/20 text-white uppercase tracking-[0.1em] border border-white/20 shadow-sm">
+                                        {joinedAtLabel} 入団
+                                    </div>
+                                )}
                             </div>
                             {nameKana && (
                                 <div className="text-xs sm:text-sm font-black text-white/80 tracking-widest mb-1 drop-shadow-sm">

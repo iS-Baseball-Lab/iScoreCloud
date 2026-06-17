@@ -1,0 +1,1 @@
+ALTER TABLE `players` ADD `joined_at` integer;

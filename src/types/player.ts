@@ -11,6 +11,7 @@ export interface Player {
   bats: string | null;
   isActive: number | boolean;
   profileImageUrl?: string | null;
+  joinedAt?: number | null;
 }
 
 export type PositionKey = "P" | "C" | "1B" | "2B" | "3B" | "SS" | "LF" | "CF" | "RF" | "DH";
@@ -24,4 +25,5 @@ export interface PlayerFormData {
   throws: string;
   bats: string;
   profileImageUrl?: string;
+  joinedAt?: string;
 }

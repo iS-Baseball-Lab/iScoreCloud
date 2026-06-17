@@ -59,6 +59,7 @@ export const players = sqliteTable('players', {
   profileImageUrl: text('profile_image_url'), 
   notes: text('notes'), 
   isActive: integer('is_active', { mode: 'boolean' }).default(true), 
+  joinedAt: integer('joined_at', { mode: 'timestamp' }),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(strftime('%s', 'now'))`),
 }, (table) => ({
   teamIdx: index("idx_players_team_id").on(table.teamId),
