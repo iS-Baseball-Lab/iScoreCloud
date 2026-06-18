@@ -325,11 +325,11 @@ export default function AttendancePage() {
     const month = String(tomorrow.getMonth() + 1).padStart(2, "0");
     const day = String(tomorrow.getDate()).padStart(2, "0");
     setEventStartAt(`${year}-${month}-${day}`);
-    setEventStartVal("09:00");
+    setEventStartVal("08:00");
     setEventEndVal("12:00");
     setHasPmSchedule(false);
-    setEventPmStartVal("13:00");
-    setEventPmEndVal("17:00");
+    setEventPmStartVal("12:00");
+    setEventPmEndVal("18:00");
     setEventPmLocation("");
     setEditingEvent(null);
     setIsEventModalOpen(true);
@@ -375,8 +375,8 @@ export default function AttendancePage() {
       setEventPmLocation(event.pmLocation || "");
     } else {
       setHasPmSchedule(false);
-      setEventPmStartVal("13:00");
-      setEventPmEndVal("17:00");
+      setEventPmStartVal("12:00");
+      setEventPmEndVal("18:00");
       setEventPmLocation("");
     }
 
