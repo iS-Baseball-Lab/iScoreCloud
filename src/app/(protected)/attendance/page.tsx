@@ -624,14 +624,14 @@ export default function AttendancePage() {
           />
         ) : (
           <div className="bg-card border border-border/40 rounded-3xl overflow-hidden shadow-sm">
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto max-h-[65vh] overflow-y-auto">
               <table className="w-full border-collapse text-left table-fixed min-w-[420px]">
                 <colgroup>
                   {/* メンバー列: スマホ 85px, PC 180px */}
                   <col className="w-[85px] sm:w-[180px]" />
-                  {/* イベント列: 常に 110px */}
+                  {/* イベント列: 常に 96px */}
                   {eventsData.map(e => (
-                    <col key={e.id} className="w-[110px]" />
+                    <col key={e.id} className="w-[96px]" />
                   ))}
                 </colgroup>
                 
@@ -639,13 +639,13 @@ export default function AttendancePage() {
                 <thead>
                   <tr className="border-b border-border/50 bg-muted/20">
                     {/* 左端：メンバー枠 */}
-                    <th className="p-1 sm:p-2.5 font-black text-[10px] sm:text-xs uppercase tracking-wider text-muted-foreground border-r border-border/40 bg-card sticky left-0 z-30 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+                    <th className="p-1 sm:p-2.5 font-black text-[10px] sm:text-xs uppercase tracking-wider text-muted-foreground border-r border-border/40 bg-card sticky left-0 top-0 z-40 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
                       メンバー
                     </th>
                     
                     {/* 右側：イベント日程列 */}
                     {eventsData.map(e => (
-                      <th key={e.id} className="p-2.5 border-r border-border/30 text-center align-top relative group">
+                      <th key={e.id} className="p-2.5 border-r border-border/30 text-center align-top relative group sticky top-0 z-20 bg-card">
                         <div className="space-y-1">
                           
                           {/* 日程種別マーク & 操作ボタンのインライン化 */}
@@ -681,7 +681,7 @@ export default function AttendancePage() {
                           </div>
 
                           {/* タイトルと日付 */}
-                          <h4 className="font-black text-xs text-foreground truncate max-w-[85px] mx-auto" title={e.title}>
+                          <h4 className="font-black text-xs text-foreground truncate max-w-[76px] mx-auto" title={e.title}>
                             {e.title}
                           </h4>
                           <p className="text-[9px] font-extrabold text-muted-foreground uppercase">
@@ -700,8 +700,8 @@ export default function AttendancePage() {
                               })()}
                             </p>
                             {e.location && (
-                              <p className="text-[8px] font-extrabold text-primary truncate max-w-[100px] mx-auto flex items-center justify-center gap-0.5" title={e.location}>
-                                <MapPin className="h-2 w-2 shrink-0 text-primary/70" /> {e.location}
+                              <p className="text-[8px] font-extrabold text-blue-600 dark:text-blue-400 truncate max-w-[84px] mx-auto flex items-center justify-center gap-0.5" title={e.location}>
+                                <MapPin className="h-2 w-2 shrink-0 text-blue-500/70" /> {e.location}
                               </p>
                             )}
                           </div>
@@ -720,8 +720,8 @@ export default function AttendancePage() {
                                 })()}
                               </p>
                               {e.pmLocation && (
-                                <p className="text-[8px] font-extrabold text-indigo-500 truncate max-w-[100px] mx-auto flex items-center justify-center gap-0.5" title={e.pmLocation}>
-                                  <MapPin className="h-2 w-2 shrink-0 text-indigo-500/70" /> {e.pmLocation}
+                                <p className="text-[8px] font-extrabold text-blue-600 dark:text-blue-400 truncate max-w-[84px] mx-auto flex items-center justify-center gap-0.5" title={e.pmLocation}>
+                                  <MapPin className="h-2 w-2 shrink-0 text-blue-500/70" /> {e.pmLocation}
                                 </p>
                               )}
                             </div>
@@ -730,7 +730,7 @@ export default function AttendancePage() {
                           {/* 当番情報 */}
                           {e.dutyGroup && (
                             <div className="mt-1">
-                              <span className="text-[8px] font-extrabold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded-xs inline-block truncate max-w-[100px]">
+                              <span className="text-[8px] font-extrabold text-purple-600 dark:text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded-xs inline-block truncate max-w-[84px]">
                                 当番: {e.dutyGroup}
                               </span>
                             </div>
@@ -769,22 +769,22 @@ export default function AttendancePage() {
                         <tr key={`${row.type}-${row.id}`} className={cn("hover:bg-muted/60 transition-colors", rowBgClass)}>
                           
                           {/* 左端メンバー名列 */}
-                          <td className={cn("p-1 sm:p-2.5 font-bold text-xs border-r border-border/40 sticky left-0 z-30 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] h-full overflow-hidden whitespace-nowrap", rowBgClass)}>
-                            <div className="flex items-center gap-1 sm:gap-2.5 w-full overflow-hidden">
+                          <td className={cn("p-0.5 sm:p-1.5 font-bold text-xs border-r border-border/40 sticky left-0 z-30 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] h-full overflow-hidden whitespace-nowrap", rowBgClass)}>
+                            <div className="flex items-center gap-1 sm:gap-2 w-full overflow-hidden">
                               {row.type === "player" ? (
-                                <div className="h-7 w-7 rounded-full bg-primary/10 text-primary hidden sm:flex items-center justify-center shrink-0 font-black text-[9px]">
+                                <div className="h-6 w-6 rounded-full bg-primary/10 text-primary hidden sm:flex items-center justify-center shrink-0 font-black text-[8px]">
                                   {row.uniformNumber ? `#${row.uniformNumber}` : "選"}
                                 </div>
                               ) : (
-                                <div className="h-7 w-7 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hidden sm:flex items-center justify-center shrink-0 font-black text-[9px]">
+                                <div className="h-6 w-6 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hidden sm:flex items-center justify-center shrink-0 font-black text-[8px]">
                                   {row.memberType === "staff" ? "指" : row.memberType === "parent" ? "保" : "他"}
                                 </div>
                               )}
                               <div className="min-w-0 flex-1 overflow-hidden">
-                                <p className="truncate text-foreground font-black text-[10px] sm:text-xs block overflow-hidden text-ellipsis whitespace-nowrap" title={row.name}>
+                                <p className="truncate text-foreground font-black text-[9px] sm:text-xs block overflow-hidden text-ellipsis whitespace-nowrap" title={row.name}>
                                   {row.name}
                                 </p>
-                                <p className="text-[7px] sm:text-[8px] text-muted-foreground leading-none font-bold uppercase mt-0.5 hidden sm:block">
+                                <p className="text-[7px] text-muted-foreground leading-none font-bold uppercase mt-0.5 hidden sm:block">
                                   {row.type === "player" ? "PLAYER" : row.memberType === "staff" ? "STAFF" : "PARENT"}
                                 </p>
                               </div>
@@ -800,12 +800,12 @@ export default function AttendancePage() {
                             const conf = getCellConfig(record?.status || "pending");
                             
                             return (
-                              <td key={e.id} className="p-1 sm:p-1.5 border-r border-border/30 text-center">
+                              <td key={e.id} className="p-0.5 sm:p-1 border-r border-border/30 text-center">
                                 <div className="flex justify-center">
                                   <button
                                     onClick={() => row.canEdit && openAttendEditModal(e, row, record || null)}
                                     className={cn(
-                                      "relative h-8 w-8 rounded-xl flex items-center justify-center font-black text-xs shadow-sm transition-transform active:scale-90",
+                                      "relative h-7 w-7 rounded-lg flex items-center justify-center font-black text-xs shadow-sm transition-transform active:scale-90",
                                       conf.bg,
                                       !row.canEdit && "cursor-default opacity-60"
                                     )}
