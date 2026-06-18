@@ -12,6 +12,9 @@ export const events = sqliteTable("events", {
   description: text("description"),
   location: text("location"),
   dutyGroup: text("duty_group"), // 当番班
+  pmStartAt: integer("pm_start_at", { mode: "timestamp" }), // 午後の開始時間
+  pmEndAt: integer("pm_end_at", { mode: "timestamp" }),     // 午後の終了時間
+  pmLocation: text("pm_location"),                         // 午後の場所
 });
 
 export const attendances = sqliteTable("attendances", {

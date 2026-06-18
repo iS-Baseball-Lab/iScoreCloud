@@ -30,6 +30,9 @@ interface Event {
   description: string | null;
   location: string | null;
   dutyGroup?: string | null;
+  pmStartAt?: string | number | Date | null;
+  pmEndAt?: string | number | Date | null;
+  pmLocation?: string | null;
 }
 
 interface Player {
@@ -130,6 +133,10 @@ export default function AttendancePage() {
   const [eventLocation, setEventLocation] = useState<string>("");
   const [eventDescription, setEventDescription] = useState<string>("");
   const [eventDutyGroup, setEventDutyGroup] = useState<string>(""); // 当番班
+  const [hasPmSchedule, setHasPmSchedule] = useState<boolean>(false);
+  const [eventPmStartVal, setEventPmStartVal] = useState<string>("");
+  const [eventPmEndVal, setEventPmEndVal] = useState<string>("");
+  const [eventPmLocation, setEventPmLocation] = useState<string>("");
 
   // 出欠入力用フォーム状態
   const [inputStatus, setInputStatus] = useState<"present" | "absent" | "pending" | "late" | "partial">("pending");
@@ -319,7 +326,11 @@ export default function AttendancePage() {
     const day = String(tomorrow.getDate()).padStart(2, "0");
     setEventStartAt(`${year}-${month}-${day}`);
     setEventStartVal("09:00");
-    setEventEndVal("");
+    setEventEndVal("12:00");
+    setHasPmSchedule(false);
+    setEventPmStartVal("13:00");
+    setEventPmEndVal("17:00");
+    setEventPmLocation("");
     setEditingEvent(null);
     setIsEventModalOpen(true);
   };
@@ -351,6 +362,24 @@ export default function AttendancePage() {
       setEventEndVal("");
     }
 
+    if (event.pmStartAt) {
+      setHasPmSchedule(true);
+      const pmStartD = new Date(event.pmStartAt);
+      setEventPmStartVal(pmStartD.toTimeString().split(" ")[0].slice(0, 5));
+      if (event.pmEndAt) {
+        const pmEndD = new Date(event.pmEndAt);
+        setEventPmEndVal(pmEndD.toTimeString().split(" ")[0].slice(0, 5));
+      } else {
+        setEventPmEndVal("");
+      }
+      setEventPmLocation(event.pmLocation || "");
+    } else {
+      setHasPmSchedule(false);
+      setEventPmStartVal("13:00");
+      setEventPmEndVal("17:00");
+      setEventPmLocation("");
+    }
+
     setIsEventModalOpen(true);
   };
 
@@ -373,6 +402,20 @@ export default function AttendancePage() {
         endDate = new Date(year, month - 1, day, endHour, endMinute, 0);
       }
 
+      let pmStartIso = null;
+      let pmEndIso = null;
+      if (hasPmSchedule && eventPmStartVal) {
+        const [pmHour, pmMin] = eventPmStartVal.split(":").map(Number);
+        const pmStartDate = new Date(year, month - 1, day, pmHour, pmMin, 0);
+        pmStartIso = pmStartDate.toISOString();
+
+        if (eventPmEndVal) {
+          const [pmEndHour, pmEndMin] = eventPmEndVal.split(":").map(Number);
+          const pmEndDate = new Date(year, month - 1, day, pmEndHour, pmEndMin, 0);
+          pmEndIso = pmEndDate.toISOString();
+        }
+      }
+
       const payload = {
         title: eventTitle.trim(),
         startAt: startDate.toISOString(),
@@ -380,7 +423,10 @@ export default function AttendancePage() {
         eventType,
         location: eventLocation.trim(),
         description: eventDescription.trim(),
-        dutyGroup: eventDutyGroup.trim() || null
+        dutyGroup: eventDutyGroup.trim() || null,
+        pmStartAt: pmStartIso,
+        pmEndAt: pmEndIso,
+        pmLocation: hasPmSchedule ? eventPmLocation.trim() || null : null
       };
 
       const url = eventModalMode === "create" 
@@ -593,7 +639,7 @@ export default function AttendancePage() {
                 <thead>
                   <tr className="border-b border-border/50 bg-muted/20">
                     {/* 左端：メンバー枠 */}
-                    <th className="p-1 sm:p-2.5 font-black text-[10px] sm:text-xs uppercase tracking-wider text-muted-foreground border-r border-border/40 bg-card sticky left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+                    <th className="p-1 sm:p-2.5 font-black text-[10px] sm:text-xs uppercase tracking-wider text-muted-foreground border-r border-border/40 bg-card sticky left-0 z-30 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
                       メンバー
                     </th>
                     
@@ -615,7 +661,7 @@ export default function AttendancePage() {
 
                             {/* 管理者向け日程編集ボタン (インライン配置で常に露出) */}
                             {canManage && (
-                              <div className="flex items-center gap-0.5 shrink-0 z-20">
+                              <div className="flex items-center gap-0.5 shrink-0">
                                 <button 
                                   onClick={(event) => openEditEventModal(e, event)}
                                   className="h-4.5 w-4.5 rounded bg-background border border-border shadow-xs hover:bg-muted text-foreground flex items-center justify-center cursor-pointer"
@@ -641,21 +687,53 @@ export default function AttendancePage() {
                           <p className="text-[9px] font-extrabold text-muted-foreground uppercase">
                             {new Date(e.startAt).toLocaleDateString("ja-JP", { month: "short", day: "numeric", weekday: "short" })}
                           </p>
-                          <p className="text-[9px] font-bold text-muted-foreground/75 leading-none">
-                            {new Date(e.startAt).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}
-                            {e.endAt && `〜${new Date(e.endAt).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}`}
-                          </p>
-                          
-                          {/* 場所・当番情報 */}
-                          {e.dutyGroup && (
-                            <p className="text-[8px] font-extrabold text-indigo-600 dark:text-indigo-400 bg-indigo-500/10 px-1 py-0.5 rounded-xs inline-block truncate max-w-[100px] mt-0.5">
-                              当番: {e.dutyGroup}
+                          {/* ☀️ 午前の時間と場所 */}
+                          <div className="text-[8px] font-bold text-muted-foreground/90 space-y-0.5 mt-1">
+                            <p className="leading-none border-b border-border/20 pb-0.5 text-zinc-500 dark:text-zinc-400 font-extrabold">
+                              ☀️ {(() => {
+                                const startD = new Date(e.startAt);
+                                const startTime = startD.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
+                                if (!e.endAt) return startTime;
+                                const endD = new Date(e.endAt);
+                                const endTime = endD.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
+                                return `${startTime}〜${endTime}`;
+                              })()}
                             </p>
+                            {e.location && (
+                              <p className="text-[8px] font-extrabold text-primary truncate max-w-[100px] mx-auto flex items-center justify-center gap-0.5" title={e.location}>
+                                <MapPin className="h-2 w-2 shrink-0 text-primary/70" /> {e.location}
+                              </p>
+                            )}
+                          </div>
+
+                          {/* 🌙 午後の時間と場所 (登録されている場合のみ表示) */}
+                          {e.pmStartAt && (
+                            <div className="text-[8px] font-bold text-muted-foreground/90 space-y-0.5 mt-1.5 pt-1.5 border-t border-dashed border-border/40">
+                              <p className="leading-none border-b border-border/20 pb-0.5 text-zinc-500 dark:text-zinc-400 font-extrabold">
+                                🌙 {(() => {
+                                  const pmStartD = new Date(e.pmStartAt!);
+                                  const pmStartTime = pmStartD.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
+                                  if (!e.pmEndAt) return pmStartTime;
+                                  const pmEndD = new Date(e.pmEndAt);
+                                  const pmEndTime = pmEndD.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
+                                  return `${pmStartTime}〜${pmEndTime}`;
+                                })()}
+                              </p>
+                              {e.pmLocation && (
+                                <p className="text-[8px] font-extrabold text-indigo-500 truncate max-w-[100px] mx-auto flex items-center justify-center gap-0.5" title={e.pmLocation}>
+                                  <MapPin className="h-2 w-2 shrink-0 text-indigo-500/70" /> {e.pmLocation}
+                                </p>
+                              )}
+                            </div>
                           )}
-                          {e.location && (
-                            <p className="text-[8px] font-bold text-primary truncate max-w-[100px] mx-auto mt-0.5 flex items-center justify-center gap-0.5">
-                              <MapPin className="h-2 w-2 shrink-0" /> {e.location}
-                            </p>
+
+                          {/* 当番情報 */}
+                          {e.dutyGroup && (
+                            <div className="mt-1">
+                              <span className="text-[8px] font-extrabold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded-xs inline-block truncate max-w-[100px]">
+                                当番: {e.dutyGroup}
+                              </span>
+                            </div>
                           )}
 
                           <Separator className="my-1.5 opacity-50" />
@@ -691,7 +769,7 @@ export default function AttendancePage() {
                         <tr key={`${row.type}-${row.id}`} className={cn("hover:bg-muted/60 transition-colors", rowBgClass)}>
                           
                           {/* 左端メンバー名列 */}
-                          <td className={cn("p-1 sm:p-2.5 font-bold text-xs border-r border-border/40 sticky left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] h-full overflow-hidden whitespace-nowrap", rowBgClass)}>
+                          <td className={cn("p-1 sm:p-2.5 font-bold text-xs border-r border-border/40 sticky left-0 z-30 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] h-full overflow-hidden whitespace-nowrap", rowBgClass)}>
                             <div className="flex items-center gap-1 sm:gap-2.5 w-full overflow-hidden">
                               {row.type === "player" ? (
                                 <div className="h-7 w-7 rounded-full bg-primary/10 text-primary hidden sm:flex items-center justify-center shrink-0 font-black text-[9px]">
@@ -792,28 +870,7 @@ export default function AttendancePage() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">開始時間 (必須)</label>
-                  <Input
-                    type="time"
-                    value={eventStartVal}
-                    onChange={e => setEventStartVal(e.target.value)}
-                    required
-                    className="h-11 rounded-xl font-bold"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">終了時間 (任意)</label>
-                  <Input
-                    type="time"
-                    value={eventEndVal}
-                    onChange={e => setEventEndVal(e.target.value)}
-                    className="h-11 rounded-xl font-bold"
-                  />
-                </div>
-              </div>
-
+              {/* 予定カテゴリ & 当番班 */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">予定カテゴリ</label>
@@ -824,25 +881,106 @@ export default function AttendancePage() {
                   </Select>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">場所</label>
+                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">当番班 (任意)</label>
                   <Input
-                    value={eventLocation}
-                    onChange={e => setEventLocation(e.target.value)}
-                    placeholder="例: 中央河川敷グラウンドA"
+                    value={eventDutyGroup}
+                    onChange={e => setEventDutyGroup(e.target.value)}
+                    placeholder="例: A班、お茶当番など"
                     className="h-11 rounded-xl font-bold"
                   />
                 </div>
               </div>
 
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">当番班 (任意)</label>
-                <Input
-                  value={eventDutyGroup}
-                  onChange={e => setEventDutyGroup(e.target.value)}
-                  placeholder="例: A班、お茶当番、グラウンド担当など"
-                  className="h-11 rounded-xl font-bold"
+              <Separator className="opacity-50 my-2" />
+
+              {/* ☀️ 午前の予定セクション */}
+              <div className="space-y-3 bg-muted/20 p-3 rounded-2xl border border-border/40">
+                <h5 className="text-[10px] font-black text-primary flex items-center gap-1 uppercase tracking-wider">
+                  ☀️ 午前の部
+                </h5>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-bold text-zinc-500">開始時間 (必須)</label>
+                    <Input
+                      type="time"
+                      value={eventStartVal}
+                      onChange={e => setEventStartVal(e.target.value)}
+                      required
+                      className="h-10 rounded-xl font-bold text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-bold text-zinc-500">終了時間 (任意)</label>
+                    <Input
+                      type="time"
+                      value={eventEndVal}
+                      onChange={e => setEventEndVal(e.target.value)}
+                      className="h-10 rounded-xl font-bold text-xs"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold text-zinc-500">場所</label>
+                  <Input
+                    value={eventLocation}
+                    onChange={e => setEventLocation(e.target.value)}
+                    placeholder="例: 河川敷グラウンドA"
+                    className="h-10 rounded-xl font-bold text-xs"
+                  />
+                </div>
+              </div>
+
+              {/* 🌙 午後の予定有無のトグル */}
+              <div className="flex items-center justify-between p-2.5 rounded-xl bg-muted/40 border border-border/40">
+                <span className="text-xs font-bold text-muted-foreground flex items-center gap-1.5">
+                  🌙 午後の予定もある
+                </span>
+                <input
+                  type="checkbox"
+                  checked={hasPmSchedule}
+                  onChange={(el) => setHasPmSchedule(el.target.checked)}
+                  className="h-4 w-4 rounded border-border text-primary focus:ring-primary accent-primary cursor-pointer"
                 />
               </div>
+
+              {/* 🌙 午後の予定セクション (トグルがONの時のみ表示) */}
+              {hasPmSchedule && (
+                <div className="space-y-3 bg-muted/30 p-3 rounded-2xl border border-border/40 animate-in fade-in slide-in-from-top-2 duration-300">
+                  <h5 className="text-[10px] font-black text-indigo-500 flex items-center gap-1 uppercase tracking-wider">
+                    🌙 午後の部
+                  </h5>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold text-zinc-500">開始時間 (必須)</label>
+                      <Input
+                        type="time"
+                        value={eventPmStartVal}
+                        onChange={e => setEventPmStartVal(e.target.value)}
+                        required={hasPmSchedule}
+                        className="h-10 rounded-xl font-bold text-xs"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold text-zinc-500">終了時間 (任意)</label>
+                      <Input
+                        type="time"
+                        value={eventPmEndVal}
+                        onChange={e => setEventPmEndVal(e.target.value)}
+                        className="h-10 rounded-xl font-bold text-xs"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-bold text-zinc-500">場所</label>
+                    <Input
+                      value={eventPmLocation}
+                      onChange={e => setEventPmLocation(e.target.value)}
+                      placeholder="例: 学校体育館"
+                      className="h-10 rounded-xl font-bold text-xs"
+                    />
+                  </div>
+                </div>
+              )}
 
               <div className="space-y-1">
                 <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">詳細説明</label>
