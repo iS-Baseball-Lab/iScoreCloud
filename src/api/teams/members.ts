@@ -252,7 +252,7 @@ export const handleCreateMember = async (c: Context) => {
   const { name, nameKana, memberType, phone, email, avatarUrl } = await c.req.json<{
     name: string;
     nameKana?: string;
-    memberType: 'staff' | 'parent' | 'other';
+    memberType: 'staff' | 'parent' | 'other' | 'player';
     phone?: string;
     email?: string;
     avatarUrl?: string;
@@ -301,7 +301,7 @@ export const handleUpdateMemberInfo = async (c: Context) => {
   const { name, nameKana, memberType, phone, email, userId, avatarUrl } = await c.req.json<{
     name?: string;
     nameKana?: string;
-    memberType?: 'staff' | 'parent' | 'other';
+    memberType?: 'staff' | 'parent' | 'other' | 'player';
     phone?: string;
     email?: string;
     userId?: string | null;

@@ -40,7 +40,7 @@ interface Member {
   nameKana?: string;
   avatarUrl?: string;
   email?: string;
-  memberType: 'staff' | 'parent' | 'other';
+  memberType: 'staff' | 'parent' | 'other' | 'player';
   phone?: string;
   authProviders?: string[];
 }
@@ -90,7 +90,7 @@ export default function UnifiedMembersPage() {
   const [members, setMembers] = useState<Member[]>([]);
   const [roleSettings, setRoleSettings] = useState<CustomRoleSetting[]>([]);
   const [isRoleSettingsOpen, setIsRoleSettingsOpen] = useState(false);
-  const [memberFilter, setMemberFilter] = useState<"すべて" | "staff" | "parent" | "other" | "pending">("すべて");
+  const [memberFilter, setMemberFilter] = useState<"すべて" | "staff" | "parent" | "player" | "other" | "pending">("すべて");
   const [isAddMemberOpen, setIsAddMemberOpen] = useState(false);
   const [editMemberTarget, setEditMemberTarget] = useState<Member | null>(null);
   const [deleteMemberTarget, setDeleteMemberTarget] = useState<Member | null>(null);
@@ -129,7 +129,7 @@ export default function UnifiedMembersPage() {
   // Member 登録・編集フォーム用状態
   const [memberFormName, setMemberFormName] = useState("");
   const [memberFormKana, setMemberFormKana] = useState("");
-  const [memberFormType, setMemberFormType] = useState<'staff' | 'parent' | 'other'>("parent");
+  const [memberFormType, setMemberFormType] = useState<'staff' | 'parent' | 'other' | 'player'>("parent");
   const [memberFormPhone, setMemberFormPhone] = useState("");
   const [memberFormEmail, setMemberFormEmail] = useState("");
   const [memberFormRole, setMemberFormRole] = useState(""); // システム上の役割 (MANAGER, COACH 等)
@@ -1083,11 +1083,12 @@ export default function UnifiedMembersPage() {
             {canManage && <TeamInviteCard inviteCode={teamId} />}
 
             {/* 種別フィルター */}
-            <div className="grid grid-cols-5 gap-1.5">
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
               {[
                 { key: "すべて", label: "すべて" },
                 { key: "staff", label: "スタッフ" },
                 { key: "parent", label: "保護者" },
+                { key: "player", label: "選手" },
                 { key: "other", label: "その他" },
                 { key: "pending", label: "申請中" }
               ].map(item => (
@@ -1144,16 +1145,17 @@ export default function UnifiedMembersPage() {
                         </div>
                         
                         <div className="flex items-center gap-2 mt-1 flex-wrap">
-                          {/* 役割種別バッジ */}
                           <span className={cn(
                             "text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded-sm",
                             m.memberType === 'staff' 
                               ? "bg-blue-500/10 text-blue-600 dark:text-blue-400" 
                               : m.memberType === 'parent' 
                                 ? "bg-amber-500/10 text-amber-600 dark:text-amber-400" 
-                                : "bg-zinc-500/10 text-zinc-600 dark:text-zinc-400"
+                                : m.memberType === 'player'
+                                  ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                                  : "bg-zinc-500/10 text-zinc-600 dark:text-zinc-400"
                           )}>
-                            {m.memberType === 'staff' ? '指導者・スタッフ' : m.memberType === 'parent' ? '保護者' : 'その他'}
+                            {m.memberType === 'staff' ? '指導者・スタッフ' : m.memberType === 'parent' ? '保護者' : m.memberType === 'player' ? '選手' : 'その他'}
                           </span>
 
                           {/* チーム内システム権限（カスタム呼称にも対応） */}
@@ -1532,6 +1534,7 @@ export default function UnifiedMembersPage() {
               <Select value={memberFormType} onChange={(e: any) => setMemberFormType(e.target.value)} className="h-11 rounded-xl bg-card">
                 <option value="staff">指導者・スタッフ</option>
                 <option value="parent">保護者</option>
+                <option value="player">選手</option>
                 <option value="other">その他メンバー</option>
               </Select>
             </div>
@@ -1630,6 +1633,7 @@ export default function UnifiedMembersPage() {
               <Select value={memberFormType} onChange={(e: any) => setMemberFormType(e.target.value)} className="h-11 rounded-xl bg-card">
                 <option value="staff">指導者・スタッフ</option>
                 <option value="parent">保護者</option>
+                <option value="player">選手</option>
                 <option value="other">その他メンバー</option>
               </Select>
             </div>
@@ -1927,7 +1931,7 @@ export default function UnifiedMembersPage() {
                     {activeMembers
                       .map(m => (
                         <option key={m.memberId} value={m.memberId}>
-                          {m.name} ({m.memberType === 'staff' ? 'スタッフ' : m.memberType === 'parent' ? '保護者' : 'その他'})
+                          {m.name} ({m.memberType === 'staff' ? 'スタッフ' : m.memberType === 'parent' ? '保護者' : m.memberType === 'player' ? '選手' : 'その他'})
                         </option>
                       ))
                     }

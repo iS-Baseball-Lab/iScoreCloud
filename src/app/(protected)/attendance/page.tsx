@@ -52,7 +52,7 @@ interface Member {
   userId: string | null;
   name: string;
   nameKana?: string;
-  memberType: 'staff' | 'parent' | 'other';
+  memberType: 'staff' | 'parent' | 'other' | 'player';
   phone?: string;
   email?: string;
   role: string;
@@ -788,7 +788,7 @@ export default function AttendancePage() {
                                   <img src={row.avatarUrl} alt={row.name} className="h-6 w-6 rounded-full object-cover shrink-0 border border-zinc-200 hidden sm:block" />
                                 ) : (
                                   <div className="h-6 w-6 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hidden sm:flex items-center justify-center shrink-0 font-black text-[8px]">
-                                    {row.memberType === "staff" ? "指" : row.memberType === "parent" ? "保" : "他"}
+                                    {row.memberType === "staff" ? "指" : row.memberType === "parent" ? "保" : row.memberType === "player" ? "選" : "他"}
                                   </div>
                                 )
                               )}
@@ -797,7 +797,7 @@ export default function AttendancePage() {
                                   {row.name}
                                 </p>
                                 <p className="text-[7px] text-muted-foreground leading-none font-bold uppercase mt-0.5 hidden sm:block">
-                                  {row.type === "player" ? "PLAYER" : row.memberType === "staff" ? "STAFF" : "PARENT"}
+                                  {row.type === "player" || row.memberType === "player" ? "PLAYER" : row.memberType === "staff" ? "STAFF" : row.memberType === "parent" ? "PARENT" : "OTHER"}
                                 </p>
                               </div>
                             </div>
