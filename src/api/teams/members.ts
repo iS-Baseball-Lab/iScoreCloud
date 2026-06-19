@@ -99,15 +99,16 @@ export const handleGetMembers = async (c: Context) => {
         tm.phone,
         tm.email           AS memberEmail,
         u.name             AS userName,
-        u.image            AS avatarUrl,
+        COALESCE(tm.avatar_url, u.image) AS avatarUrl,
         u.email            AS userEmail
       FROM team_members tm
       LEFT JOIN user u ON tm.user_id = u.id
       WHERE tm.team_id = ?
+        AND (tm.user_id IS NULL OR tm.user_id NOT IN (SELECT user_id FROM players WHERE team_id = ? AND user_id IS NOT NULL))
       ORDER BY
         CASE tm.status WHEN 'pending' THEN 0 ELSE 1 END,
         tm.joined_at ASC
-    `).bind(teamId).all()
+    `).bind(teamId, teamId).all()
 
     // ② ソーシャルログイン情報 (provider) の取得を試みる（安全設計）
     let providersMap: Record<string, string[]> = {};
@@ -248,12 +249,13 @@ export const handleCreateMember = async (c: Context) => {
   if (!session) return c.json({ error: 'Unauthorized' }, 401)
 
   const teamId = c.req.param('id')
-  const { name, nameKana, memberType, phone, email } = await c.req.json<{
+  const { name, nameKana, memberType, phone, email, avatarUrl } = await c.req.json<{
     name: string;
     nameKana?: string;
     memberType: 'staff' | 'parent' | 'other';
     phone?: string;
     email?: string;
+    avatarUrl?: string;
   }>()
   const db = drizzle(c.env.DB)
 
@@ -277,6 +279,7 @@ export const handleCreateMember = async (c: Context) => {
       memberType: memberType || 'parent',
       phone: phone?.trim() || null,
       email: email?.trim() || null,
+      avatarUrl: avatarUrl?.trim() || null,
       role: 'player', // アプリ内の権限はデフォルト player
       status: 'active'
     })
@@ -295,13 +298,14 @@ export const handleUpdateMemberInfo = async (c: Context) => {
 
   const teamId = c.req.param('id')
   const memberId = c.req.param('memberId')
-  const { name, nameKana, memberType, phone, email, userId } = await c.req.json<{
+  const { name, nameKana, memberType, phone, email, userId, avatarUrl } = await c.req.json<{
     name?: string;
     nameKana?: string;
     memberType?: 'staff' | 'parent' | 'other';
     phone?: string;
     email?: string;
     userId?: string | null;
+    avatarUrl?: string | null;
   }>()
   const db = drizzle(c.env.DB)
 
@@ -329,6 +333,7 @@ export const handleUpdateMemberInfo = async (c: Context) => {
         phone: phone !== undefined ? (phone?.trim() || null) : undefined,
         email: email !== undefined ? (email?.trim() || null) : undefined,
         userId: userId !== undefined ? userId : undefined,
+        avatarUrl: avatarUrl !== undefined ? avatarUrl : undefined,
       })
       .where(and(eq(teamMembers.id, memberId), eq(teamMembers.teamId, teamId)))
 

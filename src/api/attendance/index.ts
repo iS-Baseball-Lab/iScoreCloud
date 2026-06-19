@@ -43,11 +43,15 @@ app.get('/', async (c) => {
       .leftJoin(user, eq(teamMembers.userId, user.id))
       .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.status, "active")));
 
-    const formattedMembers = membersList.map(item => ({
-      ...item.team_members,
-      avatarUrl: item.user?.image || null,
-      authProviders: []
-    }));
+    const playerUserIds = teamPlayers.map(p => p.userId).filter(Boolean);
+
+    const formattedMembers = membersList
+      .map(item => ({
+        ...item.team_members,
+        avatarUrl: item.team_members.avatarUrl || item.user?.image || null,
+        authProviders: []
+      }))
+      .filter(m => !m.userId || !playerUserIds.includes(m.userId));
 
     // 4. 全イベントIDのリスト
     const eventIds = teamEvents.map(e => e.id);

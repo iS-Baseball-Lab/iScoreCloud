@@ -20,6 +20,7 @@ app.get('/:teamId/players', async (c) => {
         is_active      AS isActive,
         notes,
         profile_image_url AS profileImageUrl,
+        user_id        AS userId,
         joined_at      AS joinedAt,
         created_at     AS createdAt
        FROM players
@@ -40,8 +41,8 @@ app.post('/:teamId/players', async (c) => {
   const joinedAtSeconds = body.joinedAt ? Math.floor(new Date(body.joinedAt).getTime() / 1000) : null;
   try {
     await c.env.DB.prepare(
-      `INSERT INTO players (id, team_id, name, name_kana, uniform_number, primary_position, throws, bats, profile_image_url, is_active, joined_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`
+      `INSERT INTO players (id, team_id, name, name_kana, uniform_number, primary_position, throws, bats, profile_image_url, user_id, is_active, joined_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`
     ).bind(
       playerId,
       teamId,
@@ -52,6 +53,7 @@ app.post('/:teamId/players', async (c) => {
       body.throws ?? null,
       body.bats ?? null,
       body.profileImageUrl ?? null,
+      body.userId ?? null,
       joinedAtSeconds,
     ).run();
     return c.json({ success: true, id: playerId });
@@ -69,7 +71,7 @@ app.patch('/:teamId/players/:playerId', async (c) => {
   try {
     await c.env.DB.prepare(
       `UPDATE players
-       SET name = ?, name_kana = ?, uniform_number = ?, primary_position = ?, throws = ?, bats = ?, profile_image_url = ?, is_active = ?, joined_at = ?
+       SET name = ?, name_kana = ?, uniform_number = ?, primary_position = ?, throws = ?, bats = ?, profile_image_url = ?, user_id = ?, is_active = ?, joined_at = ?
        WHERE id = ? AND team_id = ?`
     ).bind(
       body.name,
@@ -79,6 +81,7 @@ app.patch('/:teamId/players/:playerId', async (c) => {
       body.throws ?? null,
       body.bats ?? null,
       body.profileImageUrl ?? null,
+      body.userId !== undefined ? body.userId : null,
       body.isActive !== false ? 1 : 0,
       joinedAtSeconds,
       playerId,

@@ -3,7 +3,7 @@
 /* 💡 選手一覧のカードUIコンポーネント（左右独立スワイプ＆アコーディオン展開対応） */
 
 import React, { useState, useRef } from "react";
-import { Pencil, Trash2, ChevronDown, ChevronUp, User, BarChart2 } from "lucide-react";
+import { Pencil, Trash2, ChevronDown, ChevronUp, User, BarChart2, Link } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Player, PositionKey } from "@/types/player";
 import { getCategory, POSITION_COLOR, POSITION_LABELS } from "./constants";
@@ -16,9 +16,12 @@ interface PlayerCardProps {
   onEdit: (p: Player) => void;
   onDelete: (p: Player) => void;
   onDetail: (p: Player) => void;
+  canManage?: boolean;
+  onLink?: (p: Player) => void;
+  onUnlink?: (p: Player) => void;
 }
 
-export function PlayerCard({ player, onEdit, onDelete, onDetail }: PlayerCardProps) {
+export function PlayerCard({ player, onEdit, onDelete, onDetail, canManage, onLink, onUnlink }: PlayerCardProps) {
   const category = getCategory(player.primaryPosition);
   const colors = POSITION_COLOR[category];
   const posLabel = player.primaryPosition
@@ -229,6 +232,47 @@ export function PlayerCard({ player, onEdit, onDelete, onDetail }: PlayerCardPro
                 <User className="h-4 w-4" strokeWidth={2.5} />
                 選手の詳細情報を見る
               </Button>
+
+              {/* アカウント紐付けボタン */}
+              {canManage && (
+                <div className="mt-3 pt-3 border-t border-border/40 flex items-center justify-between text-xs gap-3">
+                  {player.userId ? (
+                    <>
+                      <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-bold">
+                        <User className="h-4 w-4" />
+                        <span>アカウント連携済</span>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onUnlink?.(player);
+                        }}
+                        className="text-[10px] h-8 font-black text-rose-500 hover:text-rose-600 rounded-lg shrink-0"
+                      >
+                        連携解除
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-muted-foreground font-bold">アカウント未連携</span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onLink?.(player);
+                        }}
+                        className="text-[10px] h-8 font-black rounded-lg shrink-0 gap-1"
+                      >
+                        <Link className="h-3 w-3" />
+                        アカウント紐付け
+                      </Button>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         )}

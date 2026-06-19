@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Select } from "@/components/ui/select";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { 
   Search, UserPlus, Loader2, UserCircle, Users, Settings, Plus, Trash2, Edit2, 
   ChevronRight, Link, Shield, MessageCircle, Phone, Mail, FolderPlus, UserCheck, Layers, Settings2, RefreshCw, Check, X, Info
@@ -96,7 +97,11 @@ export default function UnifiedMembersPage() {
   
   // アカウント紐付けダイアログ状態
   const [linkTarget, setLinkTarget] = useState<Member | null>(null);
+  const [linkPlayerTarget, setLinkPlayerTarget] = useState<Player | null>(null); // 選手用紐付けターゲット
   const [selectedUserId, setSelectedUserId] = useState<string>("");
+
+  // Member 登録・編集フォーム用状態
+  const [memberFormAvatarUrl, setMemberFormAvatarUrl] = useState("");
 
   // ━━ グループ（Groups）関連状態 ━━
   const [groups, setGroups] = useState<Group[]>([]);
@@ -290,6 +295,7 @@ export default function UnifiedMembersPage() {
     setMemberFormType("parent");
     setMemberFormPhone("");
     setMemberFormEmail("");
+    setMemberFormAvatarUrl("");
     setIsAddMemberOpen(true);
   };
 
@@ -301,6 +307,7 @@ export default function UnifiedMembersPage() {
     setMemberFormPhone(m.phone || "");
     setMemberFormEmail(m.email || "");
     setMemberFormRole(m.role || "");
+    setMemberFormAvatarUrl(m.avatarUrl || "");
   };
 
   const handleAddMember = async (e: React.FormEvent) => {
@@ -316,7 +323,8 @@ export default function UnifiedMembersPage() {
           nameKana: memberFormKana.trim() || null,
           memberType: memberFormType,
           phone: memberFormPhone.trim() || null,
-          email: memberFormEmail.trim() || null
+          email: memberFormEmail.trim() || null,
+          avatarUrl: memberFormAvatarUrl.trim() || null
         })
       });
       if (!res.ok) {
@@ -348,7 +356,8 @@ export default function UnifiedMembersPage() {
           nameKana: memberFormKana.trim() || null,
           memberType: memberFormType,
           phone: memberFormPhone.trim() || null,
-          email: memberFormEmail.trim() || null
+          email: memberFormEmail.trim() || null,
+          avatarUrl: memberFormAvatarUrl.trim() || null
         })
       });
       if (!resInfo.ok) {
@@ -479,6 +488,77 @@ export default function UnifiedMembersPage() {
         throw new Error(err.error || "解除に失敗しました");
       }
       toast.success("アカウント紐付けを解除しました");
+      await fetchMembers(teamId);
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // 選手アカウント紐付け処理
+  const handleLinkPlayerUser = async () => {
+    if (!teamId || !linkPlayerTarget || !selectedUserId) return;
+    setIsSubmitting(true);
+    try {
+      const res = await fetch(`/api/teams/${teamId}/players/${linkPlayerTarget.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          name: linkPlayerTarget.name,
+          nameKana: linkPlayerTarget.nameKana,
+          uniformNumber: linkPlayerTarget.uniformNumber,
+          primaryPosition: linkPlayerTarget.primaryPosition,
+          throws: linkPlayerTarget.throws,
+          bats: linkPlayerTarget.bats,
+          profileImageUrl: linkPlayerTarget.profileImageUrl,
+          userId: selectedUserId,
+          isActive: linkPlayerTarget.isActive
+        })
+      });
+      if (!res.ok) {
+        const err = (await res.json()) as { error?: string };
+        throw new Error(err.error || "紐付けに失敗しました");
+      }
+      toast.success("ログインユーザーと選手情報の紐付けが完了しました");
+      setLinkPlayerTarget(null);
+      setSelectedUserId("");
+      await fetchPlayers(teamId);
+      await fetchMembers(teamId);
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // 選手アカウント紐付け解除
+  const handleUnlinkPlayerUser = async (p: Player) => {
+    if (!teamId) return;
+    if (!confirm(`${p.name} 選手の連携アカウントを解除しますか？`)) return;
+    setIsSubmitting(true);
+    try {
+      const res = await fetch(`/api/teams/${teamId}/players/${p.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: p.name,
+          nameKana: p.nameKana,
+          uniformNumber: p.uniformNumber,
+          primaryPosition: p.primaryPosition,
+          throws: p.throws,
+          bats: p.bats,
+          profileImageUrl: p.profileImageUrl,
+          userId: null,
+          isActive: p.isActive
+        })
+      });
+      if (!res.ok) {
+        const err = (await res.json()) as { error?: string };
+        throw new Error(err.error || "解除に失敗しました");
+      }
+      toast.success("アカウント連携を解除しました");
+      await fetchPlayers(teamId);
       await fetchMembers(teamId);
     } catch (err: any) {
       toast.error(err.message);
@@ -896,7 +976,7 @@ export default function UnifiedMembersPage() {
                   <PlayerCard 
                     key={player.id} 
                     player={player} 
-                    teamId={teamId} 
+                    teamId={teamId || ""} 
                     onEdit={setEditPlayerTarget} 
                     onDelete={setDeletePlayerTarget} 
                     onDetail={() => {
@@ -909,6 +989,12 @@ export default function UnifiedMembersPage() {
                       if (player.joinedAt) params.append("joinedAt", String(player.joinedAt));
                       router.push(`/members/detail?${params.toString()}`);
                     }} 
+                    canManage={canManage}
+                    onLink={(p) => {
+                      setLinkPlayerTarget(p);
+                      setSelectedUserId("");
+                    }}
+                    onUnlink={(p) => handleUnlinkPlayerUser(p)}
                   />
                 ))
               )}
@@ -1378,6 +1464,61 @@ export default function UnifiedMembersPage() {
             <DialogDescription className="text-xs font-bold text-muted-foreground">指導者・スタッフや保護者の名簿登録を行います。</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleAddMember} className="space-y-4 pt-3">
+            {/* アバター画像設定 */}
+            <div className="flex flex-col items-center justify-center py-2 space-y-2 bg-muted/30 rounded-xl border border-dashed border-border p-3">
+              <Avatar className="h-16 w-16 border border-border shadow-sm bg-background flex items-center justify-center">
+                <AvatarImage src={memberFormAvatarUrl || ""} alt="アバタープレビュー" className="object-cover" />
+                <AvatarFallback className="flex items-center justify-center bg-primary/10 text-primary">
+                  <UserCircle className="h-8 w-8" strokeWidth={2.5} />
+                </AvatarFallback>
+              </Avatar>
+              <div className="flex flex-wrap justify-center gap-1.5">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="text-[10px] h-7 px-2.5 rounded-lg font-bold"
+                  onClick={() => {
+                    const seed = memberFormName || Math.random().toString(36).substring(7);
+                    const url = `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(seed)}`;
+                    setMemberFormAvatarUrl(url);
+                  }}
+                >
+                  アバター生成 (Pop)
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="text-[10px] h-7 px-2.5 rounded-lg font-bold"
+                  onClick={() => {
+                    const seed = memberFormName || Math.random().toString(36).substring(7);
+                    const url = `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(seed)}`;
+                    setMemberFormAvatarUrl(url);
+                  }}
+                >
+                  アバター生成 (Bot)
+                </Button>
+                {memberFormAvatarUrl && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="text-[10px] h-7 px-2 rounded-lg font-bold text-destructive hover:bg-destructive/10"
+                    onClick={() => setMemberFormAvatarUrl("")}
+                  >
+                    クリア
+                  </Button>
+                )}
+              </div>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">アバター画像URL (省略時は頭文字またはソーシャル画像)</label>
+              <Input 
+                value={memberFormAvatarUrl} 
+                onChange={(e) => setMemberFormAvatarUrl(e.target.value)} 
+                placeholder="https://example.com/avatar.png" 
+                className="h-11 rounded-xl text-xs font-bold" 
+              />
+            </div>
+
             <div className="space-y-1">
               <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">名前 (必須)</label>
               <Input value={memberFormName} onChange={e => setMemberFormName(e.target.value)} placeholder="例: 佐藤 隆" required className="h-11 rounded-xl" />
@@ -1421,6 +1562,61 @@ export default function UnifiedMembersPage() {
             <DialogDescription className="text-xs font-bold text-muted-foreground">登録内容やチーム権限を修正します。</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleEditMember} className="space-y-4 pt-3">
+            {/* アバター画像設定 */}
+            <div className="flex flex-col items-center justify-center py-2 space-y-2 bg-muted/30 rounded-xl border border-dashed border-border p-3">
+              <Avatar className="h-16 w-16 border border-border shadow-sm bg-background flex items-center justify-center">
+                <AvatarImage src={memberFormAvatarUrl || ""} alt="アバタープレビュー" className="object-cover" />
+                <AvatarFallback className="flex items-center justify-center bg-primary/10 text-primary">
+                  <UserCircle className="h-8 w-8" strokeWidth={2.5} />
+                </AvatarFallback>
+              </Avatar>
+              <div className="flex flex-wrap justify-center gap-1.5">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="text-[10px] h-7 px-2.5 rounded-lg font-bold"
+                  onClick={() => {
+                    const seed = memberFormName || Math.random().toString(36).substring(7);
+                    const url = `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(seed)}`;
+                    setMemberFormAvatarUrl(url);
+                  }}
+                >
+                  アバター生成 (Pop)
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="text-[10px] h-7 px-2.5 rounded-lg font-bold"
+                  onClick={() => {
+                    const seed = memberFormName || Math.random().toString(36).substring(7);
+                    const url = `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(seed)}`;
+                    setMemberFormAvatarUrl(url);
+                  }}
+                >
+                  アバター生成 (Bot)
+                </Button>
+                {memberFormAvatarUrl && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="text-[10px] h-7 px-2 rounded-lg font-bold text-destructive hover:bg-destructive/10"
+                    onClick={() => setMemberFormAvatarUrl("")}
+                  >
+                    クリア
+                  </Button>
+                )}
+              </div>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">アバター画像URL (省略時は頭文字またはソーシャル画像)</label>
+              <Input 
+                value={memberFormAvatarUrl} 
+                onChange={(e) => setMemberFormAvatarUrl(e.target.value)} 
+                placeholder="https://example.com/avatar.png" 
+                className="h-11 rounded-xl text-xs font-bold" 
+              />
+            </div>
+
             <div className="space-y-1">
               <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">名前 (必須)</label>
               <Input value={memberFormName} onChange={e => setMemberFormName(e.target.value)} placeholder="例: 佐藤 隆" required className="h-11 rounded-xl" />
@@ -1540,6 +1736,43 @@ export default function UnifiedMembersPage() {
             <div className="flex gap-3 pt-3">
               <Button type="button" variant="outline" onClick={() => setLinkTarget(null)} className="flex-1 h-12 rounded-xl font-black">キャンセル</Button>
               <Button type="button" onClick={handleLinkUser} disabled={isSubmitting || !selectedUserId} className="flex-1 h-12 rounded-xl font-black">
+                {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "紐付ける"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 選手用アカウント紐付けダイアログ */}
+      <Dialog open={!!linkPlayerTarget} onOpenChange={(open) => !open && setLinkPlayerTarget(null)}>
+        <DialogContent className="rounded-[var(--radius-2xl)] bg-card border-border sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-black text-xl">選手のアカウント紐付け</DialogTitle>
+            <DialogDescription className="text-xs font-bold text-muted-foreground">
+              名簿上の選手「{linkPlayerTarget?.name}」をアプリのログインユーザーに紐付けます。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-3">
+            <div className="space-y-1">
+              <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">チームの参加ユーザーから選択</label>
+              {members.filter(m => m.userId).length === 0 ? (
+                <div className="text-xs text-muted-foreground py-2 text-center">選択可能な参加ユーザーがいません。先にチームへ招待・参加申請を行ってください。</div>
+              ) : (
+                <Select value={selectedUserId} onChange={(e: any) => setSelectedUserId(e.target.value)} className="h-11 rounded-xl bg-card">
+                  <option value="">ユーザーを選択...</option>
+                  {members
+                    .filter(m => m.userId && m.userId !== linkPlayerTarget?.userId)
+                    .map(m => (
+                      <option key={m.userId!} value={m.userId!}>{m.name} ({m.email || 'メールなし'})</option>
+                    ))
+                  }
+                </Select>
+              )}
+            </div>
+
+            <div className="flex gap-3 pt-3">
+              <Button type="button" variant="outline" onClick={() => setLinkPlayerTarget(null)} className="flex-1 h-12 rounded-xl font-black">キャンセル</Button>
+              <Button type="button" onClick={handleLinkPlayerUser} disabled={isSubmitting || !selectedUserId} className="flex-1 h-12 rounded-xl font-black">
                 {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "紐付ける"}
               </Button>
             </div>

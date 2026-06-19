@@ -42,6 +42,8 @@ interface Player {
   nameKana?: string;
   uniformNumber: string;
   isActive: boolean;
+  userId?: string | null;
+  profileImageUrl?: string | null;
 }
 
 interface Member {
@@ -245,12 +247,14 @@ export default function AttendancePage() {
     if (activeTab === "all" || activeTab === "players") {
       playersData.forEach(p => {
         if (filteredMemberIdsByGroup && !filteredMemberIdsByGroup.playerIds.has(p.id)) return;
+        const isMe = myUserId && p.userId === myUserId;
         rows.push({
           type: "player",
           id: p.id,
           name: p.name,
           uniformNumber: p.uniformNumber,
-          canEdit: canManage
+          avatarUrl: p.profileImageUrl,
+          canEdit: canManage || !!isMe
         });
       });
     }
@@ -772,13 +776,21 @@ export default function AttendancePage() {
                           <td className={cn("p-0.5 sm:p-1.5 font-bold text-xs border-r border-border/40 sticky left-0 z-30 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] h-full overflow-hidden whitespace-nowrap", rowBgClass)}>
                             <div className="flex items-center gap-1 sm:gap-2 w-full overflow-hidden">
                               {row.type === "player" ? (
-                                <div className="h-6 w-6 rounded-full bg-primary/10 text-primary hidden sm:flex items-center justify-center shrink-0 font-black text-[8px]">
-                                  {row.uniformNumber ? `#${row.uniformNumber}` : "選"}
-                                </div>
+                                row.avatarUrl ? (
+                                  <img src={row.avatarUrl} alt={row.name} className="h-6 w-6 rounded-full object-cover shrink-0 border border-zinc-200 hidden sm:block" />
+                                ) : (
+                                  <div className="h-6 w-6 rounded-full bg-primary/10 text-primary hidden sm:flex items-center justify-center shrink-0 font-black text-[8px]">
+                                    {row.uniformNumber ? `#${row.uniformNumber}` : "選"}
+                                  </div>
+                                )
                               ) : (
-                                <div className="h-6 w-6 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hidden sm:flex items-center justify-center shrink-0 font-black text-[8px]">
-                                  {row.memberType === "staff" ? "指" : row.memberType === "parent" ? "保" : "他"}
-                                </div>
+                                row.avatarUrl ? (
+                                  <img src={row.avatarUrl} alt={row.name} className="h-6 w-6 rounded-full object-cover shrink-0 border border-zinc-200 hidden sm:block" />
+                                ) : (
+                                  <div className="h-6 w-6 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hidden sm:flex items-center justify-center shrink-0 font-black text-[8px]">
+                                    {row.memberType === "staff" ? "指" : row.memberType === "parent" ? "保" : "他"}
+                                  </div>
+                                )
                               )}
                               <div className="min-w-0 flex-1 overflow-hidden">
                                 <p className="truncate text-foreground font-black text-[9px] sm:text-xs block overflow-hidden text-ellipsis whitespace-nowrap" title={row.name}>

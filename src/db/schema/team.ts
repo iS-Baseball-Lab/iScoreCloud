@@ -57,6 +57,7 @@ export const players = sqliteTable('players', {
   height: integer('height'), 
   weight: integer('weight'), 
   profileImageUrl: text('profile_image_url'), 
+  userId: text('user_id').references(() => user.id), // ログインユーザーIDの紐付け (二重登録防止)
   notes: text('notes'), 
   isActive: integer('is_active', { mode: 'boolean' }).default(true), 
   joinedAt: integer('joined_at', { mode: 'timestamp' }),
@@ -107,6 +108,7 @@ export const teamMembers = sqliteTable('team_members', {
   memberType: text('member_type').notNull().default('parent'), // 'staff' | 'parent' | 'other'
   phone: text('phone'),                              // 電話番号
   email: text('email'),                              // メールアドレス
+  avatarUrl: text('avatar_url'),                      // アバター画像URL (カスタム)
   
   role: text('role').notNull().default('player'), // 例: 'MANAGER'(監督・スコアラー), 'PLAYER'(閲覧のみ), 'pending'(申請中)
   status: text("status").notNull().default("active"),

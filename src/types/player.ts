@@ -11,6 +11,7 @@ export interface Player {
   bats: string | null;
   isActive: number | boolean;
   profileImageUrl?: string | null;
+  userId?: string | null; // ログインユーザーID
   joinedAt?: number | null;
 }
 
@@ -25,5 +26,6 @@ export interface PlayerFormData {
   throws: string;
   bats: string;
   profileImageUrl?: string;
+  userId?: string | null;
   joinedAt?: string;
 }
