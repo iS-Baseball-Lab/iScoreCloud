@@ -95,23 +95,95 @@ app.get('/:id/all-matches', async (c) => {
   }
 });
 
-// チームの全試合予定と結果を取得するAPI（カレンダー用）
+// チームの全試合予定と結果、および出欠日程を取得するAPI（カレンダー用）
 app.get('/:id/calendar-matches', async (c) => {
   const teamId = c.req.param('id');
   try {
-    const { results } = await c.env.DB.prepare(`
+    // 1. matches (試合) を取得
+    const { results: matchesList } = await c.env.DB.prepare(`
       SELECT m.id, m.date, m.opponent, m.my_score as myScore, m.opponent_score as opponentScore, 
              m.match_type as matchType, m.status, m.batting_order as battingOrder,
              v.name as venueName
       FROM matches m
       LEFT JOIN venues v ON m.venue_id = v.id
       WHERE m.team_id = ?
-      ORDER BY m.date ASC, m.created_at ASC
     `).bind(teamId).all();
 
-    return c.json(results);
+    // 2. events (出欠日程) を取得
+    const { results: eventsList } = await c.env.DB.prepare(`
+      SELECT id, title, start_at as startAt, end_at as endAt, event_type as eventType, 
+             description, location, duty_group as dutyGroup, pm_start_at as pmStartAt, 
+             pm_end_at as pmEndAt, pm_location as pmLocation
+      FROM events
+      WHERE team_id = ?
+    `).bind(teamId).all();
+
+    // 3. 試合データを共通形式に整形
+    const formattedMatches = matchesList.map((m: any) => ({
+      id: m.id,
+      type: 'match',
+      date: m.date, // 'YYYY-MM-DD'
+      title: `試合 vs ${m.opponent}`,
+      opponent: m.opponent,
+      myScore: m.myScore,
+      opponentScore: m.opponentScore,
+      matchType: m.matchType,
+      status: m.status,
+      battingOrder: m.battingOrder,
+      venueName: m.venueName,
+    }));
+
+    // 4. イベントデータを共通形式に整形
+    const formattedEvents = eventsList.map((e: any) => {
+      let dateObj: Date;
+      if (typeof e.startAt === 'number') {
+        const val = e.startAt;
+        if (val < 10000000000) {
+          dateObj = new Date(val * 1000);
+        } else {
+          dateObj = new Date(val);
+        }
+      } else if (e.startAt) {
+        dateObj = new Date(e.startAt);
+      } else {
+        dateObj = new Date();
+      }
+
+      // 日本時間 (JST) で確実に YYYY-MM-DD を生成する
+      const formatter = new Intl.DateTimeFormat('ja-JP', {
+        timeZone: 'Asia/Tokyo',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      });
+      const parts = formatter.formatToParts(dateObj);
+      const y = parts.find(p => p.type === 'year')?.value;
+      const month = parts.find(p => p.type === 'month')?.value;
+      const d = parts.find(p => p.type === 'day')?.value;
+      const dateStr = `${y}-${month}-${d}`;
+
+      return {
+        id: e.id,
+        type: e.eventType || 'event',
+        date: dateStr,
+        title: e.title,
+        description: e.description,
+        venueName: e.location,
+        location: e.location,
+        dutyGroup: e.dutyGroup,
+        pmStartAt: e.pmStartAt,
+        pmEndAt: e.pmEndAt,
+        pmLocation: e.pmLocation,
+      };
+    });
+
+    // 5. マージして日付順にソート
+    const allItems = [...formattedMatches, ...formattedEvents];
+    allItems.sort((a, b) => a.date.localeCompare(b.date));
+
+    return c.json(allItems);
   } catch (e: any) {
-    return c.json({ error: '試合予定の取得に失敗しました', details: e.message }, 500);
+    return c.json({ error: 'スケジュールの取得に失敗しました', details: e.message }, 500);
   }
 });
 

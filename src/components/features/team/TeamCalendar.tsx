@@ -7,14 +7,22 @@ import { cn } from "@/lib/utils";
 
 export interface CalendarMatch {
   id: string;
+  type?: 'match' | 'practice' | 'meeting' | 'event';
   date: string; // YYYY-MM-DD
-  opponent: string;
-  myScore: number;
-  opponentScore: number;
-  matchType: string; // 'official' | 'practice'
-  status: string; // 'scheduled' | 'live' | 'finished'
-  battingOrder: string;
+  title?: string;
+  opponent?: string;
+  myScore?: number | null;
+  opponentScore?: number | null;
+  matchType?: string; // 'official' | 'practice'
+  status?: string; // 'scheduled' | 'live' | 'finished'
+  battingOrder?: string;
   venueName?: string | null;
+  description?: string | null;
+  location?: string | null;
+  dutyGroup?: string | null;
+  pmStartAt?: string | number | null;
+  pmEndAt?: string | number | null;
+  pmLocation?: string | null;
 }
 
 interface TeamCalendarProps {
@@ -108,23 +116,31 @@ export const TeamCalendar: React.FC<TeamCalendarProps> = ({ matches, canManage, 
 
   // カレンダーセルに表示するための、特定の日付の簡易ステータス
   const getDateStatus = (dateStr: string) => {
-    const dayMatches = getMatchesForDate(dateStr);
-    if (dayMatches.length === 0) return null;
+    const dayEvents = getMatchesForDate(dateStr);
+    if (dayEvents.length === 0) return null;
     
     // 進行中の試合があれば最優先
-    if (dayMatches.some(m => m.status === "live")) return "live";
+    if (dayEvents.some(e => e.status === "live")) return "live";
     // 公式戦が含まれるか
-    if (dayMatches.some(m => m.matchType === "official")) return "official";
+    if (dayEvents.some(e => (!e.type || e.type === "match") && e.matchType === "official")) return "official";
+    // 練習試合が含まれるか
+    if (dayEvents.some(e => !e.type || e.type === "match")) return "match_practice";
+    // 練習
+    if (dayEvents.some(e => e.type === "practice")) return "practice";
+    // 会議
+    if (dayEvents.some(e => e.type === "meeting")) return "meeting";
     
-    return "practice";
+    return "other";
   };
 
   // 試合結果に応じた勝利・敗戦・引き分けアイコン
   const renderMatchResultText = (match: CalendarMatch) => {
     if (match.status !== "finished") return null;
-    if (match.myScore > match.opponentScore) {
+    const myScore = match.myScore ?? 0;
+    const oppScore = match.opponentScore ?? 0;
+    if (myScore > oppScore) {
       return <span className="text-xs font-black text-emerald-600 bg-emerald-500/10 px-2 py-0.5 rounded-sm">○ 勝ち</span>;
-    } else if (match.myScore < match.opponentScore) {
+    } else if (myScore < oppScore) {
       return <span className="text-xs font-black text-rose-600 bg-rose-500/10 px-2 py-0.5 rounded-sm">● 負け</span>;
     } else {
       return <span className="text-xs font-black text-zinc-500 bg-zinc-500/10 px-2 py-0.5 rounded-sm">△ 引分</span>;
@@ -225,7 +241,11 @@ export const TeamCalendar: React.FC<TeamCalendarProps> = ({ matches, canManage, 
                     <span
                       className={cn(
                         "h-1.5 w-1.5 rounded-full",
-                        isSelected ? "bg-white" : status === "official" ? "bg-blue-500" : "bg-amber-500"
+                        isSelected ? "bg-white" : 
+                        status === "official" ? "bg-blue-500" : 
+                        status === "match_practice" ? "bg-amber-500" :
+                        status === "practice" ? "bg-emerald-500" :
+                        status === "meeting" ? "bg-purple-500" : "bg-zinc-400"
                       )}
                     />
                   )}
@@ -260,80 +280,154 @@ export const TeamCalendar: React.FC<TeamCalendarProps> = ({ matches, canManage, 
 
         {selectedDayMatches.length === 0 ? (
           <div className="text-center py-8 bg-zinc-50/50 dark:bg-zinc-950/20 border border-dashed border-border/30 rounded-2xl">
-            <p className="text-xs font-bold text-muted-foreground">この日の試合予定はありません</p>
+            <p className="text-xs font-bold text-muted-foreground">この日の予定はありません</p>
           </div>
         ) : (
           <div className="space-y-2.5">
-            {selectedDayMatches.map(match => (
-              <div
-                key={match.id}
-                className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-2xl bg-zinc-50/70 dark:bg-zinc-900/40 border border-border/20 gap-3 shadow-xs hover:border-primary/20 transition-all"
-              >
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    {/* 試合タイプバッジ */}
-                    <span
-                      className={cn(
-                        "text-[9px] font-black tracking-wider px-2 py-0.5 rounded-sm uppercase",
-                        match.matchType === "official"
-                          ? "bg-blue-500/10 text-blue-600 dark:text-blue-400"
-                          : "bg-amber-500/10 text-amber-600 dark:text-amber-400"
-                      )}
-                    >
-                      {match.matchType === "official" ? "公式戦" : "練習試合"}
-                    </span>
+            {selectedDayMatches.map(item => {
+              const isMatch = !item.type || item.type === "match";
 
-                    {/* ステータスバッジ */}
-                    {match.status === "live" ? (
-                      <span className="text-[9px] font-black bg-rose-500 text-white px-2 py-0.5 rounded-sm flex items-center gap-0.5 animate-pulse">
-                        <Activity className="h-2.5 w-2.5" /> LIVE
-                      </span>
-                    ) : match.status === "finished" ? (
-                      renderMatchResultText(match)
-                    ) : (
-                      <span className="text-[9px] font-bold bg-zinc-200/60 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 px-2 py-0.5 rounded-sm">
-                        試合前
-                      </span>
-                    )}
-                  </div>
-
-                  <h5 className="font-black text-sm text-foreground">
-                    vs {match.opponent}
-                  </h5>
-
-                  <div className="flex items-center gap-3 text-[10px] font-bold text-muted-foreground">
-                    {match.venueName && (
-                      <span className="flex items-center gap-1">
-                        <MapPin className="h-3 w-3 text-primary/60" /> {match.venueName}
-                      </span>
-                    )}
-                    <span className="flex items-center gap-1">
-                      <Clock className="h-3 w-3 text-primary/60" /> {match.battingOrder === "first" ? "先攻" : "後攻"}
-                    </span>
-                  </div>
-                </div>
-
-                {/* スコア・ボタンアクション */}
-                <div className="flex items-center justify-between sm:justify-end gap-4 border-t sm:border-t-0 pt-3 sm:pt-0 border-border/30">
-                  {match.status === "finished" && (
-                    <div className="text-right sm:mr-2">
-                      <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Score</p>
-                      <p className="text-lg font-black text-foreground tabular-nums leading-none mt-1">
-                        {match.myScore} - {match.opponentScore}
-                      </p>
-                    </div>
-                  )}
-
-                  <Button
-                    onClick={() => handleActionClick(match)}
-                    size="sm"
-                    className="h-9 font-black rounded-xl px-4 text-xs"
+              if (isMatch) {
+                return (
+                  <div
+                    key={item.id}
+                    className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-2xl bg-zinc-50/70 dark:bg-zinc-900/40 border border-border/20 gap-3 shadow-xs hover:border-primary/20 transition-all"
                   >
-                    {match.status === "finished" ? "試合結果" : match.status === "live" ? "スコア入力" : "メンバー編成"}
-                  </Button>
-                </div>
-              </div>
-            ))}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {/* 試合タイプバッジ */}
+                        <span
+                          className={cn(
+                            "text-[9px] font-black tracking-wider px-2 py-0.5 rounded-sm uppercase",
+                            item.matchType === "official"
+                              ? "bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                              : "bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                          )}
+                        >
+                          {item.matchType === "official" ? "公式戦" : "練習試合"}
+                        </span>
+
+                        {/* ステータスバッジ */}
+                        {item.status === "live" ? (
+                          <span className="text-[9px] font-black bg-rose-500 text-white px-2 py-0.5 rounded-sm flex items-center gap-0.5 animate-pulse">
+                            <Activity className="h-2.5 w-2.5" /> LIVE
+                          </span>
+                        ) : item.status === "finished" ? (
+                          renderMatchResultText(item)
+                        ) : (
+                          <span className="text-[9px] font-bold bg-zinc-200/60 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 px-2 py-0.5 rounded-sm">
+                            試合前
+                          </span>
+                        )}
+                      </div>
+
+                      <h5 className="font-black text-sm text-foreground">
+                        vs {item.opponent || "対戦相手未定"}
+                      </h5>
+
+                      <div className="flex items-center gap-3 text-[10px] font-bold text-muted-foreground">
+                        {item.venueName && (
+                          <span className="flex items-center gap-1">
+                            <MapPin className="h-3 w-3 text-primary/60" /> {item.venueName}
+                          </span>
+                        )}
+                        {item.battingOrder && (
+                          <span className="flex items-center gap-1">
+                            <Clock className="h-3 w-3 text-primary/60" /> {item.battingOrder === "first" ? "先攻" : "後攻"}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* スコア・ボタンアクション */}
+                    <div className="flex items-center justify-between sm:justify-end gap-4 border-t sm:border-t-0 pt-3 sm:pt-0 border-border/30">
+                      {item.status === "finished" && (
+                        <div className="text-right sm:mr-2">
+                          <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Score</p>
+                          <p className="text-lg font-black text-foreground tabular-nums leading-none mt-1">
+                            {item.myScore} - {item.opponentScore}
+                          </p>
+                        </div>
+                      )}
+
+                      <Button
+                        onClick={() => handleActionClick(item)}
+                        size="sm"
+                        className="h-9 font-black rounded-xl px-4 text-xs"
+                      >
+                        {item.status === "finished" ? "試合結果" : item.status === "live" ? "スコア入力" : "メンバー編成"}
+                      </Button>
+                    </div>
+                  </div>
+                );
+              } else {
+                // 練習、会議、その他の日程 (events) カード
+                return (
+                  <div
+                    key={item.id}
+                    className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-2xl bg-zinc-50/70 dark:bg-zinc-900/40 border border-border/20 gap-3 shadow-xs hover:border-primary/20 transition-all"
+                  >
+                    <div className="space-y-1.5 flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {/* イベント種別バッジ */}
+                        <span
+                          className={cn(
+                            "text-[9px] font-black tracking-wider px-2 py-0.5 rounded-sm uppercase",
+                            item.type === "practice"
+                              ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                              : item.type === "meeting"
+                                ? "bg-purple-500/10 text-purple-600 dark:text-purple-400"
+                                : "bg-zinc-500/10 text-zinc-600 dark:text-zinc-400"
+                          )}
+                        >
+                          {item.type === "practice" ? "練習" : item.type === "meeting" ? "会議" : "その他予定"}
+                        </span>
+
+                        {item.dutyGroup && (
+                          <span className="text-[8px] font-extrabold text-purple-600 dark:text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded-xs">
+                            当番: {item.dutyGroup}
+                          </span>
+                        )}
+                      </div>
+
+                      <h5 className="font-black text-sm text-foreground truncate" title={item.title}>
+                        {item.title}
+                      </h5>
+
+                      <div className="flex items-center gap-3 text-[10px] font-bold text-muted-foreground flex-wrap">
+                        {item.venueName && (
+                          <span className="flex items-center gap-1" title={item.venueName}>
+                            <MapPin className="h-3 w-3 text-primary/60" /> {item.venueName}
+                          </span>
+                        )}
+                        {item.pmLocation && (
+                          <span className="flex items-center gap-1 text-blue-600 dark:text-blue-400" title={item.pmLocation}>
+                            <MapPin className="h-3 w-3 text-blue-500/60" /> 午後: {item.pmLocation}
+                          </span>
+                        )}
+                      </div>
+
+                      {item.description && (
+                        <p className="text-[10px] text-muted-foreground font-medium line-clamp-2 mt-1 whitespace-pre-line">
+                          {item.description}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* ボタンアクション */}
+                    <div className="flex items-center justify-between sm:justify-end gap-4 border-t sm:border-t-0 pt-3 sm:pt-0 border-border/30 shrink-0">
+                      <Button
+                        onClick={() => router.push(`/attendance`)}
+                        size="sm"
+                        className="h-9 font-black rounded-xl px-4 text-xs"
+                      >
+                        出欠確認
+                      </Button>
+                    </div>
+                  </div>
+                );
+              }
+            })}
           </div>
         )}
       </div>
