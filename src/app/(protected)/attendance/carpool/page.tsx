@@ -380,8 +380,12 @@ function CarpoolAssignmentContent() {
           const res = await fetch(`/api/attendance?teamId=${tid}`);
           const json = await res.json() as { success: boolean; data?: { events: any[] } };
           if (json.success && json.data) {
+            // 試合 (match) または 合宿 (camp) の日程のみを配車管理の対象とする
+            const filtered = json.data.events.filter(
+              evt => evt.eventType === 'match' || evt.eventType === 'camp'
+            );
             // 直近のイベントが上に来るように、日付の降順でソート
-            const sorted = [...json.data.events].sort(
+            const sorted = [...filtered].sort(
               (a, b) => new Date(b.startAt).getTime() - new Date(a.startAt).getTime()
             );
             setEventsList(sorted);

@@ -343,7 +343,7 @@ export const TeamCalendar: React.FC<TeamCalendarProps> = ({ matches, canManage, 
                     </div>
 
                     {/* スコア・ボタンアクション */}
-                    <div className="flex items-center justify-between sm:justify-end gap-4 border-t sm:border-t-0 pt-3 sm:pt-0 border-border/30">
+                    <div className="flex items-center justify-between sm:justify-end gap-2 border-t sm:border-t-0 pt-3 sm:pt-0 border-border/30">
                       {item.status === "finished" && (
                         <div className="text-right sm:mr-2">
                           <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Score</p>
@@ -351,6 +351,29 @@ export const TeamCalendar: React.FC<TeamCalendarProps> = ({ matches, canManage, 
                             {item.myScore} - {item.opponentScore}
                           </p>
                         </div>
+                      )}
+
+                      {/* 📅 Googleカレンダー登録リンク */}
+                      <a
+                        href={`https://www.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(item.title || `試合: vs ${item.opponent || "対戦相手未定"}`)}&dates=${item.date.replace(/-/g, "")}/${item.date.replace(/-/g, "")}&location=${encodeURIComponent(item.venueName || "")}&details=${encodeURIComponent(item.description || "")}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="h-9 px-3 rounded-xl border border-border/60 hover:bg-muted text-muted-foreground hover:text-foreground flex items-center justify-center text-[10px] font-bold transition-colors"
+                        title="Googleカレンダーに登録"
+                      >
+                        カレンダー登録
+                      </a>
+
+                      {/* 🚗 試合用の配車管理ボタン (試合終了前) */}
+                      {item.status !== "finished" && (
+                        <Button
+                          onClick={() => router.push(`/attendance/carpool?eventId=${item.id}`)}
+                          variant="outline"
+                          size="sm"
+                          className="h-9 font-black rounded-xl px-3 text-xs border-primary text-primary hover:bg-primary/5 cursor-pointer"
+                        >
+                          配車管理
+                        </Button>
                       )}
 
                       <Button
@@ -420,7 +443,30 @@ export const TeamCalendar: React.FC<TeamCalendarProps> = ({ matches, canManage, 
                     </div>
 
                     {/* ボタンアクション */}
-                    <div className="flex items-center justify-between sm:justify-end gap-4 border-t sm:border-t-0 pt-3 sm:pt-0 border-border/30 shrink-0">
+                    <div className="flex items-center justify-between sm:justify-end gap-2 border-t sm:border-t-0 pt-3 sm:pt-0 border-border/30 shrink-0">
+                      {/* 📅 Googleカレンダー登録リンク */}
+                      <a
+                        href={`https://www.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(item.title || "チーム予定")}&dates=${item.date.replace(/-/g, "")}/${item.date.replace(/-/g, "")}&location=${encodeURIComponent(item.venueName || "")}&details=${encodeURIComponent(item.description || "")}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="h-9 px-3 rounded-xl border border-border/60 hover:bg-muted text-muted-foreground hover:text-foreground flex items-center justify-center text-[10px] font-bold transition-colors"
+                        title="Googleカレンダーに登録"
+                      >
+                        カレンダー登録
+                      </a>
+
+                      {/* 🚗 合宿用の配車管理ボタン */}
+                      {item.type === "camp" && (
+                        <Button
+                          onClick={() => router.push(`/attendance/carpool?eventId=${item.id}`)}
+                          variant="outline"
+                          size="sm"
+                          className="h-9 font-black rounded-xl px-3 text-xs border-primary text-primary hover:bg-primary/5 cursor-pointer"
+                        >
+                          配車管理
+                        </Button>
+                      )}
+
                       <Button
                         onClick={() => router.push(`/attendance`)}
                         size="sm"
