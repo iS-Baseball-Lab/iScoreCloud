@@ -42,11 +42,13 @@ app.post('/', async (c) => {
 
   try {
     const body = await c.req.json();
-    const { id, teamId, name, description, isHeavy } = body;
+    const { id, teamId, name, description, isHeavy, quantity } = body;
 
     if (!teamId || !name) {
       return c.json({ success: false, error: "teamId と name は必須です。" }, 400);
     }
+
+    const qty = quantity != null ? Number(quantity) : 1;
 
     if (id) {
       // 編集（更新）
@@ -54,11 +56,12 @@ app.post('/', async (c) => {
         .set({
           name,
           description: description || null,
-          isHeavy: !!isHeavy
+          isHeavy: !!isHeavy,
+          quantity: qty
         })
         .where(eq(teamEquipments.id, id));
 
-      return c.json({ success: true, data: { id, teamId, name, description, isHeavy } });
+      return c.json({ success: true, data: { id, teamId, name, description, isHeavy, quantity: qty } });
     } else {
       // 新規登録
       const newId = `eq_${crypto.randomUUID().replace(/-/g, '')}`;
@@ -68,10 +71,11 @@ app.post('/', async (c) => {
           teamId,
           name,
           description: description || null,
-          isHeavy: !!isHeavy
+          isHeavy: !!isHeavy,
+          quantity: qty
         });
 
-      return c.json({ success: true, data: { id: newId, teamId, name, description, isHeavy } });
+      return c.json({ success: true, data: { id: newId, teamId, name, description, isHeavy, quantity: qty } });
     }
 
   } catch (err: unknown) {
@@ -131,6 +135,7 @@ app.get('/events/:eventId', async (c) => {
         name: master.name,
         description: master.description,
         isHeavy: master.isHeavy,
+        quantity: master.quantity || 1,
         carpoolId: assigned ? assigned.carpoolId : null,
         responsibleMemberId: assigned ? assigned.responsibleMemberId : null,
         status: assigned ? assigned.status : "pending"

@@ -110,6 +110,7 @@ function CarpoolAssignmentContent() {
   const [eqName, setEqName] = useState("");
   const [eqDescription, setEqDescription] = useState("");
   const [eqIsHeavy, setEqIsHeavy] = useState(false);
+  const [eqQuantity, setEqQuantity] = useState<number>(1); // 道具の個数
   
   // 配車アサイン状態 (クライアント一時メモリ)
   const [assignedCars, setAssignedCars] = useState<AssignedCar[]>([]);
@@ -314,7 +315,8 @@ function CarpoolAssignmentContent() {
           teamId: tid,
           name: eqName.trim(),
           description: eqDescription.trim() || null,
-          isHeavy: eqIsHeavy
+          isHeavy: eqIsHeavy,
+          quantity: eqQuantity
         })
       });
       const json = await res.json() as { success: boolean };
@@ -323,6 +325,7 @@ function CarpoolAssignmentContent() {
         setEqName("");
         setEqDescription("");
         setEqIsHeavy(false);
+        setEqQuantity(1);
         setEditingEq(null);
         await fetchEqMaster();
 
@@ -1294,7 +1297,7 @@ function CarpoolAssignmentContent() {
                                     )}
                                     title={`クリックで状況変更 (現在の状態: ${eq.status === 'returned' ? '返却完了' : eq.status === 'loaded' ? '積載済' : '積載待ち'})`}
                                   >
-                                    {eq.name} {eq.isHeavy ? "⚠️" : ""}
+                                    {eq.name} {eq.quantity > 1 ? `(x${eq.quantity})` : ""} {eq.isHeavy ? "⚠️" : ""}
                                   </span>
                                 ))}
                               </div>
@@ -1387,60 +1390,152 @@ function CarpoolAssignmentContent() {
               </Button>
             </div>
           ) : (
-            <div className="overflow-x-auto border border-border/30 rounded-2xl">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-muted/40 border-b border-border/30 text-[10px] font-black text-zinc-500 uppercase tracking-wider">
-                    <th className="p-3">道具名</th>
-                    <th className="p-3">区分</th>
-                    <th className="p-3">積む車両</th>
-                    <th className="p-3">持ち出し・返却担当</th>
-                    <th className="p-3 text-center">積載・返却状況</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/30 text-xs font-bold">
-                  {equipments.map((eq) => {
-                    return (
-                      <tr key={eq.equipmentId} className="hover:bg-muted/20">
-                        <td className="p-3 font-black">
-                          <div>
-                            <span className="text-foreground">{eq.name}</span>
-                            {eq.description && (
-                              <p className="text-[9px] font-bold text-muted-foreground mt-0.5">{eq.description}</p>
-                            )}
+            <div className="space-y-3">
+              {/* 💻 PC用テーブルレイアウト (md以上で表示) */}
+              <div className="hidden md:block overflow-x-auto border border-border/30 rounded-2xl">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-muted/40 border-b border-border/30 text-[10px] font-black text-zinc-500 uppercase tracking-wider">
+                      <th className="p-3">道具名</th>
+                      <th className="p-3">個数</th>
+                      <th className="p-3">区分</th>
+                      <th className="p-3">積む車両</th>
+                      <th className="p-3">持ち出し・返却担当</th>
+                      <th className="p-3 text-center">積載・返却状況</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/30 text-xs font-bold">
+                    {equipments.map((eq) => {
+                      return (
+                        <tr key={eq.equipmentId} className="hover:bg-muted/20">
+                          <td className="p-3 font-black">
+                            <div>
+                              <span className="text-foreground">{eq.name}</span>
+                              {eq.description && (
+                                <p className="text-[9px] font-bold text-muted-foreground mt-0.5">{eq.description}</p>
+                              )}
+                            </div>
+                          </td>
+                          <td className="p-3 font-bold text-foreground">
+                            {eq.quantity || 1}
+                          </td>
+                          <td className="p-3">
+                            <span className={cn(
+                              "inline-block text-[8px] font-extrabold px-2 py-0.5 rounded-full border tracking-normal",
+                              eq.isHeavy 
+                                ? "bg-rose-500/10 text-rose-600 border-rose-500/20" 
+                                : "bg-zinc-500/10 text-zinc-500 border-zinc-500/20"
+                            )}>
+                              {eq.isHeavy ? "⚠️ 大型/重量" : "通常"}
+                            </span>
+                          </td>
+                          <td className="p-3">
+                            <select
+                              value={eq.carpoolId || ""}
+                              onChange={(e) => handleAssignEquipment(eq.equipmentId, e.target.value || null)}
+                              className="h-9 rounded-xl border border-border bg-muted/20 px-2 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-primary/20 cursor-pointer"
+                            >
+                              <option value="">-- 未積載 (車から降ろす) --</option>
+                              {assignedCars.map(car => (
+                                <option key={car.id} value={car.id}>
+                                  {car.driverName} の車 ({car.carType === 'cargo' ? '道具車' : car.carType === 'bus' ? 'バス' : '普通車'})
+                                </option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="p-3">
+                            <select
+                              value={eq.responsibleMemberId || ""}
+                              onChange={(e) => handleEquipmentResponsibleChange(eq.equipmentId, e.target.value || null)}
+                              className="h-9 rounded-xl border border-border bg-muted/20 px-2 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-primary/20 cursor-pointer"
+                            >
+                              <option value="">-- 担当者なし --</option>
+                              {allAttendees
+                                .filter(att => att.memberId && att.memberType !== 'player')
+                                .map(att => (
+                                  <option key={att.memberId} value={att.memberId!}>
+                                    {att.memberName}
+                                  </option>
+                                ))
+                              }
+                            </select>
+                          </td>
+                          <td className="p-3 text-center">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleEquipmentStatus(eq.equipmentId)}
+                              className={cn(
+                                "px-3 py-1.5 text-[10px] font-black rounded-lg transition-all border cursor-pointer select-none min-w-[90px]",
+                                eq.status === "returned" 
+                                  ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20 shadow-xs" 
+                                  : eq.status === "loaded"
+                                    ? "bg-primary/10 text-primary border-primary/20 shadow-xs"
+                                    : "bg-muted text-muted-foreground border-border/50"
+                              )}
+                            >
+                              {eq.status === "returned" ? "返却完了 ✅" : eq.status === "loaded" ? "積載済 📦" : "積載待ち ⏳"}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* 📱 モバイル用カードリストレイアウト (md未満で表示) */}
+              <div className="block md:hidden space-y-3">
+                {equipments.map((eq) => {
+                  return (
+                    <div key={eq.equipmentId} className="bg-muted/10 border border-border/40 p-4 rounded-2xl space-y-3.5 shadow-xs">
+                      {/* 上段：道具名、個数、区分 */}
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <h4 className="font-black text-sm text-foreground truncate max-w-[160px]">{eq.name}</h4>
+                            <span className="text-[10px] font-black text-primary bg-primary/5 px-2 py-0.5 rounded-md border border-primary/10">
+                              {eq.quantity || 1}個
+                            </span>
                           </div>
-                        </td>
-                        <td className="p-3">
-                          <span className={cn(
-                            "inline-block text-[8px] font-extrabold px-2 py-0.5 rounded-full border tracking-normal",
-                            eq.isHeavy 
-                              ? "bg-rose-500/10 text-rose-600 border-rose-500/20" 
-                              : "bg-zinc-500/10 text-zinc-500 border-zinc-500/20"
-                          )}>
-                            {eq.isHeavy ? "⚠️ 大型/重量" : "通常"}
-                          </span>
-                        </td>
-                        <td className="p-3">
+                          {eq.description && (
+                            <p className="text-[10px] text-muted-foreground mt-1">{eq.description}</p>
+                          )}
+                        </div>
+                        <span className={cn(
+                          "inline-block text-[8px] font-extrabold px-2 py-0.5 rounded-full border tracking-normal shrink-0",
+                          eq.isHeavy 
+                            ? "bg-rose-500/10 text-rose-600 border-rose-500/20" 
+                            : "bg-zinc-500/10 text-zinc-500 border-zinc-500/20"
+                        )}>
+                          {eq.isHeavy ? "⚠️ 重い" : "通常"}
+                        </span>
+                      </div>
+
+                      {/* 中段：積載と担当者 (2カラムの選択) */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <label className="text-[8px] font-black text-zinc-400 uppercase tracking-widest block px-0.5">積む車両</label>
                           <select
                             value={eq.carpoolId || ""}
                             onChange={(e) => handleAssignEquipment(eq.equipmentId, e.target.value || null)}
-                            className="h-9 rounded-xl border border-border bg-muted/20 px-2 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-primary/20 cursor-pointer"
+                            className="w-full h-9 rounded-xl border border-border bg-muted/20 px-2 text-[11px] font-bold focus:outline-none focus:ring-2 focus:ring-primary/20 cursor-pointer"
                           >
-                            <option value="">-- 未積載 (車から降ろす) --</option>
+                            <option value="">-- 未積載 --</option>
                             {assignedCars.map(car => (
                               <option key={car.id} value={car.id}>
-                                {car.driverName} の車 ({car.carType === 'cargo' ? '道具車' : car.carType === 'bus' ? 'バス' : '普通車'})
+                                {car.driverName} ({car.carType === 'cargo' ? '道具' : car.carType === 'bus' ? 'バス' : '普通'})
                               </option>
                             ))}
                           </select>
-                        </td>
-                        <td className="p-3">
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[8px] font-black text-zinc-400 uppercase tracking-widest block px-0.5">持ち出し担当</label>
                           <select
                             value={eq.responsibleMemberId || ""}
                             onChange={(e) => handleEquipmentResponsibleChange(eq.equipmentId, e.target.value || null)}
-                            className="h-9 rounded-xl border border-border bg-muted/20 px-2 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-primary/20 cursor-pointer"
+                            className="w-full h-9 rounded-xl border border-border bg-muted/20 px-2 text-[11px] font-bold focus:outline-none focus:ring-2 focus:ring-primary/20 cursor-pointer"
                           >
-                            <option value="">-- 担当者なし --</option>
+                            <option value="">-- 担当なし --</option>
                             {allAttendees
                               .filter(att => att.memberId && att.memberType !== 'player')
                               .map(att => (
@@ -1450,28 +1545,28 @@ function CarpoolAssignmentContent() {
                               ))
                             }
                           </select>
-                        </td>
-                        <td className="p-3 text-center">
-                          <button
-                            type="button"
-                            onClick={() => handleToggleEquipmentStatus(eq.equipmentId)}
-                            className={cn(
-                              "px-3 py-1.5 text-[10px] font-black rounded-lg transition-all border cursor-pointer select-none min-w-[90px]",
-                              eq.status === "returned" 
-                                ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20 shadow-xs" 
-                                : eq.status === "loaded"
-                                  ? "bg-primary/10 text-primary border-primary/20 shadow-xs"
-                                  : "bg-muted text-muted-foreground border-border/50"
-                            )}
-                          >
-                            {eq.status === "returned" ? "返却完了 ✅" : eq.status === "loaded" ? "積載済 📦" : "積載待ち ⏳"}
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                        </div>
+                      </div>
+
+                      {/* 下段：状況ステータスボタン */}
+                      <button
+                        type="button"
+                        onClick={() => handleToggleEquipmentStatus(eq.equipmentId)}
+                        className={cn(
+                          "w-full py-2 text-[11px] font-black rounded-xl transition-all border cursor-pointer select-none",
+                          eq.status === "returned" 
+                            ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20 shadow-xs" 
+                            : eq.status === "loaded"
+                              ? "bg-primary/10 text-primary border-primary/20 shadow-xs"
+                              : "bg-muted text-muted-foreground border-border/50"
+                        )}
+                      >
+                        {eq.status === "returned" ? "返却完了 ✅" : eq.status === "loaded" ? "積載済 📦" : "積載待ち ⏳"}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>
@@ -1759,6 +1854,20 @@ function CarpoolAssignmentContent() {
                 />
               </div>
 
+              {/* 数量入力フォームの追加 */}
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">個数/数量</label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={eqQuantity}
+                  onChange={e => setEqQuantity(Math.max(1, Number(e.target.value)))}
+                  required
+                  placeholder="1"
+                  className="h-11 rounded-xl font-bold"
+                />
+              </div>
+
               <div className="space-y-1.5">
                 <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block px-1">大型・重量のある道具</span>
                 <div className="flex items-center justify-between p-3 rounded-xl bg-muted/40 border border-border/40 min-h-[44px]">
@@ -1791,15 +1900,16 @@ function CarpoolAssignmentContent() {
                       key={m.id} 
                       className="flex items-center justify-between p-2.5 bg-muted/30 rounded-xl border border-border/30 text-xs font-bold"
                     >
-                      <div className="min-w-0">
-                        <p className="font-black text-foreground truncate flex items-center gap-1.5">
-                          {m.name}
+                      <div className="min-w-0 flex-1">
+                        <div className="font-black text-foreground flex items-center gap-1.5 flex-wrap">
+                          <span className="truncate max-w-[140px]">{m.name}</span>
+                          <span className="text-[9px] font-black text-primary bg-primary/5 px-1.5 py-0.2 rounded border border-primary/10">{m.quantity || 1}個</span>
                           {m.isHeavy && (
                             <span className="text-[7px] font-extrabold bg-rose-500/10 text-rose-600 border border-rose-500/20 px-1 py-0.2 rounded">重</span>
                           )}
-                        </p>
+                        </div>
                         {m.description && (
-                          <p className="text-[9px] text-muted-foreground truncate">{m.description}</p>
+                          <p className="text-[9px] text-muted-foreground truncate mt-0.5">{m.description}</p>
                         )}
                       </div>
                       
@@ -1811,6 +1921,7 @@ function CarpoolAssignmentContent() {
                             setEqName(m.name);
                             setEqDescription(m.description || "");
                             setEqIsHeavy(!!m.isHeavy);
+                            setEqQuantity(m.quantity || 1);
                           }}
                           className="h-7 w-7 rounded-lg text-muted-foreground hover:bg-muted flex items-center justify-center transition-colors cursor-pointer"
                         >
@@ -1837,6 +1948,7 @@ function CarpoolAssignmentContent() {
                 setEqName("");
                 setEqDescription("");
                 setEqIsHeavy(false);
+                setEqQuantity(1);
               }} className="w-full h-12 rounded-xl font-bold text-sm">
                 閉じる
               </Button>

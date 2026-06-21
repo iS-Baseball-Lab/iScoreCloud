@@ -1,0 +1,1 @@
+ALTER TABLE `team_equipments` ADD `quantity` integer DEFAULT 1;

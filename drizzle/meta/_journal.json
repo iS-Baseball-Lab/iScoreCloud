@@ -183,6 +183,13 @@
       "when": 1782042487438,
       "tag": "0025_wooden_jimmy_woo",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "6",
+      "when": 1782054473633,
+      "tag": "0026_wandering_lady_deathstrike",
+      "breakpoints": true
     }
   ]
 }
