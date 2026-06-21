@@ -1,7 +1,7 @@
 // filepath: src/app/(protected)/settings/cars/page.tsx
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,6 +25,8 @@ interface CarInfo {
   capacity: number;
   fuelEfficiency: number;
   carType: "normal" | "cargo" | "bus";
+  ownerId?: string;
+  ownerName?: string | null;
 }
 
 interface Member {
@@ -39,6 +41,9 @@ export default function MyCarsPage() {
   const router = useRouter();
   const [teamId, setTeamId] = useState<string | null>(null);
   const [myMemberId, setMyMemberId] = useState<string | null>(null);
+  const [myRole, setMyRole] = useState<string>("");
+  const [allMembers, setAllMembers] = useState<Member[]>([]);
+  const [selectedOwnerId, setSelectedOwnerId] = useState<string>("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -56,20 +61,32 @@ export default function MyCarsPage() {
   const [carFuelEfficiency, setCarFuelEfficiency] = useState<number>(10);
   const [carType, setCarType] = useState<"normal" | "cargo" | "bus">("normal");
 
+  // 管理者権限判定
+  const canManage = useMemo(() => {
+    const roleUpper = myRole.toUpperCase();
+    return roleUpper === "ADMIN" || roleUpper === "MANAGER" || roleUpper === "SYSTEM_ADMIN";
+  }, [myRole]);
+
   // 削除確認用状態
   const [deleteTarget, setDeleteTarget] = useState<CarInfo | null>(null);
 
   // 1. 初期化とマイメンバーID・マイカー一覧の取得
-  const fetchCarsData = useCallback(async (tid: string, mid: string) => {
+  const fetchCarsData = useCallback(async (tid: string, mid: string, userRole: string) => {
     try {
-      const res = await fetch(`/api/carpools/cars?teamId=${tid}&ownerId=${mid}`);
+      const roleUpper = userRole.toUpperCase();
+      const isAdmin = roleUpper === "ADMIN" || roleUpper === "MANAGER" || roleUpper === "SYSTEM_ADMIN";
+      const url = isAdmin 
+        ? `/api/carpools/cars/list?teamId=${tid}` 
+        : `/api/carpools/cars?teamId=${tid}&ownerId=${mid}`;
+
+      const res = await fetch(url);
       const json = await res.json() as { success: boolean; data?: CarInfo[] };
       if (json.success) {
         setCars(json.data || []);
       }
     } catch (e) {
       console.error(e);
-      toast.error("マイカー一覧の取得に失敗しました。");
+      toast.error("車両一覧の取得に失敗しました。");
     }
   }, []);
 
@@ -78,21 +95,28 @@ export default function MyCarsPage() {
     try {
       const meRes = await fetch("/api/auth/me");
       if (!meRes.ok) throw new Error("認証情報の取得に失敗しました。");
-      const meJson = await meRes.json() as { success: boolean; data?: { id: string } };
+      const meJson = await meRes.json() as { success: boolean; data?: { id: string; memberships?: any[] } };
       if (!meJson.success || !meJson.data) throw new Error("認証に失敗しました。");
       const myUserId = meJson.data.id;
+
+      const membership = meJson.data.memberships?.find((m: any) => m.teamId === tid);
+      const userRole = membership?.role || "";
+      setMyRole(userRole);
 
       const membersRes = await fetch(`/api/teams/${tid}/members`);
       const membersJson = await membersRes.json() as { success: boolean; members?: Member[] };
       if (!membersJson.success) throw new Error("メンバーリストの取得に失敗しました。");
 
-      const myMember = (membersJson.members || []).find(m => m.userId === myUserId);
+      const membersList = membersJson.members || [];
+      setAllMembers(membersList);
+
+      const myMember = membersList.find(m => m.userId === myUserId);
       if (!myMember) {
         throw new Error("チーム内のメンバー登録が見つかりません。先にメンバー登録を行ってください。");
       }
 
       setMyMemberId(myMember.memberId);
-      await fetchCarsData(tid, myMember.memberId);
+      await fetchCarsData(tid, myMember.memberId, userRole);
 
     } catch (e) {
       console.error(e);
@@ -128,6 +152,7 @@ export default function MyCarsPage() {
       setCarCapacity(car.capacity);
       setCarFuelEfficiency(car.fuelEfficiency);
       setCarType(car.carType);
+      setSelectedOwnerId(car.ownerId || myMemberId || "");
     } else {
       setEditingCarId(null);
       setCarName("");
@@ -138,6 +163,7 @@ export default function MyCarsPage() {
       setCarCapacity(4);
       setCarFuelEfficiency(10);
       setCarType("normal");
+      setSelectedOwnerId(myMemberId || "");
     }
     setIsFormModalOpen(true);
   };
@@ -151,6 +177,12 @@ export default function MyCarsPage() {
       return;
     }
 
+    const ownerIdToSend = selectedOwnerId || myMemberId;
+    if (!ownerIdToSend) {
+      toast.error("所有者が選択されていません。");
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       const res = await fetch("/api/carpools/cars", {
@@ -159,7 +191,7 @@ export default function MyCarsPage() {
         body: JSON.stringify({
           id: editingCarId,
           teamId,
-          ownerId: myMemberId,
+          ownerId: ownerIdToSend,
           name: carName.trim(),
           color: carColor.trim() || null,
           colorCode: carColorCode.trim() || null,
@@ -175,7 +207,7 @@ export default function MyCarsPage() {
 
       toast.success(editingCarId ? "マイカー情報を更新しました" : "マイカー情報を登録しました");
       setIsFormModalOpen(false);
-      await fetchCarsData(teamId, myMemberId);
+      await fetchCarsData(teamId, myMemberId, myRole);
     } catch (err) {
       console.error(err);
       toast.error("保存に失敗しました。");
@@ -199,7 +231,7 @@ export default function MyCarsPage() {
 
       toast.success("車両情報を削除しました");
       setDeleteTarget(null);
-      await fetchCarsData(teamId, myMemberId);
+      await fetchCarsData(teamId, myMemberId, myRole);
     } catch (err) {
       console.error(err);
       toast.error("削除に失敗しました。");
@@ -302,6 +334,11 @@ export default function MyCarsPage() {
                       <h4 className="font-black text-sm truncate">
                         {car.name}
                       </h4>
+                      {car.ownerName && (
+                        <p className="text-[10px] font-bold text-zinc-500 mt-0.5">
+                          所有者: <strong className="text-zinc-700 dark:text-zinc-300 font-extrabold">{car.ownerName}</strong>
+                        </p>
+                      )}
                       <span className={cn(
                         "inline-block text-[8px] font-black uppercase px-2 py-0.5 rounded-full border tracking-wider mt-1",
                         car.carType === 'cargo' ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20' : 
@@ -370,6 +407,26 @@ export default function MyCarsPage() {
             </DialogHeader>
 
             <form onSubmit={handleSaveCar} className="space-y-4 pt-2">
+              {/* 所有者選択 (管理者の場合のみ表示) */}
+              {canManage && (
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">所有メンバー（ドライバー） (必須)</label>
+                  <select 
+                    value={selectedOwnerId} 
+                    onChange={e => setSelectedOwnerId(e.target.value)}
+                    required
+                    className="w-full h-11 rounded-xl border border-border bg-muted/20 px-3 text-sm font-bold shadow-xs focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/20"
+                  >
+                    <option value="">-- 所有メンバーを選択 --</option>
+                    {allMembers.map(m => (
+                      <option key={m.memberId} value={m.memberId}>
+                        {m.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               {/* 車両名 */}
               <div className="space-y-1">
                 <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">車両名 (必須)</label>
