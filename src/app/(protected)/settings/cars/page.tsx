@@ -10,7 +10,7 @@ import { Select } from "@/components/ui/select";
 import { toast } from "sonner";
 import { 
   Car, Plus, Trash2, Edit, Loader2, ArrowLeft, AlertCircle, Info, 
-  HelpCircle, Settings, Users, Fuel
+  HelpCircle, Settings, Users, Fuel, Palette, Hash
 } from "lucide-react";
 import { SectionHeader } from "@/components/layout/SectionHeader";
 import { EmptyState } from "@/components/layout/EmptyState";
@@ -267,18 +267,22 @@ export default function MyCarsPage() {
               >
                 <div className="flex justify-between items-start">
                   <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-2xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
-                      <Car className="h-5 w-5" />
-                    </div>
+                    {(() => {
+                      const colorStyle = getCarColorClass(car.color);
+                      return (
+                        <div className={cn(
+                          "h-10 w-10 rounded-2xl flex items-center justify-center shrink-0 border transition-all duration-300 shadow-sm",
+                          colorStyle.bg,
+                          colorStyle.text,
+                          colorStyle.border
+                        )}>
+                          <Car className="h-5 w-5" />
+                        </div>
+                      );
+                    })()}
                     <div className="min-w-0">
-                      <h4 className="font-black text-sm flex items-center gap-1.5 truncate">
-                        {car.color && <span className="text-zinc-500">{car.color}の</span>}
-                        <span>{car.name}</span>
-                        {car.numberPlate && (
-                          <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded text-zinc-500 font-extrabold">
-                            [{car.numberPlate}]
-                          </span>
-                        )}
+                      <h4 className="font-black text-sm truncate">
+                        {car.name}
                       </h4>
                       <span className={cn(
                         "inline-block text-[8px] font-black uppercase px-2 py-0.5 rounded-full border tracking-wider mt-1",
@@ -312,7 +316,7 @@ export default function MyCarsPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 border-t border-border/40 pt-3 text-xs font-bold">
+                <div className="grid grid-cols-2 gap-x-2 gap-y-2 border-t border-border/40 pt-3 text-xs font-bold">
                   <div className="flex items-center gap-1.5 text-zinc-500">
                     <Users className="h-4 w-4 shrink-0 text-muted-foreground" />
                     <span>定員: <strong className="text-foreground text-sm font-black">{car.capacity}</strong> 人</span>
@@ -320,6 +324,14 @@ export default function MyCarsPage() {
                   <div className="flex items-center gap-1.5 text-zinc-500">
                     <Fuel className="h-4 w-4 shrink-0 text-muted-foreground" />
                     <span>燃費: <strong className="text-foreground text-sm font-black">{car.fuelEfficiency}</strong> km/L</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-zinc-500">
+                    <Palette className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <span>カラー: <strong className="text-foreground text-sm font-black">{car.color || "未設定"}</strong></span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-zinc-500">
+                    <Hash className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <span>ナンバー: <strong className="text-foreground text-sm font-black">{car.numberPlate || "未設定"}</strong></span>
                   </div>
                 </div>
 
@@ -481,4 +493,88 @@ export default function MyCarsPage() {
       </main>
     </div>
   );
+}
+
+// 🎨 車の色に応じたCSSスタイルマッピング関数
+function getCarColorClass(colorName: string | null | undefined): { bg: string; text: string; border: string } {
+  if (!colorName) {
+    return { bg: "bg-primary/10 text-primary", text: "text-primary", border: "border-transparent" };
+  }
+  const cleanColor = colorName.trim().toLowerCase();
+
+  // 白・パール系
+  if (cleanColor.includes("白") || cleanColor.includes("ホワイト") || cleanColor.includes("white") || cleanColor.includes("パール")) {
+    return { 
+      bg: "bg-white dark:bg-zinc-800", 
+      text: "text-zinc-600 dark:text-zinc-300", 
+      border: "border-zinc-200 dark:border-zinc-700" 
+    };
+  }
+  // 黒・ダーク系
+  if (cleanColor.includes("黒") || cleanColor.includes("ブラック") || cleanColor.includes("black") || cleanColor.includes("ダークグレー")) {
+    return { 
+      bg: "bg-zinc-950 dark:bg-zinc-900", 
+      text: "text-white dark:text-zinc-200", 
+      border: "border-zinc-900 dark:border-zinc-950" 
+    };
+  }
+  // 赤・ピンク系
+  if (cleanColor.includes("赤") || cleanColor.includes("レッド") || cleanColor.includes("red") || cleanColor.includes("ピンク")) {
+    return { 
+      bg: "bg-rose-500 dark:bg-rose-600", 
+      text: "text-white", 
+      border: "border-rose-600 dark:border-rose-700" 
+    };
+  }
+  // 青・ネイビー系
+  if (cleanColor.includes("青") || cleanColor.includes("ブルー") || cleanColor.includes("blue") || cleanColor.includes("紺") || cleanColor.includes("ネイビー")) {
+    return { 
+      bg: "bg-blue-600 dark:bg-blue-700", 
+      text: "text-white", 
+      border: "border-blue-700 dark:border-blue-800" 
+    };
+  }
+  // 緑・カーキ系
+  if (cleanColor.includes("緑") || cleanColor.includes("グリーン") || cleanColor.includes("green") || cleanColor.includes("カーキ")) {
+    return { 
+      bg: "bg-emerald-600 dark:bg-emerald-700", 
+      text: "text-white", 
+      border: "border-emerald-700 dark:border-emerald-800" 
+    };
+  }
+  // 黄色・ゴールド
+  if (cleanColor.includes("黄") || cleanColor.includes("イエロー") || cleanColor.includes("yellow") || cleanColor.includes("金") || cleanColor.includes("ゴールド")) {
+    return { 
+      bg: "bg-amber-400 dark:bg-amber-500", 
+      text: "text-zinc-900 dark:text-white", 
+      border: "border-amber-500" 
+    };
+  }
+  // 橙・オレンジ
+  if (cleanColor.includes("オレンジ") || cleanColor.includes("orange") || cleanColor.includes("橙")) {
+    return { 
+      bg: "bg-orange-500", 
+      text: "text-white", 
+      border: "border-orange-600" 
+    };
+  }
+  // シルバー・グレー
+  if (cleanColor.includes("シルバー") || cleanColor.includes("銀") || cleanColor.includes("silver") || cleanColor.includes("グレー") || cleanColor.includes("灰") || cleanColor.includes("gray") || cleanColor.includes("grey")) {
+    return { 
+      bg: "bg-zinc-400 dark:bg-zinc-500", 
+      text: "text-white", 
+      border: "border-zinc-500" 
+    };
+  }
+  // 茶色・ベージュ・ブラウン
+  if (cleanColor.includes("茶") || cleanColor.includes("ブラウン") || cleanColor.includes("brown") || cleanColor.includes("ベージュ")) {
+    return { 
+      bg: "bg-amber-800 dark:bg-amber-900", 
+      text: "text-white", 
+      border: "border-amber-900" 
+    };
+  }
+
+  // デフォルト
+  return { bg: "bg-primary/10", text: "text-primary", border: "border-transparent" };
 }

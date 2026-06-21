@@ -591,12 +591,22 @@ function CarpoolAssignmentContent() {
                       <div className="space-y-3">
                         <div className="flex justify-between items-start">
                           <div className="flex items-center gap-2">
-                            <div className={cn(
-                              "h-9 w-9 rounded-2xl flex items-center justify-center text-white shrink-0",
-                              isCargo ? "bg-purple-500" : car.carType === "bus" ? "bg-amber-500" : "bg-primary"
-                            )}>
-                              <Car className="h-4.5 w-4.5" />
-                            </div>
+                            {(() => {
+                              const mc = car.carId ? masterCars.find(m => m.id === car.carId) : null;
+                              const colorStyle = getCarColorClass(mc?.color);
+                              return (
+                                <div className={cn(
+                                  "h-9 w-9 rounded-2xl flex items-center justify-center shrink-0 border transition-all duration-300 shadow-sm",
+                                  isCargo 
+                                    ? "bg-purple-500 text-white border-purple-600" 
+                                    : car.carType === "bus" 
+                                      ? "bg-amber-500 text-white border-amber-600" 
+                                      : `${colorStyle.bg} ${colorStyle.text} ${colorStyle.border}`
+                                )}>
+                                  <Car className="h-4.5 w-4.5" />
+                                </div>
+                              );
+                            })()}
                             <div className="min-w-0">
                               <h4 className="font-black text-xs truncate max-w-[130px]" title={car.driverName}>
                                 {car.driverName} の車
@@ -874,4 +884,88 @@ export default function CarpoolAssignmentPage() {
       <CarpoolAssignmentContent />
     </Suspense>
   );
+}
+
+// 🎨 車の色に応じたCSSスタイルマッピング関数
+function getCarColorClass(colorName: string | null | undefined): { bg: string; text: string; border: string } {
+  if (!colorName) {
+    return { bg: "bg-primary/10 text-primary", text: "text-primary", border: "border-transparent" };
+  }
+  const cleanColor = colorName.trim().toLowerCase();
+
+  // 白・パール系
+  if (cleanColor.includes("白") || cleanColor.includes("ホワイト") || cleanColor.includes("white") || cleanColor.includes("パール")) {
+    return { 
+      bg: "bg-white dark:bg-zinc-800", 
+      text: "text-zinc-600 dark:text-zinc-300", 
+      border: "border-zinc-200 dark:border-zinc-700" 
+    };
+  }
+  // 黒・ダーク系
+  if (cleanColor.includes("黒") || cleanColor.includes("ブラック") || cleanColor.includes("black") || cleanColor.includes("ダークグレー")) {
+    return { 
+      bg: "bg-zinc-950 dark:bg-zinc-900", 
+      text: "text-white dark:text-zinc-200", 
+      border: "border-zinc-900 dark:border-zinc-950" 
+    };
+  }
+  // 赤・ピンク系
+  if (cleanColor.includes("赤") || cleanColor.includes("レッド") || cleanColor.includes("red") || cleanColor.includes("ピンク")) {
+    return { 
+      bg: "bg-rose-500 dark:bg-rose-600", 
+      text: "text-white", 
+      border: "border-rose-600 dark:border-rose-700" 
+    };
+  }
+  // 青・ネイビー系
+  if (cleanColor.includes("青") || cleanColor.includes("ブルー") || cleanColor.includes("blue") || cleanColor.includes("紺") || cleanColor.includes("ネイビー")) {
+    return { 
+      bg: "bg-blue-600 dark:bg-blue-700", 
+      text: "text-white", 
+      border: "border-blue-700 dark:border-blue-800" 
+    };
+  }
+  // 緑・カーキ系
+  if (cleanColor.includes("緑") || cleanColor.includes("グリーン") || cleanColor.includes("green") || cleanColor.includes("カーキ")) {
+    return { 
+      bg: "bg-emerald-600 dark:bg-emerald-700", 
+      text: "text-white", 
+      border: "border-emerald-700 dark:border-emerald-800" 
+    };
+  }
+  // 黄色・ゴールド
+  if (cleanColor.includes("黄") || cleanColor.includes("イエロー") || cleanColor.includes("yellow") || cleanColor.includes("金") || cleanColor.includes("ゴールド")) {
+    return { 
+      bg: "bg-amber-400 dark:bg-amber-500", 
+      text: "text-zinc-900 dark:text-white", 
+      border: "border-amber-500" 
+    };
+  }
+  // 橙・オレンジ
+  if (cleanColor.includes("オレンジ") || cleanColor.includes("orange") || cleanColor.includes("橙")) {
+    return { 
+      bg: "bg-orange-500", 
+      text: "text-white", 
+      border: "border-orange-600" 
+    };
+  }
+  // シルバー・グレー
+  if (cleanColor.includes("シルバー") || cleanColor.includes("銀") || cleanColor.includes("silver") || cleanColor.includes("グレー") || cleanColor.includes("灰") || cleanColor.includes("gray") || cleanColor.includes("grey")) {
+    return { 
+      bg: "bg-zinc-400 dark:bg-zinc-500", 
+      text: "text-white", 
+      border: "border-zinc-500" 
+    };
+  }
+  // 茶色・ベージュ・ブラウン
+  if (cleanColor.includes("茶") || cleanColor.includes("ブラウン") || cleanColor.includes("brown") || cleanColor.includes("ベージュ")) {
+    return { 
+      bg: "bg-amber-800 dark:bg-amber-900", 
+      text: "text-white", 
+      border: "border-amber-900" 
+    };
+  }
+
+  // デフォルト
+  return { bg: "bg-primary/10", text: "text-primary", border: "border-transparent" };
 }
