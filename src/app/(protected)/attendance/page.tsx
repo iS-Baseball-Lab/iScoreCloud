@@ -703,7 +703,7 @@ export default function AttendancePage() {
                           {/* 🚗 配車管理ボタン */}
                           <div className="pt-1">
                             <button
-                              onClick={() => router.push(`/attendance/${e.id}/carpool`)}
+                              onClick={() => router.push(`/attendance/carpool?eventId=${e.id}`)}
                               className="w-full py-1 rounded bg-primary/10 hover:bg-primary/20 border border-primary/20 text-primary flex items-center justify-center text-[8px] font-black cursor-pointer shadow-xs transition-colors"
                               title="配車管理"
                             >

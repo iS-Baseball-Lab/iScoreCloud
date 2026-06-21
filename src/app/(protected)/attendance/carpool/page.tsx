@@ -1,17 +1,15 @@
-// filepath: src/app/(protected)/attendance/[eventId]/carpool/page.tsx
+// filepath: src/app/(protected)/attendance/carpool/page.tsx
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { useRouter, useParams } from "next/navigation";
+import React, { useState, useEffect, useCallback, useMemo, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { 
   Car, Users, ArrowLeft, Loader2, Plus, Trash2, ShieldAlert, 
-  HelpCircle, Settings, Check, X, UserMinus, ShieldCheck, MapPin, 
-  DollarSign, Calculator, AlertTriangle, UserCheck
+  Check, X, UserMinus, ShieldCheck, MapPin, Info, Link, UserCheck
 } from "lucide-react";
 import { SectionHeader } from "@/components/layout/SectionHeader";
 import { EmptyState } from "@/components/layout/EmptyState";
@@ -62,7 +60,7 @@ interface CarpoolRider {
 }
 
 interface AssignedCar {
-  id: string; // 一時的なIDまたは保存されたID
+  id: string; 
   driverId: string; // teamMembers.id
   driverName: string;
   carId: string | null;
@@ -73,10 +71,10 @@ interface AssignedCar {
   riders: CarpoolRider[];
 }
 
-export default function CarpoolAssignmentPage() {
+function CarpoolAssignmentContent() {
   const router = useRouter();
-  const params = useParams();
-  const eventId = params.eventId as string;
+  const searchParams = useSearchParams();
+  const eventId = searchParams.get("eventId") || "";
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -108,6 +106,11 @@ export default function CarpoolAssignmentPage() {
 
   // 1. データ取得
   const fetchData = useCallback(async () => {
+    if (!eventId) {
+      toast.error("イベントIDが見つかりません。");
+      setIsLoading(false);
+      return;
+    }
     setIsLoading(true);
     try {
       const res = await fetch(`/api/carpools/events/${eventId}`);
@@ -205,17 +208,13 @@ export default function CarpoolAssignmentPage() {
     const assignedIds = new Set<string>();
     
     assignedCars.forEach(car => {
-      // 運転手はすでに乗車済み
       assignedIds.add(car.driverId);
-      
-      // 同乗者をアサイン済みIDに追加
       car.riders.forEach(r => {
         if (r.playerId) assignedIds.add(r.playerId);
         if (r.memberId) assignedIds.add(r.memberId);
       });
     });
 
-    // 出席メンバーから、すでに割り当てられているメンバーを除外
     return allAttendees.filter(att => {
       const id = att.playerId || att.memberId;
       return id && !assignedIds.has(id);
@@ -226,16 +225,13 @@ export default function CarpoolAssignmentPage() {
   const checkParentChildConflict = useCallback((car: AssignedCar) => {
     if (!noParentChild) return { conflict: false, msg: "" };
 
-    // 車内の大人IDセット (ドライバー + 同乗大人)
     const adultIds = new Set<string>([car.driverId]);
     car.riders.forEach(r => {
       if (r.memberId) adultIds.add(r.memberId);
     });
 
-    // 車内の選手(子供)IDのリスト
     const childIds = car.riders.map(r => r.playerId).filter(Boolean) as string[];
 
-    // 親子関係に合致するペアがあるか走査
     for (const rel of familyRelations) {
       if (adultIds.has(rel.parentId) && childIds.includes(rel.childId)) {
         return {
@@ -247,20 +243,18 @@ export default function CarpoolAssignmentPage() {
     return { conflict: false, msg: "" };
   }, [familyRelations, noParentChild]);
 
-  // 4. アサイン処理（タップしたメンバーを車にアサイン）
+  // 4. アサイン処理
   const handleAssignRider = (carId: string) => {
     if (!selectedRider) return;
 
     const targetCar = assignedCars.find(c => c.id === carId);
     if (!targetCar) return;
 
-    // 定員オーバーの検証
     if (targetCar.riders.length >= targetCar.capacity) {
       toast.warning("定員オーバーです！席が足りません。");
       return;
     }
 
-    // 更新
     setAssignedCars(prev => prev.map(car => {
       if (car.id !== carId) return car;
       return {
@@ -283,7 +277,7 @@ export default function CarpoolAssignmentPage() {
     toast.success("車にアサインしました。");
   };
 
-  // 5. アサイン解除（降車）
+  // 5. アサイン解除
   const handleRemoveRider = (carId: string, index: number) => {
     setAssignedCars(prev => prev.map(car => {
       if (car.id !== carId) return car;
@@ -304,7 +298,6 @@ export default function CarpoolAssignmentPage() {
       return;
     }
 
-    // 二重追加チェック
     if (assignedCars.some(c => c.driverId === selectedDriverId)) {
       toast.error("この方はすでにドライバーとしてアサインされています。");
       return;
@@ -342,7 +335,7 @@ export default function CarpoolAssignmentPage() {
     setAssignedCars(prev => prev.filter(c => c.id !== carId));
   };
 
-  // 8. 車別の実費（高速代・駐車場代）の変更ハンドラ
+  // 8. 車別の実費の変更
   const handleFeeChange = (carId: string, field: "highwayFee" | "parkingFee", value: number) => {
     setAssignedCars(prev => prev.map(car => {
       if (car.id !== carId) return car;
@@ -353,7 +346,7 @@ export default function CarpoolAssignmentPage() {
     }));
   };
 
-  // 9. ドライバー選択時に、その人のマイカー情報を自動適用する
+  // 9. ドライバー選択時にマイカー情報を自動適用
   const handleDriverChange = (driverId: string) => {
     setSelectedDriverId(driverId);
     const myCar = masterCars.find(c => c.ownerId === driverId);
@@ -368,7 +361,7 @@ export default function CarpoolAssignmentPage() {
     }
   };
 
-  // 10. 保存（一括クリーン＆インサート）
+  // 10. 保存
   const handleSaveAll = async () => {
     setIsSubmitting(true);
     try {
@@ -403,7 +396,7 @@ export default function CarpoolAssignmentPage() {
       if (!json.success) throw new Error(json.error);
 
       toast.success("配車・アサインデータを保存しました！");
-      fetchData(); // リロード
+      fetchData(); 
     } catch (e) {
       console.error(e);
       toast.error("保存に失敗しました。");
@@ -423,6 +416,10 @@ export default function CarpoolAssignmentPage() {
     );
   }
 
+  if (!eventId) {
+    return <div className="p-20 text-center text-muted-foreground">イベント情報が選択されていません。</div>;
+  }
+
   return (
     <div className="flex flex-col min-h-screen text-foreground pb-32">
       <main className="flex-1 px-3 sm:px-6 max-w-5xl mx-auto w-full space-y-6 mt-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -438,7 +435,7 @@ export default function CarpoolAssignmentPage() {
 
         <SectionHeader title={`${eventTitle} 配車管理`} subtitle="CARPOOL ASSIST" showPulse={true} />
 
-        {/* ℹ️ 日時と全体交通費設定 */}
+        {/* ℹ️ 日時と全体設定 */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-card border border-border/40 p-5 rounded-3xl shadow-sm">
           <div className="md:col-span-1 space-y-1">
             <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block">イベント日時</span>
@@ -485,10 +482,10 @@ export default function CarpoolAssignmentPage() {
           </div>
         </div>
 
-        {/* ━━━━ ２カラムアサインエリア ━━━━ */}
+        {/* ━━━━ アサインエリア ━━━━ */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           
-          {/* 👈 左側: 未割り当て出席メンバー一覧 (4カラム分) */}
+          {/* 👈 左側: 未割り当てメンバー一覧 */}
           <div className="lg:col-span-4 space-y-4">
             <div className="bg-card border border-border/40 rounded-3xl p-4 shadow-sm space-y-3">
               <div className="flex items-center justify-between">
@@ -508,7 +505,7 @@ export default function CarpoolAssignmentPage() {
               <div className="max-h-[360px] lg:max-h-[500px] overflow-y-auto space-y-1.5 scrollbar-thin pr-1">
                 {unassignedRiders.length === 0 ? (
                   <div className="text-center py-10 text-muted-foreground text-xs font-bold">
-                    全員いずれかの車にアサイン済みです！👍
+                    全員アサイン済みです！👍
                   </div>
                 ) : (
                   unassignedRiders.map((rider) => {
@@ -549,10 +546,9 @@ export default function CarpoolAssignmentPage() {
             </div>
           </div>
 
-          {/* 👉 右側: アサイン済み配車枠スロット (8カラム分) */}
+          {/* 👉 右側: アサイン済み配車枠スロット */}
           <div className="lg:col-span-8 space-y-4">
             
-            {/* ヘッダー・アクション */}
             <div className="flex items-center justify-between bg-card border border-border/40 p-4 rounded-3xl shadow-sm">
               <span className="text-xs font-black text-muted-foreground">稼働予定車両: {assignedCars.length} 台</span>
               <Button 
@@ -570,7 +566,6 @@ export default function CarpoolAssignmentPage() {
               </Button>
             </div>
 
-            {/* 配車スロットグリッド */}
             {assignedCars.length === 0 ? (
               <EmptyState 
                 icon={Car} 
@@ -581,7 +576,6 @@ export default function CarpoolAssignmentPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {assignedCars.map((car) => {
                   const conflict = checkParentChildConflict(car);
-                  const isNormal = car.carType === "normal";
                   const isCargo = car.carType === "cargo";
                   
                   return (
@@ -592,7 +586,6 @@ export default function CarpoolAssignmentPage() {
                         conflict.conflict ? "border-rose-500/50 shadow-[0_0_10px_rgba(244,63,94,0.05)]" : "border-border/40"
                       )}
                     >
-                      {/* 上部: 車両基本情報 */}
                       <div className="space-y-3">
                         <div className="flex justify-between items-start">
                           <div className="flex items-center gap-2">
@@ -625,7 +618,6 @@ export default function CarpoolAssignmentPage() {
                           </div>
                         </div>
 
-                        {/* 親子警告 */}
                         {conflict.conflict && (
                           <div className="flex items-center gap-1.5 p-2 bg-rose-500/10 border border-rose-500/20 text-rose-500 text-[9px] font-black rounded-lg animate-pulse">
                             <ShieldAlert className="h-3.5 w-3.5 shrink-0" />
@@ -633,7 +625,6 @@ export default function CarpoolAssignmentPage() {
                           </div>
                         )}
 
-                        {/* アサインされたシート一覧 */}
                         <div className="space-y-1">
                           <span className="text-[8px] font-black text-zinc-400 uppercase tracking-widest block px-1">同乗シート</span>
                           
@@ -648,7 +639,7 @@ export default function CarpoolAssignmentPage() {
                                   className="flex items-center justify-between p-2 bg-muted/40 rounded-xl border border-border/20 text-[10px] font-bold"
                                 >
                                   <span className="truncate max-w-[130px]">
-                                    {isRiderPlayer ? `👤 ${riderName} (#${rider.playerNumber || ""})` : `👔 ${riderName}`}
+                                    {isRiderPlayer ? `選手: ${riderName} (#${rider.playerNumber || ""})` : `大人: ${riderName}`}
                                   </span>
                                   <button
                                     onClick={() => handleRemoveRider(car.id, idx)}
@@ -660,7 +651,6 @@ export default function CarpoolAssignmentPage() {
                               );
                             })}
 
-                            {/* 空席スロットのレンダリング */}
                             {Array.from({ length: Math.max(0, car.capacity - car.riders.length) }).map((_, idx) => (
                               <button
                                 key={`empty-${idx}`}
@@ -687,7 +677,6 @@ export default function CarpoolAssignmentPage() {
                         </div>
                       </div>
 
-                      {/* 下部: 高速代・駐車場代の入力 (精算用) */}
                       <div className="grid grid-cols-2 gap-2 border-t border-border/40 pt-3.5 mt-3 text-xs">
                         <div className="space-y-0.5">
                           <label className="text-[8px] font-black text-zinc-400 uppercase tracking-widest block">高速料金 (往復)</label>
@@ -721,7 +710,7 @@ export default function CarpoolAssignmentPage() {
 
         </div>
 
-        {/* 💾 保存・アクションエリア */}
+        {/* 💾 保存アクション */}
         <div className="fixed bottom-0 left-0 right-0 p-4 bg-background/80 backdrop-blur-md border-t border-border shadow-[0_-5px_15px_-5px_rgba(0,0,0,0.05)] z-40">
           <div className="max-w-5xl mx-auto flex items-center justify-between gap-4">
             <div className="text-[10px] text-muted-foreground font-bold hidden sm:block">
@@ -754,7 +743,7 @@ export default function CarpoolAssignmentPage() {
           </div>
         </div>
 
-        {/* 🚗 配車枠追加モーダル */}
+        {/* 🚗 追加モーダル */}
         <Dialog open={isAddCarModalOpen} onOpenChange={setIsAddCarModalOpen}>
           <DialogContent className="rounded-[var(--radius-2xl)] bg-card border-border sm:max-w-md" onInteractOutside={(e) => e.preventDefault()}>
             <DialogHeader>
@@ -766,7 +755,6 @@ export default function CarpoolAssignmentPage() {
 
             <div className="space-y-4 pt-2">
               
-              {/* ドライバー選択 */}
               <div className="space-y-1">
                 <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">運転手を選択</label>
                 <select 
@@ -786,7 +774,6 @@ export default function CarpoolAssignmentPage() {
                 </select>
               </div>
 
-              {/* 車両選択（マイカーから） */}
               <div className="space-y-1">
                 <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">使用する登録車両</label>
                 <select 
@@ -811,7 +798,6 @@ export default function CarpoolAssignmentPage() {
                 </select>
               </div>
 
-              {/* 手動スペック調整 (登録車両がない・手動の場合のみ編集可能にする) */}
               <div className="grid grid-cols-2 gap-4 border-t border-border/40 pt-4">
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">乗車定員 (運転手除く)</label>
@@ -856,5 +842,20 @@ export default function CarpoolAssignmentPage() {
 
       </main>
     </div>
+  );
+}
+
+export default function CarpoolAssignmentPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex h-[70vh] items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="h-10 w-10 animate-spin text-primary" />
+          <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest animate-pulse">Loading Carpool Page...</p>
+        </div>
+      </div>
+    }>
+      <CarpoolAssignmentContent />
+    </Suspense>
   );
 }
