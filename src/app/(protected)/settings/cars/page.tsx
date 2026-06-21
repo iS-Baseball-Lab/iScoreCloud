@@ -268,7 +268,7 @@ export default function MyCarsPage() {
           <ArrowLeft className="h-4 w-4" /> 設定メニューへ戻る
         </Button>
 
-        <SectionHeader title="マイカー情報の登録" subtitle="MY CAR REGISTRATION" showPulse={true} />
+        <SectionHeader title="車両設定・管理" subtitle="VEHICLE SETTINGS" showPulse={true} />
 
         {/* インフォメーションアラート */}
         <div className="bg-primary/5 border border-primary/20 text-primary p-4 rounded-3xl text-xs space-y-2 font-bold">

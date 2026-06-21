@@ -166,7 +166,7 @@ function PlayLogsContent() {
             戻る
           </Button>
           <SectionHeader 
-            title="プレイログ一覧" 
+            title="プレイログ" 
             subtitle="PLAY LOGS" 
             showPulse={false} 
           />

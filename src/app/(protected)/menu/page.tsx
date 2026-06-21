@@ -29,7 +29,7 @@ export default function MenuPage() {
       items: [
         { icon: User, label: "プロフィール設定", href: "/profile" },
         { icon: Settings, label: "アプリ設定", href: "/settings" },
-        { icon: Car, label: "マイカー設定", href: "/settings/cars" },
+        { icon: Car, label: "車両設定・管理", href: "/settings/cars" },
         { icon: UserPlus, label: "チーム参加申請", href: "/teams/join" },
       ],
     },
@@ -63,7 +63,7 @@ export default function MenuPage() {
     {
       title: "支援・その他",
       items: [
-        { icon: CalendarCheck, label: "出欠管理", href: "/attendance" },
+        { icon: CalendarCheck, label: "出欠・スケジュール管理", href: "/attendance" },
         { icon: Zap, label: "試合速報ジェネレーター", href: "/news-generator" },
       ],
     },

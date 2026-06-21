@@ -862,7 +862,7 @@ export default function UnifiedMembersPage() {
         {/* ━━ ページヘッダー ━━ */}
         <div className="space-y-4">
           <SectionHeader 
-            title="チーム名簿・組織管理" 
+            title="名簿・メンバー管理" 
             subtitle="MEMBERS & ROSTER" 
             showPulse={pendingMembers.length > 0} 
           />
