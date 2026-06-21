@@ -61,12 +61,14 @@ export const getAuth = (d1: D1Database, env?: AuthEnv) => {
         google: {
           clientId: env.GOOGLE_CLIENT_ID,
           clientSecret: env.GOOGLE_CLIENT_SECRET || "",
+          overrideUserInfoOnSignIn: true,
         },
       } : {}),
       ...(env?.LINE_CLIENT_ID ? {
         line: {
           clientId: env.LINE_CLIENT_ID,
           clientSecret: env.LINE_CLIENT_SECRET || "",
+          overrideUserInfoOnSignIn: true,
         },
       } : {}),
       ...(env?.MICROSOFT_CLIENT_ID ? {
@@ -74,6 +76,7 @@ export const getAuth = (d1: D1Database, env?: AuthEnv) => {
           clientId: env.MICROSOFT_CLIENT_ID,
           clientSecret: env.MICROSOFT_CLIENT_SECRET || "",
           tenantId: env.MICROSOFT_TENANT_ID || "common",
+          overrideUserInfoOnSignIn: true,
         },
       } : {}),
     },

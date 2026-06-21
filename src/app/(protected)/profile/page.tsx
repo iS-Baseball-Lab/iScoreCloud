@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { User, Mail, Shield, Save, Crown, Loader2, Camera, Calendar, Activity } from "lucide-react";
+import { User, Mail, Shield, Save, Crown, Loader2, Camera, Calendar, Activity, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -153,6 +153,14 @@ export default function ProfilePage() {
                     disabled
                     className="h-14 rounded-2xl border-border/50 bg-muted/50 text-lg font-bold text-muted-foreground cursor-not-allowed opacity-70 px-4"
                   />
+                </div>
+                {/* 🌟 ソーシャルログイン同期ガイダンス */}
+                <div className="flex items-start gap-2.5 p-4 rounded-2xl bg-muted/30 border border-border/40 text-xs font-bold text-muted-foreground leading-normal">
+                  <Info className="h-4 w-4 shrink-0 text-primary mt-0.5" />
+                  <p>
+                    LINE や Google などの連携アカウント側でメールアドレスやプロフィール画像を変更した場合、
+                    <strong>一度ログアウトし、再度ログイン</strong>していただくことで最新情報が自動的に同期されます。
+                  </p>
                 </div>
               </div>
             </div>
