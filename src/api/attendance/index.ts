@@ -51,7 +51,10 @@ app.get('/', async (c) => {
         avatarUrl: item.team_members.avatarUrl || item.user?.image || null,
         authProviders: []
       }))
-      .filter(m => !m.userId || !playerUserIds.includes(m.userId));
+      .filter(m => {
+        if (m.memberType === 'player') return false;
+        return !m.userId || !playerUserIds.includes(m.userId);
+      });
 
     // 4. 全イベントIDのリスト
     const eventIds = teamEvents.map(e => e.id);

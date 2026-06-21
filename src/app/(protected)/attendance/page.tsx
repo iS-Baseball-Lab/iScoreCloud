@@ -374,6 +374,7 @@ export default function AttendancePage() {
     // スタッフ・指導者・保護者（teamMembers）
     if (activeTab === "all" || activeTab === "staff") {
       membersData.forEach(m => {
+        if (m.memberType === "player") return; // 🌟 選手は除外する
         if (filteredMemberIdsByGroup && !filteredMemberIdsByGroup.memberIds.has(m.id)) return;
         const isMe = myUserId && m.userId === myUserId;
         rows.push({
