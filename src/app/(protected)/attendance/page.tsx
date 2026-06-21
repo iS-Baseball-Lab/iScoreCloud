@@ -903,7 +903,8 @@ export default function AttendancePage() {
                           <td 
                             onClick={() => row.canEdit && openBatchEditModal(row)}
                             className={cn(
-                              "p-2.5 sm:p-4 font-bold border-r-2 border-border/60 bg-card sticky left-0 z-10 shadow-[4px_0_8px_-3px_rgba(0,0,0,0.15)] dark:shadow-[4px_0_8px_-3px_rgba(0,0,0,0.5)] transition-colors select-none group",
+                              "p-2.5 sm:p-4 font-bold border-r-2 border-border/60 sticky left-0 z-10 shadow-[4px_0_8px_-3px_rgba(0,0,0,0.15)] dark:shadow-[4px_0_8px_-3px_rgba(0,0,0,0.5)] transition-colors select-none group",
+                              rowBgClass,
                               row.canEdit ? "cursor-pointer hover:bg-muted/80" : "cursor-default"
                             )}
                           >
