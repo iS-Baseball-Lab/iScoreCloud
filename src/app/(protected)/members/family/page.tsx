@@ -22,7 +22,7 @@ interface Player {
 }
 
 interface Member {
-  id: string; // memberId
+  memberId: string;
   name: string;
   memberType: 'staff' | 'parent' | 'other' | 'player';
   role: string;
@@ -310,7 +310,7 @@ export default function FamilyRelationsPage() {
                 >
                   <option value="">-- 保護者を選択してください --</option>
                   {members.map(m => (
-                    <option key={m.id} value={m.id}>{m.name}</option>
+                    <option key={m.memberId} value={m.memberId}>{m.name}</option>
                   ))}
                 </select>
               </div>

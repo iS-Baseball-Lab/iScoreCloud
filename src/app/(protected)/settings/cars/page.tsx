@@ -25,7 +25,7 @@ interface CarInfo {
 }
 
 interface Member {
-  id: string; // memberId
+  memberId: string;
   userId: string | null;
   name: string;
 }
@@ -84,10 +84,10 @@ export default function MyCarsPage() {
         throw new Error("チーム内のメンバー登録が見つかりません。先にメンバー登録を行ってください。");
       }
 
-      setMyMemberId(myMember.id);
+      setMyMemberId(myMember.memberId);
 
       // (3) 車両一覧取得
-      await fetchCarsData(tid, myMember.id);
+      await fetchCarsData(tid, myMember.memberId);
 
     } catch (e) {
       console.error(e);
