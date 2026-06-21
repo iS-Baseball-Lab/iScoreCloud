@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { toast } from "sonner";
 import { 
   Car, Users, ArrowLeft, Loader2, Plus, Trash2, ShieldAlert, 
-  Check, X, UserMinus, ShieldCheck, MapPin, Info, Link, UserCheck
+  Check, X, UserMinus, ShieldCheck, MapPin, Info, Link, UserCheck, Fuel
 } from "lucide-react";
 import { SectionHeader } from "@/components/layout/SectionHeader";
 import { EmptyState } from "@/components/layout/EmptyState";
@@ -364,6 +364,271 @@ function CarpoolAssignmentContent() {
     }
   };
 
+  // 自動アサイン機能
+  const handleAutoAssign = () => {
+    if (assignedCars.length === 0) {
+      toast.error("稼働予定の車両がありません。先に配車枠を追加してください。");
+      return;
+    }
+
+    // 変更用の状態コピー
+    let tempCars = assignedCars.map(c => ({
+      ...c,
+      riders: [...c.riders]
+    }));
+
+    // 未割り当てメンバーを取得し、選手を優先（先にアサイン）するためにソート
+    const sortedRiders = [...unassignedRiders].sort((a, b) => {
+      const aIsPlayer = a.memberType === "player" || a.playerId;
+      const bIsPlayer = b.memberType === "player" || b.playerId;
+      if (aIsPlayer && !bIsPlayer) return -1;
+      if (!aIsPlayer && bIsPlayer) return 1;
+      return 0;
+    });
+
+    let assignedCount = 0;
+    let failedRiders: string[] = [];
+
+    for (const rider of sortedRiders) {
+      const riderId = rider.playerId || rider.memberId;
+      if (!riderId) continue;
+
+      let success = false;
+      for (let i = 0; i < tempCars.length; i++) {
+        const car = tempCars[i];
+
+        // 1. 定員チェック
+        if (car.riders.length >= car.capacity) continue;
+
+        // 2. 親子同乗制限チェック
+        if (noParentChild) {
+          let hasConflict = false;
+
+          // rider が子供（選手）の場合
+          if (rider.playerId || rider.memberType === "player") {
+            const childId = rider.playerId;
+            
+            // ドライバーが親かチェック
+            const isParentDriver = familyRelations.some(
+              rel => rel.parentId === car.driverId && rel.childId === childId
+            );
+            if (isParentDriver) hasConflict = true;
+
+            // 同乗している大人が親かチェック
+            if (!hasConflict) {
+              const hasParentRider = car.riders.some(r => 
+                r.memberId && familyRelations.some(rel => rel.parentId === r.memberId && rel.childId === childId)
+              );
+              if (hasParentRider) hasConflict = true;
+            }
+          } 
+          // rider が大人（保護者等）の場合
+          else if (rider.memberId) {
+            const parentId = rider.memberId;
+
+            // 同乗している選手の中に自分の子供がいるかチェック
+            const hasChildRider = car.riders.some(r => 
+              r.playerId && familyRelations.some(rel => rel.parentId === parentId && rel.childId === r.playerId)
+            );
+            if (hasChildRider) hasConflict = true;
+          }
+
+          if (hasConflict) continue;
+        }
+
+        // すべてのチェックを通過 ➔ アサイン
+        car.riders.push({
+          playerId: rider.playerId,
+          playerName: rider.playerName,
+          playerNumber: rider.playerNumber,
+          memberId: rider.memberId,
+          memberName: rider.memberName,
+          memberType: rider.memberType
+        });
+        success = true;
+        assignedCount++;
+        break;
+      }
+
+      if (!success) {
+        failedRiders.push(rider.playerName || rider.memberName || "不明なメンバー");
+      }
+    }
+
+    setAssignedCars(tempCars);
+
+    if (failedRiders.length > 0) {
+      toast.warning(
+        `自動アサイン完了: ${assignedCount}名を配置しましたが、定員または親子制限により ${failedRiders.length}名（${failedRiders.join(", ")}）が配置できませんでした。手動でご調整ください。`
+      );
+    } else {
+      toast.success(`自動アサイン完了: ${assignedCount}名全員を配置しました！`);
+    }
+  };
+
+  // 交通費精算計算ロジック
+  const settlementResult = useMemo(() => {
+    // 1. 各車両の総費用を計算
+    const carsWithCost = assignedCars.map(car => {
+      const mc = car.carId ? masterCars.find(m => m.id === car.carId) : null;
+      const fuelEff = mc ? mc.fuelEfficiency : 10;
+
+      const gasolineCost = (fuelEff > 0 && distanceKm > 0)
+        ? Math.round((distanceKm / fuelEff) * gasolinePrice)
+        : 0;
+      const totalCost = gasolineCost + (car.highwayFee || 0) + (car.parkingFee || 0);
+      return {
+        ...car,
+        gasolineCost,
+        totalCost
+      };
+    });
+
+    const overallTotalCost = carsWithCost.reduce((sum, c) => sum + c.totalCost, 0);
+
+    // 2. 出席しているメンバーから「世帯（Family）」を特定
+    const presentAttendees = allAttendees.filter(att => att.status !== "absent");
+    
+    interface Family {
+      id: string; 
+      name: string; 
+      members: Attendee[];
+      isDriver: boolean;
+      driverCarCost: number; 
+    }
+
+    const families: Family[] = [];
+
+    // まず選手世帯を作成
+    presentAttendees.forEach(att => {
+      if (att.playerId) {
+        const parentRelations = familyRelations.filter(rel => rel.childId === att.playerId);
+        const parents = presentAttendees.filter(p => p.memberId && parentRelations.some(r => r.parentId === p.memberId));
+        
+        let driverCarCost = 0;
+        let isDriver = false;
+        parents.forEach(p => {
+          const car = carsWithCost.find(c => c.driverId === p.memberId);
+          if (car) {
+            driverCarCost += car.totalCost;
+            isDriver = true;
+          }
+        });
+
+        families.push({
+          id: att.playerId,
+          name: `${att.playerName || "選手"} 家族`,
+          members: [att, ...parents],
+          isDriver,
+          driverCarCost
+        });
+      }
+    });
+
+    // 次に、どの出席選手の親でもない大人（指導者や単独保護者）を独立世帯とする
+    presentAttendees.forEach(att => {
+      if (att.memberId && att.memberType !== "player") {
+        const alreadyIncluded = families.some(fam => 
+          fam.members.some(m => m.memberId === att.memberId)
+        );
+
+        if (!alreadyIncluded) {
+          const car = carsWithCost.find(c => c.driverId === att.memberId);
+          const driverCarCost = car ? car.totalCost : 0;
+
+          families.push({
+            id: att.memberId,
+            name: `${att.memberName || "大人"} 世帯`,
+            members: [att],
+            isDriver: !!car,
+            driverCarCost
+          });
+        }
+      }
+    });
+
+    const totalFamiliesCount = families.length;
+
+    // 3. 割り勘の計算
+    let detailList: {
+      familyId: string;
+      name: string;
+      role: string;
+      costPaid: number; 
+      costShare: number; 
+      balance: number; 
+    }[] = [];
+
+    if (totalFamiliesCount > 0) {
+      if (splitMethod === "by_team") {
+        const sharePerFamily = Math.round(overallTotalCost / totalFamiliesCount);
+
+        detailList = families.map(fam => {
+          const balance = fam.driverCarCost - sharePerFamily;
+          return {
+            familyId: fam.id,
+            name: fam.name,
+            role: fam.isDriver ? "車出し" : "同乗",
+            costPaid: fam.driverCarCost,
+            costShare: sharePerFamily,
+            balance
+          };
+        });
+      } else {
+        const familyShareMap = new Map<string, number>();
+        const familyPaidMap = new Map<string, number>();
+        
+        families.forEach(fam => {
+          familyShareMap.set(fam.id, 0);
+          familyPaidMap.set(fam.id, fam.driverCarCost);
+        });
+
+        carsWithCost.forEach(car => {
+          const carMemberIds = new Set<string>();
+          carMemberIds.add(car.driverId);
+          car.riders.forEach(r => {
+            if (r.memberId) carMemberIds.add(r.memberId);
+            if (r.playerId) carMemberIds.add(r.playerId);
+          });
+
+          const carFamilies = families.filter(fam => 
+            fam.members.some(m => {
+              const id = m.playerId || m.memberId;
+              return id && carMemberIds.has(id);
+            })
+          );
+
+          if (carFamilies.length > 0) {
+            const sharePerCarFamily = Math.round(car.totalCost / carFamilies.length);
+            carFamilies.forEach(fam => {
+              const currentShare = familyShareMap.get(fam.id) || 0;
+              familyShareMap.set(fam.id, currentShare + sharePerCarFamily);
+            });
+          }
+        });
+
+        detailList = families.map(fam => {
+          const costShare = familyShareMap.get(fam.id) || 0;
+          const balance = fam.driverCarCost - costShare;
+          return {
+            familyId: fam.id,
+            name: fam.name,
+            role: fam.isDriver ? "車出し" : (costShare > 0 ? "同乗" : "不参加/未割当"),
+            costPaid: fam.driverCarCost,
+            costShare,
+            balance
+          };
+        });
+      }
+    }
+
+    return {
+      overallTotalCost,
+      totalFamiliesCount,
+      detailList
+    };
+  }, [assignedCars, allAttendees, familyRelations, distanceKm, gasolinePrice, splitMethod]);
+
   // 10. 保存
   const handleSaveAll = async () => {
     setIsSubmitting(true);
@@ -554,19 +819,29 @@ function CarpoolAssignmentContent() {
             
             <div className="flex items-center justify-between bg-card border border-border/40 p-4 rounded-3xl shadow-sm">
               <span className="text-xs font-black text-muted-foreground">稼働予定車両: {assignedCars.length} 台</span>
-              <Button 
-                onClick={() => {
-                  setSelectedDriverId("");
-                  setSelectedCarId("");
-                  setManualCapacity(4);
-                  setManualCarType("normal");
-                  setIsAddCarModalOpen(true);
-                }} 
-                className="h-10 px-4 rounded-xl font-black flex items-center gap-1.5"
-              >
-                <Plus className="h-4 w-4" />
-                配車枠を追加
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button 
+                  variant="outline"
+                  onClick={handleAutoAssign}
+                  className="h-10 px-4 rounded-xl font-black flex items-center gap-1.5 border-primary text-primary hover:bg-primary/5 cursor-pointer"
+                >
+                  <Users className="h-4 w-4" />
+                  自動アサイン
+                </Button>
+                <Button 
+                  onClick={() => {
+                    setSelectedDriverId("");
+                    setSelectedCarId("");
+                    setManualCapacity(4);
+                    setManualCarType("normal");
+                    setIsAddCarModalOpen(true);
+                  }} 
+                  className="h-10 px-4 rounded-xl font-black flex items-center gap-1.5"
+                >
+                  <Plus className="h-4 w-4" />
+                  配車枠を追加
+                </Button>
+              </div>
             </div>
 
             {assignedCars.length === 0 ? (
@@ -738,6 +1013,127 @@ function CarpoolAssignmentContent() {
 
           </div>
 
+        </div>
+
+        {/* ━━ 交通費精算シミュレーター ━━ */}
+        <div className="bg-card border border-border/40 p-6 rounded-3xl shadow-sm space-y-6">
+          <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 pb-4 border-b border-border/40">
+            <div>
+              <h3 className="text-base font-black text-foreground flex items-center gap-2">
+                <Fuel className="h-5 w-5 text-primary" />
+                交通費精算シミュレーター (目安)
+              </h3>
+              <p className="text-xs text-muted-foreground font-bold mt-1">
+                距離、燃費、実費（高速・駐車場）を基にした世帯単位の割り勘計算結果です。
+              </p>
+            </div>
+
+            {/* 精算方式の切り替え */}
+            <div className="flex rounded-xl bg-muted p-1 border border-border/40 self-start sm:self-auto shrink-0">
+              <button
+                type="button"
+                onClick={() => setSplitMethod("by_team")}
+                className={cn(
+                  "px-3 py-1.5 text-[10px] font-black rounded-lg transition-all cursor-pointer",
+                  splitMethod === "by_team" 
+                    ? "bg-card text-foreground shadow-xs" 
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                チーム一括精算 (推奨)
+              </button>
+              <button
+                type="button"
+                onClick={() => setSplitMethod("by_car")}
+                className={cn(
+                  "px-3 py-1.5 text-[10px] font-black rounded-lg transition-all cursor-pointer",
+                  splitMethod === "by_car" 
+                    ? "bg-card text-foreground shadow-xs" 
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                車ごと精算
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="p-4 bg-muted/30 border border-border/20 rounded-2xl text-center">
+              <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">総交通費 (全車両合計)</span>
+              <p className="text-2xl font-black mt-1 text-foreground">
+                {settlementResult.overallTotalCost.toLocaleString()} <span className="text-xs">円</span>
+              </p>
+            </div>
+            <div className="p-4 bg-muted/30 border border-border/20 rounded-2xl text-center">
+              <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">精算対象世帯数</span>
+              <p className="text-2xl font-black mt-1 text-foreground">
+                {settlementResult.totalFamiliesCount} <span className="text-xs">世帯</span>
+              </p>
+            </div>
+            <div className="p-4 bg-muted/30 border border-border/20 rounded-2xl text-center">
+              <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">世帯平均負担額</span>
+              <p className="text-2xl font-black mt-1 text-primary">
+                {settlementResult.totalFamiliesCount > 0 
+                  ? Math.round(settlementResult.overallTotalCost / settlementResult.totalFamiliesCount).toLocaleString()
+                  : 0
+                } <span className="text-xs text-foreground">円</span>
+              </p>
+            </div>
+          </div>
+
+          {/* 精算内訳リスト */}
+          <div className="space-y-2">
+            <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest block px-1">世帯別の収支内訳</span>
+            
+            <div className="overflow-x-auto border border-border/30 rounded-2xl">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-muted/40 border-b border-border/30 text-[10px] font-black text-zinc-500 uppercase tracking-wider">
+                    <th className="p-3">世帯名</th>
+                    <th className="p-3">当日の役割</th>
+                    <th className="p-3 text-right">立替費用</th>
+                    <th className="p-3 text-right">割り勘負担</th>
+                    <th className="p-3 text-right">差引収支</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/30 text-xs font-bold">
+                  {settlementResult.detailList.map((item) => {
+                    const isPlus = item.balance > 0;
+                    const isZero = item.balance === 0;
+                    
+                    return (
+                      <tr key={item.familyId} className="hover:bg-muted/20">
+                        <td className="p-3 font-black">{item.name}</td>
+                        <td className="p-3">
+                          <span className={cn(
+                            "inline-block text-[8px] font-extrabold px-2 py-0.5 rounded-full border tracking-normal",
+                            item.role === "車出し" 
+                              ? "bg-primary/10 text-primary border-primary/20" 
+                              : item.role === "同乗"
+                                ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20"
+                                : "bg-zinc-500/10 text-zinc-500 border-zinc-500/20"
+                          )}>
+                            {item.role}
+                          </span>
+                        </td>
+                        <td className="p-3 text-right tabular-nums">{item.costPaid.toLocaleString()} 円</td>
+                        <td className="p-3 text-right tabular-nums">{item.costShare.toLocaleString()} 円</td>
+                        <td className={cn(
+                          "p-3 text-right tabular-nums font-black",
+                          isPlus ? "text-blue-600 dark:text-blue-400" : isZero ? "text-foreground" : "text-rose-600 dark:text-rose-400"
+                        )}>
+                          {isPlus ? "+" : ""}{item.balance.toLocaleString()} 円
+                          <span className="text-[9px] block font-bold text-muted-foreground">
+                            {isPlus ? "(受け取る)" : isZero ? "(精算なし)" : "(支払う)"}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
 
         {/* 💾 保存アクション */}
