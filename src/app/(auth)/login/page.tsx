@@ -1,9 +1,10 @@
 // filepath: `src/app/(auth)/login/page.tsx`
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Loader2, FileText, Shield } from "lucide-react";
 import { toast } from "sonner";
@@ -11,7 +12,16 @@ import { toast } from "sonner";
 import { authClient } from "@/lib/auth-client"; 
 
 export default function LoginPage() {
+  const router = useRouter();
   const [loadingProvider, setLoadingProvider] = useState<string | null>(null);
+  const { data: session } = authClient.useSession();
+
+  // 💡 すでにログイン済みセッションがある場合は自動的にダッシュボードへリダイレクト
+  useEffect(() => {
+    if (session) {
+      router.replace("/dashboard");
+    }
+  }, [session, router]);
 
   /**
    * 💡 ソーシャルログイン実行 (Better-Auth 仕様)

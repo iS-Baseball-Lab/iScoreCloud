@@ -9,6 +9,8 @@
 import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
+import { authClient } from "@/lib/auth-client";
 import {
   ArrowRight,
   Smartphone,
@@ -33,6 +35,15 @@ type Theme = "light" | "dark" | "system";
 export default function LandingPage() {
   const [theme, setTheme] = useState<Theme>("dark");
   const [mounted, setMounted] = useState(false);
+  const router = useRouter();
+  const { data: session } = authClient.useSession();
+
+  // 💡 すでにログイン済みセッションがある場合は自動ログイン（ダッシュボードへ遷移）
+  useEffect(() => {
+    if (session) {
+      router.replace("/dashboard");
+    }
+  }, [session, router]);
 
   // 💡 近未来的・無差別高速パルスの生成（格子状の神経系を表現）
   const pulses = useMemo(() => [...Array(15)].map((_, i) => ({
