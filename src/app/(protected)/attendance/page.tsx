@@ -701,68 +701,69 @@ export default function AttendancePage() {
                             {new Date(e.startAt).toLocaleDateString("ja-JP", { month: "short", day: "numeric", weekday: "short" })}
                           </p>
                           
-                          {/* 🚗 配車・道具管理ボタン (試合・合宿のみ) */}
-                          {(e.eventType === 'match' || e.eventType === 'camp') && (
-                            <div className="pt-1">
-                              <button
-                                onClick={() => router.push(`/attendance/carpool?eventId=${e.id}`)}
-                                className="w-full py-1 rounded bg-primary/10 hover:bg-primary/20 border border-primary/20 text-primary flex items-center justify-center text-[8px] font-black cursor-pointer shadow-xs transition-colors"
-                                title="配車・道具管理"
-                              >
-                                <Car className="h-2.5 w-2.5 mr-0.5" /> 配車・道具管理
-                              </button>
-                            </div>
-                          )}
-                          {/* ☀️ 午前の時間と場所 */}
-                          <div className="text-[8px] font-bold text-muted-foreground/90 space-y-0.5 mt-1">
-                            <p className="leading-none border-b border-border/20 pb-0.5 text-zinc-500 dark:text-zinc-400 font-extrabold">
-                              ☀️ {(() => {
-                                const startD = new Date(e.startAt);
-                                const startTime = startD.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
-                                if (!e.endAt) return startTime;
-                                const endD = new Date(e.endAt);
-                                const endTime = endD.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
-                                return `${startTime}〜${endTime}`;
-                              })()}
-                            </p>
-                            {e.location && (
-                              <p className="text-[8px] font-extrabold text-blue-600 dark:text-blue-400 truncate max-w-[84px] mx-auto flex items-center justify-center gap-0.5" title={e.location}>
-                                <MapPin className="h-2 w-2 shrink-0 text-blue-500/70" /> {e.location}
-                              </p>
-                            )}
-                          </div>
+                           {/* ☀️ 午前の時間と場所 */}
+                           <div className="text-[8px] font-bold text-muted-foreground/90 space-y-0.5 mt-1">
+                             <p className="leading-none border-b border-border/20 pb-0.5 text-zinc-500 dark:text-zinc-400 font-extrabold">
+                               ☀️ {(() => {
+                                 const startD = new Date(e.startAt);
+                                 const startTime = startD.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
+                                 if (!e.endAt) return startTime;
+                                 const endD = new Date(e.endAt);
+                                 const endTime = endD.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
+                                 return `${startTime}〜${endTime}`;
+                               })()}
+                             </p>
+                             {e.location && (
+                               <p className="text-[8px] font-extrabold text-blue-600 dark:text-blue-400 truncate max-w-[84px] mx-auto flex items-center justify-center gap-0.5" title={e.location}>
+                                 <MapPin className="h-2 w-2 shrink-0 text-blue-500/70" /> {e.location}
+                               </p>
+                             )}
+                           </div>
+ 
+                           {/* 🌙 午後の時間と場所 (登録されている場合のみ表示) */}
+                           {e.pmStartAt && (
+                             <div className="text-[8px] font-bold text-muted-foreground/90 space-y-0.5 mt-1.5 pt-1.5 border-t border-dashed border-border/40">
+                               <p className="leading-none border-b border-border/20 pb-0.5 text-zinc-500 dark:text-zinc-400 font-extrabold">
+                                 🌙 {(() => {
+                                   const pmStartD = new Date(e.pmStartAt!);
+                                   const pmStartTime = pmStartD.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
+                                   if (!e.pmEndAt) return pmStartTime;
+                                   const pmEndD = new Date(e.pmEndAt);
+                                   const pmEndTime = pmEndD.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
+                                   return `${pmStartTime}〜${pmEndTime}`;
+                                 })()}
+                               </p>
+                               {e.pmLocation && (
+                                 <p className="text-[8px] font-extrabold text-blue-600 dark:text-blue-400 truncate max-w-[84px] mx-auto flex items-center justify-center gap-0.5" title={e.pmLocation}>
+                                   <MapPin className="h-2 w-2 shrink-0 text-blue-500/70" /> {e.pmLocation}
+                                 </p>
+                               )}
+                             </div>
+                           )}
+ 
+                           {/* 当番情報 */}
+                           {e.dutyGroup && (
+                             <div className="mt-1">
+                               <span className="text-[8px] font-extrabold text-purple-600 dark:text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded-xs inline-block truncate max-w-[84px]">
+                                 当番: {e.dutyGroup}
+                               </span>
+                             </div>
+                           )}
 
-                          {/* 🌙 午後の時間と場所 (登録されている場合のみ表示) */}
-                          {e.pmStartAt && (
-                            <div className="text-[8px] font-bold text-muted-foreground/90 space-y-0.5 mt-1.5 pt-1.5 border-t border-dashed border-border/40">
-                              <p className="leading-none border-b border-border/20 pb-0.5 text-zinc-500 dark:text-zinc-400 font-extrabold">
-                                🌙 {(() => {
-                                  const pmStartD = new Date(e.pmStartAt!);
-                                  const pmStartTime = pmStartD.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
-                                  if (!e.pmEndAt) return pmStartTime;
-                                  const pmEndD = new Date(e.pmEndAt);
-                                  const pmEndTime = pmEndD.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
-                                  return `${pmStartTime}〜${pmEndTime}`;
-                                })()}
-                              </p>
-                              {e.pmLocation && (
-                                <p className="text-[8px] font-extrabold text-blue-600 dark:text-blue-400 truncate max-w-[84px] mx-auto flex items-center justify-center gap-0.5" title={e.pmLocation}>
-                                  <MapPin className="h-2 w-2 shrink-0 text-blue-500/70" /> {e.pmLocation}
-                                </p>
-                              )}
-                            </div>
-                          )}
-
-                          {/* 当番情報 */}
-                          {e.dutyGroup && (
-                            <div className="mt-1">
-                              <span className="text-[8px] font-extrabold text-purple-600 dark:text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded-xs inline-block truncate max-w-[84px]">
-                                当番: {e.dutyGroup}
-                              </span>
-                            </div>
-                          )}
-
-                          <Separator className="my-1.5 opacity-50" />
+                           {/* 🚗 配車・道具管理ボタン (試合・合宿のみ) */}
+                           {(e.eventType === 'match' || e.eventType === 'camp') && (
+                             <div className="pt-1.5 mt-1 border-t border-dashed border-border/20">
+                               <button
+                                 onClick={() => router.push(`/attendance/carpool?eventId=${e.id}`)}
+                                 className="w-full py-1 rounded bg-primary/10 hover:bg-primary/20 border border-primary/20 text-primary flex items-center justify-center text-[8px] font-black cursor-pointer shadow-xs transition-colors"
+                                 title="配車・道具管理"
+                               >
+                                 <Car className="h-2.5 w-2.5 mr-0.5" /> 配車・道具管理
+                               </button>
+                             </div>
+                           )}
+ 
+                           <Separator className="my-1.5 opacity-50" />
 
                           {/* 集計数 (伝助風) */}
                           <div className="flex items-center justify-center gap-1 text-[8px] font-extrabold tracking-tighter">
