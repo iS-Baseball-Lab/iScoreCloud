@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 
 export interface CalendarMatch {
   id: string;
-  type?: 'match' | 'practice' | 'meeting' | 'event';
+  type?: 'match' | 'practice' | 'meeting' | 'camp' | 'event';
   date: string; // YYYY-MM-DD
   title?: string;
   opponent?: string;
@@ -127,6 +127,8 @@ export const TeamCalendar: React.FC<TeamCalendarProps> = ({ matches, canManage, 
     if (dayEvents.some(e => !e.type || e.type === "match")) return "match_practice";
     // 練習
     if (dayEvents.some(e => e.type === "practice")) return "practice";
+    // 合宿
+    if (dayEvents.some(e => e.type === "camp")) return "camp";
     // 会議
     if (dayEvents.some(e => e.type === "meeting")) return "meeting";
     
@@ -245,6 +247,7 @@ export const TeamCalendar: React.FC<TeamCalendarProps> = ({ matches, canManage, 
                         status === "official" ? "bg-blue-500" : 
                         status === "match_practice" ? "bg-amber-500" :
                         status === "practice" ? "bg-emerald-500" :
+                        status === "camp" ? "bg-orange-500" :
                         status === "meeting" ? "bg-purple-500" : "bg-zinc-400"
                       )}
                     />
@@ -377,10 +380,12 @@ export const TeamCalendar: React.FC<TeamCalendarProps> = ({ matches, canManage, 
                               ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
                               : item.type === "meeting"
                                 ? "bg-purple-500/10 text-purple-600 dark:text-purple-400"
-                                : "bg-zinc-500/10 text-zinc-600 dark:text-zinc-400"
+                                : item.type === "camp"
+                                  ? "bg-orange-500/10 text-orange-600 dark:text-orange-400"
+                                  : "bg-zinc-500/10 text-zinc-600 dark:text-zinc-400"
                           )}
                         >
-                          {item.type === "practice" ? "練習" : item.type === "meeting" ? "会議" : "その他予定"}
+                          {item.type === "practice" ? "練習" : item.type === "meeting" ? "会議" : item.type === "camp" ? "合宿" : "その他予定"}
                         </span>
 
                         {item.dutyGroup && (

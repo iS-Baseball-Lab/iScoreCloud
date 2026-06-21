@@ -8,7 +8,7 @@ export const events = sqliteTable("events", {
   title: text("title").notNull(),
   startAt: integer("start_at", { mode: "timestamp" }).notNull(),
   endAt: integer("end_at", { mode: "timestamp" }),
-  eventType: text("event_type").$type<"match" | "practice" | "meeting">().default("practice"),
+  eventType: text("event_type").$type<"match" | "practice" | "meeting" | "camp">().default("practice"),
   description: text("description"),
   location: text("location"),
   dutyGroup: text("duty_group"), // 当番班

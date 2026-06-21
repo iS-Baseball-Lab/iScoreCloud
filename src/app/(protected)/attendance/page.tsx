@@ -27,7 +27,7 @@ interface Event {
   title: string;
   startAt: string | number | Date;
   endAt?: string | number | Date | null;
-  eventType: "match" | "practice" | "meeting";
+  eventType: "match" | "practice" | "meeting" | "camp";
   description: string | null;
   location: string | null;
   dutyGroup?: string | null;
@@ -135,7 +135,7 @@ export default function AttendancePage() {
   const [eventStartAt, setEventStartAt] = useState<string>("");
   const [eventStartVal, setEventStartVal] = useState<string>(""); // 時間用 hh:mm
   const [eventEndVal, setEventEndVal] = useState<string>(""); // 終了時間用 hh:mm
-  const [eventType, setEventType] = useState<"match" | "practice" | "meeting">("practice");
+  const [eventType, setEventType] = useState<"match" | "practice" | "meeting" | "camp">("practice");
   const [eventLocation, setEventLocation] = useState<string>("");
   const [eventDescription, setEventDescription] = useState<string>("");
   const [eventDutyGroup, setEventDutyGroup] = useState<string>(""); // 当番班
@@ -666,9 +666,10 @@ export default function AttendancePage() {
                               "inline-block text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full border tracking-wider shrink-0",
                               e.eventType === 'match' ? 'bg-primary/10 text-primary border-primary/20' : 
                               e.eventType === 'meeting' ? 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20' : 
+                              e.eventType === 'camp' ? 'bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/20' : 
                               'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
                             )}>
-                              {e.eventType === 'match' ? '試合' : e.eventType === 'meeting' ? '会議' : '練習'}
+                              {e.eventType === 'match' ? '試合' : e.eventType === 'meeting' ? '会議' : e.eventType === 'camp' ? '合宿' : '練習'}
                             </span>
 
                             {/* 管理者向け日程編集ボタン (インライン配置で常に露出) */}
@@ -909,6 +910,7 @@ export default function AttendancePage() {
                     <option value="practice">練習 (Practice)</option>
                     <option value="match">試合 (Match)</option>
                     <option value="meeting">会議 (Meeting)</option>
+                    <option value="camp">合宿 (Camp)</option>
                   </Select>
                 </div>
                 <div className="space-y-1">
