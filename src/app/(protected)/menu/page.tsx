@@ -64,6 +64,7 @@ export default function MenuPage() {
       title: "支援・その他",
       items: [
         { icon: CalendarCheck, label: "出欠・スケジュール管理", href: "/attendance" },
+        { icon: Car, label: "配車管理", href: "/attendance/carpool" },
         { icon: Zap, label: "試合速報ジェネレーター", href: "/news-generator" },
       ],
     },

@@ -9,7 +9,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { toast } from "sonner";
 import { 
   Car, Users, ArrowLeft, Loader2, Plus, Trash2, ShieldAlert, 
-  Check, X, UserMinus, ShieldCheck, MapPin, Info, Link, UserCheck, Fuel
+  Check, X, UserMinus, ShieldCheck, MapPin, Info, Link, UserCheck, Fuel,
+  ChevronRight, Calendar, Edit
 } from "lucide-react";
 import { SectionHeader } from "@/components/layout/SectionHeader";
 import { EmptyState } from "@/components/layout/EmptyState";
@@ -93,6 +94,22 @@ function CarpoolAssignmentContent() {
   const [allAttendees, setAllAttendees] = useState<Attendee[]>([]);
   const [familyRelations, setFamilyRelations] = useState<FamilyRelation[]>([]);
   const [masterCars, setMasterCars] = useState<MasterCar[]>([]);
+  
+  // eventId が存在しないときの日程一覧用
+  const [eventsList, setEventsList] = useState<any[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(false);
+
+  // 🎒 道具関連の状態
+  const [equipments, setEquipments] = useState<any[]>([]);
+  const [isEquipmentsSubmitting, setIsEquipmentsSubmitting] = useState(false);
+
+  // 🎒 道具マスタ編集モーダル用
+  const [isEqModalOpen, setIsEqModalOpen] = useState(false);
+  const [eqMasterList, setEqMasterList] = useState<any[]>([]);
+  const [editingEq, setEditingEq] = useState<any | null>(null);
+  const [eqName, setEqName] = useState("");
+  const [eqDescription, setEqDescription] = useState("");
+  const [eqIsHeavy, setEqIsHeavy] = useState(false);
   
   // 配車アサイン状態 (クライアント一時メモリ)
   const [assignedCars, setAssignedCars] = useState<AssignedCar[]>([]);
@@ -194,6 +211,14 @@ function CarpoolAssignmentContent() {
         setAssignedCars(mappedCars);
       }
 
+      // 🎒 道具データの取得
+      const tid = localStorage.getItem("iscore_selectedTeamId") || "";
+      const eqRes = await fetch(`/api/equipments/events/${eventId}?teamId=${tid}`);
+      const eqJson = await eqRes.json() as { success: boolean; data?: any[] };
+      if (eqJson.success && eqJson.data) {
+        setEquipments(eqJson.data);
+      }
+
     } catch (e) {
       console.error(e);
       toast.error(e instanceof Error ? e.message : "読み込みに失敗しました。");
@@ -203,8 +228,177 @@ function CarpoolAssignmentContent() {
   }, [eventId]);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    if (eventId) {
+      fetchData();
+    }
+  }, [fetchData, eventId]);
+
+  // 🎒 道具アサイン・ステータス更新などのアクション関数
+  const handleAssignEquipment = (equipmentId: string, carpoolId: string | null) => {
+    setEquipments(prev => prev.map(eq => {
+      if (eq.equipmentId !== equipmentId) return eq;
+      return { ...eq, carpoolId: carpoolId || null };
+    }));
+    toast.success(carpoolId ? "道具を車に積載アサインしました" : "道具を車から降ろしました");
+  };
+
+  const handleToggleEquipmentStatus = (equipmentId: string) => {
+    setEquipments(prev => prev.map(eq => {
+      if (eq.equipmentId !== equipmentId) return eq;
+      let newStatus: "pending" | "loaded" | "returned" = "pending";
+      if (eq.status === "pending") newStatus = "loaded";
+      else if (eq.status === "loaded") newStatus = "returned";
+      return { ...eq, status: newStatus };
+    }));
+  };
+
+  const handleEquipmentResponsibleChange = (equipmentId: string, memberId: string | null) => {
+    setEquipments(prev => prev.map(eq => {
+      if (eq.equipmentId !== equipmentId) return eq;
+      return { ...eq, responsibleMemberId: memberId || null };
+    }));
+  };
+
+  // 🎒 自動積載アシスト (重い道具を道具車cargoに優先積載)
+  const handleAutoLoadEquipments = () => {
+    if (assignedCars.length === 0) {
+      toast.error("アサイン対象の車両がありません。先に配車枠を追加してください。");
+      return;
+    }
+
+    const cargoCars = assignedCars.filter(c => c.carType === "cargo");
+    const otherCars = assignedCars.filter(c => c.carType !== "cargo");
+    const allCars = [...cargoCars, ...otherCars];
+
+    setEquipments(prev => prev.map((eq, index) => {
+      let targetCar = null;
+      if (eq.isHeavy) {
+        targetCar = cargoCars.length > 0 ? cargoCars[index % cargoCars.length] : allCars[0];
+      } else {
+        targetCar = allCars[index % allCars.length];
+      }
+      return { ...eq, carpoolId: targetCar ? targetCar.id : null };
+    }));
+
+    toast.success("道具の自動積載アシストを適用しました！(重い道具を道具車へ優先積載)");
+  };
+
+  // 🎒 道具マスタ取得
+  const fetchEqMaster = async () => {
+    const tid = localStorage.getItem("iscore_selectedTeamId");
+    if (!tid) return;
+    try {
+      const res = await fetch(`/api/equipments?teamId=${tid}`);
+      const json = await res.json() as { success: boolean; data?: any[] };
+      if (json.success) {
+        setEqMasterList(json.data || []);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  // 🎒 道具マスタ保存
+  const handleSaveEqMaster = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const tid = localStorage.getItem("iscore_selectedTeamId");
+    if (!tid || !eqName.trim()) return;
+
+    setIsEquipmentsSubmitting(true);
+    try {
+      const res = await fetch("/api/equipments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: editingEq?.id || null,
+          teamId: tid,
+          name: eqName.trim(),
+          description: eqDescription.trim() || null,
+          isHeavy: eqIsHeavy
+        })
+      });
+      const json = await res.json() as { success: boolean };
+      if (json.success) {
+        toast.success(editingEq ? "道具情報を更新しました" : "道具情報をマスタへ追加しました");
+        setEqName("");
+        setEqDescription("");
+        setEqIsHeavy(false);
+        setEditingEq(null);
+        await fetchEqMaster();
+
+        // 割当一覧も再読み込み
+        const eqRes = await fetch(`/api/equipments/events/${eventId}?teamId=${tid}`);
+        const eqJson = await eqRes.json() as { success: boolean; data?: any[] };
+        if (eqJson.success && eqJson.data) {
+          setEquipments(eqJson.data);
+        }
+      } else {
+        toast.error("保存に失敗しました。");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("保存中にエラーが発生しました。");
+    } finally {
+      setIsEquipmentsSubmitting(false);
+    }
+  };
+
+  // 🎒 道具マスタ削除
+  const handleDeleteEqMaster = async (id: string) => {
+    if (!window.confirm("この道具をマスタから削除します。よろしいですか？")) return;
+    try {
+      const res = await fetch(`/api/equipments/${id}`, { method: "DELETE" });
+      const json = await res.json() as { success: boolean };
+      if (json.success) {
+        toast.success("道具を削除しました");
+        await fetchEqMaster();
+
+        const tid = localStorage.getItem("iscore_selectedTeamId");
+        const eqRes = await fetch(`/api/equipments/events/${eventId}?teamId=${tid}`);
+        const eqJson = await eqRes.json() as { success: boolean; data?: any[] };
+        if (eqJson.success && eqJson.data) {
+          setEquipments(eqJson.data);
+        }
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error("削除に失敗しました。");
+    }
+  };
+
+  // eventId がない場合のイベント一覧取得
+  useEffect(() => {
+    if (!eventId) {
+      const fetchEvents = async () => {
+        setEventsLoading(true);
+        try {
+          const tid = localStorage.getItem("iscore_selectedTeamId");
+          if (!tid) {
+            toast.error("チームが選択されていません。");
+            return;
+          }
+          const res = await fetch(`/api/attendance?teamId=${tid}`);
+          const json = await res.json() as { success: boolean; data?: { events: any[] } };
+          if (json.success && json.data) {
+            // 直近のイベントが上に来るように、日付の降順でソート
+            const sorted = [...json.data.events].sort(
+              (a, b) => new Date(b.startAt).getTime() - new Date(a.startAt).getTime()
+            );
+            setEventsList(sorted);
+          } else {
+            toast.error("イベント一覧の取得に失敗しました。");
+          }
+        } catch (e) {
+          console.error(e);
+          toast.error("イベント情報の取得中にエラーが発生しました。");
+        } finally {
+          setEventsLoading(false);
+          setIsLoading(false);
+        }
+      };
+      fetchEvents();
+    }
+  }, [eventId]);
 
   // 2. 未割り当てのメンバー一覧をリアクティブに算出
   const unassignedRiders = useMemo(() => {
@@ -654,6 +848,7 @@ function CarpoolAssignmentContent() {
         }))
       };
 
+      // 1. 配車データの保存
       const res = await fetch(`/api/carpools/events/${eventId}/save`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -661,9 +856,26 @@ function CarpoolAssignmentContent() {
       });
 
       const json = await res.json() as { success: boolean; error?: string };
-      if (!json.success) throw new Error(json.error || "保存に失敗しました。");
+      if (!json.success) throw new Error(json.error || "配車設定の保存に失敗しました。");
 
-      toast.success("配車・アサインデータを保存しました！");
+      // 2. 道具積載データの保存
+      const eqPayload = {
+        equipments: equipments.map(eq => ({
+          equipmentId: eq.equipmentId,
+          carpoolId: eq.carpoolId,
+          responsibleMemberId: eq.responsibleMemberId,
+          status: eq.status
+        }))
+      };
+      const eqRes = await fetch(`/api/equipments/events/${eventId}/save`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(eqPayload)
+      });
+      const eqJson = await eqRes.json() as { success: boolean; error?: string };
+      if (!eqJson.success) throw new Error(eqJson.error || "道具積載データの保存に失敗しました。");
+
+      toast.success("配車・道具のデータを保存しました！");
       fetchData(); 
     } catch (e) {
       console.error(e);
@@ -685,7 +897,82 @@ function CarpoolAssignmentContent() {
   }
 
   if (!eventId) {
-    return <div className="p-20 text-center text-muted-foreground">イベント情報が選択されていません。</div>;
+    return (
+      <div className="flex flex-col min-h-screen text-foreground pb-24">
+        <main className="flex-1 px-3 sm:px-6 max-w-2xl mx-auto w-full space-y-6 mt-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          
+          {/* メニューへ戻るボタン */}
+          <Button 
+            variant="outline" 
+            onClick={() => router.push("/menu")} 
+            className="h-10 px-4 rounded-[var(--radius-xl)] font-black gap-2 shadow-sm border-border bg-card text-foreground hover:bg-muted"
+          >
+            <ArrowLeft className="h-4 w-4" /> メニューへ戻る
+          </Button>
+
+          <SectionHeader title="配車管理日程選択" subtitle="SELECT EVENT" showPulse={true} />
+
+          {eventsLoading ? (
+            <div className="flex h-[40vh] items-center justify-center">
+              <div className="flex flex-col items-center gap-3">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest animate-pulse">Loading Events...</p>
+              </div>
+            </div>
+          ) : eventsList.length === 0 ? (
+            <EmptyState 
+              icon={Car} 
+              title="予定されている日程はありません" 
+              description="「出欠・スケジュール管理」から、試合や遠征などのイベントを登録してください。"
+            />
+          ) : (
+            <div className="space-y-3">
+              <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block px-1">配車設定を行うイベントを選択してください</span>
+              <div className="space-y-2.5">
+                {eventsList.map((evt) => {
+                  const dateStr = new Date(evt.startAt).toLocaleDateString("ja-JP", {
+                    month: "short",
+                    day: "numeric",
+                    weekday: "short",
+                    hour: "2-digit",
+                    minute: "2-digit"
+                  });
+                  return (
+                    <button
+                      key={evt.id}
+                      onClick={() => router.push(`/attendance/carpool?eventId=${evt.id}`)}
+                      className="w-full p-4 bg-card hover:bg-muted/40 border border-border/40 rounded-2xl text-left transition-all active:scale-[0.99] cursor-pointer flex items-center justify-between group shadow-xs hover:shadow-sm"
+                    >
+                      <div className="space-y-1.5 min-w-0">
+                        <span className="inline-block text-[8px] font-extrabold text-primary bg-primary/10 border border-primary/20 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                          {evt.eventType === 'match' ? '試合' : evt.eventType === 'camp' ? '合宿' : evt.eventType === 'practice' ? '練習' : 'その他'}
+                        </span>
+                        <h4 className="font-black text-sm text-foreground truncate group-hover:text-primary transition-colors">
+                          {evt.title}
+                        </h4>
+                        <div className="flex items-center gap-3 text-[10px] text-zinc-500 font-bold">
+                          <span className="flex items-center gap-1">
+                            <Calendar className="h-3.5 w-3.5" />
+                            {dateStr}
+                          </span>
+                          {evt.location && (
+                            <span className="flex items-center gap-1 truncate max-w-[150px]">
+                              <MapPin className="h-3.5 w-3.5" />
+                              {evt.location}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <ChevronRight className="w-5 h-5 text-muted-foreground/30 group-hover:text-primary/60 transition-colors shrink-0 ml-2" />
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </main>
+      </div>
+    );
   }
 
   return (
@@ -980,6 +1267,36 @@ function CarpoolAssignmentContent() {
                             ))}
                           </div>
                         </div>
+
+                        {/* 🎒 車両カード内 積載道具一覧 */}
+                        {(() => {
+                          const carEqs = equipments.filter(eq => eq.carpoolId === car.id);
+                          if (carEqs.length === 0) return null;
+                          return (
+                            <div className="space-y-1 mt-2">
+                              <span className="text-[8px] font-black text-zinc-400 uppercase tracking-widest block px-1">積載道具 ({carEqs.length})</span>
+                              <div className="flex flex-wrap gap-1 px-1">
+                                {carEqs.map(eq => (
+                                  <span 
+                                    key={eq.equipmentId} 
+                                    onClick={() => handleToggleEquipmentStatus(eq.equipmentId)}
+                                    className={cn(
+                                      "inline-block text-[8px] font-extrabold px-1.5 py-0.5 rounded border tracking-normal cursor-pointer select-none",
+                                      eq.status === 'returned'
+                                        ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20"
+                                        : eq.status === 'loaded'
+                                          ? "bg-primary/10 text-primary border-primary/20"
+                                          : "bg-zinc-500/10 text-zinc-500 border-zinc-500/20"
+                                    )}
+                                    title={`クリックで状況変更 (現在の状態: ${eq.status === 'returned' ? '返却完了' : eq.status === 'loaded' ? '積載済' : '積載待ち'})`}
+                                  >
+                                    {eq.name} {eq.isHeavy ? "⚠️" : ""}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </div>
 
                       <div className="grid grid-cols-2 gap-2 border-t border-border/40 pt-3.5 mt-3 text-xs">
@@ -1013,6 +1330,146 @@ function CarpoolAssignmentContent() {
 
           </div>
 
+        </div>
+
+        {/* 🎒 道具の車載・アサイン調整 */}
+        <div className="bg-card border border-border/40 p-6 rounded-3xl shadow-sm space-y-6">
+          <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 pb-4 border-b border-border/40">
+            <div>
+              <h3 className="text-base font-black text-foreground flex items-center gap-2">
+                <Users className="h-5 w-5 text-primary" />
+                遠征道具の積載・担当調整 (EQUIPMENT CARGO)
+              </h3>
+              <p className="text-xs text-muted-foreground font-bold mt-1">
+                試合・遠征に持参するチームの共有道具を、各車両へ積載アサインします。
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <Button
+                variant="outline"
+                onClick={handleAutoLoadEquipments}
+                className="h-10 px-4 rounded-xl font-black flex items-center gap-1.5 border-primary text-primary hover:bg-primary/5 cursor-pointer text-xs"
+              >
+                <Car className="h-4 w-4" />
+                道具を自動積載
+              </Button>
+              <Button 
+                onClick={() => {
+                  fetchEqMaster();
+                  setIsEqModalOpen(true);
+                }}
+                className="h-10 px-4 rounded-xl font-black flex items-center gap-1.5 text-xs"
+              >
+                <Plus className="h-4 w-4" />
+                道具リスト編集
+              </Button>
+            </div>
+          </div>
+
+          {equipments.length === 0 ? (
+            <div className="text-center py-10 text-muted-foreground text-xs font-bold space-y-3">
+              <p>登録されている共有道具がありません。</p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  fetchEqMaster();
+                  setIsEqModalOpen(true);
+                }}
+                className="rounded-lg"
+              >
+                最初の道具を登録する
+              </Button>
+            </div>
+          ) : (
+            <div className="overflow-x-auto border border-border/30 rounded-2xl">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-muted/40 border-b border-border/30 text-[10px] font-black text-zinc-500 uppercase tracking-wider">
+                    <th className="p-3">道具名</th>
+                    <th className="p-3">区分</th>
+                    <th className="p-3">積む車両</th>
+                    <th className="p-3">持ち出し・返却担当</th>
+                    <th className="p-3 text-center">積載・返却状況</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/30 text-xs font-bold">
+                  {equipments.map((eq) => {
+                    return (
+                      <tr key={eq.equipmentId} className="hover:bg-muted/20">
+                        <td className="p-3 font-black">
+                          <div>
+                            <span className="text-foreground">{eq.name}</span>
+                            {eq.description && (
+                              <p className="text-[9px] font-bold text-muted-foreground mt-0.5">{eq.description}</p>
+                            )}
+                          </div>
+                        </td>
+                        <td className="p-3">
+                          <span className={cn(
+                            "inline-block text-[8px] font-extrabold px-2 py-0.5 rounded-full border tracking-normal",
+                            eq.isHeavy 
+                              ? "bg-rose-500/10 text-rose-600 border-rose-500/20" 
+                              : "bg-zinc-500/10 text-zinc-500 border-zinc-500/20"
+                          )}>
+                            {eq.isHeavy ? "⚠️ 大型/重量" : "通常"}
+                          </span>
+                        </td>
+                        <td className="p-3">
+                          <select
+                            value={eq.carpoolId || ""}
+                            onChange={(e) => handleAssignEquipment(eq.equipmentId, e.target.value || null)}
+                            className="h-9 rounded-xl border border-border bg-muted/20 px-2 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-primary/20 cursor-pointer"
+                          >
+                            <option value="">-- 未積載 (車から降ろす) --</option>
+                            {assignedCars.map(car => (
+                              <option key={car.id} value={car.id}>
+                                {car.driverName} の車 ({car.carType === 'cargo' ? '道具車' : car.carType === 'bus' ? 'バス' : '普通車'})
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="p-3">
+                          <select
+                            value={eq.responsibleMemberId || ""}
+                            onChange={(e) => handleEquipmentResponsibleChange(eq.equipmentId, e.target.value || null)}
+                            className="h-9 rounded-xl border border-border bg-muted/20 px-2 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-primary/20 cursor-pointer"
+                          >
+                            <option value="">-- 担当者なし --</option>
+                            {allAttendees
+                              .filter(att => att.memberId && att.memberType !== 'player')
+                              .map(att => (
+                                <option key={att.memberId} value={att.memberId!}>
+                                  {att.memberName}
+                                </option>
+                              ))
+                            }
+                          </select>
+                        </td>
+                        <td className="p-3 text-center">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleEquipmentStatus(eq.equipmentId)}
+                            className={cn(
+                              "px-3 py-1.5 text-[10px] font-black rounded-lg transition-all border cursor-pointer select-none min-w-[90px]",
+                              eq.status === "returned" 
+                                ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20 shadow-xs" 
+                                : eq.status === "loaded"
+                                  ? "bg-primary/10 text-primary border-primary/20 shadow-xs"
+                                  : "bg-muted text-muted-foreground border-border/50"
+                            )}
+                          >
+                            {eq.status === "returned" ? "返却完了 ✅" : eq.status === "loaded" ? "積載済 📦" : "積載待ち ⏳"}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
         {/* ━━ 交通費精算シミュレーター ━━ */}
@@ -1261,6 +1718,123 @@ function CarpoolAssignmentContent() {
               </Button>
               <Button type="button" variant="outline" onClick={() => setIsAddCarModalOpen(false)} className="w-full h-12 rounded-xl font-bold text-sm">
                 キャンセル
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* 🎒 道具リスト編集モーダル */}
+        <Dialog open={isEqModalOpen} onOpenChange={setIsEqModalOpen}>
+          <DialogContent className="rounded-[var(--radius-2xl)] bg-card border-border sm:max-w-md max-h-[90vh] overflow-y-auto" onInteractOutside={(e) => e.preventDefault()}>
+            <DialogHeader>
+              <DialogTitle className="font-black text-lg">共有道具リスト</DialogTitle>
+              <DialogDescription className="text-xs font-bold text-muted-foreground">
+                遠征や試合時に積載・担当調整が必要なチーム共有道具を登録・編集します。
+              </DialogDescription>
+            </DialogHeader>
+
+            <form onSubmit={handleSaveEqMaster} className="space-y-4 pt-2">
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">道具名 (必須)</label>
+                <Input
+                  value={eqName}
+                  onChange={e => setEqName(e.target.value)}
+                  required
+                  placeholder="例: キャッチャー防具一式、バットケースなど"
+                  className="h-11 rounded-xl font-bold"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">補足説明</label>
+                <Input
+                  value={eqDescription}
+                  onChange={e => setEqDescription(e.target.value)}
+                  placeholder="例: 青の大型バッグ、練習球3ダース入りなど"
+                  className="h-11 rounded-xl font-bold"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block px-1">大型・重量のある道具</span>
+                <div className="flex items-center justify-between p-3 rounded-xl bg-muted/40 border border-border/40 min-h-[44px]">
+                  <span className="text-xs font-bold text-muted-foreground">
+                    道具車（cargo）に優先アサインする
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={eqIsHeavy}
+                    onChange={e => setEqIsHeavy(e.target.checked)}
+                    className="h-4.5 w-4.5 rounded border-border text-primary focus:ring-primary accent-primary cursor-pointer"
+                  />
+                </div>
+              </div>
+
+              <Button type="submit" disabled={isEquipmentsSubmitting} className="w-full h-12 rounded-xl font-black text-white text-sm">
+                {isEquipmentsSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : editingEq ? "更新する" : "道具を追加登録する"}
+              </Button>
+            </form>
+
+            <div className="border-t border-border/40 pt-4 mt-2 space-y-3">
+              <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block px-1">登録済みの道具 ({eqMasterList.length})</span>
+              
+              <div className="space-y-1.5 max-h-[220px] overflow-y-auto scrollbar-thin">
+                {eqMasterList.length === 0 ? (
+                  <p className="text-center py-6 text-muted-foreground text-xs font-bold">登録されている道具はありません。</p>
+                ) : (
+                  eqMasterList.map((m) => (
+                    <div 
+                      key={m.id} 
+                      className="flex items-center justify-between p-2.5 bg-muted/30 rounded-xl border border-border/30 text-xs font-bold"
+                    >
+                      <div className="min-w-0">
+                        <p className="font-black text-foreground truncate flex items-center gap-1.5">
+                          {m.name}
+                          {m.isHeavy && (
+                            <span className="text-[7px] font-extrabold bg-rose-500/10 text-rose-600 border border-rose-500/20 px-1 py-0.2 rounded">重</span>
+                          )}
+                        </p>
+                        {m.description && (
+                          <p className="text-[9px] text-muted-foreground truncate">{m.description}</p>
+                        )}
+                      </div>
+                      
+                      <div className="flex items-center gap-1 shrink-0 ml-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingEq(m);
+                            setEqName(m.name);
+                            setEqDescription(m.description || "");
+                            setEqIsHeavy(!!m.isHeavy);
+                          }}
+                          className="h-7 w-7 rounded-lg text-muted-foreground hover:bg-muted flex items-center justify-center transition-colors cursor-pointer"
+                        >
+                          <Edit className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteEqMaster(m.id)}
+                          className="h-7 w-7 rounded-lg text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10 flex items-center justify-center transition-colors cursor-pointer"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <DialogFooter className="pt-2">
+              <Button type="button" variant="outline" onClick={() => {
+                setIsEqModalOpen(false);
+                setEditingEq(null);
+                setEqName("");
+                setEqDescription("");
+                setEqIsHeavy(false);
+              }} className="w-full h-12 rounded-xl font-bold text-sm">
+                閉じる
               </Button>
             </DialogFooter>
           </DialogContent>
