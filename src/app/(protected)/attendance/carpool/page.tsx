@@ -10,7 +10,7 @@ import { toast } from "sonner";
 import { 
   Car, Users, ArrowLeft, Loader2, Plus, Minus, Trash2, ShieldAlert, 
   Check, X, UserMinus, ShieldCheck, MapPin, Info, Link, UserCheck, Fuel,
-  ChevronRight, Calendar, Edit
+  ChevronRight, Calendar, Edit, MessageSquare, Copy
 } from "lucide-react";
 import { SectionHeader } from "@/components/layout/SectionHeader";
 import { EmptyState } from "@/components/layout/EmptyState";
@@ -114,6 +114,22 @@ function CarpoolAssignmentContent() {
   
   // 配車アサイン状態 (クライアント一時メモリ)
   const [assignedCars, setAssignedCars] = useState<AssignedCar[]>([]);
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // LINE共有テキスト生成用の状態
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  const [isLineTextOpen, setIsLineTextOpen] = useState(false);
+  const [lineTitle, setLineTitle] = useState("29期連絡網　川崎中央チーム");
+  const [lineMeetingTime, setLineMeetingTime] = useState("ミューザ集合5:45/出発6:00");
+  const [lineOpponents, setLineOpponents] = useState("東ブロック一年生交流戦（WH）\nvs 鶴見シニア@鶴見シニアG\nvs 青葉緑東シニア@鶴見シニア");
+  const [lineDetails, setLineDetails] = useState("-現地7:00〜7:15到着予定\n-○○さん　審判帯同");
+  const [lineGround, setLineGround] = useState("鶴見シニアG\n千葉県袖ヶ浦市川原井2074-2\n(https://maps.app.goo.gl/oPRqYwytuZbziKym6)");
+  const [lineRoute, setLineRoute] = useState("ミューザ→浜川崎IC(1号横羽線)→大師JCT(6号川崎線)→川崎浮島JCT(アクアライン)→木更津JCT(館山道)→姉崎袖ヶ浦IC→現地（往復）\n→多摩川\n※セブンイレブン姉崎袖ケ浦インター店で集合の上、現地入りして下さい。");
+  const [lineStaff, setLineStaff] = useState("○帯同スタッフ：連絡網を確認ください\n○スコアブック：スタッフ持参\n○チームカメラ：スタッフ持参\n○試合球：遠征道具車積み込み\n○審判：当日打ち合わせ\n○スコアラー：当日打ち合わせ\n○遠征詳細メール：必要\n○アナウンス：当番班母にて\n○お土産手配：当番班母にて※要否確認\n○飲料水：持参");
+  const [lineNotes, setLineNotes] = useState("○助手席の方は、当日ブロマネより助手席メール配信がありますので登録をお願いします。\n○選手の携帯電話使用は禁止です。乗車前にエナメルまたはクーラーボックスに収納すること！\n※ご家庭で周知徹底願います。\n○車内では騒がないこと！！乗車マナーの徹底をお願いします。\n○選手及び父母の服装等は遠征詳細配信メールを厳守願います。\n○高速道路では後部座席もシートベルトを締めましょう。\n○配車内容の変更は基本的に禁止です。変更理由がある場合は相談してください。");
+  const [lineFeesPerPlayer, setLineFeesPerPlayer] = useState("");
+  const [lineMicroFee, setLineMicroFee] = useState("なし");
+  const [lineRep, setLineRep] = useState("配車担当  28期河本  29期祖一");
 
   // 選択中の未アサインメンバー (タップアサイン用)
   const [selectedRider, setSelectedRider] = useState<Attendee | null>(null);
@@ -830,6 +846,145 @@ function CarpoolAssignmentContent() {
     };
   }, [assignedCars, allAttendees, familyRelations, distanceKm, gasolinePrice, splitMethod]);
 
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // LINE共有テキスト生成ロジック
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  const generateLineText = () => {
+    const dateStr = eventDate ? eventDate.split(" ")[0] : "";
+    
+    // 選手リストの抽出
+    const presentPlayers = allAttendees.filter(att => 
+      (att.playerId || att.memberType === "player") && att.status !== "absent" && att.status !== "absence"
+    );
+    const absentPlayers = allAttendees.filter(att => 
+      (att.playerId || att.memberType === "player") && (att.status === "absent" || att.status === "absence")
+    );
+
+    const playerNamesStr = presentPlayers.map(p => p.playerName || p.memberName).filter(Boolean).join("、");
+    const absentNamesStr = absentPlayers.length > 0 
+      ? `（${absentPlayers.map(p => p.playerName || p.memberName).filter(Boolean).join("・")}）`
+      : "";
+
+    // 配車リスト
+    let carpoolStr = "";
+    assignedCars.forEach((car, index) => {
+      const riderNames = car.riders.map(r => r.playerName || r.memberName || "").filter(Boolean).join("、");
+      const carEqs = equipments.filter(eq => eq.carpoolId === car.id);
+      const eqStr = carEqs.length > 0 
+        ? `（${carEqs.map(e => e.name + (e.quantity > 1 ? `x${e.quantity}` : "")).join("、")}）`
+        : "";
+
+      carpoolStr += `\n${index + 1}.${car.driverName}車:${riderNames || "運転手のみ"}${eqStr}`;
+    });
+
+    // 人数集計
+    let countPlayer = 0;
+    let countFather = 0;
+    let countMother = 0;
+    let countChild = 0;
+    let countTotal = 0;
+
+    const countRider = (name: string, isPlayer: boolean, memberType: string | null) => {
+      countTotal++;
+      if (isPlayer || memberType === "player") {
+        countPlayer++;
+      } else if (name.includes("父") || name.includes("コーチ") || name.includes("監督") || name.includes("代表") || name.includes("代表者")) {
+        countFather++;
+      } else if (name.includes("母") || name.includes("マネージャー") || name.includes("ママ")) {
+        countMother++;
+      } else if (name.includes("妹") || name.includes("弟") || name.includes("姉") || name.includes("兄") || name.includes("子") || name.includes("娘") || name.includes("息子")) {
+        countChild++;
+      } else {
+        // デフォルト大人分類
+        if (memberType === "staff" || memberType === "parent") {
+          countMother++; 
+        } else {
+          countPlayer++;
+        }
+      }
+    };
+
+    // ドライバー＆乗車人数
+    assignedCars.forEach(car => {
+      countRider(car.driverName, false, "parent");
+      car.riders.forEach(r => {
+        const name = r.playerName || r.memberName || "";
+        const isP = !!r.playerId || r.memberType === "player";
+        countRider(name, isP, r.memberType);
+      });
+    });
+
+    const headcountStr = `【選手】${countPlayer}名 / 【父】${countFather}名 / 【母】${countMother}名 / 【子】${countChild}名 / 【計】${countTotal}名`;
+
+    // 道具リストのテキスト化（持ち物）
+    const eqListStr = equipments.map(e => `○${e.name}${e.quantity > 1 ? `×${e.quantity}` : ""}：${e.isHeavy ? '道具車' : '各自'}積み込み`).join("\n");
+
+    // 交通費算出
+    const avgCarCost = assignedCars.length > 0 ? Math.round(settlementResult.overallTotalCost / assignedCars.length) : 0;
+    const avgCarCostCeil = Math.ceil(avgCarCost / 100) * 100;
+    const totalPillCost = avgCarCostCeil * assignedCars.length;
+    const costPerPlayer = presentPlayers.length > 0 ? Math.ceil(totalPillCost / presentPlayers.length) : 0;
+    const costPerPlayerCeil = Math.ceil(costPerPlayer / 100) * 100;
+
+    return `${lineTitle}
+
+=====================
+■【配車連絡】
+${dateStr}  
+${lineOpponents}
+=====================
+
+★集合/出発：${lineMeetingTime}
+
+★選手遠征費用：${lineFeesPerPlayer ? Number(lineFeesPerPlayer).toLocaleString() : costPerPlayerCeil.toLocaleString()}円
+
+
+★選手：
+${playerNamesStr || "なし"}
+
+<参加> ：${presentPlayers.length}名
+<欠席> ：${absentPlayers.length}名${absentNamesStr}
+
+
+★配車：
+　マイクロ：${lineMicroFee}${carpoolStr}
+
+※ 道具が載り切らない場合は分担して載せてください。
+
+${headcountStr}
+
+
+※連絡事項
+${lineDetails}
+
+★グラウンド：${lineGround}
+
+★ルート：
+${lineRoute}
+
+★スタッフ/持ち物等：
+${lineStaff}
+${eqListStr ? "\n" + eqListStr : ""}
+
+
+★注意事項等：
+${lineNotes}
+
+---------------------
+
+◆交通費明細 (目安自動算出)
+ ・全車交通費総額：${settlementResult.overallTotalCost.toLocaleString()}円 (台数: ${assignedCars.length}台 / 平均: ${avgCarCost.toLocaleString()}円)
+  ・車出し世帯への支払額：${avgCarCostCeil.toLocaleString()}円/台 (100円未満切り上げ)
+  
+◆精算明細
+  ・選手負担額合計：${presentPlayers.length}名 × ${lineFeesPerPlayer ? Number(lineFeesPerPlayer).toLocaleString() : costPerPlayerCeil.toLocaleString()}円 ＝ ${(presentPlayers.length * (lineFeesPerPlayer ? Number(lineFeesPerPlayer) : costPerPlayerCeil)).toLocaleString()}円
+  ・車出し支払合計：${avgCarCostCeil.toLocaleString()}円 × ${assignedCars.length}台 ＝ ${totalPillCost.toLocaleString()}円
+  ・精算差額：${((presentPlayers.length * (lineFeesPerPlayer ? Number(lineFeesPerPlayer) : costPerPlayerCeil)) - totalPillCost).toLocaleString()}円
+
+---------------------
+${lineRep}`;
+  };
+
   // 10. 保存
   const handleSaveAll = async () => {
     setIsSubmitting(true);
@@ -986,14 +1141,24 @@ function CarpoolAssignmentContent() {
     <div className="flex flex-col min-h-screen text-foreground pb-32">
       <main className="flex-1 px-3 sm:px-6 max-w-5xl mx-auto w-full space-y-6 mt-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
         
-        {/* 戻るボタン */}
-        <Button 
-          variant="outline" 
-          onClick={() => router.back()} 
-          className="h-10 px-4 rounded-[var(--radius-xl)] font-black gap-2 shadow-sm border-border bg-card text-foreground hover:bg-muted"
-        >
-          <ArrowLeft className="h-4 w-4" /> 出欠ボードへ戻る
-        </Button>
+        {/* アクションボタンエリア */}
+        <div className="flex flex-wrap items-center gap-3">
+          <Button 
+            variant="outline" 
+            onClick={() => router.back()} 
+            className="h-10 px-4 rounded-[var(--radius-xl)] font-black gap-2 shadow-sm border-border bg-card text-foreground hover:bg-muted"
+          >
+            <ArrowLeft className="h-4 w-4" /> 出欠ボードへ戻る
+          </Button>
+
+          <Button 
+            variant="outline" 
+            onClick={() => setIsLineTextOpen(true)} 
+            className="h-10 px-4 rounded-[var(--radius-xl)] font-black gap-2 shadow-sm border-primary/20 bg-primary/5 text-primary hover:bg-primary/10 transition-colors"
+          >
+            <MessageSquare className="h-4 w-4" /> LINE連絡文を作成
+          </Button>
+        </div>
 
         <SectionHeader title="配車・道具管理" subtitle="CARPOOL & EQUIPMENT" showPulse={true} />
 
@@ -1976,6 +2141,171 @@ function CarpoolAssignmentContent() {
                 setEqIsHeavy(false);
                 setEqQuantity(1);
               }} className="w-full h-12 rounded-xl font-bold text-sm">
+                閉じる
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* 📱 LINE送信用テキスト生成ダイアログ */}
+        <Dialog open={isLineTextOpen} onOpenChange={setIsLineTextOpen}>
+          <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col p-6 rounded-3xl overflow-hidden">
+            <DialogHeader className="pb-3 border-b border-border/40">
+              <DialogTitle className="text-lg font-black flex items-center gap-2">
+                <MessageSquare className="h-5 w-5 text-primary" /> LINE連絡文の自動生成
+              </DialogTitle>
+              <DialogDescription className="text-xs font-bold text-muted-foreground">
+                登録済みの出欠・配車・道具データから自動でLINE用の連絡文を作成します。必要に応じて項目を微調整してください。
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="flex-1 overflow-y-auto grid grid-cols-1 md:grid-cols-2 gap-6 py-4 pr-1">
+              {/* 左側：編集フォーム */}
+              <div className="space-y-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">タイトル連絡網</label>
+                  <Input 
+                    value={lineTitle} 
+                    onChange={e => setLineTitle(e.target.value)} 
+                    placeholder="例: 29期連絡網　川崎中央チーム"
+                    className="h-10 rounded-xl font-bold"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">集合・出発</label>
+                  <Input 
+                    value={lineMeetingTime} 
+                    onChange={e => setLineMeetingTime(e.target.value)} 
+                    placeholder="例: ミューザ集合5:45/出発6:00"
+                    className="h-10 rounded-xl font-bold"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">対戦相手・イベント詳細</label>
+                  <textarea 
+                    value={lineOpponents} 
+                    onChange={e => setLineOpponents(e.target.value)} 
+                    placeholder="例: 東ブロック一年生交流戦&#13;vs 鶴見シニア@鶴見シニアG"
+                    rows={3}
+                    className="w-full text-sm p-3 rounded-xl border border-input bg-background font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">マイクロバス（手動入力）</label>
+                  <Input 
+                    value={lineMicroFee} 
+                    onChange={e => setLineMicroFee(e.target.value)} 
+                    placeholder="例: なし、または 29期マイクロ（運転: 佐藤コーチ）"
+                    className="h-10 rounded-xl font-bold"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">選手遠征費用 (1人当たり/円)</label>
+                  <Input 
+                    type="number"
+                    value={lineFeesPerPlayer} 
+                    onChange={e => setLineFeesPerPlayer(e.target.value)} 
+                    placeholder="未指定の場合は自動算出(目安)を適用"
+                    className="h-10 rounded-xl font-bold"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">連絡事項・スケジュール補足</label>
+                  <textarea 
+                    value={lineDetails} 
+                    onChange={e => setLineDetails(e.target.value)} 
+                    placeholder="例: -現地7:00〜7:15到着予定&#13;-審判帯同..."
+                    rows={3}
+                    className="w-full text-sm p-3 rounded-xl border border-input bg-background font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">グラウンド・住所・地図URL</label>
+                  <textarea 
+                    value={lineGround} 
+                    onChange={e => setLineGround(e.target.value)} 
+                    placeholder="住所やGoogleマップURLなど"
+                    rows={3}
+                    className="w-full text-sm p-3 rounded-xl border border-input bg-background font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">移動ルート・途中の集合場所</label>
+                  <textarea 
+                    value={lineRoute} 
+                    onChange={e => setLineRoute(e.target.value)} 
+                    placeholder="経由するICやPA、コンビニの集合場所等"
+                    rows={4}
+                    className="w-full text-sm p-3 rounded-xl border border-input bg-background font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">スタッフ/持参物 (道具以外)</label>
+                  <textarea 
+                    value={lineStaff} 
+                    onChange={e => setLineStaff(e.target.value)} 
+                    placeholder="カメラ、スコアブック等の持参指示"
+                    rows={4}
+                    className="w-full text-sm p-3 rounded-xl border border-input bg-background font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">注意事項等</label>
+                  <textarea 
+                    value={lineNotes} 
+                    onChange={e => setLineNotes(e.target.value)} 
+                    placeholder="マナー、シートベルト、携帯電話使用禁止など"
+                    rows={4}
+                    className="w-full text-sm p-3 rounded-xl border border-input bg-background font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">署名</label>
+                  <Input 
+                    value={lineRep} 
+                    onChange={e => setLineRep(e.target.value)} 
+                    placeholder="配車担当の名前など"
+                    className="h-10 rounded-xl font-bold"
+                  />
+                </div>
+              </div>
+
+              {/* 右側：生成プレビュー */}
+              <div className="flex flex-col h-full min-h-[400px]">
+                <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1 mb-1 block">生成プレビュー</label>
+                <div className="flex-1 relative rounded-2xl border border-border bg-muted/30 dark:bg-muted/10 overflow-hidden flex flex-col">
+                  <textarea
+                    readOnly
+                    value={generateLineText()}
+                    className="flex-1 w-full p-4 font-mono text-xs font-medium bg-transparent border-0 resize-none focus:outline-none focus:ring-0 overflow-y-auto leading-relaxed text-zinc-800 dark:text-zinc-200"
+                  />
+                  <div className="p-3 bg-muted/60 dark:bg-muted/20 border-t border-border flex items-center justify-end shrink-0">
+                    <Button
+                      onClick={() => {
+                        navigator.clipboard.writeText(generateLineText());
+                        toast.success("LINE連絡テキストをコピーしました！");
+                      }}
+                      className="gap-2 h-10 px-4 rounded-xl font-black text-white text-xs"
+                    >
+                      <Copy className="h-4 w-4" /> クリップボードにコピー
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter className="pt-3 border-t border-border/40 shrink-0">
+              <Button variant="outline" onClick={() => setIsLineTextOpen(false)} className="w-full h-11 rounded-xl font-bold text-xs">
                 閉じる
               </Button>
             </DialogFooter>
