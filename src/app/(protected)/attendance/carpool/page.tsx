@@ -661,13 +661,13 @@ function CarpoolAssignmentContent() {
       });
 
       const json = await res.json() as { success: boolean; error?: string };
-      if (!json.success) throw new Error(json.error);
+      if (!json.success) throw new Error(json.error || "保存に失敗しました。");
 
       toast.success("配車・アサインデータを保存しました！");
       fetchData(); 
     } catch (e) {
       console.error(e);
-      toast.error("保存に失敗しました。");
+      toast.error(`保存に失敗しました: ${e instanceof Error ? e.message : "不明なエラー"}`);
     } finally {
       setIsSubmitting(false);
     }
@@ -770,7 +770,7 @@ function CarpoolAssignmentContent() {
                 </div>
               )}
 
-              <div className="max-h-[360px] lg:max-h-[500px] overflow-y-auto space-y-1.5 scrollbar-thin pr-1">
+              <div className="max-h-[360px] lg:max-h-[500px] overflow-y-auto space-y-1.5 scrollbar-thin p-1 pr-1.5">
                 {unassignedRiders.length === 0 ? (
                   <div className="text-center py-10 text-muted-foreground text-xs font-bold">
                     全員アサイン済みです！👍
@@ -788,7 +788,7 @@ function CarpoolAssignmentContent() {
                         className={cn(
                           "w-full p-2.5 rounded-xl border text-left transition-all active:scale-98 cursor-pointer flex items-center justify-between",
                           isSelected 
-                            ? "bg-primary border-primary text-white shadow-md scale-[1.02]" 
+                            ? "bg-primary border-primary text-white shadow-sm ring-2 ring-primary ring-offset-2 dark:ring-offset-zinc-950" 
                             : "bg-muted/40 hover:bg-muted/75 border-border/50 text-foreground"
                         )}
                       >

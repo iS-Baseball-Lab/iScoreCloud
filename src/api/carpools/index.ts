@@ -443,8 +443,25 @@ app.post('/events/:eventId/save', async (c) => {
 
       // 3. 新しい配車枠および同乗者のインサート
       if (Array.isArray(carpools) && carpools.length > 0) {
+        // 外部キーの存在チェック用にマスタIDリストを取得
+        const validDrivers = await tx.select({ id: teamMembers.id }).from(teamMembers);
+        const validDriverIds = new Set(validDrivers.map(d => d.id));
+
+        const validCars = await tx.select({ id: memberCars.id }).from(memberCars);
+        const validCarIds = new Set(validCars.map(c => c.id));
+
+        const validPlayers = await tx.select({ id: players.id }).from(players);
+        const validPlayerIds = new Set(validPlayers.map(p => p.id));
+
         for (const cp of carpools) {
+          // driverId が有効な teamMembers.id に存在するかチェック
+          if (!cp.driverId || !validDriverIds.has(cp.driverId)) {
+            console.warn(`[Save Carpool Warning] Skipping invalid driverId: ${cp.driverId}`);
+            continue; // ドライバーが無効な場合はこの配車枠の保存をスキップ
+          }
+
           const carpoolId = `cp_${crypto.randomUUID().replace(/-/g, '')}`;
+          const isCarValid = cp.carId && validCarIds.has(cp.carId);
 
           // 配車枠のインサート
           await tx.insert(eventCarpools)
@@ -452,7 +469,7 @@ app.post('/events/:eventId/save', async (c) => {
               id: carpoolId,
               eventId,
               driverId: cp.driverId,
-              carId: cp.carId || null,
+              carId: isCarValid ? cp.carId : null, // 無効な車両IDはnullにフォールバック
               capacity: Number(cp.capacity) || 4,
               carType: cp.carType || 'normal',
               highwayFee: Number(cp.highwayFee) || 0,
@@ -462,13 +479,22 @@ app.post('/events/:eventId/save', async (c) => {
           // 同乗者のインサート
           if (Array.isArray(cp.riders) && cp.riders.length > 0) {
             for (const rider of cp.riders) {
+              const isPlayerValid = !!(rider.playerId && validPlayerIds.has(rider.playerId));
+              const isMemberValid = !!(rider.memberId && validDriverIds.has(rider.memberId));
+
+              // どちらも有効でない場合はインサートをスキップ
+              if (!isPlayerValid && !isMemberValid) {
+                console.warn(`[Save Carpool Warning] Skipping invalid rider (no valid player or member):`, rider);
+                continue;
+              }
+
               const riderId = `cpr_${crypto.randomUUID().replace(/-/g, '')}`;
               await tx.insert(eventCarpoolRiders)
                 .values({
                   id: riderId,
                   carpoolId,
-                  playerId: rider.playerId || null,
-                  memberId: rider.memberId || null
+                  playerId: isPlayerValid ? rider.playerId : null,
+                  memberId: isMemberValid ? rider.memberId : null
                 });
             }
           }
