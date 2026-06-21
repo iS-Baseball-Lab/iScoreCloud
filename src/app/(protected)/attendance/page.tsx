@@ -743,8 +743,8 @@ export default function AttendancePage() {
             <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-250px)] md:max-h-[calc(100vh-290px)] scrollbar-thin">
               <table className="w-full border-collapse text-left table-fixed min-w-[420px]">
                 <colgroup>
-                  {/* メンバー列: スマホ 150px, PC 180px */}
-                  <col className="w-[150px] sm:w-[180px]" />
+                  {/* メンバー列: スマホ 90px, PC 110px */}
+                  <col className="w-[90px] sm:w-[110px]" />
                   {/* イベント列: 常に 96px */}
                   {filteredEvents.map(e => (
                     <col key={e.id} className="w-[96px]" />
@@ -754,8 +754,7 @@ export default function AttendancePage() {
                 {/* ━ ヘッダー ━ */}
                 <thead className="relative z-20">
                   <tr className="border-b border-border/50 bg-muted/20">
-                    {/* 左端：メンバー枠 */}
-                    <th className="p-2.5 sm:p-4 font-black text-[10px] sm:text-xs uppercase tracking-wider text-muted-foreground border-r-2 border-border/60 bg-card sticky left-0 top-0 z-35 shadow-[4px_0_8px_-3px_rgba(0,0,0,0.15)] dark:shadow-[4px_0_8px_-3px_rgba(0,0,0,0.5)]">
+                    <th className="py-2.5 px-1.5 sm:py-4 sm:px-2.5 font-black text-[10px] sm:text-xs uppercase tracking-wider text-muted-foreground bg-card sticky left-0 top-0 z-35 shadow-[4px_0_8px_-3px_rgba(0,0,0,0.15)] dark:shadow-[4px_0_8px_-3px_rgba(0,0,0,0.5)] relative after:content-[''] after:absolute after:right-0 after:top-0 after:bottom-0 after:w-[2px] after:bg-border/80">
                       メンバー
                     </th>
                     
@@ -903,7 +902,7 @@ export default function AttendancePage() {
                           <td 
                             onClick={() => row.canEdit && openBatchEditModal(row)}
                             className={cn(
-                              "p-2.5 sm:p-4 font-bold border-r-2 border-border/60 sticky left-0 z-10 shadow-[4px_0_8px_-3px_rgba(0,0,0,0.15)] dark:shadow-[4px_0_8px_-3px_rgba(0,0,0,0.5)] transition-colors select-none group",
+                              "py-2.5 px-1.5 sm:py-4 sm:px-2.5 font-bold sticky left-0 z-10 shadow-[4px_0_8px_-3px_rgba(0,0,0,0.15)] dark:shadow-[4px_0_8px_-3px_rgba(0,0,0,0.5)] transition-colors select-none group relative after:content-[''] after:absolute after:right-0 after:top-0 after:bottom-0 after:w-[2px] after:bg-border/80",
                               rowBgClass,
                               row.canEdit ? "cursor-pointer hover:bg-muted/80" : "cursor-default"
                             )}
