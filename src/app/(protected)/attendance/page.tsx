@@ -627,7 +627,7 @@ export default function AttendancePage() {
             description={canManage ? "「日程を追加」ボタンから、練習や試合の日程を追加してください。" : "まだチームスケジュールがありません。"}
           />
         ) : (
-          <div className="bg-card border border-border/40 rounded-3xl overflow-hidden shadow-sm">
+          <div className="bg-card border border-border/40 rounded-3xl shadow-sm">
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-left table-fixed min-w-[420px]">
                 <colgroup>
@@ -643,13 +643,13 @@ export default function AttendancePage() {
                 <thead>
                   <tr className="border-b border-border/50 bg-muted/20">
                     {/* 左端：メンバー枠 */}
-                    <th className="p-1 sm:p-2.5 font-black text-[10px] sm:text-xs uppercase tracking-wider text-muted-foreground border-r border-border/40 bg-card sticky left-0 top-16 sm:top-20 z-30 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+                    <th className="p-1 sm:p-2.5 font-black text-[10px] sm:text-xs uppercase tracking-wider text-muted-foreground border-r border-border/40 bg-card sticky left-0 top-16 sm:top-20 z-35 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
                       メンバー
                     </th>
                     
                     {/* 右側：イベント日程列 */}
                     {eventsData.map(e => (
-                      <th key={e.id} className="p-2.5 border-r border-border/30 text-center align-top relative group sticky top-16 sm:top-20 z-20 bg-card">
+                      <th key={e.id} className="p-2.5 border-r border-border/30 text-center align-top relative group sticky top-16 sm:top-20 z-25 bg-card">
                         <div className="space-y-1">
                           
                           {/* 日程種別マーク & 操作ボタンのインライン化 */}
@@ -773,7 +773,7 @@ export default function AttendancePage() {
                         <tr key={`${row.type}-${row.id}`} className={cn("hover:bg-muted/60 transition-colors", rowBgClass)}>
                           
                           {/* 左端メンバー名列 */}
-                          <td className={cn("p-0.5 sm:p-1.5 font-bold text-xs border-r border-border/40 sticky left-0 z-30 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] h-full overflow-hidden whitespace-nowrap", rowBgClass)}>
+                          <td className={cn("p-0.5 sm:p-1.5 font-bold text-xs border-r border-border/40 sticky left-0 z-15 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] h-full overflow-hidden whitespace-nowrap", rowBgClass)}>
                             <div className="flex items-center gap-1 sm:gap-2 w-full overflow-hidden">
                               {row.type === "player" ? (
                                 row.avatarUrl ? (
