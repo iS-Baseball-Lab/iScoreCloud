@@ -6,7 +6,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "motion/react";
-import { LayoutDashboard, Users, Trophy, MoreHorizontal, UserSquare2, X, CalendarCheck } from "lucide-react";
+import { LayoutDashboard, Users, Trophy, MoreHorizontal, UserSquare2, X, CalendarCheck, ScrollText } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export function FloatingNav() {
@@ -61,10 +61,11 @@ export function FloatingNav() {
 
   const menuItems = [
     { icon: Users, label: "TEAM", href: "/team", angle: -165 },
-    { icon: UserSquare2, label: "MEMBERS", href: "/members", angle: -135 },
-    { icon: CalendarCheck, label: "ATTEND", href: "/attendance", angle: -105 },
-    { icon: LayoutDashboard, label: "HOME", href: "/dashboard", angle: -75 },
-    { icon: Trophy, label: "EVENT", href: "/tournaments", angle: -45 },
+    { icon: UserSquare2, label: "MEMBERS", href: "/members", angle: -140 },
+    { icon: CalendarCheck, label: "ATTEND", href: "/attendance", angle: -115 },
+    { icon: LayoutDashboard, label: "HOME", href: "/dashboard", angle: -90 },
+    { icon: Trophy, label: "EVENT", href: "/tournaments", angle: -65 },
+    { icon: ScrollText, label: "MATCHES", href: "/matches", angle: -40 },
     { icon: MoreHorizontal, label: "MENU", href: "/menu", angle: -15 },
   ];
 
@@ -100,7 +101,7 @@ export function FloatingNav() {
         <AnimatePresence>
           {isOpen && menuItems.map((item, index) => {
             const isActive = pathname === item.href;
-            const RADIUS = 115; 
+            const RADIUS = 125; 
             const radian = (item.angle * Math.PI) / 180;
             const x = Math.cos(radian) * RADIUS;
             const y = Math.sin(radian) * RADIUS;
