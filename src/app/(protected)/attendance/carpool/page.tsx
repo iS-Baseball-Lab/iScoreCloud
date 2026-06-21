@@ -914,7 +914,7 @@ function CarpoolAssignmentContent() {
             <ArrowLeft className="h-4 w-4" /> メニューへ戻る
           </Button>
 
-          <SectionHeader title="配車管理日程選択" subtitle="SELECT EVENT" showPulse={true} />
+          <SectionHeader title="配車・道具管理日程選択" subtitle="SELECT EVENT" showPulse={true} />
 
           {eventsLoading ? (
             <div className="flex h-[40vh] items-center justify-center">
@@ -992,7 +992,7 @@ function CarpoolAssignmentContent() {
           <ArrowLeft className="h-4 w-4" /> 出欠ボードへ戻る
         </Button>
 
-        <SectionHeader title={`${eventTitle} 配車管理`} subtitle="CARPOOL ASSIST" showPulse={true} />
+        <SectionHeader title={`${eventTitle} 配車・道具管理`} subtitle="CARPOOL & EQUIPMENT" showPulse={true} />
 
         {/* ℹ️ 日時と全体設定 */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-card border border-border/40 p-5 rounded-3xl shadow-sm">

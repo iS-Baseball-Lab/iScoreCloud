@@ -701,16 +701,18 @@ export default function AttendancePage() {
                             {new Date(e.startAt).toLocaleDateString("ja-JP", { month: "short", day: "numeric", weekday: "short" })}
                           </p>
                           
-                          {/* 🚗 配車管理ボタン */}
-                          <div className="pt-1">
-                            <button
-                              onClick={() => router.push(`/attendance/carpool?eventId=${e.id}`)}
-                              className="w-full py-1 rounded bg-primary/10 hover:bg-primary/20 border border-primary/20 text-primary flex items-center justify-center text-[8px] font-black cursor-pointer shadow-xs transition-colors"
-                              title="配車管理"
-                            >
-                              <Car className="h-2.5 w-2.5 mr-0.5" /> 配車管理
-                            </button>
-                          </div>
+                          {/* 🚗 配車・道具管理ボタン (試合・合宿のみ) */}
+                          {(e.eventType === 'match' || e.eventType === 'camp') && (
+                            <div className="pt-1">
+                              <button
+                                onClick={() => router.push(`/attendance/carpool?eventId=${e.id}`)}
+                                className="w-full py-1 rounded bg-primary/10 hover:bg-primary/20 border border-primary/20 text-primary flex items-center justify-center text-[8px] font-black cursor-pointer shadow-xs transition-colors"
+                                title="配車・道具管理"
+                              >
+                                <Car className="h-2.5 w-2.5 mr-0.5" /> 配車・道具管理
+                              </button>
+                            </div>
+                          )}
                           {/* ☀️ 午前の時間と場所 */}
                           <div className="text-[8px] font-bold text-muted-foreground/90 space-y-0.5 mt-1">
                             <p className="leading-none border-b border-border/20 pb-0.5 text-zinc-500 dark:text-zinc-400 font-extrabold">
