@@ -104,6 +104,9 @@ export default function AttendancePage() {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
+  // ヘッダー固定用 translateY
+  const [headerTranslateY, setHeaderTranslateY] = useState(0);
+
   // フィルター用ステータス
   const [activeTab, setActiveTab] = useState<"all" | "players" | "staff">("all");
   const [selectedGroupId, setSelectedGroupId] = useState<string>("all");
@@ -215,6 +218,8 @@ export default function AttendancePage() {
     }
   };
 
+
+
   // 管理者権限判定
   const canManage = useMemo(() => {
     const roleUpper = myRole.toUpperCase();
@@ -277,6 +282,29 @@ export default function AttendancePage() {
 
     return rows;
   }, [activeTab, playersData, membersData, filteredMemberIdsByGroup, myUserId, canManage]);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const table = document.querySelector("table");
+      if (!table) return;
+      
+      const rect = table.getBoundingClientRect();
+      const globalHeaderHeight = window.innerWidth < 640 ? 64 : 80;
+      
+      if (rect.top < globalHeaderHeight) {
+        const offset = globalHeaderHeight - rect.top;
+        const maxOffset = rect.height - 180;
+        setHeaderTranslateY(Math.min(offset, maxOffset > 0 ? maxOffset : 0));
+      } else {
+        setHeaderTranslateY(0);
+      }
+    };
+    
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    handleScroll();
+    
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, [eventsData, displayRows]);
 
   // 3. 各マスの出欠ステータス検索マップ
   const attendanceMap = useMemo(() => {
@@ -640,16 +668,16 @@ export default function AttendancePage() {
                 </colgroup>
                 
                 {/* ━ ヘッダー ━ */}
-                <thead>
+                <thead style={{ transform: `translateY(${headerTranslateY}px)`, transition: 'transform 0.01s ease-out' }} className="relative z-20">
                   <tr className="border-b border-border/50 bg-muted/20">
                     {/* 左端：メンバー枠 */}
-                    <th className="p-1 sm:p-2.5 font-black text-[10px] sm:text-xs uppercase tracking-wider text-muted-foreground border-r border-border/40 bg-card sticky left-0 top-16 sm:top-20 z-35 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+                    <th className="p-1 sm:p-2.5 font-black text-[10px] sm:text-xs uppercase tracking-wider text-muted-foreground border-r border-border/40 bg-card sticky left-0 top-0 z-35 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
                       メンバー
                     </th>
                     
                     {/* 右側：イベント日程列 */}
                     {eventsData.map(e => (
-                      <th key={e.id} className="p-2.5 border-r border-border/30 text-center align-top relative group sticky top-16 sm:top-20 z-25 bg-card">
+                      <th key={e.id} className="p-2.5 border-r border-border/30 text-center align-top relative group sticky top-0 z-25 bg-card">
                         <div className="space-y-1">
                           
                           {/* 日程種別マーク & 操作ボタンのインライン化 */}
@@ -773,7 +801,7 @@ export default function AttendancePage() {
                         <tr key={`${row.type}-${row.id}`} className={cn("hover:bg-muted/60 transition-colors", rowBgClass)}>
                           
                           {/* 左端メンバー名列 */}
-                          <td className={cn("p-0.5 sm:p-1.5 font-bold text-xs border-r border-border/40 sticky left-0 z-15 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] h-full overflow-hidden whitespace-nowrap", rowBgClass)}>
+                          <td className={cn("p-0.5 sm:p-1.5 font-bold text-xs border-r border-border/40 sticky left-0 z-15 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] whitespace-nowrap", rowBgClass)}>
                             <div className="flex items-center gap-1 sm:gap-2 w-full overflow-hidden">
                               {row.type === "player" ? (
                                 row.avatarUrl ? (
