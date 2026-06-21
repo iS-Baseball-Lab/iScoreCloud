@@ -19,6 +19,8 @@ import { cn } from "@/lib/utils";
 interface CarInfo {
   id: string;
   name: string;
+  color: string | null;
+  numberPlate: string | null;
   capacity: number;
   fuelEfficiency: number;
   carType: "normal" | "cargo" | "bus";
@@ -43,6 +45,8 @@ export default function MyCarsPage() {
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [editingCarId, setEditingCarId] = useState<string | null>(null);
   const [carName, setCarName] = useState("");
+  const [carColor, setCarColor] = useState("");
+  const [carNumberPlate, setCarNumberPlate] = useState("");
   const [carCapacity, setCarCapacity] = useState<number>(4);
   const [carFuelEfficiency, setCarFuelEfficiency] = useState<number>(10);
   const [carType, setCarType] = useState<"normal" | "cargo" | "bus">("normal");
@@ -112,12 +116,16 @@ export default function MyCarsPage() {
     if (car) {
       setEditingCarId(car.id);
       setCarName(car.name);
+      setCarColor(car.color || "");
+      setCarNumberPlate(car.numberPlate || "");
       setCarCapacity(car.capacity);
       setCarFuelEfficiency(car.fuelEfficiency);
       setCarType(car.carType);
     } else {
       setEditingCarId(null);
       setCarName("");
+      setCarColor("");
+      setCarNumberPlate("");
       setCarCapacity(4);
       setCarFuelEfficiency(10);
       setCarType("normal");
@@ -144,6 +152,8 @@ export default function MyCarsPage() {
           teamId,
           ownerId: myMemberId,
           name: carName.trim(),
+          color: carColor.trim() || null,
+          numberPlate: carNumberPlate.trim() || null,
           capacity: carCapacity,
           fuelEfficiency: carFuelEfficiency,
           carType
@@ -260,8 +270,16 @@ export default function MyCarsPage() {
                     <div className="h-10 w-10 rounded-2xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
                       <Car className="h-5 w-5" />
                     </div>
-                    <div>
-                      <h4 className="font-black text-sm">{car.name}</h4>
+                    <div className="min-w-0">
+                      <h4 className="font-black text-sm flex items-center gap-1.5 truncate">
+                        {car.color && <span className="text-zinc-500">{car.color}の</span>}
+                        <span>{car.name}</span>
+                        {car.numberPlate && (
+                          <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded text-zinc-500 font-extrabold">
+                            [{car.numberPlate}]
+                          </span>
+                        )}
+                      </h4>
                       <span className={cn(
                         "inline-block text-[8px] font-black uppercase px-2 py-0.5 rounded-full border tracking-wider mt-1",
                         car.carType === 'cargo' ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20' : 
@@ -333,7 +351,49 @@ export default function MyCarsPage() {
                   value={carName}
                   onChange={e => setCarName(e.target.value)}
                   required
-                  placeholder="例: 白のセレナ、アルファードなど"
+                  placeholder="例: セレナ、アルファードなど"
+                  className="h-11 rounded-xl font-bold"
+                />
+              </div>
+
+              {/* 車の色 */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">車の色</label>
+                
+                {/* クイック選択バッジ */}
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {["白", "黒", "シルバー", "グレー", "紺", "青", "赤", "茶"].map(color => (
+                    <button
+                      key={color}
+                      type="button"
+                      onClick={() => setCarColor(color)}
+                      className={cn(
+                        "px-2.5 py-1 text-[10px] font-black rounded-lg border transition-all active:scale-95 cursor-pointer",
+                        carColor === color 
+                          ? "bg-primary border-primary text-white" 
+                          : "bg-muted/40 border-border text-muted-foreground hover:bg-muted"
+                      )}
+                    >
+                      {color}
+                    </button>
+                  ))}
+                </div>
+
+                <Input
+                  value={carColor}
+                  onChange={e => setCarColor(e.target.value)}
+                  placeholder="例: パールホワイト、ダークブルーなど"
+                  className="h-11 rounded-xl font-bold"
+                />
+              </div>
+
+              {/* 車のナンバー */}
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">車両ナンバー (下4桁など)</label>
+                <Input
+                  value={carNumberPlate}
+                  onChange={e => setCarNumberPlate(e.target.value)}
+                  placeholder="例: 12-34"
                   className="h-11 rounded-xl font-bold"
                 />
               </div>

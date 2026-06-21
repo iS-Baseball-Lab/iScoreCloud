@@ -27,6 +27,8 @@ export const memberCars = sqliteTable("member_cars", {
   teamId: text("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
   ownerId: text("owner_id").notNull().references(() => teamMembers.id, { onDelete: "cascade" }),
   name: text("name").notNull(), // 例: "セレナ", "アルファード", "デミオ"
+  color: text("color"), // 車の色
+  numberPlate: text("number_plate"), // ナンバープレート番号 (下4桁など)
   capacity: integer("capacity").notNull().default(4), // 乗車定員（運転手を除く乗れる人数）
   fuelEfficiency: integer("fuel_efficiency").notNull().default(10), // 燃費 (km/L)
   carType: text("car_type").$type<"normal" | "cargo" | "bus">().default("normal"), // 普通車 / 道具車 / バス

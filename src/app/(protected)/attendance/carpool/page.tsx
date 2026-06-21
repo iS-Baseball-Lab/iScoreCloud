@@ -48,6 +48,8 @@ interface MasterCar {
   capacity: number;
   fuelEfficiency: number;
   carType: "normal" | "cargo" | "bus";
+  color: string | null;
+  numberPlate: string | null;
 }
 
 interface CarpoolRider {
@@ -599,8 +601,22 @@ function CarpoolAssignmentContent() {
                               <h4 className="font-black text-xs truncate max-w-[130px]" title={car.driverName}>
                                 {car.driverName} の車
                               </h4>
-                              <p className="text-[9px] font-bold text-muted-foreground truncate max-w-[130px]">
-                                {car.carId ? masterCars.find(mc => mc.id === car.carId)?.name : "手動登録車両"}
+                              <p className="text-[9px] font-bold text-muted-foreground truncate max-w-[130px]" title={
+                                car.carId 
+                                  ? (() => {
+                                      const mc = masterCars.find(m => m.id === car.carId);
+                                      if (!mc) return "";
+                                      return `${mc.color ? mc.color + "の" : ""}${mc.name}${mc.numberPlate ? " [" + mc.numberPlate + "]" : ""}`;
+                                    })()
+                                  : "手動登録車両"
+                              }>
+                                {car.carId ? (
+                                  (() => {
+                                    const mc = masterCars.find(m => m.id === car.carId);
+                                    if (!mc) return "不明な車両";
+                                    return `${mc.color ? mc.color + "の" : ""}${mc.name}${mc.numberPlate ? " [" + mc.numberPlate + "]" : ""}`;
+                                  })()
+                                ) : "手動登録車両"}
                               </p>
                             </div>
                           </div>
