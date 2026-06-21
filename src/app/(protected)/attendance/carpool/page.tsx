@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { 
-  Car, Users, ArrowLeft, Loader2, Plus, Trash2, ShieldAlert, 
+  Car, Users, ArrowLeft, Loader2, Plus, Minus, Trash2, ShieldAlert, 
   Check, X, UserMinus, ShieldCheck, MapPin, Info, Link, UserCheck, Fuel,
   ChevronRight, Calendar, Edit
 } from "lucide-react";
@@ -1857,15 +1857,35 @@ function CarpoolAssignmentContent() {
               {/* 数量入力フォームの追加 */}
               <div className="space-y-1">
                 <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">個数/数量</label>
-                <Input
-                  type="number"
-                  min={1}
-                  value={eqQuantity}
-                  onChange={e => setEqQuantity(Math.max(1, Number(e.target.value)))}
-                  required
-                  placeholder="1"
-                  className="h-11 rounded-xl font-bold"
-                />
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="h-11 w-11 rounded-xl shrink-0"
+                    onClick={() => setEqQuantity(prev => Math.max(1, prev - 1))}
+                  >
+                    <Minus className="h-4 w-4" />
+                  </Button>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={eqQuantity}
+                    onChange={e => setEqQuantity(Math.max(1, Number(e.target.value)))}
+                    required
+                    placeholder="1"
+                    className="h-11 rounded-xl font-bold text-center"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="h-11 w-11 rounded-xl shrink-0"
+                    onClick={() => setEqQuantity(prev => prev + 1)}
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
 
               <div className="space-y-1.5">
