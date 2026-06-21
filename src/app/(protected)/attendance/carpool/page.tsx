@@ -770,7 +770,7 @@ function CarpoolAssignmentContent() {
                 </div>
               )}
 
-              <div className="max-h-[360px] lg:max-h-[500px] overflow-y-auto space-y-1.5 scrollbar-thin p-1 pr-1.5">
+              <div className="max-h-[360px] lg:max-h-[500px] overflow-y-auto space-y-1.5 scrollbar-thin p-1.5 pr-2">
                 {unassignedRiders.length === 0 ? (
                   <div className="text-center py-10 text-muted-foreground text-xs font-bold">
                     全員アサイン済みです！👍
@@ -788,7 +788,7 @@ function CarpoolAssignmentContent() {
                         className={cn(
                           "w-full p-2.5 rounded-xl border text-left transition-all active:scale-98 cursor-pointer flex items-center justify-between",
                           isSelected 
-                            ? "bg-primary border-primary text-white shadow-sm ring-2 ring-primary ring-offset-2 dark:ring-offset-zinc-950" 
+                            ? "bg-primary border-primary text-white shadow-sm ring-2 ring-inset ring-white/30" 
                             : "bg-muted/40 hover:bg-muted/75 border-border/50 text-foreground"
                         )}
                       >
