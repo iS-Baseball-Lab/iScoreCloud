@@ -44,7 +44,8 @@ interface FamilyRelation {
 
 interface MasterCar {
   id: string;
-  ownerId: string;
+  ownerId: string | null;
+  ownerId2: string | null;
   name: string;
   capacity: number;
   fuelEfficiency: number;
@@ -625,7 +626,7 @@ function CarpoolAssignmentContent() {
   // 9. ドライバー選択時にマイカー情報を自動適用
   const handleDriverChange = (driverId: string) => {
     setSelectedDriverId(driverId);
-    const myCar = masterCars.find(c => c.ownerId === driverId);
+    const myCar = masterCars.find(c => c.ownerId === driverId || c.ownerId2 === driverId);
     if (myCar) {
       setSelectedCarId(myCar.id);
       setManualCapacity(myCar.capacity);
@@ -1999,9 +2000,11 @@ ${lineRep}`;
                 >
                   <option value="">-- 手動入力（車両スペック） --</option>
                   {selectedDriverId && masterCars
-                    .filter(c => c.ownerId === selectedDriverId)
+                    .filter(c => c.ownerId === selectedDriverId || c.ownerId2 === selectedDriverId || (c.carType === "bus" && !c.ownerId && !c.ownerId2))
                     .map(c => (
-                      <option key={c.id} value={c.id}>{c.name} (定員: {c.capacity}人)</option>
+                      <option key={c.id} value={c.id}>
+                        {c.name} (定員: {c.capacity}人){c.carType === "bus" && !c.ownerId ? " [チーム共有]" : ""}
+                      </option>
                     ))
                   }
                 </select>

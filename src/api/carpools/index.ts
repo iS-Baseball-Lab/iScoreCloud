@@ -5,7 +5,8 @@
 
 import { Hono } from 'hono';
 import { drizzle } from 'drizzle-orm/d1';
-import { eq, and, inArray } from 'drizzle-orm';
+import { eq, and, or, inArray } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/sqlite-core';
 import { 
   memberCars, parentChildRelations, eventCarpoolSettings, 
   eventCarpools, eventCarpoolRiders 
@@ -38,7 +39,10 @@ app.get('/cars', async (c) => {
       .from(memberCars)
       .where(and(
         eq(memberCars.teamId, teamId),
-        eq(memberCars.ownerId, ownerId)
+        or(
+          eq(memberCars.ownerId, ownerId),
+          eq(memberCars.ownerId2, ownerId)
+        )
       ));
     return c.json({ success: true, data: cars });
   } catch (err: unknown) {
@@ -59,11 +63,14 @@ app.get('/cars/list', async (c) => {
 
   const db = drizzle(c.env.DB);
   try {
+    const owner2 = alias(teamMembers, 'owner2');
     const list = await db.select({
       id: memberCars.id,
       teamId: memberCars.teamId,
       ownerId: memberCars.ownerId,
       ownerName: teamMembers.name,
+      ownerId2: memberCars.ownerId2,
+      ownerName2: owner2.name,
       name: memberCars.name,
       color: memberCars.color,
       colorCode: memberCars.colorCode,
@@ -75,6 +82,7 @@ app.get('/cars/list', async (c) => {
     })
     .from(memberCars)
     .leftJoin(teamMembers, eq(memberCars.ownerId, teamMembers.id))
+    .leftJoin(owner2, eq(memberCars.ownerId2, owner2.id))
     .where(eq(memberCars.teamId, teamId));
 
     return c.json({ success: true, data: list });
@@ -92,10 +100,11 @@ app.post('/cars', async (c) => {
   const db = drizzle(c.env.DB);
   try {
     const body = await c.req.json();
-    const { id, teamId, ownerId, name, color, colorCode, numberPlate, capacity, fuelEfficiency, carType } = body;
+    const { id, teamId, ownerId, ownerId2, name, color, colorCode, numberPlate, capacity, fuelEfficiency, carType } = body;
 
-    if (!teamId || !ownerId || !name) {
-      return c.json({ success: false, error: "必須項目 (teamId, ownerId, name) が不足しています。" }, 400);
+    const isBus = carType === "bus";
+    if (!teamId || (!isBus && !ownerId) || !name) {
+      return c.json({ success: false, error: isBus ? "必須項目 (teamId, name) が不足しています。" : "必須項目 (teamId, ownerId, name) が不足しています。" }, 400);
     }
 
     const carId = id || `car_${crypto.randomUUID().replace(/-/g, '')}`;
@@ -103,7 +112,8 @@ app.post('/cars', async (c) => {
     const values = {
       id: carId,
       teamId,
-      ownerId,
+      ownerId: ownerId || null,
+      ownerId2: ownerId2 || null,
       name: name.trim(),
       color: color ? color.trim() : null,
       colorCode: colorCode ? colorCode.trim() : null,

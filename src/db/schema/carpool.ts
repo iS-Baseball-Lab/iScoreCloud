@@ -25,7 +25,8 @@ export const parentChildRelations = sqliteTable("parent_child_relations", {
 export const memberCars = sqliteTable("member_cars", {
   id: text("id").primaryKey(),
   teamId: text("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
-  ownerId: text("owner_id").notNull().references(() => teamMembers.id, { onDelete: "cascade" }),
+  ownerId: text("owner_id").references(() => teamMembers.id, { onDelete: "cascade" }), // 🌟 複数所有・バス対応：任意に
+  ownerId2: text("owner_id2").references(() => teamMembers.id, { onDelete: "set null" }), // 🌟 第二所有者
   name: text("name").notNull(), // 例: "セレナ", "アルファード", "デミオ"
   color: text("color"), // 車の色名称
   colorCode: text("color_code"), // 車の色カラーコード (HEX)
@@ -37,6 +38,7 @@ export const memberCars = sqliteTable("member_cars", {
 }, (table) => ({
   teamIdx: index("idx_member_cars_team_id").on(table.teamId),
   ownerIdx: index("idx_member_cars_owner_id").on(table.ownerId),
+  owner2Idx: index("idx_member_cars_owner_id2").on(table.ownerId2),
 }));
 
 // ==========================================

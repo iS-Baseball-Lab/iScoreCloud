@@ -25,8 +25,10 @@ interface CarInfo {
   capacity: number;
   fuelEfficiency: number;
   carType: "normal" | "cargo" | "bus";
-  ownerId?: string;
+  ownerId?: string | null;
   ownerName?: string | null;
+  ownerId2?: string | null;
+  ownerName2?: string | null;
 }
 
 interface Member {
@@ -44,6 +46,7 @@ export default function MyCarsPage() {
   const [myRole, setMyRole] = useState<string>("");
   const [allMembers, setAllMembers] = useState<Member[]>([]);
   const [selectedOwnerId, setSelectedOwnerId] = useState<string>("");
+  const [selectedOwnerId2, setSelectedOwnerId2] = useState<string>("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -152,7 +155,8 @@ export default function MyCarsPage() {
       setCarCapacity(car.capacity);
       setCarFuelEfficiency(car.fuelEfficiency);
       setCarType(car.carType);
-      setSelectedOwnerId(car.ownerId || myMemberId || "");
+      setSelectedOwnerId(car.ownerId || "");
+      setSelectedOwnerId2(car.ownerId2 || "");
     } else {
       setEditingCarId(null);
       setCarName("");
@@ -164,6 +168,7 @@ export default function MyCarsPage() {
       setCarFuelEfficiency(10);
       setCarType("normal");
       setSelectedOwnerId(myMemberId || "");
+      setSelectedOwnerId2("");
     }
     setIsFormModalOpen(true);
   };
@@ -177,8 +182,12 @@ export default function MyCarsPage() {
       return;
     }
 
-    const ownerIdToSend = selectedOwnerId || myMemberId;
-    if (!ownerIdToSend) {
+    const isBus = carType === "bus";
+    // バス（マイクロバス）の場合は所有者を null 許容にする。普通・道具車の場合は、選択された所有者か自身の memberId を設定する
+    const ownerIdToSend = isBus ? (selectedOwnerId || null) : (selectedOwnerId || myMemberId);
+    const ownerId2ToSend = selectedOwnerId2 || null;
+
+    if (!isBus && !ownerIdToSend) {
       toast.error("所有者が選択されていません。");
       return;
     }
@@ -192,6 +201,7 @@ export default function MyCarsPage() {
           id: editingCarId,
           teamId,
           ownerId: ownerIdToSend,
+          ownerId2: ownerId2ToSend,
           name: carName.trim(),
           color: carColor.trim() || null,
           colorCode: carColorCode.trim() || null,
@@ -334,10 +344,18 @@ export default function MyCarsPage() {
                       <h4 className="font-black text-sm truncate">
                         {car.name}
                       </h4>
-                      {car.ownerName && (
+                      {car.carType === 'bus' && !car.ownerName && !car.ownerName2 ? (
                         <p className="text-[10px] font-bold text-zinc-500 mt-0.5">
-                          所有者: <strong className="text-zinc-700 dark:text-zinc-300 font-extrabold">{car.ownerName}</strong>
+                          所有者: <strong className="text-zinc-500 dark:text-zinc-400 font-extrabold">チーム共有 (所有者なし)</strong>
                         </p>
+                      ) : (
+                        (car.ownerName || car.ownerName2) && (
+                          <p className="text-[10px] font-bold text-zinc-500 mt-0.5">
+                            所有者: <strong className="text-zinc-700 dark:text-zinc-300 font-extrabold">
+                              {[car.ownerName, car.ownerName2].filter(Boolean).join("、")}
+                            </strong>
+                          </p>
+                        )
                       )}
                       <span className={cn(
                         "inline-block text-[8px] font-black uppercase px-2 py-0.5 rounded-full border tracking-wider mt-1",
@@ -407,25 +425,55 @@ export default function MyCarsPage() {
             </DialogHeader>
 
             <form onSubmit={handleSaveCar} className="space-y-4 pt-2">
-              {/* 所有者選択 (管理者の場合のみ表示) */}
-              {canManage && (
+              {/* 所有者選択 */}
+              <div className="space-y-3 p-3 bg-muted/20 border border-border/40 rounded-2xl">
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">所有メンバー（ドライバー） (必須)</label>
+                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1 block">
+                    {carType === "bus" ? "第一所有メンバー (任意)" : "第一所有メンバー (必須)"}
+                  </label>
+                  {canManage ? (
+                    <select 
+                      value={selectedOwnerId} 
+                      onChange={e => setSelectedOwnerId(e.target.value)}
+                      required={carType !== "bus"}
+                      className="w-full h-11 rounded-xl border border-border bg-card px-3 text-sm font-bold shadow-xs focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/20"
+                    >
+                      <option value="">{carType === "bus" ? "-- 所有者なし (チーム共有 / レンタカー) --" : "-- 所有メンバーを選択 --"}</option>
+                      {allMembers.map(m => (
+                        <option key={m.memberId} value={m.memberId}>
+                          {m.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <Input
+                      value={allMembers.find(m => m.memberId === (selectedOwnerId || myMemberId))?.name || ""}
+                      disabled
+                      className="h-11 rounded-xl font-bold bg-muted"
+                    />
+                  )}
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1 block">
+                    第二所有メンバー (任意 - 同一車両を運転する配偶者・家族など)
+                  </label>
                   <select 
-                    value={selectedOwnerId} 
-                    onChange={e => setSelectedOwnerId(e.target.value)}
-                    required
-                    className="w-full h-11 rounded-xl border border-border bg-muted/20 px-3 text-sm font-bold shadow-xs focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/20"
+                    value={selectedOwnerId2} 
+                    onChange={e => setSelectedOwnerId2(e.target.value)}
+                    className="w-full h-11 rounded-xl border border-border bg-card px-3 text-sm font-bold shadow-xs focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/20"
                   >
-                    <option value="">-- 所有メンバーを選択 --</option>
-                    {allMembers.map(m => (
-                      <option key={m.memberId} value={m.memberId}>
-                        {m.name}
-                      </option>
-                    ))}
+                    <option value="">-- 第二所有者なし --</option>
+                    {allMembers
+                      .filter(m => m.memberId !== (selectedOwnerId || myMemberId))
+                      .map(m => (
+                        <option key={m.memberId} value={m.memberId}>
+                          {m.name}
+                        </option>
+                      ))}
                   </select>
                 </div>
-              )}
+              </div>
 
               {/* 車両名 */}
               <div className="space-y-1">
