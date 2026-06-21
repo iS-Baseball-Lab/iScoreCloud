@@ -917,14 +917,27 @@ export default function UnifiedMembersPage() {
                 {players.length}
                 <span className="text-xs font-bold text-muted-foreground">名の選手が登録中</span>
               </p>
-              <Button 
-                onClick={() => setIsAddPlayerOpen(true)} 
-                size="sm" 
-                className="h-9 px-4 rounded-[var(--radius-lg)] font-black gap-2"
-              >
-                <UserPlus className="h-4 w-4" strokeWidth={2.5} />
-                選手追加
-              </Button>
+              <div className="flex items-center gap-2">
+                {canManage && (
+                  <Button
+                    onClick={() => router.push("/members/family")}
+                    size="sm"
+                    variant="outline"
+                    className="h-9 px-3 rounded-[var(--radius-lg)] font-black gap-1.5 border-border shadow-sm"
+                  >
+                    <Link className="h-4 w-4" />
+                    親子設定
+                  </Button>
+                )}
+                <Button 
+                  onClick={() => setIsAddPlayerOpen(true)} 
+                  size="sm" 
+                  className="h-9 px-4 rounded-[var(--radius-lg)] font-black gap-2"
+                >
+                  <UserPlus className="h-4 w-4" strokeWidth={2.5} />
+                  選手追加
+                </Button>
+              </div>
             </div>
 
             {/* カテゴリサマリー */}
@@ -1066,6 +1079,17 @@ export default function UnifiedMembersPage() {
                   >
                     <Settings2 className="h-4 w-4" />
                     呼称設定
+                  </Button>
+                )}
+                {canManage && (
+                  <Button
+                    onClick={() => router.push("/members/family")}
+                    size="sm"
+                    variant="outline"
+                    className="h-9 px-3 rounded-[var(--radius-lg)] font-black gap-1.5 border-border shadow-sm"
+                  >
+                    <Link className="h-4 w-4" />
+                    親子設定
                   </Button>
                 )}
                 <Button 

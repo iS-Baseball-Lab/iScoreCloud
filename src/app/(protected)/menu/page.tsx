@@ -7,7 +7,7 @@ import {
   LogOut, User, Settings, HelpCircle, ChevronRight, Activity, Calendar,
   LayoutDashboard, Users, Contact, CalendarCheck, Trophy, FileText, Shield, Zap,
   UserPlus, ScrollText, CalendarPlus, Timer, ShieldCheck, MapPin, BookOpen,
-  History // 🔥 プレイログ用のアイコンを追加
+  History, Car // 🔥 プレイログ用およびマイカー用
 } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 import { toast } from "sonner";
@@ -29,6 +29,7 @@ export default function MenuPage() {
       items: [
         { icon: User, label: "プロフィール設定", href: "/profile" },
         { icon: Settings, label: "アプリ設定", href: "/settings" },
+        { icon: Car, label: "マイカー設定", href: "/settings/cars" },
         { icon: UserPlus, label: "チーム参加申請", href: "/teams/join" },
       ],
     },
