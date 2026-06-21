@@ -15,7 +15,7 @@ const app = new Hono<{ Bindings: WorkerEnv }>()
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 app.get('/', async (c) => {
   const auth = getAuth(c.env.DB, c.env)
-  const session = await auth.api.getSession({ headers: c.req.raw.headers })
+  const session = await auth.api.getSession({ request: c.req.raw })
   if (!session) return c.json({ error: 'Unauthorized' }, 401)
 
   const db = drizzle(c.env.DB)
@@ -38,7 +38,7 @@ app.get('/', async (c) => {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 app.post('/', async (c) => {
   const auth = getAuth(c.env.DB, c.env)
-  const session = await auth.api.getSession({ headers: c.req.raw.headers })
+  const session = await auth.api.getSession({ request: c.req.raw })
   if (!session) return c.json({ error: 'Unauthorized' }, 401)
 
   // 💡 body から isExternal と category を受け取る
@@ -111,7 +111,7 @@ app.get('/:orgId/teams', async (c) => {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 app.delete('/:orgId', async (c) => {
   const auth = getAuth(c.env.DB, c.env)
-  const session = await auth.api.getSession({ headers: c.req.raw.headers })
+  const session = await auth.api.getSession({ request: c.req.raw })
   if (!session) return c.json({ error: 'Unauthorized' }, 401)
 
   const orgId = c.req.param('orgId')
@@ -155,7 +155,7 @@ app.delete('/:orgId', async (c) => {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 app.patch('/:orgId', async (c) => {
   const auth = getAuth(c.env.DB, c.env)
-  const session = await auth.api.getSession({ headers: c.req.raw.headers })
+  const session = await auth.api.getSession({ request: c.req.raw })
   if (!session) return c.json({ error: 'Unauthorized' }, 401)
 
   const orgId = c.req.param('orgId')

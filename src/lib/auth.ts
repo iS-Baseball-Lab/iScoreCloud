@@ -17,7 +17,7 @@ interface AuthEnv {
   BETTER_AUTH_URL?: string; // 💡 追加：エッジ環境での OAuth 安定化のため
 }
 
-let authCache: ReturnType<typeof betterAuth> | null = null;
+let authCache: any = null;
 let lastD1: D1Database | null = null;
 
 export const getAuth = (d1: D1Database, env?: AuthEnv) => {
@@ -27,7 +27,7 @@ export const getAuth = (d1: D1Database, env?: AuthEnv) => {
   }
 
   const db = drizzle(d1);
-  authCache = betterAuth({
+  const auth = betterAuth({
     baseURL: env?.BETTER_AUTH_URL, // 💡 追加：Cloudflare 環境での baseURL ズレ防止
     trustedHeaders: ["x-forwarded-host", "x-forwarded-proto"], // 💡 追加：プロキシ背後での State 整合性を保証
     user: {
@@ -85,6 +85,7 @@ export const getAuth = (d1: D1Database, env?: AuthEnv) => {
     },
   });
 
+  authCache = auth;
   lastD1 = d1;
-  return authCache;
+  return auth;
 };

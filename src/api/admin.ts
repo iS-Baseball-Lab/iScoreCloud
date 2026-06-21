@@ -10,7 +10,7 @@ const app = new Hono<{ Bindings: WorkerEnv }>()
 
 app.get('/users', async (c) => {
   const auth = getAuth(c.env.DB, c.env)
-  const session = await auth.api.getSession({ headers: c.req.raw.headers })
+  const session = await auth.api.getSession({ request: c.req.raw })
   if ((session?.user as AuthUser)?.role !== 'SYSTEM_ADMIN') return c.json({ error: '権限がありません' }, 403)
 
   try {
@@ -21,7 +21,7 @@ app.get('/users', async (c) => {
 
 app.patch('/users/:id/role', async (c) => {
   const auth = getAuth(c.env.DB, c.env)
-  const session = await auth.api.getSession({ headers: c.req.raw.headers })
+  const session = await auth.api.getSession({ request: c.req.raw })
   if ((session?.user as AuthUser)?.role !== 'SYSTEM_ADMIN') return c.json({ error: '権限がありません' }, 403)
 
   const userId = c.req.param('id')
@@ -34,7 +34,7 @@ app.patch('/users/:id/role', async (c) => {
 
 app.delete('/users/:id', async (c) => {
   const auth = getAuth(c.env.DB, c.env)
-  const session = await auth.api.getSession({ headers: c.req.raw.headers })
+  const session = await auth.api.getSession({ request: c.req.raw })
   if ((session?.user as AuthUser)?.role !== 'SYSTEM_ADMIN') return c.json({ error: '権限がありません' }, 403)
 
   const userId = c.req.param('id')
@@ -47,7 +47,7 @@ app.delete('/users/:id', async (c) => {
 
 app.get('/teams', async (c) => {
   const auth = getAuth(c.env.DB, c.env)
-  const session = await auth.api.getSession({ headers: c.req.raw.headers })
+  const session = await auth.api.getSession({ request: c.req.raw })
   if ((session?.user as AuthUser)?.role !== 'SYSTEM_ADMIN') return c.json({ error: '権限がありません' }, 403)
 
   try {
@@ -61,7 +61,7 @@ app.get('/teams', async (c) => {
 
 app.get('/teams/:id/members', async (c) => {
   const auth = getAuth(c.env.DB, c.env)
-  const session = await auth.api.getSession({ headers: c.req.raw.headers })
+  const session = await auth.api.getSession({ request: c.req.raw })
   if ((session?.user as AuthUser)?.role !== 'SYSTEM_ADMIN') return c.json({ error: '権限がありません' }, 403)
 
   const teamId = c.req.param('id')
@@ -73,7 +73,7 @@ app.get('/teams/:id/members', async (c) => {
 
 app.post('/teams/:id/members', async (c) => {
   const auth = getAuth(c.env.DB, c.env)
-  const session = await auth.api.getSession({ headers: c.req.raw.headers })
+  const session = await auth.api.getSession({ request: c.req.raw })
   if ((session?.user as AuthUser)?.role !== 'SYSTEM_ADMIN') return c.json({ error: '権限がありません' }, 403)
 
   const teamId = c.req.param('id')
@@ -93,7 +93,7 @@ app.post('/teams/:id/members', async (c) => {
 
 app.delete('/teams/:id/members/:userId', async (c) => {
   const auth = getAuth(c.env.DB, c.env)
-  const session = await auth.api.getSession({ headers: c.req.raw.headers })
+  const session = await auth.api.getSession({ request: c.req.raw })
   if ((session?.user as AuthUser)?.role !== 'SYSTEM_ADMIN') return c.json({ error: '権限がありません' }, 403)
 
   const teamId = c.req.param('id')

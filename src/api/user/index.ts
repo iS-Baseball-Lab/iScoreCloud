@@ -9,7 +9,7 @@ const app = new Hono<{ Bindings: { DB: D1Database } }>()
 
 app.get('/accounts', async (c) => {
   const auth = getAuth(c.env.DB, c.env as any); // 🌟 ここで取得！
-  const session = await auth.api.getSession({ headers: c.req.raw.headers });
+  const session = await auth.api.getSession({ request: c.req.raw });
 
   if (!session?.user) return c.json({ error: 'Unauthorized' }, 401);
 

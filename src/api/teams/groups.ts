@@ -12,7 +12,7 @@ const app = new Hono<{ Bindings: WorkerEnv }>()
 /** 👥 チーム内のグループ一覧取得 (所属メンバー & 役割付き) */
 app.get('/:teamId/groups', async (c) => {
   const auth = getAuth(c.env.DB, c.env)
-  const session = await auth.api.getSession({ headers: c.req.raw.headers })
+  const session = await auth.api.getSession({ request: c.req.raw })
   if (!session) return c.json({ error: 'Unauthorized' }, 401)
 
   const teamId = c.req.param('teamId')
@@ -76,7 +76,7 @@ app.get('/:teamId/groups', async (c) => {
 /** 👥 新規グループ作成 (子グループとしての登録も parentId で対応) */
 app.post('/:teamId/groups', async (c) => {
   const auth = getAuth(c.env.DB, c.env)
-  const session = await auth.api.getSession({ headers: c.req.raw.headers })
+  const session = await auth.api.getSession({ request: c.req.raw })
   if (!session) return c.json({ error: 'Unauthorized' }, 401)
 
   const teamId = c.req.param('teamId')
@@ -112,7 +112,7 @@ app.post('/:teamId/groups', async (c) => {
 /** 👥 グループ更新 (名前変更・親グループ付け替え) */
 app.patch('/:teamId/groups/:groupId', async (c) => {
   const auth = getAuth(c.env.DB, c.env)
-  const session = await auth.api.getSession({ headers: c.req.raw.headers })
+  const session = await auth.api.getSession({ request: c.req.raw })
   if (!session) return c.json({ error: 'Unauthorized' }, 401)
 
   const teamId = c.req.param('teamId')
@@ -149,7 +149,7 @@ app.patch('/:teamId/groups/:groupId', async (c) => {
 /** 👥 グループ削除 (配下の子やメンバー所属も cascade で自動削除) */
 app.delete('/:teamId/groups/:groupId', async (c) => {
   const auth = getAuth(c.env.DB, c.env)
-  const session = await auth.api.getSession({ headers: c.req.raw.headers })
+  const session = await auth.api.getSession({ request: c.req.raw })
   if (!session) return c.json({ error: 'Unauthorized' }, 401)
 
   const teamId = c.req.param('teamId')
@@ -174,7 +174,7 @@ app.delete('/:teamId/groups/:groupId', async (c) => {
 /** 👥 グループへメンバー所属の追加 & 役割設定 */
 app.post('/:teamId/groups/:groupId/members', async (c) => {
   const auth = getAuth(c.env.DB, c.env)
-  const session = await auth.api.getSession({ headers: c.req.raw.headers })
+  const session = await auth.api.getSession({ request: c.req.raw })
   if (!session) return c.json({ error: 'Unauthorized' }, 401)
 
   const teamId = c.req.param('teamId')
@@ -237,7 +237,7 @@ app.post('/:teamId/groups/:groupId/members', async (c) => {
 /** 👥 グループ内メンバーの役割 (role) 編集 */
 app.patch('/:teamId/groups/:groupId/members/:relationId', async (c) => {
   const auth = getAuth(c.env.DB, c.env)
-  const session = await auth.api.getSession({ headers: c.req.raw.headers })
+  const session = await auth.api.getSession({ request: c.req.raw })
   if (!session) return c.json({ error: 'Unauthorized' }, 401)
 
   const teamId = c.req.param('teamId')
@@ -280,7 +280,7 @@ app.patch('/:teamId/groups/:groupId/members/:relationId', async (c) => {
 /** 👥 グループからメンバーを除外 */
 app.delete('/:teamId/groups/:groupId/members/:relationId', async (c) => {
   const auth = getAuth(c.env.DB, c.env)
-  const session = await auth.api.getSession({ headers: c.req.raw.headers })
+  const session = await auth.api.getSession({ request: c.req.raw })
   if (!session) return c.json({ error: 'Unauthorized' }, 401)
 
   const teamId = c.req.param('teamId')

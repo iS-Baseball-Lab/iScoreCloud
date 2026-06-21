@@ -22,7 +22,7 @@ const getRoleLabel = (role: string) => {
 
 app.get('/me', async (c) => {
   const auth = getAuth(c.env.DB, c.env) // 🌟 ここでインスタンスを取得！
-  const session = await auth.api.getSession({ headers: c.req.raw.headers })
+  const session = await auth.api.getSession({ request: c.req.raw })
 
   if (!session || !session.user) {
     return c.json({ success: false, error: 'Unauthorized' }, 401)

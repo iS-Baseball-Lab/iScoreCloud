@@ -10,7 +10,7 @@ import type { AuthUser } from '@/types/api'
 /** 🌟 チーム参加申請（型安全＆ねじれ解消版） */
 export const handleJoinTeam = async (c: Context) => {
   const auth = getAuth(c.env.DB, c.env)
-  const session = await auth.api.getSession({ headers: c.req.raw.headers })
+  const session = await auth.api.getSession({ request: c.req.raw })
   if (!session || !session.user) return c.json({ success: false, error: 'Unauthorized' }, 401)
 
   const body = await c.req.json().catch(() => null)
@@ -52,9 +52,9 @@ export const handleJoinTeam = async (c: Context) => {
 /** チーム検索 */
 export const handleSearchTeam = async (c: Context) => {
   const auth = getAuth(c.env.DB, c.env)
-  const session = await auth.api.getSession({ headers: c.req.raw.headers })
+  const session = await auth.api.getSession({ request: c.req.raw })
   if (!session) return c.json({ error: 'Unauthorized' }, 401)
-  const teamId = c.req.param('id')
+  const teamId = c.req.param('id')!
   const db = drizzle(c.env.DB)
 
   try {
@@ -68,10 +68,10 @@ export const handleSearchTeam = async (c: Context) => {
 /** 🌟 チームメンバー一覧取得（ソーシャルバッジ対応・安全設計） */
 export const handleGetMembers = async (c: Context) => {
   const auth = getAuth(c.env.DB, c.env)
-  const session = await auth.api.getSession({ headers: c.req.raw.headers })
+  const session = await auth.api.getSession({ request: c.req.raw })
   if (!session) return c.json({ error: 'Unauthorized' }, 401)
 
-  const teamId = c.req.param('id')
+  const teamId = c.req.param('id')!
   const db = drizzle(c.env.DB)
 
   try {
@@ -157,10 +157,10 @@ export const handleGetMembers = async (c: Context) => {
 /** 🌟 役割呼称カスタマイズの保存・更新 */
 export const handlePutRoleSettings = async (c: Context) => {
   const auth = getAuth(c.env.DB, c.env)
-  const session = await auth.api.getSession({ headers: c.req.raw.headers })
+  const session = await auth.api.getSession({ request: c.req.raw })
   if (!session) return c.json({ error: 'Unauthorized' }, 401)
 
-  const teamId = c.req.param('id')
+  const teamId = c.req.param('id')!
   const { settings } = await c.req.json<{ settings: Array<{ role: string, customLabel: string }> }>()
   const db = drizzle(c.env.DB)
 
@@ -190,11 +190,11 @@ export const handlePutRoleSettings = async (c: Context) => {
 /** 🌟 メンバーのロール変更（自動承認機能つき） */
 export const handlePatchMemberRole = async (c: Context) => {
   const auth = getAuth(c.env.DB, c.env)
-  const session = await auth.api.getSession({ headers: c.req.raw.headers })
+  const session = await auth.api.getSession({ request: c.req.raw })
   if (!session) return c.json({ error: 'Unauthorized' }, 401)
 
-  const teamId = c.req.param('id')
-  const memberId = c.req.param('memberId')
+  const teamId = c.req.param('id')!
+  const memberId = c.req.param('memberId')!
   const { role } = await c.req.json<{ role: string }>()
   const db = drizzle(c.env.DB)
 
@@ -220,11 +220,11 @@ export const handlePatchMemberRole = async (c: Context) => {
 /** メンバーを除名 */
 export const handleRemoveMember = async (c: Context) => {
   const auth = getAuth(c.env.DB, c.env)
-  const session = await auth.api.getSession({ headers: c.req.raw.headers })
+  const session = await auth.api.getSession({ request: c.req.raw })
   if (!session) return c.json({ error: 'Unauthorized' }, 401)
 
-  const teamId = c.req.param('id')
-  const memberId = c.req.param('memberId')
+  const teamId = c.req.param('id')!
+  const memberId = c.req.param('memberId')!
   const db = drizzle(c.env.DB)
 
   try {
@@ -245,10 +245,10 @@ export const handleRemoveMember = async (c: Context) => {
 /** 🌟 アカウント無しの新規メンバー（スタッフ・保護者）登録 */
 export const handleCreateMember = async (c: Context) => {
   const auth = getAuth(c.env.DB, c.env)
-  const session = await auth.api.getSession({ headers: c.req.raw.headers })
+  const session = await auth.api.getSession({ request: c.req.raw })
   if (!session) return c.json({ error: 'Unauthorized' }, 401)
 
-  const teamId = c.req.param('id')
+  const teamId = c.req.param('id')!
   const { name, nameKana, memberType, phone, email, avatarUrl } = await c.req.json<{
     name: string;
     nameKana?: string;
@@ -293,11 +293,14 @@ export const handleCreateMember = async (c: Context) => {
 /** 🌟 メンバー情報の更新 (およびログインユーザーとの紐付け) */
 export const handleUpdateMemberInfo = async (c: Context) => {
   const auth = getAuth(c.env.DB, c.env)
-  const session = await auth.api.getSession({ headers: c.req.raw.headers })
+  const session = await auth.api.getSession({ request: c.req.raw })
   if (!session) return c.json({ error: 'Unauthorized' }, 401)
 
-  const teamId = c.req.param('id')
-  const memberId = c.req.param('memberId')
+  const teamId = c.req.param('id')!
+  const memberId = c.req.param('memberId')!
+  if (!teamId || !memberId) {
+    return c.json({ error: 'パラメータが不足しています' }, 400)
+  }
   const { name, nameKana, memberType, phone, email, userId, avatarUrl } = await c.req.json<{
     name?: string;
     nameKana?: string;
