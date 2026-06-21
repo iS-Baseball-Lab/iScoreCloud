@@ -24,6 +24,7 @@ import tournaments from './api/tournaments'
 import testPush from './api/teams/test-push'
 import carpoolsRoute from './api/carpools'
 import equipmentsRoute from './api/equipments'
+import venuesRoute from './api/venues'
 import type { WorkerEnv } from './types/api'
 
 const app = new Hono<{ Bindings: WorkerEnv }>()
@@ -49,6 +50,7 @@ app.route('/api/tournaments', tournaments)
 app.route('/api/teams', testPush)
 app.route('/api/carpools', carpoolsRoute)
 app.route('/api/equipments', equipmentsRoute)
+app.route('/api/venues', venuesRoute)
 
 export default {
   async fetch(request: Request, env: WorkerEnv, ctx: ExecutionContext) {

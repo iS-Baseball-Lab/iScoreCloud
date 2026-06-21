@@ -94,6 +94,7 @@ export interface CreateMatchBody {
   location?: string;
   innings?: number;
   tournamentName?: string;
+  venueId?: string | null;
 }
 
 export interface UpdateMatchBody {
@@ -104,6 +105,7 @@ export interface UpdateMatchBody {
   location?: string;
   innings?: number;
   tournamentName?: string;
+  venueId?: string | null;
 }
 
 export interface FinishMatchBody {

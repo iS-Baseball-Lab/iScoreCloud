@@ -272,7 +272,8 @@ app.get('/events/:eventId', async (c) => {
       id: events.id,
       teamId: events.teamId,
       title: events.title,
-      startAt: events.startAt
+      startAt: events.startAt,
+      location: events.location
     })
     .from(events)
     .where(eq(events.id, eventId))

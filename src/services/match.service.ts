@@ -87,6 +87,7 @@ export const MatchService = {
       opponentHits: matches.opponentHits,
       myErrors: matches.myErrors,
       opponentErrors: matches.opponentErrors,
+      venueId: matches.venueId,
     })
       .from(matches)
       .leftJoin(tournaments, eq(matches.tournamentId, tournaments.id))
@@ -150,6 +151,7 @@ export const MatchService = {
       matchType: body.matchType,
       battingOrder: body.battingOrder,
       surfaceDetails: body.location,
+      venueId: body.venueId || null,
       innings: body.innings,
       status: "scheduled",
     });
@@ -167,6 +169,7 @@ export const MatchService = {
       matchType: body.matchType,
       battingOrder: body.battingOrder,
       surfaceDetails: body.location,
+      venueId: body.venueId || null,
       innings: body.innings,
     }).where(eq(matches.id, matchId));
   },

@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useTeam } from "@/contexts/TeamContext";
 import { toast } from "sonner";
-import { MatchBasicForm } from "@/components/features/matches/match-basic-form";
+import { MatchBasicForm, MatchFormState } from "@/components/features/matches/match-basic-form";
 import { QuickScoreForm } from "@/components/features/matches/match-score-board";
 import { SectionHeader } from "@/components/layout/SectionHeader";
 
@@ -36,16 +36,17 @@ function CreateMatchContent() {
   const pageInfo = getPageInfo();
 
   // 統合フォームステート
-  const [formState, setFormState] = useState({
+  const [formState, setFormState] = useState<MatchFormState>({
     opponent: "",
     date: new Date().toISOString().split("T")[0],
     time: "",
     venue: "",
-    matchType: 'practice' as 'official' | 'practice',
+    venueId: null,
+    matchType: 'practice',
     tournamentName: "",
-    battingOrder: 'unknown' as 'unknown' | 'first' | 'second',
-    benchSide: 'unknown' as 'unknown' | '1B' | '3B',
-    inningCount: 7 as 6 | 7 | 9,
+    battingOrder: 'unknown',
+    benchSide: 'unknown',
+    inningCount: 7,
   });
 
   const [isLoading, setIsLoading] = useState(false);

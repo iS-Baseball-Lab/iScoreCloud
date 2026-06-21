@@ -154,7 +154,7 @@ function CarpoolAssignmentContent() {
       const json = await res.json() as {
         success: boolean;
         data?: {
-          event: { title: string; startAt: string };
+          event: { title: string; startAt: string; location?: string | null };
           settings: { distanceKm: number; gasolinePrice: number; splitMethod: "by_car" | "by_team"; noParentChild: boolean; id: string };
           carpools: { id: string; driverId: string; driverName: string; carId: string | null; capacity: number; carType: "normal" | "cargo" | "bus"; highwayFee: number; parkingFee: number; riders: any[] }[];
           attendees: Attendee[];
@@ -181,6 +181,63 @@ function CarpoolAssignmentContent() {
       setAllAttendees(attendees);
       setFamilyRelations(familyRelations);
       setMasterCars(masterCars);
+
+      // 1. 球場マスタデータを取得してLINE連絡文のグラウンド情報・住所・マップURLを自動生成
+      let venuesList: any[] = [];
+      try {
+        const venuesRes = await fetch("/api/venues");
+        const venuesJson = await venuesRes.json() as { success: boolean; data?: any[] };
+        if (venuesJson.success && Array.isArray(venuesJson.data)) {
+          venuesList = venuesJson.data;
+        }
+      } catch (err) {
+        console.error("Failed to fetch venues master in carpool page:", err);
+      }
+
+      if (event.location) {
+        const matchingVenue = venuesList.find(
+          v => v.name.toLowerCase() === event.location!.trim().toLowerCase() ||
+               (v.shortName && v.shortName.toLowerCase() === event.location!.trim().toLowerCase())
+        );
+        if (matchingVenue) {
+          const mapPart = matchingVenue.mapUrl ? `\n(${matchingVenue.mapUrl})` : "";
+          setLineGround(`${matchingVenue.name}${matchingVenue.address ? `\n${matchingVenue.address}` : ""}${mapPart}`);
+        } else {
+          setLineGround(event.location);
+        }
+      } else if (event.title) {
+        const matchingVenue = venuesList.find(
+          v => event.title.toLowerCase().includes(v.name.toLowerCase()) ||
+               (v.shortName && event.title.toLowerCase().includes(v.shortName.toLowerCase()))
+        );
+        if (matchingVenue) {
+          const mapPart = matchingVenue.mapUrl ? `\n(${matchingVenue.mapUrl})` : "";
+          setLineGround(`${matchingVenue.name}${matchingVenue.address ? `\n${matchingVenue.address}` : ""}${mapPart}`);
+        } else {
+          setLineGround("");
+        }
+      } else {
+        setLineGround("");
+      }
+
+      if (event.title) {
+        setLineOpponents(event.title);
+      }
+
+      // 2. チーム名を取得してLINEタイトルを初期化
+      const tid = localStorage.getItem("iscore_selectedTeamId") || "";
+      if (tid) {
+        try {
+          const teamRes = await fetch(`/api/teams`);
+          const teamJson = await teamRes.json() as any[];
+          const team = teamJson.find((t: any) => t.id === tid);
+          if (team) {
+            setLineTitle(`連絡網　${team.name}`);
+          }
+        } catch (err) {
+          console.error("Failed to fetch team for LINE title:", err);
+        }
+      }
 
       // 保存されていた配車データをローカルアサイン配列にマップ
       const mappedCars: AssignedCar[] = carpools.map(cp => ({
@@ -229,7 +286,6 @@ function CarpoolAssignmentContent() {
       }
 
       // 🎒 道具データの取得
-      const tid = localStorage.getItem("iscore_selectedTeamId") || "";
       const eqRes = await fetch(`/api/equipments/events/${eventId}?teamId=${tid}`);
       const eqJson = await eqRes.json() as { success: boolean; data?: any[] };
       if (eqJson.success && eqJson.data) {

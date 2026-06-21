@@ -18,6 +18,7 @@ interface UpdateMatchRequest {
   benchSide?: '1B' | '3B' | 'unknown'; // 🌟 ベンチ位置
   innings?: 6 | 7 | 9;                 // 🌟 イニング数
   location?: string;                   // 🌟 フロントからはlocationとして来る想定（DBはsurfaceDetails）
+  venueId?: string;                    // 🌟 追加：球場ID
 }
 
 // ━━━ 試合情報の更新 (PATCH) ━━━
@@ -44,6 +45,7 @@ app.patch('/:id', async (c) => {
       benchSide: body.benchSide,
       innings: body.innings,
       surfaceDetails: n(body.location),
+      venueId: n(body.venueId),
     };
 
     // 💡 undefined のプロパティは更新対象から外す（部分更新への対応）

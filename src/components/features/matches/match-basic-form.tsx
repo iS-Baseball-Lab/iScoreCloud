@@ -1,4 +1,4 @@
-// filepath: src/components/features/matches/match-basic-form.tsx
+import React, { useState, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Users, Calendar, Clock, MapPin, Trophy, Hash, Tent } from "lucide-react";
@@ -10,6 +10,7 @@ export interface MatchFormState {
   date: string;
   time: string;
   venue: string;
+  venueId?: string | null; // 🌟 追加：球場ID
   matchType: 'official' | 'practice';
   tournamentName: string;
   battingOrder: 'first' | 'second' | 'unknown'; // 先攻後攻も未定があるかもしれないので拡張可能ですが、今回はベンチに集中します
@@ -26,6 +27,53 @@ interface Props {
 }
 
 export function MatchBasicForm({ state, setState, tournaments, isNewTournament, setIsNewTournament }: Props) {
+  const [venues, setVenues] = useState<any[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/venues")
+      .then((res) => res.json())
+      .then((data: any) => {
+        if (data.success && Array.isArray(data.data)) {
+          setVenues(data.data);
+        }
+      })
+      .catch((err) => console.error("Failed to fetch venues", err));
+  }, []);
+
+  const suggestions = React.useMemo(() => {
+    const query = state.venue.trim().toLowerCase();
+    if (!query) {
+      return venues.slice(0, 5); // 登録済みの球場を最大5件表示
+    }
+    return venues.filter(
+      (v) =>
+        v.name.toLowerCase().includes(query) ||
+        (v.shortName && v.shortName.toLowerCase().includes(query)) ||
+        (v.address && v.address.toLowerCase().includes(query))
+    );
+  }, [venues, state.venue]);
+
+  const handleVenueChange = (val: string) => {
+    const exactMatch = venues.find(
+      (v) => v.name.toLowerCase() === val.trim().toLowerCase() || (v.shortName && v.shortName.toLowerCase() === val.trim().toLowerCase())
+    );
+    setState({
+      ...state,
+      venue: val,
+      venueId: exactMatch ? exactMatch.id : null,
+    });
+  };
+
+  const selectSuggestion = (v: any) => {
+    setState({
+      ...state,
+      venue: v.name,
+      venueId: v.id,
+    });
+    setShowSuggestions(false);
+  };
+
   return (
     <div className="space-y-5">
       {/* 相手チーム */}
@@ -40,8 +88,45 @@ export function MatchBasicForm({ state, setState, tournaments, isNewTournament, 
           <Input type="date" value={state.date} onChange={e => setState({...state, date: e.target.value})} className="h-11 rounded-2xl text-sm font-bold bg-background" /></div>
         <div className="space-y-1.5"><label className="text-[10px] font-black uppercase text-muted-foreground"><Clock className="h-3 w-3 inline mr-1" /> Time</label>
           <Input type="time" value={state.time} onChange={e => setState({...state, time: e.target.value})} className="h-11 rounded-2xl text-sm font-bold bg-background" /></div>
-        <div className="col-span-2 space-y-1.5"><label className="text-[10px] font-black uppercase text-muted-foreground"><MapPin className="h-3 w-3 inline mr-1" /> Venue</label>
-          <Input placeholder="球場名" value={state.venue} onChange={e => setState({...state, venue: e.target.value})} className="h-11 rounded-2xl text-sm font-bold bg-background" /></div>
+        <div className="col-span-2 space-y-1.5 relative"><label className="text-[10px] font-black uppercase text-muted-foreground"><MapPin className="h-3 w-3 inline mr-1" /> Venue</label>
+          <Input 
+            placeholder="球場名 (入力するとサジェストされます)" 
+            value={state.venue} 
+            onChange={e => handleVenueChange(e.target.value)} 
+            onFocus={() => setShowSuggestions(true)}
+            onBlur={() => {
+              // delay to allow onMouseDown to execute
+              setTimeout(() => setShowSuggestions(false), 200);
+            }}
+            className="h-11 rounded-2xl text-sm font-bold bg-background border-border" 
+          />
+          {showSuggestions && suggestions.length > 0 && (
+            <div className="absolute top-[100%] left-0 right-0 z-50 mt-1 max-h-60 overflow-y-auto bg-card border border-border rounded-2xl shadow-lg divide-y divide-border/40">
+              {suggestions.map((v) => (
+                <button
+                  key={v.id}
+                  type="button"
+                  onMouseDown={() => selectSuggestion(v)}
+                  className="w-full px-4 py-3 text-left hover:bg-muted/80 active:bg-muted flex flex-col gap-0.5 transition-colors"
+                >
+                  <span className="font-bold text-sm text-foreground flex items-center gap-1.5">
+                    {v.name}
+                    {v.shortName && (
+                      <span className="text-[10px] px-1.5 py-0.5 bg-muted text-muted-foreground rounded">
+                        {v.shortName}
+                      </span>
+                    )}
+                  </span>
+                  {v.address && (
+                    <span className="text-[10px] text-muted-foreground truncate">
+                      {v.address}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* 試合設定：タイプ・イニング */}

@@ -179,7 +179,7 @@ export const TeamCalendar: React.FC<TeamCalendarProps> = ({ matches, canManage, 
           <Button variant="ghost" size="icon" className="h-9 w-9 rounded-lg" onClick={handlePrevMonth}>
             <ChevronLeft className="h-5 w-5 text-muted-foreground" />
           </Button>
-          <span className="text-sm font-black min-w-[80px] text-center tabular-nums text-foreground">
+          <span className="text-base sm:text-lg font-black min-w-[110px] text-center tabular-nums text-foreground">
             {currentYear}年 {currentMonth + 1}月
           </span>
           <Button variant="ghost" size="icon" className="h-9 w-9 rounded-lg" onClick={handleNextMonth}>
@@ -192,7 +192,7 @@ export const TeamCalendar: React.FC<TeamCalendarProps> = ({ matches, canManage, 
       </div>
 
       {/* ━━ 曜日ヘッダー ━━ */}
-      <div className="grid grid-cols-7 text-center text-[10px] font-black text-muted-foreground uppercase tracking-widest pb-2 border-b border-border/30">
+      <div className="grid grid-cols-7 text-center text-[11px] sm:text-xs font-black text-muted-foreground uppercase tracking-widest pb-2.5 border-b border-border/30">
         {weekDays.map((day, idx) => (
           <span key={day} className={cn(idx === 0 && "text-rose-500", idx === 6 && "text-blue-500")}>
             {day}
@@ -227,7 +227,7 @@ export const TeamCalendar: React.FC<TeamCalendarProps> = ({ matches, canManage, 
                 isSelected && "bg-primary text-primary-foreground hover:bg-primary border-primary ring-2 ring-primary/20"
               )}
             >
-              <span className="text-xs sm:text-sm font-bold tabular-nums">
+              <span className="text-sm sm:text-base font-black tabular-nums">
                 {day.date.getDate()}
               </span>
 
@@ -262,8 +262,8 @@ export const TeamCalendar: React.FC<TeamCalendarProps> = ({ matches, canManage, 
       {/* ━━ 選択された日付の試合予定カードエリア ━━ */}
       <div className="pt-4 border-t border-border/40 space-y-3">
         <div className="flex items-center justify-between mb-2">
-          <h4 className="text-xs font-black text-muted-foreground flex items-center gap-1.5">
-            <Info className="h-3.5 w-3.5" />
+          <h4 className="text-xs sm:text-sm font-black text-muted-foreground flex items-center gap-1.5">
+            <Info className="h-4 w-4 text-primary/60" />
             {selectedDate.getFullYear()}年{selectedDate.getMonth() + 1}月{selectedDate.getDate()}日の予定
           </h4>
 

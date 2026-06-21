@@ -340,6 +340,16 @@ export default function DashboardPage() {
           </div>
         </section>
 
+        {/* --- 4.5. 試合カレンダー (CALENDAR) --- */}
+        <section className="space-y-6">
+          <SectionHeader title="チームスケジュール" subtitle="Team Schedule" showPulse />
+          <TeamCalendar 
+            matches={calendarMatches} 
+            canManage={canManage} 
+            teamId={currentTeam?.id || ""} 
+          />
+        </section>
+
         {/* --- 🚀 進行中の試合 (LIVE HERO SECTION) --- */}
         {liveMatch && (
           <section className="animate-bounce-in">
@@ -440,16 +450,6 @@ export default function DashboardPage() {
               Total: {stats.total} Matches Played
             </p>
           </div>
-        </section>
-
-        {/* --- 4.5. 試合カレンダー (CALENDAR) --- */}
-        <section className="space-y-6">
-          <SectionHeader title="チームスケジュール" subtitle="Team Schedule" showPulse />
-          <TeamCalendar 
-            matches={calendarMatches} 
-            canManage={canManage} 
-            teamId={currentTeam?.id || ""} 
-          />
         </section>
 
         {/* --- 5. 試合予定 (UPCOMING MATCHES) --- */}
