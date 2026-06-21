@@ -10,7 +10,7 @@ import { Select } from "@/components/ui/select";
 import { toast } from "sonner";
 import { 
   Car, Plus, Trash2, Edit, Loader2, ArrowLeft, AlertCircle, Info, 
-  HelpCircle, Settings, Users, Fuel, Palette, Hash
+  HelpCircle, Settings, Users, Fuel, Palette, Hash, Check
 } from "lucide-react";
 import { SectionHeader } from "@/components/layout/SectionHeader";
 import { EmptyState } from "@/components/layout/EmptyState";
@@ -275,12 +275,15 @@ export default function MyCarsPage() {
                     {(() => {
                       const colorStyle = getCarColorClass(car.color);
                       return (
-                        <div className={cn(
-                          "h-10 w-10 rounded-2xl flex items-center justify-center shrink-0 border transition-all duration-300 shadow-sm",
-                          colorStyle.bg,
-                          colorStyle.text,
-                          colorStyle.border
-                        )}>
+                        <div 
+                          className={cn(
+                            "h-10 w-10 rounded-2xl flex items-center justify-center shrink-0 border transition-all duration-300 shadow-sm",
+                            colorStyle.bg,
+                            colorStyle.text,
+                            colorStyle.border
+                          )}
+                          style={colorStyle.style}
+                        >
                           <Car className="h-5 w-5" />
                         </div>
                       );
@@ -370,34 +373,67 @@ export default function MyCarsPage() {
               </div>
 
               {/* 車の色 */}
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">車の色</label>
                 
-                {/* クイック選択バッジ */}
-                <div className="flex flex-wrap gap-1.5 mb-2">
-                  {["白", "黒", "シルバー", "グレー", "紺", "青", "赤", "茶"].map(color => (
+                {/* 丸いカラーパレット（ビジュアルカラーピッカー） */}
+                <div className="flex flex-wrap items-center gap-2 mb-1">
+                  {[
+                    { label: "白", hex: "#ffffff", name: "白" },
+                    { label: "黒", hex: "#18181b", name: "黒" },
+                    { label: "銀", hex: "#d4d4d8", name: "シルバー" },
+                    { label: "灰", hex: "#71717a", name: "グレー" },
+                    { label: "赤", hex: "#ef4444", name: "赤" },
+                    { label: "青", hex: "#3b82f6", name: "青" },
+                    { label: "紺", hex: "#1e3a8a", name: "紺" },
+                    { label: "緑", hex: "#10b981", name: "緑" },
+                    { label: "黄", hex: "#f59e0b", name: "黄" },
+                    { label: "橙", hex: "#f97316", name: "オレンジ" },
+                    { label: "茶", hex: "#78350f", name: "茶" }
+                  ].map(item => (
                     <button
-                      key={color}
+                      key={item.label}
                       type="button"
-                      onClick={() => setCarColor(color)}
+                      onClick={() => setCarColor(item.name)}
                       className={cn(
-                        "px-2.5 py-1 text-[10px] font-black rounded-lg border transition-all active:scale-95 cursor-pointer",
-                        carColor === color 
-                          ? "bg-primary border-primary text-white" 
-                          : "bg-muted/40 border-border text-muted-foreground hover:bg-muted"
+                        "h-6 w-6 rounded-full border transition-all active:scale-90 cursor-pointer shadow-xs relative flex items-center justify-center",
+                        carColor === item.name ? "ring-2 ring-primary ring-offset-2 scale-110" : "border-border"
                       )}
+                      style={{ backgroundColor: item.hex }}
+                      title={item.name}
                     >
-                      {color}
+                      {carColor === item.name && (
+                        <Check className="h-3.5 w-3.5" style={{ color: (item.label === "白" || item.label === "銀") ? "#000000" : "#ffffff" }} />
+                      )}
                     </button>
                   ))}
+
+                  {/* カスタムカラーピッカーボタン (HTML5のcolor inputを活用) */}
+                  <div className="relative h-6 w-6 rounded-full border border-border overflow-hidden bg-gradient-to-tr from-rose-400 via-indigo-500 to-emerald-400 cursor-pointer flex items-center justify-center group active:scale-90 transition-transform" title="カスタムカラー選択">
+                    <input
+                      type="color"
+                      value={carColor.startsWith("#") ? carColor : "#3b82f6"}
+                      onChange={e => setCarColor(e.target.value)}
+                      className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10"
+                    />
+                    <Plus className="h-3.5 w-3.5 text-white pointer-events-none drop-shadow-sm" />
+                  </div>
                 </div>
 
-                <Input
-                  value={carColor}
-                  onChange={e => setCarColor(e.target.value)}
-                  placeholder="例: パールホワイト、ダークブルーなど"
-                  className="h-11 rounded-xl font-bold"
-                />
+                <div className="flex gap-2">
+                  <Input
+                    value={carColor}
+                    onChange={e => setCarColor(e.target.value)}
+                    placeholder="例: パールホワイト、ダークブルーなど"
+                    className="h-11 rounded-xl font-bold flex-1"
+                  />
+                  {carColor.startsWith("#") && (
+                    <div 
+                      className="w-11 h-11 rounded-xl border border-border shrink-0 shadow-xs transition-colors duration-300" 
+                      style={{ backgroundColor: carColor }} 
+                    />
+                  )}
+                </div>
               </div>
 
               {/* 車のナンバー */}
@@ -497,14 +533,30 @@ export default function MyCarsPage() {
 }
 
 // 🎨 車の色に応じたCSSスタイルマッピング関数
-function getCarColorClass(colorName: string | null | undefined): { bg: string; text: string; border: string } {
+function getCarColorClass(colorName: string | null | undefined): { bg: string; text: string; border: string; style?: React.CSSProperties } {
   if (!colorName) {
     return { bg: "bg-primary/10 text-primary", text: "text-primary", border: "border-transparent" };
   }
-  const cleanColor = colorName.trim().toLowerCase();
+  const cleanColor = colorName.trim();
 
+  // 16進数カラーコードの判定
+  if (cleanColor.startsWith("#")) {
+    const isLight = isLightColor(cleanColor);
+    return {
+      bg: "",
+      text: isLight ? "text-zinc-700" : "text-white",
+      border: isLight ? "border-zinc-200" : "border-transparent",
+      style: {
+        backgroundColor: cleanColor,
+        color: isLight ? "#27272a" : "#ffffff",
+        borderColor: isLight ? "#e4e4e7" : "transparent"
+      }
+    };
+  }
+
+  const lowerColor = cleanColor.toLowerCase();
   // 白・パール系
-  if (cleanColor.includes("白") || cleanColor.includes("ホワイト") || cleanColor.includes("white") || cleanColor.includes("パール")) {
+  if (lowerColor.includes("白") || lowerColor.includes("ホワイト") || lowerColor.includes("white") || lowerColor.includes("パール")) {
     return { 
       bg: "bg-white dark:bg-zinc-800", 
       text: "text-zinc-600 dark:text-zinc-300", 
@@ -512,7 +564,7 @@ function getCarColorClass(colorName: string | null | undefined): { bg: string; t
     };
   }
   // 黒・ダーク系
-  if (cleanColor.includes("黒") || cleanColor.includes("ブラック") || cleanColor.includes("black") || cleanColor.includes("ダークグレー")) {
+  if (lowerColor.includes("黒") || lowerColor.includes("ブラック") || lowerColor.includes("black") || lowerColor.includes("ダークグレー")) {
     return { 
       bg: "bg-zinc-950 dark:bg-zinc-900", 
       text: "text-white dark:text-zinc-200", 
@@ -520,7 +572,7 @@ function getCarColorClass(colorName: string | null | undefined): { bg: string; t
     };
   }
   // 赤・ピンク系
-  if (cleanColor.includes("赤") || cleanColor.includes("レッド") || cleanColor.includes("red") || cleanColor.includes("ピンク")) {
+  if (lowerColor.includes("赤") || lowerColor.includes("レッド") || lowerColor.includes("red") || lowerColor.includes("ピンク")) {
     return { 
       bg: "bg-rose-500 dark:bg-rose-600", 
       text: "text-white", 
@@ -528,7 +580,7 @@ function getCarColorClass(colorName: string | null | undefined): { bg: string; t
     };
   }
   // 青・ネイビー系
-  if (cleanColor.includes("青") || cleanColor.includes("ブルー") || cleanColor.includes("blue") || cleanColor.includes("紺") || cleanColor.includes("ネイビー")) {
+  if (lowerColor.includes("青") || lowerColor.includes("ブルー") || lowerColor.includes("blue") || lowerColor.includes("紺") || lowerColor.includes("ネイビー")) {
     return { 
       bg: "bg-blue-600 dark:bg-blue-700", 
       text: "text-white", 
@@ -536,7 +588,7 @@ function getCarColorClass(colorName: string | null | undefined): { bg: string; t
     };
   }
   // 緑・カーキ系
-  if (cleanColor.includes("緑") || cleanColor.includes("グリーン") || cleanColor.includes("green") || cleanColor.includes("カーキ")) {
+  if (lowerColor.includes("緑") || lowerColor.includes("グリーン") || lowerColor.includes("green") || lowerColor.includes("カーキ")) {
     return { 
       bg: "bg-emerald-600 dark:bg-emerald-700", 
       text: "text-white", 
@@ -544,7 +596,7 @@ function getCarColorClass(colorName: string | null | undefined): { bg: string; t
     };
   }
   // 黄色・ゴールド
-  if (cleanColor.includes("黄") || cleanColor.includes("イエロー") || cleanColor.includes("yellow") || cleanColor.includes("金") || cleanColor.includes("ゴールド")) {
+  if (lowerColor.includes("黄") || lowerColor.includes("イエロー") || lowerColor.includes("yellow") || lowerColor.includes("金") || lowerColor.includes("ゴールド")) {
     return { 
       bg: "bg-amber-400 dark:bg-amber-500", 
       text: "text-zinc-900 dark:text-white", 
@@ -552,7 +604,7 @@ function getCarColorClass(colorName: string | null | undefined): { bg: string; t
     };
   }
   // 橙・オレンジ
-  if (cleanColor.includes("オレンジ") || cleanColor.includes("orange") || cleanColor.includes("橙")) {
+  if (lowerColor.includes("オレンジ") || lowerColor.includes("orange") || lowerColor.includes("橙")) {
     return { 
       bg: "bg-orange-500", 
       text: "text-white", 
@@ -560,7 +612,7 @@ function getCarColorClass(colorName: string | null | undefined): { bg: string; t
     };
   }
   // シルバー・グレー
-  if (cleanColor.includes("シルバー") || cleanColor.includes("銀") || cleanColor.includes("silver") || cleanColor.includes("グレー") || cleanColor.includes("灰") || cleanColor.includes("gray") || cleanColor.includes("grey")) {
+  if (lowerColor.includes("シルバー") || lowerColor.includes("銀") || lowerColor.includes("silver") || lowerColor.includes("グレー") || lowerColor.includes("灰") || lowerColor.includes("gray") || lowerColor.includes("grey")) {
     return { 
       bg: "bg-zinc-400 dark:bg-zinc-500", 
       text: "text-white", 
@@ -568,7 +620,7 @@ function getCarColorClass(colorName: string | null | undefined): { bg: string; t
     };
   }
   // 茶色・ベージュ・ブラウン
-  if (cleanColor.includes("茶") || cleanColor.includes("ブラウン") || cleanColor.includes("brown") || cleanColor.includes("ベージュ")) {
+  if (lowerColor.includes("茶") || lowerColor.includes("ブラウン") || lowerColor.includes("brown") || lowerColor.includes("ベージュ")) {
     return { 
       bg: "bg-amber-800 dark:bg-amber-900", 
       text: "text-white", 
@@ -578,4 +630,15 @@ function getCarColorClass(colorName: string | null | undefined): { bg: string; t
 
   // デフォルト
   return { bg: "bg-primary/10", text: "text-primary", border: "border-transparent" };
+}
+
+// 輝度から明るい色かどうかを判定するヘルパー (テキストの白黒コントラスト調整用)
+function isLightColor(hexColor: string): boolean {
+  const hex = hexColor.replace("#", "");
+  if (hex.length !== 6) return true;
+  const r = parseInt(hex.substring(0, 2), 16);
+  const g = parseInt(hex.substring(2, 4), 16);
+  const b = parseInt(hex.substring(4, 6), 16);
+  const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
+  return yiq >= 150; // 輝度が150以上なら明るいとみなして黒文字を合わせる
 }
