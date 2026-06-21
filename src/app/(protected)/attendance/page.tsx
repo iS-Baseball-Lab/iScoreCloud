@@ -130,6 +130,22 @@ export default function AttendancePage() {
     record: AttendanceRecord | null;
   } | null>(null);
 
+  // 🎒 複数日程一括出欠登録モーダル状態
+  const [isBatchModalOpen, setIsBatchModalOpen] = useState<boolean>(false);
+  const [batchTargetRow, setBatchTargetRow] = useState<any | null>(null);
+  const [batchAttendances, setBatchAttendances] = useState<any[]>([]); // Array of { eventId, title, startAt, eventType, status, hasCar, comment }
+
+  // 過去予定の表示制御状態 (デフォルトはOFF＝今日以降を表示)
+  const [showPastEvents, setShowPastEvents] = useState<boolean>(false);
+
+  // 過去予定のフィルタリングロジック
+  const filteredEvents = useMemo(() => {
+    if (showPastEvents) return eventsData;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return eventsData.filter(e => new Date(e.startAt) >= today);
+  }, [eventsData, showPastEvents]);
+
   // イベント入力用フォーム状態
   const [eventTitle, setEventTitle] = useState<string>("");
   const [eventStartAt, setEventStartAt] = useState<string>("");
@@ -149,6 +165,83 @@ export default function AttendancePage() {
   const [inputComment, setInputComment] = useState<string>("");
   const [inputHasCar, setInputHasCar] = useState<boolean>(false);
   const [inputRole, setInputRole] = useState<string>("player");
+
+  // 🎒 複数日程一括編集モーダルの制御と保存処理
+  const openBatchEditModal = (row: any) => {
+    if (!row.canEdit) {
+      toast.error("このメンバーの出欠を編集する権限がありません。");
+      return;
+    }
+    setBatchTargetRow(row);
+    
+    // 表示されている全日程（filteredEvents）について、現在の出欠データをマッピング
+    const list = filteredEvents.map(e => {
+      const key = row.type === "player" 
+        ? `event_${e.id}_player_${row.id}`
+        : `event_${e.id}_member_${row.id}`;
+      const record = attendanceMap[key];
+      return {
+        eventId: e.id,
+        title: e.title,
+        startAt: e.startAt,
+        eventType: e.eventType,
+        status: record?.status || "pending",
+        hasCar: !!record?.hasCar,
+        comment: record?.comment || ""
+      };
+    });
+    setBatchAttendances(list);
+    setIsBatchModalOpen(true);
+  };
+
+  const updateBatchItem = (eventId: string, field: string, value: any) => {
+    setBatchAttendances(prev => prev.map(item => {
+      if (item.eventId !== eventId) return item;
+      return {
+        ...item,
+        [field]: value
+      };
+    }));
+  };
+
+  const handleSaveBatchAttendance = async () => {
+    if (!batchTargetRow || !teamId) return;
+    setIsSubmitting(true);
+    try {
+      const promises = batchAttendances.map(item => {
+        const body = {
+          eventId: item.eventId,
+          playerId: batchTargetRow.type === "player" ? batchTargetRow.id : null,
+          memberId: batchTargetRow.type === "member" ? batchTargetRow.id : null,
+          userId: batchTargetRow.userId || null,
+          status: item.status,
+          hasCar: item.hasCar,
+          comment: item.comment,
+        };
+        return fetch("/api/attendance/update", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        }).then(r => r.json() as Promise<{ success: boolean; error?: string }>);
+      });
+
+      const results = await Promise.all(promises);
+      const failed = results.filter(r => !r.success);
+      if (failed.length > 0) {
+        throw new Error(failed[0].error || "一部の日程の出欠保存に失敗しました。");
+      }
+
+      toast.success(`${batchTargetRow.name} の出欠スケジュールを一括保存しました！`);
+      setIsBatchModalOpen(false);
+      setBatchTargetRow(null);
+      fetchInitialData(teamId);
+    } catch (e) {
+      console.error(e);
+      toast.error(e instanceof Error ? e.message : "一括保存中にエラーが発生しました。");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   // 1. 初期設定とデータ取得
   useEffect(() => {
@@ -302,12 +395,12 @@ export default function AttendancePage() {
   const eventSummaries = useMemo(() => {
     const summaries: Record<string, { present: number; absent: number; late: number; pending: number; partial: number }> = {};
     
-    eventsData.forEach(e => {
+    filteredEvents.forEach(e => {
       summaries[e.id] = { present: 0, absent: 0, late: 0, pending: 0, partial: 0 };
     });
 
     displayRows.forEach(row => {
-      eventsData.forEach(e => {
+      filteredEvents.forEach(e => {
         const key = row.type === "player" 
           ? `event_${e.id}_player_${row.id}`
           : `event_${e.id}_member_${row.id}`;
@@ -321,7 +414,7 @@ export default function AttendancePage() {
     });
 
     return summaries;
-  }, [eventsData, displayRows, attendanceMap]);
+  }, [filteredEvents, displayRows, attendanceMap]);
 
   // 4. イベント管理アクション
   const openCreateEventModal = () => {
@@ -604,8 +697,19 @@ export default function AttendancePage() {
             </button>
           </div>
 
-          {/* 右側：グループフィルター & 日程追加ボタン */}
-          <div className="flex items-center gap-3 w-full md:w-auto">
+          {/* 右側：グループフィルター & 過去予定トグル & 日程追加ボタン */}
+          <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+            {/* 過去予定トグル */}
+            <label className="flex items-center gap-2 text-xs font-bold text-muted-foreground bg-muted/40 hover:bg-muted/70 px-3.5 py-2 rounded-2xl border border-border/40 cursor-pointer select-none transition-colors">
+              <input
+                type="checkbox"
+                checked={showPastEvents}
+                onChange={(e) => setShowPastEvents(e.target.checked)}
+                className="h-4 w-4 rounded border-border text-primary focus:ring-primary accent-primary cursor-pointer"
+              />
+              <span>過去の予定を表示</span>
+            </label>
+
             {/* グループ選択 */}
             <div className="flex items-center gap-2 flex-1 md:flex-initial">
               <Filter className="h-4 w-4 text-muted-foreground shrink-0" />
@@ -628,7 +732,7 @@ export default function AttendancePage() {
         </div>
 
         {/* 伝助風一括マトリックスボード */}
-        {eventsData.length === 0 ? (
+        {filteredEvents.length === 0 ? (
           <EmptyState 
             icon={CalendarDays} 
             title="登録された予定はありません" 
@@ -642,7 +746,7 @@ export default function AttendancePage() {
                   {/* メンバー列: スマホ 150px, PC 180px */}
                   <col className="w-[150px] sm:w-[180px]" />
                   {/* イベント列: 常に 96px */}
-                  {eventsData.map(e => (
+                  {filteredEvents.map(e => (
                     <col key={e.id} className="w-[96px]" />
                   ))}
                 </colgroup>
@@ -651,12 +755,12 @@ export default function AttendancePage() {
                 <thead className="relative z-20">
                   <tr className="border-b border-border/50 bg-muted/20">
                     {/* 左端：メンバー枠 */}
-                    <th className="p-1 sm:p-2.5 font-black text-[10px] sm:text-xs uppercase tracking-wider text-muted-foreground border-r border-border/40 bg-card sticky left-0 top-0 z-35 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+                    <th className="p-2.5 sm:p-4 font-black text-[10px] sm:text-xs uppercase tracking-wider text-muted-foreground border-r-2 border-border/60 bg-card sticky left-0 top-0 z-35 shadow-[4px_0_8px_-3px_rgba(0,0,0,0.15)] dark:shadow-[4px_0_8px_-3px_rgba(0,0,0,0.5)]">
                       メンバー
                     </th>
                     
                     {/* 右側：イベント日程列 */}
-                    {eventsData.map(e => (
+                    {filteredEvents.map(e => (
                       <th key={e.id} className="p-2.5 border-r border-border/30 text-center align-top relative group sticky top-0 z-25 bg-card">
                         <div className="space-y-1">
                           
@@ -750,9 +854,19 @@ export default function AttendancePage() {
                              </div>
                            )}
 
-                           {/* 🚗 配車・道具管理ボタン (試合・合宿のみ) */}
+                          <Separator className="my-1.5 opacity-50" />
+
+                          {/* 集計数 (伝助風) */}
+                          <div className="flex items-center justify-center gap-1 text-[8px] font-extrabold tracking-tighter">
+                            <span className="text-emerald-600 dark:text-emerald-400">◎{eventSummaries[e.id]?.present || 0}</span>
+                            <span className="text-sky-600 dark:text-sky-400">○{eventSummaries[e.id]?.partial || 0}</span>
+                            <span className="text-amber-600 dark:text-amber-400">△{eventSummaries[e.id]?.late || 0}</span>
+                            <span className="text-rose-600 dark:text-rose-400">×{eventSummaries[e.id]?.absent || 0}</span>
+                          </div>
+
+                           {/* 🚗 配車・道具管理ボタン (試合・合宿のみ) - 一番下(カウントの下)に配置 */}
                            {(e.eventType === 'match' || e.eventType === 'camp') && (
-                             <div className="pt-1.5 mt-1 border-t border-dashed border-border/20">
+                             <div className="pt-1.5 mt-1.5 border-t border-dashed border-border/20">
                                <button
                                  onClick={() => router.push(`/attendance/carpool?eventId=${e.id}`)}
                                  className="w-full py-1 rounded bg-primary/10 hover:bg-primary/20 border border-primary/20 text-primary flex items-center justify-center text-[8px] font-black cursor-pointer shadow-xs transition-colors"
@@ -762,16 +876,6 @@ export default function AttendancePage() {
                                </button>
                              </div>
                            )}
- 
-                           <Separator className="my-1.5 opacity-50" />
-
-                          {/* 集計数 (伝助風) */}
-                          <div className="flex items-center justify-center gap-1 text-[8px] font-extrabold tracking-tighter">
-                            <span className="text-emerald-600 dark:text-emerald-400">◎{eventSummaries[e.id]?.present || 0}</span>
-                            <span className="text-sky-600 dark:text-sky-400">○{eventSummaries[e.id]?.partial || 0}</span>
-                            <span className="text-amber-600 dark:text-amber-400">△{eventSummaries[e.id]?.late || 0}</span>
-                            <span className="text-rose-600 dark:text-rose-400">×{eventSummaries[e.id]?.absent || 0}</span>
-                          </div>
 
                         </div>
                       </th>
@@ -783,7 +887,7 @@ export default function AttendancePage() {
                 <tbody className="divide-y divide-border/40">
                   {displayRows.length === 0 ? (
                     <tr>
-                      <td colSpan={eventsData.length + 1} className="p-8 text-center text-muted-foreground font-bold text-sm">
+                      <td colSpan={filteredEvents.length + 1} className="p-8 text-center text-muted-foreground font-bold text-sm">
                         条件に一致するメンバーがいません
                       </td>
                     </tr>
@@ -795,9 +899,15 @@ export default function AttendancePage() {
                       return (
                         <tr key={`${row.type}-${row.id}`} className={cn("hover:bg-muted/60 transition-colors", rowBgClass)}>
                           
-                          {/* 左端メンバー名列 */}
-                          <td className={cn("p-0.5 sm:p-1.5 font-bold text-xs border-r border-border/40 sticky left-0 z-15 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] whitespace-nowrap", rowBgClass)}>
-                            <div className="flex items-center gap-1 sm:gap-2 w-full overflow-hidden">
+                          {/* 左端：メンバー名列 */}
+                          <td 
+                            onClick={() => row.canEdit && openBatchEditModal(row)}
+                            className={cn(
+                              "p-2.5 sm:p-4 font-bold border-r-2 border-border/60 bg-card sticky left-0 z-10 shadow-[4px_0_8px_-3px_rgba(0,0,0,0.15)] dark:shadow-[4px_0_8px_-3px_rgba(0,0,0,0.5)] transition-colors select-none group",
+                              row.canEdit ? "cursor-pointer hover:bg-muted/80" : "cursor-default"
+                            )}
+                          >
+                            <div className="flex items-center gap-2">
                               {row.type === "player" ? (
                                 row.avatarUrl ? (
                                   <img src={row.avatarUrl} alt={row.name} className="h-6 w-6 rounded-full object-cover shrink-0 border border-zinc-200 block" />
@@ -816,7 +926,10 @@ export default function AttendancePage() {
                                 )
                               )}
                               <div className="min-w-0 flex-1 overflow-hidden">
-                                <p className="truncate text-foreground font-black text-[9px] sm:text-xs block overflow-hidden text-ellipsis whitespace-nowrap" title={row.name}>
+                                <p className={cn(
+                                  "truncate text-foreground font-black text-[9px] sm:text-xs block overflow-hidden text-ellipsis whitespace-nowrap",
+                                  row.canEdit && "group-hover:underline decoration-primary decoration-2"
+                                )} title={row.name}>
                                   {row.name}
                                 </p>
                                 <p className="text-[7px] text-muted-foreground leading-none font-bold uppercase mt-0.5 block">
@@ -827,7 +940,7 @@ export default function AttendancePage() {
                           </td>
 
                           {/* 各イベントのステータスセル */}
-                          {eventsData.map(e => {
+                          {filteredEvents.map(e => {
                             const key = row.type === "player" 
                               ? `event_${e.id}_player_${row.id}`
                               : `event_${e.id}_member_${row.id}`;
@@ -1131,6 +1244,144 @@ export default function AttendancePage() {
                 {isSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "登録する"}
               </Button>
               <Button type="button" variant="outline" onClick={() => setIsAttendModalOpen(false)} className="w-full h-12 rounded-xl font-bold text-xs">
+                キャンセル
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* 🎒 複数日程一括編集ダイアログ */}
+        <Dialog open={isBatchModalOpen} onOpenChange={setIsBatchModalOpen}>
+          <DialogContent className="rounded-[var(--radius-2xl)] bg-card border-border sm:max-w-md max-h-[85vh] flex flex-col p-0 overflow-hidden" onInteractOutside={(el) => el.preventDefault()}>
+            <DialogHeader className="p-6 pb-2">
+              <DialogTitle className="font-black text-lg flex items-center gap-2">
+                <Users className="h-5 w-5 text-primary" />
+                {batchTargetRow?.name} の出欠スケジュール一括登録
+              </DialogTitle>
+              <DialogDescription className="text-xs font-bold text-muted-foreground">
+                表示されているすべての日程の出欠を一括で設定・保存します。
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="flex-1 overflow-y-auto px-6 py-2 space-y-4 divide-y divide-border/30">
+              {batchAttendances.map((item, index) => {
+                const dateStr = new Date(item.startAt).toLocaleDateString("ja-JP", { month: "short", day: "numeric", weekday: "short" });
+                const timeStr = new Date(item.startAt).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
+                // 大人メンバー（スタッフ・保護者）かどうかの判定。選手以外に車出しトグルを表示
+                const isAdult = batchTargetRow?.type === "member" && batchTargetRow?.memberType !== "player";
+
+                return (
+                  <div key={item.eventId} className={cn("pt-4 space-y-3", index === 0 && "pt-0")}>
+                    {/* 日程タイトルと日時 */}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-1.5">
+                          <span className={cn(
+                            "inline-block text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full border tracking-wider",
+                            item.eventType === 'match' ? 'bg-primary/10 text-primary border-primary/20' : 
+                            item.eventType === 'meeting' ? 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20' : 
+                            item.eventType === 'camp' ? 'bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/20' : 
+                            'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+                          )}>
+                            {item.eventType === 'match' ? '試合' : item.eventType === 'meeting' ? '会議' : item.eventType === 'camp' ? '合宿' : '練習'}
+                          </span>
+                          <h4 className="font-black text-sm text-foreground truncate max-w-[180px]" title={item.title}>
+                            {item.title}
+                          </h4>
+                        </div>
+                        <p className="text-[10px] font-extrabold text-muted-foreground">
+                          {dateStr} {timeStr}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* 出欠の選択ボタン群 & 車出し（大人用） & コメント */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {/* 出欠の四択ボタン */}
+                      <div className="grid grid-cols-4 gap-1">
+                        <button
+                          type="button"
+                          onClick={() => updateBatchItem(item.eventId, "status", "present")}
+                          className={cn(
+                            "py-1.5 px-0.5 rounded-lg border transition-all cursor-pointer flex flex-col items-center justify-center min-h-[44px]",
+                            item.status === "present" ? "bg-emerald-500/10 border-emerald-500 text-emerald-600 dark:text-emerald-400" : "border-border hover:bg-muted"
+                          )}
+                          title="当番参加"
+                        >
+                          <span className="text-[8px] font-black leading-none">当番</span>
+                          <span className="text-xs font-black mt-0.5">◎</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => updateBatchItem(item.eventId, "status", "partial")}
+                          className={cn(
+                            "py-1.5 px-0.5 rounded-lg border transition-all cursor-pointer flex flex-col items-center justify-center min-h-[44px]",
+                            item.status === "partial" ? "bg-sky-500/10 border-sky-500 text-sky-600 dark:text-sky-400" : "border-border hover:bg-muted"
+                          )}
+                          title="参加"
+                        >
+                          <span className="text-[8px] font-black leading-none">参加</span>
+                          <span className="text-xs font-black mt-0.5">○</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => updateBatchItem(item.eventId, "status", "late")}
+                          className={cn(
+                            "py-1.5 px-0.5 rounded-lg border transition-all cursor-pointer flex flex-col items-center justify-center min-h-[44px]",
+                            item.status === "late" ? "bg-amber-500/10 border-amber-500 text-amber-600 dark:text-amber-400" : "border-border hover:bg-muted"
+                          )}
+                          title="遅刻・試合なら"
+                        >
+                          <span className="text-[8px] font-black leading-none">試合なら</span>
+                          <span className="text-xs font-black mt-0.5">△</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => updateBatchItem(item.eventId, "status", "absent")}
+                          className={cn(
+                            "py-1.5 px-0.5 rounded-lg border transition-all cursor-pointer flex flex-col items-center justify-center min-h-[44px]",
+                            item.status === "absent" ? "bg-rose-500/10 border-rose-500 text-rose-600 dark:text-rose-400" : "border-border hover:bg-muted"
+                          )}
+                          title="不参加"
+                        >
+                          <span className="text-[8px] font-black leading-none">不参加</span>
+                          <span className="text-xs font-black mt-0.5">×</span>
+                        </button>
+                      </div>
+
+                      {/* コメント・車出し設定 */}
+                      <div className="flex flex-col gap-1.5 justify-center">
+                        <Input
+                          value={item.comment}
+                          onChange={(e) => updateBatchItem(item.eventId, "comment", e.target.value)}
+                          placeholder="コメント（理由等）"
+                          className="h-8 rounded-lg text-[11px] font-bold py-1"
+                        />
+                        {isAdult && (
+                          <label className="flex items-center justify-between px-2.5 py-1 rounded-lg bg-muted/40 border border-border/40 text-[11px] font-bold cursor-pointer hover:bg-muted/70 transition-colors">
+                            <span className="flex items-center gap-1 text-muted-foreground">
+                              <Car className="h-3 w-3" /> 車出しOK
+                            </span>
+                            <input
+                              type="checkbox"
+                              checked={item.hasCar}
+                              onChange={(e) => updateBatchItem(item.eventId, "hasCar", e.target.checked)}
+                              className="h-3.5 w-3.5 rounded border-border text-primary focus:ring-primary accent-primary cursor-pointer"
+                            />
+                          </label>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <DialogFooter className="p-6 bg-muted/20 border-t border-border/40 flex flex-col gap-2 w-full sm:flex-col shrink-0">
+              <Button onClick={handleSaveBatchAttendance} disabled={isSubmitting} className="w-full h-11 rounded-xl font-black text-white text-sm">
+                {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "一括保存する"}
+              </Button>
+              <Button type="button" variant="outline" onClick={() => setIsBatchModalOpen(false)} className="w-full h-11 rounded-xl font-bold text-sm">
                 キャンセル
               </Button>
             </DialogFooter>
