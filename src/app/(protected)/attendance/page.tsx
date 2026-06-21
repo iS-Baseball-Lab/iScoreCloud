@@ -104,8 +104,7 @@ export default function AttendancePage() {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
-  // ヘッダー固定用 translateY
-  const [headerTranslateY, setHeaderTranslateY] = useState(0);
+
 
   // フィルター用ステータス
   const [activeTab, setActiveTab] = useState<"all" | "players" | "staff">("all");
@@ -283,28 +282,7 @@ export default function AttendancePage() {
     return rows;
   }, [activeTab, playersData, membersData, filteredMemberIdsByGroup, myUserId, canManage]);
 
-  useEffect(() => {
-    const handleScroll = () => {
-      const table = document.querySelector("table");
-      if (!table) return;
-      
-      const rect = table.getBoundingClientRect();
-      const globalHeaderHeight = window.innerWidth < 640 ? 64 : 80;
-      
-      if (rect.top < globalHeaderHeight) {
-        const offset = globalHeaderHeight - rect.top;
-        const maxOffset = rect.height - 180;
-        setHeaderTranslateY(Math.min(offset, maxOffset > 0 ? maxOffset : 0));
-      } else {
-        setHeaderTranslateY(0);
-      }
-    };
-    
-    window.addEventListener("scroll", handleScroll, { passive: true });
-    handleScroll();
-    
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, [eventsData, displayRows]);
+
 
   // 3. 各マスの出欠ステータス検索マップ
   const attendanceMap = useMemo(() => {
@@ -655,8 +633,8 @@ export default function AttendancePage() {
             description={canManage ? "「日程を追加」ボタンから、練習や試合の日程を追加してください。" : "まだチームスケジュールがありません。"}
           />
         ) : (
-          <div className="bg-card border border-border/40 rounded-3xl shadow-sm">
-            <div className="overflow-x-auto">
+          <div className="bg-card border border-border/40 rounded-3xl shadow-sm overflow-hidden">
+            <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-250px)] md:max-h-[calc(100vh-290px)] scrollbar-thin">
               <table className="w-full border-collapse text-left table-fixed min-w-[420px]">
                 <colgroup>
                   {/* メンバー列: スマホ 150px, PC 180px */}
@@ -668,7 +646,7 @@ export default function AttendancePage() {
                 </colgroup>
                 
                 {/* ━ ヘッダー ━ */}
-                <thead style={{ transform: `translateY(${headerTranslateY}px)`, transition: 'transform 0.01s ease-out' }} className="relative z-20">
+                <thead className="relative z-20">
                   <tr className="border-b border-border/50 bg-muted/20">
                     {/* 左端：メンバー枠 */}
                     <th className="p-1 sm:p-2.5 font-black text-[10px] sm:text-xs uppercase tracking-wider text-muted-foreground border-r border-border/40 bg-card sticky left-0 top-0 z-35 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
