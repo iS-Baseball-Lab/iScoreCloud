@@ -995,14 +995,20 @@ function CarpoolAssignmentContent() {
           <ArrowLeft className="h-4 w-4" /> 出欠ボードへ戻る
         </Button>
 
-        <SectionHeader title={`${eventTitle} 配車・道具管理`} subtitle="CARPOOL & EQUIPMENT" showPulse={true} />
+        <SectionHeader title="配車・道具管理" subtitle="CARPOOL & EQUIPMENT" showPulse={true} />
 
         {/* ℹ️ 日時と全体設定 */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-card border border-border/40 p-5 rounded-3xl shadow-sm">
-          <div className="md:col-span-1 space-y-1">
-            <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block">イベント日時</span>
-            <div className="font-black text-sm">{eventDate}</div>
-            <p className="text-[10px] text-muted-foreground font-bold">
+          <div className="md:col-span-1 space-y-2">
+            <div>
+              <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block mb-0.5">対象イベント</span>
+              <div className="font-black text-base text-primary leading-tight">{eventTitle}</div>
+            </div>
+            <div>
+              <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block mb-0.5">イベント日時</span>
+              <div className="font-bold text-xs text-zinc-600 dark:text-zinc-300">{eventDate}</div>
+            </div>
+            <p className="text-[10px] text-muted-foreground font-bold pt-1">
               ※本日に「参加（◎/○/遅刻）」と回答したメンバーから配車アサインが可能です。
             </p>
           </div>
