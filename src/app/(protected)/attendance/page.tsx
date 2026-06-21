@@ -628,11 +628,11 @@ export default function AttendancePage() {
           />
         ) : (
           <div className="bg-card border border-border/40 rounded-3xl overflow-hidden shadow-sm">
-            <div className="overflow-x-auto max-h-[65vh] overflow-y-auto">
+            <div className="overflow-x-auto">
               <table className="w-full border-collapse text-left table-fixed min-w-[420px]">
                 <colgroup>
-                  {/* メンバー列: スマホ 85px, PC 180px */}
-                  <col className="w-[85px] sm:w-[180px]" />
+                  {/* メンバー列: スマホ 150px, PC 180px */}
+                  <col className="w-[150px] sm:w-[180px]" />
                   {/* イベント列: 常に 96px */}
                   {eventsData.map(e => (
                     <col key={e.id} className="w-[96px]" />
@@ -643,13 +643,13 @@ export default function AttendancePage() {
                 <thead>
                   <tr className="border-b border-border/50 bg-muted/20">
                     {/* 左端：メンバー枠 */}
-                    <th className="p-1 sm:p-2.5 font-black text-[10px] sm:text-xs uppercase tracking-wider text-muted-foreground border-r border-border/40 bg-card sticky left-0 top-0 z-40 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+                    <th className="p-1 sm:p-2.5 font-black text-[10px] sm:text-xs uppercase tracking-wider text-muted-foreground border-r border-border/40 bg-card sticky left-0 top-16 sm:top-20 z-30 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
                       メンバー
                     </th>
                     
                     {/* 右側：イベント日程列 */}
                     {eventsData.map(e => (
-                      <th key={e.id} className="p-2.5 border-r border-border/30 text-center align-top relative group sticky top-0 z-20 bg-card">
+                      <th key={e.id} className="p-2.5 border-r border-border/30 text-center align-top relative group sticky top-16 sm:top-20 z-20 bg-card">
                         <div className="space-y-1">
                           
                           {/* 日程種別マーク & 操作ボタンのインライン化 */}
@@ -777,17 +777,17 @@ export default function AttendancePage() {
                             <div className="flex items-center gap-1 sm:gap-2 w-full overflow-hidden">
                               {row.type === "player" ? (
                                 row.avatarUrl ? (
-                                  <img src={row.avatarUrl} alt={row.name} className="h-6 w-6 rounded-full object-cover shrink-0 border border-zinc-200 hidden sm:block" />
+                                  <img src={row.avatarUrl} alt={row.name} className="h-6 w-6 rounded-full object-cover shrink-0 border border-zinc-200 block" />
                                 ) : (
-                                  <div className="h-6 w-6 rounded-full bg-primary/10 text-primary hidden sm:flex items-center justify-center shrink-0 font-black text-[8px]">
+                                  <div className="h-6 w-6 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0 font-black text-[8px]">
                                     {row.uniformNumber ? `#${row.uniformNumber}` : "選"}
                                   </div>
                                 )
                               ) : (
                                 row.avatarUrl ? (
-                                  <img src={row.avatarUrl} alt={row.name} className="h-6 w-6 rounded-full object-cover shrink-0 border border-zinc-200 hidden sm:block" />
+                                  <img src={row.avatarUrl} alt={row.name} className="h-6 w-6 rounded-full object-cover shrink-0 border border-zinc-200 block" />
                                 ) : (
-                                  <div className="h-6 w-6 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hidden sm:flex items-center justify-center shrink-0 font-black text-[8px]">
+                                  <div className="h-6 w-6 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0 font-black text-[8px]">
                                     {row.memberType === "staff" ? "指" : row.memberType === "parent" ? "保" : row.memberType === "player" ? "選" : "他"}
                                   </div>
                                 )
@@ -796,7 +796,7 @@ export default function AttendancePage() {
                                 <p className="truncate text-foreground font-black text-[9px] sm:text-xs block overflow-hidden text-ellipsis whitespace-nowrap" title={row.name}>
                                   {row.name}
                                 </p>
-                                <p className="text-[7px] text-muted-foreground leading-none font-bold uppercase mt-0.5 hidden sm:block">
+                                <p className="text-[7px] text-muted-foreground leading-none font-bold uppercase mt-0.5 block">
                                   {row.type === "player" || row.memberType === "player" ? "PLAYER" : row.memberType === "staff" ? "STAFF" : row.memberType === "parent" ? "PARENT" : "OTHER"}
                                 </p>
                               </div>
