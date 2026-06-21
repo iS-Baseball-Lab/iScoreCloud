@@ -229,13 +229,18 @@ export default function MyCarsPage() {
         <SectionHeader title="マイカー情報の登録" subtitle="MY CAR REGISTRATION" showPulse={true} />
 
         {/* インフォメーションアラート */}
-        <div className="bg-primary/5 border border-primary/20 text-primary p-4 rounded-3xl text-xs space-y-1.5 font-bold">
+        <div className="bg-primary/5 border border-primary/20 text-primary p-4 rounded-3xl text-xs space-y-2 font-bold">
           <div className="flex items-center gap-2 text-sm font-black">
             <Info className="h-4 w-4 shrink-0" />
             <span>チーム遠征・試合時の配車計算に使用されます</span>
           </div>
           <p>
-            ご提供いただく車両の「定員（運転手除く）」や「燃費（km/L）」をあらかじめ登録しておくことで、自動配車機能や交通費（ガソリン代・高速代）の割り勘精算計算が正確に行われます。
+            ご提供いただく車両の「定員」や「燃費（km/L）」をあらかじめ登録しておくことで、自動配車機能や交通費（ガソリン代・高速代）の割り勘精算計算が正確に行われます。
+          </p>
+          <p className="text-[11px] text-primary/90 border-t border-primary/10 pt-2 font-extrabold leading-normal">
+            ⚠️ <strong>「定員」に関する重要事項:</strong>
+            <br />
+            登録する定員数には<strong>運転手（ご自身）は含めず、同乗可能な最大人数</strong>を指定してください。
           </p>
         </div>
 
@@ -334,10 +339,6 @@ export default function MyCarsPage() {
                     <span>ナンバー: <strong className="text-foreground text-sm font-black">{car.numberPlate || "未設定"}</strong></span>
                   </div>
                 </div>
-
-                <p className="text-[10px] text-muted-foreground font-bold leading-tight">
-                  ※定員にドライバー（ご自身）は含まれません。同乗可能な人数を指定しています。
-                </p>
               </div>
             ))}
           </div>
