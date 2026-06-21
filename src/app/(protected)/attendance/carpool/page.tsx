@@ -27,6 +27,7 @@ interface Attendee {
   userId: string | null;
   status: string;
   hasCar: boolean;
+  carId?: string | null;
   playerName: string | null;
   playerNumber: string | null;
   memberName: string | null;
@@ -266,8 +267,8 @@ function CarpoolAssignmentContent() {
         const defaultCars: AssignedCar[] = [];
         attendees.forEach(att => {
           if (att.hasCar && att.memberId) {
-            // 所有する車を検索
-            const myCar = masterCars.find(c => c.ownerId === att.memberId);
+            // 所有する車を検索（出欠回答時の指定車があれば最優先、なければ持ち車）
+            const myCar = (att.carId && masterCars.find(c => c.id === att.carId)) || masterCars.find(c => c.ownerId === att.memberId || c.ownerId2 === att.memberId);
             defaultCars.push({
               id: `temp_${crypto.randomUUID().replace(/-/g, '')}`,
               driverId: att.memberId,

@@ -1,0 +1,1 @@
+ALTER TABLE `attendances` ADD `car_id` text REFERENCES member_cars(id);

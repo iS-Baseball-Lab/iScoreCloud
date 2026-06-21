@@ -68,6 +68,7 @@ app.get('/', async (c) => {
         status: attendances.status,
         roleInEvent: attendances.roleInEvent,
         hasCar: attendances.hasCar,
+        carId: attendances.carId,
         comment: attendances.comment,
         updatedAt: attendances.updatedAt,
       })
@@ -110,6 +111,7 @@ app.get('/:eventId', async (c) => {
       status: attendances.status,
       roleInEvent: attendances.roleInEvent,
       hasCar: attendances.hasCar,
+      carId: attendances.carId,
       comment: attendances.comment,
       updatedAt: attendances.updatedAt,
       userName: user.name,

@@ -1,6 +1,7 @@
 import { sqliteTable, text, integer, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { user } from "./auth";
 import { teams, players, teamMembers } from "./team";
+import { memberCars } from "./carpool";
 
 export const events = sqliteTable("events", {
   id: text("id").primaryKey(),
@@ -26,9 +27,11 @@ export const attendances = sqliteTable("attendances", {
   status: text("status").$type<"present" | "absent" | "pending" | "late" | "partial">().default("pending"),
   roleInEvent: text("role_in_event").default("player"),
   hasCar: integer("has_car", { mode: "boolean" }).default(false),
+  carId: text("car_id").references(() => memberCars.id, { onDelete: "set null" }),
   comment: text("comment"),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
 }, (table) => ({
   eventPlayerUniqueIdx: uniqueIndex("idx_event_player_uniq").on(table.eventId, table.playerId),
   eventMemberUniqueIdx: uniqueIndex("idx_event_member_uniq").on(table.eventId, table.memberId),
 }));
+

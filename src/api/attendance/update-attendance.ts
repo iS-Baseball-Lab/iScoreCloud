@@ -26,6 +26,7 @@ app.post('/update', async (c) => {
       status,
       roleInEvent,
       hasCar,
+      carId,
       comment
     } = body;
 
@@ -49,6 +50,7 @@ app.post('/update', async (c) => {
           status: status || 'pending',
           roleInEvent: roleInEvent || 'player',
           hasCar: !!hasCar,
+          carId: carId || null,
           comment: comment || '',
           updatedAt: new Date(),
         })
@@ -59,6 +61,7 @@ app.post('/update', async (c) => {
             status: status || 'pending',
             roleInEvent: roleInEvent || 'player',
             hasCar: !!hasCar,
+            carId: carId || null,
             comment: comment || '',
             updatedAt: new Date(),
           }
@@ -77,6 +80,7 @@ app.post('/update', async (c) => {
           status: status || 'pending',
           roleInEvent: roleInEvent || 'player',
           hasCar: !!hasCar,
+          carId: carId || null,
           comment: comment || '',
           updatedAt: new Date(),
         })
@@ -87,6 +91,7 @@ app.post('/update', async (c) => {
             status: status || 'pending',
             roleInEvent: roleInEvent || 'player',
             hasCar: !!hasCar,
+            carId: carId || null,
             comment: comment || '',
             updatedAt: new Date(),
           }

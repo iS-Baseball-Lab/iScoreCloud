@@ -70,6 +70,7 @@ interface AttendanceRecord {
   status: "present" | "absent" | "pending" | "late" | "partial";
   roleInEvent: string;
   hasCar: boolean;
+  carId?: string | null;
   comment: string;
   updatedAt: string | number;
 }
@@ -102,7 +103,7 @@ export default function AttendancePage() {
   const [groupRelations, setGroupRelations] = useState<GroupMemberRelation[]>([]);
   const [myUserId, setMyUserId] = useState<string | null>(null);
   const [myRole, setMyRole] = useState<string>("");
-
+  const [allCars, setAllCars] = useState<any[]>([]); // 🌟 車両マスタ用状態
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
@@ -164,6 +165,7 @@ export default function AttendancePage() {
   const [inputStatus, setInputStatus] = useState<"present" | "absent" | "pending" | "late" | "partial">("pending");
   const [inputComment, setInputComment] = useState<string>("");
   const [inputHasCar, setInputHasCar] = useState<boolean>(false);
+  const [inputCarId, setInputCarId] = useState<string>("");
   const [inputRole, setInputRole] = useState<string>("player");
 
   // 🎒 複数日程一括編集モーダルの制御と保存処理
@@ -187,6 +189,7 @@ export default function AttendancePage() {
         eventType: e.eventType,
         status: record?.status || "pending",
         hasCar: !!record?.hasCar,
+        carId: record?.carId || "",
         comment: record?.comment || ""
       };
     });
@@ -216,6 +219,7 @@ export default function AttendancePage() {
           userId: batchTargetRow.userId || null,
           status: item.status,
           hasCar: item.hasCar,
+          carId: item.hasCar ? (item.carId || null) : null,
           comment: item.comment,
         };
         return fetch("/api/attendance/update", {
@@ -279,6 +283,15 @@ export default function AttendancePage() {
           setPlayersData(attendJson.data.players || []);
           setMemberData(attendJson.data.members || []);
           setAttendanceRecords(attendJson.data.attendances || []);
+        }
+      }
+
+      // 車両リストのフェッチ
+      const carsRes = await fetch(`/api/carpools/cars/list?teamId=${tid}`);
+      if (carsRes.ok) {
+        const carsJson = await carsRes.json() as any;
+        if (carsJson.success) {
+          setAllCars(carsJson.data || []);
         }
       }
 
@@ -585,6 +598,7 @@ export default function AttendancePage() {
     setInputStatus(record?.status || "pending");
     setInputComment(record?.comment || "");
     setInputHasCar(record?.hasCar || false);
+    setInputCarId(record?.carId || "");
     setInputRole(record?.roleInEvent || "player");
     setIsAttendModalOpen(true);
   };
@@ -602,6 +616,7 @@ export default function AttendancePage() {
         userId: myUserId,
         status: inputStatus,
         hasCar: inputHasCar,
+        carId: inputHasCar ? (inputCarId || null) : null,
         comment: inputComment.trim(),
         roleInEvent: inputRole
       };
@@ -1222,10 +1237,36 @@ export default function AttendancePage() {
                 <input
                   type="checkbox"
                   checked={inputHasCar}
-                  onChange={(el) => setInputHasCar(el.target.checked)}
+                  onChange={(el) => {
+                    const checked = el.target.checked;
+                    setInputHasCar(checked);
+                    if (!checked) setInputCarId("");
+                  }}
                   className="h-4 w-4 rounded border-border text-primary focus:ring-primary accent-primary cursor-pointer"
                 />
               </div>
+
+              {/* 使用車両の選択 */}
+              {inputHasCar && (
+                <div className="space-y-1 animate-in fade-in duration-200">
+                  <label className="text-[9px] font-black text-zinc-500 uppercase tracking-wider px-1">使用する車両</label>
+                  <select
+                    value={inputCarId}
+                    onChange={(e) => setInputCarId(e.target.value)}
+                    className="w-full h-10 rounded-xl border border-border bg-card px-3 text-xs font-bold shadow-xs focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 cursor-pointer"
+                  >
+                    <option value="">-- 車両を指定しない --</option>
+                    {activeCell && allCars
+                      .filter(car => car.ownerId === activeCell.row.id || car.ownerId2 === activeCell.row.id)
+                      .map(car => (
+                        <option key={car.id} value={car.id}>
+                          {car.name} {car.numberPlate ? `[${car.numberPlate}]` : ""} (定員:{car.capacity}人)
+                        </option>
+                      ))
+                    }
+                  </select>
+                </div>
+              )}
 
               {/* コメント入力 */}
               <div className="space-y-1">
@@ -1358,17 +1399,40 @@ export default function AttendancePage() {
                           className="h-8 rounded-lg text-[11px] font-bold py-1"
                         />
                         {isAdult && (
-                          <label className="flex items-center justify-between px-2.5 py-1 rounded-lg bg-muted/40 border border-border/40 text-[11px] font-bold cursor-pointer hover:bg-muted/70 transition-colors">
-                            <span className="flex items-center gap-1 text-muted-foreground">
-                              <Car className="h-3 w-3" /> 車出しOK
-                            </span>
-                            <input
-                              type="checkbox"
-                              checked={item.hasCar}
-                              onChange={(e) => updateBatchItem(item.eventId, "hasCar", e.target.checked)}
-                              className="h-3.5 w-3.5 rounded border-border text-primary focus:ring-primary accent-primary cursor-pointer"
-                            />
-                          </label>
+                          <div className="space-y-1.5 w-full">
+                            <label className="flex items-center justify-between px-2.5 py-1 rounded-lg bg-muted/40 border border-border/40 text-[11px] font-bold cursor-pointer hover:bg-muted/70 transition-colors">
+                              <span className="flex items-center gap-1 text-muted-foreground">
+                                <Car className="h-3 w-3" /> 車出しOK
+                              </span>
+                              <input
+                                type="checkbox"
+                                checked={item.hasCar}
+                                onChange={(e) => {
+                                  const checked = e.target.checked;
+                                  updateBatchItem(item.eventId, "hasCar", checked);
+                                  if (!checked) updateBatchItem(item.eventId, "carId", "");
+                                }}
+                                className="h-3.5 w-3.5 rounded border-border text-primary focus:ring-primary accent-primary cursor-pointer"
+                              />
+                            </label>
+                            {item.hasCar && (
+                              <select
+                                value={item.carId || ""}
+                                onChange={(e) => updateBatchItem(item.eventId, "carId", e.target.value)}
+                                className="w-full h-8 rounded-lg border border-border bg-card px-2 text-[10px] font-bold focus:outline-none focus:ring-2 focus:ring-primary/20 cursor-pointer"
+                              >
+                                <option value="">-- 車両を指定しない --</option>
+                                {allCars
+                                  .filter(car => car.ownerId === batchTargetRow?.id || car.ownerId2 === batchTargetRow?.id)
+                                  .map(car => (
+                                    <option key={car.id} value={car.id}>
+                                      {car.name} {car.numberPlate ? `[${car.numberPlate}]` : ""}
+                                    </option>
+                                  ))
+                                }
+                              </select>
+                            )}
+                          </div>
                         )}
                       </div>
                     </div>

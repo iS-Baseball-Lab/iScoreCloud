@@ -331,6 +331,7 @@ app.get('/events/:eventId', async (c) => {
       userId: attendances.userId,
       status: attendances.status,
       hasCar: attendances.hasCar,
+      carId: attendances.carId,
       playerName: players.name,
       playerNumber: players.uniformNumber,
       memberName: teamMembers.name,
