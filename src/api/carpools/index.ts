@@ -66,6 +66,7 @@ app.get('/cars/list', async (c) => {
       ownerName: teamMembers.name,
       name: memberCars.name,
       color: memberCars.color,
+      colorCode: memberCars.colorCode,
       numberPlate: memberCars.numberPlate,
       capacity: memberCars.capacity,
       fuelEfficiency: memberCars.fuelEfficiency,
@@ -91,7 +92,7 @@ app.post('/cars', async (c) => {
   const db = drizzle(c.env.DB);
   try {
     const body = await c.req.json();
-    const { id, teamId, ownerId, name, color, numberPlate, capacity, fuelEfficiency, carType } = body;
+    const { id, teamId, ownerId, name, color, colorCode, numberPlate, capacity, fuelEfficiency, carType } = body;
 
     if (!teamId || !ownerId || !name) {
       return c.json({ success: false, error: "必須項目 (teamId, ownerId, name) が不足しています。" }, 400);
@@ -105,6 +106,7 @@ app.post('/cars', async (c) => {
       ownerId,
       name: name.trim(),
       color: color ? color.trim() : null,
+      colorCode: colorCode ? colorCode.trim() : null,
       numberPlate: numberPlate ? numberPlate.trim() : null,
       capacity: Number(capacity) || 4,
       fuelEfficiency: Number(fuelEfficiency) || 10,

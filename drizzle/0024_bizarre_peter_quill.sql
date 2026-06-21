@@ -1,0 +1,1 @@
+ALTER TABLE `member_cars` ADD `color_code` text;

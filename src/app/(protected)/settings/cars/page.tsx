@@ -20,6 +20,7 @@ interface CarInfo {
   id: string;
   name: string;
   color: string | null;
+  colorCode: string | null;
   numberPlate: string | null;
   capacity: number;
   fuelEfficiency: number;
@@ -31,6 +32,8 @@ interface Member {
   userId: string | null;
   name: string;
 }
+
+
 
 export default function MyCarsPage() {
   const router = useRouter();
@@ -46,6 +49,8 @@ export default function MyCarsPage() {
   const [editingCarId, setEditingCarId] = useState<string | null>(null);
   const [carName, setCarName] = useState("");
   const [carColor, setCarColor] = useState("");
+  const [carColorCode, setCarColorCode] = useState("");
+  const [currentHue, setCurrentHue] = useState<number>(200);
   const [carNumberPlate, setCarNumberPlate] = useState("");
   const [carCapacity, setCarCapacity] = useState<number>(4);
   const [carFuelEfficiency, setCarFuelEfficiency] = useState<number>(10);
@@ -71,14 +76,12 @@ export default function MyCarsPage() {
   const initialize = useCallback(async (tid: string) => {
     setIsLoading(true);
     try {
-      // (1) ログインユーザーのuserIdを取得
       const meRes = await fetch("/api/auth/me");
       if (!meRes.ok) throw new Error("認証情報の取得に失敗しました。");
       const meJson = await meRes.json() as { success: boolean; data?: { id: string } };
       if (!meJson.success || !meJson.data) throw new Error("認証に失敗しました。");
       const myUserId = meJson.data.id;
 
-      // (2) チームのメンバーリストから、自分(teamMembers.userId === myUserId)を特定する
       const membersRes = await fetch(`/api/teams/${tid}/members`);
       const membersJson = await membersRes.json() as { success: boolean; members?: Member[] };
       if (!membersJson.success) throw new Error("メンバーリストの取得に失敗しました。");
@@ -89,8 +92,6 @@ export default function MyCarsPage() {
       }
 
       setMyMemberId(myMember.memberId);
-
-      // (3) 車両一覧取得
       await fetchCarsData(tid, myMember.memberId);
 
     } catch (e) {
@@ -117,6 +118,12 @@ export default function MyCarsPage() {
       setEditingCarId(car.id);
       setCarName(car.name);
       setCarColor(car.color || "");
+      setCarColorCode(car.colorCode || "");
+      if (car.colorCode && car.colorCode.startsWith("#")) {
+        setCurrentHue(hexToHue(car.colorCode));
+      } else {
+        setCurrentHue(200);
+      }
       setCarNumberPlate(car.numberPlate || "");
       setCarCapacity(car.capacity);
       setCarFuelEfficiency(car.fuelEfficiency);
@@ -125,6 +132,8 @@ export default function MyCarsPage() {
       setEditingCarId(null);
       setCarName("");
       setCarColor("");
+      setCarColorCode("");
+      setCurrentHue(200);
       setCarNumberPlate("");
       setCarCapacity(4);
       setCarFuelEfficiency(10);
@@ -153,6 +162,7 @@ export default function MyCarsPage() {
           ownerId: myMemberId,
           name: carName.trim(),
           color: carColor.trim() || null,
+          colorCode: carColorCode.trim() || null,
           numberPlate: carNumberPlate.trim() || null,
           capacity: carCapacity,
           fuelEfficiency: carFuelEfficiency,
@@ -273,7 +283,7 @@ export default function MyCarsPage() {
                 <div className="flex justify-between items-start">
                   <div className="flex items-center gap-3">
                     {(() => {
-                      const colorStyle = getCarColorClass(car.color);
+                      const colorStyle = getCarColorClass(car.colorCode);
                       return (
                         <div 
                           className={cn(
@@ -372,67 +382,93 @@ export default function MyCarsPage() {
                 />
               </div>
 
-              {/* 車の色 */}
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">車の色</label>
+              {/* 車の色（色名称 ＆ カラーコードの分離管理） */}
+              <div className="space-y-3 bg-muted/20 p-3 rounded-2xl border border-border/40">
+                <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1 block">車のカラー設定</label>
                 
-                {/* 丸いカラーパレット（ビジュアルカラーピッカー） */}
-                <div className="flex flex-wrap items-center gap-2 mb-1">
-                  {[
-                    { label: "白", hex: "#ffffff", name: "白" },
-                    { label: "黒", hex: "#18181b", name: "黒" },
-                    { label: "銀", hex: "#d4d4d8", name: "シルバー" },
-                    { label: "灰", hex: "#71717a", name: "グレー" },
-                    { label: "赤", hex: "#ef4444", name: "赤" },
-                    { label: "青", hex: "#3b82f6", name: "青" },
-                    { label: "紺", hex: "#1e3a8a", name: "紺" },
-                    { label: "緑", hex: "#10b981", name: "緑" },
-                    { label: "黄", hex: "#f59e0b", name: "黄" },
-                    { label: "橙", hex: "#f97316", name: "オレンジ" },
-                    { label: "茶", hex: "#78350f", name: "茶" }
-                  ].map(item => (
-                    <button
-                      key={item.label}
-                      type="button"
-                      onClick={() => setCarColor(item.name)}
-                      className={cn(
-                        "h-6 w-6 rounded-full border transition-all active:scale-90 cursor-pointer shadow-xs relative flex items-center justify-center",
-                        carColor === item.name ? "ring-2 ring-primary ring-offset-2 scale-110" : "border-border"
-                      )}
-                      style={{ backgroundColor: item.hex }}
-                      title={item.name}
-                    >
-                      {carColor === item.name && (
-                        <Check className="h-3.5 w-3.5" style={{ color: (item.label === "白" || item.label === "銀") ? "#000000" : "#ffffff" }} />
-                      )}
-                    </button>
-                  ))}
-
-                  {/* カスタムカラーピッカーボタン (HTML5のcolor inputを活用) */}
-                  <div className="relative h-6 w-6 rounded-full border border-border overflow-hidden bg-gradient-to-tr from-rose-400 via-indigo-500 to-emerald-400 cursor-pointer flex items-center justify-center group active:scale-90 transition-transform" title="カスタムカラー選択">
-                    <input
-                      type="color"
-                      value={carColor.startsWith("#") ? carColor : "#3b82f6"}
-                      onChange={e => setCarColor(e.target.value)}
-                      className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10"
-                    />
-                    <Plus className="h-3.5 w-3.5 text-white pointer-events-none drop-shadow-sm" />
+                {/* 1. プリセットカラーパレット */}
+                <div className="space-y-1">
+                  <span className="text-[9px] font-bold text-zinc-400 block px-1">人気のカラー</span>
+                  <div className="flex flex-wrap items-center gap-2 px-1">
+                    {[
+                      { label: "白", hex: "#ffffff", name: "白" },
+                      { label: "黒", hex: "#18181b", name: "黒" },
+                      { label: "銀", hex: "#d4d4d8", name: "シルバー" },
+                      { label: "灰", hex: "#71717a", name: "グレー" },
+                      { label: "赤", hex: "#ef4444", name: "赤" },
+                      { label: "青", hex: "#3b82f6", name: "青" },
+                      { label: "紺", hex: "#1e3a8a", name: "紺" },
+                      { label: "緑", hex: "#10b981", name: "緑" },
+                      { label: "黄", hex: "#f59e0b", name: "黄" },
+                      { label: "橙", hex: "#f97316", name: "オレンジ" },
+                      { label: "茶", hex: "#78350f", name: "茶" }
+                    ].map(item => (
+                      <button
+                        key={item.label}
+                        type="button"
+                        onClick={() => {
+                          setCarColor(item.name);
+                          setCarColorCode(item.hex);
+                          setCurrentHue(hexToHue(item.hex));
+                        }}
+                        className={cn(
+                          "h-6 w-6 rounded-full border transition-all active:scale-90 cursor-pointer shadow-xs relative flex items-center justify-center",
+                          carColorCode === item.hex ? "ring-2 ring-primary ring-offset-2 scale-110" : "border-border"
+                        )}
+                        style={{ backgroundColor: item.hex }}
+                        title={item.name}
+                      >
+                        {carColorCode === item.hex && (
+                          <Check className="h-3.5 w-3.5" style={{ color: (item.label === "白" || item.label === "銀") ? "#000000" : "#ffffff" }} />
+                        )}
+                      </button>
+                    ))}
                   </div>
                 </div>
 
-                <div className="flex gap-2">
+                {/* 2. インライングラデーションスライダー（カスタムカラーピッカー） */}
+                <div className="space-y-1.5 border-t border-border/40 pt-2.5">
+                  <div className="flex justify-between items-center px-1">
+                    <span className="text-[9px] font-bold text-zinc-400">カスタムカラー調整</span>
+                    <span className="text-[9px] font-mono text-zinc-400">{carColorCode || "選択してください"}</span>
+                  </div>
+                  <div className="flex items-center gap-3 px-1">
+                    <input
+                      type="range"
+                      min="0"
+                      max="360"
+                      value={currentHue}
+                      onChange={e => {
+                        const hue = Number(e.target.value);
+                        setCurrentHue(hue);
+                        const hex = hslToHex(hue, 80, 50);
+                        setCarColorCode(hex);
+                        // 色名称がパレットのいずれかと一致していない場合は、自動的にカスタム色として扱う
+                        if (!carColor || ["白", "黒", "シルバー", "グレー", "赤", "青", "紺", "緑", "黄", "オレンジ", "茶"].includes(carColor)) {
+                          setCarColor("カスタムカラー");
+                        }
+                      }}
+                      className="w-full h-3 rounded-lg appearance-none cursor-pointer outline-none transition-opacity"
+                      style={{
+                        background: "linear-gradient(to right, #ff0000 0%, #ffff00 17%, #00ff00 33%, #00ffff 50%, #0000ff 67%, #ff00ff 83%, #ff0000 100%)"
+                      }}
+                    />
+                    <div 
+                      className="w-9 h-9 rounded-xl border border-border/60 shrink-0 shadow-xs transition-colors duration-300"
+                      style={{ backgroundColor: carColorCode || "#3b82f6" }}
+                    />
+                  </div>
+                </div>
+
+                {/* 3. 色名称の入力テキスト欄 */}
+                <div className="space-y-1 pt-1">
+                  <span className="text-[9px] font-bold text-zinc-400 block px-1">色名称 (例: パールホワイト、メタリックブルーなど)</span>
                   <Input
                     value={carColor}
                     onChange={e => setCarColor(e.target.value)}
-                    placeholder="例: パールホワイト、ダークブルーなど"
-                    className="h-11 rounded-xl font-bold flex-1"
+                    placeholder="例: ホワイトパール、紺、赤など"
+                    className="h-11 rounded-xl font-bold"
                   />
-                  {carColor.startsWith("#") && (
-                    <div 
-                      className="w-11 h-11 rounded-xl border border-border shrink-0 shadow-xs transition-colors duration-300" 
-                      style={{ backgroundColor: carColor }} 
-                    />
-                  )}
                 </div>
               </div>
 
@@ -641,4 +677,40 @@ function isLightColor(hexColor: string): boolean {
   const b = parseInt(hex.substring(4, 6), 16);
   const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
   return yiq >= 150; // 輝度が150以上なら明るいとみなして黒文字を合わせる
+}
+
+// 🌈 HSLからHEXカラーコードへの変換関数 (インラインスライダー用)
+function hslToHex(h: number, s: number, l: number): string {
+  l /= 100;
+  const a = s * Math.min(l, 1 - l) / 100;
+  const f = (n: number) => {
+    const k = (n + h / 30) % 12;
+    const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
+    return Math.round(255 * color).toString(16).padStart(2, '0');
+  };
+  return `#${f(0)}${f(8)}${f(4)}`;
+}
+
+// 🎨 HEXカラーコードから色相(Hue)への逆変換関数 (編集時のスライダー初期位置連動用)
+function hexToHue(hex: string): number {
+  const cleanHex = hex.replace("#", "");
+  if (cleanHex.length !== 6) return 200;
+  const r = parseInt(cleanHex.substring(0, 2), 16) / 255;
+  const g = parseInt(cleanHex.substring(2, 4), 16) / 255;
+  const b = parseInt(cleanHex.substring(4, 6), 16) / 255;
+  
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  let h = 0;
+
+  if (max !== min) {
+    const d = max - min;
+    switch (max) {
+      case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+      case g: h = (b - r) / d + 2; break;
+      case b: h = (r - g) / d + 4; break;
+    }
+    h /= 6;
+  }
+  return Math.round(h * 360);
 }

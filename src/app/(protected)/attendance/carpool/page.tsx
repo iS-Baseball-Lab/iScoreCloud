@@ -49,6 +49,7 @@ interface MasterCar {
   fuelEfficiency: number;
   carType: "normal" | "cargo" | "bus";
   color: string | null;
+  colorCode: string | null;
   numberPlate: string | null;
 }
 
@@ -593,7 +594,7 @@ function CarpoolAssignmentContent() {
                           <div className="flex items-center gap-2">
                             {(() => {
                               const mc = car.carId ? masterCars.find(m => m.id === car.carId) : null;
-                              const colorStyle = getCarColorClass(mc?.color);
+                              const colorStyle = getCarColorClass(mc?.colorCode);
                               return (
                                 <div 
                                   className={cn(
@@ -610,27 +611,27 @@ function CarpoolAssignmentContent() {
                                 </div>
                               );
                             })()}
-                            <div className="min-w-0">
+                            <div className="min-w-0 flex-1">
                               <h4 className="font-black text-xs truncate max-w-[130px]" title={car.driverName}>
                                 {car.driverName} の車
                               </h4>
-                              <p className="text-[9px] font-bold text-muted-foreground truncate max-w-[130px]" title={
-                                car.carId 
-                                  ? (() => {
-                                      const mc = masterCars.find(m => m.id === car.carId);
-                                      if (!mc) return "";
-                                      return `${mc.color ? mc.color + "の" : ""}${mc.name}${mc.numberPlate ? " [" + mc.numberPlate + "]" : ""}`;
-                                    })()
-                                  : "手動登録車両"
-                              }>
-                                {car.carId ? (
-                                  (() => {
-                                    const mc = masterCars.find(m => m.id === car.carId);
-                                    if (!mc) return "不明な車両";
-                                    return `${mc.color ? mc.color + "の" : ""}${mc.name}${mc.numberPlate ? " [" + mc.numberPlate + "]" : ""}`;
-                                  })()
-                                ) : "手動登録車両"}
-                              </p>
+                              {(() => {
+                                if (!car.carId) return <p className="text-[9px] font-bold text-muted-foreground">手動登録車両</p>;
+                                const mc = masterCars.find(m => m.id === car.carId);
+                                if (!mc) return <p className="text-[9px] font-bold text-muted-foreground">不明な車両</p>;
+                                return (
+                                  <div className="space-y-0.5">
+                                    <p className="text-[9px] font-bold text-foreground truncate max-w-[130px]" title={mc.name}>
+                                      {mc.name} {mc.numberPlate ? `[${mc.numberPlate}]` : ""}
+                                    </p>
+                                    {mc.color && (
+                                      <span className="inline-block text-[8px] font-extrabold text-muted-foreground bg-muted px-1.5 py-0.2 rounded-sm leading-normal">
+                                        {mc.color}
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })()}
                             </div>
                           </div>
 
