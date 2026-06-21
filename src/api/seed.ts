@@ -12,7 +12,7 @@ const app = new Hono<{ Bindings: WorkerEnv }>();
 
 app.post('/', async (c) => {
   const auth = getAuth(c.env.DB, c.env);
-  const session = await auth.api.getSession({ request: c.req.raw });
+  const session = await auth.api.getSession({ headers: c.req.raw.headers as any });
   if (!session) return c.json({ error: 'Unauthorized' }, 401);
 
   const db = drizzle(c.env.DB);
