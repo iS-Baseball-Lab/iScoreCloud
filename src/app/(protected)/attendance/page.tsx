@@ -2,6 +2,7 @@
 "use client";
 
 import React, { useEffect, useState, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { 
   Calendar, Users, Plus, CheckCircle2, AlertCircle, HelpCircle, 
   Car, MessageSquare, Loader2, Edit, Trash2, CalendarDays, Filter, ChevronRight, MapPin
@@ -91,6 +92,7 @@ interface GroupMemberRelation {
 // コンポーネント本体
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 export default function AttendancePage() {
+  const router = useRouter();
   const [teamId, setTeamId] = useState<string>("");
   const [eventsData, setEventsData] = useState<Event[]>([]);
   const [playersData, setPlayersData] = useState<Player[]>([]);
@@ -697,6 +699,17 @@ export default function AttendancePage() {
                           <p className="text-[9px] font-extrabold text-muted-foreground uppercase">
                             {new Date(e.startAt).toLocaleDateString("ja-JP", { month: "short", day: "numeric", weekday: "short" })}
                           </p>
+                          
+                          {/* 🚗 配車管理ボタン */}
+                          <div className="pt-1">
+                            <button
+                              onClick={() => router.push(`/attendance/${e.id}/carpool`)}
+                              className="w-full py-1 rounded bg-primary/10 hover:bg-primary/20 border border-primary/20 text-primary flex items-center justify-center text-[8px] font-black cursor-pointer shadow-xs transition-colors"
+                              title="配車管理"
+                            >
+                              <Car className="h-2.5 w-2.5 mr-0.5" /> 配車管理
+                            </button>
+                          </div>
                           {/* ☀️ 午前の時間と場所 */}
                           <div className="text-[8px] font-bold text-muted-foreground/90 space-y-0.5 mt-1">
                             <p className="leading-none border-b border-border/20 pb-0.5 text-zinc-500 dark:text-zinc-400 font-extrabold">

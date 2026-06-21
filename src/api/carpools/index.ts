@@ -5,9 +5,13 @@
 
 import { Hono } from 'hono';
 import { drizzle } from 'drizzle-orm/d1';
-import { eq, and } from 'drizzle-orm';
-import { memberCars, parentChildRelations } from '@/db/schema/carpool';
+import { eq, and, inArray } from 'drizzle-orm';
+import { 
+  memberCars, parentChildRelations, eventCarpoolSettings, 
+  eventCarpools, eventCarpoolRiders 
+} from '@/db/schema/carpool';
 import { teamMembers, players } from '@/db/schema/team';
+import { events, attendances } from '@/db/schema/attendance';
 import type { WorkerEnv } from '@/types/api';
 
 const app = new Hono<{ Bindings: WorkerEnv }>();
@@ -240,6 +244,236 @@ app.delete('/family/:relationId', async (c) => {
     return c.json({ success: true });
   } catch (err: unknown) {
     console.error(`[Delete Family Relation Error]:`, err);
+    return c.json({ success: false, error: err instanceof Error ? err.message : "Internal Server Error" }, 500);
+  }
+});
+
+// ==========================================
+// 📅 イベント別配車アサイン (eventCarpools / riders / settings) API
+// ==========================================
+
+/**
+ * 📋 イベントの配車設定・アサイン情報を一括取得
+ * GET /api/carpools/events/:eventId
+ */
+app.get('/events/:eventId', async (c) => {
+  const eventId = c.req.param('eventId');
+  const db = drizzle(c.env.DB);
+
+  try {
+    // 1. イベント詳細とチームIDを取得
+    const eventDetail = await db.select({
+      id: events.id,
+      teamId: events.teamId,
+      title: events.title,
+      startAt: events.startAt
+    })
+    .from(events)
+    .where(eq(events.id, eventId))
+    .get();
+
+    if (!eventDetail) {
+      return c.json({ success: false, error: "指定されたイベントが見つかりません。" }, 404);
+    }
+    const teamId = eventDetail.teamId;
+
+    // 2. 配車全体の設定を取得 (なければデフォルト値)
+    let settings = await db.select()
+      .from(eventCarpoolSettings)
+      .where(eq(eventCarpoolSettings.eventId, eventId))
+      .get();
+
+    if (!settings) {
+      settings = {
+        id: "",
+        eventId,
+        distanceKm: 0,
+        gasolinePrice: 170,
+        splitMethod: "by_team" as const,
+        noParentChild: true
+      };
+    }
+
+    // 3. 親子関係を取得 (親子同乗警告のため)
+    const familyRelations = await db.select()
+      .from(parentChildRelations)
+      .where(eq(parentChildRelations.teamId, teamId));
+
+    // 4. 車両マスタを取得 (マイカー情報)
+    const masterCars = await db.select()
+      .from(memberCars)
+      .where(eq(memberCars.teamId, teamId));
+
+    // 5. 出席するメンバー（選手 ＆ 大人）の一覧と出欠ステータスを取得
+    // 参加予定 (present, partial, late) のみ
+    const attendees = await db.select({
+      id: attendances.id,
+      eventId: attendances.eventId,
+      playerId: attendances.playerId,
+      memberId: attendances.memberId,
+      userId: attendances.userId,
+      status: attendances.status,
+      hasCar: attendances.hasCar,
+      playerName: players.name,
+      playerNumber: players.uniformNumber,
+      memberName: teamMembers.name,
+      memberType: teamMembers.memberType
+    })
+    .from(attendances)
+    .leftJoin(players, eq(attendances.playerId, players.id))
+    .leftJoin(teamMembers, eq(attendances.memberId, teamMembers.id))
+    .where(and(
+      eq(attendances.eventId, eventId),
+      inArray(attendances.status, ['present', 'partial', 'late'])
+    ));
+
+    // 6. 登録済みの配車スロットを取得
+    const carpools = await db.select({
+      id: eventCarpools.id,
+      eventId: eventCarpools.eventId,
+      driverId: eventCarpools.driverId,
+      driverName: teamMembers.name,
+      carId: eventCarpools.carId,
+      capacity: eventCarpools.capacity,
+      carType: eventCarpools.carType,
+      highwayFee: eventCarpools.highwayFee,
+      parkingFee: eventCarpools.parkingFee
+    })
+    .from(eventCarpools)
+    .leftJoin(teamMembers, eq(eventCarpools.driverId, teamMembers.id))
+    .where(eq(eventCarpools.eventId, eventId));
+
+    // 7. 同乗者（riders）を全配車スロットに対して取得
+    const carpoolIds = carpools.map(cp => cp.id);
+    let riders: any[] = [];
+    if (carpoolIds.length > 0) {
+      riders = await db.select({
+        id: eventCarpoolRiders.id,
+        carpoolId: eventCarpoolRiders.carpoolId,
+        playerId: eventCarpoolRiders.playerId,
+        playerName: players.name,
+        playerNumber: players.uniformNumber,
+        memberId: eventCarpoolRiders.memberId,
+        memberName: teamMembers.name,
+        memberType: teamMembers.memberType
+      })
+      .from(eventCarpoolRiders)
+      .leftJoin(players, eq(eventCarpoolRiders.playerId, players.id))
+      .leftJoin(teamMembers, eq(eventCarpoolRiders.memberId, teamMembers.id))
+      .where(inArray(eventCarpoolRiders.carpoolId, carpoolIds));
+    }
+
+    // 配車スロットと同乗者をマージ
+    const carpoolsWithRiders = carpools.map(cp => ({
+      ...cp,
+      riders: riders.filter(r => r.carpoolId === cp.id)
+    }));
+
+    return c.json({
+      success: true,
+      data: {
+        event: eventDetail,
+        settings,
+        carpools: carpoolsWithRiders,
+        attendees,
+        familyRelations,
+        masterCars
+      }
+    });
+
+  } catch (err: unknown) {
+    console.error(`[Fetch Event Carpools Error]:`, err);
+    return c.json({ success: false, error: err instanceof Error ? err.message : "Internal Server Error" }, 500);
+  }
+});
+
+/**
+ * 📋 イベントの配車設定・アサイン情報を一括保存
+ * POST /api/carpools/events/:eventId/save
+ */
+app.post('/events/:eventId/save', async (c) => {
+  const eventId = c.req.param('eventId');
+  const db = drizzle(c.env.DB);
+
+  try {
+    const body = await c.req.json();
+    const { settings, carpools } = body;
+
+    if (!settings) {
+      return c.json({ success: false, error: "settings が必要です。" }, 400);
+    }
+
+    // トランザクション処理
+    await db.transaction(async (tx) => {
+      // 1. 設定の保存 (eventCarpoolSettings) - 一度削除してから挿入
+      await tx.delete(eventCarpoolSettings)
+        .where(eq(eventCarpoolSettings.eventId, eventId));
+
+      const settingId = `ecs_${crypto.randomUUID().replace(/-/g, '')}`;
+      await tx.insert(eventCarpoolSettings)
+        .values({
+          id: settingId,
+          eventId,
+          distanceKm: Number(settings.distanceKm) || 0,
+          gasolinePrice: Number(settings.gasolinePrice) || 170,
+          splitMethod: settings.splitMethod || 'by_team',
+          noParentChild: !!settings.noParentChild
+        });
+
+      // 2. 既存 of このイベントの配車枠 (および同乗者) を一括削除
+      const existingCarpools = await tx.select({ id: eventCarpools.id })
+        .from(eventCarpools)
+        .where(eq(eventCarpools.eventId, eventId));
+      const existingCarpoolIds = existingCarpools.map(cp => cp.id);
+
+      if (existingCarpoolIds.length > 0) {
+        // 同乗者の削除
+        await tx.delete(eventCarpoolRiders)
+          .where(inArray(eventCarpoolRiders.carpoolId, existingCarpoolIds));
+        // 配車枠の削除
+        await tx.delete(eventCarpools)
+          .where(eq(eventCarpools.eventId, eventId));
+      }
+
+      // 3. 新しい配車枠および同乗者のインサート
+      if (Array.isArray(carpools) && carpools.length > 0) {
+        for (const cp of carpools) {
+          const carpoolId = `cp_${crypto.randomUUID().replace(/-/g, '')}`;
+
+          // 配車枠のインサート
+          await tx.insert(eventCarpools)
+            .values({
+              id: carpoolId,
+              eventId,
+              driverId: cp.driverId,
+              carId: cp.carId || null,
+              capacity: Number(cp.capacity) || 4,
+              carType: cp.carType || 'normal',
+              highwayFee: Number(cp.highwayFee) || 0,
+              parkingFee: Number(cp.parkingFee) || 0
+            });
+
+          // 同乗者のインサート
+          if (Array.isArray(cp.riders) && cp.riders.length > 0) {
+            for (const rider of cp.riders) {
+              const riderId = `cpr_${crypto.randomUUID().replace(/-/g, '')}`;
+              await tx.insert(eventCarpoolRiders)
+                .values({
+                  id: riderId,
+                  carpoolId,
+                  playerId: rider.playerId || null,
+                  memberId: rider.memberId || null
+                });
+            }
+          }
+        }
+      }
+    });
+
+    return c.json({ success: true });
+
+  } catch (err: unknown) {
+    console.error(`[Save Event Carpools Error]:`, err);
     return c.json({ success: false, error: err instanceof Error ? err.message : "Internal Server Error" }, 500);
   }
 });
