@@ -305,10 +305,12 @@ export const TeamCalendar: React.FC<TeamCalendarProps> = ({ matches, canManage, 
                             "text-[9px] font-black tracking-wider px-2 py-0.5 rounded-sm uppercase",
                             item.matchType === "official"
                               ? "bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                              : item.matchType === "exchange"
+                              ? "bg-purple-500/10 text-purple-600 dark:text-purple-400"
                               : "bg-amber-500/10 text-amber-600 dark:text-amber-400"
                           )}
                         >
-                          {item.matchType === "official" ? "公式戦" : "練習試合"}
+                          {item.matchType === "official" ? "公式戦" : item.matchType === "exchange" ? "交流戦" : "OP戦"}
                         </span>
 
                         {/* ステータスバッジ */}

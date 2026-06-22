@@ -11,7 +11,7 @@ export interface MatchFormState {
   time: string;
   venue: string;
   venueId?: string | null; // 🌟 追加：球場ID
-  matchType: 'official' | 'practice';
+  matchType: 'official' | 'practice' | 'exchange';
   tournamentName: string;
   battingOrder: 'first' | 'second' | 'unknown'; // 先攻後攻も未定があるかもしれないので拡張可能ですが、今回はベンチに集中します
   benchSide: '1B' | '3B' | 'unknown'; // 🌟 'unknown' を追加
@@ -132,9 +132,10 @@ export function MatchBasicForm({ state, setState, tournaments, isNewTournament, 
       {/* 試合設定：タイプ・イニング */}
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-1.5"><label className="text-[10px] font-black uppercase text-muted-foreground flex items-center gap-1.5"><Trophy className="h-3.5 w-3.5" /> Type</label>
-          <div className="flex gap-1.5">
-            <Button type="button" variant={state.matchType === 'official' ? 'default' : 'outline'} onClick={() => setState({...state, matchType: 'official'})} className={cn("flex-1 h-11 rounded-2xl text-[10px] font-bold", state.matchType === 'official' && "bg-amber-600 hover:bg-amber-700")}>公式</Button>
-            <Button type="button" variant={state.matchType === 'practice' ? 'default' : 'outline'} onClick={() => setState({...state, matchType: 'practice'})} className={cn("flex-1 h-11 rounded-2xl text-[10px] font-bold", state.matchType === 'practice' && "bg-emerald-600 hover:bg-emerald-700")}>練習</Button>
+          <div className="flex gap-1">
+            <Button type="button" variant={state.matchType === 'official' ? 'default' : 'outline'} onClick={() => setState({...state, matchType: 'official'})} className={cn("flex-1 h-11 rounded-2xl text-[9px] font-bold p-0", state.matchType === 'official' && "bg-amber-600 hover:bg-amber-700")}>公式</Button>
+            <Button type="button" variant={state.matchType === 'practice' ? 'default' : 'outline'} onClick={() => setState({...state, matchType: 'practice'})} className={cn("flex-1 h-11 rounded-2xl text-[9px] font-bold p-0", state.matchType === 'practice' && "bg-emerald-600 hover:bg-emerald-700")}>OP戦</Button>
+            <Button type="button" variant={state.matchType === 'exchange' ? 'default' : 'outline'} onClick={() => setState({...state, matchType: 'exchange'})} className={cn("flex-1 h-11 rounded-2xl text-[9px] font-bold p-0", state.matchType === 'exchange' && "bg-blue-600 hover:bg-blue-700")}>交流戦</Button>
           </div>
         </div>
         <div className="space-y-1.5"><label className="text-[10px] font-black uppercase text-muted-foreground flex items-center gap-1.5"><Hash className="h-3.5 w-3.5" /> Innings</label>

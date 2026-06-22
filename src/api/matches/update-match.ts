@@ -12,7 +12,7 @@ interface UpdateMatchRequest {
   opponent?: string;
   date?: string;
   time?: string; // フロント側で結合してdateに入れるか、ここで結合するか（今回はフロント側で結合してdateに送ってくる想定）
-  matchType?: 'official' | 'practice';
+  matchType?: 'official' | 'practice' | 'exchange';
   tournamentName?: string; // 💡 Hono側ではtournamentIdとして処理すべきですが、現状の仕様に合わせてマッピング
   battingOrder?: 'first' | 'second';
   benchSide?: '1B' | '3B' | 'unknown'; // 🌟 ベンチ位置

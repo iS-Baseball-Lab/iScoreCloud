@@ -182,7 +182,7 @@ export default function TeamProfilePage() {
 
             overall = calc(matchesData);
             official = calc(matchesData.filter(m => m.matchType === 'official'));
-            practice = calc(matchesData.filter(m => m.matchType === 'practice'));
+            practice = calc(matchesData.filter(m => m.matchType === 'practice' || m.matchType === 'exchange'));
             totalRuns = matchesData.reduce((sum, m) => sum + m.myScore, 0);
           }
 
@@ -289,7 +289,7 @@ export default function TeamProfilePage() {
                   <div className="-mb-4">
                     <WinRateDonut stats={stats.overall} label="総合勝率" subLabel="Overall" size="lg" />
                   </div>
-                  <WinRateDonut stats={stats.practice} label="練習試合" subLabel="Practice" size="sm" />
+                  <WinRateDonut stats={stats.practice} label="OP・交流戦" subLabel="OP/Friendly" size="sm" />
                 </div>
 
                 <div className="grid grid-cols-3 w-full pt-6 border-t border-border/40">

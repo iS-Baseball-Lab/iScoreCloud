@@ -287,13 +287,15 @@ export function MatchList({ matches, isLoading, onDelete }: MatchListProps) {
                     <div className="flex items-center gap-2 mb-1.5">
                       <span className={cn(
                         "w-16 text-center text-[10px] sm:text-xs font-black px-1.5 py-0.5 rounded shadow-sm",
-                        match.matchType === 'official' ? "bg-amber-500/10 text-amber-600 border border-amber-500/20" : "bg-emerald-500/10 text-emerald-600 border border-emerald-500/20"
+                        match.matchType === 'official' ? "bg-amber-500/10 text-amber-600 border border-amber-500/20" :
+                        match.matchType === 'exchange' ? "bg-blue-500/10 text-blue-600 border border-blue-500/20" :
+                        "bg-emerald-500/10 text-emerald-600 border border-emerald-500/20"
                       )}>
-                        {match.matchType === 'official' ? '公式戦' : '練習試合'}
+                        {match.matchType === 'official' ? '公式戦' : match.matchType === 'exchange' ? '交流戦' : 'OP戦'}
                       </span>
                       {/* 🌟 修正：上段に大会名を表示（練習試合の場合は「練習試合」等を優先表示） */}
                       <span className="text-xs sm:text-sm font-bold text-muted-foreground truncate">
-                        {match.tournamentName || (match.matchType === 'official' ? "大会名未登録" : "練習試合")}
+                        {match.tournamentName || (match.matchType === 'official' ? "大会名未登録" : match.matchType === 'exchange' ? "交流戦" : "OP戦")}
                       </span>
                     </div>
 

@@ -223,7 +223,7 @@ export default function DashboardPage() {
     return matches
       .filter(m => m.status === 'finished')
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-      .slice(0, 3);
+      .slice(0, 5);
   }, [matches]);
 
   // 💡 4. 統計計算 (完了した試合のみ)
@@ -487,7 +487,7 @@ export default function DashboardPage() {
 
         {/* --- 6. 試合結果 (LATEST MATCHES) --- */}
         <section className="space-y-10">
-          <SectionHeader title="試合結果" subtitle="Latest 3 Matches" showPulse />
+          <SectionHeader title="試合結果" subtitle="Latest 5 Matches" showPulse />
           <div className="min-h-[100px]">
             {/* 🌟 finishedMatches (完了済み) だけを表示 */}
             <MatchList matches={finishedMatches} isLoading={isLoading} onDelete={handleDeleteMatch} />

@@ -24,7 +24,7 @@ interface Tournament {
 interface MatchData {
   opponent?: string;
   tournamentName?: string;
-  matchType?: 'official' | 'practice';
+  matchType?: 'official' | 'practice' | 'exchange';
   battingOrder?: 'first' | 'second';
   benchSide?: '1B' | '3B' | 'unknown';
   surfaceDetails?: string;

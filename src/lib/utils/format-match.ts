@@ -26,7 +26,7 @@ export function generateMatchReport(match: Match): string {
     `${resultEmoji}\n` +
     `vs ${match.opponent}\n` +
     `スコア: ${myScoreStr} - ${oppScoreStr}\n` +
-    `種別: ${match.matchType === 'official' ? '公式戦' : '練習試合'}\n` +
+    `種別: ${match.matchType === 'official' ? '公式戦' : match.matchType === 'exchange' ? '交流戦' : 'OP戦'}\n` +
     `#iScoreCloud #野球速報`
   );
 }

@@ -457,7 +457,7 @@ export default function NewsGeneratorPage() {
                                 {m.matchType && (
                                   <>
                                     <span>•</span>
-                                    <span>{m.matchType === "official" ? "公式戦" : "練習試合"}</span>
+                                    <span>{m.matchType === "official" ? "公式戦" : m.matchType === "exchange" ? "交流戦" : "OP戦"}</span>
                                   </>
                                 )}
                                 {(m.venueShortName || m.venueName) && (

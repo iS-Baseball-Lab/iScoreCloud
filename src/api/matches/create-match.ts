@@ -13,7 +13,7 @@ interface CreateMatchRequest {
   teamId: string;
   opponent: string;
   date: string;
-  matchType: 'official' | 'practice';
+  matchType: 'official' | 'practice' | 'exchange';
   tournamentId?: string;
   venueId?: string;
   battingOrder: 'first' | 'second';

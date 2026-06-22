@@ -52,7 +52,7 @@ export const MatchService = {
       ...r,
       // status / matchType / battingOrder はスキーマ上 string だがアプリ内では限定値のみ使用
       status: r.status as "scheduled" | "live" | "finished",
-      matchType: r.matchType as "official" | "practice",
+      matchType: r.matchType as "official" | "practice" | "exchange",
       battingOrder: r.battingOrder as "first" | "second",
       myInningScores: JSON.parse(r.myInningScores ?? "[]") as number[],
       opponentInningScores: JSON.parse(r.opponentInningScores ?? "[]") as number[],

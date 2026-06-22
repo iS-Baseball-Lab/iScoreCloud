@@ -4,7 +4,7 @@
    2. LINE Webhook からの groupId 取得および Push 送信用の型を完備。 */
 
 /** 試合種別、攻守、ステータス */
-export type MatchType = 'official' | 'practice' | 'other';
+export type MatchType = 'official' | 'practice' | 'exchange' | 'other';
 export type BattingOrder = 'first' | 'second';
 export type MatchStatus = 'scheduled' | 'live' | 'finished';
 

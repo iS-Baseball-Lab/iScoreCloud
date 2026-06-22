@@ -80,7 +80,7 @@ export function Scoreboard() {
           <div className="flex-1 flex items-center gap-1.5 overflow-hidden pr-2 cursor-default select-none h-full">
             <Trophy className="w-3.5 h-3.5 text-amber-500 shrink-0" />
             <span className="text-[9px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest truncate">
-              {state.tournamentName || (state.matchType === 'practice' ? '練習試合' : '大会未設定')}
+              {state.tournamentName || (state.matchType === 'practice' ? 'OP戦' : state.matchType === 'exchange' ? '交流戦' : '大会未設定')}
             </span>
           </div>
 

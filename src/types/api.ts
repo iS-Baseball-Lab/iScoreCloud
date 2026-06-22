@@ -89,7 +89,7 @@ export interface CreateMatchBody {
   teamId: string;
   opponent: string;
   date: string;
-  matchType: "official" | "practice";
+  matchType: "official" | "practice" | "exchange";
   battingOrder: "first" | "second";
   location?: string;
   innings?: number;
@@ -100,7 +100,7 @@ export interface CreateMatchBody {
 export interface UpdateMatchBody {
   opponent: string;
   date: string;
-  matchType: "official" | "practice";
+  matchType: "official" | "practice" | "exchange";
   battingOrder: "first" | "second";
   location?: string;
   innings?: number;
@@ -147,7 +147,7 @@ export interface MatchRow {
   teamId: string;
   opponent: string;
   date: string;
-  matchType: "official" | "practice";
+  matchType: "official" | "practice" | "exchange";
   battingOrder: "first" | "second";
 
   // 🏟️ 現場状況（追加カラム）
