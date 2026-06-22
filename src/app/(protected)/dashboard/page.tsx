@@ -28,6 +28,7 @@ import { Match } from "@/types/match";
 import { getWindDirectionLabel, getWMOWeatherText, reverseGeocode, type OpenMeteoResponse } from "@/lib/weather";
 import { cn } from "@/lib/utils";
 import { TeamCalendar, CalendarMatch } from "@/components/features/team/TeamCalendar";
+import { DashboardTicker } from "@/components/features/dashboard/DashboardTicker";
 
 interface WeatherData {
   temp: number;
@@ -239,6 +240,82 @@ export default function DashboardPage() {
     return { ...s, total, rate };
   }, [matches]);
 
+  // 📢 ティッカー用の流れるメッセージの動的自動生成
+  const tickerMessages = useMemo(() => {
+    const msgs: string[] = [];
+
+    // 0. 歓迎メッセージ
+    if (myTeamName) {
+      msgs.push(`ようこそ iScoreCloud へ！本日も ${myTeamName} の活動をサポートします。`);
+    } else {
+      msgs.push("ようこそ iScoreCloud へ！本日も楽しく野球をプレイしましょう！");
+    }
+
+    // 1. 直近の試合予定
+    if (upcomingMatches.length > 0) {
+      const nextMatch = upcomingMatches[0];
+      let matchDateStr = "";
+      let timeStr = "";
+      try {
+        const d = new Date(nextMatch.date);
+        matchDateStr = `${d.getMonth() + 1}/${d.getDate()}`;
+        if (nextMatch.date.includes("T") || nextMatch.date.includes(" ")) {
+          timeStr = ` ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+        }
+      } catch (e) {
+        matchDateStr = nextMatch.date;
+      }
+      const venueStr = nextMatch.venueShortName || nextMatch.venueName || nextMatch.venue || "";
+      const opponentStr = nextMatch.opponent || "相手チーム";
+      const typeStr = nextMatch.matchType === 'practice' ? 'OP戦' : nextMatch.matchType === 'exchange' ? '交流戦' : '公式戦';
+      
+      msgs.push(
+        `次回対戦予定：${matchDateStr}${timeStr} 〜 【${typeStr}】vs ${opponentStr}${venueStr ? ` @ ${venueStr}` : ""}`
+      );
+      
+      msgs.push(`【出欠回答】次回 ${matchDateStr} の試合への出欠回答をお願いします（出欠・スケジュール管理ページより）。`);
+    }
+
+    // 2. 最新の試合結果
+    if (finishedMatches.length > 0) {
+      const lastMatch = finishedMatches[0];
+      let matchDateStr = "";
+      try {
+        const d = new Date(lastMatch.date);
+        matchDateStr = `${d.getMonth() + 1}/${d.getDate()}`;
+      } catch (e) {
+        matchDateStr = lastMatch.date;
+      }
+      const opponentStr = lastMatch.opponent || "相手チーム";
+      const myScore = lastMatch.myScore;
+      const oppScore = lastMatch.opponentScore;
+      let resultText = "";
+      if (myScore > oppScore) {
+        resultText = `○ ${myScore}-${oppScore} で勝利！`;
+      } else if (myScore < oppScore) {
+        resultText = `● ${myScore}-${oppScore} で惜敗`;
+      } else {
+        resultText = `△ ${myScore}-${oppScore} 引き分け`;
+      }
+      
+      msgs.push(`最新試合結果（${matchDateStr}）：vs ${opponentStr} ${resultText}`);
+    }
+
+    // 3. 現在地の天気予報
+    if (weather) {
+      const area = locationName || "グラウンド周辺";
+      const temp = weather.temp;
+      const weatherText = getWMOWeatherText(weather.weatherCode);
+      const windDirection = getWindDirectionLabel(weather.windDir);
+      const windSpeed = weather.windSpd;
+      msgs.push(
+        `本日のグラウンドコンディション（${area}）：天気 ${weatherText}、気温 ${temp}°C、風向 ${windDirection} (風速 ${windSpeed}m/s)`
+      );
+    }
+
+    return msgs;
+  }, [upcomingMatches, finishedMatches, weather, locationName, myTeamName]);
+
   if (!mounted) return null;
 
   const timeString = currentTime.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -246,6 +323,9 @@ export default function DashboardPage() {
 
   return (
     <div className="w-full animate-in fade-in duration-500 bg-transparent min-h-screen pb-24">
+      {/* 📢 スタジアム電光掲示板風 ニュースティッカー */}
+      <DashboardTicker messages={tickerMessages} />
+
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-12 space-y-16">
 
         {/* --- 1. タイトルエリア (巨大Dashboard) --- */}
