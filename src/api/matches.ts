@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { drizzle } from "drizzle-orm/d1";
 import { MatchService } from "@/services/match.service";
 import { eq, sql } from "drizzle-orm";
-import { matchUndoHistories, atBats, playLogs } from "@/db/schema/score";
+import { matchUndoHistories, atBats, playLogs, baseAdvances } from "@/db/schema/score";
 import { matches } from "@/db/schema/match";
 
 const app = new Hono<{ Bindings: { DB: D1Database } }>();
@@ -219,6 +219,234 @@ app.delete("/:id", async (c) => {
     return c.json({ success: true });
   } catch (error) {
     return c.json({ success: false, error: "Failed to delete match" }, 500);
+  }
+});
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 📊 個人成績自動集計 ＆ 打席履歴（Boxscore）API
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+app.get("/:id/boxscore", async (c) => {
+  const db = drizzle(c.env.DB);
+  const matchId = c.req.param("id");
+
+  try {
+    // playersテーブルと結合してバッターとピッチャーの名前を取得
+    const rows = await db.select({
+      id: atBats.id,
+      inning: atBats.inning,
+      isTop: atBats.isTop,
+      result: atBats.result,
+      batterId: atBats.batterId,
+      batterName: sql<string>`batter.name`,
+      batterNumber: sql<string>`batter.number`,
+      pitcherId: atBats.pitcherId,
+      pitcherName: sql<string>`pitcher.name`,
+    })
+    .from(atBats)
+    .leftJoin(sql`players as batter`, sql`batter.id = ${atBats.batterId}`)
+    .leftJoin(sql`players as pitcher`, sql`pitcher.id = ${atBats.pitcherId}`)
+    .where(eq(atBats.matchId, matchId))
+    .orderBy(atBats.inning, atBats.createdAt)
+    .all();
+
+    return c.json(rows);
+  } catch (error) {
+    console.error("Boxscore API error:", error);
+    return c.json([], 500);
+  }
+});
+
+app.get("/:id/stats", async (c) => {
+  const db = drizzle(c.env.DB);
+  const matchId = c.req.param("id");
+
+  try {
+    const match = await db.select().from(matches).where(eq(matches.id, matchId)).get();
+    if (!match) return c.json({ success: false, error: "Match not found" }, 404);
+
+    const isMyTeamTop = match.battingOrder === "first";
+
+    const dbAtBats = await db.select({
+      id: atBats.id,
+      inning: atBats.inning,
+      isTop: atBats.isTop,
+      result: atBats.result,
+      batterId: atBats.batterId,
+      batterName: sql<string>`batter.name`,
+      batterNumber: sql<string>`batter.number`,
+      pitcherId: atBats.pitcherId,
+      pitcherName: sql<string>`pitcher.name`,
+      pitcherNumber: sql<string>`pitcher.number`,
+    })
+    .from(atBats)
+    .leftJoin(sql`players as batter`, sql`batter.id = ${atBats.batterId}`)
+    .leftJoin(sql`players as pitcher`, sql`pitcher.id = ${atBats.pitcherId}`)
+    .where(eq(atBats.matchId, matchId))
+    .all();
+
+    const dbAdvances = await db.select()
+      .from(baseAdvances)
+      .where(eq(baseAdvances.matchId, matchId))
+      .all();
+
+    const runsList = dbAdvances.filter(a => a.toBase === 4 && !a.isOut);
+
+    // --- 打者成績集計 ---
+    const batterMap = new Map<string, any>();
+
+    for (const ab of dbAtBats) {
+      const isMyAttack = ab.isTop === isMyTeamTop;
+      if (!isMyAttack || !ab.batterId) continue;
+
+      const batterId = ab.batterId;
+      if (!batterMap.has(batterId)) {
+        batterMap.set(batterId, {
+          id: batterId,
+          name: ab.batterName || "不明",
+          number: ab.batterNumber || "-",
+          plateAppearances: 0,
+          atBats: 0,
+          runs: 0,
+          hits: 0,
+          rbi: 0,
+          strikeouts: 0,
+          walks: 0,
+        });
+      }
+
+      const p = batterMap.get(batterId);
+      p.plateAppearances++;
+
+      const res = ab.result || "";
+      const isWalk = res.includes("BB") || res.includes("HP") || res.includes("DB") || res.includes("四球") || res.includes("死球");
+      const isSacrifice = res.includes("SF") || res.includes("SH") || res.includes("犠");
+
+      if (!isWalk && !isSacrifice) {
+        p.atBats++;
+      }
+
+      if (isWalk) {
+        p.walks++;
+      }
+
+      if (res.includes("1B") || res.includes("2B") || res.includes("3B") || res.includes("HR") || res.includes("安") || res.includes("本塁打")) {
+        p.hits++;
+      }
+
+      if (res.includes("K") || res.includes("三振")) {
+        p.strikeouts++;
+      }
+
+      const rbiCount = runsList.filter(a => a.atBatId === ab.id).length;
+      p.rbi += rbiCount;
+    }
+
+    for (const run of runsList) {
+      if (run.runnerId && batterMap.has(run.runnerId)) {
+        batterMap.get(run.runnerId).runs++;
+      }
+    }
+
+    const batterStatsList = Array.from(batterMap.values()).map(p => {
+      const avgVal = p.atBats > 0 ? (p.hits / p.atBats) : 0;
+      let avgStr = avgVal.toFixed(3);
+      if (avgStr.startsWith("0.")) {
+        avgStr = avgStr.substring(1);
+      } else if (avgStr === "1.000") {
+        avgStr = "1.00";
+      }
+      return {
+        ...p,
+        avg: p.atBats > 0 ? avgStr : ".000"
+      };
+    });
+
+    // --- 投手成績集計 ---
+    const pitcherMap = new Map<string, any>();
+
+    for (const ab of dbAtBats) {
+      const isMyDefense = ab.isTop !== isMyTeamTop;
+      if (!isMyDefense || !ab.pitcherId) continue;
+
+      const pitcherId = ab.pitcherId;
+      if (!pitcherMap.has(pitcherId)) {
+        pitcherMap.set(pitcherId, {
+          id: pitcherId,
+          name: ab.pitcherName || "不明",
+          number: ab.pitcherNumber || "-",
+          outs: 0,
+          hits: 0,
+          walks: 0,
+          strikeouts: 0,
+          runs: 0,
+          earnedRuns: 0,
+        });
+      }
+
+      const p = pitcherMap.get(pitcherId);
+      const res = ab.result || "";
+
+      if (res.includes("1B") || res.includes("2B") || res.includes("3B") || res.includes("HR") || res.includes("安") || res.includes("本塁打")) {
+        p.hits++;
+      }
+
+      if (res.includes("BB") || res.includes("HP") || res.includes("DB") || res.includes("四球") || res.includes("死球")) {
+        p.walks++;
+      }
+
+      if (res.includes("K") || res.includes("三振")) {
+        p.strikeouts++;
+      }
+
+      const isOut = res.includes("アウト") || res.includes("K") || res.includes("三振") || 
+                    res.includes("ゴロ") || res.includes("フライ") || res.includes("ライナー") || 
+                    res.includes("併殺") || res.includes("犠") || 
+                    /^[1-9]-[1-9]$/.test(res) || 
+                    /^[1-9]F$/.test(res) || 
+                    /^[1-9]L$/.test(res) || 
+                    res.includes("DP");
+
+      if (isOut) {
+        if (res.includes("併殺") || res.includes("DP")) {
+          p.outs += 2;
+        } else {
+          p.outs += 1;
+        }
+      }
+    }
+
+    for (const run of runsList) {
+      const ab = dbAtBats.find(a => a.id === run.atBatId);
+      if (ab && ab.pitcherId && pitcherMap.has(ab.pitcherId)) {
+        const p = pitcherMap.get(ab.pitcherId);
+        p.runs++;
+        p.earnedRuns++;
+      }
+    }
+
+    const pitcherStatsList = Array.from(pitcherMap.values()).map(p => {
+      const inningsInt = Math.floor(p.outs / 3);
+      const inningsFrac = p.outs % 3;
+      const ipStr = inningsFrac > 0 ? `${inningsInt}.${inningsFrac}` : `${inningsInt}.0`;
+
+      const eraVal = p.outs > 0 ? (p.earnedRuns * 7 * 3) / p.outs : 0;
+
+      return {
+        ...p,
+        ip: ipStr,
+        era: p.outs > 0 ? eraVal.toFixed(2) : "0.00"
+      };
+    });
+
+    return c.json({
+      success: true,
+      stats: batterStatsList,
+      pitcherStats: pitcherStatsList
+    });
+  } catch (error) {
+    console.error("Stats API error:", error);
+    return c.json({ success: false, error: "Failed to generate stats", stats: [], pitcherStats: [] }, 500);
   }
 });
 

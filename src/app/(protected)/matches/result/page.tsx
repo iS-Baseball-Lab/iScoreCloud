@@ -68,6 +68,7 @@ function MatchResultContent() {
   const [match, setMatch] = useState<any | null>(null);
   const [atBats, setAtBats] = useState<any[]>([]);
   const [stats, setStats] = useState<PlayerStats[]>([]);
+  const [pitcherStats, setPitcherStats] = useState<any[]>([]);
   const [teamName, setTeamName] = useState<string>("自チーム");
   const [isLoading, setIsLoading] = useState(true);
   const [isDownloading, setIsDownloading] = useState(false);
@@ -81,15 +82,23 @@ function MatchResultContent() {
     const fetchData = async () => {
       try {
         const matchRes = await fetch(`/api/matches/${matchId}`);
-        if (matchRes.ok) setMatch(await matchRes.json());
+        if (matchRes.ok) {
+          const json = (await matchRes.json()) as any;
+          if (json.success && json.match) {
+            setMatch(json.match);
+          }
+        }
         
         const boxscoreRes = await fetch(`/api/matches/${matchId}/boxscore`);
-        if (boxscoreRes.ok) setAtBats(await boxscoreRes.json());
+        if (boxscoreRes.ok) setAtBats((await boxscoreRes.json()) as any[]);
 
         const statsRes = await fetch(`/api/matches/${matchId}/stats`);
         if (statsRes.ok) {
-          const statsData = (await statsRes.json()) as { success: boolean, stats: PlayerStats[] };
-          if (statsData.success && statsData.stats) setStats(statsData.stats);
+          const statsData = (await statsRes.json()) as any;
+          if (statsData.success) {
+            setStats(statsData.stats || []);
+            setPitcherStats(statsData.pitcherStats || []);
+          }
         }
       } catch (error) { console.error(error); }
       finally { setIsLoading(false); }
@@ -332,7 +341,7 @@ function MatchResultContent() {
           <section className="space-y-6 mb-20">
             <SectionHeader title="個人成績" subtitle="Player Stats" />
             <Tabs defaultValue="batting" className="w-full">
-              <TabsList className="grid w-full grid-cols-2 h-14 rounded-2xl bg-muted/50 p-1.5 border border-border">
+              <TabsList className="grid w-full grid-cols-3 h-14 rounded-2xl bg-muted/50 p-1.5 border border-border">
                 <TabsTrigger
                   value="batting"
                   className="rounded-xl font-black text-xs tracking-widest data-[state=active]:bg-background data-[state=active]:text-primary"
@@ -344,6 +353,12 @@ function MatchResultContent() {
                   className="rounded-xl font-black text-xs tracking-widest data-[state=active]:bg-background data-[state=active]:text-primary"
                 >
                   <Zap className="h-4 w-4 mr-2" /> PITCHING
+                </TabsTrigger>
+                <TabsTrigger
+                  value="timeline"
+                  className="rounded-xl font-black text-xs tracking-widest data-[state=active]:bg-background data-[state=active]:text-primary"
+                >
+                  <Activity className="h-4 w-4 mr-2" /> TIMELINE
                 </TabsTrigger>
               </TabsList>
               
@@ -398,11 +413,95 @@ function MatchResultContent() {
               </TabsContent>
 
               <TabsContent value="pitching" className="mt-6">
-                <Card className="rounded-[32px] border-border bg-card overflow-hidden py-20">
-                  <div className="flex flex-col items-center space-y-4 opacity-50">
-                    <Zap className="h-16 w-12 text-muted-foreground" />
-                    <p className="font-black tracking-widest uppercase text-sm text-foreground">No Pitching Data Recorded</p>
+                <Card className="rounded-[32px] border-border bg-card overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader className="bg-muted/50">
+                        <TableRow className="border-border">
+                          <TableHead className="font-black text-[10px] text-muted-foreground uppercase tracking-widest pl-6">Pitcher</TableHead>
+                          <TableHead className="text-center font-black text-[10px] text-muted-foreground uppercase tracking-widest">IP</TableHead>
+                          <TableHead className="text-center font-black text-[10px] text-muted-foreground uppercase tracking-widest">H</TableHead>
+                          <TableHead className="text-center font-black text-[10px] text-muted-foreground uppercase tracking-widest">BB</TableHead>
+                          <TableHead className="text-center font-black text-[10px] text-muted-foreground uppercase tracking-widest">SO</TableHead>
+                          <TableHead className="text-center font-black text-[10px] text-muted-foreground uppercase tracking-widest">R</TableHead>
+                          <TableHead className="text-right font-black text-[10px] text-primary uppercase tracking-widest pr-6">ERA</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {pitcherStats.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={7} className="text-center py-20 text-muted-foreground font-bold">
+                              投手データがありません
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          pitcherStats.map((player) => (
+                            <TableRow key={player.id} className="border-border hover:bg-muted/30 transition-colors group">
+                              <TableCell className="font-bold py-4 pl-6">
+                                <div className="flex items-center gap-3">
+                                  <span className="text-[10px] font-black text-muted-foreground w-6">#{player.number}</span>
+                                  <span className="truncate group-hover:text-primary transition-colors text-foreground">{player.name}</span>
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-center tabular-nums font-black text-foreground">{player.ip}</TableCell>
+                              <TableCell className="text-center tabular-nums text-muted-foreground font-bold">{player.hits}</TableCell>
+                              <TableCell className="text-center tabular-nums text-muted-foreground font-bold">{player.walks}</TableCell>
+                              <TableCell className="text-center tabular-nums font-black text-foreground">{player.strikeouts}</TableCell>
+                              <TableCell className="text-center tabular-nums text-muted-foreground font-bold">{player.runs}</TableCell>
+                              <TableCell className="text-right tabular-nums font-black text-primary text-base pr-6">
+                                {player.era}
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
                   </div>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="timeline" className="mt-6">
+                <Card className="rounded-[32px] border-border bg-card overflow-hidden p-6 space-y-6">
+                  {atBats.length === 0 ? (
+                    <div className="text-center py-20 text-muted-foreground font-bold">
+                      打席データがありません
+                    </div>
+                  ) : (
+                    <div className="relative border-l border-border/60 pl-6 ml-4 space-y-8">
+                      {Array.from(new Set(atBats.map(a => `${a.inning}回${a.isTop ? '表' : '裏'}`))).map((inningLabel) => {
+                        const inningAtBats = atBats.filter(a => `${a.inning}回${a.isTop ? '表' : '裏'}` === inningLabel);
+                        return (
+                          <div key={inningLabel} className="relative space-y-3">
+                            <span className="absolute -left-[31px] top-1 h-3.5 w-3.5 rounded-full bg-primary border-[2.5px] border-background" />
+                            
+                            <h4 className="font-black text-sm text-primary uppercase tracking-wider">{inningLabel}</h4>
+                            <div className="space-y-2">
+                              {inningAtBats.map((ab, idx) => (
+                                <div key={ab.id} className="p-3 bg-muted/20 border border-border/40 rounded-2xl flex items-center justify-between text-xs sm:text-sm font-bold gap-4 hover:bg-muted/40 transition-colors">
+                                  <div className="flex items-center gap-3">
+                                    <span className="text-[10px] font-black text-muted-foreground bg-muted px-2 py-0.5 rounded-md">
+                                      打席 {idx + 1}
+                                    </span>
+                                    <span>
+                                      {ab.batterName ? `${ab.batterName} (#${ab.batterNumber})` : "不明"}
+                                    </span>
+                                    {ab.pitcherName && (
+                                      <span className="text-[11px] text-muted-foreground">
+                                        (投: {ab.pitcherName})
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className="font-black text-primary px-3 py-1 bg-primary/5 rounded-full border border-primary/10">
+                                    {ab.result || "打席結果なし"}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </Card>
               </TabsContent>
             </Tabs>
