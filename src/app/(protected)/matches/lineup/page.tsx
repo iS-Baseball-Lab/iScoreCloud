@@ -49,6 +49,7 @@ function LineupPageContent() {
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
 
   const [attendance, setAttendance] = useState<Record<string, "bench" | "absent">>({});
+  const [originalAbsents, setOriginalAbsents] = useState<string[]>([]);
   const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
   const [templateName, setTemplateName] = useState("");
 
@@ -155,11 +156,14 @@ function LineupPageContent() {
             const matchedEvent = (eventsList || []).find((e: any) => isSameDay(matchDate!, e.startAt));
             if (matchedEvent) {
               const eventAttendances = (attendancesList || []).filter((a: any) => a.eventId === matchedEvent.id);
+              const absents: string[] = [];
               eventAttendances.forEach((att: any) => {
                 if (att.playerId && att.status === 'absent') {
                   initialAttendance[att.playerId] = 'absent';
+                  absents.push(att.playerId);
                 }
               });
+              setOriginalAbsents(absents);
             }
           }
         }
@@ -644,10 +648,18 @@ function LineupPageContent() {
                         
                         <div className="flex bg-muted p-1 rounded-lg w-32">
                           <button
-                            onClick={() => setAttendance(prev => ({ ...prev, [player.id]: "bench" }))}
+                            onClick={() => {
+                              if (originalAbsents.includes(player.id)) {
+                                toast.error("出欠管理で欠席登録されているため、控えに変更できません。");
+                                return;
+                              }
+                              setAttendance(prev => ({ ...prev, [player.id]: "bench" }));
+                            }}
+                            disabled={originalAbsents.includes(player.id)}
                             className={cn(
                               "flex-1 flex items-center justify-center py-1.5 rounded-md text-[10px] font-black transition-all cursor-pointer",
-                              status === "bench" ? "bg-white dark:bg-zinc-700 text-emerald-600 dark:text-emerald-400 shadow-sm" : "text-muted-foreground hover:text-foreground"
+                              status === "bench" ? "bg-white dark:bg-zinc-700 text-emerald-600 dark:text-emerald-400 shadow-sm" : "text-muted-foreground hover:text-foreground",
+                              originalAbsents.includes(player.id) && "opacity-50 cursor-not-allowed"
                             )}
                           >
                             <UserCheck className="w-3 h-3 mr-1" /> 控え
