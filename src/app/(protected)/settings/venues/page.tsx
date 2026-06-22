@@ -34,6 +34,25 @@ export default function VenuesSettingsPage() {
   const [venues, setVenues] = useState<VenueInfo[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
 
+  // 地図のインライン展開状態の管理
+  const [expandedVenues, setExpandedVenues] = useState<Record<string, boolean>>({});
+
+  const toggleMap = (id: string) => {
+    setExpandedVenues(prev => ({
+      ...prev,
+      [id]: !prev[id]
+    }));
+  };
+
+  const getEmbedUrl = useCallback((venue: VenueInfo) => {
+    if (!venue.mapUrl) return "";
+    if (venue.mapUrl.includes("google.com/maps/embed")) {
+      return venue.mapUrl;
+    }
+    const query = venue.address || venue.name;
+    return `https://maps.google.com/maps?q=${encodeURIComponent(query)}&t=&z=15&ie=UTF8&iwloc=&output=embed`;
+  }, []);
+
   // フォーム用状態 (新規・編集)
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [editingVenueId, setEditingVenueId] = useState<string | null>(null);
@@ -285,15 +304,29 @@ export default function VenuesSettingsPage() {
                   {/* アクションボタン */}
                   <div className="flex items-center gap-1 shrink-0">
                     {venue.mapUrl && (
-                      <a 
-                        href={venue.mapUrl} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="h-8 w-8 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors"
-                        title="地図を開く"
-                      >
-                        <ExternalLink className="h-4.5 w-4.5" />
-                      </a>
+                      <>
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          onClick={() => toggleMap(venue.id)}
+                          className={cn(
+                            "h-8 w-8 rounded-lg text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors",
+                            expandedVenues[venue.id] && "bg-primary/10 text-primary"
+                          )}
+                          title={expandedVenues[venue.id] ? "地図を非表示" : "地図をインライン表示"}
+                        >
+                          <Map className="h-4.5 w-4.5" />
+                        </Button>
+                        <a 
+                          href={venue.mapUrl} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="h-8 w-8 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors"
+                          title="Google Map で直接開く"
+                        >
+                          <ExternalLink className="h-4.5 w-4.5" />
+                        </a>
+                      </>
                     )}
                     <Button 
                       variant="ghost" 
@@ -333,6 +366,22 @@ export default function VenuesSettingsPage() {
                   <div className="bg-muted/30 p-2.5 rounded-xl text-xs text-zinc-600 dark:text-zinc-400 font-medium flex gap-2">
                     <FileText className="h-4 w-4 text-zinc-400 shrink-0 mt-0.5" />
                     <p className="leading-normal break-words whitespace-pre-wrap flex-1">{venue.notes}</p>
+                  </div>
+                )}
+
+                {/* 🗺️ 地図のインライン埋め込み表示 */}
+                {venue.mapUrl && expandedVenues[venue.id] && (
+                  <div className="w-full aspect-video rounded-2xl overflow-hidden border border-border/40 shadow-inner animate-in fade-in duration-300">
+                    <iframe
+                      src={getEmbedUrl(venue)}
+                      width="100%"
+                      height="100%"
+                      style={{ border: 0 }}
+                      allowFullScreen={false}
+                      loading="lazy"
+                      referrerPolicy="no-referrer-when-downgrade"
+                      title={`${venue.name}の地図`}
+                    />
                   </div>
                 )}
               </div>
