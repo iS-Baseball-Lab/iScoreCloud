@@ -164,16 +164,30 @@ export const MatchService = {
   async updateMatch(db: DrizzleDB, matchId: string, body: UpdateMatchBody): Promise<void> {
     const tournamentId = await this._resolveTournament(db, body.matchType, body.tournamentName);
 
-    await db.update(matches).set({
+    const updateData: any = {
       opponent: body.opponent,
       tournamentId,
       date: body.date,
       matchType: body.matchType,
       battingOrder: body.battingOrder,
       surfaceDetails: body.location,
-      venueId: body.venueId || null,
+      venueId: body.venueId !== undefined ? (body.venueId || null) : undefined,
       innings: body.innings,
-    }).where(eq(matches.id, matchId));
+      status: body.status,
+      myScore: body.myScore,
+      opponentScore: body.opponentScore,
+      myInningScores: body.myInningScores ? JSON.stringify(body.myInningScores) : undefined,
+      opponentInningScores: body.opponentInningScores ? JSON.stringify(body.opponentInningScores) : undefined,
+    };
+
+    // undefined のキーを除外
+    Object.keys(updateData).forEach(key => {
+      if (updateData[key] === undefined) {
+        delete updateData[key];
+      }
+    });
+
+    await db.update(matches).set(updateData).where(eq(matches.id, matchId));
   },
 
   // 6.5 スタメン情報の取得と保存

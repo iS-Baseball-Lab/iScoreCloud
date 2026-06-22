@@ -106,6 +106,11 @@ export interface UpdateMatchBody {
   innings?: number;
   tournamentName?: string;
   venueId?: string | null;
+  status?: "scheduled" | "live" | "finished";
+  myScore?: number;
+  opponentScore?: number;
+  myInningScores?: number[];
+  opponentInningScores?: number[];
 }
 
 export interface FinishMatchBody {
