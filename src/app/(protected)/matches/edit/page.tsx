@@ -11,6 +11,7 @@ import { MatchBasicForm, MatchFormState } from "@/components/features/matches/ma
 import { FinishedScoreBoard } from "@/components/features/matches/match-score-board";
 import { SectionHeader } from "@/components/layout/SectionHeader";
 import { useTeam } from "@/contexts/TeamContext";
+import { cn } from "@/lib/utils";
 
 // ━━━ 型定義 ━━━
 interface Tournament {
@@ -194,6 +195,26 @@ function MatchEditContent() {
     fetchAllData();
   }, [matchId, router, currentTeam]);
 
+  // イニング数が変更された際に配列のサイズを追従させる
+  useEffect(() => {
+    if (isLoading) return;
+    const targetLength = formState.inningCount;
+    setMyInnings(prev => {
+      if (prev.length === targetLength) return prev;
+      if (prev.length < targetLength) {
+        return [...prev, ...Array(targetLength - prev.length).fill("")];
+      }
+      return prev.slice(0, targetLength);
+    });
+    setOpponentInnings(prev => {
+      if (prev.length === targetLength) return prev;
+      if (prev.length < targetLength) {
+        return [...prev, ...Array(targetLength - prev.length).fill("")];
+      }
+      return prev.slice(0, targetLength);
+    });
+  }, [formState.inningCount, isLoading]);
+
   const myTotalScore = myInnings.reduce((sum, val) => sum + (parseInt(val) || 0), 0);
   const opponentTotalScore = opponentInnings.reduce((sum, val) => sum + (parseInt(val) || 0), 0);
 
@@ -208,28 +229,20 @@ function MatchEditContent() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...formState,
+          status: matchStatus, // 🌟 アトミック化：ステータスを送信
           tournamentName: formState.matchType === 'official' ? formState.tournamentName : "",
           date: formState.time ? `${formState.date} ${formState.time}` : formState.date,
           location: formState.venue, // DBのスキーマに合わせてマッピング
           innings: formState.inningCount, // DBのスキーマに合わせてマッピング
+          // 🌟 アトミック化：スコア情報も一緒に送信
+          myScore: matchStatus === 'finished' ? myTotalScore : 0,
+          opponentScore: matchStatus === 'finished' ? opponentTotalScore : 0,
+          myInningScores: matchStatus === 'finished' ? myInnings.map(val => parseInt(val) || 0) : [],
+          opponentInningScores: matchStatus === 'finished' ? opponentInnings.map(val => parseInt(val) || 0) : [],
         }),
       });
       const data = (await res.json()) as MatchResponse;
       if (!data.success) throw new Error(data.error || "試合の更新に失敗しました");
-
-      // 完了済みの試合の時だけスコアボードを保存
-      if (matchStatus === 'finished') {
-        await fetch(`/api/matches/${matchId}/finish`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            myScore: myTotalScore,
-            opponentScore: opponentTotalScore,
-            myInningScores: myInnings.map(val => parseInt(val) || 0),
-            opponentInningScores: opponentInnings.map(val => parseInt(val) || 0),
-          }),
-        });
-      }
 
       toast.success("試合情報を更新しました！");
       router.back();
@@ -272,6 +285,53 @@ function MatchEditContent() {
           </CardContent>
         </Card>
 
+        {/* 🌟 試合ステータス選択 */}
+        <Card className="rounded-3xl border border-border bg-card shadow-sm overflow-hidden">
+          <CardContent className="p-4 space-y-2">
+            <label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest block mb-1">
+              試合ステータス
+            </label>
+            <div className="flex p-1 bg-muted rounded-2xl border border-border">
+              <button
+                type="button"
+                onClick={() => setMatchStatus('scheduled')}
+                className={cn(
+                  "flex-1 py-2 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1.5",
+                  matchStatus === 'scheduled'
+                    ? "bg-background text-foreground shadow-sm border border-border/20 font-black"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                📅 予定
+              </button>
+              <button
+                type="button"
+                onClick={() => setMatchStatus('live')}
+                className={cn(
+                  "flex-1 py-2 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1.5",
+                  matchStatus === 'live'
+                    ? "bg-red-600 text-white shadow-sm font-black"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                🔴 試合中
+              </button>
+              <button
+                type="button"
+                onClick={() => setMatchStatus('finished')}
+                className={cn(
+                  "flex-1 py-2 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1.5",
+                  matchStatus === 'finished'
+                    ? "bg-primary text-primary-foreground shadow-sm font-black"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                🏆 終了
+              </button>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* 試合完了時のみスコアボードを表示 */}
         {matchStatus === 'finished' && (
           <FinishedScoreBoard
@@ -284,12 +344,10 @@ function MatchEditContent() {
             myTotalScore={myTotalScore} opponentTotalScore={opponentTotalScore}
             onAddInning={() => {
               setFormState(p => ({ ...p, inningCount: (p.inningCount + 1) as 6 | 7 | 9 }));
-              setMyInnings(p => [...p, ""]); setOpponentInnings(p => [...p, ""]);
             }}
             onRemoveInning={() => {
               if (formState.inningCount <= 1) return;
               setFormState(p => ({ ...p, inningCount: (p.inningCount - 1) as 6 | 7 | 9 }));
-              setMyInnings(p => p.slice(0, -1)); setOpponentInnings(p => p.slice(0, -1));
             }}
           />
         )}

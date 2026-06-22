@@ -2,8 +2,8 @@
 import React from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { Plus, X } from "lucide-react";
+import { Plus, Minus } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 // ━━ ① QUICK SCORE 用（新規登録時の特大スコア入力） ━━
 interface QuickScoreFormProps {
@@ -16,72 +16,150 @@ interface QuickScoreFormProps {
   setMyInnings: (v: string[]) => void;
   opponentInnings: string[];
   setOpponentInnings: (v: string[]) => void;
+  onAddInning?: () => void;
+  onRemoveInning?: () => void;
 }
 
 export function QuickScoreForm({
   inningCount,
   myScore,
-  setMyScore,
   opponentScore,
-  setOpponentScore,
   myInnings,
   setMyInnings,
   opponentInnings,
-  setOpponentInnings
+  setOpponentInnings,
+  onAddInning,
+  onRemoveInning
 }: QuickScoreFormProps) {
+  // 自チームの合計得点
+  const myTotal = myInnings.reduce((sum, val) => sum + (parseInt(val) || 0), 0);
+  // 相手チームの合計得点
+  const oppTotal = opponentInnings.reduce((sum, val) => sum + (parseInt(val) || 0), 0);
+
   return (
-    <Card className="rounded-3xl border-border/40 bg-background shadow-xl overflow-hidden animate-in slide-in-from-bottom-4 duration-500">
-      <div className="bg-zinc-900 text-zinc-100 p-3 flex items-center justify-between">
-        <h2 className="text-xs font-black italic tracking-wider">RESULT SCORE</h2>
-      </div>
-      <CardContent className="p-6 space-y-8">
-        {/* 合計スコア（巨大） */}
-        <div className="flex items-center justify-around gap-4 py-2">
-          <div className="text-center space-y-2">
-            <p className="text-[10px] font-black text-muted-foreground uppercase">自チーム</p>
-            <Input
-              type="number" placeholder="0"
-              className="w-20 h-20 text-center text-3xl font-black rounded-2xl bg-primary/5 border-primary/20 text-primary"
-              value={myScore} onChange={(e) => setMyScore(e.target.value)}
-            />
+    <Card className="rounded-3xl border border-border/60 bg-gradient-to-br from-card to-background shadow-xl overflow-hidden animate-in slide-in-from-bottom-4 duration-500">
+      <div className="bg-zinc-950 text-zinc-100 p-4 flex items-center justify-between border-b border-border/40">
+        <div>
+          <h2 className="text-xs font-black italic tracking-widest text-primary">QUICK SCORE BOARD</h2>
+          <p className="text-[9px] text-zinc-400 mt-0.5">イニング得点を入力すると合計が自動計算されます</p>
+        </div>
+        
+        {/* イニング増減コントロール */}
+        {onAddInning && onRemoveInning && (
+          <div className="flex items-center gap-2 bg-zinc-900 px-2 py-1 rounded-xl border border-zinc-800">
+            <button
+              type="button"
+              onClick={onRemoveInning}
+              disabled={inningCount <= 1}
+              className="h-6 w-6 rounded-lg bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700 disabled:opacity-30 disabled:hover:bg-zinc-800 flex items-center justify-center transition-all"
+            >
+              <Minus className="h-3 w-3" />
+            </button>
+            <span className="text-[10px] font-black text-zinc-300 min-w-[36px] text-center tabular-nums">{inningCount}回</span>
+            <button
+              type="button"
+              onClick={onAddInning}
+              className="h-6 w-6 rounded-lg bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700 flex items-center justify-center transition-all"
+            >
+              <Plus className="h-3 w-3" />
+            </button>
           </div>
-          <span className="text-2xl font-black text-muted-foreground/30 mt-6">-</span>
-          <div className="text-center space-y-2">
-            <p className="text-[10px] font-black text-muted-foreground uppercase">相手</p>
-            <Input
-              type="number" placeholder="0"
-              className="w-20 h-20 text-center text-3xl font-black rounded-2xl bg-background border-border/40"
-              value={opponentScore} onChange={(e) => setOpponentScore(e.target.value)}
-            />
+        )}
+      </div>
+
+      <CardContent className="p-6 space-y-6">
+        {/* 合計スコアディスプレイ (巨大・読み取り専用) */}
+        <div className="relative flex items-center justify-center gap-10 py-6 bg-zinc-950/40 rounded-2xl border border-border/30 overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-r from-primary/5 via-transparent to-transparent pointer-events-none" />
+          
+          <div className="text-center space-y-1 z-10">
+            <p className="text-[10px] font-black text-primary tracking-widest uppercase">自チーム</p>
+            <div className="w-24 h-20 flex items-center justify-center text-5xl font-black rounded-2xl bg-primary/5 border border-primary/20 text-primary shadow-inner tabular-nums">
+              {myTotal}
+            </div>
+          </div>
+          
+          <div className="text-center mt-4 z-10">
+            <span className="text-3xl font-black text-muted-foreground/30">-</span>
+          </div>
+          
+          <div className="text-center space-y-1 z-10">
+            <p className="text-[10px] font-black text-muted-foreground tracking-widest uppercase">相手チーム</p>
+            <div className="w-24 h-20 flex items-center justify-center text-5xl font-black rounded-2xl bg-zinc-900 border border-border/40 text-foreground shadow-inner tabular-nums">
+              {oppTotal}
+            </div>
           </div>
         </div>
 
-        {/* イニングスコア（オプショナル） */}
-        <div className="space-y-4">
-          <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Inning Scores (Optional)</p>
+        {/* イニングスコア入力 (野球のスコアボード風) */}
+        <div className="space-y-3">
+          <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Inning Scores</p>
+          
           <div className="overflow-x-auto pb-2 -mx-2 px-2">
-            <div className="flex gap-3">
-              {Array.from({ length: inningCount }).map((_, i) => (
-                <div key={i} className="flex flex-col gap-2 shrink-0">
-                  <span className="text-[10px] font-black text-center text-muted-foreground/50">{i + 1}</span>
-                  <Input
-                    type="text" placeholder="-"
-                    className="w-10 h-10 p-0 text-center font-bold bg-primary/5 border-primary/10 rounded-lg"
-                    value={myInnings[i] || ""}
-                    onChange={(e) => {
-                      const next = [...myInnings]; next[i] = e.target.value; setMyInnings(next);
-                    }}
-                  />
-                  <Input
-                    type="text" placeholder="-"
-                    className="w-10 h-10 p-0 text-center font-bold bg-background border-border/40 rounded-lg"
-                    value={opponentInnings[i] || ""}
-                    onChange={(e) => {
-                      const next = [...opponentInnings]; next[i] = e.target.value; setOpponentInnings(next);
-                    }}
-                  />
+            <div className="min-w-[340px] border border-border/30 rounded-2xl overflow-hidden bg-zinc-950/20 divide-y divide-border/20">
+              {/* ヘッダー行 (イニング番号) */}
+              <div className="flex items-center h-8 bg-zinc-950/50">
+                <div className="w-16 shrink-0 text-[10px] font-black text-muted-foreground text-center border-r border-border/20">TEAM</div>
+                <div className="flex-1 flex divide-x divide-border/10">
+                  {Array.from({ length: inningCount }).map((_, i) => (
+                    <div key={i} className="flex-1 text-[10px] font-black text-muted-foreground/60 text-center py-1">
+                      {i + 1}
+                    </div>
+                  ))}
                 </div>
-              ))}
+              </div>
+
+              {/* 自チーム得点行 */}
+              <div className="flex items-center h-12">
+                <div className="w-16 shrink-0 text-[10px] font-black text-primary text-center border-r border-border/20 bg-primary/5">自チーム</div>
+                <div className="flex-1 flex divide-x divide-border/10">
+                  {Array.from({ length: inningCount }).map((_, i) => (
+                    <div key={i} className="flex-1 p-1 flex items-center justify-center">
+                      <Input
+                        type="tel"
+                        pattern="[0-9]*"
+                        placeholder="-"
+                        className="w-9 h-9 p-0 text-center font-black text-sm bg-primary/5 border-0 focus-visible:ring-1 focus-visible:ring-primary text-primary rounded-lg transition-all"
+                        value={myInnings[i] || ""}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val === "" || /^[0-9]*$/.test(val)) {
+                            const next = [...myInnings];
+                            next[i] = val;
+                            setMyInnings(next);
+                          }
+                        }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* 相手チーム得点行 */}
+              <div className="flex items-center h-12">
+                <div className="w-16 shrink-0 text-[10px] font-black text-muted-foreground text-center border-r border-border/20 bg-zinc-900/30">相手</div>
+                <div className="flex-1 flex divide-x divide-border/10">
+                  {Array.from({ length: inningCount }).map((_, i) => (
+                    <div key={i} className="flex-1 p-1 flex items-center justify-center">
+                      <Input
+                        type="tel"
+                        pattern="[0-9]*"
+                        placeholder="-"
+                        className="w-9 h-9 p-0 text-center font-black text-sm bg-background border-0 focus-visible:ring-1 focus-visible:ring-zinc-400 rounded-lg transition-all"
+                        value={opponentInnings[i] || ""}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val === "" || /^[0-9]*$/.test(val)) {
+                            const next = [...opponentInnings];
+                            next[i] = val;
+                            setOpponentInnings(next);
+                          }
+                        }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -120,73 +198,120 @@ export function FinishedScoreBoard({
   onAddInning,
   onRemoveInning
 }: FinishedScoreBoardProps) {
+  // 先攻・後攻での表示名
+  const topTeamName = battingOrder === 'second' ? opponentName : teamName;
+  const bottomTeamName = battingOrder === 'second' ? teamName : opponentName;
+
   return (
-    <Card className="rounded-3xl border-border/40 bg-background shadow-xl overflow-hidden animate-in fade-in duration-300">
-      <div className="bg-zinc-900 text-zinc-100 p-4 flex items-center justify-between">
-        <h2 className="text-xs font-black italic tracking-wider">SCOREBOARD</h2>
-        <div className="flex items-center gap-2">
-          <Button type="button" variant="outline" size="icon" onClick={onRemoveInning} disabled={inningCount <= 1}
-            className="h-7 w-7 rounded-full bg-zinc-800 border-zinc-700 text-zinc-300 hover:bg-zinc-700 hover:text-white">
-            <X className="h-3 w-3" />
-          </Button>
-          <span className="text-[10px] font-bold text-zinc-400 tabular-nums w-12 text-center">{inningCount} INN</span>
-          <Button type="button" variant="outline" size="icon" onClick={onAddInning}
-            className="h-7 w-7 rounded-full bg-zinc-800 border-zinc-700 text-zinc-300 hover:bg-zinc-700 hover:text-white">
+    <Card className="rounded-3xl border border-border/60 bg-gradient-to-br from-card to-background shadow-xl overflow-hidden animate-in fade-in duration-300">
+      <div className="bg-zinc-950 text-zinc-100 p-4 flex items-center justify-between border-b border-border/40">
+        <div>
+          <h2 className="text-xs font-black italic tracking-widest text-primary">RUNNING SCOREBOARD</h2>
+          <p className="text-[9px] text-zinc-400 mt-0.5">各イニングの得点を入力してください</p>
+        </div>
+        <div className="flex items-center gap-2 bg-zinc-900 px-2 py-1 rounded-xl border border-zinc-800">
+          <button
+            type="button"
+            onClick={onRemoveInning}
+            disabled={inningCount <= 1}
+            className="h-6 w-6 rounded-lg bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700 disabled:opacity-30 disabled:hover:bg-zinc-800 flex items-center justify-center transition-all"
+          >
+            <Minus className="h-3 w-3" />
+          </button>
+          <span className="text-[10px] font-black text-zinc-300 min-w-[36px] text-center tabular-nums">{inningCount}回</span>
+          <button
+            type="button"
+            onClick={onAddInning}
+            className="h-6 w-6 rounded-lg bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700 flex items-center justify-center transition-all"
+          >
             <Plus className="h-3 w-3" />
-          </Button>
+          </button>
         </div>
       </div>
 
       <CardContent className="p-4 overflow-x-auto">
-        <div className="min-w-[340px] space-y-3">
-          {/* 先攻の行 */}
-          <div className="flex items-center gap-2">
-            <div className="w-20 font-black text-xs truncate text-muted-foreground">
-              {battingOrder === 'second' ? opponentName : teamName}
-            </div>
-            <div className="flex-1 flex gap-1.5">
+        <div className="min-w-[340px] border border-border/30 rounded-2xl overflow-hidden bg-zinc-950/20 divide-y divide-border/20">
+          {/* ヘッダー行 (イニング番号とR) */}
+          <div className="flex items-center h-8 bg-zinc-950/50">
+            <div className="w-24 shrink-0 text-[10px] font-black text-muted-foreground pl-4 border-r border-border/20">TEAM</div>
+            <div className="flex-1 flex divide-x divide-border/10">
               {Array.from({ length: inningCount }).map((_, i) => (
-                <Input
-                  key={`top-${i}`} type="text" placeholder="-"
-                  value={battingOrder === 'second' ? (opponentInnings[i] || "") : (myInnings[i] || "")}
-                  onChange={(e) => {
-                    if (battingOrder === 'second') {
-                      const next = [...opponentInnings]; next[i] = e.target.value; setOpponentInnings(next);
-                    } else {
-                      const next = [...myInnings]; next[i] = e.target.value; setMyInnings(next);
-                    }
-                  }}
-                  className="w-8 h-8 p-0 text-center font-bold text-xs rounded-lg bg-muted/40 border-0"
-                />
+                <div key={i} className="flex-1 text-[10px] font-black text-muted-foreground/60 text-center py-1">
+                  {i + 1}
+                </div>
               ))}
             </div>
-            <div className="w-8 text-center font-black text-sm text-primary tabular-nums">
+            <div className="w-12 shrink-0 text-[10px] font-black text-primary text-center bg-primary/5">R</div>
+          </div>
+
+          {/* 先攻の行 */}
+          <div className="flex items-center h-12">
+            <div className="w-24 shrink-0 text-xs font-black truncate text-foreground pl-4 border-r border-border/20">
+              {topTeamName}
+            </div>
+            <div className="flex-1 flex divide-x divide-border/10">
+              {Array.from({ length: inningCount }).map((_, i) => (
+                <div key={`top-${i}`} className="flex-1 p-1 flex items-center justify-center">
+                  <Input
+                    type="tel"
+                    pattern="[0-9]*"
+                    placeholder="-"
+                    value={battingOrder === 'second' ? (opponentInnings[i] || "") : (myInnings[i] || "")}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === "" || /^[0-9]*$/.test(val)) {
+                        if (battingOrder === 'second') {
+                          const next = [...opponentInnings]; next[i] = val; setOpponentInnings(next);
+                        } else {
+                          const next = [...myInnings]; next[i] = val; setMyInnings(next);
+                        }
+                      }
+                    }}
+                    className={cn(
+                      "w-8 h-8 p-0 text-center font-black text-xs border-0 rounded-lg transition-all bg-background",
+                      ((battingOrder === 'second' && opponentInnings[i]) || (battingOrder !== 'second' && myInnings[i])) && "font-black text-primary"
+                    )}
+                  />
+                </div>
+              ))}
+            </div>
+            <div className="w-12 shrink-0 text-center font-black text-sm text-primary bg-primary/5 tabular-nums">
               {battingOrder === 'second' ? opponentTotalScore : myTotalScore}
             </div>
           </div>
 
           {/* 後攻の行 */}
-          <div className="flex items-center gap-2">
-            <div className="w-20 font-black text-xs truncate text-muted-foreground">
-              {battingOrder === 'second' ? teamName : opponentName}
+          <div className="flex items-center h-12">
+            <div className="w-24 shrink-0 text-xs font-black truncate text-foreground pl-4 border-r border-border/20">
+              {bottomTeamName}
             </div>
-            <div className="flex-1 flex gap-1.5">
+            <div className="flex-1 flex divide-x divide-border/10">
               {Array.from({ length: inningCount }).map((_, i) => (
-                <Input
-                  key={`bottom-${i}`} type="text" placeholder="-"
-                  value={battingOrder === 'second' ? (myInnings[i] || "") : (opponentInnings[i] || "")}
-                  onChange={(e) => {
-                    if (battingOrder === 'second') {
-                      const next = [...myInnings]; next[i] = e.target.value; setMyInnings(next);
-                    } else {
-                      const next = [...opponentInnings]; next[i] = e.target.value; setOpponentInnings(next);
-                    }
-                  }}
-                  className="w-8 h-8 p-0 text-center font-bold text-xs rounded-lg bg-muted/40 border-0"
-                />
+                <div key={`bottom-${i}`} className="flex-1 p-1 flex items-center justify-center">
+                  <Input
+                    type="tel"
+                    pattern="[0-9]*"
+                    placeholder="-"
+                    value={battingOrder === 'second' ? (myInnings[i] || "") : (opponentInnings[i] || "")}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === "" || /^[0-9]*$/.test(val)) {
+                        if (battingOrder === 'second') {
+                          const next = [...myInnings]; next[i] = val; setMyInnings(next);
+                        } else {
+                          const next = [...opponentInnings]; next[i] = val; setOpponentInnings(next);
+                        }
+                      }
+                    }}
+                    className={cn(
+                      "w-8 h-8 p-0 text-center font-black text-xs border-0 rounded-lg transition-all bg-background",
+                      ((battingOrder === 'second' && myInnings[i]) || (battingOrder !== 'second' && opponentInnings[i])) && "font-black text-primary"
+                    )}
+                  />
+                </div>
               ))}
             </div>
-            <div className="w-8 text-center font-black text-sm text-primary tabular-nums">
+            <div className="w-12 shrink-0 text-center font-black text-sm text-primary bg-primary/5 tabular-nums">
               {battingOrder === 'second' ? myTotalScore : opponentTotalScore}
             </div>
           </div>

@@ -59,6 +59,35 @@ function CreateMatchContent() {
   const [myInnings, setMyInnings] = useState<string[]>(Array(7).fill(""));
   const [opponentInnings, setOpponentInnings] = useState<string[]>(Array(7).fill(""));
 
+  // イニング得点から合計スコアを自動計算して同期
+  useEffect(() => {
+    if (mode === "quick") {
+      const myTotal = myInnings.reduce((sum, val) => sum + (parseInt(val) || 0), 0);
+      const oppTotal = opponentInnings.reduce((sum, val) => sum + (parseInt(val) || 0), 0);
+      setMyScore(myTotal.toString());
+      setOpponentScore(oppTotal.toString());
+    }
+  }, [myInnings, opponentInnings, mode]);
+
+  // イニング数が変更された際に配列のサイズを追従させる
+  useEffect(() => {
+    const targetLength = formState.inningCount;
+    setMyInnings(prev => {
+      if (prev.length === targetLength) return prev;
+      if (prev.length < targetLength) {
+        return [...prev, ...Array(targetLength - prev.length).fill("")];
+      }
+      return prev.slice(0, targetLength);
+    });
+    setOpponentInnings(prev => {
+      if (prev.length === targetLength) return prev;
+      if (prev.length < targetLength) {
+        return [...prev, ...Array(targetLength - prev.length).fill("")];
+      }
+      return prev.slice(0, targetLength);
+    });
+  }, [formState.inningCount]);
+
   useEffect(() => {
     const fetchTournaments = async () => {
       try {
@@ -150,6 +179,13 @@ function CreateMatchContent() {
             opponentScore={opponentScore} setOpponentScore={setOpponentScore}
             myInnings={myInnings} setMyInnings={setMyInnings}
             opponentInnings={opponentInnings} setOpponentInnings={setOpponentInnings}
+            onAddInning={() => {
+              setFormState(p => ({ ...p, inningCount: (p.inningCount + 1) as 6 | 7 | 9 }));
+            }}
+            onRemoveInning={() => {
+              if (formState.inningCount <= 1) return;
+              setFormState(p => ({ ...p, inningCount: (p.inningCount - 1) as 6 | 7 | 9 }));
+            }}
           />
         )}
 

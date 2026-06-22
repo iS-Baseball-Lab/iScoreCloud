@@ -19,6 +19,11 @@ interface UpdateMatchRequest {
   innings?: 6 | 7 | 9;                 // 🌟 イニング数
   location?: string;                   // 🌟 フロントからはlocationとして来る想定（DBはsurfaceDetails）
   venueId?: string;                    // 🌟 追加：球場ID
+  status?: 'scheduled' | 'live' | 'finished';
+  myScore?: number;
+  opponentScore?: number;
+  myInningScores?: number[];
+  opponentInningScores?: number[];
 }
 
 // ━━━ 試合情報の更新 (PATCH) ━━━
@@ -46,6 +51,11 @@ app.patch('/:id', async (c) => {
       innings: body.innings,
       surfaceDetails: n(body.location),
       venueId: n(body.venueId),
+      status: body.status,
+      myScore: body.myScore,
+      opponentScore: body.opponentScore,
+      myInningScores: body.myInningScores ? JSON.stringify(body.myInningScores) : undefined,
+      opponentInningScores: body.opponentInningScores ? JSON.stringify(body.opponentInningScores) : undefined,
     };
 
     // 💡 undefined のプロパティは更新対象から外す（部分更新への対応）
