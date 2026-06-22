@@ -324,7 +324,7 @@ export default function DashboardPage() {
   return (
     <div className="w-full animate-in fade-in duration-500 bg-transparent min-h-screen pb-24">
       {/* 📢 スタジアム電光掲示板風 ニュースティッカー */}
-      <DashboardTicker messages={tickerMessages} />
+      <DashboardTicker messages={tickerMessages} className="sticky top-16 sm:top-20 z-30" />
 
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-12 space-y-16">
 
