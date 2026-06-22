@@ -10,6 +10,8 @@ import { UserSession, UserTeamMembership } from "@/types/auth"; // 💡 必要�
 import { TeamSwitcher } from "@/components/layout/team-switcher";
 import { UserProfileMenu } from "@/components/layout/user-profile-menu";
 import { useTeam } from "@/contexts/TeamContext";
+import { authClient } from "@/lib/auth-client";
+import { toast } from "sonner";
 
 interface AuthResponse {
   success: boolean;
@@ -61,7 +63,17 @@ export function Header() {
     fetchUser();
   }, [currentTeam, selectTeam]);
 
-  const handleLogout = async () => router.push("/login");
+  const handleLogout = async () => {
+    try {
+      await authClient.signOut();
+      toast.success("iScoreCloudから退出しました。お疲れ様でした！");
+      router.push("/");
+      router.refresh();
+    } catch (error) {
+      console.error("Logout error:", error);
+      toast.error("ログアウトに失敗しました。");
+    }
+  };
 
   const handleTeamSwitch = (teamId: string, orgId?: string) => {
     const target = user?.memberships?.find(m => m.teamId === teamId);
