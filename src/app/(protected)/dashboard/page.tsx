@@ -200,6 +200,12 @@ export default function DashboardPage() {
     fetchDashboardData();
   }, [currentTeam?.id]); // 💡 チームが切り替わったら再取得
 
+  // 💡 削除完了時のコールバック（ローカルStateから除外して即時反映させる）
+  const handleDeleteMatch = useCallback((deletedId: string) => {
+    setMatches(prev => prev.filter(m => m.id !== deletedId));
+    setCalendarMatches(prev => prev.filter(m => m.id !== deletedId));
+  }, []);
+
   // 💡 1. 進行中の試合 (LIVE) だけを HERO 用に抽出
   const liveMatch = useMemo(() => {
     return matches.find(m => m.status === 'live');
@@ -458,7 +464,7 @@ export default function DashboardPage() {
           {/* 🌟 scheduled の試合があるかどうかで表示を切り替え */}
           {upcomingMatches.length > 0 ? (
             <div className="min-h-[100px]">
-              <MatchList matches={upcomingMatches} isLoading={isLoading} />
+              <MatchList matches={upcomingMatches} isLoading={isLoading} onDelete={handleDeleteMatch} />
             </div>
           ) : (
             <EmptyState
@@ -484,7 +490,7 @@ export default function DashboardPage() {
           <SectionHeader title="試合結果" subtitle="Latest 3 Matches" showPulse />
           <div className="min-h-[100px]">
             {/* 🌟 finishedMatches (完了済み) だけを表示 */}
-            <MatchList matches={finishedMatches} isLoading={isLoading} />
+            <MatchList matches={finishedMatches} isLoading={isLoading} onDelete={handleDeleteMatch} />
           </div>
           {!isLoading && matches.length > 0 && (
             <div className="flex justify-center pt-6">

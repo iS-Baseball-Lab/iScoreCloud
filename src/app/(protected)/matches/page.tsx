@@ -65,6 +65,10 @@ export default function AllMatchesPage() {
     fetchMatches();
   }, []);
 
+  const handleDeleteMatch = (deletedId: string) => {
+    setMatches(prev => prev.filter(m => m.id !== deletedId));
+  };
+
   // getMatchStatus is now outside the component
 
   const filteredMatches = matches
@@ -127,7 +131,7 @@ export default function AllMatchesPage() {
         </button>
       </div>
 
-      <MatchList matches={paginatedMatches} isLoading={isLoading} />
+      <MatchList matches={paginatedMatches} isLoading={isLoading} onDelete={handleDeleteMatch} />
 
       {/* 🌟 ページングナビゲーション（背景色付きのフラットデザイン） */}
       {totalPages > 1 && (
