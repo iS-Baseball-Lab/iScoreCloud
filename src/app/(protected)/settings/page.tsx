@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Wrench, SendHorizontal, AlertCircle } from "lucide-react";
+import { Wrench, SendHorizontal, AlertCircle, Car, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SectionHeader } from "@/components/layout/SectionHeader";
 import { useTeam } from "@/contexts/TeamContext";
@@ -187,6 +187,35 @@ export default function SettingsPage() {
                 onSave={handleSave}
               />
             )}
+
+            {/* 💡 車両・球場設定へのリンクカード */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4">
+              <button
+                onClick={() => router.push("/settings/cars")}
+                className="flex items-center gap-4 p-5 rounded-2xl bg-card border border-border/40 hover:border-primary/40 hover:bg-muted/10 transition-all text-left w-full shadow-sm cursor-pointer group"
+              >
+                <div className="p-3.5 rounded-xl bg-primary/10 text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-all shrink-0">
+                  <Car className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-sm font-black text-foreground">車両・配車設定</p>
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase">Car Settings</p>
+                </div>
+              </button>
+
+              <button
+                onClick={() => router.push("/settings/venues")}
+                className="flex items-center gap-4 p-5 rounded-2xl bg-card border border-border/40 hover:border-primary/40 hover:bg-muted/10 transition-all text-left w-full shadow-sm cursor-pointer group"
+              >
+                <div className="p-3.5 rounded-xl bg-primary/10 text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-all shrink-0">
+                  <MapPin className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-sm font-black text-foreground">球場・グラウンド設定</p>
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase">Venue Settings</p>
+                </div>
+              </button>
+            </div>
 
             {/* LINEテスト送信セクション */}
             {lineSettings?.lineGroupId && lineSettings?.isAutoReportEnabled && (

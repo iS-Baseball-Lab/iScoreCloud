@@ -74,27 +74,39 @@ app.patch('/:id', async (c) => {
 
   const id = c.req.param('id')!
   const body = await c.req.json<{
-    name?: string
-    shortName?: string
-    address?: string
-    mapUrl?: string
-    surfaceType?: string
-    dimensions?: string
-    notes?: string
+    name?: string | null
+    shortName?: string | null
+    address?: string | null
+    mapUrl?: string | null
+    surfaceType?: string | null
+    dimensions?: string | null
+    notes?: string | null
   }>()
 
   const db = drizzle(c.env.DB)
   try {
+    // 💡 安全にトリムし、空文字やnullならnullにするヘルパー
+    const s = (val: string | null | undefined) => (val && typeof val === 'string') ? val.trim() : null;
+
+    const updateData = {
+      name: body.name !== undefined ? (body.name?.trim() || undefined) : undefined,
+      shortName: body.shortName !== undefined ? s(body.shortName) : undefined,
+      address: body.address !== undefined ? s(body.address) : undefined,
+      mapUrl: body.mapUrl !== undefined ? s(body.mapUrl) : undefined,
+      surfaceType: body.surfaceType !== undefined ? body.surfaceType : undefined,
+      dimensions: body.dimensions !== undefined ? s(body.dimensions) : undefined,
+      notes: body.notes !== undefined ? s(body.notes) : undefined,
+    };
+
+    // 💡 Drizzle のエラーを防ぐため undefined のキーはクエリから除外する
+    Object.keys(updateData).forEach(key => {
+      if ((updateData as any)[key] === undefined) {
+        delete (updateData as any)[key];
+      }
+    });
+
     await db.update(venues)
-      .set({
-        name: body.name !== undefined ? (body.name.trim() || undefined) : undefined,
-        shortName: body.shortName !== undefined ? (body.shortName.trim() || null) : undefined,
-        address: body.address !== undefined ? (body.address.trim() || null) : undefined,
-        mapUrl: body.mapUrl !== undefined ? (body.mapUrl.trim() || null) : undefined,
-        surfaceType: body.surfaceType !== undefined ? body.surfaceType : undefined,
-        dimensions: body.dimensions !== undefined ? (body.dimensions.trim() || null) : undefined,
-        notes: body.notes !== undefined ? (body.notes.trim() || null) : undefined,
-      })
+      .set(updateData)
       .where(eq(venues.id, id))
     return c.json({ success: true })
   } catch (e: any) {
