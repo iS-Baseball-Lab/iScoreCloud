@@ -222,8 +222,10 @@ export const MatchService = {
 
   // 7. 試合削除
   async deleteMatch(db: DrizzleDB, matchId: string) {
+    // 💡 db.run(sql`...`) はPromiseを返しバッチ処理に入らないため、事前に実行してD1/Drizzleのエラーを回避します
+    await db.run(sql`DELETE FROM pitches WHERE at_bat_id IN (SELECT id FROM at_bats WHERE match_id = ${matchId})`);
+
     await db.batch([
-      db.run(sql`DELETE FROM pitches WHERE at_bat_id IN (SELECT id FROM at_bats WHERE match_id = ${matchId})`) as any,
       db.delete(baseAdvances).where(eq(baseAdvances.matchId, matchId)) as any,
       db.delete(atBats).where(eq(atBats.matchId, matchId)) as any,
       db.delete(playLogs).where(eq(playLogs.matchId, matchId)) as any,

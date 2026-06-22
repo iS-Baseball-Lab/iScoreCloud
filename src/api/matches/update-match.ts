@@ -104,23 +104,5 @@ app.patch('/:id/finish', async (c) => {
   }
 });
 
-// ━━━ 試合の削除 (DELETE) ━━━
-app.delete('/:id', async (c) => {
-  const db = drizzle(c.env.DB);
-  const matchId = c.req.param('id');
-
-  try {
-    // 💡 DELETE実行
-    // ※ teamIdのリレーションに onDelete: 'cascade' が付いているため、
-    // ここで試合を消せば、関連するイニングデータ等も（DB側で設定していれば）消えます。
-    await db.delete(matches).where(eq(matches.id, matchId));
-
-    return c.json({ success: true });
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "試合の削除に失敗しました";
-    console.error("Match Delete Error Detail:", errorMessage);
-    return c.json({ success: false, error: errorMessage }, 500);
-  }
-});
 
 export default app;
