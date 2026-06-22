@@ -165,43 +165,41 @@ app.post('/events/:eventId/save', async (c) => {
       return c.json({ success: false, error: "equipments 配列が必要です。" }, 400);
     }
 
-    // トランザクション処理
-    await db.transaction(async (tx) => {
-      // 1. 既存のこのイベントの日程別道具割当を削除
-      await tx.delete(eventEquipments)
-        .where(eq(eventEquipments.eventId, eventId));
+    // 💡 トランザクション処理の代替 (D1で動作しないため個別実行)
+    // 1. 既存のこのイベントの日程別道具割当を削除
+    await db.delete(eventEquipments)
+      .where(eq(eventEquipments.eventId, eventId));
 
-      // 2. 有効な配車スロット ID (eventCarpools.id) リストを取得 (外部キー制約エラー防止)
-      const validCarpools = await tx.select({ id: eventCarpools.id })
-        .from(eventCarpools)
-        .where(eq(eventCarpools.eventId, eventId));
-      const validCarpoolIds = new Set(validCarpools.map(c => c.id));
+    // 2. 有効な配車スロット ID (eventCarpools.id) リストを取得 (外部キー制約エラー防止)
+    const validCarpools = await db.select({ id: eventCarpools.id })
+      .from(eventCarpools)
+      .where(eq(eventCarpools.eventId, eventId));
+    const validCarpoolIds = new Set(validCarpools.map(c => c.id));
 
-      // 3. 有効なメンバー ID リストを取得 (外部キー制約エラー防止)
-      const validMembers = await tx.select({ id: teamMembers.id })
-        .from(teamMembers);
-      const validMemberIds = new Set(validMembers.map(m => m.id));
+    // 3. 有効なメンバー ID リストを取得 (外部キー制約エラー防止)
+    const validMembers = await db.select({ id: teamMembers.id })
+      .from(teamMembers);
+    const validMemberIds = new Set(validMembers.map(m => m.id));
 
-      // 4. 新たなアサインをインサート
-      for (const eqData of equipments) {
-        // もし積載先が未設定(null)か、無効なID（フロント一時IDなど）の場合は null にフォールバック
-        const carpoolId = (eqData.carpoolId && validCarpoolIds.has(eqData.carpoolId)) ? eqData.carpoolId : null;
-        
-        // 担当メンバーが無効なIDの場合は null にフォールバック
-        const responsibleMemberId = (eqData.responsibleMemberId && validMemberIds.has(eqData.responsibleMemberId)) ? eqData.responsibleMemberId : null;
+    // 4. 新たなアサインをインサート
+    for (const eqData of equipments) {
+      // もし積載先が未設定(null)か、無効なID（フロント一時IDなど）の場合は null にフォールバック
+      const carpoolId = (eqData.carpoolId && validCarpoolIds.has(eqData.carpoolId)) ? eqData.carpoolId : null;
+      
+      // 担当メンバーが無効なIDの場合は null にフォールバック
+      const responsibleMemberId = (eqData.responsibleMemberId && validMemberIds.has(eqData.responsibleMemberId)) ? eqData.responsibleMemberId : null;
 
-        const id = `eveq_${crypto.randomUUID().replace(/-/g, '')}`;
-        await tx.insert(eventEquipments)
-          .values({
-            id,
-            eventId,
-            equipmentId: eqData.equipmentId,
-            carpoolId,
-            responsibleMemberId,
-            status: eqData.status || "pending"
-          });
-      }
-    });
+      const id = `eveq_${crypto.randomUUID().replace(/-/g, '')}`;
+      await db.insert(eventEquipments)
+        .values({
+          id,
+          eventId,
+          equipmentId: eqData.equipmentId,
+          carpoolId,
+          responsibleMemberId,
+          status: eqData.status || "pending"
+        });
+    }
 
     return c.json({ success: true });
 

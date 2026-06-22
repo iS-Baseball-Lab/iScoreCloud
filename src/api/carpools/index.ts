@@ -421,98 +421,96 @@ app.post('/events/:eventId/save', async (c) => {
       return c.json({ success: false, error: "settings が必要です。" }, 400);
     }
 
-    // トランザクション処理
-    await db.transaction(async (tx) => {
-      // 1. 設定の保存 (eventCarpoolSettings) - 一度削除してから挿入
-      await tx.delete(eventCarpoolSettings)
-        .where(eq(eventCarpoolSettings.eventId, eventId));
+    // 💡 トランザクション処理の代替 (D1で動作しないため個別実行)
+    // 1. 設定の保存 (eventCarpoolSettings) - 一度削除してから挿入
+    await db.delete(eventCarpoolSettings)
+      .where(eq(eventCarpoolSettings.eventId, eventId));
 
-      const settingId = `ecs_${crypto.randomUUID().replace(/-/g, '')}`;
-      await tx.insert(eventCarpoolSettings)
-        .values({
-          id: settingId,
-          eventId,
-          distanceKm: Number(settings.distanceKm) || 0,
-          gasolinePrice: Number(settings.gasolinePrice) || 170,
-          splitMethod: settings.splitMethod || 'by_team',
-          noParentChild: !!settings.noParentChild
-        });
+    const settingId = `ecs_${crypto.randomUUID().replace(/-/g, '')}`;
+    await db.insert(eventCarpoolSettings)
+      .values({
+        id: settingId,
+        eventId,
+        distanceKm: Number(settings.distanceKm) || 0,
+        gasolinePrice: Number(settings.gasolinePrice) || 170,
+        splitMethod: settings.splitMethod || 'by_team',
+        noParentChild: !!settings.noParentChild
+      });
 
-      // 2. 既存 of このイベントの配車枠 (および同乗者) を一括削除
-      const existingCarpools = await tx.select({ id: eventCarpools.id })
-        .from(eventCarpools)
+    // 2. 既存 of このイベントの配車枠 (および同乗者) を一括削除
+    const existingCarpools = await db.select({ id: eventCarpools.id })
+      .from(eventCarpools)
+      .where(eq(eventCarpools.eventId, eventId));
+    const existingCarpoolIds = existingCarpools.map(cp => cp.id);
+
+    if (existingCarpoolIds.length > 0) {
+      // 同乗者の削除
+      await db.delete(eventCarpoolRiders)
+        .where(inArray(eventCarpoolRiders.carpoolId, existingCarpoolIds));
+      // 配車枠の削除
+      await db.delete(eventCarpools)
         .where(eq(eventCarpools.eventId, eventId));
-      const existingCarpoolIds = existingCarpools.map(cp => cp.id);
+    }
 
-      if (existingCarpoolIds.length > 0) {
-        // 同乗者の削除
-        await tx.delete(eventCarpoolRiders)
-          .where(inArray(eventCarpoolRiders.carpoolId, existingCarpoolIds));
-        // 配車枠の削除
-        await tx.delete(eventCarpools)
-          .where(eq(eventCarpools.eventId, eventId));
-      }
+    // 3. 新しい配車枠および同乗者のインサート
+    if (Array.isArray(carpools) && carpools.length > 0) {
+      // 外部キーの存在チェック用にマスタIDリストを取得
+      const validDrivers = await db.select({ id: teamMembers.id }).from(teamMembers);
+      const validDriverIds = new Set(validDrivers.map(d => d.id));
 
-      // 3. 新しい配車枠および同乗者のインサート
-      if (Array.isArray(carpools) && carpools.length > 0) {
-        // 外部キーの存在チェック用にマスタIDリストを取得
-        const validDrivers = await tx.select({ id: teamMembers.id }).from(teamMembers);
-        const validDriverIds = new Set(validDrivers.map(d => d.id));
+      const validCars = await db.select({ id: memberCars.id }).from(memberCars);
+      const validCarIds = new Set(validCars.map(c => c.id));
 
-        const validCars = await tx.select({ id: memberCars.id }).from(memberCars);
-        const validCarIds = new Set(validCars.map(c => c.id));
+      const validPlayers = await db.select({ id: players.id }).from(players);
+      const validPlayerIds = new Set(validPlayers.map(p => p.id));
 
-        const validPlayers = await tx.select({ id: players.id }).from(players);
-        const validPlayerIds = new Set(validPlayers.map(p => p.id));
+      for (const cp of carpools) {
+        // driverId が有効な teamMembers.id に存在するかチェック
+        if (!cp.driverId || !validDriverIds.has(cp.driverId)) {
+          console.warn(`[Save Carpool Warning] Skipping invalid driverId: ${cp.driverId}`);
+          continue; // ドライバーが無効な場合はこの配車枠の保存をスキップ
+        }
 
-        for (const cp of carpools) {
-          // driverId が有効な teamMembers.id に存在するかチェック
-          if (!cp.driverId || !validDriverIds.has(cp.driverId)) {
-            console.warn(`[Save Carpool Warning] Skipping invalid driverId: ${cp.driverId}`);
-            continue; // ドライバーが無効な場合はこの配車枠の保存をスキップ
-          }
+        const carpoolId = `cp_${crypto.randomUUID().replace(/-/g, '')}`;
+        const isCarValid = cp.carId && validCarIds.has(cp.carId);
 
-          const carpoolId = `cp_${crypto.randomUUID().replace(/-/g, '')}`;
-          const isCarValid = cp.carId && validCarIds.has(cp.carId);
+        // 配車枠のインサート
+        await db.insert(eventCarpools)
+          .values({
+            id: carpoolId,
+            eventId,
+            driverId: cp.driverId,
+            carId: isCarValid ? cp.carId : null, // 無効な車両IDはnullにフォールバック
+            capacity: Number(cp.capacity) || 4,
+            carType: cp.carType || 'normal',
+            highwayFee: Number(cp.highwayFee) || 0,
+            parkingFee: Number(cp.parkingFee) || 0
+          });
 
-          // 配車枠のインサート
-          await tx.insert(eventCarpools)
-            .values({
-              id: carpoolId,
-              eventId,
-              driverId: cp.driverId,
-              carId: isCarValid ? cp.carId : null, // 無効な車両IDはnullにフォールバック
-              capacity: Number(cp.capacity) || 4,
-              carType: cp.carType || 'normal',
-              highwayFee: Number(cp.highwayFee) || 0,
-              parkingFee: Number(cp.parkingFee) || 0
-            });
+        // 同乗者のインサート
+        if (Array.isArray(cp.riders) && cp.riders.length > 0) {
+          for (const rider of cp.riders) {
+            const isPlayerValid = !!(rider.playerId && validPlayerIds.has(rider.playerId));
+            const isMemberValid = !!(rider.memberId && validDriverIds.has(rider.memberId));
 
-          // 同乗者のインサート
-          if (Array.isArray(cp.riders) && cp.riders.length > 0) {
-            for (const rider of cp.riders) {
-              const isPlayerValid = !!(rider.playerId && validPlayerIds.has(rider.playerId));
-              const isMemberValid = !!(rider.memberId && validDriverIds.has(rider.memberId));
-
-              // どちらも有効でない場合はインサートをスキップ
-              if (!isPlayerValid && !isMemberValid) {
-                console.warn(`[Save Carpool Warning] Skipping invalid rider (no valid player or member):`, rider);
-                continue;
-              }
-
-              const riderId = `cpr_${crypto.randomUUID().replace(/-/g, '')}`;
-              await tx.insert(eventCarpoolRiders)
-                .values({
-                  id: riderId,
-                  carpoolId,
-                  playerId: isPlayerValid ? rider.playerId : null,
-                  memberId: isMemberValid ? rider.memberId : null
-                });
+            // どちらも有効でない場合はインサートをスキップ
+            if (!isPlayerValid && !isMemberValid) {
+              console.warn(`[Save Carpool Warning] Skipping invalid rider (no valid player or member):`, rider);
+              continue;
             }
+
+            const riderId = `cpr_${crypto.randomUUID().replace(/-/g, '')}`;
+            await db.insert(eventCarpoolRiders)
+              .values({
+                id: riderId,
+                carpoolId,
+                playerId: isPlayerValid ? rider.playerId : null,
+                memberId: isMemberValid ? rider.memberId : null
+              });
           }
         }
       }
-    });
+    }
 
     return c.json({ success: true });
 
