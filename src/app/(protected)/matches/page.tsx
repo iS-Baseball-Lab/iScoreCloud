@@ -1,14 +1,13 @@
 // src/app/(protected)/matches/page.tsx
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronLeft, Swords, Loader2, ChevronRight, Calendar, Activity, Trophy } from "lucide-react";
+import { ChevronLeft, Loader2, Calendar, Activity, Trophy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MatchList } from "@/components/matches/match-list";
 import { toast } from "sonner";
 import { Match, MatchStatus } from "@/types/match";
-import { cn } from "@/lib/utils";
 import { SectionHeader } from "@/components/layout/SectionHeader";
 
 // ステータスを推論・補完する関数（古いデータ対応）
@@ -25,14 +24,6 @@ export default function AllMatchesPage() {
   const router = useRouter();
   const [matches, setMatches] = useState<Match[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<MatchStatus>("scheduled");
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
-
-  const handleTabChange = (tab: MatchStatus) => {
-    setActiveTab(tab);
-    setCurrentPage(1);
-  };
 
   useEffect(() => {
     const fetchMatches = async () => {
@@ -45,16 +36,6 @@ export default function AllMatchesPage() {
           const data = await res.json();
           const loadedMatches = Array.isArray(data) ? (data as Match[]).sort((a, b) => b.date.localeCompare(a.date)) : [];
           setMatches(loadedMatches);
-
-          if (loadedMatches.length > 0) {
-            if (loadedMatches.some(m => getMatchStatus(m) === "live")) {
-              setActiveTab("live");
-            } else if (loadedMatches.some(m => getMatchStatus(m) === "scheduled")) {
-              setActiveTab("scheduled");
-            } else {
-              setActiveTab("finished");
-            }
-          }
         }
       } catch (error) {
         toast.error("データの読み込みに失敗しました");
@@ -69,25 +50,33 @@ export default function AllMatchesPage() {
     setMatches(prev => prev.filter(m => m.id !== deletedId));
   };
 
-  // getMatchStatus is now outside the component
+  // 1. 進行中 (live) の試合: 降順 (直近が上)
+  const liveMatches = useMemo(() => {
+    return matches
+      .filter(m => getMatchStatus(m) === "live")
+      .sort((a, b) => b.date.localeCompare(a.date));
+  }, [matches]);
 
-  const filteredMatches = matches
-    .filter(m => getMatchStatus(m) === activeTab)
-    .sort((a, b) => {
-      if (activeTab === "scheduled") {
-        // 予定の場合は昇順（近い未来から先に表示）
-        return a.date.localeCompare(b.date);
-      }
-      // それ以外は降順（直近の過去から先に表示）
-      return b.date.localeCompare(a.date);
-    });
-  const totalPages = Math.ceil(filteredMatches.length / itemsPerPage);
-  const paginatedMatches = filteredMatches.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  // 2. 予定されている試合 (scheduled): 昇順 (近い未来から順に表示)
+  const scheduledMatches = useMemo(() => {
+    return matches
+      .filter(m => getMatchStatus(m) === "scheduled")
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }, [matches]);
+
+  // 3. 終了した試合 (finished): 降順 (直近過去が上)
+  const finishedMatches = useMemo(() => {
+    return matches
+      .filter(m => getMatchStatus(m) === "finished")
+      .sort((a, b) => b.date.localeCompare(a.date));
+  }, [matches]);
+
+  const hasMatches = matches.length > 0;
 
   return (
     <div className="min-h-screen bg-transparent p-4 sm:p-6 max-w-4xl mx-auto pb-24">
       {/* ━━ トップ：戻るボタン & SectionHeader ━━ */}
-      <div className="space-y-4 mb-6">
+      <div className="space-y-4 mb-8">
         <Button 
           variant="outline" 
           size="sm" 
@@ -97,66 +86,58 @@ export default function AllMatchesPage() {
           <ChevronLeft className="h-4 w-4" />
           戻る
         </Button>
-        <SectionHeader title="試合一覧" subtitle="MATCH HISTORY" showPulse={false} />
+        <SectionHeader title="試合一覧" subtitle="ALL MATCHES" showPulse={false} />
       </div>
 
-      {/* 🌟 3つのステータス切り替えタブ */}
-      <div className="flex bg-muted/30 p-1.5 rounded-3xl border border-border/40 shadow-inner mb-6">
-        <button
-          onClick={() => handleTabChange("scheduled")}
-          className={cn(
-            "flex-1 py-3 text-sm sm:text-base font-black rounded-2xl transition-all flex items-center justify-center gap-2",
-            activeTab === "scheduled" ? "bg-amber-500 text-white shadow-sm" : "text-muted-foreground hover:text-foreground"
+      {isLoading ? (
+        <div className="flex justify-center py-20">
+          <Loader2 className="animate-spin h-8 w-8 text-primary" />
+        </div>
+      ) : !hasMatches ? (
+        <div className="text-center py-20 text-muted-foreground font-medium">
+          登録されている試合はありません
+        </div>
+      ) : (
+        <div className="space-y-12">
+          {/* 1. 進行中の試合 */}
+          {liveMatches.length > 0 && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 border-b border-rose-500/10 pb-2">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-600"></span>
+                </span>
+                <h3 className="text-xs font-black text-rose-600 dark:text-rose-400 tracking-widest uppercase flex items-center gap-1.5">
+                  <Activity className="w-4 h-4" /> 進行中の試合
+                </h3>
+              </div>
+              <MatchList matches={liveMatches} isLoading={isLoading} onDelete={handleDeleteMatch} />
+            </div>
           )}
-        >
-          <Calendar className="w-4 h-4 sm:w-5 sm:h-5" /> 予定
-        </button>
-        <button
-          onClick={() => handleTabChange("live")}
-          className={cn(
-            "flex-1 py-3 text-sm sm:text-base font-black rounded-2xl transition-all flex items-center justify-center gap-2",
-            activeTab === "live" ? "bg-rose-500 text-white shadow-sm" : "text-muted-foreground hover:text-foreground"
-          )}
-        >
-          <Activity className="w-4 h-4 sm:w-5 sm:h-5" /> 進行中
-        </button>
-        <button
-          onClick={() => handleTabChange("finished")}
-          className={cn(
-            "flex-1 py-3 text-sm sm:text-base font-black rounded-2xl transition-all flex items-center justify-center gap-2",
-            activeTab === "finished" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-          )}
-        >
-          <Trophy className="w-4 h-4 sm:w-5 sm:h-5" /> 終了
-        </button>
-      </div>
 
-      <MatchList matches={paginatedMatches} isLoading={isLoading} onDelete={handleDeleteMatch} />
+          {/* 2. 試合予定 */}
+          {scheduledMatches.length > 0 && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 border-b border-amber-500/10 pb-2">
+                <h3 className="text-xs font-black text-amber-600 dark:text-amber-400 tracking-widest uppercase flex items-center gap-1.5">
+                  <Calendar className="w-4 h-4" /> 試合予定
+                </h3>
+              </div>
+              <MatchList matches={scheduledMatches} isLoading={isLoading} onDelete={handleDeleteMatch} />
+            </div>
+          )}
 
-      {/* 🌟 ページングナビゲーション（背景色付きのフラットデザイン） */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-4 mt-8">
-          <Button
-            variant="outline"
-            size="icon"
-            className="rounded-full h-11 w-11 bg-primary/10 hover:bg-primary/20 border-primary/20 text-primary shadow-sm"
-            disabled={currentPage === 1}
-            onClick={() => setCurrentPage(p => p - 1)}
-          >
-            <ChevronLeft className="h-6 w-6" />
-          </Button>
-          <span className="text-sm font-black tabular-nums bg-white/50 dark:bg-zinc-800/50 backdrop-blur-sm px-4 py-2 rounded-full border border-border/50 shadow-sm">
-            {currentPage} / {totalPages}
-          </span>
-          <Button
-            variant="outline"
-            size="icon"
-            className="rounded-full h-11 w-11 bg-primary/10 hover:bg-primary/20 border-primary/20 text-primary shadow-sm"
-            disabled={currentPage === totalPages}
-            onClick={() => setCurrentPage(p => p + 1)}
-          >
-            <ChevronRight className="h-6 w-6" />
-          </Button>
+          {/* 3. 試合結果 */}
+          {finishedMatches.length > 0 && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 border-b border-primary/10 pb-2">
+                <h3 className="text-xs font-black text-primary tracking-widest uppercase flex items-center gap-1.5">
+                  <Trophy className="w-4 h-4" /> 試合結果
+                </h3>
+              </div>
+              <MatchList matches={finishedMatches} isLoading={isLoading} onDelete={handleDeleteMatch} />
+            </div>
+          )}
         </div>
       )}
     </div>
