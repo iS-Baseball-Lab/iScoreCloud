@@ -56,7 +56,7 @@ app.post('/create', async (c) => {
 
     // 🌟 2. 大会名（tournamentName）が送られてきた場合、自動的に解決・新規生成する
     let tournamentId: string | null = null;
-    if (body.matchType === 'official' && (body as any).tournamentName) {
+    if ((body.matchType === 'official' || body.matchType === 'exchange') && (body as any).tournamentName) {
       const tName = (body as any).tournamentName;
       const existingTournament = await db.select().from(tournaments)
         .where(eq(tournaments.name, tName)).get();

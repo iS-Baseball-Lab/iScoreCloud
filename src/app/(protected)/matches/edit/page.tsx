@@ -230,7 +230,7 @@ function MatchEditContent() {
         body: JSON.stringify({
           ...formState,
           status: matchStatus, // 🌟 アトミック化：ステータスを送信
-          tournamentName: formState.matchType === 'official' ? formState.tournamentName : "",
+          tournamentName: (formState.matchType === 'official' || formState.matchType === 'exchange') ? formState.tournamentName : "",
           date: formState.time ? `${formState.date} ${formState.time}` : formState.date,
           location: formState.venue, // DBのスキーマに合わせてマッピング
           innings: formState.inningCount, // DBのスキーマに合わせてマッピング

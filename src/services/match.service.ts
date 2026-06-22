@@ -123,7 +123,7 @@ export const MatchService = {
 
   // 4. 大会（Tournament）の検索・作成（内部ヘルパー）
   async _resolveTournament(db: DrizzleDB, matchType: string, tournamentName?: string): Promise<string | null> {
-    if (matchType !== "official" || !tournamentName) return null;
+    if ((matchType !== "official" && matchType !== "exchange") || !tournamentName) return null;
 
     const existingTournament = await db.select().from(tournaments)
       .where(eq(tournaments.name, tournamentName)).get();

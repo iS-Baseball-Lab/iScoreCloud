@@ -148,11 +148,11 @@ export function MatchBasicForm({ state, setState, tournaments, isNewTournament, 
       </div>
 
       {/* 大会セレクター */}
-      {state.matchType === 'official' && (
+      {(state.matchType === 'official' || state.matchType === 'exchange') && (
         <div className="space-y-2 animate-in fade-in">
-          <label className="text-[10px] font-black uppercase text-amber-600 flex items-center gap-1.5"><Trophy className="h-3.5 w-3.5" /> Tournament</label>
+          <label className={cn("text-[10px] font-black uppercase flex items-center gap-1.5", state.matchType === 'official' ? "text-amber-600" : "text-blue-600")}><Trophy className="h-3.5 w-3.5" /> Tournament</label>
           <TournamentSelector tournaments={tournaments} value={state.tournamentName} isNew={isNewTournament} onSelect={(name, createNew) => { setState({...state, tournamentName: name}); setIsNewTournament(createNew); }} />
-          {isNewTournament && <Input autoFocus value={state.tournamentName} onChange={e => setState({...state, tournamentName: e.target.value})} className="h-11 rounded-2xl text-sm font-bold bg-amber-500/10 border-amber-500" />}
+          {isNewTournament && <Input autoFocus value={state.tournamentName} onChange={e => setState({...state, tournamentName: e.target.value})} className={cn("h-11 rounded-2xl text-sm font-bold", state.matchType === 'official' ? "bg-amber-500/10 border-amber-500" : "bg-blue-500/10 border-blue-500")} />}
         </div>
       )}
 
