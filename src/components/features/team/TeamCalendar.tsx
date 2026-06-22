@@ -162,7 +162,7 @@ export const TeamCalendar: React.FC<TeamCalendarProps> = ({ matches, canManage, 
   };
 
   return (
-    <div className="bg-white/50 dark:bg-zinc-900/50 backdrop-blur-xl border border-border/40 rounded-3xl overflow-hidden shadow-sm hover:shadow-md transition-all p-5 sm:p-7 space-y-6">
+    <div className="bg-white dark:bg-black border border-border/60 rounded-3xl overflow-hidden shadow-sm hover:shadow-md transition-all p-5 sm:p-7 space-y-6">
       
       {/* ━━ カレンダーヘッダー ━━ */}
       <div className="flex items-center justify-between">
@@ -220,11 +220,11 @@ export const TeamCalendar: React.FC<TeamCalendarProps> = ({ matches, canManage, 
               onClick={() => setSelectedDate(day.date)}
               className={cn(
                 "relative aspect-square flex flex-col items-center justify-center rounded-xl transition-all active:scale-95 cursor-pointer border border-transparent select-none",
-                !day.isCurrentMonth && "opacity-35 text-muted-foreground/50",
-                day.isCurrentMonth && "hover:bg-zinc-100/70 dark:hover:bg-zinc-800/50",
+                !day.isCurrentMonth && "text-muted-foreground/30",
+                day.isCurrentMonth && "hover:bg-zinc-100 dark:hover:bg-zinc-900",
                 day.isCurrentMonth && isSunday && "text-rose-500",
                 day.isCurrentMonth && isSaturday && "text-blue-500",
-                isToday && "bg-primary/5 border-primary/20 text-primary font-black",
+                isToday && "bg-primary/10 dark:bg-primary/25 border-primary/30 text-primary font-black",
                 isSelected && "bg-primary text-primary-foreground hover:bg-primary border-primary ring-2 ring-primary/20"
               )}
             >
@@ -295,7 +295,7 @@ export const TeamCalendar: React.FC<TeamCalendarProps> = ({ matches, canManage, 
                 return (
                   <div
                     key={item.id}
-                    className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-2xl bg-zinc-50/70 dark:bg-zinc-900/40 border border-border/20 gap-3 shadow-xs hover:border-primary/20 transition-all"
+                    className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-900/50 border border-border/40 gap-3 shadow-xs hover:border-primary/30 transition-all"
                   >
                     <div className="space-y-1.5">
                       <div className="flex items-center gap-2 flex-wrap">
@@ -394,7 +394,7 @@ export const TeamCalendar: React.FC<TeamCalendarProps> = ({ matches, canManage, 
                 return (
                   <div
                     key={item.id}
-                    className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-2xl bg-zinc-50/70 dark:bg-zinc-900/40 border border-border/20 gap-3 shadow-xs hover:border-primary/20 transition-all"
+                    className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-900/50 border border-border/40 gap-3 shadow-xs hover:border-primary/30 transition-all"
                   >
                     <div className="space-y-1.5 flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
