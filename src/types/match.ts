@@ -38,6 +38,7 @@ export interface Match {
   surfaceDetails?: string;
   tournamentName?: string;
   venueName?: string;
+  venueShortName?: string | null;
   innings?: number;
   myInningScores?: (number | null)[];
   opponentInningScores?: (number | null)[];

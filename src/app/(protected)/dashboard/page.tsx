@@ -407,7 +407,7 @@ export default function DashboardPage() {
               <div className="mt-6 pt-6 border-t border-border/40 flex justify-between items-center text-zinc-500">
                 <span className="text-sm font-bold">{liveMatch.tournamentName || liveMatch.tournament || "公式戦"}</span>
                 <span className="text-sm font-bold flex items-center gap-2">
-                  <MapPin className="h-3 w-3" /> {liveMatch.venueName || liveMatch.venue || "球場未設定"}
+                  <MapPin className="h-3 w-3" /> {liveMatch.venueShortName || liveMatch.venueName || liveMatch.venue || liveMatch.surfaceDetails || "球場未設定"}
                 </span>
               </div>
             </div>

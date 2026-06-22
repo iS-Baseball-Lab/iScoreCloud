@@ -180,7 +180,7 @@ export default function NewsGeneratorPage() {
   useEffect(() => {
     if (matchDetail) {
       setOpponentName(matchDetail.opponent || "");
-      setVenueName(matchDetail.surfaceDetails || matchDetail.venueName || "");
+      setVenueName(matchDetail.venueShortName || matchDetail.venueName || matchDetail.surfaceDetails || "");
       
       if (matchDetail.matchType === "official") {
         setMatchName(matchDetail.tournamentName || "公式戦");
@@ -460,10 +460,10 @@ export default function NewsGeneratorPage() {
                                     <span>{m.matchType === "official" ? "公式戦" : "練習試合"}</span>
                                   </>
                                 )}
-                                {m.venueName && (
+                                {(m.venueShortName || m.venueName) && (
                                   <>
                                     <span>•</span>
-                                    <span className="truncate">{m.venueName}</span>
+                                    <span className="truncate">{m.venueShortName || m.venueName}</span>
                                   </>
                                 )}
                               </div>

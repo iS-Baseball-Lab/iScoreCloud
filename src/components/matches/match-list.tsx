@@ -307,7 +307,7 @@ export function MatchList({ matches, isLoading, onDelete }: MatchListProps) {
                       <span>{formatSafeDate(match.date, "MM/dd HH:mm")}</span>
                       <span className="text-border">|</span>
                       <MapPin className="h-3.5 w-3.5 shrink-0" />
-                      <span className="truncate">{match.surfaceDetails || "球場未設定"}</span>
+                      <span className="truncate">{match.venueShortName || match.venueName || match.surfaceDetails || "球場未設定"}</span>
                     </p>
                   </div>
 

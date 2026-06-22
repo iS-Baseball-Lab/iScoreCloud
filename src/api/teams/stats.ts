@@ -103,7 +103,7 @@ app.get('/:id/calendar-matches', async (c) => {
     const { results: matchesList } = await c.env.DB.prepare(`
       SELECT m.id, m.date, m.opponent, m.my_score as myScore, m.opponent_score as opponentScore, 
              m.match_type as matchType, m.status, m.batting_order as battingOrder,
-             v.name as venueName
+             v.name as venueName, v.short_name as venueShortName
       FROM matches m
       LEFT JOIN venues v ON m.venue_id = v.id
       WHERE m.team_id = ?
@@ -131,6 +131,7 @@ app.get('/:id/calendar-matches', async (c) => {
       status: m.status,
       battingOrder: m.battingOrder,
       venueName: m.venueName,
+      venueShortName: m.venueShortName,
     }));
 
     // 4. イベントデータを共通形式に整形

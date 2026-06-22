@@ -17,6 +17,7 @@ export interface CalendarMatch {
   status?: string; // 'scheduled' | 'live' | 'finished'
   battingOrder?: string;
   venueName?: string | null;
+  venueShortName?: string | null;
   description?: string | null;
   location?: string | null;
   dutyGroup?: string | null;
@@ -331,7 +332,7 @@ export const TeamCalendar: React.FC<TeamCalendarProps> = ({ matches, canManage, 
                       <div className="flex items-center gap-3 text-[10px] font-bold text-muted-foreground">
                         {item.venueName && (
                           <span className="flex items-center gap-1">
-                            <MapPin className="h-3 w-3 text-primary/60" /> {item.venueName}
+                            <MapPin className="h-3 w-3 text-primary/60" /> {item.venueShortName || item.venueName}
                           </span>
                         )}
                         {item.battingOrder && (
@@ -425,7 +426,7 @@ export const TeamCalendar: React.FC<TeamCalendarProps> = ({ matches, canManage, 
                       <div className="flex items-center gap-3 text-[10px] font-bold text-muted-foreground flex-wrap">
                         {item.venueName && (
                           <span className="flex items-center gap-1" title={item.venueName}>
-                            <MapPin className="h-3 w-3 text-primary/60" /> {item.venueName}
+                            <MapPin className="h-3 w-3 text-primary/60" /> {item.venueShortName || item.venueName}
                           </span>
                         )}
                         {item.pmLocation && (
