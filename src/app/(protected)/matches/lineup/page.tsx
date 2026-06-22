@@ -104,10 +104,12 @@ function LineupPageContent() {
           return;
         }
 
-        const [playersRes, lineupsRes, templatesRes] = await Promise.all([
+        const [playersRes, lineupsRes, templatesRes, matchDetailRes, attendanceRes] = await Promise.all([
           fetch(`/api/teams/${targetTeamId}/players`, { cache: "no-store" }),
           matchId ? fetch(`/api/matches/${matchId}/lineups`, { cache: "no-store" }) : Promise.resolve(null),
-          fetch(`/api/teams/${targetTeamId}/lineup-templates`, { cache: "no-store" })
+          fetch(`/api/teams/${targetTeamId}/lineup-templates`, { cache: "no-store" }),
+          matchId ? fetch(`/api/matches/${matchId}`, { cache: "no-store" }) : Promise.resolve(null),
+          fetch(`/api/attendance?teamId=${targetTeamId}`, { cache: "no-store" })
         ]);
 
         if (!playersRes.ok) throw new Error("選手データの取得に失敗しました");
@@ -118,7 +120,49 @@ function LineupPageContent() {
         playersData.forEach(p => { 
           initialAttendance[p.id] = "bench"; 
         });
-        setAttendance(initialAttendance);
+
+        // 試合と同日の出欠管理イベントを特定し、欠席者を自動的にマッピングする
+        let matchDate: string | null = null;
+        if (matchDetailRes && matchDetailRes.ok) {
+          const matchDetailJson = (await matchDetailRes.json()) as any;
+          if (matchDetailJson.success && matchDetailJson.match) {
+            matchDate = matchDetailJson.match.date;
+          }
+        }
+
+        if (matchDate && attendanceRes && attendanceRes.ok) {
+          const attendanceJson = (await attendanceRes.json()) as any;
+          if (attendanceJson.success && attendanceJson.data) {
+            const { events: eventsList, attendances: attendancesList } = attendanceJson.data;
+            
+            const isSameDay = (dateStr1: string, dateVal2: any) => {
+              try {
+                const d1 = new Date(dateStr1);
+                let d2: Date;
+                if (typeof dateVal2 === 'number') {
+                  d2 = dateVal2 < 10000000000 ? new Date(dateVal2 * 1000) : new Date(dateVal2);
+                } else {
+                  d2 = new Date(dateVal2);
+                }
+                return d1.getFullYear() === d2.getFullYear() &&
+                       d1.getMonth() === d2.getMonth() &&
+                       d1.getDate() === d2.getDate();
+              } catch (e) {
+                return false;
+              }
+            };
+
+            const matchedEvent = (eventsList || []).find((e: any) => isSameDay(matchDate!, e.startAt));
+            if (matchedEvent) {
+              const eventAttendances = (attendancesList || []).filter((a: any) => a.eventId === matchedEvent.id);
+              eventAttendances.forEach((att: any) => {
+                if (att.playerId && att.status === 'absent') {
+                  initialAttendance[att.playerId] = 'absent';
+                }
+              });
+            }
+          }
+        }
 
         if (lineupsRes && lineupsRes.ok) {
           const lineupsData = await lineupsRes.json() as any;
@@ -129,11 +173,16 @@ function LineupPageContent() {
             if (lineupsData.lineups.opponentLineup?.length > 0) {
               setOpponentLineup(lineupsData.lineups.opponentLineup);
             }
-            if (Object.keys(lineupsData.lineups.myAttendance || {}).length > 0) {
-              setAttendance(lineupsData.lineups.myAttendance);
-            }
+            const savedAttendance = lineupsData.lineups.myAttendance || {};
+            Object.keys(savedAttendance).forEach(pid => {
+              if (savedAttendance[pid] === 'absent') {
+                initialAttendance[pid] = 'absent';
+              }
+            });
           }
         }
+
+        setAttendance(initialAttendance);
 
         if (templatesRes && templatesRes.ok) {
           const templatesData = await templatesRes.json() as any[];
