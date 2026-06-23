@@ -80,7 +80,7 @@ app.post('/:teamId/groups', async (c) => {
   if (!session) return c.json({ error: 'Unauthorized' }, 401)
 
   const teamId = c.req.param('teamId')
-  const { name, parentId } = await c.req.json<{ name: string; parentId?: string | null }>()
+  const { name, parentId, isAttendanceLinked } = await c.req.json<{ name: string; parentId?: string | null; isAttendanceLinked?: boolean }>()
   const db = drizzle(c.env.DB)
 
   try {
@@ -100,7 +100,8 @@ app.post('/:teamId/groups', async (c) => {
       id: newGroupId,
       teamId,
       name: name.trim(),
-      parentId: parentId || null
+      parentId: parentId || null,
+      isAttendanceLinked: !!isAttendanceLinked
     })
 
     return c.json({ success: true, groupId: newGroupId })
@@ -117,7 +118,7 @@ app.patch('/:teamId/groups/:groupId', async (c) => {
 
   const teamId = c.req.param('teamId')
   const groupId = c.req.param('groupId')
-  const { name, parentId } = await c.req.json<{ name?: string; parentId?: string | null }>()
+  const { name, parentId, isAttendanceLinked } = await c.req.json<{ name?: string; parentId?: string | null; isAttendanceLinked?: boolean }>()
   const db = drizzle(c.env.DB)
 
   try {
@@ -136,7 +137,8 @@ app.patch('/:teamId/groups/:groupId', async (c) => {
     await db.update(teamGroups)
       .set({
         name: name !== undefined ? name.trim() : undefined,
-        parentId: parentId !== undefined ? parentId : undefined
+        parentId: parentId !== undefined ? parentId : undefined,
+        isAttendanceLinked: isAttendanceLinked !== undefined ? isAttendanceLinked : undefined
       })
       .where(and(eq(teamGroups.id, groupId), eq(teamGroups.teamId, teamId)))
 

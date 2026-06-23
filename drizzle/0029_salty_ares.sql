@@ -1,0 +1,1 @@
+ALTER TABLE `team_groups` ADD `is_attendance_linked` integer DEFAULT false NOT NULL;

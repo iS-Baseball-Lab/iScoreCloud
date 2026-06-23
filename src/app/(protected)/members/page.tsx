@@ -50,6 +50,7 @@ interface Group {
   teamId: string;
   name: string;
   parentId: string | null;
+  isAttendanceLinked: boolean;
   createdAt: number;
 }
 
@@ -137,6 +138,7 @@ export default function UnifiedMembersPage() {
   // Group フォーム用状態
   const [groupFormName, setGroupFormName] = useState("");
   const [groupFormParentId, setGroupFormParentId] = useState<string | null>(null);
+  const [groupFormIsAttendanceLinked, setGroupFormIsAttendanceLinked] = useState(false);
 
   // ━━ データ取得処理 ━━
   const fetchPlayers = useCallback(async (tid: string) => {
@@ -571,6 +573,7 @@ export default function UnifiedMembersPage() {
   const openAddGroup = (pId: string | null = null) => {
     setGroupFormName("");
     setParentGroupId(pId);
+    setGroupFormIsAttendanceLinked(false);
     setIsAddGroupOpen(true);
   };
 
@@ -584,7 +587,8 @@ export default function UnifiedMembersPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: groupFormName.trim(),
-          parentId: parentGroupId
+          parentId: parentGroupId,
+          isAttendanceLinked: groupFormIsAttendanceLinked
         })
       });
       if (!res.ok) throw new Error();
@@ -608,7 +612,8 @@ export default function UnifiedMembersPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: groupFormName.trim(),
-          parentId: groupFormParentId || null
+          parentId: groupFormParentId || null,
+          isAttendanceLinked: groupFormIsAttendanceLinked
         })
       });
       if (!res.ok) throw new Error();
@@ -778,25 +783,38 @@ export default function UnifiedMembersPage() {
       <div className="flex flex-col gap-1.5 w-full">
         {childGroups.map(g => {
           const isSelected = selectedGroupId === g.id;
+          const memberCount = groupMembers.filter(m => m.groupId === g.id).length;
+
           return (
             <div key={g.id} className="w-full flex flex-col">
               <div 
-                style={{ paddingLeft: `${depth * 16 + 12}px` }}
                 className={cn(
-                  "flex items-center justify-between py-2.5 pr-3 rounded-[var(--radius-lg)] border transition-all cursor-pointer group",
+                  "flex items-center justify-between py-2.5 pl-2 pr-3 rounded-[var(--radius-lg)] border transition-all cursor-pointer group",
                   isSelected
                     ? "bg-primary/5 border-primary/20 text-primary"
                     : "bg-card hover:bg-zinc-50 border-border dark:hover:bg-zinc-900"
                 )}
                 onClick={() => setSelectedGroupId(g.id)}
               >
-                <div className="flex items-center gap-2 min-w-0">
+                <div className="flex items-center gap-1.5 min-w-0 flex-1">
                   <ChevronRight className={cn("h-4 w-4 shrink-0 transition-transform text-muted-foreground", isSelected && "text-primary rotate-90")} />
                   <span className="text-xs font-black tracking-tight truncate">{g.name}</span>
+                  
+                  {/* 所属人数バッジ */}
+                  <span className="text-[9px] font-bold bg-zinc-100 dark:bg-zinc-900 text-zinc-500 px-1.5 py-0.5 rounded-full shrink-0">
+                    {memberCount}人
+                  </span>
+                  
+                  {/* 出欠連携バッジ */}
+                  {g.isAttendanceLinked && (
+                    <span className="text-[8px] font-black bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-1 py-0.5 rounded-xs shrink-0 border border-emerald-500/20" title="出欠の絞り込みに連携中">
+                      出欠連携
+                    </span>
+                  )}
                 </div>
                 
                 {/* グループホバー時の管理アクション */}
-                <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity ml-2 shrink-0">
                   <button 
                     onClick={(e) => { e.stopPropagation(); openAddGroup(g.id); }}
                     className="p-1 rounded hover:bg-zinc-150 dark:hover:bg-zinc-800 text-muted-foreground hover:text-foreground transition-colors"
@@ -805,7 +823,13 @@ export default function UnifiedMembersPage() {
                     <FolderPlus className="h-3.5 w-3.5" />
                   </button>
                   <button 
-                    onClick={(e) => { e.stopPropagation(); setGroupFormName(g.name); setGroupFormParentId(g.parentId); setEditGroupTarget(g); }}
+                    onClick={(e) => { 
+                      e.stopPropagation(); 
+                      setGroupFormName(g.name); 
+                      setGroupFormParentId(g.parentId); 
+                      setGroupFormIsAttendanceLinked(g.isAttendanceLinked || false);
+                      setEditGroupTarget(g); 
+                    }}
                     className="p-1 rounded hover:bg-zinc-150 dark:hover:bg-zinc-800 text-muted-foreground hover:text-foreground transition-colors"
                   >
                     <Edit2 className="h-3.5 w-3.5" />
@@ -819,8 +843,8 @@ export default function UnifiedMembersPage() {
                 </div>
               </div>
               
-              {/* 子階層のレンダリング */}
-              <div className="w-full">
+              {/* 子階層のレンダリング (ガイドライン付き縦線描画) */}
+              <div className="w-full pl-3.5 border-l border-zinc-200/85 dark:border-zinc-800 ml-4.5 mt-1 mb-1">
                 {renderGroupTree(g.id, depth + 1)}
               </div>
             </div>
@@ -1324,7 +1348,12 @@ export default function UnifiedMembersPage() {
                       <div className="flex items-center gap-2 mt-0.5">
                         <h4 className="font-black text-base text-foreground">{selectedGroup.name}</h4>
                         <button 
-                          onClick={() => { setGroupFormName(selectedGroup.name); setGroupFormParentId(selectedGroup.parentId); setEditGroupTarget(selectedGroup); }}
+                          onClick={() => { 
+                            setGroupFormName(selectedGroup.name); 
+                            setGroupFormParentId(selectedGroup.parentId); 
+                            setGroupFormIsAttendanceLinked(selectedGroup.isAttendanceLinked || false);
+                            setEditGroupTarget(selectedGroup); 
+                          }}
                           className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
                           title="グループ情報を編集"
                         >
@@ -1828,6 +1857,19 @@ export default function UnifiedMembersPage() {
               <Input value={groupFormName} onChange={e => setGroupFormName(e.target.value)} placeholder="例: 保護者会、配車係" required className="h-11 rounded-xl" />
             </div>
 
+            <div className="flex items-center gap-2 py-1 px-1">
+              <input
+                type="checkbox"
+                id="addGroupIsAttendanceLinked"
+                checked={groupFormIsAttendanceLinked}
+                onChange={(e) => setGroupFormIsAttendanceLinked(e.target.checked)}
+                className="h-4 w-4 rounded border-border text-primary focus:ring-primary accent-primary cursor-pointer"
+              />
+              <label htmlFor="addGroupIsAttendanceLinked" className="text-xs font-bold text-foreground cursor-pointer select-none">
+                出欠管理の絞り込みに連携する
+              </label>
+            </div>
+
             <div className="flex gap-3 pt-3">
               <Button type="button" variant="outline" onClick={() => setIsAddGroupOpen(false)} className="flex-1 h-12 rounded-xl font-black">キャンセル</Button>
               <Button type="submit" disabled={isSubmitting} className="flex-1 h-12 rounded-xl font-black">
@@ -1866,6 +1908,19 @@ export default function UnifiedMembersPage() {
                   ))
                 }
               </Select>
+            </div>
+
+            <div className="flex items-center gap-2 py-1 px-1">
+              <input
+                type="checkbox"
+                id="editGroupIsAttendanceLinked"
+                checked={groupFormIsAttendanceLinked}
+                onChange={(e) => setGroupFormIsAttendanceLinked(e.target.checked)}
+                className="h-4 w-4 rounded border-border text-primary focus:ring-primary accent-primary cursor-pointer"
+              />
+              <label htmlFor="editGroupIsAttendanceLinked" className="text-xs font-bold text-foreground cursor-pointer select-none">
+                出欠管理の絞り込みに連携する
+              </label>
             </div>
 
             <div className="flex gap-3 pt-3">

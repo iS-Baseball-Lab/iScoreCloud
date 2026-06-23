@@ -80,6 +80,7 @@ interface Group {
   teamId: string;
   name: string;
   parentId: string | null;
+  isAttendanceLinked?: boolean;
 }
 
 interface GroupMemberRelation {
@@ -731,7 +732,7 @@ export default function AttendancePage() {
               <Filter className="h-4 w-4 text-muted-foreground shrink-0" />
               <Select value={selectedGroupId} onChange={(e: any) => setSelectedGroupId(e.target.value)}>
                 <option value="all">すべてのグループ</option>
-                {groups.map(g => (
+                {groups.filter(g => g.isAttendanceLinked).map(g => (
                   <option key={g.id} value={g.id}>{g.name}</option>
                 ))}
               </Select>

@@ -136,6 +136,7 @@ export const teamGroups = sqliteTable('team_groups', {
   teamId: text('team_id').notNull().references(() => teams.id, { onDelete: 'cascade' }),
   name: text('name').notNull(),                      // グループ名 (例: "保護者会")
   parentId: text('parent_id').references((): any => teamGroups.id, { onDelete: 'cascade' }), // 親グループID (階層構造用)
+  isAttendanceLinked: integer('is_attendance_linked', { mode: 'boolean' }).notNull().default(false),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(strftime('%s', 'now'))`),
 }, (table) => ({
   teamIdx: index("idx_team_groups_team_id").on(table.teamId),
