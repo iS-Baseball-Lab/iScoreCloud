@@ -112,8 +112,7 @@ export default function AttendancePage() {
 
 
   // フィルター用ステータス
-  const [activeTab, setActiveTab] = useState<"all" | "players" | "staff">("all");
-  const [selectedGroupId, setSelectedGroupId] = useState<string>("all");
+  const [selectedFilter, setSelectedFilter] = useState<string>("all");
 
   // 日程モーダル制御
   const [isEventModalOpen, setIsEventModalOpen] = useState<boolean>(false);
@@ -325,13 +324,13 @@ export default function AttendancePage() {
 
   // 2. 出欠表のグリッド向けデータ構成
   const filteredMemberIdsByGroup = useMemo(() => {
-    if (selectedGroupId === "all") return null;
-    const relations = groupRelations.filter(r => r.groupId === selectedGroupId);
+    if (selectedFilter === "all" || selectedFilter === "players" || selectedFilter === "staff") return null;
+    const relations = groupRelations.filter(r => r.groupId === selectedFilter);
     return {
       playerIds: new Set(relations.map(r => r.playerId).filter(Boolean)),
       memberIds: new Set(relations.map(r => r.teamMemberId).filter(Boolean))
     };
-  }, [selectedGroupId, groupRelations]);
+  }, [selectedFilter, groupRelations]);
 
   // 表示するメンバー一覧の作成（縦軸）
   const displayRows = useMemo(() => {
@@ -345,8 +344,10 @@ export default function AttendancePage() {
       canEdit: boolean;
     }[] = [];
 
-    // 選手（players）
-    if (activeTab === "all" || activeTab === "players") {
+    // 選手（players）を含めるか判定
+    const includePlayers = selectedFilter === "all" || selectedFilter === "players" || (selectedFilter !== "staff" && selectedFilter !== "all");
+
+    if (includePlayers) {
       playersData.forEach(p => {
         if (filteredMemberIdsByGroup && !filteredMemberIdsByGroup.playerIds.has(p.id)) return;
         const isMe = myUserId && p.userId === myUserId;
@@ -361,8 +362,10 @@ export default function AttendancePage() {
       });
     }
 
-    // スタッフ・指導者・保護者（teamMembers）
-    if (activeTab === "all" || activeTab === "staff") {
+    // スタッフ・指導者・保護者（teamMembers）を含めるか判定
+    const includeStaff = selectedFilter === "all" || selectedFilter === "staff" || (selectedFilter !== "players" && selectedFilter !== "all");
+
+    if (includeStaff) {
       membersData.forEach(m => {
         if (m.memberType === "player") return; // 🌟 選手は除外する
         if (filteredMemberIdsByGroup && !filteredMemberIdsByGroup.memberIds.has(m.id)) return;
@@ -379,7 +382,7 @@ export default function AttendancePage() {
     }
 
     return rows;
-  }, [activeTab, playersData, membersData, filteredMemberIdsByGroup, myUserId, canManage]);
+  }, [selectedFilter, playersData, membersData, filteredMemberIdsByGroup, myUserId, canManage]);
 
 
 
@@ -679,62 +682,25 @@ export default function AttendancePage() {
         <SectionHeader title="出欠・スケジュール管理" subtitle="ATTENDANCE BOARD" showPulse={true} />
 
         {/* コントロール・フィルターバー */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-card border border-border/40 p-4 rounded-3xl shadow-sm">
-          
-          {/* 左側：タブ切り替え */}
-          <div className="flex items-center gap-1.5 p-1 bg-muted/50 rounded-2xl shrink-0 self-start md:self-auto">
-            <button
-              onClick={() => setActiveTab("all")}
-              className={cn("px-4 py-2 rounded-xl text-xs font-black transition-all", activeTab === "all" ? "bg-background text-primary shadow-sm" : "text-muted-foreground hover:text-foreground")}
-            >
-              全員 ({playersData.length + membersData.length})
-            </button>
-            <button
-              onClick={() => setActiveTab("players")}
-              className={cn("px-4 py-2 rounded-xl text-xs font-black transition-all", activeTab === "players" ? "bg-background text-primary shadow-sm" : "text-muted-foreground hover:text-foreground")}
-            >
-              選手 ({playersData.length})
-            </button>
-            <button
-              onClick={() => setActiveTab("staff")}
-              className={cn("px-4 py-2 rounded-xl text-xs font-black transition-all", activeTab === "staff" ? "bg-background text-primary shadow-sm" : "text-muted-foreground hover:text-foreground")}
-            >
-              指導者・保護者 ({membersData.length})
-            </button>
-          </div>
+        <div className="flex items-center justify-between gap-4 bg-card border border-border/40 p-4 rounded-3xl shadow-sm">
+          {/* 左側：過去予定トグル */}
+          <label className="flex items-center gap-2 text-xs font-bold text-muted-foreground bg-muted/40 hover:bg-muted/70 px-3.5 py-2 rounded-2xl border border-border/40 cursor-pointer select-none transition-colors">
+            <input
+              type="checkbox"
+              checked={showPastEvents}
+              onChange={(e) => setShowPastEvents(e.target.checked)}
+              className="h-4 w-4 rounded border-border text-primary focus:ring-primary accent-primary cursor-pointer"
+            />
+            <span>過去の予定を表示</span>
+          </label>
 
-          {/* 右側：グループフィルター & 過去予定トグル & 日程追加ボタン */}
-          <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-            {/* 過去予定トグル */}
-            <label className="flex items-center gap-2 text-xs font-bold text-muted-foreground bg-muted/40 hover:bg-muted/70 px-3.5 py-2 rounded-2xl border border-border/40 cursor-pointer select-none transition-colors">
-              <input
-                type="checkbox"
-                checked={showPastEvents}
-                onChange={(e) => setShowPastEvents(e.target.checked)}
-                className="h-4 w-4 rounded border-border text-primary focus:ring-primary accent-primary cursor-pointer"
-              />
-              <span>過去の予定を表示</span>
-            </label>
-
-            {/* グループ選択 */}
-            <div className="flex items-center gap-2 flex-1 md:flex-initial">
-              <Filter className="h-4 w-4 text-muted-foreground shrink-0" />
-              <Select value={selectedGroupId} onChange={(e: any) => setSelectedGroupId(e.target.value)}>
-                <option value="all">すべてのグループ</option>
-                {groups.filter(g => !!(g.isAttendanceLinked ?? g.is_attendance_linked)).map(g => (
-                  <option key={g.id} value={g.id}>{g.name}</option>
-                ))}
-              </Select>
-            </div>
-
-            {/* 管理者用：日程追加ボタン */}
-            {canManage && (
-              <Button onClick={openCreateEventModal} className="h-10 px-4 rounded-xl font-black shrink-0">
-                <Plus className="h-4 w-4 mr-1.5" />
-                日程を追加
-              </Button>
-            )}
-          </div>
+          {/* 右側：管理者用：日程追加ボタン */}
+          {canManage && (
+            <Button onClick={openCreateEventModal} className="h-10 px-4 rounded-xl font-black shrink-0">
+              <Plus className="h-4 w-4 mr-1.5" />
+              日程を追加
+            </Button>
+          )}
         </div>
 
         {/* 伝助風一括マトリックスボード */}
@@ -760,8 +726,47 @@ export default function AttendancePage() {
                 {/* ━ ヘッダー ━ */}
                 <thead className="relative z-20">
                   <tr className="border-b border-border/50 bg-muted/20">
-                    <th className="py-2.5 px-1.5 sm:py-4 sm:px-2.5 font-black text-[10px] sm:text-xs uppercase tracking-wider text-muted-foreground bg-card sticky left-0 top-0 z-35 shadow-[4px_0_8px_-3px_rgba(0,0,0,0.15)] dark:shadow-[4px_0_8px_-3px_rgba(0,0,0,0.5)] after:content-[''] after:absolute after:right-0 after:top-0 after:bottom-0 after:w-[1px] after:bg-border/80">
-                      メンバー
+                    <th className="py-2 px-1.5 sm:py-3 sm:px-2 bg-card sticky left-0 top-0 z-35 shadow-[4px_0_8px_-3px_rgba(0,0,0,0.15)] dark:shadow-[4px_0_8px_-3px_rgba(0,0,0,0.5)] after:content-[''] after:absolute after:right-0 after:top-0 after:bottom-0 after:w-[1px] after:bg-border/80">
+                      <div className="relative flex items-center justify-between w-full h-full min-h-[28px] px-1 bg-muted/40 hover:bg-muted/70 rounded-md transition-colors border border-border/20 cursor-pointer">
+                        {/* 表示用テキストとアイコン */}
+                        <div className="flex items-center justify-between w-full min-w-0 pr-3.5">
+                          <span className="font-black text-[10px] sm:text-xs text-foreground uppercase tracking-wider truncate">
+                            {selectedFilter === "all" ? "全員" :
+                             selectedFilter === "players" ? "選手" :
+                             selectedFilter === "staff" ? "スタッフ" :
+                             (groups.find(g => g.id === selectedFilter)?.name || "メンバー")}
+                          </span>
+                          <span className="text-[9px] font-bold text-muted-foreground ml-1 shrink-0 bg-background dark:bg-zinc-900 px-1 py-0.5 rounded-sm">
+                            {displayRows.length}人
+                          </span>
+                        </div>
+                        {/* 下向き矢印アイコン */}
+                        <div className="absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground">
+                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="3" stroke="currentColor" className="w-2.5 h-2.5">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                          </svg>
+                        </div>
+                        
+                        {/* 実際のセレクトボックス (透明化して上に重ねる) */}
+                        <select
+                          value={selectedFilter}
+                          onChange={(e) => setSelectedFilter(e.target.value)}
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                        >
+                          <option value="all" className="bg-card text-foreground font-bold">全員 ({playersData.length + membersData.length}人)</option>
+                          <option value="players" className="bg-card text-foreground font-bold">選手のみ ({playersData.length}人)</option>
+                          <option value="staff" className="bg-card text-foreground font-bold">指導者・保護者 ({membersData.length}人)</option>
+                          
+                          {groups.filter(g => !!(g.isAttendanceLinked ?? g.is_attendance_linked)).length > 0 && (
+                            <>
+                              <option disabled className="bg-card text-muted-foreground/50">───────────────</option>
+                              {groups.filter(g => !!(g.isAttendanceLinked ?? g.is_attendance_linked)).map(g => (
+                                <option key={g.id} value={g.id} className="bg-card text-foreground font-bold">{g.name}</option>
+                              ))}
+                            </>
+                          )}
+                        </select>
+                      </div>
                     </th>
                     
                     {/* 右側：イベント日程列 */}
