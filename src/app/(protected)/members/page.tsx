@@ -827,7 +827,7 @@ export default function UnifiedMembersPage() {
                       e.stopPropagation(); 
                       setGroupFormName(g.name); 
                       setGroupFormParentId(g.parentId); 
-                      setGroupFormIsAttendanceLinked(g.isAttendanceLinked || false);
+                      setGroupFormIsAttendanceLinked(!!g.isAttendanceLinked);
                       setEditGroupTarget(g); 
                     }}
                     className="p-1 rounded hover:bg-zinc-150 dark:hover:bg-zinc-800 text-muted-foreground hover:text-foreground transition-colors"
@@ -1351,7 +1351,7 @@ export default function UnifiedMembersPage() {
                           onClick={() => { 
                             setGroupFormName(selectedGroup.name); 
                             setGroupFormParentId(selectedGroup.parentId); 
-                            setGroupFormIsAttendanceLinked(selectedGroup.isAttendanceLinked || false);
+                            setGroupFormIsAttendanceLinked(!!selectedGroup.isAttendanceLinked);
                             setEditGroupTarget(selectedGroup); 
                           }}
                           className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"

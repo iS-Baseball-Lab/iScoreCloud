@@ -64,7 +64,7 @@
     "lint": "node node_modules/.bin/next lint",
     "check": "npm run build && node node_modules/.bin/tsc",
     "cf-typegen": "wrangler types --env-interface CloudflareEnv env.d.ts",
-    "deploy": "npm run build && npx wrangler deploy",
+    "deploy": "npm run build && npm run db:mig:remote && npx wrangler deploy",
     "preview": "npm run build && npx wrangler dev",
     "db:exec": "wrangler d1 execute i-score-db",
     "db:mig:remote": "wrangler d1 migrations apply i-score-db --remote",
