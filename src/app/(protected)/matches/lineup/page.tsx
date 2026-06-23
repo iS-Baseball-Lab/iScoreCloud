@@ -53,6 +53,9 @@ function LineupPageContent() {
   const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
   const [templateName, setTemplateName] = useState("");
 
+  const [activeSelectionIndex, setActiveSelectionIndex] = useState<number | null>(null);
+  const [playerSearchQuery, setPlayerSearchQuery] = useState("");
+
   const [myLineup, setMyLineup] = useState(
     Array.from({ length: 9 }, (_, i) => ({ order: i + 1, position: "", playerId: "", name: "", uniformNumber: "" }))
   );
@@ -203,6 +206,17 @@ function LineupPageContent() {
 
     fetchData();
   }, [urlTeamId, matchId]);
+
+  // ESCキーで選手選択モーダルを閉じる
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setActiveSelectionIndex(null);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   const getDisabledPositions = (lineup: any[], currentIndex: number) =>
     lineup
@@ -508,46 +522,24 @@ function LineupPageContent() {
                   </select>
 
                   {activeTab === "myTeam" ? (
-                    <select 
-                      value={(player as typeof myLineup[0]).playerId || ""}
-                      onChange={(e) => {
-                        const list = [...myLineup];
-                        const selectedId = e.target.value;
-                        const selectedPlayer = teamPlayers.find(p => p.id === selectedId);
-                        list[index].playerId = selectedId;
-                        list[index].name = selectedPlayer ? selectedPlayer.name : "";
-                        list[index].uniformNumber = selectedPlayer ? (selectedPlayer.uniformNumber || "") : "";
-                        setMyLineup(list);
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveSelectionIndex(index);
+                        setPlayerSearchQuery("");
                       }}
                       className={cn(
-                        "flex-1 h-11 bg-transparent border-none font-bold text-sm focus:outline-none cursor-pointer transition-colors",
-                        isCompleted ? "text-foreground" : "text-muted-foreground"
+                        "flex-1 h-11 px-3 text-left border-none font-bold text-sm rounded-xl focus:outline-none hover:bg-muted/40 transition-colors flex items-center justify-between",
+                        isCompleted ? "text-foreground bg-primary/5 border border-primary/20" : "text-muted-foreground/60"
                       )}
                     >
-                      <option value="">選手を選択...</option>
-                      {teamPlayers.map(p => {
-                        const isAlreadySelected = disabledPlayers.includes(p.id);
-                        // 🌟 欠席判定を追加
-                        const isAbsent = attendance[p.id] === "absent";
-                        
-                        // 既に選択済みか、欠席の場合は選択不可（disabled）にする
-                        const isDisabled = isAlreadySelected || isAbsent;
-
-                        // 表示するラベルを状態に応じて変更
-                        let label = `${p.uniformNumber ? p.uniformNumber + '.' : ''} ${p.name}`;
-                        if (isAlreadySelected) {
-                          label = `[選択済] ${p.name}`;
-                        } else if (isAbsent) {
-                          label = `[欠席] ${p.name}`; // 🌟 欠席者には [欠席] と表示
-                        }
-
-                        return (
-                          <option key={p.id} value={p.id} disabled={isDisabled}>
-                            {label}
-                          </option>
-                        );
-                      })}
-                    </select>
+                      <span className="truncate">
+                        {myLineup[index].playerId
+                          ? `${myLineup[index].uniformNumber ? myLineup[index].uniformNumber + '.' : ''} ${myLineup[index].name}`
+                          : "選手を選択..."}
+                      </span>
+                      <ChevronDown className="w-4 h-4 text-muted-foreground/60 shrink-0 ml-2" />
+                    </button>
                   ) : (
                     <Input
                       placeholder="相手選手名"
@@ -713,6 +705,166 @@ function LineupPageContent() {
               <Button onClick={saveTemplate} className="flex-1 h-14 rounded-2xl font-black shadow-lg shadow-primary/20">
                 保存する
               </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 選手選択モーダル */}
+      {activeSelectionIndex !== null && myLineup[activeSelectionIndex] && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={() => setActiveSelectionIndex(null)}
+        >
+          <div 
+            className="bg-card w-full max-w-md rounded-[32px] border-2 border-border/40 p-6 shadow-2xl flex flex-col max-h-[85vh] animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-4 border-b border-border/40">
+              <div>
+                <h3 className="text-base font-black text-foreground">選手を選択</h3>
+                <p className="text-[10px] text-muted-foreground font-bold">
+                  {activeSelectionIndex + 1}番打者 の守備位置: {
+                    POSITIONS.find(p => p.id === myLineup[activeSelectionIndex!].position)?.label || "未設定"
+                  }
+                </p>
+              </div>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={() => setActiveSelectionIndex(null)}
+                className="h-8 w-8 p-0 rounded-full font-black text-xs"
+              >
+                ✕
+              </Button>
+            </div>
+
+            {/* 検索バー */}
+            <div className="my-4 relative">
+              <Input
+                placeholder="選手名または背番号で検索..."
+                value={playerSearchQuery}
+                onChange={(e) => setPlayerSearchQuery(e.target.value)}
+                className="h-11 rounded-xl bg-muted/40 border-none font-bold pl-4 pr-10 text-sm"
+                autoFocus
+              />
+              {playerSearchQuery && (
+                <button
+                  onClick={() => setPlayerSearchQuery("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-muted-foreground hover:text-foreground"
+                >
+                  クリア
+                </button>
+              )}
+            </div>
+
+            {/* 選手リスト */}
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1 min-h-[300px]">
+              {/* 選択解除（クリア）ボタン */}
+              <button
+                type="button"
+                onClick={() => {
+                  const list = [...myLineup];
+                  list[activeSelectionIndex!] = {
+                    ...list[activeSelectionIndex!],
+                    playerId: "",
+                    name: "",
+                    uniformNumber: ""
+                  };
+                  setMyLineup(list);
+                  setActiveSelectionIndex(null);
+                  toast.success(`${activeSelectionIndex! + 1}番の選択を解除しました`);
+                }}
+                className="w-full flex items-center justify-center gap-2 p-3 rounded-xl border border-dashed border-muted-foreground/30 text-xs font-black text-muted-foreground hover:bg-muted/40 hover:text-foreground transition-all"
+              >
+                選択をクリアする（空欄にする）
+              </button>
+
+              {/* 選手一覧 */}
+              {(() => {
+                // 検索絞り込み
+                const query = playerSearchQuery.trim().toLowerCase();
+                const filtered = teamPlayers.filter(p => {
+                  const nameMatch = p.name.toLowerCase().includes(query);
+                  const numMatch = p.uniformNumber ? p.uniformNumber.includes(query) : false;
+                  return nameMatch || numMatch;
+                });
+
+                if (filtered.length === 0) {
+                  return (
+                    <div className="text-center py-12">
+                      <p className="text-xs font-bold text-muted-foreground">選手が見つかりません</p>
+                    </div>
+                  );
+                }
+
+                // すでに選択されている他打順の選手一覧
+                const disabledPlayers = getDisabledPlayers(myLineup, activeSelectionIndex!);
+
+                return filtered.map(p => {
+                  const isAlreadySelected = disabledPlayers.includes(p.id);
+                  const isAbsent = attendance[p.id] === "absent";
+                  const isDisabled = isAlreadySelected || isAbsent;
+
+                  // どの打順で選択されているか特定
+                  const assignedOrder = myLineup.find((item, idx) => idx !== activeSelectionIndex && item.playerId === p.id)?.order;
+
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      disabled={isDisabled}
+                      onClick={() => {
+                        const list = [...myLineup];
+                        list[activeSelectionIndex!] = {
+                          ...list[activeSelectionIndex!],
+                          playerId: p.id,
+                          name: p.name,
+                          uniformNumber: p.uniformNumber || ""
+                        };
+                        setMyLineup(list);
+                        setActiveSelectionIndex(null);
+                        toast.success(`${activeSelectionIndex! + 1}番に ${p.name} を設定しました`);
+                      }}
+                      className={cn(
+                        "w-full flex items-center justify-between p-3 rounded-xl border-2 transition-all text-left",
+                        myLineup[activeSelectionIndex!].playerId === p.id
+                          ? "bg-primary/10 border-primary text-primary"
+                          : "bg-card hover:bg-muted/30 border-border/40",
+                        isDisabled && "opacity-45 cursor-not-allowed bg-muted/20 hover:bg-muted/20"
+                      )}
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs font-black min-w-[20px] text-muted-foreground">
+                          {p.uniformNumber ? `${p.uniformNumber}.` : "-"}
+                        </span>
+                        <span className="text-sm font-bold text-foreground">
+                          {p.name}
+                        </span>
+                      </div>
+
+                      {/* ステータスバッジ */}
+                      <div className="flex gap-1.5 items-center">
+                        {isAlreadySelected && (
+                          <span className="text-[10px] font-black bg-zinc-500/10 text-zinc-600 dark:text-zinc-400 px-2 py-0.5 rounded-md">
+                            選択中 ({assignedOrder}番)
+                          </span>
+                        )}
+                        {isAbsent && (
+                          <span className="text-[10px] font-black bg-rose-500/10 text-rose-600 dark:text-rose-400 px-2 py-0.5 rounded-md">
+                            欠席
+                          </span>
+                        )}
+                        {!isAlreadySelected && !isAbsent && (
+                          <span className="text-[10px] font-black bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-2 py-0.5 rounded-md">
+                            起用可能
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                });
+              })()}
             </div>
           </div>
         </div>
