@@ -81,6 +81,7 @@ interface Group {
   name: string;
   parentId: string | null;
   isAttendanceLinked?: boolean;
+  is_attendance_linked?: boolean | number;
 }
 
 interface GroupMemberRelation {
@@ -296,27 +297,15 @@ export default function AttendancePage() {
         }
       }
 
-      // グループ情報のフェッチ
+      // グループ情報および所属メンバー関係のフェッチ
       const groupRes = await fetch(`/api/teams/${tid}/groups`);
       if (groupRes.ok) {
         const groupJson = await groupRes.json() as any;
         if (groupJson.success) {
-          setGroups(groupJson.data || []);
+          setGroups(groupJson.groups || []);
+          setGroupRelations(groupJson.members || []);
         }
       }
-
-      // グループ所属メンバー関係のフェッチ
-      const groupList = await fetch(`/api/teams/${tid}/groups`).then(r => r.json()).then(j => (j as any).data || []) as Group[];
-      const relationsPromises = groupList.map(g => 
-        fetch(`/api/teams/${tid}/groups/${g.id}/members`)
-          .then(r => r.json())
-          .then(j => {
-            const res = j as any;
-            return res.success && res.data ? res.data.map((m: any) => ({ ...m, groupId: g.id })) : [];
-          })
-      );
-      const allRelations = await Promise.all(relationsPromises);
-      setGroupRelations(allRelations.flat());
 
     } catch (e) {
       console.error(e);
@@ -732,7 +721,7 @@ export default function AttendancePage() {
               <Filter className="h-4 w-4 text-muted-foreground shrink-0" />
               <Select value={selectedGroupId} onChange={(e: any) => setSelectedGroupId(e.target.value)}>
                 <option value="all">すべてのグループ</option>
-                {groups.filter(g => g.isAttendanceLinked).map(g => (
+                {groups.filter(g => !!(g.isAttendanceLinked ?? g.is_attendance_linked)).map(g => (
                   <option key={g.id} value={g.id}>{g.name}</option>
                 ))}
               </Select>

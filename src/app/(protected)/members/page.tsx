@@ -51,6 +51,7 @@ interface Group {
   name: string;
   parentId: string | null;
   isAttendanceLinked: boolean;
+  is_attendance_linked?: boolean | number;
   createdAt: number;
 }
 
@@ -806,7 +807,7 @@ export default function UnifiedMembersPage() {
                   </span>
                   
                   {/* 出欠連携バッジ */}
-                  {g.isAttendanceLinked && (
+                  {(g.isAttendanceLinked || g.is_attendance_linked) && (
                     <span className="text-[8px] font-black bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-1 py-0.5 rounded-xs shrink-0 border border-emerald-500/20" title="出欠の絞り込みに連携中">
                       出欠連携
                     </span>
@@ -827,7 +828,7 @@ export default function UnifiedMembersPage() {
                       e.stopPropagation(); 
                       setGroupFormName(g.name); 
                       setGroupFormParentId(g.parentId); 
-                      setGroupFormIsAttendanceLinked(!!g.isAttendanceLinked);
+                      setGroupFormIsAttendanceLinked(!!(g.isAttendanceLinked ?? g.is_attendance_linked));
                       setEditGroupTarget(g); 
                     }}
                     className="p-1 rounded hover:bg-zinc-150 dark:hover:bg-zinc-800 text-muted-foreground hover:text-foreground transition-colors"
@@ -1351,7 +1352,7 @@ export default function UnifiedMembersPage() {
                           onClick={() => { 
                             setGroupFormName(selectedGroup.name); 
                             setGroupFormParentId(selectedGroup.parentId); 
-                            setGroupFormIsAttendanceLinked(!!selectedGroup.isAttendanceLinked);
+                            setGroupFormIsAttendanceLinked(!!(selectedGroup.isAttendanceLinked ?? selectedGroup.is_attendance_linked));
                             setEditGroupTarget(selectedGroup); 
                           }}
                           className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
