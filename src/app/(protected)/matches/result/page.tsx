@@ -10,7 +10,7 @@ import {
   Loader2, Trophy, Download, ChevronLeft,
   Share2, Calendar, Activity, Target, Zap, Sparkles, TrendingUp,
   Video, Edit3, X, Play, Plus, BookOpen, AlertCircle, Award, Flame,
-  MapPin
+  MapPin, Users
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import * as htmlToImage from 'html-to-image';
@@ -116,6 +116,35 @@ function getYoutubeVideoId(url: string | null | undefined): string | null {
   const match = url.match(regExp);
   return (match && match[2].length === 11) ? match[2] : null;
 }
+
+// 守備位置の表示ラベルマッピング
+const getPositionLabel = (pos: string) => {
+  const mapping: Record<string, string> = {
+    "1": "投", "2": "捕", "3": "一", "4": "二", "5": "三",
+    "6": "遊", "7": "左", "8": "中", "9": "右", "DH": "指",
+    "P": "打", "R": "走"
+  };
+  return mapping[pos] || pos || "-";
+};
+
+// 守備位置のバッジカラーマッピング
+const getPositionColor = (pos: string) => {
+  const mapping: Record<string, string> = {
+    "1": "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20",
+    "2": "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20",
+    "3": "bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/20",
+    "4": "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
+    "5": "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
+    "6": "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20",
+    "7": "bg-lime-500/10 text-lime-600 dark:text-lime-400 border-lime-500/20",
+    "8": "bg-teal-500/10 text-teal-600 dark:text-teal-400 border-teal-500/20",
+    "9": "bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/20",
+    "DH": "bg-zinc-550/10 text-zinc-600 dark:text-zinc-400 border-zinc-500/20",
+    "P": "bg-pink-500/10 text-pink-600 dark:text-pink-400 border-pink-500/20",
+    "R": "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20"
+  };
+  return mapping[pos] || "bg-muted text-muted-foreground border-border";
+};
 
 // 注目スタッツ（本日のヒーロー）自動抽出ロジック
 function extractHighlightStats(stats: PlayerStats[], pitcherStats: PitcherStats[]): HighlightHero[] {
@@ -246,6 +275,11 @@ function MatchResultContent() {
   const [stats, setStats] = useState<PlayerStats[]>([]);
   const [pitcherStats, setPitcherStats] = useState<PitcherStats[]>([]);
   const [teamName, setTeamName] = useState<string>("自チーム");
+  
+  // スタメン・ラインナップのロード用
+  const [myLineup, setMyLineup] = useState<any[]>([]);
+  const [opponentLineup, setOpponentLineup] = useState<any[]>([]);
+
   const [isLoading, setIsLoading] = useState(true);
   const [isDownloading, setIsDownloading] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -280,6 +314,16 @@ function MatchResultContent() {
           if (statsData.success) {
             setStats(statsData.stats || []);
             setPitcherStats(statsData.pitcherStats || []);
+          }
+        }
+
+        // スタメンデータのロード
+        const lineupsRes = await fetch(`/api/matches/${matchId}/lineups`);
+        if (lineupsRes.ok) {
+          const lData = (await lineupsRes.json()) as any;
+          if (lData.success && lData.lineups) {
+            setMyLineup(lData.lineups.myLineup || []);
+            setOpponentLineup(lData.lineups.opponentLineup || []);
           }
         }
 
@@ -487,17 +531,26 @@ function MatchResultContent() {
           <ChevronLeft className="h-4 w-4" />
           戻る
         </Button>
-        <div className="flex gap-3">
+        <div className="flex gap-3 items-center">
+          <Button 
+            variant="outline" 
+            size="sm"
+            onClick={() => router.push(`/matches/scorebook?id=${matchId}`)}
+            className="h-10 px-4 rounded-[var(--radius-xl)] font-black gap-2 shadow-sm border-border bg-card text-foreground hover:bg-muted"
+          >
+            <BookOpen className="h-4 w-4 text-primary" />
+            スコアブック
+          </Button>
           <Button 
             variant="outline" 
             size="icon" 
             onClick={() => setIsYoutubeModalOpen(true)}
-            className="rounded-full border-border bg-card text-foreground hover:bg-muted shadow-sm"
+            className="h-10 w-10 rounded-full border-border bg-card text-foreground hover:bg-muted shadow-sm flex items-center justify-center"
             title="試合動画URLを編集"
           >
             <Video className="h-4 w-4" />
           </Button>
-          <Button onClick={handleDownloadImage} className="rounded-full font-black px-8 bg-primary hover:bg-primary/90 text-primary-foreground shadow-md active:scale-95 transition-all">
+          <Button onClick={handleDownloadImage} className="rounded-full font-black px-8 h-10 bg-primary hover:bg-primary/90 text-primary-foreground shadow-md active:scale-95 transition-all flex items-center justify-center">
             <Download className="mr-2 h-4 w-4" /> DOWNLOAD
           </Button>
         </div>
@@ -825,8 +878,14 @@ function MatchResultContent() {
           {/* 4. ボックススコア成績データタブ */}
           <section className="space-y-5">
             <SectionHeader title="個人成績・ボックススコア" subtitle="Player Stats & Box Score" />
-            <Tabs defaultValue="batting" className="w-full">
-              <TabsList className="grid w-full grid-cols-3 h-14 rounded-2xl bg-muted/50 p-1 border border-border">
+            <Tabs defaultValue="lineup" className="w-full">
+              <TabsList className="grid w-full grid-cols-4 h-14 rounded-2xl bg-muted/50 p-1 border border-border">
+                <TabsTrigger
+                  value="lineup"
+                  className="rounded-xl font-black text-xs tracking-widest data-[state=active]:bg-background data-[state=active]:text-primary text-muted-foreground"
+                >
+                  <Users className="h-4 w-4 mr-2" /> LINEUP
+                </TabsTrigger>
                 <TabsTrigger
                   value="batting"
                   className="rounded-xl font-black text-xs tracking-widest data-[state=active]:bg-background data-[state=active]:text-primary text-muted-foreground"
@@ -847,6 +906,113 @@ function MatchResultContent() {
                 </TabsTrigger>
               </TabsList>
               
+              {/* 👥 LINEUP タブコンテンツ */}
+              <TabsContent value="lineup" className="mt-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* 先攻チームスタメン */}
+                  <Card className="rounded-[28px] border-border bg-card overflow-hidden shadow-xs">
+                    <div className="bg-muted/50 p-4 border-b border-border">
+                      <h4 className="font-black text-sm text-foreground flex items-center justify-between">
+                        <span>{topTeamName}</span>
+                        <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-black">Starting XI / lineup</span>
+                      </h4>
+                    </div>
+                    <div className="p-2">
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="border-border/60 hover:bg-transparent">
+                            <TableHead className="font-black text-[10px] text-muted-foreground uppercase tracking-widest w-12 text-center">打順</TableHead>
+                            <TableHead className="font-black text-[10px] text-muted-foreground uppercase tracking-widest w-16 text-center">位置</TableHead>
+                            <TableHead className="font-black text-[10px] text-muted-foreground uppercase tracking-widest pl-4">選手名</TableHead>
+                            <TableHead className="font-black text-[10px] text-muted-foreground uppercase tracking-widest w-16 text-right pr-6">背番号</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {(isMyTeamTop ? myLineup : opponentLineup).length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={4} className="text-center py-10 text-muted-foreground font-bold">
+                                ラインナップ情報がありません
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            (isMyTeamTop ? myLineup : opponentLineup).map((slot: any, idx: number) => {
+                              const pos = slot.position || "";
+                              const num = slot.uniformNumber || "-";
+                              return (
+                                <TableRow key={idx} className="border-border/65 hover:bg-muted/30 transition-colors">
+                                  <td className="text-center py-3 text-xs italic font-black text-muted-foreground/80">{slot.order || (idx + 1)}</td>
+                                  <td className="text-center py-2">
+                                    <span className={cn(
+                                      "inline-block text-[11px] font-black px-2 py-0.5 rounded border leading-none",
+                                      getPositionColor(pos)
+                                    )}>
+                                      {getPositionLabel(pos)}
+                                    </span>
+                                  </td>
+                                  <td className="pl-4 font-bold text-foreground text-sm">{slot.name || "不明"}</td>
+                                  <td className="text-right pr-6 font-bold text-muted-foreground text-xs tabular-nums">#{num}</td>
+                                </TableRow>
+                              );
+                            })
+                          )}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </Card>
+
+                  {/* 後攻チームスタメン */}
+                  <Card className="rounded-[28px] border-border bg-card overflow-hidden shadow-xs">
+                    <div className="bg-muted/50 p-4 border-b border-border">
+                      <h4 className="font-black text-sm text-foreground flex items-center justify-between">
+                        <span>{bottomTeamName}</span>
+                        <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-black">Starting XI / lineup</span>
+                      </h4>
+                    </div>
+                    <div className="p-2">
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="border-border/60 hover:bg-transparent">
+                            <TableHead className="font-black text-[10px] text-muted-foreground uppercase tracking-widest w-12 text-center">打順</TableHead>
+                            <TableHead className="font-black text-[10px] text-muted-foreground uppercase tracking-widest w-16 text-center">位置</TableHead>
+                            <TableHead className="font-black text-[10px] text-muted-foreground uppercase tracking-widest pl-4">選手名</TableHead>
+                            <TableHead className="font-black text-[10px] text-muted-foreground uppercase tracking-widest w-16 text-right pr-6">背番号</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {(!isMyTeamTop ? myLineup : opponentLineup).length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={4} className="text-center py-10 text-muted-foreground font-bold">
+                                ラインナップ情報がありません
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            (!isMyTeamTop ? myLineup : opponentLineup).map((slot: any, idx: number) => {
+                              const pos = slot.position || "";
+                              const num = slot.uniformNumber || "-";
+                              return (
+                                <TableRow key={idx} className="border-border/65 hover:bg-muted/30 transition-colors">
+                                  <td className="text-center py-3 text-xs italic font-black text-muted-foreground/80">{slot.order || (idx + 1)}</td>
+                                  <td className="text-center py-2">
+                                    <span className={cn(
+                                      "inline-block text-[11px] font-black px-2 py-0.5 rounded border leading-none",
+                                      getPositionColor(pos)
+                                    )}>
+                                      {getPositionLabel(pos)}
+                                    </span>
+                                  </td>
+                                  <td className="pl-4 font-bold text-foreground text-sm">{slot.name || "不明"}</td>
+                                  <td className="text-right pr-6 font-bold text-muted-foreground text-xs tabular-nums">#{num}</td>
+                                </TableRow>
+                              );
+                            })
+                          )}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </Card>
+                </div>
+              </TabsContent>
+
               <TabsContent value="batting" className="mt-4 space-y-4">
                 <Card className="rounded-[28px] border-border bg-card overflow-hidden shadow-xs">
                   <div className="overflow-x-auto">
@@ -1146,7 +1312,7 @@ function MatchResultContent() {
                 disabled={isSavingUrl}
               />
               <p className="text-[10px] text-muted-foreground font-bold leading-normal">
-                ※ 試合動画の共有リンク、またはブラウザ of URL をそのまま入力してください。
+                ※ 試合動画の共有リンク、またはブラウザのURLをそのまま入力してください。
               </p>
             </div>
 
