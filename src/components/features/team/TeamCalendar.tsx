@@ -1,9 +1,11 @@
 // filepath: src/components/features/team/TeamCalendar.tsx
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight, Calendar, Plus, MapPin, Trophy, Activity, Info, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { MatchCard } from "@/components/matches/match-card";
+import { Match, MatchStatus, MatchType, BattingOrder } from "@/types/match";
 
 export interface CalendarMatch {
   id: string;
@@ -39,6 +41,25 @@ export const TeamCalendar: React.FC<TeamCalendarProps> = ({ matches, canManage, 
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   // 選択している日付 (初期値は今日)
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  // 試合カードの展開ステート
+  const [expandedMatchId, setExpandedMatchId] = useState<string | null>(null);
+  // 自チーム名
+  const [teamFullName, setTeamFullName] = useState("");
+
+  useEffect(() => {
+    const fetchTeamName = async () => {
+      if (!teamId) return;
+      const teamRes = await fetch("/api/auth/me");
+      if (teamRes.ok) {
+        const res = (await teamRes.json()) as { data: { memberships: { teamId: string; organizationName?: string; teamName: string }[] } };
+        const currentMembership = res.data.memberships.find(m => m.teamId === teamId);
+        if (currentMembership) {
+          setTeamFullName(`${currentMembership.organizationName ?? ""} ${currentMembership.teamName}`.trim());
+        }
+      }
+    };
+    fetchTeamName();
+  }, [teamId]);
 
   const currentYear = currentDate.getFullYear();
   const currentMonth = currentDate.getMonth(); // 0-11
@@ -110,7 +131,7 @@ export const TeamCalendar: React.FC<TeamCalendarProps> = ({ matches, canManage, 
 
   // 特定の日付の試合一覧を取得
   const getMatchesForDate = (dateStr: string) => {
-    return matches.filter(m => m.date === dateStr);
+    return matches.filter(m => m.date.startsWith(dateStr));
   };
 
   const selectedDayMatches = getMatchesForDate(selectedDateStr);
@@ -292,102 +313,28 @@ export const TeamCalendar: React.FC<TeamCalendarProps> = ({ matches, canManage, 
               const isMatch = !item.type || item.type === "match";
 
               if (isMatch) {
+                const mappedMatch: Match = {
+                  id: item.id,
+                  opponent: item.opponent || "対戦相手未定",
+                  date: item.date,
+                  myScore: item.myScore ?? 0,
+                  opponentScore: item.opponentScore ?? 0,
+                  status: (item.status as MatchStatus) || 'scheduled',
+                  matchType: (item.matchType as MatchType) || 'practice',
+                  battingOrder: (item.battingOrder as BattingOrder) || 'first',
+                  venueName: item.venueName || "",
+                  venueShortName: item.venueShortName || null,
+                };
+
                 return (
-                  <div
+                  <MatchCard
                     key={item.id}
-                    className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-900/50 border border-border/40 gap-3 shadow-xs hover:border-primary/30 transition-all"
-                  >
-                    <div className="space-y-1.5">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {/* 試合タイプバッジ */}
-                        <span
-                          className={cn(
-                            "text-[9px] font-black tracking-wider px-2 py-0.5 rounded-sm uppercase",
-                            item.matchType === "official"
-                              ? "bg-blue-500/10 text-blue-600 dark:text-blue-400"
-                              : item.matchType === "exchange"
-                              ? "bg-purple-500/10 text-purple-600 dark:text-purple-400"
-                              : "bg-amber-500/10 text-amber-600 dark:text-amber-400"
-                          )}
-                        >
-                          {item.matchType === "official" ? "公式戦" : item.matchType === "exchange" ? "交流戦" : "OP戦"}
-                        </span>
-
-                        {/* ステータスバッジ */}
-                        {item.status === "live" ? (
-                          <span className="text-[9px] font-black bg-rose-500 text-white px-2 py-0.5 rounded-sm flex items-center gap-0.5 animate-pulse">
-                            <Activity className="h-2.5 w-2.5" /> LIVE
-                          </span>
-                        ) : item.status === "finished" ? (
-                          renderMatchResultText(item)
-                        ) : (
-                          <span className="text-[9px] font-bold bg-zinc-200/60 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 px-2 py-0.5 rounded-sm">
-                            試合前
-                          </span>
-                        )}
-                      </div>
-
-                      <h5 className="font-black text-sm text-foreground">
-                        vs {item.opponent || "対戦相手未定"}
-                      </h5>
-
-                      <div className="flex items-center gap-3 text-[10px] font-bold text-muted-foreground">
-                        {item.venueName && (
-                          <span className="flex items-center gap-1">
-                            <MapPin className="h-3 w-3 text-primary/60" /> {item.venueShortName || item.venueName}
-                          </span>
-                        )}
-                        {item.battingOrder && (
-                          <span className="flex items-center gap-1">
-                            <Clock className="h-3 w-3 text-primary/60" /> {item.battingOrder === "first" ? "先攻" : "後攻"}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* スコア・ボタンアクション */}
-                    <div className="flex items-center justify-between sm:justify-end gap-2 border-t sm:border-t-0 pt-3 sm:pt-0 border-border/30">
-                      {item.status === "finished" && (
-                        <div className="text-right sm:mr-2">
-                          <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Score</p>
-                          <p className="text-lg font-black text-foreground tabular-nums leading-none mt-1">
-                            {item.myScore} - {item.opponentScore}
-                          </p>
-                        </div>
-                      )}
-
-                      {/* 📅 Googleカレンダー登録リンク */}
-                      <a
-                        href={`https://www.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(item.title || `試合: vs ${item.opponent || "対戦相手未定"}`)}&dates=${item.date.replace(/-/g, "")}/${item.date.replace(/-/g, "")}&location=${encodeURIComponent(item.venueName || "")}&details=${encodeURIComponent(item.description || "")}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="h-9 px-3 rounded-xl border border-border/60 hover:bg-muted text-muted-foreground hover:text-foreground flex items-center justify-center text-[10px] font-bold transition-colors"
-                        title="Googleカレンダーに登録"
-                      >
-                        カレンダー登録
-                      </a>
-
-                      {/* 🚗 試合用の配車管理ボタン (試合終了前) */}
-                      {item.status !== "finished" && (
-                        <Button
-                          onClick={() => router.push(`/attendance/carpool?eventId=${item.id}`)}
-                          variant="outline"
-                          size="sm"
-                          className="h-9 font-black rounded-xl px-3 text-xs border-primary text-primary hover:bg-primary/5 cursor-pointer"
-                        >
-                          配車管理
-                        </Button>
-                      )}
-
-                      <Button
-                        onClick={() => handleActionClick(item)}
-                        size="sm"
-                        className="h-9 font-black rounded-xl px-4 text-xs"
-                      >
-                        {item.status === "finished" ? "試合結果" : item.status === "live" ? "スコア入力" : "メンバー編成"}
-                      </Button>
-                    </div>
-                  </div>
+                    match={mappedMatch}
+                    isExpanded={expandedMatchId === item.id}
+                    onToggleExpand={() => setExpandedMatchId(expandedMatchId === item.id ? null : item.id)}
+                    enableSwipe={false} // カレンダーの下では誤操作防止のためスワイプ無効
+                    teamFullName={teamFullName}
+                  />
                 );
               } else {
                 // 練習、会議、その他の日程 (events) カード
