@@ -149,57 +149,60 @@ export default function DashboardPage() {
   }, [refreshWeather]);
 
   // 4. 試合データ取得 (iscore_selectedTeamId 対応)
-  useEffect(() => {
-    const fetchDashboardData = async () => {
-      setIsLoading(true);
-      try {
-        const teamId = typeof window !== "undefined" ? localStorage.getItem("iscore_selectedTeamId") : null;
-        if (!teamId) {
-          setIsLoading(false);
-          return;
-        }
-
-        const matchRes = await fetch(`/api/matches?teamId=${teamId}`);
-        if (matchRes.ok) {
-          const result = await matchRes.json() as any;
-          let matchArray: Match[] = [];
-          if (Array.isArray(result)) {
-            matchArray = result;
-          } else if (result && Array.isArray(result.data)) {
-            matchArray = result.data;
-          }
-          if (matchArray.length > 0) {
-            const sorted = matchArray.sort((a, b) => b.date.localeCompare(a.date));
-            setMatches(sorted);
-          }
-        }
-
-        // カレンダーデータの取得
-        const calendarRes = await fetch(`/api/teams/${teamId}/calendar-matches`);
-        if (calendarRes.ok) {
-          const calendarData = await calendarRes.json() as CalendarMatch[];
-          setCalendarMatches(calendarData);
-        }
-
-        // 管理者権限の判定
-        const teamsRes = await fetch("/api/teams", { cache: "no-store" });
-        if (teamsRes.ok) {
-          const teamsData = await teamsRes.json() as any[];
-          const myTeamInfo = teamsData.find(t => t.id === teamId);
-          if (myTeamInfo) {
-            const userRole = myTeamInfo.myRole ? String(myTeamInfo.myRole).toUpperCase() : "";
-            const isFounder = myTeamInfo.isFounder === true || myTeamInfo.isFounder === 1;
-            setCanManage((userRole === 'ADMIN' || userRole === 'MANAGER' || isFounder) === true);
-          }
-        }
-      } catch (error) {
-        console.error("Match fetch error:", error);
-      } finally {
+  const fetchDashboardData = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const teamId = typeof window !== "undefined" ? localStorage.getItem("iscore_selectedTeamId") : null;
+      if (!teamId) {
         setIsLoading(false);
+        return;
       }
-    };
-    fetchDashboardData();
+
+      const matchRes = await fetch(`/api/matches?teamId=${teamId}`);
+      if (matchRes.ok) {
+        const result = await matchRes.json() as any;
+        let matchArray: Match[] = [];
+        if (Array.isArray(result)) {
+          matchArray = result;
+        } else if (result && Array.isArray(result.data)) {
+          matchArray = result.data;
+        }
+        if (matchArray.length > 0) {
+          const sorted = matchArray.sort((a, b) => b.date.localeCompare(a.date));
+          setMatches(sorted);
+        } else {
+          setMatches([]);
+        }
+      }
+
+      // カレンダーデータの取得
+      const calendarRes = await fetch(`/api/teams/${teamId}/calendar-matches`);
+      if (calendarRes.ok) {
+        const calendarData = await calendarRes.json() as CalendarMatch[];
+        setCalendarMatches(calendarData);
+      }
+
+      // 管理者権限の判定
+      const teamsRes = await fetch("/api/teams", { cache: "no-store" });
+      if (teamsRes.ok) {
+        const teamsData = await teamsRes.json() as any[];
+        const myTeamInfo = teamsData.find(t => t.id === teamId);
+        if (myTeamInfo) {
+          const userRole = myTeamInfo.myRole ? String(myTeamInfo.myRole).toUpperCase() : "";
+          const isFounder = myTeamInfo.isFounder === true || myTeamInfo.isFounder === 1;
+          setCanManage((userRole === 'ADMIN' || userRole === 'MANAGER' || isFounder) === true);
+        }
+      }
+    } catch (error) {
+      console.error("Match fetch error:", error);
+    } finally {
+      setIsLoading(false);
+    }
   }, [currentTeam?.id]); // 💡 チームが切り替わったら再取得
+
+  useEffect(() => {
+    fetchDashboardData();
+  }, [fetchDashboardData]);
 
   // 💡 削除完了時のコールバック（ローカルStateから除外して即時反映させる）
   const handleDeleteMatch = useCallback((deletedId: string) => {
@@ -433,6 +436,7 @@ export default function DashboardPage() {
             matches={calendarMatches} 
             canManage={canManage} 
             teamId={currentTeam?.id || ""} 
+            onRefresh={fetchDashboardData}
           />
         </section>
 

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { MatchCard } from "@/components/matches/match-card";
 import { Match, MatchStatus, MatchType, BattingOrder } from "@/types/match";
+import { EventCard } from "./event-card";
 
 export interface CalendarMatch {
   id: string;
@@ -32,9 +33,10 @@ interface TeamCalendarProps {
   matches: CalendarMatch[];
   canManage: boolean;
   teamId: string;
+  onRefresh?: () => void;
 }
 
-export const TeamCalendar: React.FC<TeamCalendarProps> = ({ matches, canManage, teamId }) => {
+export const TeamCalendar: React.FC<TeamCalendarProps> = ({ matches, canManage, teamId, onRefresh }) => {
   const router = useRouter();
   
   // 現在表示しているカレンダーの年月
@@ -332,100 +334,25 @@ export const TeamCalendar: React.FC<TeamCalendarProps> = ({ matches, canManage, 
                     match={mappedMatch}
                     isExpanded={expandedMatchId === item.id}
                     onToggleExpand={() => setExpandedMatchId(expandedMatchId === item.id ? null : item.id)}
-                    enableSwipe={false} // カレンダーの下では誤操作防止のためスワイプ無効
+                    enableSwipe={canManage} // 管理者ならカレンダー下でもフリック編集・削除を有効化
+                    onDelete={() => {
+                      if (onRefresh) onRefresh();
+                    }}
                     teamFullName={teamFullName}
                   />
                 );
               } else {
                 // 練習、会議、その他の日程 (events) カード
                 return (
-                  <div
+                  <EventCard
                     key={item.id}
-                    className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-900/50 border border-border/40 gap-3 shadow-xs hover:border-primary/30 transition-all"
-                  >
-                    <div className="space-y-1.5 flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {/* イベント種別バッジ */}
-                        <span
-                          className={cn(
-                            "text-[9px] font-black tracking-wider px-2 py-0.5 rounded-sm uppercase",
-                            item.type === "practice"
-                              ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                              : item.type === "meeting"
-                                ? "bg-purple-500/10 text-purple-600 dark:text-purple-400"
-                                : item.type === "camp"
-                                  ? "bg-orange-500/10 text-orange-600 dark:text-orange-400"
-                                  : "bg-zinc-500/10 text-zinc-600 dark:text-zinc-400"
-                          )}
-                        >
-                          {item.type === "practice" ? "練習" : item.type === "meeting" ? "会議" : item.type === "camp" ? "合宿" : "その他予定"}
-                        </span>
-
-                        {item.dutyGroup && (
-                          <span className="text-[8px] font-extrabold text-purple-600 dark:text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded-xs">
-                            当番: {item.dutyGroup}
-                          </span>
-                        )}
-                      </div>
-
-                      <h5 className="font-black text-sm text-foreground truncate" title={item.title}>
-                        {item.title}
-                      </h5>
-
-                      <div className="flex items-center gap-3 text-[10px] font-bold text-muted-foreground flex-wrap">
-                        {item.venueName && (
-                          <span className="flex items-center gap-1" title={item.venueName}>
-                            <MapPin className="h-3 w-3 text-primary/60" /> {item.venueShortName || item.venueName}
-                          </span>
-                        )}
-                        {item.pmLocation && (
-                          <span className="flex items-center gap-1 text-blue-600 dark:text-blue-400" title={item.pmLocation}>
-                            <MapPin className="h-3 w-3 text-blue-500/60" /> 午後: {item.pmLocation}
-                          </span>
-                        )}
-                      </div>
-
-                      {item.description && (
-                        <p className="text-[10px] text-muted-foreground font-medium line-clamp-2 mt-1 whitespace-pre-line">
-                          {item.description}
-                        </p>
-                      )}
-                    </div>
-
-                    {/* ボタンアクション */}
-                    <div className="flex items-center justify-between sm:justify-end gap-2 border-t sm:border-t-0 pt-3 sm:pt-0 border-border/30 shrink-0">
-                      {/* 📅 Googleカレンダー登録リンク */}
-                      <a
-                        href={`https://www.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(item.title || "チーム予定")}&dates=${item.date.replace(/-/g, "")}/${item.date.replace(/-/g, "")}&location=${encodeURIComponent(item.venueName || "")}&details=${encodeURIComponent(item.description || "")}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="h-9 px-3 rounded-xl border border-border/60 hover:bg-muted text-muted-foreground hover:text-foreground flex items-center justify-center text-[10px] font-bold transition-colors"
-                        title="Googleカレンダーに登録"
-                      >
-                        カレンダー登録
-                      </a>
-
-                      {/* 🚗 合宿用の配車管理ボタン */}
-                      {item.type === "camp" && (
-                        <Button
-                          onClick={() => router.push(`/attendance/carpool?eventId=${item.id}`)}
-                          variant="outline"
-                          size="sm"
-                          className="h-9 font-black rounded-xl px-3 text-xs border-primary text-primary hover:bg-primary/5 cursor-pointer"
-                        >
-                          配車管理
-                        </Button>
-                      )}
-
-                      <Button
-                        onClick={() => router.push(`/attendance`)}
-                        size="sm"
-                        className="h-9 font-black rounded-xl px-4 text-xs"
-                      >
-                        出欠確認
-                      </Button>
-                    </div>
-                  </div>
+                    event={item}
+                    teamId={teamId}
+                    enableSwipe={canManage} // 管理者の場合にフリック操作を有効化
+                    onDelete={() => {
+                      if (onRefresh) onRefresh();
+                    }}
+                  />
                 );
               }
             })}
