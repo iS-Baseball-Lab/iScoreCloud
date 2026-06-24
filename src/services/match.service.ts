@@ -40,6 +40,8 @@ export const MatchService = {
       venueId: matches.venueId,
       weather: matches.weather,
       youtubeUrl: matches.youtubeUrl,
+      venueAddress: venues.address,
+      venueMapUrl: venues.mapUrl,
     })
       .from(matches)
       .leftJoin(tournaments, eq(matches.tournamentId, tournaments.id))
@@ -92,6 +94,8 @@ export const MatchService = {
       opponentErrors: matches.opponentErrors,
       venueId: matches.venueId,
       youtubeUrl: matches.youtubeUrl,
+      venueAddress: venues.address,
+      venueMapUrl: venues.mapUrl,
     })
       .from(matches)
       .leftJoin(tournaments, eq(matches.tournamentId, tournaments.id))

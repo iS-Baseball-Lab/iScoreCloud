@@ -172,6 +172,8 @@ export interface MatchRow {
   youtubeUrl: string | null;
   tournamentName?: string | null;
   venueName?: string | null;
+  venueAddress?: string | null;
+  venueMapUrl?: string | null;
 }
 
 /**

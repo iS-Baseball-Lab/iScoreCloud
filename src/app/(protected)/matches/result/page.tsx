@@ -9,7 +9,8 @@ import { EmptyState } from "@/components/layout/EmptyState";
 import {
   Loader2, Trophy, Download, ChevronLeft,
   Share2, Calendar, Activity, Target, Zap, Sparkles, TrendingUp,
-  Video, Edit3, X, Play, Plus, BookOpen, AlertCircle, Award, Flame
+  Video, Edit3, X, Play, Plus, BookOpen, AlertCircle, Award, Flame,
+  MapPin
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import * as htmlToImage from 'html-to-image';
@@ -45,6 +46,10 @@ interface Match {
   youtubeUrl?: string | null;
   venueName?: string | null;
   surfaceDetails?: string | null;
+  venueAddress?: string | null;
+  venueMapUrl?: string | null;
+  benchSide?: string | null;
+  tournamentName?: string | null;
 }
 
 interface AtBat {
@@ -672,6 +677,94 @@ function MatchResultContent() {
             </section>
           )}
 
+          {/* 📅 試合情報 ＆ 会場案内（住所・地図） */}
+          <section className="space-y-5">
+            <SectionHeader title="試合情報・会場案内" subtitle="Game Info & Venue" />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* 試合基本情報 */}
+              <Card className="border-border bg-card rounded-[28px] overflow-hidden shadow-xs p-6 space-y-4">
+                <h4 className="text-xs font-black text-primary uppercase tracking-widest border-b border-border pb-2 flex items-center gap-2">
+                  <Calendar className="h-4 w-4" /> 試合詳細スペック
+                </h4>
+                <div className="space-y-3 font-bold text-xs sm:text-sm">
+                  <div className="flex justify-between py-1 border-b border-border/40">
+                    <span className="text-muted-foreground">日時</span>
+                    <span className="text-foreground">{match.date}</span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-border/40">
+                    <span className="text-muted-foreground">試合区分</span>
+                    <span className="text-foreground">
+                      {match.matchType === "official" ? "🏆 公式戦" :
+                       match.matchType === "practice" ? "⚾ 練習試合" : "🤝 交流戦"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-border/40">
+                    <span className="text-muted-foreground">ベンチ位置</span>
+                    <span className="text-foreground font-black">
+                      {match.benchSide === "1B" ? "🔴 1塁側" :
+                       match.benchSide === "3B" ? "🔵 3塁側" : "⚪ 未定・情報なし"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-border/40">
+                    <span className="text-muted-foreground">規定イニング</span>
+                    <span className="text-foreground">{match.innings || 7}回</span>
+                  </div>
+                  {match.tournamentName && (
+                    <div className="flex justify-between py-1 border-b border-border/40">
+                      <span className="text-muted-foreground">大会名</span>
+                      <span className="text-foreground text-right max-w-[200px] truncate">{match.tournamentName}</span>
+                    </div>
+                  )}
+                </div>
+              </Card>
+
+              {/* 球場アクセス ＆ 地図埋め込み */}
+              <Card className="border-border bg-card rounded-[28px] overflow-hidden shadow-xs p-6 space-y-4 flex flex-col justify-between">
+                <div className="space-y-2">
+                  <h4 className="text-xs font-black text-primary uppercase tracking-widest border-b border-border pb-2 flex items-center gap-2">
+                    <MapPin className="h-4 w-4" /> 会場アクセス
+                  </h4>
+                  <div className="space-y-1">
+                    <p className="font-black text-sm sm:text-base text-foreground">
+                      {match.venueName || match.surfaceDetails || "球場情報未設定"}
+                    </p>
+                    <p className="text-xs text-muted-foreground font-bold leading-relaxed">
+                      {match.venueAddress || "住所情報は登録されていません。"}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Google Map 埋め込み iframe */}
+                {(match.venueAddress || match.venueName) ? (
+                  <div className="space-y-3 mt-2">
+                    <div className="w-full h-40 rounded-2xl overflow-hidden border border-border shadow-inner">
+                      <iframe
+                        src={`https://maps.google.com/maps?q=${encodeURIComponent(match.venueAddress || match.venueName || '')}&output=embed`}
+                        title="Google Map"
+                        frameBorder="0"
+                        allowFullScreen
+                        loading="lazy"
+                        className="w-full h-full"
+                      />
+                    </div>
+                    <a
+                      href={match.venueMapUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(match.venueAddress || match.venueName || '')}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full rounded-xl font-black text-xs gap-1.5 h-10 border border-border bg-card hover:bg-muted text-foreground flex items-center justify-center transition-all shadow-xs"
+                    >
+                      🗺️ Googleマップでルート検索
+                    </a>
+                  </div>
+                ) : (
+                  <div className="py-8 text-center text-xs text-muted-foreground font-bold border border-dashed border-border/60 rounded-2xl">
+                    マップを表示するための住所情報がありません
+                  </div>
+                )}
+              </Card>
+            </div>
+          </section>
+
           {/* 3. AI パフォーマンス分析カード */}
           <section className="space-y-5">
             <SectionHeader title="戦評" subtitle="AI Insight" />
@@ -1053,7 +1146,7 @@ function MatchResultContent() {
                 disabled={isSavingUrl}
               />
               <p className="text-[10px] text-muted-foreground font-bold leading-normal">
-                ※ 試合動画の共有リンク、またはブラウザのURLをそのまま入力してください。
+                ※ 試合動画の共有リンク、またはブラウザ of URL をそのまま入力してください。
               </p>
             </div>
 
