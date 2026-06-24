@@ -11,6 +11,7 @@ import { EventCard } from "./event-card";
 export interface CalendarMatch {
   id: string;
   type?: 'match' | 'practice' | 'meeting' | 'camp' | 'event';
+  source?: 'match' | 'event';
   date: string; // YYYY-MM-DD
   title?: string;
   opponent?: string;
@@ -312,7 +313,7 @@ export const TeamCalendar: React.FC<TeamCalendarProps> = ({ matches, canManage, 
         ) : (
           <div className="space-y-2.5">
             {selectedDayMatches.map(item => {
-              const isMatch = !item.type || item.type === "match";
+              const isMatch = item.source === "match";
 
               if (isMatch) {
                 const mappedMatch: Match = {

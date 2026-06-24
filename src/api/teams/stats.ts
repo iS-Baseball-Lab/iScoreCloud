@@ -122,6 +122,7 @@ app.get('/:id/calendar-matches', async (c) => {
     const formattedMatches = matchesList.map((m: any) => ({
       id: m.id,
       type: 'match',
+      source: 'match',
       date: m.date, // 'YYYY-MM-DD'
       title: `試合 vs ${m.opponent}`,
       opponent: m.opponent,
@@ -166,6 +167,7 @@ app.get('/:id/calendar-matches', async (c) => {
       return {
         id: e.id,
         type: e.eventType || 'event',
+        source: 'event',
         date: dateStr,
         title: e.title,
         description: e.description,
