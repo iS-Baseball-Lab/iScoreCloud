@@ -13,6 +13,8 @@ export interface CalendarMatch {
   type?: 'match' | 'practice' | 'meeting' | 'camp' | 'event';
   source?: 'match' | 'event';
   date: string; // YYYY-MM-DD
+  mapUrl?: string | null;
+  pmMapUrl?: string | null;
   title?: string;
   opponent?: string;
   myScore?: number | null;

@@ -186,14 +186,36 @@ export function EventCard({
 
             <div className="flex items-center gap-3 text-[10px] font-bold text-muted-foreground flex-wrap">
               {event.venueName && (
-                <span className="flex items-center gap-1" title={event.venueName}>
-                  <MapPin className="h-3 w-3 text-primary/60" /> {event.venueShortName || event.venueName}
-                </span>
+                <div className="flex items-center gap-1" title={event.venueName}>
+                  <MapPin className="h-3 w-3 text-primary/60" /> 
+                  <span>{event.venueShortName || event.venueName}</span>
+                  {event.mapUrl && (
+                    <a
+                      href={event.mapUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="ml-1 text-[9px] text-blue-500 hover:text-blue-600 hover:underline font-black pointer-events-auto"
+                    >
+                      [地図]
+                    </a>
+                  )}
+                </div>
               )}
               {event.pmLocation && (
-                <span className="flex items-center gap-1 text-blue-600 dark:text-blue-400" title={event.pmLocation}>
-                  <MapPin className="h-3 w-3 text-blue-500/60" /> 午後: {event.pmLocation}
-                </span>
+                <div className="flex items-center gap-1 text-blue-600 dark:text-blue-400" title={event.pmLocation}>
+                  <MapPin className="h-3 w-3 text-blue-500/60" /> 
+                  <span>午後: {event.pmLocation}</span>
+                  {event.pmMapUrl && (
+                    <a
+                      href={event.pmMapUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="ml-1 text-[9px] text-blue-500 hover:text-blue-600 hover:underline font-black pointer-events-auto"
+                    >
+                      [地図]
+                    </a>
+                  )}
+                </div>
               )}
             </div>
 

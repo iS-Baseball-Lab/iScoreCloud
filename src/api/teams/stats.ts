@@ -118,6 +118,12 @@ app.get('/:id/calendar-matches', async (c) => {
       WHERE team_id = ?
     `).bind(teamId).all();
 
+    // 2.5. venues (球場マスタ) を取得
+    const { results: venuesList } = await c.env.DB.prepare(`
+      SELECT id, name, short_name as shortName, map_url as mapUrl
+      FROM venues
+    `).all();
+
     // 3. 試合データを共通形式に整形
     const formattedMatches = matchesList.map((m: any) => ({
       id: m.id,
@@ -164,6 +170,24 @@ app.get('/:id/calendar-matches', async (c) => {
       const d = parts.find(p => p.type === 'day')?.value;
       const dateStr = `${y}-${month}-${d}`;
 
+      // 場所に対応する球場マスタを探し、map_urlを紐づける
+      const matchedVenue = venuesList.find((v: any) => 
+        e.location && (
+          e.location === v.name || 
+          e.location === v.shortName || 
+          (v.name && e.location.includes(v.name)) || 
+          (v.shortName && e.location.includes(v.shortName))
+        )
+      );
+      const pmMatchedVenue = venuesList.find((v: any) => 
+        e.pmLocation && (
+          e.pmLocation === v.name || 
+          e.pmLocation === v.shortName || 
+          (v.name && e.pmLocation.includes(v.name)) || 
+          (v.shortName && e.pmLocation.includes(v.shortName))
+        )
+      );
+
       return {
         id: e.id,
         type: e.eventType || 'event',
@@ -173,10 +197,12 @@ app.get('/:id/calendar-matches', async (c) => {
         description: e.description,
         venueName: e.location,
         location: e.location,
+        mapUrl: matchedVenue?.mapUrl || null,
+        pmLocation: e.pmLocation,
+        pmMapUrl: pmMatchedVenue?.mapUrl || null,
         dutyGroup: e.dutyGroup,
         pmStartAt: e.pmStartAt,
         pmEndAt: e.pmEndAt,
-        pmLocation: e.pmLocation,
       };
     });
 

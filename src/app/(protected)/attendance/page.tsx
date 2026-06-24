@@ -108,6 +108,7 @@ export default function AttendancePage() {
   const [allCars, setAllCars] = useState<any[]>([]); // 🌟 車両マスタ用状態
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [venuesData, setVenuesData] = useState<any[]>([]);
 
 
 
@@ -303,6 +304,15 @@ export default function AttendancePage() {
         if (groupJson.success) {
           setGroups(groupJson.groups || []);
           setGroupRelations(groupJson.members || []);
+        }
+      }
+
+      // 球場リストのフェッチ
+      const venuesRes = await fetch(`/api/venues`);
+      if (venuesRes.ok) {
+        const venuesJson = await venuesRes.json() as any;
+        if (venuesJson.success) {
+          setVenuesData(venuesJson.data || []);
         }
       }
 
@@ -1086,7 +1096,15 @@ export default function AttendancePage() {
                     onChange={e => setEventLocation(e.target.value)}
                     placeholder="例: 河川敷グラウンドA"
                     className="h-10 rounded-xl font-bold text-xs"
+                    list="venues-list"
                   />
+                  <datalist id="venues-list">
+                    {venuesData.map(v => (
+                      <option key={v.id} value={v.name}>
+                        {v.shortName ? `${v.name} (${v.shortName})` : v.name}
+                      </option>
+                    ))}
+                  </datalist>
                 </div>
               </div>
 
@@ -1137,7 +1155,15 @@ export default function AttendancePage() {
                       onChange={e => setEventPmLocation(e.target.value)}
                       placeholder="例: 学校体育館"
                       className="h-10 rounded-xl font-bold text-xs"
+                      list="venues-list-pm"
                     />
+                    <datalist id="venues-list-pm">
+                      {venuesData.map(v => (
+                        <option key={v.id} value={v.name}>
+                          {v.shortName ? `${v.name} (${v.shortName})` : v.name}
+                        </option>
+                      ))}
+                    </datalist>
                   </div>
                 </div>
               )}
