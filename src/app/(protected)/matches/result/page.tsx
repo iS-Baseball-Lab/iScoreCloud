@@ -518,7 +518,7 @@ function MatchResultContent() {
   const youtubeVideoId = getYoutubeVideoId(match.youtubeUrl);
 
   return (
-    <div className="w-full min-h-screen pb-24 bg-background text-foreground animate-in fade-in duration-500">
+    <div className="w-full min-h-screen pb-24 text-foreground animate-in fade-in duration-500">
 
       {/* 💡 アクションヘッダー */}
       <div className="max-w-4xl mx-auto px-6 pt-8 mb-8 flex items-center justify-between">
