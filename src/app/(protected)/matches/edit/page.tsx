@@ -31,6 +31,7 @@ interface MatchData {
   innings?: number;
   status?: string;
   date?: string;
+  youtubeUrl?: string | null;
 }
 
 interface MatchResponse {
@@ -109,6 +110,8 @@ function MatchEditContent() {
     inningCount: 7,
   });
 
+  const [youtubeUrl, setYoutubeUrl] = useState<string>("");
+
   const [matchStatus, setMatchStatus] = useState<string>("scheduled");
   const [teamName, setTeamName] = useState("自チーム");
   const [myInnings, setMyInnings] = useState<string[]>([]);
@@ -154,6 +157,8 @@ function MatchEditContent() {
             benchSide: m.benchSide || 'unknown',
             inningCount: (m.innings as 6 | 7 | 9) || 7,
           });
+
+          setYoutubeUrl(m.youtubeUrl || "");
 
           setMatchStatus(m.status || "scheduled");
 
@@ -239,6 +244,7 @@ function MatchEditContent() {
           opponentScore: matchStatus === 'finished' ? opponentTotalScore : 0,
           myInningScores: matchStatus === 'finished' ? myInnings.map(val => parseInt(val) || 0) : [],
           opponentInningScores: matchStatus === 'finished' ? opponentInnings.map(val => parseInt(val) || 0) : [],
+          youtubeUrl: youtubeUrl || null,
         }),
       });
       const data = (await res.json()) as MatchResponse;
@@ -329,6 +335,25 @@ function MatchEditContent() {
                 🏆 終了
               </button>
             </div>
+          </CardContent>
+        </Card>
+
+        {/* 🎥 YouTube 動画 URL 設定 */}
+        <Card className="rounded-3xl border border-border bg-card shadow-sm overflow-hidden">
+          <CardContent className="p-4 space-y-2">
+            <label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest block mb-1">
+              YouTube 試合動画 URL
+            </label>
+            <input
+              type="url"
+              placeholder="https://www.youtube.com/watch?v=..."
+              value={youtubeUrl}
+              onChange={(e) => setYoutubeUrl(e.target.value)}
+              className="w-full px-4 py-3 text-sm rounded-2xl border border-border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
+            />
+            <p className="text-[10px] text-muted-foreground font-bold">
+              ※ YouTube動画（ハイライトやフル動画）のURLを入力すると、試合明細ページに動画が埋め込まれます。
+            </p>
           </CardContent>
         </Card>
 

@@ -1,0 +1,1 @@
+ALTER TABLE `matches` ADD `youtube_url` text;

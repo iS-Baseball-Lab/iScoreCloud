@@ -211,6 +211,13 @@
       "when": 1782181271540,
       "tag": "0029_salty_ares",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "6",
+      "when": 1782342393372,
+      "tag": "0030_square_gargoyle",
+      "breakpoints": true
     }
   ]
 }

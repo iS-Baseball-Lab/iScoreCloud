@@ -39,6 +39,7 @@ export const MatchService = {
       isColdGame: matches.isColdGame,
       venueId: matches.venueId,
       weather: matches.weather,
+      youtubeUrl: matches.youtubeUrl,
     })
       .from(matches)
       .leftJoin(tournaments, eq(matches.tournamentId, tournaments.id))
@@ -90,6 +91,7 @@ export const MatchService = {
       myErrors: matches.myErrors,
       opponentErrors: matches.opponentErrors,
       venueId: matches.venueId,
+      youtubeUrl: matches.youtubeUrl,
     })
       .from(matches)
       .leftJoin(tournaments, eq(matches.tournamentId, tournaments.id))
@@ -178,6 +180,7 @@ export const MatchService = {
       opponentScore: body.opponentScore,
       myInningScores: body.myInningScores ? JSON.stringify(body.myInningScores) : undefined,
       opponentInningScores: body.opponentInningScores ? JSON.stringify(body.opponentInningScores) : undefined,
+      youtubeUrl: body.youtubeUrl,
     };
 
     // undefined のキーを除外

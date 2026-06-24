@@ -98,6 +98,7 @@ export const matches = sqliteTable("matches", {
   myAttendance: text("my_attendance").default('{}'),
 
   weather: text("weather"),
+  youtubeUrl: text("youtube_url"),
   lockedByUserId: text("locked_by_user_id"),
   lockedByUserName: text("locked_by_user_name"),
   lockedAt: integer("locked_at", { mode: "timestamp" }),

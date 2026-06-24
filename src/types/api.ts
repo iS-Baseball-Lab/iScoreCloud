@@ -111,6 +111,7 @@ export interface UpdateMatchBody {
   opponentScore?: number;
   myInningScores?: number[];
   opponentInningScores?: number[];
+  youtubeUrl?: string | null;
 }
 
 export interface FinishMatchBody {
@@ -168,6 +169,7 @@ export interface MatchRow {
   opponentInningScores: number[]; // JSON.parse 後の配列として定義
 
   weather: string | null;
+  youtubeUrl: string | null;
   tournamentName?: string | null;
   venueName?: string | null;
 }
