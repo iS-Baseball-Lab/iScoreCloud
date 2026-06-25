@@ -40,6 +40,12 @@ export const MatchService = {
       venueId: matches.venueId,
       weather: matches.weather,
       youtubeUrl: matches.youtubeUrl,
+      liveMyScore: matches.liveMyScore,
+      liveOpponentScore: matches.liveOpponentScore,
+      liveMyInningScores: matches.liveMyInningScores,
+      liveOpponentInningScores: matches.liveOpponentInningScores,
+      liveStatus: matches.liveStatus,
+      lockedByUserName: matches.lockedByUserName,
       venueAddress: venues.address,
       venueMapUrl: venues.mapUrl,
     })
@@ -59,6 +65,9 @@ export const MatchService = {
       battingOrder: r.battingOrder as "first" | "second",
       myInningScores: JSON.parse(r.myInningScores ?? "[]") as number[],
       opponentInningScores: JSON.parse(r.opponentInningScores ?? "[]") as number[],
+      liveMyInningScores: JSON.parse(r.liveMyInningScores ?? "[]") as number[],
+      liveOpponentInningScores: JSON.parse(r.liveOpponentInningScores ?? "[]") as number[],
+      liveStatus: r.liveStatus as "none" | "draft" | "completed",
     }));
   },
 
@@ -94,6 +103,13 @@ export const MatchService = {
       opponentErrors: matches.opponentErrors,
       venueId: matches.venueId,
       youtubeUrl: matches.youtubeUrl,
+      liveMyScore: matches.liveMyScore,
+      liveOpponentScore: matches.liveOpponentScore,
+      liveMyInningScores: matches.liveMyInningScores,
+      liveOpponentInningScores: matches.liveOpponentInningScores,
+      liveStatus: matches.liveStatus,
+      lockedByUserName: matches.lockedByUserName,
+      lockedByUserId: matches.lockedByUserId,
       venueAddress: venues.address,
       venueMapUrl: venues.mapUrl,
     })
@@ -185,6 +201,7 @@ export const MatchService = {
       myInningScores: body.myInningScores ? JSON.stringify(body.myInningScores) : undefined,
       opponentInningScores: body.opponentInningScores ? JSON.stringify(body.opponentInningScores) : undefined,
       youtubeUrl: body.youtubeUrl,
+      liveStatus: body.myInningScores ? "none" : undefined, // 🌟 簡易スコア更新時はライブ下書きを無効化
     };
 
     // undefined のキーを除外

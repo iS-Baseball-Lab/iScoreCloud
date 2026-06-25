@@ -99,6 +99,11 @@ export const matches = sqliteTable("matches", {
 
   weather: text("weather"),
   youtubeUrl: text("youtube_url"),
+  liveMyScore: integer("live_my_score").notNull().default(0),
+  liveOpponentScore: integer("live_opponent_score").notNull().default(0),
+  liveMyInningScores: text("live_my_inning_scores").default('[]'),
+  liveOpponentInningScores: text("live_opponent_inning_scores").default('[]'),
+  liveStatus: text("live_status").notNull().default("none"), // 'none', 'draft', 'completed'
   lockedByUserId: text("locked_by_user_id"),
   lockedByUserName: text("locked_by_user_name"),
   lockedAt: integer("locked_at", { mode: "timestamp" }),

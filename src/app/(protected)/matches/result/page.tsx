@@ -50,6 +50,12 @@ interface Match {
   venueMapUrl?: string | null;
   benchSide?: string | null;
   tournamentName?: string | null;
+  liveMyScore?: number;
+  liveOpponentScore?: number;
+  liveMyInningScores?: string;
+  liveOpponentInningScores?: string;
+  liveStatus?: string;
+  lockedByUserName?: string | null;
 }
 
 interface AtBat {
@@ -538,6 +544,15 @@ function MatchResultContent() {
           <Button 
             variant="outline" 
             size="sm"
+            onClick={() => router.push(`/matches/edit?id=${matchId}`)}
+            className="h-10 px-3 sm:px-4 rounded-[var(--radius-xl)] font-black gap-1.5 shadow-sm border-border bg-card text-foreground hover:bg-muted text-xs sm:text-sm"
+          >
+            <Edit3 className="h-4 w-4 text-amber-550 dark:text-amber-450" />
+            スコア編集
+          </Button>
+          <Button 
+            variant="outline" 
+            size="sm"
             onClick={() => router.push(`/matches/scorebook?id=${matchId}`)}
             className="h-10 px-3 sm:px-4 rounded-[var(--radius-xl)] font-black gap-1.5 shadow-sm border-border bg-card text-foreground hover:bg-muted text-xs sm:text-sm"
           >
@@ -561,6 +576,15 @@ function MatchResultContent() {
 
       <main className="max-w-4xl mx-auto px-4 space-y-6 sm:space-y-8">
         
+        {match.liveStatus === 'draft' && (
+          <div className="p-4 bg-amber-500/5 dark:bg-amber-500/10 border border-amber-500/20 dark:border-amber-500/30 rounded-[var(--radius-xl)] flex items-start sm:items-center gap-3 text-amber-600 dark:text-amber-400 shadow-xs animate-in slide-in-from-top-3 duration-350">
+            <AlertCircle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5 sm:mt-0" />
+            <div className="text-xs sm:text-sm font-bold leading-normal">
+              {match.lockedByUserName || "スコアラー"}さんが現在詳細スコアをライブ入力（途中保存）中です。完了するまで簡易スコアが表示されます。
+            </div>
+          </div>
+        )}
+
         {/* 🎬 YouTube 動画セクション */}
         <section className="space-y-3">
           <SectionHeader title="試合動画" subtitle="Game Video" />

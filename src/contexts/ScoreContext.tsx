@@ -207,8 +207,13 @@ function getNormalizedAtBatResult(actionNote: string): string {
         const m = data.match;
         
         // 🌟 D1に保存されたJSON文字列をパースして復元
-        const restoredMyInningScores = typeof m.myInningScores === 'string' ? JSON.parse(m.myInningScores) : [];
-        const restoredOpponentInningScores = typeof m.opponentInningScores === 'string' ? JSON.parse(m.opponentInningScores) : [];
+        // ライブスコア下書き（途中保存）がある場合はライブデータを復元、無ければ本番スコアを復元
+        const restoredMyInningScores = m.liveStatus === 'draft'
+          ? (typeof m.liveMyInningScores === 'string' ? JSON.parse(m.liveMyInningScores) : [])
+          : (typeof m.myInningScores === 'string' ? JSON.parse(m.myInningScores) : []);
+        const restoredOpponentInningScores = m.liveStatus === 'draft'
+          ? (typeof m.liveOpponentInningScores === 'string' ? JSON.parse(m.liveOpponentInningScores) : [])
+          : (typeof m.opponentInningScores === 'string' ? JSON.parse(m.opponentInningScores) : []);
         
         // ログの復元
         const restoredLogs = logsData?.success && Array.isArray(logsData.logs) ? logsData.logs : [];
@@ -317,8 +322,8 @@ function getNormalizedAtBatResult(actionNote: string): string {
           matchType: m.matchType,
           inning: m.currentInning || 1,
           isTop,
-          myScore: m.myScore || 0,
-          opponentScore: m.opponentScore || 0,
+          myScore: m.liveStatus === 'draft' ? (m.liveMyScore || 0) : (m.myScore || 0),
+          opponentScore: m.liveStatus === 'draft' ? (m.liveOpponentScore || 0) : (m.opponentScore || 0),
           myInningScores: restoredMyInningScores,
           opponentInningScores: restoredOpponentInningScores,
           maxInnings: m.innings || 7,
@@ -368,8 +373,13 @@ function getNormalizedAtBatResult(actionNote: string): string {
         const m = data.match;
         
         // D1に保存されたJSON文字列をパースして復元
-        const restoredMyInningScores = typeof m.myInningScores === 'string' ? JSON.parse(m.myInningScores) : [];
-        const restoredOpponentInningScores = typeof m.opponentInningScores === 'string' ? JSON.parse(m.opponentInningScores) : [];
+        // ライブスコア下書きがある場合はライブ一時データを復元
+        const restoredMyInningScores = m.liveStatus === 'draft'
+          ? (typeof m.liveMyInningScores === 'string' ? JSON.parse(m.liveMyInningScores) : [])
+          : (typeof m.myInningScores === 'string' ? JSON.parse(m.myInningScores) : []);
+        const restoredOpponentInningScores = m.liveStatus === 'draft'
+          ? (typeof m.liveOpponentInningScores === 'string' ? JSON.parse(m.liveOpponentInningScores) : [])
+          : (typeof m.opponentInningScores === 'string' ? JSON.parse(m.opponentInningScores) : []);
         
         // ログの復元
         const restoredLogs = logsData?.success && Array.isArray(logsData.logs) ? logsData.logs : [];
@@ -448,8 +458,8 @@ function getNormalizedAtBatResult(actionNote: string): string {
             ...prev,
             inning: m.currentInning || 1,
             isTop,
-            myScore: m.myScore || 0,
-            opponentScore: m.opponentScore || 0,
+            myScore: m.liveStatus === 'draft' ? (m.liveMyScore || 0) : (m.myScore || 0),
+            opponentScore: m.liveStatus === 'draft' ? (m.liveOpponentScore || 0) : (m.opponentScore || 0),
             myInningScores: restoredMyInningScores,
             opponentInningScores: restoredOpponentInningScores,
             maxInnings: m.innings || 7,
@@ -1517,6 +1527,15 @@ function getNormalizedAtBatResult(actionNote: string): string {
     });
   };
 
+  // 🚀 9.3 試合の入力再開
+  const resumeMatch = async () => {
+    setState(prev => {
+      const next = pushHistory(prev, { status: "live", logs: appendLog("スコア入力再開", prev) });
+      syncWithBackend(next, "スコア入力再開");
+      return next;
+    });
+  };
+
   const substitutePlayer = useCallback((
     team: 'my' | 'opponent',
     orderIndex: number,
@@ -1646,6 +1665,7 @@ function getNormalizedAtBatResult(actionNote: string): string {
       resetBatter,
       undo,
       finishMatch,
+      resumeMatch, // 🌟 追加
       resetMatch, // 🌟 追加
       updateMatchSettings,
       substitutePlayer,

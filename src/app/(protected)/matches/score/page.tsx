@@ -14,13 +14,13 @@ import { ControlPanel } from "@/components/score/ControlPanel";
 import { PlayArea } from "@/components/score/PlayArea";
 import { PlayLog } from "@/components/score/PlayLog";
 import { cn } from "@/lib/utils";
-import { Loader2, ChevronUp, History, Zap, ArrowLeft } from "lucide-react";
+import { Loader2, ChevronUp, History, Zap, ArrowLeft, PlayCircle, Edit3 } from "lucide-react";
 
 function ScorePageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const matchId = searchParams.get("id");
-  const { initMatch, state, isLoading, isScorer } = useScore(); // Contextから権限と状態を取得[span_4](start_span)[span_4](end_span)
+  const { initMatch, state, isLoading, isScorer, resumeMatch } = useScore(); // Contextから権限と状態を取得[span_4](start_span)[span_4](end_span)
   const [isReady, setIsReady] = useState(false);
   const [isLogExpanded, setIsLogExpanded] = useState(false);
 
@@ -123,7 +123,9 @@ function ScorePageContent() {
                 <span className="relative flex h-2 w-2 shrink-0">
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-zinc-400 dark:bg-zinc-500"></span>
                 </span>
-                <span className="text-xs font-black text-foreground tracking-wider uppercase truncate">試合終了（閲覧モード）</span>
+                <span className="text-xs font-black text-foreground tracking-wider uppercase truncate">
+                  {state.lockedBy ? `試合終了（${state.lockedBy.userName}さんが入力中...）` : "試合終了（閲覧モード）"}
+                </span>
               </div>
               
               <div className="flex items-center gap-2 shrink-0">
@@ -134,6 +136,20 @@ function ScorePageContent() {
                   <ArrowLeft className="w-3.5 h-3.5" />
                   戻る
                 </button>
+
+                {isScorer && (
+                  <button
+                    onClick={async () => {
+                      if (window.confirm("試合終了ステータスを解除し、詳細ライブスコア入力を再開しますか？\n(入力完了時に現在のクイックスコア結果はライブ詳細結果で上書きされます)")) {
+                        await resumeMatch();
+                      }
+                    }}
+                    className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white text-[10px] font-black rounded-xl transition-all shadow-md shrink-0 cursor-pointer"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                    詳細入力を再開
+                  </button>
+                )}
 
                 <button
                   onClick={() => {

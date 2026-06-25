@@ -42,6 +42,12 @@ export interface Match {
   innings?: number;
   myInningScores?: (number | null)[];
   opponentInningScores?: (number | null)[];
+  liveMyScore?: number;
+  liveOpponentScore?: number;
+  liveMyInningScores?: (number | null)[];
+  liveOpponentInningScores?: (number | null)[];
+  liveStatus?: 'none' | 'draft' | 'completed';
+  lockedByUserName?: string | null;
   isWalkOff?: boolean; // 💡 サヨナラ勝ちの「x」表示用
 }
 

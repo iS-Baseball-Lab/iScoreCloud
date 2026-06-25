@@ -168,6 +168,14 @@ export interface MatchRow {
   myInningScores: number[]; // JSON.parse 後の配列として定義
   opponentInningScores: number[]; // JSON.parse 後の配列として定義
 
+  // 🌟 ライブ用カラム
+  liveMyScore?: number;
+  liveOpponentScore?: number;
+  liveMyInningScores?: number[];
+  liveOpponentInningScores?: number[];
+  liveStatus?: 'none' | 'draft' | 'completed';
+  lockedByUserName?: string | null;
+
   weather: string | null;
   youtubeUrl: string | null;
   tournamentName?: string | null;

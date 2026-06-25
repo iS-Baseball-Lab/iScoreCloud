@@ -96,25 +96,39 @@ matchesApi.post('/update-score', async (c) => {
     }
 
     // 4. トランザクション処理 (matches, at_bats, play_logs のアトミック更新/取り消し)
+    const isFinished = newStatus === 'finished';
+
+    const updateFields: any = {
+      currentInning: inning,
+      isBottom: !!isBottom,
+      status: newStatus,
+      balls: balls ?? 0,
+      strikes: strikes ?? 0,
+      outs: outs ?? 0,
+      runners: JSON.stringify(runners || { base1: null, base2: null, base3: null }),
+      myHits: myHits ?? 0,
+      opponentHits: opponentHits ?? 0,
+      myErrors: myErrors ?? 0,
+      opponentErrors: opponentErrors ?? 0,
+      // 🌟 ライブ専用カラムは進行中・終了に関わらず常に最新の下書き状態へ更新
+      liveMyScore: myScore,
+      liveOpponentScore: opponentScore,
+      liveMyInningScores: JSON.stringify(myInningScores || []),
+      liveOpponentInningScores: JSON.stringify(opponentInningScores || []),
+      liveStatus: isFinished ? "completed" : "draft",
+    };
+
+    // 🌟 正式反映（試合終了）時のみ、正規スコアをライブ結果で上書き
+    if (isFinished) {
+      updateFields.myScore = myScore;
+      updateFields.opponentScore = opponentScore;
+      updateFields.myInningScores = JSON.stringify(myInningScores || []);
+      updateFields.opponentInningScores = JSON.stringify(opponentInningScores || []);
+    }
+
     const batchPromises = [
       db.update(matches)
-        .set({
-          myScore,
-          opponentScore,
-          currentInning: inning,
-          isBottom: !!isBottom,
-          status: newStatus,
-          myInningScores: JSON.stringify(myInningScores || []),
-          opponentInningScores: JSON.stringify(opponentInningScores || []),
-          balls: balls ?? 0,
-          strikes: strikes ?? 0,
-          outs: outs ?? 0,
-          runners: JSON.stringify(runners || { base1: null, base2: null, base3: null }),
-          myHits: myHits ?? 0,
-          opponentHits: opponentHits ?? 0,
-          myErrors: myErrors ?? 0,
-          opponentErrors: opponentErrors ?? 0
-        })
+        .set(updateFields)
         .where(eq(matches.id, matchId))
     ];
 

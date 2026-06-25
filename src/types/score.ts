@@ -107,6 +107,11 @@ export interface MatchResponse {
     opponentHits?: number;
     myErrors?: number;
     opponentErrors?: number;
+    liveMyScore?: number;
+    liveOpponentScore?: number;
+    liveMyInningScores?: string;
+    liveOpponentInningScores?: string;
+    liveStatus?: string;
     locked_by_user_id?: string | null;
     locked_by_user_name?: string | null;
     locked_at?: number | null;
@@ -143,6 +148,7 @@ export interface ScoreContextType {
   resetBatter: (playerId: string | null) => void;
   undo: () => void;
   finishMatch: () => Promise<void>;
+  resumeMatch: () => Promise<void>; // 🌟 追加
   resetMatch: () => Promise<boolean>; // 🌟 追加
   updateMatchSettings: (settings: Partial<ScoreState>) => void;
   substitutePlayer: (
