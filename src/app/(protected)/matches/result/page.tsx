@@ -470,7 +470,8 @@ function MatchResultContent() {
       acc.plateAppearances += cur.plateAppearances;
       acc.atBats += cur.atBats;
       acc.hits += cur.hits;
-      acc.rbi += cur.rbi;
+      acc.rbi += acc.rbi; // 打点加算の修正
+      acc.rbi = acc.rbi + (parseInt(cur.rbi.toString()) || 0) - acc.rbi; // 正しい集計
       acc.runs += cur.runs;
       const k = parseInt(cur.strikeouts.toString()) || 0;
       const bb = parseInt(cur.walks.toString()) || 0;
@@ -480,6 +481,8 @@ function MatchResultContent() {
     },
     { plateAppearances: 0, atBats: 0, hits: 0, rbi: 0, runs: 0, strikeouts: 0, walks: 0 }
   );
+  // 打点集計の正確性調整
+  batterTotal.rbi = stats.reduce((sum, p) => sum + (parseInt(p.rbi.toString()) || 0), 0);
 
   const teamAvgVal = batterTotal.atBats > 0 ? batterTotal.hits / batterTotal.atBats : 0;
   let teamAvgStr = teamAvgVal.toFixed(3);
@@ -518,10 +521,10 @@ function MatchResultContent() {
   const youtubeVideoId = getYoutubeVideoId(match.youtubeUrl);
 
   return (
-    <div className="w-full min-h-screen pb-24 text-foreground animate-in fade-in duration-500">
+    <div className="w-full min-h-screen pb-16 text-foreground animate-in fade-in duration-500">
 
       {/* 💡 アクションヘッダー */}
-      <div className="max-w-4xl mx-auto px-6 pt-8 mb-8 flex items-center justify-between">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 pt-4 sm:pt-6 mb-4 sm:mb-6 flex items-center justify-between">
         <Button 
           variant="outline" 
           size="sm" 
@@ -531,12 +534,12 @@ function MatchResultContent() {
           <ChevronLeft className="h-4 w-4" />
           戻る
         </Button>
-        <div className="flex gap-3 items-center">
+        <div className="flex gap-2.5 items-center">
           <Button 
             variant="outline" 
             size="sm"
             onClick={() => router.push(`/matches/scorebook?id=${matchId}`)}
-            className="h-10 px-4 rounded-[var(--radius-xl)] font-black gap-2 shadow-sm border-border bg-card text-foreground hover:bg-muted"
+            className="h-10 px-3 sm:px-4 rounded-[var(--radius-xl)] font-black gap-1.5 shadow-sm border-border bg-card text-foreground hover:bg-muted text-xs sm:text-sm"
           >
             <BookOpen className="h-4 w-4 text-primary" />
             スコアブック
@@ -550,19 +553,19 @@ function MatchResultContent() {
           >
             <Video className="h-4 w-4" />
           </Button>
-          <Button onClick={handleDownloadImage} className="rounded-full font-black px-8 h-10 bg-primary hover:bg-primary/90 text-primary-foreground shadow-md active:scale-95 transition-all flex items-center justify-center">
-            <Download className="mr-2 h-4 w-4" /> DOWNLOAD
+          <Button onClick={handleDownloadImage} className="rounded-full font-black px-5 sm:px-8 h-10 bg-primary hover:bg-primary/90 text-primary-foreground shadow-md active:scale-95 transition-all flex items-center justify-center text-xs sm:text-sm">
+            <Download className="mr-1.5 h-4 w-4" /> DOWNLOAD
           </Button>
         </div>
       </div>
 
-      <main className="max-w-4xl mx-auto px-4 space-y-8">
+      <main className="max-w-4xl mx-auto px-4 space-y-6 sm:space-y-8">
         
         {/* 🎬 YouTube 動画セクション */}
-        <section className="space-y-4">
+        <section className="space-y-3">
           <SectionHeader title="試合動画" subtitle="Game Video" />
           {youtubeVideoId ? (
-            <div className="relative group rounded-[32px] overflow-hidden border border-border bg-card shadow-md">
+            <div className="relative group rounded-[var(--radius-xl)] overflow-hidden border-0 sm:border border-border/40 bg-card shadow-sm">
               <div className="aspect-video w-full">
                 <iframe
                   src={`https://www.youtube.com/embed/${youtubeVideoId}`}
@@ -583,17 +586,17 @@ function MatchResultContent() {
           ) : (
             <Card 
               onClick={() => setIsYoutubeModalOpen(true)}
-              className="border-dashed border-2 border-border/60 bg-card/40 hover:bg-muted/10 rounded-[32px] cursor-pointer transition-all duration-300 group py-12 flex flex-col items-center justify-center gap-4 text-center px-6"
+              className="border-dashed border-2 border-border/30 bg-card/40 hover:bg-muted/10 rounded-[var(--radius-xl)] cursor-pointer transition-all duration-300 group py-6 sm:py-10 flex flex-col items-center justify-center gap-3 text-center px-4 sm:px-6"
             >
-              <div className="p-5 bg-muted rounded-full text-muted-foreground group-hover:scale-110 transition-all">
-                <Play className="h-8 w-8 fill-current text-muted-foreground group-hover:text-primary" />
+              <div className="p-3 bg-muted rounded-full text-muted-foreground group-hover:scale-110 transition-all">
+                <Play className="h-6 w-6 fill-current text-muted-foreground group-hover:text-primary" />
               </div>
               <div>
-                <p className="font-black text-foreground/80 group-hover:text-foreground text-base">YouTube 試合動画を設定する</p>
-                <p className="text-xs text-muted-foreground mt-1 font-bold">試合のハイライトやフル動画を埋め込んで記録を豪華に保存</p>
+                <p className="font-black text-foreground/80 group-hover:text-foreground text-sm sm:text-base">YouTube 試合動画を設定する</p>
+                <p className="text-[10px] sm:text-xs text-muted-foreground mt-1 font-bold">試合のハイライトやフル動画を埋め込んで記録を豪華に保存</p>
               </div>
-              <Button size="sm" className="rounded-full font-black mt-2 bg-muted text-foreground hover:bg-muted/80">
-                <Plus className="h-4 w-4 mr-1" /> URLを登録
+              <Button size="sm" className="rounded-full font-black mt-1 bg-muted text-foreground hover:bg-muted/80 text-xs">
+                <Plus className="h-3.5 w-3.5 mr-1" /> URLを登録
               </Button>
             </Card>
           )}
@@ -601,94 +604,94 @@ function MatchResultContent() {
 
         {/* 🏟️ スコア ＆ チーム成績（キャプチャエリア） */}
         <div ref={captureRef} className={cn(
-          "bg-background transition-all space-y-12",
-          isDownloading ? "w-[850px] p-12 border-none shadow-none text-foreground" : "p-8 sm:p-12 rounded-[40px] border border-border shadow-md bg-card/20"
+          "transition-all space-y-8 sm:space-y-12",
+          isDownloading ? "w-[850px] p-12 border-none shadow-none text-foreground bg-background" : "p-3 sm:p-8 md:p-10 rounded-[var(--radius-2xl)] border-0 sm:border border-border/60 shadow-sm bg-card/25"
         )}>
 
           {/* 1. スコアビジュアル (巨大フォント) */}
-          <section className="text-center space-y-8">
-            <div className="space-y-4">
-              <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-primary/10 rounded-full border border-primary/20">
+          <section className="text-center space-y-6 sm:space-y-8">
+            <div className="space-y-3 sm:space-y-4">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-primary/5 rounded-[var(--radius-md)] border border-primary/10">
                 <Trophy className="h-3.5 w-3.5 text-primary" />
-                <span className="text-[10px] font-black text-primary uppercase tracking-[0.3em]">Game Report</span>
+                <span className="text-[9px] font-black text-primary uppercase tracking-[0.2em]">Game Report</span>
               </div>
-              <h1 className="text-4xl sm:text-6xl font-black italic tracking-tighter uppercase leading-none text-foreground">
+              <h1 className="text-3xl sm:text-5xl font-black italic tracking-tighter uppercase leading-none text-foreground">
                 vs {match.opponent}
               </h1>
-              <div className="flex justify-center items-center gap-4 text-muted-foreground font-bold text-xs uppercase tracking-wider">
-                <div className="flex items-center gap-1.5"><Calendar className="h-4 w-4 text-muted-foreground/60" /> {match.date}</div>
+              <div className="flex justify-center items-center gap-3 sm:gap-4 text-muted-foreground font-bold text-[10px] sm:text-xs uppercase tracking-wider">
+                <div className="flex items-center gap-1"><Calendar className="h-3.5 w-3.5 text-muted-foreground/50" /> {match.date}</div>
                 <span className="h-3 w-px bg-border" />
-                <div className="flex items-center gap-1.5"><Activity className="h-4 w-4 text-muted-foreground/60" /> {match.matchType}</div>
+                <div className="flex items-center gap-1"><Activity className="h-3.5 w-3.5 text-muted-foreground/50" /> {match.matchType}</div>
               </div>
             </div>
 
-            <div className="flex items-center justify-center gap-8 sm:gap-16 pt-4">
+            <div className="flex items-center justify-center gap-6 sm:gap-16 pt-2">
               <div className="text-center">
-                <p className="text-xs font-black text-muted-foreground uppercase tracking-widest mb-2">Opponent</p>
-                <p className="text-7xl sm:text-8xl font-black italic tracking-tighter leading-none text-foreground/80">{match.opponentScore}</p>
+                <p className="text-[10px] sm:text-xs font-black text-muted-foreground uppercase tracking-widest mb-1">Opponent</p>
+                <p className="text-5xl sm:text-7xl font-black italic tracking-tighter leading-none text-foreground/80">{match.opponentScore}</p>
               </div>
-              <div className="text-4xl font-black text-muted-foreground/45 italic mt-8">-</div>
+              <div className="text-2xl sm:text-4xl font-black text-muted-foreground/35 italic mt-6">-</div>
               <div className="text-center">
-                <p className="text-xs font-black text-primary uppercase tracking-widest mb-2">My Team</p>
+                <p className="text-[10px] sm:text-xs font-black text-primary uppercase tracking-widest mb-1">My Team</p>
                 <p className={cn(
-                  "text-7xl sm:text-8xl font-black italic tracking-tighter leading-none",
+                  "text-5xl sm:text-7xl font-black italic tracking-tighter leading-none",
                   match.myScore > match.opponentScore ? "text-primary" : "text-foreground"
                 )}>{match.myScore}</p>
               </div>
             </div>
 
             {(match.venueName || match.surfaceDetails) && (
-              <p className="text-xs text-muted-foreground font-bold tracking-wide pt-2">
+              <p className="text-[10px] sm:text-xs text-muted-foreground font-bold tracking-wide pt-1">
                 🏟️ {match.venueName || match.surfaceDetails}
               </p>
             )}
           </section>
 
           {/* 2. ランニングスコア (野球公式：先攻・後攻で表示順入替) */}
-          <section className="space-y-5">
+          <section className="space-y-4">
             <SectionHeader title="イニングスコア" subtitle="Line Score" />
-            <div className="bg-card border border-border rounded-[28px] overflow-hidden shadow-xs">
+            <div className="bg-card border-0 sm:border border-border/40 rounded-[var(--radius-xl)] overflow-hidden shadow-xs">
               <div className="overflow-x-auto scrollbar-hide">
                 <table className="w-full text-center">
                   <thead>
-                    <tr className="bg-muted/50 border-b border-border text-[10px] font-black text-muted-foreground uppercase tracking-widest">
-                      <th className="p-4 text-left w-48 pl-6">Teams</th>
+                    <tr className="bg-muted/50 border-b border-border/30 text-[9px] sm:text-[10px] font-black text-muted-foreground uppercase tracking-widest">
+                      <th className="p-1.5 sm:p-3 text-left w-36 sm:w-48 pl-2 sm:pl-4">Teams</th>
                       {[...Array(inningsCount)].map((_, i) => (
-                        <th key={i} className="w-10 italic">{i + 1}</th>
+                        <th key={i} className="w-8 sm:w-10 italic">{i + 1}</th>
                       ))}
-                      <th className="w-14 bg-primary/5 text-primary italic">R</th>
-                      <th className="w-10 italic opacity-50">H</th>
-                      <th className="w-10 italic opacity-50 text-rose-500">E</th>
+                      <th className="w-12 bg-primary/5 text-primary italic">R</th>
+                      <th className="w-8 italic opacity-55">H</th>
+                      <th className="w-8 italic opacity-55 text-rose-500">E</th>
                     </tr>
                   </thead>
-                  <tbody className="font-black text-lg italic tabular-nums text-foreground">
-                    <tr className="border-b border-border/60">
+                  <tbody className="font-black text-sm sm:text-lg italic tabular-nums text-foreground">
+                    <tr className="border-b border-border/30">
                       <td className={cn(
-                        "p-4 text-left text-sm not-italic uppercase tracking-tight pl-6 font-bold",
+                        "p-1.5 sm:p-3 text-left text-[11px] sm:text-sm not-italic uppercase tracking-tight pl-2 sm:pl-4 font-bold truncate max-w-[120px] sm:max-w-none",
                         isMyTeamTop ? "text-primary" : "text-foreground/80"
                       )}>
                         {topTeamName}
                       </td>
                       {[...Array(inningsCount)].map((_, i) => (
-                        <td key={i} className="text-muted-foreground/60">{topScores[i] ?? 0}</td>
+                        <td key={i} className="text-muted-foreground/60 p-1 sm:p-2 text-xs sm:text-base">{topScores[i] ?? 0}</td>
                       ))}
-                      <td className="bg-primary/5 p-3 text-2xl font-black">{topTotalScore}</td>
-                      <td className="text-xs opacity-50">{topHits || '-'}</td>
-                      <td className="text-xs opacity-50 text-rose-500">{topErrors || '-'}</td>
+                      <td className="bg-primary/5 p-1 sm:p-2 text-base sm:text-xl font-black text-center">{topTotalScore}</td>
+                      <td className="text-[10px] sm:text-xs opacity-50 p-1 sm:p-2">{topHits || '-'}</td>
+                      <td className="text-[10px] sm:text-xs opacity-50 text-rose-500 p-1 sm:p-2">{topErrors || '-'}</td>
                     </tr>
                     <tr className="bg-muted/10">
                       <td className={cn(
-                        "p-4 text-left text-sm not-italic uppercase tracking-tight pl-6 font-bold",
+                        "p-1.5 sm:p-3 text-left text-[11px] sm:text-sm not-italic uppercase tracking-tight pl-2 sm:pl-4 font-bold truncate max-w-[120px] sm:max-w-none",
                         !isMyTeamTop ? "text-primary" : "text-foreground/80"
                       )}>
                         {bottomTeamName}
                       </td>
                       {[...Array(inningsCount)].map((_, i) => (
-                        <td key={i} className="text-muted-foreground/60">{bottomScores[i] ?? 0}</td>
+                        <td key={i} className="text-muted-foreground/60 p-1 sm:p-2 text-xs sm:text-base">{bottomScores[i] ?? 0}</td>
                       ))}
-                      <td className="bg-primary/5 p-3 text-2xl font-black">{bottomTotalScore}</td>
-                      <td className="text-xs opacity-50">{bottomHits || '-'}</td>
-                      <td className="text-xs opacity-50 text-rose-500">{bottomErrors || '-'}</td>
+                      <td className="bg-primary/5 p-1 sm:p-2 text-base sm:text-xl font-black text-center">{bottomTotalScore}</td>
+                      <td className="text-[10px] sm:text-xs opacity-50 p-1 sm:p-2">{bottomHits || '-'}</td>
+                      <td className="text-[10px] sm:text-xs opacity-50 text-rose-500 p-1 sm:p-2">{bottomErrors || '-'}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -698,28 +701,28 @@ function MatchResultContent() {
 
           {/* 🎉 注目スタッツ（本日のヒーロー）セクション */}
           {highlightHeroes.length > 0 && (
-            <section className="space-y-5 animate-in fade-in duration-700">
+            <section className="space-y-4 animate-in fade-in duration-500">
               <SectionHeader title="本日の注目選手" subtitle="Key Players" />
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                 {highlightHeroes.map((hero, idx) => (
-                  <Card key={idx} className="border-primary/25 bg-card/65 rounded-2xl overflow-hidden shadow-xs hover:shadow-sm transition-all group">
-                    <CardContent className="p-4 flex items-start gap-3">
+                  <Card key={idx} className="border-0 sm:border border-primary/10 bg-card/65 rounded-[var(--radius-xl)] overflow-hidden shadow-xs hover:shadow-sm transition-all group">
+                    <CardContent className="p-3 sm:p-4 flex items-start gap-2.5 sm:gap-3">
                       <div className={cn(
-                        "p-2.5 rounded-xl shrink-0 mt-0.5",
+                        "p-2 rounded-[var(--radius-lg)] shrink-0 mt-0.5",
                         hero.type === "hit" ? "bg-amber-500/10 text-amber-500" :
                         hero.type === "rbi" ? "bg-emerald-500/10 text-emerald-500" :
                         "bg-sky-500/10 text-sky-500"
                       )}>
-                        {hero.type === "hit" ? <Flame className="h-5 w-5" /> : <Award className="h-5 w-5" />}
+                        {hero.type === "hit" ? <Flame className="h-4.5 w-4.5" /> : <Award className="h-4.5 w-4.5" />}
                       </div>
                       <div className="space-y-1">
-                        <span className="inline-block text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-muted/80 text-muted-foreground font-black">
+                        <span className="inline-block text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded bg-muted/85 text-muted-foreground">
                           {hero.label}
                         </span>
-                        <h4 className="font-black text-sm text-foreground group-hover:text-primary transition-colors">
+                        <h4 className="font-black text-xs sm:text-sm text-foreground group-hover:text-primary transition-colors">
                           {hero.value}
                         </h4>
-                        <p className="text-[10px] sm:text-xs font-medium text-muted-foreground leading-normal">
+                        <p className="text-[10px] font-semibold text-muted-foreground leading-normal">
                           {hero.description}
                         </p>
                       </div>
@@ -731,57 +734,57 @@ function MatchResultContent() {
           )}
 
           {/* 📅 試合情報 ＆ 会場案内（住所・地図） */}
-          <section className="space-y-5">
+          <section className="space-y-4">
             <SectionHeader title="試合情報・会場案内" subtitle="Game Info & Venue" />
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
               {/* 試合基本情報 */}
-              <Card className="border-border bg-card rounded-[28px] overflow-hidden shadow-xs p-6 space-y-4">
-                <h4 className="text-xs font-black text-primary uppercase tracking-widest border-b border-border pb-2 flex items-center gap-2">
-                  <Calendar className="h-4 w-4" /> 試合詳細スペック
+              <Card className="border-0 sm:border border-border/40 bg-card rounded-[var(--radius-xl)] overflow-hidden shadow-xs p-3.5 sm:p-6 space-y-4">
+                <h4 className="text-xs font-black text-primary uppercase tracking-widest border-b border-border/40 pb-2 flex items-center gap-2">
+                  <Calendar className="h-3.5 w-3.5" /> 試合詳細スペック
                 </h4>
-                <div className="space-y-3 font-bold text-xs sm:text-sm">
-                  <div className="flex justify-between py-1 border-b border-border/40">
-                    <span className="text-muted-foreground">日時</span>
-                    <span className="text-foreground">{match.date}</span>
+                <div className="space-y-2.5 font-bold text-xs sm:text-sm">
+                  <div className="flex justify-between py-1 border-b border-border/20">
+                    <span className="text-muted-foreground text-xs">日時</span>
+                    <span className="text-foreground text-xs sm:text-sm">{match.date}</span>
                   </div>
-                  <div className="flex justify-between py-1 border-b border-border/40">
-                    <span className="text-muted-foreground">試合区分</span>
-                    <span className="text-foreground">
+                  <div className="flex justify-between py-1 border-b border-border/20">
+                    <span className="text-muted-foreground text-xs">試合区分</span>
+                    <span className="text-foreground text-xs sm:text-sm">
                       {match.matchType === "official" ? "🏆 公式戦" :
                        match.matchType === "practice" ? "⚾ 練習試合" : "🤝 交流戦"}
                     </span>
                   </div>
-                  <div className="flex justify-between py-1 border-b border-border/40">
-                    <span className="text-muted-foreground">ベンチ位置</span>
-                    <span className="text-foreground font-black">
+                  <div className="flex justify-between py-1 border-b border-border/20">
+                    <span className="text-muted-foreground text-xs">ベンチ位置</span>
+                    <span className="text-foreground text-xs sm:text-sm font-black">
                       {match.benchSide === "1B" ? "🔴 1塁側" :
                        match.benchSide === "3B" ? "🔵 3塁側" : "⚪ 未定・情報なし"}
                     </span>
                   </div>
-                  <div className="flex justify-between py-1 border-b border-border/40">
-                    <span className="text-muted-foreground">規定イニング</span>
-                    <span className="text-foreground">{match.innings || 7}回</span>
+                  <div className="flex justify-between py-1 border-b border-border/20">
+                    <span className="text-muted-foreground text-xs">規定イニング</span>
+                    <span className="text-foreground text-xs sm:text-sm">{match.innings || 7}回</span>
                   </div>
                   {match.tournamentName && (
-                    <div className="flex justify-between py-1 border-b border-border/40">
-                      <span className="text-muted-foreground">大会名</span>
-                      <span className="text-foreground text-right max-w-[200px] truncate">{match.tournamentName}</span>
+                    <div className="flex justify-between py-1 border-b border-border/20">
+                      <span className="text-muted-foreground text-xs">大会名</span>
+                      <span className="text-foreground text-xs sm:text-sm text-right max-w-[180px] sm:max-w-[200px] truncate">{match.tournamentName}</span>
                     </div>
                   )}
                 </div>
               </Card>
 
               {/* 球場アクセス ＆ 地図埋め込み */}
-              <Card className="border-border bg-card rounded-[28px] overflow-hidden shadow-xs p-6 space-y-4 flex flex-col justify-between">
+              <Card className="border-0 sm:border border-border/40 bg-card rounded-[var(--radius-xl)] overflow-hidden shadow-xs p-3.5 sm:p-6 space-y-4 flex flex-col justify-between">
                 <div className="space-y-2">
-                  <h4 className="text-xs font-black text-primary uppercase tracking-widest border-b border-border pb-2 flex items-center gap-2">
-                    <MapPin className="h-4 w-4" /> 会場アクセス
+                  <h4 className="text-xs font-black text-primary uppercase tracking-widest border-b border-border/40 pb-2 flex items-center gap-2">
+                    <MapPin className="h-3.5 w-3.5" /> 会場アクセス
                   </h4>
                   <div className="space-y-1">
-                    <p className="font-black text-sm sm:text-base text-foreground">
+                    <p className="font-black text-sm text-foreground">
                       {match.venueName || match.surfaceDetails || "球場情報未設定"}
                     </p>
-                    <p className="text-xs text-muted-foreground font-bold leading-relaxed">
+                    <p className="text-[10px] sm:text-xs text-muted-foreground font-bold leading-normal">
                       {match.venueAddress || "住所情報は登録されていません。"}
                     </p>
                   </div>
@@ -789,8 +792,8 @@ function MatchResultContent() {
 
                 {/* Google Map 埋め込み iframe */}
                 {(match.venueAddress || match.venueName) ? (
-                  <div className="space-y-3 mt-2">
-                    <div className="w-full h-40 rounded-2xl overflow-hidden border border-border shadow-inner">
+                  <div className="space-y-3 mt-1">
+                    <div className="w-full h-36 sm:h-40 rounded-[var(--radius-md)] overflow-hidden border border-border shadow-inner">
                       <iframe
                         src={`https://maps.google.com/maps?q=${encodeURIComponent(match.venueAddress || match.venueName || '')}&output=embed`}
                         title="Google Map"
@@ -804,13 +807,13 @@ function MatchResultContent() {
                       href={match.venueMapUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(match.venueAddress || match.venueName || '')}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="w-full rounded-xl font-black text-xs gap-1.5 h-10 border border-border bg-card hover:bg-muted text-foreground flex items-center justify-center transition-all shadow-xs"
+                      className="w-full rounded-[var(--radius-md)] font-black text-xs gap-1.5 h-10 border border-border bg-card hover:bg-muted text-foreground flex items-center justify-center transition-all shadow-xs"
                     >
                       🗺️ Googleマップでルート検索
                     </a>
                   </div>
                 ) : (
-                  <div className="py-8 text-center text-xs text-muted-foreground font-bold border border-dashed border-border/60 rounded-2xl">
+                  <div className="py-8 text-center text-xs text-muted-foreground font-bold border border-dashed border-border/40 rounded-[var(--radius-md)]">
                     マップを表示するための住所情報がありません
                   </div>
                 )}
@@ -819,52 +822,52 @@ function MatchResultContent() {
           </section>
 
           {/* 3. AI パフォーマンス分析カード */}
-          <section className="space-y-5">
+          <section className="space-y-4">
             <SectionHeader title="戦評" subtitle="AI Insight" />
-            <Card className="border-primary/20 bg-card rounded-[28px] overflow-hidden shadow-xs">
-              <CardContent className="p-6 space-y-4">
+            <Card className="border-0 sm:border border-primary/10 bg-card rounded-[var(--radius-xl)] overflow-hidden shadow-xs">
+              <CardContent className="p-3.5 sm:p-6 space-y-4">
                 {!aiAnalysis ? (
                   <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
                     <div className="flex items-center gap-4">
-                      <div className="p-4 bg-primary/10 text-primary rounded-2xl shadow-inner animate-pulse">
-                        <Sparkles className="h-6 w-6" />
+                      <div className="p-3 bg-primary/10 text-primary rounded-[var(--radius-xl)] shadow-inner animate-pulse">
+                        <Sparkles className="h-5.5 w-5.5" />
                       </div>
                       <div>
-                        <p className="font-black text-base text-foreground">AI パフォーマンス分析</p>
-                        <p className="text-xs text-muted-foreground font-bold mt-0.5">今日のMVPと勝因をAIがプロの野球アナリスト視点で分析します</p>
+                        <p className="font-black text-sm sm:text-base text-foreground">AI パフォーマンス分析</p>
+                        <p className="text-[10px] sm:text-xs text-muted-foreground font-bold mt-0.5">今日のMVPと勝因をAIがプロの野球アナリスト視点で分析します</p>
                       </div>
                     </div>
                     <Button
                       onClick={analyzePerformance}
                       disabled={isAnalyzing}
-                      className="w-full sm:w-auto rounded-full font-black px-8 h-12 bg-primary hover:bg-primary/90 text-primary-foreground transition-all active:scale-95 shrink-0"
+                      className="w-full sm:w-auto rounded-full font-black px-6 sm:px-8 h-11 bg-primary hover:bg-primary/90 text-primary-foreground transition-all active:scale-95 shrink-0 text-xs"
                     >
                       {isAnalyzing ? (
-                        <Loader2 className="h-5 w-5 animate-spin mr-2" />
+                        <Loader2 className="h-4 w-4 animate-spin mr-1.5" />
                       ) : (
-                        <TrendingUp className="h-5 w-5 mr-2" />
+                        <TrendingUp className="h-4 w-4 mr-1.5" />
                       )}
                       分析を開始する
                     </Button>
                   </div>
                 ) : (
                   <div className="animate-in fade-in slide-in-from-top-4 duration-500">
-                    <div className="flex items-center gap-2 mb-4 border-b border-border pb-2">
+                    <div className="flex items-center gap-2 mb-3 border-b border-border/40 pb-2">
                       <Sparkles className="h-4 w-4 text-primary" />
-                      <span className="text-[10px] font-black uppercase text-primary tracking-widest">AI Analyst Insight</span>
+                      <span className="text-[9px] font-black uppercase text-primary tracking-widest">AI Analyst Insight</span>
                     </div>
                     <div className="relative">
                       <div className="absolute -left-2 top-0 bottom-0 w-1 bg-primary rounded-full" />
-                      <p className="text-sm font-bold leading-relaxed italic text-foreground pl-4 py-1">
+                      <p className="text-xs sm:text-sm font-bold leading-relaxed italic text-slate-800 dark:text-slate-200 pl-3.5 py-1">
                         {aiAnalysis}
                       </p>
                     </div>
-                    <div className="flex justify-end mt-4">
+                    <div className="flex justify-end mt-3">
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={() => setAiAnalysis(null)}
-                        className="text-[10px] font-black text-muted-foreground hover:text-foreground"
+                        className="text-[9px] font-black text-muted-foreground hover:text-foreground"
                       >
                         分析結果を閉じる
                       </Button>
@@ -876,61 +879,61 @@ function MatchResultContent() {
           </section>
 
           {/* 4. ボックススコア成績データタブ */}
-          <section className="space-y-5">
+          <section className="space-y-4">
             <SectionHeader title="個人成績・ボックススコア" subtitle="Player Stats & Box Score" />
             <Tabs defaultValue="lineup" className="w-full">
-              <TabsList className="grid w-full grid-cols-4 h-14 rounded-2xl bg-muted/50 p-1 border border-border">
+              <TabsList className="grid w-full grid-cols-4 h-13 rounded-[var(--radius-xl)] bg-muted/50 p-1 border border-border/40">
                 <TabsTrigger
                   value="lineup"
-                  className="rounded-xl font-black text-xs tracking-widest data-[state=active]:bg-background data-[state=active]:text-primary text-muted-foreground"
+                  className="rounded-[var(--radius-md)] font-black text-[10px] sm:text-xs tracking-wider data-[state=active]:bg-background data-[state=active]:text-primary text-muted-foreground p-1"
                 >
-                  <Users className="h-4 w-4 mr-2" /> LINEUP
+                  <Users className="h-3.5 w-3.5 mr-1" /> LINEUP
                 </TabsTrigger>
                 <TabsTrigger
                   value="batting"
-                  className="rounded-xl font-black text-xs tracking-widest data-[state=active]:bg-background data-[state=active]:text-primary text-muted-foreground"
+                  className="rounded-[var(--radius-md)] font-black text-[10px] sm:text-xs tracking-wider data-[state=active]:bg-background data-[state=active]:text-primary text-muted-foreground p-1"
                 >
-                  <Target className="h-4 w-4 mr-2" /> BATTING
+                  <Target className="h-3.5 w-3.5 mr-1" /> BATTING
                 </TabsTrigger>
                 <TabsTrigger
                   value="pitching"
-                  className="rounded-xl font-black text-xs tracking-widest data-[state=active]:bg-background data-[state=active]:text-primary text-muted-foreground"
+                  className="rounded-[var(--radius-md)] font-black text-[10px] sm:text-xs tracking-wider data-[state=active]:bg-background data-[state=active]:text-primary text-muted-foreground p-1"
                 >
-                  <Zap className="h-4 w-4 mr-2" /> PITCHING
+                  <Zap className="h-3.5 w-3.5 mr-1" /> PITCHING
                 </TabsTrigger>
                 <TabsTrigger
                   value="timeline"
-                  className="rounded-xl font-black text-xs tracking-widest data-[state=active]:bg-background data-[state=active]:text-primary text-muted-foreground"
+                  className="rounded-[var(--radius-md)] font-black text-[10px] sm:text-xs tracking-wider data-[state=active]:bg-background data-[state=active]:text-primary text-muted-foreground p-1"
                 >
-                  <Activity className="h-4 w-4 mr-2" /> TIMELINE
+                  <Activity className="h-3.5 w-3.5 mr-1" /> TIMELINE
                 </TabsTrigger>
               </TabsList>
               
               {/* 👥 LINEUP タブコンテンツ */}
               <TabsContent value="lineup" className="mt-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
                   {/* 先攻チームスタメン */}
-                  <Card className="rounded-[28px] border-border bg-card overflow-hidden shadow-xs">
-                    <div className="bg-muted/50 p-4 border-b border-border">
-                      <h4 className="font-black text-sm text-foreground flex items-center justify-between">
+                  <Card className="rounded-[var(--radius-xl)] border-0 sm:border border-border/40 bg-card overflow-hidden shadow-xs">
+                    <div className="bg-muted/30 p-2.5 sm:p-3 border-b border-border/30">
+                      <h4 className="font-black text-xs sm:text-sm text-foreground flex items-center justify-between">
                         <span>{topTeamName}</span>
-                        <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-black">Starting XI / lineup</span>
+                        <span className="text-[9px] text-muted-foreground/60 uppercase tracking-widest font-black">Starting lineup</span>
                       </h4>
                     </div>
-                    <div className="p-2">
+                    <div className="p-1">
                       <Table>
                         <TableHeader>
-                          <TableRow className="border-border/60 hover:bg-transparent">
-                            <TableHead className="font-black text-[10px] text-muted-foreground uppercase tracking-widest w-12 text-center">打順</TableHead>
-                            <TableHead className="font-black text-[10px] text-muted-foreground uppercase tracking-widest w-16 text-center">位置</TableHead>
-                            <TableHead className="font-black text-[10px] text-muted-foreground uppercase tracking-widest pl-4">選手名</TableHead>
-                            <TableHead className="font-black text-[10px] text-muted-foreground uppercase tracking-widest w-16 text-right pr-6">背番号</TableHead>
+                          <TableRow className="border-border/25 hover:bg-transparent">
+                            <TableHead className="font-black text-[9px] text-muted-foreground uppercase tracking-widest w-10 text-center py-1.5 sm:py-2.5">打順</TableHead>
+                            <TableHead className="font-black text-[9px] text-muted-foreground uppercase tracking-widest w-14 text-center py-1.5 sm:py-2.5">位置</TableHead>
+                            <TableHead className="font-black text-[9px] text-muted-foreground uppercase tracking-widest pl-2 sm:pl-3 py-1.5 sm:py-2.5">選手名</TableHead>
+                            <TableHead className="font-black text-[9px] text-muted-foreground uppercase tracking-widest w-14 text-right pr-3 sm:pr-4 py-1.5 sm:py-2.5">背番号</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
                           {(isMyTeamTop ? myLineup : opponentLineup).length === 0 ? (
                             <TableRow>
-                              <TableCell colSpan={4} className="text-center py-10 text-muted-foreground font-bold">
+                              <TableCell colSpan={4} className="text-center py-8 text-xs text-muted-foreground font-bold">
                                 ラインナップ情報がありません
                               </TableCell>
                             </TableRow>
@@ -939,18 +942,18 @@ function MatchResultContent() {
                               const pos = slot.position || "";
                               const num = slot.uniformNumber || "-";
                               return (
-                                <TableRow key={idx} className="border-border/65 hover:bg-muted/30 transition-colors">
-                                  <td className="text-center py-3 text-xs italic font-black text-muted-foreground/80">{slot.order || (idx + 1)}</td>
-                                  <td className="text-center py-2">
+                                <TableRow key={idx} className="border-border/25 hover:bg-muted/20 transition-colors">
+                                  <td className="text-center py-1.5 sm:py-2 text-[11px] sm:text-xs italic font-black text-muted-foreground/60">{slot.order || (idx + 1)}</td>
+                                  <td className="text-center py-1 sm:py-1.5">
                                     <span className={cn(
-                                      "inline-block text-[11px] font-black px-2 py-0.5 rounded border leading-none",
+                                      "inline-block text-[9px] sm:text-[10px] font-black px-1.5 py-0.5 rounded border leading-none",
                                       getPositionColor(pos)
                                     )}>
                                       {getPositionLabel(pos)}
                                     </span>
                                   </td>
-                                  <td className="pl-4 font-bold text-foreground text-sm">{slot.name || "不明"}</td>
-                                  <td className="text-right pr-6 font-bold text-muted-foreground text-xs tabular-nums">#{num}</td>
+                                  <td className="pl-2 sm:pl-3 font-bold text-foreground text-[11px] sm:text-sm py-1.5 sm:py-2.5">{slot.name || "不明"}</td>
+                                  <td className="text-right pr-3 sm:pr-4 font-bold text-muted-foreground/80 text-[11px] sm:text-xs py-1.5 sm:py-2.5 tabular-nums">#{num}</td>
                                 </TableRow>
                               );
                             })
@@ -961,27 +964,27 @@ function MatchResultContent() {
                   </Card>
 
                   {/* 後攻チームスタメン */}
-                  <Card className="rounded-[28px] border-border bg-card overflow-hidden shadow-xs">
-                    <div className="bg-muted/50 p-4 border-b border-border">
-                      <h4 className="font-black text-sm text-foreground flex items-center justify-between">
+                  <Card className="rounded-[var(--radius-xl)] border-0 sm:border border-border/40 bg-card overflow-hidden shadow-xs">
+                    <div className="bg-muted/30 p-2.5 sm:p-3 border-b border-border/30">
+                      <h4 className="font-black text-xs sm:text-sm text-foreground flex items-center justify-between">
                         <span>{bottomTeamName}</span>
-                        <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-black">Starting XI / lineup</span>
+                        <span className="text-[9px] text-muted-foreground/60 uppercase tracking-widest font-black">Starting lineup</span>
                       </h4>
                     </div>
-                    <div className="p-2">
+                    <div className="p-1">
                       <Table>
                         <TableHeader>
-                          <TableRow className="border-border/60 hover:bg-transparent">
-                            <TableHead className="font-black text-[10px] text-muted-foreground uppercase tracking-widest w-12 text-center">打順</TableHead>
-                            <TableHead className="font-black text-[10px] text-muted-foreground uppercase tracking-widest w-16 text-center">位置</TableHead>
-                            <TableHead className="font-black text-[10px] text-muted-foreground uppercase tracking-widest pl-4">選手名</TableHead>
-                            <TableHead className="font-black text-[10px] text-muted-foreground uppercase tracking-widest w-16 text-right pr-6">背番号</TableHead>
+                          <TableRow className="border-border/25 hover:bg-transparent">
+                            <TableHead className="font-black text-[9px] text-muted-foreground uppercase tracking-widest w-10 text-center py-1.5 sm:py-2.5">打順</TableHead>
+                            <TableHead className="font-black text-[9px] text-muted-foreground uppercase tracking-widest w-14 text-center py-1.5 sm:py-2.5">位置</TableHead>
+                            <TableHead className="font-black text-[9px] text-muted-foreground uppercase tracking-widest pl-2 sm:pl-3 py-1.5 sm:py-2.5">選手名</TableHead>
+                            <TableHead className="font-black text-[9px] text-muted-foreground uppercase tracking-widest w-14 text-right pr-3 sm:pr-4 py-1.5 sm:py-2.5">背番号</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
                           {(!isMyTeamTop ? myLineup : opponentLineup).length === 0 ? (
                             <TableRow>
-                              <TableCell colSpan={4} className="text-center py-10 text-muted-foreground font-bold">
+                              <TableCell colSpan={4} className="text-center py-8 text-xs text-muted-foreground font-bold">
                                 ラインナップ情報がありません
                               </TableCell>
                             </TableRow>
@@ -990,18 +993,18 @@ function MatchResultContent() {
                               const pos = slot.position || "";
                               const num = slot.uniformNumber || "-";
                               return (
-                                <TableRow key={idx} className="border-border/65 hover:bg-muted/30 transition-colors">
-                                  <td className="text-center py-3 text-xs italic font-black text-muted-foreground/80">{slot.order || (idx + 1)}</td>
-                                  <td className="text-center py-2">
+                                <TableRow key={idx} className="border-border/25 hover:bg-muted/20 transition-colors">
+                                  <td className="text-center py-1.5 sm:py-2 text-[11px] sm:text-xs italic font-black text-muted-foreground/60">{slot.order || (idx + 1)}</td>
+                                  <td className="text-center py-1 sm:py-1.5">
                                     <span className={cn(
-                                      "inline-block text-[11px] font-black px-2 py-0.5 rounded border leading-none",
+                                      "inline-block text-[9px] sm:text-[10px] font-black px-1.5 py-0.5 rounded border leading-none",
                                       getPositionColor(pos)
                                     )}>
                                       {getPositionLabel(pos)}
                                     </span>
                                   </td>
-                                  <td className="pl-4 font-bold text-foreground text-sm">{slot.name || "不明"}</td>
-                                  <td className="text-right pr-6 font-bold text-muted-foreground text-xs tabular-nums">#{num}</td>
+                                  <td className="pl-2 sm:pl-3 font-bold text-foreground text-[11px] sm:text-sm py-1.5 sm:py-2.5">{slot.name || "不明"}</td>
+                                  <td className="text-right pr-3 sm:pr-4 font-bold text-muted-foreground/80 text-[11px] sm:text-xs py-1.5 sm:py-2.5 tabular-nums">#{num}</td>
                                 </TableRow>
                               );
                             })
@@ -1014,26 +1017,26 @@ function MatchResultContent() {
               </TabsContent>
 
               <TabsContent value="batting" className="mt-4 space-y-4">
-                <Card className="rounded-[28px] border-border bg-card overflow-hidden shadow-xs">
+                <Card className="rounded-[var(--radius-xl)] border-0 sm:border border-border/40 bg-card overflow-hidden shadow-xs">
                   <div className="overflow-x-auto">
                     <Table>
-                      <TableHeader className="bg-muted/50 border-b border-border">
-                        <TableRow className="border-border hover:bg-transparent">
-                          <TableHead className="font-black text-[10px] text-muted-foreground uppercase tracking-widest pl-6">Player</TableHead>
-                          <TableHead className="text-center font-black text-[10px] text-muted-foreground uppercase tracking-widest">PA</TableHead>
-                          <TableHead className="text-center font-black text-[10px] text-muted-foreground uppercase tracking-widest">AB</TableHead>
-                          <TableHead className="text-center font-black text-[10px] text-muted-foreground uppercase tracking-widest">H</TableHead>
-                          <TableHead className="text-center font-black text-[10px] text-muted-foreground uppercase tracking-widest">RBI</TableHead>
-                          <TableHead className="text-center font-black text-[10px] text-muted-foreground uppercase tracking-widest">R</TableHead>
-                          <TableHead className="text-center font-black text-[10px] text-muted-foreground uppercase tracking-widest">K</TableHead>
-                          <TableHead className="text-center font-black text-[10px] text-muted-foreground uppercase tracking-widest">BB/HP</TableHead>
-                          <TableHead className="text-right font-black text-[10px] text-primary uppercase tracking-widest pr-6">AVG</TableHead>
+                      <TableHeader className="bg-muted/50 border-b border-border/30">
+                        <TableRow className="border-border/25 hover:bg-transparent">
+                          <TableHead className="font-black text-[9px] text-muted-foreground uppercase tracking-widest pl-2 sm:pl-4 py-1.5 sm:py-2.5">Player</TableHead>
+                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">PA</TableHead>
+                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">AB</TableHead>
+                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">H</TableHead>
+                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">RBI</TableHead>
+                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">R</TableHead>
+                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">K</TableHead>
+                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">BB/HP</TableHead>
+                          <TableHead className="text-right font-black text-[9px] text-primary uppercase tracking-widest pr-2 sm:pr-4 py-1.5 sm:py-2.5">AVG</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {stats.length === 0 ? (
                           <TableRow>
-                            <TableCell colSpan={9} className="text-center py-16 text-muted-foreground font-bold">
+                            <TableCell colSpan={9} className="text-center py-12 text-xs text-muted-foreground font-bold">
                               打撃データがありません
                             </TableCell>
                           </TableRow>
@@ -1047,42 +1050,42 @@ function MatchResultContent() {
                                 <TableRow 
                                   key={player.id} 
                                   className={cn(
-                                    "border-border hover:bg-muted/30 transition-colors group",
-                                    isHero && "bg-amber-500/5 dark:bg-amber-500/10 font-medium"
+                                    "border-border/25 hover:bg-muted/20 transition-colors group",
+                                    isHero && "bg-amber-500/[0.04] dark:bg-amber-500/[0.07] font-medium"
                                   )}
                                 >
-                                  <TableCell className="font-bold py-4 pl-6">
-                                    <div className="flex items-center gap-3">
-                                      <span className="text-[10px] font-black text-muted-foreground/60 w-6">#{player.number}</span>
-                                      <span className="truncate group-hover:text-primary transition-colors text-foreground">{player.name}</span>
+                                  <TableCell className="font-bold py-1.5 sm:py-2.5 pl-2 sm:pl-4">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[9px] font-black text-muted-foreground/50 w-5">#{player.number}</span>
+                                      <span className="truncate group-hover:text-primary transition-colors text-foreground text-[11px] sm:text-sm">{player.name}</span>
                                     </div>
                                   </TableCell>
-                                  <TableCell className="text-center tabular-nums text-muted-foreground font-bold">{player.plateAppearances}</TableCell>
-                                  <TableCell className="text-center tabular-nums text-muted-foreground font-bold">{player.atBats}</TableCell>
-                                  <TableCell className={cn("text-center tabular-nums font-black", hitCount >= 2 ? "text-amber-500" : "text-foreground")}>{player.hits}</TableCell>
-                                  <TableCell className={cn("text-center tabular-nums font-black", rbiCount >= 1 ? "text-emerald-500" : "text-foreground")}>{player.rbi}</TableCell>
-                                  <TableCell className="text-center tabular-nums text-muted-foreground font-bold">{player.runs}</TableCell>
-                                  <TableCell className="text-center tabular-nums text-muted-foreground/60 font-bold">{player.strikeouts}</TableCell>
-                                  <TableCell className="text-center tabular-nums text-muted-foreground/60 font-bold">{player.walks}</TableCell>
-                                  <TableCell className="text-right tabular-nums font-black text-primary text-sm pr-6">
+                                  <TableCell className="text-center tabular-nums text-muted-foreground/80 text-[11px] sm:text-xs px-1 sm:px-2.5 py-1.5 sm:py-2.5">{player.plateAppearances}</TableCell>
+                                  <TableCell className="text-center tabular-nums text-muted-foreground/80 text-[11px] sm:text-xs px-1 sm:px-2.5 py-1.5 sm:py-2.5">{player.atBats}</TableCell>
+                                  <TableCell className={cn("text-center tabular-nums font-black text-[11px] sm:text-sm px-1 sm:px-2.5 py-1.5 sm:py-2.5", hitCount >= 2 ? "text-amber-500" : "text-foreground")}>{player.hits}</TableCell>
+                                  <TableCell className={cn("text-center tabular-nums font-black text-[11px] sm:text-sm px-1 sm:px-2.5 py-1.5 sm:py-2.5", rbiCount >= 1 ? "text-emerald-500" : "text-foreground")}>{player.rbi}</TableCell>
+                                  <TableCell className="text-center tabular-nums text-muted-foreground/80 text-[11px] sm:text-xs px-1 sm:px-2.5 py-1.5 sm:py-2.5">{player.runs}</TableCell>
+                                  <TableCell className="text-center tabular-nums text-muted-foreground/50 text-[11px] sm:text-xs px-1 sm:px-2.5 py-1.5 sm:py-2.5">{player.strikeouts}</TableCell>
+                                  <TableCell className="text-center tabular-nums text-muted-foreground/50 text-[11px] sm:text-xs px-1 sm:px-2.5 py-1.5 sm:py-2.5">{player.walks}</TableCell>
+                                  <TableCell className="text-right tabular-nums font-black text-primary text-[11px] sm:text-sm pr-2 sm:pr-4 py-1.5 sm:py-2.5">
                                     {player.avg}
                                   </TableCell>
                                 </TableRow>
                               );
                             })}
                             {/* BATTING TEAM TOTAL */}
-                            <TableRow className="border-t-2 border-border bg-muted/30 hover:bg-muted/50 font-black">
-                              <TableCell className="py-4 pl-6 text-foreground font-black">
-                                <span className="text-xs uppercase tracking-wider text-muted-foreground">TEAM TOTAL</span>
+                            <TableRow className="border-t border-border/50 bg-muted/25 hover:bg-muted/40 font-black">
+                              <TableCell className="py-2 sm:py-3 pl-2 sm:pl-4 text-foreground font-black">
+                                <span className="text-[10px] uppercase tracking-wider text-muted-foreground">TEAM TOTAL</span>
                               </TableCell>
-                              <TableCell className="text-center tabular-nums text-muted-foreground">{batterTotal.plateAppearances}</TableCell>
-                              <TableCell className="text-center tabular-nums text-muted-foreground">{batterTotal.atBats}</TableCell>
-                              <TableCell className="text-center tabular-nums text-foreground text-base">{batterTotal.hits}</TableCell>
-                              <TableCell className="text-center tabular-nums text-foreground text-base">{batterTotal.rbi}</TableCell>
-                              <TableCell className="text-center tabular-nums text-muted-foreground">{batterTotal.runs}</TableCell>
-                              <TableCell className="text-center tabular-nums text-muted-foreground/60">{batterTotal.strikeouts}</TableCell>
-                              <TableCell className="text-center tabular-nums text-muted-foreground/60">{batterTotal.walks}</TableCell>
-                              <TableCell className="text-right tabular-nums text-primary text-base pr-6">{teamAvgStr}</TableCell>
+                              <TableCell className="text-center tabular-nums text-muted-foreground text-[11px] sm:text-xs px-1 sm:px-2.5 py-2 sm:py-3">{batterTotal.plateAppearances}</TableCell>
+                              <TableCell className="text-center tabular-nums text-muted-foreground text-[11px] sm:text-xs px-1 sm:px-2.5 py-2 sm:py-3">{batterTotal.atBats}</TableCell>
+                              <TableCell className="text-center tabular-nums text-foreground text-xs sm:text-base px-1 sm:px-2.5 py-2 sm:py-3">{batterTotal.hits}</TableCell>
+                              <TableCell className="text-center tabular-nums text-foreground text-xs sm:text-base px-1 sm:px-2.5 py-2 sm:py-3">{batterTotal.rbi}</TableCell>
+                              <TableCell className="text-center tabular-nums text-muted-foreground text-[11px] sm:text-xs px-1 sm:px-2.5 py-2 sm:py-3">{batterTotal.runs}</TableCell>
+                              <TableCell className="text-center tabular-nums text-muted-foreground/50 text-[11px] sm:text-xs px-1 sm:px-2.5 py-2 sm:py-3">{batterTotal.strikeouts}</TableCell>
+                              <TableCell className="text-center tabular-nums text-muted-foreground/50 text-[11px] sm:text-xs px-1 sm:px-2.5 py-2 sm:py-3">{batterTotal.walks}</TableCell>
+                              <TableCell className="text-right tabular-nums text-primary text-xs sm:text-base pr-2 sm:pr-4 py-2 sm:py-3">{teamAvgStr}</TableCell>
                             </TableRow>
                           </>
                         )}
@@ -1093,51 +1096,51 @@ function MatchResultContent() {
 
                 {/* 📝 打撃詳細（新聞・プロ仕様詳細） */}
                 {hasGameDetails && (
-                  <Card className="rounded-[28px] border-border bg-card/60 p-6 space-y-4 text-xs sm:text-sm shadow-xs">
-                    <div className="flex items-center gap-2 border-b border-border pb-2">
+                  <Card className="rounded-[var(--radius-xl)] border-0 sm:border border-border/40 bg-card/45 p-3.5 sm:p-6 space-y-3 text-xs sm:text-sm shadow-xs">
+                    <div className="flex items-center gap-2 border-b border-border/40 pb-2">
                       <BookOpen className="h-4 w-4 text-primary" />
                       <span className="text-[10px] font-black uppercase text-primary tracking-widest">打撃・走塁詳細</span>
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 font-bold text-foreground/80 leading-relaxed">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 font-bold text-foreground/80 leading-relaxed text-xs">
                       {gameDetails.double.length > 0 && (
                         <div>
-                          <span className="text-muted-foreground mr-2">【二塁打】</span>
+                          <span className="text-muted-foreground mr-1.5">【二塁打】</span>
                           <span>{gameDetails.double.join(", ")}</span>
                         </div>
                       )}
                       {gameDetails.triple.length > 0 && (
                         <div>
-                          <span className="text-muted-foreground mr-2">【三塁打】</span>
+                          <span className="text-muted-foreground mr-1.5">【三塁打】</span>
                           <span>{gameDetails.triple.join(", ")}</span>
                         </div>
                       )}
                       {gameDetails.homeRun.length > 0 && (
                         <div>
-                          <span className="text-primary mr-2 font-black">【本塁打】</span>
+                          <span className="text-primary mr-1.5 font-black">【本塁打】</span>
                           <span className="text-foreground">{gameDetails.homeRun.join(", ")}</span>
                         </div>
                       )}
                       {gameDetails.stolenBase.length > 0 && (
                         <div>
-                          <span className="text-muted-foreground mr-2">【盗塁】</span>
+                          <span className="text-muted-foreground mr-1.5">【盗塁】</span>
                           <span>{gameDetails.stolenBase.join(", ")}</span>
                         </div>
                       )}
                       {gameDetails.sacrificeBunt.length > 0 && (
                         <div>
-                          <span className="text-muted-foreground mr-2">【犠打】</span>
+                          <span className="text-muted-foreground mr-1.5">【犠打】</span>
                           <span>{gameDetails.sacrificeBunt.join(", ")}</span>
                         </div>
                       )}
                       {gameDetails.sacrificeFly.length > 0 && (
                         <div>
-                          <span className="text-muted-foreground mr-2">【犠飛】</span>
+                          <span className="text-muted-foreground mr-1.5">【犠飛】</span>
                           <span>{gameDetails.sacrificeFly.join(", ")}</span>
                         </div>
                       )}
                       {gameDetails.doublePlay.length > 0 && (
                         <div>
-                          <span className="text-rose-500/75 mr-2">【併殺打】</span>
+                          <span className="text-rose-500/75 mr-1.5">【併殺打】</span>
                           <span>{gameDetails.doublePlay.join(", ")}</span>
                         </div>
                       )}
@@ -1147,25 +1150,25 @@ function MatchResultContent() {
               </TabsContent>
 
               <TabsContent value="pitching" className="mt-4">
-                <Card className="rounded-[28px] border-border bg-card overflow-hidden shadow-xs">
+                <Card className="rounded-[var(--radius-xl)] border-0 sm:border border-border/40 bg-card overflow-hidden shadow-xs">
                   <div className="overflow-x-auto">
                     <Table>
-                      <TableHeader className="bg-muted/50 border-b border-border">
-                        <TableRow className="border-border hover:bg-transparent">
-                          <TableHead className="font-black text-[10px] text-muted-foreground uppercase tracking-widest pl-6">Pitcher</TableHead>
-                          <TableHead className="text-center font-black text-[10px] text-muted-foreground uppercase tracking-widest">IP</TableHead>
-                          <TableHead className="text-center font-black text-[10px] text-muted-foreground uppercase tracking-widest">H</TableHead>
-                          <TableHead className="text-center font-black text-[10px] text-muted-foreground uppercase tracking-widest">BB/HP</TableHead>
-                          <TableHead className="text-center font-black text-[10px] text-muted-foreground uppercase tracking-widest">SO</TableHead>
-                          <TableHead className="text-center font-black text-[10px] text-muted-foreground uppercase tracking-widest">R</TableHead>
-                          <TableHead className="text-center font-black text-[10px] text-muted-foreground uppercase tracking-widest">ER</TableHead>
-                          <TableHead className="text-right font-black text-[10px] text-primary uppercase tracking-widest pr-6">ERA</TableHead>
+                      <TableHeader className="bg-muted/50 border-b border-border/30">
+                        <TableRow className="border-border/25 hover:bg-transparent">
+                          <TableHead className="font-black text-[9px] text-muted-foreground uppercase tracking-widest pl-2 sm:pl-4 py-1.5 sm:py-2.5">Pitcher</TableHead>
+                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">IP</TableHead>
+                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">H</TableHead>
+                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">BB/HP</TableHead>
+                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">SO</TableHead>
+                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">R</TableHead>
+                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">ER</TableHead>
+                          <TableHead className="text-right font-black text-[9px] text-primary uppercase tracking-widest pr-2 sm:pr-4 py-1.5 sm:py-2.5">ERA</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {pitcherStats.length === 0 ? (
                           <TableRow>
-                            <TableCell colSpan={8} className="text-center py-16 text-muted-foreground font-bold">
+                            <TableCell colSpan={8} className="text-center py-12 text-xs text-muted-foreground font-bold">
                               投手データがありません
                             </TableCell>
                           </TableRow>
@@ -1180,40 +1183,40 @@ function MatchResultContent() {
                                 <TableRow 
                                   key={player.id} 
                                   className={cn(
-                                    "border-border hover:bg-muted/30 transition-colors group",
-                                    isHero && "bg-sky-500/5 dark:bg-sky-500/10 font-medium"
+                                    "border-border/25 hover:bg-muted/20 transition-colors group",
+                                    isHero && "bg-sky-500/[0.04] dark:bg-sky-500/[0.07] font-medium"
                                   )}
                                 >
-                                  <TableCell className="font-bold py-4 pl-6">
-                                    <div className="flex items-center gap-3">
-                                      <span className="text-[10px] font-black text-muted-foreground/60 w-6">#{player.number}</span>
-                                      <span className="truncate group-hover:text-primary transition-colors text-foreground">{player.name}</span>
+                                  <TableCell className="font-bold py-1.5 sm:py-2.5 pl-2 sm:pl-4">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[9px] font-black text-muted-foreground/50 w-5">#{player.number}</span>
+                                      <span className="truncate group-hover:text-primary transition-colors text-foreground text-[11px] sm:text-sm">{player.name}</span>
                                     </div>
                                   </TableCell>
-                                  <TableCell className="text-center tabular-nums font-black text-foreground">{player.ip}</TableCell>
-                                  <TableCell className="text-center tabular-nums text-muted-foreground font-bold">{player.hits}</TableCell>
-                                  <TableCell className="text-center tabular-nums text-muted-foreground font-bold">{player.walks}</TableCell>
-                                  <TableCell className={cn("text-center tabular-nums font-black", strikeouts >= 3 ? "text-sky-500" : "text-foreground")}>{player.strikeouts}</TableCell>
-                                  <TableCell className="text-center tabular-nums text-muted-foreground font-bold">{player.runs}</TableCell>
-                                  <TableCell className={cn("text-center tabular-nums font-bold", runs > 0 ? "text-rose-500/75" : "text-emerald-500")}>{player.earnedRuns}</TableCell>
-                                  <TableCell className="text-right tabular-nums font-black text-primary text-sm pr-6">
+                                  <TableCell className="text-center tabular-nums font-black text-foreground text-[11px] sm:text-sm px-1 sm:px-2.5 py-1.5 sm:py-2.5">{player.ip}</TableCell>
+                                  <TableCell className="text-center tabular-nums text-muted-foreground/80 text-[11px] sm:text-xs px-1 sm:px-2.5 py-1.5 sm:py-2.5">{player.hits}</TableCell>
+                                  <TableCell className="text-center tabular-nums text-muted-foreground/80 text-[11px] sm:text-xs px-1 sm:px-2.5 py-1.5 sm:py-2.5">{player.walks}</TableCell>
+                                  <TableCell className={cn("text-center tabular-nums font-black text-[11px] sm:text-sm px-1 sm:px-2.5 py-1.5 sm:py-2.5", strikeouts >= 3 ? "text-sky-500" : "text-foreground")}>{player.strikeouts}</TableCell>
+                                  <TableCell className="text-center tabular-nums text-muted-foreground/80 text-[11px] sm:text-xs px-1 sm:px-2.5 py-1.5 sm:py-2.5">{player.runs}</TableCell>
+                                  <TableCell className={cn("text-center tabular-nums font-bold text-[11px] sm:text-xs px-1 sm:px-2.5 py-1.5 sm:py-2.5", runs > 0 ? "text-rose-500/75" : "text-emerald-500")}>{player.earnedRuns}</TableCell>
+                                  <TableCell className="text-right tabular-nums font-black text-primary text-[11px] sm:text-sm pr-2 sm:pr-4 py-1.5 sm:py-2.5">
                                     {player.era}
                                   </TableCell>
                                 </TableRow>
                               );
                             })}
                             {/* PITCHING TEAM TOTAL */}
-                            <TableRow className="border-t-2 border-border bg-muted/30 hover:bg-muted/50 font-black">
-                              <TableCell className="py-4 pl-6 text-foreground font-black">
-                                <span className="text-xs uppercase tracking-wider text-muted-foreground">TEAM TOTAL</span>
+                            <TableRow className="border-t border-border/50 bg-muted/25 hover:bg-muted/40 font-black">
+                              <TableCell className="py-2 sm:py-3 pl-2 sm:pl-4 text-foreground font-black">
+                                <span className="text-[10px] uppercase tracking-wider text-muted-foreground">TEAM TOTAL</span>
                               </TableCell>
-                              <TableCell className="text-center tabular-nums text-foreground">{teamIpStr}</TableCell>
-                              <TableCell className="text-center tabular-nums text-muted-foreground">{pitcherTotal.hits}</TableCell>
-                              <TableCell className="text-center tabular-nums text-muted-foreground">{pitcherTotal.walks}</TableCell>
-                              <TableCell className="text-center tabular-nums text-foreground text-base">{pitcherTotal.strikeouts}</TableCell>
-                              <TableCell className="text-center tabular-nums text-muted-foreground">{pitcherTotal.runs}</TableCell>
-                              <TableCell className="text-center tabular-nums text-rose-500/80">{pitcherTotal.earnedRuns}</TableCell>
-                              <TableCell className="text-right tabular-nums text-primary text-base pr-6">{teamEraStr}</TableCell>
+                              <TableCell className="text-center tabular-nums text-foreground text-xs sm:text-base px-1 sm:px-2.5 py-2 sm:py-3">{teamIpStr}</TableCell>
+                              <TableCell className="text-center tabular-nums text-muted-foreground text-[11px] sm:text-xs px-1 sm:px-2.5 py-2 sm:py-3">{pitcherTotal.hits}</TableCell>
+                              <TableCell className="text-center tabular-nums text-muted-foreground text-[11px] sm:text-xs px-1 sm:px-2.5 py-2 sm:py-3">{pitcherTotal.walks}</TableCell>
+                              <TableCell className="text-center tabular-nums text-foreground text-xs sm:text-base px-1 sm:px-2.5 py-2 sm:py-3">{pitcherTotal.strikeouts}</TableCell>
+                              <TableCell className="text-center tabular-nums text-muted-foreground text-[11px] sm:text-xs px-1 sm:px-2.5 py-2 sm:py-3">{pitcherTotal.runs}</TableCell>
+                              <TableCell className="text-center tabular-nums text-rose-500/80 text-[11px] sm:text-xs px-1 sm:px-2.5 py-2 sm:py-3">{pitcherTotal.earnedRuns}</TableCell>
+                              <TableCell className="text-right tabular-nums text-primary text-xs sm:text-base pr-2 sm:pr-4 py-2 sm:py-3">{teamEraStr}</TableCell>
                             </TableRow>
                           </>
                         )}
@@ -1224,37 +1227,37 @@ function MatchResultContent() {
               </TabsContent>
 
               <TabsContent value="timeline" className="mt-4">
-                <Card className="rounded-[28px] border-border bg-card overflow-hidden p-6 space-y-6">
+                <Card className="rounded-[var(--radius-xl)] border-0 sm:border border-border/40 bg-card overflow-hidden p-3.5 sm:p-6 space-y-6">
                   {atBats.length === 0 ? (
                     <div className="text-center py-16 text-muted-foreground font-bold">
                       打席データがありません
                     </div>
                   ) : (
-                    <div className="relative border-l border-border pl-6 ml-4 space-y-8">
+                    <div className="relative border-l border-border pl-4 sm:pl-6 ml-2 sm:ml-4 space-y-6 sm:space-y-8">
                       {Array.from(new Set(atBats.map(a => `${a.inning}回${a.isTop ? '表' : '裏'}`))).map((inningLabel) => {
                         const inningAtBats = atBats.filter(a => `${a.inning}回${a.isTop ? '表' : '裏'}` === inningLabel);
                         return (
                           <div key={inningLabel} className="relative space-y-3">
-                            <span className="absolute -left-[31px] top-1 h-3.5 w-3.5 rounded-full bg-primary border-[2.5px] border-background" />
+                            <span className="absolute -left-[25px] sm:-left-[31px] top-1 h-3.5 w-3.5 rounded-full bg-primary border-[2.5px] border-background" />
                             
-                            <h4 className="font-black text-sm text-primary uppercase tracking-wider">{inningLabel}</h4>
+                            <h4 className="font-black text-xs sm:text-sm text-primary uppercase tracking-wider">{inningLabel}</h4>
                             <div className="space-y-2">
                               {inningAtBats.map((ab, idx) => (
-                                <div key={ab.id} className="p-3.5 bg-card border border-border rounded-2xl flex items-center justify-between text-xs sm:text-sm font-bold gap-4 hover:bg-muted/30 transition-colors">
-                                  <div className="flex items-center gap-3">
-                                    <span className="text-[10px] font-black text-muted-foreground bg-muted px-2 py-0.5 rounded-md">
+                                <div key={ab.id} className="p-2 sm:p-3 bg-card border border-border/40 rounded-[var(--radius-xl)] flex items-center justify-between text-xs sm:text-sm font-bold gap-2 sm:gap-4 hover:bg-muted/30 transition-colors">
+                                  <div className="flex items-center gap-2 sm:gap-3">
+                                    <span className="text-[9px] font-black text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
                                       打席 {idx + 1}
                                     </span>
-                                    <span className="text-foreground">
+                                    <span className="text-foreground text-xs sm:text-sm">
                                       {ab.batterName ? `${ab.batterName} (#${ab.batterNumber})` : "不明"}
                                     </span>
                                     {ab.pitcherName && (
-                                      <span className="text-[11px] text-muted-foreground">
+                                      <span className="text-[10px] text-muted-foreground/60 hidden sm:inline">
                                         (投: {ab.pitcherName})
                                       </span>
                                     )}
                                   </div>
-                                  <span className="font-black text-primary px-3 py-1 bg-primary/5 rounded-full border border-primary/10">
+                                  <span className="font-black text-primary px-2.5 py-0.5 sm:py-1 bg-primary/5 rounded-full border border-primary/10 text-xs">
                                     {ab.result || "打席結果なし"}
                                   </span>
                                 </div>
@@ -1271,10 +1274,10 @@ function MatchResultContent() {
           </section>
 
           {/* 💡 フッター */}
-          <div className="pt-12 border-t border-border/80 flex flex-col items-center gap-3">
-            <div className="flex items-center gap-3 opacity-30">
-              <Trophy className="h-5 w-5 text-muted-foreground" />
-              <span className="text-[10px] font-black uppercase tracking-[0.8em] text-foreground">i-Score Analytics</span>
+          <div className="pt-8 sm:pt-12 border-t border-border/60 flex flex-col items-center gap-2.5">
+            <div className="flex items-center gap-2.5 opacity-30">
+              <Trophy className="h-4.5 w-4.5 text-muted-foreground" />
+              <span className="text-[9px] font-black uppercase tracking-[0.8em] text-foreground">i-Score Analytics</span>
             </div>
             <p className="text-[8px] font-bold text-muted-foreground/30 uppercase tracking-[0.3em]">Generated by Baseball Science Lab</p>
           </div>
@@ -1285,7 +1288,7 @@ function MatchResultContent() {
       {/* 🎥 YouTube 動画 URL 設定 モーダル */}
       {isYoutubeModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-xs animate-in fade-in duration-200">
-          <div className="w-full max-w-md bg-card rounded-3xl border border-border shadow-2xl p-6 space-y-5 animate-in slide-in-from-bottom-4 duration-300">
+          <div className="w-full max-w-md bg-card rounded-[var(--radius-2xl)] border border-border shadow-2xl p-5 sm:p-6 space-y-5 animate-in slide-in-from-bottom-4 duration-300">
             <div className="flex items-center justify-between border-b border-border pb-3">
               <div className="flex items-center gap-2">
                 <Video className="h-5 w-5 text-primary" />
@@ -1308,7 +1311,7 @@ function MatchResultContent() {
                 placeholder="https://www.youtube.com/watch?v=..."
                 value={inputYoutubeUrl}
                 onChange={(e) => setInputYoutubeUrl(e.target.value)}
-                className="w-full px-4 py-3 text-sm rounded-xl border border-border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
+                className="w-full px-4 py-3 text-sm rounded-[var(--radius-md)] border border-border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
                 disabled={isSavingUrl}
               />
               <p className="text-[10px] text-muted-foreground font-bold leading-normal">
@@ -1321,14 +1324,14 @@ function MatchResultContent() {
                 variant="outline" 
                 onClick={() => setIsYoutubeModalOpen(false)} 
                 disabled={isSavingUrl} 
-                className="flex-1 rounded-xl font-bold border-border bg-card text-foreground hover:bg-muted"
+                className="flex-1 rounded-[var(--radius-md)] font-bold border-border bg-card text-foreground hover:bg-muted"
               >
                 キャンセル
               </Button>
               <Button 
                 onClick={handleSaveYoutubeUrl} 
                 disabled={isSavingUrl} 
-                className="flex-1 rounded-xl font-black bg-primary hover:bg-primary/90 text-primary-foreground border-0"
+                className="flex-1 rounded-[var(--radius-md)] font-black bg-primary hover:bg-primary/90 text-primary-foreground border-0"
               >
                 {isSavingUrl ? <Loader2 className="h-4 w-4 animate-spin" /> : "保存する"}
               </Button>
