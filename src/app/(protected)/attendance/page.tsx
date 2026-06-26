@@ -1009,7 +1009,7 @@ export default function AttendancePage() {
 
         {/* ━ 管理者用：日程追加・編集モーダル ━ */}
         <Dialog open={isEventModalOpen} onOpenChange={setIsEventModalOpen}>
-          <DialogContent className="rounded-[var(--radius-2xl)] bg-card border-border sm:max-w-md" onInteractOutside={(el) => el.preventDefault()}>
+          <DialogContent className="rounded-[var(--radius-2xl)] bg-card border-border sm:max-w-md max-h-[85vh] overflow-y-auto" onInteractOutside={(el) => el.preventDefault()}>
             <DialogHeader>
               <DialogTitle className="font-black text-xl">
                 {eventModalMode === "create" ? "新しい日程の追加" : "日程の編集"}
@@ -1196,7 +1196,7 @@ export default function AttendancePage() {
 
         {/* ━ 出欠編集ダイアログ (マスをタップした時にポップアップ) ━ */}
         <Dialog open={isAttendModalOpen} onOpenChange={setIsAttendModalOpen}>
-          <DialogContent className="rounded-[var(--radius-2xl)] bg-card border-border sm:max-w-xs" onInteractOutside={(el) => el.preventDefault()}>
+          <DialogContent className="rounded-[var(--radius-2xl)] bg-card border-border sm:max-w-xs max-h-[85vh] overflow-y-auto" onInteractOutside={(el) => el.preventDefault()}>
             <DialogHeader>
               <DialogTitle className="font-black text-base">
                 {activeCell?.row.name} の出欠登録

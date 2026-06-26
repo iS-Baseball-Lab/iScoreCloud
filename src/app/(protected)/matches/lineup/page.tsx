@@ -777,7 +777,6 @@ function LineupPageContent() {
                     value={playerSearchQuery}
                     onChange={(e) => setPlayerSearchQuery(e.target.value)}
                     className="h-11 rounded-xl bg-muted/40 border-none font-bold pl-4 pr-10 text-sm"
-                    autoFocus
                   />
                   {playerSearchQuery && (
                     <button
