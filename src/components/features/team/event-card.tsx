@@ -115,7 +115,8 @@ export function EventCard({
   return (
     <div className={cn(
       "group relative overflow-hidden transition-all duration-200 ease-out",
-      "rounded-[var(--radius-2xl)] border border-border/50 shadow-sm"
+      "rounded-[var(--radius-2xl)] border shadow-sm",
+      event.status === 'rainout' ? "border-blue-500/30" : "border-border/50"
     )}>
       
       {/* スワイプ時のみ背面の編集・削除アクションを表示 */}
@@ -152,8 +153,8 @@ export function EventCard({
         onTouchEnd={handleTouchEnd}
         style={{ transform: `translateX(${currentOffset}px)`, touchAction: enableSwipe ? "pan-y" : "auto" }}
         className={cn(
-          "relative z-10 h-full transition-transform duration-200 ease-out bg-card",
-          event.status === 'rainout' && "border border-blue-500/20"
+          "relative z-10 h-full transition-transform duration-200 ease-out",
+          event.status === 'rainout' ? "bg-[#f0f6ff] dark:bg-[#0f172a]" : "bg-card"
         )}
         onClick={handleCardClick}
       >
