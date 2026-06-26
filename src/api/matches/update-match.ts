@@ -19,7 +19,7 @@ interface UpdateMatchRequest {
   innings?: 6 | 7 | 9;                 // 🌟 イニング数
   location?: string;                   // 🌟 フロントからはlocationとして来る想定（DBはsurfaceDetails）
   venueId?: string;                    // 🌟 追加：球場ID
-  status?: 'scheduled' | 'live' | 'finished';
+  status?: 'scheduled' | 'live' | 'finished' | 'rainout';
   myScore?: number;
   opponentScore?: number;
   myInningScores?: number[];

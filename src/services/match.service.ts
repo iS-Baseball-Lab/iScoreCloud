@@ -60,7 +60,7 @@ export const MatchService = {
     return rows.map((r) => ({
       ...r,
       // status / matchType / battingOrder はスキーマ上 string だがアプリ内では限定値のみ使用
-      status: r.status as "scheduled" | "live" | "finished",
+      status: r.status as "scheduled" | "live" | "finished" | "rainout",
       matchType: r.matchType as "official" | "practice" | "exchange",
       battingOrder: r.battingOrder as "first" | "second",
       myInningScores: JSON.parse(r.myInningScores ?? "[]") as number[],

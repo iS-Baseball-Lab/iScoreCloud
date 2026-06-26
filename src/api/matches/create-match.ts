@@ -20,7 +20,7 @@ interface CreateMatchRequest {
   benchSide?: '1B' | '3B' | 'unknown'; // 🌟 追加：ベンチ位置
   innings: 6 | 7 | 9;                  // 🌟 追加：イニング数
   surfaceDetails?: string;
-  status: 'scheduled' | 'started' | 'finished'; // 🌟 追加：3つの導線対応
+  status: 'scheduled' | 'started' | 'finished' | 'rainout'; // 🌟 追加：3つの導線対応
   myScore?: number;                    // 🌟 追加：QUICK SCORE用
   opponentScore?: number;              // 🌟 追加：QUICK SCORE用
   myInningScores?: number[];           // 🌟 追加：QUICK SCORE用

@@ -334,6 +334,18 @@ function MatchEditContent() {
               >
                 🏆 終了
               </button>
+              <button
+                type="button"
+                onClick={() => setMatchStatus('rainout')}
+                className={cn(
+                  "flex-1 py-2 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1.5",
+                  matchStatus === 'rainout'
+                    ? "bg-blue-500 text-white shadow-sm font-black"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                ☔ 中止
+              </button>
             </div>
           </CardContent>
         </Card>

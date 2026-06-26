@@ -14,6 +14,7 @@ import { SectionHeader } from "@/components/layout/SectionHeader";
 const getMatchStatus = (m: Match): MatchStatus => {
   if (m.status === "live") return "live";
   if (m.status === "finished") return "finished";
+  if (m.status === "rainout") return "rainout";
   
   // DBにステータスがない・不完全な場合のフォールバック
   const isFuture = new Date(m.date) > new Date();
@@ -64,10 +65,10 @@ export default function AllMatchesPage() {
       .sort((a, b) => a.date.localeCompare(b.date));
   }, [matches]);
 
-  // 3. 終了した試合 (finished): 降順 (直近過去が上)
+  // 3. 終了・中止した試合 (finished / rainout): 降順 (直近過去が上)
   const finishedMatches = useMemo(() => {
     return matches
-      .filter(m => getMatchStatus(m) === "finished")
+      .filter(m => getMatchStatus(m) === "finished" || getMatchStatus(m) === "rainout")
       .sort((a, b) => b.date.localeCompare(a.date));
   }, [matches]);
 

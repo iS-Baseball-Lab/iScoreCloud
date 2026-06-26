@@ -24,7 +24,7 @@ export const attendances = sqliteTable("attendances", {
   playerId: text("player_id").references(() => players.id, { onDelete: "cascade" }),
   memberId: text("member_id").references(() => teamMembers.id, { onDelete: "cascade" }),
   userId: text("user_id").references(() => user.id),
-  status: text("status").$type<"present" | "absent" | "pending" | "late" | "partial">().default("pending"),
+  status: text("status").$type<"present" | "absent" | "pending" | "late" | "partial" | "rainout">().default("pending"),
   roleInEvent: text("role_in_event").default("player"),
   hasCar: integer("has_car", { mode: "boolean" }).default(false),
   carId: text("car_id").references(() => memberCars.id, { onDelete: "set null" }),

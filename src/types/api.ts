@@ -106,7 +106,7 @@ export interface UpdateMatchBody {
   innings?: number;
   tournamentName?: string;
   venueId?: string | null;
-  status?: "scheduled" | "live" | "finished";
+  status?: "scheduled" | "live" | "finished" | "rainout";
   myScore?: number;
   opponentScore?: number;
   myInningScores?: number[];
@@ -161,7 +161,7 @@ export interface MatchRow {
   surfaceDetails: string | null;
   innings: number; // 規定イニング (7 or 9)
 
-  status: 'scheduled' | 'live' | 'finished';
+  status: 'scheduled' | 'live' | 'finished' | 'rainout';
 
   myScore: number;
   opponentScore: number;

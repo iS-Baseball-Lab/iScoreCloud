@@ -762,7 +762,7 @@ function CarpoolAssignmentContent() {
     const overallTotalCost = carsWithCost.reduce((sum, c) => sum + c.totalCost, 0);
 
     // 2. 出席しているメンバーから「世帯（Family）」を特定
-    const presentAttendees = allAttendees.filter(att => att.status !== "absent");
+    const presentAttendees = allAttendees.filter(att => att.status !== "absent" && att.status !== "rainout");
     
     interface Family {
       id: string; 
@@ -912,7 +912,7 @@ function CarpoolAssignmentContent() {
     
     // 選手リストの抽出
     const presentPlayers = allAttendees.filter(att => 
-      (att.playerId || att.memberType === "player") && att.status !== "absent" && att.status !== "absence"
+      (att.playerId || att.memberType === "player") && att.status !== "absent" && att.status !== "absence" && att.status !== "rainout"
     );
     const absentPlayers = allAttendees.filter(att => 
       (att.playerId || att.memberType === "player") && (att.status === "absent" || att.status === "absence")

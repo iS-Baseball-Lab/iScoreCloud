@@ -288,15 +288,24 @@ export function MatchCard({
             </div>
 
             <div className="flex flex-col items-center gap-1.5 shrink-0">
-              {!isFuture && (
+              {!isFuture && match.status !== 'rainout' && (
                 <div className="w-14 text-center">
                   {isWin && <span className="block w-full bg-blue-600 text-white text-[11px] font-black py-0.5 rounded shadow-sm">WIN</span>}
                   {isLoss && <span className="block w-full bg-rose-600 text-white text-[11px] font-black py-0.5 rounded shadow-sm">LOSE</span>}
                   {isDraw && <span className="block w-full bg-zinc-500 text-white text-[11px] font-black py-0.5 rounded shadow-sm">DRAW</span>}
                 </div>
               )}
+              {match.status === 'rainout' && (
+                <div className="w-16 text-center">
+                  <span className="block w-full bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/30 text-[10px] sm:text-[11px] font-black py-0.5 rounded shadow-sm">雨天中止</span>
+                </div>
+              )}
               
-              {isFuture ? (
+              {match.status === 'rainout' ? (
+                <div className="px-2.5 py-1.5 bg-blue-500/5 dark:bg-blue-500/10 rounded-xl border border-blue-500/20 text-center min-w-[85px] flex flex-col items-center justify-center">
+                  <p className="text-[10px] font-black text-blue-600 dark:text-blue-400 leading-none">☔ 中止</p>
+                </div>
+              ) : isFuture ? (
                 <div className="px-1 py-1.5 bg-primary/10 rounded-xl border border-primary/20 text-center min-w-[85px] flex flex-col items-center justify-center">
                   <p className="text-[8px] font-black text-primary/70 uppercase leading-none mb-0.5">START IN</p>
                   <MatchCountdown date={match.date} />
@@ -399,6 +408,30 @@ export function MatchCard({
                       >
                         <PlayCircle className="h-4 w-4" strokeWidth={2.5} />
                         ライブ入力
+                      </Button>
+                      <Button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          router.push(`/matches/result?id=${match.id}`);
+                        }}
+                        variant="outline"
+                        className="flex-1 h-11 rounded-[var(--radius-lg)] font-black gap-1.5 shadow-sm text-[10px] sm:text-xs bg-card border-border hover:bg-primary/5 hover:text-primary transition-colors"
+                      >
+                        <ClipboardList className="h-4 w-4 text-primary" strokeWidth={2.5} />
+                        試合明細
+                      </Button>
+                    </>
+                  ) : match.status === 'rainout' ? (
+                    <>
+                      <Button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          router.push(`/matches/edit?id=${match.id}`);
+                        }}
+                        className="flex-1 h-11 rounded-[var(--radius-lg)] font-black gap-1.5 shadow-sm text-[10px] sm:text-xs bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-900 dark:text-zinc-100 border border-zinc-200 dark:border-zinc-700 transition-colors"
+                      >
+                        <Edit2 className="h-4 w-4" strokeWidth={2.5} />
+                        試合編集
                       </Button>
                       <Button
                         onClick={(e) => {

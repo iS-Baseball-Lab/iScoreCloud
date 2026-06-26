@@ -67,7 +67,7 @@ interface AttendanceRecord {
   playerId: string | null;
   memberId: string | null;
   userId: string | null;
-  status: "present" | "absent" | "pending" | "late" | "partial";
+  status: "present" | "absent" | "pending" | "late" | "partial" | "rainout";
   roleInEvent: string;
   hasCar: boolean;
   carId?: string | null;
@@ -164,7 +164,7 @@ export default function AttendancePage() {
   const [eventPmLocation, setEventPmLocation] = useState<string>("");
 
   // 出欠入力用フォーム状態
-  const [inputStatus, setInputStatus] = useState<"present" | "absent" | "pending" | "late" | "partial">("pending");
+  const [inputStatus, setInputStatus] = useState<"present" | "absent" | "pending" | "late" | "partial" | "rainout">("pending");
   const [inputComment, setInputComment] = useState<string>("");
   const [inputHasCar, setInputHasCar] = useState<boolean>(false);
   const [inputCarId, setInputCarId] = useState<string>("");
@@ -410,10 +410,10 @@ export default function AttendancePage() {
 
   // 各日程の出欠集計
   const eventSummaries = useMemo(() => {
-    const summaries: Record<string, { present: number; absent: number; late: number; pending: number; partial: number }> = {};
+    const summaries: Record<string, { present: number; absent: number; late: number; pending: number; partial: number; rainout: number }> = {};
     
     filteredEvents.forEach(e => {
-      summaries[e.id] = { present: 0, absent: 0, late: 0, pending: 0, partial: 0 };
+      summaries[e.id] = { present: 0, absent: 0, late: 0, pending: 0, partial: 0, rainout: 0 };
     });
 
     displayRows.forEach(row => {
@@ -665,6 +665,8 @@ export default function AttendancePage() {
         return { label: "△", bg: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20" };
       case "absent":
         return { label: "×", bg: "bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20" };
+      case "rainout":
+        return { label: "☔", bg: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20" };
       default:
         return { label: "？", bg: "bg-muted text-muted-foreground opacity-40" };
     }
@@ -882,6 +884,7 @@ export default function AttendancePage() {
                             <span className="text-sky-600 dark:text-sky-400">○{eventSummaries[e.id]?.partial || 0}</span>
                             <span className="text-amber-600 dark:text-amber-400">△{eventSummaries[e.id]?.late || 0}</span>
                             <span className="text-rose-600 dark:text-rose-400">×{eventSummaries[e.id]?.absent || 0}</span>
+                            <span className="text-blue-600 dark:text-blue-400">☔{eventSummaries[e.id]?.rainout || 0}</span>
                           </div>
 
                            {/* 🚗 配車・道具管理ボタン (試合・合宿のみ) - 一番下(カウントの下)に配置 */}
@@ -1207,9 +1210,10 @@ export default function AttendancePage() {
 
             <div className="space-y-4 pt-2">
               
-              {/* 出欠の四択ボタン */}
-              <div className="grid grid-cols-4 gap-1">
+              {/* 出欠の五択ボタン */}
+              <div className="grid grid-cols-5 gap-1">
                 <button
+                  type="button"
                   onClick={() => setInputStatus("present")}
                   className={cn(
                     "py-2 px-0.5 rounded-xl border transition-all cursor-pointer flex flex-col items-center justify-center min-h-[52px]",
@@ -1220,6 +1224,7 @@ export default function AttendancePage() {
                   <span className="text-sm font-black mt-1">◎</span>
                 </button>
                 <button
+                  type="button"
                   onClick={() => setInputStatus("partial")}
                   className={cn(
                     "py-2 px-0.5 rounded-xl border transition-all cursor-pointer flex flex-col items-center justify-center min-h-[52px]",
@@ -1230,6 +1235,7 @@ export default function AttendancePage() {
                   <span className="text-sm font-black mt-1">○</span>
                 </button>
                 <button
+                  type="button"
                   onClick={() => setInputStatus("late")}
                   className={cn(
                     "py-2 px-0.5 rounded-xl border transition-all cursor-pointer flex flex-col items-center justify-center min-h-[52px]",
@@ -1240,6 +1246,7 @@ export default function AttendancePage() {
                   <span className="text-sm font-black mt-1">△</span>
                 </button>
                 <button
+                  type="button"
                   onClick={() => setInputStatus("absent")}
                   className={cn(
                     "py-2 px-0.5 rounded-xl border transition-all cursor-pointer flex flex-col items-center justify-center min-h-[52px]",
@@ -1248,6 +1255,17 @@ export default function AttendancePage() {
                 >
                   <span className="text-[9px] font-black leading-none">不参加</span>
                   <span className="text-sm font-black mt-1">×</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setInputStatus("rainout")}
+                  className={cn(
+                    "py-2 px-0.5 rounded-xl border transition-all cursor-pointer flex flex-col items-center justify-center min-h-[52px]",
+                    inputStatus === "rainout" ? "bg-blue-500/10 border-blue-500 text-blue-600 dark:text-blue-400" : "border-border hover:bg-muted"
+                  )}
+                >
+                  <span className="text-[9px] font-black leading-none">雨天中止</span>
+                  <span className="text-sm font-black mt-1">☔</span>
                 </button>
               </div>
 
@@ -1360,8 +1378,8 @@ export default function AttendancePage() {
 
                     {/* 出欠の選択ボタン群 & 車出し（大人用） & コメント */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {/* 出欠の四択ボタン */}
-                      <div className="grid grid-cols-4 gap-1">
+                      {/* 出欠の五択ボタン */}
+                      <div className="grid grid-cols-5 gap-1">
                         <button
                           type="button"
                           onClick={() => updateBatchItem(item.eventId, "status", "present")}
@@ -1409,6 +1427,18 @@ export default function AttendancePage() {
                         >
                           <span className="text-[8px] font-black leading-none">不参加</span>
                           <span className="text-xs font-black mt-0.5">×</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => updateBatchItem(item.eventId, "status", "rainout")}
+                          className={cn(
+                            "py-1.5 px-0.5 rounded-lg border transition-all cursor-pointer flex flex-col items-center justify-center min-h-[44px]",
+                            item.status === "rainout" ? "bg-blue-500/10 border-blue-500 text-blue-600 dark:text-blue-400" : "border-border hover:bg-muted"
+                          )}
+                          title="雨天中止"
+                        >
+                          <span className="text-[8px] font-black leading-none">中止</span>
+                          <span className="text-xs font-black mt-0.5">☔</span>
                         </button>
                       </div>
 

@@ -73,7 +73,7 @@ export const matches = sqliteTable("matches", {
   // 🌟 現場仕様：規定イニングを草野球標準の 7回 に設定
   innings: integer("innings").notNull().default(7),
 
-  status: text("status").notNull().default("scheduled"), // 'scheduled', 'live', 'finished'
+  status: text("status").notNull().default("scheduled"), // 'scheduled', 'live', 'finished', 'rainout'
 
   myScore: integer("my_score").notNull().default(0),
   opponentScore: integer("opponent_score").notNull().default(0),

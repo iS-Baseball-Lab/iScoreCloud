@@ -6,7 +6,7 @@
 /** 試合種別、攻守、ステータス */
 export type MatchType = 'official' | 'practice' | 'exchange' | 'other';
 export type BattingOrder = 'first' | 'second';
-export type MatchStatus = 'scheduled' | 'live' | 'finished';
+export type MatchStatus = 'scheduled' | 'live' | 'finished' | 'rainout';
 
 /** 💡 チーム・LINE連携用の定義 */
 export interface Team {
