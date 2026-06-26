@@ -1200,6 +1200,19 @@ export default function AttendancePage() {
                 </div>
               )}
 
+              {/* ☔ 雨天中止にするトグル */}
+              <div className="flex items-center justify-between p-2.5 rounded-xl bg-blue-500/5 dark:bg-blue-950/10 border border-blue-500/20">
+                <span className="text-xs font-bold text-blue-600 dark:text-blue-400 flex items-center gap-1.5">
+                  ☔ 雨天中止にする
+                </span>
+                <input
+                  type="checkbox"
+                  checked={eventStatus === "rainout"}
+                  onChange={(el) => setEventStatus(el.target.checked ? "rainout" : "scheduled")}
+                  className="h-4 w-4 rounded border-border text-primary focus:ring-primary accent-primary cursor-pointer"
+                />
+              </div>
+
               <div className="space-y-1">
                 <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">詳細説明</label>
                 <textarea
