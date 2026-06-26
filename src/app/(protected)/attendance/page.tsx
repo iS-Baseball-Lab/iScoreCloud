@@ -34,6 +34,7 @@ interface Event {
   pmStartAt?: string | number | Date | null;
   pmEndAt?: string | number | Date | null;
   pmLocation?: string | null;
+  status?: "scheduled" | "rainout" | null;
 }
 
 interface Player {
@@ -67,7 +68,7 @@ interface AttendanceRecord {
   playerId: string | null;
   memberId: string | null;
   userId: string | null;
-  status: "present" | "absent" | "pending" | "late" | "partial" | "rainout";
+  status: "present" | "absent" | "pending" | "late" | "partial";
   roleInEvent: string;
   hasCar: boolean;
   carId?: string | null;
@@ -162,9 +163,10 @@ export default function AttendancePage() {
   const [eventPmStartVal, setEventPmStartVal] = useState<string>("");
   const [eventPmEndVal, setEventPmEndVal] = useState<string>("");
   const [eventPmLocation, setEventPmLocation] = useState<string>("");
+  const [eventStatus, setEventStatus] = useState<"scheduled" | "rainout">("scheduled"); // 📅 イベント全体のステータス (通常/雨天中止)
 
   // 出欠入力用フォーム状態
-  const [inputStatus, setInputStatus] = useState<"present" | "absent" | "pending" | "late" | "partial" | "rainout">("pending");
+  const [inputStatus, setInputStatus] = useState<"present" | "absent" | "pending" | "late" | "partial">("pending");
   const [inputComment, setInputComment] = useState<string>("");
   const [inputHasCar, setInputHasCar] = useState<boolean>(false);
   const [inputCarId, setInputCarId] = useState<string>("");
@@ -410,10 +412,10 @@ export default function AttendancePage() {
 
   // 各日程の出欠集計
   const eventSummaries = useMemo(() => {
-    const summaries: Record<string, { present: number; absent: number; late: number; pending: number; partial: number; rainout: number }> = {};
+    const summaries: Record<string, { present: number; absent: number; late: number; pending: number; partial: number }> = {};
     
     filteredEvents.forEach(e => {
-      summaries[e.id] = { present: 0, absent: 0, late: 0, pending: 0, partial: 0, rainout: 0 };
+      summaries[e.id] = { present: 0, absent: 0, late: 0, pending: 0, partial: 0 };
     });
 
     displayRows.forEach(row => {
@@ -425,7 +427,9 @@ export default function AttendancePage() {
         const status = record?.status || "pending";
         
         if (summaries[e.id]) {
-          summaries[e.id][status]++;
+          if (status in summaries[e.id]) {
+            summaries[e.id][status as "present" | "absent" | "late" | "pending" | "partial"]++;
+          }
         }
       });
     });
@@ -454,6 +458,7 @@ export default function AttendancePage() {
     setEventPmEndVal("18:00");
     setEventPmLocation("");
     setEditingEvent(null);
+    setEventStatus("scheduled");
     setIsEventModalOpen(true);
   };
 
@@ -466,6 +471,7 @@ export default function AttendancePage() {
     setEventDescription(event.description || "");
     setEventType(event.eventType);
     setEventDutyGroup(event.dutyGroup || "");
+    setEventStatus(event.status || "scheduled");
     
     const d = new Date(event.startAt);
     const year = d.getFullYear();
@@ -548,7 +554,8 @@ export default function AttendancePage() {
         dutyGroup: eventDutyGroup.trim() || null,
         pmStartAt: pmStartIso,
         pmEndAt: pmEndIso,
-        pmLocation: hasPmSchedule ? eventPmLocation.trim() || null : null
+        pmLocation: hasPmSchedule ? eventPmLocation.trim() || null : null,
+        status: eventStatus
       };
 
       const url = eventModalMode === "create" 
@@ -665,8 +672,6 @@ export default function AttendancePage() {
         return { label: "△", bg: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20" };
       case "absent":
         return { label: "×", bg: "bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20" };
-      case "rainout":
-        return { label: "☔", bg: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20" };
       default:
         return { label: "？", bg: "bg-muted text-muted-foreground opacity-40" };
     }
@@ -783,7 +788,10 @@ export default function AttendancePage() {
                     
                     {/* 右側：イベント日程列 */}
                     {filteredEvents.map(e => (
-                      <th key={e.id} className="p-2.5 border-r border-border/30 text-center align-top relative group sticky top-0 z-25 bg-card">
+                      <th key={e.id} className={cn(
+                        "p-2.5 border-r border-border/30 text-center align-top relative group sticky top-0 z-25 bg-card",
+                        e.status === 'rainout' && "bg-blue-500/5 dark:bg-blue-950/10"
+                      )}>
                         <div className="space-y-1">
                           
                           {/* 日程種別マーク & 操作ボタンのインライン化 */}
@@ -820,8 +828,11 @@ export default function AttendancePage() {
                           </div>
 
                           {/* タイトルと日付 */}
-                          <h4 className="font-black text-xs text-foreground truncate max-w-[76px] mx-auto" title={e.title}>
-                            {e.title}
+                          <h4 className={cn(
+                            "font-black text-xs text-foreground truncate max-w-[76px] mx-auto",
+                            e.status === 'rainout' && "text-blue-600 dark:text-blue-400 font-extrabold"
+                          )} title={e.title}>
+                            {e.status === 'rainout' ? `☔ ${e.title}` : e.title}
                           </h4>
                           <p className="text-[9px] font-extrabold text-muted-foreground uppercase">
                             {new Date(e.startAt).toLocaleDateString("ja-JP", { month: "short", day: "numeric", weekday: "short" })}
@@ -879,16 +890,21 @@ export default function AttendancePage() {
                           <Separator className="my-1.5 opacity-50" />
 
                           {/* 集計数 (伝助風) */}
-                          <div className="flex items-center justify-center gap-1 text-[8px] font-extrabold tracking-tighter">
-                            <span className="text-emerald-600 dark:text-emerald-400">◎{eventSummaries[e.id]?.present || 0}</span>
-                            <span className="text-sky-600 dark:text-sky-400">○{eventSummaries[e.id]?.partial || 0}</span>
-                            <span className="text-amber-600 dark:text-amber-400">△{eventSummaries[e.id]?.late || 0}</span>
-                            <span className="text-rose-600 dark:text-rose-400">×{eventSummaries[e.id]?.absent || 0}</span>
-                            <span className="text-blue-600 dark:text-blue-400">☔{eventSummaries[e.id]?.rainout || 0}</span>
-                          </div>
+                          {e.status === 'rainout' ? (
+                            <div className="flex items-center justify-center text-[9px] font-black text-blue-600 dark:text-blue-400 bg-blue-500/10 py-0.5 rounded-xs animate-pulse">
+                              ☔ 雨天中止
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-center gap-1 text-[8px] font-extrabold tracking-tighter">
+                              <span className="text-emerald-600 dark:text-emerald-400">◎{eventSummaries[e.id]?.present || 0}</span>
+                              <span className="text-sky-600 dark:text-sky-400">○{eventSummaries[e.id]?.partial || 0}</span>
+              <span className="text-amber-600 dark:text-amber-400">△{eventSummaries[e.id]?.late || 0}</span>
+                              <span className="text-rose-600 dark:text-rose-400">×{eventSummaries[e.id]?.absent || 0}</span>
+                            </div>
+                          )}
 
-                           {/* 🚗 配車・道具管理ボタン (試合・合宿のみ) - 一番下(カウントの下)に配置 */}
-                           {(e.eventType === 'match' || e.eventType === 'camp') && (
+                           {/* 🚗 配車・道具管理ボタン (試合・合宿のみ、通常時のみ) - 一番下(カウントの下)に配置 */}
+                           {(e.eventType === 'match' || e.eventType === 'camp') && e.status !== 'rainout' && (
                              <div className="pt-1.5 mt-1.5 border-t border-dashed border-border/20">
                                <button
                                  onClick={() => router.push(`/attendance/carpool?eventId=${e.id}`)}
@@ -969,6 +985,19 @@ export default function AttendancePage() {
                               ? `event_${e.id}_player_${row.id}`
                               : `event_${e.id}_member_${row.id}`;
                             const record = attendanceMap[key];
+
+                            if (e.status === 'rainout') {
+                              return (
+                                <td key={e.id} className="p-0.5 sm:p-1 border-r border-border/30 text-center bg-blue-500/5 dark:bg-blue-950/5">
+                                  <div className="flex justify-center">
+                                    <div className="h-7 w-7 rounded-lg flex items-center justify-center font-black text-xs bg-blue-500/10 text-blue-600/60 dark:text-blue-400/60 border border-blue-500/20" title="雨天中止のため出欠不要">
+                                      ☔
+                                    </div>
+                                  </div>
+                                </td>
+                              );
+                            }
+
                             const conf = getCellConfig(record?.status || "pending");
                             
                             return (
@@ -1255,17 +1284,6 @@ export default function AttendancePage() {
                 >
                   <span className="text-[9px] font-black leading-none">不参加</span>
                   <span className="text-sm font-black mt-1">×</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setInputStatus("rainout")}
-                  className={cn(
-                    "py-2 px-0.5 rounded-xl border transition-all cursor-pointer flex flex-col items-center justify-center min-h-[52px]",
-                    inputStatus === "rainout" ? "bg-blue-500/10 border-blue-500 text-blue-600 dark:text-blue-400" : "border-border hover:bg-muted"
-                  )}
-                >
-                  <span className="text-[9px] font-black leading-none">雨天中止</span>
-                  <span className="text-sm font-black mt-1">☔</span>
                 </button>
               </div>
 

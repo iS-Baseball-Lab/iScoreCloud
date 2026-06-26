@@ -46,7 +46,7 @@ app.post('/:teamId', async (c) => {
 
   try {
     const body = await c.req.json();
-    const { title, startAt, endAt, eventType, description, location, dutyGroup, pmStartAt, pmEndAt, pmLocation } = body;
+    const { title, startAt, endAt, eventType, description, location, dutyGroup, pmStartAt, pmEndAt, pmLocation, status } = body;
 
     if (!title || !startAt) {
       return c.json({ success: false, error: "タイトルと開始日時は必須です。" }, 400);
@@ -68,6 +68,7 @@ app.post('/:teamId', async (c) => {
         pmStartAt: pmStartAt ? new Date(pmStartAt) : null,
         pmEndAt: pmEndAt ? new Date(pmEndAt) : null,
         pmLocation: pmLocation || null,
+        status: status || 'scheduled',
       })
       .returning();
 
@@ -92,7 +93,7 @@ app.patch('/:teamId/:eventId', async (c) => {
 
   try {
     const body = await c.req.json();
-    const { title, startAt, endAt, eventType, description, location, dutyGroup, pmStartAt, pmEndAt, pmLocation } = body;
+    const { title, startAt, endAt, eventType, description, location, dutyGroup, pmStartAt, pmEndAt, pmLocation, status } = body;
 
     const updateFields: Partial<typeof events.$inferInsert> = {};
     if (title !== undefined) updateFields.title = title;
@@ -105,6 +106,7 @@ app.patch('/:teamId/:eventId', async (c) => {
     if (pmStartAt !== undefined) updateFields.pmStartAt = pmStartAt ? new Date(pmStartAt) : null;
     if (pmEndAt !== undefined) updateFields.pmEndAt = pmEndAt ? new Date(pmEndAt) : null;
     if (pmLocation !== undefined) updateFields.pmLocation = pmLocation;
+    if (status !== undefined) updateFields.status = status;
 
     const result = await db.update(events)
       .set(updateFields)

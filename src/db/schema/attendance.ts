@@ -16,6 +16,7 @@ export const events = sqliteTable("events", {
   pmStartAt: integer("pm_start_at", { mode: "timestamp" }), // 午後の開始時間
   pmEndAt: integer("pm_end_at", { mode: "timestamp" }),     // 午後の終了時間
   pmLocation: text("pm_location"),                         // 午後の場所
+  status: text("status").$type<"scheduled" | "rainout">().default("scheduled"), // 📅 イベント全体のステータス (雨天中止など)
 });
 
 export const attendances = sqliteTable("attendances", {
@@ -24,7 +25,7 @@ export const attendances = sqliteTable("attendances", {
   playerId: text("player_id").references(() => players.id, { onDelete: "cascade" }),
   memberId: text("member_id").references(() => teamMembers.id, { onDelete: "cascade" }),
   userId: text("user_id").references(() => user.id),
-  status: text("status").$type<"present" | "absent" | "pending" | "late" | "partial" | "rainout">().default("pending"),
+  status: text("status").$type<"present" | "absent" | "pending" | "late" | "partial">().default("pending"),
   roleInEvent: text("role_in_event").default("player"),
   hasCar: integer("has_car", { mode: "boolean" }).default(false),
   carId: text("car_id").references(() => memberCars.id, { onDelete: "set null" }),
