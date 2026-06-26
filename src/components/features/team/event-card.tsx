@@ -153,7 +153,7 @@ export function EventCard({
         style={{ transform: `translateX(${currentOffset}px)`, touchAction: enableSwipe ? "pan-y" : "auto" }}
         className={cn(
           "relative z-10 h-full transition-transform duration-200 ease-out bg-card",
-          event.status === 'rainout' && "bg-blue-500/5 dark:bg-blue-950/10 border border-blue-500/20"
+          event.status === 'rainout' && "border border-blue-500/20"
         )}
         onClick={handleCardClick}
       >
@@ -266,7 +266,7 @@ export function EventCard({
             <Button
               onClick={(e) => {
                 e.stopPropagation();
-                router.push(`/attendance?editEventId=${event.id}`);
+                router.push(`/attendance`);
               }}
               size="sm"
               className="h-9 font-black rounded-xl px-4 text-xs"

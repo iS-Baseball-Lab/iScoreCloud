@@ -807,10 +807,7 @@ export default function AttendancePage() {
                     
                     {/* 右側：イベント日程列 */}
                     {filteredEvents.map(e => (
-                      <th key={e.id} className={cn(
-                        "p-2.5 border-r border-border/30 text-center align-top relative group sticky top-0 z-25 bg-card",
-                        e.status === 'rainout' && "bg-blue-500/5 dark:bg-blue-950/10"
-                      )}>
+                      <th key={e.id} className="p-2.5 border-r border-border/30 text-center align-top relative group sticky top-0 z-25 bg-card">
                         <div className="space-y-1">
                           
                           {/* 日程種別マーク & 操作ボタンのインライン化 */}
