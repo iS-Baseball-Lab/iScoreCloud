@@ -113,7 +113,7 @@ app.get('/:id/calendar-matches', async (c) => {
     const { results: eventsList } = await c.env.DB.prepare(`
       SELECT id, title, start_at as startAt, end_at as endAt, event_type as eventType, 
              description, location, duty_group as dutyGroup, pm_start_at as pmStartAt, 
-             pm_end_at as pmEndAt, pm_location as pmLocation
+             pm_end_at as pmEndAt, pm_location as pmLocation, status
       FROM events
       WHERE team_id = ?
     `).bind(teamId).all();
@@ -203,6 +203,7 @@ app.get('/:id/calendar-matches', async (c) => {
         dutyGroup: e.dutyGroup,
         pmStartAt: e.pmStartAt,
         pmEndAt: e.pmEndAt,
+        status: e.status || 'scheduled',
       };
     });
 

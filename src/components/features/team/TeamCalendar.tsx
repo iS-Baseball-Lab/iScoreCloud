@@ -146,6 +146,9 @@ export const TeamCalendar: React.FC<TeamCalendarProps> = ({ matches, canManage, 
     const dayEvents = getMatchesForDate(dateStr);
     if (dayEvents.length === 0) return null;
     
+    // 雨天中止のイベントが含まれる場合は最優先で雨天中止とする
+    if (dayEvents.some(e => e.status === "rainout")) return "rainout";
+    
     // 進行中の試合があれば最優先
     if (dayEvents.some(e => e.status === "live")) return "live";
     // 公式戦が含まれるか
@@ -234,6 +237,7 @@ export const TeamCalendar: React.FC<TeamCalendarProps> = ({ matches, canManage, 
           const isSelected = selectedDateStr === dayStr;
           const isToday = todayStr === dayStr;
           const status = getDateStatus(dayStr);
+          const hasRainout = getMatchesForDate(dayStr).some(e => e.status === "rainout");
           
           // 日曜日または土曜日のカラーリング
           const dayOfWeek = day.date.getDay();
@@ -250,6 +254,7 @@ export const TeamCalendar: React.FC<TeamCalendarProps> = ({ matches, canManage, 
                 day.isCurrentMonth && "hover:bg-zinc-100 dark:hover:bg-zinc-900",
                 day.isCurrentMonth && isSunday && "text-rose-500",
                 day.isCurrentMonth && isSaturday && "text-blue-500",
+                day.isCurrentMonth && hasRainout && "text-blue-600 dark:text-blue-400 bg-blue-500/5 dark:bg-blue-950/10 border-blue-500/20 font-black",
                 isToday && "bg-primary/10 dark:bg-primary/25 border-primary/30 text-primary font-black",
                 isSelected && "bg-primary text-primary-foreground hover:bg-primary border-primary ring-2 ring-primary/20"
               )}
@@ -271,6 +276,7 @@ export const TeamCalendar: React.FC<TeamCalendarProps> = ({ matches, canManage, 
                       className={cn(
                         "h-1.5 w-1.5 rounded-full",
                         isSelected ? "bg-white" : 
+                        status === "rainout" ? "bg-blue-500" :
                         status === "official" ? "bg-blue-500" : 
                         status === "match_practice" ? "bg-amber-500" :
                         status === "practice" ? "bg-emerald-500" :

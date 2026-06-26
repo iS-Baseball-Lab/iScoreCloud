@@ -511,6 +511,25 @@ export default function AttendancePage() {
     setIsEventModalOpen(true);
   };
 
+  // 💡 editEventId クエリパラメータがある場合に自動で日程編集モーダルを開く
+  useEffect(() => {
+    if (typeof window === "undefined" || isLoading || filteredEvents.length === 0) return;
+
+    const params = new URLSearchParams(window.location.search);
+    const editEventId = params.get("editEventId");
+    if (editEventId) {
+      const targetEvent = filteredEvents.find(e => e.id === editEventId);
+      if (targetEvent) {
+        // イベント編集モーダルを開く
+        openEditEventModal(targetEvent, { stopPropagation: () => {} } as any);
+        
+        // URLパラメータをクリアしてリロード時の再オープンを防止
+        const newUrl = window.location.pathname;
+        window.history.replaceState({}, "", newUrl);
+      }
+    }
+  }, [filteredEvents, isLoading]);
+
   const handleSaveEvent = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!eventTitle.trim() || !eventStartAt || !eventStartVal) {

@@ -254,6 +254,26 @@ export default function DashboardPage() {
       msgs.push("ようこそ iScoreCloud へ！本日も楽しく野球をプレイしましょう！");
     }
 
+    // ☔ 雨天中止の直近予定の優先表示
+    const todayObj = new Date();
+    const todayY = todayObj.getFullYear();
+    const todayM = String(todayObj.getMonth() + 1).padStart(2, "0");
+    const todayD = String(todayObj.getDate()).padStart(2, "0");
+    const todayStr = `${todayY}-${todayM}-${todayD}`;
+
+    const rainoutEvents = calendarMatches.filter(e => e.status === 'rainout' && e.date >= todayStr);
+    if (rainoutEvents.length > 0) {
+      const sortedRainouts = [...rainoutEvents].sort((a, b) => a.date.localeCompare(b.date));
+      sortedRainouts.forEach(e => {
+        let dateStr = "";
+        try {
+          const d = new Date(e.date);
+          dateStr = `${d.getMonth() + 1}/${d.getDate()}`;
+        } catch (err) { dateStr = e.date; }
+        msgs.push(`【☔ 雨天中止】${dateStr} の「${e.title}」は雨天中止となりました。`);
+      });
+    }
+
     // 1. 直近の試合予定
     if (upcomingMatches.length > 0) {
       const nextMatch = upcomingMatches[0];

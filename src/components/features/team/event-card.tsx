@@ -126,7 +126,7 @@ export function EventCard({
         )}>
           <div className="absolute top-0 left-0 h-full w-[75px]">
             <button
-              onClick={(e) => { e.stopPropagation(); router.push('/attendance'); }}
+              onClick={(e) => { e.stopPropagation(); router.push(`/attendance?editEventId=${event.id}`); }}
               className="flex flex-col items-center justify-center w-full h-full bg-blue-500 text-white active:bg-blue-600 transition-colors"
             >
               <Edit2 className="h-5 w-5 mb-1" />
@@ -151,7 +151,10 @@ export function EventCard({
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
         style={{ transform: `translateX(${currentOffset}px)`, touchAction: enableSwipe ? "pan-y" : "auto" }}
-        className="relative z-10 h-full transition-transform duration-200 ease-out bg-card"
+        className={cn(
+          "relative z-10 h-full transition-transform duration-200 ease-out bg-card",
+          event.status === 'rainout' && "bg-blue-500/5 dark:bg-blue-950/10 border border-blue-500/20"
+        )}
         onClick={handleCardClick}
       >
         <div className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs hover:border-primary/30 transition-all">
@@ -173,6 +176,12 @@ export function EventCard({
                 {event.type === "practice" ? "練習" : event.type === "meeting" ? "会議" : event.type === "camp" ? "合宿" : "その他予定"}
               </span>
 
+              {event.status === 'rainout' && (
+                <span className="text-[9px] font-black tracking-wider px-2 py-0.5 rounded-sm uppercase bg-blue-500/10 text-blue-600 dark:text-blue-400 animate-pulse">
+                  ☔ 雨天中止
+                </span>
+              )}
+
               {event.dutyGroup && (
                 <span className="text-[8px] font-extrabold text-purple-600 dark:text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded-xs">
                   当番: {event.dutyGroup}
@@ -187,8 +196,8 @@ export function EventCard({
             <div className="flex items-center gap-3 text-[10px] font-bold text-muted-foreground flex-wrap">
               {event.venueName && (
                 <div className="flex items-center gap-1" title={event.venueName}>
-                  <MapPin className="h-3 w-3 text-primary/60" /> 
-                  <span>{event.venueShortName || event.venueName}</span>
+                  <MapPin className="h-3 w-3 text-muted-foreground/60" /> 
+                  <span>午前: {event.venueShortName || event.venueName}</span>
                   {event.mapUrl && (
                     <a
                       href={event.mapUrl}
@@ -202,8 +211,8 @@ export function EventCard({
                 </div>
               )}
               {event.pmLocation && (
-                <div className="flex items-center gap-1 text-blue-600 dark:text-blue-400" title={event.pmLocation}>
-                  <MapPin className="h-3 w-3 text-blue-500/60" /> 
+                <div className="flex items-center gap-1" title={event.pmLocation}>
+                  <MapPin className="h-3 w-3 text-muted-foreground/60" /> 
                   <span>午後: {event.pmLocation}</span>
                   {event.pmMapUrl && (
                     <a
@@ -257,7 +266,7 @@ export function EventCard({
             <Button
               onClick={(e) => {
                 e.stopPropagation();
-                router.push(`/attendance`);
+                router.push(`/attendance?editEventId=${event.id}`);
               }}
               size="sm"
               className="h-9 font-black rounded-xl px-4 text-xs"
