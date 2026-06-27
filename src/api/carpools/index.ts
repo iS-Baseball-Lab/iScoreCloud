@@ -472,7 +472,7 @@ app.post('/events/:eventId/save', async (c) => {
           continue; // ドライバーが無効な場合はこの配車枠の保存をスキップ
         }
 
-        const carpoolId = `cp_${crypto.randomUUID().replace(/-/g, '')}`;
+        const carpoolId = cp.id || `cp_${crypto.randomUUID().replace(/-/g, '')}`;
         const isCarValid = cp.carId && validCarIds.has(cp.carId);
 
         // 配車枠のインサート

@@ -270,7 +270,7 @@ function CarpoolAssignmentContent() {
             // 所有する車を検索（出欠回答時の指定車があれば最優先、なければ持ち車）
             const myCar = (att.carId && masterCars.find(c => c.id === att.carId)) || masterCars.find(c => c.ownerId === att.memberId || c.ownerId2 === att.memberId);
             defaultCars.push({
-              id: `temp_${crypto.randomUUID().replace(/-/g, '')}`,
+              id: `cp_${crypto.randomUUID().replace(/-/g, '')}`,
               driverId: att.memberId,
               driverName: att.memberName || "ドライバー",
               carId: myCar ? myCar.id : null,
@@ -587,7 +587,7 @@ function CarpoolAssignmentContent() {
     const selectedCar = masterCars.find(c => c.id === selectedCarId);
 
     const newCarSlot: AssignedCar = {
-      id: `temp_${crypto.randomUUID().replace(/-/g, '')}`,
+      id: `cp_${crypto.randomUUID().replace(/-/g, '')}`,
       driverId: selectedDriverId,
       driverName: driver.memberName || "ドライバー",
       carId: selectedCar ? selectedCar.id : null,
@@ -1055,6 +1055,7 @@ ${lineRep}`;
           noParentChild
         },
         carpools: assignedCars.map(car => ({
+          id: car.id,
           driverId: car.driverId,
           carId: car.carId,
           capacity: car.capacity,
