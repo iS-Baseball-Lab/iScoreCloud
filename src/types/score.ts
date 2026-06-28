@@ -139,7 +139,7 @@ export interface ScoreContextType {
   ) => Promise<void>;
   recordRunnerAction: (
     baseNum: 1 | 2 | 3,
-    action: "steal_success" | "steal_out" | "pickoff_out" | "pickoff_safe" | "wp_advance" | "pb_advance" | "balk_advance" | "error_advance" | "hit_advance" | "clear",
+    action: "steal_success" | "steal_out" | "pickoff_out" | "pickoff_safe" | "wp_advance" | "pb_advance" | "balk_advance" | "error_advance" | "hit_advance" | "clear" | "silent_assign" | "silent_advance",
     assignPlayerId?: string,
     targetBase?: 2 | 3 | 4
   ) => Promise<void>;

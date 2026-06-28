@@ -12,7 +12,7 @@ interface RunnerActionModalProps {
   baseNum: 1 | 2 | 3;
   playerName: string;
   onSelectAction: (
-    action: "steal_success" | "steal_out" | "pickoff_out" | "pickoff_safe" | "wp_advance" | "pb_advance" | "balk_advance" | "error_advance" | "hit_advance" | "clear",
+    action: "steal_success" | "steal_out" | "pickoff_out" | "pickoff_safe" | "wp_advance" | "pb_advance" | "balk_advance" | "error_advance" | "hit_advance" | "clear" | "silent_advance",
     targetBase?: 2 | 3 | 4
   ) => void;
 }
@@ -102,6 +102,12 @@ export function RunnerActionModal({
       color: "bg-zinc-50 dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-white",
     },
     {
+      id: "silent_advance",
+      label: "🔄 記録なし進塁 (位置スライド)",
+      desc: "ログに残さず、走者の位置だけを別の塁に移動させます",
+      color: "bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800 border-dashed",
+    },
+    {
       id: "clear",
       label: "❌ 走者解除 (記録なし)",
       desc: "ログに残さず単に走者を消去",
@@ -181,7 +187,8 @@ export function RunnerActionModal({
                     "wp_advance",
                     "pb_advance",
                     "balk_advance",
-                    "error_advance"
+                    "error_advance",
+                    "silent_advance"
                   ].includes(act.id);
 
                   if (isAdvance && baseNum < 3) {

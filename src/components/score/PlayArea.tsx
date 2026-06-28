@@ -225,14 +225,14 @@ export function PlayArea() {
 
   const handleAssignRunner = async (playerId: string) => {
     if (!selectedBase) return;
-    await recordRunnerAction(selectedBase, "steal_success", playerId);
+    await recordRunnerAction(selectedBase, "silent_assign", playerId);
     setIsAssignModalOpen(false);
   };
 
   const handleCustomAssignRunner = async () => {
     if (!selectedBase || !customPlayerName.trim()) return;
     const customId = `custom-${customPlayerName.trim()}`;
-    await recordRunnerAction(selectedBase, "steal_success", customId);
+    await recordRunnerAction(selectedBase, "silent_assign", customId);
     setIsAssignModalOpen(false);
   };
 

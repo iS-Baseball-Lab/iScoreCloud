@@ -1206,7 +1206,7 @@ function getNormalizedAtBatResult(actionNote: string): string {
   // 🚀 5.5 走者個別アクション（盗塁、牽制死、進塁など）の記録
   const recordRunnerAction = async (
     baseNum: 1 | 2 | 3,
-    action: "steal_success" | "steal_out" | "pickoff_out" | "pickoff_safe" | "wp_advance" | "pb_advance" | "balk_advance" | "error_advance" | "hit_advance" | "clear",
+    action: "steal_success" | "steal_out" | "pickoff_out" | "pickoff_safe" | "wp_advance" | "pb_advance" | "balk_advance" | "error_advance" | "hit_advance" | "clear" | "silent_assign" | "silent_advance",
     assignPlayerId?: string,
     targetBase?: 2 | 3 | 4
   ) => {
@@ -1232,6 +1232,12 @@ function getNormalizedAtBatResult(actionNote: string): string {
       if (!runnerId && assignPlayerId) {
         const nextRunners = { ...prev.runners, [key]: assignPlayerId };
         
+        if (action === "silent_assign") {
+          const next = pushHistory(prev, { runners: nextRunners });
+          syncWithBackend(next, `${baseNum}塁走者配置 (手動修正)`, true);
+          return next;
+        }
+
         // 選手名を取得
         const playerName = getRunnerNameById(assignPlayerId);
 
@@ -1265,7 +1271,35 @@ function getNormalizedAtBatResult(actionNote: string): string {
       // 各アクションの処理
       const destBase = targetBase || (baseNum === 3 ? 4 : (baseNum + 1) as 2 | 3 | 4);
 
-      if (action === "steal_success") {
+      if (action === "silent_advance") {
+        nextRunners[key] = null;
+        if (destBase === 4) {
+          const isMyTeam = (prev.isTop && prev.isGuestFirst) || (!prev.isTop && !prev.isGuestFirst);
+          const scoreField = isMyTeam ? 'myScore' : 'opponentScore';
+          const nextScore = prev[scoreField] + 1;
+          
+          const inningScoresField = isMyTeam ? 'myInningScores' : 'opponentInningScores';
+          const inningScores = [...prev[inningScoresField]];
+          if (inningScores.length < prev.inning) {
+            while (inningScores.length < prev.inning) inningScores.push(0);
+          }
+          inningScores[prev.inning - 1] = (inningScores[prev.inning - 1] || 0) + 1;
+          
+          const next = pushHistory(prev, {
+            runners: nextRunners,
+            [scoreField]: nextScore,
+            [inningScoresField]: inningScores
+          });
+          syncWithBackend(next, `${baseNum}塁走者本塁生還 (手動修正)`, true);
+          return next;
+        } else {
+          const nextKey = `base${destBase}` as keyof typeof prev.runners;
+          nextRunners[nextKey] = runnerId;
+          const next = pushHistory(prev, { runners: nextRunners });
+          syncWithBackend(next, `${baseNum}塁走者を${destBase}塁へ移動 (手動修正)`, true);
+          return next;
+        }
+      } else if (action === "steal_success") {
         nextRunners[key] = null;
         if (destBase === 4) {
           actualRbi = 1;
