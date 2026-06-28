@@ -5,7 +5,7 @@
 
 import React, { useMemo } from "react";
 import { useScore } from "@/contexts/ScoreContext";
-import { History, Trophy, ArrowUpRight, Circle, ChevronDown, ChevronUp, XCircle, Activity } from "lucide-react";
+import { History, Trophy, ArrowUpRight, Circle, ChevronDown, ChevronUp, XCircle, Activity, Edit2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface PlayLogProps {
@@ -13,7 +13,7 @@ interface PlayLogProps {
 }
 
 export function PlayLog({ limit = 3 }: PlayLogProps) {
-  const { state } = useScore();
+  const { state, updatePlayLogDescription } = useScore();
 
   // イニング境界の区切りを含めた、表示用アイテムの配列を生成する
   const displayItems = useMemo(() => {
@@ -192,6 +192,24 @@ export function PlayLog({ limit = 3 }: PlayLogProps) {
               )}>
                 {cleanDesc}
               </span>
+
+              {state.isScorer && !isSeparatorText(cleanDesc) && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const newText = window.prompt("実況メモを修正してください:", cleanDesc);
+                    if (newText !== null && newText.trim() !== "") {
+                      const bsoSuffix = log.description.match(/\s\[B:\d+,\s*S:\d+,\s*O:\d+\]$/)?.[0] || "";
+                      updatePlayLogDescription(log.id, `${newText.trim()}${bsoSuffix}`);
+                    }
+                  }}
+                  className="p-1 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded text-zinc-400 hover:text-foreground active:scale-95 transition-all shrink-0 cursor-pointer"
+                  title="ログを直接編集"
+                >
+                  <Edit2 className="h-3.5 w-3.5" />
+                </button>
+              )}
             </div>
 
             {/* BSO */}

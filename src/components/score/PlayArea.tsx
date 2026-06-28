@@ -8,9 +8,10 @@ import { cn } from "@/lib/utils";
 import { RunnerActionModal } from "./RunnerActionModal";
 import { SubstitutionModal } from "./SubstitutionModal";
 import { X, UserPlus, Check, User, ChevronDown } from "lucide-react";
+import { toast } from "sonner";
 
 export function PlayArea() {
-  const { state, updateRunners, recordInPlay, recordRunnerAction, substitutePlayer, forceAcquireLock } = useScore();
+  const { state, updateRunners, recordInPlay, recordRunnerAction, substitutePlayer, forceAcquireLock, overrideGameState } = useScore();
   const { runners } = state;
 
   // モーダル・アサイン用状態管理
@@ -172,6 +173,31 @@ export function PlayArea() {
     if (window.navigator.vibrate) window.navigator.vibrate(10);
   };
 
+  const handleChangeBattingIndex = (currentIdx: number, teamType: 'my' | 'opponent') => {
+    if (!state.isScorer) return;
+    
+    const lineup = teamType === 'my' ? state.myLineup : state.opponentLineup;
+    const maxOrder = lineup?.length || 9;
+    
+    const newValStr = window.prompt(`打順（1〜${maxOrder}）を半角数字で入力して強制変更できます:`, (currentIdx + 1).toString());
+    if (newValStr === null) return;
+    
+    const newVal = parseInt(newValStr, 10);
+    if (isNaN(newVal) || newVal < 1 || newVal > maxOrder) {
+      toast.error(`1〜${maxOrder}の数字を入力してください`);
+      return;
+    }
+    
+    const targetIdx = newVal - 1;
+    const isMyTeam = teamType === 'my';
+    const nextBatterId = lineup?.[targetIdx]?.playerId || lineup?.[targetIdx]?.id || null;
+    
+    overrideGameState({
+      [isMyTeam ? 'myBattingIndex' : 'opponentBattingIndex']: targetIdx,
+      batterId: nextBatterId
+    }, `[打順手動変更] 打順を${newVal}番に強制変更しました`);
+  };
+
   const handleFielderClick = (posNum: string) => {
     if (!state.isScorer) return;
 
@@ -329,7 +355,18 @@ export function PlayArea() {
                   </span>
 
                   {/* 中央: 打者情報 */}
-                  <div className="flex items-center gap-1 min-w-0 justify-center flex-1 mx-1.5">
+                  <div 
+                    onClick={(e) => {
+                      if (state.isScorer) {
+                        e.stopPropagation();
+                        handleChangeBattingIndex(index, isMyAttack ? 'my' : 'opponent');
+                      }
+                    }}
+                    className={cn(
+                      "flex items-center gap-1 min-w-0 justify-center flex-1 mx-1.5 rounded hover:bg-white/10 px-1 py-0.5",
+                      state.isScorer && "cursor-pointer"
+                    )}
+                  >
                     <span className="text-[11px] sm:text-[12px] [@media(max-height:700px)]:text-[10px] font-black truncate">
                       {`${index + 1}番 ${batterName}`}
                     </span>

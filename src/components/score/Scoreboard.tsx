@@ -6,17 +6,95 @@ import { useRouter } from "next/navigation";
 import { useScore } from "@/contexts/ScoreContext";
 import { cn } from "@/lib/utils";
 import { Users, Trophy } from "lucide-react";
+import { toast } from "sonner";
 
 export function Scoreboard() {
   const router = useRouter();
-  // 💡 Contextから最新の状態と関数を取得
-  const { state, updateMatchSettings } = useScore();
+  const { state, updateMatchSettings, overrideGameState } = useScore();
   const [offsetX, setOffsetX] = useState(0);
   const startX = useRef(0);
 
   // 💡 maxInningsがない場合のフォールバック（型定義に合わせて安全に参照）
   const displayInningsCount = Math.max(state.maxInnings || 7, state.inning);
   const innings = Array.from({ length: displayInningsCount }, (_, i) => i + 1);
+
+  // 🚀 得点手動修正ハンドラー
+  const handleInningScoreClick = (inningNum: number, teamType: 'guest' | 'home') => {
+    if (!state.isScorer) return;
+    
+    const isMyTeamGuest = state.isGuestFirst;
+    const isGuest = teamType === 'guest';
+    
+    // 現在のスコア配列をコピー
+    const currentScores = isGuest 
+      ? (isMyTeamGuest ? [...state.myInningScores] : [...state.opponentInningScores])
+      : (isMyTeamGuest ? [...state.opponentInningScores] : [...state.myInningScores]);
+      
+    const currentVal = currentScores[inningNum - 1] ?? 0;
+    const newValStr = window.prompt(`${inningNum}回${isGuest ? "先攻" : "後攻"}の得点を入力してください:`, currentVal.toString());
+    if (newValStr === null) return;
+    
+    const newVal = parseInt(newValStr, 10);
+    if (isNaN(newVal) || newVal < 0) {
+      toast.error("有効な得点（0以上の整数）を入力してください");
+      return;
+    }
+    
+    // 配列の長さを合わせる
+    while (currentScores.length < inningNum) {
+      currentScores.push(0);
+    }
+    currentScores[inningNum - 1] = newVal;
+    
+    // 新しい総得点
+    const nextTotal = currentScores.reduce((sum, val) => sum + (val || 0), 0);
+    
+    const updatePayload: any = {};
+    if (isGuest) {
+      if (isMyTeamGuest) {
+        updatePayload.myInningScores = currentScores;
+        updatePayload.myScore = nextTotal;
+      } else {
+        updatePayload.opponentInningScores = currentScores;
+        updatePayload.opponentScore = nextTotal;
+      }
+    } else {
+      if (isMyTeamGuest) {
+        updatePayload.opponentInningScores = currentScores;
+        updatePayload.opponentScore = nextTotal;
+      } else {
+        updatePayload.myInningScores = currentScores;
+        updatePayload.myScore = nextTotal;
+      }
+    }
+    
+    overrideGameState(updatePayload, `[得点手動変更] ${inningNum}回${isGuest ? "先攻" : "後攻"}の得点を ${newVal} に変更 (総得点: ${nextTotal}点)`);
+  };
+
+  const handleTotalScoreClick = (teamType: 'guest' | 'home') => {
+    if (!state.isScorer) return;
+    
+    const isMyTeamGuest = state.isGuestFirst;
+    const isGuest = teamType === 'guest';
+    
+    const currentTotal = isGuest
+      ? (isMyTeamGuest ? state.myScore : state.opponentScore)
+      : (isMyTeamGuest ? state.opponentScore : state.myScore);
+      
+    const newValStr = window.prompt(`${isGuest ? "先攻" : "後攻"}の総得点を入力してください:`, currentTotal.toString());
+    if (newValStr === null) return;
+    
+    const newVal = parseInt(newValStr, 10);
+    if (isNaN(newVal) || newVal < 0) {
+      toast.error("有効な得点（0以上の整数）を入力してください");
+      return;
+    }
+    
+    const isMyTeam = (isGuest && isMyTeamGuest) || (!isGuest && !isMyTeamGuest);
+    overrideGameState({
+      [isMyTeam ? 'myScore' : 'opponentScore']: newVal
+    }, `[得点手動変更] ${isGuest ? "先攻" : "後攻"}の総得点を ${newVal}点 に変更`);
+  };
 
   // 試合開始前判定（設定変更を許可する条件：1回表、0対0、無死無走者）
   const isPreGame = state.inning === 1 && state.isTop &&
@@ -158,11 +236,11 @@ export function Scoreboard() {
                     <span className={state.isTop ? "text-primary" : "text-foreground/40"}>先</span>
                   </td>
                   {innings.map(i => (
-                    <td key={i} className={cn("text-center text-lg [@media(max-height:700px)]:text-sm px-0.5", numberStyle, state.inning === i && state.isTop ? "text-primary font-bold underline underline-offset-4" : "text-foreground/80")}>
+                    <td key={i} onClick={() => handleInningScoreClick(i, 'guest')} className={cn("text-center text-lg [@media(max-height:700px)]:text-sm px-0.5 cursor-pointer", numberStyle, state.inning === i && state.isTop ? "text-primary font-bold underline underline-offset-4" : "text-foreground/80")}>
                       {guestInningScores[i - 1] ?? (i <= state.inning && (state.isTop || i < state.inning) ? "0" : "-")}
                     </td>
                   ))}
-                  <td className={cn("text-center text-xl [@media(max-height:700px)]:text-base font-black tabular-nums tracking-tighter", state.isTop ? "bg-primary/10 text-primary" : "bg-muted/40 text-foreground")}>
+                  <td onClick={() => handleTotalScoreClick('guest')} className={cn("text-center text-xl [@media(max-height:700px)]:text-base font-black tabular-nums tracking-tighter cursor-pointer", state.isTop ? "bg-primary/10 text-primary" : "bg-muted/40 text-foreground")}>
                     {guestScore}
                   </td>
                   <td className="text-center text-sm [@media(max-height:700px)]:text-[11px] text-muted-foreground/40 font-bold">{guestHits ?? 0}</td>
@@ -174,11 +252,11 @@ export function Scoreboard() {
                     <span className={!state.isTop ? "text-primary" : "text-foreground/40"}>後</span>
                   </td>
                   {innings.map(i => (
-                    <td key={i} className={cn("text-center text-lg [@media(max-height:700px)]:text-sm px-0.5", numberStyle, state.inning === i && !state.isTop ? "text-primary font-bold underline underline-offset-4" : "text-foreground/80")}>
+                    <td key={i} onClick={() => handleInningScoreClick(i, 'home')} className={cn("text-center text-lg [@media(max-height:700px)]:text-sm px-0.5 cursor-pointer", numberStyle, state.inning === i && !state.isTop ? "text-primary font-bold underline underline-offset-4" : "text-foreground/80")}>
                       {homeInningScores[i - 1] ?? (i <= state.inning && (!state.isTop || i < state.inning) ? "0" : "-")}
                     </td>
                   ))}
-                  <td className={cn("text-center text-xl [@media(max-height:700px)]:text-base font-black tabular-nums tracking-tighter", !state.isTop ? "bg-primary/10 text-primary" : "bg-muted/40 text-foreground")}>
+                  <td onClick={() => handleTotalScoreClick('home')} className={cn("text-center text-xl [@media(max-height:700px)]:text-base font-black tabular-nums tracking-tighter cursor-pointer", !state.isTop ? "bg-primary/10 text-primary" : "bg-muted/40 text-foreground")}>
                     {homeScore}
                   </td>
                   <td className="text-center text-sm [@media(max-height:700px)]:text-[11px] text-muted-foreground/40 font-bold">{homeHits ?? 0}</td>
@@ -213,11 +291,22 @@ export function Scoreboard() {
 
           <div className="flex gap-4 [@media(max-height:700px)]:gap-2 h-full items-center">
             {[
-              { label: 'B', color: 'bg-emerald-500 shadow-[0_0_12px_#10b981] [@media(max-height:700px)]:shadow-none', count: state.balls, max: 3, textColor: 'text-emerald-600' },
-              { label: 'S', color: 'bg-amber-400 shadow-[0_0_12px_#fbbf24] [@media(max-height:700px)]:shadow-none', count: state.strikes, max: 2, textColor: 'text-amber-600' },
-              { label: 'O', color: 'bg-rose-500 shadow-[0_0_12px_#f43f5e] [@media(max-height:700px)]:shadow-none', count: state.outs, max: 2, textColor: 'text-rose-600' }
+              { label: 'B', color: 'bg-emerald-500 shadow-[0_0_12px_#10b981] [@media(max-height:700px)]:shadow-none', count: state.balls, max: 3, textColor: 'text-emerald-600', field: 'balls' },
+              { label: 'S', color: 'bg-amber-400 shadow-[0_0_12px_#fbbf24] [@media(max-height:700px)]:shadow-none', count: state.strikes, max: 2, textColor: 'text-amber-600', field: 'strikes' },
+              { label: 'O', color: 'bg-rose-500 shadow-[0_0_12px_#f43f5e] [@media(max-height:700px)]:shadow-none', count: state.outs, max: 2, textColor: 'text-rose-600', field: 'outs' }
             ].map(type => (
-              <div key={type.label} className="flex flex-row items-center gap-1.5 [@media(max-height:700px)]:gap-1">
+              <div 
+                key={type.label} 
+                className={cn(
+                  "flex flex-row items-center gap-1.5 [@media(max-height:700px)]:gap-1",
+                  state.isScorer && "cursor-pointer active:scale-95 transition-transform"
+                )}
+                onClick={() => {
+                  if (!state.isScorer) return;
+                  const nextCount = (type.count + 1) % (type.max + 1);
+                  overrideGameState({ [type.field]: nextCount }, `[設定手動変更] ${type.label}を${nextCount}に変更`);
+                }}
+              >
                 <span className={cn("text-sm [@media(max-height:700px)]:text-[11px] font-black leading-none", type.textColor)}>{type.label}</span>
                 <div className="flex gap-1.5 [@media(max-height:700px)]:gap-1">
                   {Array.from({ length: type.max }).map((_, i) => (

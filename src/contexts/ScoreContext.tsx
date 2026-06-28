@@ -1618,6 +1618,63 @@ function getNormalizedAtBatResult(actionNote: string): string {
     setState(prev => ({ ...prev, ...settings }));
   };
 
+  // 🚀 10.5 盤面状況の手動強制上書き（整合性調整用）
+  const overrideGameState = useCallback(async (settings: Partial<ScoreState>, actionNote: string) => {
+    if (!state.isScorer) return;
+
+    let nextState: ScoreState | null = null;
+    setState(prev => {
+      const bso = {
+        balls: settings.balls !== undefined ? settings.balls : prev.balls,
+        strikes: settings.strikes !== undefined ? settings.strikes : prev.strikes,
+        outs: settings.outs !== undefined ? settings.outs : prev.outs
+      };
+      const newLogs = appendLog(actionNote, prev, bso);
+      const next = { ...prev, ...settings, logs: newLogs } as ScoreState;
+      nextState = pushHistory(prev, next);
+      return nextState;
+    });
+
+    if (nextState) {
+      await syncWithBackend(nextState, actionNote, true); // ライン速報は静かにスキップ
+    }
+  }, [state.isScorer, appendLog, pushHistory, syncWithBackend]);
+
+  // 🚀 10.6 プレイログの直接修正
+  const updatePlayLogDescription = useCallback(async (logId: string, newDescription: string) => {
+    if (!state.isScorer) return;
+
+    setState(prev => {
+      const updatedLogs = prev.logs.map(log => {
+        if (log.id === logId) {
+          return { ...log, description: newDescription };
+        }
+        return log;
+      });
+      return { ...prev, logs: updatedLogs };
+    });
+
+    try {
+      const res = await fetch(`/api/matches/logs/${logId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          description: newDescription,
+          resultType: "play"
+        })
+      });
+      const data = await res.json() as { success: boolean };
+      if (data.success) {
+        toast.success("プレイログを直接修正しました");
+      } else {
+        toast.error("ログの保存に失敗しました");
+      }
+    } catch (e) {
+      console.error("Failed to update play log:", e);
+      toast.error("通信エラーが発生しました");
+    }
+  }, [state.isScorer]);
+
   // 🚀 11. 閲覧者（観戦モード）向け：試合データのスマートポーリング
   useEffect(() => {
     // 試合IDがあり、自分がスコアラーではなく、試合が進行中の場合のみポーリングを動かす
@@ -1668,6 +1725,8 @@ function getNormalizedAtBatResult(actionNote: string): string {
       resumeMatch, // 🌟 追加
       resetMatch, // 🌟 追加
       updateMatchSettings,
+      overrideGameState,
+      updatePlayLogDescription,
       substitutePlayer,
       acquireLock,
       releaseLock,

@@ -163,4 +163,6 @@ export interface ScoreContextType {
   releaseLock: () => Promise<void>;
   forceAcquireLock: () => Promise<void>;
   refreshMatch: (matchId: string) => Promise<void>;
+  overrideGameState: (settings: Partial<ScoreState>, actionNote: string) => Promise<void>;
+  updatePlayLogDescription: (logId: string, newDescription: string) => Promise<void>;
 }
