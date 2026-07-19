@@ -7,13 +7,12 @@ import { Button } from "@/components/ui/button";
 import { SectionHeader } from "@/components/layout/SectionHeader";
 import { EmptyState } from "@/components/layout/EmptyState";
 import {
-  Loader2, Trophy, Download, ChevronLeft,
+  Loader2, Trophy, ChevronLeft,
   Share2, Calendar, Activity, Target, Zap, Sparkles, TrendingUp,
   Video, Edit3, X, Play, Plus, BookOpen, AlertCircle, Award, Flame,
   MapPin, Users
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import * as htmlToImage from 'html-to-image';
 import { toast } from "sonner";
 import {
   Table,
@@ -289,7 +288,6 @@ function MatchResultContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
-  const captureRef = useRef<HTMLDivElement>(null);
 
   const [isYoutubeModalOpen, setIsYoutubeModalOpen] = useState(false);
   const [inputYoutubeUrl, setInputYoutubeUrl] = useState("");
@@ -620,10 +618,10 @@ function MatchResultContent() {
           )}
         </section>
 
-        {/* 🏟️ スコア ＆ チーム成績（キャプチャエリア） */}
-        <div ref={captureRef} className={cn(
+        {/* 🏟️ スコア ＆ チーム成績 */}
+        <div className={cn(
           "transition-all space-y-8 sm:space-y-12",
-          isDownloading ? "w-[850px] p-12 border-none shadow-none text-foreground bg-background" : "p-3 sm:p-8 md:p-10 rounded-[var(--radius-2xl)] border-0 sm:border border-border/60 shadow-sm bg-card/25"
+          "p-3 sm:p-8 md:p-10 rounded-[var(--radius-2xl)] border-0 sm:border border-border/60 shadow-sm bg-card/25"
         )}>
 
           {/* 1. スコアビジュアル (巨大フォント) */}
