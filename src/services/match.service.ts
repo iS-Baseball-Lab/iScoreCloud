@@ -297,10 +297,11 @@ export const MatchService = {
 
   // 9. スコアブックの画像解析結果を一括流し込み（保存）
   async saveScorebookImport(db: DrizzleDB, matchId: string, events: AtBatEvent[]) {
+    // A. pitches テーブルのクリア（at_bats に紐づくため事前に削除）
+    await db.run(sql`DELETE FROM pitches WHERE at_bat_id IN (SELECT id FROM at_bats WHERE match_id = ${matchId})`);
+
     // 既存の play_logs, at_bats, base_advances をクリア
     await db.transaction(async (tx) => {
-      // A. pitches テーブルのクリア（at_bats に紐づくため事前に削除）
-      await tx.run(sql`DELETE FROM pitches WHERE at_bat_id IN (SELECT id FROM at_bats WHERE match_id = ${matchId})`);
       
       // B. 既存の試合データを削除
       await tx.delete(baseAdvances).where(eq(baseAdvances.matchId, matchId));

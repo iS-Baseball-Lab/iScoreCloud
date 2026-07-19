@@ -11,7 +11,7 @@ const scorebookRouter = new Hono<{ Bindings: WorkerEnv }>();
 const { matches, teams } = schema;
 
 // 1. スコアブック画像のAI解析エンドポイント
-scorebookRouter.post("/import", async (c) => {
+scorebookRouter.post("/:id/scorebook/import", async (c) => {
   const db = drizzle(c.env.DB, { schema });
   const matchId = c.req.param("id") as string;
   const apiKey = c.env.GEMINI_API_KEY;
@@ -126,7 +126,7 @@ ${legendPromptAdd}
 出力フォーマットは指定された JSON スキーマに従ってください。手書き文字の解読には細心の注意を払い、打順(1〜9)とイニング(1〜7または9)が整合するようにマッピングしてください。`;
 
     // F. Gemini API の呼び出し (HTTP Fetch)
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`;
     const geminiRes = await fetch(geminiUrl, {
       method: "POST",
       headers: {
@@ -224,8 +224,7 @@ ${legendPromptAdd}
   }
 });
 
-// 2. 確定データの一括保存エンドポイント
-scorebookRouter.post("/save", async (c) => {
+scorebookRouter.post("/:id/scorebook/save", async (c) => {
   const db = drizzle(c.env.DB, { schema });
   const matchId = c.req.param("id") as string;
 

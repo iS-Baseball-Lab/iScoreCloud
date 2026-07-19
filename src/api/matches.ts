@@ -9,7 +9,7 @@ import scorebookRouter from "./matches/scorebook";
 
 const app = new Hono<{ Bindings: { DB: D1Database } }>();
 
-app.route("/:id/scorebook", scorebookRouter);
+app.route("/", scorebookRouter);
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // ⚾️ 窓口（Controller / Router）
