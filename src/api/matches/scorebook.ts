@@ -192,10 +192,11 @@ ${legendPromptAdd}
     }
 
     const geminiData = await geminiRes.json() as any;
+    const finishReason = geminiData.candidates?.[0]?.finishReason;
     const responseText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
     
     if (!responseText) {
-      return c.json({ success: false, error: "AIからの解析結果が空でした" }, 500);
+      return c.json({ success: false, error: `AIからの解析結果が空でした (終了理由: ${finishReason})` }, 500);
     }
 
     let jsonText = responseText.trim();
@@ -203,7 +204,14 @@ ${legendPromptAdd}
       const cleaned = jsonText.replace(/^```[a-zA-Z0-9]*\n/, "").replace(/\n```$/, "");
       jsonText = cleaned.trim();
     }
-    const parsedJson = JSON.parse(jsonText) as { events: AtBatEvent[] };
+    
+    let parsedJson;
+    try {
+      parsedJson = JSON.parse(jsonText) as { events: AtBatEvent[] };
+    } catch (parseError: any) {
+      console.error("JSON parse failed. Raw text:", jsonText);
+      throw new Error(`JSON構文エラー (${finishReason}): ${parseError.message}\n--- 生データ ---\n${jsonText.slice(0, 1000)}`);
+    }
     const events = parsedJson.events || [];
 
     // G. 論理矛盾検知（Validation）の実行
