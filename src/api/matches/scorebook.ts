@@ -124,7 +124,32 @@ ${legendPromptAdd}
 4. 各イニングは、3アウトになった打席で終了（チェンジ）し、そのマスの右下や右側に斜めの二重線「//」などが描かれて区切られます。
 5. 【超重要】画像に含まれるすべてのイニング（通常1回から最終回まで）と、全打席を漏れなく最後まで解析してください。決して1イニング等で途中で出力を打ち切らず、試合終了までの全データを網羅してください。
 
-出力フォーマットは指定された JSON スキーマに従ってください。手書き文字の解読には細心の注意を払い、打順(1〜9)とイニング(1〜7または9)が整合するようにマッピングしてください。`;
+出力フォーマットは必ず以下のJSON形式に従い、\`\`\`json と \`\`\` で囲んで出力してください。
+【JSON構造】
+{
+  "events": [
+    {
+      "inning": 1,
+      "isTop": true,
+      "battingOrder": 1,
+      "batterName": "選手名",
+      "pitcherName": "選手名",
+      "result": "打席結果",
+      "outsInThisPlay": 0,
+      "endingOuts": 1,
+      "runsInThisPlay": 0,
+      "advances": [
+        {
+          "runnerName": "選手名",
+          "from": "1B",
+          "to": "2B",
+          "method": "進塁理由"
+        }
+      ]
+    }
+  ]
+}
+注意: \`from\` と \`to\` は "1B", "2B", "3B", "HP" のいずれかを使用してください。`;
 
     // F. Gemini API の呼び出し (HTTP Fetch)
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`;
@@ -144,44 +169,7 @@ ${legendPromptAdd}
         ],
         generationConfig: {
           maxOutputTokens: 8192,
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: "OBJECT",
-            properties: {
-              events: {
-                type: "ARRAY",
-                items: {
-                  type: "OBJECT",
-                  properties: {
-                    inning: { type: "INTEGER" },
-                    isTop: { type: "BOOLEAN" },
-                    battingOrder: { type: "INTEGER" },
-                    batterName: { type: "STRING" },
-                    pitcherName: { type: "STRING" },
-                    result: { type: "STRING" },
-                    outsInThisPlay: { type: "INTEGER" },
-                    endingOuts: { type: "INTEGER" },
-                    runsInThisPlay: { type: "INTEGER" },
-                    advances: {
-                      type: "ARRAY",
-                      items: {
-                        type: "OBJECT",
-                        properties: {
-                          runnerName: { type: "STRING" },
-                          from: { type: "STRING", enum: ["1B", "2B", "3B", "HP"] },
-                          to: { type: "STRING", enum: ["1B", "2B", "3B", "HP"] },
-                          method: { type: "STRING" }
-                        },
-                        required: ["runnerName", "to"]
-                      }
-                    }
-                  },
-                  required: ["inning", "isTop", "battingOrder", "batterName", "pitcherName", "result", "outsInThisPlay", "endingOuts", "runsInThisPlay", "advances"]
-                }
-              }
-            },
-            required: ["events"]
-          }
+          temperature: 0.1
         }
       })
     });
