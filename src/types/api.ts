@@ -65,6 +65,7 @@ export interface Membership {
   roleLabel: string;
   status: string;
   isMainTeam: boolean;
+  logoImageUrl?: string | null;
 }
 
 /** /api/auth/me レスポンス全体 */

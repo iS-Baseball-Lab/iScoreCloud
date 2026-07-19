@@ -41,6 +41,7 @@ app.get('/me', async (c) => {
         organizationCategory: organizations.category,
         role: teamMembers.role,
         status: teamMembers.status,
+        logoImageUrl: organizations.logoImageUrl,
       })
       .from(teamMembers)
       .innerJoin(teams, eq(teamMembers.teamId, teams.id))
@@ -57,6 +58,7 @@ app.get('/me', async (c) => {
         roleLabel: getRoleLabel(t.role),
         status: t.status,
         isMainTeam: index === 0,
+        logoImageUrl: t.logoImageUrl,
       });
     });
   } catch (error) {

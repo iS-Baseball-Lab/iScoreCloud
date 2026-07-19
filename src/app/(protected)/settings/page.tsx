@@ -2,7 +2,9 @@
 
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Wrench, SendHorizontal, AlertCircle, Car, MapPin } from "lucide-react";
+import { Wrench, SendHorizontal, AlertCircle, Car, MapPin, Camera, Upload, Loader2 } from "lucide-react";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { SectionHeader } from "@/components/layout/SectionHeader";
 import { useTeam } from "@/contexts/TeamContext";
@@ -12,7 +14,7 @@ import { toast } from "sonner";
 
 export default function SettingsPage() {
   const router = useRouter();
-  const { currentTeam, isLoading: isTeamLoading } = useTeam();
+  const { currentTeam, selectTeam, isLoading: isTeamLoading } = useTeam();
   
   const [lineSettings, setLineSettings] = useState<{
     lineGroupId: string;
@@ -24,6 +26,7 @@ export default function SettingsPage() {
   const [isLoadingSettings, setIsLoadingSettings] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [isPushing, setIsPushing] = useState(false);
+  const [logoUploading, setLogoUploading] = useState(false);
 
   // 💡 チームIDが変更されたらLINE設定を取得
   useEffect(() => {
@@ -49,6 +52,62 @@ export default function SettingsPage() {
 
     fetchSettings();
   }, [currentTeam?.id]);
+
+  // 💡 チームアイコン（ロゴ）のアップロード・保存処理
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !currentTeam?.id) return;
+
+    setLogoUploading(true);
+    setStatus("⏳ 画像をアップロード中...");
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      // 1. 画像アップロード API を叩く (type=team)
+      const uploadRes = await fetch("/api/images/upload?type=team", {
+        method: "POST",
+        body: formData,
+      });
+      const uploadData = await uploadRes.json() as { success: boolean; imageUrl?: string; error?: string };
+
+      if (!uploadData.success || !uploadData.imageUrl) {
+        throw new Error(uploadData.error || "アップロードに失敗しました");
+      }
+
+      const imageUrl = uploadData.imageUrl;
+
+      // 2. チーム情報の更新 API を叩く
+      setStatus("⏳ チーム情報を更新中...");
+      const updateRes = await fetch(`/api/teams/${currentTeam.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ logoImageUrl: imageUrl }),
+      });
+      const updateData = await updateRes.json() as { success: boolean; error?: string };
+
+      if (updateData.success) {
+        // 3. グローバルコンテキスト（とlocalStorage）を即時更新
+        selectTeam({
+          id: currentTeam.id,
+          name: currentTeam.name,
+          organizationCategory: currentTeam.organizationCategory,
+          logoImageUrl: imageUrl,
+        });
+        setStatus("✅ チームアイコンが正常に更新されました。");
+        toast.success("チームアイコンを変更しました");
+      } else {
+        throw new Error(updateData.error || "更新に失敗しました");
+      }
+    } catch (err: any) {
+      console.error(err);
+      setStatus(`❌ エラー: ${err.message || "処理に失敗しました"}`);
+      toast.error(err.message || "アイコンの変更に失敗しました");
+    } finally {
+      setLogoUploading(false);
+    }
+  };
 
   // 💡 設定の保存処理
   const handleSave = async (settings: {
@@ -173,6 +232,67 @@ export default function SettingsPage() {
               >
                 チームを切り替える
               </Button>
+            </div>
+
+            {/* 💡 チームアイコン設定カード */}
+            <div className="bg-card border border-border/40 rounded-[30px] p-6 sm:p-8 space-y-6 shadow-sm">
+              <div className="flex items-center justify-between border-b border-border/40 pb-4">
+                <div>
+                  <h3 className="text-lg font-black text-foreground flex items-center gap-2">
+                    <Camera className="h-5 w-5 text-primary" />
+                    チームアイコン設定
+                  </h3>
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-0.5">
+                    Team Icon Settings
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-center gap-6">
+                {/* プレビュー */}
+                <div className="relative group shrink-0">
+                  <Avatar className="h-24 w-24 sm:h-28 sm:w-28 border-2 border-primary/20 bg-background shadow-inner flex items-center justify-center overflow-hidden">
+                    {currentTeam.logoImageUrl && (
+                      <img src={currentTeam.logoImageUrl} alt="Team Icon" className="h-full w-full object-contain" />
+                    )}
+                    <AvatarFallback className="w-full h-full flex items-center justify-center text-primary font-black text-2xl bg-primary/5 select-none">
+                      {currentTeam.name.slice(0, 2).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                  {logoUploading && (
+                    <div className="absolute inset-0 bg-background/70 backdrop-blur-sm rounded-full flex items-center justify-center">
+                      <Loader2 className="h-8 w-8 text-primary animate-spin" />
+                    </div>
+                  )}
+                </div>
+
+                {/* 操作エリア */}
+                <div className="flex-1 space-y-4 text-center sm:text-left">
+                  <div className="space-y-1">
+                    <p className="text-sm font-bold text-foreground">ロゴ画像をアップロード</p>
+                    <p className="text-xs text-muted-foreground">
+                      PNG, JPG, WEBP形式の画像を推奨します。設定された画像はチームのマークとして表示されます。
+                    </p>
+                  </div>
+
+                  <div className="flex justify-center sm:justify-start">
+                    <label className={cn(
+                      "flex items-center gap-2 px-5 h-11 rounded-full font-black text-xs sm:text-sm bg-primary text-primary-foreground shadow-sm hover:scale-[1.02] active:scale-95 transition-all cursor-pointer",
+                      logoUploading && "pointer-events-none opacity-50"
+                    )}>
+                      <Upload className="h-4 w-4" />
+                      {logoUploading ? "アップロード中..." : "画像を選択する"}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleLogoUpload}
+                        className="hidden"
+                        disabled={logoUploading}
+                      />
+                    </label>
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* LINE連携カード */}

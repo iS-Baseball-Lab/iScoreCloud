@@ -68,7 +68,8 @@ app.get('/', async (c) => {
     tier: teams.tier,
     teamType: teams.teamType,
     myRole: teamMembers.role,
-    isFounder: eq(teams.createdBy, session.user.id)
+    isFounder: eq(teams.createdBy, session.user.id),
+    logoImageUrl: organizations.logoImageUrl
   })
     .from(teamMembers)
     .innerJoin(teams, eq(teamMembers.teamId, teams.id))
@@ -123,11 +124,12 @@ app.patch('/:id', async (c) => {
       homeGround: body.homeGround !== undefined ? body.homeGround : undefined
     }).where(eq(teams.id, teamId))
 
-    if (body.description !== undefined) {
+    if (body.logoImageUrl !== undefined || body.description !== undefined) {
       const teamObj = await db.select({ organizationId: teams.organizationId }).from(teams).where(eq(teams.id, teamId)).get()
       if (teamObj && teamObj.organizationId) {
         await db.update(organizations).set({
-          description: body.description
+          logoImageUrl: body.logoImageUrl !== undefined ? body.logoImageUrl : undefined,
+          description: body.description !== undefined ? body.description : undefined
         }).where(eq(organizations.id, teamObj.organizationId))
       }
     }

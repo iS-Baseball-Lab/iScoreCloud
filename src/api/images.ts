@@ -17,9 +17,13 @@ app.post('/upload', async (c) => {
   const file = formData['file'] as File
   if (!file) return c.json({ error: 'File is required' }, 400)
 
+  // 💡 アップロードの用途に応じて保存先フォルダを切り替える (type=team など)
+  const uploadType = c.req.query('type') || 'avatar'
+  const folder = uploadType === 'team' ? 'teams' : 'avatars'
+
   // 拡張子を取得して、ユーザーIDベースのユニークなファイル名を作成
   const fileExtension = file.name.split('.').pop()
-  const fileName = `avatars/${session.user.id}-${Date.now()}.${fileExtension}`
+  const fileName = `${folder}/${session.user.id}-${Date.now()}.${fileExtension}`
 
   try {
     // R2バケットへ保存！
