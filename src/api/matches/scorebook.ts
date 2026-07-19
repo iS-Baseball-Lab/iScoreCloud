@@ -55,23 +55,55 @@ scorebookRouter.post("/import", async (c) => {
     let legendPromptAdd = "";
     if (legendUrl) {
       try {
-        const legendRes = await fetch(legendUrl);
-        if (legendRes.ok) {
-          const legendBytes = await legendRes.arrayBuffer();
-          const legendBase64 = Buffer.from(legendBytes).toString("base64");
-          const legendMimeType = legendRes.headers.get("content-type") || "image/png";
+        const marker = "/api/images/";
+        const markerIdx = legendUrl.indexOf(marker);
+
+        if (markerIdx !== -1 && c.env.BUCKET) {
+          // A. 自分の配信サーバーのパス（/api/images/）であれば、R2から直接ロードする（最速・安全）
+          const r2Key = legendUrl.substring(markerIdx + marker.length);
+          const r2Object = await c.env.BUCKET.get(r2Key);
           
-          imageParts.push({
-            inlineData: {
-              mimeType: legendMimeType,
-              data: legendBase64
-            }
-          });
-          
-          legendPromptAdd = `\n⚠️ 【画像 2】は、このチームが使用しているスコア記号の早見表（レジェンド）です。この画像 2 に定義されている記号の記述ルール（三振、四球、ヒットなどの独自の表現）を最優先にして、画像 1（手書きスコアブック）を解析してください。`;
+          if (r2Object) {
+            const legendBytes = await r2Object.arrayBuffer();
+            const legendBase64 = Buffer.from(legendBytes).toString("base64");
+            const legendMimeType = r2Object.httpMetadata?.contentType || "image/png";
+
+            imageParts.push({
+              inlineData: {
+                mimeType: legendMimeType,
+                data: legendBase64
+              }
+            });
+
+            legendPromptAdd = `\n⚠️ 【画像 2】は、このチームが使用しているスコア記号の早見表（レジェンド）です。この画像 2 に定義されている記号の記述ルール（三振、四球、ヒットなどの独自の表現）を最優先にして、画像 1（手書きスコアブック）を解析してください。`;
+          }
+        } else {
+          // B. 外部URLなどの場合は HTTP でフェッチする
+          let targetUrl = legendUrl;
+          if (legendUrl.startsWith("/")) {
+            // 相対URLの場合はリクエストのホスト名（オリジン）を付与して絶対URLにする
+            const requestUrl = new URL(c.req.url);
+            targetUrl = `${requestUrl.origin}${legendUrl}`;
+          }
+
+          const legendRes = await fetch(targetUrl);
+          if (legendRes.ok) {
+            const legendBytes = await legendRes.arrayBuffer();
+            const legendBase64 = Buffer.from(legendBytes).toString("base64");
+            const legendMimeType = legendRes.headers.get("content-type") || "image/png";
+
+            imageParts.push({
+              inlineData: {
+                mimeType: legendMimeType,
+                data: legendBase64
+              }
+            });
+
+            legendPromptAdd = `\n⚠️ 【画像 2】は、このチームが使用しているスコア記号の早見表（レジェンド）です。この画像 2 に定義されている記号の記述ルール（三振、四球、ヒットなどの独自の表現）を最優先にして、画像 1（手書きスコアブック）を解析してください。`;
+          }
         }
       } catch (err) {
-        console.error("Failed to fetch scorebook legend image:", err);
+        console.error("Failed to load scorebook legend image:", err);
       }
     }
 
