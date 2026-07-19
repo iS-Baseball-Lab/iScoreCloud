@@ -115,14 +115,17 @@ app.patch('/:id', async (c) => {
     const member = await db.select().from(teamMembers).where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, session.user.id))).get()
     if (userRole !== 'SYSTEM_ADMIN' && (!member || !canManageTeam(member.role))) return c.json({ error: '権限がありません' }, 403)
 
-    await db.update(teams).set({ 
-      name: body.name, 
-      year: body.year, 
-      tier: body.tier, 
-      teamType: body.teamType,
-      managerName: body.managerName !== undefined ? body.managerName : undefined,
-      homeGround: body.homeGround !== undefined ? body.homeGround : undefined
-    }).where(eq(teams.id, teamId))
+    const updatePayload: Record<string, any> = {};
+    if (body.name !== undefined) updatePayload.name = body.name;
+    if (body.year !== undefined) updatePayload.year = body.year;
+    if (body.tier !== undefined) updatePayload.tier = body.tier;
+    if (body.teamType !== undefined) updatePayload.teamType = body.teamType;
+    if (body.managerName !== undefined) updatePayload.managerName = body.managerName;
+    if (body.homeGround !== undefined) updatePayload.homeGround = body.homeGround;
+
+    if (Object.keys(updatePayload).length > 0) {
+      await db.update(teams).set(updatePayload).where(eq(teams.id, teamId));
+    }
 
     if (body.logoImageUrl !== undefined || body.description !== undefined) {
       const teamObj = await db.select({ organizationId: teams.organizationId, name: teams.name }).from(teams).where(eq(teams.id, teamId)).get()
