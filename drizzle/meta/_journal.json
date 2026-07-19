@@ -232,6 +232,13 @@
       "when": 1782488401908,
       "tag": "0032_icy_jetstream",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "6",
+      "when": 1784458094180,
+      "tag": "0033_misty_whiplash",
+      "breakpoints": true
     }
   ]
 }
