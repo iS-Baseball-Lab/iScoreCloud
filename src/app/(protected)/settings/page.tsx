@@ -187,7 +187,7 @@ export default function SettingsPage() {
       <div className="max-w-2xl mx-auto space-y-8">
         
         {/* ヘッダーエリア */}
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-center">
           <SectionHeader title="アプリ設定" subtitle="SETTINGS" showPulse={false} />
         </div>
 
