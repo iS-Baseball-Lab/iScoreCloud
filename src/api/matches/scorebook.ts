@@ -126,7 +126,7 @@ ${legendPromptAdd}
 出力フォーマットは指定された JSON スキーマに従ってください。手書き文字の解読には細心の注意を払い、打順(1〜9)とイニング(1〜7または9)が整合するようにマッピングしてください。`;
 
     // F. Gemini API の呼び出し (HTTP Fetch)
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
     const geminiRes = await fetch(geminiUrl, {
       method: "POST",
       headers: {
