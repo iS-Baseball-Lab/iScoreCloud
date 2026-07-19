@@ -125,12 +125,25 @@ app.patch('/:id', async (c) => {
     }).where(eq(teams.id, teamId))
 
     if (body.logoImageUrl !== undefined || body.description !== undefined) {
-      const teamObj = await db.select({ organizationId: teams.organizationId }).from(teams).where(eq(teams.id, teamId)).get()
-      if (teamObj && teamObj.organizationId) {
+      const teamObj = await db.select({ organizationId: teams.organizationId, name: teams.name }).from(teams).where(eq(teams.id, teamId)).get()
+      if (teamObj) {
+        let orgId = teamObj.organizationId;
+        
+        // 🌟 組織情報がない場合は、その場で自動生成して紐付ける
+        if (!orgId) {
+          orgId = crypto.randomUUID();
+          await db.insert(organizations).values({
+            id: orgId,
+            name: teamObj.name,
+            category: 'other',
+          });
+          await db.update(teams).set({ organizationId: orgId }).where(eq(teams.id, teamId));
+        }
+
         await db.update(organizations).set({
           logoImageUrl: body.logoImageUrl !== undefined ? body.logoImageUrl : undefined,
           description: body.description !== undefined ? body.description : undefined
-        }).where(eq(organizations.id, teamObj.organizationId))
+        }).where(eq(organizations.id, orgId))
       }
     }
 
