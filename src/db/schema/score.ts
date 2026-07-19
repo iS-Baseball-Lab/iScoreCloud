@@ -73,6 +73,7 @@ export const playLogs = sqliteTable("play_logs", {
     inningText: text("inning_text").notNull(), // 見出し用 (例: "1回表")
     resultType: text("result_type").notNull(), // アイコンの色分け等に使用 (例: 'hit', 'out', 'score', 'sub'(交代))
     description: text("description").notNull(), // 実況テキスト (例: "1番 山田: センター前へのクリーンヒット！")
+    validationMessage: text("validation_message"), // 🌟 AI解析による矛盾点・エラーの個別メモ
     createdAt: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(strftime('%s', 'now'))`),
 }, (table) => ({
     matchIdx: index("idx_play_logs_match_id").on(table.matchId),

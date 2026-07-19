@@ -216,12 +216,28 @@ app.put("/logs/:logId", async (c) => {
       .set({
         description: body.description,
         resultType: body.resultType || "play",
+        validationMessage: null, // 編集されたらバリデーションエラーはクリアする
       })
       .where(eq(playLogs.id, logId));
     return c.json({ success: true });
   } catch (error) {
     console.error("Error updating play log:", error);
     return c.json({ success: false, error: "Failed to update play log" }, 500);
+  }
+});
+
+app.patch("/logs/:logId/resolve", async (c) => {
+  const db = drizzle(c.env.DB);
+  const logId = c.req.param("logId");
+
+  try {
+    await db.update(playLogs)
+      .set({ validationMessage: null })
+      .where(eq(playLogs.id, logId));
+    return c.json({ success: true });
+  } catch (error) {
+    console.error("Error resolving play log validation:", error);
+    return c.json({ success: false, error: "Failed to resolve validation" }, 500);
   }
 });
 

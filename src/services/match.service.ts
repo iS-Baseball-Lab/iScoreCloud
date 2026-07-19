@@ -293,6 +293,7 @@ export const MatchService = {
       inning: parseInt(log.inningText) || 1,
       isTop: log.inningText.includes("表"),
       timestamp: log.createdAt.getTime(),
+      validationMessage: log.validationMessage,
     }));
   },
 
@@ -337,10 +338,12 @@ export const MatchService = {
     batchQueries.push(db.delete(baseAdvances).where(eq(baseAdvances.matchId, matchId)));
     batchQueries.push(db.delete(atBats).where(eq(atBats.matchId, matchId)));
     batchQueries.push(db.delete(playLogs).where(eq(playLogs.matchId, matchId)));
-    batchQueries.push(db.update(matches).set({ scorebookValidations: JSON.stringify(validationMessages) }).where(eq(matches.id, matchId)));
 
     // E. 各打席イベントをインサート
+    let eventIndex = 0;
+    const baseTime = Date.now();
     for (const e of events) {
+      eventIndex++;
       const atBatId = crypto.randomUUID();
       const batterId = await resolvePlayerId(e.batterName);
       const pitcherId = await resolvePlayerId(e.pitcherName);
@@ -389,12 +392,17 @@ export const MatchService = {
       if (e.result.includes('H') || e.result.match(/^[789]$/) || e.result.includes('安')) resultType = 'hit';
       else if (e.runsInThisPlay > 0) resultType = 'score';
 
+      // 該当打席のバリデーションメッセージを探す
+      const msg = validationMessages.find(v => v.inning === e.inning && v.isTop === e.isTop && v.battingOrder === e.battingOrder);
+
       batchQueries.push(db.insert(playLogs).values({
         id: crypto.randomUUID(),
         matchId,
         inningText,
         resultType,
         description: descText,
+        validationMessage: msg ? JSON.stringify(msg) : null,
+        createdAt: new Date(baseTime + eventIndex * 10), // ミリ秒単位で連番を付与して厳密な時系列ソートを実現
       }));
     }
 

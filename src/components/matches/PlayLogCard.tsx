@@ -19,6 +19,7 @@ export interface PlayLog {
   result: string;
   description: string;
   createdAt: string;
+  validationMessage?: string | null;
 }
 
 export function parseD1PlayLog(
@@ -28,6 +29,7 @@ export function parseD1PlayLog(
     inning: number;
     isTop: boolean;
     timestamp: number;
+    validationMessage?: string | null;
   },
   gameTitle: string
 ): PlayLog {
@@ -87,6 +89,7 @@ export function parseD1PlayLog(
     result: result,
     description: detailDesc,
     createdAt: formattedDate,
+    validationMessage: d1Log.validationMessage,
   };
 }
 
@@ -94,9 +97,10 @@ interface PlayLogCardProps {
   log: PlayLog;
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
+  onResolve?: (id: string) => void;
 }
 
-export function PlayLogCard({ log, onEdit, onDelete }: PlayLogCardProps) {
+export function PlayLogCard({ log, onEdit, onDelete, onResolve }: PlayLogCardProps) {
   // ━━ 展開状態の管理 ━━
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -208,6 +212,8 @@ export function PlayLogCard({ log, onEdit, onDelete }: PlayLogCardProps) {
         </button>
       </div>
 
+
+
       {/* ━━ 前面カード本体 ━━ */}
       <div
         style={{ transform: `translateX(${offsetX}px)`, touchAction: "pan-y" }}
@@ -280,7 +286,46 @@ export function PlayLogCard({ log, onEdit, onDelete }: PlayLogCardProps) {
           </div>
         </div>
 
-        {/* ━━ 💡 展開時の詳細情報エリア (背景をシームレス化) ━━ */}
+        {/* 🌟 バリデーションエラーがある場合の表示 */}
+        {log.validationMessage && (
+          <div className="bg-destructive/10 border-t border-destructive/20 p-3 flex flex-col gap-2">
+            <div className="flex items-start gap-2 text-destructive">
+              <MessageSquare className="w-4 h-4 mt-0.5 shrink-0" />
+              <p className="text-xs font-bold leading-snug">
+                {(() => {
+                  try {
+                    const parsed = JSON.parse(log.validationMessage);
+                    return parsed.message || log.validationMessage;
+                  } catch {
+                    return log.validationMessage;
+                  }
+                })()}
+              </p>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onResolve?.(log.id);
+                }}
+                className="px-3 py-1.5 bg-destructive text-destructive-foreground text-[10px] font-black rounded-lg shadow-sm active:scale-95 transition-transform"
+              >
+                問題なし
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEdit(log.id);
+                }}
+                className="px-3 py-1.5 bg-primary/10 text-primary text-[10px] font-black rounded-lg active:scale-95 transition-transform"
+              >
+                編集して修正
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ━━ 展開時の詳細情報エリア (背景をシームレス化) ━━ */}
         {isExpanded && (
           <div className="border-t border-border/40 bg-transparent">
             <div className="p-4 animate-in fade-in slide-in-from-top-2 duration-200">

@@ -1,0 +1,1 @@
+ALTER TABLE `play_logs` ADD `validation_message` text;

@@ -173,22 +173,22 @@ function PlayLogsContent() {
     }
   };
 
-  // 🌟 未解決の矛盾点をクリアする処理
-  const handleResolveValidations = async () => {
-    if (!selectedMatchId) return;
-    setIsResolving(true);
+  // 🌟 個別のプレイログのエラーをクリアする処理
+  const handleResolveLog = async (logId: string) => {
     try {
-      const res = await fetch(`/api/matches/${selectedMatchId}/validations/resolve`, { method: "POST" });
+      const res = await fetch(`/api/matches/logs/${logId}/resolve`, { method: "PATCH" });
       if (res.ok) {
-        setPersistedValidations([]);
-        toast.success("矛盾点をクリア（問題なしで確定）しました！");
+        setLogs((prev) =>
+          prev.map((log) =>
+            log.id === logId ? { ...log, validationMessage: undefined } : log
+          )
+        );
+        toast.success("矛盾点をクリア（問題なしで確定）しました");
       } else {
         toast.error("処理に失敗しました");
       }
     } catch (err) {
       toast.error("通信エラーが発生しました");
-    } finally {
-      setIsResolving(false);
     }
   };
 
@@ -373,35 +373,6 @@ function PlayLogsContent() {
           </Button>
         )}
 
-        {/* ━━ 🌟 未解決の矛盾点（AI解析エラー）表示領域 ━━ */}
-        {persistedValidations.length > 0 && (
-          <div className="bg-destructive/10 border-2 border-destructive/20 p-4 rounded-2xl space-y-3">
-            <div className="flex items-center gap-2 text-destructive">
-              <AlertTriangle className="w-5 h-5" />
-              <h3 className="font-black text-sm">AI解析の矛盾点が残っています</h3>
-            </div>
-            <ul className="text-xs text-destructive/80 space-y-1 font-bold pl-2 border-l-2 border-destructive/20">
-              {persistedValidations.map((v, i) => (
-                <li key={i}>
-                  {v.inning}回{v.isTop ? '表' : '裏'} {v.battingOrder}番: {v.message}
-                </li>
-              ))}
-            </ul>
-            <p className="text-[10px] text-zinc-500 font-bold leading-tight">
-              ※下のプレイログから各打席の手直しを行うためのメモです。<br />
-              修正が完了したか、無視してよい場合は「問題なしで確定」を押してください。
-            </p>
-            <Button
-              onClick={handleResolveValidations}
-              disabled={isResolving}
-              className="w-full h-10 rounded-[var(--radius-xl)] bg-destructive hover:bg-destructive/90 text-destructive-foreground font-black flex items-center justify-center gap-2 mt-2"
-            >
-              {isResolving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-              問題なしで確定（クリア）
-            </Button>
-          </div>
-        )}
-
         {/* ━━ ログカードリスト ━━ */}
         <div className="grid grid-cols-1 gap-3">
           {isLoadingLogs ? (
@@ -422,7 +393,8 @@ function PlayLogsContent() {
                 key={log.id} 
                 log={log} 
                 onEdit={handleEdit} 
-                onDelete={handleDelete} 
+                onDelete={handleDelete}
+                onResolve={handleResolveLog}
               />
             ))
           )}
