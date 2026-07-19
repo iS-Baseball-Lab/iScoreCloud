@@ -263,24 +263,6 @@ export function MatchCard({
           isExpanded ? "bg-primary/5 dark:bg-primary/10" : "bg-card"
         )}
       >
-        {/* 🌟 試合動画がある場合、カード上部に埋め込む */}
-        {youtubeVideoId && (
-          <div 
-            className="w-full aspect-video border-b border-border/50 overflow-hidden bg-black rounded-t-[calc(var(--radius-2xl)-1px)]"
-            onTouchStart={(e) => e.stopPropagation()}
-            onTouchMove={(e) => e.stopPropagation()}
-            onTouchEnd={(e) => e.stopPropagation()}
-          >
-            <iframe
-              src={`https://www.youtube.com/embed/${youtubeVideoId}`}
-              title="YouTube video player"
-              frameBorder="0"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-              allowFullScreen
-              className="w-full h-full"
-            />
-          </div>
-        )}
 
         <div
           className="p-4 sm:p-5 cursor-pointer"
@@ -312,6 +294,12 @@ export function MatchCard({
                 <span className="text-border">|</span>
                 <MapPin className="h-3.5 w-3.5 shrink-0" />
                 <span className="truncate">{match.venueShortName || match.venueName || match.surfaceDetails || "球場未設定"}</span>
+                {youtubeVideoId && (
+                  <>
+                    <span className="text-border mx-0.5">|</span>
+                    <PlayCircle className="h-3.5 w-3.5 shrink-0 text-red-500" />
+                  </>
+                )}
               </p>
             </div>
 
