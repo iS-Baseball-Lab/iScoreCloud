@@ -292,10 +292,10 @@ function MatchResultContent() {
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
   const captureRef = useRef<HTMLDivElement>(null);
 
-  // YouTube インプレース編集用モーダル状態
   const [isYoutubeModalOpen, setIsYoutubeModalOpen] = useState(false);
   const [inputYoutubeUrl, setInputYoutubeUrl] = useState("");
   const [isSavingUrl, setIsSavingUrl] = useState(false);
+  const [isReaggregating, setIsReaggregating] = useState(false);
 
   // データ取得ロジック
   useEffect(() => {
@@ -393,6 +393,32 @@ function MatchResultContent() {
       toast.error("AI分析中にエラーが発生しました");
     } finally {
       setIsAnalyzing(false);
+    }
+  };
+
+  // 再集計（プレイログのテキストと打席結果の同期）
+  const handleReaggregate = async () => {
+    if (!matchId) return;
+    setIsReaggregating(true);
+    try {
+      const res = await fetch(`/api/matches/${matchId}/reaggregate`, { method: "POST" });
+      if (res.ok) {
+        const data = (await res.json()) as { success: boolean; updatedCount?: number; error?: string };
+        if (data.success) {
+          toast.success(`プレイログの内容を個人成績に同期しました（更新: ${data.updatedCount || 0}件）`);
+          // リロードして最新の成績を取得
+          window.location.reload();
+        } else {
+          toast.error(data.error || "再集計に失敗しました");
+        }
+      } else {
+        toast.error("サーバーエラーが発生しました");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("再集計中に通信エラーが発生しました");
+    } finally {
+      setIsReaggregating(false);
     }
   };
 
@@ -904,7 +930,23 @@ function MatchResultContent() {
 
           {/* 4. ボックススコア成績データタブ */}
           <section className="space-y-4">
-            <SectionHeader title="個人成績・ボックススコア" subtitle="Player Stats & Box Score" />
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <SectionHeader title="個人成績・ボックススコア" subtitle="Player Stats & Box Score" />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleReaggregate}
+                disabled={isReaggregating}
+                className="rounded-full font-black text-xs border-primary/20 text-primary hover:bg-primary/10 shadow-xs transition-all h-9 px-4"
+              >
+                {isReaggregating ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
+                ) : (
+                  <Activity className="h-3.5 w-3.5 mr-1.5" />
+                )}
+                成績データを再集計する
+              </Button>
+            </div>
             <Tabs defaultValue="lineup" className="w-full">
               <TabsList className="grid w-full grid-cols-4 h-13 rounded-[var(--radius-xl)] bg-muted/50 p-1 border border-border/40">
                 <TabsTrigger

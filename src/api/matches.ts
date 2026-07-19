@@ -263,6 +263,66 @@ app.delete("/:id", async (c) => {
   }
 });
 
+app.post("/:id/reaggregate", async (c) => {
+  const db = drizzle(c.env.DB);
+  const matchId = c.req.param("id");
+
+  try {
+    const logs = await db.select().from(playLogs).where(eq(playLogs.matchId, matchId)).all();
+    
+    // atBatsとplayersをJOINしてbatterNameを取得
+    const bats = await db.select({
+      id: atBats.id,
+      inning: atBats.inning,
+      isTop: atBats.isTop,
+      batterName: sql<string>`players.name`,
+    })
+    .from(atBats)
+    .leftJoin(sql`players`, sql`players.id = ${atBats.batterId}`)
+    .where(eq(atBats.matchId, matchId))
+    .all();
+
+    const batchQueries: any[] = [];
+    const usedBatIds = new Set<string>();
+
+    for (const log of logs) {
+      // ログのテキストから打順・選手名・結果を抽出（例: "1番 山田: センター前安打"）
+      const match = log.description.match(/^(\d+)番\s*([^:]+):\s*(.*)$/);
+      if (match) {
+        const batterName = match[2].trim();
+        const resultText = match[3].trim();
+        const inning = parseInt(log.inningText) || 1;
+        const isTop = log.inningText.includes("表");
+
+        // 該当する atBat を探す（イニング、表裏、打者名が一致し、まだ更新していないもの）
+        const targetBat = bats.find(b => 
+          b.inning === inning && 
+          b.isTop === isTop && 
+          b.batterName === batterName &&
+          !usedBatIds.has(b.id)
+        );
+
+        if (targetBat) {
+          usedBatIds.add(targetBat.id);
+          batchQueries.push(db.update(atBats)
+            .set({ result: resultText })
+            .where(eq(atBats.id, targetBat.id))
+          );
+        }
+      }
+    }
+
+    if (batchQueries.length > 0) {
+      await db.batch(batchQueries as [any, ...any[]]);
+    }
+
+    return c.json({ success: true, updatedCount: batchQueries.length });
+  } catch (error) {
+    console.error("Reaggregate API error:", error);
+    return c.json({ success: false, error: "再集計処理に失敗しました" }, 500);
+  }
+});
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // 📊 個人成績自動集計 ＆ 打席履歴（Boxscore）API
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
