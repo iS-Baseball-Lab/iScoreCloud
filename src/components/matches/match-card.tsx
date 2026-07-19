@@ -46,6 +46,14 @@ const formatSafeDate = (dateStr: string, fmt: string) => {
   }
 };
 
+// YouTube 動画ID 抽出ユーティリティ
+function getYoutubeVideoId(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+  const match = url.match(regExp);
+  return (match && match[2].length === 11) ? match[2] : null;
+}
+
 // 🌟 カウントダウン用サブコンポーネント（幅固定＆tabular-nums）
 function MatchCountdown({ date }: { date: string }) {
   const [timeLeft, setTimeLeft] = useState("00:00:00");
@@ -94,6 +102,7 @@ export function MatchCard({
   teamFullName = "",
 }: MatchCardProps) {
   const router = useRouter();
+  const youtubeVideoId = getYoutubeVideoId(match.youtubeUrl);
 
   // ━━ スワイプ操作の状態管理 ━━
   const [offsetX, setOffsetX] = useState(0);
@@ -254,6 +263,25 @@ export function MatchCard({
           isExpanded ? "bg-primary/5 dark:bg-primary/10" : "bg-card"
         )}
       >
+        {/* 🌟 試合動画がある場合、カード上部に埋め込む */}
+        {youtubeVideoId && (
+          <div 
+            className="w-full aspect-video border-b border-border/50 overflow-hidden bg-black rounded-t-[calc(var(--radius-2xl)-1px)]"
+            onTouchStart={(e) => e.stopPropagation()}
+            onTouchMove={(e) => e.stopPropagation()}
+            onTouchEnd={(e) => e.stopPropagation()}
+          >
+            <iframe
+              src={`https://www.youtube.com/embed/${youtubeVideoId}`}
+              title="YouTube video player"
+              frameBorder="0"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allowFullScreen
+              className="w-full h-full"
+            />
+          </div>
+        )}
+
         <div
           className="p-4 sm:p-5 cursor-pointer"
           onClick={handleCardClick}

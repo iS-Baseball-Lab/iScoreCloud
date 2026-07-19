@@ -49,6 +49,7 @@ export interface Match {
   liveStatus?: 'none' | 'draft' | 'completed';
   lockedByUserName?: string | null;
   isWalkOff?: boolean; // 💡 サヨナラ勝ちの「x」表示用
+  youtubeUrl?: string | null;
 }
 
 /** 💡 LINE Messaging API 用レスポンス型 */
