@@ -287,7 +287,6 @@ function MatchResultContent() {
   const [opponentLineup, setOpponentLineup] = useState<any[]>([]);
 
   const [isLoading, setIsLoading] = useState(true);
-  const [isDownloading, setIsDownloading] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
   const captureRef = useRef<HTMLDivElement>(null);
@@ -421,34 +420,6 @@ function MatchResultContent() {
       setIsReaggregating(false);
     }
   };
-
-  // 画像保存
-  const handleDownloadImage = async () => {
-    if (!captureRef.current || !match) return;
-    setIsDownloading(true);
-    const toastId = toast.loading("画像を生成しています...");
-    
-    // システムの現在のモード（darkかlightか）に応じて背景色を設定
-    const isDark = document.documentElement.classList.contains("dark");
-    const downloadBg = isDark ? "#090d16" : "#ffffff";
-    
-    try {
-      const dataUrl = await htmlToImage.toPng(captureRef.current, {
-        backgroundColor: downloadBg,
-        pixelRatio: 3,
-      });
-      const link = document.createElement("a");
-      link.download = `iScore_${match.opponent}_${match.date}.png`;
-      link.href = dataUrl;
-      link.click();
-      toast.success("保存完了！", { id: toastId });
-    } catch (error) {
-      toast.error("失敗しました", { id: toastId });
-    } finally {
-      setIsDownloading(false);
-    }
-  };
-
   // YouTube URL 保存処理
   const handleSaveYoutubeUrl = async () => {
     if (!matchId) return;
@@ -593,9 +564,6 @@ function MatchResultContent() {
             title="試合動画URLを編集"
           >
             <Video className="h-4 w-4" />
-          </Button>
-          <Button onClick={handleDownloadImage} className="rounded-full font-black px-5 sm:px-8 h-10 bg-primary hover:bg-primary/90 text-primary-foreground shadow-md active:scale-95 transition-all flex items-center justify-center text-xs sm:text-sm">
-            <Download className="mr-1.5 h-4 w-4" /> DOWNLOAD
           </Button>
         </div>
       </div>
