@@ -152,7 +152,7 @@ ${legendPromptAdd}
 注意: \`from\` と \`to\` は "1B", "2B", "3B", "HP" のいずれかを使用してください。`;
 
     // F. Gemini API の呼び出し (HTTP Fetch)
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-pro:generateContent?key=${apiKey}`;
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
     const geminiRes = await fetch(geminiUrl, {
       method: "POST",
       headers: {
@@ -169,8 +169,7 @@ ${legendPromptAdd}
         ],
         generationConfig: {
           maxOutputTokens: 8192,
-          temperature: 0.1,
-          responseMimeType: "application/json"
+          temperature: 0.1
         }
       })
     });
