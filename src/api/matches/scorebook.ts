@@ -129,30 +129,30 @@ ${legendPromptAdd}
 {
   "events": [
     {
-      "inning": 1,
-      "isTop": true,
-      "battingOrder": 1,
-      "batterName": "選手名",
-      "pitcherName": "選手名",
-      "result": "打席結果",
-      "outsInThisPlay": 0,
-      "endingOuts": 1,
-      "runsInThisPlay": 0,
-      "advances": [
+      "i": 1,             // inning
+      "t": true,          // isTop
+      "bo": 1,            // battingOrder
+      "b": "選手名",      // batterName
+      "p": "選手名",      // pitcherName
+      "r": "打席結果",    // result
+      "o": 1,             // outsInThisPlay
+      "eo": 1,            // endingOuts
+      "ru": 0,            // runsInThisPlay
+      "a": [              // advances
         {
-          "runnerName": "選手名",
-          "from": "1B",
-          "to": "2B",
-          "method": "進塁理由"
+          "rn": "走者名", // runnerName
+          "f": "1B",      // from
+          "t": "2B",      // to
+          "m": "盗塁"     // method
         }
       ]
     }
   ]
 }
-注意: \`from\` と \`to\` は "1B", "2B", "3B", "HP" のいずれかを使用してください。`;
+注意: \`f\` と \`t\` は "1B", "2B", "3B", "HP" のいずれかを使用してください。`;
 
     // F. Gemini API の呼び出し (HTTP Fetch)
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${apiKey}`;
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
     const geminiRes = await fetch(geminiUrl, {
       method: "POST",
       headers: {
@@ -193,14 +193,33 @@ ${legendPromptAdd}
       jsonText = cleaned.trim();
     }
     
-    let parsedJson;
+    let parsedJson: any;
     try {
-      parsedJson = JSON.parse(jsonText) as { events: AtBatEvent[] };
+      parsedJson = JSON.parse(jsonText);
     } catch (parseError: any) {
       console.error("JSON parse failed. Raw text:", jsonText);
       throw new Error(`JSON構文エラー (${finishReason}): ${parseError.message}\n--- 生データ ---\n${jsonText.slice(0, 1000)}`);
     }
-    const events = parsedJson.events || [];
+    const rawEvents = parsedJson.events || [];
+    
+    // 短縮キー（i, t, boなど）をAtBatEvent形式にマッピングする（互換性のためフルキーへのフォールバックも用意）
+    const events: AtBatEvent[] = rawEvents.map((e: any) => ({
+      inning: e.i ?? e.inning,
+      isTop: e.t ?? e.isTop,
+      battingOrder: e.bo ?? e.battingOrder,
+      batterName: e.b ?? e.batterName,
+      pitcherName: e.p ?? e.pitcherName,
+      result: e.r ?? e.result,
+      outsInThisPlay: e.o ?? e.outsInThisPlay,
+      endingOuts: e.eo ?? e.endingOuts,
+      runsInThisPlay: e.ru ?? e.runsInThisPlay,
+      advances: (e.a ?? e.advances ?? []).map((a: any) => ({
+        runnerName: a.rn ?? a.runnerName,
+        from: a.f ?? a.from,
+        to: a.t ?? a.to,
+        method: a.m ?? a.method
+      }))
+    }));
 
     // G. 論理矛盾検知（Validation）の実行
     const validationMessages = validateEvents(events);
