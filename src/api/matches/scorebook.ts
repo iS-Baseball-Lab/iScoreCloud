@@ -335,7 +335,7 @@ export default scorebookRouter;
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
   const len = bytes.length;
-  const chunkSize = 0x8000; // 32KB
+  const chunkSize = 4096; // 4KB (コールスタックオーバーフロー防止)
   let binary = "";
   for (let i = 0; i < len; i += chunkSize) {
     const chunk = bytes.subarray(i, i + chunkSize);
