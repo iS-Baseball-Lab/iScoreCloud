@@ -38,7 +38,7 @@ scorebookRouter.post("/import", async (c) => {
 
     // B. アップロード画像を Base64 にエンコード
     const fileBytes = await file.arrayBuffer();
-    const fileBase64 = Buffer.from(fileBytes).toString("base64");
+    const fileBase64 = arrayBufferToBase64(fileBytes);
     const fileMimeType = file.type || "image/png";
 
     // C. Gemini API 用の画像パーツリストを構築
@@ -65,7 +65,7 @@ scorebookRouter.post("/import", async (c) => {
           
           if (r2Object) {
             const legendBytes = await r2Object.arrayBuffer();
-            const legendBase64 = Buffer.from(legendBytes).toString("base64");
+            const legendBase64 = arrayBufferToBase64(legendBytes);
             const legendMimeType = r2Object.httpMetadata?.contentType || "image/png";
 
             imageParts.push({
@@ -89,7 +89,7 @@ scorebookRouter.post("/import", async (c) => {
           const legendRes = await fetch(targetUrl);
           if (legendRes.ok) {
             const legendBytes = await legendRes.arrayBuffer();
-            const legendBase64 = Buffer.from(legendBytes).toString("base64");
+            const legendBase64 = arrayBufferToBase64(legendBytes);
             const legendMimeType = legendRes.headers.get("content-type") || "image/png";
 
             imageParts.push({
@@ -196,7 +196,12 @@ ${legendPromptAdd}
       return c.json({ success: false, error: "AIからの解析結果が空でした" }, 500);
     }
 
-    const parsedJson = JSON.parse(responseText) as { events: AtBatEvent[] };
+    let jsonText = responseText.trim();
+    if (jsonText.startsWith("```")) {
+      const cleaned = jsonText.replace(/^```[a-zA-Z0-9]*\n/, "").replace(/\n```$/, "");
+      jsonText = cleaned.trim();
+    }
+    const parsedJson = JSON.parse(jsonText) as { events: AtBatEvent[] };
     const events = parsedJson.events || [];
 
     // G. 論理矛盾検知（Validation）の実行
@@ -326,3 +331,12 @@ function validateEvents(events: AtBatEvent[]): ValidationMessage[] {
 }
 
 export default scorebookRouter;
+
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
