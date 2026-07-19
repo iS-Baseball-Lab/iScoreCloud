@@ -26,6 +26,7 @@ interface Team {
   teamType: string | null;
   myRole: string;
   isFounder: boolean | number; // 💡 SQLiteから 0/1 で返ってくる可能性を考慮
+  logoImageUrl?: string | null;
 }
 
 interface MatchStats {
@@ -236,14 +237,21 @@ export default function TeamProfilePage() {
 
         <div className="relative -mt-16 sm:-mt-20 flex flex-col sm:flex-row sm:items-end gap-4 sm:gap-6 mb-8 sm:mb-12">
           <div className="relative group shrink-0 self-start sm:self-auto">
-            <Avatar className="h-28 w-28 sm:h-36 sm:w-36 border-4 border-background shadow-xl bg-white dark:bg-zinc-800">
+            <Avatar className="h-28 w-28 sm:h-36 sm:w-36 border-4 border-background shadow-xl bg-white dark:bg-zinc-800 overflow-hidden">
+              {team.logoImageUrl && (
+                <img src={team.logoImageUrl} alt="Team Logo" className="h-full w-full object-contain" />
+              )}
               <AvatarFallback className="text-4xl sm:text-5xl font-black text-primary bg-primary/10">
                 {(team.orgName || team.name || "T").slice(0, 2).toUpperCase()}
               </AvatarFallback>
             </Avatar>
             {/* 🌟 修正：完全な三項演算子でガード */}
             {canManage === true ? (
-              <button className="absolute bottom-1 right-1 sm:bottom-2 sm:right-2 p-2.5 sm:p-3 bg-primary text-primary-foreground rounded-full shadow-lg hover:scale-110 active:scale-95 transition-transform border-2 border-background cursor-pointer">
+              <button 
+                onClick={() => router.push("/settings")}
+                className="absolute bottom-1 right-1 sm:bottom-2 sm:right-2 p-2.5 sm:p-3 bg-primary text-primary-foreground rounded-full shadow-lg hover:scale-110 active:scale-95 transition-transform border-2 border-background cursor-pointer"
+                title="チーム設定でアイコンを変更する"
+              >
                 <Camera className="h-4 w-4 sm:h-5 sm:w-5" />
               </button>
             ) : null}
