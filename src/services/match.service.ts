@@ -402,7 +402,7 @@ export const MatchService = {
         resultType,
         description: descText,
         validationMessage: msg ? JSON.stringify(msg) : null,
-        createdAt: new Date(baseTime + eventIndex * 10), // ミリ秒単位で連番を付与して厳密な時系列ソートを実現
+        createdAt: new Date(baseTime + eventIndex * 1000), // ミリ秒単位で連番を付与して厳密な時系列ソートを実現
       }));
     }
 
