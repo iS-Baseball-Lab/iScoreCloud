@@ -215,7 +215,12 @@ ${legendPromptAdd}
 
   } catch (error: any) {
     console.error("Scorebook import error:", error);
-    return c.json({ success: false, error: error.message || "解析処理中にエラーが発生しました" }, 500);
+    const details = error instanceof Error ? `${error.name}: ${error.message}\n${error.stack}` : String(error);
+    return c.json({ 
+      success: false, 
+      error: `解析処理中にエラーが発生しました: ${error.message || error}`,
+      details
+    }, 500);
   }
 });
 
@@ -335,11 +340,30 @@ export default scorebookRouter;
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
   const len = bytes.length;
-  const chunkSize = 4096; // 4KB (コールスタックオーバーフロー防止)
-  let binary = "";
-  for (let i = 0; i < len; i += chunkSize) {
-    const chunk = bytes.subarray(i, i + chunkSize);
-    binary += String.fromCharCode.apply(null, chunk as any);
+  let base64 = "";
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+  let i = 0;
+  for (i = 0; i < len - 2; i += 3) {
+    const chunk = (bytes[i] << 16) | (bytes[i + 1] << 8) | bytes[i + 2];
+    base64 += chars[(chunk & 0xFC0000) >> 18];
+    base64 += chars[(chunk & 0x3F000) >> 12];
+    base64 += chars[(chunk & 0xFC0) >> 6];
+    base64 += chars[chunk & 0x3F];
   }
-  return btoa(binary);
+
+  if (i === len - 2) {
+    const chunk = (bytes[i] << 16) | (bytes[i + 1] << 8);
+    base64 += chars[(chunk & 0xFC0000) >> 18];
+    base64 += chars[(chunk & 0x3F000) >> 12];
+    base64 += chars[(chunk & 0xFC0) >> 6];
+    base64 += "=";
+  } else if (i === len - 1) {
+    const chunk = bytes[i] << 16;
+    base64 += chars[(chunk & 0xFC0000) >> 18];
+    base64 += chars[(chunk & 0x3F000) >> 12];
+    base64 += "==";
+  }
+
+  return base64;
 }
