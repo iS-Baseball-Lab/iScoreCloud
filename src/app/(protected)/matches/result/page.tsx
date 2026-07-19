@@ -930,7 +930,7 @@ function MatchResultContent() {
 
           {/* 4. ボックススコア成績データタブ */}
           <section className="space-y-4">
-            <SectionHeader title="個人成績・ボックススコア" subtitle="Player Stats & Box Score" />
+            <SectionHeader title="個人成績" subtitle="Player Stats" />
             <div className="flex justify-end">
               <Button
                 variant="outline"
