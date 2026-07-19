@@ -257,7 +257,7 @@ export default function SettingsPage() {
           </div>
         ) : !currentTeam ? (
           /* チーム未選択時のガイダンス */
-          <div className="bg-card border-2 border-border/80 rounded-[40px] p-12 text-center space-y-6">
+          <div className="bg-secondary/10 border-2 border-border/80 rounded-[40px] p-12 text-center space-y-6">
             <div className="h-20 w-20 rounded-full bg-destructive/10 flex items-center justify-center mx-auto">
               <AlertCircle className="h-10 w-10 text-destructive" />
             </div>
@@ -271,7 +271,7 @@ export default function SettingsPage() {
             </div>
             <Button
               onClick={() => router.push("/dashboard")}
-              className="rounded-full font-bold px-8 h-12 shadow-sm active:scale-95 transition-all bg-primary text-primary-foreground"
+              className="rounded-[20px] font-black h-14 px-8 shadow-md active:scale-95 transition-all bg-primary text-primary-foreground hover:scale-[1.02]"
             >
               ダッシュボードへ移動
             </Button>
@@ -279,7 +279,7 @@ export default function SettingsPage() {
         ) : (
           /* 本格設定フォーム */
           <div className="space-y-6">
-            <div className="p-4 bg-primary/5 border border-primary/20 rounded-2xl flex items-center justify-between">
+            <div className="p-4 bg-secondary/10 border-2 border-border/80 rounded-2xl flex items-center justify-between">
               <p className="text-sm font-bold">
                 対象チーム: <span className="font-black text-primary">{currentTeam.name}</span>
               </p>
@@ -431,9 +431,9 @@ export default function SettingsPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4">
               <button
                 onClick={() => router.push("/settings/cars")}
-                className="flex items-center gap-4 p-5 rounded-2xl bg-card border border-border/40 hover:border-primary/40 hover:bg-muted/10 transition-all text-left w-full shadow-sm cursor-pointer group"
+                className="flex items-center gap-4 p-5 rounded-[25px] bg-secondary/10 border-2 border-border/80 hover:border-primary/40 hover:bg-secondary/20 transition-all text-left w-full shadow-sm cursor-pointer group"
               >
-                <div className="p-3.5 rounded-xl bg-primary/10 text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-all shrink-0">
+                <div className="p-3.5 rounded-xl bg-primary text-primary-foreground shrink-0 group-hover:scale-110 transition-all">
                   <Car className="h-5 w-5" />
                 </div>
                 <div>
@@ -444,9 +444,9 @@ export default function SettingsPage() {
 
               <button
                 onClick={() => router.push("/settings/venues")}
-                className="flex items-center gap-4 p-5 rounded-2xl bg-card border border-border/40 hover:border-primary/40 hover:bg-muted/10 transition-all text-left w-full shadow-sm cursor-pointer group"
+                className="flex items-center gap-4 p-5 rounded-[25px] bg-secondary/10 border-2 border-border/80 hover:border-primary/40 hover:bg-secondary/20 transition-all text-left w-full shadow-sm cursor-pointer group"
               >
-                <div className="p-3.5 rounded-xl bg-primary/10 text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-all shrink-0">
+                <div className="p-3.5 rounded-xl bg-primary text-primary-foreground shrink-0 group-hover:scale-110 transition-all">
                   <MapPin className="h-5 w-5" />
                 </div>
                 <div>
