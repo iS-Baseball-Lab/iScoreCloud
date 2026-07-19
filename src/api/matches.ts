@@ -289,19 +289,20 @@ app.post("/:id/reaggregate", async (c) => {
     const debugParsed: any[] = [];
 
     for (const log of logs) {
-      // ログのテキストから打順・選手名・結果を抽出（例: "1番 山田: センター前安打"）
-      const match = log.description.match(/^(\d+)番\s*([^:]+):\s*(.*)$/);
+      // ログのテキストから選手名と結果を抽出（"1番 山田: 安打", "undefined番 山田: 安打", "山田: 安打" など全てに対応）
+      const match = log.description.match(/^(?:.*?番\s*)?([^:]+):\s*(.*)$/);
       if (match) {
-        const batterName = match[2].trim();
-        const resultText = match[3].trim();
+        const batterName = match[1].trim();
+        const resultText = match[2].trim();
         const inning = parseInt(log.inningText) || 1;
         const isTop = log.inningText.includes("表");
 
         // 該当する atBat を探す（イニング、表裏、打者名が一致し、まだ更新していないもの）
+        // 型の違い（SQLiteの0/1や文字列等）を吸収するために == を使用
         const targetBat = bats.find(b => 
-          b.inning === inning && 
-          b.isTop === isTop && 
-          b.batterName === batterName &&
+          b.inning == inning && 
+          b.isTop == isTop && 
+          b.batterName?.trim() == batterName &&
           !usedBatIds.has(b.id)
         );
 
@@ -311,7 +312,9 @@ app.post("/:id/reaggregate", async (c) => {
           isTop,
           batterName,
           resultText,
-          foundTargetBatId: targetBat?.id || null
+          foundTargetBatId: targetBat?.id || null,
+          b_isTop_type: targetBat ? typeof targetBat.isTop : null,
+          b_inning_type: targetBat ? typeof targetBat.inning : null
         });
 
         if (targetBat) {
