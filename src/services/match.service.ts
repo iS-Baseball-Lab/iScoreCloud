@@ -11,6 +11,7 @@ import type {
   MatchRow,
   InningRow,
   AtBatEvent,
+  ValidationMessage,
 } from "@/types/api";
 
 // 💡 データベース操作（ビジネスロジック）だけを担当する「サービス層」
