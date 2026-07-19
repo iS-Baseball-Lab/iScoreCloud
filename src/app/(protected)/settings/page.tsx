@@ -235,20 +235,18 @@ export default function SettingsPage() {
             </div>
 
             {/* 💡 チームアイコン設定カード */}
-            <div className="bg-card border border-border/40 rounded-[30px] p-6 sm:p-8 space-y-6 shadow-sm">
-              <div className="flex items-center justify-between border-b border-border/40 pb-4">
+            <div className="w-full bg-secondary/10 border-2 border-border/80 rounded-[40px] p-6 space-y-6">
+              <div className="flex items-center gap-4">
+                <div className="bg-primary p-3 rounded-2xl">
+                  <Camera className="w-8 h-8 text-primary-foreground" />
+                </div>
                 <div>
-                  <h3 className="text-lg font-black text-foreground flex items-center gap-2">
-                    <Camera className="h-5 w-5 text-primary" />
-                    チームアイコン設定
-                  </h3>
-                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-0.5">
-                    Team Icon Settings
-                  </p>
+                  <h2 className="text-xl font-black italic tracking-tighter uppercase text-primary">チームアイコン設定</h2>
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase">Team Icon Settings</p>
                 </div>
               </div>
 
-              <div className="flex flex-col sm:flex-row items-center gap-6">
+              <div className="flex flex-col sm:flex-row items-center gap-6 p-5 bg-background rounded-2xl border-2 border-border/50">
                 {/* プレビュー */}
                 <div className="relative group shrink-0">
                   <Avatar className="h-24 w-24 sm:h-28 sm:w-28 border-2 border-primary/20 bg-background shadow-inner flex items-center justify-center overflow-hidden">
@@ -268,7 +266,7 @@ export default function SettingsPage() {
                 </div>
 
                 {/* 操作エリア */}
-                <div className="flex-1 space-y-4 text-center sm:text-left">
+                <div className="flex-1 space-y-4 text-center sm:text-left w-full">
                   <div className="space-y-1">
                     <p className="text-sm font-bold text-foreground">ロゴ画像をアップロード</p>
                     <p className="text-xs text-muted-foreground">
@@ -278,10 +276,10 @@ export default function SettingsPage() {
 
                   <div className="flex justify-center sm:justify-start">
                     <label className={cn(
-                      "flex items-center gap-2 px-5 h-11 rounded-full font-black text-xs sm:text-sm bg-primary text-primary-foreground shadow-sm hover:scale-[1.02] active:scale-95 transition-all cursor-pointer",
+                      "flex items-center justify-center gap-2 px-8 h-14 rounded-[20px] font-black text-sm bg-primary text-primary-foreground shadow-sm hover:scale-[1.02] active:scale-95 transition-all cursor-pointer w-full sm:w-auto",
                       logoUploading && "pointer-events-none opacity-50"
                     )}>
-                      <Upload className="h-4 w-4" />
+                      <Upload className="h-5 w-5" />
                       {logoUploading ? "アップロード中..." : "画像を選択する"}
                       <input
                         type="file"
