@@ -52,6 +52,27 @@ function PlayLogsContent() {
         method: "POST",
         body: formData,
       });
+
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error("API Error Text:", errorText);
+        
+        let errorMessage = "解析に失敗しました";
+        try {
+          const errorJson = JSON.parse(errorText);
+          errorMessage = errorJson.error || errorMessage;
+          if (errorJson.details) {
+            console.error("API Error Details:", errorJson.details);
+          }
+        } catch (_) {
+          errorMessage = errorText.substring(0, 150) || errorMessage;
+        }
+        
+        toast.error(errorMessage);
+        setIsAnalyzing(false);
+        return;
+      }
+
       const data = await res.json() as { success: boolean; events?: AtBatEvent[]; validationMessages?: ValidationMessage[]; error?: string };
 
       if (data.success && data.events) {
@@ -61,9 +82,9 @@ function PlayLogsContent() {
       } else {
         toast.error(data.error || "解析に失敗しました");
       }
-    } catch (err) {
-      console.error(err);
-      toast.error("ネットワークエラーが発生しました");
+    } catch (err: any) {
+      console.error("Fetch Exception:", err);
+      toast.error(`通信エラーが発生しました: ${err.message || err}`);
     } finally {
       setIsAnalyzing(false);
     }
