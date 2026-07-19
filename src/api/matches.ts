@@ -5,6 +5,7 @@ import { MatchService } from "@/services/match.service";
 import { eq, sql } from "drizzle-orm";
 import { matchUndoHistories, atBats, playLogs, baseAdvances } from "@/db/schema/score";
 import { matches } from "@/db/schema/match";
+import { players } from "@/db/schema/team";
 import scorebookRouter from "./matches/scorebook";
 
 const app = new Hono<{ Bindings: { DB: D1Database } }>();
@@ -275,15 +276,17 @@ app.post("/:id/reaggregate", async (c) => {
       id: atBats.id,
       inning: atBats.inning,
       isTop: atBats.isTop,
-      batterName: sql<string>`players.name`,
+      batterName: players.name,
     })
     .from(atBats)
-    .leftJoin(sql`players`, sql`players.id = ${atBats.batterId}`)
+    .leftJoin(players, eq(players.id, atBats.batterId))
     .where(eq(atBats.matchId, matchId))
     .all();
 
     const batchQueries: any[] = [];
     const usedBatIds = new Set<string>();
+
+    const debugParsed: any[] = [];
 
     for (const log of logs) {
       // ログのテキストから打順・選手名・結果を抽出（例: "1番 山田: センター前安打"）
@@ -302,6 +305,15 @@ app.post("/:id/reaggregate", async (c) => {
           !usedBatIds.has(b.id)
         );
 
+        debugParsed.push({
+          logId: log.id,
+          inning,
+          isTop,
+          batterName,
+          resultText,
+          foundTargetBatId: targetBat?.id || null
+        });
+
         if (targetBat) {
           usedBatIds.add(targetBat.id);
           batchQueries.push(db.update(atBats)
@@ -309,6 +321,8 @@ app.post("/:id/reaggregate", async (c) => {
             .where(eq(atBats.id, targetBat.id))
           );
         }
+      } else {
+        debugParsed.push({ logId: log.id, failedMatch: log.description });
       }
     }
 
@@ -316,7 +330,7 @@ app.post("/:id/reaggregate", async (c) => {
       await db.batch(batchQueries as [any, ...any[]]);
     }
 
-    return c.json({ success: true, updatedCount: batchQueries.length });
+    return c.json({ success: true, updatedCount: batchQueries.length, debug: debugParsed, sampleBats: bats.slice(0, 3) });
   } catch (error) {
     console.error("Reaggregate API error:", error);
     return c.json({ success: false, error: "再集計処理に失敗しました" }, 500);

@@ -930,8 +930,8 @@ function MatchResultContent() {
 
           {/* 4. ボックススコア成績データタブ */}
           <section className="space-y-4">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <SectionHeader title="個人成績・ボックススコア" subtitle="Player Stats & Box Score" />
+            <SectionHeader title="個人成績・ボックススコア" subtitle="Player Stats & Box Score" />
+            <div className="flex justify-end">
               <Button
                 variant="outline"
                 size="sm"
