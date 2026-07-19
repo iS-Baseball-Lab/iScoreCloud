@@ -300,139 +300,141 @@ export const MatchService = {
     // A. pitches テーブルのクリア（at_bats に紐づくため事前に削除）
     await db.run(sql`DELETE FROM pitches WHERE at_bat_id IN (SELECT id FROM at_bats WHERE match_id = ${matchId})`);
 
-    // 既存の play_logs, at_bats, base_advances をクリア
-    await db.transaction(async (tx) => {
-      
-      // B. 既存の試合データを削除
-      await tx.delete(baseAdvances).where(eq(baseAdvances.matchId, matchId));
-      await tx.delete(atBats).where(eq(atBats.matchId, matchId));
-      await tx.delete(playLogs).where(eq(playLogs.matchId, matchId));
+    // C. 試合のチームIDを取得
+    const match = await db.select({ teamId: matches.teamId, opponent: matches.opponent, battingOrder: matches.battingOrder }).from(matches).where(eq(matches.id, matchId)).get();
+    if (!match) throw new Error("Match not found");
+    const teamId = match.teamId;
 
-      // C. 試合のチームIDを取得
-      const match = await tx.select({ teamId: matches.teamId, opponent: matches.opponent, battingOrder: matches.battingOrder }).from(matches).where(eq(matches.id, matchId)).get();
-      if (!match) throw new Error("Match not found");
-      const teamId = match.teamId;
+    // D. チームの選手一覧を取得し、名前マッピング辞書を作成
+    const existingPlayers = await db.select().from(players).where(eq(players.teamId, teamId)).all();
+    const playerMap = new Map<string, string>(); // name -> id
+    existingPlayers.forEach(p => playerMap.set(p.name, p.id));
 
-      // D. チームの選手一覧を取得し、名前マッピング辞書を作成
-      const existingPlayers = await tx.select().from(players).where(eq(players.teamId, teamId)).all();
-      const playerMap = new Map<string, string>(); // name -> id
-      existingPlayers.forEach(p => playerMap.set(p.name, p.id));
+    // 選手解決ヘルパー (存在しなければその場で新規作成して即DB反映)
+    const resolvePlayerId = async (name: string): Promise<string> => {
+      const cleanName = name.trim();
+      if (!cleanName) return "";
+      if (playerMap.has(cleanName)) return playerMap.get(cleanName)!;
 
-      // 選手解決ヘルパー (存在しなければその場で新規作成)
-      const resolvePlayerId = async (name: string): Promise<string> => {
-        const cleanName = name.trim();
-        if (!cleanName) return "";
-        if (playerMap.has(cleanName)) return playerMap.get(cleanName)!;
+      // 新規登録 (仮登録: 背番号は 99 とする)
+      const newPlayerId = crypto.randomUUID();
+      await db.insert(players).values({
+        id: newPlayerId,
+        teamId: teamId,
+        name: cleanName,
+        uniformNumber: "99",
+        status: 'active',
+      } as any);
+      playerMap.set(cleanName, newPlayerId);
+      return newPlayerId;
+    };
 
-        // チームメンバーに存在しない場合は新規登録 (仮登録: 背番号は 99 とする)
-        const newPlayerId = crypto.randomUUID();
-        await tx.insert(players).values({
-          id: newPlayerId,
-          teamId: teamId,
-          name: cleanName,
-          uniformNumber: "99",
-          status: 'active',
-        } as any);
-        playerMap.set(cleanName, newPlayerId);
-        return newPlayerId;
-      };
+    // D1 トランザクションの代わりに Batch を使用するためのクエリ配列
+    const batchQueries: any[] = [];
 
-      // E. 各打席イベントをインサート
-      for (const e of events) {
-        const atBatId = crypto.randomUUID();
-        const batterId = await resolvePlayerId(e.batterName);
-        const pitcherId = await resolvePlayerId(e.pitcherName);
+    // B. 既存の試合データを削除
+    batchQueries.push(db.delete(baseAdvances).where(eq(baseAdvances.matchId, matchId)));
+    batchQueries.push(db.delete(atBats).where(eq(atBats.matchId, matchId)));
+    batchQueries.push(db.delete(playLogs).where(eq(playLogs.matchId, matchId)));
 
-        // A. at_bats レコードの挿入
-        await tx.insert(atBats).values({
-          id: atBatId,
-          matchId,
-          inning: e.inning,
-          isTop: e.isTop,
-          batterId: batterId || null,
-          pitcherId: pitcherId || null,
-          result: e.result,
-        });
+    // E. 各打席イベントをインサート
+    for (const e of events) {
+      const atBatId = crypto.randomUUID();
+      const batterId = await resolvePlayerId(e.batterName);
+      const pitcherId = await resolvePlayerId(e.pitcherName);
 
-        // B. base_advances レコードの挿入
-        for (const adv of e.advances) {
-          const runnerId = await resolvePlayerId(adv.runnerName);
-          if (!runnerId) continue;
+      // A. at_bats レコードの挿入
+      batchQueries.push(db.insert(atBats).values({
+        id: atBatId,
+        matchId,
+        inning: e.inning,
+        isTop: e.isTop,
+        batterId: batterId || null,
+        pitcherId: pitcherId || null,
+        result: e.result,
+      }));
 
-          // 塁の数値化 (0: 打席, 1: 1塁, 2: 2塁, 3: 3塁, 4: 本塁)
-          const mapBase = (b?: string): number => {
-            if (b === '1B') return 1;
-            if (b === '2B') return 2;
-            if (b === '3B') return 3;
-            if (b === 'HP') return 4;
-            return 0;
-          };
+      // B. base_advances レコードの挿入
+      for (const adv of e.advances) {
+        const runnerId = await resolvePlayerId(adv.runnerName);
+        if (!runnerId) continue;
 
-          await tx.insert(baseAdvances).values({
-            id: crypto.randomUUID(),
-            matchId,
-            atBatId,
-            runnerId,
-            fromBase: mapBase(adv.from),
-            toBase: mapBase(adv.to),
-            reason: adv.method || 'hit',
-            isOut: false,
-          });
-        }
+        const mapBase = (b?: string): number => {
+          if (b === '1B') return 1;
+          if (b === '2B') return 2;
+          if (b === '3B') return 3;
+          if (b === 'HP') return 4;
+          return 0;
+        };
 
-        // C. play_logs レコードの挿入（実況テキスト）
-        const inningText = `${e.inning}回${e.isTop ? '表' : '裏'}`;
-        const descText = `${e.battingOrder}番 ${e.batterName}: ${e.result}`;
-        
-        let resultType = 'out';
-        if (e.result.includes('H') || e.result.match(/^[789]$/) || e.result.includes('安')) resultType = 'hit';
-        else if (e.runsInThisPlay > 0) resultType = 'score';
-
-        await tx.insert(playLogs).values({
+        batchQueries.push(db.insert(baseAdvances).values({
           id: crypto.randomUUID(),
           matchId,
-          inningText,
-          resultType,
-          description: descText,
-        });
+          atBatId,
+          runnerId,
+          fromBase: mapBase(adv.from),
+          toBase: mapBase(adv.to),
+          reason: adv.method || 'hit',
+          isOut: false,
+        }));
       }
 
-      // F. 試合全体のスコア・イニングスコアを再計算して `matches` に反映
-      const myInningScores: (number | null)[] = [];
-      const opponentInningScores: (number | null)[] = [];
+      // C. play_logs レコードの挿入
+      const inningText = `${e.inning}回${e.isTop ? '表' : '裏'}`;
+      const descText = `${e.battingOrder}番 ${e.batterName}: ${e.result}`;
+      
+      let resultType = 'out';
+      if (e.result.includes('H') || e.result.match(/^[789]$/) || e.result.includes('安')) resultType = 'hit';
+      else if (e.runsInThisPlay > 0) resultType = 'score';
 
-      let maxInning = 1;
-      events.forEach(e => {
-        if (e.inning > maxInning) maxInning = e.inning;
-      });
+      batchQueries.push(db.insert(playLogs).values({
+        id: crypto.randomUUID(),
+        matchId,
+        inningText,
+        resultType,
+        description: descText,
+      }));
+    }
 
-      for (let i = 1; i <= maxInning; i++) {
-        const isMyTeamTop = match.battingOrder === 'first';
+    // F. 試合全体のスコア・イニングスコアを再計算して `matches` に反映
+    const myInningScores: (number | null)[] = [];
+    const opponentInningScores: (number | null)[] = [];
 
-        const topRuns = events.filter(e => e.inning === i && e.isTop).reduce((sum, e) => sum + e.runsInThisPlay, 0);
-        const bottomRuns = events.filter(e => e.inning === i && !e.isTop).reduce((sum, e) => sum + e.runsInThisPlay, 0);
-
-        if (isMyTeamTop) {
-          myInningScores.push(topRuns);
-          opponentInningScores.push(bottomRuns);
-        } else {
-          myInningScores.push(bottomRuns);
-          opponentInningScores.push(topRuns);
-        }
-      }
-
-      const totalMyScore = myInningScores.reduce((sum: number, r) => sum + (r || 0), 0);
-      const totalOpponentScore = opponentInningScores.reduce((sum: number, r) => sum + (r || 0), 0);
-
-      await tx.update(matches).set({
-        myScore: totalMyScore,
-        opponentScore: totalOpponentScore,
-        myInningScores: JSON.stringify(myInningScores),
-        opponentInningScores: JSON.stringify(opponentInningScores),
-        currentInning: maxInning,
-        isBottom: false,
-        status: "finished",
-      }).where(eq(matches.id, matchId));
+    let maxInning = 1;
+    events.forEach(e => {
+      if (e.inning > maxInning) maxInning = e.inning;
     });
+
+    for (let i = 1; i <= maxInning; i++) {
+      const isMyTeamTop = match.battingOrder === 'first';
+      const topRuns = events.filter(e => e.inning === i && e.isTop).reduce((sum, e) => sum + e.runsInThisPlay, 0);
+      const bottomRuns = events.filter(e => e.inning === i && !e.isTop).reduce((sum, e) => sum + e.runsInThisPlay, 0);
+
+      if (isMyTeamTop) {
+        myInningScores.push(topRuns);
+        opponentInningScores.push(bottomRuns);
+      } else {
+        myInningScores.push(bottomRuns);
+        opponentInningScores.push(topRuns);
+      }
+    }
+
+    const totalMyScore = myInningScores.reduce((sum: number, r) => sum + (r || 0), 0);
+    const totalOpponentScore = opponentInningScores.reduce((sum: number, r) => sum + (r || 0), 0);
+
+    batchQueries.push(db.update(matches).set({
+      myScore: totalMyScore,
+      opponentScore: totalOpponentScore,
+      myInningScores: JSON.stringify(myInningScores),
+      opponentInningScores: JSON.stringify(opponentInningScores),
+      currentInning: maxInning,
+      isBottom: false,
+      status: "finished",
+    }).where(eq(matches.id, matchId)));
+
+    // バッチ実行
+    if (batchQueries.length > 0) {
+      await db.batch(batchQueries as [any, ...any[]]);
+    }
   }
 };
