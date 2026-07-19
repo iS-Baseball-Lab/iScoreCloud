@@ -238,12 +238,13 @@ export default function TeamProfilePage() {
         <div className="relative -mt-16 sm:-mt-20 flex flex-col sm:flex-row sm:items-end gap-4 sm:gap-6 mb-8 sm:mb-12">
           <div className="relative group shrink-0 self-start sm:self-auto">
             <Avatar className="h-28 w-28 sm:h-36 sm:w-36 border-4 border-background shadow-xl bg-white dark:bg-zinc-800 overflow-hidden">
-              {team.logoImageUrl && (
+              {team.logoImageUrl ? (
                 <img src={team.logoImageUrl} alt="Team Logo" className="h-full w-full object-contain" />
+              ) : (
+                <AvatarFallback className="text-4xl sm:text-5xl font-black text-primary bg-primary/10">
+                  {(team.orgName || team.name || "T").slice(0, 2).toUpperCase()}
+                </AvatarFallback>
               )}
-              <AvatarFallback className="text-4xl sm:text-5xl font-black text-primary bg-primary/10">
-                {(team.orgName || team.name || "T").slice(0, 2).toUpperCase()}
-              </AvatarFallback>
             </Avatar>
             {/* 🌟 修正：完全な三項演算子でガード */}
             {canManage === true ? (

@@ -252,12 +252,13 @@ export default function SettingsPage() {
                 {/* プレビュー */}
                 <div className="relative group shrink-0">
                   <Avatar className="h-24 w-24 sm:h-28 sm:w-28 border-2 border-primary/20 bg-background shadow-inner flex items-center justify-center overflow-hidden">
-                    {currentTeam.logoImageUrl && (
+                    {currentTeam.logoImageUrl ? (
                       <img src={currentTeam.logoImageUrl} alt="Team Icon" className="h-full w-full object-contain" />
+                    ) : (
+                      <AvatarFallback className="w-full h-full flex items-center justify-center text-primary font-black text-2xl bg-primary/5 select-none">
+                        {currentTeam.name.slice(0, 2).toUpperCase()}
+                      </AvatarFallback>
                     )}
-                    <AvatarFallback className="w-full h-full flex items-center justify-center text-primary font-black text-2xl bg-primary/5 select-none">
-                      {currentTeam.name.slice(0, 2).toUpperCase()}
-                    </AvatarFallback>
                   </Avatar>
                   {logoUploading && (
                     <div className="absolute inset-0 bg-background/70 backdrop-blur-sm rounded-full flex items-center justify-center">

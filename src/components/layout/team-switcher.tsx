@@ -35,13 +35,14 @@ export function TeamSwitcher({ activeTeam, memberships, onTeamSwitch }: TeamSwit
         >
           {/* 親コンテナの縮小を防ぐ shrink-0 は死守 */}
           <Avatar className="h-7 w-7 sm:h-9 sm:w-9 border border-primary/30 bg-background group-hover:bg-primary/10 transition-colors shrink-0 overflow-hidden">
-            {activeTeam.logoImageUrl && (
+            {activeTeam.logoImageUrl ? (
               <img src={activeTeam.logoImageUrl} alt="Team Logo" className="h-full w-full object-contain" />
+            ) : (
+              /* 🔥 修正：文字の縦割れ・ズレを完全に防ぐソリッドな中央配置クラスを注入 */
+              <AvatarFallback className="w-full h-full flex items-center justify-center text-primary font-black text-[10px] sm:text-[11px] whitespace-nowrap leading-none tracking-tighter select-none bg-background">
+                {(activeTeam.organizationName || activeTeam.teamName || "T").slice(0, 2).toUpperCase()}
+              </AvatarFallback>
             )}
-            {/* 🔥 修正：文字の縦割れ・ズレを完全に防ぐソリッドな中央配置クラスを注入 */}
-            <AvatarFallback className="w-full h-full flex items-center justify-center text-primary font-black text-[10px] sm:text-[11px] whitespace-nowrap leading-none tracking-tighter select-none bg-background">
-              {(activeTeam.organizationName || activeTeam.teamName || "T").slice(0, 2).toUpperCase()}
-            </AvatarFallback>
           </Avatar>
           <div className="flex flex-col justify-center overflow-hidden flex-1">
             <span className="text-[11px] sm:text-sm font-black tracking-widest uppercase truncate leading-tight group-hover:text-primary transition-colors">
@@ -64,13 +65,14 @@ export function TeamSwitcher({ activeTeam, memberships, onTeamSwitch }: TeamSwit
           return (
             <DropdownMenuItem key={m.teamId} onClick={() => onTeamSwitch(m.teamId, m.organizationId)} className={`flex items-start gap-3 p-2.5 rounded-lg cursor-pointer transition-colors ${isCurrent ? 'bg-primary/10 text-primary focus:bg-primary/15' : 'hover:bg-muted focus:bg-muted'}`}>
               <Avatar className={`h-8 w-8 border shrink-0 overflow-hidden ${isCurrent ? 'border-primary/40 bg-primary/20' : 'border-border/50 bg-background'}`}>
-                {m.logoImageUrl && (
+                {m.logoImageUrl ? (
                   <img src={m.logoImageUrl} alt="Team Logo" className="h-full w-full object-contain" />
+                ) : (
+                  /* 🔥 修正：リスト内の一覧アバターも同様に改行バグを完全封殺 */
+                  <AvatarFallback className={`w-full h-full flex items-center justify-center font-black text-[10px] sm:text-[11px] whitespace-nowrap leading-none tracking-tighter select-none ${isCurrent ? 'text-primary' : 'text-muted-foreground'}`}>
+                    {(m.organizationName || m.teamName || "T").slice(0, 2).toUpperCase()}
+                  </AvatarFallback>
                 )}
-                {/* 🔥 修正：リスト内の一覧アバターも同様に改行バグを完全封殺 */}
-                <AvatarFallback className={`w-full h-full flex items-center justify-center font-black text-[10px] sm:text-[11px] whitespace-nowrap leading-none tracking-tighter select-none ${isCurrent ? 'text-primary' : 'text-muted-foreground'}`}>
-                  {(m.organizationName || m.teamName || "T").slice(0, 2).toUpperCase()}
-                </AvatarFallback>
               </Avatar>
               <div className="flex flex-col flex-1 overflow-hidden">
                 <span className="text-sm font-bold truncate leading-tight">{m.organizationName || m.teamName}</span>
