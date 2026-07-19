@@ -5,8 +5,11 @@ import { MatchService } from "@/services/match.service";
 import { eq, sql } from "drizzle-orm";
 import { matchUndoHistories, atBats, playLogs, baseAdvances } from "@/db/schema/score";
 import { matches } from "@/db/schema/match";
+import scorebookRouter from "./matches/scorebook";
 
 const app = new Hono<{ Bindings: { DB: D1Database } }>();
+
+app.route("/:id/scorebook", scorebookRouter);
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // ⚾️ 窓口（Controller / Router）

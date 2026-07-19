@@ -31,7 +31,7 @@ export interface WorkerEnv {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 /** Drizzle ORM の D1 インスタンス型（スキーマ付き） */
-export type DrizzleDB = DrizzleD1Database<typeof schema>;
+export type DrizzleDB = DrizzleD1Database<any>;
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // better-auth ユーザー拡張型
@@ -66,6 +66,7 @@ export interface Membership {
   status: string;
   isMainTeam: boolean;
   logoImageUrl?: string | null;
+  scorebookLegendUrl?: string | null;
 }
 
 /** /api/auth/me レスポンス全体 */
@@ -242,4 +243,36 @@ export interface LineupPlayer {
 export interface LineupSlot {
   playerId: string | null;
   position: string | null;
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// ⚾️ スコアブックAI解析・相互補填用型
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+export interface BaseAdvance {
+  runnerName: string;
+  from?: '1B' | '2B' | '3B' | 'HP';
+  to: '1B' | '2B' | '3B' | 'HP';
+  method?: string;
+}
+
+export interface AtBatEvent {
+  inning: number;
+  isTop: boolean;
+  battingOrder: number;
+  batterName: string;
+  pitcherName: string;
+  result: string;
+  outsInThisPlay: number;
+  endingOuts: number;
+  runsInThisPlay: number;
+  advances: BaseAdvance[];
+}
+
+export interface ValidationMessage {
+  type: 'ERROR' | 'WARNING';
+  inning: number;
+  isTop: boolean;
+  battingOrder: number;
+  message: string;
 }

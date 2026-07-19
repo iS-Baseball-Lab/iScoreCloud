@@ -3,11 +3,12 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 
-interface Team {
+export interface Team {
   id: string;
   name: string;
   organizationCategory?: string;
   logoImageUrl?: string | null;
+  scorebookLegendUrl?: string | null;
 }
 
 interface TeamContextType {
@@ -22,6 +23,7 @@ const STORAGE_KEY = "iscore_selectedTeamId";
 const NAME_STORAGE_KEY = "iscore_selectedTeamName";
 const CATEGORY_STORAGE_KEY = "iscore_selectedTeamCategory";
 const LOGO_STORAGE_KEY = "iscore_selectedTeamLogo";
+const LEGEND_STORAGE_KEY = "iscore_selectedTeamLegend";
 
 export function TeamProvider({ children }: { children: React.ReactNode }) {
   const [currentTeam, setCurrentTeam] = useState<Team | null>(null);
@@ -33,9 +35,16 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
     const savedName = localStorage.getItem(NAME_STORAGE_KEY);
     const savedCategory = localStorage.getItem(CATEGORY_STORAGE_KEY) || undefined;
     const savedLogo = localStorage.getItem(LOGO_STORAGE_KEY) || undefined;
+    const savedLegend = localStorage.getItem(LEGEND_STORAGE_KEY) || undefined;
 
     if (savedId && savedName) {
-      setCurrentTeam({ id: savedId, name: savedName, organizationCategory: savedCategory, logoImageUrl: savedLogo });
+      setCurrentTeam({ 
+        id: savedId, 
+        name: savedName, 
+        organizationCategory: savedCategory, 
+        logoImageUrl: savedLogo,
+        scorebookLegendUrl: savedLegend
+      });
     }
     setIsLoading(false);
   }, []);
@@ -47,6 +56,7 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem(NAME_STORAGE_KEY, team.name);
     localStorage.setItem(CATEGORY_STORAGE_KEY, team.organizationCategory || "");
     localStorage.setItem(LOGO_STORAGE_KEY, team.logoImageUrl || "");
+    localStorage.setItem(LEGEND_STORAGE_KEY, team.scorebookLegendUrl || "");
   }, []);
 
   return (

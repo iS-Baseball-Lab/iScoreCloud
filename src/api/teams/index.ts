@@ -69,7 +69,8 @@ app.get('/', async (c) => {
     teamType: teams.teamType,
     myRole: teamMembers.role,
     isFounder: eq(teams.createdBy, session.user.id),
-    logoImageUrl: organizations.logoImageUrl
+    logoImageUrl: organizations.logoImageUrl,
+    scorebookLegendUrl: teams.scorebookLegendUrl
   })
     .from(teamMembers)
     .innerJoin(teams, eq(teamMembers.teamId, teams.id))
@@ -122,6 +123,7 @@ app.patch('/:id', async (c) => {
     if (body.teamType !== undefined) updatePayload.teamType = body.teamType;
     if (body.managerName !== undefined) updatePayload.managerName = body.managerName;
     if (body.homeGround !== undefined) updatePayload.homeGround = body.homeGround;
+    if (body.scorebookLegendUrl !== undefined) updatePayload.scorebookLegendUrl = body.scorebookLegendUrl;
 
     if (Object.keys(updatePayload).length > 0) {
       await db.update(teams).set(updatePayload).where(eq(teams.id, teamId));

@@ -7,7 +7,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { SectionHeader } from "@/components/layout/SectionHeader";
-import { useTeam } from "@/contexts/TeamContext";
+import { useTeam, Team } from "@/contexts/TeamContext";
 import { LineSettingsCard } from "@/components/features/teams/line-settings-card";
 import { TeamSettingsUpdatePayload, TeamSettingsUpdateResponse } from "@/api/teams/update-settings";
 import { toast } from "sonner";
@@ -106,6 +106,65 @@ export default function SettingsPage() {
       toast.error(err.message || "アイコンの変更に失敗しました");
     } finally {
       setLogoUploading(false);
+    }
+  };
+
+  const [legendUploading, setLegendUploading] = useState(false);
+
+  // 💡 スコア記号早見表のアップロード・保存処理
+  const handleLegendUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !currentTeam?.id) return;
+
+    setLegendUploading(true);
+    setStatus("⏳ 早見表画像をアップロード中...");
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      // 1. 画像アップロード API を叩く (type=team)
+      const uploadRes = await fetch("/api/images/upload?type=team", {
+        method: "POST",
+        body: formData,
+      });
+      const uploadData = await uploadRes.json() as { success: boolean; imageUrl?: string; error?: string };
+
+      if (!uploadData.success || !uploadData.imageUrl) {
+        throw new Error(uploadData.error || "アップロードに失敗しました");
+      }
+
+      const imageUrl = uploadData.imageUrl;
+
+      // 2. チーム情報の更新 API を叩く
+      setStatus("⏳ チーム情報を更新中...");
+      const updateRes = await fetch(`/api/teams/${currentTeam.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scorebookLegendUrl: imageUrl }),
+      });
+      const updateData = await updateRes.json() as { success: boolean; error?: string };
+
+      if (updateData.success) {
+        // 3. グローバルコンテキスト（とlocalStorage）を即時更新
+        selectTeam({
+          id: currentTeam.id,
+          name: currentTeam.name,
+          organizationCategory: currentTeam.organizationCategory,
+          logoImageUrl: currentTeam.logoImageUrl,
+          scorebookLegendUrl: imageUrl,
+        });
+        setStatus("✅ スコア早見表画像が正常に更新されました。");
+        toast.success("早見表画像を変更しました");
+      } else {
+        throw new Error(updateData.error || "更新に失敗しました");
+      }
+    } catch (err: any) {
+      console.error(err);
+      setStatus(`❌ エラー: ${err.message || "処理に失敗しました"}`);
+      toast.error(err.message || "画像の変更に失敗しました");
+    } finally {
+      setLegendUploading(false);
     }
   };
 
@@ -287,6 +346,67 @@ export default function SettingsPage() {
                         onChange={handleLogoUpload}
                         className="hidden"
                         disabled={logoUploading}
+                      />
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 💡 スコア記号早見表設定カード */}
+            <div className="w-full bg-secondary/10 border-2 border-border/80 rounded-[40px] p-6 space-y-6">
+              <div className="flex items-center gap-4">
+                <div className="bg-primary p-3 rounded-2xl">
+                  <Wrench className="w-8 h-8 text-primary-foreground" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-black italic tracking-tighter uppercase text-primary">スコア記号早見表設定</h2>
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase">Scorebook Legend Settings</p>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-center gap-6 p-5 bg-background rounded-2xl border-2 border-border/50">
+                {/* プレビュー */}
+                <div className="relative group shrink-0">
+                  <div className="h-24 w-24 sm:h-28 sm:w-28 border-2 border-primary/20 bg-background shadow-inner flex items-center justify-center overflow-hidden rounded-2xl">
+                    {currentTeam.scorebookLegendUrl ? (
+                      <img src={currentTeam.scorebookLegendUrl} alt="Scorebook Legend" className="h-full w-full object-contain" />
+                    ) : (
+                      <div className="w-full h-full flex flex-col items-center justify-center text-primary bg-primary/5 select-none p-2 text-center">
+                        <span className="font-black text-2xl">A-Z</span>
+                        <span className="text-[9px] font-bold text-muted-foreground">未登録</span>
+                      </div>
+                    )}
+                  </div>
+                  {legendUploading && (
+                    <div className="absolute inset-0 bg-background/70 backdrop-blur-sm rounded-2xl flex items-center justify-center">
+                      <Loader2 className="h-8 w-8 text-primary animate-spin" />
+                    </div>
+                  )}
+                </div>
+
+                {/* 操作エリア */}
+                <div className="flex-1 space-y-4 text-center sm:text-left w-full">
+                  <div className="space-y-1">
+                    <p className="text-sm font-bold text-foreground">早見表画像を登録する</p>
+                    <p className="text-xs text-muted-foreground">
+                      チーム独自のスコア書き方や記号の対応表がある場合、その画像をアップロードしてください。AIスコアブック解析時に辞書として活用されます。
+                    </p>
+                  </div>
+
+                  <div className="flex justify-center sm:justify-start">
+                    <label className={cn(
+                      "flex items-center justify-center gap-2 px-8 h-14 rounded-[20px] font-black text-sm bg-primary text-primary-foreground shadow-sm hover:scale-[1.02] active:scale-95 transition-all cursor-pointer w-full sm:w-auto",
+                      legendUploading && "pointer-events-none opacity-50"
+                    )}>
+                      <Upload className="h-5 w-5" />
+                      {legendUploading ? "アップロード中..." : "早見表を選択する"}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleLegendUpload}
+                        className="hidden"
+                        disabled={legendUploading}
                       />
                     </label>
                   </div>
