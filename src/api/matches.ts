@@ -77,10 +77,32 @@ app.get("/:id/lineups", async (c) => {
 
 app.get("/:id/logs", async (c) => {
   try {
-    const logs = await MatchService.getPlayLogs(drizzle(c.env.DB), c.req.param("id"));
-    return c.json({ success: true, logs });
+    const db = drizzle(c.env.DB);
+    const matchId = c.req.param("id");
+    const logs = await MatchService.getPlayLogs(db, matchId);
+    
+    // バリデーションも取得
+    const matchData = await db.select({ scorebookValidations: matches.scorebookValidations }).from(matches).where(eq(matches.id, matchId)).get();
+    let validationMessages = [];
+    if (matchData?.scorebookValidations) {
+      try {
+        validationMessages = JSON.parse(matchData.scorebookValidations);
+      } catch (e) {}
+    }
+
+    return c.json({ success: true, logs, validationMessages });
   } catch (error) {
     return c.json({ success: false, error: "Failed to fetch play logs" }, 500);
+  }
+});
+
+app.post("/:id/validations/resolve", async (c) => {
+  try {
+    const db = drizzle(c.env.DB);
+    await db.update(matches).set({ scorebookValidations: '[]' }).where(eq(matches.id, c.req.param("id")));
+    return c.json({ success: true });
+  } catch (error) {
+    return c.json({ success: false, error: "Failed to resolve validations" }, 500);
   }
 });
 

@@ -227,12 +227,12 @@ scorebookRouter.post("/:id/scorebook/save", async (c) => {
   const matchId = c.req.param("id") as string;
 
   try {
-    const body = await c.req.json() as { events: AtBatEvent[] };
+    const body = await c.req.json() as { events: AtBatEvent[], validationMessages?: ValidationMessage[] };
     if (!body.events || !Array.isArray(body.events)) {
       return c.json({ success: false, error: "打席イベントデータが必要です" }, 400);
     }
 
-    await MatchService.saveScorebookImport(db, matchId, body.events);
+    await MatchService.saveScorebookImport(db, matchId, body.events, body.validationMessages || []);
     return c.json({ success: true });
 
   } catch (error: any) {

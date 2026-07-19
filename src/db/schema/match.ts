@@ -108,6 +108,10 @@ export const matches = sqliteTable("matches", {
   lockedByUserName: text("locked_by_user_name"),
   lockedAt: integer("locked_at", { mode: "timestamp" }),
   lockExpiresAt: integer("lock_expires_at", { mode: "timestamp" }),
+  
+  // 🌟 AIスコアブック解析の矛盾点（バリデーションメッセージ）を保持するJSON文字列
+  scorebookValidations: text("scorebook_validations").default('[]'),
+  
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(strftime('%s', 'now'))`),
 }, (table) => ({
   teamIdx: index("idx_matches_team_id").on(table.teamId),

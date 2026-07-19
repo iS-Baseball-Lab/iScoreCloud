@@ -1,0 +1,1 @@
+ALTER TABLE `matches` ADD `scorebook_validations` text DEFAULT '[]';

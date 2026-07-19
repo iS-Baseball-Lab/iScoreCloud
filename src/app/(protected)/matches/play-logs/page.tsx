@@ -29,13 +29,14 @@ function PlayLogsContent() {
   const [isLoadingMatches, setIsLoadingMatches] = useState(true);
   const [isLoadingLogs, setIsLoadingLogs] = useState(false);
 
-  // 🌟 スコアブックAIインポート用ステート
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analyzedEvents, setAnalyzedEvents] = useState<AtBatEvent[]>([]);
   const [validationMessages, setValidationMessages] = useState<ValidationMessage[]>([]);
+  const [persistedValidations, setPersistedValidations] = useState<ValidationMessage[]>([]);
   const [isSaving, setIsSaving] = useState(false);
+  const [isResolving, setIsResolving] = useState(false);
 
   // 🌟 スコアブック画像AI解析実行
   const handleStartImport = async () => {
@@ -149,7 +150,10 @@ function PlayLogsContent() {
       const res = await fetch(`/api/matches/${selectedMatchId}/scorebook/save`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ events: analyzedEvents }),
+        body: JSON.stringify({ 
+          events: analyzedEvents,
+          validationMessages: validationMessages // 🌟 矛盾点も一緒に保存
+        }),
       });
       const data = await res.json() as { success: boolean; error?: string };
 
@@ -166,6 +170,25 @@ function PlayLogsContent() {
       toast.error("通信エラーが発生しました");
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  // 🌟 未解決の矛盾点をクリアする処理
+  const handleResolveValidations = async () => {
+    if (!selectedMatchId) return;
+    setIsResolving(true);
+    try {
+      const res = await fetch(`/api/matches/${selectedMatchId}/validations/resolve`, { method: "POST" });
+      if (res.ok) {
+        setPersistedValidations([]);
+        toast.success("矛盾点をクリア（問題なしで確定）しました！");
+      } else {
+        toast.error("処理に失敗しました");
+      }
+    } catch (err) {
+      toast.error("通信エラーが発生しました");
+    } finally {
+      setIsResolving(false);
     }
   };
 
@@ -220,7 +243,7 @@ function PlayLogsContent() {
       try {
         const res = await fetch(`/api/matches/${selectedMatchId}/logs`);
         if (res.ok) {
-          const data = (await res.json()) as { success: boolean; logs: any[] };
+          const data = (await res.json()) as { success: boolean; logs: any[]; validationMessages?: ValidationMessage[] };
           if (data.success && Array.isArray(data.logs)) {
             const selectedMatch = matches.find((m) => m.id === selectedMatchId);
             const gameTitle = selectedMatch
@@ -234,11 +257,14 @@ function PlayLogsContent() {
               return playLog;
             });
             setLogs(parsed);
+            setPersistedValidations(data.validationMessages || []);
           } else {
             setLogs([]);
+            setPersistedValidations([]);
           }
         } else {
           setLogs([]);
+          setPersistedValidations([]);
         }
       } catch (error) {
         console.error("Failed to fetch logs:", error);
@@ -345,6 +371,35 @@ function PlayLogsContent() {
             <Upload className="w-5 h-5" />
             手書きスコアから一括取込 (AI)
           </Button>
+        )}
+
+        {/* ━━ 🌟 未解決の矛盾点（AI解析エラー）表示領域 ━━ */}
+        {persistedValidations.length > 0 && (
+          <div className="bg-destructive/10 border-2 border-destructive/20 p-4 rounded-2xl space-y-3">
+            <div className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="w-5 h-5" />
+              <h3 className="font-black text-sm">AI解析の矛盾点が残っています</h3>
+            </div>
+            <ul className="text-xs text-destructive/80 space-y-1 font-bold pl-2 border-l-2 border-destructive/20">
+              {persistedValidations.map((v, i) => (
+                <li key={i}>
+                  {v.inning}回{v.isTop ? '表' : '裏'} {v.battingOrder}番: {v.message}
+                </li>
+              ))}
+            </ul>
+            <p className="text-[10px] text-zinc-500 font-bold leading-tight">
+              ※下のプレイログから各打席の手直しを行うためのメモです。<br />
+              修正が完了したか、無視してよい場合は「問題なしで確定」を押してください。
+            </p>
+            <Button
+              onClick={handleResolveValidations}
+              disabled={isResolving}
+              className="w-full h-10 rounded-[var(--radius-xl)] bg-destructive hover:bg-destructive/90 text-destructive-foreground font-black flex items-center justify-center gap-2 mt-2"
+            >
+              {isResolving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+              問題なしで確定（クリア）
+            </Button>
+          </div>
         )}
 
         {/* ━━ ログカードリスト ━━ */}

@@ -296,7 +296,7 @@ export const MatchService = {
   },
 
   // 9. スコアブックの画像解析結果を一括流し込み（保存）
-  async saveScorebookImport(db: DrizzleDB, matchId: string, events: AtBatEvent[]) {
+  async saveScorebookImport(db: DrizzleDB, matchId: string, events: AtBatEvent[], validationMessages: ValidationMessage[] = []) {
     // A. pitches テーブルのクリア（at_bats に紐づくため事前に削除）
     await db.run(sql`DELETE FROM pitches WHERE at_bat_id IN (SELECT id FROM at_bats WHERE match_id = ${matchId})`);
 
@@ -332,10 +332,11 @@ export const MatchService = {
     // D1 トランザクションの代わりに Batch を使用するためのクエリ配列
     const batchQueries: any[] = [];
 
-    // B. 既存の試合データを削除
+    // B. 既存の試合データを削除し、バリデーションメッセージを更新
     batchQueries.push(db.delete(baseAdvances).where(eq(baseAdvances.matchId, matchId)));
     batchQueries.push(db.delete(atBats).where(eq(atBats.matchId, matchId)));
     batchQueries.push(db.delete(playLogs).where(eq(playLogs.matchId, matchId)));
+    batchQueries.push(db.update(matches).set({ scorebookValidations: JSON.stringify(validationMessages) }).where(eq(matches.id, matchId)));
 
     // E. 各打席イベントをインサート
     for (const e of events) {
