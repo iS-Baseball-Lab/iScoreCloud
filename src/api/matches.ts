@@ -356,7 +356,7 @@ app.get("/:id/boxscore", async (c) => {
       result: atBats.result,
       batterId: atBats.batterId,
       batterName: sql<string>`batter.name`,
-      batterNumber: sql<string>`batter.number`,
+      batterNumber: sql<string>`batter.uniform_number`,
       pitcherId: atBats.pitcherId,
       pitcherName: sql<string>`pitcher.name`,
     })
@@ -391,10 +391,10 @@ app.get("/:id/stats", async (c) => {
       result: atBats.result,
       batterId: atBats.batterId,
       batterName: sql<string>`batter.name`,
-      batterNumber: sql<string>`batter.number`,
+      batterNumber: sql<string>`batter.uniform_number`,
       pitcherId: atBats.pitcherId,
       pitcherName: sql<string>`pitcher.name`,
-      pitcherNumber: sql<string>`pitcher.number`,
+      pitcherNumber: sql<string>`pitcher.uniform_number`,
     })
     .from(atBats)
     .leftJoin(sql`players as batter`, sql`batter.id = ${atBats.batterId}`)
