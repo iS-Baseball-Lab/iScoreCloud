@@ -1261,7 +1261,7 @@ function MatchResultContent() {
 
               <TabsContent value="timeline" className="mt-4">
                 <MatchTimeline 
-                  events={atBats as TimelineEvent[]} 
+                  events={atBats.map(ab => ({ ...ab, isTop: ab.isTop === 1 }))} 
                   emptyMessage="打席データがありません" 
                 />
               </TabsContent>
