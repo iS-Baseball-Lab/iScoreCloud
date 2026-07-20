@@ -297,12 +297,11 @@ app.post("/:id/reaggregate", async (c) => {
         const inning = parseInt(log.inningText) || 1;
         const isTop = log.inningText.includes("表");
 
-        // 該当する atBat を探す（イニング、表裏、打者名が一致し、まだ更新していないもの）
-        // 型の違い（SQLiteの0/1や文字列等）を吸収するために == を使用
+        // 該当する atBat を探す（イニング、表裏が一致し、まだ更新していないもの）
+        // 型の違いを吸収するために == を使用。名前の揺れを無視し、時系列（挿入順）でマッピングする
         const targetBat = bats.find(b => 
           b.inning == inning && 
           b.isTop == isTop && 
-          b.batterName?.trim() == batterName &&
           !usedBatIds.has(b.id)
         );
 
