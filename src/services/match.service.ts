@@ -312,11 +312,25 @@ export const MatchService = {
     const playerMap = new Map<string, string>(); // name -> id
     existingPlayers.forEach(p => playerMap.set(p.name, p.id));
 
+    const normalize = (s: string) => s.replace(/[\s　]+/g, '').toLowerCase();
+
     // 選手解決ヘルパー (存在しなければ null を返す)
     const resolvePlayerId = async (name: string): Promise<string | null> => {
       const cleanName = name.trim();
       if (!cleanName) return null;
       if (playerMap.has(cleanName)) return playerMap.get(cleanName)!;
+
+      const normClean = normalize(cleanName);
+
+      // 1. スペース抜き・小文字化で完全一致をチェック
+      const exactMatch = existingPlayers.find(p => normalize(p.name) === normClean);
+      if (exactMatch) return exactMatch.id;
+
+      // 2. 前方一致（苗字のみ記載されている場合など）をチェック
+      const partialMatches = existingPlayers.filter(p => normalize(p.name).startsWith(normClean));
+      if (partialMatches.length === 1) {
+        return partialMatches[0].id; // 1人に絞れた場合のみ
+      }
 
       // 自動追加（仮登録）は行わず、見つからない場合は null を返す
       return null;
