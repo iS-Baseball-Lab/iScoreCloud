@@ -2,7 +2,7 @@
 import { Hono } from "hono";
 import { drizzle } from "drizzle-orm/d1";
 import { MatchService } from "@/services/match.service";
-import { eq, sql } from "drizzle-orm";
+import { eq, sql, desc } from "drizzle-orm";
 import { matchUndoHistories, atBats, playLogs, baseAdvances } from "@/db/schema/score";
 import { matches } from "@/db/schema/match";
 import { players } from "@/db/schema/team";
@@ -31,9 +31,28 @@ app.get("/", async (c) => {
 
 app.get("/:id", async (c) => {
   try {
-    const matchData = await MatchService.getMatchById(drizzle(c.env.DB), c.req.param("id"));
+    const db = drizzle(c.env.DB);
+    const matchId = c.req.param("id");
+    const matchData = await MatchService.getMatchById(db, matchId);
     if (!matchData) return c.json({ success: false, error: "Match not found" }, 404);
-    return c.json({ success: true, match: matchData });
+
+    // 前後の試合を取得
+    const matchesList = await db.select({ id: matches.id })
+      .from(matches)
+      .where(eq(matches.teamId, matchData.teamId))
+      .orderBy(desc(matches.date), desc(matches.createdAt))
+      .all();
+      
+    const currentIndex = matchesList.findIndex(m => m.id === matchId);
+    let prevMatchId = null; // 時系列で古い試合 (DESCなので index が後ろ)
+    let nextMatchId = null; // 時系列で新しい試合 (DESCなので index が前)
+    
+    if (currentIndex !== -1) {
+      if (currentIndex < matchesList.length - 1) prevMatchId = matchesList[currentIndex + 1].id;
+      if (currentIndex > 0) nextMatchId = matchesList[currentIndex - 1].id;
+    }
+
+    return c.json({ success: true, match: matchData, prevMatchId, nextMatchId });
   } catch (error) {
     return c.json({ success: false, error: "Failed to fetch match" }, 500);
   }

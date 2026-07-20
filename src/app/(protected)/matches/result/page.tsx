@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { SectionHeader } from "@/components/layout/SectionHeader";
 import { EmptyState } from "@/components/layout/EmptyState";
 import {
-  Loader2, Trophy, ChevronLeft,
+  Loader2, Trophy, ChevronLeft, ChevronRight,
   Share2, Calendar, Activity, Target, Zap, Sparkles, TrendingUp,
   Video, Edit3, X, Play, Plus, BookOpen, AlertCircle, Award, Flame,
   MapPin, Users
@@ -289,6 +289,9 @@ function MatchResultContent() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
 
+  const [prevMatchId, setPrevMatchId] = useState<string | null>(null);
+  const [nextMatchId, setNextMatchId] = useState<string | null>(null);
+
   const [isYoutubeModalOpen, setIsYoutubeModalOpen] = useState(false);
   const [inputYoutubeUrl, setInputYoutubeUrl] = useState("");
   const [isSavingUrl, setIsSavingUrl] = useState(false);
@@ -305,6 +308,8 @@ function MatchResultContent() {
           if (json.success && json.match) {
             setMatch(json.match);
             setInputYoutubeUrl(json.match.youtubeUrl || "");
+            setPrevMatchId(json.prevMatchId || null);
+            setNextMatchId(json.nextMatchId || null);
           }
         }
         
@@ -1304,6 +1309,25 @@ function MatchResultContent() {
               </TabsContent>
             </Tabs>
           </section>
+
+          {/* 前後の試合リンク */}
+          {(prevMatchId || nextMatchId) && (
+            <div className="pt-4 pb-2 flex justify-between items-center gap-3 sm:gap-4">
+              {prevMatchId ? (
+                <Button variant="outline" onClick={() => router.push(`/matches/result?id=${prevMatchId}`)} className="h-12 flex-1 rounded-[var(--radius-xl)] font-bold gap-2 text-[11px] sm:text-sm border-border/60 hover:bg-muted text-muted-foreground hover:text-foreground group transition-all shadow-sm">
+                  <ChevronLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" />
+                  前の試合
+                </Button>
+              ) : <div className="flex-1" />}
+              
+              {nextMatchId ? (
+                <Button variant="outline" onClick={() => router.push(`/matches/result?id=${nextMatchId}`)} className="h-12 flex-1 rounded-[var(--radius-xl)] font-bold gap-2 text-[11px] sm:text-sm border-border/60 hover:bg-muted text-muted-foreground hover:text-foreground group transition-all shadow-sm">
+                  次の試合
+                  <ChevronRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
+                </Button>
+              ) : <div className="flex-1" />}
+            </div>
+          )}
 
           {/* 💡 フッター */}
           <div className="pt-8 sm:pt-12 border-t border-border/60 flex flex-col items-center gap-2.5">
