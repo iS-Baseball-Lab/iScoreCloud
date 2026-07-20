@@ -52,7 +52,7 @@ export const baseAdvances = sqliteTable("base_advances", {
     matchId: text("match_id").notNull().references(() => matches.id, { onDelete: "cascade" }),
     atBatId: text("at_bat_id").notNull().references(() => atBats.id, { onDelete: "cascade" }), // 誰の打席中に起きた進塁か
     pitchId: text("pitch_id").references(() => pitches.id), // どの投球のタイミングで起きたか（盗塁等の記録用）
-    runnerId: text("runner_id").notNull().references(() => players.id), // 走者（ランナー）のID
+    runnerId: text("runner_id").references(() => players.id), // 走者（ランナー）のID (未登録選手の場合は null)
     fromBase: integer("from_base").notNull(), // 元いた塁 (0: バッターボックス, 1: 1塁, 2: 2塁, 3: 3塁)
     toBase: integer("to_base").notNull(),     // 進んだ（またはアウトになった）先の塁 (1, 2, 3, 4: 本塁)
     reason: text("reason").notNull(), // 進塁理由（PDF出力時の記号の元！） 例: 'hit'(安打), 'steal'(盗塁), 'wp'(暴投), 'error'(エラー)

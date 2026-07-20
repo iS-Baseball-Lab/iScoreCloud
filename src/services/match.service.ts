@@ -312,23 +312,14 @@ export const MatchService = {
     const playerMap = new Map<string, string>(); // name -> id
     existingPlayers.forEach(p => playerMap.set(p.name, p.id));
 
-    // 選手解決ヘルパー (存在しなければその場で新規作成して即DB反映)
-    const resolvePlayerId = async (name: string): Promise<string> => {
+    // 選手解決ヘルパー (存在しなければ null を返す)
+    const resolvePlayerId = async (name: string): Promise<string | null> => {
       const cleanName = name.trim();
-      if (!cleanName) return "";
+      if (!cleanName) return null;
       if (playerMap.has(cleanName)) return playerMap.get(cleanName)!;
 
-      // 新規登録 (仮登録: 背番号は 99 とする)
-      const newPlayerId = crypto.randomUUID();
-      await db.insert(players).values({
-        id: newPlayerId,
-        teamId: teamId,
-        name: cleanName,
-        uniformNumber: "99",
-        status: 'active',
-      } as any);
-      playerMap.set(cleanName, newPlayerId);
-      return newPlayerId;
+      // 自動追加（仮登録）は行わず、見つからない場合は null を返す
+      return null;
     };
 
     // D1 トランザクションの代わりに Batch を使用するためのクエリ配列
