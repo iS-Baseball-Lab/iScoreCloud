@@ -440,7 +440,15 @@ function PlayLogsContent() {
             </div>
           ) : (
             <MatchTimeline
-              events={logs as TimelineEvent[]}
+              events={logs.map(log => ({
+                id: log.id,
+                inning: log.inning,
+                isTop: log.topBottom === 'top',
+                batterName: log.batterName,
+                pitcherName: log.pitcherName,
+                result: log.result,
+                description: log.description
+              }))}
               emptyMessage={matches.length === 0 ? "チームの試合データを登録してください" : "選択した試合にはまだプレイログが記録されていません"}
               onEdit={handleEdit}
               onDelete={handleDelete}
