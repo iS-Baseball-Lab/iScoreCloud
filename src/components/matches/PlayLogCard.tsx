@@ -17,15 +17,18 @@ export interface PlayLog {
   strikes: number;
   outs: number;
   result: string;
+  resultType: string;
   description: string;
   createdAt: string;
   validationMessage?: string | null;
+  hasBso: boolean;
 }
 
 export function parseD1PlayLog(
   d1Log: {
     id: string;
     description: string;
+    resultType?: string;
     inning: number;
     isTop: boolean;
     timestamp: number;
@@ -40,11 +43,13 @@ export function parseD1PlayLog(
   let strikes = 0;
   let outs = 0;
   let cleanDesc = desc;
+  let hasBso = false;
   if (bsoMatch) {
     balls = parseInt(bsoMatch[1], 10);
     strikes = parseInt(bsoMatch[2], 10);
     outs = parseInt(bsoMatch[3], 10);
     cleanDesc = desc.replace(/\s\[B:\d+,\s*S:\d+,\s*O:\d+\]$/, "");
+    hasBso = true;
   }
 
   const batterMatch = cleanDesc.match(/^(\d+)番\s*([^:]+):\s*(.*)$/);
@@ -73,7 +78,7 @@ export function parseD1PlayLog(
   const dateObj = new Date(d1Log.timestamp);
   const formattedDate = isNaN(dateObj.getTime())
     ? ""
-    : `${dateObj.getMonth() + 1}/${dateObj.getDate()} ${String(dateObj.getHours()).padStart(2, "0")}:${String(dateObj.getMinutes()).padStart(2, "0")}`;
+    : `${String(dateObj.getHours()).padStart(2, "0")}:${String(dateObj.getMinutes()).padStart(2, "0")}`;
 
   return {
     id: d1Log.id,
@@ -87,20 +92,23 @@ export function parseD1PlayLog(
     strikes: strikes,
     outs: outs,
     result: result,
+    resultType: d1Log.resultType || "out",
     description: detailDesc,
     createdAt: formattedDate,
     validationMessage: d1Log.validationMessage,
+    hasBso,
   };
 }
 
 interface PlayLogCardProps {
   log: PlayLog;
+  isLast?: boolean;
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
   onResolve?: (id: string) => void;
 }
 
-export function PlayLogCard({ log, onEdit, onDelete, onResolve }: PlayLogCardProps) {
+export function PlayLogCard({ log, isLast = false, onEdit, onDelete, onResolve }: PlayLogCardProps) {
   // ━━ 展開状態の管理 ━━
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -128,22 +136,18 @@ export function PlayLogCard({ log, onEdit, onDelete, onResolve }: PlayLogCardPro
     const diffX = currentX - touchStartX.current;
     const diffY = currentY - touchStartY.current;
 
-    // 💡 Smart Swipe Control: 縦スクロール判定時はスワイプを無効化して縦移動を優先
     if (Math.abs(diffY) > Math.abs(diffX) && Math.abs(diffY) > 5) {
       isVerticalScroll.current = true;
       setOffsetX(0);
       return;
     }
 
-    // 展開中は横スワイプを無効化
     if (isExpanded) {
       return;
     }
 
     let newOffsetX = startOffsetX.current + diffX;
-    // 右スワイプ（プラス方向）は 0 で止める（左スワイプのみアクションを表示）
     if (newOffsetX > 0) newOffsetX = 0;
-    // 左スワイプはアクション幅の2倍まで引っ張れるようにし、アクション表示幅（アクション幅×2）でロック
     const maxPull = -(ACTION_WIDTH * 2);
     if (newOffsetX < maxPull) newOffsetX = maxPull;
 
@@ -154,7 +158,7 @@ export function PlayLogCard({ log, onEdit, onDelete, onResolve }: PlayLogCardPro
     touchStartX.current = null;
     touchStartY.current = null;
 
-    const targetWidth = ACTION_WIDTH * 2; // 編集と削除の2つのボタン分
+    const targetWidth = ACTION_WIDTH * 2;
     if (offsetX < -targetWidth / 2) {
       setOffsetX(-targetWidth);
     } else {
@@ -172,177 +176,202 @@ export function PlayLogCard({ log, onEdit, onDelete, onResolve }: PlayLogCardPro
     setIsExpanded(!isExpanded);
   };
 
+  const getDotColorClass = (type: string) => {
+    switch (type) {
+      case 'hit': return "bg-primary border-background ring-primary/30";
+      case 'score': return "bg-amber-500 border-background ring-amber-500/30";
+      case 'out': return "bg-muted-foreground/30 border-background ring-muted/30";
+      case 'sub': return "bg-blue-400 border-background ring-blue-400/30";
+      default: return "bg-muted-foreground/30 border-background";
+    }
+  };
+
   return (
-    // 💡 外側ラッパーによる角丸くり抜き (Outer Masking)
-    <div className={cn(
-      "group relative overflow-hidden transition-all duration-200 ease-out",
-      "rounded-[var(--radius-2xl)] border bg-card",
-      isExpanded ? "border-primary/40 shadow-sm shadow-primary/5" : "border-border/50 shadow-sm"
-    )}>
+    <div className="relative pl-12 sm:pl-16 py-1 group/timeline">
+      {/* タイムラインの縦線（背骨） */}
+      {!isLast && (
+        <div className="absolute left-[24px] sm:left-[32px] top-8 bottom-[-16px] w-0.5 bg-border/40 group-hover/timeline:bg-primary/20 transition-colors z-0" />
+      )}
       
-      {/* ━━ 背面アクションボタン (Opacity Controlによる透け防止) ━━ */}
+      {/* タイムラインのドット（結果インジケーター） */}
       <div className={cn(
-        "absolute inset-0 z-0 transition-opacity duration-150 bg-transparent flex justify-end",
-        (offsetX !== 0) ? "opacity-100" : "opacity-0 pointer-events-none"
+        "absolute left-[18px] sm:left-[26px] top-5 w-[14px] h-[14px] rounded-full border-2 shadow-sm z-10 transition-transform group-hover/timeline:scale-125 ring-2",
+        getDotColorClass(log.resultType)
+      )} />
+
+      {/* 💡 外側ラッパーによる角丸くり抜き (Outer Masking) */}
+      <div className={cn(
+        "group relative overflow-hidden transition-all duration-200 ease-out",
+        "rounded-2xl border",
+        isExpanded ? "border-primary/30 bg-primary/[0.02] shadow-sm" : "border-border/30 bg-card/60 backdrop-blur-sm shadow-sm hover:border-border/60 hover:bg-card/80"
       )}>
-        {/* 編集ボタン */}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onEdit(log.id);
-            setOffsetX(0);
-          }}
-          className="h-full w-[75px] flex flex-col items-center justify-center gap-1 bg-blue-500 text-white active:bg-blue-600 transition-colors"
-        >
-          <Edit2 className="h-4 w-4" strokeWidth={2.5} />
-          <span className="text-[10px] font-black uppercase tracking-wider">編集</span>
-        </button>
+        
+        {/* ━━ 背面アクションボタン ━━ */}
+        <div className={cn(
+          "absolute inset-0 z-0 transition-opacity duration-150 bg-transparent flex justify-end",
+          (offsetX !== 0) ? "opacity-100" : "opacity-0 pointer-events-none"
+        )}>
+          {/* 編集ボタン */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit(log.id);
+              setOffsetX(0);
+            }}
+            className="h-full w-[75px] flex flex-col items-center justify-center gap-1 bg-blue-500 text-white active:bg-blue-600 transition-colors"
+          >
+            <Edit2 className="h-4 w-4" strokeWidth={2.5} />
+            <span className="text-[10px] font-black uppercase tracking-wider">編集</span>
+          </button>
 
-        {/* 削除ボタン */}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete(log.id);
-            setOffsetX(0);
-          }}
-          className="h-full w-[75px] flex flex-col items-center justify-center gap-1 bg-rose-500 text-white active:bg-rose-600 transition-colors"
-        >
-          <Trash2 className="h-4 w-4" strokeWidth={2.5} />
-          <span className="text-[10px] font-black uppercase tracking-wider">削除</span>
-        </button>
-      </div>
-
-
-
-      {/* ━━ 前面カード本体 ━━ */}
-      <div
-        style={{ transform: `translateX(${offsetX}px)`, touchAction: "pan-y" }}
-        className={cn(
-          "relative z-10 flex flex-col h-full transition-transform duration-200 ease-out",
-          isExpanded ? "bg-primary/5 dark:bg-primary/10" : "bg-card"
-        )}
-      >
-        {/* カードメイン領域（タップ・スワイプ領域） */}
-        <div
-          className="p-4 cursor-pointer"
-          onClick={handleCardClick}
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
-        >
-          {/* 上部ヘッダー（イニング、試合名、日付） */}
-          <div className="flex justify-between items-start mb-2 pointer-events-none">
-            <div className="flex items-center gap-2">
-              <span className="bg-foreground text-background font-black text-xs px-2 py-0.5 rounded-[var(--radius-sm)]">
-                {log.inning}回{log.topBottom === "top" ? "表" : "裏"}
-              </span>
-              <span className="text-xs font-black text-muted-foreground">{log.gameTitle}</span>
-            </div>
-            <span className="text-[10px] text-muted-foreground font-bold font-mono">{log.createdAt}</span>
-          </div>
-
-          {/* 対戦内容と結果 */}
-          <div className="flex justify-between items-center my-3 pointer-events-none">
-            <div>
-              <div className="text-[10px] font-bold text-muted-foreground/80">投手: {log.pitcherName} vs</div>
-              <div className="text-base font-black text-foreground">{log.batterName}</div>
-            </div>
-            <div className="text-right">
-              <div className="text-[10px] font-bold text-muted-foreground/80">打席結果</div>
-              <div className="text-base font-black text-primary">{log.result}</div>
-            </div>
-          </div>
-
-          {/* BSO・フラット表示 & 展開インジケーター */}
-          <div className="flex items-center justify-between mt-3 gap-4">
-            <div className="flex items-center gap-4 bg-muted/60 dark:bg-zinc-800/40 p-2 rounded-xl border border-border/40 pointer-events-none">
-              <div className="flex items-center gap-1">
-                <span className="text-[10px] font-black w-3 text-yellow-500">B</span>
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <div key={i} className={cn("w-2 h-2 rounded-full", i < log.balls ? "bg-yellow-500" : "bg-neutral-300 dark:bg-neutral-700")} />
-                ))}
-              </div>
-              <div className="flex items-center gap-1">
-                <span className="text-[10px] font-black w-3 text-red-500">S</span>
-                {Array.from({ length: 2 }).map((_, i) => (
-                  <div key={i} className={cn("w-2 h-2 rounded-full", i < log.strikes ? "bg-red-500" : "bg-neutral-300 dark:bg-neutral-700")} />
-                ))}
-              </div>
-              <div className="flex items-center gap-1">
-                <span className="text-[10px] font-black w-3 text-blue-500">O</span>
-                {Array.from({ length: 2 }).map((_, i) => (
-                  <div key={i} className={cn("w-2 h-2 rounded-full", i < log.outs ? "bg-blue-500" : "bg-neutral-300 dark:bg-neutral-700")} />
-                ))}
-              </div>
-            </div>
-
-            <div className="flex items-center justify-center shrink-0 text-muted-foreground/60 transition-transform">
-              {isExpanded ? (
-                <ChevronUp className="h-5 w-5 text-primary animate-pulse" strokeWidth={2.5} />
-              ) : (
-                <ChevronDown className="h-5 w-5" strokeWidth={2} />
-              )}
-            </div>
-          </div>
+          {/* 削除ボタン */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete(log.id);
+              setOffsetX(0);
+            }}
+            className="h-full w-[75px] flex flex-col items-center justify-center gap-1 bg-rose-500 text-white active:bg-rose-600 transition-colors"
+          >
+            <Trash2 className="h-4 w-4" strokeWidth={2.5} />
+            <span className="text-[10px] font-black uppercase tracking-wider">削除</span>
+          </button>
         </div>
 
-        {/* 🌟 バリデーションエラーがある場合の表示 */}
-        {log.validationMessage && (
-          <div className="bg-destructive/10 border-t border-destructive/20 p-3 flex flex-col gap-2">
-            <div className="flex items-start gap-2 text-destructive">
-              <MessageSquare className="w-4 h-4 mt-0.5 shrink-0" />
-              <p className="text-xs font-bold leading-snug">
-                {(() => {
-                  try {
-                    const parsed = JSON.parse(log.validationMessage);
-                    return parsed.message || log.validationMessage;
-                  } catch {
-                    return log.validationMessage;
-                  }
-                })()}
-              </p>
-            </div>
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onResolve?.(log.id);
-                }}
-                className="px-3 py-1.5 bg-destructive text-destructive-foreground text-[10px] font-black rounded-lg shadow-sm active:scale-95 transition-transform"
-              >
-                問題なし
-              </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onEdit(log.id);
-                }}
-                className="px-3 py-1.5 bg-primary/10 text-primary text-[10px] font-black rounded-lg active:scale-95 transition-transform"
-              >
-                編集して修正
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* ━━ 展開時の詳細情報エリア (背景をシームレス化) ━━ */}
-        {isExpanded && (
-          <div className="border-t border-border/40 bg-transparent">
-            <div className="p-4 animate-in fade-in slide-in-from-top-2 duration-200">
-              <div className="rounded-xl bg-background/60 dark:bg-zinc-950/40 border border-dashed border-primary/20 p-4">
-                <div className="flex items-center gap-2 mb-2 text-primary">
-                  <MessageSquare className="h-4 w-4" />
-                  <span className="text-xs font-black uppercase tracking-wider">打席メモ・詳細説明</span>
+        {/* ━━ 前面カード本体 ━━ */}
+        <div
+          style={{ transform: `translateX(${offsetX}px)`, touchAction: "pan-y" }}
+          className="relative z-10 flex flex-col h-full transition-transform duration-200 ease-out bg-inherit"
+        >
+          {/* カードメイン領域（タップ・スワイプ領域） */}
+          <div
+            className="p-3 sm:p-4 cursor-pointer"
+            onClick={handleCardClick}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+          >
+            <div className="flex justify-between items-start pointer-events-none">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center border border-primary/20 shrink-0 shadow-sm">
+                  <span className="text-primary font-black text-sm">{log.batterName.charAt(0) || "-"}</span>
                 </div>
-                <p className="text-sm font-bold text-foreground/80 leading-relaxed whitespace-pre-wrap">
-                  {log.description || "詳細なメモはありません。"}
-                </p>
+                <div>
+                  <div className="text-[15px] font-black text-foreground leading-tight tracking-tight">
+                    {log.batterName.replace(/番\s*/, '番 ')}
+                  </div>
+                  {log.pitcherName !== "投手" && (
+                    <div className="text-[10px] font-bold text-muted-foreground/80 mt-0.5">vs {log.pitcherName}</div>
+                  )}
+                </div>
+              </div>
+              <div className="text-right flex flex-col items-end justify-between min-h-[2.5rem]">
+                <div className={cn(
+                  "text-xs font-black px-2.5 py-1 rounded-md shadow-sm border",
+                  log.resultType === 'hit' ? 'bg-primary/10 text-primary border-primary/20' : 
+                  log.resultType === 'score' ? 'bg-amber-500/10 text-amber-600 border-amber-500/20' :
+                  'bg-muted/50 text-muted-foreground border-transparent'
+                )}>
+                  {log.result}
+                </div>
+                <div className="text-[9px] text-muted-foreground/50 font-mono mt-1">{log.createdAt}</div>
+              </div>
+            </div>
+
+            {/* BSO・フラット表示 & 展開インジケーター */}
+            <div className={cn("flex items-center mt-3 pt-1", log.hasBso ? "justify-between" : "justify-end")}>
+              {log.hasBso && (
+                <div className="flex items-center gap-2.5 bg-muted/30 dark:bg-zinc-800/20 px-2.5 py-1 rounded border border-border/20 pointer-events-none">
+                  <div className="flex items-center gap-1">
+                    <span className="text-[9px] font-black w-2 text-yellow-500">B</span>
+                    {Array.from({ length: 3 }).map((_, i) => (
+                      <div key={i} className={cn("w-1.5 h-1.5 rounded-full", i < log.balls ? "bg-yellow-500" : "bg-neutral-200 dark:bg-neutral-700")} />
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="text-[9px] font-black w-2 text-red-500">S</span>
+                    {Array.from({ length: 2 }).map((_, i) => (
+                      <div key={i} className={cn("w-1.5 h-1.5 rounded-full", i < log.strikes ? "bg-red-500 shadow-[0_0_2px_rgba(239,68,68,0.5)]" : "bg-neutral-200 dark:bg-neutral-700")} />
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="text-[9px] font-black w-2 text-blue-500">O</span>
+                    {Array.from({ length: 2 }).map((_, i) => (
+                      <div key={i} className={cn("w-1.5 h-1.5 rounded-full", i < log.outs ? "bg-blue-500" : "bg-neutral-200 dark:bg-neutral-700")} />
+                    ))}
+                  </div>
+                </div>
+              )}
+              
+              <div className="flex items-center justify-center shrink-0 text-muted-foreground/40 transition-transform">
+                {isExpanded ? (
+                  <ChevronUp className="h-4 w-4 text-primary animate-pulse" strokeWidth={2.5} />
+                ) : (
+                  <ChevronDown className="h-4 w-4" strokeWidth={2} />
+                )}
               </div>
             </div>
           </div>
-        )}
 
+          {/* 🌟 バリデーションエラーがある場合の表示 */}
+          {log.validationMessage && (
+            <div className="bg-destructive/5 border-t border-destructive/10 p-3 flex flex-col gap-2">
+              <div className="flex items-start gap-2 text-destructive">
+                <MessageSquare className="w-4 h-4 mt-0.5 shrink-0" />
+                <p className="text-xs font-bold leading-snug">
+                  {(() => {
+                    try {
+                      const parsed = JSON.parse(log.validationMessage);
+                      return parsed.message || log.validationMessage;
+                    } catch {
+                      return log.validationMessage;
+                    }
+                  })()}
+                </p>
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onResolve?.(log.id);
+                  }}
+                  className="px-3 py-1.5 bg-destructive text-destructive-foreground text-[10px] font-black rounded-lg shadow-sm active:scale-95 transition-transform"
+                >
+                  問題なし
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onEdit(log.id);
+                  }}
+                  className="px-3 py-1.5 bg-primary/10 text-primary text-[10px] font-black rounded-lg active:scale-95 transition-transform"
+                >
+                  編集して修正
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ━━ 展開時の詳細情報エリア ━━ */}
+          {isExpanded && (
+            <div className="border-t border-border/30 bg-transparent">
+              <div className="p-3 sm:p-4 animate-in fade-in slide-in-from-top-2 duration-200">
+                <div className="rounded-xl bg-background/50 dark:bg-zinc-950/30 border border-dashed border-primary/20 p-3 sm:p-4">
+                  <div className="flex items-center gap-2 mb-2 text-primary/80">
+                    <MessageSquare className="h-3.5 w-3.5" />
+                    <span className="text-[10px] font-black uppercase tracking-widest">打席メモ・詳細説明</span>
+                  </div>
+                  <p className="text-xs sm:text-sm font-bold text-foreground/80 leading-relaxed whitespace-pre-wrap">
+                    {log.description || "詳細なメモはありません。"}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+        </div>
       </div>
     </div>
   );
 }
+

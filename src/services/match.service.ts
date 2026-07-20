@@ -290,6 +290,7 @@ export const MatchService = {
     return logs.map(log => ({
       id: log.id,
       description: log.description,
+      resultType: log.resultType,
       inning: parseInt(log.inningText) || 1,
       isTop: log.inningText.includes("表"),
       timestamp: log.createdAt.getTime(),

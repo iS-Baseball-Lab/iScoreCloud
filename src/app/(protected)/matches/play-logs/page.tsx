@@ -31,12 +31,27 @@ function PlayLogsContent() {
 
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analyzedEvents, setAnalyzedEvents] = useState<AtBatEvent[]>([]);
   const [validationMessages, setValidationMessages] = useState<ValidationMessage[]>([]);
   const [persistedValidations, setPersistedValidations] = useState<ValidationMessage[]>([]);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isResolving, setIsResolving] = useState(false);
+
+  // 🌟 イニングごとのグルーピング（最新イニングを上に、イニング内は時系列順に）
+  const groupedLogs = React.useMemo(() => {
+    const groups: { inningText: string; inning: number; topBottom: string; logs: any[] }[] = [];
+    logs.forEach(log => {
+      const inningText = `${log.inning}回${log.topBottom === 'top' ? '表' : '裏'}`;
+      let group = groups.find(g => g.inningText === inningText);
+      if (!group) {
+        group = { inningText, inning: log.inning, topBottom: log.topBottom, logs: [] };
+        groups.push(group);
+      }
+      group.logs.push(log);
+    });
+    return groups.reverse(); // 最新イニングを一番上に
+  }, [logs]);
 
   // 🌟 スコアブック画像AI解析実行
   const handleStartImport = async () => {
@@ -374,9 +389,12 @@ function PlayLogsContent() {
         )}
 
         {/* ━━ ログカードリスト ━━ */}
-        <div className="grid grid-cols-1 gap-3">
+        <div className="flex flex-col gap-8 relative mt-6">
+          {/* 全体を貫く薄い縦線（デザインの背骨） */}
+          <div className="absolute left-6 top-2 bottom-4 w-px bg-border/40 z-0 hidden sm:block" />
+
           {isLoadingLogs ? (
-            <div className="p-12 text-center flex flex-col items-center gap-3">
+            <div className="p-12 text-center flex flex-col items-center gap-3 relative z-10 bg-background/80 backdrop-blur-sm rounded-3xl">
               <Loader2 className="w-6 h-6 animate-spin text-primary" />
               <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider animate-pulse">Loading play logs...</span>
             </div>
@@ -385,17 +403,36 @@ function PlayLogsContent() {
               icon={History} 
               title="プレイログがありません" 
               description={matches.length === 0 ? "チームの試合データを登録してください" : "選択した試合にはまだプレイログが記録されていません"} 
-              className="mt-4"
+              className="mt-4 relative z-10"
             />
           ) : (
-            logs.map((log) => (
-              <PlayLogCard 
-                key={log.id} 
-                log={log} 
-                onEdit={handleEdit} 
-                onDelete={handleDelete}
-                onResolve={handleResolveLog}
-              />
+            groupedLogs.map((group) => (
+              <div key={group.inningText} className="relative z-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                {/* イニングヘッダー */}
+                <div className="flex items-center gap-3 mb-4 sticky top-[4.5rem] z-20 py-2 bg-background/90 backdrop-blur-md">
+                  <div className="h-8 w-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-black text-xs shadow-sm ring-4 ring-background">
+                    {group.inning}
+                  </div>
+                  <h3 className="text-lg font-black italic text-foreground tracking-tight">
+                    {group.inningText}
+                  </h3>
+                  <div className="h-px flex-1 bg-gradient-to-r from-border/80 to-transparent ml-2" />
+                </div>
+                
+                {/* イニング内のプレイログリスト */}
+                <div className="flex flex-col gap-3 relative">
+                  {group.logs.map((log, index) => (
+                    <PlayLogCard 
+                      key={log.id} 
+                      log={log} 
+                      isLast={index === group.logs.length - 1}
+                      onEdit={handleEdit} 
+                      onDelete={handleDelete}
+                      onResolve={handleResolveLog}
+                    />
+                  ))}
+                </div>
+              </div>
             ))
           )}
         </div>
