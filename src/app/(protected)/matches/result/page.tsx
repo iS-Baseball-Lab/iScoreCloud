@@ -6,12 +6,8 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { SectionHeader } from "@/components/layout/SectionHeader";
 import { EmptyState } from "@/components/layout/EmptyState";
-import {
-  Loader2, Trophy, ChevronLeft, ChevronRight,
-  Share2, Calendar, Activity, Target, Zap, Sparkles, TrendingUp,
-  Video, Edit3, X, Play, Plus, BookOpen, AlertCircle, Award, Flame,
-  MapPin, Users
-} from "lucide-react";
+import { Edit2, ShieldAlert, Sparkles, MapPin, Share2, History, Target, EyeOff, FileSpreadsheet, Lock, Activity, Trophy, ChevronLeft, ChevronRight, Calendar, Zap, TrendingUp, Video, Edit3, X, Play, Plus, BookOpen, AlertCircle, Award, Flame, Users } from "lucide-react";
+import { MatchTimeline, TimelineEvent } from "@/components/matches/MatchTimeline";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import {
@@ -1264,48 +1260,10 @@ function MatchResultContent() {
               </TabsContent>
 
               <TabsContent value="timeline" className="mt-4">
-                <Card className="rounded-[var(--radius-xl)] border-0 sm:border border-border/40 bg-card overflow-hidden p-3.5 sm:p-6 space-y-6">
-                  {atBats.length === 0 ? (
-                    <div className="text-center py-16 text-muted-foreground font-bold">
-                      打席データがありません
-                    </div>
-                  ) : (
-                    <div className="relative border-l border-border pl-4 sm:pl-6 ml-2 sm:ml-4 space-y-6 sm:space-y-8">
-                      {Array.from(new Set(atBats.map(a => `${a.inning}回${a.isTop ? '表' : '裏'}`))).map((inningLabel) => {
-                        const inningAtBats = atBats.filter(a => `${a.inning}回${a.isTop ? '表' : '裏'}` === inningLabel);
-                        return (
-                          <div key={inningLabel} className="relative space-y-3">
-                            <span className="absolute -left-[25px] sm:-left-[31px] top-1 h-3.5 w-3.5 rounded-full bg-primary border-[2.5px] border-background" />
-                            
-                            <h4 className="font-black text-xs sm:text-sm text-primary uppercase tracking-wider">{inningLabel}</h4>
-                            <div className="space-y-2">
-                              {inningAtBats.map((ab, idx) => (
-                                <div key={ab.id} className="p-2 sm:p-3 bg-card border border-border/40 rounded-[var(--radius-xl)] flex items-center justify-between text-xs sm:text-sm font-bold gap-2 sm:gap-4 hover:bg-muted/30 transition-colors">
-                                  <div className="flex items-center gap-2 sm:gap-3">
-                                    <span className="text-[9px] font-black text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-                                      打席 {idx + 1}
-                                    </span>
-                                    <span className="text-foreground text-xs sm:text-sm">
-                                      {ab.batterName ? `${ab.batterName} (#${ab.batterNumber})` : "不明"}
-                                    </span>
-                                    {ab.pitcherName && (
-                                      <span className="text-[10px] text-muted-foreground/60 hidden sm:inline">
-                                        (投: {ab.pitcherName})
-                                      </span>
-                                    )}
-                                  </div>
-                                  <span className="font-black text-primary px-2.5 py-0.5 sm:py-1 bg-primary/5 rounded-full border border-primary/10 text-xs">
-                                    {ab.result || "打席結果なし"}
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </Card>
+                <MatchTimeline 
+                  events={atBats as TimelineEvent[]} 
+                  emptyMessage="打席データがありません" 
+                />
               </TabsContent>
             </Tabs>
           </section>

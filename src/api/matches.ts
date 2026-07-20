@@ -126,6 +126,27 @@ app.post("/:id/validations/resolve", async (c) => {
   }
 });
 
+// 🌟 プレイログと成績データをすべて削除（リセット）
+app.delete("/:id/reset-logs", async (c) => {
+  try {
+    const db = drizzle(c.env.DB);
+    const matchId = c.req.param("id");
+    
+    // playLogs と atBats を matchId で削除
+    // ※ atBats を削除すると、cascade で pitches, base_advances も削除される
+    await db.delete(playLogs).where(eq(playLogs.matchId, matchId));
+    await db.delete(atBats).where(eq(atBats.matchId, matchId));
+    
+    // スコアバリデーションの履歴もクリア
+    await db.update(matches).set({ scorebookValidations: '[]' }).where(eq(matches.id, matchId));
+
+    return c.json({ success: true });
+  } catch (error) {
+    console.error("Failed to reset logs:", error);
+    return c.json({ success: false, error: "Failed to reset play logs" }, 500);
+  }
+});
+
 app.put("/:id/lineups", async (c) => {
   try {
     const body = await c.req.json();

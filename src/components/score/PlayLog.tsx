@@ -20,8 +20,10 @@ export function PlayLog({ limit = 3 }: PlayLogProps) {
     const list: any[] = [];
     if (state.logs.length === 0) return list;
 
+    // APIからは昇順（古い順）で取得されるため、ライブスコア表示用に降順（新しい順）へ反転させる
+    const reversedLogs = [...state.logs].reverse();
     // 表示するログをスライス
-    const targetLogs = limit ? state.logs.slice(0, limit) : state.logs;
+    const targetLogs = limit ? reversedLogs.slice(0, limit) : reversedLogs;
 
     for (let i = 0; i < targetLogs.length; i++) {
       const currentLog = targetLogs[i];

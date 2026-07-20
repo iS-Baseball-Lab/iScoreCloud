@@ -3,11 +3,12 @@
 
 import React, { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ChevronLeft, History, Loader2, Calendar, Upload, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { ChevronLeft, History, Loader2, Calendar, Upload, AlertTriangle, CheckCircle2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SectionHeader } from "@/components/layout/SectionHeader";
 import { EmptyState } from "@/components/layout/EmptyState";
-import { PlayLogCard, PlayLog, parseD1PlayLog } from "@/components/matches/PlayLogCard";
+import { parseD1PlayLog, PlayLog } from "@/components/matches/PlayLogCard";
+import { MatchTimeline, TimelineEvent } from "@/components/matches/MatchTimeline";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import type { AtBatEvent, ValidationMessage } from "@/types/api";
@@ -207,6 +208,36 @@ function PlayLogsContent() {
     }
   };
 
+  // 🌟 全データリセット処理
+  const handleResetLogs = async () => {
+    if (!selectedMatchId) return;
+    if (!window.confirm("本当にこの試合のすべてのプレイログと成績データ（打席・投球など）を削除しますか？\n（※試合の基本情報は残りますが、プレイログ等は元に戻せません）")) {
+      return;
+    }
+    setIsLoadingLogs(true);
+    try {
+      const res = await fetch(`/api/matches/${selectedMatchId}/reset-logs`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { success: boolean };
+        if (data.success) {
+          toast.success("全データをリセットしました");
+          setLogs([]);
+          setPersistedValidations([]);
+        } else {
+          toast.error("リセットに失敗しました");
+        }
+      } else {
+        toast.error("通信エラーが発生しました");
+      }
+    } catch (e) {
+      toast.error("リセット中にエラーが発生しました");
+    } finally {
+      setIsLoadingLogs(false);
+    }
+  };
+
   // 1. Fetch matches for the selected team
   useEffect(() => {
     const fetchMatches = async () => {
@@ -379,61 +410,41 @@ function PlayLogsContent() {
         )}
 
         {selectedMatchId && (
-          <Button
-            onClick={() => setIsImportModalOpen(true)}
-            className="w-full h-12 rounded-2xl font-black italic gap-2 bg-primary text-primary-foreground shadow-md transition-all active:scale-95 cursor-pointer"
-          >
-            <Upload className="w-5 h-5" />
-            手書きスコアから一括取込 (AI)
-          </Button>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <Button
+              onClick={() => setIsImportModalOpen(true)}
+              className="w-full flex-1 h-12 rounded-2xl font-black italic gap-2 bg-primary text-primary-foreground shadow-md transition-all active:scale-95 cursor-pointer"
+            >
+              <Upload className="w-5 h-5" />
+              手書きスコアから一括取込 (AI)
+            </Button>
+            {logs.length > 0 && (
+              <Button
+                onClick={handleResetLogs}
+                variant="destructive"
+                className="w-full sm:w-auto h-12 rounded-2xl font-black italic gap-2 shadow-md transition-all active:scale-95 cursor-pointer"
+              >
+                <Trash2 className="w-5 h-5" />
+                全データリセット
+              </Button>
+            )}
+          </div>
         )}
 
-        {/* ━━ ログカードリスト ━━ */}
-        <div className="flex flex-col gap-8 relative mt-6">
-          {/* 全体を貫く薄い縦線（デザインの背骨） */}
-          <div className="absolute left-6 top-2 bottom-4 w-px bg-border/40 z-0 hidden sm:block" />
-
+        {/* ━━ ログタイムライン ━━ */}
+        <div className="mt-6">
           {isLoadingLogs ? (
-            <div className="p-12 text-center flex flex-col items-center gap-3 relative z-10 bg-background/80 backdrop-blur-sm rounded-3xl">
+            <div className="p-12 text-center flex flex-col items-center gap-3 bg-background/80 backdrop-blur-sm rounded-3xl">
               <Loader2 className="w-6 h-6 animate-spin text-primary" />
               <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider animate-pulse">Loading play logs...</span>
             </div>
-          ) : logs.length === 0 ? (
-            <EmptyState 
-              icon={History} 
-              title="プレイログがありません" 
-              description={matches.length === 0 ? "チームの試合データを登録してください" : "選択した試合にはまだプレイログが記録されていません"} 
-              className="mt-4 relative z-10"
-            />
           ) : (
-            groupedLogs.map((group) => (
-              <div key={group.inningText} className="relative z-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                {/* イニングヘッダー */}
-                <div className="flex items-center gap-3 mb-4 sticky top-[4.5rem] z-20 py-2 bg-background/90 backdrop-blur-md">
-                  <div className="h-8 w-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-black text-xs shadow-sm ring-4 ring-background">
-                    {group.inning}
-                  </div>
-                  <h3 className="text-lg font-black italic text-foreground tracking-tight">
-                    {group.inningText}
-                  </h3>
-                  <div className="h-px flex-1 bg-gradient-to-r from-border/80 to-transparent ml-2" />
-                </div>
-                
-                {/* イニング内のプレイログリスト */}
-                <div className="flex flex-col gap-3 relative">
-                  {group.logs.map((log, index) => (
-                    <PlayLogCard 
-                      key={log.id} 
-                      log={log} 
-                      isLast={index === group.logs.length - 1}
-                      onEdit={handleEdit} 
-                      onDelete={handleDelete}
-                      onResolve={handleResolveLog}
-                    />
-                  ))}
-                </div>
-              </div>
-            ))
+            <MatchTimeline
+              events={logs as TimelineEvent[]}
+              emptyMessage={matches.length === 0 ? "チームの試合データを登録してください" : "選択した試合にはまだプレイログが記録されていません"}
+              onEdit={handleEdit}
+              onDelete={handleDelete}
+            />
           )}
         </div>
 
