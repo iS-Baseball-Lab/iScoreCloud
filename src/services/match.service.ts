@@ -1,5 +1,5 @@
 // src/services/match.service.ts
-import { eq, desc, sql } from "drizzle-orm";
+import { eq, desc, asc, sql } from "drizzle-orm";
 import { matches, tournaments, venues, matchLineups } from "@/db/schema/match";
 import { playLogs, atBats, baseAdvances, matchUndoHistories } from "@/db/schema/score";
 import { players } from "@/db/schema/team";
@@ -283,7 +283,7 @@ export const MatchService = {
     const logs = await db.select()
       .from(playLogs)
       .where(eq(playLogs.matchId, matchId))
-      .orderBy(desc(playLogs.createdAt), sql`rowid DESC`)
+      .orderBy(asc(playLogs.createdAt), sql`rowid ASC`)
       .all();
     
     // PlayLogEntry 型に合わせる
