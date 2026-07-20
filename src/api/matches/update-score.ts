@@ -162,10 +162,11 @@ matchesApi.post('/update-score', async (c) => {
       }
     } else {
       // 通常の更新時は新規ログ/打席を挿入
-      if (newAtBat) {
+      const atBatId = newAtBat ? crypto.randomUUID() : null;
+      if (newAtBat && atBatId) {
         batchPromises.push(
           db.insert(atBats).values({
-            id: crypto.randomUUID(),
+            id: atBatId,
             matchId,
             inning: newAtBat.inning,
             isTop: newAtBat.isTop,
@@ -180,6 +181,7 @@ matchesApi.post('/update-score', async (c) => {
           db.insert(playLogs).values({
             id: crypto.randomUUID(),
             matchId,
+            atBatId: atBatId || undefined, // 🌟 成績データ（at_bats）とのリンク用
             inningText: newPlayLog.inningText,
             resultType: newPlayLog.resultType,
             description: newPlayLog.description

@@ -403,6 +403,7 @@ export const MatchService = {
       batchQueries.push(db.insert(playLogs).values({
         id: crypto.randomUUID(),
         matchId,
+        atBatId, // 🌟 成績データ（at_bats）とのリンク用
         inningText,
         resultType,
         description: descText,

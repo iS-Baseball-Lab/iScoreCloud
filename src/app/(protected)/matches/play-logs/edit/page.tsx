@@ -15,6 +15,9 @@ function EditLogForm() {
   const logId = searchParams.get("id");
 
   const [log, setLog] = useState<any>(null);
+  const [roster, setRoster] = useState<any[]>([]);
+  const [batterId, setBatterId] = useState<string>("");
+  const [pitcherId, setPitcherId] = useState<string>("");
   const [value, setValue] = useState("");
   const [prefix, setPrefix] = useState("");
   const [suffix, setSuffix] = useState("");
@@ -28,11 +31,15 @@ function EditLogForm() {
       log?: {
         id: string;
         matchId: string;
+        atBatId?: string;
+        batterId?: string;
+        pitcherId?: string;
         inningText: string;
         resultType: string;
         description: string;
         createdAt: string | number | Date;
       };
+      roster?: any[];
       error?: string;
     }
 
@@ -43,6 +50,9 @@ function EditLogForm() {
           const data = (await res.json()) as LogResponse;
           if (data.success && data.log) {
             setLog(data.log);
+            setBatterId(data.log.batterId || "");
+            setPitcherId(data.log.pitcherId || "");
+            setRoster(data.roster || []);
             const desc = data.log.description || "";
             
             // 1. Extract BSO suffix if present
@@ -97,6 +107,9 @@ function EditLogForm() {
         body: JSON.stringify({
           description: finalDescription,
           resultType: log?.resultType || "play",
+          atBatId: log?.atBatId || null,
+          batterId: batterId || null,
+          pitcherId: pitcherId || null,
         }),
       });
 
@@ -157,6 +170,39 @@ function EditLogForm() {
               <span className="text-base font-black italic text-zinc-900 dark:text-white">{prefix.replace(/:\s*$/, "")}</span>
             </div>
           )}
+        </div>
+      )}
+
+      {/* 選手紐付け */}
+      {log?.atBatId && (
+        <div className="space-y-4 pt-2 border-t border-border/50">
+          <div className="space-y-2 pt-2">
+            <label className="text-xs font-black text-muted-foreground tracking-wider uppercase pl-1">打者 (Batter)</label>
+            <select
+              value={batterId}
+              onChange={(e) => setBatterId(e.target.value)}
+              className="flex h-12 w-full items-center justify-between rounded-[var(--radius-xl)] border border-input bg-background px-3 py-2 text-base ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <option value="">(不明・未設定)</option>
+              {roster.map(p => (
+                <option key={p.id} value={p.id}>{p.uniform_number ? `${p.uniform_number} ` : ''}{p.name}</option>
+              ))}
+            </select>
+          </div>
+          
+          <div className="space-y-2">
+            <label className="text-xs font-black text-muted-foreground tracking-wider uppercase pl-1">投手 (Pitcher)</label>
+            <select
+              value={pitcherId}
+              onChange={(e) => setPitcherId(e.target.value)}
+              className="flex h-12 w-full items-center justify-between rounded-[var(--radius-xl)] border border-input bg-background px-3 py-2 text-base ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <option value="">(不明・未設定)</option>
+              {roster.map(p => (
+                <option key={p.id} value={p.id}>{p.uniform_number ? `${p.uniform_number} ` : ''}{p.name}</option>
+              ))}
+            </select>
+          </div>
         </div>
       )}
 

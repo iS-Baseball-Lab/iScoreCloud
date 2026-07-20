@@ -70,6 +70,7 @@ export const baseAdvances = sqliteTable("base_advances", {
 export const playLogs = sqliteTable("play_logs", {
     id: text("id").primaryKey(),
     matchId: text("match_id").notNull().references(() => matches.id, { onDelete: "cascade" }),
+    atBatId: text("at_bat_id").references(() => atBats.id, { onDelete: "cascade" }), // 🌟 追加: 成績データとのリンク用
     inningText: text("inning_text").notNull(), // 見出し用 (例: "1回表")
     resultType: text("result_type").notNull(), // アイコンの色分け等に使用 (例: 'hit', 'out', 'score', 'sub'(交代))
     description: text("description").notNull(), // 実況テキスト (例: "1番 山田: センター前へのクリーンヒット！")
@@ -77,6 +78,7 @@ export const playLogs = sqliteTable("play_logs", {
     createdAt: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(strftime('%s', 'now'))`),
 }, (table) => ({
     matchIdx: index("idx_play_logs_match_id").on(table.matchId),
+    atBatIdx: index("idx_play_logs_at_bat_id").on(table.atBatId), // インデックス追加
 }));
 
 // ==========================================

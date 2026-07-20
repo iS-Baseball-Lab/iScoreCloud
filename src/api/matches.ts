@@ -212,15 +212,32 @@ app.get("/logs/:logId", async (c) => {
     if (!log) {
       return c.json({ success: false, error: "Play log not found" }, 404);
     }
+
+    // 🌟 新機能：atBatの取得と、チームのrosterの取得
+    let atBat = null;
+    if (log.atBatId) {
+      atBat = await db.select().from(atBats).where(eq(atBats.id, log.atBatId)).get();
+    }
+
+    // Roster 取得のためにチームIDを引く
+    const match = await db.select({ teamId: matches.teamId }).from(matches).where(eq(matches.id, log.matchId)).get();
+    let roster: any[] = [];
+    if (match) {
+      roster = await db.select().from(players).where(eq(players.teamId, match.teamId)).all();
+    }
+
     const formattedLog = {
       id: log.id,
       matchId: log.matchId,
+      atBatId: log.atBatId,
+      batterId: atBat?.batterId || null,
+      pitcherId: atBat?.pitcherId || null,
       inningText: log.inningText,
       resultType: log.resultType,
       description: log.description,
       createdAt: log.createdAt instanceof Date ? log.createdAt.getTime() : new Date(log.createdAt).getTime(),
     };
-    return c.json({ success: true, log: formattedLog });
+    return c.json({ success: true, log: formattedLog, roster });
   } catch (error) {
     return c.json({ success: false, error: "Failed to fetch play log" }, 500);
   }
@@ -239,6 +256,16 @@ app.put("/logs/:logId", async (c) => {
         validationMessage: null, // 編集されたらバリデーションエラーはクリアする
       })
       .where(eq(playLogs.id, logId));
+
+    // もし atBatId があって、batterId や pitcherId も送られてきていたら更新
+    if (body.atBatId && (body.batterId !== undefined || body.pitcherId !== undefined)) {
+      const updateData: any = {};
+      if (body.batterId !== undefined) updateData.batterId = body.batterId || null;
+      if (body.pitcherId !== undefined) updateData.pitcherId = body.pitcherId || null;
+
+      await db.update(atBats).set(updateData).where(eq(atBats.id, body.atBatId));
+    }
+
     return c.json({ success: true });
   } catch (error) {
     console.error("Error updating play log:", error);
