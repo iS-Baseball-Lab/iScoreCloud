@@ -6,7 +6,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { SectionHeader } from "@/components/layout/SectionHeader";
 import { EmptyState } from "@/components/layout/EmptyState";
-import { Edit2, ShieldAlert, Sparkles, MapPin, Share2, History, Target, EyeOff, FileSpreadsheet, Lock, Activity, Trophy, ChevronLeft, ChevronRight, Calendar, Zap, TrendingUp, Video, Edit3, X, Play, Plus, BookOpen, AlertCircle, Award, Flame, Users } from "lucide-react";
+import { Edit2, ShieldAlert, Sparkles, MapPin, Share2, History, Target, EyeOff, FileSpreadsheet, Lock, Activity, Trophy, ChevronLeft, ChevronRight, Calendar, Zap, TrendingUp, Video, Edit3, X, Play, Plus, BookOpen, AlertCircle, Award, Flame, Users, Loader2 } from "lucide-react";
 import { MatchTimeline, TimelineEvent } from "@/components/matches/MatchTimeline";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
