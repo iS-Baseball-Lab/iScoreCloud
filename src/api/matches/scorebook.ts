@@ -359,32 +359,19 @@ function validateEvents(events: AtBatEvent[]): ValidationMessage[] {
 export default scorebookRouter;
 
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  // Edge ランタイムや Node.js 互換環境で Buffer が使える場合は、超高速（約1ms）で変換
+  if (typeof Buffer !== 'undefined') {
+    return Buffer.from(buffer).toString('base64');
+  }
+
+  // Buffer が使えない場合のフォールバック（チャンク分割で btoa を使用）
   const bytes = new Uint8Array(buffer);
-  const len = bytes.length;
-  let base64 = "";
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-  let i = 0;
-  for (i = 0; i < len - 2; i += 3) {
-    const chunk = (bytes[i] << 16) | (bytes[i + 1] << 8) | bytes[i + 2];
-    base64 += chars[(chunk & 0xFC0000) >> 18];
-    base64 += chars[(chunk & 0x3F000) >> 12];
-    base64 += chars[(chunk & 0xFC0) >> 6];
-    base64 += chars[chunk & 0x3F];
+  let binary = "";
+  const chunkSize = 8192;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    // @ts-ignore
+    binary += String.fromCharCode.apply(null, chunk);
   }
-
-  if (i === len - 2) {
-    const chunk = (bytes[i] << 16) | (bytes[i + 1] << 8);
-    base64 += chars[(chunk & 0xFC0000) >> 18];
-    base64 += chars[(chunk & 0x3F000) >> 12];
-    base64 += chars[(chunk & 0xFC0) >> 6];
-    base64 += "=";
-  } else if (i === len - 1) {
-    const chunk = bytes[i] << 16;
-    base64 += chars[(chunk & 0xFC0000) >> 18];
-    base64 += chars[(chunk & 0x3F000) >> 12];
-    base64 += "==";
-  }
-
-  return base64;
+  return btoa(binary);
 }
