@@ -2,7 +2,7 @@
 import { Hono } from "hono";
 import { drizzle } from "drizzle-orm/d1";
 import { MatchService } from "@/services/match.service";
-import { eq, sql, desc } from "drizzle-orm";
+import { eq, sql, desc, and } from "drizzle-orm";
 import { matchUndoHistories, atBats, playLogs, baseAdvances } from "@/db/schema/score";
 import { matches } from "@/db/schema/match";
 import { players } from "@/db/schema/team";
@@ -217,6 +217,23 @@ app.get("/logs/:logId", async (c) => {
     let atBat = null;
     if (log.atBatId) {
       atBat = await db.select().from(atBats).where(eq(atBats.id, log.atBatId)).get();
+    }
+
+    // フォールバック: atBatIdが未保存の既存データの場合、作成日時が完全に一致する打席データを探す
+    if (!atBat) {
+      atBat = await db.select().from(atBats)
+        .where(
+          and(
+            eq(atBats.matchId, log.matchId),
+            eq(atBats.createdAt, log.createdAt)
+          )
+        ).get();
+        
+      // 見つかった場合、次回以降のために atBatId を保存して修復しておく
+      if (atBat) {
+        await db.update(playLogs).set({ atBatId: atBat.id }).where(eq(playLogs.id, log.id));
+        log.atBatId = atBat.id;
+      }
     }
 
     // Roster 取得のためにチームIDを引く
