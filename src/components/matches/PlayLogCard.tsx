@@ -103,8 +103,8 @@ export function parseD1PlayLog(
 interface PlayLogCardProps {
   log: PlayLog;
   isLast?: boolean;
-  onEdit: (id: string) => void;
-  onDelete: (id: string) => void;
+  onEdit?: (id: string) => void;
+  onDelete?: (id: string) => void;
   onResolve?: (id: string) => void;
 }
 
@@ -130,6 +130,9 @@ export function PlayLogCard({ log, isLast = false, onEdit, onDelete, onResolve }
 
   const handleTouchMove = (e: React.TouchEvent) => {
     if (touchStartX.current === null || touchStartY.current === null || isVerticalScroll.current) return;
+    
+    // アクションがどちらも未設定ならスワイプを無効化
+    if (!onEdit && !onDelete) return;
 
     const currentX = e.touches[0].clientX;
     const currentY = e.touches[0].clientY;
@@ -212,30 +215,34 @@ export function PlayLogCard({ log, isLast = false, onEdit, onDelete, onResolve }
           (offsetX !== 0) ? "opacity-100" : "opacity-0 pointer-events-none"
         )}>
           {/* 編集ボタン */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onEdit(log.id);
-              setOffsetX(0);
-            }}
-            className="h-full w-[75px] flex flex-col items-center justify-center gap-1 bg-blue-500 text-white active:bg-blue-600 transition-colors"
-          >
-            <Edit2 className="h-4 w-4" strokeWidth={2.5} />
-            <span className="text-[10px] font-black uppercase tracking-wider">編集</span>
-          </button>
+          {onEdit && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onEdit(log.id);
+                setOffsetX(0);
+              }}
+              className="h-full w-[75px] flex flex-col items-center justify-center gap-1 bg-blue-500 text-white active:bg-blue-600 transition-colors"
+            >
+              <Edit2 className="h-4 w-4" strokeWidth={2.5} />
+              <span className="text-[10px] font-black uppercase tracking-wider">編集</span>
+            </button>
+          )}
 
           {/* 削除ボタン */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete(log.id);
-              setOffsetX(0);
-            }}
-            className="h-full w-[75px] flex flex-col items-center justify-center gap-1 bg-rose-500 text-white active:bg-rose-600 transition-colors"
-          >
-            <Trash2 className="h-4 w-4" strokeWidth={2.5} />
-            <span className="text-[10px] font-black uppercase tracking-wider">削除</span>
-          </button>
+          {onDelete && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(log.id);
+                setOffsetX(0);
+              }}
+              className="h-full w-[75px] flex flex-col items-center justify-center gap-1 bg-rose-500 text-white active:bg-rose-600 transition-colors"
+            >
+              <Trash2 className="h-4 w-4" strokeWidth={2.5} />
+              <span className="text-[10px] font-black uppercase tracking-wider">削除</span>
+            </button>
+          )}
         </div>
 
         {/* ━━ 前面カード本体 ━━ */}
@@ -339,15 +346,17 @@ export function PlayLogCard({ log, isLast = false, onEdit, onDelete, onResolve }
                 >
                   問題なし
                 </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onEdit(log.id);
-                  }}
-                  className="px-3 py-1.5 bg-primary/10 text-primary text-[10px] font-black rounded-lg active:scale-95 transition-transform"
-                >
-                  編集して修正
-                </button>
+                {onEdit && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onEdit(log.id);
+                    }}
+                    className="px-3 py-1.5 bg-primary/10 text-primary text-[10px] font-black rounded-lg active:scale-95 transition-transform"
+                  >
+                    編集して修正
+                  </button>
+                )}
               </div>
             </div>
           )}

@@ -7,8 +7,8 @@ import { Button } from "@/components/ui/button";
 import { SectionHeader } from "@/components/layout/SectionHeader";
 import { EmptyState } from "@/components/layout/EmptyState";
 import { Edit2, ShieldAlert, Sparkles, MapPin, Share2, History, Target, EyeOff, FileSpreadsheet, Lock, Activity, Trophy, ChevronLeft, ChevronRight, Calendar, Zap, TrendingUp, Video, Edit3, X, Play, Plus, BookOpen, AlertCircle, Award, Flame, Users, Loader2 } from "lucide-react";
-import { MatchTimeline, TimelineEvent } from "@/components/matches/MatchTimeline";
-import { parseD1PlayLog } from "@/components/matches/PlayLogCard";
+import { MatchTimeline } from "@/components/matches/MatchTimeline";
+import { parseD1PlayLog, PlayLog } from "@/components/matches/PlayLogCard";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import {
@@ -274,7 +274,7 @@ function MatchResultContent() {
 
   const [match, setMatch] = useState<Match | null>(null);
   const [atBats, setAtBats] = useState<AtBat[]>([]);
-  const [playLogs, setPlayLogs] = useState<TimelineEvent[]>([]);
+  const [playLogs, setPlayLogs] = useState<PlayLog[]>([]);
   const [stats, setStats] = useState<PlayerStats[]>([]);
   const [pitcherStats, setPitcherStats] = useState<PitcherStats[]>([]);
   const [teamName, setTeamName] = useState<string>("自チーム");
@@ -320,16 +320,8 @@ function MatchResultContent() {
           if (logsData.success && Array.isArray(logsData.logs)) {
             const parsedLogs = logsData.logs.map((log: any) => {
               const playLog = parseD1PlayLog(log, "試合");
-              return {
-                id: playLog.id,
-                inning: playLog.inning,
-                isTop: playLog.topBottom === 'top',
-                batterName: playLog.batterName,
-                pitcherName: playLog.pitcherName,
-                result: playLog.result,
-                description: playLog.description,
-                validationMessage: playLog.validationMessage
-              } as TimelineEvent;
+              playLog.validationMessage = null; // AI指摘はプレイログページでのみ表示
+              return playLog;
             });
             setPlayLogs(parsedLogs);
           }
@@ -1284,7 +1276,23 @@ function MatchResultContent() {
 
               <TabsContent value="timeline" className="mt-4">
                 <MatchTimeline 
-                  events={playLogs.length > 0 ? playLogs : atBats} 
+                  events={playLogs.length > 0 ? playLogs : atBats.map(ab => ({
+                    id: ab.id,
+                    gameId: matchId || "",
+                    gameTitle: "試合",
+                    inning: ab.inning,
+                    topBottom: ab.isTop ? "top" : "bottom",
+                    batterName: ab.batterName || "打者",
+                    pitcherName: ab.pitcherName || "投手",
+                    balls: 0,
+                    strikes: 0,
+                    outs: 0,
+                    result: ab.result || "打席完了",
+                    resultType: "out",
+                    description: ab.result || "",
+                    createdAt: "",
+                    hasBso: false
+                  } as PlayLog))} 
                   emptyMessage="プレイログデータがありません" 
                 />
               </TabsContent>

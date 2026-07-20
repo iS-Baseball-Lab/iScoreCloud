@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { SectionHeader } from "@/components/layout/SectionHeader";
 import { EmptyState } from "@/components/layout/EmptyState";
 import { parseD1PlayLog, PlayLog } from "@/components/matches/PlayLogCard";
-import { MatchTimeline, TimelineEvent } from "@/components/matches/MatchTimeline";
+import { MatchTimeline } from "@/components/matches/MatchTimeline";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import type { AtBatEvent, ValidationMessage } from "@/types/api";
@@ -440,16 +440,7 @@ function PlayLogsContent() {
             </div>
           ) : (
             <MatchTimeline
-              events={logs.map(log => ({
-                id: log.id,
-                inning: log.inning,
-                isTop: log.topBottom === 'top',
-                batterName: log.batterName,
-                pitcherName: log.pitcherName,
-                result: log.result,
-                description: log.description,
-                validationMessage: log.validationMessage
-              }))}
+              events={logs}
               emptyMessage={matches.length === 0 ? "チームの試合データを登録してください" : "選択した試合にはまだプレイログが記録されていません"}
               onEdit={handleEdit}
               onDelete={handleDelete}
