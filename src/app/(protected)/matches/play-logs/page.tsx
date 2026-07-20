@@ -241,7 +241,7 @@ function PlayLogsContent() {
     const fetchLogs = async () => {
       setIsLoadingLogs(true);
       try {
-        const res = await fetch(`/api/matches/${selectedMatchId}/logs`);
+        const res = await fetch(`/api/matches/${selectedMatchId}/logs?t=${Date.now()}`);
         if (res.ok) {
           const data = (await res.json()) as { success: boolean; logs: any[]; validationMessages?: ValidationMessage[] };
           if (data.success && Array.isArray(data.logs)) {
