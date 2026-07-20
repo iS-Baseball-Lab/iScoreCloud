@@ -433,9 +433,13 @@ export const MatchService = {
       status: "finished",
     }).where(eq(matches.id, matchId)));
 
-    // バッチ実行
+    // バッチ実行 (D1は1回に100クエリまでの制限があるためチャンク分割)
     if (batchQueries.length > 0) {
-      await db.batch(batchQueries as [any, ...any[]]);
+      const chunkSize = 80;
+      for (let i = 0; i < batchQueries.length; i += chunkSize) {
+        const chunk = batchQueries.slice(i, i + chunkSize);
+        await db.batch(chunk as [any, ...any[]]);
+      }
     }
   }
 };
