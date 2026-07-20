@@ -256,7 +256,12 @@ scorebookRouter.post("/:id/scorebook/save", async (c) => {
 
   } catch (error: any) {
     console.error("Scorebook save error:", error);
-    return c.json({ success: false, error: error.message || "データの保存中にエラーが発生しました" }, 500);
+    return c.json({ 
+      success: false, 
+      error: error.message || "データの保存中にエラーが発生しました",
+      stack: error.stack,
+      details: String(error)
+    }, 500);
   }
 });
 
