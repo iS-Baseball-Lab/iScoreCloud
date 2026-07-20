@@ -22,7 +22,7 @@ interface MatchTimelineProps {
 }
 
 export function MatchTimeline({ events, onEdit, onDelete, emptyMessage = "データがありません" }: MatchTimelineProps) {
-  // 1. イニングごとにグループ化 (eventsは昇順であることを前提とする)
+  // 1. イニングごとにグループ化
   const groupedEvents = useMemo(() => {
     const groups: { inningLabel: string; inning: number; isTop: boolean; events: TimelineEvent[] }[] = [];
     
@@ -36,6 +36,16 @@ export function MatchTimeline({ events, onEdit, onDelete, emptyMessage = "デー
       group.events.push(event);
     });
     
+    // イニング順、かつ表→裏の順になるようにソート
+    groups.sort((a, b) => {
+      if (a.inning !== b.inning) {
+        return a.inning - b.inning;
+      }
+      if (a.isTop && !b.isTop) return -1;
+      if (!a.isTop && b.isTop) return 1;
+      return 0;
+    });
+
     return groups;
   }, [events]);
 
