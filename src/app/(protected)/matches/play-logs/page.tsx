@@ -447,7 +447,8 @@ function PlayLogsContent() {
                 batterName: log.batterName,
                 pitcherName: log.pitcherName,
                 result: log.result,
-                description: log.description
+                description: log.description,
+                validationMessage: log.validationMessage
               }))}
               emptyMessage={matches.length === 0 ? "チームの試合データを登録してください" : "選択した試合にはまだプレイログが記録されていません"}
               onEdit={handleEdit}

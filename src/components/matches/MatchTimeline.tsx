@@ -12,6 +12,7 @@ export interface TimelineEvent {
   pitcherName?: string | null;
   result?: string | null;
   description?: string | null;
+  validationMessage?: string | null;
 }
 
 interface MatchTimelineProps {
@@ -100,6 +101,14 @@ export function MatchTimeline({ events, onEdit, onDelete, emptyMessage = "デー
                     {ev.description && (
                       <div className="text-muted-foreground font-medium text-xs mt-1 sm:mt-0 leading-relaxed border-l-2 border-primary/20 pl-2 ml-1">
                         {ev.description}
+                      </div>
+                    )}
+                    
+                    {/* バリデーションエラーメッセージ (AI解析指摘) */}
+                    {ev.validationMessage && (
+                      <div className="mt-2 p-2 sm:p-2.5 bg-destructive/10 text-destructive text-[10px] sm:text-xs rounded-lg border border-destructive/20 font-bold flex items-start gap-1.5 leading-relaxed">
+                        <Activity className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                        <div>{ev.validationMessage}</div>
                       </div>
                     )}
                   </div>
