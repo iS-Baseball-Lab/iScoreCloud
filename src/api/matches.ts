@@ -297,13 +297,22 @@ app.post("/:id/reaggregate", async (c) => {
         const inning = parseInt(log.inningText) || 1;
         const isTop = log.inningText.includes("表");
 
-        // 該当する atBat を探す（イニング、表裏が一致し、まだ更新していないもの）
-        // 型の違いを吸収するために == を使用。名前の揺れを無視し、時系列（挿入順）でマッピングする
-        const targetBat = bats.find(b => 
-          b.inning == inning && 
-          b.isTop == isTop && 
-          !usedBatIds.has(b.id)
-        );
+        // 該当する atBat を探す（イニング、表裏が一致し、さらに名前から空白を除去して一致確認）
+        // 名前の揺れ（半角・全角スペース）を吸収するため replace(/\s+/g, '') を使用
+        const targetBat = bats.find(b => {
+          const isSameInning = b.inning == inning;
+          const isSameTop = b.isTop == isTop;
+          if (!isSameInning || !isSameTop) return false;
+          if (usedBatIds.has(b.id)) return false;
+
+          // b.batterName が無い（未登録の相手選手など）場合はそのまま許可（時系列フォールバック）
+          if (!b.batterName) return true;
+          
+          // 空白を全て除去して比較
+          const dbName = b.batterName.replace(/[\s　]+/g, '');
+          const logName = batterName.replace(/[\s　]+/g, '');
+          return dbName === logName;
+        });
 
         debugParsed.push({
           logId: log.id,
