@@ -283,7 +283,7 @@ export const MatchService = {
     const logs = await db.select()
       .from(playLogs)
       .where(eq(playLogs.matchId, matchId))
-      .orderBy(desc(playLogs.createdAt))
+      .orderBy(desc(playLogs.createdAt), sql`rowid DESC`)
       .all();
     
     // PlayLogEntry 型に合わせる
