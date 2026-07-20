@@ -56,7 +56,7 @@ interface Match {
 interface AtBat {
   id: string;
   inning: number;
-  isTop: number;
+  isTop: boolean;
   result: string | null;
   batterId: string | null;
   batterName: string;
@@ -233,7 +233,7 @@ function extractGameDetails(atBats: AtBat[], isMyTeamTop: boolean) {
   };
 
   atBats.forEach((ab) => {
-    const isMyAttack = ab.isTop === (isMyTeamTop ? 1 : 0);
+    const isMyAttack = ab.isTop === isMyTeamTop;
     if (!isMyAttack || !ab.result) return;
 
     const res = ab.result;
@@ -1261,7 +1261,7 @@ function MatchResultContent() {
 
               <TabsContent value="timeline" className="mt-4">
                 <MatchTimeline 
-                  events={atBats.map(ab => ({ ...ab, isTop: ab.isTop === 1 }))} 
+                  events={atBats} 
                   emptyMessage="打席データがありません" 
                 />
               </TabsContent>
