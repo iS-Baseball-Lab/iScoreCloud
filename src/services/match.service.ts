@@ -392,7 +392,18 @@ export const MatchService = {
 
       // C. play_logs レコードの挿入
       const inningText = `${e.inning}回${e.isTop ? '表' : '裏'}`;
-      const descText = `${e.battingOrder}番 ${e.batterName}: ${e.result}`;
+      
+      let pitchesStr = "";
+      if (e.pitches && e.pitches.length > 0) {
+        pitchesStr = `\n===PITCHES===\n${e.pitches.map((p, i) => `${i + 1}球目: ${p}`).join("\n")}`;
+      }
+      
+      const balls = e.balls || 0;
+      const strikes = e.strikes || 0;
+      const outs = e.outsInThisPlay || 0; // AIが抽出したアウトカウント
+      
+      // BSOサフィックスを含めた完全なテキストを構成する
+      const descText = `${e.battingOrder}番 ${e.batterName}: ${e.result}${pitchesStr} [B:${balls}, S:${strikes}, O:${outs}]`;
       
       let resultType = 'out';
       if (e.result.includes('H') || e.result.match(/^[789]$/) || e.result.includes('安')) resultType = 'hit';

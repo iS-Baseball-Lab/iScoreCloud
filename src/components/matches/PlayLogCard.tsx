@@ -52,27 +52,28 @@ export function parseD1PlayLog(
     hasBso = true;
   }
 
-  const batterMatch = cleanDesc.match(/^(\d+)番\s*([^:]+):\s*(.*)$/);
+  const batterMatch = cleanDesc.match(/^(\d+)番\s*([^:]+):\s*([\s\S]*)$/);
   
   let batterName = "打者";
   let result = "打席完了";
   let detailDesc = cleanDesc;
+  let pitchesDesc = "";
 
   if (batterMatch) {
-    const order = batterMatch[1];
-    const name = batterMatch[2];
-    const playResult = batterMatch[3];
-    batterName = `${order}番 ${name}`;
-    result = playResult;
-    detailDesc = playResult;
+    batterName = `${batterMatch[1]}番 ${batterMatch[2]}`;
+    result = batterMatch[3].trim();
   } else if (cleanDesc.startsWith("選手交代")) {
     batterName = "選手交代";
     result = "交代";
-    detailDesc = cleanDesc;
   } else if (cleanDesc === "試合終了") {
     batterName = "試合終了";
     result = "ゲームセット";
-    detailDesc = cleanDesc;
+  }
+
+  if (result.includes("===PITCHES===")) {
+    const parts = result.split("===PITCHES===");
+    result = parts[0].trim();
+    pitchesDesc = parts[1].trim();
   }
 
   const dateObj = new Date(d1Log.timestamp);
@@ -93,7 +94,7 @@ export function parseD1PlayLog(
     outs: outs,
     result: result,
     resultType: d1Log.resultType || "out",
-    description: detailDesc,
+    description: pitchesDesc,
     createdAt: formattedDate,
     validationMessage: d1Log.validationMessage,
     hasBso,
@@ -318,6 +319,21 @@ export function PlayLogCard({ log, isLast = false, onEdit, onDelete, onResolve }
                 )}
               </div>
             </div>
+
+            {/* 投球履歴の表示 (展開時のみ) */}
+            {isExpanded && log.description && (
+              <div className="mt-4 pt-3 border-t border-border/50 animate-in slide-in-from-top-2 fade-in duration-200">
+                <div className="text-[10px] font-black text-muted-foreground/60 mb-2 uppercase tracking-wider">Pitches</div>
+                <div className="space-y-1.5">
+                  {log.description.split('\n').map((pitch, idx) => (
+                    <div key={idx} className="flex items-center gap-2 text-xs font-medium text-foreground bg-muted/20 px-2 py-1.5 rounded">
+                      <div className="w-1.5 h-1.5 rounded-full bg-primary/40 shrink-0" />
+                      {pitch}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* 🌟 バリデーションエラーがある場合の表示 */}

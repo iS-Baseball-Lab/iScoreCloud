@@ -1,7 +1,7 @@
 // filepath: src/api/matches/scorebook.ts
 import { Hono } from "hono";
 import { drizzle } from "drizzle-orm/d1";
-import { eq } from "drizzle-orm";
+import { eq, asc } from "drizzle-orm";
 import { MatchService } from "@/services/match.service";
 import * as schema from "@/db/schema";
 import type { WorkerEnv, AtBatEvent, ValidationMessage } from "@/types/api";
@@ -36,10 +36,26 @@ scorebookRouter.post("/:id/scorebook/import", async (c) => {
     const team = await db.select({ scorebookLegendUrl: teams.scorebookLegendUrl }).from(teams).where(eq(teams.id, match.teamId)).get();
     const legendUrl = team?.scorebookLegendUrl;
 
-    // B. アップロード画像を Base64 にエンコード
     const fileBytes = await file.arrayBuffer();
     const fileBase64 = arrayBufferToBase64(fileBytes);
     const fileMimeType = file.type || "image/png";
+
+    // C-0. 試合のスタメン情報を取得してプロンプトに注入
+    const lineups = await db.select({
+      battingOrder: schema.matchLineups.battingOrder,
+      name: schema.players.name
+    })
+    .from(schema.matchLineups)
+    .innerJoin(schema.players, eq(schema.matchLineups.playerId, schema.players.id))
+    .where(eq(schema.matchLineups.matchId, matchId))
+    .orderBy(asc(schema.matchLineups.battingOrder))
+    .all();
+
+    let lineupPrompt = "";
+    if (lineups.length > 0) {
+      const lineupText = lineups.map(l => `${l.battingOrder}番: ${l.name}`).join(", ");
+      lineupPrompt = `\n⚠️ 【重要: スタメン情報】この試合の自チームのスタメンは以下の通りです。画像内の文字が潰れていて読み取りづらい場合は、このスタメンリストの選手名を最優先して紐づけてください。\n[${lineupText}]\n`;
+    }
 
     // C. Gemini API 用の画像パーツリストを構築
     const imageParts: any[] = [
@@ -110,19 +126,14 @@ scorebookRouter.post("/:id/scorebook/import", async (c) => {
     // E. プロンプトの設計
     const prompt = `あなたは野球のスコアブック（主に日本で主流の早稲田式・成美堂式）の記号と構造を完全に理解したAIスコアラーです。
 添付されたスコアブックの画像（画像 1）を精確に解析し、打席ごとのプレイイベントを構造化データとして出力してください。
-${legendPromptAdd}
+${legendPromptAdd}${lineupPrompt}
 
 早稲田式スコアブックの読み取りルール:
-1. 各マスは1打席を表します。マスの中央にある記号が最終的な打撃結果またはアウト時の守備位置です（例: 「5-3」はサードゴロ、「K」は三振、「B」または「BB」は四球、「7」はレフト前安打、「8」はセンターフライ、「E6」はショートのエラーなど）。
-2. マスの中にあるひし形の枠線と、そこに引かれた実線が進塁を表します。
-   - 右下の線：1塁への進塁
-   - 右上の線：2塁への進塁
-   - 左上の線：3塁への進塁
-   - 左下の線および赤などで塗りつぶされたひし形：本塁への生還（得点）
-   - 各進塁の横に書かれている小さな記号や数字は進塁理由（例: 「S」は盗塁、「WP」はワイルドピッチ、「E」はエラーなど）。
-3. マスの右下にある丸で囲まれた数字（例: ①, ②, ③）は、そのイニングでのアウトカウントを表します。
-4. 各イニングは、3アウトになった打席で終了（チェンジ）し、そのマスの右下や右側に斜めの二重線「//」などが描かれて区切られます。
-5. 【超重要】画像に含まれるすべてのイニング（通常1回から最終回まで）と、全打席を漏れなく最後まで解析してください。決して1イニング等で途中で出力を打ち切らず、試合終了までの全データを網羅してください。
+1. 各マスは1打席を表します。マスの中央にある記号が最終的な打撃結果またはアウト時の守備位置です。
+2. 進塁はマスのひし形の枠線と実線で表されます（右下:1塁, 右上:2塁, 左上:3塁, 左下:本塁）。
+3. マスの右下にある丸数字（①, ②, ③）はそのイニングでのアウトカウントです。
+4. 【投球履歴（BSO）の解析】: マスの中には、ボール(B)・ストライク(S)・ファウル等の投球ごとの記録が小さなチェックマークや数字で書かれています。これらを読み取り、最終的なボール数(b)とストライク数(s)、および1球ごとの投球結果(pi: 例 ["ボール", "ストライク", "ファウル", "センター前ヒット"]) を抽出してください。
+5. 【超重要】画像に含まれるすべてのイニングと全打席を漏れなく最後まで解析してください。途中で打ち切らないでください。
 
 出力フォーマットは必ず以下のJSON形式に従い、\`\`\`json と \`\`\` で囲んで出力してください。
 【JSON構造】
@@ -138,6 +149,15 @@ ${legendPromptAdd}
       "o": 1,             // outsInThisPlay
       "eo": 1,            // endingOuts
       "ru": 0,            // runsInThisPlay
+      "b": 2,             // 最終ボールカウント (数値)
+      "s": 2,             // 最終ストライクカウント (数値)
+      "pi": [             // 1球ごとの投球履歴 (配列)
+        "ボール",
+        "ストライク",
+        "ボール",
+        "ファウル",
+        "センター前ヒット"
+      ],
       "a": [              // advances
         {
           "rn": "走者名", // runnerName
@@ -148,6 +168,7 @@ ${legendPromptAdd}
       ]
     }
   ]
+}
 }
 注意: \`f\` と \`t\` は "1B", "2B", "3B", "HP" のいずれかを使用してください。`;
 
@@ -203,23 +224,29 @@ ${legendPromptAdd}
     const rawEvents = parsedJson.events || [];
     
     // 短縮キー（i, t, boなど）をAtBatEvent形式にマッピングする（互換性のためフルキーへのフォールバックも用意）
-    const events: AtBatEvent[] = rawEvents.map((e: any) => ({
-      inning: e.i ?? e.inning,
-      isTop: e.t ?? e.isTop,
-      battingOrder: e.bo ?? e.battingOrder,
-      batterName: e.b ?? e.batterName,
-      pitcherName: e.p ?? e.pitcherName,
-      result: e.r ?? e.result,
-      outsInThisPlay: e.o ?? e.outsInThisPlay,
-      endingOuts: e.eo ?? e.endingOuts,
-      runsInThisPlay: e.ru ?? e.runsInThisPlay,
-      advances: (e.a ?? e.advances ?? []).map((a: any) => ({
-        runnerName: a.rn ?? a.runnerName,
-        from: a.f ?? a.from,
-        to: a.t ?? a.to,
-        method: a.m ?? a.method
-      }))
-    }));
+    const events: AtBatEvent[] = rawEvents.map((e: any) => {
+      const mappedEvent: AtBatEvent = {
+        inning: e.i,
+        isTop: e.t,
+        battingOrder: e.bo,
+        batterName: e.b || "",
+        pitcherName: e.p || "",
+        result: e.r || "",
+        outsInThisPlay: e.o || 0,
+        endingOuts: e.eo || 0,
+        runsInThisPlay: e.ru || 0,
+        balls: e.b || 0,
+        strikes: e.s || 0,
+        pitches: e.pi || [],
+        advances: (e.a || []).map((a: any) => ({
+          runnerName: a.rn ?? a.runnerName,
+          from: a.f ?? a.from,
+          to: a.t ?? a.to,
+          method: a.m ?? a.method
+        }))
+      };
+      return mappedEvent;
+    });
 
     // G. 論理矛盾検知（Validation）の実行
     const validationMessages = validateEvents(events);

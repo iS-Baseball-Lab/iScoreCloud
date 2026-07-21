@@ -267,6 +267,9 @@ export interface AtBatEvent {
   endingOuts: number;
   runsInThisPlay: number;
   advances: BaseAdvance[];
+  balls?: number;
+  strikes?: number;
+  pitches?: string[];
 }
 
 export interface ValidationMessage {
