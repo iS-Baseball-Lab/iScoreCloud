@@ -929,36 +929,17 @@ function MatchResultContent() {
                 成績データを再集計する
               </Button>
             </div>
-            <Tabs defaultValue="lineup" className="w-full">
-              <TabsList className="grid w-full grid-cols-4 h-13 rounded-[var(--radius-xl)] bg-muted/50 p-1 border border-border/40">
-                <TabsTrigger
-                  value="lineup"
-                  className="rounded-[var(--radius-md)] font-black text-[10px] sm:text-xs tracking-wider data-[state=active]:bg-background data-[state=active]:text-primary text-muted-foreground p-1"
-                >
-                  <Users className="h-3.5 w-3.5 mr-1" /> LINEUP
-                </TabsTrigger>
-                <TabsTrigger
-                  value="batting"
-                  className="rounded-[var(--radius-md)] font-black text-[10px] sm:text-xs tracking-wider data-[state=active]:bg-background data-[state=active]:text-primary text-muted-foreground p-1"
-                >
-                  <Target className="h-3.5 w-3.5 mr-1" /> BATTING
-                </TabsTrigger>
-                <TabsTrigger
-                  value="pitching"
-                  className="rounded-[var(--radius-md)] font-black text-[10px] sm:text-xs tracking-wider data-[state=active]:bg-background data-[state=active]:text-primary text-muted-foreground p-1"
-                >
-                  <Zap className="h-3.5 w-3.5 mr-1" /> PITCHING
-                </TabsTrigger>
-                <TabsTrigger
-                  value="timeline"
-                  className="rounded-[var(--radius-md)] font-black text-[10px] sm:text-xs tracking-wider data-[state=active]:bg-background data-[state=active]:text-primary text-muted-foreground p-1"
-                >
-                  <Activity className="h-3.5 w-3.5 mr-1" /> TIMELINE
-                </TabsTrigger>
-              </TabsList>
+            </div>
+
+            {/* 試合詳細・成績表示領域 (縦積み) */}
+            <div className="w-full space-y-12">
               
-              {/* 👥 LINEUP タブコンテンツ */}
-              <TabsContent value="lineup" className="mt-4">
+              {/* 👥 スタメン */}
+              <section>
+                <div className="flex items-center gap-2 mb-4 pl-2 border-l-4 border-primary">
+                  <Users className="h-5 w-5 text-primary" />
+                  <h3 className="font-black text-lg text-foreground tracking-tight">スタメン</h3>
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
                   {/* 先攻チームスタメン */}
                   <Card className="rounded-[var(--radius-xl)] border-0 sm:border border-border/40 bg-card overflow-hidden shadow-xs">
@@ -1062,23 +1043,28 @@ function MatchResultContent() {
                     </div>
                   </Card>
                 </div>
-              </TabsContent>
+              </section>
 
-              <TabsContent value="batting" className="mt-4 space-y-4">
+              {/* 🎯 打撃成績 */}
+              <section>
+                <div className="flex items-center gap-2 mb-4 pl-2 border-l-4 border-primary">
+                  <Target className="h-5 w-5 text-primary" />
+                  <h3 className="font-black text-lg text-foreground tracking-tight">打撃成績</h3>
+                </div>
                 <Card className="rounded-[var(--radius-xl)] border-0 sm:border border-border/40 bg-card overflow-hidden shadow-xs">
                   <div className="overflow-x-auto">
                     <Table>
                       <TableHeader className="bg-muted/50 border-b border-border/30">
                         <TableRow className="border-border/25 hover:bg-transparent">
-                          <TableHead className="font-black text-[9px] text-muted-foreground uppercase tracking-widest pl-2 sm:pl-4 py-1.5 sm:py-2.5">Player</TableHead>
-                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">PA</TableHead>
-                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">AB</TableHead>
-                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">H</TableHead>
-                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">RBI</TableHead>
-                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">R</TableHead>
-                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">K</TableHead>
-                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">BB/HP</TableHead>
-                          <TableHead className="text-right font-black text-[9px] text-primary uppercase tracking-widest pr-2 sm:pr-4 py-1.5 sm:py-2.5">AVG</TableHead>
+                          <TableHead className="font-black text-[9px] text-muted-foreground uppercase tracking-widest pl-2 sm:pl-4 py-1.5 sm:py-2.5">選手</TableHead>
+                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">打席</TableHead>
+                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">打数</TableHead>
+                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">安打</TableHead>
+                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">打点</TableHead>
+                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">得点</TableHead>
+                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">三振</TableHead>
+                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">四死球</TableHead>
+                          <TableHead className="text-right font-black text-[9px] text-primary uppercase tracking-widest pr-2 sm:pr-4 py-1.5 sm:py-2.5">打率</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -1195,22 +1181,27 @@ function MatchResultContent() {
                     </div>
                   </Card>
                 )}
-              </TabsContent>
+              </section>
 
-              <TabsContent value="pitching" className="mt-4">
+              {/* ⚡ 投手成績 */}
+              <section>
+                <div className="flex items-center gap-2 mb-4 pl-2 border-l-4 border-primary">
+                  <Zap className="h-5 w-5 text-primary" />
+                  <h3 className="font-black text-lg text-foreground tracking-tight">投手成績</h3>
+                </div>
                 <Card className="rounded-[var(--radius-xl)] border-0 sm:border border-border/40 bg-card overflow-hidden shadow-xs">
                   <div className="overflow-x-auto">
                     <Table>
                       <TableHeader className="bg-muted/50 border-b border-border/30">
                         <TableRow className="border-border/25 hover:bg-transparent">
-                          <TableHead className="font-black text-[9px] text-muted-foreground uppercase tracking-widest pl-2 sm:pl-4 py-1.5 sm:py-2.5">Pitcher</TableHead>
-                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">IP</TableHead>
-                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">H</TableHead>
-                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">BB/HP</TableHead>
-                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">SO</TableHead>
-                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">R</TableHead>
-                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">ER</TableHead>
-                          <TableHead className="text-right font-black text-[9px] text-primary uppercase tracking-widest pr-2 sm:pr-4 py-1.5 sm:py-2.5">ERA</TableHead>
+                          <TableHead className="font-black text-[9px] text-muted-foreground uppercase tracking-widest pl-2 sm:pl-4 py-1.5 sm:py-2.5">投手</TableHead>
+                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">投球回</TableHead>
+                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">被安打</TableHead>
+                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">四死球</TableHead>
+                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">奪三振</TableHead>
+                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">失点</TableHead>
+                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">自責点</TableHead>
+                          <TableHead className="text-right font-black text-[9px] text-primary uppercase tracking-widest pr-2 sm:pr-4 py-1.5 sm:py-2.5">防御率</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -1272,9 +1263,14 @@ function MatchResultContent() {
                     </Table>
                   </div>
                 </Card>
-              </TabsContent>
+              </section>
 
-              <TabsContent value="timeline" className="mt-4">
+              {/* 📈 タイムライン */}
+              <section>
+                <div className="flex items-center gap-2 mb-4 pl-2 border-l-4 border-primary">
+                  <Activity className="h-5 w-5 text-primary" />
+                  <h3 className="font-black text-lg text-foreground tracking-tight">タイムライン</h3>
+                </div>
                 <MatchTimeline 
                   events={playLogs.length > 0 ? playLogs : atBats.map(ab => ({
                     id: ab.id,
@@ -1295,8 +1291,9 @@ function MatchResultContent() {
                   } as PlayLog))} 
                   emptyMessage="プレイログデータがありません" 
                 />
-              </TabsContent>
-            </Tabs>
+              </section>
+
+            </div>
           </section>
 
           {/* 前後の試合リンク */}
