@@ -19,7 +19,7 @@ import {
   TableHeader,
   TableRow
 } from "@/components/ui/table";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+
 import { Card, CardContent } from "@/components/ui/card";
 
 interface Match {
@@ -929,8 +929,6 @@ function MatchResultContent() {
                 成績データを再集計する
               </Button>
             </div>
-            </div>
-
             {/* 試合詳細・成績表示領域 (縦積み) */}
             <div className="w-full space-y-12">
               
