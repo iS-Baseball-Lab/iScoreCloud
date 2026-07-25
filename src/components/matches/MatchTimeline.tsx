@@ -12,12 +12,108 @@ interface MatchTimelineProps {
   emptyMessage?: string;
 }
 
+function expandPlayLogsToPitches(logs: PlayLog[]): PlayLog[] {
+  const pitchLogs: PlayLog[] = [];
+
+  logs.forEach(log => {
+    // 投球履歴のパース
+    const lines = log.description
+      ? log.description.split("\n").map(l => l.trim()).filter(Boolean)
+      : [];
+
+    let currentB = log.balls;
+    let currentS = log.strikes;
+    let currentO = log.outs;
+
+    if (lines.length === 0) {
+      pitchLogs.push({
+        ...log,
+        balls: currentB,
+        strikes: currentS,
+        outs: currentO,
+        hasBso: true
+      });
+      return;
+    }
+
+    lines.forEach((line, idx) => {
+      const isLast = idx === lines.length - 1;
+      const pitchMatch = line.match(/^(\d+)球目:\s*(.*)$/);
+
+      let pitchNum = idx + 1;
+      let pitchRes = line;
+
+      if (pitchMatch) {
+        pitchNum = parseInt(pitchMatch[1], 10);
+        pitchRes = pitchMatch[2];
+      }
+
+      // 投球結果によるBSO更新
+      const lowerRes = pitchRes.toLowerCase();
+
+      if (lowerRes.includes("ボール") || lowerRes.includes("ball") || lowerRes.includes("b")) {
+        currentB = Math.min(4, currentB + 1);
+      } else if (lowerRes.includes("ストライク") || lowerRes.includes("strike") || lowerRes.includes("s") || lowerRes.includes("空振り") || lowerRes.includes("見逃し")) {
+        currentS = Math.min(3, currentS + 1);
+        if (currentS === 3) {
+          currentO = Math.min(3, currentO + 1);
+        }
+      } else if (lowerRes.includes("ファウル") || lowerRes.includes("foul") || lowerRes.includes("f")) {
+        if (currentS < 2) {
+          currentS++;
+        }
+      }
+
+      if (isLast) {
+        if (log.result.includes("三振") || log.result.includes("K")) {
+          currentS = 3;
+          currentO = Math.min(3, currentO + 1);
+        } else if (log.result.includes("四球") || log.result.includes("BB")) {
+          currentB = 4;
+        } else {
+          const isOut = log.result.includes("アウト") ||
+                        log.result.includes("ゴロ") || log.result.includes("フライ") || log.result.includes("ライナー") ||
+                        log.result.includes("併殺") || log.result.includes("犠") ||
+                        /^[1-9]-[1-9]$/.test(log.result) ||
+                        /^[1-9]F$/.test(log.result) ||
+                        /^[1-9]L$/.test(log.result) ||
+                        log.result.includes("DP");
+          if (isOut) {
+            if (log.result.includes("併殺") || log.result.includes("DP")) {
+              currentO = Math.min(3, currentO + 2);
+            } else {
+              currentO = Math.min(3, currentO + 1);
+            }
+          }
+        }
+      }
+
+      pitchLogs.push({
+        ...log,
+        id: `${log.id}-${pitchNum}`,
+        balls: currentB,
+        strikes: currentS,
+        outs: currentO,
+        result: isLast 
+          ? `${pitchNum}球目: ${pitchRes} (${log.result})` 
+          : `${pitchNum}球目: ${pitchRes}`,
+        resultType: isLast ? log.resultType : "pitch",
+        description: "", // 詳細アコーディオンは不要
+        hasBso: true
+      });
+    });
+  });
+
+  return pitchLogs;
+}
+
 export function MatchTimeline({ events, onEdit, onDelete, emptyMessage = "データがありません" }: MatchTimelineProps) {
   // 1. イニングごとにグループ化
   const groupedEvents = useMemo(() => {
     const groups: { inningLabel: string; inning: number; isTop: boolean; events: PlayLog[] }[] = [];
+    const expandedPitches = expandPlayLogsToPitches(events);
     
-    events.forEach(event => {
+    expandedPitches.forEach(event => {
       const isTop = event.topBottom === 'top';
       const inningLabel = `${event.inning}回${isTop ? '表' : '裏'}`;
       let group = groups.find(g => g.inningLabel === inningLabel);

@@ -177,7 +177,9 @@ export function PlayLogCard({ log, isLast = false, onEdit, onDelete, onResolve }
       setOffsetX(0);
       return;
     }
-    setIsExpanded(!isExpanded);
+    if (log.description) {
+      setIsExpanded(!isExpanded);
+    }
   };
 
   const getDotColorClass = (type: string) => {
@@ -186,6 +188,7 @@ export function PlayLogCard({ log, isLast = false, onEdit, onDelete, onResolve }
       case 'score': return "bg-amber-500 border-background ring-amber-500/30";
       case 'out': return "bg-muted-foreground/30 border-background ring-muted/30";
       case 'sub': return "bg-blue-400 border-background ring-blue-400/30";
+      case 'pitch': return "bg-muted border-border ring-transparent";
       default: return "bg-muted-foreground/30 border-background";
     }
   };
@@ -199,7 +202,10 @@ export function PlayLogCard({ log, isLast = false, onEdit, onDelete, onResolve }
       
       {/* タイムラインのドット（結果インジケーター） */}
       <div className={cn(
-        "absolute left-[18px] sm:left-[26px] top-5 w-[14px] h-[14px] rounded-full border-2 shadow-sm z-10 transition-transform group-hover/timeline:scale-125 ring-2",
+        "absolute left-[18px] sm:left-[26px] z-10 transition-transform group-hover/timeline:scale-125 ring-2 rounded-full border-2 shadow-sm",
+        log.resultType === 'pitch' 
+          ? "top-[23px] w-[8px] h-[8px] ml-[3px]" 
+          : "top-5 w-[14px] h-[14px]",
         getDotColorClass(log.resultType)
       )} />
 
@@ -278,6 +284,7 @@ export function PlayLogCard({ log, isLast = false, onEdit, onDelete, onResolve }
                   "text-xs font-black px-2.5 py-1 rounded-md shadow-sm border",
                   log.resultType === 'hit' ? 'bg-primary/10 text-primary border-primary/20' : 
                   log.resultType === 'score' ? 'bg-amber-500/10 text-amber-600 border-amber-500/20' :
+                  log.resultType === 'pitch' ? 'bg-muted/30 text-muted-foreground border-transparent font-medium text-[11px]' :
                   'bg-muted/50 text-muted-foreground border-transparent'
                 )}>
                   {log.result}
@@ -311,13 +318,15 @@ export function PlayLogCard({ log, isLast = false, onEdit, onDelete, onResolve }
                 </div>
               )}
               
-              <div className="flex items-center justify-center shrink-0 text-muted-foreground/40 transition-transform">
-                {isExpanded ? (
-                  <ChevronUp className="h-4 w-4 text-primary animate-pulse" strokeWidth={2.5} />
-                ) : (
-                  <ChevronDown className="h-4 w-4" strokeWidth={2} />
-                )}
-              </div>
+              {log.description && (
+                <div className="flex items-center justify-center shrink-0 text-muted-foreground/40 transition-transform">
+                  {isExpanded ? (
+                    <ChevronUp className="h-4 w-4 text-primary animate-pulse" strokeWidth={2.5} />
+                  ) : (
+                    <ChevronDown className="h-4 w-4" strokeWidth={2} />
+                  )}
+                </div>
+              )}
             </div>
 
             {/* 投球履歴の表示 (展開時のみ) */}
