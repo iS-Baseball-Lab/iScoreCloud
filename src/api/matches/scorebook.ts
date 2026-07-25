@@ -40,7 +40,17 @@ scorebookRouter.post("/:id/scorebook/import", async (c) => {
     const fileBase64 = arrayBufferToBase64(fileBytes);
     const fileMimeType = file.type || "image/png";
 
-    // C-0. 試合のスタメン情報を取得してプロンプトに注入
+    // C-0. チームの登録全選手およびスタメン情報を取得してプロンプトに注入
+    const allPlayers = await db.select({
+      id: schema.players.id,
+      name: schema.players.name,
+      nameKana: schema.players.nameKana,
+      uniformNumber: schema.players.uniformNumber
+    })
+    .from(schema.players)
+    .where(eq(schema.players.teamId, match.teamId))
+    .all();
+
     const lineups = await db.select({
       battingOrder: schema.matchLineups.battingOrder,
       name: schema.players.name
@@ -51,10 +61,16 @@ scorebookRouter.post("/:id/scorebook/import", async (c) => {
     .orderBy(asc(schema.matchLineups.battingOrder))
     .all();
 
+    let playerRosterPrompt = "";
+    if (allPlayers.length > 0) {
+      const rosterText = allPlayers.map(p => p.uniformNumber ? `${p.name}${p.nameKana ? `(${p.nameKana})` : ''} [#${p.uniformNumber}]` : p.name).join(", ");
+      playerRosterPrompt = `\n⚠️ 【重要: チーム登録全選手リスト】このチームに所属する選手一覧は以下の通りです。スコアブックに苗字のみや略称で記載されている場合でも、このリストに存在する正式名称（フルネーム）に最も近い選手名を選択・名寄せして出力してください。\n[${rosterText}]\n`;
+    }
+
     let lineupPrompt = "";
     if (lineups.length > 0) {
       const lineupText = lineups.map(l => `${l.battingOrder}番: ${l.name}`).join(", ");
-      lineupPrompt = `\n⚠️ 【重要: スタメン情報】この試合の自チームのスタメンは以下の通りです。画像内の文字が潰れていて読み取りづらい場合は、このスタメンリストの選手名を最優先して紐づけてください。\n[${lineupText}]\n`;
+      lineupPrompt = `\n⚠️ 【重要: スタメン情報】この試合の自チームのスタメン打順は以下の通りです。打順(bo)に対応する選手名は、このスタメンリストの選手名を最優先で一致させてください。\n[${lineupText}]\n`;
     }
 
     // C. Gemini API 用の画像パーツリストを構築
@@ -126,7 +142,7 @@ scorebookRouter.post("/:id/scorebook/import", async (c) => {
     // E. プロンプトの設計
     const prompt = `あなたは野球のスコアブック（主に日本で主流の早稲田式・成美堂式）の記号と構造を完全に理解したAIスコアラーです。
 添付されたスコアブックの画像（画像 1）を精確に解析し、打席ごとのプレイイベントを構造化データとして出力してください。
-${legendPromptAdd}${lineupPrompt}
+${legendPromptAdd}${playerRosterPrompt}${lineupPrompt}
 
 早稲田式スコアブックの読み取りルール:
 1. 各マスは1打席を表します。マスの中央にある記号が最終的な打撃結果またはアウト時の守備位置です。

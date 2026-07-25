@@ -313,27 +313,61 @@ export const MatchService = {
     const playerMap = new Map<string, string>(); // name -> id
     existingPlayers.forEach(p => playerMap.set(p.name, p.id));
 
+    // D-1. 試合のスタメン一覧を取得し、打順マッピング（battingOrder -> playerId）およびスタメン選手IDセットを作成
+    const lineupRecords = await db.select({
+      battingOrder: matchLineups.battingOrder,
+      playerId: matchLineups.playerId,
+    })
+    .from(matchLineups)
+    .where(eq(matchLineups.matchId, matchId))
+    .all();
+
+    const lineupOrderMap = new Map<number, string>(); // battingOrder (1-9) -> playerId
+    const starterPlayerIds = new Set<string>();
+    lineupRecords.forEach(l => {
+      lineupOrderMap.set(l.battingOrder, l.playerId);
+      starterPlayerIds.add(l.playerId);
+    });
+
     const normalize = (s: string) => s.replace(/[\s　]+/g, '').toLowerCase();
 
-    // 選手解決ヘルパー (存在しなければ null を返す)
-    const resolvePlayerId = async (name: any): Promise<string | null> => {
+    // 選手解決ヘルパー (打順フォールバック・スタメン優先付き)
+    const resolvePlayerId = async (name: any, options?: { battingOrder?: number, isMyTeamBatting?: boolean }): Promise<string | null> => {
       const cleanName = (typeof name === 'string' ? name : (name !== null && name !== undefined ? String(name) : '')).trim();
-      if (!cleanName) return null;
-      if (playerMap.has(cleanName)) return playerMap.get(cleanName)!;
+      
+      // 1. 完全一致（辞書）
+      if (cleanName && playerMap.has(cleanName)) return playerMap.get(cleanName)!;
 
       const normClean = normalize(cleanName);
 
-      // 1. スペース抜き・小文字化で完全一致をチェック
-      const exactMatch = existingPlayers.find(p => normalize(p.name) === normClean);
-      if (exactMatch) return exactMatch.id;
+      if (normClean) {
+        // 2. スペース抜き・小文字化での完全一致
+        const exactMatch = existingPlayers.find(p => normalize(p.name) === normClean);
+        if (exactMatch) return exactMatch.id;
 
-      // 2. 前方一致（苗字のみ記載されている場合など）をチェック
-      const partialMatches = existingPlayers.filter(p => normalize(p.name).startsWith(normClean));
-      if (partialMatches.length === 1) {
-        return partialMatches[0].id; // 1人に絞れた場合のみ
+        // 3. 部分一致・苗字一致（例: 「山田」で登録名「山田 太郎」にマッチ）
+        const partialMatches = existingPlayers.filter(p => {
+          const normP = normalize(p.name);
+          return normP.startsWith(normClean) || normClean.startsWith(normP);
+        });
+
+        if (partialMatches.length === 1) {
+          return partialMatches[0].id;
+        }
+
+        if (partialMatches.length > 1) {
+          // 同一苗字などで複数ヒットした場合、その試合のスタメン選手を優先
+          const starterMatch = partialMatches.find(p => starterPlayerIds.has(p.id));
+          if (starterMatch) return starterMatch.id;
+          return partialMatches[0].id;
+        }
       }
 
-      // 自動追加（仮登録）は行わず、見つからない場合は null を返す
+      // 4. 自チームの打席で選手名から特定できない場合、打順 (battingOrder) からスタメンを自動補完
+      if (options?.isMyTeamBatting && options?.battingOrder && lineupOrderMap.has(options.battingOrder)) {
+        return lineupOrderMap.get(options.battingOrder)!;
+      }
+
       return null;
     };
 
@@ -348,11 +382,16 @@ export const MatchService = {
     // E. 各打席イベントをインサート
     let eventIndex = 0;
     const baseTime = Date.now();
+    const isMyTeamTop = match.battingOrder === 'first';
+
     for (const e of events) {
       eventIndex++;
       const atBatId = crypto.randomUUID();
-      const batterId = await resolvePlayerId(e.batterName);
-      const pitcherId = await resolvePlayerId(e.pitcherName);
+
+      const isMyTeamBatting = (e.isTop && isMyTeamTop) || (!e.isTop && !isMyTeamTop);
+
+      const batterId = await resolvePlayerId(e.batterName, { battingOrder: e.battingOrder, isMyTeamBatting });
+      const pitcherId = await resolvePlayerId(e.pitcherName, { isMyTeamBatting: !isMyTeamBatting });
 
       // A. at_bats レコードの挿入
       batchQueries.push(db.insert(atBats).values({
@@ -367,7 +406,7 @@ export const MatchService = {
 
       // B. base_advances レコードの挿入
       for (const adv of e.advances) {
-        const runnerId = await resolvePlayerId(adv.runnerName);
+        const runnerId = await resolvePlayerId(adv.runnerName, { isMyTeamBatting });
         if (!runnerId) continue;
 
         const mapBase = (b?: string): number => {
