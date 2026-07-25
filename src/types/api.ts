@@ -254,6 +254,8 @@ export interface BaseAdvance {
   from?: '1B' | '2B' | '3B' | 'HP';
   to: '1B' | '2B' | '3B' | 'HP';
   method?: string;
+  isOut?: boolean;
+  pitchNumber?: number;
 }
 
 export interface AtBatEvent {

@@ -1,7 +1,7 @@
 // src/services/match.service.ts
 import { eq, desc, asc, sql } from "drizzle-orm";
 import { matches, tournaments, venues, matchLineups } from "@/db/schema/match";
-import { playLogs, atBats, baseAdvances, matchUndoHistories } from "@/db/schema/score";
+import { playLogs, atBats, baseAdvances, pitches, matchUndoHistories } from "@/db/schema/score";
 import { players } from "@/db/schema/team";
 import type {
   DrizzleDB,
@@ -303,10 +303,30 @@ export const MatchService = {
     // A. pitches テーブルのクリア（at_bats に紐づくため事前に削除）
     await db.run(sql`DELETE FROM pitches WHERE at_bat_id IN (SELECT id FROM at_bats WHERE match_id = ${matchId})`);
 
-    // C. 試合のチームIDを取得
-    const match = await db.select({ teamId: matches.teamId, opponent: matches.opponent, battingOrder: matches.battingOrder }).from(matches).where(eq(matches.id, matchId)).get();
+    // C. 試合のチームIDおよび相手スタメンを取得
+    const match = await db.select({ 
+      teamId: matches.teamId, 
+      opponent: matches.opponent, 
+      battingOrder: matches.battingOrder,
+      opponentLineup: matches.opponentLineup
+    }).from(matches).where(eq(matches.id, matchId)).get();
     if (!match) throw new Error("Match not found");
     const teamId = match.teamId;
+
+    let opponentLineup: any[] = [];
+    try {
+      opponentLineup = JSON.parse(match.opponentLineup || '[]');
+    } catch (e) {
+      opponentLineup = [];
+    }
+    if (!Array.isArray(opponentLineup) || opponentLineup.length === 0) {
+      opponentLineup = Array.from({ length: 9 }, (_, i) => ({
+        order: i + 1,
+        position: "",
+        name: "",
+        uniformNumber: ""
+      }));
+    }
 
     // D. チームの選手一覧を取得し、名前マッピング辞書を作成
     const existingPlayers = await db.select().from(players).where(eq(players.teamId, teamId)).all();
@@ -410,6 +430,34 @@ export const MatchService = {
       }
       e.pitcherName = rawPitcherName;
 
+      // 🌟 相手チーム選手名の自動逆反映 (Lineup Reflection)
+      if (!isMyTeamBatting && e.batterName && e.battingOrder) {
+        const targetSlot = opponentLineup.find(p => p.order === e.battingOrder);
+        if (targetSlot) {
+          targetSlot.name = e.batterName;
+        } else {
+          opponentLineup.push({
+            order: e.battingOrder,
+            position: "",
+            name: e.batterName,
+            uniformNumber: ""
+          });
+        }
+      }
+      if (isMyTeamBatting && e.pitcherName) {
+        let pitcherSlot = opponentLineup.find(p => p.position === "1");
+        if (pitcherSlot) {
+          if (!pitcherSlot.name) pitcherSlot.name = e.pitcherName;
+        } else {
+          opponentLineup.push({
+            order: 0,
+            position: "1",
+            name: e.pitcherName,
+            uniformNumber: ""
+          });
+        }
+      }
+
       const batterId = await resolvePlayerId(e.batterName, { battingOrder: e.battingOrder, isMyTeamBatting });
       const pitcherId = await resolvePlayerId(e.pitcherName, { isMyTeamBatting: !isMyTeamBatting });
 
@@ -424,6 +472,53 @@ export const MatchService = {
         result: e.result,
       }));
 
+      // 🌟 A-1. 一球ごとの投球（pitches）レコードの挿入
+      const pitchIdsMap: Record<number, string> = {};
+      if (e.pitches && e.pitches.length > 0) {
+        let ballsBefore = 0;
+        let strikesBefore = 0;
+
+        e.pitches.forEach((pText, i) => {
+          const pitchId = crypto.randomUUID();
+          const pitchNum = i + 1;
+          pitchIdsMap[pitchNum] = pitchId;
+
+          let pitchResult = "strike";
+          const lowerP = pText.toLowerCase();
+
+          if (lowerP.includes("ボール") || lowerP.includes("ball") || lowerP.includes("b")) {
+            pitchResult = "ball";
+          } else if (lowerP.includes("空振り") || lowerP.includes("swing")) {
+            pitchResult = "swinging_strike";
+          } else if (lowerP.includes("ストライク") || lowerP.includes("strike") || lowerP.includes("s") || lowerP.includes("見逃し")) {
+            pitchResult = "strike";
+          } else if (lowerP.includes("ファウル") || lowerP.includes("foul") || lowerP.includes("f")) {
+            pitchResult = "foul";
+          } else if (lowerP.includes("ヒット") || lowerP.includes("安打") || lowerP.includes("本塁打") || lowerP.includes("安") || lowerP.includes("1b") || lowerP.includes("2b") || lowerP.includes("3b") || lowerP.includes("hr")) {
+            pitchResult = "hit";
+          }
+
+          batchQueries.push(db.insert(pitches).values({
+            id: pitchId,
+            atBatId: atBatId,
+            pitchNumber: pitchNum,
+            result: pitchResult,
+            ballsBefore: ballsBefore,
+            strikesBefore: strikesBefore,
+          }));
+
+          if (pitchResult === "ball") {
+            ballsBefore = Math.min(3, ballsBefore + 1);
+          } else if (pitchResult === "strike" || pitchResult === "swinging_strike") {
+            strikesBefore = Math.min(2, strikesBefore + 1);
+          } else if (pitchResult === "foul") {
+            if (strikesBefore < 2) {
+              strikesBefore++;
+            }
+          }
+        });
+      }
+
       // B. base_advances レコードの挿入
       for (const adv of e.advances) {
         const runnerId = await resolvePlayerId(adv.runnerName, { isMyTeamBatting });
@@ -437,6 +532,9 @@ export const MatchService = {
           return 0;
         };
 
+        const pitchId = adv.pitchNumber ? pitchIdsMap[adv.pitchNumber] || null : null;
+        const isOut = adv.isOut ?? ((adv.method || '').includes('アウト') || (adv.method || '').includes('死'));
+
         batchQueries.push(db.insert(baseAdvances).values({
           id: crypto.randomUUID(),
           matchId,
@@ -445,7 +543,8 @@ export const MatchService = {
           fromBase: mapBase(adv.from),
           toBase: mapBase(adv.to),
           reason: adv.method || 'hit',
-          isOut: false,
+          isOut: isOut,
+          pitchId: pitchId,
         }));
       }
 
@@ -515,6 +614,7 @@ export const MatchService = {
       opponentScore: totalOpponentScore,
       myInningScores: JSON.stringify(myInningScores),
       opponentInningScores: JSON.stringify(opponentInningScores),
+      opponentLineup: JSON.stringify(opponentLineup),
       currentInning: maxInning,
       isBottom: false,
       status: "finished",

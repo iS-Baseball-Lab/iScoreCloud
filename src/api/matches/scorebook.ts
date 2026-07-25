@@ -27,8 +27,14 @@ scorebookRouter.post("/:id/scorebook/import", async (c) => {
       return c.json({ success: false, error: "画像ファイルが必要です" }, 400);
     }
 
-    // A. 試合に紐づくチームの「早見表画像」を取得
-    const match = await db.select({ teamId: matches.teamId }).from(matches).where(eq(matches.id, matchId as string)).get();
+    // A. 試合に紐づくチームの「早見表画像」および相手スタメンを取得
+    const match = await db.select({ 
+      teamId: matches.teamId,
+      opponentLineup: matches.opponentLineup
+    })
+    .from(matches)
+    .where(eq(matches.id, matchId as string))
+    .get();
     if (!match) {
       return c.json({ success: false, error: "試合が見つかりません" }, 404);
     }
@@ -64,13 +70,29 @@ scorebookRouter.post("/:id/scorebook/import", async (c) => {
     let playerRosterPrompt = "";
     if (allPlayers.length > 0) {
       const rosterText = allPlayers.map(p => p.uniformNumber ? `${p.name}${p.nameKana ? `(${p.nameKana})` : ''} [#${p.uniformNumber}]` : p.name).join(", ");
-      playerRosterPrompt = `\n⚠️ 【重要: チーム登録全選手リスト】このチームに所属する選手一覧は以下の通りです。スコアブックに苗字のみや略称で記載されている場合でも、このリストに存在する正式名称（フルネーム）に最も近い選手名を選択・名寄せして出力してください。\n[${rosterText}]\n`;
+      playerRosterPrompt = `\n⚠️ 【重要: 自チーム登録全選手リスト】このチーム（自チーム）に所属する選手一覧は以下の通りです。スコアブックに苗字のみや略称で記載されている場合でも、このリストに存在する正式名称（フルネーム）に最も近い選手名を選択・名寄せして出力してください。バッター名(b)および投手名(p)（自チームの投球イニングの投手）の両方に適用してください。\n[${rosterText}]\n`;
     }
 
     let lineupPrompt = "";
     if (lineups.length > 0) {
       const lineupText = lineups.map(l => `${l.battingOrder}番: ${l.name}`).join(", ");
-      lineupPrompt = `\n⚠️ 【重要: スタメン情報】この試合の自チームのスタメン打順は以下の通りです。打順(bo)に対応する選手名は、このスタメンリストの選手名を最優先で一致させてください。\n[${lineupText}]\n`;
+      lineupPrompt = `\n⚠️ 【重要: 自チームスタメン情報】この試合の自チームのスタメン打順は以下の通りです。打順(bo)に対応する選手名は、このスタメンリストの選手名を最優先で一致させてください。\n[${lineupText}]\n`;
+    }
+
+    let opponentLineupPrompt = "";
+    if (match?.opponentLineup) {
+      try {
+        const oppLineup = JSON.parse(match.opponentLineup);
+        if (Array.isArray(oppLineup) && oppLineup.length > 0) {
+          const oppText = oppLineup
+            .filter((p: any) => p.name)
+            .map((p: any) => p.order > 0 ? `${p.order}番: ${p.name}` : p.name)
+            .join(", ");
+          if (oppText) {
+            opponentLineupPrompt = `\n⚠️ 【重要: 相手チームの登録スタメン】この試合の対戦相手（相手チーム）のスタメン情報は以下の通りです。相手チームの打席におけるバッター名(b)は、このリストの選手名に最も近いものに名寄せして出力してください。\n[${oppText}]\n`;
+          }
+        }
+      } catch (e) {}
     }
 
     // C. Gemini API 用の画像パーツリストを構築
@@ -142,14 +164,14 @@ scorebookRouter.post("/:id/scorebook/import", async (c) => {
     // E. プロンプトの設計
     const prompt = `あなたは野球のスコアブック（主に日本で主流の早稲田式・成美堂式）の記号と構造を完全に理解したAIスコアラーです。
 添付されたスコアブックの画像（画像 1）を精確に解析し、打席ごとのプレイイベントを構造化データとして出力してください。
-${legendPromptAdd}${playerRosterPrompt}${lineupPrompt}
+${legendPromptAdd}${playerRosterPrompt}${lineupPrompt}${opponentLineupPrompt}
 
 早稲田式スコアブックの読み取りルール:
 1. 各マスは1打席を表します。マスの中央にある記号が最終的な打撃結果またはアウト時の守備位置です。
 2. 進塁はマスのひし形の枠線と実線で表されます（右下:1塁, 右上:2塁, 左上:3塁, 左下:本塁）。
 3. マスの右下にある丸数字（①, ②, ③）はそのイニングでのアウトカウントです。
 4. 【投球履歴（BSO）の解析】: マスの中には、ボール(B)・ストライク(S)・ファウル等の投球ごとの記録が小さなチェックマークや数字で書かれています。これらを読み取り、最終的なボール数(b)とストライク数(s)、および1球ごとの投球結果(pi: 例 ["ボール", "ストライク", "ファウル", "センター前ヒット"]) を抽出してください。
-5. 【投手名(p)の抽出ルール】: 各打席で対峙している投手の名前を抽出してください。投手交代の特記がない限り、イニングを跨いでも前の打席と同じ投手名を維持して出力してください。
+5. 【投手名(p)の抽出ルール】: 各打席で対峙している投手の名前を抽出してください。投手交代の特記がない限り、イニングを跨いでも前の打席と同じ投手名を維持して出力してください。自チームの投球イニング（相手の攻撃）での投手名は、上記の「自チーム登録全選手リスト」に最も近いものに名寄せして出力してください。
 6. 【得点数(ru)の抽出ルール】: マス内の本塁生還(HP)や本塁打(HR)など、その打席で発生した得点数を ru (数値) に正確に設定してください。
 7. 【超重要】画像に含まれるすべてのイニングと全打席を漏れなく最後まで解析してください。途中で打ち切らないでください。
 
@@ -181,12 +203,13 @@ ${legendPromptAdd}${playerRosterPrompt}${lineupPrompt}
           "rn": "走者名", // runnerName
           "f": "1B",      // from
           "t": "2B",      // to
-          "m": "盗塁"     // method
+          "m": "盗塁",    // method
+          "io": false,    // 進塁失敗によるアウトか (isOut, boolean)
+          "pn": 3         // この進塁が起きた球数 (pitchNumber, 数値, オプショナル)
         }
       ]
     }
   ]
-}
 }
 注意: \`f\` と \`t\` は "1B", "2B", "3B", "HP" のいずれかを使用してください。`;
 
@@ -260,7 +283,9 @@ ${legendPromptAdd}${playerRosterPrompt}${lineupPrompt}
           runnerName: typeof a.rn === 'string' ? a.rn : (typeof a.runnerName === 'string' ? a.runnerName : String(a.rn ?? a.runnerName ?? "")),
           from: a.f ?? a.from,
           to: a.t ?? a.to,
-          method: a.m ?? a.method
+          method: a.m ?? a.method,
+          isOut: typeof a.io === 'boolean' ? a.io : (typeof a.isOut === 'boolean' ? a.isOut : undefined),
+          pitchNumber: typeof a.pn === 'number' ? a.pn : (typeof a.pitchNumber === 'number' ? a.pitchNumber : undefined)
         }))
       };
       return mappedEvent;
