@@ -212,8 +212,10 @@ export function PlayLogCard({ log, isLast = false, onEdit, onDelete, onResolve }
       {/* 💡 外側ラッパーによる角丸くり抜き (Outer Masking) */}
       <div className={cn(
         "group relative overflow-hidden transition-all duration-200 ease-out",
-        "rounded-2xl border",
-        isExpanded ? "border-primary/30 bg-primary/[0.02] shadow-sm" : "border-border/30 bg-card/60 backdrop-blur-sm shadow-sm hover:border-border/60 hover:bg-card/80"
+        log.resultType === 'pitch' 
+          ? "border-b border-border/15 bg-transparent" 
+          : "rounded-2xl border border-border/30 bg-card/60 backdrop-blur-sm shadow-sm hover:border-border/60 hover:bg-card/80",
+        isExpanded && "border-primary/30 bg-primary/[0.02] shadow-sm"
       )}>
         
         {/* ━━ 背面アクションボタン ━━ */}
@@ -259,75 +261,113 @@ export function PlayLogCard({ log, isLast = false, onEdit, onDelete, onResolve }
         >
           {/* カードメイン領域（タップ・スワイプ領域） */}
           <div
-            className="p-3 sm:p-4 cursor-pointer"
+            className={cn(
+              "cursor-pointer",
+              log.resultType === 'pitch' ? "p-2 px-3 sm:py-2.5 sm:px-4" : "p-3 sm:p-4"
+            )}
             onClick={handleCardClick}
             onTouchStart={handleTouchStart}
             onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
           >
-            <div className="flex justify-between items-start pointer-events-none">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center border border-primary/20 shrink-0 shadow-sm">
-                  <span className="text-primary font-black text-sm">{log.batterName.charAt(0) || "-"}</span>
+            {log.resultType === 'pitch' ? (
+              <div className="flex flex-row justify-between items-center w-full pointer-events-none text-xs gap-2 py-0.5 animate-in fade-in duration-200">
+                {/* 左側: 投球結果テキストとバッター名 */}
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-black text-foreground text-[13px] tracking-tight">{log.result}</span>
+                  <span className="text-[10px] text-muted-foreground/80 truncate">({log.batterName.replace(/番\s*/, '番 ')})</span>
                 </div>
-                <div>
-                  <div className="text-[15px] font-black text-foreground leading-tight tracking-tight">
-                    {log.batterName.replace(/番\s*/, '番 ')}
+                
+                {/* 右側: BSOカウント */}
+                {log.hasBso && (
+                  <div className="flex items-center gap-1.5 bg-muted/20 px-2 py-0.5 rounded border border-border/10 shrink-0 scale-90 sm:scale-100 origin-right">
+                    <div className="flex items-center gap-0.5">
+                      <span className="text-[8px] font-black w-1.5 text-yellow-500">B</span>
+                      {Array.from({ length: 3 }).map((_, i) => (
+                        <div key={i} className={cn("w-1 h-1 rounded-full", i < log.balls ? "bg-yellow-500" : "bg-neutral-200 dark:bg-neutral-700")} />
+                      ))}
+                    </div>
+                    <div className="flex items-center gap-0.5">
+                      <span className="text-[8px] font-black w-1.5 text-red-500">S</span>
+                      {Array.from({ length: 2 }).map((_, i) => (
+                        <div key={i} className={cn("w-1 h-1 rounded-full", i < log.strikes ? "bg-red-500 shadow-[0_0_2px_rgba(239,68,68,0.5)]" : "bg-neutral-200 dark:bg-neutral-700")} />
+                      ))}
+                    </div>
+                    <div className="flex items-center gap-0.5">
+                      <span className="text-[8px] font-black w-1.5 text-blue-500">O</span>
+                      {Array.from({ length: 2 }).map((_, i) => (
+                        <div key={i} className={cn("w-1 h-1 rounded-full", i < log.outs ? "bg-blue-500" : "bg-neutral-200 dark:bg-neutral-700")} />
+                      ))}
+                    </div>
                   </div>
-                  {log.pitcherName !== "投手" && (
-                    <div className="text-[10px] font-bold text-muted-foreground/80 mt-0.5">vs {log.pitcherName}</div>
-                  )}
-                </div>
+                )}
               </div>
-              <div className="text-right flex flex-col items-end justify-between min-h-[2.5rem]">
-                <div className={cn(
-                  "text-xs font-black px-2.5 py-1 rounded-md shadow-sm border",
-                  log.resultType === 'hit' ? 'bg-primary/10 text-primary border-primary/20' : 
-                  log.resultType === 'score' ? 'bg-amber-500/10 text-amber-600 border-amber-500/20' :
-                  log.resultType === 'pitch' ? 'bg-muted/30 text-muted-foreground border-transparent font-medium text-[11px]' :
-                  'bg-muted/50 text-muted-foreground border-transparent'
-                )}>
-                  {log.result}
+            ) : (
+              <>
+                <div className="flex justify-between items-start pointer-events-none">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center border border-primary/20 shrink-0 shadow-sm">
+                      <span className="text-primary font-black text-sm">{log.batterName.charAt(0) || "-"}</span>
+                    </div>
+                    <div>
+                      <div className="text-[15px] font-black text-foreground leading-tight tracking-tight">
+                        {log.batterName.replace(/番\s*/, '番 ')}
+                      </div>
+                      {log.pitcherName !== "投手" && (
+                        <div className="text-[10px] font-bold text-muted-foreground/80 mt-0.5">vs {log.pitcherName}</div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="text-right flex flex-col items-end justify-between min-h-[2.5rem]">
+                    <div className={cn(
+                      "text-xs font-black px-2.5 py-1 rounded-md shadow-sm border",
+                      log.resultType === 'hit' ? 'bg-primary/10 text-primary border-primary/20' : 
+                      log.resultType === 'score' ? 'bg-amber-500/10 text-amber-600 border-amber-500/20' :
+                      'bg-muted/50 text-muted-foreground border-transparent'
+                    )}>
+                      {log.result}
+                    </div>
+                    <div className="text-[9px] text-muted-foreground/50 font-mono mt-1">{log.createdAt}</div>
+                  </div>
                 </div>
-                <div className="text-[9px] text-muted-foreground/50 font-mono mt-1">{log.createdAt}</div>
-              </div>
-            </div>
 
-            {/* BSO・フラット表示 & 展開インジケーター */}
-            <div className={cn("flex items-center mt-3 pt-1", log.hasBso ? "justify-between" : "justify-end")}>
-              {log.hasBso && (
-                <div className="flex items-center gap-2.5 bg-muted/30 dark:bg-zinc-800/20 px-2.5 py-1 rounded border border-border/20 pointer-events-none">
-                  <div className="flex items-center gap-1">
-                    <span className="text-[9px] font-black w-2 text-yellow-500">B</span>
-                    {Array.from({ length: 3 }).map((_, i) => (
-                      <div key={i} className={cn("w-1.5 h-1.5 rounded-full", i < log.balls ? "bg-yellow-500" : "bg-neutral-200 dark:bg-neutral-700")} />
-                    ))}
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <span className="text-[9px] font-black w-2 text-red-500">S</span>
-                    {Array.from({ length: 2 }).map((_, i) => (
-                      <div key={i} className={cn("w-1.5 h-1.5 rounded-full", i < log.strikes ? "bg-red-500 shadow-[0_0_2px_rgba(239,68,68,0.5)]" : "bg-neutral-200 dark:bg-neutral-700")} />
-                    ))}
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <span className="text-[9px] font-black w-2 text-blue-500">O</span>
-                    {Array.from({ length: 2 }).map((_, i) => (
-                      <div key={i} className={cn("w-1.5 h-1.5 rounded-full", i < log.outs ? "bg-blue-500" : "bg-neutral-200 dark:bg-neutral-700")} />
-                    ))}
-                  </div>
-                </div>
-              )}
-              
-              {log.description && (
-                <div className="flex items-center justify-center shrink-0 text-muted-foreground/40 transition-transform">
-                  {isExpanded ? (
-                    <ChevronUp className="h-4 w-4 text-primary animate-pulse" strokeWidth={2.5} />
-                  ) : (
-                    <ChevronDown className="h-4 w-4" strokeWidth={2} />
+                {/* BSO・フラット表示 & 展開インジケーター */}
+                <div className={cn("flex items-center mt-3 pt-1", log.hasBso ? "justify-between" : "justify-end")}>
+                  {log.hasBso && (
+                    <div className="flex items-center gap-2.5 bg-muted/30 dark:bg-zinc-800/20 px-2.5 py-1 rounded border border-border/20 pointer-events-none">
+                      <div className="flex items-center gap-1">
+                        <span className="text-[9px] font-black w-2 text-yellow-500">B</span>
+                        {Array.from({ length: 3 }).map((_, i) => (
+                          <div key={i} className={cn("w-1.5 h-1.5 rounded-full", i < log.balls ? "bg-yellow-500" : "bg-neutral-200 dark:bg-neutral-700")} />
+                        ))}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-[9px] font-black w-2 text-red-500">S</span>
+                        {Array.from({ length: 2 }).map((_, i) => (
+                          <div key={i} className={cn("w-1.5 h-1.5 rounded-full", i < log.strikes ? "bg-red-500 shadow-[0_0_2px_rgba(239,68,68,0.5)]" : "bg-neutral-200 dark:bg-neutral-700")} />
+                        ))}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-[9px] font-black w-2 text-blue-500">O</span>
+                        {Array.from({ length: 2 }).map((_, i) => (
+                          <div key={i} className={cn("w-1.5 h-1.5 rounded-full", i < log.outs ? "bg-blue-500" : "bg-neutral-200 dark:bg-neutral-700")} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {log.description && (
+                    <div className="flex items-center justify-center shrink-0 text-muted-foreground/40 transition-transform">
+                      {isExpanded ? (
+                        <ChevronUp className="h-4 w-4 text-primary animate-pulse" strokeWidth={2.5} />
+                      ) : (
+                        <ChevronDown className="h-4 w-4" strokeWidth={2} />
+                      )}
+                    </div>
                   )}
                 </div>
-              )}
-            </div>
+              </>
+            )}
 
             {/* 投球履歴の表示 (展開時のみ) */}
             {isExpanded && log.description && (
