@@ -267,7 +267,7 @@ export function MatchCard({
         {/* 🌟 試合動画がある場合、カード上部に埋め込む（カスタムサムネイル表記でYouTubeタイトルのオーバーレイを完全消去） */}
         {youtubeVideoId && (
           <div 
-            className="w-full aspect-video border-b border-border/50 overflow-hidden bg-black rounded-t-[calc(var(--radius-2xl)-1px)] relative group/video"
+            className="w-full aspect-video border-b border-border/50 overflow-hidden bg-black relative group/video"
             onTouchStart={(e) => e.stopPropagation()}
             onTouchMove={(e) => e.stopPropagation()}
             onTouchEnd={(e) => e.stopPropagation()}
