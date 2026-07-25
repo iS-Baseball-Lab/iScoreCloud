@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { format, differenceInSeconds, intervalToDuration } from "date-fns";
-import { Edit2, Calendar, MapPin, Trash2, ChevronDown, ChevronUp, PlayCircle, Users, BookOpen, ClipboardList, Clock } from "lucide-react";
+import { Edit2, Calendar, MapPin, Trash2, ChevronDown, ChevronUp, PlayCircle, Users, BookOpen, ClipboardList, Clock, Play } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Match } from "@/types/match";
@@ -103,6 +103,7 @@ export function MatchCard({
 }: MatchCardProps) {
   const router = useRouter();
   const youtubeVideoId = getYoutubeVideoId(match.youtubeUrl);
+  const [isPlayingVideo, setIsPlayingVideo] = useState(false);
 
   // ━━ スワイプ操作の状態管理 ━━
   const [offsetX, setOffsetX] = useState(0);
@@ -263,22 +264,57 @@ export function MatchCard({
           isExpanded ? "bg-primary/5 dark:bg-primary/10" : "bg-card"
         )}
       >
-        {/* 🌟 試合動画がある場合、カード上部に埋め込む */}
+        {/* 🌟 試合動画がある場合、カード上部に埋め込む（カスタムサムネイル表記でYouTubeタイトルのオーバーレイを完全消去） */}
         {youtubeVideoId && (
           <div 
-            className="w-full aspect-video border-b border-border/50 overflow-hidden bg-black rounded-t-[calc(var(--radius-2xl)-1px)]"
+            className="w-full aspect-video border-b border-border/50 overflow-hidden bg-black rounded-t-[calc(var(--radius-2xl)-1px)] relative group/video"
             onTouchStart={(e) => e.stopPropagation()}
             onTouchMove={(e) => e.stopPropagation()}
             onTouchEnd={(e) => e.stopPropagation()}
           >
-            <iframe
-              src={`https://www.youtube.com/embed/${youtubeVideoId}`}
-              title="YouTube video player"
-              frameBorder="0"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-              allowFullScreen
-              className="w-full h-full"
-            />
+            {isPlayingVideo ? (
+              <iframe
+                src={`https://www.youtube-nocookie.com/embed/${youtubeVideoId}?autoplay=1&rel=0&modestbranding=1`}
+                title="YouTube video player"
+                frameBorder="0"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowFullScreen
+                className="w-full h-full"
+              />
+            ) : (
+              <div 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsPlayingVideo(true);
+                }}
+                className="relative w-full h-full cursor-pointer overflow-hidden group/thumb"
+              >
+                {/* 1. 高画質YouTubeサムネイル画像 */}
+                <img
+                  src={`https://img.youtube.com/vi/${youtubeVideoId}/hqdefault.jpg`}
+                  alt="Game Video Thumbnail"
+                  className="w-full h-full object-cover transition-transform duration-500 group-hover/thumb:scale-105"
+                />
+                
+                {/* 2. グラデーションオーバーレイ */}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent group-hover/thumb:from-black/80 transition-colors" />
+
+                {/* 3. 洗練されたカスタム再生ボタン */}
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-rose-600/90 text-white flex items-center justify-center shadow-lg group-hover/thumb:scale-110 group-hover/thumb:bg-rose-600 transition-all duration-300 ring-4 ring-white/20">
+                    <Play className="w-7 h-7 sm:w-8 sm:h-8 fill-current translate-x-0.5" />
+                  </div>
+                </div>
+
+                {/* 4. アプリ標準のクリーンな再生ガイドラベル */}
+                <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between text-[11px] font-bold text-white/90 drop-shadow-sm pointer-events-none">
+                  <span className="flex items-center gap-1.5 bg-black/50 backdrop-blur-md px-3 py-1.2 rounded-full border border-white/15">
+                    <Play className="w-3.5 h-3.5 fill-current text-rose-500" />
+                    タップして試合動画を再生
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
