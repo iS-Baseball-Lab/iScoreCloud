@@ -502,8 +502,35 @@ app.get("/:id/stats", async (c) => {
 
     const runsList = dbAdvances.filter(a => a.toBase === 4 && !a.isOut);
 
-    // --- 打者成績集計 ---
+    // --- 打者・走者・守備成績集計 (20項目) ---
     const batterMap = new Map<string, any>();
+
+    const getBatterInit = (id: string, name: string, num: string) => ({
+      id,
+      name: name || "不明",
+      number: num || "-",
+      plateAppearances: 0, // 1. 打席数
+      atBats: 0,           // 2. 打数
+      singles: 0,          // 3. 単打
+      doubles: 0,          // 4. 二塁打
+      triples: 0,          // 5. 三塁打
+      homeRuns: 0,         // 6. 本塁打
+      hits: 0,             // 安打数 (単打+二塁打+三塁打+本塁打)
+      walks: 0,            // 7. 四球
+      hitByPitch: 0,       // 8. 死球
+      runs: 0,             // 9. 得点
+      rbi: 0,              // 10. 打点
+      stolenBases: 0,      // 11. 盗塁
+      caughtStealing: 0,   // 12. 盗塁刺
+      strikeouts: 0,       // 13. 三振
+      sacBunts: 0,         // 14. 犠打
+      sacFlies: 0,         // 15. 犠飛
+      leftOnBase: 0,       // 16. 残塁
+      errors: 0,           // 17. 失策
+      doublePlays: 0,      // 18. 併殺
+      assists: 0,          // 19. 捕殺
+      putouts: 0,          // 20. 刺殺
+    });
 
     for (const ab of dbAtBats) {
       const isMyAttack = ab.isTop === isMyTeamTop;
@@ -511,36 +538,45 @@ app.get("/:id/stats", async (c) => {
 
       const batterId = ab.batterId;
       if (!batterMap.has(batterId)) {
-        batterMap.set(batterId, {
-          id: batterId,
-          name: ab.batterName || "不明",
-          number: ab.batterNumber || "-",
-          plateAppearances: 0,
-          atBats: 0,
-          runs: 0,
-          hits: 0,
-          rbi: 0,
-          strikeouts: 0,
-          walks: 0,
-        });
+        batterMap.set(batterId, getBatterInit(batterId, ab.batterName, ab.batterNumber));
       }
 
       const p = batterMap.get(batterId);
       p.plateAppearances++;
 
       const res = ab.result || "";
-      const isWalk = res.includes("BB") || res.includes("HP") || res.includes("DB") || res.includes("四球") || res.includes("死球");
-      const isSacrifice = res.includes("SF") || res.includes("SH") || res.includes("犠");
+      const isWalk = res.includes("BB") || res.includes("四球");
+      const isHbp = res.includes("HP") || res.includes("DB") || res.includes("死球");
+      const isSacBunt = res.includes("SH") || res.includes("犠打") || (res.includes("犠") && !res.includes("飛"));
+      const isSacFly = res.includes("SF") || res.includes("犠飛");
 
-      if (!isWalk && !isSacrifice) {
+      if (isWalk) p.walks++;
+      if (isHbp) p.hitByPitch++;
+      if (isSacBunt) p.sacBunts++;
+      if (isSacFly) p.sacFlies++;
+
+      // 打数 (AB) = 四球・死球・犠打・犠飛 以外の打席
+      if (!isWalk && !isHbp && !isSacBunt && !isSacFly) {
         p.atBats++;
       }
 
-      if (isWalk) {
-        p.walks++;
-      }
+      // 安打・長打判別
+      const is2B = res.includes("2B") || res.includes("二塁打") || res.includes("２塁打");
+      const is3B = res.includes("3B") || res.includes("三塁打") || res.includes("３塁打");
+      const isHR = res.includes("HR") || res.includes("本塁打");
+      const is1B = res.includes("1B") || res.includes("単打") || (res.includes("安") && !is2B && !is3B && !isHR);
 
-      if (res.includes("1B") || res.includes("2B") || res.includes("3B") || res.includes("HR") || res.includes("安") || res.includes("本塁打")) {
+      if (isHR) {
+        p.homeRuns++;
+        p.hits++;
+      } else if (is3B) {
+        p.triples++;
+        p.hits++;
+      } else if (is2B) {
+        p.doubles++;
+        p.hits++;
+      } else if (is1B) {
+        p.singles++;
         p.hits++;
       }
 
@@ -548,13 +584,40 @@ app.get("/:id/stats", async (c) => {
         p.strikeouts++;
       }
 
+      if (res.includes("DP") || res.includes("併殺") || res.includes("ゲッツー")) {
+        p.doublePlays++;
+      }
+
+      if (res.includes("E") || res.includes("失策") || res.includes("エラー")) {
+        p.errors++;
+      }
+
+      // 打点集計 (該当打席で本塁生還した走者数)
       const rbiCount = runsList.filter(a => a.atBatId === ab.id).length;
       p.rbi += rbiCount;
     }
 
-    for (const run of runsList) {
-      if (run.runnerId && batterMap.has(run.runnerId)) {
-        batterMap.get(run.runnerId).runs++;
+    // 得点・盗塁・盗塁刺の集計 (base_advancesより)
+    for (const adv of dbAdvances) {
+      if (adv.runnerId && batterMap.has(adv.runnerId)) {
+        const runner = batterMap.get(adv.runnerId);
+        
+        // 得点
+        if (adv.toBase === 4 && !adv.isOut) {
+          runner.runs++;
+        }
+
+        // 盗塁
+        const reasonStr = String(adv.reason || '');
+        if (reasonStr.includes('stolen') || reasonStr.includes('SB') || reasonStr.includes('盗塁')) {
+          if (adv.isOut) {
+            runner.caughtStealing++;
+          } else {
+            runner.stolenBases++;
+          }
+        } else if (reasonStr.includes('CS') || reasonStr.includes('盗塁刺') || reasonStr.includes('盗塁死')) {
+          runner.caughtStealing++;
+        }
       }
     }
 
