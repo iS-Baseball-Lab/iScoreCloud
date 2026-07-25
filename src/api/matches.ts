@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { drizzle } from "drizzle-orm/d1";
 import { MatchService } from "@/services/match.service";
 import { eq, sql, desc, and } from "drizzle-orm";
-import { matchUndoHistories, atBats, playLogs, baseAdvances } from "@/db/schema/score";
+import { matchUndoHistories, atBats, playLogs, baseAdvances, pitches } from "@/db/schema/score";
 import { matches } from "@/db/schema/match";
 import { players } from "@/db/schema/team";
 import scorebookRouter from "./matches/scorebook";
@@ -500,6 +500,15 @@ app.get("/:id/stats", async (c) => {
       .where(eq(baseAdvances.matchId, matchId))
       .all();
 
+    const dbPitches = await db.select({
+      id: pitches.id,
+      atBatId: pitches.atBatId,
+    })
+    .from(pitches)
+    .innerJoin(atBats, eq(pitches.atBatId, atBats.id))
+    .where(eq(atBats.matchId, matchId))
+    .all();
+
     const runsList = dbAdvances.filter(a => a.toBase === 4 && !a.isOut);
 
     // --- 打者・走者・守備成績集計 (20項目) ---
@@ -649,9 +658,17 @@ app.get("/:id/stats", async (c) => {
           name: ab.pitcherName || "不明",
           number: ab.pitcherNumber || "-",
           outs: 0,
+          pitches: 0,
+          battersFaced: 0,
           hits: 0,
-          walks: 0,
+          homeRuns: 0,
+          sacBunts: 0,
+          sacFlies: 0,
           strikeouts: 0,
+          walks: 0,
+          hitByPitch: 0,
+          wildPitches: 0,
+          balks: 0,
           runs: 0,
           earnedRuns: 0,
         });
@@ -660,16 +677,52 @@ app.get("/:id/stats", async (c) => {
       const p = pitcherMap.get(pitcherId);
       const res = ab.result || "";
 
-      if (res.includes("1B") || res.includes("2B") || res.includes("3B") || res.includes("HR") || res.includes("安") || res.includes("本塁打")) {
+      // 投球数 (その打席の投球データをカウント)
+      const pitchCountForAtBat = dbPitches.filter(pt => pt.atBatId === ab.id).length;
+      p.pitches += pitchCountForAtBat;
+
+      // 対戦打者
+      p.battersFaced++;
+
+      // 被安打 (単打, 二塁打, 三塁打, 本塁打)
+      const is2B = res.includes("2B") || res.includes("二塁打") || res.includes("２塁打");
+      const is3B = res.includes("3B") || res.includes("三塁打") || res.includes("３塁打");
+      const isHR = res.includes("HR") || res.includes("本塁打");
+      const is1B = res.includes("1B") || res.includes("単打") || (res.includes("安") && !is2B && !is3B && !isHR);
+      if (is1B || is2B || is3B || isHR) {
         p.hits++;
       }
 
-      if (res.includes("BB") || res.includes("HP") || res.includes("DB") || res.includes("四球") || res.includes("死球")) {
+      // 被本塁打
+      if (isHR) {
+        p.homeRuns++;
+      }
+
+      // 被犠打
+      const isSacBunt = res.includes("SH") || res.includes("犠打") || (res.includes("犠") && !res.includes("飛"));
+      if (isSacBunt) {
+        p.sacBunts++;
+      }
+
+      // 被犠飛
+      const isSacFly = res.includes("SF") || res.includes("犠飛");
+      if (isSacFly) {
+        p.sacFlies++;
+      }
+
+      // 奪三振
+      if (res.includes("K") || res.includes("三振")) {
+        p.strikeouts++;
+      }
+
+      // 与四球
+      if (res.includes("BB") || res.includes("四球")) {
         p.walks++;
       }
 
-      if (res.includes("K") || res.includes("三振")) {
-        p.strikeouts++;
+      // 与死球
+      if (res.includes("HP") || res.includes("DB") || res.includes("死球")) {
+        p.hitByPitch++;
       }
 
       const isOut = res.includes("アウト") || res.includes("K") || res.includes("三振") || 
@@ -689,6 +742,22 @@ app.get("/:id/stats", async (c) => {
       }
     }
 
+    // 暴投・ボークの集計
+    for (const adv of dbAdvances) {
+      const ab = dbAtBats.find(a => a.id === adv.atBatId);
+      if (ab && ab.pitcherId && pitcherMap.has(ab.pitcherId)) {
+        const p = pitcherMap.get(ab.pitcherId);
+        const reasonStr = String(adv.reason || '');
+        if (reasonStr.includes('wp') || reasonStr.includes('wp_advance') || reasonStr.includes('暴投')) {
+          p.wildPitches++;
+        }
+        if (reasonStr.includes('balk') || reasonStr.includes('balk_advance') || reasonStr.includes('ボーク')) {
+          p.balks++;
+        }
+      }
+    }
+
+    // 失点・自責点の集計
     for (const run of runsList) {
       const ab = dbAtBats.find(a => a.id === run.atBatId);
       if (ab && ab.pitcherId && pitcherMap.has(ab.pitcherId)) {

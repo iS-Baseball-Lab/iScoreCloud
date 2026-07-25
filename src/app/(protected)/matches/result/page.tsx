@@ -100,9 +100,17 @@ interface PitcherStats {
   number: string;
   outs: number;
   ip: string;
+  pitches: number;
+  battersFaced: number;
   hits: number;
-  walks: number;
+  homeRuns: number;
+  sacBunts: number;
+  sacFlies: number;
   strikeouts: number;
+  walks: number;
+  hitByPitch: number;
+  wildPitches: number;
+  balks: number;
   runs: number;
   earnedRuns: number;
   era: string;
@@ -541,15 +549,38 @@ function MatchResultContent() {
   // 投手成績合計の算出
   const pitcherTotal = pitcherStats.reduce(
     (acc, cur) => {
-      acc.outs += cur.outs;
-      acc.hits += cur.hits;
-      acc.walks += cur.walks;
-      acc.strikeouts += cur.strikeouts;
-      acc.runs += cur.runs;
-      acc.earnedRuns += cur.earnedRuns;
+      acc.outs += cur.outs || 0;
+      acc.pitches += cur.pitches || 0;
+      acc.battersFaced += cur.battersFaced || 0;
+      acc.hits += cur.hits || 0;
+      acc.homeRuns += cur.homeRuns || 0;
+      acc.sacBunts += cur.sacBunts || 0;
+      acc.sacFlies += cur.sacFlies || 0;
+      acc.strikeouts += cur.strikeouts || 0;
+      acc.walks += cur.walks || 0;
+      acc.hitByPitch += cur.hitByPitch || 0;
+      acc.wildPitches += cur.wildPitches || 0;
+      acc.balks += cur.balks || 0;
+      acc.runs += cur.runs || 0;
+      acc.earnedRuns += cur.earnedRuns || 0;
       return acc;
     },
-    { outs: 0, hits: 0, walks: 0, strikeouts: 0, runs: 0, earnedRuns: 0 }
+    {
+      outs: 0,
+      pitches: 0,
+      battersFaced: 0,
+      hits: 0,
+      homeRuns: 0,
+      sacBunts: 0,
+      sacFlies: 0,
+      strikeouts: 0,
+      walks: 0,
+      hitByPitch: 0,
+      wildPitches: 0,
+      balks: 0,
+      runs: 0,
+      earnedRuns: 0
+    }
   );
 
   const totalInningsInt = Math.floor(pitcherTotal.outs / 3);
@@ -1263,18 +1294,25 @@ function MatchResultContent() {
                         <TableRow className="border-border/25 hover:bg-transparent">
                           <TableHead className="font-black text-[9px] text-muted-foreground uppercase tracking-widest pl-2 sm:pl-4 py-1.5 sm:py-2.5">投手</TableHead>
                           <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">投球回</TableHead>
-                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">被安打</TableHead>
-                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">四死球</TableHead>
-                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">奪三振</TableHead>
+                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">投球数</TableHead>
+                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">打者</TableHead>
+                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">安打</TableHead>
+                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">本塁打</TableHead>
+                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">犠打</TableHead>
+                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">犠飛</TableHead>
+                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">三振</TableHead>
+                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">四球</TableHead>
+                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">死球</TableHead>
+                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">暴投</TableHead>
+                          <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">ボーク</TableHead>
                           <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">失点</TableHead>
                           <TableHead className="text-center font-black text-[9px] text-muted-foreground uppercase tracking-widest px-1 sm:px-2.5 py-1.5 sm:py-2.5">自責点</TableHead>
-                          <TableHead className="text-right font-black text-[9px] text-primary uppercase tracking-widest pr-2 sm:pr-4 py-1.5 sm:py-2.5">防御率</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {pitcherStats.length === 0 ? (
                           <TableRow>
-                            <TableCell colSpan={8} className="text-center py-12 text-xs text-muted-foreground font-bold">
+                            <TableCell colSpan={15} className="text-center py-12 text-xs text-muted-foreground font-bold">
                               投手データがありません
                             </TableCell>
                           </TableRow>
@@ -1300,14 +1338,19 @@ function MatchResultContent() {
                                     </div>
                                   </TableCell>
                                   <TableCell className="text-center tabular-nums font-black text-foreground text-[11px] sm:text-sm px-1 sm:px-2.5 py-1.5 sm:py-2.5">{player.ip}</TableCell>
+                                  <TableCell className="text-center tabular-nums text-muted-foreground/80 text-[11px] sm:text-xs px-1 sm:px-2.5 py-1.5 sm:py-2.5">{player.pitches}</TableCell>
+                                  <TableCell className="text-center tabular-nums text-muted-foreground/80 text-[11px] sm:text-xs px-1 sm:px-2.5 py-1.5 sm:py-2.5">{player.battersFaced}</TableCell>
                                   <TableCell className="text-center tabular-nums text-muted-foreground/80 text-[11px] sm:text-xs px-1 sm:px-2.5 py-1.5 sm:py-2.5">{player.hits}</TableCell>
-                                  <TableCell className="text-center tabular-nums text-muted-foreground/80 text-[11px] sm:text-xs px-1 sm:px-2.5 py-1.5 sm:py-2.5">{player.walks}</TableCell>
+                                  <TableCell className="text-center tabular-nums text-muted-foreground/80 text-[11px] sm:text-xs px-1 sm:px-2.5 py-1.5 sm:py-2.5">{player.homeRuns}</TableCell>
+                                  <TableCell className="text-center tabular-nums text-muted-foreground/80 text-[11px] sm:text-xs px-1 sm:px-2.5 py-1.5 sm:py-2.5">{player.sacBunts}</TableCell>
+                                  <TableCell className="text-center tabular-nums text-muted-foreground/80 text-[11px] sm:text-xs px-1 sm:px-2.5 py-1.5 sm:py-2.5">{player.sacFlies}</TableCell>
                                   <TableCell className={cn("text-center tabular-nums font-black text-[11px] sm:text-sm px-1 sm:px-2.5 py-1.5 sm:py-2.5", strikeouts >= 3 ? "text-sky-500" : "text-foreground")}>{player.strikeouts}</TableCell>
+                                  <TableCell className="text-center tabular-nums text-muted-foreground/80 text-[11px] sm:text-xs px-1 sm:px-2.5 py-1.5 sm:py-2.5">{player.walks}</TableCell>
+                                  <TableCell className="text-center tabular-nums text-muted-foreground/80 text-[11px] sm:text-xs px-1 sm:px-2.5 py-1.5 sm:py-2.5">{player.hitByPitch}</TableCell>
+                                  <TableCell className="text-center tabular-nums text-muted-foreground/80 text-[11px] sm:text-xs px-1 sm:px-2.5 py-1.5 sm:py-2.5">{player.wildPitches}</TableCell>
+                                  <TableCell className="text-center tabular-nums text-muted-foreground/80 text-[11px] sm:text-xs px-1 sm:px-2.5 py-1.5 sm:py-2.5">{player.balks}</TableCell>
                                   <TableCell className="text-center tabular-nums text-muted-foreground/80 text-[11px] sm:text-xs px-1 sm:px-2.5 py-1.5 sm:py-2.5">{player.runs}</TableCell>
                                   <TableCell className={cn("text-center tabular-nums font-bold text-[11px] sm:text-xs px-1 sm:px-2.5 py-1.5 sm:py-2.5", runs > 0 ? "text-rose-500/75" : "text-emerald-500")}>{player.earnedRuns}</TableCell>
-                                  <TableCell className="text-right tabular-nums font-black text-primary text-[11px] sm:text-sm pr-2 sm:pr-4 py-1.5 sm:py-2.5">
-                                    {player.era}
-                                  </TableCell>
                                 </TableRow>
                               );
                             })}
@@ -1317,12 +1360,19 @@ function MatchResultContent() {
                                 <span className="text-[10px] uppercase tracking-wider text-muted-foreground">TEAM TOTAL</span>
                               </TableCell>
                               <TableCell className="text-center tabular-nums text-foreground text-xs sm:text-base px-1 sm:px-2.5 py-2 sm:py-3">{teamIpStr}</TableCell>
+                              <TableCell className="text-center tabular-nums text-muted-foreground text-[11px] sm:text-xs px-1 sm:px-2.5 py-2 sm:py-3">{pitcherTotal.pitches}</TableCell>
+                              <TableCell className="text-center tabular-nums text-muted-foreground text-[11px] sm:text-xs px-1 sm:px-2.5 py-2 sm:py-3">{pitcherTotal.battersFaced}</TableCell>
                               <TableCell className="text-center tabular-nums text-muted-foreground text-[11px] sm:text-xs px-1 sm:px-2.5 py-2 sm:py-3">{pitcherTotal.hits}</TableCell>
-                              <TableCell className="text-center tabular-nums text-muted-foreground text-[11px] sm:text-xs px-1 sm:px-2.5 py-2 sm:py-3">{pitcherTotal.walks}</TableCell>
+                              <TableCell className="text-center tabular-nums text-muted-foreground text-[11px] sm:text-xs px-1 sm:px-2.5 py-2 sm:py-3">{pitcherTotal.homeRuns}</TableCell>
+                              <TableCell className="text-center tabular-nums text-muted-foreground text-[11px] sm:text-xs px-1 sm:px-2.5 py-2 sm:py-3">{pitcherTotal.sacBunts}</TableCell>
+                              <TableCell className="text-center tabular-nums text-muted-foreground text-[11px] sm:text-xs px-1 sm:px-2.5 py-2 sm:py-3">{pitcherTotal.sacFlies}</TableCell>
                               <TableCell className="text-center tabular-nums text-foreground text-xs sm:text-base px-1 sm:px-2.5 py-2 sm:py-3">{pitcherTotal.strikeouts}</TableCell>
+                              <TableCell className="text-center tabular-nums text-muted-foreground text-[11px] sm:text-xs px-1 sm:px-2.5 py-2 sm:py-3">{pitcherTotal.walks}</TableCell>
+                              <TableCell className="text-center tabular-nums text-muted-foreground text-[11px] sm:text-xs px-1 sm:px-2.5 py-2 sm:py-3">{pitcherTotal.hitByPitch}</TableCell>
+                              <TableCell className="text-center tabular-nums text-muted-foreground text-[11px] sm:text-xs px-1 sm:px-2.5 py-2 sm:py-3">{pitcherTotal.wildPitches}</TableCell>
+                              <TableCell className="text-center tabular-nums text-muted-foreground text-[11px] sm:text-xs px-1 sm:px-2.5 py-2 sm:py-3">{pitcherTotal.balks}</TableCell>
                               <TableCell className="text-center tabular-nums text-muted-foreground text-[11px] sm:text-xs px-1 sm:px-2.5 py-2 sm:py-3">{pitcherTotal.runs}</TableCell>
                               <TableCell className="text-center tabular-nums text-rose-500/80 text-[11px] sm:text-xs px-1 sm:px-2.5 py-2 sm:py-3">{pitcherTotal.earnedRuns}</TableCell>
-                              <TableCell className="text-right tabular-nums text-primary text-xs sm:text-base pr-2 sm:pr-4 py-2 sm:py-3">{teamEraStr}</TableCell>
                             </TableRow>
                           </>
                         )}
