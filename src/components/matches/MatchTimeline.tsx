@@ -15,7 +15,17 @@ interface MatchTimelineProps {
 function expandPlayLogsToPitches(logs: PlayLog[]): PlayLog[] {
   const pitchLogs: PlayLog[] = [];
 
+  let currentInningKey = "";
+  let runningOuts = 0;
+
   logs.forEach(log => {
+    // イニングの切り替わり判定（イニングまたは表裏が変わったらアウトカウントをリセット）
+    const inningKey = `${log.inning}-${log.topBottom}`;
+    if (inningKey !== currentInningKey) {
+      currentInningKey = inningKey;
+      runningOuts = 0;
+    }
+
     // 打順と名前の分解
     const orderMatch = log.batterName.match(/^(\d+)番\s*(.*)$/);
     const batterOrder = orderMatch ? orderMatch[1] : "";
@@ -26,16 +36,30 @@ function expandPlayLogsToPitches(logs: PlayLog[]): PlayLog[] {
       ? log.description.split("\n").map(l => l.trim()).filter(Boolean)
       : [];
 
-    let currentB = log.balls;
-    let currentS = log.strikes;
-    let currentO = log.outs;
+    // 打席開始時のカウントは必ず B:0, S:0。アウト数はその時点の累積アウト数
+    let currentB = 0;
+    let currentS = 0;
+    const atBatStartOuts = runningOuts;
 
     if (lines.length === 0) {
+      // 投球詳細がない場合
+      const isOut = log.result.includes("アウト") ||
+                    log.result.includes("ゴロ") || log.result.includes("フライ") || log.result.includes("ライナー") ||
+                    log.result.includes("三振") || log.result.includes("併殺") || log.result.includes("犠") ||
+                    /^[1-9]-[1-9]$/.test(log.result);
+      if (isOut) {
+        if (log.result.includes("併殺") || log.result.includes("DP")) {
+          runningOuts = Math.min(3, runningOuts + 2);
+        } else {
+          runningOuts = Math.min(3, runningOuts + 1);
+        }
+      }
+
       pitchLogs.push({
         ...log,
-        balls: currentB,
-        strikes: currentS,
-        outs: currentO,
+        balls: log.balls,
+        strikes: log.strikes,
+        outs: runningOuts,
         hasBso: true,
         isFirstPitch: true,
         isFinalPitch: true,
@@ -64,22 +88,21 @@ function expandPlayLogsToPitches(logs: PlayLog[]): PlayLog[] {
       const lowerRes = pitchRes.toLowerCase();
 
       if (lowerRes.includes("ボール") || lowerRes.includes("ball") || lowerRes.includes("b")) {
-        currentB = Math.min(4, currentB + 1);
-      } else if (lowerRes.includes("ストライク") || lowerRes.includes("strike") || lowerRes.includes("s") || lowerRes.includes("空振り") || lowerRes.includes("見逃し")) {
-        currentS = Math.min(3, currentS + 1);
-        if (currentS === 3) {
-          currentO = Math.min(3, currentO + 1);
-        }
+        currentB = Math.min(3, currentB + 1);
+      } else if (lowerRes.includes("空振り") || lowerRes.includes("見逃し") || lowerRes.includes("ストライク") || lowerRes.includes("strike") || lowerRes.includes("s")) {
+        currentS = Math.min(2, currentS + 1);
       } else if (lowerRes.includes("ファウル") || lowerRes.includes("foul") || lowerRes.includes("f")) {
         if (currentS < 2) {
           currentS++;
         }
       }
 
+      let pitchOuts = atBatStartOuts;
+
       if (isLast) {
         if (log.result.includes("三振") || log.result.includes("K")) {
           currentS = 3;
-          currentO = Math.min(3, currentO + 1);
+          runningOuts = Math.min(3, runningOuts + 1);
         } else if (log.result.includes("四球") || log.result.includes("BB")) {
           currentB = 4;
         } else {
@@ -92,12 +115,13 @@ function expandPlayLogsToPitches(logs: PlayLog[]): PlayLog[] {
                         log.result.includes("DP");
           if (isOut) {
             if (log.result.includes("併殺") || log.result.includes("DP")) {
-              currentO = Math.min(3, currentO + 2);
+              runningOuts = Math.min(3, runningOuts + 2);
             } else {
-              currentO = Math.min(3, currentO + 1);
+              runningOuts = Math.min(3, runningOuts + 1);
             }
           }
         }
+        pitchOuts = runningOuts;
       }
 
       pitchLogs.push({
@@ -105,7 +129,7 @@ function expandPlayLogsToPitches(logs: PlayLog[]): PlayLog[] {
         id: `${log.id}-${pitchNum}`,
         balls: currentB,
         strikes: currentS,
-        outs: currentO,
+        outs: pitchOuts,
         result: `${pitchNum}球目: ${pitchRes}`,
         resultType: isLast ? log.resultType : "pitch",
         description: "",
