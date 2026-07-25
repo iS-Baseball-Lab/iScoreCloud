@@ -316,8 +316,8 @@ export const MatchService = {
     const normalize = (s: string) => s.replace(/[\s　]+/g, '').toLowerCase();
 
     // 選手解決ヘルパー (存在しなければ null を返す)
-    const resolvePlayerId = async (name: string): Promise<string | null> => {
-      const cleanName = name.trim();
+    const resolvePlayerId = async (name: any): Promise<string | null> => {
+      const cleanName = (typeof name === 'string' ? name : (name !== null && name !== undefined ? String(name) : '')).trim();
       if (!cleanName) return null;
       if (playerMap.has(cleanName)) return playerMap.get(cleanName)!;
 

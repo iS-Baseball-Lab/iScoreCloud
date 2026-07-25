@@ -149,7 +149,7 @@ ${legendPromptAdd}${lineupPrompt}
       "o": 1,             // outsInThisPlay
       "eo": 1,            // endingOuts
       "ru": 0,            // runsInThisPlay
-      "b": 2,             // 最終ボールカウント (数値)
+      "bl": 2,            // 最終ボールカウント (数値)
       "s": 2,             // 最終ストライクカウント (数値)
       "pi": [             // 1球ごとの投球履歴 (配列)
         "ボール",
@@ -226,20 +226,20 @@ ${legendPromptAdd}${lineupPrompt}
     // 短縮キー（i, t, boなど）をAtBatEvent形式にマッピングする（互換性のためフルキーへのフォールバックも用意）
     const events: AtBatEvent[] = rawEvents.map((e: any) => {
       const mappedEvent: AtBatEvent = {
-        inning: e.i,
-        isTop: e.t,
-        battingOrder: e.bo,
-        batterName: e.b || "",
-        pitcherName: e.p || "",
-        result: e.r || "",
-        outsInThisPlay: e.o || 0,
-        endingOuts: e.eo || 0,
-        runsInThisPlay: e.ru || 0,
-        balls: e.b || 0,
-        strikes: e.s || 0,
-        pitches: e.pi || [],
-        advances: (e.a || []).map((a: any) => ({
-          runnerName: a.rn ?? a.runnerName,
+        inning: typeof e.i === 'number' ? e.i : (typeof e.inning === 'number' ? e.inning : 1),
+        isTop: typeof e.t === 'boolean' ? e.t : (typeof e.isTop === 'boolean' ? e.isTop : true),
+        battingOrder: typeof e.bo === 'number' ? e.bo : (typeof e.battingOrder === 'number' ? e.battingOrder : 1),
+        batterName: typeof e.b === 'string' ? e.b : (typeof e.batterName === 'string' ? e.batterName : (e.b !== undefined && typeof e.b !== 'number' ? String(e.b) : (e.batterName ? String(e.batterName) : ""))),
+        pitcherName: typeof e.p === 'string' ? e.p : (typeof e.pitcherName === 'string' ? e.pitcherName : (e.p ? String(e.p) : (e.pitcherName ? String(e.pitcherName) : ""))),
+        result: typeof e.r === 'string' ? e.r : (typeof e.result === 'string' ? e.result : (e.r ? String(e.r) : (e.result ? String(e.result) : ""))),
+        outsInThisPlay: typeof e.o === 'number' ? e.o : (typeof e.outsInThisPlay === 'number' ? e.outsInThisPlay : 0),
+        endingOuts: typeof e.eo === 'number' ? e.eo : (typeof e.endingOuts === 'number' ? e.endingOuts : 0),
+        runsInThisPlay: typeof e.ru === 'number' ? e.ru : (typeof e.runsInThisPlay === 'number' ? e.runsInThisPlay : 0),
+        balls: typeof e.bl === 'number' ? e.bl : (typeof e.balls === 'number' ? e.balls : (typeof e.b === 'number' ? e.b : 0)),
+        strikes: typeof e.s === 'number' ? e.s : (typeof e.strikes === 'number' ? e.strikes : 0),
+        pitches: Array.isArray(e.pi) ? e.pi : (Array.isArray(e.pitches) ? e.pitches : []),
+        advances: (e.a || e.advances || []).map((a: any) => ({
+          runnerName: typeof a.rn === 'string' ? a.rn : (typeof a.runnerName === 'string' ? a.runnerName : String(a.rn ?? a.runnerName ?? "")),
           from: a.f ?? a.from,
           to: a.t ?? a.to,
           method: a.m ?? a.method
