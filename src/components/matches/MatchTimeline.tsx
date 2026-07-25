@@ -16,6 +16,11 @@ function expandPlayLogsToPitches(logs: PlayLog[]): PlayLog[] {
   const pitchLogs: PlayLog[] = [];
 
   logs.forEach(log => {
+    // 打順と名前の分解
+    const orderMatch = log.batterName.match(/^(\d+)番\s*(.*)$/);
+    const batterOrder = orderMatch ? orderMatch[1] : "";
+    const batterNameClean = orderMatch ? orderMatch[2] : log.batterName;
+
     // 投球履歴のパース
     const lines = log.description
       ? log.description.split("\n").map(l => l.trim()).filter(Boolean)
@@ -31,12 +36,19 @@ function expandPlayLogsToPitches(logs: PlayLog[]): PlayLog[] {
         balls: currentB,
         strikes: currentS,
         outs: currentO,
-        hasBso: true
+        hasBso: true,
+        isFirstPitch: true,
+        isFinalPitch: true,
+        pitchText: log.result,
+        finalResultText: log.result,
+        batterOrder,
+        batterNameClean
       });
       return;
     }
 
     lines.forEach((line, idx) => {
+      const isFirst = idx === 0;
       const isLast = idx === lines.length - 1;
       const pitchMatch = line.match(/^(\d+)球目:\s*(.*)$/);
 
@@ -94,12 +106,16 @@ function expandPlayLogsToPitches(logs: PlayLog[]): PlayLog[] {
         balls: currentB,
         strikes: currentS,
         outs: currentO,
-        result: isLast 
-          ? `${pitchNum}球目: ${pitchRes} (${log.result})` 
-          : `${pitchNum}球目: ${pitchRes}`,
+        result: `${pitchNum}球目: ${pitchRes}`,
         resultType: isLast ? log.resultType : "pitch",
-        description: "", // 詳細アコーディオンは不要
-        hasBso: true
+        description: "",
+        hasBso: true,
+        isFirstPitch: isFirst,
+        isFinalPitch: isLast,
+        pitchText: `${pitchNum}球目: ${pitchRes}`,
+        finalResultText: log.result,
+        batterOrder,
+        batterNameClean
       });
     });
   });
