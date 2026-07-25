@@ -384,11 +384,31 @@ export const MatchService = {
     const baseTime = Date.now();
     const isMyTeamTop = match.battingOrder === 'first';
 
+    let lastTopPitcherName = "";
+    let lastBottomPitcherName = "";
+
+    const getEffectiveRuns = (e: AtBatEvent): number => {
+      const ru = typeof e.runsInThisPlay === 'number' ? e.runsInThisPlay : 0;
+      const hpCount = (e.advances || []).filter(a => (a.to === 'HP' || (a as any).t === 'HP')).length;
+      const isHR = (e.result || '').includes('HR') || (e.result || '').includes('本塁打');
+      return Math.max(ru, hpCount) + (isHR && hpCount === 0 ? 1 : 0);
+    };
+
     for (const e of events) {
       eventIndex++;
       const atBatId = crypto.randomUUID();
 
       const isMyTeamBatting = (e.isTop && isMyTeamTop) || (!e.isTop && !isMyTeamTop);
+
+      // 投手名の自動継承（AIが空文字で返した場合のキャリーオーバー）
+      let rawPitcherName = (typeof e.pitcherName === 'string' ? e.pitcherName : '').trim();
+      if (!rawPitcherName) {
+        rawPitcherName = e.isTop ? lastTopPitcherName : lastBottomPitcherName;
+      } else {
+        if (e.isTop) lastTopPitcherName = rawPitcherName;
+        else lastBottomPitcherName = rawPitcherName;
+      }
+      e.pitcherName = rawPitcherName;
 
       const batterId = await resolvePlayerId(e.batterName, { battingOrder: e.battingOrder, isMyTeamBatting });
       const pitcherId = await resolvePlayerId(e.pitcherName, { isMyTeamBatting: !isMyTeamBatting });
@@ -440,13 +460,14 @@ export const MatchService = {
       const balls = e.balls || 0;
       const strikes = e.strikes || 0;
       const outs = e.outsInThisPlay || 0; // AIが抽出したアウトカウント
+      const effectiveRuns = getEffectiveRuns(e);
       
       // BSOサフィックスを含めた完全なテキストを構成する
       const descText = `${e.battingOrder}番 ${e.batterName}: ${e.result}${pitchesStr} [B:${balls}, S:${strikes}, O:${outs}]`;
       
       let resultType = 'out';
       if (e.result.includes('H') || e.result.match(/^[789]$/) || e.result.includes('安')) resultType = 'hit';
-      else if (e.runsInThisPlay > 0) resultType = 'score';
+      else if (effectiveRuns > 0) resultType = 'score';
 
       // 該当打席のバリデーションメッセージを探す
       const msg = validationMessages.find(v => v.inning === e.inning && v.isTop === e.isTop && v.battingOrder === e.battingOrder);
@@ -474,8 +495,8 @@ export const MatchService = {
 
     for (let i = 1; i <= maxInning; i++) {
       const isMyTeamTop = match.battingOrder === 'first';
-      const topRuns = events.filter(e => e.inning === i && e.isTop).reduce((sum, e) => sum + e.runsInThisPlay, 0);
-      const bottomRuns = events.filter(e => e.inning === i && !e.isTop).reduce((sum, e) => sum + e.runsInThisPlay, 0);
+      const topRuns = events.filter(e => e.inning === i && e.isTop).reduce((sum, e) => sum + getEffectiveRuns(e), 0);
+      const bottomRuns = events.filter(e => e.inning === i && !e.isTop).reduce((sum, e) => sum + getEffectiveRuns(e), 0);
 
       if (isMyTeamTop) {
         myInningScores.push(topRuns);
