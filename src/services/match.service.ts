@@ -565,7 +565,20 @@ export const MatchService = {
       const descText = `${e.battingOrder}番 ${e.batterName}: ${e.result}${pitchesStr} [B:${balls}, S:${strikes}, O:${outs}]`;
       
       let resultType = 'out';
-      if (e.result.includes('H') || e.result.match(/^[789]$/) || e.result.includes('安')) resultType = 'hit';
+      const rText = e.result || '';
+      const isHit = rText.includes('H') || 
+                    rText.includes('安') || 
+                    rText.includes('ヒット') || 
+                    rText.includes('単打') || 
+                    rText.includes('二塁打') || 
+                    rText.includes('三塁打') || 
+                    rText.includes('本塁打') || 
+                    rText.includes('1B') || 
+                    rText.includes('2B') || 
+                    rText.includes('3B') || 
+                    rText.includes('HR') || 
+                    /^[789]$/.test(rText.trim());
+      if (isHit) resultType = 'hit';
       else if (effectiveRuns > 0) resultType = 'score';
 
       // 該当打席のバリデーションメッセージを探す

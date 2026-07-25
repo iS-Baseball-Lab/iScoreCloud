@@ -29,7 +29,7 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
   const [currentTeam, setCurrentTeam] = useState<Team | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // 💡 マウント時に localStorage から復元
+  // 💡 マウント時に localStorage から復元 ＆ サーバーから最新情報を同期
   useEffect(() => {
     const savedId = localStorage.getItem(STORAGE_KEY);
     const savedName = localStorage.getItem(NAME_STORAGE_KEY);
@@ -47,6 +47,35 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
       });
     }
     setIsLoading(false);
+
+    // 🌟 データベースから最新のチーム情報（早見表画像・ロゴ等）を非同期フェッチして全端末で同期
+    if (savedId) {
+      fetch('/api/teams', { cache: "no-store" })
+        .then(res => res.ok ? res.json() : null)
+        .then((data: any) => {
+          if (Array.isArray(data)) {
+            const matched = data.find((t: any) => t.id === savedId);
+            if (matched) {
+              const serverTeam: Team = {
+                id: matched.id,
+                name: matched.name,
+                organizationCategory: matched.category || undefined,
+                logoImageUrl: matched.logoImageUrl || undefined,
+                scorebookLegendUrl: matched.scorebookLegendUrl || undefined
+              };
+              setCurrentTeam(serverTeam);
+              localStorage.setItem(STORAGE_KEY, serverTeam.id);
+              localStorage.setItem(NAME_STORAGE_KEY, serverTeam.name);
+              localStorage.setItem(CATEGORY_STORAGE_KEY, serverTeam.organizationCategory || "");
+              localStorage.setItem(LOGO_STORAGE_KEY, serverTeam.logoImageUrl || "");
+              localStorage.setItem(LEGEND_STORAGE_KEY, serverTeam.scorebookLegendUrl || "");
+            }
+          }
+        })
+        .catch(err => {
+          console.error("Failed to sync team data from server:", err);
+        });
+    }
   }, []);
 
   // 💡 チーム選択時のアクション
