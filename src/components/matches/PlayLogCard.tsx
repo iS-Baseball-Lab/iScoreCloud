@@ -312,21 +312,21 @@ export function PlayLogCard({ log, isLast = false, onEdit, onDelete, onResolve }
               {log.hasBso && (
                 <div className="flex items-center gap-2 bg-muted/20 px-2 py-0.5 rounded border border-border/10 shrink-0 origin-right">
                   <div className="flex items-center gap-0.5">
-                    <span className="text-[9px] font-black w-2 text-yellow-500">B</span>
+                    <span className="text-[9px] font-black w-2 text-emerald-500">B</span>
                     {Array.from({ length: 3 }).map((_, i) => (
-                      <div key={i} className={cn("w-1.5 h-1.5 rounded-full", i < log.balls ? "bg-yellow-500" : "bg-neutral-200 dark:bg-neutral-700")} />
+                      <div key={i} className={cn("w-1.5 h-1.5 rounded-full", i < log.balls ? "bg-emerald-500 shadow-[0_0_2px_rgba(16,185,129,0.5)]" : "bg-neutral-200 dark:bg-neutral-700")} />
                     ))}
                   </div>
                   <div className="flex items-center gap-0.5">
-                    <span className="text-[9px] font-black w-2 text-red-500">S</span>
+                    <span className="text-[9px] font-black w-2 text-amber-500">S</span>
                     {Array.from({ length: 2 }).map((_, i) => (
-                      <div key={i} className={cn("w-1.5 h-1.5 rounded-full", i < log.strikes ? "bg-red-500 shadow-[0_0_2px_rgba(239,68,68,0.5)]" : "bg-neutral-200 dark:bg-neutral-700")} />
+                      <div key={i} className={cn("w-1.5 h-1.5 rounded-full", i < log.strikes ? "bg-amber-500 shadow-[0_0_2px_rgba(245,158,11,0.5)]" : "bg-neutral-200 dark:bg-neutral-700")} />
                     ))}
                   </div>
                   <div className="flex items-center gap-0.5">
-                    <span className="text-[9px] font-black w-2 text-blue-500">O</span>
+                    <span className="text-[9px] font-black w-2 text-rose-500">O</span>
                     {Array.from({ length: 2 }).map((_, i) => (
-                      <div key={i} className={cn("w-1.5 h-1.5 rounded-full", i < log.outs ? "bg-blue-500" : "bg-neutral-200 dark:bg-neutral-700")} />
+                      <div key={i} className={cn("w-1.5 h-1.5 rounded-full", i < log.outs ? "bg-rose-500 shadow-[0_0_2px_rgba(244,63,94,0.5)]" : "bg-neutral-200 dark:bg-neutral-700")} />
                     ))}
                   </div>
                 </div>
