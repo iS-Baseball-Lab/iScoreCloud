@@ -44,7 +44,7 @@ export function MatchBasicForm({ state, setState, tournaments, isNewTournament, 
   const suggestions = React.useMemo(() => {
     const query = state.venue.trim().toLowerCase();
     if (!query) {
-      return venues.slice(0, 5); // 登録済みの球場を最大5件表示
+      return venues; // 🌟 登録済みの全球場を表示できるように制限解除
     }
     return venues.filter(
       (v) =>
@@ -101,7 +101,10 @@ export function MatchBasicForm({ state, setState, tournaments, isNewTournament, 
             className="h-11 rounded-2xl text-sm font-bold bg-background border-border" 
           />
           {showSuggestions && suggestions.length > 0 && (
-            <div className="absolute top-[100%] left-0 right-0 z-50 mt-1 max-h-60 overflow-y-auto bg-card border border-border rounded-2xl shadow-lg divide-y divide-border/40">
+            <div className="absolute top-[100%] left-0 right-0 z-50 mt-1 max-h-64 overflow-y-auto bg-card border border-border rounded-2xl shadow-lg divide-y divide-border/40">
+              <div className="px-4 py-1.5 bg-muted/50 text-[10px] font-black text-muted-foreground uppercase tracking-wider sticky top-0 backdrop-blur-sm z-10 border-b border-border/30">
+                {state.venue.trim() ? `該当する球場 (${suggestions.length}件)` : `登録済み球場一覧 (${suggestions.length}件)`}
+              </div>
               {suggestions.map((v) => (
                 <button
                   key={v.id}
@@ -112,7 +115,7 @@ export function MatchBasicForm({ state, setState, tournaments, isNewTournament, 
                   <span className="font-bold text-sm text-foreground flex items-center gap-1.5">
                     {v.name}
                     {v.shortName && (
-                      <span className="text-[10px] px-1.5 py-0.5 bg-muted text-muted-foreground rounded">
+                      <span className="text-[10px] px-1.5 py-0.5 bg-muted text-muted-foreground rounded font-normal">
                         {v.shortName}
                       </span>
                     )}
