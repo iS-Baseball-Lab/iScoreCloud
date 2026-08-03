@@ -120,7 +120,7 @@ export function FloatingNav() {
                      "w-16 h-16 rounded-full flex flex-col items-center justify-center gap-1 border-[3px] transition-colors relative z-10",
                      isActive 
                        ? "bg-primary border-primary text-primary-foreground shadow-xl shadow-black/20 dark:shadow-black/40" 
-                       : "bg-primary/10 dark:bg-primary/20 border-primary/30 text-foreground shadow-xl shadow-black/10 backdrop-blur-md hover:bg-primary/20"
+                       : "bg-card border-primary/60 text-foreground shadow-xl shadow-black/20 hover:border-primary hover:bg-primary/10"
                   )}>
                     <item.icon className="w-6 h-6 stroke-[2.5]" />
                     <span className="text-[9px] font-black tracking-tight">{item.label}</span>
