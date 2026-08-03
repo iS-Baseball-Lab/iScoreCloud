@@ -60,13 +60,13 @@ export function FloatingNav() {
   }, [prevScrollY, isOpen]);
 
   const menuItems = [
-    { icon: Users, label: "TEAM", href: "/team", angle: -165 },
-    { icon: UserSquare2, label: "MEMBERS", href: "/members", angle: -140 },
-    { icon: CalendarCheck, label: "ATTEND", href: "/attendance", angle: -115 },
-    { icon: LayoutDashboard, label: "HOME", href: "/dashboard", angle: -90 },
-    { icon: Trophy, label: "EVENT", href: "/tournaments", angle: -65 },
-    { icon: ScrollText, label: "MATCHES", href: "/matches", angle: -40 },
-    { icon: MoreHorizontal, label: "MENU", href: "/menu", angle: -15 },
+    { icon: Users, label: "チーム", href: "/team", angle: -165 },
+    { icon: UserSquare2, label: "メンバー", href: "/members", angle: -140 },
+    { icon: CalendarCheck, label: "出欠", href: "/attendance", angle: -115 },
+    { icon: LayoutDashboard, label: "ホーム", href: "/dashboard", angle: -90 },
+    { icon: Trophy, label: "大会", href: "/tournaments", angle: -65 },
+    { icon: ScrollText, label: "試合", href: "/matches", angle: -40 },
+    { icon: MoreHorizontal, label: "メニュー", href: "/menu", angle: -15 },
   ];
 
   return (
@@ -123,7 +123,7 @@ export function FloatingNav() {
                        : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-xl shadow-black/10"
                   )}>
                     <item.icon className="w-6 h-6 stroke-[2.5]" />
-                    <span className="text-[8px] font-black uppercase tracking-tighter">{item.label}</span>
+                    <span className="text-[9px] font-black tracking-tight">{item.label}</span>
                   </div>
                 </Link>
               </motion.div>
