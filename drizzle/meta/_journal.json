@@ -267,6 +267,13 @@
       "when": 1784532143709,
       "tag": "0037_silky_echo",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "6",
+      "when": 1785990597602,
+      "tag": "0038_mixed_grandmaster",
+      "breakpoints": true
     }
   ]
 }
