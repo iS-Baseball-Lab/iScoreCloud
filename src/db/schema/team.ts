@@ -112,6 +112,7 @@ export const teamMembers = sqliteTable('team_members', {
   avatarUrl: text('avatar_url'),                      // アバター画像URL (カスタム)
   
   role: text('role').notNull().default('player'), // 例: 'MANAGER'(監督・スコアラー), 'PLAYER'(閲覧のみ), 'pending'(申請中)
+  subRoles: text('sub_roles'), // 💡 兼務（マルチロール）用JSON配列文字列 例: '["scorer", "parent"]'
   status: text("status").notNull().default("active"),
   joinedAt: integer('joined_at', { mode: 'timestamp' }).notNull().default(sql`(strftime('%s', 'now'))`),
 }, (table) => ({

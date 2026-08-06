@@ -73,36 +73,56 @@ export const isApprovedMember = (role?: string | null): boolean => {
 };
 
 // 1. システム管理（IT担当）ができるか
-export const canManageSystem = (role?: string | null): boolean => {
+export const canManageSystem = (role?: string | null, subRoles?: string[] | null): boolean => {
   if (!role) return false;
-  return role.toLowerCase() === ROLES.ADMIN;
+  if (role.toLowerCase() === ROLES.ADMIN) return true;
+  if (subRoles && Array.isArray(subRoles)) {
+    return subRoles.some(sr => sr.toLowerCase() === ROLES.ADMIN);
+  }
+  return false;
 };
 
 // 2. チーム管理（代表・監督・IT担当）ができるか
-export const canManageTeam = (role?: string | null): boolean => {
+export const canManageTeam = (role?: string | null, subRoles?: string[] | null): boolean => {
   if (!role) return false;
   const r = role.toLowerCase();
-  return (r === ROLES.ADMIN || r === ROLES.MANAGER);
+  if (r === ROLES.ADMIN || r === ROLES.MANAGER) return true;
+  if (subRoles && Array.isArray(subRoles)) {
+    return subRoles.some(sr => {
+      const s = sr.toLowerCase();
+      return s === ROLES.ADMIN || s === ROLES.MANAGER;
+    });
+  }
+  return false;
 };
 
 // 3. スコアの入力・編集（管理者、監督、コーチ、スコアラー）ができるか
-export const canEditScore = (role?: string | null): boolean => {
+export const canEditScore = (role?: string | null, subRoles?: string[] | null): boolean => {
   if (!role) return false;
   const r = role.toLowerCase();
-  return (r === ROLES.ADMIN || r === ROLES.MANAGER || r === ROLES.COACH || r === ROLES.SCORER);
+  const allowed = [ROLES.ADMIN, ROLES.MANAGER, ROLES.COACH, ROLES.SCORER];
+  if (allowed.includes(r as any)) return true;
+  if (subRoles && Array.isArray(subRoles)) {
+    return subRoles.some(sr => allowed.includes(sr.toLowerCase() as any));
+  }
+  return false;
 };
 
 // 4. チーム内部情報の閲覧（スタッフ・保護者以上）ができるか
-export const canViewInternalData = (role?: string | null): boolean => {
+export const canViewInternalData = (role?: string | null, subRoles?: string[] | null): boolean => {
   if (!role) return false;
   const r = role.toLowerCase();
-  // 🌟 内部スケジュールや連絡網、選手データは「保護者」も見れるように追加！
-  return (
-    r === ROLES.ADMIN || 
-    r === ROLES.MANAGER || 
-    r === ROLES.COACH || 
-    r === ROLES.SCORER || 
-    r === ROLES.STAFF ||
-    r === ROLES.PARENT
-  );
+  const allowed = [
+    ROLES.ADMIN, 
+    ROLES.MANAGER, 
+    ROLES.COACH, 
+    ROLES.SCORER, 
+    ROLES.STAFF,
+    ROLES.PARENT
+  ];
+  if (allowed.includes(r as any)) return true;
+  if (subRoles && Array.isArray(subRoles)) {
+    return subRoles.some(sr => allowed.includes(sr.toLowerCase() as any));
+  }
+  return false;
 };

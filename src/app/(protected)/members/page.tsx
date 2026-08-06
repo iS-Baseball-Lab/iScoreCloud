@@ -34,6 +34,7 @@ interface Member {
   memberId: string;
   userId: string | null;
   role: string;
+  subRoles?: string[];
   status: string;
   joinedAt: number;
   name: string;
@@ -1207,11 +1208,18 @@ export default function UnifiedMembersPage() {
                             {m.memberType === 'staff' ? '指導者・スタッフ' : m.memberType === 'parent' ? '保護者' : m.memberType === 'player' ? '選手' : 'その他'}
                           </span>
 
-                          {/* チーム内システム権限（カスタム呼称にも対応） */}
+                          {/* チーム内システム権限（カスタム呼称および兼務表記に対応） */}
                           {m.userId && (
-                            <span className="text-[8px] font-black px-2 py-0.5 rounded-sm bg-primary/10 text-primary border border-primary/20">
-                              権限: {resolveRoleLabel(m.role, roleSettings)}
-                            </span>
+                            <div className="flex items-center gap-1 flex-wrap">
+                              <span className="text-[8px] font-black px-2 py-0.5 rounded-sm bg-primary/10 text-primary border border-primary/20">
+                                権限: {resolveRoleLabel(m.role, roleSettings)}
+                              </span>
+                              {m.subRoles && m.subRoles.filter(sr => sr !== m.role).map(sr => (
+                                <span key={sr} className="text-[8px] font-bold px-1.5 py-0.5 rounded-sm bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                                  兼務: {resolveRoleLabel(sr, roleSettings)}
+                                </span>
+                              ))}
+                            </div>
                           )}
 
                           {/* ユーザー紐付けバッジ */}

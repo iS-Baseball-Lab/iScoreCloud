@@ -15,12 +15,14 @@ export interface TeamMember {
   authProviders?: string[];
   avatarUrl: string | null;
   role: string;
+  subRoles?: string[]; // 🌟 兼務（マルチロール）
   status: "active" | "pending";
   joinedAt: number | null;
-  email?: string | null; // 🌟 追加
+  email?: string | null;
 }
 
 const ROLE_CONFIG: Record<string, { label: string; desc: string; color: string; bg: string; icon: React.ReactNode; }> = {
+  [ROLES.ADMIN]: { label: "IT管理者", desc: "システム最高管理者", color: "text-amber-600 dark:text-amber-400", bg: "bg-amber-500/10 border-amber-500/30", icon: <Crown className="h-3.5 w-3.5" /> },
   [ROLES.MANAGER]: { label: "監督/代表", desc: "全権限 — チーム設定・メンバー管理まで", color: "text-amber-600 dark:text-amber-400", bg: "bg-amber-500/10 border-amber-500/30", icon: <Crown className="h-3.5 w-3.5" /> },
   [ROLES.COACH]: { label: "コーチ", desc: "スコア入力・選手管理・データ閲覧", color: "text-blue-600 dark:text-blue-400", bg: "bg-blue-500/10 border-blue-500/30", icon: <ShieldCheck className="h-3.5 w-3.5" /> },
   [ROLES.SCORER]: { label: "スコアラー", desc: "スコア入力・データ閲覧", color: "text-green-600 dark:text-green-400", bg: "bg-green-500/10 border-green-500/30", icon: <UserCog className="h-3.5 w-3.5" /> },
@@ -38,7 +40,16 @@ const SELECTABLE_ROLES: Role[] = [
   ROLES.STAFF, 
   ROLES.PARENT, 
   ROLES.PLAYER, 
-  ROLES.VIEWER
+  ROLES.VIEWER,
+  ROLES.ADMIN,
+];
+
+const SUB_ROLE_CANDIDATES = [
+  { role: ROLES.SCORER, label: "スコアラー" },
+  { role: ROLES.PARENT, label: "保護者" },
+  { role: ROLES.COACH, label: "コーチ" },
+  { role: ROLES.STAFF, label: "スタッフ" },
+  { role: ROLES.ADMIN, label: "IT管理者" },
 ];
 
 function getRoleConfig(role: string) { return ROLE_CONFIG[role] ?? { label: role, desc: "", color: "text-muted-foreground", bg: "bg-muted/40 border-border/40", icon: <Users className="h-3.5 w-3.5" /> }; }
@@ -46,64 +57,142 @@ function getRoleConfig(role: string) { return ROLE_CONFIG[role] ?? { label: role
 function RoleBadge({ role }: { role: string }) {
   const cfg = getRoleConfig(role);
   return (
-    <span className={cn("inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black border uppercase tracking-wider", cfg.bg, cfg.color)}>
+    <span className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black border uppercase tracking-wider", cfg.bg, cfg.color)}>
       {cfg.icon}
       {cfg.label}
     </span>
   );
 }
 
-function RoleSelector({ currentRole, memberId, myRole, onRoleChange, disabled }: {
-  currentRole: string; memberId: string; myRole: string; onRoleChange: (memberId: string, newRole: string) => Promise<void>; disabled?: boolean;
+function SubRoleBadge({ role }: { role: string }) {
+  const cfg = getRoleConfig(role);
+  return (
+    <span className={cn("inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-bold border opacity-90", cfg.bg, cfg.color)}>
+      {cfg.label}
+    </span>
+  );
+}
+
+function RoleSelector({ currentRole, currentSubRoles = [], memberId, myRole, onRoleChange, disabled }: {
+  currentRole: string;
+  currentSubRoles?: string[];
+  memberId: string;
+  myRole: string;
+  onRoleChange: (memberId: string, newRole: string, newSubRoles?: string[]) => Promise<void>;
+  disabled?: boolean;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isChanging, setIsChanging] = useState(false);
+  const [selectedMainRole, setSelectedMainRole] = useState(currentRole);
+  const [selectedSubRoles, setSelectedSubRoles] = useState<string[]>(currentSubRoles);
+
   const cfg = getRoleConfig(currentRole);
   const canChange = !disabled && (myRole === ROLES.MANAGER || myRole === "SYSTEM_ADMIN" || myRole === "admin");
 
-  const handleSelect = async (role: string) => {
-    if (role === currentRole) { setIsOpen(false); return; }
+  const toggleSubRole = (subRole: string) => {
+    setSelectedSubRoles(prev => 
+      prev.includes(subRole) ? prev.filter(r => r !== subRole) : [...prev, subRole]
+    );
+  };
+
+  const handleSave = async () => {
     setIsChanging(true);
     setIsOpen(false);
-    await onRoleChange(memberId, role);
+    await onRoleChange(memberId, selectedMainRole, selectedSubRoles);
     setIsChanging(false);
   };
 
   return (
     <div className="relative">
-      <button
-        onClick={() => canChange && setIsOpen(!isOpen)}
-        disabled={isChanging || !canChange}
-        className={cn(
-          "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black border uppercase tracking-wider transition-all",
-          cfg.bg, cfg.color, canChange && "hover:opacity-85 cursor-pointer", !canChange && "cursor-default opacity-90"
-        )}
-      >
-        {isChanging ? <Loader2 className="h-3 w-3 animate-spin" /> : cfg.icon}
-        {cfg.label}
-        {canChange && <ChevronDown className={cn("h-3 w-3 transition-transform duration-150", isOpen && "rotate-180")} />}
-      </button>
+      <div className="flex items-center gap-1 flex-wrap">
+        <button
+          onClick={() => canChange && setIsOpen(!isOpen)}
+          disabled={isChanging || !canChange}
+          className={cn(
+            "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black border uppercase tracking-wider transition-all",
+            cfg.bg, cfg.color, canChange && "hover:opacity-85 cursor-pointer shadow-sm", !canChange && "cursor-default opacity-90"
+          )}
+        >
+          {isChanging ? <Loader2 className="h-3 w-3 animate-spin" /> : cfg.icon}
+          {cfg.label}
+          {canChange && <ChevronDown className={cn("h-3 w-3 transition-transform duration-150", isOpen && "rotate-180")} />}
+        </button>
+
+        {/* 🌟 サブバッジ（兼務タグ）の表示 */}
+        {currentSubRoles.filter(r => r !== currentRole).map(sr => (
+          <SubRoleBadge key={sr} role={sr} />
+        ))}
+      </div>
 
       {isOpen && (
         <>
           <div className="fixed inset-0 z-30" onClick={() => setIsOpen(false)} />
-          <div className="absolute right-0 top-7 z-40 w-52 rounded-[var(--radius-xl)] border border-border bg-card shadow-lg p-1 animate-in fade-in slide-in-from-top-1 duration-150">
-            {SELECTABLE_ROLES.map((r) => {
-              const rc = getRoleConfig(r);
-              return (
-                <button
-                  key={r}
-                  onClick={() => handleSelect(r)}
-                  className={cn("w-full flex items-start gap-2 px-2.5 py-2 rounded-[var(--radius-lg)] text-left transition-colors hover:bg-muted/80", r === currentRole && "bg-primary/10")}
-                >
-                  <span className={cn("mt-0.5 shrink-0", rc.color)}>{rc.icon}</span>
-                  <div className="flex flex-col min-w-0">
-                    <span className={cn("text-xs font-black tracking-wide", rc.color)}>{rc.label}</span>
-                    <span className="text-[9px] text-muted-foreground leading-tight mt-0.5 truncate">{rc.desc}</span>
-                  </div>
-                </button>
-              );
-            })}
+          <div className="absolute right-0 top-7 z-40 w-64 rounded-[var(--radius-xl)] border border-border bg-card shadow-2xl p-3 animate-in fade-in slide-in-from-top-1 duration-150 space-y-3">
+            <div>
+              <p className="text-[10px] font-black uppercase text-muted-foreground tracking-wider mb-1.5">メイン役割 (基本権限)</p>
+              <div className="space-y-1 max-h-48 overflow-y-auto pr-0.5">
+                {SELECTABLE_ROLES.map((r) => {
+                  const rc = getRoleConfig(r);
+                  return (
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() => setSelectedMainRole(r)}
+                      className={cn(
+                        "w-full flex items-start gap-2 px-2 py-1.5 rounded-xl text-left transition-colors",
+                        r === selectedMainRole ? "bg-primary/10 border border-primary/30" : "hover:bg-muted/70 border border-transparent"
+                      )}
+                    >
+                      <span className={cn("mt-0.5 shrink-0", rc.color)}>{rc.icon}</span>
+                      <div className="flex flex-col min-w-0">
+                        <span className={cn("text-xs font-black tracking-wide", rc.color)}>{rc.label}</span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-border/60">
+              <p className="text-[10px] font-black uppercase text-muted-foreground tracking-wider mb-1.5">兼務役割 (サブバッジ)</p>
+              <div className="flex flex-wrap gap-1.5">
+                {SUB_ROLE_CANDIDATES.map(item => {
+                  const isChecked = selectedSubRoles.includes(item.role);
+                  return (
+                    <button
+                      key={item.role}
+                      type="button"
+                      onClick={() => toggleSubRole(item.role)}
+                      className={cn(
+                        "text-[10px] font-bold px-2 py-1 rounded-lg border transition-all cursor-pointer",
+                        isChecked
+                          ? "bg-primary text-primary-foreground border-primary shadow-xs"
+                          : "bg-muted/50 text-muted-foreground border-border hover:bg-muted"
+                      )}
+                    >
+                      {item.label} {isChecked && "✓"}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="pt-2 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setIsOpen(false)}
+                className="flex-1 py-1.5 text-xs font-bold rounded-xl border border-border bg-muted/40 hover:bg-muted text-foreground"
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                onClick={handleSave}
+                className="flex-1 py-1.5 text-xs font-black rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm"
+              >
+                決定・保存
+              </button>
+            </div>
           </div>
         </>
       )}
@@ -123,7 +212,7 @@ interface TeamMemberCardProps {
   member: TeamMember;
   myUserId: string;
   myRole: string;
-  onRoleChange: (memberId: string, newRole: string) => Promise<void>;
+  onRoleChange: (memberId: string, newRole: string, newSubRoles?: string[]) => Promise<void>;
   onRemove: (member: TeamMember) => void;
 }
 
@@ -187,7 +276,14 @@ export function TeamMemberCard({ member, myUserId, myRole, onRoleChange, onRemov
         ) : (
           <div className="flex items-center gap-2">
             {isPending && <span className="text-[10px] font-black text-orange-500 animate-pulse">未承認:</span>}
-            <RoleSelector currentRole={member.role} memberId={member.memberId} myRole={myRole} onRoleChange={onRoleChange} disabled={isMe} />
+            <RoleSelector 
+              currentRole={member.role} 
+              currentSubRoles={member.subRoles}
+              memberId={member.memberId} 
+              myRole={myRole} 
+              onRoleChange={onRoleChange} 
+              disabled={isMe} 
+            />
           </div>
         )}
 

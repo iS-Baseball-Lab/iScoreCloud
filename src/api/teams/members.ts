@@ -91,6 +91,7 @@ export const handleGetMembers = async (c: Context) => {
         tm.id              AS memberId,
         tm.user_id         AS userId,
         tm.role,
+        tm.sub_roles       AS subRoles,
         tm.status,
         tm.joined_at       AS joinedAt,
         tm.name            AS memberName,
@@ -133,20 +134,31 @@ export const handleGetMembers = async (c: Context) => {
     }
 
     // ③ フロントエンド用のフォーマットに合体させる
-    const formattedMembers = results.map((row: any) => ({
-      memberId: row.memberId,
-      userId: row.userId,
-      role: row.role,
-      status: row.status,
-      joinedAt: row.joinedAt,
-      name: row.memberName || row.userName || "名前なし",
-      nameKana: row.nameKana,
-      avatarUrl: row.avatarUrl,
-      email: row.memberEmail || row.userEmail || "",
-      memberType: row.memberType,
-      phone: row.phone,
-      authProviders: row.userId ? (providersMap[row.userId] || []) : [],
-    }))
+    const formattedMembers = results.map((row: any) => {
+      let parsedSubRoles: string[] = [];
+      if (row.subRoles) {
+        try {
+          parsedSubRoles = typeof row.subRoles === 'string' ? JSON.parse(row.subRoles) : row.subRoles;
+        } catch (e) {
+          parsedSubRoles = [];
+        }
+      }
+      return {
+        memberId: row.memberId,
+        userId: row.userId,
+        role: row.role,
+        subRoles: parsedSubRoles,
+        status: row.status,
+        joinedAt: row.joinedAt,
+        name: row.memberName || row.userName || "名前なし",
+        nameKana: row.nameKana,
+        avatarUrl: row.avatarUrl,
+        email: row.memberEmail || row.userEmail || "",
+        memberType: row.memberType,
+        phone: row.phone,
+        authProviders: row.userId ? (providersMap[row.userId] || []) : [],
+      };
+    })
 
     return c.json({ success: true, members: formattedMembers, inviteCode: teamId, roleSettings })
   } catch (e: any) {
@@ -195,7 +207,7 @@ export const handlePatchMemberRole = async (c: Context) => {
 
   const teamId = c.req.param('id')!
   const memberId = c.req.param('memberId')!
-  const { role } = await c.req.json<{ role: string }>()
+  const { role, subRoles } = await c.req.json<{ role: string; subRoles?: string[] }>()
   const db = drizzle(c.env.DB)
 
   try {
@@ -205,12 +217,17 @@ export const handlePatchMemberRole = async (c: Context) => {
       return c.json({ error: '権限がありません' }, 403)
     }
 
+    const updateData: any = {
+      role: role.toLowerCase(),
+      status: 'active'
+    }
+    if (subRoles !== undefined) {
+      updateData.subRoles = JSON.stringify(subRoles);
+    }
+
     // 💡 ロール変更と同時に、status を 'active' に強制昇格させる
     await db.update(teamMembers)
-      .set({
-        role: role.toLowerCase(),
-        status: 'active'
-      })
+      .set(updateData)
       .where(and(eq(teamMembers.id, memberId), eq(teamMembers.teamId, teamId)))
 
     return c.json({ success: true })
