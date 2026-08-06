@@ -136,6 +136,7 @@ export default function UnifiedMembersPage() {
   const [memberFormPhone, setMemberFormPhone] = useState("");
   const [memberFormEmail, setMemberFormEmail] = useState("");
   const [memberFormRole, setMemberFormRole] = useState(""); // システム上の役割 (MANAGER, COACH 等)
+  const [memberFormSubRoles, setMemberFormSubRoles] = useState<string[]>([]); // 兼務ロール (サブバッジ)
 
   // Group フォーム用状態
   const [groupFormName, setGroupFormName] = useState("");
@@ -311,6 +312,7 @@ export default function UnifiedMembersPage() {
     setMemberFormPhone(m.phone || "");
     setMemberFormEmail(m.email || "");
     setMemberFormRole(m.role || "");
+    setMemberFormSubRoles(m.subRoles || []);
     setMemberFormAvatarUrl(m.avatarUrl || "");
   };
 
@@ -369,16 +371,16 @@ export default function UnifiedMembersPage() {
         throw new Error(err.error || "基本情報の更新に失敗しました");
       }
 
-      // 2. もし紐付け済みアカウントの「システム権限」が変更されていたら、権限更新APIも投げる
-      if (editMemberTarget.userId && memberFormRole && memberFormRole !== editMemberTarget.role) {
+      // 2. 権限ロール・兼務ロールの更新APIを投げる
+      if (memberFormRole) {
         const resRole = await fetch(`/api/teams/${teamId}/members/${editMemberTarget.memberId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ role: memberFormRole }),
+          body: JSON.stringify({ role: memberFormRole, subRoles: memberFormSubRoles }),
         });
         if (!resRole.ok) {
           const err = (await resRole.json()) as { error?: string };
-          throw new Error(err.error || "システム権限の更新に失敗しました");
+          throw new Error(err.error || "権限の更新に失敗しました");
         }
       }
 
@@ -1700,16 +1702,16 @@ export default function UnifiedMembersPage() {
               </Select>
             </div>
             
-            {/* 紐付け済みの場合のみシステム権限ロールを編集可能にする */}
-            {editMemberTarget?.userId && (
+            {/* チーム権限ロールおよび兼務ロールの編集 */}
+            <div className="space-y-3 pt-1 border-t border-border/40">
               <div className="space-y-1">
                 <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">
-                  チーム権限ロール {editMemberTarget.userId === myUserId && "(自身の権限は変更不可)"}
+                  メイン役割 (基本権限) {editMemberTarget?.userId === myUserId && "(自身の権限は変更不可)"}
                 </label>
                 <Select 
                   value={memberFormRole} 
                   onChange={(e: any) => setMemberFormRole(e.target.value)} 
-                  disabled={editMemberTarget.userId === myUserId || !canManage}
+                  disabled={editMemberTarget?.userId === myUserId || !canManage}
                   className="h-11 rounded-xl bg-card"
                 >
                   <option value="manager">{resolveRoleLabel("manager", roleSettings)} (代表・監督)</option>
@@ -1719,9 +1721,47 @@ export default function UnifiedMembersPage() {
                   <option value="parent">{resolveRoleLabel("parent", roleSettings)} (保護者)</option>
                   <option value="player">{resolveRoleLabel("player", roleSettings)} (選手)</option>
                   <option value="viewer">{resolveRoleLabel("viewer", roleSettings)} (閲覧専用)</option>
+                  <option value="admin">{resolveRoleLabel("admin", roleSettings)} (IT管理者)</option>
                 </Select>
               </div>
-            )}
+
+              {/* 兼務ロール (複数選択タグ) */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">
+                  兼務役割 (複数選択・表示タグ)
+                </label>
+                <div className="flex flex-wrap gap-1.5 p-2 rounded-xl bg-muted/40 border border-border/50">
+                  {[
+                    { role: "scorer", label: resolveRoleLabel("scorer", roleSettings) },
+                    { role: "parent", label: resolveRoleLabel("parent", roleSettings) },
+                    { role: "coach", label: resolveRoleLabel("coach", roleSettings) },
+                    { role: "staff", label: resolveRoleLabel("staff", roleSettings) },
+                    { role: "admin", label: resolveRoleLabel("admin", roleSettings) },
+                  ].map(item => {
+                    const isChecked = memberFormSubRoles.includes(item.role);
+                    return (
+                      <button
+                        key={item.role}
+                        type="button"
+                        onClick={() => {
+                          setMemberFormSubRoles(prev => 
+                            prev.includes(item.role) ? prev.filter(r => r !== item.role) : [...prev, item.role]
+                          );
+                        }}
+                        className={cn(
+                          "text-xs font-black px-2.5 py-1 rounded-lg border transition-all cursor-pointer flex items-center gap-1",
+                          isChecked
+                            ? "bg-primary text-primary-foreground border-primary shadow-xs"
+                            : "bg-background text-muted-foreground border-border hover:bg-muted"
+                        )}
+                      >
+                        {item.label} {isChecked && "✓"}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
 
             <div className="space-y-1">
               <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">電話番号 (任意)</label>
