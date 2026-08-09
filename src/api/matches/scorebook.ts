@@ -77,13 +77,13 @@ scorebookRouter.post("/:id/scorebook/import", async (c) => {
     let playerRosterPrompt = "";
     if (allPlayers.length > 0) {
       const rosterText = allPlayers.map(p => p.uniformNumber ? `${p.name}${p.nameKana ? `(${p.nameKana})` : ''} [#${p.uniformNumber}]` : p.name).join(", ");
-      playerRosterPrompt = `\n⚠️ 【重要: 自チーム登録全選手リスト】このチーム（自チーム）に所属する選手一覧は以下の通りです。スコアブックに苗字のみや略称で記載されている場合でも、このリストに存在する正式名称（フルネーム）に最も近い選手名を選択・名寄せして出力してください。バッター名(b)および投手名(p)（自チームの投球イニングの投手）の両方に適用してください。\n[${rosterText}]\n`;
+      playerRosterPrompt = `\n⚠️ 【自チーム登録全選手リスト】自チームの所属選手一覧: [${rosterText}]\n`;
     }
 
     let lineupPrompt = "";
     if (lineups.length > 0) {
       const lineupText = lineups.map(l => `${l.battingOrder}番: ${l.name}`).join(", ");
-      lineupPrompt = `\n⚠️ 【重要: 自チームスタメン情報】この試合の自チームのスタメン打順は以下の通りです。打順(bo)に対応する選手名は、このスタメンリストの選手名を最優先で一致させてください。\n[${lineupText}]\n`;
+      lineupPrompt = `\n⚠️ 【自チームスタメン情報】自チームのスタメン打順: [${lineupText}]\n`;
     }
 
     let opponentLineupPrompt = "";
@@ -96,10 +96,34 @@ scorebookRouter.post("/:id/scorebook/import", async (c) => {
             .map((p: any) => p.order > 0 ? `${p.order}番: ${p.name}` : p.name)
             .join(", ");
           if (oppText) {
-            opponentLineupPrompt = `\n⚠️ 【重要: 相手チームの登録スタメン】この試合の対戦相手（相手チーム）のスタメン情報は以下の通りです。相手チームの打席におけるバッター名(b)は、このリストの選手名に最も近いものに名寄せして出力してください。\n[${oppText}]\n`;
+            opponentLineupPrompt = `\n⚠️ 【相手チーム登録スタメン】対戦相手のスタメン打順: [${oppText}]\n`;
           }
         }
       } catch (e) {}
+    }
+
+    const isMyTeamFirst = match.battingOrder === "first";
+    let teamAttackRulePrompt = "";
+    if (isMyTeamFirst) {
+      teamAttackRulePrompt = `
+⚠️ 【超重要: 先攻/後攻と打者・投手の割り当てルール】
+この試合で、自チームは【先攻 (表の攻撃)】、相手チームは【後攻 (裏の攻撃)】です。
+1. **表の攻撃 (t: true)** ➔ 【自チームの打席イニング】です。
+   ・バッター名(b): 「自チームスタメン情報」および「自チーム登録全選手リスト」から名寄せして適用してください。
+   ・投手名(p): 対戦相手の投手名（画像内の手書き文字）を出力してください。
+2. **裏の攻撃 (t: false)** ➔ 【相手チームの打席イニング】です。
+   ・バッター名(b): 「相手チーム登録スタメン」の選手名を適用してください（※絶対に自チームの選手名を適用しないでください！）。
+   ・投手名(p): 「自チーム登録全選手リスト」に最も近い自チームの投手名を適用してください。`;
+    } else {
+      teamAttackRulePrompt = `
+⚠️ 【超重要: 先攻/後攻と打者・投手の割り当てルール】
+この試合で、自チームは【後攻 (裏の攻撃)】、相手チームは【先攻 (表の攻撃)】です。
+1. **表の攻撃 (t: true)** ➔ 【相手チームの打席イニング】です。
+   ・バッター名(b): 「相手チーム登録スタメン」の選手名を適用してください（※絶対に自チームの選手名を適用しないでください！）。
+   ・投手名(p): 「自チーム登録全選手リスト」に最も近い自チームの投手名を適用してください。
+2. **裏の攻撃 (t: false)** ➔ 【自チームの打席イニング】です。
+   ・バッター名(b): 「自チームスタメン情報」および「自チーム登録全選手リスト」から名寄せして適用してください。
+   ・投手名(p): 対戦相手の投手名（画像内の手書き文字）を出力してください。`;
     }
 
     let scoreboardPrompt = "";
@@ -108,7 +132,6 @@ scorebookRouter.post("/:id/scorebook/import", async (c) => {
         const myScores: number[] = JSON.parse(match.myInningScores || "[]");
         const oppScores: number[] = JSON.parse(match.opponentInningScores || "[]");
         
-        const isMyTeamFirst = match.battingOrder === "first";
         const topScores = isMyTeamFirst ? myScores : oppScores;
         const bottomScores = isMyTeamFirst ? oppScores : myScores;
         
@@ -222,7 +245,7 @@ ${scoreSummaryLines.join("\n")}\n`;
     // E. プロンプトの設計
     const prompt = `あなたは野球のスコアブック（主に日本で主流の早稲田式・成美堂式）の記号と構造を完全に理解したAIスコアラーです。
 添付されたスコアブックの画像（画像 1）を精確に解析し、打席ごとのプレイイベントを構造化データとして出力してください。
-${legendPromptAdd}${playerRosterPrompt}${lineupPrompt}${opponentLineupPrompt}${scoreboardPrompt}
+${legendPromptAdd}${playerRosterPrompt}${lineupPrompt}${opponentLineupPrompt}${teamAttackRulePrompt}${scoreboardPrompt}
 
 早稲田式スコアブックの読み取りルール:
 1. 各マスは1打席を表します。マスの中央にある記号が最終的な打撃結果またはアウト時の守備位置です。
