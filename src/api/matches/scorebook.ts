@@ -39,8 +39,10 @@ scorebookRouter.post("/:id/scorebook/import", async (c) => {
       return c.json({ success: false, error: "試合が見つかりません" }, 404);
     }
 
+    // formData から直接渡された legendUrl もサポート
+    const legendUrlFromForm = formData.get("legendUrl") as string | null;
     const team = await db.select({ scorebookLegendUrl: teams.scorebookLegendUrl }).from(teams).where(eq(teams.id, match.teamId)).get();
-    const legendUrl = team?.scorebookLegendUrl;
+    const legendUrl = legendUrlFromForm || team?.scorebookLegendUrl;
 
     const fileBytes = await file.arrayBuffer();
     const fileBase64 = arrayBufferToBase64(fileBytes);
@@ -95,7 +97,7 @@ scorebookRouter.post("/:id/scorebook/import", async (c) => {
       } catch (e) {}
     }
 
-    // C. Gemini API 用の画像パーツリストを構築
+    // C. Gemini API 用の画像パーツリストを構築 (画像1: 手書きスコアブック)
     const imageParts: any[] = [
       {
         inlineData: {
@@ -105,59 +107,84 @@ scorebookRouter.post("/:id/scorebook/import", async (c) => {
       }
     ];
 
-    // D. 早見表画像があれば取得してパーツに追加 (マルチイメージ対応)
+    // D. 早見表画像があれば取得してパーツに追加 (マルチイメージ対応: 画像2)
     let legendPromptAdd = "";
+    let isLegendLoaded = false;
+
     if (legendUrl) {
       try {
-        const marker = "/api/images/";
-        const markerIdx = legendUrl.indexOf(marker);
+        if (legendUrl.startsWith("data:")) {
+          // A-1. Data URI (data:image/png;base64,...) の直接パース
+          const [header, base64Data] = legendUrl.split(",");
+          const mimeMatch = header.match(/data:(.*?);/);
+          const legendMimeType = mimeMatch ? mimeMatch[1] : "image/png";
 
-        if (markerIdx !== -1 && c.env.BUCKET) {
-          // A. 自分の配信サーバーのパス（/api/images/）であれば、R2から直接ロードする（最速・安全）
-          const r2Key = legendUrl.substring(markerIdx + marker.length);
-          const r2Object = await c.env.BUCKET.get(r2Key);
-          
-          if (r2Object) {
-            const legendBytes = await r2Object.arrayBuffer();
-            const legendBase64 = arrayBufferToBase64(legendBytes);
-            const legendMimeType = r2Object.httpMetadata?.contentType || "image/png";
-
+          if (base64Data) {
             imageParts.push({
               inlineData: {
                 mimeType: legendMimeType,
-                data: legendBase64
+                data: base64Data.trim()
               }
             });
-
-            legendPromptAdd = `\n⚠️ 【画像 2】は、このチームが使用しているスコア記号の早見表（レジェンド）です。この画像 2 に定義されている記号の記述ルール（三振、四球、ヒットなどの独自の表現）を最優先にして、画像 1（手書きスコアブック）を解析してください。`;
+            isLegendLoaded = true;
           }
         } else {
-          // B. 外部URLなどの場合は HTTP でフェッチする
-          let targetUrl = legendUrl;
-          if (legendUrl.startsWith("/")) {
-            // 相対URLの場合はリクエストのホスト名（オリジン）を付与して絶対URLにする
-            const requestUrl = new URL(c.req.url);
-            targetUrl = `${requestUrl.origin}${legendUrl}`;
-          }
+          const marker = "/api/images/";
+          const markerIdx = legendUrl.indexOf(marker);
 
-          const legendRes = await fetch(targetUrl);
-          if (legendRes.ok) {
-            const legendBytes = await legendRes.arrayBuffer();
-            const legendBase64 = arrayBufferToBase64(legendBytes);
-            const legendMimeType = legendRes.headers.get("content-type") || "image/png";
+          if (markerIdx !== -1 && c.env.BUCKET) {
+            // A-2. R2 から直接ロード
+            const r2Key = legendUrl.substring(markerIdx + marker.length);
+            const r2Object = await c.env.BUCKET.get(r2Key);
+            
+            if (r2Object) {
+              const legendBytes = await r2Object.arrayBuffer();
+              const legendBase64 = arrayBufferToBase64(legendBytes);
+              const legendMimeType = r2Object.httpMetadata?.contentType || "image/png";
 
-            imageParts.push({
-              inlineData: {
-                mimeType: legendMimeType,
-                data: legendBase64
-              }
-            });
+              imageParts.push({
+                inlineData: {
+                  mimeType: legendMimeType,
+                  data: legendBase64
+                }
+              });
+              isLegendLoaded = true;
+            }
+          } else {
+            // A-3. HTTP / Relative URL のフェッチ
+            let targetUrl = legendUrl;
+            if (legendUrl.startsWith("/")) {
+              const requestUrl = new URL(c.req.url);
+              targetUrl = `${requestUrl.origin}${legendUrl}`;
+            }
 
-            legendPromptAdd = `\n⚠️ 【画像 2】は、このチームが使用しているスコア記号の早見表（レジェンド）です。この画像 2 に定義されている記号の記述ルール（三振、四球、ヒットなどの独自の表現）を最優先にして、画像 1（手書きスコアブック）を解析してください。`;
+            const legendRes = await fetch(targetUrl);
+            if (legendRes.ok) {
+              const legendBytes = await legendRes.arrayBuffer();
+              const legendBase64 = arrayBufferToBase64(legendBytes);
+              const legendMimeType = legendRes.headers.get("content-type") || "image/png";
+
+              imageParts.push({
+                inlineData: {
+                  mimeType: legendMimeType,
+                  data: legendBase64
+                }
+              });
+              isLegendLoaded = true;
+            } else {
+              console.warn(`[ScorebookImport] Failed to fetch legendUrl (Status ${legendRes.status}): ${targetUrl}`);
+            }
           }
         }
+
+        if (isLegendLoaded) {
+          legendPromptAdd = `\n🔥【最重要ルール: 添付画像 2 の「記号早見表（レジェンド）」の絶対遵守】
+添付された【画像 2】は、このチームが公式に登録している「スコア記号早見表（レジェンド）」です。
+画像 2 には、このチーム特有の記号・略称・図形（例: 安打、アウト、三振、四死球、盗塁、牽制死、牽制悪送球、牽制球などの独自の表記や書き方ルール）が定義されています。
+画像 1（手書きスコアブック）のマスを解析する際は、画像 2 の定義と照らし合わせ、画像 2 に記載されている記号ルールを『最優先』として解析結果を出力してください。画像 2 の記号と一般的な早稲田式スコアの解釈が衝突する場合は、必ず画像 2 の定義を優先してください。`;
+        }
       } catch (err) {
-        console.error("Failed to load scorebook legend image:", err);
+        console.error("[ScorebookImport] Failed to load scorebook legend image:", err);
       }
     }
 
@@ -170,7 +197,7 @@ ${legendPromptAdd}${playerRosterPrompt}${lineupPrompt}${opponentLineupPrompt}
 1. 各マスは1打席を表します。マスの中央にある記号が最終的な打撃結果またはアウト時の守備位置です。
 2. 進塁はマスのひし形の枠線と実線で表されます（右下:1塁, 右上:2塁, 左上:3塁, 左下:本塁）。
 3. マスの右下にある丸数字（①, ②, ③）はそのイニングでのアウトカウントです。
-4. 【投球履歴（BSO）の解析】: マスの中には、ボール(B)・ストライク(S)・ファウル等の投球ごとの記録が小さなチェックマークや数字で書かれています。これらを読み取り、最終的なボール数(b)とストライク数(s)、および1球ごとの投球結果(pi: 例 ["ボール", "ストライク", "ファウル", "センター前ヒット"]) を抽出してください。
+4. 【投球履歴（BSO）の解析】: マスの中には、ボール(B)・ストライク(S)・ファウル等の投球ごとの記録が小さなチェックマークや数字で書かれています。これらを読み取り、最終的なボール数(b)とストライク数(s)、および1球ごとの投球結果(pi: 例 ["ボール", "ストライク", "牽制", "ファウル", "センター前ヒット"]) を抽出してください。投球履歴欄の 'k', 'K', '牽' などの表記は「牽制」として認識してください。
 5. 【投手名(p)の抽出ルール】: 各打席で対峙している投手の名前を抽出してください。投手交代の特記がない限り、イニングを跨いでも前の打席と同じ投手名を維持して出力してください。自チームの投球イニング（相手の攻撃）での投手名は、上記の「自チーム登録全選手リスト」に最も近いものに名寄せして出力してください。
 6. 【得点数(ru)の抽出ルール】: マス内の本塁生還(HP)や本塁打(HR)など、その打席で発生した得点数を ru (数値) に正確に設定してください。
 7. 【超重要】画像に含まれるすべてのイニングと全打席を漏れなく最後まで解析してください。途中で打ち切らないでください。
@@ -179,6 +206,9 @@ ${legendPromptAdd}${playerRosterPrompt}${lineupPrompt}${opponentLineupPrompt}
    - **単打・二塁打・三塁打・本塁打**: '1B', '2B', '3B', 'HR', 'H', '本塁打', '二塁打' などの表記。
    - **打球方向の数字＋ヒット表記**: マス内に数字 '7' (レフト), '8' (センター), '9' (ライト), '5' (サード), '6' (ショート), '4' (セカンド), '3' (ファースト) が書かれ、そこに一本線・波線・斜線が付いている、あるいは単にヒットとして書かれている場合は、アウトではなく 「7前安打 (レフト前ヒット)」 や 「8中安打 (センター前ヒット)」 のように、必ず 「ヒット」または「安打」の文字を含めて打撃結果(r)に出力 してください。
    - **ヒットとアウトの判別**: '7F' は「レフトフライ（アウト）」、'7L' は「レフトライナー（アウト）」、'7-3' や '6-3' は「ゴロアウト」。明確にフライ(F)やゴロ(ハイフン)の表記がない限り、外野打球数字 '7', '8', '9' は安打（ヒット）として優先的に解析してください。
+9. 【牽制球・牽制死・牽制悪送球の解析ルール】:
+   - **牽制死（牽制アウト）**: 進塁線上に 'P-O', 'P.O', 'PO', 'TO' (Throw Out), '牽制死', '牽死' や、守備送球番号（例: 投手牽制1塁死なら '1-3', '1-4', 捕手牽制なら '2-3', '2-4'）とアウト記号（波線・×・丸数字 ①等）が記録されている場合は、走者の進塁情報(a)に "m": "牽制死", "io": true, "f": "1B" (元の塁), "t": "1B" (または目標塁) として追加し、o (この打席のアウト数) に1を加算してください。
+   - **牽制悪送球**: 牽制の悪送球による進塁の場合、進塁線の記号（'E1', 'E2' や '1'の丸印など）から "m": "牽制悪送球", "io": false として進塁情報(a)を抽出してください。
 
 出力フォーマットは必ず以下のJSON形式に従い、\`\`\`json と \`\`\` で囲んで出力してください。
 【JSON構造】
@@ -199,7 +229,7 @@ ${legendPromptAdd}${playerRosterPrompt}${lineupPrompt}${opponentLineupPrompt}
       "pi": [             // 1球ごとの投球履歴 (配列)
         "ボール",
         "ストライク",
-        "ボール",
+        "牽制",
         "ファウル",
         "センター前ヒット"
       ],
@@ -208,7 +238,7 @@ ${legendPromptAdd}${playerRosterPrompt}${lineupPrompt}${opponentLineupPrompt}
           "rn": "走者名", // runnerName
           "f": "1B",      // from
           "t": "2B",      // to
-          "m": "盗塁",    // method
+          "m": "盗塁",    // method (例: "盗塁", "牽制死", "牽制悪送球", "暴投")
           "io": false,    // 進塁失敗によるアウトか (isOut, boolean)
           "pn": 3         // この進塁が起きた球数 (pitchNumber, 数値, オプショナル)
         }

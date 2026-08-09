@@ -13,6 +13,8 @@ import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import type { AtBatEvent, ValidationMessage } from "@/types/api";
 
+import { useTeam } from "@/contexts/TeamContext";
+
 interface MatchOption {
   id: string;
   opponent: string;
@@ -23,6 +25,7 @@ function PlayLogsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const urlMatchId = searchParams.get("matchId") || searchParams.get("id");
+  const { currentTeam } = useTeam();
 
   const [matches, setMatches] = useState<MatchOption[]>([]);
   const [selectedMatchId, setSelectedMatchId] = useState<string>("");
@@ -63,6 +66,9 @@ function PlayLogsContent() {
 
     const formData = new FormData();
     formData.append("file", selectedFile);
+    if (currentTeam?.scorebookLegendUrl) {
+      formData.append("legendUrl", currentTeam.scorebookLegendUrl);
+    }
 
     try {
       const res = await fetch(`/api/matches/${selectedMatchId}/scorebook/import`, {
