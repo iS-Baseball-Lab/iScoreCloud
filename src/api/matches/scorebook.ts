@@ -27,10 +27,15 @@ scorebookRouter.post("/:id/scorebook/import", async (c) => {
       return c.json({ success: false, error: "画像ファイルが必要です" }, 400);
     }
 
-    // A. 試合に紐づくチームの「早見表画像」および相手スタメンを取得
+    // A. 試合に紐づくチームの「早見表画像」、相手スタメン、およびイニング別スコアボードを取得
     const match = await db.select({ 
       teamId: matches.teamId,
-      opponentLineup: matches.opponentLineup
+      opponentLineup: matches.opponentLineup,
+      myScore: matches.myScore,
+      opponentScore: matches.opponentScore,
+      myInningScores: matches.myInningScores,
+      opponentInningScores: matches.opponentInningScores,
+      battingOrder: matches.battingOrder
     })
     .from(matches)
     .where(eq(matches.id, matchId as string))
@@ -93,6 +98,32 @@ scorebookRouter.post("/:id/scorebook/import", async (c) => {
           if (oppText) {
             opponentLineupPrompt = `\n⚠️ 【重要: 相手チームの登録スタメン】この試合の対戦相手（相手チーム）のスタメン情報は以下の通りです。相手チームの打席におけるバッター名(b)は、このリストの選手名に最も近いものに名寄せして出力してください。\n[${oppText}]\n`;
           }
+        }
+      } catch (e) {}
+    }
+
+    let scoreboardPrompt = "";
+    if (match) {
+      try {
+        const myScores: number[] = JSON.parse(match.myInningScores || "[]");
+        const oppScores: number[] = JSON.parse(match.opponentInningScores || "[]");
+        
+        const isMyTeamFirst = match.battingOrder === "first";
+        const topScores = isMyTeamFirst ? myScores : oppScores;
+        const bottomScores = isMyTeamFirst ? oppScores : myScores;
+        
+        const scoreSummaryLines: string[] = [];
+        if (topScores.length > 0) {
+          scoreSummaryLines.push(`・【表（先攻）イニング別得点】: ${topScores.map((s, idx) => `${idx + 1}回:${s}点`).join(", ")} (合計: ${isMyTeamFirst ? (match.myScore ?? 0) : (match.opponentScore ?? 0)}点)`);
+        }
+        if (bottomScores.length > 0) {
+          scoreSummaryLines.push(`・【裏（後攻）イニング別得点】: ${bottomScores.map((s, idx) => `${idx + 1}回:${s}点`).join(", ")} (合計: ${isMyTeamFirst ? (match.opponentScore ?? 0) : (match.myScore ?? 0)}点)`);
+        }
+
+        if (scoreSummaryLines.length > 0) {
+          scoreboardPrompt = `\n⚠️ 【精度向上用ヒント: 登録済みイニング別スコアボード】
+この試合の確定（または入力済み）スコアボード情報は以下の通りです。各打席での得点数(ru)や本塁生還進塁(HP)を解析する際は、イニングごとの得点数がこのスコアボード結果と矛盾しないように優先して照合してください。
+${scoreSummaryLines.join("\n")}\n`;
         }
       } catch (e) {}
     }
@@ -191,7 +222,7 @@ scorebookRouter.post("/:id/scorebook/import", async (c) => {
     // E. プロンプトの設計
     const prompt = `あなたは野球のスコアブック（主に日本で主流の早稲田式・成美堂式）の記号と構造を完全に理解したAIスコアラーです。
 添付されたスコアブックの画像（画像 1）を精確に解析し、打席ごとのプレイイベントを構造化データとして出力してください。
-${legendPromptAdd}${playerRosterPrompt}${lineupPrompt}${opponentLineupPrompt}
+${legendPromptAdd}${playerRosterPrompt}${lineupPrompt}${opponentLineupPrompt}${scoreboardPrompt}
 
 早稲田式スコアブックの読み取りルール:
 1. 各マスは1打席を表します。マスの中央にある記号が最終的な打撃結果またはアウト時の守備位置です。
@@ -209,6 +240,11 @@ ${legendPromptAdd}${playerRosterPrompt}${lineupPrompt}${opponentLineupPrompt}
 9. 【牽制球・牽制死・牽制悪送球の解析ルール】:
    - **牽制死（牽制アウト）**: 進塁線上に 'P-O', 'P.O', 'PO', 'TO' (Throw Out), '牽制死', '牽死' や、守備送球番号（例: 投手牽制1塁死なら '1-3', '1-4', 捕手牽制なら '2-3', '2-4'）とアウト記号（波線・×・丸数字 ①等）が記録されている場合は、走者の進塁情報(a)に "m": "牽制死", "io": true, "f": "1B" (元の塁), "t": "1B" (または目標塁) として追加し、o (この打席のアウト数) に1を加算してください。
    - **牽制悪送球**: 牽制の悪送球による進塁の場合、進塁線の記号（'E1', 'E2' や '1'の丸印など）から "m": "牽制悪送球", "io": false として進塁情報(a)を抽出してください。
+10. 【手書きマスの解釈例 (Few-Shot Pattern)】:
+   - 例1: マス中央に '8'、右下に ① ➔ 結果 r: "8飛" (センターフライ), o: 1
+   - 例2: マス中央に '7' に横線 ➔ 結果 r: "7前安打" (レフト前ヒット), o: 0, a: [{"rn": "打者名", "f": "1B", "t": "1B", "m": "安打", "io": false}]
+   - 例3: 右下線上に波線＋'P-O' ➔ 進塁 a: [{"rn": "走者名", "f": "1B", "t": "1B", "m": "牽制死", "io": true}], o: 1
+   - 例4: BSO欄に 'B','B','S','B','B' ➔ 結果 r: "四球", bl: 4, s: 1
 
 出力フォーマットは必ず以下のJSON形式に従い、\`\`\`json と \`\`\` で囲んで出力してください。
 【JSON構造】
@@ -265,7 +301,7 @@ ${legendPromptAdd}${playerRosterPrompt}${lineupPrompt}${opponentLineupPrompt}
           }
         ],
         generationConfig: {
-          temperature: 0.1,
+          temperature: 0.0,
           responseMimeType: "application/json"
         }
       })
