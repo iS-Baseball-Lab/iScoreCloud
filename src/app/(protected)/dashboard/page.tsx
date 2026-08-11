@@ -222,12 +222,12 @@ export default function DashboardPage() {
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   }, [matches]);
 
-  // 💡 3. 完了または雨天中止した試合 (FINISHED / RAINOUT) を抽出、降順（最新の過去が上）でソートし、最新3件を取得
+  // 💡 3. 完了または雨天中止した試合 (FINISHED / RAINOUT) を抽出、降順（最新の過去が上）でソートし、最新10件を取得
   const finishedMatches = useMemo(() => {
     return matches
       .filter(m => m.status === 'finished' || m.status === 'rainout')
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-      .slice(0, 5);
+      .slice(0, 10);
   }, [matches]);
 
   // 💡 4. 統計計算 (完了した試合のみ)
@@ -593,7 +593,7 @@ export default function DashboardPage() {
 
         {/* --- 6. 試合結果 (LATEST MATCHES) --- */}
         <section className="space-y-10">
-          <SectionHeader title="試合結果" subtitle="Latest 5 Matches" showPulse />
+          <SectionHeader title="試合結果" subtitle="Latest 10 Matches" showPulse />
           <div className="min-h-[100px]">
             {/* 🌟 finishedMatches (完了済み) だけを表示 */}
             <MatchList matches={finishedMatches} isLoading={isLoading} onDelete={handleDeleteMatch} />
