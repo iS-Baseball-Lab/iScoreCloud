@@ -993,7 +993,7 @@ app.get("/documents", async (c) => {
       description: "29期専用の遠征合宿スケジュール、宿泊先案内、持ち物リスト、健康チェックシートです。",
       fileUrl: "https://example.com/demo-trip.pdf",
       scope: "team",
-      scopeLabel: "この編成限定",
+      scopeLabel: "29期",
     },
     {
       id: "demo-doc-4",
@@ -1081,7 +1081,7 @@ app.get("/documents", async (c) => {
       description: d.description || "",
       fileUrl: d.fileUrl,
       scope: d.scope,
-      scopeLabel: d.scope === "organization" ? "チーム全体" : `${currentTeam.name}限定`,
+      scopeLabel: d.scope === "organization" ? "チーム全体" : (currentTeam.name || "編成"),
     }));
 
     return c.json({

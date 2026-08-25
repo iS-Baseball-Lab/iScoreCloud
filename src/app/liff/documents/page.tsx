@@ -277,7 +277,7 @@ export default function LiffDocumentsPage() {
             }`}
           >
             <Building2 className="w-3.5 h-3.5" />
-            <span>チーム全体共有</span>
+            <span>チーム全体</span>
           </button>
           <button
             type="button"
@@ -289,7 +289,7 @@ export default function LiffDocumentsPage() {
             }`}
           >
             <Users2 className="w-3.5 h-3.5" />
-            <span>{currentTeam?.teamName ? `${currentTeam.teamName} 限定` : "この編成限定"}</span>
+            <span>{currentTeam?.teamName || "編成"}</span>
           </button>
         </div>
 
@@ -491,10 +491,10 @@ export default function LiffDocumentsPage() {
                     >
                       <div className="flex items-center gap-1.5 font-black text-xs">
                         <Users2 className="w-4 h-4 shrink-0" />
-                        <span>この編成のみ</span>
+                        <span>{currentTeam?.teamName || "この編成"}</span>
                       </div>
                       <p className="text-[10px] font-medium leading-tight opacity-80">
-                        {currentTeam?.teamName || "選択中の編成"} 限定で公開
+                        {currentTeam?.teamName || "選択中の編成"} メンバーに公開
                       </p>
                     </button>
                   </div>
