@@ -103,6 +103,26 @@ app.get("/hub", async (c) => {
         .all();
     }
 
+    // 登録されている全チーム一覧の取得 (TeamSwitcher用)
+    const allTeams = await db
+      .select({
+        id: teams.id,
+        name: teams.name,
+        orgName: organizations.name,
+        logoImageUrl: organizations.logoImageUrl,
+      })
+      .from(teams)
+      .leftJoin(organizations, eq(teams.organizationId, organizations.id))
+      .orderBy(desc(teams.createdAt))
+      .all();
+
+    const teamList = (allTeams || []).map((t) => ({
+      id: t.id,
+      name: t.orgName ? `${t.orgName} ${t.name}` : t.name,
+      shortName: t.name,
+      logoImageUrl: t.logoImageUrl || undefined,
+    }));
+
     const liffId = c.env.NEXT_PUBLIC_LIFF_ID || c.env.LIFF_ID || "";
 
     return c.json({
@@ -114,6 +134,7 @@ app.get("/hub", async (c) => {
         shortName: targetTeam?.name || "チーム",
         homeGround: targetTeam?.homeGround || null,
       },
+      teams: teamList,
       nextEvent: nextEvent
         ? {
             id: nextEvent.id,
@@ -135,6 +156,7 @@ app.get("/hub", async (c) => {
       success: false,
       liffId: c.env.NEXT_PUBLIC_LIFF_ID || c.env.LIFF_ID || "",
       team: { name: "チームHUB" },
+      teams: [],
       matches: [],
     });
   }
