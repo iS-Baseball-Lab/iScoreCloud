@@ -1,7 +1,8 @@
 // filepath: src/components/liff/JoinTeamModal.tsx
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { UserPlus, Shield, CheckCircle2, Clock, X, AlertCircle, Loader2 } from "lucide-react";
 import { useLiff } from "./LiffProvider";
 
@@ -13,6 +14,7 @@ interface JoinTeamModalProps {
 
 export function JoinTeamModal({ isOpen, onClose, onSuccess }: JoinTeamModalProps) {
   const { profile } = useLiff();
+  const [mounted, setMounted] = useState(false);
   const [inviteCode, setInviteCode] = useState("");
   const [name, setName] = useState(profile?.displayName || "");
   const [memberType, setMemberType] = useState<"parent" | "player" | "staff">("parent");
@@ -21,7 +23,11 @@ export function JoinTeamModal({ isOpen, onClose, onSuccess }: JoinTeamModalProps
   const [statusResult, setStatusResult] = useState<{ status: "pending" | "active"; message: string } | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  if (!isOpen) return null;
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!isOpen || !mounted) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -75,8 +81,8 @@ export function JoinTeamModal({ isOpen, onClose, onSuccess }: JoinTeamModalProps
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-background/80 backdrop-blur-md overflow-y-auto animate-in fade-in duration-200">
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-background/80 backdrop-blur-md overflow-y-auto animate-in fade-in duration-200">
       <div className="w-full max-w-md bg-card rounded-3xl border border-border shadow-2xl p-5 sm:p-6 space-y-4 my-auto max-h-[88vh] overflow-y-auto animate-in zoom-in-95 duration-200">
         
         {/* ヘッダー */}
@@ -221,6 +227,7 @@ export function JoinTeamModal({ isOpen, onClose, onSuccess }: JoinTeamModalProps
           </form>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
