@@ -176,7 +176,7 @@ export const teamDocuments = sqliteTable('team_documents', {
   fileSize: text('file_size'),
   description: text('description'),
   scope: text('scope').$type<'organization' | 'team'>().notNull().default('team'),
-  createdById: text('created_by_id').references(() => user.id),
+  createdById: text('created_by_id'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(strftime('%s', 'now'))`),
 }, (table) => ({
   orgIdx: index("idx_team_docs_org_id").on(table.organizationId),
@@ -194,11 +194,12 @@ export const teamFaqs = sqliteTable('team_faqs', {
   answer: text('answer').notNull(),
   category: text('category').notNull().default('general'), // 'rain' | 'duty' | 'equipment' | 'cost' | 'manner' | 'trip' | 'general'
   scope: text('scope').$type<'organization' | 'team'>().notNull().default('team'),
-  createdById: text('created_by_id').references(() => user.id),
+  createdById: text('created_by_id'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(strftime('%s', 'now'))`),
 }, (table) => ({
   orgIdx: index("idx_team_faqs_org_id").on(table.organizationId),
   teamIdx: index("idx_team_faqs_team_id").on(table.teamId),
 }));
+
 
 
