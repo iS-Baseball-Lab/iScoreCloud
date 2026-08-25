@@ -10,13 +10,6 @@ import { extractYouTubeVideoId } from "@/lib/youtube";
 import { useLiff } from "@/components/liff/LiffProvider";
 import { Video, ChevronRight } from "lucide-react";
 
-interface TeamItem {
-  id: string;
-  name: string;
-  shortName: string;
-  logoImageUrl?: string;
-}
-
 interface HubDataResponse {
   success: boolean;
   liffId?: string;
@@ -26,17 +19,13 @@ interface HubDataResponse {
     shortName: string;
     homeGround?: string | null;
   };
-  teams?: TeamItem[];
   nextEvent?: any;
   matches?: MatchCardData[];
 }
 
 export default function LiffHubPage() {
-  const { profile } = useLiff();
+  const { profile, currentTeam, selectTeam } = useLiff();
   const [userName, setUserName] = useState<string>("メンバー");
-  const [teamName, setTeamName] = useState<string>("チーム");
-  const [currentTeamId, setCurrentTeamId] = useState<string>("");
-  const [teamsList, setTeamsList] = useState<TeamItem[]>([]);
   const [nextEvent, setNextEvent] = useState<any>(null);
   const [matches, setMatches] = useState<MatchCardData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -48,30 +37,25 @@ export default function LiffHubPage() {
     }
   }, [profile]);
 
-  // DBからチーム情報・次回予定・試合一覧を完全自動取得
-  const loadHubData = useCallback(async (targetTeamId?: string) => {
+  // DBからチーム情報・次回予定・試合一覧を完全自動取得（currentTeam.id に応じて連動）
+  const loadHubData = useCallback(async (teamId?: string) => {
     try {
       setIsLoading(true);
-      const urlParams = new URLSearchParams(window.location.search);
-      const selectedId = targetTeamId || urlParams.get("teamId") || currentTeamId;
-
-      const endpoint = selectedId ? `/api/liff/hub?teamId=${selectedId}` : `/api/liff/hub`;
+      const targetTeamId = teamId || currentTeam?.id;
+      const endpoint = targetTeamId ? `/api/liff/hub?teamId=${targetTeamId}` : `/api/liff/hub`;
       const res = await fetch(endpoint);
 
       if (res.ok) {
         const data = (await res.json()) as HubDataResponse;
-        if (data.team?.name) {
-          setTeamName(data.team.name);
-          if (data.team.id) setCurrentTeamId(data.team.id);
-        }
-        if (Array.isArray(data.teams)) {
-          setTeamsList(data.teams);
-        }
         if (data.nextEvent) {
           setNextEvent(data.nextEvent);
+        } else {
+          setNextEvent(null);
         }
         if (Array.isArray(data.matches)) {
           setMatches(data.matches);
+        } else {
+          setMatches([]);
         }
       }
     } catch (error) {
@@ -79,30 +63,23 @@ export default function LiffHubPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [currentTeamId]);
+  }, [currentTeam?.id]);
 
   useEffect(() => {
     loadHubData();
   }, [loadHubData]);
 
-  // チーム切り替え
-  const handleSelectTeam = (teamId: string) => {
-    setCurrentTeamId(teamId);
-    loadHubData(teamId);
-  };
+  const teamName = currentTeam?.name || "チーム";
 
   // 最新の動画付き試合
   const latestVideoMatch = matches.find((m) => !!extractYouTubeVideoId(m.youtubeUrl));
 
   return (
     <div className="flex flex-col min-h-screen">
-      {/* 🌟 本家 iScoreCloud と完全統一されたヘッダー */}
+      {/* 🌟 本家 iScoreCloud と完全統一されたヘッダー（選択チームは全画面で自動維持） */}
       <LiffHeader
         title={teamName}
         subtitle="チームHUB"
-        teams={teamsList}
-        currentTeamId={currentTeamId}
-        onSelectTeam={handleSelectTeam}
         shareData={{
           title: `${teamName} チームHUB`,
           text: `出欠回答、配車表、予定確認、試合動画の閲覧はこちらから！`,

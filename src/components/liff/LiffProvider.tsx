@@ -1,9 +1,16 @@
 // filepath: src/components/liff/LiffProvider.tsx
 "use client";
 
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
 import type { Liff } from "@line/liff";
 import { initLiff, getLiffProfile, type LiffUserProfile } from "@/lib/liff/liff-client";
+
+export interface LiffTeamItem {
+  id: string;
+  name: string;
+  shortName: string;
+  logoImageUrl?: string;
+}
 
 interface LiffContextType {
   liff: Liff | null;
@@ -14,6 +21,11 @@ interface LiffContextType {
   reason?: string;
   profile: LiffUserProfile | null;
   error: string | null;
+  // チーム状態管理 (LocalStorage & Provider で完全維持)
+  teams: LiffTeamItem[];
+  currentTeam: LiffTeamItem | null;
+  selectTeam: (teamId: string) => void;
+  isLoadingTeam: boolean;
 }
 
 const LiffContext = createContext<LiffContextType>({
@@ -24,6 +36,10 @@ const LiffContext = createContext<LiffContextType>({
   isMock: false,
   profile: null,
   error: null,
+  teams: [],
+  currentTeam: null,
+  selectTeam: () => {},
+  isLoadingTeam: true,
 });
 
 export function LiffProvider({
@@ -41,6 +57,77 @@ export function LiffProvider({
   const [reason, setReason] = useState<string | undefined>();
   const [profile, setProfile] = useState<LiffUserProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // チーム状態
+  const [teams, setTeams] = useState<LiffTeamItem[]>([]);
+  const [currentTeam, setCurrentTeam] = useState<LiffTeamItem | null>(null);
+  const [isLoadingTeam, setIsLoadingTeam] = useState(true);
+
+  // チーム選択ハンドラー（LocalStorageに永続化し、全画面で同期）
+  const selectTeam = useCallback((teamId: string) => {
+    localStorage.setItem("iscore_selectedTeamId", teamId);
+    setTeams((prevTeams) => {
+      const found = prevTeams.find((t) => t.id === teamId);
+      if (found) {
+        setCurrentTeam(found);
+      }
+      return prevTeams;
+    });
+  }, []);
+
+  // チーム一覧 & 初期選択チームのロード
+  const loadTeams = useCallback(async () => {
+    try {
+      setIsLoadingTeam(true);
+      const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+      const urlTeamId = urlParams?.get("teamId");
+      const storedTeamId = typeof window !== "undefined" ? localStorage.getItem("iscore_selectedTeamId") : null;
+      const targetTeamId = urlTeamId || storedTeamId;
+
+      const endpoint = targetTeamId ? `/api/liff/hub?teamId=${targetTeamId}` : `/api/liff/hub`;
+      const res = await fetch(endpoint);
+
+      if (res.ok) {
+        const data = await res.json() as {
+          teams?: LiffTeamItem[];
+          team?: { id: string | null; name: string; shortName: string; logoImageUrl?: string };
+        };
+
+        const teamList = data.teams || [];
+        setTeams(teamList);
+
+        // 選択中チームの特定
+        let activeTeam: LiffTeamItem | null = null;
+        if (targetTeamId) {
+          activeTeam = teamList.find((t) => t.id === targetTeamId) || null;
+        }
+        if (!activeTeam && data.team?.id) {
+          activeTeam = {
+            id: data.team.id,
+            name: data.team.name,
+            shortName: data.team.shortName,
+            logoImageUrl: data.team.logoImageUrl,
+          };
+        }
+        if (!activeTeam && teamList.length > 0) {
+          activeTeam = teamList[0];
+        }
+
+        if (activeTeam) {
+          setCurrentTeam(activeTeam);
+          localStorage.setItem("iscore_selectedTeamId", activeTeam.id);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load teams in LiffProvider:", err);
+    } finally {
+      setIsLoadingTeam(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadTeams();
+  }, [loadTeams]);
 
   useEffect(() => {
     let isMounted = true;
@@ -97,6 +184,10 @@ export function LiffProvider({
         reason,
         profile,
         error,
+        teams,
+        currentTeam,
+        selectTeam,
+        isLoadingTeam,
       }}
     >
       {children}

@@ -1,7 +1,7 @@
 // filepath: src/components/liff/LiffHeader.tsx
 "use client";
 
-import React, { useState } from "react";
+import React from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useTheme } from "next-themes";
@@ -18,7 +18,7 @@ import {
   User,
   Users
 } from "lucide-react";
-import { useLiff } from "./LiffProvider";
+import { useLiff, type LiffTeamItem } from "./LiffProvider";
 import { shareTargetPicker } from "@/lib/liff/liff-client";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -30,19 +30,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-interface TeamItem {
-  id: string;
-  name: string;
-  orgName?: string;
-  roleLabel?: string;
-  logoImageUrl?: string;
-}
-
 interface LiffHeaderProps {
   title?: string;
   subtitle?: string;
   showBack?: boolean;
-  teams?: TeamItem[];
+  teams?: LiffTeamItem[];
   currentTeamId?: string;
   onSelectTeam?: (teamId: string) => void;
   shareData?: {
@@ -53,17 +45,23 @@ interface LiffHeaderProps {
 }
 
 export function LiffHeader({
-  title = "チーム",
+  title,
   subtitle = "チームHUB",
   showBack = false,
-  teams = [],
-  currentTeamId,
-  onSelectTeam,
+  teams: propsTeams,
+  currentTeamId: propsCurrentTeamId,
+  onSelectTeam: propsOnSelectTeam,
   shareData,
 }: LiffHeaderProps) {
   const router = useRouter();
-  const { profile, isInClient } = useLiff();
+  const { profile, isInClient, teams: contextTeams, currentTeam, selectTeam } = useLiff();
   const { theme, setTheme } = useTheme();
+
+  // チーム情報：props優先、なければLiffProviderのContextから自動取得
+  const effectiveTeams = propsTeams && propsTeams.length > 0 ? propsTeams : contextTeams;
+  const effectiveTeamName = title || currentTeam?.name || "チーム";
+  const effectiveCurrentTeamId = propsCurrentTeamId || currentTeam?.id || "";
+  const handleSelectTeam = propsOnSelectTeam || selectTeam;
 
   const handleShare = async () => {
     if (!shareData) return;
@@ -135,7 +133,7 @@ export function LiffHeader({
         <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 justify-end flex-1">
           
           {/* チーム表示 & 切り替えバッジ (TeamSwitcher) */}
-          {teams.length > 1 ? (
+          {effectiveTeams.length > 1 ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
@@ -144,12 +142,12 @@ export function LiffHeader({
                 >
                   <Avatar className="h-6 w-6 border border-primary/30 bg-background shrink-0 overflow-hidden">
                     <AvatarFallback className="w-full h-full flex items-center justify-center text-primary font-black text-[10px] select-none bg-background">
-                      {(title || "T").slice(0, 2).toUpperCase()}
+                      {effectiveTeamName.slice(0, 2).toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
                   <div className="flex flex-col justify-center overflow-hidden min-w-0 flex-1">
                     <span className="text-[11px] sm:text-xs font-black tracking-tight text-foreground truncate leading-tight">
-                      {title}
+                      {effectiveTeamName}
                     </span>
                     <span className="text-[8px] font-bold text-muted-foreground uppercase truncate leading-none mt-0.5">
                       {subtitle}
@@ -163,10 +161,10 @@ export function LiffHeader({
                   所属チーム切り替え
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                {teams.map((t) => (
+                {effectiveTeams.map((t) => (
                   <DropdownMenuItem
                     key={t.id}
-                    onClick={() => onSelectTeam?.(t.id)}
+                    onClick={() => handleSelectTeam?.(t.id)}
                     className="flex items-center justify-between p-2 cursor-pointer font-bold text-xs"
                   >
                     <div className="flex items-center gap-2 truncate">
@@ -177,7 +175,7 @@ export function LiffHeader({
                       </Avatar>
                       <span className="truncate">{t.name}</span>
                     </div>
-                    {t.id === currentTeamId && <Check className="w-3.5 h-3.5 text-primary shrink-0" />}
+                    {t.id === effectiveCurrentTeamId && <Check className="w-3.5 h-3.5 text-primary shrink-0" />}
                   </DropdownMenuItem>
                 ))}
               </DropdownMenuContent>
@@ -185,16 +183,16 @@ export function LiffHeader({
           ) : (
             <div
               className="flex items-center gap-1.5 pl-1 pr-2.5 py-1 rounded-full bg-primary/10 backdrop-blur-md border border-primary/40 text-foreground shadow-xs min-w-0 max-w-[150px] sm:max-w-[200px]"
-              title={title}
+              title={effectiveTeamName}
             >
               <Avatar className="h-6 w-6 border border-primary/30 bg-background shrink-0 overflow-hidden">
                 <AvatarFallback className="w-full h-full flex items-center justify-center text-primary font-black text-[10px] select-none bg-background">
-                  {(title || "T").slice(0, 2).toUpperCase()}
+                  {effectiveTeamName.slice(0, 2).toUpperCase()}
                 </AvatarFallback>
               </Avatar>
               <div className="flex flex-col justify-center overflow-hidden min-w-0 flex-1">
                 <span className="text-[11px] sm:text-xs font-black tracking-tight text-foreground truncate leading-tight">
-                  {title}
+                  {effectiveTeamName}
                 </span>
                 <span className="text-[8px] font-bold text-muted-foreground uppercase truncate leading-none mt-0.5">
                   {subtitle}
