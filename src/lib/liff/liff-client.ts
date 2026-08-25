@@ -51,7 +51,10 @@ export async function initLiff(liffId?: string): Promise<{ liff: Liff | null; is
 
   try {
     const liff = (await import("@line/liff")).default;
-    await liff.init({ liffId: targetLiffId });
+    await liff.init({ 
+      liffId: targetLiffId,
+      withLoginOnExternalBrowser: true, // 外部ブラウザでもLINEログイン自動連携
+    });
     liffInstance = liff;
     return { liff, isMock: false };
   } catch (error: any) {
@@ -76,7 +79,7 @@ export function isInLineClient(): boolean {
 }
 
 /**
- * ログイン中ユーザーのLINEプロフィールを取得する
+ * ログイン中ユーザーのLINEプロフィールを取得する (getProfile + getDecodedIDToken)
  */
 export async function getLiffProfile(): Promise<LiffUserProfile | null> {
   if (!liffInstance) return null;
@@ -85,13 +88,33 @@ export async function getLiffProfile(): Promise<LiffUserProfile | null> {
     if (!liffInstance.isLoggedIn()) {
       return null;
     }
-    const profile = await liffInstance.getProfile();
-    return {
-      userId: profile.userId,
-      displayName: profile.displayName,
-      pictureUrl: profile.pictureUrl,
-      statusMessage: profile.statusMessage,
-    };
+
+    // 1. getProfile を試行
+    try {
+      const profile = await liffInstance.getProfile();
+      if (profile?.displayName) {
+        return {
+          userId: profile.userId,
+          displayName: profile.displayName,
+          pictureUrl: profile.pictureUrl,
+          statusMessage: profile.statusMessage,
+        };
+      }
+    } catch (profileErr) {
+      console.warn("liff.getProfile failed, falling back to ID token:", profileErr);
+    }
+
+    // 2. ID Token フォールバック
+    const idToken = liffInstance.getDecodedIDToken();
+    if (idToken) {
+      return {
+        userId: idToken.sub || "unknown",
+        displayName: idToken.name || "メンバー",
+        pictureUrl: idToken.picture,
+      };
+    }
+
+    return null;
   } catch (error) {
     console.error("❌ Failed to get LIFF profile:", error);
     return null;

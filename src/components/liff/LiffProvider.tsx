@@ -55,7 +55,21 @@ export function LiffProvider({
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isMock, setIsMock] = useState(false);
   const [reason, setReason] = useState<string | undefined>();
-  const [profile, setProfile] = useState<LiffUserProfile | null>(null);
+  const [profile, setProfile] = useState<LiffUserProfile | null>(() => {
+    if (typeof window !== "undefined") {
+      const storedName = localStorage.getItem("iscore_user_name");
+      const storedAvatar = localStorage.getItem("iscore_user_avatar");
+      const storedUserId = localStorage.getItem("iscore_user_id");
+      if (storedName) {
+        return {
+          userId: storedUserId || "cached-user",
+          displayName: storedName,
+          pictureUrl: storedAvatar || undefined,
+        };
+      }
+    }
+    return null;
+  });
   const [error, setError] = useState<string | null>(null);
 
   // チーム状態 (LocalStorageから同期的に初期IDを取得)
@@ -163,9 +177,14 @@ export function LiffProvider({
           // LINEアプリ内またはログイン済みの場合
           if (instance.isLoggedIn()) {
             const userProfile = await getLiffProfile();
-            if (isMounted) {
+            if (isMounted && userProfile) {
               setProfile(userProfile);
               setIsLoggedIn(true);
+              localStorage.setItem("iscore_user_name", userProfile.displayName);
+              localStorage.setItem("iscore_user_id", userProfile.userId);
+              if (userProfile.pictureUrl) {
+                localStorage.setItem("iscore_user_avatar", userProfile.pictureUrl);
+              }
             }
           } else if (inClient) {
             // LINEアプリ内の場合は自動ログインをトリガー
