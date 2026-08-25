@@ -1,7 +1,7 @@
 // filepath: src/components/liff/LiffHeader.tsx
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import Link from "next/link";
 import { useTheme } from "next-themes";
 import { 
@@ -19,6 +19,7 @@ import {
 import { useLiff, type LiffTeamItem } from "./LiffProvider";
 import { shareTargetPicker } from "@/lib/liff/liff-client";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { JoinTeamModal } from "./JoinTeamModal";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -40,8 +41,9 @@ interface LiffHeaderProps {
 }
 
 export function LiffHeader({ shareData }: LiffHeaderProps) {
-  const { profile, isInClient, isLoggedIn, login, teams, currentTeam, selectTeam } = useLiff();
+  const { profile, isInClient, isLoggedIn, login, teams, currentTeam, selectTeam, isDemo, refreshTeams } = useLiff();
   const { theme, setTheme } = useTheme();
+  const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
 
   const activeTeamName = currentTeam?.name || "チーム";
   const activeShortName = currentTeam?.shortName || currentTeam?.name || "チーム";
@@ -101,85 +103,77 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
         <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0 justify-end flex-1">
           
           {/* チーム切り替えバッジ (TeamSwitcher) */}
-          {teams.length > 1 ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <div
-                  className="flex items-center gap-1.5 sm:gap-2 pl-1 pr-2 py-1.5 rounded-full bg-primary/10 backdrop-blur-md border border-primary/40 text-foreground shadow-xs hover:bg-primary/20 transition-all cursor-pointer flex-1 max-w-[190px] min-[400px]:max-w-[220px] sm:max-w-[280px] outline-hidden select-none"
-                  title="チームを切り替える"
-                >
-                  <Avatar className="h-7 w-7 border border-primary/30 bg-background shrink-0 overflow-hidden">
-                    {currentTeam?.logoImageUrl ? (
-                      <img src={currentTeam.logoImageUrl} alt="Team Logo" className="h-full w-full object-contain" />
-                    ) : (
-                      <AvatarFallback className="w-full h-full flex items-center justify-center text-primary font-black text-[11px] select-none bg-background">
-                        {activeTeamName.slice(0, 2).toUpperCase()}
-                      </AvatarFallback>
-                    )}
-                  </Avatar>
-                  <div className="flex flex-col justify-center overflow-hidden min-w-0 flex-1">
-                    <span className="text-[11px] sm:text-xs font-black tracking-tight text-foreground truncate leading-tight">
-                      {activeTeamName}
-                    </span>
-                    <span className="text-[9px] font-bold text-muted-foreground uppercase truncate leading-none mt-0.5">
-                      チームHUB
-                    </span>
-                  </div>
-                  <ChevronDown className="h-3.5 w-3.5 text-primary/80 shrink-0 ml-0.5" />
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <div
+                className={`flex items-center gap-1.5 sm:gap-2 pl-1 pr-2 py-1.5 rounded-full backdrop-blur-md border text-foreground shadow-xs hover:opacity-90 transition-all cursor-pointer flex-1 max-w-[190px] min-[400px]:max-w-[220px] sm:max-w-[280px] outline-hidden select-none ${
+                  isDemo 
+                    ? "bg-amber-500/10 border-amber-500/40 text-amber-950 dark:text-amber-100" 
+                    : "bg-primary/10 border-primary/40"
+                }`}
+                title={activeTeamName}
+              >
+                <Avatar className="h-7 w-7 border border-primary/30 bg-background shrink-0 overflow-hidden">
+                  {currentTeam?.logoImageUrl ? (
+                    <img src={currentTeam.logoImageUrl} alt="Team Logo" className="h-full w-full object-contain" />
+                  ) : (
+                    <AvatarFallback className={`w-full h-full flex items-center justify-center font-black text-[11px] select-none bg-background ${
+                      isDemo ? "text-amber-600" : "text-primary"
+                    }`}>
+                      {activeTeamName.slice(0, 2).toUpperCase()}
+                    </AvatarFallback>
+                  )}
+                </Avatar>
+                <div className="flex flex-col justify-center overflow-hidden min-w-0 flex-1">
+                  <span className="text-[11px] sm:text-xs font-black tracking-tight text-foreground truncate leading-tight">
+                    {activeTeamName}
+                  </span>
+                  <span className={`text-[9px] font-black uppercase truncate leading-none mt-0.5 ${
+                    isDemo ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"
+                  }`}>
+                    {isDemo ? "🌟 デモ体験中" : "チームHUB"}
+                  </span>
                 </div>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-60 p-1.5">
-                <DropdownMenuLabel className="text-[10px] font-bold text-muted-foreground uppercase px-2 py-1">
-                  所属チーム切り替え
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                {teams.map((t) => (
-                  <DropdownMenuItem
-                    key={t.id}
-                    onClick={() => selectTeam(t.id)}
-                    className="flex items-center justify-between p-2 cursor-pointer font-bold text-xs rounded-xl"
-                  >
-                    <div className="flex items-center gap-2 truncate">
-                      <Avatar className="h-6 w-6 border border-border shrink-0">
-                        {t.logoImageUrl ? (
-                          <img src={t.logoImageUrl} alt={t.name} className="h-full w-full object-contain" />
-                        ) : (
-                          <AvatarFallback className="text-[10px] font-black">
-                            {t.name.slice(0, 2).toUpperCase()}
-                          </AvatarFallback>
-                        )}
-                      </Avatar>
-                      <span className="truncate">{t.name}</span>
-                    </div>
-                    {t.id === currentTeam?.id && <Check className="w-4 h-4 text-primary shrink-0" />}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          ) : (
-            <div
-              className="flex items-center gap-1.5 sm:gap-2 pl-1 pr-2.5 py-1.5 rounded-full bg-primary/10 backdrop-blur-md border border-primary/40 text-foreground shadow-xs flex-1 max-w-[190px] min-[400px]:max-w-[220px] sm:max-w-[280px]"
-              title={activeTeamName}
-            >
-              <Avatar className="h-7 w-7 border border-primary/30 bg-background shrink-0 overflow-hidden">
-                {currentTeam?.logoImageUrl ? (
-                  <img src={currentTeam.logoImageUrl} alt="Team Logo" className="h-full w-full object-contain" />
-                ) : (
-                  <AvatarFallback className="w-full h-full flex items-center justify-center text-primary font-black text-[11px] select-none bg-background">
-                    {activeTeamName.slice(0, 2).toUpperCase()}
-                  </AvatarFallback>
-                )}
-              </Avatar>
-              <div className="flex flex-col justify-center overflow-hidden min-w-0 flex-1">
-                <span className="text-[11px] sm:text-xs font-black tracking-tight text-foreground truncate leading-tight">
-                  {activeTeamName}
-                </span>
-                <span className="text-[9px] font-bold text-muted-foreground uppercase truncate leading-none mt-0.5">
-                  チームHUB
-                </span>
+                <ChevronDown className="h-3.5 w-3.5 text-primary/80 shrink-0 ml-0.5" />
               </div>
-            </div>
-          )}
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-60 p-1.5 space-y-1">
+              <DropdownMenuLabel className="text-[10px] font-bold text-muted-foreground uppercase px-2 py-1">
+                所属チーム切り替え
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {teams.map((t) => (
+                <DropdownMenuItem
+                  key={t.id}
+                  onClick={() => selectTeam(t.id)}
+                  className="flex items-center justify-between p-2 cursor-pointer font-bold text-xs rounded-xl"
+                >
+                  <div className="flex items-center gap-2 truncate">
+                    <Avatar className="h-6 w-6 border border-border shrink-0">
+                      {t.logoImageUrl ? (
+                        <img src={t.logoImageUrl} alt={t.name} className="h-full w-full object-contain" />
+                      ) : (
+                        <AvatarFallback className="text-[10px] font-black">
+                          {t.name.slice(0, 2).toUpperCase()}
+                        </AvatarFallback>
+                      )}
+                    </Avatar>
+                    <span className="truncate">{t.name}</span>
+                  </div>
+                  {t.id === currentTeam?.id && <Check className="w-4 h-4 text-primary shrink-0" />}
+                </DropdownMenuItem>
+              ))}
+
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => setIsJoinModalOpen(true)}
+                className="flex items-center gap-2 p-2 cursor-pointer font-black text-xs text-primary hover:bg-primary/10 rounded-xl"
+              >
+                <Users className="w-4 h-4" />
+                <span>招待コードでチームに参加</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           {/* ユーザープロフィールメニュー (UserProfileMenu) */}
           <DropdownMenu>
@@ -307,6 +301,16 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
 
       {/* 🌟 iScoreCloud シグネチャーのグラデーションライン (本家と完全同一) */}
       <div className="h-[1px] sm:h-[1.5px] w-full bg-gradient-to-r from-transparent via-primary/30 to-transparent" />
+
+      {/* チーム参加申請モーダル */}
+      <JoinTeamModal
+        isOpen={isJoinModalOpen}
+        onClose={() => setIsJoinModalOpen(false)}
+        onSuccess={() => {
+          setIsJoinModalOpen(false);
+          refreshTeams();
+        }}
+      />
     </header>
   );
 }

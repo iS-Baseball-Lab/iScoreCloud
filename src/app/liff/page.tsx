@@ -8,7 +8,9 @@ import { HubQuickNav } from "@/components/liff/HubQuickNav";
 import { MatchScoreCard, type MatchCardData } from "@/components/liff/MatchScoreCard";
 import { extractYouTubeVideoId } from "@/lib/youtube";
 import { useLiff } from "@/components/liff/LiffProvider";
-import { Video, ChevronRight } from "lucide-react";
+import { Video, ChevronRight, UserPlus } from "lucide-react";
+import { DemoBanner } from "@/components/liff/DemoBanner";
+import { JoinTeamModal } from "@/components/liff/JoinTeamModal";
 
 interface HubDataResponse {
   success: boolean;
@@ -24,7 +26,7 @@ interface HubDataResponse {
 }
 
 export default function LiffHubPage() {
-  const { profile, currentTeam, selectTeam, isLoadingTeam, isLoggedIn, login } = useLiff();
+  const { profile, currentTeam, selectTeam, isLoadingTeam, isLoggedIn, login, isDemo, refreshTeams } = useLiff();
   const [userName, setUserName] = useState<string>(() => {
     if (typeof window !== "undefined") {
       return localStorage.getItem("iscore_user_name") || "メンバー";
@@ -34,6 +36,7 @@ export default function LiffHubPage() {
   const [nextEvent, setNextEvent] = useState<any>(null);
   const [matches, setMatches] = useState<MatchCardData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
 
   // LINEプロフィール取得時の名前反映
   useEffect(() => {
@@ -92,6 +95,13 @@ export default function LiffHubPage() {
       />
 
       <div className="p-4 space-y-6">
+        {/* 🌟 デモ体験モード時の案内バナー */}
+        {isDemo && (
+          <section>
+            <DemoBanner onOpenJoinModal={() => setIsJoinModalOpen(true)} />
+          </section>
+        )}
+
         {/* 👋 ユーザー挨拶 */}
         <div className="flex items-center justify-between px-1">
           <div className="flex flex-col">
@@ -103,15 +113,28 @@ export default function LiffHubPage() {
             </h2>
           </div>
 
-          {!isLoggedIn && (
-            <button
-              type="button"
-              onClick={login}
-              className="px-3 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-black text-[11px] shadow-xs transition-all flex items-center gap-1 shrink-0"
-            >
-              <span>LINE連携</span>
-            </button>
-          )}
+          <div className="flex items-center gap-1.5">
+            {isDemo && (
+              <button
+                type="button"
+                onClick={() => setIsJoinModalOpen(true)}
+                className="px-3 py-1.5 rounded-full bg-primary hover:bg-primary/90 active:scale-95 text-primary-foreground font-black text-[11px] shadow-xs transition-all flex items-center gap-1 shrink-0"
+              >
+                <UserPlus className="w-3.5 h-3.5" />
+                <span>参加申請</span>
+              </button>
+            )}
+
+            {!isLoggedIn && (
+              <button
+                type="button"
+                onClick={login}
+                className="px-3 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-black text-[11px] shadow-xs transition-all flex items-center gap-1 shrink-0"
+              >
+                <span>LINE連携</span>
+              </button>
+            )}
+          </div>
         </div>
 
         {/* 🌟 ヒーローセクション：次回予定 & ワンタップ出欠 */}
@@ -149,6 +172,17 @@ export default function LiffHubPage() {
           </section>
         )}
       </div>
+
+      {/* チーム参加申請モーダル */}
+      <JoinTeamModal
+        isOpen={isJoinModalOpen}
+        onClose={() => setIsJoinModalOpen(false)}
+        onSuccess={() => {
+          setIsJoinModalOpen(false);
+          refreshTeams();
+          loadHubData();
+        }}
+      />
     </div>
   );
 }

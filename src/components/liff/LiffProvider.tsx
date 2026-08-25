@@ -28,6 +28,8 @@ interface LiffContextType {
   currentTeam: LiffTeamItem | null;
   selectTeam: (teamId: string) => void;
   isLoadingTeam: boolean;
+  isDemo: boolean;
+  refreshTeams: () => Promise<void>;
 }
 
 const LiffContext = createContext<LiffContextType>({
@@ -43,6 +45,8 @@ const LiffContext = createContext<LiffContextType>({
   currentTeam: null,
   selectTeam: () => {},
   isLoadingTeam: true,
+  isDemo: false,
+  refreshTeams: async () => {},
 });
 
 export function LiffProvider({
@@ -92,6 +96,7 @@ export function LiffProvider({
     return null;
   });
   const [isLoadingTeam, setIsLoadingTeam] = useState(true);
+  const [isDemo, setIsDemo] = useState(false);
 
   // チーム選択ハンドラー（LocalStorageに永続化し、全画面で同期）
   const selectTeam = useCallback((teamId: string) => {
@@ -120,16 +125,18 @@ export function LiffProvider({
 
       if (res.ok) {
         const data = await res.json() as {
+          isDemo?: boolean;
           teams?: LiffTeamItem[];
           team?: { id: string | null; name: string; shortName: string; logoImageUrl?: string };
         };
 
+        setIsDemo(!!data.isDemo);
         const teamList = data.teams || [];
         setTeams(teamList);
 
         // 選択中チームの特定
         let activeTeam: LiffTeamItem | null = null;
-        if (targetTeamId) {
+        if (targetTeamId && !data.isDemo) {
           activeTeam = teamList.find((t) => t.id === targetTeamId) || null;
         }
         if (!activeTeam && data.team?.id) {
@@ -146,8 +153,10 @@ export function LiffProvider({
 
         if (activeTeam) {
           setCurrentTeam(activeTeam);
-          localStorage.setItem("iscore_selectedTeamId", activeTeam.id);
-          localStorage.setItem("iscore_selectedTeamName", activeTeam.name);
+          if (!data.isDemo) {
+            localStorage.setItem("iscore_selectedTeamId", activeTeam.id);
+            localStorage.setItem("iscore_selectedTeamName", activeTeam.name);
+          }
         }
       }
     } catch (err) {
@@ -270,6 +279,8 @@ export function LiffProvider({
         currentTeam,
         selectTeam,
         isLoadingTeam,
+        isDemo,
+        refreshTeams: loadTeams,
       }}
     >
       {children}
