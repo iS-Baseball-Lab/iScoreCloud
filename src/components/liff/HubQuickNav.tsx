@@ -104,29 +104,6 @@ export function HubQuickNav() {
           </div>
         </a>
 
-        {/* 📄 資料ダウンロード */}
-        <a
-          href="/liff/documents"
-          className="flex flex-col justify-between p-4 rounded-2xl bg-card border border-border shadow-xs hover:border-primary/50 hover:shadow-md transition-all active:scale-[0.98] group"
-        >
-          <div className="flex items-center justify-between">
-            <span className="w-10 h-10 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center font-black">
-              <FileText className="w-5 h-5 group-hover:scale-110 transition-transform" />
-            </span>
-            <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-600">
-              書類
-            </span>
-          </div>
-          <div className="mt-3">
-            <h4 className="text-sm font-black text-foreground tracking-tight">
-              資料ダウンロード
-            </h4>
-            <p className="text-[11px] font-bold text-muted-foreground mt-0.5">
-              規約・配車マニュアル
-            </p>
-          </div>
-        </a>
-
         {/* ❓ よくある質問 (Q&A) */}
         <a
           href="/liff/faq"
@@ -146,6 +123,29 @@ export function HubQuickNav() {
             </h4>
             <p className="text-[11px] font-bold text-muted-foreground mt-0.5">
               雨天連絡・当番の疑問
+            </p>
+          </div>
+        </a>
+
+        {/* 📄 資料ダウンロード */}
+        <a
+          href="/liff/documents"
+          className="flex flex-col justify-between p-4 rounded-2xl bg-card border border-border shadow-xs hover:border-primary/50 hover:shadow-md transition-all active:scale-[0.98] group"
+        >
+          <div className="flex items-center justify-between">
+            <span className="w-10 h-10 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center font-black">
+              <FileText className="w-5 h-5 group-hover:scale-110 transition-transform" />
+            </span>
+            <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-600">
+              書類
+            </span>
+          </div>
+          <div className="mt-3">
+            <h4 className="text-sm font-black text-foreground tracking-tight">
+              資料ダウンロード
+            </h4>
+            <p className="text-[11px] font-bold text-muted-foreground mt-0.5">
+              規約・配車マニュアル
             </p>
           </div>
         </a>
