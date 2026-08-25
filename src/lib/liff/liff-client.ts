@@ -13,16 +13,24 @@ let liffInstance: Liff | null = null;
 /**
  * LIFF SDKを初期化する
  */
-export async function initLiff(liffId?: string): Promise<{ liff: Liff | null; isMock: boolean }> {
-  const targetLiffId = liffId || process.env.NEXT_PUBLIC_LIFF_ID;
-
-  if (!targetLiffId) {
-    console.warn("⚠️ NEXT_PUBLIC_LIFF_ID is not configured. Running in fallback mode.");
-    return { liff: null, isMock: true };
+export async function initLiff(liffId?: string): Promise<{ liff: Liff | null; isMock: boolean; reason?: string }> {
+  if (typeof window === "undefined") {
+    return { liff: null, isMock: true, reason: "SSR" };
   }
 
-  if (typeof window === "undefined") {
-    return { liff: null, isMock: true };
+  // LIFF ID の優先順位: 引数 > URLクエリ > localStorage > 環境変数
+  const urlParams = new URLSearchParams(window.location.search);
+  const queryLiffId = urlParams.get("liffId");
+  const storedLiffId = localStorage.getItem("iscore_liff_id");
+  const targetLiffId = liffId || queryLiffId || storedLiffId || process.env.NEXT_PUBLIC_LIFF_ID;
+
+  if (queryLiffId) {
+    localStorage.setItem("iscore_liff_id", queryLiffId);
+  }
+
+  if (!targetLiffId) {
+    console.warn("⚠️ LIFF ID is not configured (NEXT_PUBLIC_LIFF_ID, url ?liffId=, or localStorage). Running in mock fallback mode.");
+    return { liff: null, isMock: true, reason: "LIFF_ID_NOT_CONFIGURED" };
   }
 
   try {
@@ -30,9 +38,9 @@ export async function initLiff(liffId?: string): Promise<{ liff: Liff | null; is
     await liff.init({ liffId: targetLiffId });
     liffInstance = liff;
     return { liff, isMock: false };
-  } catch (error) {
+  } catch (error: any) {
     console.error("❌ Failed to initialize LIFF SDK:", error);
-    return { liff: null, isMock: true };
+    return { liff: null, isMock: true, reason: error?.message || "LIFF_INIT_ERROR" };
   }
 }
 

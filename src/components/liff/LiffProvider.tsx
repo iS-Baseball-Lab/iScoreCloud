@@ -10,6 +10,8 @@ interface LiffContextType {
   isReady: boolean;
   isInClient: boolean;
   isLoggedIn: boolean;
+  isMock: boolean;
+  reason?: string;
   profile: LiffUserProfile | null;
   error: string | null;
 }
@@ -19,6 +21,7 @@ const LiffContext = createContext<LiffContextType>({
   isReady: false,
   isInClient: false,
   isLoggedIn: false,
+  isMock: false,
   profile: null,
   error: null,
 });
@@ -34,6 +37,8 @@ export function LiffProvider({
   const [isReady, setIsReady] = useState(false);
   const [isInClient, setIsInClient] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isMock, setIsMock] = useState(false);
+  const [reason, setReason] = useState<string | undefined>();
   const [profile, setProfile] = useState<LiffUserProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -42,8 +47,11 @@ export function LiffProvider({
 
     async function setup() {
       try {
-        const { liff: instance, isMock } = await initLiff(liffId);
+        const { liff: instance, isMock: mockMode, reason: mockReason } = await initLiff(liffId);
         if (!isMounted) return;
+
+        setIsMock(mockMode);
+        setReason(mockReason);
 
         if (instance) {
           setLiff(instance);
@@ -85,6 +93,8 @@ export function LiffProvider({
         isReady,
         isInClient,
         isLoggedIn,
+        isMock,
+        reason,
         profile,
         error,
       }}
