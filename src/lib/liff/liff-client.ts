@@ -55,6 +55,9 @@ export async function initLiff(liffId?: string): Promise<{ liff: Liff | null; is
       liffId: targetLiffId,
       withLoginOnExternalBrowser: true, // 外部ブラウザでもLINEログイン自動連携
     });
+    
+    // 🌟 LIFF SDKの内部初期化・セッション準備を確実に待機
+    await liff.ready;
     liffInstance = liff;
     return { liff, isMock: false };
   } catch (error: any) {
@@ -85,6 +88,8 @@ export async function getLiffProfile(): Promise<LiffUserProfile | null> {
   if (!liffInstance) return null;
 
   try {
+    await liffInstance.ready;
+
     if (!liffInstance.isLoggedIn()) {
       return null;
     }
@@ -105,19 +110,34 @@ export async function getLiffProfile(): Promise<LiffUserProfile | null> {
     }
 
     // 2. ID Token フォールバック
-    const idToken = liffInstance.getDecodedIDToken();
-    if (idToken) {
-      return {
-        userId: idToken.sub || "unknown",
-        displayName: idToken.name || "メンバー",
-        pictureUrl: idToken.picture,
-      };
+    try {
+      const idToken = liffInstance.getDecodedIDToken();
+      if (idToken) {
+        return {
+          userId: idToken.sub || "unknown",
+          displayName: idToken.name || "メンバー",
+          pictureUrl: idToken.picture,
+        };
+      }
+    } catch (idErr) {
+      console.warn("liff.getDecodedIDToken failed:", idErr);
     }
 
     return null;
   } catch (error) {
     console.error("❌ Failed to get LIFF profile:", error);
     return null;
+  }
+}
+
+/**
+ * LINEログインを実行する
+ */
+export function loginLiff(): void {
+  if (liffInstance && !liffInstance.isLoggedIn()) {
+    liffInstance.login({
+      redirectUri: typeof window !== "undefined" ? window.location.href : undefined,
+    });
   }
 }
 

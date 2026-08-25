@@ -21,6 +21,7 @@ interface LiffContextType {
   reason?: string;
   profile: LiffUserProfile | null;
   error: string | null;
+  login: () => void;
   // チーム状態管理 (LocalStorage & Provider で完全維持)
   teams: LiffTeamItem[];
   currentTeam: LiffTeamItem | null;
@@ -36,6 +37,7 @@ const LiffContext = createContext<LiffContextType>({
   isMock: false,
   profile: null,
   error: null,
+  login: () => {},
   teams: [],
   currentTeam: null,
   selectTeam: () => {},
@@ -158,6 +160,15 @@ export function LiffProvider({
     loadTeams();
   }, [loadTeams]);
 
+  // ログイン処理ハンドラー
+  const handleLogin = useCallback(() => {
+    if (liff && !liff.isLoggedIn()) {
+      liff.login({
+        redirectUri: typeof window !== "undefined" ? window.location.href : undefined,
+      });
+    }
+  }, [liff]);
+
   useEffect(() => {
     let isMounted = true;
 
@@ -171,6 +182,7 @@ export function LiffProvider({
 
         if (instance) {
           setLiff(instance);
+          await instance.ready;
           const inClient = instance.isInClient();
           setIsInClient(inClient);
 
@@ -218,6 +230,7 @@ export function LiffProvider({
         reason,
         profile,
         error,
+        login: handleLogin,
         teams,
         currentTeam,
         selectTeam,

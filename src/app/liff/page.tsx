@@ -24,7 +24,7 @@ interface HubDataResponse {
 }
 
 export default function LiffHubPage() {
-  const { profile, currentTeam, selectTeam, isLoadingTeam } = useLiff();
+  const { profile, currentTeam, selectTeam, isLoadingTeam, isLoggedIn, login } = useLiff();
   const [userName, setUserName] = useState<string>(() => {
     if (typeof window !== "undefined") {
       return localStorage.getItem("iscore_user_name") || "メンバー";
@@ -102,6 +102,16 @@ export default function LiffHubPage() {
               こんにちは、{userName} さん 👋
             </h2>
           </div>
+
+          {!isLoggedIn && (
+            <button
+              type="button"
+              onClick={login}
+              className="px-3 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-black text-[11px] shadow-xs transition-all flex items-center gap-1 shrink-0"
+            >
+              <span>LINE連携</span>
+            </button>
+          )}
         </div>
 
         {/* 🌟 ヒーローセクション：次回予定 & ワンタップ出欠 */}

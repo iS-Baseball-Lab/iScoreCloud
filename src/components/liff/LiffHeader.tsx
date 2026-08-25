@@ -40,7 +40,7 @@ interface LiffHeaderProps {
 }
 
 export function LiffHeader({ shareData }: LiffHeaderProps) {
-  const { profile, isInClient, teams, currentTeam, selectTeam } = useLiff();
+  const { profile, isInClient, isLoggedIn, login, teams, currentTeam, selectTeam } = useLiff();
   const { theme, setTheme } = useTheme();
 
   const activeTeamName = currentTeam?.name || "チーム";
@@ -216,13 +216,23 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
                     {displayName}
                   </span>
                   <div className="flex items-center gap-1 mt-0.5">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${isLoggedIn ? "bg-emerald-500" : "bg-amber-500"}`} />
                     <span className="text-[10px] font-bold text-muted-foreground">
-                      LINEミニアプリ連携中
+                      {isLoggedIn ? "LINEミニアプリ連携中" : "LINE未連携"}
                     </span>
                   </div>
                 </div>
               </div>
+
+              {!isLoggedIn && (
+                <DropdownMenuItem
+                  onClick={login}
+                  className="flex items-center gap-2 p-2 cursor-pointer font-black text-xs text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl my-1"
+                >
+                  <User className="w-4 h-4" />
+                  <span>LINEでログインして名前を表示</span>
+                </DropdownMenuItem>
+              )}
 
               <DropdownMenuSeparator />
 
