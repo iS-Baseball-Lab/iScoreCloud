@@ -1,10 +1,11 @@
 // filepath: src/app/liff/carpool/page.tsx
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
-import { Car, Clock, MapPin, Users, AlertCircle, ChevronRight, Fuel, Phone, Shield } from "lucide-react";
+import { useLiff } from "@/components/liff/LiffProvider";
+import { Car, Clock, MapPin, Users, AlertCircle, ChevronRight, Fuel, Phone, Shield, Loader2 } from "lucide-react";
 
 interface CarAssignment {
   carNumber: number;
@@ -16,62 +17,49 @@ interface CarAssignment {
   isCargo?: boolean;
 }
 
+interface CarpoolData {
+  eventTitle: string;
+  date: string;
+  gatherTime: string;
+  gatherLocation: string;
+  destination: string;
+  costShare: string;
+  notes: string;
+  cars: CarAssignment[];
+}
+
 export default function LiffCarpoolPage() {
+  const { currentTeam } = useLiff();
   const [direction, setDirection] = useState<"outbound" | "return">("outbound");
+  const [carpoolInfo, setCarpoolInfo] = useState<CarpoolData | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // モックデータ（実運用時はAPI/D1と連携）
-  const carpoolInfo = {
-    eventTitle: "秋季大会 2回戦 vs レッドソックス",
-    date: "2026年8月30日(日)",
-    gatherTime: "07:45 集合 / 08:00 出発",
-    gatherLocation: "川崎市立桜本小学校 正門前",
-    destination: "多摩川緑地野球場 第1駐車場",
-    costShare: "1家族あたり 約 600 円 (高速・ガソリン代割り勘)",
-    notes: "※道具車はボールケース・テント・救急箱を積載します。\n※各自水筒と氷の準備をお願いします。",
-    cars: [
-      {
-        carNumber: 1,
-        driverName: "鈴木 パパ",
-        carModel: "セレナ (白)",
-        plate: "・12-34",
-        capacity: 6,
-        passengers: [
-          { name: "鈴木 翔太 (選手)", type: "player" },
-          { name: "佐藤 蓮 (選手)", type: "player" },
-          { name: "高橋 陸 (選手)", type: "player" },
-          { name: "田中 健太 (選手)", type: "player" },
-          { name: "佐藤 ママ (保護者)", type: "adult" },
-        ],
-      },
-      {
-        carNumber: 2,
-        driverName: "田中 パパ (コーチ)",
-        carModel: "アルファード (黒)",
-        plate: "・・88",
-        capacity: 5,
-        passengers: [
-          { name: "田中 颯太 (選手)", type: "player" },
-          { name: "伊藤 悠斗 (選手)", type: "player" },
-          { name: "渡辺 陽向 (選手)", type: "player" },
-          { name: "渡辺 パパ (コーチ)", type: "adult" },
-        ],
-      },
-      {
-        carNumber: 3,
-        driverName: "山下 監督",
-        carModel: "ハイエース (道具車)",
-        plate: "・56-78",
-        capacity: 3,
-        isCargo: true,
-        passengers: [
-          { name: "中村 湊 (選手)", type: "player" },
-          { name: "小林 樹 (選手)", type: "player" },
-        ],
-      },
-    ] as CarAssignment[],
-  };
+  const loadCarpool = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const teamId = currentTeam?.id || "demo-team";
+      const res = await fetch(`/api/liff/carpool?teamId=${teamId}`);
+      if (res.ok) {
+        const data = await res.json() as { success: boolean; carpool?: CarpoolData };
+        if (data.carpool) {
+          setCarpoolInfo(data.carpool);
+        } else {
+          setCarpoolInfo(null);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch carpool:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [currentTeam?.id]);
 
-  const totalPassengers = carpoolInfo.cars.reduce(
+  useEffect(() => {
+    loadCarpool();
+  }, [loadCarpool]);
+
+  const cars = carpoolInfo?.cars || [];
+  const totalPassengers = cars.reduce(
     (acc, car) => acc + car.passengers.length,
     0
   );
@@ -84,7 +72,7 @@ export default function LiffCarpoolPage() {
         {/* ページ内ヘッダー */}
         <LiffPageHeader
           title="配車表 & 集合案内"
-          subtitle={carpoolInfo.date}
+          subtitle={carpoolInfo?.date || "次回の配車情報"}
           icon={
             <span className="w-8 h-8 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center font-black">
               <Car className="w-4 h-4" />
@@ -92,12 +80,34 @@ export default function LiffCarpoolPage() {
           }
           showBack
           shareData={{
-            title: `【配車表】${carpoolInfo.date} ${carpoolInfo.eventTitle}`,
-            text: `集合: ${carpoolInfo.gatherTime} @ ${carpoolInfo.gatherLocation}\n乗車人数: 計${totalPassengers}名`,
+            title: `【配車表】${carpoolInfo?.date || ""} ${carpoolInfo?.eventTitle || ""}`,
+            text: `集合: ${carpoolInfo?.gatherTime || ""} @ ${carpoolInfo?.gatherLocation || ""}\n乗車人数: 計${totalPassengers}名`,
           }}
         />
-        {/* 集合概要カード */}
-        <section className="bg-card border-2 border-primary/40 rounded-3xl p-4 shadow-sm space-y-3">
+
+        {/* ローディング */}
+        {isLoading ? (
+          <div className="flex flex-col items-center justify-center py-16 text-muted-foreground space-y-2">
+            <Loader2 className="w-6 h-6 animate-spin text-primary" />
+            <span className="text-xs font-bold">配車表を読み込み中...</span>
+          </div>
+        ) : !carpoolInfo || cars.length === 0 ? (
+          /* 空ステート */
+          <div className="flex flex-col items-center justify-center py-16 text-center bg-card border border-border rounded-3xl p-6 space-y-3">
+            <div className="w-12 h-12 rounded-2xl bg-muted flex items-center justify-center text-muted-foreground">
+              <Car className="w-6 h-6" />
+            </div>
+            <div className="space-y-1">
+              <h4 className="text-sm font-black text-foreground">配車表はまだ作成されていません</h4>
+              <p className="text-xs font-bold text-muted-foreground">
+                管理者がWeb版から配車割り当てを行うと、ここに自動反映されます。
+              </p>
+            </div>
+          </div>
+        ) : (
+          <>
+            {/* 集合概要カード */}
+            <section className="bg-card border-2 border-primary/40 rounded-3xl p-4 shadow-sm space-y-3">
           <div className="flex items-center justify-between">
             <span className="px-2.5 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-black">
               🚗 配車情報
@@ -236,15 +246,19 @@ export default function LiffCarpoolPage() {
         </section>
 
         {/* 注意事項 */}
-        <section className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-900 dark:text-amber-200 space-y-1.5">
-          <div className="flex items-center gap-1.5 font-black text-amber-700 dark:text-amber-400">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>配車・送迎時の注意事項</span>
-          </div>
-          <p className="font-medium whitespace-pre-line leading-relaxed text-[11px]">
-            {carpoolInfo.notes}
-          </p>
-        </section>
+        {carpoolInfo?.notes && (
+          <section className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-900 dark:text-amber-200 space-y-1.5">
+            <div className="flex items-center gap-1.5 font-black text-amber-700 dark:text-amber-400">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>配車・送迎時の注意事項</span>
+            </div>
+            <p className="font-medium whitespace-pre-line leading-relaxed text-[11px]">
+              {carpoolInfo.notes}
+            </p>
+          </section>
+        )}
+          </>
+        )}
       </div>
     </div>
   );

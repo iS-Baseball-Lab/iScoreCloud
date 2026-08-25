@@ -1,10 +1,11 @@
 // filepath: src/app/liff/grounds/page.tsx
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
-import { MapPin, Navigation, Car, AlertTriangle, Info, Check, ExternalLink } from "lucide-react";
+import { useLiff } from "@/components/liff/LiffProvider";
+import { MapPin, Navigation, Car, AlertTriangle, Info, Check, ExternalLink, Loader2 } from "lucide-react";
 
 interface VenueInfo {
   id: string;
@@ -12,50 +13,40 @@ interface VenueInfo {
   shortName: string;
   address: string;
   mapUrl: string;
-  surface: string; // "dirt" | "turf" | "grass"
+  surface: string;
   spikeRule: string;
   parkingInfo: string;
   notes: string;
 }
 
 export default function LiffGroundsPage() {
-  const [selectedId, setSelectedId] = useState<string>("venue-1");
+  const { currentTeam } = useLiff();
+  const [venues, setVenues] = useState<VenueInfo[]>([]);
+  const [selectedId, setSelectedId] = useState<string>("");
+  const [isLoading, setIsLoading] = useState(true);
 
-  const venues: VenueInfo[] = [
-    {
-      id: "venue-1",
-      name: "多摩川緑地野球場 (多摩川緑地広場)",
-      shortName: "多摩川緑地 (1面・2面)",
-      address: "神奈川県川崎市高津区二子地先",
-      mapUrl: "https://maps.google.com/?q=多摩川緑地野球場",
-      surface: "土 (内野) / 天然芝 (外野)",
-      spikeRule: "金具スパイク可 / ポイント推奨",
-      parkingInfo: "第1駐車場（土日祝は1台500円）。チーム枠4台まで。河川敷道路は徐行厳守。",
-      notes: "水道あり・簡易トイレあり。自販機は土手上にあり。雨天後はグラウンド水はけ注意。",
-    },
-    {
-      id: "venue-2",
-      name: "川崎市等々力球場",
-      shortName: "等々力球場",
-      address: "神奈川県川崎市中原区等々力1-1",
-      mapUrl: "https://maps.google.com/?q=等々力球場",
-      surface: "人工芝 (全面)",
-      spikeRule: "⚠️ 金具スパイク禁止 (ポイント・アップシューズのみ)",
-      parkingInfo: "等々力緑地公園 東駐車場を利用（有料）。満車の可能性が高いため乗り合い必須。",
-      notes: "屋根付きスタンドあり。更衣室・シャワー完備。敷地内全面禁煙。",
-    },
-    {
-      id: "venue-3",
-      name: "川崎市立桜本小学校 グラウンド",
-      shortName: "桜本小 (ホーム)",
-      address: "神奈川県川崎市川崎区桜本1-10-1",
-      mapUrl: "https://maps.google.com/?q=川崎市立桜本小学校",
-      surface: "土 (クレー)",
-      spikeRule: "ポイントスパイクまたはトレーニングシューズ",
-      parkingInfo: "正門から入り体育館裏へ（事前登録車のみ3台まで駐車可）。近隣コインPあり。",
-      notes: "学校敷地内です。近隣住宅へのボール飛び出し防止ネットの確認必須。ゴミは全て持ち帰り。",
-    },
-  ];
+  const loadGrounds = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const teamId = currentTeam?.id || "demo-team";
+      const res = await fetch(`/api/liff/grounds?teamId=${teamId}`);
+      if (res.ok) {
+        const data = await res.json() as { success: boolean; venues?: VenueInfo[] };
+        if (data.venues && data.venues.length > 0) {
+          setVenues(data.venues);
+          setSelectedId(data.venues[0].id);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch grounds:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [currentTeam?.id]);
+
+  useEffect(() => {
+    loadGrounds();
+  }, [loadGrounds]);
 
   return (
     <div className="flex flex-col min-h-screen">

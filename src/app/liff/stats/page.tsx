@@ -1,23 +1,68 @@
 // filepath: src/app/liff/stats/page.tsx
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
-import { Trophy, Award, TrendingUp, User, Flame, Activity } from "lucide-react";
+import { useLiff } from "@/components/liff/LiffProvider";
+import { Trophy, Award, TrendingUp, User, Flame, Activity, Loader2 } from "lucide-react";
+
+interface TeamStatsData {
+  totalMatches: number;
+  wins: number;
+  losses: number;
+  draws: number;
+  winRate: string;
+  runsScored: number;
+  runsAllowed: number;
+  runDiff: string;
+}
 
 export default function LiffStatsPage() {
-  const [tab, setTab] = useState<"team" | "batting" | "pitching">("batting");
+  const { currentTeam } = useLiff();
+  const [tab, setTab] = useState<"team" | "batting" | "pitching">("team");
+  const [stats, setStats] = useState<TeamStatsData>({
+    totalMatches: 0,
+    wins: 0,
+    losses: 0,
+    draws: 0,
+    winRate: ".000",
+    runsScored: 0,
+    runsAllowed: 0,
+    runDiff: "0",
+  });
+  const [isLoading, setIsLoading] = useState(true);
 
-  // モックデータ
+  const loadStats = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const teamId = currentTeam?.id || "demo-team";
+      const res = await fetch(`/api/liff/stats?teamId=${teamId}`);
+      if (res.ok) {
+        const data = await res.json() as { success: boolean; stats?: TeamStatsData };
+        if (data.stats) {
+          setStats(data.stats);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch stats:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [currentTeam?.id]);
+
+  useEffect(() => {
+    loadStats();
+  }, [loadStats]);
+
   const teamStats = {
-    matches: 16,
-    wins: 12,
-    losses: 3,
-    draws: 1,
-    winRate: ".800",
-    runsScored: 98,
-    runsAllowed: 42,
+    matches: stats.totalMatches,
+    wins: stats.wins,
+    losses: stats.losses,
+    draws: stats.draws,
+    winRate: stats.winRate,
+    runsScored: stats.runsScored,
+    runsAllowed: stats.runsAllowed,
   };
 
   const battingRankings = [

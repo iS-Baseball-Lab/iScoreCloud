@@ -1,10 +1,11 @@
 // filepath: src/app/liff/schedule/page.tsx
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
-import { Calendar, Clock, MapPin, Users, CheckCircle2, XCircle, HelpCircle, Utensils, Shield, Filter } from "lucide-react";
+import { useLiff } from "@/components/liff/LiffProvider";
+import { Calendar, Clock, MapPin, Users, CheckCircle2, XCircle, HelpCircle, Utensils, Shield, Filter, Loader2 } from "lucide-react";
 
 interface ScheduleEvent {
   id: string;
@@ -20,51 +21,53 @@ interface ScheduleEvent {
 }
 
 export default function LiffSchedulePage() {
+  const { currentTeam, profile, isLoadingTeam } = useLiff();
   const [filter, setFilter] = useState<"all" | "match" | "practice">("all");
+  const [events, setEvents] = useState<ScheduleEvent[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const [events, setEvents] = useState<ScheduleEvent[]>([
-    {
-      id: "ev-1",
-      title: "秋季大会 2回戦 vs レッドソックス",
-      date: "8月30日(日)",
-      time: "08:30 集合 (09:30 PB)",
-      location: "市民第1球場 (1面)",
-      eventType: "match",
-      dutyGroup: "B班 (鍵・救急)",
-      needsLunch: true,
-      myStatus: "present",
-      attendCount: { present: 14, absent: 2, pending: 1 },
-    },
-    {
-      id: "ev-2",
-      title: "午後 強化守備・走塁練習",
-      date: "9月5日(土)",
-      time: "13:00 〜 17:00",
-      location: "桜本小学校 グラウンド",
-      eventType: "practice",
-      dutyGroup: "C班 (グラウンド整備)",
-      needsLunch: false,
-      myStatus: "pending",
-      attendCount: { present: 11, absent: 3, pending: 3 },
-    },
-    {
-      id: "ev-3",
-      title: "練習試合 vs グリーンライオンズ (ダブルヘッダー)",
-      date: "9月6日(日)",
-      time: "08:00 集合 (第1試合 09:00 / 第2試合 11:30)",
-      location: "緑地運動公園 野球場B",
-      eventType: "match",
-      dutyGroup: "A班 (審判割当・配車)",
-      needsLunch: true,
-      myStatus: "pending",
-      attendCount: { present: 12, absent: 1, pending: 4 },
-    },
-  ]);
+  const loadSchedule = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const teamId = currentTeam?.id || "demo-team";
+      const userId = profile?.userId || "";
+      const res = await fetch(`/api/liff/schedule?teamId=${teamId}&userId=${userId}`);
+      if (res.ok) {
+        const data = await res.json() as { success: boolean; events?: ScheduleEvent[] };
+        if (data.events) {
+          setEvents(data.events);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch schedule:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [currentTeam?.id, profile?.userId]);
 
-  const handleStatusChange = (eventId: string, status: "present" | "absent" | "pending") => {
+  useEffect(() => {
+    loadSchedule();
+  }, [loadSchedule]);
+
+  const handleStatusChange = async (eventId: string, status: "present" | "absent" | "pending") => {
+    // 楽観的更新
     setEvents((prev) =>
       prev.map((ev) => (ev.id === eventId ? { ...ev, myStatus: status } : ev))
     );
+
+    try {
+      await fetch("/api/liff/attendance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          eventId,
+          userId: profile?.userId,
+          status,
+        }),
+      });
+    } catch (err) {
+      console.error("Failed to save attendance:", err);
+    }
   };
 
   const filteredEvents = events.filter((ev) => {
@@ -93,6 +96,7 @@ export default function LiffSchedulePage() {
             text: `出欠未回答の方は確認とご登録をお願いします！`,
           }}
         />
+
         {/* フィルタータブ */}
         <div className="flex items-center gap-1.5 p-1 bg-muted/60 rounded-2xl border border-border">
           <button
@@ -130,9 +134,29 @@ export default function LiffSchedulePage() {
           </button>
         </div>
 
-        {/* 予定カード一覧 */}
-        <div className="space-y-4">
-          {filteredEvents.map((ev) => (
+        {/* ローディング */}
+        {isLoading ? (
+          <div className="flex flex-col items-center justify-center py-16 text-muted-foreground space-y-2">
+            <Loader2 className="w-6 h-6 animate-spin text-primary" />
+            <span className="text-xs font-bold">予定を読み込み中...</span>
+          </div>
+        ) : filteredEvents.length === 0 ? (
+          /* 空ステート */
+          <div className="flex flex-col items-center justify-center py-16 text-center bg-card border border-border rounded-3xl p-6 space-y-3">
+            <div className="w-12 h-12 rounded-2xl bg-muted flex items-center justify-center text-muted-foreground">
+              <Calendar className="w-6 h-6" />
+            </div>
+            <div className="space-y-1">
+              <h4 className="text-sm font-black text-foreground">登録されている予定はありません</h4>
+              <p className="text-xs font-bold text-muted-foreground">
+                管理者がWeb版から新しい予定を登録すると、ここに自動反映されます。
+              </p>
+            </div>
+          </div>
+        ) : (
+          /* 予定カード一覧 */
+          <div className="space-y-4">
+            {filteredEvents.map((ev) => (
             <div
               key={ev.id}
               className="bg-card border border-border rounded-3xl p-4 shadow-xs space-y-3"
@@ -256,8 +280,9 @@ export default function LiffSchedulePage() {
                 </div>
               </div>
             </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
