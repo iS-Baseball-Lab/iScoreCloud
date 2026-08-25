@@ -104,15 +104,27 @@ export function LiffProvider({
 
   // チーム選択ハンドラー（LocalStorageに永続化し、全画面で同期）
   const selectTeam = useCallback((teamId: string) => {
-    localStorage.setItem("iscore_selectedTeamId", teamId);
-    setTeams((prevTeams) => {
-      const found = prevTeams.find((t) => t.id === teamId);
-      if (found) {
-        setCurrentTeam(found);
-        localStorage.setItem("iscore_selectedTeamName", found.name);
-      }
-      return prevTeams;
-    });
+    if (teamId === "demo-team") {
+      setIsDemo(true);
+      setTeams((prevTeams) => {
+        const found = prevTeams.find((t) => t.id === "demo-team");
+        if (found) {
+          setCurrentTeam(found);
+        }
+        return prevTeams;
+      });
+    } else {
+      setIsDemo(false);
+      localStorage.setItem("iscore_selectedTeamId", teamId);
+      setTeams((prevTeams) => {
+        const found = prevTeams.find((t) => t.id === teamId);
+        if (found) {
+          setCurrentTeam(found);
+          localStorage.setItem("iscore_selectedTeamName", found.name);
+        }
+        return prevTeams;
+      });
+    }
   }, []);
 
   // チーム一覧 & 初期選択チームのロード

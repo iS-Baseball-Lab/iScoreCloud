@@ -220,6 +220,33 @@ app.get("/hub", async (c) => {
   const requestedTeamId = c.req.query("teamId");
 
   try {
+    // 全チーム一覧の取得 (チームスイッチャー用)
+    const allTeams = await db
+      .select({
+        id: teams.id,
+        name: teams.name,
+        shortName: teams.name,
+        orgName: organizations.name,
+        logoImageUrl: organizations.logoImageUrl,
+      })
+      .from(teams)
+      .leftJoin(organizations, eq(teams.organizationId, organizations.id))
+      .orderBy(desc(teams.createdAt))
+      .all();
+
+    const teamList = allTeams.map((t) => ({
+      id: t.id,
+      name: `${t.orgName ? `${t.orgName} ` : ""}${t.name}`.trim(),
+      orgName: t.orgName || t.name,
+      teamName: t.name,
+      shortName: t.shortName,
+      logoImageUrl: t.logoImageUrl || undefined,
+      isDemo: false,
+    }));
+
+    // ログインメンバーもいつでも体験できるよう、末尾にデモチームを追加
+    teamList.push(DEMO_TEAM);
+
     let targetTeam: any = null;
 
     if (requestedTeamId && requestedTeamId !== "demo-team") {
@@ -246,7 +273,7 @@ app.get("/hub", async (c) => {
         liffId,
         isDemo: true,
         team: DEMO_TEAM,
-        teams: [DEMO_TEAM],
+        teams: teamList,
         nextEvent: DEMO_NEXT_EVENT,
         matches: DEMO_MATCHES,
       });
@@ -278,32 +305,6 @@ app.get("/hub", async (c) => {
       .orderBy(desc(matches.date), desc(matches.createdAt))
       .limit(10)
       .all();
-
-    const allTeams = await db
-      .select({
-        id: teams.id,
-        name: teams.name,
-        shortName: teams.name,
-        orgName: organizations.name,
-        logoImageUrl: organizations.logoImageUrl,
-      })
-      .from(teams)
-      .leftJoin(organizations, eq(teams.organizationId, organizations.id))
-      .orderBy(desc(teams.createdAt))
-      .all();
-
-    const teamList = allTeams.map((t) => ({
-      id: t.id,
-      name: `${t.orgName ? `${t.orgName} ` : ""}${t.name}`.trim(),
-      orgName: t.orgName || t.name,
-      teamName: t.name,
-      shortName: t.shortName,
-      logoImageUrl: t.logoImageUrl || undefined,
-      isDemo: false,
-    }));
-
-    // ログインメンバーもいつでも体験できるよう、末尾にデモチームを追加
-    teamList.push(DEMO_TEAM);
 
     const liffId = c.env.NEXT_PUBLIC_LIFF_ID || c.env.LIFF_ID || "";
 

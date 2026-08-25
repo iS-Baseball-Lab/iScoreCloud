@@ -76,11 +76,11 @@ export function JoinTeamModal({ isOpen, onClose, onSuccess }: JoinTeamModalProps
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="w-full max-w-md bg-card rounded-3xl border border-border shadow-2xl p-6 space-y-5 animate-in zoom-in-95 duration-300">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-background/80 backdrop-blur-md overflow-y-auto animate-in fade-in duration-200">
+      <div className="w-full max-w-md bg-card rounded-3xl border border-border shadow-2xl p-5 sm:p-6 space-y-4 my-auto max-h-[88vh] overflow-y-auto animate-in zoom-in-95 duration-200">
         
         {/* ヘッダー */}
-        <div className="flex items-center justify-between pb-3 border-b border-border/50">
+        <div className="flex items-center justify-between pb-3 border-b border-border/50 sticky top-0 bg-card z-10">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-2xl bg-primary/10 text-primary flex items-center justify-center">
               <UserPlus className="w-5 h-5" />
