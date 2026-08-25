@@ -3,6 +3,7 @@
 
 import React, { useState } from "react";
 import { LiffHeader } from "@/components/liff/LiffHeader";
+import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { HelpCircle, ChevronDown, Search, Sparkles, MessageCircle, AlertCircle } from "lucide-react";
 
 interface FaqItem {
@@ -94,17 +95,24 @@ export default function LiffFaqPage() {
 
   return (
     <div className="flex flex-col min-h-screen">
-      <LiffHeader
-        title="よくある質問 (Q&A)"
-        subtitle="保護者・選手の疑問を解決"
-        showBack
-        shareData={{
-          title: `【よくある質問】チームQ&A一覧`,
-          text: `雨天時の連絡、当番・配車、用具規定などのFAQはこちらから確認できます`,
-        }}
-      />
+      <LiffHeader />
 
       <div className="p-4 space-y-5">
+        {/* ページ内ヘッダー */}
+        <LiffPageHeader
+          title="よくある質問 (Q&A)"
+          subtitle="保護者・選手の疑問を解決"
+          icon={
+            <span className="w-8 h-8 rounded-xl bg-teal-500/10 text-teal-600 dark:text-teal-400 flex items-center justify-center font-black">
+              <HelpCircle className="w-4 h-4" />
+            </span>
+          }
+          showBack
+          shareData={{
+            title: `【よくある質問】チームQ&A一覧`,
+            text: `雨天時の連絡、当番・配車、用具規定などのFAQはこちらから確認できます`,
+          }}
+        />
         {/* 検索バー */}
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />

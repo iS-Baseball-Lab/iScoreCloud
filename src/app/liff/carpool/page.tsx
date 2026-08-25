@@ -3,6 +3,7 @@
 
 import React, { useState } from "react";
 import { LiffHeader } from "@/components/liff/LiffHeader";
+import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { Car, Clock, MapPin, Users, AlertCircle, ChevronRight, Fuel, Phone, Shield } from "lucide-react";
 
 interface CarAssignment {
@@ -77,17 +78,24 @@ export default function LiffCarpoolPage() {
 
   return (
     <div className="flex flex-col min-h-screen">
-      <LiffHeader
-        title="配車表 & 集合案内"
-        subtitle={carpoolInfo.date}
-        showBack
-        shareData={{
-          title: `【配車表】${carpoolInfo.date} ${carpoolInfo.eventTitle}`,
-          text: `集合: ${carpoolInfo.gatherTime} @ ${carpoolInfo.gatherLocation}\n乗車人数: 計${totalPassengers}名`,
-        }}
-      />
+      <LiffHeader />
 
       <div className="p-4 space-y-5">
+        {/* ページ内ヘッダー */}
+        <LiffPageHeader
+          title="配車表 & 集合案内"
+          subtitle={carpoolInfo.date}
+          icon={
+            <span className="w-8 h-8 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center font-black">
+              <Car className="w-4 h-4" />
+            </span>
+          }
+          showBack
+          shareData={{
+            title: `【配車表】${carpoolInfo.date} ${carpoolInfo.eventTitle}`,
+            text: `集合: ${carpoolInfo.gatherTime} @ ${carpoolInfo.gatherLocation}\n乗車人数: 計${totalPassengers}名`,
+          }}
+        />
         {/* 集合概要カード */}
         <section className="bg-card border-2 border-primary/40 rounded-3xl p-4 shadow-sm space-y-3">
           <div className="flex items-center justify-between">

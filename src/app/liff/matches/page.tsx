@@ -4,6 +4,7 @@
 import React, { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { LiffHeader } from "@/components/liff/LiffHeader";
+import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { YouTubePlayer } from "@/components/liff/YouTubePlayer";
 import { Match } from "@/types/match";
 import { Calendar, MapPin, Trophy, Users, Shield, Loader2, Video } from "lucide-react";
@@ -55,7 +56,7 @@ function MatchDetailContent() {
   if (isLoading) {
     return (
       <div className="flex flex-col min-h-screen">
-        <LiffHeader title="試合情報" showBack />
+        <LiffHeader />
         <div className="flex-1 flex flex-col items-center justify-center p-8 text-muted-foreground gap-3">
           <Loader2 className="w-8 h-8 animate-spin text-primary" />
           <p className="text-sm font-bold">試合データを読み込み中...</p>
@@ -67,7 +68,7 @@ function MatchDetailContent() {
   if (error || !match) {
     return (
       <div className="flex flex-col min-h-screen">
-        <LiffHeader title="試合情報" showBack />
+        <LiffHeader />
         <div className="p-6">
           <EmptyState
             icon={Shield}
@@ -108,17 +109,24 @@ function MatchDetailContent() {
 
   return (
     <div className="flex flex-col min-h-screen">
-      <LiffHeader
-        title={`vs ${match.opponent}`}
-        subtitle={`${match.date} ${match.venueName ? `• ${match.venueName}` : ""}`}
-        showBack
-        shareData={{
-          title: `vs ${match.opponent} 試合情報 & 動画`,
-          text: shareText,
-        }}
-      />
+      <LiffHeader />
 
       <div className="p-4 space-y-5">
+        {/* ページ内ヘッダー */}
+        <LiffPageHeader
+          title={`vs ${match.opponent}`}
+          subtitle={`${match.date} ${match.venueName ? `• ${match.venueName}` : ""}`}
+          icon={
+            <span className="w-8 h-8 rounded-xl bg-red-500/10 text-red-600 dark:text-red-400 flex items-center justify-center font-black">
+              <Video className="w-4 h-4" />
+            </span>
+          }
+          showBack
+          shareData={{
+            title: `vs ${match.opponent} 試合情報 & 動画`,
+            text: shareText,
+          }}
+        />
         {/* 📹 試合動画（YouTube 限定公開プレイヤー） */}
         <section className="space-y-2">
           <div className="flex items-center justify-between">

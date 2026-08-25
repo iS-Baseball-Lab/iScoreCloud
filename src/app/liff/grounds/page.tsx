@@ -3,6 +3,7 @@
 
 import React, { useState } from "react";
 import { LiffHeader } from "@/components/liff/LiffHeader";
+import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { MapPin, Navigation, Car, AlertTriangle, Info, Check, ExternalLink } from "lucide-react";
 
 interface VenueInfo {
@@ -58,17 +59,24 @@ export default function LiffGroundsPage() {
 
   return (
     <div className="flex flex-col min-h-screen">
-      <LiffHeader
-        title="駐車場 & 球場案内"
-        subtitle="グラウンド情報・アクセス"
-        showBack
-        shareData={{
-          title: `【球場・駐車場案内】チーム利用グラウンド一覧`,
-          text: `球場アクセス・駐車場ルール・スパイク指定の確認用です`,
-        }}
-      />
+      <LiffHeader />
 
       <div className="p-4 space-y-5">
+        {/* ページ内ヘッダー */}
+        <LiffPageHeader
+          title="駐車場 & 球場案内"
+          subtitle="グラウンド情報・アクセス・駐車場ルール"
+          icon={
+            <span className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-black">
+              <MapPin className="w-4 h-4" />
+            </span>
+          }
+          showBack
+          shareData={{
+            title: `【球場・駐車場案内】チーム利用グラウンド一覧`,
+            text: `球場アクセス・駐車場ルール・スパイク指定の確認用です`,
+          }}
+        />
         {/* 球場選択リスト */}
         <div className="space-y-4">
           {venues.map((venue) => (

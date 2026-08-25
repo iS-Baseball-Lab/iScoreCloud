@@ -3,6 +3,7 @@
 
 import React, { useState } from "react";
 import { LiffHeader } from "@/components/liff/LiffHeader";
+import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { Calendar, Clock, MapPin, Users, CheckCircle2, XCircle, HelpCircle, Utensils, Shield, Filter } from "lucide-react";
 
 interface ScheduleEvent {
@@ -74,17 +75,24 @@ export default function LiffSchedulePage() {
 
   return (
     <div className="flex flex-col min-h-screen">
-      <LiffHeader
-        title="予定 & 出欠管理"
-        subtitle="今後のスケジュール・当番表"
-        showBack
-        shareData={{
-          title: `【スケジュール】今後のチーム予定一覧`,
-          text: `出欠未回答の方は確認とご登録をお願いします！`,
-        }}
-      />
+      <LiffHeader />
 
       <div className="p-4 space-y-5">
+        {/* ページ内ヘッダー */}
+        <LiffPageHeader
+          title="予定 & お当番表"
+          subtitle="今後のスケジュール・出欠・当番確認"
+          icon={
+            <span className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center font-black">
+              <Calendar className="w-4 h-4" />
+            </span>
+          }
+          showBack
+          shareData={{
+            title: `【スケジュール】今後のチーム予定一覧`,
+            text: `出欠未回答の方は確認とご登録をお願いします！`,
+          }}
+        />
         {/* フィルタータブ */}
         <div className="flex items-center gap-1.5 p-1 bg-muted/60 rounded-2xl border border-border">
           <button

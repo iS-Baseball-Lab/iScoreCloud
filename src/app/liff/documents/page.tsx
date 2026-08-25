@@ -3,6 +3,7 @@
 
 import React, { useState } from "react";
 import { LiffHeader } from "@/components/liff/LiffHeader";
+import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { FileText, Download, Eye, Calendar, Tag, Search, ShieldCheck } from "lucide-react";
 
 interface TeamDocument {
@@ -108,17 +109,24 @@ export default function LiffDocumentsPage() {
 
   return (
     <div className="flex flex-col min-h-screen">
-      <LiffHeader
-        title="資料ダウンロード"
-        subtitle="チーム規約・配車マニュアル・届出書類"
-        showBack
-        shareData={{
-          title: `【チーム資料】各種規約・マニュアル一覧`,
-          text: `チーム規約、配車ガイド、用具規定などのPDF資料はこちらから閲覧できます`,
-        }}
-      />
+      <LiffHeader />
 
       <div className="p-4 space-y-5">
+        {/* ページ内ヘッダー */}
+        <LiffPageHeader
+          title="資料ダウンロード"
+          subtitle="チーム規約・配車マニュアル・届出書類"
+          icon={
+            <span className="w-8 h-8 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center font-black">
+              <FileText className="w-4 h-4" />
+            </span>
+          }
+          showBack
+          shareData={{
+            title: `【チーム資料】各種規約・マニュアル一覧`,
+            text: `チーム規約、配車ガイド、用具規定などのPDF資料はこちらから閲覧できます`,
+          }}
+        />
         {/* 検索バー */}
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />

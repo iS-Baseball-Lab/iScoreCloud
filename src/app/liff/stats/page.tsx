@@ -3,6 +3,7 @@
 
 import React, { useState } from "react";
 import { LiffHeader } from "@/components/liff/LiffHeader";
+import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { Trophy, Award, TrendingUp, User, Flame, Activity } from "lucide-react";
 
 export default function LiffStatsPage() {
@@ -39,17 +40,24 @@ export default function LiffStatsPage() {
 
   return (
     <div className="flex flex-col min-h-screen">
-      <LiffHeader
-        title="成績 & ランキング"
-        subtitle="2026年度 チーム・個人スタッツ"
-        showBack
-        shareData={{
-          title: `【成績速報】チーム勝率 ${teamStats.winRate} (${teamStats.wins}勝${teamStats.losses}敗)`,
-          text: `打率・本塁打・投手成績ランキングをチェック！`,
-        }}
-      />
+      <LiffHeader />
 
       <div className="p-4 space-y-5">
+        {/* ページ内ヘッダー */}
+        <LiffPageHeader
+          title="成績 & ランキング"
+          subtitle="2026年度 チーム・個人スタッツ"
+          icon={
+            <span className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center font-black">
+              <Trophy className="w-4 h-4" />
+            </span>
+          }
+          showBack
+          shareData={{
+            title: `【成績速報】チーム勝率 ${teamStats.winRate} (${teamStats.wins}勝${teamStats.losses}敗)`,
+            text: `打率・本塁打・投手成績ランキングをチェック！`,
+          }}
+        />
         {/* 🏆 チーム勝敗サマリーカード */}
         <section className="bg-card border-2 border-amber-500/40 rounded-3xl p-4 shadow-sm space-y-3">
           <div className="flex items-center justify-between">

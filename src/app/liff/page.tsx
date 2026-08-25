@@ -78,8 +78,6 @@ export default function LiffHubPage() {
     <div className="flex flex-col min-h-screen">
       {/* 🌟 本家 iScoreCloud と完全統一されたヘッダー（選択チームは全画面で自動維持） */}
       <LiffHeader
-        title={teamName}
-        subtitle="チームHUB"
         shareData={{
           title: `${teamName} チームHUB`,
           text: `出欠回答、配車表、予定確認、試合動画の閲覧はこちらから！`,
