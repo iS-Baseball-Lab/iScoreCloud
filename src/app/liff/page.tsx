@@ -24,7 +24,7 @@ interface HubDataResponse {
 }
 
 export default function LiffHubPage() {
-  const { profile, currentTeam, selectTeam } = useLiff();
+  const { profile, currentTeam, selectTeam, isLoadingTeam } = useLiff();
   const [userName, setUserName] = useState<string>("メンバー");
   const [nextEvent, setNextEvent] = useState<any>(null);
   const [matches, setMatches] = useState<MatchCardData[]>([]);
@@ -39,6 +39,8 @@ export default function LiffHubPage() {
 
   // DBからチーム情報・次回予定・試合一覧を完全自動取得（currentTeam.id に応じて連動）
   const loadHubData = useCallback(async (teamId?: string) => {
+    if (isLoadingTeam && !currentTeam?.id) return;
+
     try {
       setIsLoading(true);
       const targetTeamId = teamId || currentTeam?.id;
@@ -63,7 +65,7 @@ export default function LiffHubPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [currentTeam?.id]);
+  }, [currentTeam?.id, isLoadingTeam]);
 
   useEffect(() => {
     loadHubData();

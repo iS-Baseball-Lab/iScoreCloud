@@ -58,9 +58,22 @@ export function LiffProvider({
   const [profile, setProfile] = useState<LiffUserProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // チーム状態
+  // チーム状態 (LocalStorageから同期的に初期IDを取得)
   const [teams, setTeams] = useState<LiffTeamItem[]>([]);
-  const [currentTeam, setCurrentTeam] = useState<LiffTeamItem | null>(null);
+  const [currentTeam, setCurrentTeam] = useState<LiffTeamItem | null>(() => {
+    if (typeof window !== "undefined") {
+      const storedId = localStorage.getItem("iscore_selectedTeamId");
+      const storedName = localStorage.getItem("iscore_selectedTeamName");
+      if (storedId) {
+        return {
+          id: storedId,
+          name: storedName || "選択チーム",
+          shortName: storedName || "選択チーム",
+        };
+      }
+    }
+    return null;
+  });
   const [isLoadingTeam, setIsLoadingTeam] = useState(true);
 
   // チーム選択ハンドラー（LocalStorageに永続化し、全画面で同期）
@@ -70,6 +83,7 @@ export function LiffProvider({
       const found = prevTeams.find((t) => t.id === teamId);
       if (found) {
         setCurrentTeam(found);
+        localStorage.setItem("iscore_selectedTeamName", found.name);
       }
       return prevTeams;
     });
@@ -116,6 +130,7 @@ export function LiffProvider({
         if (activeTeam) {
           setCurrentTeam(activeTeam);
           localStorage.setItem("iscore_selectedTeamId", activeTeam.id);
+          localStorage.setItem("iscore_selectedTeamName", activeTeam.name);
         }
       }
     } catch (err) {

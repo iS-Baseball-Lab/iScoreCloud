@@ -17,7 +17,7 @@ function MatchesContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const matchId = searchParams.get("id");
-  const { currentTeam } = useLiff();
+  const { currentTeam, isLoadingTeam } = useLiff();
 
   // 単一試合詳細用ステート
   const [match, setMatch] = useState<Match | null>(null);
@@ -27,7 +27,7 @@ function MatchesContent() {
 
   // 試合一覧用ステート
   const [matchesList, setMatchesList] = useState<MatchCardData[]>([]);
-  const [isListLoading, setIsListLoading] = useState(false);
+  const [isListLoading, setIsListLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | "video" | "official">("all");
 
   // 1. 試合詳細のロード (matchId がある場合)
@@ -64,6 +64,7 @@ function MatchesContent() {
   // 2. 試合一覧のロード (matchId がない場合、選択中チームに応じてフェッチ)
   const loadMatchesList = useCallback(async () => {
     if (matchId) return;
+    if (isLoadingTeam && !currentTeam?.id) return;
 
     try {
       setIsListLoading(true);
@@ -82,7 +83,7 @@ function MatchesContent() {
     } finally {
       setIsListLoading(false);
     }
-  }, [matchId, currentTeam?.id]);
+  }, [matchId, currentTeam?.id, isLoadingTeam]);
 
   useEffect(() => {
     loadMatchesList();
