@@ -17,6 +17,7 @@ import {
   memberCars,
   eventCarpoolSettings,
   teamDocuments,
+  teamFaqs,
 } from "@/db/schema";
 import type { WorkerEnv } from "@/types/api";
 
@@ -1144,6 +1145,206 @@ app.post("/documents", async (c) => {
   } catch (error: any) {
     console.error("Failed to create document:", error);
     return c.json({ success: false, error: error?.message || "資料の登録に失敗しました" }, 500);
+  }
+});
+
+/**
+ * ❓ チーム・編成Q&A (FAQ) 一覧取得API
+ */
+app.get("/faqs", async (c) => {
+  const db = drizzle(c.env.DB);
+  const teamId = c.req.query("teamId");
+
+  const DEMO_FAQS = [
+    {
+      id: "demo-faq-1",
+      category: "rain",
+      categoryLabel: "雨天・中止判断",
+      question: "雨天時の練習・試合の中止判断はいつ、どこで連絡されますか？",
+      answer: "原則として【当日の朝 6:30 まで】にLINEグループおよびチームHUBにて連絡します。グラウンド状態により現地判断となる場合もありますので、連絡があるまでは待機をお願いします。",
+      scope: "organization",
+      scopeLabel: "チーム全体",
+    },
+    {
+      id: "demo-faq-2",
+      category: "duty",
+      categoryLabel: "当番・配車",
+      question: "お当番の日に急用や体調不良で行けなくなった場合はどうすればいいですか？",
+      answer: "まずは同じ班のメンバーにLINEで連絡し、交代可能かご相談ください。調整がつかない場合は、父母会長または学年幹事へ速やかにご連絡をお願いします。",
+      scope: "organization",
+      scopeLabel: "チーム全体",
+    },
+    {
+      id: "demo-faq-3",
+      category: "duty",
+      categoryLabel: "当番・配車",
+      question: "配車時の高速代やガソリン代の精算はどうなりますか？",
+      answer: "遠征終了後、配車表に記載された目安金額を元に、同乗した各家庭から運転手の方へ直接現金またはPayPay等でお支払いいただきます（1家族あたり500〜800円程度が目安です）。",
+      scope: "organization",
+      scopeLabel: "チーム全体",
+    },
+    {
+      id: "demo-faq-4",
+      category: "trip",
+      categoryLabel: "遠征・合宿",
+      question: "29期の遠征合宿の集合時間とお小遣いの上限は？",
+      answer: "集合は川崎駅西口 6:00 厳守です。お小遣いは2,000円以内（飲み物・お土産用）とし、名前を書いた封筒に入れて持たせてください。",
+      scope: "team",
+      scopeLabel: "29期",
+    },
+    {
+      id: "demo-faq-5",
+      category: "equipment",
+      categoryLabel: "用具・持ち物",
+      question: "バットやスパイクを新しく購入する際の注意点はありますか？",
+      answer: "公式戦では全日本軟式野球連盟（JSBB）公認マークのバットが必要です。また、小学生（学童部）は金属刃のスパイクは禁止されており、ポイントスパイクまたはゴム底のみ使用可能です。購入前に監督・コーチにご相談いただくことをおすすめします。",
+      scope: "organization",
+      scopeLabel: "チーム全体",
+    },
+    {
+      id: "demo-faq-6",
+      category: "equipment",
+      categoryLabel: "用具・持ち物",
+      question: "夏場の活動時の持ち物や熱中症対策について教えてください。",
+      answer: "水筒（2L以上推奨・スポーツドリンク推奨）、氷嚢（アイシング用）、塩分タブレット、着替え用アンダーシャツを必ずご持参ください。ベンチにはチーム用の大型クーラーボックスと氷を用意しています。",
+      scope: "organization",
+      scopeLabel: "チーム全体",
+    },
+    {
+      id: "demo-faq-7",
+      category: "cost",
+      categoryLabel: "部費・保険",
+      question: "部費の支払い方法と期限について教えてください。",
+      answer: "部費は毎月25日までに指定口座へのお振込み、または父母会会計への手渡しとなります。半期・年間のまとめ払いも可能です。",
+      scope: "organization",
+      scopeLabel: "チーム全体",
+    },
+    {
+      id: "demo-faq-8",
+      category: "manner",
+      categoryLabel: "試合観戦マナー",
+      question: "試合の応援やベンチ裏での観戦ルールはありますか？",
+      answer: "選手への過度な指示出し（審判へのアピールや暴言）は禁止されています。全力プレーを称える温かい声援と拍手をお願いします。また、球場ごとの指定応援席エリアのルールを遵守してください。",
+      scope: "organization",
+      scopeLabel: "チーム全体",
+    },
+  ];
+
+  try {
+    if (!teamId || teamId === "demo-team") {
+      return c.json({
+        success: true,
+        isDemo: true,
+        faqs: DEMO_FAQS,
+      });
+    }
+
+    // チーム情報を取得して organizationId を特定
+    const currentTeam = await db
+      .select({
+        id: teams.id,
+        name: teams.name,
+        organizationId: teams.organizationId,
+      })
+      .from(teams)
+      .where(eq(teams.id, teamId))
+      .get();
+
+    if (!currentTeam) {
+      return c.json({ success: true, isDemo: false, faqs: [] });
+    }
+
+    // 組織全体FAQ または この編成限定FAQを取得
+    const conditions = [eq(teamFaqs.teamId, teamId)];
+    if (currentTeam.organizationId) {
+      conditions.push(eq(teamFaqs.organizationId, currentTeam.organizationId));
+    }
+
+    const rows = await db
+      .select()
+      .from(teamFaqs)
+      .where(or(...conditions))
+      .orderBy(desc(teamFaqs.createdAt))
+      .all();
+
+    const categoryLabels: Record<string, string> = {
+      rain: "雨天・中止判断",
+      duty: "当番・配車",
+      equipment: "用具・持ち物",
+      cost: "部費・保険",
+      manner: "観戦マナー",
+      trip: "遠征・合宿",
+      general: "その他・全般",
+    };
+
+    const formatted = rows.map((f) => ({
+      id: f.id,
+      question: f.question,
+      answer: f.answer,
+      category: f.category,
+      categoryLabel: categoryLabels[f.category] || "その他",
+      scope: f.scope,
+      scopeLabel: f.scope === "organization" ? "チーム全体" : (currentTeam.name || "編成"),
+      createdAt: f.createdAt,
+    }));
+
+    return c.json({
+      success: true,
+      isDemo: false,
+      faqs: formatted,
+    });
+  } catch (error: any) {
+    console.error("Failed to load liff faqs:", error);
+    return c.json({ success: false, faqs: [] });
+  }
+});
+
+/**
+ * ❓ Q&A (FAQ) 新規登録API
+ */
+app.post("/faqs", async (c) => {
+  const db = drizzle(c.env.DB);
+  try {
+    const body = await c.req.json();
+    const { teamId, question, answer, category, scope, userId } = body;
+
+    if (!teamId || !question || !answer) {
+      return c.json({ success: false, error: "teamId, question, answer are required" }, 400);
+    }
+
+    if (teamId === "demo-team") {
+      return c.json({ success: true, message: "Q&Aを登録しました（デモ）" });
+    }
+
+    // チーム情報を取得して organizationId を特定
+    const currentTeam = await db
+      .select({
+        id: teams.id,
+        organizationId: teams.organizationId,
+      })
+      .from(teams)
+      .where(eq(teams.id, teamId))
+      .get();
+
+    const organizationId = currentTeam?.organizationId || null;
+    const faqScope = scope === "organization" ? "organization" : "team";
+
+    await db.insert(teamFaqs).values({
+      id: `faq_${crypto.randomUUID()}`,
+      organizationId: faqScope === "organization" ? organizationId : null,
+      teamId: faqScope === "team" ? teamId : null,
+      question: question.trim(),
+      answer: answer.trim(),
+      category: category || "general",
+      scope: faqScope,
+      createdById: userId || null,
+      createdAt: new Date(),
+    });
+
+    return c.json({ success: true, message: "Q&Aを登録しました" });
+  } catch (error: any) {
+    console.error("Failed to create faq:", error);
+    return c.json({ success: false, error: error?.message || "Q&Aの登録に失敗しました" }, 500);
   }
 });
 

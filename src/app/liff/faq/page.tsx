@@ -1,83 +1,133 @@
 // filepath: src/app/liff/faq/page.tsx
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
-import { HelpCircle, ChevronDown, Search, Sparkles, MessageCircle, AlertCircle } from "lucide-react";
+import { useLiff } from "@/components/liff/LiffProvider";
+import {
+  HelpCircle,
+  ChevronDown,
+  Search,
+  Plus,
+  X,
+  Building2,
+  Users2,
+  Loader2,
+  AlertCircle,
+  MessageCircleQuestion,
+  Sparkles,
+} from "lucide-react";
 
 interface FaqItem {
   id: string;
-  category: "duty" | "rain" | "equipment" | "cost" | "manner";
+  category: string;
   categoryLabel: string;
   question: string;
   answer: string;
+  scope: "organization" | "team";
+  scopeLabel: string;
 }
 
 export default function LiffFaqPage() {
+  const { currentTeam, profile } = useLiff();
+  const [faqs, setFaqs] = useState<FaqItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
+  const [selectedScope, setSelectedScope] = useState<"all" | "organization" | "team">("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
-  const [openIds, setOpenIds] = useState<string[]>(["faq-1"]);
+  const [openIds, setOpenIds] = useState<string[]>([]);
 
-  const faqs: FaqItem[] = [
-    {
-      id: "faq-1",
-      category: "rain",
-      categoryLabel: "雨天・中止判断",
-      question: "雨天時の練習・試合の中止判断はいつ、どこで連絡されますか？",
-      answer: "原則として【当日の朝 6:30 まで】にLINEグループおよびチームHUBにて連絡します。グラウンド状態により現地判断となる場合もありますので、連絡があるまでは待機をお願いします。",
-    },
-    {
-      id: "faq-2",
-      category: "duty",
-      categoryLabel: "当番・配車",
-      question: "お当番の日に急用や体調不良で行けなくなった場合はどうすればいいですか？",
-      answer: "まずは同じ班のメンバーにLINEで連絡し、交代可能かご相談ください。調整がつかない場合は、父母会長または学年幹事へ速やかにご連絡をお願いします。",
-    },
-    {
-      id: "faq-3",
-      category: "duty",
-      categoryLabel: "当番・配車",
-      question: "配車時の高速代やガソリン代の精算はどうなりますか？",
-      answer: "遠征終了後、配車表に記載された目安金額を元に、同乗した各家庭から運転手の方へ直接現金またはPayPay等でお支払いいただきます（1家族あたり500〜800円程度が目安です）。",
-    },
-    {
-      id: "faq-4",
-      category: "equipment",
-      categoryLabel: "用具・持ち物",
-      question: "バットやスパイクを新しく購入する際の注意点はありますか？",
-      answer: "公式戦では全日本軟式野球連盟（JSBB）公認マークのバットが必要です。また、小学生（学童部）は金属刃のスパイクは禁止されており、ポイントスパイクまたはゴム底のみ使用可能です。購入前に監督・コーチにご相談いただくことをおすすめします。",
-    },
-    {
-      id: "faq-5",
-      category: "equipment",
-      categoryLabel: "用具・持ち物",
-      question: "夏場の活動時の持ち物や熱中症対策について教えてください。",
-      answer: "水筒（2L以上推奨・スポーツドリンク推奨）、氷嚢（アイシング用）、塩分タブレット、着替え用アンダーシャツを必ずご持参ください。ベンチにはチーム用の大型クーラーボックスと氷を用意しています。",
-    },
-    {
-      id: "faq-6",
-      category: "cost",
-      categoryLabel: "部費・保険",
-      question: "部費の支払い方法と期限について教えてください。",
-      answer: "部費は毎月25日までに指定口座へのお振込み、または父母会会計への手渡しとなります。半期・年間のまとめ払いも可能です。",
-    },
-    {
-      id: "faq-7",
-      category: "manner",
-      categoryLabel: "試合観戦マナー",
-      question: "試合の応援やベンチ裏での観戦ルールはありますか？",
-      answer: "選手への過度な指示出し（審判へのアピールや暴言）は禁止されています。全力プレーを称える温かい声援と拍手をお願いします。また、球場ごとの指定応援席エリアのルールを遵守してください。",
-    },
-  ];
+  // 新規登録モーダル用ステート
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  const [newQuestion, setNewQuestion] = useState("");
+  const [newAnswer, setNewAnswer] = useState("");
+  const [newCategory, setNewCategory] = useState("rain");
+  const [newScope, setNewScope] = useState<"organization" | "team">("team");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const loadFaqs = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const teamId = currentTeam?.id || "demo-team";
+      const res = await fetch(`/api/liff/faqs?teamId=${teamId}`);
+      if (res.ok) {
+        const data = (await res.json()) as { success: boolean; faqs?: FaqItem[] };
+        if (data.faqs) {
+          setFaqs(data.faqs);
+          // 最初の1件をデフォルトで開く
+          if (data.faqs.length > 0) {
+            setOpenIds([data.faqs[0].id]);
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch faqs:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [currentTeam?.id]);
+
+  useEffect(() => {
+    loadFaqs();
+  }, [loadFaqs]);
+
+  const handleCreateFaq = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newQuestion.trim() || !newAnswer.trim()) return;
+
+    try {
+      setIsSubmitting(true);
+      setSubmitError(null);
+      const teamId = currentTeam?.id || "demo-team";
+
+      const res = await fetch("/api/liff/faqs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          teamId,
+          question: newQuestion.trim(),
+          answer: newAnswer.trim(),
+          category: newCategory,
+          scope: newScope,
+          userId: profile?.userId,
+        }),
+      });
+
+      const data = (await res.json()) as { success: boolean; error?: string };
+      if (!data.success) {
+        throw new Error(data.error || "Q&Aの登録に失敗しました");
+      }
+
+      // 登録成功
+      setIsModalOpen(false);
+      setNewQuestion("");
+      setNewAnswer("");
+      loadFaqs();
+    } catch (err: any) {
+      console.error("Error creating FAQ:", err);
+      setSubmitError(err.message || "Q&Aの登録に失敗しました");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const categories = [
     { id: "all", label: "すべて" },
     { id: "rain", label: "雨天判断" },
     { id: "duty", label: "当番・配車" },
     { id: "equipment", label: "用具・持ち物" },
+    { id: "trip", label: "遠征・合宿" },
     { id: "cost", label: "部費・保険" },
     { id: "manner", label: "観戦マナー" },
+    { id: "general", label: "その他" },
   ];
 
   const toggleAccordion = (id: string) => {
@@ -88,9 +138,11 @@ export default function LiffFaqPage() {
 
   const filteredFaqs = faqs.filter((faq) => {
     const matchesCategory = selectedCategory === "all" || faq.category === selectedCategory;
-    const matchesSearch = faq.question.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          faq.answer.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesCategory && matchesSearch;
+    const matchesScope = selectedScope === "all" || faq.scope === selectedScope;
+    const matchesSearch =
+      faq.question.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      faq.answer.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesCategory && matchesScope && matchesSearch;
   });
 
   return (
@@ -101,7 +153,7 @@ export default function LiffFaqPage() {
         {/* ページ内ヘッダー */}
         <LiffPageHeader
           title="よくある質問 (Q&A)"
-          subtitle="保護者・選手の疑問を解決"
+          subtitle="保護者・選手の疑問を即座に解決"
           icon={
             <span className="w-8 h-8 rounded-xl bg-teal-500/10 text-teal-600 dark:text-teal-400 flex items-center justify-center font-black">
               <HelpCircle className="w-4 h-4" />
@@ -113,12 +165,65 @@ export default function LiffFaqPage() {
             text: `雨天時の連絡、当番・配車、用具規定などのFAQはこちらから確認できます`,
           }}
         />
+
+        {/* ➕ Q&Aを追加ボタン (別行配置) */}
+        <button
+          type="button"
+          onClick={() => {
+            setIsModalOpen(true);
+            setSubmitError(null);
+          }}
+          className="w-full py-3 px-4 rounded-2xl bg-primary text-primary-foreground font-black text-xs shadow-sm hover:bg-primary/90 active:scale-[0.99] transition-all flex items-center justify-center gap-2"
+        >
+          <Plus className="w-4 h-4" />
+          <span>新しいQ&A（質問・回答）を追加する</span>
+        </button>
+
+        {/* 🏢 チーム全体 vs 👥 編成限定 スコープ切り替えタブ (自然な幅で横スクロール可能) */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 -mx-4 px-4 scrollbar-none">
+          <button
+            type="button"
+            onClick={() => setSelectedScope("all")}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all ${
+              selectedScope === "all"
+                ? "bg-foreground text-background shadow-xs"
+                : "bg-muted/70 text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            すべて ({faqs.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedScope("organization")}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all flex items-center gap-1.5 ${
+              selectedScope === "organization"
+                ? "bg-primary text-primary-foreground shadow-xs"
+                : "bg-muted/70 text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Building2 className="w-3.5 h-3.5" />
+            <span>チーム全体</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedScope("team")}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all flex items-center gap-1.5 ${
+              selectedScope === "team"
+                ? "bg-purple-600 text-white shadow-xs"
+                : "bg-muted/70 text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Users2 className="w-3.5 h-3.5" />
+            <span>{currentTeam?.teamName || "編成"}</span>
+          </button>
+        </div>
+
         {/* 検索バー */}
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <input
             type="text"
-            placeholder="知りたいことを検索 (例: 雨天、配車、スパイク)..."
+            placeholder="知りたいことを検索 (例: 雨天、配車、合宿、スパイク)..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full pl-9 pr-4 py-2.5 bg-card border border-border rounded-2xl text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/20"
@@ -143,53 +248,89 @@ export default function LiffFaqPage() {
           ))}
         </div>
 
-        {/* Q&A アコーディオン一覧 */}
-        <div className="space-y-3">
-          {filteredFaqs.length === 0 ? (
-            <div className="text-center py-10 text-muted-foreground text-xs font-bold">
-              該当する質問が見つかりませんでした
+        {/* ローディング */}
+        {isLoading ? (
+          <div className="flex flex-col items-center justify-center py-16 text-muted-foreground space-y-2">
+            <Loader2 className="w-6 h-6 animate-spin text-primary" />
+            <span className="text-xs font-bold">Q&Aを読み込み中...</span>
+          </div>
+        ) : filteredFaqs.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 text-center bg-card border border-border rounded-3xl p-6 space-y-3">
+            <div className="w-12 h-12 rounded-2xl bg-muted flex items-center justify-center text-muted-foreground">
+              <MessageCircleQuestion className="w-6 h-6" />
             </div>
-          ) : (
-            filteredFaqs.map((faq) => {
+            <div className="space-y-1">
+              <h4 className="text-sm font-black text-foreground">該当するQ&Aがありません</h4>
+              <p className="text-xs font-bold text-muted-foreground">
+                上の「Q&Aを追加」ボタンから新しい質問と回答を登録できます。
+              </p>
+            </div>
+          </div>
+        ) : (
+          /* Q&A アコーディオン一覧 */
+          <div className="space-y-3">
+            {filteredFaqs.map((faq) => {
               const isOpen = openIds.includes(faq.id);
               return (
                 <div
                   key={faq.id}
-                  className="bg-card border border-border rounded-3xl overflow-hidden shadow-xs transition-all"
+                  className={`bg-card border rounded-3xl overflow-hidden shadow-xs transition-all ${
+                    isOpen ? "border-primary/50 shadow-md" : "border-border hover:border-border/80"
+                  }`}
                 >
                   <button
                     type="button"
                     onClick={() => toggleAccordion(faq.id)}
-                    className="w-full p-4 text-left flex items-start justify-between gap-3 hover:bg-muted/30 transition-colors"
+                    className="w-full p-4 text-left flex items-start justify-between gap-3 focus:outline-hidden"
                   >
                     <div className="flex items-start gap-2.5 min-w-0">
-                      <span className="w-6 h-6 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 font-black text-xs">
+                      <span className="w-6 h-6 rounded-lg bg-teal-500/10 text-teal-600 dark:text-teal-400 font-black text-xs flex items-center justify-center shrink-0 mt-0.5">
                         Q
                       </span>
-                      <div>
-                        <span className="px-2 py-0.5 rounded-md bg-muted text-muted-foreground text-[10px] font-black">
-                          {faq.categoryLabel}
-                        </span>
-                        <h3 className="text-xs font-black text-foreground mt-1 tracking-tight leading-snug">
+                      <div className="space-y-1.5 min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {/* スコープバッジ */}
+                          <span
+                            className={`px-2 py-0.5 rounded-md text-[10px] font-black flex items-center gap-1 ${
+                              faq.scope === "organization"
+                                ? "bg-primary/10 text-primary border border-primary/20"
+                                : "bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20"
+                            }`}
+                          >
+                            {faq.scope === "organization" ? (
+                              <Building2 className="w-3 h-3" />
+                            ) : (
+                              <Users2 className="w-3 h-3" />
+                            )}
+                            <span>{faq.scopeLabel}</span>
+                          </span>
+
+                          <span className="px-2 py-0.5 rounded-md bg-muted text-muted-foreground text-[10px] font-black">
+                            {faq.categoryLabel}
+                          </span>
+                        </div>
+                        <h3 className="text-xs sm:text-sm font-black text-foreground tracking-tight leading-snug">
                           {faq.question}
                         </h3>
                       </div>
                     </div>
 
-                    <ChevronDown
-                      className={`w-4 h-4 text-muted-foreground shrink-0 mt-1 transition-transform duration-200 ${
-                        isOpen ? "rotate-180 text-primary" : ""
+                    <div
+                      className={`w-6 h-6 rounded-full bg-muted flex items-center justify-center shrink-0 transition-transform duration-200 ${
+                        isOpen ? "rotate-180 bg-primary/10 text-primary" : "text-muted-foreground"
                       }`}
-                    />
+                    >
+                      <ChevronDown className="w-3.5 h-3.5" />
+                    </div>
                   </button>
 
                   {isOpen && (
-                    <div className="px-4 pb-4 pt-1 border-t border-border/40 text-xs text-muted-foreground font-medium leading-relaxed bg-muted/20">
-                      <div className="flex items-start gap-2 pt-2">
-                        <span className="w-5 h-5 rounded-md bg-primary/10 text-primary flex items-center justify-center shrink-0 font-black text-[11px]">
+                    <div className="px-4 pb-4 pt-1 border-t border-border/40 bg-muted/20 animate-in fade-in duration-200">
+                      <div className="flex items-start gap-2.5 mt-2">
+                        <span className="w-6 h-6 rounded-lg bg-primary/10 text-primary font-black text-xs flex items-center justify-center shrink-0 mt-0.5">
                           A
                         </span>
-                        <p className="whitespace-pre-line text-foreground/90 font-medium">
+                        <p className="text-xs text-foreground/90 font-bold leading-relaxed whitespace-pre-wrap flex-1">
                           {faq.answer}
                         </p>
                       </div>
@@ -197,21 +338,162 @@ export default function LiffFaqPage() {
                   )}
                 </div>
               );
-            })
-          )}
-        </div>
-
-        {/* 解決しない場合のお問い合わせ案内 */}
-        <section className="p-4 rounded-2xl bg-muted/40 border border-border/60 text-xs space-y-2 text-center">
-          <div className="flex items-center justify-center gap-1.5 font-black text-foreground text-xs">
-            <MessageCircle className="w-4 h-4 text-primary" />
-            <span>解決しない場合は？</span>
+            })}
           </div>
-          <p className="text-[11px] text-muted-foreground font-medium">
-            不明な点や個別のご相談は、LINEグループまたは各学年の父母会役員・監督へお気軽にお尋ねください。
-          </p>
-        </section>
+        )}
       </div>
+
+      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          ❓ Q&A 追加モーダル
+          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+      {isModalOpen &&
+        mounted &&
+        createPortal(
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-background/80 backdrop-blur-md overflow-y-auto animate-in fade-in duration-200">
+            <div className="w-full max-w-md bg-card rounded-3xl border border-border shadow-2xl p-5 sm:p-6 space-y-4 my-auto max-h-[92vh] overflow-y-auto animate-in zoom-in-95 duration-200">
+              
+              {/* モーダルヘッダー */}
+              <div className="flex items-center justify-between pb-3 border-b border-border/50 sticky top-0 bg-card z-10">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-2xl bg-teal-500/10 text-teal-600 dark:text-teal-400 flex items-center justify-center font-black">
+                    <HelpCircle className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-foreground">Q&Aの新規登録</h3>
+                    <p className="text-[11px] font-bold text-muted-foreground">よくある質問と回答を共有</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className="p-1.5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground transition-all"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {submitError && (
+                <div className="p-3 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-xs font-bold flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{submitError}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleCreateFaq} className="space-y-4">
+                {/* 🌟 登録スコープ選択（チーム全体 vs この編成） */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black text-foreground">
+                    登録範囲 (公開対象) <span className="text-destructive">*</span>
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setNewScope("organization")}
+                      className={`p-3 rounded-2xl text-left border transition-all flex flex-col gap-1 ${
+                        newScope === "organization"
+                          ? "bg-primary/10 border-primary text-primary shadow-xs"
+                          : "bg-background border-border text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 font-black text-xs">
+                        <Building2 className="w-4 h-4 shrink-0" />
+                        <span>チーム全体</span>
+                      </div>
+                      <p className="text-[10px] font-medium leading-tight opacity-80">
+                        {currentTeam?.orgName || "クラブ"}の全編成・全学年で共通
+                      </p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setNewScope("team")}
+                      className={`p-3 rounded-2xl text-left border transition-all flex flex-col gap-1 ${
+                        newScope === "team"
+                          ? "bg-purple-500/10 border-purple-500 text-purple-600 dark:text-purple-400 shadow-xs"
+                          : "bg-background border-border text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 font-black text-xs">
+                        <Users2 className="w-4 h-4 shrink-0" />
+                        <span>{currentTeam?.teamName || "この編成"}</span>
+                      </div>
+                      <p className="text-[10px] font-medium leading-tight opacity-80">
+                        {currentTeam?.teamName || "選択中の編成"} メンバーに公開
+                      </p>
+                    </button>
+                  </div>
+                </div>
+
+                {/* カテゴリ選択 */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black text-foreground">カテゴリ</label>
+                  <select
+                    value={newCategory}
+                    onChange={(e) => setNewCategory(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/20"
+                  >
+                    <option value="rain">雨天・中止判断</option>
+                    <option value="duty">当番・配車</option>
+                    <option value="equipment">用具・持ち物</option>
+                    <option value="trip">遠征・合宿</option>
+                    <option value="cost">部費・保険</option>
+                    <option value="manner">観戦マナー</option>
+                    <option value="general">その他・全般</option>
+                  </select>
+                </div>
+
+                {/* 質問（Q） */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black text-foreground">
+                    質問 (Q) <span className="text-destructive">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="例: 雨天時の練習中止の連絡は何時頃入りますか？"
+                    value={newQuestion}
+                    onChange={(e) => setNewQuestion(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/20"
+                    required
+                  />
+                </div>
+
+                {/* 回答（A） */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black text-foreground">
+                    回答 (A) <span className="text-destructive">*</span>
+                  </label>
+                  <textarea
+                    rows={4}
+                    placeholder="保護者や選手に向けた分かりやすい回答を記入"
+                    value={newAnswer}
+                    onChange={(e) => setNewAnswer(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/20 resize-none"
+                    required
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isSubmitting || !newQuestion.trim() || !newAnswer.trim()}
+                  className="w-full py-3 rounded-2xl bg-primary text-primary-foreground font-black text-xs hover:bg-primary/90 active:scale-[0.99] transition-all flex items-center justify-center gap-2 shadow-sm disabled:opacity-50"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>登録中...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="w-4 h-4" />
+                      <span>Q&Aを登録する</span>
+                    </>
+                  )}
+                </button>
+              </form>
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 }

@@ -183,3 +183,22 @@ export const teamDocuments = sqliteTable('team_documents', {
   teamIdx: index("idx_team_docs_team_id").on(table.teamId),
 }));
 
+// ==========================================
+// ❓ チーム・編成別 Q&A (FAQ) テーブル
+// ==========================================
+export const teamFaqs = sqliteTable('team_faqs', {
+  id: text('id').primaryKey(),
+  organizationId: text('organization_id').references(() => organizations.id, { onDelete: 'cascade' }), // チーム全体用
+  teamId: text('team_id').references(() => teams.id, { onDelete: 'cascade' }),                         // 編成限定用 (Nullable)
+  question: text('question').notNull(),
+  answer: text('answer').notNull(),
+  category: text('category').notNull().default('general'), // 'rain' | 'duty' | 'equipment' | 'cost' | 'manner' | 'trip' | 'general'
+  scope: text('scope').$type<'organization' | 'team'>().notNull().default('team'),
+  createdById: text('created_by_id').references(() => user.id),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(strftime('%s', 'now'))`),
+}, (table) => ({
+  orgIdx: index("idx_team_faqs_org_id").on(table.organizationId),
+  teamIdx: index("idx_team_faqs_team_id").on(table.teamId),
+}));
+
+
