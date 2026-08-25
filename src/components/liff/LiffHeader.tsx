@@ -45,11 +45,6 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
   const { theme, setTheme } = useTheme();
   const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
 
-  const activeTeamName = currentTeam?.name || "チーム";
-  const activeShortName = currentTeam?.shortName || currentTeam?.name || "チーム";
-  const displayName = profile?.displayName || "メンバー";
-  const userInitial = displayName.slice(0, 1).toUpperCase();
-
   const handleShare = async () => {
     if (!shareData) return;
 
@@ -77,9 +72,17 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
     }
   };
 
+  const orgDisplayName = currentTeam?.orgName || currentTeam?.name || "チーム";
+  const teamDisplayName = isDemo
+    ? "🌟 体験デモチーム"
+    : (currentTeam?.teamName || currentTeam?.shortName || "チームHUB");
+
+  const displayName = profile?.displayName || "メンバー";
+  const userInitial = displayName.slice(0, 1).toUpperCase();
+
   return (
-    <header className="sticky top-0 z-40 w-full bg-white/95 dark:bg-background/90 backdrop-blur-xl border-b border-border/40 transition-colors duration-200">
-      <div className="flex h-14 sm:h-16 items-center justify-between px-3 sm:px-6 gap-2">
+    <header className="sticky top-0 z-40 w-full bg-background/80 backdrop-blur-xl border-b border-border/40 shadow-xs transition-colors duration-200">
+      <div className="flex h-14 sm:h-16 items-center justify-between px-3 sm:px-4 gap-2 sm:gap-3">
         
         {/* 🌟 1. 左側: ロゴ & ブランド (本家と完全同一) */}
         <Link
@@ -106,12 +109,12 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <div
-                className={`flex items-center gap-1.5 sm:gap-2 pl-1 pr-2 py-1.5 rounded-full backdrop-blur-md border text-foreground shadow-xs hover:opacity-90 transition-all cursor-pointer flex-1 max-w-[190px] min-[400px]:max-w-[220px] sm:max-w-[280px] outline-hidden select-none ${
+                className={`flex items-center gap-1.5 sm:gap-2 pl-1 pr-2.5 py-1.5 rounded-full backdrop-blur-md border text-foreground shadow-xs hover:opacity-90 transition-all cursor-pointer flex-1 max-w-[190px] min-[400px]:max-w-[220px] sm:max-w-[280px] outline-hidden select-none ${
                   isDemo 
                     ? "bg-amber-500/10 border-amber-500/40 text-amber-950 dark:text-amber-100" 
                     : "bg-primary/10 border-primary/40"
                 }`}
-                title={activeTeamName}
+                title={`${orgDisplayName} (${teamDisplayName})`}
               >
                 <Avatar className="h-7 w-7 border border-primary/30 bg-background shrink-0 overflow-hidden">
                   {currentTeam?.logoImageUrl ? (
@@ -120,47 +123,56 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
                     <AvatarFallback className={`w-full h-full flex items-center justify-center font-black text-[11px] select-none bg-background ${
                       isDemo ? "text-amber-600" : "text-primary"
                     }`}>
-                      {activeTeamName.slice(0, 2).toUpperCase()}
+                      {orgDisplayName.slice(0, 2).toUpperCase()}
                     </AvatarFallback>
                   )}
                 </Avatar>
                 <div className="flex flex-col justify-center overflow-hidden min-w-0 flex-1">
+                  {/* 1行目: 組織名 / チーム名（例: 川崎中央リトルシニア） */}
                   <span className="text-[11px] sm:text-xs font-black tracking-tight text-foreground truncate leading-tight">
-                    {activeTeamName}
+                    {orgDisplayName}
                   </span>
+                  {/* 2行目: 編成名（例: 29期 / 2026年度 1軍） */}
                   <span className={`text-[9px] font-black uppercase truncate leading-none mt-0.5 ${
-                    isDemo ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"
+                    isDemo ? "text-amber-600 dark:text-amber-400 font-black" : "text-muted-foreground font-bold"
                   }`}>
-                    {isDemo ? "🌟 デモ体験中" : "チームHUB"}
+                    {teamDisplayName}
                   </span>
                 </div>
                 <ChevronDown className="h-3.5 w-3.5 text-primary/80 shrink-0 ml-0.5" />
               </div>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-60 p-1.5 space-y-1">
+            <DropdownMenuContent align="end" className="w-64 p-1.5 space-y-1">
               <DropdownMenuLabel className="text-[10px] font-bold text-muted-foreground uppercase px-2 py-1">
-                所属チーム切り替え
+                チーム切り替え
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
               {teams.map((t) => (
                 <DropdownMenuItem
                   key={t.id}
                   onClick={() => selectTeam(t.id)}
-                  className="flex items-center justify-between p-2 cursor-pointer font-bold text-xs rounded-xl"
+                  className={`flex items-center justify-between p-2 cursor-pointer font-bold text-xs rounded-xl ${
+                    t.isDemo || t.id === "demo-team" ? "bg-amber-500/10 text-amber-900 dark:text-amber-200" : ""
+                  }`}
                 >
                   <div className="flex items-center gap-2 truncate">
-                    <Avatar className="h-6 w-6 border border-border shrink-0">
+                    <Avatar className="h-7 w-7 border border-border shrink-0">
                       {t.logoImageUrl ? (
                         <img src={t.logoImageUrl} alt={t.name} className="h-full w-full object-contain" />
                       ) : (
                         <AvatarFallback className="text-[10px] font-black">
-                          {t.name.slice(0, 2).toUpperCase()}
+                          {(t.orgName || t.name).slice(0, 2).toUpperCase()}
                         </AvatarFallback>
                       )}
                     </Avatar>
-                    <span className="truncate">{t.name}</span>
+                    <div className="flex flex-col min-w-0">
+                      <span className="text-xs font-black truncate">{t.orgName || t.name}</span>
+                      <span className="text-[10px] text-muted-foreground font-bold truncate">
+                        {t.isDemo || t.id === "demo-team" ? "🌟 体験用デモ" : (t.teamName || t.shortName || "チーム")}
+                      </span>
+                    </div>
                   </div>
-                  {t.id === currentTeam?.id && <Check className="w-4 h-4 text-primary shrink-0" />}
+                  {t.id === currentTeam?.id && <Check className="w-4 h-4 text-primary shrink-0 ml-2" />}
                 </DropdownMenuItem>
               ))}
 

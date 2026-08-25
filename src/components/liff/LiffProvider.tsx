@@ -9,8 +9,12 @@ import { authClient } from "@/lib/auth-client";
 export interface LiffTeamItem {
   id: string;
   name: string;
+  orgName?: string;
+  teamName?: string;
   shortName: string;
   logoImageUrl?: string;
+  role?: string;
+  isDemo?: boolean;
 }
 
 interface LiffContextType {
@@ -127,7 +131,7 @@ export function LiffProvider({
         const data = await res.json() as {
           isDemo?: boolean;
           teams?: LiffTeamItem[];
-          team?: { id: string | null; name: string; shortName: string; logoImageUrl?: string };
+          team?: { id: string | null; name: string; orgName?: string; teamName?: string; shortName: string; logoImageUrl?: string };
         };
 
         setIsDemo(!!data.isDemo);
@@ -143,8 +147,11 @@ export function LiffProvider({
           activeTeam = {
             id: data.team.id,
             name: data.team.name,
+            orgName: data.team.orgName,
+            teamName: data.team.teamName,
             shortName: data.team.shortName,
             logoImageUrl: data.team.logoImageUrl,
+            isDemo: !!data.isDemo,
           };
         }
         if (!activeTeam && teamList.length > 0) {
@@ -153,7 +160,7 @@ export function LiffProvider({
 
         if (activeTeam) {
           setCurrentTeam(activeTeam);
-          if (!data.isDemo) {
+          if (!data.isDemo && activeTeam.id !== "demo-team") {
             localStorage.setItem("iscore_selectedTeamId", activeTeam.id);
             localStorage.setItem("iscore_selectedTeamName", activeTeam.name);
           }

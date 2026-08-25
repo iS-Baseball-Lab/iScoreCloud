@@ -12,10 +12,13 @@ const app = new Hono<{ Bindings: WorkerEnv }>();
  */
 const DEMO_TEAM = {
   id: "demo-team",
-  name: "iScore ドリームス",
+  name: "iScore ドリームス (体験デモ)",
+  orgName: "iScore ドリームス",
+  teamName: "体験デモチーム",
   shortName: "ドリームス",
   managerName: "山田 監督",
   homeGround: "多摩川緑地野球場 (1面)",
+  logoImageUrl: undefined as string | undefined,
   year: 2026,
   isDemo: true,
 };
@@ -292,9 +295,15 @@ app.get("/hub", async (c) => {
     const teamList = allTeams.map((t) => ({
       id: t.id,
       name: `${t.orgName ? `${t.orgName} ` : ""}${t.name}`.trim(),
+      orgName: t.orgName || t.name,
+      teamName: t.name,
       shortName: t.shortName,
       logoImageUrl: t.logoImageUrl || undefined,
+      isDemo: false,
     }));
+
+    // ログインメンバーもいつでも体験できるよう、末尾にデモチームを追加
+    teamList.push(DEMO_TEAM);
 
     const liffId = c.env.NEXT_PUBLIC_LIFF_ID || c.env.LIFF_ID || "";
 
@@ -305,6 +314,8 @@ app.get("/hub", async (c) => {
       team: {
         id: targetTeam.id,
         name: fullTeamName,
+        orgName: targetTeam.orgName || targetTeam.name,
+        teamName: targetTeam.name,
         shortName: targetTeam.name,
         homeGround: targetTeam.homeGround || null,
         logoImageUrl: targetTeam.logoImageUrl || undefined,
