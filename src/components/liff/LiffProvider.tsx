@@ -47,15 +47,19 @@ export function LiffProvider({
 
         if (instance) {
           setLiff(instance);
-          setIsInClient(instance.isInClient());
-          const loggedIn = instance.isLoggedIn();
-          setIsLoggedIn(loggedIn);
+          const inClient = instance.isInClient();
+          setIsInClient(inClient);
 
-          if (loggedIn) {
+          // LINEアプリ内またはログイン済みの場合
+          if (instance.isLoggedIn()) {
             const userProfile = await getLiffProfile();
             if (isMounted) {
               setProfile(userProfile);
+              setIsLoggedIn(true);
             }
+          } else if (inClient) {
+            // LINEアプリ内の場合は自動ログインをトリガー
+            instance.login();
           }
         }
         setIsReady(true);

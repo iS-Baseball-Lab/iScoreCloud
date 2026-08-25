@@ -13,7 +13,8 @@ import { Video, ChevronRight, User, Users2 } from "lucide-react";
 export default function LiffHubPage() {
   const { profile } = useLiff();
   const [viewMode, setViewMode] = useState<LiffViewMode>("player");
-  const [teamName, setTeamName] = useState<string>("チームHUB");
+  const [userName, setUserName] = useState<string>("メンバー");
+  const [teamName, setTeamName] = useState<string>("i-Score チーム");
   const [matches, setMatches] = useState<MatchCardData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -31,28 +32,55 @@ export default function LiffHubPage() {
   };
 
   useEffect(() => {
+    // 1. プロフィール名が取得できた場合は優先反映
+    if (profile?.displayName) {
+      setUserName(profile.displayName);
+    }
+  }, [profile]);
+
+  useEffect(() => {
     async function loadData() {
       try {
         setIsLoading(true);
         const urlParams = new URLSearchParams(window.location.search);
         let targetTeamId = urlParams.get("teamId") || localStorage.getItem("iscore_selectedTeamId");
+        const queryTeamName = urlParams.get("teamName");
 
-        if (!targetTeamId) {
-          const meRes = await fetch("/api/auth/me");
-          if (meRes.ok) {
-            const meData = (await meRes.json()) as { data?: { memberships?: { teamId: string; teamName: string; memberType?: string }[] } };
-            const firstTeam = meData.data?.memberships?.[0];
-            if (firstTeam) {
+        if (queryTeamName) {
+          setTeamName(decodeURIComponent(queryTeamName));
+        }
+
+        // ユーザー認証・チーム情報の取得
+        const meRes = await fetch("/api/auth/me");
+        if (meRes.ok) {
+          const meData = (await meRes.json()) as {
+            data?: {
+              user?: { name?: string };
+              memberships?: { teamId: string; teamName: string; memberType?: string }[];
+            };
+          };
+
+          // ユーザー名の反映（LIFFプロフィールがまだない場合）
+          if (meData.data?.user?.name && !profile?.displayName) {
+            setUserName(meData.data.user.name);
+          }
+
+          const firstTeam = meData.data?.memberships?.[0];
+          if (firstTeam) {
+            if (!targetTeamId) {
               targetTeamId = firstTeam.teamId;
+            }
+            if (!queryTeamName) {
               setTeamName(firstTeam.teamName);
-              // memberType が parent なら初期表示を保護者モードに
-              if (firstTeam.memberType === "parent" && !localStorage.getItem("iscore_liff_view_mode")) {
-                setViewMode("parent");
-              }
+            }
+            // memberType が parent なら初期表示を保護者モードに
+            if (firstTeam.memberType === "parent" && !localStorage.getItem("iscore_liff_view_mode")) {
+              setViewMode("parent");
             }
           }
         }
 
+        // 試合一覧データの取得
         if (targetTeamId) {
           const res = await fetch(`/api/matches?teamId=${targetTeamId}`);
           if (res.ok) {
@@ -68,7 +96,7 @@ export default function LiffHubPage() {
     }
 
     loadData();
-  }, []);
+  }, [profile]);
 
   // 最新の動画付き試合
   const latestVideoMatch = matches.find((m) => !!extractYouTubeVideoId(m.youtubeUrl));
@@ -102,8 +130,6 @@ export default function LiffHubPage() {
       </button>
     </div>
   );
-
-  const userName = profile?.displayName || "メンバー";
 
   return (
     <div className="flex flex-col min-h-screen">
