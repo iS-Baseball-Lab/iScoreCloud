@@ -2,7 +2,7 @@
 import { Hono } from "hono";
 import { drizzle } from "drizzle-orm/d1";
 import { eq, desc, gte, and, sql } from "drizzle-orm";
-import { teams, organizations, matches, events } from "@/db/schema";
+import { teams, organizations, matches, events, venues } from "@/db/schema";
 import type { WorkerEnv } from "@/types/api";
 
 const app = new Hono<{ Bindings: WorkerEnv }>();
@@ -159,6 +159,54 @@ app.get("/hub", async (c) => {
       teams: [],
       matches: [],
     });
+  }
+});
+
+/**
+ * チームの試合一覧取得API (動画付き試合含む)
+ */
+app.get("/matches", async (c) => {
+  const db = drizzle(c.env.DB);
+  let teamId = c.req.query("teamId");
+
+  try {
+    if (!teamId) {
+      const firstTeam = await db.select({ id: teams.id }).from(teams).orderBy(desc(teams.createdAt)).get();
+      teamId = firstTeam?.id;
+    }
+
+    if (!teamId) {
+      return c.json({ success: true, matches: [] });
+    }
+
+    const matchesList = await db
+      .select({
+        id: matches.id,
+        opponent: matches.opponent,
+        date: matches.date,
+        status: matches.status,
+        myScore: matches.myScore,
+        opponentScore: matches.opponentScore,
+        youtubeUrl: matches.youtubeUrl,
+        matchType: matches.matchType,
+        venueName: venues.name,
+        innings: matches.innings,
+        myInningScores: matches.myInningScores,
+        opponentInningScores: matches.opponentInningScores,
+      })
+      .from(matches)
+      .leftJoin(venues, eq(matches.venueId, venues.id))
+      .where(eq(matches.teamId, teamId))
+      .orderBy(desc(matches.date), desc(matches.createdAt))
+      .all();
+
+    return c.json({
+      success: true,
+      matches: matchesList || [],
+    });
+  } catch (error: any) {
+    console.error("Failed to load liff matches:", error);
+    return c.json({ success: false, matches: [] });
   }
 });
 
