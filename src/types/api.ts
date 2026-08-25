@@ -23,6 +23,8 @@ export interface WorkerEnv {
   LINE_CLIENT_SECRET?: string;
   /** 🌟 修正: Messaging API 送信用のトークンを定義 */
   LINE_CHANNEL_ACCESS_TOKEN: string;
+  NEXT_PUBLIC_LIFF_ID?: string;
+  LIFF_ID?: string;
   GEMINI_API_KEY?: string;
 }
 

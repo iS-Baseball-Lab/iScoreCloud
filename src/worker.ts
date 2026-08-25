@@ -25,12 +25,14 @@ import testPush from './api/teams/test-push'
 import carpoolsRoute from './api/carpools'
 import equipmentsRoute from './api/equipments'
 import venuesRoute from './api/venues'
+import liffRoute from './api/liff'
 import type { WorkerEnv } from './types/api'
 
 const app = new Hono<{ Bindings: WorkerEnv }>()
 
 // 💡 整理整頓された美しいルーティング
 app.route('/api/auth', authRoute)
+app.route('/api/liff', liffRoute)
 app.route('/api/attendance', attendanceRoute)      // GET /api/attendance/:eventId
 app.route('/api/attendance', attendanceUpdate)     // POST /api/attendance/update
 app.route('/api/events', eventsRoute)

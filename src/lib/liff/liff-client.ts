@@ -18,18 +18,34 @@ export async function initLiff(liffId?: string): Promise<{ liff: Liff | null; is
     return { liff: null, isMock: true, reason: "SSR" };
   }
 
-  // LIFF ID の優先順位: 引数 > URLクエリ > localStorage > 環境変数
+  // 1. LIFF ID の優先順位: 引数 > URLクエリ > localStorage > 環境変数
   const urlParams = new URLSearchParams(window.location.search);
   const queryLiffId = urlParams.get("liffId");
   const storedLiffId = localStorage.getItem("iscore_liff_id");
-  const targetLiffId = liffId || queryLiffId || storedLiffId || process.env.NEXT_PUBLIC_LIFF_ID;
+  let targetLiffId = liffId || queryLiffId || storedLiffId || process.env.NEXT_PUBLIC_LIFF_ID;
 
   if (queryLiffId) {
     localStorage.setItem("iscore_liff_id", queryLiffId);
   }
 
+  // 2. まだ LIFF ID が未確定の場合、Cloudflare Workers API (/api/liff/config) から自動フェッチ
   if (!targetLiffId) {
-    console.warn("⚠️ LIFF ID is not configured (NEXT_PUBLIC_LIFF_ID, url ?liffId=, or localStorage). Running in mock fallback mode.");
+    try {
+      const configRes = await fetch("/api/liff/config");
+      if (configRes.ok) {
+        const configData = (await configRes.json()) as { success?: boolean; liffId?: string };
+        if (configData.liffId) {
+          targetLiffId = configData.liffId;
+          localStorage.setItem("iscore_liff_id", configData.liffId);
+        }
+      }
+    } catch {
+      // ignore fetch error
+    }
+  }
+
+  if (!targetLiffId) {
+    console.warn("⚠️ LIFF ID is not configured. Running in mock fallback mode.");
     return { liff: null, isMock: true, reason: "LIFF_ID_NOT_CONFIGURED" };
   }
 
