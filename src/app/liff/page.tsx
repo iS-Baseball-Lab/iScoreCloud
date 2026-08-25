@@ -13,7 +13,7 @@ import { Video, ChevronRight, User, Users2 } from "lucide-react";
 export default function LiffHubPage() {
   const { profile } = useLiff();
   const [viewMode, setViewMode] = useState<LiffViewMode>("player");
-  const [teamName, setTeamName] = useState<string>("チームポータル");
+  const [teamName, setTeamName] = useState<string>("チームHUB");
   const [matches, setMatches] = useState<MatchCardData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -109,10 +109,10 @@ export default function LiffHubPage() {
     <div className="flex flex-col min-h-screen">
       <LiffHeader
         title={teamName}
-        subtitle="チームポータル (HUB)"
+        subtitle="チームHUB"
         rightElement={ModeSwitch}
         shareData={{
-          title: `${teamName} チームポータル`,
+          title: `${teamName} チームHUB`,
           text: `出欠回答、予定確認、試合動画の閲覧はこちらから！`,
         }}
       />

@@ -21,7 +21,7 @@ export function HubQuickNav({ viewMode }: HubQuickNavProps) {
         <div className="grid grid-cols-2 gap-3">
           {/* 🚗 配車表・集合案内 */}
           <a
-            href="/attendance/carpool"
+            href="/liff/carpool"
             className="flex flex-col justify-between p-4 rounded-2xl bg-card border border-border shadow-xs hover:border-primary/50 hover:shadow-md transition-all active:scale-[0.98] group"
           >
             <div className="flex items-center justify-between">
@@ -67,7 +67,7 @@ export function HubQuickNav({ viewMode }: HubQuickNavProps) {
 
           {/* 📅 予定 & 当番表 */}
           <a
-            href="/attendance"
+            href="/liff/schedule"
             className="flex flex-col justify-between p-4 rounded-2xl bg-card border border-border shadow-xs hover:border-primary/50 hover:shadow-md transition-all active:scale-[0.98] group"
           >
             <div className="flex items-center justify-between">
@@ -90,7 +90,7 @@ export function HubQuickNav({ viewMode }: HubQuickNavProps) {
 
           {/* 🗺️ 球場 & 駐車場MAP */}
           <a
-            href="/grounds"
+            href="/liff/grounds"
             className="flex flex-col justify-between p-4 rounded-2xl bg-card border border-border shadow-xs hover:border-primary/50 hover:shadow-md transition-all active:scale-[0.98] group"
           >
             <div className="flex items-center justify-between">
@@ -148,7 +148,7 @@ export function HubQuickNav({ viewMode }: HubQuickNavProps) {
 
         {/* 📅 予定 & 出欠 */}
         <a
-          href="/attendance"
+          href="/liff/schedule"
           className="flex flex-col justify-between p-4 rounded-2xl bg-card border border-border shadow-xs hover:border-primary/50 hover:shadow-md transition-all active:scale-[0.98] group"
         >
           <div className="flex items-center justify-between">
@@ -171,7 +171,7 @@ export function HubQuickNav({ viewMode }: HubQuickNavProps) {
 
         {/* 📊 成績 & ランキング */}
         <a
-          href="/team"
+          href="/liff/stats"
           className="flex flex-col justify-between p-4 rounded-2xl bg-card border border-border shadow-xs hover:border-primary/50 hover:shadow-md transition-all active:scale-[0.98] group"
         >
           <div className="flex items-center justify-between">
@@ -194,7 +194,7 @@ export function HubQuickNav({ viewMode }: HubQuickNavProps) {
 
         {/* 🗺️ 球場マップ */}
         <a
-          href="/grounds"
+          href="/liff/grounds"
           className="flex flex-col justify-between p-4 rounded-2xl bg-card border border-border shadow-xs hover:border-primary/50 hover:shadow-md transition-all active:scale-[0.98] group"
         >
           <div className="flex items-center justify-between">
