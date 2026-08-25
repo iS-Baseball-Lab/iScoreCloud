@@ -368,6 +368,78 @@ app.get("/hub", async (c) => {
 /**
  * チームの試合一覧取得API (動画付き試合含む)
  */
+app.get("/matches", async (c) => {
+  const db = drizzle(c.env.DB);
+  let teamId = c.req.query("teamId");
+
+  try {
+    if (!teamId || teamId === "demo-team") {
+      return c.json({
+        success: true,
+        isDemo: true,
+        matches: DEMO_MATCHES,
+      });
+    }
+
+    const rawMatches = await db
+      .select({
+        id: matches.id,
+        opponent: matches.opponent,
+        date: matches.date,
+        status: matches.status,
+        myScore: matches.myScore,
+        opponentScore: matches.opponentScore,
+        youtubeUrl: matches.youtubeUrl,
+        matchType: matches.matchType,
+        venueName: venues.name,
+        innings: matches.innings,
+        myInningScores: matches.myInningScores,
+        opponentInningScores: matches.opponentInningScores,
+      })
+      .from(matches)
+      .leftJoin(venues, eq(matches.venueId, venues.id))
+      .where(eq(matches.teamId, teamId))
+      .orderBy(desc(matches.date), desc(matches.createdAt))
+      .all();
+
+    const formattedMatches = rawMatches.map((m) => {
+      let myInnings: number[] = [];
+      let opponentInnings: number[] = [];
+
+      try {
+        if (typeof m.myInningScores === "string") {
+          myInnings = JSON.parse(m.myInningScores);
+        } else if (Array.isArray(m.myInningScores)) {
+          myInnings = m.myInningScores;
+        }
+      } catch {}
+
+      try {
+        if (typeof m.opponentInningScores === "string") {
+          opponentInnings = JSON.parse(m.opponentInningScores);
+        } else if (Array.isArray(m.opponentInningScores)) {
+          opponentInnings = m.opponentInningScores;
+        }
+      } catch {}
+
+      return {
+        ...m,
+        myInningScores: myInnings,
+        opponentInningScores: opponentInnings,
+      };
+    });
+
+    return c.json({
+      success: true,
+      isDemo: false,
+      matches: formattedMatches,
+    });
+  } catch (error: any) {
+    console.error("Failed to load liff matches:", error);
+    return c.json({ success: false, matches: [] });
+  }
+});
+
 /**
  * チームの予定・スケジュール一覧取得API (出欠回答状況つき)
  */
