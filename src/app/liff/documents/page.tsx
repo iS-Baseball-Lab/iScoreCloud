@@ -156,68 +156,67 @@ export default function LiffDocumentsPage() {
 
       <div className="p-4 space-y-5">
         {/* ページ内ヘッダー */}
-        <div className="flex items-center justify-between gap-3">
-          <LiffPageHeader
-            title="資料ダウンロード"
-            subtitle="チーム規約・配車マニュアル・合宿のしおり"
-            icon={
-              <span className="w-8 h-8 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center font-black">
-                <FileText className="w-4 h-4" />
-              </span>
-            }
-            showBack
-            shareData={{
-              title: `【チーム資料】各種規約・マニュアル一覧`,
-              text: `チーム規約、配車ガイド、用具規定などの資料はこちらから閲覧できます`,
-            }}
-          />
+        <LiffPageHeader
+          title="資料ダウンロード"
+          subtitle="チーム規約・配車マニュアル・合宿のしおり"
+          icon={
+            <span className="w-8 h-8 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center font-black">
+              <FileText className="w-4 h-4" />
+            </span>
+          }
+          showBack
+          shareData={{
+            title: `【チーム資料】各種規約・マニュアル一覧`,
+            text: `チーム規約、配車ガイド、用具規定などの資料はこちらから閲覧できます`,
+          }}
+        />
 
-          <button
-            type="button"
-            onClick={() => setIsModalOpen(true)}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-primary text-primary-foreground text-xs font-black shadow-sm hover:bg-primary/90 active:scale-95 transition-all shrink-0"
-          >
-            <Plus className="w-4 h-4" />
-            <span>資料を追加</span>
-          </button>
-        </div>
+        {/* ➕ 資料を追加ボタン (別行配置) */}
+        <button
+          type="button"
+          onClick={() => setIsModalOpen(true)}
+          className="w-full py-3 px-4 rounded-2xl bg-primary text-primary-foreground font-black text-xs shadow-sm hover:bg-primary/90 active:scale-[0.99] transition-all flex items-center justify-center gap-2"
+        >
+          <Plus className="w-4 h-4" />
+          <span>新しいチーム資料・しおりを追加する</span>
+        </button>
 
-        {/* 🏢 チーム全体 vs 👥 編成限定 スコープ切り替えタブ */}
-        <div className="flex items-center gap-1.5 p-1 bg-muted/60 rounded-2xl border border-border">
+        {/* 🏢 チーム全体 vs 👥 編成限定 スコープ切り替えタブ (均等割りをやめて自然な幅でスクロール可能に) */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 -mx-4 px-4 scrollbar-none">
           <button
             type="button"
             onClick={() => setSelectedScope("all")}
-            className={`flex-1 py-1.5 rounded-xl text-xs font-black transition-all ${
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all ${
               selectedScope === "all"
-                ? "bg-card text-foreground shadow-xs"
-                : "text-muted-foreground hover:text-foreground"
+                ? "bg-foreground text-background shadow-xs"
+                : "bg-muted/70 text-muted-foreground hover:text-foreground"
             }`}
           >
-            全資料 ({documents.length})
+            すべて ({documents.length})
           </button>
           <button
             type="button"
             onClick={() => setSelectedScope("organization")}
-            className={`flex-1 py-1.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1 ${
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all flex items-center gap-1.5 ${
               selectedScope === "organization"
-                ? "bg-card text-primary shadow-xs"
-                : "text-muted-foreground hover:text-foreground"
+                ? "bg-primary text-primary-foreground shadow-xs"
+                : "bg-muted/70 text-muted-foreground hover:text-foreground"
             }`}
           >
             <Building2 className="w-3.5 h-3.5" />
-            <span>チーム全体</span>
+            <span>チーム全体共有</span>
           </button>
           <button
             type="button"
             onClick={() => setSelectedScope("team")}
-            className={`flex-1 py-1.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1 ${
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all flex items-center gap-1.5 ${
               selectedScope === "team"
-                ? "bg-card text-purple-600 dark:text-purple-400 shadow-xs"
-                : "text-muted-foreground hover:text-foreground"
+                ? "bg-purple-600 text-white shadow-xs"
+                : "bg-muted/70 text-muted-foreground hover:text-foreground"
             }`}
           >
             <Users2 className="w-3.5 h-3.5" />
-            <span>{currentTeam?.teamName || "この編成"}</span>
+            <span>{currentTeam?.teamName ? `${currentTeam.teamName} 限定` : "この編成限定"}</span>
           </button>
         </div>
 
