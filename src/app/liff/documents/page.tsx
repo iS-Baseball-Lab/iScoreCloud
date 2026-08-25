@@ -1,7 +1,7 @@
 // filepath: src/app/liff/documents/page.tsx
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
@@ -21,9 +21,11 @@ import {
   Loader2,
   CheckCircle2,
   AlertCircle,
+  UploadCloud,
   FileSpreadsheet,
   FileCode,
   Link2,
+  Paperclip,
 } from "lucide-react";
 
 interface TeamDocument {
@@ -51,6 +53,8 @@ export default function LiffDocumentsPage() {
   // 新規登録モーダル用ステート
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [uploadMode, setUploadMode] = useState<"file" | "url">("file");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [newTitle, setNewTitle] = useState("");
   const [newCategory, setNewCategory] = useState("rules");
   const [newScope, setNewScope] = useState<"organization" | "team">("team");
@@ -59,6 +63,7 @@ export default function LiffDocumentsPage() {
   const [newDescription, setNewDescription] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -86,15 +91,78 @@ export default function LiffDocumentsPage() {
     loadDocuments();
   }, [loadDocuments]);
 
+  // ファイルが選択されたときのハンドラ
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setSelectedFile(file);
+
+    // タイトルが未入力ならファイル名から自動設定（拡張子除く）
+    if (!newTitle.trim()) {
+      const nameWithoutExt = file.name.replace(/\.[^/.]+$/, "");
+      setNewTitle(nameWithoutExt);
+    }
+
+    // 拡張子からファイル種別を自動判定
+    const ext = file.name.split(".").pop()?.toLowerCase() || "";
+    if (["xls", "xlsx", "csv"].includes(ext)) setNewFileType("XLSX");
+    else if (["doc", "docx"].includes(ext)) setNewFileType("DOCX");
+    else if (["png", "jpg", "jpeg", "webp"].includes(ext)) setNewFileType("IMG");
+    else setNewFileType("PDF");
+  };
+
   const handleCreateDocument = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTitle.trim() || !newFileUrl.trim()) return;
+    if (!newTitle.trim()) return;
 
     try {
       setIsSubmitting(true);
       setSubmitError(null);
-
       const teamId = currentTeam?.id || "demo-team";
+
+      let finalFileUrl = newFileUrl.trim();
+      let finalFileType = newFileType;
+      let finalFileSize = "WEB";
+
+      // 📁 端末からファイルアップロードの場合 (Cloudflare R2 へ保存)
+      if (uploadMode === "file") {
+        if (!selectedFile) {
+          throw new Error("アップロードするファイルを選択してください");
+        }
+
+        const formData = new FormData();
+        formData.append("file", selectedFile);
+        formData.append("teamId", teamId);
+
+        const uploadRes = await fetch("/api/documents/upload", {
+          method: "POST",
+          body: formData,
+        });
+
+        const uploadData = await uploadRes.json() as {
+          success: boolean;
+          fileUrl?: string;
+          fileType?: string;
+          fileSize?: string;
+          error?: string;
+        };
+
+        if (!uploadData.success || !uploadData.fileUrl) {
+          throw new Error(uploadData.error || "R2へのファイルアップロードに失敗しました");
+        }
+
+        finalFileUrl = uploadData.fileUrl;
+        finalFileType = uploadData.fileType || newFileType;
+        finalFileSize = uploadData.fileSize || "WEB";
+      } else {
+        // 🔗 外部URLの場合
+        if (!finalFileUrl) {
+          throw new Error("資料URLを入力してください");
+        }
+      }
+
+      // D1 データベースの team_documents にメタデータを保存
       const res = await fetch("/api/liff/documents", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -103,21 +171,22 @@ export default function LiffDocumentsPage() {
           title: newTitle.trim(),
           category: newCategory,
           scope: newScope,
-          fileUrl: newFileUrl.trim(),
-          fileType: newFileType,
-          fileSize: "WEB",
+          fileUrl: finalFileUrl,
+          fileType: finalFileType,
+          fileSize: finalFileSize,
           description: newDescription.trim(),
           userId: profile?.userId,
         }),
       });
 
-      const data = await res.json() as { success: boolean; error?: string };
+      const data = (await res.json()) as { success: boolean; error?: string };
       if (!data.success) {
         throw new Error(data.error || "登録に失敗しました");
       }
 
       // 登録成功
       setIsModalOpen(false);
+      setSelectedFile(null);
       setNewTitle("");
       setNewFileUrl("");
       setNewDescription("");
@@ -174,7 +243,11 @@ export default function LiffDocumentsPage() {
         {/* ➕ 資料を追加ボタン (別行配置) */}
         <button
           type="button"
-          onClick={() => setIsModalOpen(true)}
+          onClick={() => {
+            setIsModalOpen(true);
+            setSelectedFile(null);
+            setSubmitError(null);
+          }}
           className="w-full py-3 px-4 rounded-2xl bg-primary text-primary-foreground font-black text-xs shadow-sm hover:bg-primary/90 active:scale-[0.99] transition-all flex items-center justify-center gap-2"
         >
           <Plus className="w-4 h-4" />
@@ -264,7 +337,7 @@ export default function LiffDocumentsPage() {
             <div className="space-y-1">
               <h4 className="text-sm font-black text-foreground">登録されている資料はありません</h4>
               <p className="text-xs font-bold text-muted-foreground">
-                右上の「資料を追加」ボタンから規約や合宿のしおりを登録できます。
+                上の「資料を追加」ボタンからPDFや遠征のしおりを直接アップロードできます。
               </p>
             </div>
           </div>
@@ -347,13 +420,13 @@ export default function LiffDocumentsPage() {
       </div>
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          📄 資料追加モーダル (createPortalでdocument.body直下にマウント)
+          📄 資料追加モーダル (R2アップロード & URL両対応)
           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {isModalOpen &&
         mounted &&
         createPortal(
           <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-background/80 backdrop-blur-md overflow-y-auto animate-in fade-in duration-200">
-            <div className="w-full max-w-md bg-card rounded-3xl border border-border shadow-2xl p-5 sm:p-6 space-y-4 my-auto max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-200">
+            <div className="w-full max-w-md bg-card rounded-3xl border border-border shadow-2xl p-5 sm:p-6 space-y-4 my-auto max-h-[92vh] overflow-y-auto animate-in zoom-in-95 duration-200">
               
               {/* モーダルヘッダー */}
               <div className="flex items-center justify-between pb-3 border-b border-border/50 sticky top-0 bg-card z-10">
@@ -363,7 +436,7 @@ export default function LiffDocumentsPage() {
                   </div>
                   <div>
                     <h3 className="text-base font-black text-foreground">資料の登録</h3>
-                    <p className="text-[11px] font-bold text-muted-foreground">規約・マニュアル・しおりを追加</p>
+                    <p className="text-[11px] font-bold text-muted-foreground">PDF・しおりをクラウドに保存</p>
                   </div>
                 </div>
                 <button
@@ -427,6 +500,114 @@ export default function LiffDocumentsPage() {
                   </div>
                 </div>
 
+                {/* 🌟 アップロード方式の切り替え */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black text-foreground">アップロード方法</label>
+                  <div className="grid grid-cols-2 gap-2 p-1 bg-muted/60 rounded-xl border border-border">
+                    <button
+                      type="button"
+                      onClick={() => setUploadMode("file")}
+                      className={`py-1.5 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-1.5 ${
+                        uploadMode === "file"
+                          ? "bg-card text-foreground shadow-xs"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <UploadCloud className="w-3.5 h-3.5 text-primary" />
+                      <span>ファイル選択 (R2)</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setUploadMode("url")}
+                      className={`py-1.5 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-1.5 ${
+                        uploadMode === "url"
+                          ? "bg-card text-foreground shadow-xs"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <Link2 className="w-3.5 h-3.5" />
+                      <span>外部URL指定</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* 📁 ファイル選択エリア (R2保存モード) */}
+                {uploadMode === "file" ? (
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-black text-foreground">
+                      ファイルを選択 <span className="text-destructive">*</span>
+                    </label>
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={handleFileChange}
+                      accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.webp"
+                      className="hidden"
+                    />
+
+                    {selectedFile ? (
+                      <div className="p-3 rounded-2xl bg-primary/5 border-2 border-dashed border-primary/40 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Paperclip className="w-4 h-4 text-primary shrink-0" />
+                          <div className="min-w-0">
+                            <p className="text-xs font-black text-foreground truncate">
+                              {selectedFile.name}
+                            </p>
+                            <span className="text-[10px] text-muted-foreground font-bold">
+                              {(selectedFile.size / 1024).toFixed(0)} KB
+                            </span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedFile(null);
+                            if (fileInputRef.current) fileInputRef.current.value = "";
+                          }}
+                          className="p-1 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="w-full py-6 rounded-2xl border-2 border-dashed border-border hover:border-primary/50 bg-background/50 hover:bg-muted/40 transition-all flex flex-col items-center justify-center gap-1.5 text-muted-foreground group"
+                      >
+                        <div className="w-10 h-10 rounded-2xl bg-primary/10 text-primary flex items-center justify-center group-hover:scale-110 transition-transform">
+                          <UploadCloud className="w-5 h-5" />
+                        </div>
+                        <span className="text-xs font-bold text-foreground">
+                          ここをタップしてPDF・写真を選択
+                        </span>
+                        <span className="text-[10px] text-muted-foreground">
+                          PDF, Word, Excel, 画像ファイルに対応
+                        </span>
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  /* 🔗 外部URL指定エリア */
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-black text-foreground">
+                      資料URL / 共有リンク <span className="text-destructive">*</span>
+                    </label>
+                    <div className="relative">
+                      <Link2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <input
+                        type="url"
+                        placeholder="Google Drive, Dropbox, PDF等の共有URL"
+                        value={newFileUrl}
+                        onChange={(e) => setNewFileUrl(e.target.value)}
+                        className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/20"
+                        required
+                      />
+                    </div>
+                  </div>
+                )}
+
                 {/* 資料タイトル */}
                 <div className="space-y-1.5">
                   <label className="text-xs font-black text-foreground">
@@ -460,48 +641,6 @@ export default function LiffDocumentsPage() {
                   </select>
                 </div>
 
-                {/* ファイルURL / Google Driveリンク */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-black text-foreground">
-                    資料URL / 共有リンク <span className="text-destructive">*</span>
-                  </label>
-                  <div className="relative">
-                    <Link2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <input
-                      type="url"
-                      placeholder="Google Drive, Dropbox, PDF等の共有URL"
-                      value={newFileUrl}
-                      onChange={(e) => setNewFileUrl(e.target.value)}
-                      className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/20"
-                      required
-                    />
-                  </div>
-                  <p className="text-[10px] text-muted-foreground font-bold">
-                    ※Googleドライブの「リンクを知っている全員が閲覧可」URLなどを貼り付けてください。
-                  </p>
-                </div>
-
-                {/* ファイル形式 */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-black text-foreground">ファイル形式</label>
-                  <div className="grid grid-cols-4 gap-2">
-                    {["PDF", "DOCX", "XLSX", "LINK"].map((ft) => (
-                      <button
-                        key={ft}
-                        type="button"
-                        onClick={() => setNewFileType(ft)}
-                        className={`py-2 rounded-xl text-xs font-bold border transition-all ${
-                          newFileType === ft
-                            ? "bg-primary text-primary-foreground border-primary shadow-xs"
-                            : "bg-background border-border text-muted-foreground hover:text-foreground"
-                        }`}
-                      >
-                        {ft}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
                 {/* 説明・メモ */}
                 <div className="space-y-1.5">
                   <label className="text-xs font-black text-foreground">説明・持ち物メモ (任意)</label>
@@ -516,18 +655,18 @@ export default function LiffDocumentsPage() {
 
                 <button
                   type="submit"
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || (uploadMode === "file" && !selectedFile)}
                   className="w-full py-3 rounded-2xl bg-primary text-primary-foreground font-black text-xs hover:bg-primary/90 active:scale-[0.99] transition-all flex items-center justify-center gap-2 shadow-sm disabled:opacity-50"
                 >
                   {isSubmitting ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>登録中...</span>
+                      <span>クラウドへアップロード中...</span>
                     </>
                   ) : (
                     <>
                       <Plus className="w-4 h-4" />
-                      <span>資料を登録する</span>
+                      <span>資料を保存する</span>
                     </>
                   )}
                 </button>
