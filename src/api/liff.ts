@@ -1,7 +1,7 @@
 // filepath: src/api/liff.ts
 import { Hono } from "hono";
 import { drizzle } from "drizzle-orm/d1";
-import { eq, desc, asc, gte, and, sql } from "drizzle-orm";
+import { eq, desc, asc, gte, and, or, sql } from "drizzle-orm";
 import {
   teams,
   organizations,
@@ -16,6 +16,7 @@ import {
   eventCarpoolRiders,
   memberCars,
   eventCarpoolSettings,
+  teamDocuments,
 } from "@/db/schema";
 import type { WorkerEnv } from "@/types/api";
 
@@ -944,6 +945,205 @@ app.get("/stats", async (c) => {
   } catch (error: any) {
     console.error("Failed to load liff stats:", error);
     return c.json({ success: false, stats: null });
+  }
+});
+
+/**
+ * チーム資料一覧取得API (チーム全体共有 + この編成限定)
+ */
+app.get("/documents", async (c) => {
+  const db = drizzle(c.env.DB);
+  const teamId = c.req.query("teamId");
+
+  const DEMO_DOCUMENTS = [
+    {
+      id: "demo-doc-1",
+      title: "2026年度 チーム規約・父母会会則",
+      category: "rules",
+      categoryLabel: "規約・会則",
+      fileType: "PDF",
+      fileSize: "1.2 MB",
+      updatedAt: "2026/04/01",
+      description: "チームの理念、部費・活動方針、父母会の役割と運営規定に関する基本規約です。",
+      fileUrl: "https://example.com/demo-rules.pdf",
+      scope: "organization",
+      scopeLabel: "チーム全体",
+    },
+    {
+      id: "demo-doc-2",
+      title: "配車・送迎マニュアル & 安全ガイドライン",
+      category: "manual",
+      categoryLabel: "配車・当番",
+      fileType: "PDF",
+      fileSize: "840 KB",
+      updatedAt: "2026/05/15",
+      description: "遠征時の集合場所、ジュニアシートの着用基準、高速代・ガソリン代の精算ルールです。",
+      fileUrl: "https://example.com/demo-carpool.pdf",
+      scope: "organization",
+      scopeLabel: "チーム全体",
+    },
+    {
+      id: "demo-doc-3",
+      title: "29期 秋季遠征合宿のしおり・持ち物表",
+      category: "trip",
+      categoryLabel: "遠征・合宿",
+      fileType: "PDF",
+      fileSize: "1.8 MB",
+      updatedAt: "2026/08/10",
+      description: "29期専用の遠征合宿スケジュール、宿泊先案内、持ち物リスト、健康チェックシートです。",
+      fileUrl: "https://example.com/demo-trip.pdf",
+      scope: "team",
+      scopeLabel: "この編成限定",
+    },
+    {
+      id: "demo-doc-4",
+      title: "学童・少年野球 連盟指定用具・服装規定",
+      category: "equipment",
+      categoryLabel: "用具・服装",
+      fileType: "PDF",
+      fileSize: "2.1 MB",
+      updatedAt: "2026/03/20",
+      description: "公式戦で使用可能なバット(JSBBマーク)、ヘルメット、スパイク(金具禁止)、アンダーシャツの規定です。",
+      fileUrl: "https://example.com/demo-equipment.pdf",
+      scope: "organization",
+      scopeLabel: "チーム全体",
+    },
+    {
+      id: "demo-doc-5",
+      title: "スポーツ安全保険 補償内容・事故時対応マニュアル",
+      category: "insurance",
+      categoryLabel: "保険・安全",
+      fileType: "PDF",
+      fileSize: "650 KB",
+      updatedAt: "2026/04/01",
+      description: "怪我や事故が発生した際の初期対応手順、病院受診時の連絡先、保険金請求の流れです。",
+      fileUrl: "https://example.com/demo-insurance.pdf",
+      scope: "organization",
+      scopeLabel: "チーム全体",
+    },
+  ];
+
+  try {
+    if (!teamId || teamId === "demo-team") {
+      return c.json({
+        success: true,
+        isDemo: true,
+        documents: DEMO_DOCUMENTS,
+      });
+    }
+
+    // チームと組織IDを取得
+    const currentTeam = await db
+      .select({
+        id: teams.id,
+        name: teams.name,
+        organizationId: teams.organizationId,
+      })
+      .from(teams)
+      .where(eq(teams.id, teamId))
+      .get();
+
+    if (!currentTeam) {
+      return c.json({ success: true, isDemo: false, documents: [] });
+    }
+
+    // 組織全体資料 または この編成限定資料を取得
+    const conditions = [eq(teamDocuments.teamId, teamId)];
+    if (currentTeam.organizationId) {
+      conditions.push(eq(teamDocuments.organizationId, currentTeam.organizationId));
+    }
+
+    const docs = await db
+      .select()
+      .from(teamDocuments)
+      .where(or(...conditions))
+      .orderBy(desc(teamDocuments.createdAt))
+      .all();
+
+    const categoryLabels: Record<string, string> = {
+      rules: "規約・会則",
+      manual: "配車・当番",
+      equipment: "用具・服装",
+      insurance: "保険・安全",
+      form: "届出書類",
+      trip: "遠征・合宿",
+      other: "その他",
+    };
+
+    const formatted = docs.map((d) => ({
+      id: d.id,
+      title: d.title,
+      category: d.category,
+      categoryLabel: categoryLabels[d.category] || "その他",
+      fileType: d.fileType || "PDF",
+      fileSize: d.fileSize || "ファイル",
+      updatedAt: new Date(d.createdAt).toLocaleDateString("ja-JP", { year: "numeric", month: "2-digit", day: "2-digit" }),
+      description: d.description || "",
+      fileUrl: d.fileUrl,
+      scope: d.scope,
+      scopeLabel: d.scope === "organization" ? "チーム全体" : `${currentTeam.name}限定`,
+    }));
+
+    return c.json({
+      success: true,
+      isDemo: false,
+      documents: formatted,
+    });
+  } catch (error: any) {
+    console.error("Failed to load liff documents:", error);
+    return c.json({ success: false, documents: [] });
+  }
+});
+
+/**
+ * 資料登録API
+ */
+app.post("/documents", async (c) => {
+  const db = drizzle(c.env.DB);
+  try {
+    const body = await c.req.json();
+    const { teamId, title, category, fileUrl, fileType, fileSize, description, scope, userId } = body;
+
+    if (!teamId || !title || !fileUrl) {
+      return c.json({ success: false, error: "teamId, title, fileUrl are required" }, 400);
+    }
+
+    if (teamId === "demo-team") {
+      return c.json({ success: true, message: "資料を登録しました（デモ）" });
+    }
+
+    // チーム情報を取得して organizationId を特定
+    const currentTeam = await db
+      .select({
+        id: teams.id,
+        organizationId: teams.organizationId,
+      })
+      .from(teams)
+      .where(eq(teams.id, teamId))
+      .get();
+
+    const organizationId = currentTeam?.organizationId || null;
+    const documentScope = scope === "organization" ? "organization" : "team";
+
+    await db.insert(teamDocuments).values({
+      id: `doc_${crypto.randomUUID()}`,
+      organizationId: documentScope === "organization" ? organizationId : null,
+      teamId: documentScope === "team" ? teamId : null,
+      title,
+      category: category || "other",
+      fileUrl,
+      fileType: fileType || "PDF",
+      fileSize: fileSize || "WEB",
+      description: description || null,
+      scope: documentScope,
+      createdById: userId || null,
+      createdAt: new Date(),
+    });
+
+    return c.json({ success: true, message: "資料を登録しました" });
+  } catch (error: any) {
+    console.error("Failed to create document:", error);
+    return c.json({ success: false, error: error?.message || "資料の登録に失敗しました" }, 500);
   }
 });
 

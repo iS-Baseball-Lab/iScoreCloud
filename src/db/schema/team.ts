@@ -161,3 +161,25 @@ export const teamGroupMembers = sqliteTable('team_group_members', {
   playerIdx: index("idx_tg_members_player_id").on(table.playerId),
   teamMemberIdx: index("idx_tg_members_team_member_id").on(table.teamMemberId),
 }));
+
+// ==========================================
+// 📄 チーム・組織共有資料テーブル
+// ==========================================
+export const teamDocuments = sqliteTable('team_documents', {
+  id: text('id').primaryKey(),
+  organizationId: text('organization_id').references(() => organizations.id, { onDelete: 'cascade' }), // チーム全体用
+  teamId: text('team_id').references(() => teams.id, { onDelete: 'cascade' }),                         // 編成限定用 (Nullable)
+  title: text('title').notNull(),
+  category: text('category').notNull().default('other'), // 'rules' | 'manual' | 'equipment' | 'insurance' | 'form' | 'other'
+  fileUrl: text('file_url').notNull(),
+  fileType: text('file_type').default('PDF'), // 'PDF' | 'DOCX' | 'XLSX' | 'LINK'
+  fileSize: text('file_size'),
+  description: text('description'),
+  scope: text('scope').$type<'organization' | 'team'>().notNull().default('team'),
+  createdById: text('created_by_id').references(() => user.id),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(strftime('%s', 'now'))`),
+}, (table) => ({
+  orgIdx: index("idx_team_docs_org_id").on(table.organizationId),
+  teamIdx: index("idx_team_docs_team_id").on(table.teamId),
+}));
+
