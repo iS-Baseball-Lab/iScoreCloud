@@ -3,7 +3,8 @@
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
 import type { Liff } from "@line/liff";
-import { initLiff, getLiffProfile, type LiffUserProfile } from "@/lib/liff/liff-client";
+import { LiffUserProfile, initLiff, getLiffProfile, loginLiff } from "@/lib/liff/liff-client";
+import { authClient } from "@/lib/auth-client";
 
 export interface LiffTeamItem {
   id: string;
@@ -160,14 +161,48 @@ export function LiffProvider({
     loadTeams();
   }, [loadTeams]);
 
-  // ログイン処理ハンドラー
-  const handleLogin = useCallback(() => {
-    if (liff && !liff.isLoggedIn()) {
-      liff.login({
-        redirectUri: typeof window !== "undefined" ? window.location.href : undefined,
-      });
+  const { data: authSession } = authClient.useSession();
+
+  // 本家Web版（Better-Auth）のセッションが存在する場合、プロファイルに自動反映
+  useEffect(() => {
+    if (authSession?.user?.name) {
+      const userProf: LiffUserProfile = {
+        userId: authSession.user.id,
+        displayName: authSession.user.name,
+        pictureUrl: authSession.user.image || undefined,
+      };
+      setProfile((prev) => prev || userProf);
+      setIsLoggedIn(true);
+      localStorage.setItem("iscore_user_name", authSession.user.name);
+      localStorage.setItem("iscore_user_id", authSession.user.id);
+      if (authSession.user.image) {
+        localStorage.setItem("iscore_user_avatar", authSession.user.image);
+      }
     }
-  }, [liff]);
+  }, [authSession]);
+
+  // ログイン処理ハンドラー (LIFFとBetter-Authソーシャルログインのハイブリッド)
+  const handleLogin = useCallback(async () => {
+    if (isInClient && liff) {
+      if (!liff.isLoggedIn()) {
+        liff.login({
+          redirectUri: typeof window !== "undefined" ? window.location.href : undefined,
+        });
+      }
+    } else {
+      // 外部ブラウザの場合は Better-Auth の LINE ログインを起動
+      try {
+        await authClient.signIn.social({
+          provider: "line",
+          callbackURL: typeof window !== "undefined" ? window.location.href : "/liff",
+        });
+      } catch {
+        if (liff) {
+          liff.login();
+        }
+      }
+    }
+  }, [isInClient, liff]);
 
   useEffect(() => {
     let isMounted = true;
