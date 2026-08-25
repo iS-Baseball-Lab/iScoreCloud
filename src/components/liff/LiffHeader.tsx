@@ -11,6 +11,7 @@ interface LiffHeaderProps {
   title?: string;
   subtitle?: string;
   showBack?: boolean;
+  rightElement?: React.ReactNode;
   shareData?: {
     title: string;
     text: string;
@@ -22,6 +23,7 @@ export function LiffHeader({
   title = "i-Score Mini",
   subtitle,
   showBack = false,
+  rightElement,
   shareData,
 }: LiffHeaderProps) {
   const router = useRouter();
@@ -86,7 +88,9 @@ export function LiffHeader({
       </div>
 
       <div className="flex items-center gap-2 shrink-0">
-        {shareData && (
+        {rightElement}
+
+        {shareData && !rightElement && (
           <button
             type="button"
             onClick={handleShare}
@@ -97,7 +101,7 @@ export function LiffHeader({
           </button>
         )}
 
-        {profile && (
+        {profile && !rightElement && (
           <div className="flex items-center gap-1.5 pl-1">
             {profile.pictureUrl ? (
               <img

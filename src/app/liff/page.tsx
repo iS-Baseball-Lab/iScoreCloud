@@ -3,35 +3,52 @@
 
 import React, { useState, useEffect } from "react";
 import { LiffHeader } from "@/components/liff/LiffHeader";
+import { HubHeroCard, type LiffViewMode } from "@/components/liff/HubHeroCard";
+import { HubQuickNav } from "@/components/liff/HubQuickNav";
 import { MatchScoreCard, type MatchCardData } from "@/components/liff/MatchScoreCard";
-import { YouTubePlayer } from "@/components/liff/YouTubePlayer";
 import { extractYouTubeVideoId } from "@/lib/youtube";
-import { Swords, Video, Trophy, Filter, Loader2, Sparkles } from "lucide-react";
-import { EmptyState } from "@/components/layout/EmptyState";
+import { useLiff } from "@/components/liff/LiffProvider";
+import { Video, ChevronRight, User, Users2 } from "lucide-react";
 
-export default function LiffHomePage() {
+export default function LiffHubPage() {
+  const { profile } = useLiff();
+  const [viewMode, setViewMode] = useState<LiffViewMode>("player");
+  const [teamName, setTeamName] = useState<string>("チームポータル");
   const [matches, setMatches] = useState<MatchCardData[]>([]);
-  const [teamName, setTeamName] = useState<string>("チーム試合情報");
   const [isLoading, setIsLoading] = useState(true);
-  const [filter, setFilter] = useState<"all" | "video" | "win">("all");
+
+  // ローカルストレージまたは初期ロールからモードを復元
+  useEffect(() => {
+    const savedMode = localStorage.getItem("iscore_liff_view_mode") as LiffViewMode;
+    if (savedMode === "player" || savedMode === "parent") {
+      setViewMode(savedMode);
+    }
+  }, []);
+
+  const handleModeChange = (mode: LiffViewMode) => {
+    setViewMode(mode);
+    localStorage.setItem("iscore_liff_view_mode", mode);
+  };
 
   useEffect(() => {
-    async function loadMatches() {
+    async function loadData() {
       try {
         setIsLoading(true);
-        // チームIDの取得（URLクエリパラメータ、localStorage、または最新チームから）
         const urlParams = new URLSearchParams(window.location.search);
         let targetTeamId = urlParams.get("teamId") || localStorage.getItem("iscore_selectedTeamId");
 
         if (!targetTeamId) {
-          // チーム一覧または認証情報から取得を試みる
           const meRes = await fetch("/api/auth/me");
           if (meRes.ok) {
-            const meData = (await meRes.json()) as { data?: { memberships?: { teamId: string; teamName: string }[] } };
+            const meData = (await meRes.json()) as { data?: { memberships?: { teamId: string; teamName: string; memberType?: string }[] } };
             const firstTeam = meData.data?.memberships?.[0];
             if (firstTeam) {
               targetTeamId = firstTeam.teamId;
               setTeamName(firstTeam.teamName);
+              // memberType が parent なら初期表示を保護者モードに
+              if (firstTeam.memberType === "parent" && !localStorage.getItem("iscore_liff_view_mode")) {
+                setViewMode("parent");
+              }
             }
           }
         }
@@ -44,126 +61,109 @@ export default function LiffHomePage() {
           }
         }
       } catch (error) {
-        console.error("Failed to load LIFF matches:", error);
+        console.error("Failed to load hub data:", error);
       } finally {
         setIsLoading(false);
       }
     }
 
-    loadMatches();
+    loadData();
   }, []);
 
-  // フィルタリング
-  const filteredMatches = matches.filter((m) => {
-    if (filter === "video") {
-      return !!extractYouTubeVideoId(m.youtubeUrl);
-    }
-    if (filter === "win") {
-      return m.status === "finished" && m.myScore > m.opponentScore;
-    }
-    return true;
-  });
-
-  // 最新の動画付き試合をピックアップ
+  // 最新の動画付き試合
   const latestVideoMatch = matches.find((m) => !!extractYouTubeVideoId(m.youtubeUrl));
+
+  // モード切り替えスイッチ
+  const ModeSwitch = (
+    <div className="flex items-center p-0.5 bg-muted/80 rounded-xl border border-border">
+      <button
+        type="button"
+        onClick={() => handleModeChange("player")}
+        className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-black transition-all ${
+          viewMode === "player"
+            ? "bg-card text-foreground shadow-xs"
+            : "text-muted-foreground hover:text-foreground"
+        }`}
+      >
+        <User className="w-3 h-3" />
+        <span>選手</span>
+      </button>
+      <button
+        type="button"
+        onClick={() => handleModeChange("parent")}
+        className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-black transition-all ${
+          viewMode === "parent"
+            ? "bg-card text-blue-600 dark:text-blue-400 shadow-xs"
+            : "text-muted-foreground hover:text-foreground"
+        }`}
+      >
+        <Users2 className="w-3 h-3" />
+        <span>保護者</span>
+      </button>
+    </div>
+  );
+
+  const userName = profile?.displayName || "メンバー";
 
   return (
     <div className="flex flex-col min-h-screen">
       <LiffHeader
         title={teamName}
-        subtitle="試合一覧・動画アーカイブ"
+        subtitle="チームポータル (HUB)"
+        rightElement={ModeSwitch}
         shareData={{
-          title: `${teamName} の試合情報・動画アーカイブ`,
-          text: `最新の試合結果や限定公開YouTube動画をチェックしよう！`,
+          title: `${teamName} チームポータル`,
+          text: `出欠回答、予定確認、試合動画の閲覧はこちらから！`,
         }}
       />
 
-      <div className="p-4 space-y-5">
-        {/* 🌟 ピックアップ動画（最新の動画付き試合） */}
-        {!isLoading && latestVideoMatch && (
-          <section className="space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5 text-xs font-black text-foreground">
-                <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-red-600 text-white text-[10px]">
-                  ▶
-                </span>
-                <span>最新の試合動画</span>
-              </div>
-              <span className="text-[11px] font-bold text-muted-foreground">
-                vs {latestVideoMatch.opponent} ({latestVideoMatch.date})
-              </span>
-            </div>
-
-            <YouTubePlayer
-              url={latestVideoMatch.youtubeUrl}
-              title={`vs ${latestVideoMatch.opponent} (${latestVideoMatch.date})`}
-            />
-          </section>
-        )}
-
-        {/* フィルタータブ */}
-        <div className="flex items-center justify-between gap-2 pt-1 border-t border-border/50">
-          <div className="flex items-center gap-1.5 p-1 bg-muted/50 rounded-xl border border-border/60">
-            <button
-              type="button"
-              onClick={() => setFilter("all")}
-              className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all ${
-                filter === "all"
-                  ? "bg-card text-foreground shadow-xs"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              全試合 ({matches.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => setFilter("video")}
-              className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-black transition-all ${
-                filter === "video"
-                  ? "bg-card text-red-600 dark:text-red-400 shadow-xs"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <Video className="w-3.5 h-3.5" />
-              <span>動画あり</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setFilter("win")}
-              className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-black transition-all ${
-                filter === "win"
-                  ? "bg-card text-emerald-600 dark:text-emerald-400 shadow-xs"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <Trophy className="w-3.5 h-3.5" />
-              <span>勝利試合</span>
-            </button>
+      <div className="p-4 space-y-6">
+        {/* 👋 ユーザー挨拶 & 役割ステータス */}
+        <div className="flex items-center justify-between px-1">
+          <div className="flex flex-col">
+            <span className="text-xs font-bold text-muted-foreground">
+              {viewMode === "parent" ? "保護者モード表示中" : "選手モード表示中"}
+            </span>
+            <h2 className="text-lg font-black text-foreground tracking-tight">
+              こんにちは、{userName} さん 👋
+            </h2>
           </div>
         </div>
 
-        {/* 試合カードリスト */}
-        <section className="space-y-3">
-          {isLoading ? (
-            <div className="space-y-3 py-4">
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="h-32 w-full rounded-2xl bg-muted/40 animate-pulse" />
-              ))}
-            </div>
-          ) : filteredMatches.length === 0 ? (
-            <div className="py-8">
-              <EmptyState
-                icon={Swords}
-                title="該当する試合がありません"
-                description={filter === "video" ? "動画が登録されている試合はまだありません" : "No matches found"}
-              />
-            </div>
-          ) : (
-            filteredMatches.map((match) => (
-              <MatchScoreCard key={match.id} match={match} />
-            ))
-          )}
+        {/* 🌟 ヒーローセクション：次回予定 & 出欠（選手・保護者で内容分岐） */}
+        <section>
+          <HubHeroCard
+            viewMode={viewMode}
+            teamName={teamName}
+          />
         </section>
+
+        {/* 🚀 クイックメニュー（2x2タイル） */}
+        <section>
+          <HubQuickNav viewMode={viewMode} />
+        </section>
+
+        {/* 🎬 最新の試合動画ハイライト */}
+        {latestVideoMatch && (
+          <section className="space-y-3 pt-1 border-t border-border/50">
+            <div className="flex items-center justify-between px-1">
+              <div className="flex items-center gap-1.5 text-xs font-black text-foreground">
+                <Video className="w-4 h-4 text-red-500" />
+                <span>最新の試合動画</span>
+              </div>
+
+              <a
+                href="/liff/matches"
+                className="flex items-center gap-0.5 text-xs font-black text-primary hover:underline"
+              >
+                <span>一覧を見る</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </a>
+            </div>
+
+            <MatchScoreCard match={latestVideoMatch} />
+          </section>
+        )}
       </div>
     </div>
   );
