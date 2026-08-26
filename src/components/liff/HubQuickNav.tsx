@@ -2,14 +2,17 @@
 "use client";
 
 import React from "react";
-import { Video, Calendar, Trophy, MapPin, Car, ClipboardList, FileText, HelpCircle } from "lucide-react";
+import { Video, Calendar, Trophy, MapPin, Car, ClipboardList, FileText, HelpCircle, LayoutGrid } from "lucide-react";
 
 export function HubQuickNav() {
   return (
     <div className="space-y-2.5">
-      <h3 className="text-xs font-black text-foreground px-1 tracking-tight">
-        クイックメニュー
-      </h3>
+      <div className="flex items-center gap-1.5 px-1">
+        <LayoutGrid className="w-3.5 h-3.5 text-primary" />
+        <h3 className="text-xs font-black text-foreground tracking-tight">
+          クイックメニュー
+        </h3>
+      </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         {/* 🚗 配車表・集合案内 */}
