@@ -32,40 +32,39 @@ export function LiffBottomNav() {
       <div className="fixed bottom-0 left-0 right-0 z-50 flex justify-center pointer-events-none">
         <div className="w-full max-w-lg pointer-events-auto relative">
           
-          {/* 🌟 数学的真円円弧 (SVG Circular Arc) による完全な真円縁取りノッチ */}
+          {/* 🌟 上部クリップを解消し、青丸を丸く包み込む完全真円ノッチ */}
           <div className="relative w-full h-[66px] select-none">
             
-            {/* SVG: 半径36pxの完全な真円円弧 (A 36 36 ...) で青丸(半径30px)を完全に真円で縁取る */}
+            {/* SVG背景: viewBoxを上部に拡張し、上部が平らにならず綺麗な半円ドームを描く */}
             <svg
-              viewBox="0 0 375 66"
+              viewBox="0 -26 375 92"
               preserveAspectRatio="none"
-              className="absolute inset-0 w-full h-full filter drop-shadow-[0_-3px_12px_rgba(0,0,0,0.06)]"
+              className="absolute -top-[26px] inset-x-0 w-full h-[92px] overflow-visible filter drop-shadow-[0_-4px_14px_rgba(0,0,0,0.07)]"
               fill="none"
             >
               {/* 
-                中心 (187.5, 26)
-                青丸: 半径 30px (直径 60px)
-                白枠ノッチ: 半径 36px の数学的真円円弧 (A 36 36 0 0 1 ...)
-                均等余白: 360度すべて完全均等な 6px！
+                中心 (187.5, 14)
+                青丸: 半径 30px (頂点 Y = -16)
+                白枠ノッチ: 半径 36px (頂点 Y = -22) -> 上部が切れずに美しい真円ドームとして青丸を包む！
               */}
               <path
                 d="M 0,16 
-                   L 146,16 
-                   Q 151,16 153.5,13.5 
-                   A 36 36 0 0 1 221.5,13.5 
-                   Q 224,16 229,16 
+                   L 142,16 
+                   Q 148,16 151.5,12 
+                   A 36 36 0 0 1 223.5,12 
+                   Q 227,16 233,16 
                    L 375,16 
                    L 375,66 
                    L 0,66 Z"
                 className="fill-card"
               />
-              {/* 上部の美しい真円縁取り境界線 */}
+              {/* 上部の美しい真円ドーム境界線 */}
               <path
                 d="M 0,16 
-                   L 146,16 
-                   Q 151,16 153.5,13.5 
-                   A 36 36 0 0 1 221.5,13.5 
-                   Q 224,16 229,16 
+                   L 142,16 
+                   Q 148,16 151.5,12 
+                   A 36 36 0 0 1 223.5,12 
+                   Q 227,16 233,16 
                    L 375,16"
                 className="stroke-border/80"
                 strokeWidth="1.2"
@@ -73,8 +72,8 @@ export function LiffBottomNav() {
               />
             </svg>
 
-            {/* 🌟 中央: 青い円形試合情報ボタン (直径60px, 半径30px, ノッチ真円と同心円配置) */}
-            <div className="absolute left-1/2 -translate-x-1/2 -top-1 z-20">
+            {/* 🌟 中央: 青い円形試合情報ボタン (直径60px, 半径30px, ノッチ真円ドームと同心円配置) */}
+            <div className="absolute left-1/2 -translate-x-1/2 -top-4 z-20">
               <Link
                 href="/liff/matches"
                 onClick={() => setIsOtherMenuOpen(false)}
