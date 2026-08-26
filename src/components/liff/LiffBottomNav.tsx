@@ -32,68 +32,16 @@ export function LiffBottomNav() {
       <div className="fixed bottom-0 left-0 right-0 z-50 flex justify-center pointer-events-none">
         <div className="w-full max-w-lg pointer-events-auto relative">
           
-          {/* 🌟 忠実なSVG湾曲ノッチボトムナビゲーション */}
-          <div className="relative w-full h-[64px] select-none">
+          {/* 🌟 スタイリッシュで美しいフラット＆インセット・ボトムナビゲーションバー */}
+          <nav className="relative bg-card/95 backdrop-blur-xl border-t border-border/80 shadow-[0_-4px_20px_rgba(0,0,0,0.06)] px-2 pt-1 pb-[max(env(safe-area-inset-bottom),10px)]">
             
-            {/* SVG背景と境界線 */}
-            <svg
-              viewBox="0 0 375 64"
-              preserveAspectRatio="none"
-              className="absolute inset-0 w-full h-full filter drop-shadow-[0_-3px_10px_rgba(0,0,0,0.06)]"
-              fill="none"
-            >
-              {/* 背景の塗り */}
-              <path
-                d="M 0,16 
-                   L 132,16 
-                   C 150,16 160,1 187.5,1 
-                   C 215,1 225,16 243,16 
-                   L 375,16 
-                   L 375,64 
-                   L 0,64 Z"
-                className="fill-card"
-              />
-              {/* 上部の美しい境界線 */}
-              <path
-                d="M 0,16 
-                   L 132,16 
-                   C 150,16 160,1 187.5,1 
-                   C 215,1 225,16 243,16 
-                   L 375,16"
-                className="stroke-border/80"
-                strokeWidth="1.2"
-                strokeLinecap="round"
-                fill="none"
-              />
-            </svg>
-
-            {/* 🌟 中央突出: 試合情報 (青い円形ボタン) */}
-            <div className="absolute left-1/2 -translate-x-1/2 -top-5 z-20">
-              <Link
-                href="/liff/matches"
-                onClick={() => setIsOtherMenuOpen(false)}
-                className={`w-[58px] h-[58px] rounded-full flex flex-col items-center justify-center shadow-lg active:scale-95 transition-all text-white bg-gradient-to-tr from-[#0066EE] via-[#0088FF] to-[#00B4D8] shadow-[#0080FF]/35 ${
-                  isMatches && !isOtherMenuOpen 
-                    ? "ring-4 ring-[#0080FF]/30 scale-105" 
-                    : "hover:brightness-110"
-                }`}
-                title="試合情報"
-              >
-                <Video className="w-5 h-5 -mb-0.5" />
-                <span className="text-[9px] font-black tracking-tighter leading-none mt-1">
-                  試合情報
-                </span>
-              </Link>
-            </div>
-
-            {/* ナビゲーションメニューアイテム（5分割グリッド） */}
-            <div className="relative z-10 grid grid-cols-5 h-full items-end pb-2 px-1">
+            <div className="grid grid-cols-5 h-[58px] items-center">
               
               {/* ① 🏠 ホーム */}
               <Link
                 href="/liff"
                 onClick={() => setIsOtherMenuOpen(false)}
-                className={`flex flex-col items-center justify-center gap-1 transition-all select-none active:scale-90 ${
+                className={`flex flex-col items-center justify-center gap-1 py-1 transition-all select-none active:scale-90 ${
                   isHome && !isOtherMenuOpen
                     ? "text-[#0080FF] dark:text-[#38bdf8] font-black"
                     : "text-muted-foreground hover:text-foreground font-bold"
@@ -107,7 +55,7 @@ export function LiffBottomNav() {
               <Link
                 href="/liff/stats"
                 onClick={() => setIsOtherMenuOpen(false)}
-                className={`flex flex-col items-center justify-center gap-1 transition-all select-none active:scale-90 ${
+                className={`flex flex-col items-center justify-center gap-1 py-1 transition-all select-none active:scale-90 ${
                   isStats && !isOtherMenuOpen
                     ? "text-[#0080FF] dark:text-[#38bdf8] font-black"
                     : "text-muted-foreground hover:text-foreground font-bold"
@@ -117,14 +65,30 @@ export function LiffBottomNav() {
                 <span className="text-[10px] leading-none tracking-tight">チーム成績</span>
               </Link>
 
-              {/* ③ 中央プレースホルダー */}
-              <div className="pointer-events-none" />
+              {/* ③ 🌟 試合情報 (バーの内側にすっきりと収まる青丸アクセントボタン) */}
+              <div className="flex flex-col items-center justify-center">
+                <Link
+                  href="/liff/matches"
+                  onClick={() => setIsOtherMenuOpen(false)}
+                  className={`w-[48px] h-[48px] rounded-full flex flex-col items-center justify-center shadow-md active:scale-95 transition-all text-white bg-gradient-to-tr from-[#0066EE] via-[#0088FF] to-[#00B4D8] shadow-[#0080FF]/25 ${
+                    isMatches && !isOtherMenuOpen 
+                      ? "ring-2 ring-[#0080FF]/40 scale-105" 
+                      : "hover:brightness-110"
+                  }`}
+                  title="試合情報"
+                >
+                  <Video className="w-4 h-4 -mb-0.5" />
+                  <span className="text-[8.5px] font-black tracking-tighter leading-none mt-0.5">
+                    試合情報
+                  </span>
+                </Link>
+              </div>
 
               {/* ④ 🔍 検索 */}
               <Link
                 href="/liff/grounds"
                 onClick={() => setIsOtherMenuOpen(false)}
-                className={`flex flex-col items-center justify-center gap-1 transition-all select-none active:scale-90 ${
+                className={`flex flex-col items-center justify-center gap-1 py-1 transition-all select-none active:scale-90 ${
                   isSearch && !isOtherMenuOpen
                     ? "text-[#0080FF] dark:text-[#38bdf8] font-black"
                     : "text-muted-foreground hover:text-foreground font-bold"
@@ -138,7 +102,7 @@ export function LiffBottomNav() {
               <button
                 type="button"
                 onClick={() => setIsOtherMenuOpen((prev) => !prev)}
-                className={`flex flex-col items-center justify-center gap-1 transition-all select-none active:scale-90 ${
+                className={`flex flex-col items-center justify-center gap-1 py-1 transition-all select-none active:scale-90 ${
                   isOtherMenuOpen || isOther
                     ? "text-[#0080FF] dark:text-[#38bdf8] font-black"
                     : "text-muted-foreground hover:text-foreground font-bold"
@@ -149,10 +113,7 @@ export function LiffBottomNav() {
               </button>
 
             </div>
-          </div>
-
-          {/* iPhone セーフエリア下部背景 */}
-          <div className="h-[max(env(safe-area-inset-bottom),8px)] bg-card" />
+          </nav>
 
         </div>
       </div>
