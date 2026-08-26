@@ -8,10 +8,6 @@ import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { useLiff } from "@/components/liff/LiffProvider";
 import {
   FileText,
-  Download,
-  Eye,
-  Calendar,
-  Tag,
   Search,
   Plus,
   X,
@@ -19,13 +15,12 @@ import {
   Users2,
   ExternalLink,
   Loader2,
-  CheckCircle2,
   AlertCircle,
   UploadCloud,
-  FileSpreadsheet,
-  FileCode,
   Link2,
   Paperclip,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 
 interface TeamDocument {
@@ -51,7 +46,7 @@ export default function LiffDocumentsPage() {
   const [searchQuery, setSearchQuery] = useState<string>("");
 
   // 新規登録モーダル用ステート
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [uploadMode, setUploadMode] = useState<"file" | "url">("file");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -64,6 +59,20 @@ export default function LiffDocumentsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // 編集モーダル用ステート
+  const [editingDoc, setEditingDoc] = useState<TeamDocument | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editCategory, setEditCategory] = useState("rules");
+  const [editScope, setEditScope] = useState<"organization" | "team">("team");
+  const [editFileUrl, setEditFileUrl] = useState("");
+  const [editFileType, setEditFileType] = useState("PDF");
+  const [editFileSize, setEditFileSize] = useState("WEB");
+  const [editDescription, setEditDescription] = useState("");
+  const [editUploadMode, setEditUploadMode] = useState<"current" | "file" | "url">("current");
+  const [editSelectedFile, setEditSelectedFile] = useState<File | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const editFileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -91,20 +100,17 @@ export default function LiffDocumentsPage() {
     loadDocuments();
   }, [loadDocuments]);
 
-  // ファイルが選択されたときのハンドラ
+  // 新規作成ファイル選択
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     setSelectedFile(file);
 
-    // タイトルが未入力ならファイル名から自動設定（拡張子除く）
     if (!newTitle.trim()) {
       const nameWithoutExt = file.name.replace(/\.[^/.]+$/, "");
       setNewTitle(nameWithoutExt);
     }
 
-    // 拡張子からファイル種別を自動判定
     const ext = file.name.split(".").pop()?.toLowerCase() || "";
     if (["xls", "xlsx", "csv"].includes(ext)) setNewFileType("XLSX");
     else if (["doc", "docx"].includes(ext)) setNewFileType("DOCX");
@@ -112,6 +118,35 @@ export default function LiffDocumentsPage() {
     else setNewFileType("PDF");
   };
 
+  // 編集時ファイル選択
+  const handleEditFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setEditSelectedFile(file);
+
+    const ext = file.name.split(".").pop()?.toLowerCase() || "";
+    if (["xls", "xlsx", "csv"].includes(ext)) setEditFileType("XLSX");
+    else if (["doc", "docx"].includes(ext)) setEditFileType("DOCX");
+    else if (["png", "jpg", "jpeg", "webp"].includes(ext)) setEditFileType("IMG");
+    else setEditFileType("PDF");
+  };
+
+  // 編集モーダルを開く
+  const openEditModal = (doc: TeamDocument) => {
+    setEditingDoc(doc);
+    setEditTitle(doc.title);
+    setEditCategory(doc.category);
+    setEditScope(doc.scope);
+    setEditFileUrl(doc.fileUrl);
+    setEditFileType(doc.fileType);
+    setEditFileSize(doc.fileSize);
+    setEditDescription(doc.description || "");
+    setEditUploadMode("current");
+    setEditSelectedFile(null);
+    setSubmitError(null);
+  };
+
+  // 新規登録処理
   const handleCreateDocument = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim()) return;
@@ -125,7 +160,6 @@ export default function LiffDocumentsPage() {
       let finalFileType = newFileType;
       let finalFileSize = "WEB";
 
-      // 📁 端末からファイルアップロードの場合 (Cloudflare R2 へ保存)
       if (uploadMode === "file") {
         if (!selectedFile) {
           throw new Error("アップロードするファイルを選択してください");
@@ -140,7 +174,7 @@ export default function LiffDocumentsPage() {
           body: formData,
         });
 
-        const uploadData = await uploadRes.json() as {
+        const uploadData = (await uploadRes.json()) as {
           success: boolean;
           fileUrl?: string;
           fileType?: string;
@@ -156,13 +190,11 @@ export default function LiffDocumentsPage() {
         finalFileType = uploadData.fileType || newFileType;
         finalFileSize = uploadData.fileSize || "WEB";
       } else {
-        // 🔗 外部URLの場合
         if (!finalFileUrl) {
           throw new Error("資料URLを入力してください");
         }
       }
 
-      // D1 データベースの team_documents にメタデータを保存
       const res = await fetch("/api/liff/documents", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -184,8 +216,7 @@ export default function LiffDocumentsPage() {
         throw new Error(data.error || "登録に失敗しました");
       }
 
-      // 登録成功
-      setIsModalOpen(false);
+      setIsCreateModalOpen(false);
       setSelectedFile(null);
       setNewTitle("");
       setNewFileUrl("");
@@ -196,6 +227,105 @@ export default function LiffDocumentsPage() {
       setSubmitError(err.message || "資料の登録に失敗しました");
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // 更新処理
+  const handleUpdateDocument = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingDoc || !editTitle.trim()) return;
+
+    try {
+      setIsSubmitting(true);
+      setSubmitError(null);
+      const teamId = currentTeam?.id || "demo-team";
+
+      let finalFileUrl = editFileUrl.trim();
+      let finalFileType = editFileType;
+      let finalFileSize = editFileSize;
+
+      if (editUploadMode === "file" && editSelectedFile) {
+        const formData = new FormData();
+        formData.append("file", editSelectedFile);
+        formData.append("teamId", teamId);
+
+        const uploadRes = await fetch("/api/documents/upload", {
+          method: "POST",
+          body: formData,
+        });
+
+        const uploadData = (await uploadRes.json()) as {
+          success: boolean;
+          fileUrl?: string;
+          fileType?: string;
+          fileSize?: string;
+          error?: string;
+        };
+
+        if (!uploadData.success || !uploadData.fileUrl) {
+          throw new Error(uploadData.error || "ファイルのアップロードに失敗しました");
+        }
+
+        finalFileUrl = uploadData.fileUrl;
+        finalFileType = uploadData.fileType || editFileType;
+        finalFileSize = uploadData.fileSize || "WEB";
+      }
+
+      const res = await fetch(`/api/liff/documents/${editingDoc.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          teamId,
+          title: editTitle.trim(),
+          category: editCategory,
+          scope: editScope,
+          fileUrl: finalFileUrl,
+          fileType: finalFileType,
+          fileSize: finalFileSize,
+          description: editDescription.trim(),
+        }),
+      });
+
+      const data = (await res.json()) as { success: boolean; error?: string };
+      if (!data.success) {
+        throw new Error(data.error || "資料の更新に失敗しました");
+      }
+
+      setEditingDoc(null);
+      loadDocuments();
+    } catch (err: any) {
+      console.error("Error updating document:", err);
+      setSubmitError(err.message || "資料の更新に失敗しました");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // 削除処理
+  const handleDeleteDocument = async () => {
+    if (!editingDoc) return;
+    if (!confirm(`「${editingDoc.title}」を削除してもよろしいですか？`)) return;
+
+    try {
+      setIsDeleting(true);
+      setSubmitError(null);
+
+      const res = await fetch(`/api/liff/documents/${editingDoc.id}`, {
+        method: "DELETE",
+      });
+
+      const data = (await res.json()) as { success: boolean; error?: string };
+      if (!data.success) {
+        throw new Error(data.error || "資料の削除に失敗しました");
+      }
+
+      setEditingDoc(null);
+      loadDocuments();
+    } catch (err: any) {
+      console.error("Error deleting document:", err);
+      setSubmitError(err.message || "資料の削除に失敗しました");
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -244,7 +374,7 @@ export default function LiffDocumentsPage() {
         <button
           type="button"
           onClick={() => {
-            setIsModalOpen(true);
+            setIsCreateModalOpen(true);
             setSelectedFile(null);
             setSubmitError(null);
           }}
@@ -254,7 +384,7 @@ export default function LiffDocumentsPage() {
           <span>新しいチーム資料・しおりを追加する</span>
         </button>
 
-        {/* 🏢 チーム全体 vs 👥 編成限定 スコープ切り替えタブ (均等割りをやめて自然な幅でスクロール可能に) */}
+        {/* 🏢 チーム全体 vs 👥 編成限定 スコープ切り替えタブ */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 -mx-4 px-4 scrollbar-none">
           <button
             type="button"
@@ -305,7 +435,7 @@ export default function LiffDocumentsPage() {
           />
         </div>
 
-        {/* カテゴリフィルター（横スクロール） */}
+        {/* カテゴリフィルター */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 -mx-4 px-4 scrollbar-none">
           {categories.map((cat) => (
             <button
@@ -402,6 +532,16 @@ export default function LiffDocumentsPage() {
                   </div>
 
                   <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => openEditModal(doc)}
+                      className="p-1.5 rounded-xl border border-border hover:bg-muted text-muted-foreground hover:text-foreground transition-all flex items-center gap-1 text-xs font-black"
+                      title="資料を編集・削除"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                      <span>編集</span>
+                    </button>
+
                     <a
                       href={doc.fileUrl}
                       target="_blank"
@@ -420,28 +560,27 @@ export default function LiffDocumentsPage() {
       </div>
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          📄 資料追加モーダル (R2アップロード & URL両対応)
+          ➕ 資料 新規追加モーダル
           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-      {isModalOpen &&
+      {isCreateModalOpen &&
         mounted &&
         createPortal(
           <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-background/80 backdrop-blur-md overflow-y-auto animate-in fade-in duration-200">
             <div className="w-full max-w-md bg-card rounded-3xl border border-border shadow-2xl p-5 sm:p-6 space-y-4 my-auto max-h-[92vh] overflow-y-auto animate-in zoom-in-95 duration-200">
               
-              {/* モーダルヘッダー */}
               <div className="flex items-center justify-between pb-3 border-b border-border/50 sticky top-0 bg-card z-10">
                 <div className="flex items-center gap-2.5">
                   <div className="w-9 h-9 rounded-2xl bg-primary/10 text-primary flex items-center justify-center">
                     <Plus className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="text-base font-black text-foreground">資料の登録</h3>
+                    <h3 className="text-base font-black text-foreground">資料の新規登録</h3>
                     <p className="text-[11px] font-bold text-muted-foreground">PDF・しおりをクラウドに保存</p>
                   </div>
                 </div>
                 <button
                   type="button"
-                  onClick={() => setIsModalOpen(false)}
+                  onClick={() => setIsCreateModalOpen(false)}
                   className="p-1.5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground transition-all"
                 >
                   <X className="w-5 h-5" />
@@ -456,7 +595,7 @@ export default function LiffDocumentsPage() {
               )}
 
               <form onSubmit={handleCreateDocument} className="space-y-4">
-                {/* 🌟 登録スコープ選択（チーム全体 vs この編成） */}
+                {/* 登録スコープ選択 */}
                 <div className="space-y-1.5">
                   <label className="text-xs font-black text-foreground">
                     登録範囲 (公開対象) <span className="text-destructive">*</span>
@@ -500,7 +639,7 @@ export default function LiffDocumentsPage() {
                   </div>
                 </div>
 
-                {/* 🌟 アップロード方式の切り替え */}
+                {/* アップロード方式 */}
                 <div className="space-y-1.5">
                   <label className="text-xs font-black text-foreground">アップロード方法</label>
                   <div className="grid grid-cols-2 gap-2 p-1 bg-muted/60 rounded-xl border border-border">
@@ -532,7 +671,6 @@ export default function LiffDocumentsPage() {
                   </div>
                 </div>
 
-                {/* 📁 ファイル選択エリア (R2保存モード) */}
                 {uploadMode === "file" ? (
                   <div className="space-y-1.5">
                     <label className="text-xs font-black text-foreground">
@@ -589,7 +727,6 @@ export default function LiffDocumentsPage() {
                     )}
                   </div>
                 ) : (
-                  /* 🔗 外部URL指定エリア */
                   <div className="space-y-1.5">
                     <label className="text-xs font-black text-foreground">
                       資料URL / 共有リンク <span className="text-destructive">*</span>
@@ -661,7 +798,7 @@ export default function LiffDocumentsPage() {
                   {isSubmitting ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>クラウドへアップロード中...</span>
+                      <span>クラウドへ保存中...</span>
                     </>
                   ) : (
                     <>
@@ -670,6 +807,259 @@ export default function LiffDocumentsPage() {
                     </>
                   )}
                 </button>
+              </form>
+            </div>
+          </div>,
+          document.body
+        )}
+
+      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          ✏️ 資料 編集・削除モーダル
+          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+      {editingDoc &&
+        mounted &&
+        createPortal(
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-background/80 backdrop-blur-md overflow-y-auto animate-in fade-in duration-200">
+            <div className="w-full max-w-md bg-card rounded-3xl border border-border shadow-2xl p-5 sm:p-6 space-y-4 my-auto max-h-[92vh] overflow-y-auto animate-in zoom-in-95 duration-200">
+              
+              <div className="flex items-center justify-between pb-3 border-b border-border/50 sticky top-0 bg-card z-10">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-2xl bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center font-black">
+                    <Pencil className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-foreground">資料の編集</h3>
+                    <p className="text-[11px] font-bold text-muted-foreground">公開範囲や内容の更新・削除</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditingDoc(null)}
+                  className="p-1.5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground transition-all"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {submitError && (
+                <div className="p-3 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-xs font-bold flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{submitError}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleUpdateDocument} className="space-y-4">
+                {/* 登録スコープ選択 */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black text-foreground">
+                    登録範囲 (公開対象) <span className="text-destructive">*</span>
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setEditScope("organization")}
+                      className={`p-3 rounded-2xl text-left border transition-all flex flex-col gap-1 ${
+                        editScope === "organization"
+                          ? "bg-primary/10 border-primary text-primary shadow-xs"
+                          : "bg-background border-border text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 font-black text-xs">
+                        <Building2 className="w-4 h-4 shrink-0" />
+                        <span>チーム全体</span>
+                      </div>
+                      <p className="text-[10px] font-medium leading-tight opacity-80">
+                        {currentTeam?.orgName || "クラブ"}の全編成・全学年で共通
+                      </p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setEditScope("team")}
+                      className={`p-3 rounded-2xl text-left border transition-all flex flex-col gap-1 ${
+                        editScope === "team"
+                          ? "bg-purple-500/10 border-purple-500 text-purple-600 dark:text-purple-400 shadow-xs"
+                          : "bg-background border-border text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 font-black text-xs">
+                        <Users2 className="w-4 h-4 shrink-0" />
+                        <span>{currentTeam?.teamName || "この編成"}</span>
+                      </div>
+                      <p className="text-[10px] font-medium leading-tight opacity-80">
+                        {currentTeam?.teamName || "選択中の編成"} メンバーに公開
+                      </p>
+                    </button>
+                  </div>
+                </div>
+
+                {/* 資料タイトル */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black text-foreground">
+                    資料名 / タイトル <span className="text-destructive">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/20"
+                    required
+                  />
+                </div>
+
+                {/* カテゴリ */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black text-foreground">カテゴリ</label>
+                  <select
+                    value={editCategory}
+                    onChange={(e) => setEditCategory(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/20"
+                  >
+                    <option value="rules">規約・会則</option>
+                    <option value="manual">配車・当番</option>
+                    <option value="equipment">用具・服装</option>
+                    <option value="trip">遠征・合宿</option>
+                    <option value="insurance">保険・安全</option>
+                    <option value="form">届出書類</option>
+                    <option value="other">その他</option>
+                  </select>
+                </div>
+
+                {/* ファイルの変更オプション */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black text-foreground">ファイルの差し替え</label>
+                  <div className="grid grid-cols-3 gap-1.5 p-1 bg-muted/60 rounded-xl border border-border">
+                    <button
+                      type="button"
+                      onClick={() => setEditUploadMode("current")}
+                      className={`py-1.5 rounded-lg text-[11px] font-black transition-all ${
+                        editUploadMode === "current"
+                          ? "bg-card text-foreground shadow-xs"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      変更しない
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditUploadMode("file")}
+                      className={`py-1.5 rounded-lg text-[11px] font-black transition-all ${
+                        editUploadMode === "file"
+                          ? "bg-card text-foreground shadow-xs"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      ファイル選択
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditUploadMode("url")}
+                      className={`py-1.5 rounded-lg text-[11px] font-black transition-all ${
+                        editUploadMode === "url"
+                          ? "bg-card text-foreground shadow-xs"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      URL変更
+                    </button>
+                  </div>
+
+                  {editUploadMode === "file" && (
+                    <div className="pt-1.5">
+                      <input
+                        type="file"
+                        ref={editFileInputRef}
+                        onChange={handleEditFileChange}
+                        accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.webp"
+                        className="hidden"
+                      />
+                      {editSelectedFile ? (
+                        <div className="p-3 rounded-2xl bg-primary/5 border-2 border-dashed border-primary/40 flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <Paperclip className="w-4 h-4 text-primary shrink-0" />
+                            <p className="text-xs font-black text-foreground truncate">
+                              {editSelectedFile.name}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setEditSelectedFile(null)}
+                            className="p-1 text-muted-foreground hover:text-foreground"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => editFileInputRef.current?.click()}
+                          className="w-full py-4 rounded-2xl border-2 border-dashed border-border hover:border-primary/50 bg-background flex flex-col items-center justify-center gap-1 text-muted-foreground"
+                        >
+                          <UploadCloud className="w-5 h-5 text-primary" />
+                          <span className="text-xs font-bold text-foreground">
+                            新しいファイルを選択
+                          </span>
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {editUploadMode === "url" && (
+                    <div className="pt-1.5 relative">
+                      <Link2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <input
+                        type="url"
+                        placeholder="Google Drive, Dropbox等のURL"
+                        value={editFileUrl}
+                        onChange={(e) => setEditFileUrl(e.target.value)}
+                        className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/20"
+                        required
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* 説明・持ち物メモ */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black text-foreground">説明・持ち物メモ (任意)</label>
+                  <textarea
+                    rows={2}
+                    value={editDescription}
+                    onChange={(e) => setEditDescription(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/20 resize-none"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={handleDeleteDocument}
+                    disabled={isDeleting || isSubmitting}
+                    className="py-3 px-4 rounded-2xl border border-destructive/30 text-destructive hover:bg-destructive/10 font-black text-xs transition-all flex items-center justify-center gap-1.5 shrink-0 active:scale-95 disabled:opacity-50"
+                  >
+                    {isDeleting ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="w-4 h-4" />
+                    )}
+                    <span>削除</span>
+                  </button>
+
+                  <button
+                    type="submit"
+                    disabled={isSubmitting || isDeleting}
+                    className="flex-1 py-3 rounded-2xl bg-primary text-primary-foreground font-black text-xs hover:bg-primary/90 active:scale-[0.99] transition-all flex items-center justify-center gap-2 shadow-sm disabled:opacity-50"
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>保存中...</span>
+                      </>
+                    ) : (
+                      <span>変更を保存</span>
+                    )}
+                  </button>
+                </div>
               </form>
             </div>
           </div>,

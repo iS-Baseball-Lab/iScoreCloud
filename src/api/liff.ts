@@ -1348,4 +1348,147 @@ app.post("/faqs", async (c) => {
   }
 });
 
+/**
+ * 📄 資料更新API (PUT /documents/:id)
+ */
+app.put("/documents/:id", async (c) => {
+  const db = drizzle(c.env.DB);
+  const id = c.req.param("id");
+  try {
+    const body = await c.req.json();
+    const { title, category, fileUrl, fileType, fileSize, description, scope, teamId } = body;
+
+    if (id.startsWith("demo-")) {
+      return c.json({ success: true, message: "資料を更新しました（デモ）" });
+    }
+
+    const currentDoc = await db.select().from(teamDocuments).where(eq(teamDocuments.id, id)).get();
+    if (!currentDoc) {
+      return c.json({ success: false, error: "指定された資料が見つかりません" }, 404);
+    }
+
+    // スコープの切り替え
+    let organizationId = currentDoc.organizationId;
+    let targetTeamId = currentDoc.teamId;
+
+    if (scope === "organization" && !organizationId && targetTeamId) {
+      const team = await db.select({ orgId: teams.organizationId }).from(teams).where(eq(teams.id, targetTeamId)).get();
+      organizationId = team?.orgId || null;
+      targetTeamId = null;
+    } else if (scope === "team" && teamId) {
+      targetTeamId = teamId;
+      organizationId = null;
+    }
+
+    await db
+      .update(teamDocuments)
+      .set({
+        title: title ? title.trim() : currentDoc.title,
+        category: category || currentDoc.category,
+        fileUrl: fileUrl ? fileUrl.trim() : currentDoc.fileUrl,
+        fileType: fileType || currentDoc.fileType,
+        fileSize: fileSize || currentDoc.fileSize,
+        description: description !== undefined ? description.trim() : currentDoc.description,
+        scope: scope || currentDoc.scope,
+        organizationId: scope === "organization" ? organizationId : null,
+        teamId: scope === "team" ? targetTeamId : null,
+      })
+      .where(eq(teamDocuments.id, id));
+
+    return c.json({ success: true, message: "資料を更新しました" });
+  } catch (error: any) {
+    console.error("Failed to update document:", error);
+    return c.json({ success: false, error: error?.message || "資料の更新に失敗しました" }, 500);
+  }
+});
+
+/**
+ * 📄 資料削除API (DELETE /documents/:id)
+ */
+app.delete("/documents/:id", async (c) => {
+  const db = drizzle(c.env.DB);
+  const id = c.req.param("id");
+  try {
+    if (id.startsWith("demo-")) {
+      return c.json({ success: true, message: "資料を削除しました（デモ）" });
+    }
+
+    await db.delete(teamDocuments).where(eq(teamDocuments.id, id));
+    return c.json({ success: true, message: "資料を削除しました" });
+  } catch (error: any) {
+    console.error("Failed to delete document:", error);
+    return c.json({ success: false, error: error?.message || "資料の削除に失敗しました" }, 500);
+  }
+});
+
+/**
+ * ❓ Q&A更新API (PUT /faqs/:id)
+ */
+app.put("/faqs/:id", async (c) => {
+  const db = drizzle(c.env.DB);
+  const id = c.req.param("id");
+  try {
+    const body = await c.req.json();
+    const { question, answer, category, scope, teamId } = body;
+
+    if (id.startsWith("demo-")) {
+      return c.json({ success: true, message: "Q&Aを更新しました（デモ）" });
+    }
+
+    const currentFaq = await db.select().from(teamFaqs).where(eq(teamFaqs.id, id)).get();
+    if (!currentFaq) {
+      return c.json({ success: false, error: "指定されたQ&Aが見つかりません" }, 404);
+    }
+
+    // スコープの切り替え
+    let organizationId = currentFaq.organizationId;
+    let targetTeamId = currentFaq.teamId;
+
+    if (scope === "organization" && !organizationId && targetTeamId) {
+      const team = await db.select({ orgId: teams.organizationId }).from(teams).where(eq(teams.id, targetTeamId)).get();
+      organizationId = team?.orgId || null;
+      targetTeamId = null;
+    } else if (scope === "team" && teamId) {
+      targetTeamId = teamId;
+      organizationId = null;
+    }
+
+    await db
+      .update(teamFaqs)
+      .set({
+        question: question ? question.trim() : currentFaq.question,
+        answer: answer ? answer.trim() : currentFaq.answer,
+        category: category || currentFaq.category,
+        scope: scope || currentFaq.scope,
+        organizationId: scope === "organization" ? organizationId : null,
+        teamId: scope === "team" ? targetTeamId : null,
+      })
+      .where(eq(teamFaqs.id, id));
+
+    return c.json({ success: true, message: "Q&Aを更新しました" });
+  } catch (error: any) {
+    console.error("Failed to update faq:", error);
+    return c.json({ success: false, error: error?.message || "Q&Aの更新に失敗しました" }, 500);
+  }
+});
+
+/**
+ * ❓ Q&A削除API (DELETE /faqs/:id)
+ */
+app.delete("/faqs/:id", async (c) => {
+  const db = drizzle(c.env.DB);
+  const id = c.req.param("id");
+  try {
+    if (id.startsWith("demo-")) {
+      return c.json({ success: true, message: "Q&Aを削除しました（デモ）" });
+    }
+
+    await db.delete(teamFaqs).where(eq(teamFaqs.id, id));
+    return c.json({ success: true, message: "Q&Aを削除しました" });
+  } catch (error: any) {
+    console.error("Failed to delete faq:", error);
+    return c.json({ success: false, error: error?.message || "Q&Aの削除に失敗しました" }, 500);
+  }
+});
+
 export default app;
