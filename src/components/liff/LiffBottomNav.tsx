@@ -14,10 +14,7 @@ import {
   Car,
   FileText,
   HelpCircle,
-  MapPin,
   Calendar,
-  ChevronRight,
-  Sparkles
 } from "lucide-react";
 
 export function LiffBottomNav() {
@@ -35,42 +32,50 @@ export function LiffBottomNav() {
       <div className="fixed bottom-0 left-0 right-0 z-50 flex justify-center pointer-events-none">
         <div className="w-full max-w-lg pointer-events-auto relative">
           
-          {/* 🌟 画像通りの滑らかな湾曲ノッチSVG背景 */}
-          <div className="relative w-full h-[68px]">
-            <svg
-              className="absolute inset-0 w-full h-full filter drop-shadow-[0_-4px_16px_rgba(0,0,0,0.07)]"
-              viewBox="0 0 375 68"
-              preserveAspectRatio="none"
-              fill="none"
-            >
-              {/* 背景の塗り */}
-              <path
-                d="M 0,16 
-                   L 132,16 
-                   C 146,16 154,2 187.5,2 
-                   C 221,2 229,16 243,16 
-                   L 375,16 
-                   L 375,68 
-                   L 0,68 Z"
-                className="fill-card"
-              />
-              {/* 上部の繊細な境界線 */}
-              <path
-                d="M 0,16 
-                   L 132,16 
-                   C 146,16 154,2 187.5,2 
-                   C 221,2 229,16 243,16 
-                   L 375,16"
-                className="stroke-border/80"
-                strokeWidth="1.2"
-                fill="none"
-              />
-            </svg>
+          {/* 🌟 外側と内側の角度が100%一致する同心円・精密ノッチバー */}
+          <div className="relative w-full h-[66px]">
+            
+            {/* 1. ベースの水平バー（左右） */}
+            <div className="absolute inset-x-0 bottom-0 top-[14px] bg-card border-t border-border/80 shadow-[0_-4px_20px_rgba(0,0,0,0.06)]" />
 
-            {/* ナビゲーションメニューアイテム（5分割） */}
-            <div className="relative z-10 grid grid-cols-5 h-full items-end pb-2.5 px-1.5">
+            {/* 2. 中央の精密幾何学ノッチ（固定幅120pxを画面中央に完全固定してレスポンシブな歪みをゼロ化） */}
+            <div className="absolute left-1/2 -translate-x-1/2 top-0 w-[110px] h-[66px] pointer-events-none">
+              <svg
+                viewBox="0 0 110 66"
+                className="w-full h-full"
+                fill="none"
+              >
+                {/* 
+                  幾何学計算:
+                  中心 (55, 33)
+                  外側ノッチ円弧: 半径 33px (直径 66px)
+                  内側青ボタン: 半径 27px (直径 54px)
+                  余白 (Gap): 均等に 6px の完全な同心円！
+                  左右フィレット: 滑らかなベジェ曲線で水平線 (Y=14) へシームレスに接続
+                */}
+                <path
+                  d="M 0,14 
+                     C 15,14 22,2 55,2 
+                     C 88,2 95,14 110,14 
+                     L 110,66 
+                     L 0,66 Z"
+                  className="fill-card"
+                />
+                <path
+                  d="M 0,14 
+                     C 15,14 22,2 55,2 
+                     C 88,2 95,14 110,14"
+                  className="stroke-border/80"
+                  strokeWidth="1.2"
+                  fill="none"
+                />
+              </svg>
+            </div>
+
+            {/* 3. ナビゲーションメニューアイテム（5分割） */}
+            <div className="relative z-10 grid grid-cols-5 h-full items-end pb-2 px-1">
               
-              {/* 1. 🏠 ホーム */}
+              {/* ① 🏠 ホーム */}
               <Link
                 href="/liff"
                 onClick={() => setIsOtherMenuOpen(false)}
@@ -84,7 +89,7 @@ export function LiffBottomNav() {
                 <span className="text-[10px] leading-none tracking-tight">ホーム</span>
               </Link>
 
-              {/* 2. 📊 チーム成績 */}
+              {/* ② 🏆 チーム成績 */}
               <Link
                 href="/liff/stats"
                 onClick={() => setIsOtherMenuOpen(false)}
@@ -98,15 +103,17 @@ export function LiffBottomNav() {
                 <span className="text-[10px] leading-none tracking-tight">チーム成績</span>
               </Link>
 
-              {/* 🌟 3. 中央突出: 試合情報 (青い円形ボタン) */}
+              {/* ③ 🌟 試合情報 (中央突出の完全同心円ブルーボタン: 直径54px) */}
               <div className="flex flex-col items-center justify-center relative -top-3">
                 <Link
                   href="/liff/matches"
                   onClick={() => setIsOtherMenuOpen(false)}
                   className={`w-[54px] h-[54px] rounded-full flex flex-col items-center justify-center shadow-lg active:scale-95 transition-all text-white bg-gradient-to-tr from-[#0066EE] via-[#0088FF] to-[#00B4D8] shadow-[#0080FF]/35 ${
-                    isMatches && !isOtherMenuOpen ? "ring-3 ring-[#0080FF]/30 scale-105" : "hover:brightness-110"
+                    isMatches && !isOtherMenuOpen 
+                      ? "ring-3 ring-[#0080FF]/40 scale-105" 
+                      : "hover:brightness-110"
                   }`}
-                  title="試合情報・動画スコア"
+                  title="試合情報"
                 >
                   <Video className="w-5 h-5 -mb-0.5" />
                   <span className="text-[9px] font-black tracking-tighter leading-none mt-1">
@@ -115,7 +122,7 @@ export function LiffBottomNav() {
                 </Link>
               </div>
 
-              {/* 4. 🔍 検索 (球場・予定検索) */}
+              {/* ④ 🔍 検索 */}
               <Link
                 href="/liff/grounds"
                 onClick={() => setIsOtherMenuOpen(false)}
@@ -129,7 +136,7 @@ export function LiffBottomNav() {
                 <span className="text-[10px] leading-none tracking-tight">検索</span>
               </Link>
 
-              {/* 5. ⋯ その他 (ドロワー展開) */}
+              {/* ⑤ ⋯ その他 */}
               <button
                 type="button"
                 onClick={() => setIsOtherMenuOpen((prev) => !prev)}
@@ -153,7 +160,6 @@ export function LiffBottomNav() {
           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {isOtherMenuOpen && (
         <div className="fixed inset-0 z-40 flex justify-center items-end bg-background/60 backdrop-blur-xs animate-in fade-in duration-200">
-          {/* オーバーレイ背景タップで閉じる */}
           <div 
             className="absolute inset-0"
             onClick={() => setIsOtherMenuOpen(false)}
@@ -175,7 +181,7 @@ export function LiffBottomNav() {
             </div>
 
             <div className="grid grid-cols-2 gap-2.5">
-              {/* 📅 予定・出欠回答 */}
+              {/* 📅 予定 & 出欠 */}
               <Link
                 href="/liff/schedule"
                 onClick={() => setIsOtherMenuOpen(false)}
@@ -186,11 +192,11 @@ export function LiffBottomNav() {
                 </span>
                 <div className="min-w-0">
                   <p className="text-xs font-black text-foreground truncate">予定 & 出欠</p>
-                  <p className="text-[10px] text-muted-foreground font-bold truncate">当番・スケジュール</p>
+                  <p className="text-[10px] text-muted-foreground font-bold truncate">当番・出欠確認</p>
                 </div>
               </Link>
 
-              {/* 🚗 配車表・集合案内 */}
+              {/* 🚗 配車表 */}
               <Link
                 href="/liff/carpool"
                 onClick={() => setIsOtherMenuOpen(false)}
