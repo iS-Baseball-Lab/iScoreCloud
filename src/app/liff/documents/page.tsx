@@ -146,6 +146,16 @@ export default function LiffDocumentsPage() {
     setSubmitError(null);
   };
 
+  // ファイルをBase64文字列に変換するヘルパー関数
+  const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = (error) => reject(error);
+    });
+  };
+
   // 新規登録処理
   const handleCreateDocument = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -165,42 +175,51 @@ export default function LiffDocumentsPage() {
           throw new Error("アップロードするファイルを選択してください");
         }
 
-        const formData = new FormData();
-        formData.append("file", selectedFile);
-        formData.append("teamId", teamId);
+        const sizeBytes = selectedFile.size || 0;
+        finalFileSize = sizeBytes >= 1024 * 1024 
+          ? `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB` 
+          : `${Math.max(1, Math.round(sizeBytes / 1024))} KB`;
 
-        let uploadRes = await fetch("/api/liff/documents/upload", {
-          method: "POST",
-          body: formData,
-        });
+        let uploadSuccess = false;
 
-        if (!uploadRes.ok) {
-          uploadRes = await fetch("/api/documents/upload", {
+        // 🌟 1. R2アップロードを試行
+        try {
+          const formData = new FormData();
+          formData.append("file", selectedFile);
+          formData.append("teamId", teamId);
+
+          const uploadRes = await fetch("/api/liff/documents/upload", {
             method: "POST",
             body: formData,
           });
+
+          if (uploadRes.ok) {
+            const uploadData = (await uploadRes.json()) as {
+              success: boolean;
+              fileUrl?: string;
+              fileType?: string;
+              fileSize?: string;
+            };
+
+            if (uploadData.success && uploadData.fileUrl) {
+              finalFileUrl = uploadData.fileUrl;
+              if (uploadData.fileType) finalFileType = uploadData.fileType;
+              if (uploadData.fileSize) finalFileSize = uploadData.fileSize;
+              uploadSuccess = true;
+            }
+          }
+        } catch (uploadErr) {
+          console.warn("R2 upload endpoint failed, falling back to data URL:", uploadErr);
         }
 
-        if (!uploadRes.ok) {
-          const errText = await uploadRes.text();
-          throw new Error(errText || "ファイルのアップロードに失敗しました");
+        // 🌟 2. アップロードAPIが未応答/失敗した場合は Base64 Data URL でフォールバック保存
+        if (!uploadSuccess) {
+          try {
+            finalFileUrl = await fileToBase64(selectedFile);
+          } catch (base64Err) {
+            throw new Error("ファイルの読み込みに失敗しました。もう一度お試しください。");
+          }
         }
-
-        const uploadData = (await uploadRes.json()) as {
-          success: boolean;
-          fileUrl?: string;
-          fileType?: string;
-          fileSize?: string;
-          error?: string;
-        };
-
-        if (!uploadData.success || !uploadData.fileUrl) {
-          throw new Error(uploadData.error || "R2へのファイルアップロードに失敗しました");
-        }
-
-        finalFileUrl = uploadData.fileUrl;
-        finalFileType = uploadData.fileType || newFileType;
-        finalFileSize = uploadData.fileSize || "WEB";
       } else {
         if (!finalFileUrl) {
           throw new Error("資料URLを入力してください");
@@ -262,42 +281,49 @@ export default function LiffDocumentsPage() {
       let finalFileSize = editFileSize;
 
       if (editUploadMode === "file" && editSelectedFile) {
-        const formData = new FormData();
-        formData.append("file", editSelectedFile);
-        formData.append("teamId", teamId);
+        const sizeBytes = editSelectedFile.size || 0;
+        finalFileSize = sizeBytes >= 1024 * 1024 
+          ? `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB` 
+          : `${Math.max(1, Math.round(sizeBytes / 1024))} KB`;
 
-        let uploadRes = await fetch("/api/liff/documents/upload", {
-          method: "POST",
-          body: formData,
-        });
+        let uploadSuccess = false;
 
-        if (!uploadRes.ok) {
-          uploadRes = await fetch("/api/documents/upload", {
+        try {
+          const formData = new FormData();
+          formData.append("file", editSelectedFile);
+          formData.append("teamId", teamId);
+
+          const uploadRes = await fetch("/api/liff/documents/upload", {
             method: "POST",
             body: formData,
           });
+
+          if (uploadRes.ok) {
+            const uploadData = (await uploadRes.json()) as {
+              success: boolean;
+              fileUrl?: string;
+              fileType?: string;
+              fileSize?: string;
+            };
+
+            if (uploadData.success && uploadData.fileUrl) {
+              finalFileUrl = uploadData.fileUrl;
+              if (uploadData.fileType) finalFileType = uploadData.fileType;
+              if (uploadData.fileSize) finalFileSize = uploadData.fileSize;
+              uploadSuccess = true;
+            }
+          }
+        } catch (uploadErr) {
+          console.warn("R2 edit upload failed, fallback to base64:", uploadErr);
         }
 
-        if (!uploadRes.ok) {
-          const errText = await uploadRes.text();
-          throw new Error(errText || "ファイルのアップロードに失敗しました");
+        if (!uploadSuccess) {
+          try {
+            finalFileUrl = await fileToBase64(editSelectedFile);
+          } catch (base64Err) {
+            throw new Error("ファイルの読み込みに失敗しました");
+          }
         }
-
-        const uploadData = (await uploadRes.json()) as {
-          success: boolean;
-          fileUrl?: string;
-          fileType?: string;
-          fileSize?: string;
-          error?: string;
-        };
-
-        if (!uploadData.success || !uploadData.fileUrl) {
-          throw new Error(uploadData.error || "ファイルのアップロードに失敗しました");
-        }
-
-        finalFileUrl = uploadData.fileUrl;
-        finalFileType = uploadData.fileType || editFileType;
-        finalFileSize = uploadData.fileSize || "WEB";
       }
 
       const res = await fetch(`/api/liff/documents/${editingDoc.id}`, {

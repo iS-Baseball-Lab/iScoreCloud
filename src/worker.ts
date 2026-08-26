@@ -4,6 +4,7 @@
    2. API ユニットの責務分離規約に基づき、参照系と更新系を適切にマウントする。 */
 
 import { Hono } from 'hono'
+import { cors } from 'hono/cors'
 import attendanceRoute from './api/attendance'
 import attendanceUpdate from './api/attendance/update-attendance'
 import eventsRoute from './api/events'
@@ -30,6 +31,15 @@ import documentsRoute from './api/documents'
 import type { WorkerEnv } from './types/api'
 
 const app = new Hono<{ Bindings: WorkerEnv }>()
+
+// 🌟 CORSを全APIルートに適用（LINE内ブラウザ/LIFFのFailed to fetchを根絶）
+app.use('*', cors({
+  origin: '*',
+  allowHeaders: ['Content-Type', 'Authorization'],
+  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  exposeHeaders: ['Content-Length'],
+  maxAge: 86400,
+}))
 
 // 💡 整理整頓された美しいルーティング
 app.route('/api/auth', authRoute)
