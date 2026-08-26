@@ -32,39 +32,36 @@ export function LiffBottomNav() {
       <div className="fixed bottom-0 left-0 right-0 z-50 flex justify-center pointer-events-none">
         <div className="w-full max-w-lg pointer-events-auto relative">
           
-          {/* 🌟 影を強め、なだらかな立ち上がりS字フィレットを備えた極上ノッチボトムナビ */}
+          {/* 🌟 完全なめらか連続曲線・適度なクッキリ影・絶妙な青丸位置のボトムナビ */}
           <div className="relative w-full h-[68px] select-none">
             
-            {/* SVG背景: 影を少し強め、裾野の立ち上がりをなだらかに拡張 */}
+            {/* SVG背景: 接合部のカクカクを完全排除した1本の超滑らか連続ベジェ曲線 ＆ 広がりを抑えた上質シャドウ */}
             <svg
               viewBox="0 -26 375 94"
               preserveAspectRatio="none"
-              className="absolute -top-[26px] inset-x-0 w-full h-[94px] overflow-visible filter drop-shadow-[0_-5px_18px_rgba(0,0,0,0.12)]"
+              className="absolute -top-[26px] inset-x-0 w-full h-[94px] overflow-visible filter drop-shadow-[0_-3px_8px_rgba(0,0,0,0.10)]"
               fill="none"
             >
               {/* 
-                中心 (187.5, 24)
-                青丸: 半径 34px (直径 68px)
-                白枠ノッチ: 半径 38px の真円円弧 + なだらかな左右S字フィレット
+                数学的完全連続曲線 (C1 Continuous Spline)
+                水平ライン (Y=16) から頂点 (187.5, -14) まで接線の角が一切ない極上の滑らかさ
               */}
               <path
                 d="M 0,16 
-                   L 134,16 
-                   C 143,16 147,13.5 150.5,13 
-                   A 38 38 0 0 1 224.5,13 
-                   C 228,13.5 232,16 241,16 
+                   L 126,16 
+                   C 152,16 162,-14 187.5,-14 
+                   C 213,-14 223,16 249,16 
                    L 375,16 
                    L 375,68 
                    L 0,68 Z"
                 className="fill-card"
               />
-              {/* 上部の美しいなだらか真円ドーム境界線 */}
+              {/* 上部の極上なめらか境界線 */}
               <path
                 d="M 0,16 
-                   L 134,16 
-                   C 143,16 147,13.5 150.5,13 
-                   A 38 38 0 0 1 224.5,13 
-                   C 228,13.5 232,16 241,16 
+                   L 126,16 
+                   C 152,16 162,-14 187.5,-14 
+                   C 213,-14 223,16 249,16 
                    L 375,16"
                 className="stroke-border/80"
                 strokeWidth="1.2"
@@ -72,8 +69,8 @@ export function LiffBottomNav() {
               />
             </svg>
 
-            {/* 🌟 中央: 青い円形試合情報ボタン (直径68px, 美しいノッチにジャストフィット) */}
-            <div className="absolute left-1/2 -translate-x-1/2 -top-2.5 z-20">
+            {/* 🌟 中央: 青い円形試合情報ボタン (直径68px, ちょっとだけ下にずらして安定配置) */}
+            <div className="absolute left-1/2 -translate-x-1/2 -top-1.5 z-20">
               <Link
                 href="/liff/matches"
                 onClick={() => setIsOtherMenuOpen(false)}
