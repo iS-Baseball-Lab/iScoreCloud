@@ -32,51 +32,31 @@ export function LiffBottomNav() {
       <div className="fixed bottom-0 left-0 right-0 z-50 flex justify-center pointer-events-none">
         <div className="w-full max-w-lg pointer-events-auto relative">
           
-          {/* 🌟 湾曲ノッチ付きボトムバーコンテナ */}
+          {/* 🌟 100%真円幾何学ドーム ＆ 逆角丸フィレットによる完全なノッチ */}
           <div className="relative w-full select-none">
             
-            {/* 1. 背景ノッチ (SVG) - 画面中央に固定し、青い円と完全に同心円の弧を描く */}
-            <div className="relative w-full h-[72px]">
-              <svg
-                viewBox="0 0 375 72"
-                preserveAspectRatio="none"
-                className="w-full h-full filter drop-shadow-[0_-3px_12px_rgba(0,0,0,0.06)]"
-              >
-                {/* 
-                  基準線 Y = 20 (バーの上端)
-                  中央 X = 187.5
-                  青い円: 中心 (187.5, 20), 半径 28px (直径 56px) -> 頂点 Y = -8, 底点 Y = 48
-                  白いノッチ: 中心 (187.5, 20), 半径 33px (均等 5px 余白) -> 頂点 Y = -13, 底点 Y = 53
-                  左右の接続カーブ: (142, 20) から (187.5, -13) を経て (233, 20) へ滑らかなS字曲線
-                */}
-                <path
-                  d="M 0,20 
-                     L 138,20 
-                     C 152,20 158,5 187.5,5 
-                     C 217,5 223,20 237,20 
-                     L 375,20 
-                     L 375,72 
-                     L 0,72 Z"
-                  className="fill-card"
-                />
-                <path
-                  d="M 0,20 
-                     L 138,20 
-                     C 152,20 158,5 187.5,5 
-                     C 217,5 223,20 237,20 
-                     L 375,20"
-                  className="stroke-border/80"
-                  strokeWidth="1.2"
-                  fill="none"
-                />
-              </svg>
+            {/* ① 中央の白い真円ドーム台座（直径68px） */}
+            <div className="absolute left-1/2 -translate-x-1/2 -top-6 w-[70px] h-[70px] rounded-full bg-card border-t border-border/80 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] z-0 pointer-events-none" />
 
-              {/* 2. 🌟 中央の突出青いボタン (完全中央・同心円配置) */}
-              <div className="absolute left-1/2 -translate-x-1/2 top-0 -translate-y-1 z-20">
+            {/* ② 左側の滑らかな逆角丸フィレット (S字トランジション) */}
+            <div className="absolute right-1/2 mr-[32px] -top-3 w-4 h-3 pointer-events-none overflow-hidden z-0">
+              <div className="w-8 h-8 rounded-full border-r border-b border-border/80 bg-card -translate-x-4 -translate-y-5 shadow-[4px_4px_0_0_hsl(var(--card))]" />
+            </div>
+
+            {/* ③ 右側の滑らかな逆角丸フィレット (S字トランジション) */}
+            <div className="absolute left-1/2 ml-[32px] -top-3 w-4 h-3 pointer-events-none overflow-hidden z-0">
+              <div className="w-8 h-8 rounded-full border-l border-b border-border/80 bg-card translate-x-0 -translate-y-5 shadow-[-4px_4px_0_0_hsl(var(--card))]" />
+            </div>
+
+            {/* ④ メインの水平ナビゲーションバー */}
+            <nav className="relative bg-card border-t border-border/80 shadow-[0_-4px_20px_rgba(0,0,0,0.06)] z-10">
+              
+              {/* 中央の青い円形突出ボタン (FAB) - 真円ドームと同心円 (直径58px, 均等6pxマージン) */}
+              <div className="absolute left-1/2 -translate-x-1/2 -top-4 z-30">
                 <Link
                   href="/liff/matches"
                   onClick={() => setIsOtherMenuOpen(false)}
-                  className={`w-[56px] h-[56px] rounded-full flex flex-col items-center justify-center shadow-lg active:scale-95 transition-all text-white bg-gradient-to-tr from-[#0066EE] via-[#0088FF] to-[#00B4D8] shadow-[#0080FF]/35 ${
+                  className={`w-[58px] h-[58px] rounded-full flex flex-col items-center justify-center shadow-lg active:scale-95 transition-all text-white bg-gradient-to-tr from-[#0066EE] via-[#0088FF] to-[#00B4D8] shadow-[#0080FF]/35 ${
                     isMatches && !isOtherMenuOpen 
                       ? "ring-4 ring-[#0080FF]/30 scale-105" 
                       : "hover:brightness-110"
@@ -90,14 +70,14 @@ export function LiffBottomNav() {
                 </Link>
               </div>
 
-              {/* 3. 左右のナビゲーションアイコン (5分割グリッド) */}
-              <div className="absolute inset-0 pt-5 pb-1 px-1 z-10 grid grid-cols-5 items-center">
+              {/* 5分割メニューグリッド */}
+              <div className="grid grid-cols-5 h-[56px] items-center px-1">
                 
-                {/* ① 🏠 ホーム */}
+                {/* 1. 🏠 ホーム */}
                 <Link
                   href="/liff"
                   onClick={() => setIsOtherMenuOpen(false)}
-                  className={`flex flex-col items-center justify-center gap-1 transition-all select-none active:scale-90 ${
+                  className={`flex flex-col items-center justify-center gap-1 py-1 transition-all select-none active:scale-90 ${
                     isHome && !isOtherMenuOpen
                       ? "text-[#0080FF] dark:text-[#38bdf8] font-black"
                       : "text-muted-foreground hover:text-foreground font-bold"
@@ -107,11 +87,11 @@ export function LiffBottomNav() {
                   <span className="text-[10px] leading-none tracking-tight">ホーム</span>
                 </Link>
 
-                {/* ② 🏆 チーム成績 */}
+                {/* 2. 🏆 チーム成績 */}
                 <Link
                   href="/liff/stats"
                   onClick={() => setIsOtherMenuOpen(false)}
-                  className={`flex flex-col items-center justify-center gap-1 transition-all select-none active:scale-90 ${
+                  className={`flex flex-col items-center justify-center gap-1 py-1 transition-all select-none active:scale-90 ${
                     isStats && !isOtherMenuOpen
                       ? "text-[#0080FF] dark:text-[#38bdf8] font-black"
                       : "text-muted-foreground hover:text-foreground font-bold"
@@ -121,14 +101,14 @@ export function LiffBottomNav() {
                   <span className="text-[10px] leading-none tracking-tight">チーム成績</span>
                 </Link>
 
-                {/* ③ 中央プレースホルダー（中央ボタンの領域を空ける） */}
+                {/* 3. 中央プレースホルダー（FABボタンの空間） */}
                 <div className="pointer-events-none" />
 
-                {/* ④ 🔍 検索 */}
+                {/* 4. 🔍 検索 */}
                 <Link
                   href="/liff/grounds"
                   onClick={() => setIsOtherMenuOpen(false)}
-                  className={`flex flex-col items-center justify-center gap-1 transition-all select-none active:scale-90 ${
+                  className={`flex flex-col items-center justify-center gap-1 py-1 transition-all select-none active:scale-90 ${
                     isSearch && !isOtherMenuOpen
                       ? "text-[#0080FF] dark:text-[#38bdf8] font-black"
                       : "text-muted-foreground hover:text-foreground font-bold"
@@ -138,11 +118,11 @@ export function LiffBottomNav() {
                   <span className="text-[10px] leading-none tracking-tight">検索</span>
                 </Link>
 
-                {/* ⑤ ⋯ その他 */}
+                {/* 5. ⋯ その他 */}
                 <button
                   type="button"
                   onClick={() => setIsOtherMenuOpen((prev) => !prev)}
-                  className={`flex flex-col items-center justify-center gap-1 transition-all select-none active:scale-90 ${
+                  className={`flex flex-col items-center justify-center gap-1 py-1 transition-all select-none active:scale-90 ${
                     isOtherMenuOpen || isOther
                       ? "text-[#0080FF] dark:text-[#38bdf8] font-black"
                       : "text-muted-foreground hover:text-foreground font-bold"
@@ -153,10 +133,11 @@ export function LiffBottomNav() {
                 </button>
 
               </div>
-            </div>
 
-            {/* 4. iPhone等のセーフエリア下部背景 */}
-            <div className="h-[max(env(safe-area-inset-bottom),8px)] bg-card" />
+              {/* iPhone セーフエリア下部余白 */}
+              <div className="h-[max(env(safe-area-inset-bottom),8px)]" />
+
+            </nav>
 
           </div>
         </div>
