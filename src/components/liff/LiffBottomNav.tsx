@@ -15,6 +15,7 @@ import {
   FileText,
   HelpCircle,
   Calendar,
+  LayoutGrid,
 } from "lucide-react";
 
 export function LiffBottomNav() {
@@ -35,17 +36,13 @@ export function LiffBottomNav() {
           {/* 🌟 完全なめらか連続曲線・適度なクッキリ影・絶妙な青丸位置のボトムナビ */}
           <div className="relative w-full h-[68px] select-none">
             
-            {/* SVG背景: 接合部のカクカクを完全排除した1本の超滑らか連続ベジェ曲線 ＆ 広がりを抑えた上質シャドウ */}
+            {/* SVG背景: 継ぎ目のない一体型ベジェ曲線 */}
             <svg
               viewBox="0 -26 375 94"
               preserveAspectRatio="none"
               className="absolute -top-[26px] inset-x-0 w-full h-[94px] overflow-visible filter drop-shadow-[0_-3px_8px_rgba(0,0,0,0.10)]"
               fill="none"
             >
-              {/* 
-                数学的完全連続曲線 (C1 Continuous Spline)
-                水平ライン (Y=16) から頂点 (187.5, -14) まで接線の角が一切ない極上の滑らかさ
-              */}
               <path
                 d="M 0,16 
                    L 126,16 
@@ -56,7 +53,6 @@ export function LiffBottomNav() {
                    L 0,68 Z"
                 className="fill-card"
               />
-              {/* 上部の極上なめらか境界線 */}
               <path
                 d="M 0,16 
                    L 126,16 
@@ -69,7 +65,7 @@ export function LiffBottomNav() {
               />
             </svg>
 
-            {/* 🌟 中央: 青い円形試合情報ボタン (直径68px, ちょっとだけ下にずらして安定配置) */}
+            {/* 🌟 中央: 青い円形試合情報ボタン */}
             <div className="absolute left-1/2 -translate-x-1/2 -top-1.5 z-20">
               <Link
                 href="/liff/matches"
@@ -88,7 +84,7 @@ export function LiffBottomNav() {
               </Link>
             </div>
 
-            {/* ナビゲーションメニューアイテム（スマートなアイコンサイズ: w-5 h-5） */}
+            {/* ナビゲーションメニューアイテム（5分割グリッド） */}
             <div className="relative z-10 grid grid-cols-5 h-full items-end pb-2 px-1">
               
               {/* ① 🏠 ホーム */}
@@ -160,7 +156,7 @@ export function LiffBottomNav() {
       </div>
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          📑 「その他」タップ時のボトムシートメニュー
+          📑 「その他」タップ時の全メニュー一覧ボトムシート
           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {isOtherMenuOpen && (
         <div className="fixed inset-0 z-40 flex justify-center items-end bg-background/60 backdrop-blur-xs animate-in fade-in duration-200">
@@ -169,11 +165,11 @@ export function LiffBottomNav() {
             onClick={() => setIsOtherMenuOpen(false)}
           />
 
-          <div className="w-full max-w-lg bg-card rounded-t-3xl border-t border-x border-border shadow-2xl p-5 pb-28 space-y-4 relative z-10 animate-in slide-in-from-bottom duration-200">
-            <div className="flex items-center justify-between pb-2 border-b border-border/50">
+          <div className="w-full max-w-lg bg-card rounded-t-3xl border-t border-x border-border shadow-2xl p-5 pb-28 space-y-4 relative z-10 animate-in slide-in-from-bottom duration-200 max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-border/50 sticky top-0 bg-card z-10">
               <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-[#0080FF]" />
-                <h4 className="text-sm font-black text-foreground">その他のメニュー</h4>
+                <LayoutGrid className="w-4 h-4 text-[#0080FF]" />
+                <h4 className="text-sm font-black text-foreground">すべてのメニュー</h4>
               </div>
               <button
                 type="button"
@@ -184,27 +180,88 @@ export function LiffBottomNav() {
               </button>
             </div>
 
+            {/* 🌟 すべてのメニュー項目 (全8機能) */}
             <div className="grid grid-cols-2 gap-2.5">
-              {/* 📅 予定 & 出欠 */}
+              {/* ① 🏠 ホーム */}
+              <Link
+                href="/liff"
+                onClick={() => setIsOtherMenuOpen(false)}
+                className="flex items-center gap-3 p-3 rounded-2xl bg-muted/40 hover:bg-muted border border-border/60 transition-all group"
+              >
+                <span className="w-9 h-9 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform">
+                  <Home className="w-5 h-5" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-xs font-black text-foreground truncate">ホーム</p>
+                  <p className="text-[10px] text-muted-foreground font-bold truncate">トップページ</p>
+                </div>
+              </Link>
+
+              {/* ② 🏆 チーム成績 */}
+              <Link
+                href="/liff/stats"
+                onClick={() => setIsOtherMenuOpen(false)}
+                className="flex items-center gap-3 p-3 rounded-2xl bg-muted/40 hover:bg-muted border border-border/60 transition-all group"
+              >
+                <span className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform">
+                  <Trophy className="w-5 h-5" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-xs font-black text-foreground truncate">チーム成績</p>
+                  <p className="text-[10px] text-muted-foreground font-bold truncate">勝敗・打撃個人成績</p>
+                </div>
+              </Link>
+
+              {/* ③ 📹 試合情報 */}
+              <Link
+                href="/liff/matches"
+                onClick={() => setIsOtherMenuOpen(false)}
+                className="flex items-center gap-3 p-3 rounded-2xl bg-muted/40 hover:bg-muted border border-border/60 transition-all group"
+              >
+                <span className="w-9 h-9 rounded-xl bg-red-500/10 text-red-600 dark:text-red-400 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform">
+                  <Video className="w-5 h-5" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-xs font-black text-foreground truncate">試合情報</p>
+                  <p className="text-[10px] text-muted-foreground font-bold truncate">試合動画 & スコア</p>
+                </div>
+              </Link>
+
+              {/* ④ 🔍 検索 (球場・施設) */}
+              <Link
+                href="/liff/grounds"
+                onClick={() => setIsOtherMenuOpen(false)}
+                className="flex items-center gap-3 p-3 rounded-2xl bg-muted/40 hover:bg-muted border border-border/60 transition-all group"
+              >
+                <span className="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform">
+                  <Search className="w-5 h-5" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-xs font-black text-foreground truncate">検索 (球場・施設)</p>
+                  <p className="text-[10px] text-muted-foreground font-bold truncate">アクセス・駐車場</p>
+                </div>
+              </Link>
+
+              {/* ⑤ 📅 予定 & 欠席 */}
               <Link
                 href="/liff/schedule"
                 onClick={() => setIsOtherMenuOpen(false)}
-                className="flex items-center gap-3 p-3 rounded-2xl bg-muted/50 hover:bg-muted border border-border/60 transition-all group"
+                className="flex items-center gap-3 p-3 rounded-2xl bg-muted/40 hover:bg-muted border border-border/60 transition-all group"
               >
-                <span className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform">
+                <span className="w-9 h-9 rounded-xl bg-orange-500/10 text-orange-600 dark:text-orange-400 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform">
                   <Calendar className="w-5 h-5" />
                 </span>
                 <div className="min-w-0">
-                  <p className="text-xs font-black text-foreground truncate">予定 & 出欠</p>
+                  <p className="text-xs font-black text-foreground truncate">予定 & 欠席</p>
                   <p className="text-[10px] text-muted-foreground font-bold truncate">当番・出欠確認</p>
                 </div>
               </Link>
 
-              {/* 🚗 配車表 */}
+              {/* ⑥ 🚗 配車表 */}
               <Link
                 href="/liff/carpool"
                 onClick={() => setIsOtherMenuOpen(false)}
-                className="flex items-center gap-3 p-3 rounded-2xl bg-muted/50 hover:bg-muted border border-border/60 transition-all group"
+                className="flex items-center gap-3 p-3 rounded-2xl bg-muted/40 hover:bg-muted border border-border/60 transition-all group"
               >
                 <span className="w-9 h-9 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform">
                   <Car className="w-5 h-5" />
@@ -215,26 +272,26 @@ export function LiffBottomNav() {
                 </div>
               </Link>
 
-              {/* 📄 資料ダウンロード */}
+              {/* ⑦ 📄 資料ダウンロード */}
               <Link
                 href="/liff/documents"
                 onClick={() => setIsOtherMenuOpen(false)}
-                className="flex items-center gap-3 p-3 rounded-2xl bg-muted/50 hover:bg-muted border border-border/60 transition-all group"
+                className="flex items-center gap-3 p-3 rounded-2xl bg-muted/40 hover:bg-muted border border-border/60 transition-all group"
               >
                 <span className="w-9 h-9 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform">
                   <FileText className="w-5 h-5" />
                 </span>
                 <div className="min-w-0">
                   <p className="text-xs font-black text-foreground truncate">資料ダウンロード</p>
-                  <p className="text-[10px] text-muted-foreground font-bold truncate">規約・遠征のしおり</p>
+                  <p className="text-[10px] text-muted-foreground font-bold truncate">規約・配車マニュアル</p>
                 </div>
               </Link>
 
-              {/* ❓ よくある質問 */}
+              {/* ⑧ ❓ よくある質問 */}
               <Link
                 href="/liff/faq"
                 onClick={() => setIsOtherMenuOpen(false)}
-                className="flex items-center gap-3 p-3 rounded-2xl bg-muted/50 hover:bg-muted border border-border/60 transition-all group"
+                className="flex items-center gap-3 p-3 rounded-2xl bg-muted/40 hover:bg-muted border border-border/60 transition-all group"
               >
                 <span className="w-9 h-9 rounded-xl bg-teal-500/10 text-teal-600 dark:text-teal-400 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform">
                   <HelpCircle className="w-5 h-5" />
