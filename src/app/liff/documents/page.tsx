@@ -169,10 +169,22 @@ export default function LiffDocumentsPage() {
         formData.append("file", selectedFile);
         formData.append("teamId", teamId);
 
-        const uploadRes = await fetch("/api/documents/upload", {
+        let uploadRes = await fetch("/api/liff/documents/upload", {
           method: "POST",
           body: formData,
         });
+
+        if (!uploadRes.ok) {
+          uploadRes = await fetch("/api/documents/upload", {
+            method: "POST",
+            body: formData,
+          });
+        }
+
+        if (!uploadRes.ok) {
+          const errText = await uploadRes.text();
+          throw new Error(errText || "ファイルのアップロードに失敗しました");
+        }
 
         const uploadData = (await uploadRes.json()) as {
           success: boolean;
@@ -210,6 +222,11 @@ export default function LiffDocumentsPage() {
           userId: profile?.userId,
         }),
       });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(errText || "資料の登録に失敗しました");
+      }
 
       const data = (await res.json()) as { success: boolean; error?: string };
       if (!data.success) {
@@ -249,10 +266,22 @@ export default function LiffDocumentsPage() {
         formData.append("file", editSelectedFile);
         formData.append("teamId", teamId);
 
-        const uploadRes = await fetch("/api/documents/upload", {
+        let uploadRes = await fetch("/api/liff/documents/upload", {
           method: "POST",
           body: formData,
         });
+
+        if (!uploadRes.ok) {
+          uploadRes = await fetch("/api/documents/upload", {
+            method: "POST",
+            body: formData,
+          });
+        }
+
+        if (!uploadRes.ok) {
+          const errText = await uploadRes.text();
+          throw new Error(errText || "ファイルのアップロードに失敗しました");
+        }
 
         const uploadData = (await uploadRes.json()) as {
           success: boolean;

@@ -1097,6 +1097,83 @@ app.get("/documents", async (c) => {
 });
 
 /**
+ * 📄 資料ファイルアップロード API (POST /api/liff/documents/upload)
+ */
+app.post("/documents/upload", async (c) => {
+  try {
+    let file: File | null = null;
+    let teamId = "general";
+
+    try {
+      const formData = await c.req.formData();
+      file = formData.get("file") as File | null;
+      const t = formData.get("teamId");
+      if (typeof t === "string" && t) teamId = t;
+    } catch {
+      const body = await c.req.parseBody();
+      file = (body["file"] as File) || null;
+      if (typeof body["teamId"] === "string" && body["teamId"]) {
+        teamId = body["teamId"];
+      }
+    }
+
+    if (!file || typeof file === "string" || !file.name) {
+      return c.json({ success: false, error: "ファイルが選択されていません" }, 400);
+    }
+
+    const originalName = file.name || "document.pdf";
+    const ext = originalName.split(".").pop()?.toLowerCase() || "pdf";
+
+    let fileType = "PDF";
+    if (["xls", "xlsx", "csv"].includes(ext)) fileType = "XLSX";
+    else if (["doc", "docx"].includes(ext)) fileType = "DOCX";
+    else if (["png", "jpg", "jpeg", "webp"].includes(ext)) fileType = "IMG";
+    else if (["ppt", "pptx"].includes(ext)) fileType = "PPTX";
+
+    const sizeBytes = file.size || 0;
+    let fileSizeStr = `${(sizeBytes / 1024).toFixed(0)} KB`;
+    if (sizeBytes >= 1024 * 1024) {
+      fileSizeStr = `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
+    }
+
+    if (c.env.BUCKET) {
+      const safeExt = ext.replace(/[^a-z0-9]/gi, "");
+      const filename = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}.${safeExt}`;
+      const r2Key = `documents/${teamId}/${filename}`;
+
+      const mimeType = file.type || (ext === "pdf" ? "application/pdf" : "application/octet-stream");
+      const arrayBuffer = await file.arrayBuffer();
+
+      await c.env.BUCKET.put(r2Key, arrayBuffer, {
+        httpMetadata: {
+          contentType: mimeType,
+          contentDisposition: `inline; filename="${encodeURIComponent(originalName)}"`,
+        },
+        customMetadata: {
+          originalName: encodeURIComponent(originalName),
+          teamId,
+        },
+      });
+
+      const fileUrl = `/api/documents/files/${teamId}/${filename}`;
+
+      return c.json({
+        success: true,
+        fileUrl,
+        fileName: originalName,
+        fileType,
+        fileSize: fileSizeStr,
+      });
+    }
+
+    return c.json({ success: false, error: "R2ストレージが設定されていません" }, 500);
+  } catch (error: any) {
+    console.error("Document upload in liff error:", error);
+    return c.json({ success: false, error: error?.message || "アップロードに失敗しました" }, 500);
+  }
+});
+
+/**
  * 資料登録API
  */
 app.post("/documents", async (c) => {

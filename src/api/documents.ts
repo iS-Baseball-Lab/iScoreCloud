@@ -9,16 +9,25 @@ const app = new Hono<{ Bindings: WorkerEnv }>();
  */
 app.post("/upload", async (c) => {
   try {
-    const formData = await c.req.parseBody();
-    const file = formData["file"] as File;
-    const teamId = (formData["teamId"] as string) || "general";
+    let file: File | null = null;
+    let teamId = "general";
 
-    if (!file) {
-      return c.json({ success: false, error: "ファイルが選択されていません" }, 400);
+    try {
+      const formData = await c.req.formData();
+      file = formData.get("file") as File | null;
+      const t = formData.get("teamId");
+      if (typeof t === "string" && t) teamId = t;
+    } catch {
+      // フォールバック
+      const body = await c.req.parseBody();
+      file = (body["file"] as File) || null;
+      if (typeof body["teamId"] === "string" && body["teamId"]) {
+        teamId = body["teamId"];
+      }
     }
 
-    if (!c.env.BUCKET) {
-      return c.json({ success: false, error: "R2バケットが設定されていません" }, 500);
+    if (!file || typeof file === "string" || !file.name) {
+      return c.json({ success: false, error: "ファイルが選択されていません" }, 400);
     }
 
     // 拡張子とファイル種別を判定
@@ -38,35 +47,42 @@ app.post("/upload", async (c) => {
       fileSizeStr = `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
     }
 
-    // R2の保存キー（documents/{teamId}/{timestamp}-{random}.{ext}）
-    const safeExt = ext.replace(/[^a-z0-9]/gi, "");
-    const filename = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}.${safeExt}`;
-    const r2Key = `documents/${teamId}/${filename}`;
+    // R2バケットが使える場合
+    if (c.env.BUCKET) {
+      const safeExt = ext.replace(/[^a-z0-9]/gi, "");
+      const filename = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}.${safeExt}`;
+      const r2Key = `documents/${teamId}/${filename}`;
 
-    const mimeType = file.type || (ext === "pdf" ? "application/pdf" : "application/octet-stream");
+      const mimeType = file.type || (ext === "pdf" ? "application/pdf" : "application/octet-stream");
 
-    // R2バケットへ保存
-    await c.env.BUCKET.put(r2Key, await file.arrayBuffer(), {
-      httpMetadata: {
-        contentType: mimeType,
-        contentDisposition: `inline; filename="${encodeURIComponent(originalName)}"`,
-      },
-      customMetadata: {
-        originalName: encodeURIComponent(originalName),
-        teamId,
-      },
-    });
+      const arrayBuffer = await file.arrayBuffer();
 
-    // 配信URL
-    const fileUrl = `/api/documents/files/${teamId}/${filename}`;
+      await c.env.BUCKET.put(r2Key, arrayBuffer, {
+        httpMetadata: {
+          contentType: mimeType,
+          contentDisposition: `inline; filename="${encodeURIComponent(originalName)}"`,
+        },
+        customMetadata: {
+          originalName: encodeURIComponent(originalName),
+          teamId,
+        },
+      });
+
+      const fileUrl = `/api/documents/files/${teamId}/${filename}`;
+
+      return c.json({
+        success: true,
+        fileUrl,
+        fileName: originalName,
+        fileType,
+        fileSize: fileSizeStr,
+      });
+    }
 
     return c.json({
-      success: true,
-      fileUrl,
-      fileName: originalName,
-      fileType,
-      fileSize: fileSizeStr,
-    });
+      success: false,
+      error: "ストレージバケットが設定されていません",
+    }, 500);
   } catch (error: any) {
     console.error("Document upload error:", error);
     return c.json({ success: false, error: error?.message || "アップロードに失敗しました" }, 500);
@@ -94,12 +110,10 @@ app.get("/files/:teamId/:filename", async (c) => {
   object.writeHttpMetadata(headers);
   headers.set("etag", object.httpEtag);
   
-  // ブラウザで直接プレビューできるように inline を優先
   if (!headers.has("content-disposition")) {
     headers.set("content-disposition", `inline; filename="${filename}"`);
   }
   
-  // キャッシュ設定（1週間キャッシュ）
   headers.set("cache-control", "public, max-age=604800, immutable");
 
   return new Response(object.body as any, {
