@@ -32,22 +32,22 @@ export function LiffBottomNav() {
       <div className="fixed bottom-0 left-0 right-0 z-50 flex justify-center pointer-events-none">
         <div className="w-full max-w-lg pointer-events-auto relative">
           
-          {/* 🌟 青丸を一回り大きくし、外側ノッチで美しく縁取るボトムナビゲーション */}
+          {/* 🌟 水平立ち上がり幅を縮め、青丸をぴったりタイトに縁取るボトムナビゲーション */}
           <div className="relative w-full h-[66px] select-none">
             
-            {/* SVGによる青丸を沿うように縁取るノッチ曲線 */}
+            {/* SVGによる青丸の輪郭にぴったり沿うタイトな縁取りノッチ */}
             <svg
               viewBox="0 0 375 66"
               preserveAspectRatio="none"
               className="absolute inset-0 w-full h-full filter drop-shadow-[0_-3px_12px_rgba(0,0,0,0.06)]"
               fill="none"
             >
-              {/* 背景の塗り */}
+              {/* 背景の塗り (立ち上がり幅を78pxに縮小し青丸にぴったり密着) */}
               <path
                 d="M 0,16 
-                   L 128,16 
-                   C 146,16 154,-4 187.5,-4 
-                   C 221,-4 229,16 247,16 
+                   L 148,16 
+                   C 160,16 164,-2 187.5,-2 
+                   C 211,-2 215,16 227,16 
                    L 375,16 
                    L 375,66 
                    L 0,66 Z"
@@ -56,9 +56,9 @@ export function LiffBottomNav() {
               {/* 上部の美しい縁取り境界線 */}
               <path
                 d="M 0,16 
-                   L 128,16 
-                   C 146,16 154,-4 187.5,-4 
-                   C 221,-4 229,16 247,16 
+                   L 148,16 
+                   C 160,16 164,-2 187.5,-2 
+                   C 211,-2 215,16 227,16 
                    L 375,16"
                 className="stroke-border/80"
                 strokeWidth="1.2"
@@ -66,14 +66,14 @@ export function LiffBottomNav() {
               />
             </svg>
 
-            {/* 🌟 中央: 一回り大きくなった試合情報ボタン (直径60px, ノッチにぴったり沿う配置) */}
-            <div className="absolute left-1/2 -translate-x-1/2 -top-4 z-20">
+            {/* 🌟 中央: 青い円形試合情報ボタン (直径60px, タイトなノッチに完璧フィット) */}
+            <div className="absolute left-1/2 -translate-x-1/2 -top-3.5 z-20">
               <Link
                 href="/liff/matches"
                 onClick={() => setIsOtherMenuOpen(false)}
                 className={`w-[60px] h-[60px] rounded-full flex flex-col items-center justify-center shadow-lg active:scale-95 transition-all text-white bg-gradient-to-tr from-[#0066EE] via-[#0088FF] to-[#00B4D8] shadow-[#0080FF]/35 ${
                   isMatches && !isOtherMenuOpen 
-                    ? "ring-4 ring-[#0080FF]/30 scale-105" 
+                    ? "ring-3 ring-[#0080FF]/30 scale-105" 
                     : "hover:brightness-110"
                 }`}
                 title="試合情報"
