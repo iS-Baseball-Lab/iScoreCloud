@@ -32,10 +32,10 @@ export function LiffBottomNav() {
       <div className="fixed bottom-0 left-0 right-0 z-50 flex justify-center pointer-events-none">
         <div className="w-full max-w-lg pointer-events-auto relative">
           
-          {/* 🌟 隙間をキュッと狭めた真円縁取りノッチ ＆ 一回り大きなアイコン */}
+          {/* 🌟 二回り大きな青丸(直径68px) ＆ 下位置調整 ＆ 同心円白枠ノッチ */}
           <div className="relative w-full h-[68px] select-none">
             
-            {/* SVG背景: 半径34pxの真円円弧で隙間約4pxのタイトな縁取り */}
+            {/* SVG背景: 半径38pxの真円円弧で青丸(半径34px)を均等4pxで美しく縁取る */}
             <svg
               viewBox="0 -26 375 94"
               preserveAspectRatio="none"
@@ -43,16 +43,16 @@ export function LiffBottomNav() {
               fill="none"
             >
               {/* 
-                中心 (187.5, 14)
-                青丸: 半径 30px (直径 60px)
-                白枠ノッチ: 半径 34px (隙間わずか4pxの極上フィット)
+                中心 (187.5, 24)
+                青丸: 半径 34px (直径 68px, 頂点 Y = -10)
+                白枠ノッチ: 半径 38px (頂点 Y = -14) -> 隙間4pxで青丸を均等に縁取る
               */}
               <path
                 d="M 0,16 
-                   L 145,16 
-                   Q 150,16 153.5,12.5 
-                   A 34 34 0 0 1 221.5,12.5 
-                   Q 225,16 230,16 
+                   L 142,16 
+                   Q 147,16 150.5,13 
+                   A 38 38 0 0 1 224.5,13 
+                   Q 228,16 233,16 
                    L 375,16 
                    L 375,68 
                    L 0,68 Z"
@@ -61,10 +61,10 @@ export function LiffBottomNav() {
               {/* 上部の美しい真円ドーム境界線 */}
               <path
                 d="M 0,16 
-                   L 145,16 
-                   Q 150,16 153.5,12.5 
-                   A 34 34 0 0 1 221.5,12.5 
-                   Q 225,16 230,16 
+                   L 142,16 
+                   Q 147,16 150.5,13 
+                   A 38 38 0 0 1 224.5,13 
+                   Q 228,16 233,16 
                    L 375,16"
                 className="stroke-border/80"
                 strokeWidth="1.2"
@@ -72,12 +72,12 @@ export function LiffBottomNav() {
               />
             </svg>
 
-            {/* 🌟 中央: 青い円形試合情報ボタン (直径60px, ノッチと隙間4pxで超密着フィット) */}
-            <div className="absolute left-1/2 -translate-x-1/2 -top-4 z-20">
+            {/* 🌟 中央: 二回り大きくなった青い円形ボタン (直径68px, 下位置調整でノッチに完璧フィット) */}
+            <div className="absolute left-1/2 -translate-x-1/2 -top-2.5 z-20">
               <Link
                 href="/liff/matches"
                 onClick={() => setIsOtherMenuOpen(false)}
-                className={`w-[60px] h-[60px] rounded-full flex flex-col items-center justify-center shadow-lg active:scale-95 transition-all text-white bg-gradient-to-tr from-[#0066EE] via-[#0088FF] to-[#00B4D8] shadow-[#0080FF]/35 ${
+                className={`w-[68px] h-[68px] rounded-full flex flex-col items-center justify-center shadow-lg active:scale-95 transition-all text-white bg-gradient-to-tr from-[#0066EE] via-[#0088FF] to-[#00B4D8] shadow-[#0080FF]/35 ${
                   isMatches && !isOtherMenuOpen 
                     ? "ring-3 ring-[#0080FF]/30 scale-105" 
                     : "hover:brightness-110"
@@ -85,26 +85,26 @@ export function LiffBottomNav() {
                 title="試合情報"
               >
                 <Video className="w-6 h-6 -mb-0.5" />
-                <span className="text-[9.5px] font-black tracking-tighter leading-none mt-0.5">
+                <span className="text-[10px] font-black tracking-tighter leading-none mt-1">
                   試合情報
                 </span>
               </Link>
             </div>
 
-            {/* ナビゲーションメニューアイテム（一回り大きくなったアイコン: w-6 h-6） */}
+            {/* ナビゲーションメニューアイテム（元のスマートなアイコンサイズ: w-5 h-5） */}
             <div className="relative z-10 grid grid-cols-5 h-full items-end pb-2 px-1">
               
               {/* ① 🏠 ホーム */}
               <Link
                 href="/liff"
                 onClick={() => setIsOtherMenuOpen(false)}
-                className={`flex flex-col items-center justify-center gap-0.5 transition-all select-none active:scale-90 ${
+                className={`flex flex-col items-center justify-center gap-1 transition-all select-none active:scale-90 ${
                   isHome && !isOtherMenuOpen
                     ? "text-[#0080FF] dark:text-[#38bdf8] font-black"
                     : "text-muted-foreground hover:text-foreground font-bold"
                 }`}
               >
-                <Home className={`w-6 h-6 transition-transform ${isHome && !isOtherMenuOpen ? "scale-110" : ""}`} />
+                <Home className={`w-5 h-5 transition-transform ${isHome && !isOtherMenuOpen ? "scale-110" : ""}`} />
                 <span className="text-[10px] leading-none tracking-tight">ホーム</span>
               </Link>
 
@@ -112,13 +112,13 @@ export function LiffBottomNav() {
               <Link
                 href="/liff/stats"
                 onClick={() => setIsOtherMenuOpen(false)}
-                className={`flex flex-col items-center justify-center gap-0.5 transition-all select-none active:scale-90 ${
+                className={`flex flex-col items-center justify-center gap-1 transition-all select-none active:scale-90 ${
                   isStats && !isOtherMenuOpen
                     ? "text-[#0080FF] dark:text-[#38bdf8] font-black"
                     : "text-muted-foreground hover:text-foreground font-bold"
                 }`}
               >
-                <Trophy className={`w-6 h-6 transition-transform ${isStats && !isOtherMenuOpen ? "scale-110" : ""}`} />
+                <Trophy className={`w-5 h-5 transition-transform ${isStats && !isOtherMenuOpen ? "scale-110" : ""}`} />
                 <span className="text-[10px] leading-none tracking-tight">チーム成績</span>
               </Link>
 
@@ -129,13 +129,13 @@ export function LiffBottomNav() {
               <Link
                 href="/liff/grounds"
                 onClick={() => setIsOtherMenuOpen(false)}
-                className={`flex flex-col items-center justify-center gap-0.5 transition-all select-none active:scale-90 ${
+                className={`flex flex-col items-center justify-center gap-1 transition-all select-none active:scale-90 ${
                   isSearch && !isOtherMenuOpen
                     ? "text-[#0080FF] dark:text-[#38bdf8] font-black"
                     : "text-muted-foreground hover:text-foreground font-bold"
                 }`}
               >
-                <Search className={`w-6 h-6 transition-transform ${isSearch && !isOtherMenuOpen ? "scale-110" : ""}`} />
+                <Search className={`w-5 h-5 transition-transform ${isSearch && !isOtherMenuOpen ? "scale-110" : ""}`} />
                 <span className="text-[10px] leading-none tracking-tight">検索</span>
               </Link>
 
@@ -143,13 +143,13 @@ export function LiffBottomNav() {
               <button
                 type="button"
                 onClick={() => setIsOtherMenuOpen((prev) => !prev)}
-                className={`flex flex-col items-center justify-center gap-0.5 transition-all select-none active:scale-90 ${
+                className={`flex flex-col items-center justify-center gap-1 transition-all select-none active:scale-90 ${
                   isOtherMenuOpen || isOther
                     ? "text-[#0080FF] dark:text-[#38bdf8] font-black"
                     : "text-muted-foreground hover:text-foreground font-bold"
                 }`}
               >
-                <Menu className={`w-6 h-6 transition-transform ${isOtherMenuOpen ? "rotate-90 scale-110" : ""}`} />
+                <Menu className={`w-5 h-5 transition-transform ${isOtherMenuOpen ? "rotate-90 scale-110" : ""}`} />
                 <span className="text-[10px] leading-none tracking-tight">その他</span>
               </button>
 
