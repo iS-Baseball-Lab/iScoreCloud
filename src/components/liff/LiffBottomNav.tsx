@@ -66,8 +66,8 @@ export function LiffBottomNav() {
               />
             </svg>
 
-            {/* 🌟 中央: 青い円形試合情報ボタン (直径60px, タイトなノッチに完璧フィット) */}
-            <div className="absolute left-1/2 -translate-x-1/2 -top-3.5 z-20">
+            {/* 🌟 中央: 青い円形試合情報ボタン (直径60px, ノッチ内側にすっぽり収まる位置へ調整) */}
+            <div className="absolute left-1/2 -translate-x-1/2 -top-1 z-20">
               <Link
                 href="/liff/matches"
                 onClick={() => setIsOtherMenuOpen(false)}
