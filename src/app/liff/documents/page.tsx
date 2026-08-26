@@ -678,10 +678,11 @@ export default function LiffDocumentsPage() {
                     </label>
                     <input
                       type="file"
+                      id="create-doc-file-input"
                       ref={fileInputRef}
                       onChange={handleFileChange}
-                      accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.webp"
-                      className="hidden"
+                      accept="application/pdf,image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.webp"
+                      className="sr-only"
                     />
 
                     {selectedFile ? (
@@ -703,16 +704,15 @@ export default function LiffDocumentsPage() {
                             setSelectedFile(null);
                             if (fileInputRef.current) fileInputRef.current.value = "";
                           }}
-                          className="p-1 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground"
+                          className="p-1.5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground"
                         >
                           <X className="w-4 h-4" />
                         </button>
                       </div>
                     ) : (
-                      <button
-                        type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                        className="w-full py-6 rounded-2xl border-2 border-dashed border-border hover:border-primary/50 bg-background/50 hover:bg-muted/40 transition-all flex flex-col items-center justify-center gap-1.5 text-muted-foreground group"
+                      <label
+                        htmlFor="create-doc-file-input"
+                        className="w-full py-6 rounded-2xl border-2 border-dashed border-border hover:border-primary/50 bg-background/50 hover:bg-muted/40 transition-all flex flex-col items-center justify-center gap-1.5 text-muted-foreground cursor-pointer group active:scale-[0.99]"
                       >
                         <div className="w-10 h-10 rounded-2xl bg-primary/10 text-primary flex items-center justify-center group-hover:scale-110 transition-transform">
                           <UploadCloud className="w-5 h-5" />
@@ -723,7 +723,7 @@ export default function LiffDocumentsPage() {
                         <span className="text-[10px] text-muted-foreground">
                           PDF, Word, Excel, 画像ファイルに対応
                         </span>
-                      </button>
+                      </label>
                     )}
                   </div>
                 ) : (
@@ -968,10 +968,11 @@ export default function LiffDocumentsPage() {
                     <div className="pt-1.5">
                       <input
                         type="file"
+                        id="edit-doc-file-input"
                         ref={editFileInputRef}
                         onChange={handleEditFileChange}
-                        accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.webp"
-                        className="hidden"
+                        accept="application/pdf,image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.webp"
+                        className="sr-only"
                       />
                       {editSelectedFile ? (
                         <div className="p-3 rounded-2xl bg-primary/5 border-2 border-dashed border-primary/40 flex items-center justify-between gap-2">
@@ -983,23 +984,25 @@ export default function LiffDocumentsPage() {
                           </div>
                           <button
                             type="button"
-                            onClick={() => setEditSelectedFile(null)}
+                            onClick={() => {
+                              setEditSelectedFile(null);
+                              if (editFileInputRef.current) editFileInputRef.current.value = "";
+                            }}
                             className="p-1 text-muted-foreground hover:text-foreground"
                           >
                             <X className="w-4 h-4" />
                           </button>
                         </div>
                       ) : (
-                        <button
-                          type="button"
-                          onClick={() => editFileInputRef.current?.click()}
-                          className="w-full py-4 rounded-2xl border-2 border-dashed border-border hover:border-primary/50 bg-background flex flex-col items-center justify-center gap-1 text-muted-foreground"
+                        <label
+                          htmlFor="edit-doc-file-input"
+                          className="w-full py-4 rounded-2xl border-2 border-dashed border-border hover:border-primary/50 bg-background flex flex-col items-center justify-center gap-1 text-muted-foreground cursor-pointer group active:scale-[0.99]"
                         >
-                          <UploadCloud className="w-5 h-5 text-primary" />
+                          <UploadCloud className="w-5 h-5 text-primary group-hover:scale-110 transition-transform" />
                           <span className="text-xs font-bold text-foreground">
                             新しいファイルを選択
                           </span>
-                        </button>
+                        </label>
                       )}
                     </div>
                   )}
