@@ -81,10 +81,10 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
   const userInitial = displayName.slice(0, 1).toUpperCase();
 
   return (
-    <header className="sticky top-0 z-40 w-full bg-background/80 backdrop-blur-xl border-b border-border/40 shadow-xs transition-colors duration-200">
+    <header className="sticky top-0 z-40 w-full bg-white dark:bg-black backdrop-blur-xl border-b border-border/40 shadow-xs transition-colors duration-200">
       <div className="flex h-14 sm:h-16 items-center justify-between px-3 sm:px-4 gap-2 sm:gap-3">
         
-        {/* 🌟 1. 左側: ロゴ & ブランド (本家と完全同一) */}
+        {/* 🌟 1. 左側: ロゴ & ブランド (LINEミニアプリ: iScoreMini) */}
         <Link
           href="/liff"
           className="flex items-center gap-2 shrink-0 group outline-hidden"
@@ -97,7 +97,7 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
           />
           <div className="flex items-center gap-1.5">
             <h1 className="text-base sm:text-xl font-black italic tracking-tighter text-foreground leading-none group-hover:text-primary transition-colors">
-              iScore<span className="text-primary">Cloud</span>
+              iScore<span className="text-primary">Mini</span>
             </h1>
           </div>
         </Link>
