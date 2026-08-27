@@ -129,6 +129,79 @@ app.patch('/:teamId/:eventId', async (c) => {
 });
 
 /**
+ * 📅 イベント一括登録・更新 (月間予定スケジューラー用)
+ */
+app.post('/:teamId/bulk', async (c) => {
+  const teamId = c.req.param('teamId');
+  const db = drizzle(c.env.DB);
+
+  try {
+    const body = await c.req.json();
+    const { events: eventList } = body as { events: any[] };
+
+    if (!Array.isArray(eventList)) {
+      return c.json({ success: false, error: "events配列が必要です。" }, 400);
+    }
+
+    const savedResults = [];
+
+    for (const item of eventList) {
+      if (item.id && !item.id.startsWith("new_") && !item.id.startsWith("temp_")) {
+        // 既存イベントの更新
+        const updated = await db.update(events)
+          .set({
+            title: item.title,
+            startAt: new Date(item.startAt),
+            endAt: item.endAt ? new Date(item.endAt) : null,
+            eventType: item.eventType || 'practice',
+            description: item.description || '',
+            location: item.location || '',
+            dutyGroup: item.dutyGroup || null,
+            pmStartAt: item.pmStartAt ? new Date(item.pmStartAt) : null,
+            pmEndAt: item.pmEndAt ? new Date(item.pmEndAt) : null,
+            pmLocation: item.pmLocation || null,
+            status: item.status || 'scheduled',
+          })
+          .where(and(eq(events.id, item.id), eq(events.teamId, teamId)))
+          .returning();
+        if (updated.length > 0) savedResults.push(updated[0]);
+      } else {
+        // 新規イベント登録
+        const newId = `event_${crypto.randomUUID().replace(/-/g, '')}`;
+        const created = await db.insert(events)
+          .values({
+            id: newId,
+            teamId,
+            title: item.title,
+            startAt: new Date(item.startAt),
+            endAt: item.endAt ? new Date(item.endAt) : null,
+            eventType: item.eventType || 'practice',
+            description: item.description || '',
+            location: item.location || '',
+            dutyGroup: item.dutyGroup || null,
+            pmStartAt: item.pmStartAt ? new Date(item.pmStartAt) : null,
+            pmEndAt: item.pmEndAt ? new Date(item.pmEndAt) : null,
+            pmLocation: item.pmLocation || null,
+            status: item.status || 'scheduled',
+          })
+          .returning();
+        if (created.length > 0) savedResults.push(created[0]);
+      }
+    }
+
+    return c.json({
+      success: true,
+      message: `${savedResults.length}件の活動日予定を保存しました。`,
+      data: savedResults
+    });
+  } catch (err: unknown) {
+    console.error(`[Bulk Save Events Error]:`, err);
+    const errorMsg = err instanceof Error ? err.message : "Internal Server Error";
+    return c.json({ success: false, error: errorMsg }, 500);
+  }
+});
+
+/**
  * 📅 イベント削除
  */
 app.delete('/:teamId/:eventId', async (c) => {
@@ -157,3 +230,5 @@ app.delete('/:teamId/:eventId', async (c) => {
 });
 
 export default app;
+
+

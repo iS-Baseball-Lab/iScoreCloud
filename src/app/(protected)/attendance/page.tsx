@@ -730,12 +730,22 @@ export default function AttendancePage() {
             <span>過去の予定を表示</span>
           </label>
 
-          {/* 右側：管理者用：日程追加ボタン */}
+          {/* 右側：管理者用：活動予定スケジューラー & 日程追加ボタン */}
           {canManage && (
-            <Button onClick={openCreateEventModal} className="h-10 px-4 rounded-xl font-black shrink-0">
-              <Plus className="h-4 w-4 mr-1.5" />
-              日程を追加
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={() => router.push("/team/schedule")}
+                className="h-10 px-4 rounded-xl font-black border-primary/40 text-primary hover:bg-primary/10 transition-all shrink-0"
+              >
+                <CalendarDays className="h-4 w-4 mr-1.5" />
+                活動日スケジューラー
+              </Button>
+              <Button onClick={openCreateEventModal} className="h-10 px-4 rounded-xl font-black shrink-0">
+                <Plus className="h-4 w-4 mr-1.5" />
+                日程を追加
+              </Button>
+            </div>
           )}
         </div>
 

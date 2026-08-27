@@ -97,6 +97,25 @@ export default function LiffSchedulePage() {
           }}
         />
 
+        {/* 🌟 管理者向け：活動予定スケジューラーへの導線 */}
+        <div className="flex items-center justify-between p-3 rounded-2xl bg-primary/10 border border-primary/20">
+          <div className="flex items-center gap-2">
+            <span className="w-8 h-8 rounded-xl bg-primary text-primary-foreground flex items-center justify-center font-black shrink-0">
+              <Calendar className="w-4 h-4" />
+            </span>
+            <div>
+              <p className="text-xs font-black text-foreground">活動日スケジューラー</p>
+              <p className="text-[10px] font-bold text-muted-foreground">カレンダーで予定・午前午後・当番を一括設定</p>
+            </div>
+          </div>
+          <a
+            href="/liff/schedule/admin"
+            className="py-1.5 px-3 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 active:scale-95 text-xs font-black shadow-xs transition-all shrink-0"
+          >
+            予定を設定
+          </a>
+        </div>
+
         {/* フィルタータブ */}
         <div className="flex items-center gap-1.5 p-1 bg-muted/60 rounded-2xl border border-border">
           <button
