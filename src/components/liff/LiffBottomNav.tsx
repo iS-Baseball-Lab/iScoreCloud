@@ -65,14 +65,14 @@ export function LiffBottomNav() {
               />
             </svg>
 
-            {/* 🌟 中央: 青い円形試合情報ボタン */}
+            {/* 🌟 中央: プライマリーカラーの円形試合情報ボタン（カラーテーマ完全連動） */}
             <div className="absolute left-1/2 -translate-x-1/2 -top-1.5 z-20">
               <Link
                 href="/liff/matches"
                 onClick={() => setIsOtherMenuOpen(false)}
-                className={`w-[68px] h-[68px] rounded-full flex flex-col items-center justify-center shadow-lg active:scale-95 transition-all text-white bg-gradient-to-tr from-[#0066EE] via-[#0088FF] to-[#00B4D8] shadow-[#0080FF]/35 ${
+                className={`w-[68px] h-[68px] rounded-full flex flex-col items-center justify-center shadow-lg active:scale-95 transition-all text-primary-foreground bg-primary shadow-primary/35 ${
                   isMatches && !isOtherMenuOpen 
-                    ? "ring-3 ring-[#0080FF]/30 scale-105" 
+                    ? "ring-3 ring-primary/30 scale-105" 
                     : "hover:brightness-110"
                 }`}
                 title="試合情報"
@@ -93,7 +93,7 @@ export function LiffBottomNav() {
                 onClick={() => setIsOtherMenuOpen(false)}
                 className={`flex flex-col items-center justify-center gap-1 transition-all select-none active:scale-90 ${
                   isHome && !isOtherMenuOpen
-                    ? "text-[#0080FF] dark:text-[#38bdf8] font-black"
+                    ? "text-primary font-black"
                     : "text-muted-foreground hover:text-foreground font-bold"
                 }`}
               >
@@ -107,7 +107,7 @@ export function LiffBottomNav() {
                 onClick={() => setIsOtherMenuOpen(false)}
                 className={`flex flex-col items-center justify-center gap-1 transition-all select-none active:scale-90 ${
                   isStats && !isOtherMenuOpen
-                    ? "text-[#0080FF] dark:text-[#38bdf8] font-black"
+                    ? "text-primary font-black"
                     : "text-muted-foreground hover:text-foreground font-bold"
                 }`}
               >
@@ -124,7 +124,7 @@ export function LiffBottomNav() {
                 onClick={() => setIsOtherMenuOpen(false)}
                 className={`flex flex-col items-center justify-center gap-1 transition-all select-none active:scale-90 ${
                   isSearch && !isOtherMenuOpen
-                    ? "text-[#0080FF] dark:text-[#38bdf8] font-black"
+                    ? "text-primary font-black"
                     : "text-muted-foreground hover:text-foreground font-bold"
                 }`}
               >
@@ -138,7 +138,7 @@ export function LiffBottomNav() {
                 onClick={() => setIsOtherMenuOpen((prev) => !prev)}
                 className={`flex flex-col items-center justify-center gap-1 transition-all select-none active:scale-90 ${
                   isOtherMenuOpen || isOther
-                    ? "text-[#0080FF] dark:text-[#38bdf8] font-black"
+                    ? "text-primary font-black"
                     : "text-muted-foreground hover:text-foreground font-bold"
                 }`}
               >
@@ -168,7 +168,7 @@ export function LiffBottomNav() {
           <div className="w-full max-w-lg bg-card rounded-t-3xl border-t border-x border-border shadow-2xl p-5 pb-28 space-y-4 relative z-10 animate-in slide-in-from-bottom duration-200 max-h-[85vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-border/50 sticky top-0 bg-card z-10">
               <div className="flex items-center gap-2">
-                <LayoutGrid className="w-4 h-4 text-[#0080FF]" />
+                <LayoutGrid className="w-4 h-4 text-primary" />
                 <h4 className="text-sm font-black text-foreground">すべてのメニュー</h4>
               </div>
               <button
