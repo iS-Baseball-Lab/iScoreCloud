@@ -74,6 +74,7 @@ export function MonthlySchedulePlanner({
 }: MonthlySchedulePlannerProps) {
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const [selectedDayItems, setSelectedDayItems] = useState<ScheduleDayItem[]>([]);
+  const [isLoadingEvents, setIsLoadingEvents] = useState<boolean>(true);
   const [isSaving, setIsSaving] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -98,30 +99,78 @@ export function MonthlySchedulePlanner({
     return `${m}/${d}(${w})`;
   };
 
-  // 初期モック予定データ（今月の土日を数日投入）
-  useEffect(() => {
-    const initialItems: ScheduleDayItem[] = [
-      {
-        id: "ev-init-1",
-        dateStr: `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}-30`,
-        dayLabel: `8/30(日)`,
-        title: "秋季大会 2回戦 vs レッドソックス",
-        slotType: "all_day",
-        amType: "match",
-        amTitle: "試合 vs レッドソックス",
-        amTime: "08:30〜12:30",
-        amLocation: "市民第1球場 (1面)",
-        pmType: "practice",
-        pmTitle: "午後練習 & 連携確認",
-        pmTime: "13:30〜17:00",
-        pmLocation: "大師河原第3G",
-        dutyGroup: "2班",
-        needsLunch: true,
-        memo: "鍵当番・救急箱持参。08:30現地集合厳守。",
+  // 時刻フォーマット補助 (ISO文字列 -> "08:30〜12:00")
+  const formatTimeRange = (start?: string | null, end?: string | null, fallback: string = "08:30〜12:00") => {
+    if (!start) return fallback;
+    try {
+      const s = new Date(start);
+      const sh = String(s.getHours()).padStart(2, "0");
+      const sm = String(s.getMinutes()).padStart(2, "0");
+      if (!end) return `${sh}:${sm}〜`;
+      const e = new Date(end);
+      const eh = String(e.getHours()).padStart(2, "0");
+      const em = String(e.getMinutes()).padStart(2, "0");
+      return `${sh}:${sm}〜${eh}:${em}`;
+    } catch {
+      return fallback;
+    }
+  };
+
+  // 🌟 DBから保存済みイベント一覧をロード
+  const fetchEvents = async () => {
+    setIsLoadingEvents(true);
+    try {
+      const activeTeamId = teamId || "team_1";
+      const res = await fetch(`/api/events/${activeTeamId}`);
+      if (res.ok) {
+        const json = await res.json() as any;
+        if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+          const loadedItems: ScheduleDayItem[] = json.data.map((ev: any) => {
+            const startD = new Date(ev.startAt);
+            const dateStr = formatDateString(startD);
+            const dayLabel = formatDayLabel(startD);
+
+            const hasPm = !!ev.pmStartAt;
+            const slotType: ScheduleDayItem["slotType"] = hasPm ? "all_day" : "am_only";
+
+            return {
+              id: ev.id,
+              dateStr,
+              dayLabel,
+              title: ev.title || "活動予定",
+              slotType,
+              amType: (ev.eventType as any) || "practice",
+              amTitle: ev.title || "午前活動",
+              amTime: formatTimeRange(ev.startAt, ev.endAt, "08:30〜12:00"),
+              amLocation: ev.location || "",
+              pmType: (ev.eventType as any) || "practice",
+              pmTitle: "午後活動",
+              pmTime: formatTimeRange(ev.pmStartAt, ev.pmEndAt, "13:00〜17:00"),
+              pmLocation: ev.pmLocation || ev.location || "",
+              dutyGroup: ev.dutyGroup || "1班",
+              needsLunch: hasPm || ev.needsLunch || false,
+              memo: ev.description || "",
+            };
+          });
+
+          // 日付昇順でソートして設定
+          setSelectedDayItems(loadedItems.sort((a, b) => a.dateStr.localeCompare(b.dateStr)));
+          return;
+        }
       }
-    ];
-    setSelectedDayItems(initialItems);
-  }, [currentYear, currentMonth]);
+    } catch (err) {
+      console.error("[Fetch Events Error]:", err);
+    } finally {
+      setIsLoadingEvents(false);
+    }
+
+    // データが空の場合のデフォルト
+    setIsLoadingEvents(false);
+  };
+
+  useEffect(() => {
+    fetchEvents();
+  }, [teamId]);
 
   // カレンダーグリッド用日付配列（42マス）
   const getCalendarDays = () => {

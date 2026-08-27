@@ -1,12 +1,23 @@
 // filepath: src/app/(protected)/team/schedule/page.tsx
 "use client";
 
-import React from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { MonthlySchedulePlanner } from "@/components/schedule/MonthlySchedulePlanner";
 import { Calendar, ArrowLeft, Users, CheckSquare, Sparkles } from "lucide-react";
 
 export default function TeamSchedulePlannerPage() {
+  const [teamId, setTeamId] = useState<string>("team_1");
+  const [teamName, setTeamName] = useState<string>("東京ジャイアンツ");
+
+  useEffect(() => {
+    // localStorage から選択中チームを取得
+    const savedTeamId = localStorage.getItem("currentTeamId");
+    if (savedTeamId) {
+      setTeamId(savedTeamId);
+    }
+  }, []);
+
   return (
     <div className="max-w-6xl mx-auto space-y-6 p-4 md:p-8">
       {/* ページヘッダー */}
@@ -50,7 +61,8 @@ export default function TeamSchedulePlannerPage() {
       </div>
 
       {/* スケジューラー本体 */}
-      <MonthlySchedulePlanner teamId="team_1" teamName="東京ジャイアンツ" />
+      <MonthlySchedulePlanner teamId={teamId} teamName={teamName} />
     </div>
   );
 }
+
