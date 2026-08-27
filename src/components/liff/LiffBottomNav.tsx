@@ -165,7 +165,7 @@ export function LiffBottomNav() {
             onClick={() => setIsOtherMenuOpen(false)}
           />
 
-          <div className="w-full max-w-lg bg-card rounded-t-3xl border-t border-x border-border shadow-2xl p-5 pb-28 space-y-4 relative z-10 animate-in slide-in-from-bottom duration-200 max-h-[85vh] overflow-y-auto">
+          <div className="w-full max-w-lg bg-card rounded-t-3xl border-t border-x border-border shadow-2xl p-5 pb-36 space-y-4 relative z-10 animate-in slide-in-from-bottom duration-200 max-h-[85vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-border/50 sticky top-0 bg-card z-10">
               <div className="flex items-center gap-2">
                 <LayoutGrid className="w-4 h-4 text-primary" />
@@ -174,7 +174,7 @@ export function LiffBottomNav() {
               <button
                 type="button"
                 onClick={() => setIsOtherMenuOpen(false)}
-                className="p-1 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground"
+                className="p-1.5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground active:scale-90 transition-all"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -186,7 +186,7 @@ export function LiffBottomNav() {
               <Link
                 href="/liff"
                 onClick={() => setIsOtherMenuOpen(false)}
-                className="flex items-center gap-3 p-3 rounded-2xl bg-muted/40 hover:bg-muted border border-border/60 transition-all group"
+                className="flex items-center gap-3 p-3 rounded-2xl bg-muted/40 hover:bg-muted border border-border/60 transition-all group active:scale-95"
               >
                 <span className="w-9 h-9 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform">
                   <Home className="w-5 h-5" />
@@ -201,7 +201,7 @@ export function LiffBottomNav() {
               <Link
                 href="/liff/stats"
                 onClick={() => setIsOtherMenuOpen(false)}
-                className="flex items-center gap-3 p-3 rounded-2xl bg-muted/40 hover:bg-muted border border-border/60 transition-all group"
+                className="flex items-center gap-3 p-3 rounded-2xl bg-muted/40 hover:bg-muted border border-border/60 transition-all group active:scale-95"
               >
                 <span className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform">
                   <Trophy className="w-5 h-5" />
@@ -216,7 +216,7 @@ export function LiffBottomNav() {
               <Link
                 href="/liff/matches"
                 onClick={() => setIsOtherMenuOpen(false)}
-                className="flex items-center gap-3 p-3 rounded-2xl bg-muted/40 hover:bg-muted border border-border/60 transition-all group"
+                className="flex items-center gap-3 p-3 rounded-2xl bg-muted/40 hover:bg-muted border border-border/60 transition-all group active:scale-95"
               >
                 <span className="w-9 h-9 rounded-xl bg-red-500/10 text-red-600 dark:text-red-400 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform">
                   <Video className="w-5 h-5" />
@@ -231,7 +231,7 @@ export function LiffBottomNav() {
               <Link
                 href="/liff/grounds"
                 onClick={() => setIsOtherMenuOpen(false)}
-                className="flex items-center gap-3 p-3 rounded-2xl bg-muted/40 hover:bg-muted border border-border/60 transition-all group"
+                className="flex items-center gap-3 p-3 rounded-2xl bg-muted/40 hover:bg-muted border border-border/60 transition-all group active:scale-95"
               >
                 <span className="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform">
                   <MapPin className="w-5 h-5" />
@@ -246,7 +246,7 @@ export function LiffBottomNav() {
               <Link
                 href="/liff/schedule"
                 onClick={() => setIsOtherMenuOpen(false)}
-                className="flex items-center gap-3 p-3 rounded-2xl bg-muted/40 hover:bg-muted border border-border/60 transition-all group"
+                className="flex items-center gap-3 p-3 rounded-2xl bg-muted/40 hover:bg-muted border border-border/60 transition-all group active:scale-95"
               >
                 <span className="w-9 h-9 rounded-xl bg-orange-500/10 text-orange-600 dark:text-orange-400 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform">
                   <Calendar className="w-5 h-5" />
@@ -261,7 +261,7 @@ export function LiffBottomNav() {
               <Link
                 href="/liff/carpool"
                 onClick={() => setIsOtherMenuOpen(false)}
-                className="flex items-center gap-3 p-3 rounded-2xl bg-muted/40 hover:bg-muted border border-border/60 transition-all group"
+                className="flex items-center gap-3 p-3 rounded-2xl bg-muted/40 hover:bg-muted border border-border/60 transition-all group active:scale-95"
               >
                 <span className="w-9 h-9 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform">
                   <Car className="w-5 h-5" />
@@ -276,7 +276,7 @@ export function LiffBottomNav() {
               <Link
                 href="/liff/documents"
                 onClick={() => setIsOtherMenuOpen(false)}
-                className="flex items-center gap-3 p-3 rounded-2xl bg-muted/40 hover:bg-muted border border-border/60 transition-all group"
+                className="flex items-center gap-3 p-3 rounded-2xl bg-muted/40 hover:bg-muted border border-border/60 transition-all group active:scale-95"
               >
                 <span className="w-9 h-9 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform">
                   <FileText className="w-5 h-5" />
@@ -291,7 +291,7 @@ export function LiffBottomNav() {
               <Link
                 href="/liff/faq"
                 onClick={() => setIsOtherMenuOpen(false)}
-                className="flex items-center gap-3 p-3 rounded-2xl bg-muted/40 hover:bg-muted border border-border/60 transition-all group"
+                className="flex items-center gap-3 p-3 rounded-2xl bg-muted/40 hover:bg-muted border border-border/60 transition-all group active:scale-95"
               >
                 <span className="w-9 h-9 rounded-xl bg-teal-500/10 text-teal-600 dark:text-teal-400 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform">
                   <HelpCircle className="w-5 h-5" />
@@ -303,22 +303,22 @@ export function LiffBottomNav() {
               </Link>
             </div>
 
-            {/* 📜 法務・規約リンク */}
-            <div className="pt-3 border-t border-border/40 flex items-center justify-center gap-4 text-[11px] font-bold text-muted-foreground">
+            {/* 📜 法務・規約リンク（ゆったりタッチできるボタン形式） */}
+            <div className="pt-4 border-t border-border/40 flex items-center justify-center gap-3">
               <Link
                 href="/liff/terms"
                 onClick={() => setIsOtherMenuOpen(false)}
-                className="hover:text-primary hover:underline transition-colors"
+                className="py-2 px-3.5 rounded-full bg-muted/60 hover:bg-muted active:scale-95 border border-border/60 text-xs font-black text-muted-foreground hover:text-foreground transition-all flex items-center gap-1.5"
               >
-                利用規約
+                <span>利用規約</span>
               </Link>
-              <span>•</span>
+
               <Link
                 href="/liff/privacy"
                 onClick={() => setIsOtherMenuOpen(false)}
-                className="hover:text-primary hover:underline transition-colors"
+                className="py-2 px-3.5 rounded-full bg-muted/60 hover:bg-muted active:scale-95 border border-border/60 text-xs font-black text-muted-foreground hover:text-foreground transition-all flex items-center gap-1.5"
               >
-                プライバシーポリシー
+                <span>プライバシーポリシー</span>
               </Link>
             </div>
           </div>
