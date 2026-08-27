@@ -21,6 +21,9 @@ import {
   Paperclip,
   Pencil,
   Trash2,
+  Eye,
+  ImageIcon,
+  Download,
 } from "lucide-react";
 
 interface TeamDocument {
@@ -59,6 +62,9 @@ export default function LiffDocumentsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // プレビューモーダル用ステート
+  const [previewDoc, setPreviewDoc] = useState<TeamDocument | null>(null);
 
   // 編集モーダル用ステート
   const [editingDoc, setEditingDoc] = useState<TeamDocument | null>(null);
@@ -597,15 +603,14 @@ export default function LiffDocumentsPage() {
                       <span>編集</span>
                     </button>
 
-                    <a
-                      href={doc.fileUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-1 px-3.5 py-1.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black transition-all active:scale-95 shadow-xs"
+                    <button
+                      type="button"
+                      onClick={() => setPreviewDoc(doc)}
+                      className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black transition-all active:scale-95 shadow-xs"
                     >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                      <span>資料を開く</span>
-                    </a>
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>資料を見る</span>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -1119,6 +1124,133 @@ export default function LiffDocumentsPage() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>,
+          document.body
+        )}
+
+      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          👁️ 資料 プレビュー・閲覧モーダル (画像/PDF/URL)
+          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+      {previewDoc &&
+        mounted &&
+        createPortal(
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-background/90 backdrop-blur-md overflow-y-auto animate-in fade-in duration-200">
+            <div 
+              className="absolute inset-0"
+              onClick={() => setPreviewDoc(null)}
+            />
+
+            <div className="w-full max-w-lg bg-card rounded-3xl border border-border shadow-2xl overflow-hidden flex flex-col max-h-[92vh] relative z-10 animate-in zoom-in-95 duration-200">
+              
+              {/* モーダルヘッダー */}
+              <div className="flex items-center justify-between p-4 border-b border-border/50 bg-card">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                    {previewDoc.fileType === "IMG" || previewDoc.fileUrl.startsWith("data:image/") ? (
+                      <ImageIcon className="w-4 h-4" />
+                    ) : (
+                      <FileText className="w-4 h-4" />
+                    )}
+                  </span>
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-black text-foreground truncate">
+                      {previewDoc.title}
+                    </h3>
+                    <p className="text-[10px] font-bold text-muted-foreground truncate">
+                      {previewDoc.categoryLabel} • {previewDoc.fileSize}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {/* ダウンロード / 共有リンク */}
+                  {previewDoc.fileUrl.startsWith("http") && (
+                    <a
+                      href={previewDoc.fileUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="p-1.5 rounded-xl hover:bg-muted text-muted-foreground hover:text-foreground transition-all"
+                      title="外部ブラウザで開く"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                    </a>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => setPreviewDoc(null)}
+                    className="p-1.5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground transition-all"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* プレビューコンテンツ本体 */}
+              <div className="flex-1 overflow-y-auto p-4 flex flex-col items-center justify-center bg-muted/30 min-h-[260px] max-h-[70vh]">
+                {previewDoc.fileType === "IMG" || previewDoc.fileUrl.startsWith("data:image/") || previewDoc.fileUrl.match(/\.(png|jpg|jpeg|webp|gif)$/i) ? (
+                  <div className="flex flex-col items-center justify-center w-full space-y-3">
+                    <div className="relative max-w-full rounded-2xl overflow-hidden shadow-md border border-border/80 bg-black/5 flex items-center justify-center">
+                      <img
+                        src={previewDoc.fileUrl}
+                        alt={previewDoc.title}
+                        className="max-h-[60vh] max-w-full object-contain rounded-2xl select-none"
+                      />
+                    </div>
+                    <p className="text-[11px] font-bold text-muted-foreground text-center">
+                      💡 画像を長押しするとスマートフォンに保存できます
+                    </p>
+                  </div>
+                ) : previewDoc.fileType === "PDF" || previewDoc.fileUrl.startsWith("data:application/pdf") || previewDoc.fileUrl.endsWith(".pdf") ? (
+                  <div className="w-full h-[60vh] flex flex-col items-center justify-center space-y-3">
+                    <iframe
+                      src={previewDoc.fileUrl}
+                      title={previewDoc.title}
+                      className="w-full h-full rounded-2xl border border-border shadow-xs bg-card"
+                    />
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-10 text-center space-y-3">
+                    <div className="w-16 h-16 rounded-3xl bg-primary/10 text-primary flex items-center justify-center shadow-inner">
+                      <FileText className="w-8 h-8" />
+                    </div>
+                    <div className="space-y-1">
+                      <h4 className="text-sm font-black text-foreground">{previewDoc.title}</h4>
+                      <p className="text-xs font-bold text-muted-foreground">
+                        {previewDoc.description || "外部共有リンク資料"}
+                      </p>
+                    </div>
+                    {previewDoc.fileUrl.startsWith("http") ? (
+                      <a
+                        href={previewDoc.fileUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-5 py-2.5 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black transition-all flex items-center gap-2 shadow-sm active:scale-95"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                        <span>外部サイトで閲覧する</span>
+                      </a>
+                    ) : (
+                      <a
+                        href={previewDoc.fileUrl}
+                        download={previewDoc.title}
+                        className="px-5 py-2.5 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black transition-all flex items-center gap-2 shadow-sm active:scale-95"
+                      >
+                        <Download className="w-4 h-4" />
+                        <span>ファイルを保存する</span>
+                      </a>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* モーダルフッター */}
+              {previewDoc.description && (
+                <div className="p-3.5 border-t border-border/50 bg-card text-xs text-muted-foreground font-medium">
+                  <p className="line-clamp-2">{previewDoc.description}</p>
+                </div>
+              )}
             </div>
           </div>,
           document.body
