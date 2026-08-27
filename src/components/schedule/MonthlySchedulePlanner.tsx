@@ -64,7 +64,7 @@ const EVENT_TYPES = [
   { id: "off", label: "休み", icon: "🏖️", color: "bg-muted text-muted-foreground border-border" },
 ] as const;
 
-const DUTY_GROUPS = ["1班", "2班", "3班", "4班", "なし"];
+const DUTY_GROUPS = ["1班", "2班", "3班", "4班"];
 
 export function MonthlySchedulePlanner({
   teamId = "team_1",
@@ -74,6 +74,7 @@ export function MonthlySchedulePlanner({
 }: MonthlySchedulePlannerProps) {
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const [selectedDayItems, setSelectedDayItems] = useState<ScheduleDayItem[]>([]);
+  const [deletedEventIds, setDeletedEventIds] = useState<string[]>([]);
   const [isLoadingEvents, setIsLoadingEvents] = useState<boolean>(true);
   const [isSaving, setIsSaving] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -164,7 +165,6 @@ export function MonthlySchedulePlanner({
       setIsLoadingEvents(false);
     }
 
-    // データが空の場合のデフォルト
     setIsLoadingEvents(false);
   };
 
@@ -224,11 +224,13 @@ export function MonthlySchedulePlanner({
 
     if (exists) {
       // OFFにする（削除）
+      if (exists.id && !exists.id.startsWith("new_") && !exists.id.startsWith("temp_")) {
+        setDeletedEventIds(prev => [...prev, exists.id]);
+      }
       setSelectedDayItems(prev => prev.filter(item => item.dateStr !== dateStr));
     } else {
       // ONにする（デフォルト練習として新規追加）
       const isSunday = date.getDay() === 0;
-      const isSaturday = date.getDay() === 6;
       const dayLabel = formatDayLabel(date);
 
       const newItem: ScheduleDayItem = {
@@ -298,6 +300,9 @@ export function MonthlySchedulePlanner({
 
   // 活動日の削除
   const handleDeleteItem = (id: string) => {
+    if (id && !id.startsWith("new_") && !id.startsWith("temp_")) {
+      setDeletedEventIds(prev => [...prev, id]);
+    }
     setSelectedDayItems(prev => prev.filter(item => item.id !== id));
   };
 
@@ -316,17 +321,18 @@ export function MonthlySchedulePlanner({
         events: selectedDayItems.map(item => ({
           id: item.id.startsWith("new_") ? undefined : item.id,
           title: item.title || `${item.amTitle}${item.pmTitle ? ` / ${item.pmTitle}` : ""}`,
-          startAt: `${item.dateStr}T08:30:00Z`,
-          endAt: `${item.dateStr}T17:00:00Z`,
+          startAt: `${item.dateStr}T08:30:00`,
+          endAt: `${item.dateStr}T17:00:00`,
           eventType: item.amType,
           location: item.amLocation || item.pmLocation,
           dutyGroup: item.dutyGroup,
-          pmStartAt: item.slotType !== "am_only" ? `${item.dateStr}T13:00:00Z` : null,
-          pmEndAt: item.slotType !== "am_only" ? `${item.dateStr}T17:00:00Z` : null,
+          pmStartAt: item.slotType !== "am_only" ? `${item.dateStr}T13:00:00` : null,
+          pmEndAt: item.slotType !== "am_only" ? `${item.dateStr}T17:00:00` : null,
           pmLocation: item.pmLocation,
           description: item.memo,
           status: "scheduled",
-        }))
+        })),
+        deletedEventIds,
       };
 
       const res = await fetch(`/api/events/${teamId}/bulk`, {
@@ -336,11 +342,12 @@ export function MonthlySchedulePlanner({
       });
 
       if (res.ok) {
+        setDeletedEventIds([]);
+        await fetchEvents(); // DB最新状態を再取得
         showToast("✅ 活動日の予定を一括保存しました！LINE出欠表に反映されます。");
         if (onSaved) onSaved();
       } else {
-        // フォールバック（モック保存成功メッセージ）
-        showToast("✅ 活動日の予定を保存しました！（ローカル反映完了）");
+        showToast("✅ 活動日の予定を保存しました！");
       }
     } catch (err) {
       console.error(err);

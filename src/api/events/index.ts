@@ -131,27 +131,69 @@ app.patch('/:teamId/:eventId', async (c) => {
 /**
  * 📅 イベント一括登録・更新 (月間予定スケジューラー用)
  */
+/**
+ * 📅 イベント一括登録・更新・削除 (月間予定スケジューラー用)
+ */
 app.post('/:teamId/bulk', async (c) => {
   const teamId = c.req.param('teamId');
   const db = drizzle(c.env.DB);
 
   try {
     const body = await c.req.json();
-    const { events: eventList } = body as { events: any[] };
+    const { events: eventList, deletedEventIds } = body as { 
+      events: any[]; 
+      deletedEventIds?: string[];
+    };
 
     if (!Array.isArray(eventList)) {
       return c.json({ success: false, error: "events配列が必要です。" }, 400);
     }
 
+    // 1. 削除対象IDのレコードを削除
+    if (Array.isArray(deletedEventIds) && deletedEventIds.length > 0) {
+      for (const delId of deletedEventIds) {
+        if (delId && !delId.startsWith("new_") && !delId.startsWith("temp_")) {
+          await db.delete(events)
+            .where(and(eq(events.id, delId), eq(events.teamId, teamId)));
+        }
+      }
+    }
+
+    // 2. チームの既存イベント一覧を取得（同一日チェック用）
+    const existingEvents = await db.select()
+      .from(events)
+      .where(eq(events.teamId, teamId));
+
+    const existingMapByDate = new Map<string, typeof existingEvents[0]>();
+    for (const ev of existingEvents) {
+      const d = new Date(ev.startAt);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      const dateKey = `${y}-${m}-${day}`;
+      existingMapByDate.set(dateKey, ev);
+    }
+
     const savedResults = [];
 
     for (const item of eventList) {
-      if (item.id && !item.id.startsWith("new_") && !item.id.startsWith("temp_")) {
-        // 既存イベントの更新
+      const startAtDate = new Date(item.startAt);
+      const y = startAtDate.getFullYear();
+      const m = String(startAtDate.getMonth() + 1).padStart(2, "0");
+      const day = String(startAtDate.getDate()).padStart(2, "0");
+      const dateKey = `${y}-${m}-${day}`;
+
+      // 既存レコードがあるか（IDが一致、または同じ日付のレコード）
+      const existingRecord = (item.id && !item.id.startsWith("new_")) 
+        ? existingEvents.find(e => e.id === item.id)
+        : existingMapByDate.get(dateKey);
+
+      if (existingRecord) {
+        // 既存イベントの更新 (UPDATE)
         const updated = await db.update(events)
           .set({
             title: item.title,
-            startAt: new Date(item.startAt),
+            startAt: startAtDate,
             endAt: item.endAt ? new Date(item.endAt) : null,
             eventType: item.eventType || 'practice',
             description: item.description || '',
@@ -162,18 +204,18 @@ app.post('/:teamId/bulk', async (c) => {
             pmLocation: item.pmLocation || null,
             status: item.status || 'scheduled',
           })
-          .where(and(eq(events.id, item.id), eq(events.teamId, teamId)))
+          .where(and(eq(events.id, existingRecord.id), eq(events.teamId, teamId)))
           .returning();
         if (updated.length > 0) savedResults.push(updated[0]);
       } else {
-        // 新規イベント登録
+        // 新規イベント登録 (INSERT)
         const newId = `event_${crypto.randomUUID().replace(/-/g, '')}`;
         const created = await db.insert(events)
           .values({
             id: newId,
             teamId,
             title: item.title,
-            startAt: new Date(item.startAt),
+            startAt: startAtDate,
             endAt: item.endAt ? new Date(item.endAt) : null,
             eventType: item.eventType || 'practice',
             description: item.description || '',
