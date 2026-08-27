@@ -47,7 +47,7 @@ export function HubHeroSection({
   const [activeTab, setActiveTab] = useState<"next" | "calendar" | "score">("next");
 
   // 出欠ステート
-  const [playerStatus, setPlayerStatus] = useState<"present" | "absent" | "pending">("pending");
+  const [playerStatus, setPlayerStatus] = useState<"present" | "absent" | "pending" | "late">("pending");
   const [carStatus, setCarStatus] = useState<"can_drive" | "need_ride" | "not_needed">("need_ride");
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -301,56 +301,79 @@ export function HubHeroSection({
             )}
           </div>
 
-          {/* ワンタップ出欠回答エリア */}
-          <div className="pt-2 border-t border-primary/15 space-y-2.5">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-black text-foreground">あなたの出欠回答</span>
-              <span className="text-[10px] font-bold text-muted-foreground">タップして変更</span>
+          {/* ワンタップ出欠回答エリア (○, △, ×, ？) */}
+          <div className="pt-2 border-t border-primary/15 space-y-2">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-black text-foreground">あなたの出欠回答</span>
+              <span className="text-[11px] font-bold">
+                {playerStatus === "present" && <span className="text-emerald-600 dark:text-emerald-400 font-black">○ 出席で回答中</span>}
+                {playerStatus === "late" && <span className="text-amber-600 dark:text-amber-400 font-black">△ 調整・遅刻で回答中</span>}
+                {playerStatus === "absent" && <span className="text-rose-600 dark:text-rose-400 font-black">× 欠席で回答中</span>}
+                {playerStatus === "pending" && <span className="text-muted-foreground font-black">？ 未定・未回答</span>}
+              </span>
             </div>
 
-            {/* 参加 / 欠席 / 未定 */}
-            <div className="grid grid-cols-3 gap-2">
+            {/* ○, △, ×, ？ の4等分グリッド */}
+            <div className="grid grid-cols-4 gap-1.5">
+              {/* ○ 出席 */}
               <button
                 type="button"
                 onClick={() => setPlayerStatus("present")}
-                className={`flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-2xl text-xs font-black transition-all active:scale-95 ${
+                className={`flex flex-col items-center justify-center py-2 rounded-2xl text-xs font-black transition-all active:scale-95 ${
                   playerStatus === "present"
                     ? "bg-emerald-600 text-white shadow-xs ring-2 ring-emerald-500/50"
-                    : "bg-muted hover:bg-muted/80 text-muted-foreground"
+                    : "bg-muted/70 hover:bg-muted text-muted-foreground"
                 }`}
               >
-                <CheckCircle2 className="w-4 h-4 shrink-0" />
-                <span>参加</span>
+                <span className="text-base leading-none mb-0.5">○</span>
+                <span className="text-[10px]">出席</span>
               </button>
 
+              {/* △ 調整 / 遅刻 */}
+              <button
+                type="button"
+                onClick={() => setPlayerStatus("late")}
+                className={`flex flex-col items-center justify-center py-2 rounded-2xl text-xs font-black transition-all active:scale-95 ${
+                  playerStatus === "late"
+                    ? "bg-amber-500 text-white shadow-xs ring-2 ring-amber-500/50"
+                    : "bg-muted/70 hover:bg-muted text-muted-foreground"
+                }`}
+              >
+                <span className="text-base leading-none mb-0.5">△</span>
+                <span className="text-[10px]">調整</span>
+              </button>
+
+              {/* × 欠席 */}
               <button
                 type="button"
                 onClick={() => setPlayerStatus("absent")}
-                className={`flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-2xl text-xs font-black transition-all active:scale-95 ${
+                className={`flex flex-col items-center justify-center py-2 rounded-2xl text-xs font-black transition-all active:scale-95 ${
                   playerStatus === "absent"
                     ? "bg-rose-600 text-white shadow-xs ring-2 ring-rose-500/50"
-                    : "bg-muted hover:bg-muted/80 text-muted-foreground"
+                    : "bg-muted/70 hover:bg-muted text-muted-foreground"
                 }`}
               >
-                <XCircle className="w-4 h-4 shrink-0" />
-                <span>欠席</span>
+                <span className="text-base leading-none mb-0.5">×</span>
+                <span className="text-[10px]">欠席</span>
               </button>
 
+              {/* ？ 未定 */}
               <button
                 type="button"
                 onClick={() => setPlayerStatus("pending")}
-                className={`flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-2xl text-xs font-black transition-all active:scale-95 ${
+                className={`flex flex-col items-center justify-center py-2 rounded-2xl text-xs font-black transition-all active:scale-95 ${
                   playerStatus === "pending"
-                    ? "bg-amber-600 text-white shadow-xs ring-2 ring-amber-500/50"
-                    : "bg-muted hover:bg-muted/80 text-muted-foreground"
+                    ? "bg-slate-700 text-white dark:bg-slate-300 dark:text-slate-900 shadow-xs ring-2 ring-slate-500/50"
+                    : "bg-muted/70 hover:bg-muted text-muted-foreground"
                 }`}
               >
-                <span>未定</span>
+                <span className="text-base leading-none mb-0.5">？</span>
+                <span className="text-[10px]">未定</span>
               </button>
             </div>
 
             {/* 参加時の配車アンケート */}
-            {playerStatus === "present" && (
+            {(playerStatus === "present" || playerStatus === "late") && (
               <div className="p-3 rounded-2xl bg-primary/5 border border-primary/20 space-y-2 animate-in fade-in slide-in-from-top-1 duration-200">
                 <div className="flex items-center justify-between text-xs font-bold text-foreground">
                   <span className="flex items-center gap-1.5">
