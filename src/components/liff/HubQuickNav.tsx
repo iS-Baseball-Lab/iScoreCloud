@@ -7,10 +7,10 @@ import { Calendar, Car, FileText, HelpCircle, LayoutGrid } from "lucide-react";
 
 export function HubQuickNav() {
   return (
-    <div className="space-y-2.5">
+    <div className="space-y-3">
       <div className="flex items-center gap-1.5 px-1">
-        <LayoutGrid className="w-3.5 h-3.5 text-primary" />
-        <h3 className="text-xs font-black text-foreground tracking-tight">
+        <LayoutGrid className="w-4 h-4 text-primary" />
+        <h3 className="text-sm font-black text-foreground tracking-tight">
           クイックメニュー
         </h3>
       </div>
@@ -29,11 +29,11 @@ export function HubQuickNav() {
               FAQ
             </span>
           </div>
-          <div className="mt-3">
-            <h4 className="text-sm font-black text-foreground tracking-tight">
+          <div className="mt-3.5 space-y-0.5">
+            <h4 className="text-base font-black text-foreground tracking-tight">
               よくある質問
             </h4>
-            <p className="text-[11px] font-bold text-muted-foreground mt-0.5">
+            <p className="text-xs font-bold text-muted-foreground">
               雨天連絡・当番の疑問
             </p>
           </div>
@@ -52,11 +52,11 @@ export function HubQuickNav() {
               書類
             </span>
           </div>
-          <div className="mt-3">
-            <h4 className="text-sm font-black text-foreground tracking-tight">
+          <div className="mt-3.5 space-y-0.5">
+            <h4 className="text-base font-black text-foreground tracking-tight">
               資料ダウンロード
             </h4>
-            <p className="text-[11px] font-bold text-muted-foreground mt-0.5">
+            <p className="text-xs font-bold text-muted-foreground">
               規約・配車マニュアル
             </p>
           </div>
@@ -75,11 +75,11 @@ export function HubQuickNav() {
               予定
             </span>
           </div>
-          <div className="mt-3">
-            <h4 className="text-sm font-black text-foreground tracking-tight">
+          <div className="mt-3.5 space-y-0.5">
+            <h4 className="text-base font-black text-foreground tracking-tight">
               予定 & 欠席
             </h4>
-            <p className="text-[11px] font-bold text-muted-foreground mt-0.5">
+            <p className="text-xs font-bold text-muted-foreground">
               当番・出欠の確認
             </p>
           </div>
@@ -98,11 +98,11 @@ export function HubQuickNav() {
               送迎
             </span>
           </div>
-          <div className="mt-3">
-            <h4 className="text-sm font-black text-foreground tracking-tight">
+          <div className="mt-3.5 space-y-0.5">
+            <h4 className="text-base font-black text-foreground tracking-tight">
               配車表
             </h4>
-            <p className="text-[11px] font-bold text-muted-foreground mt-0.5">
+            <p className="text-xs font-bold text-muted-foreground">
               乗車割り・集合時間
             </p>
           </div>

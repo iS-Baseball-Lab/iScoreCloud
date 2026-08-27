@@ -281,8 +281,8 @@ function MatchesContent() {
       <div className="p-4 space-y-5">
         {/* ページ内ヘッダー */}
         <LiffPageHeader
-          title="試合動画 & スコア"
-          subtitle={`${currentTeam?.name || "チーム"}の試合一覧`}
+          title="試合情報"
+          subtitle="ハイライト動画 & スコアボード"
           icon={
             <span className="w-8 h-8 rounded-xl bg-red-500/10 text-red-600 dark:text-red-400 flex items-center justify-center font-black">
               <Video className="w-4 h-4" />
@@ -290,7 +290,7 @@ function MatchesContent() {
           }
           showBack
           shareData={{
-            title: `【試合動画・スコア】${currentTeam?.name || "チーム"} 試合一覧`,
+            title: `【試合情報】${currentTeam?.name || "チーム"} 試合一覧`,
             text: `試合ハイライト動画・スコアボードはこちらから確認できます！`,
           }}
         />

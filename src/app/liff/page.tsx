@@ -94,57 +94,63 @@ export default function LiffHubPage() {
         }}
       />
 
-      <div className="p-4 space-y-6">
-        {/* 🌟 デモ体験モード時の案内バナー */}
-        {isDemo && (
+      {/* 🌟 上部〜ヒーローセクション：薄いプライマリーカラー背景ゾーン */}
+      <div className="bg-gradient-to-b from-primary/12 via-primary/6 to-transparent pb-2">
+        <div className="p-4 space-y-5">
+          {/* 🌟 デモ体験モード時の案内バナー */}
+          {isDemo && (
+            <section>
+              <DemoBanner onOpenJoinModal={() => setIsJoinModalOpen(true)} />
+            </section>
+          )}
+
+          {/* 👋 ユーザー挨拶 */}
+          <div className="flex items-center justify-between px-1">
+            <div className="flex flex-col">
+              <span className="text-[11px] font-black text-primary uppercase tracking-wider">
+                iScoreCloud チームHUB
+              </span>
+              <h2 className="text-xl font-black text-foreground tracking-tight">
+                こんにちは、{userName} さん 👋
+              </h2>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              {isDemo && (
+                <button
+                  type="button"
+                  onClick={() => setIsJoinModalOpen(true)}
+                  className="px-3 py-1.5 rounded-full bg-primary hover:bg-primary/90 active:scale-95 text-primary-foreground font-black text-[11px] shadow-xs transition-all flex items-center gap-1 shrink-0"
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  <span>参加申請</span>
+                </button>
+              )}
+
+              {!isLoggedIn && (
+                <button
+                  type="button"
+                  onClick={login}
+                  className="px-3 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-black text-[11px] shadow-xs transition-all flex items-center gap-1 shrink-0"
+                >
+                  <span>LINE連携</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* 🌟 ヒーローセクション：次回予定 & ワンタップ出欠 */}
           <section>
-            <DemoBanner onOpenJoinModal={() => setIsJoinModalOpen(true)} />
+            <HubHeroCard
+              teamName={teamName}
+              nextEvent={nextEvent}
+            />
           </section>
-        )}
-
-        {/* 👋 ユーザー挨拶 */}
-        <div className="flex items-center justify-between px-1">
-          <div className="flex flex-col">
-            <span className="text-[11px] font-bold text-muted-foreground">
-              iScoreCloud チームHUB
-            </span>
-            <h2 className="text-lg font-black text-foreground tracking-tight">
-              こんにちは、{userName} さん 👋
-            </h2>
-          </div>
-
-          <div className="flex items-center gap-1.5">
-            {isDemo && (
-              <button
-                type="button"
-                onClick={() => setIsJoinModalOpen(true)}
-                className="px-3 py-1.5 rounded-full bg-primary hover:bg-primary/90 active:scale-95 text-primary-foreground font-black text-[11px] shadow-xs transition-all flex items-center gap-1 shrink-0"
-              >
-                <UserPlus className="w-3.5 h-3.5" />
-                <span>参加申請</span>
-              </button>
-            )}
-
-            {!isLoggedIn && (
-              <button
-                type="button"
-                onClick={login}
-                className="px-3 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-black text-[11px] shadow-xs transition-all flex items-center gap-1 shrink-0"
-              >
-                <span>LINE連携</span>
-              </button>
-            )}
-          </div>
         </div>
+      </div>
 
-        {/* 🌟 ヒーローセクション：次回予定 & ワンタップ出欠 */}
-        <section>
-          <HubHeroCard
-            teamName={teamName}
-            nextEvent={nextEvent}
-          />
-        </section>
-
+      {/* 🚀 メインコンテンツエリア */}
+      <div className="p-4 pt-1 space-y-6">
         {/* 🚀 クイックメニュー（配車・動画・予定・MAP・書類・Q&A） */}
         <section>
           <HubQuickNav />
@@ -152,9 +158,9 @@ export default function LiffHubPage() {
 
         {/* 🎬 最新の試合動画ハイライト */}
         {latestVideoMatch && (
-          <section className="space-y-3 pt-1 border-t border-border/50">
+          <section className="space-y-3 pt-2 border-t border-border/50">
             <div className="flex items-center justify-between px-1">
-              <div className="flex items-center gap-1.5 text-xs font-black text-foreground">
+              <div className="flex items-center gap-1.5 text-sm font-black text-foreground">
                 <Video className="w-4 h-4 text-red-500" />
                 <span>最新の試合動画</span>
               </div>

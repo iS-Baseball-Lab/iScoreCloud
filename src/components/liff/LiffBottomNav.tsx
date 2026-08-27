@@ -8,7 +8,7 @@ import {
   Home, 
   Trophy, 
   Video, 
-  Search, 
+  MapPin, 
   Menu, 
   X,
   Car,
@@ -118,7 +118,7 @@ export function LiffBottomNav() {
               {/* ③ 中央プレースホルダー */}
               <div className="pointer-events-none" />
 
-              {/* ④ 🔍 検索 */}
+              {/* ④ 📍 球場 & 施設 */}
               <Link
                 href="/liff/grounds"
                 onClick={() => setIsOtherMenuOpen(false)}
@@ -128,8 +128,8 @@ export function LiffBottomNav() {
                     : "text-muted-foreground hover:text-foreground font-bold"
                 }`}
               >
-                <Search className={`w-5 h-5 transition-transform ${isSearch && !isOtherMenuOpen ? "scale-110" : ""}`} />
-                <span className="text-[10px] leading-none tracking-tight">検索</span>
+                <MapPin className={`w-5 h-5 transition-transform ${isSearch && !isOtherMenuOpen ? "scale-110" : ""}`} />
+                <span className="text-[9.5px] leading-none tracking-tight">球場 & 施設</span>
               </Link>
 
               {/* ⑤ ⋯ その他 */}
@@ -227,17 +227,17 @@ export function LiffBottomNav() {
                 </div>
               </Link>
 
-              {/* ④ 🔍 検索 (球場・施設) */}
+              {/* ④ 📍 球場 & 施設 */}
               <Link
                 href="/liff/grounds"
                 onClick={() => setIsOtherMenuOpen(false)}
                 className="flex items-center gap-3 p-3 rounded-2xl bg-muted/40 hover:bg-muted border border-border/60 transition-all group"
               >
                 <span className="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform">
-                  <Search className="w-5 h-5" />
+                  <MapPin className="w-5 h-5" />
                 </span>
                 <div className="min-w-0">
-                  <p className="text-xs font-black text-foreground truncate">検索 (球場・施設)</p>
+                  <p className="text-xs font-black text-foreground truncate">球場 & 施設</p>
                   <p className="text-[10px] text-muted-foreground font-bold truncate">アクセス・駐車場</p>
                 </div>
               </Link>
