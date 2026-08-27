@@ -191,7 +191,7 @@ export function HubHeroSection({
   return (
     <div className="space-y-2.5">
       {/* 🌟 1. 上部セグメントタブ（次回予定 / カレンダー / 試合速報） */}
-      <div className="flex items-center p-1 bg-background/80 dark:bg-muted/40 backdrop-blur-md rounded-2xl border border-border/80 shadow-xs">
+      <div className="flex items-center p-1 bg-background/80 dark:bg-muted/40 backdrop-blur-md rounded-2xl border border-primary/20 dark:border-primary/25 shadow-xs">
         <button
           type="button"
           onClick={() => setActiveTab("next")}
@@ -236,7 +236,7 @@ export function HubHeroSection({
 
       {/* 🅰️ 【次回予定】カード（出欠・配車・お当番） */}
       {activeTab === "next" && (
-        <div className="relative overflow-hidden rounded-3xl bg-card border-2 border-border/80 shadow-md p-4 space-y-4 animate-in fade-in duration-200">
+        <div className="relative overflow-hidden rounded-3xl bg-card border-2 border-primary/25 dark:border-primary/30 shadow-md shadow-primary/5 p-4 space-y-4 animate-in fade-in duration-200">
           {/* 上部タグ & 日時 */}
           <div className="flex items-center justify-between">
             <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-black tracking-tight ${
@@ -272,7 +272,7 @@ export function HubHeroSection({
           </div>
 
           {/* 連絡事項：配車・お当番・お弁当インフォメーション */}
-          <div className="p-3 rounded-2xl bg-muted/40 border border-border/60 space-y-2 text-xs">
+          <div className="p-3 rounded-2xl bg-muted/40 border border-primary/15 space-y-2 text-xs">
             <div className="grid grid-cols-2 gap-2 text-xs">
               <div className="flex items-center gap-1.5 font-bold">
                 <Car className="w-3.5 h-3.5 text-blue-500 shrink-0" />
@@ -294,7 +294,7 @@ export function HubHeroSection({
             </div>
 
             {event.dutyGroup && (
-              <div className="pt-1.5 border-t border-border/40 flex items-center justify-between text-[11px] font-bold">
+              <div className="pt-1.5 border-t border-primary/15 flex items-center justify-between text-[11px] font-bold">
                 <span className="text-muted-foreground">お当番</span>
                 <span className="text-primary font-black">{event.dutyGroup}</span>
               </div>
@@ -302,7 +302,7 @@ export function HubHeroSection({
           </div>
 
           {/* ワンタップ出欠回答エリア */}
-          <div className="pt-2 border-t border-border/60 space-y-2.5">
+          <div className="pt-2 border-t border-primary/15 space-y-2.5">
             <div className="flex items-center justify-between">
               <span className="text-xs font-black text-foreground">あなたの出欠回答</span>
               <span className="text-[10px] font-bold text-muted-foreground">タップして変更</span>
@@ -404,10 +404,10 @@ export function HubHeroSection({
 
       {/* 🅱️ 【チームカレンダー】カード（本家ダッシュボード同等の月間カレンダー ＋ 直近の日程一覧） */}
       {activeTab === "calendar" && (
-        <div className="relative overflow-hidden rounded-3xl bg-card border-2 border-border/80 shadow-md p-4 space-y-4 animate-in fade-in duration-200">
+        <div className="relative overflow-hidden rounded-3xl bg-card border-2 border-primary/25 dark:border-primary/30 shadow-md shadow-primary/5 p-4 space-y-4 animate-in fade-in duration-200">
           
           {/* ━━ 1. カレンダーヘッダー（年月切り替え & 今日ボタン） ━━ */}
-          <div className="flex items-center justify-between pb-1 border-b border-border/40">
+          <div className="flex items-center justify-between pb-1 border-b border-primary/15">
             <div className="flex items-center gap-1.5">
               <span className="w-7 h-7 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
                 <Calendar className="w-4 h-4" />
@@ -445,7 +445,7 @@ export function HubHeroSection({
           </div>
 
           {/* ━━ 2. 曜日ヘッダー ━━ */}
-          <div className="grid grid-cols-7 text-center text-[10px] font-black text-muted-foreground uppercase pb-1 border-b border-border/20">
+          <div className="grid grid-cols-7 text-center text-[10px] font-black text-muted-foreground uppercase pb-1 border-b border-primary/10">
             {weekDays.map((day, idx) => (
               <span key={day} className={cn(idx === 0 && "text-rose-500", idx === 6 && "text-blue-500")}>
                 {day}
@@ -502,7 +502,7 @@ export function HubHeroSection({
           </div>
 
           {/* ━━ 4. 選択日 / 直近の日程リスト ━━ */}
-          <div className="pt-3 border-t border-border/50 space-y-2.5">
+          <div className="pt-3 border-t border-primary/15 space-y-2.5">
             <div className="flex items-center justify-between">
               <span className="text-xs font-black text-foreground flex items-center gap-1.5">
                 <CalendarDays className="w-3.5 h-3.5 text-primary" />
@@ -523,7 +523,7 @@ export function HubHeroSection({
                 <Link
                   key={ev.id}
                   href="/liff/schedule"
-                  className="flex items-start gap-2.5 p-2.5 rounded-2xl bg-muted/40 hover:bg-muted/70 border border-border/60 transition-all group"
+                  className="flex items-start gap-2.5 p-2.5 rounded-2xl bg-muted/40 hover:bg-muted/70 border border-primary/15 transition-all group"
                 >
                   {/* 日付バッジ */}
                   <div className={`px-2 py-1 rounded-xl flex flex-col items-center justify-center shrink-0 min-w-[48px] ${
@@ -562,7 +562,7 @@ export function HubHeroSection({
 
       {/* 🅲 【試合速報】カード（直近の試合結果・スコア・ハイライト） */}
       {activeTab === "score" && (
-        <div className="relative overflow-hidden rounded-3xl bg-card border-2 border-border/80 shadow-md p-4 space-y-3.5 animate-in fade-in duration-200">
+        <div className="relative overflow-hidden rounded-3xl bg-card border-2 border-primary/25 dark:border-primary/30 shadow-md shadow-primary/5 p-4 space-y-3.5 animate-in fade-in duration-200">
           <div className="flex items-center justify-between">
             <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-black tracking-tight ${
               isWin
@@ -588,7 +588,7 @@ export function HubHeroSection({
           )}
 
           {/* 対戦スコアボード */}
-          <div className="p-3 rounded-2xl bg-muted/40 border border-border/60 flex items-center justify-between">
+          <div className="p-3 rounded-2xl bg-muted/40 border border-primary/15 flex items-center justify-between">
             <div className="text-center flex-1 min-w-0 pr-2">
               <span className="text-[10px] font-black text-primary block truncate">{teamName}</span>
               <span className="text-2xl font-black text-foreground">{recentMatch.myScore ?? "-"}</span>
