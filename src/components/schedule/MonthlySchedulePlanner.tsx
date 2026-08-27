@@ -100,21 +100,54 @@ export function MonthlySchedulePlanner({
     return `${m}/${d}(${w})`;
   };
 
-  // 時刻フォーマット補助 (ISO文字列 -> "08:30〜12:00")
-  const formatTimeRange = (start?: string | null, end?: string | null, fallback: string = "08:30〜12:00") => {
+  // 時刻フォーマット補助（ISO文字列または時刻文字列から "08:00〜12:00" を安全に抽出）
+  const formatTimeRange = (start?: string | null, end?: string | null, fallback: string = "08:00〜12:00") => {
     if (!start) return fallback;
     try {
-      const s = new Date(start);
-      const sh = String(s.getHours()).padStart(2, "0");
-      const sm = String(s.getMinutes()).padStart(2, "0");
-      if (!end) return `${sh}:${sm}〜`;
-      const e = new Date(end);
-      const eh = String(e.getHours()).padStart(2, "0");
-      const em = String(e.getMinutes()).padStart(2, "0");
-      return `${sh}:${sm}〜${eh}:${em}`;
+      // "YYYY-MM-DDTHH:mm" または "HH:mm" から時:分を直接抽出
+      const extractHHMM = (val: string) => {
+        const match = val.match(/T?(\d{2}):(\d{2})/);
+        if (match) return `${match[1]}:${match[2]}`;
+        const d = new Date(val);
+        if (!isNaN(d.getTime())) {
+          return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+        }
+        return null;
+      };
+
+      const startHHMM = extractHHMM(start);
+      const endHHMM = end ? extractHHMM(end) : null;
+
+      if (startHHMM && endHHMM) {
+        return `${startHHMM}〜${endHHMM}`;
+      } else if (startHHMM) {
+        return `${startHHMM}〜`;
+      }
+      return fallback;
     } catch {
       return fallback;
     }
+  };
+
+  // 入力された文字列（"08:00〜12:00", "8:00-12:00" など）から時:分をパース
+  const parseTimeRange = (timeStr: string, defaultStart: string, defaultEnd: string) => {
+    if (!timeStr) return { start: defaultStart, end: defaultEnd };
+    const matches = timeStr.match(/(\d{1,2}):(\d{2})/g);
+    if (matches && matches.length >= 2) {
+      const sParts = matches[0].split(":");
+      const eParts = matches[1].split(":");
+      return {
+        start: `${sParts[0].padStart(2, "0")}:${sParts[1]}`,
+        end: `${eParts[0].padStart(2, "0")}:${eParts[1]}`,
+      };
+    } else if (matches && matches.length === 1) {
+      const sParts = matches[0].split(":");
+      return {
+        start: `${sParts[0].padStart(2, "0")}:${sParts[1]}`,
+        end: defaultEnd,
+      };
+    }
+    return { start: defaultStart, end: defaultEnd };
   };
 
   // 🌟 DBから保存済みイベント一覧をロード
@@ -127,9 +160,18 @@ export function MonthlySchedulePlanner({
         const json = await res.json() as any;
         if (json.success && Array.isArray(json.data) && json.data.length > 0) {
           const loadedItems: ScheduleDayItem[] = json.data.map((ev: any) => {
-            const startD = new Date(ev.startAt);
-            const dateStr = formatDateString(startD);
-            const dayLabel = formatDayLabel(startD);
+            // startAt から安全に YYYY-MM-DD を抽出
+            let dateStr = "";
+            if (typeof ev.startAt === "string" && ev.startAt.includes("T")) {
+              dateStr = ev.startAt.split("T")[0];
+            } else {
+              const startD = new Date(ev.startAt);
+              dateStr = formatDateString(startD);
+            }
+
+            const [y, m, d] = dateStr.split("-").map(Number);
+            const dateObj = new Date(y, m - 1, d);
+            const dayLabel = formatDayLabel(dateObj);
 
             const hasPm = !!ev.pmStartAt;
             const slotType: ScheduleDayItem["slotType"] = hasPm ? "all_day" : "am_only";
@@ -142,11 +184,11 @@ export function MonthlySchedulePlanner({
               slotType,
               amType: (ev.eventType as any) || "practice",
               amTitle: ev.title || "午前活動",
-              amTime: formatTimeRange(ev.startAt, ev.endAt, "08:30〜12:00"),
+              amTime: formatTimeRange(ev.startAt, ev.endAt, "08:00〜12:00"),
               amLocation: ev.location || "",
               pmType: (ev.eventType as any) || "practice",
               pmTitle: "午後活動",
-              pmTime: formatTimeRange(ev.pmStartAt, ev.pmEndAt, "13:00〜17:00"),
+              pmTime: formatTimeRange(ev.pmStartAt, ev.pmEndAt, "12:00〜18:00"),
               pmLocation: ev.pmLocation || ev.location || "",
               dutyGroup: ev.dutyGroup || "1班",
               needsLunch: hasPm || ev.needsLunch || false,
@@ -241,11 +283,11 @@ export function MonthlySchedulePlanner({
         slotType: "all_day",
         amType: "practice",
         amTitle: "午前練習",
-        amTime: "08:30〜12:00",
+        amTime: "08:00〜12:00",
         amLocation: "ホームグラウンド",
         pmType: "practice",
         pmTitle: "午後練習",
-        pmTime: "13:00〜17:00",
+        pmTime: "12:00〜18:00",
         pmLocation: "ホームグラウンド",
         dutyGroup: "1班",
         needsLunch: true,
@@ -276,11 +318,11 @@ export function MonthlySchedulePlanner({
           slotType: "all_day",
           amType: "practice",
           amTitle: "午前練習",
-          amTime: "08:30〜12:00",
+          amTime: "08:00〜12:00",
           amLocation: "ホームグラウンド",
           pmType: "practice",
           pmTitle: "午後練習",
-          pmTime: "13:00〜17:00",
+          pmTime: "12:00〜18:00",
           pmLocation: "ホームグラウンド",
           dutyGroup: "1班",
           needsLunch: true,
@@ -312,26 +354,47 @@ export function MonthlySchedulePlanner({
     setTimeout(() => setToastMessage(null), 3000);
   };
 
-  // 一括保存処理
+  // 一括保存処理（入力された実際の活動時間を正確に反映）
   const handleSaveAll = async () => {
     setIsSaving(true);
     try {
-      // API呼び出し (POST /api/events/:teamId/bulk)
       const payload = {
-        events: selectedDayItems.map(item => ({
-          id: item.id.startsWith("new_") ? undefined : item.id,
-          title: item.title || `${item.amTitle}${item.pmTitle ? ` / ${item.pmTitle}` : ""}`,
-          startAt: `${item.dateStr}T08:30:00`,
-          endAt: `${item.dateStr}T17:00:00`,
-          eventType: item.amType,
-          location: item.amLocation || item.pmLocation,
-          dutyGroup: item.dutyGroup,
-          pmStartAt: item.slotType !== "am_only" ? `${item.dateStr}T13:00:00` : null,
-          pmEndAt: item.slotType !== "am_only" ? `${item.dateStr}T17:00:00` : null,
-          pmLocation: item.pmLocation,
-          description: item.memo,
-          status: "scheduled",
-        })),
+        events: selectedDayItems.map(item => {
+          // 入力された amTime / pmTime を正確にパース
+          const amParsed = parseTimeRange(item.amTime, "08:00", "12:00");
+          const pmParsed = parseTimeRange(item.pmTime, "12:00", "18:00");
+
+          const startAtStr = item.slotType === "pm_only"
+            ? `${item.dateStr}T${pmParsed.start}:00`
+            : `${item.dateStr}T${amParsed.start}:00`;
+
+          const endAtStr = item.slotType === "am_only"
+            ? `${item.dateStr}T${amParsed.end}:00`
+            : `${item.dateStr}T${pmParsed.end}:00`;
+
+          const pmStartAtStr = item.slotType !== "am_only"
+            ? `${item.dateStr}T${pmParsed.start}:00`
+            : null;
+
+          const pmEndAtStr = item.slotType !== "am_only"
+            ? `${item.dateStr}T${pmParsed.end}:00`
+            : null;
+
+          return {
+            id: item.id.startsWith("new_") ? undefined : item.id,
+            title: item.title || `${item.amTitle}${item.pmTitle ? ` / ${item.pmTitle}` : ""}`,
+            startAt: startAtStr,
+            endAt: endAtStr,
+            eventType: item.amType,
+            location: item.amLocation || item.pmLocation,
+            dutyGroup: item.dutyGroup,
+            pmStartAt: pmStartAtStr,
+            pmEndAt: pmEndAtStr,
+            pmLocation: item.pmLocation,
+            description: item.memo,
+            status: "scheduled",
+          };
+        }),
         deletedEventIds,
       };
 
@@ -655,7 +718,7 @@ export function MonthlySchedulePlanner({
                               type="text"
                               value={item.amTime}
                               onChange={(e) => handleUpdateItem(item.id, { amTime: e.target.value })}
-                              placeholder="08:30〜12:00"
+                              placeholder="08:00〜12:00"
                               className="bg-transparent text-xs font-bold text-foreground focus:outline-hidden w-full"
                             />
                           </div>
@@ -714,7 +777,7 @@ export function MonthlySchedulePlanner({
                               type="text"
                               value={item.pmTime}
                               onChange={(e) => handleUpdateItem(item.id, { pmTime: e.target.value })}
-                              placeholder="13:00〜17:00"
+                              placeholder="12:00〜18:00"
                               className="bg-transparent text-xs font-bold text-foreground focus:outline-hidden w-full"
                             />
                           </div>
