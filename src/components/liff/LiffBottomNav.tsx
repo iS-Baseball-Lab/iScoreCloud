@@ -16,6 +16,8 @@ import {
   HelpCircle,
   Calendar,
   LayoutGrid,
+  Settings,
+  ChevronRight,
 } from "lucide-react";
 
 export function LiffBottomNav() {
@@ -300,6 +302,22 @@ export function LiffBottomNav() {
                   <p className="text-xs font-black text-foreground truncate">よくある質問</p>
                   <p className="text-[10px] text-muted-foreground font-bold truncate">雨天判断・用具規定</p>
                 </div>
+              </Link>
+
+              {/* ⑨ ⚙️ アプリ設定 */}
+              <Link
+                href="/liff/settings"
+                onClick={() => setIsOtherMenuOpen(false)}
+                className="flex items-center gap-3 p-3 rounded-2xl bg-muted/40 hover:bg-muted border border-border/60 transition-all group active:scale-95 col-span-2"
+              >
+                <span className="w-9 h-9 rounded-xl bg-slate-500/10 text-slate-700 dark:text-slate-300 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform">
+                  <Settings className="w-5 h-5" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-black text-foreground truncate">アプリ設定</p>
+                  <p className="text-[10px] text-muted-foreground font-bold truncate">表示テーマ・立場・スコア入力設定</p>
+                </div>
+                <ChevronRight className="w-4 h-4 text-muted-foreground mr-1" />
               </Link>
             </div>
 
