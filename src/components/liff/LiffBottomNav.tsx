@@ -18,6 +18,7 @@ import {
   LayoutGrid,
   Settings,
   ChevronRight,
+  ShieldCheck,
 } from "lucide-react";
 
 export function LiffBottomNav() {
@@ -321,13 +322,14 @@ export function LiffBottomNav() {
               </Link>
             </div>
 
-            {/* 📜 法務・規約リンク（ゆったりタッチできるボタン形式） */}
+            {/* 📜 法務・規約リンク（アイコン付きゆったりタッチできるボタン形式） */}
             <div className="pt-4 border-t border-border/40 flex items-center justify-center gap-3">
               <Link
                 href="/liff/terms"
                 onClick={() => setIsOtherMenuOpen(false)}
                 className="py-2 px-3.5 rounded-full bg-muted/60 hover:bg-muted active:scale-95 border border-border/60 text-xs font-black text-muted-foreground hover:text-foreground transition-all flex items-center gap-1.5"
               >
+                <FileText className="w-3.5 h-3.5 text-primary" />
                 <span>利用規約</span>
               </Link>
 
@@ -336,6 +338,7 @@ export function LiffBottomNav() {
                 onClick={() => setIsOtherMenuOpen(false)}
                 className="py-2 px-3.5 rounded-full bg-muted/60 hover:bg-muted active:scale-95 border border-border/60 text-xs font-black text-muted-foreground hover:text-foreground transition-all flex items-center gap-1.5"
               >
+                <ShieldCheck className="w-3.5 h-3.5 text-primary" />
                 <span>プライバシーポリシー</span>
               </Link>
             </div>
