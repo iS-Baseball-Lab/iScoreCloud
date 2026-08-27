@@ -22,6 +22,7 @@ interface HubDataResponse {
     homeGround?: string | null;
   };
   nextEvent?: any;
+  events?: any[];
   matches?: MatchCardData[];
 }
 
@@ -34,6 +35,7 @@ export default function LiffHubPage() {
     return "メンバー";
   });
   const [nextEvent, setNextEvent] = useState<any>(null);
+  const [events, setEvents] = useState<any[]>([]);
   const [matches, setMatches] = useState<MatchCardData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
@@ -61,6 +63,11 @@ export default function LiffHubPage() {
           setNextEvent(data.nextEvent);
         } else {
           setNextEvent(null);
+        }
+        if (Array.isArray(data.events)) {
+          setEvents(data.events);
+        } else {
+          setEvents([]);
         }
         if (Array.isArray(data.matches)) {
           setMatches(data.matches);
@@ -134,11 +141,12 @@ export default function LiffHubPage() {
             </div>
           </div>
 
-          {/* 🌟 ヒーローセクション：タブ切り替え（次回予定 / カレンダー / 試合速報） */}
+          {/* 🌟 ヒーローセクション：タブ切り替え（活動予定（カルーセル） / カレンダー / 試合速報） */}
           <section>
             <HubHeroSection
               teamName={teamName}
               nextEvent={nextEvent}
+              eventsList={events}
               latestMatch={matches[0] || null}
             />
           </section>

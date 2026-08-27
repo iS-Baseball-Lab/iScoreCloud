@@ -298,12 +298,41 @@ app.get("/hub", async (c) => {
     const teamId = targetTeam.id;
     const fullTeamName = `${targetTeam.orgName ? `${targetTeam.orgName} ` : ""}${targetTeam.name}`.trim();
 
-    const nextEvent = await db
+    // チームのイベント一覧を取得（日付順）
+    const allEventsList = await db
       .select()
       .from(events)
       .where(eq(events.teamId, teamId))
-      .orderBy(desc(events.startAt))
-      .get();
+      .orderBy(asc(events.startAt))
+      .all();
+
+    const formattedEventsList = allEventsList.map((ev) => {
+      const d = new Date(ev.startAt);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      const dateStr = `${y}-${m}-${day}`;
+
+      return {
+        id: ev.id,
+        title: ev.title,
+        date: d.toLocaleDateString("ja-JP", { month: "numeric", day: "numeric", weekday: "short" }),
+        dateStr,
+        startAt: ev.startAt,
+        endAt: ev.endAt,
+        pmStartAt: ev.pmStartAt,
+        pmEndAt: ev.pmEndAt,
+        time: d.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }),
+        location: ev.location || targetTeam.homeGround || "グラウンド",
+        eventType: ev.eventType || "practice",
+        dutyGroup: ev.dutyGroup || "1班",
+        carInfo: "配車調整中",
+        needsLunch: !!ev.pmStartAt,
+        memo: ev.description || "",
+      };
+    });
+
+    const nextEvent = formattedEventsList[0] || null;
 
     const matchesList = await db
       .select({
@@ -338,19 +367,8 @@ app.get("/hub", async (c) => {
         logoImageUrl: targetTeam.logoImageUrl || undefined,
       },
       teams: teamList,
-      nextEvent: nextEvent
-        ? {
-            id: nextEvent.id,
-            title: nextEvent.title,
-            date: new Date(nextEvent.startAt).toLocaleDateString("ja-JP", { month: "numeric", day: "numeric", weekday: "short" }),
-            time: new Date(nextEvent.startAt).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }),
-            location: nextEvent.location || targetTeam.homeGround || "グラウンド",
-            eventType: nextEvent.eventType || "match",
-            dutyGroup: nextEvent.dutyGroup || "A班",
-            carInfo: "配車調整中",
-            needsLunch: true,
-          }
-        : null,
+      nextEvent,
+      events: formattedEventsList,
       matches: matchesList,
     });
   } catch (error: any) {
@@ -362,6 +380,32 @@ app.get("/hub", async (c) => {
       team: DEMO_TEAM,
       teams: [DEMO_TEAM],
       nextEvent: DEMO_NEXT_EVENT,
+      events: [
+        {
+          id: "demo-ev-1",
+          title: "秋季大会 2回戦 vs レッドソックス",
+          date: "8/29(土)",
+          dateStr: "2026-08-29",
+          time: "08:00〜12:00",
+          location: "市民第1球場",
+          eventType: "match",
+          dutyGroup: "1班",
+          carInfo: "鈴木号・佐藤号",
+          needsLunch: false,
+        },
+        {
+          id: "demo-ev-2",
+          title: "全日通常練習 & 守備連携・走塁強化",
+          date: "8/30(日)",
+          dateStr: "2026-08-30",
+          time: "08:00〜18:00",
+          location: "大師河原第3G",
+          eventType: "practice",
+          dutyGroup: "2班",
+          carInfo: "配車調整中",
+          needsLunch: true,
+        },
+      ],
       matches: DEMO_MATCHES,
     });
   }
