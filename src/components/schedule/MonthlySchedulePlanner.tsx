@@ -33,19 +33,19 @@ export interface ScheduleDayItem {
   slotType: "all_day" | "am_only" | "pm_only"; // 終日 / 午前のみ / 午後のみ
   
   // 午前設定
-  amType: "practice" | "match" | "practice_match" | "camp" | "meeting" | "off";
+  amType: "practice" | "match" | "camp" | "off";
   amTitle: string;
   amTime: string;
   amLocation: string;
 
   // 午後設定
-  pmType: "practice" | "match" | "practice_match" | "camp" | "meeting" | "off";
+  pmType: "practice" | "match" | "camp" | "off";
   pmTitle: string;
   pmTime: string;
   pmLocation: string;
 
   // 当番・持ち物
-  dutyGroup: string; // A班, B班, C班, D班, 本部, なし
+  dutyGroup: string; // 1班, 2班, 3班, 4班, なし
   needsLunch: boolean; // お弁当要否
   memo: string; // 連絡事項
 }
@@ -59,14 +59,12 @@ interface MonthlySchedulePlannerProps {
 
 const EVENT_TYPES = [
   { id: "practice", label: "練習", icon: "🏃", color: "bg-primary/10 text-primary border-primary/30" },
-  { id: "match", label: "公式戦", icon: "⚾", color: "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30" },
-  { id: "practice_match", label: "練習試合", icon: "⚔️", color: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30" },
+  { id: "match", label: "試合", icon: "⚾", color: "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30" },
   { id: "camp", label: "合宿", icon: "🏕️", color: "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/30" },
-  { id: "meeting", label: "総会/MTG", icon: "📋", color: "bg-teal-500/10 text-teal-600 dark:text-teal-400 border-teal-500/30" },
-  { id: "off", label: "休み/オフ", icon: "🏖️", color: "bg-muted text-muted-foreground border-border" },
+  { id: "off", label: "休み", icon: "🏖️", color: "bg-muted text-muted-foreground border-border" },
 ] as const;
 
-const DUTY_GROUPS = ["A班", "B班", "C班", "D班", "本部/役員", "なし (各自)"];
+const DUTY_GROUPS = ["1班", "2班", "3班", "4班", "なし"];
 
 export function MonthlySchedulePlanner({
   teamId = "team_1",
@@ -110,14 +108,14 @@ export function MonthlySchedulePlanner({
         title: "秋季大会 2回戦 vs レッドソックス",
         slotType: "all_day",
         amType: "match",
-        amTitle: "公式戦 vs レッドソックス",
+        amTitle: "試合 vs レッドソックス",
         amTime: "08:30〜12:30",
         amLocation: "市民第1球場 (1面)",
         pmType: "practice",
         pmTitle: "午後練習 & 連携確認",
         pmTime: "13:30〜17:00",
         pmLocation: "大師河原第3G",
-        dutyGroup: "B班",
+        dutyGroup: "2班",
         needsLunch: true,
         memo: "鍵当番・救急箱持参。08:30現地集合厳守。",
       }
@@ -195,10 +193,10 @@ export function MonthlySchedulePlanner({
         amTime: "08:30〜12:00",
         amLocation: "ホームグラウンド",
         pmType: "practice",
-        pmTitle: "午後通常練習",
+        pmTitle: "午後練習",
         pmTime: "13:00〜17:00",
         pmLocation: "ホームグラウンド",
-        dutyGroup: "A班",
+        dutyGroup: "1班",
         needsLunch: true,
         memo: "",
       };
@@ -233,7 +231,7 @@ export function MonthlySchedulePlanner({
           pmTitle: "午後練習",
           pmTime: "13:00〜17:00",
           pmLocation: "ホームグラウンド",
-          dutyGroup: "A班",
+          dutyGroup: "1班",
           needsLunch: true,
           memo: "",
         });
@@ -454,7 +452,7 @@ export function MonthlySchedulePlanner({
                 {activeItem && (
                   <div className="w-full space-y-0.5 mt-1">
                     <div className="px-1.5 py-0.5 rounded-md bg-card/80 border border-primary/20 text-[9.5px] font-black text-foreground truncate">
-                      {activeItem.amType === "match" ? "⚾ 公式戦" : activeItem.amType === "camp" ? "🏕️ 合宿" : "🏃 練習"}
+                      {activeItem.amType === "match" ? "⚾ 試合" : activeItem.amType === "camp" ? "🏕️ 合宿" : "🏃 練習"}
                     </div>
                     {activeItem.dutyGroup && (
                       <div className="text-[9px] font-bold text-primary truncate hidden sm:block">
@@ -474,13 +472,13 @@ export function MonthlySchedulePlanner({
         <div className="flex items-center justify-between px-1">
           <h3 className="text-base font-black text-foreground flex items-center gap-2">
             <Layers className="w-4 h-4 text-primary" />
-            <span>活動日詳細設定一覧</span>
+            <span>活動日設定一覧</span>
             <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
               {selectedDayItems.length}件
             </span>
           </h3>
           <span className="text-xs text-muted-foreground font-bold">
-            午前・午後の種別や当番班をカスタマイズ
+            午前・午後の種別や当番を設定
           </span>
         </div>
 
@@ -496,7 +494,7 @@ export function MonthlySchedulePlanner({
           </div>
         ) : (
           <div className="space-y-4">
-            {selectedDayItems.map((item, index) => (
+            {selectedDayItems.map((item) => (
               <div
                 key={item.id}
                 className="p-4 sm:p-5 rounded-3xl bg-card border-2 border-primary/20 shadow-sm space-y-4 transition-all"
@@ -565,24 +563,24 @@ export function MonthlySchedulePlanner({
 
                 {/* 2. 午前 / 午後の活動内容設定グリッド */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* ☀️ 【午前セクション】 */}
+                  {/* ☀️ 【午前】 */}
                   {(item.slotType === "all_day" || item.slotType === "am_only") && (
                     <div className="p-3.5 rounded-2xl bg-muted/30 border border-primary/15 space-y-3">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-black text-foreground flex items-center gap-1.5">
                           <Sun className="w-3.5 h-3.5 text-amber-500" />
-                          <span>午前セクション</span>
+                          <span>午前</span>
                         </span>
 
-                        {/* 種別ピル */}
+                        {/* 種別ピル（練習・試合・合宿・休み） */}
                         <div className="flex flex-wrap gap-1">
-                          {EVENT_TYPES.slice(0, 4).map(t => (
+                          {EVENT_TYPES.map(t => (
                             <button
                               key={t.id}
                               type="button"
                               onClick={() => handleUpdateItem(item.id, { amType: t.id as any })}
                               className={cn(
-                                "px-2 py-0.5 rounded-lg text-[10.5px] font-black border transition-all",
+                                "px-2.5 py-1 rounded-xl text-xs font-black border transition-all",
                                 item.amType === t.id ? t.color : "bg-card border-border text-muted-foreground hover:text-foreground"
                               )}
                             >
@@ -594,7 +592,7 @@ export function MonthlySchedulePlanner({
 
                       <div className="grid grid-cols-2 gap-2 text-xs">
                         <div>
-                          <label className="text-[10px] font-bold text-muted-foreground block mb-1">集合・開始時間</label>
+                          <label className="text-[10px] font-bold text-muted-foreground block mb-1">活動時間</label>
                           <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-card border border-border/80">
                             <Clock className="w-3.5 h-3.5 text-primary shrink-0" />
                             <input
@@ -624,24 +622,24 @@ export function MonthlySchedulePlanner({
                     </div>
                   )}
 
-                  {/* 🌙 【午後セクション】 */}
+                  {/* 🌙 【午後】 */}
                   {(item.slotType === "all_day" || item.slotType === "pm_only") && (
                     <div className="p-3.5 rounded-2xl bg-muted/30 border border-primary/15 space-y-3">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-black text-foreground flex items-center gap-1.5">
                           <Moon className="w-3.5 h-3.5 text-indigo-500" />
-                          <span>午後セクション</span>
+                          <span>午後</span>
                         </span>
 
-                        {/* 種別ピル */}
+                        {/* 種別ピル（練習・試合・合宿・休み） */}
                         <div className="flex flex-wrap gap-1">
-                          {EVENT_TYPES.slice(0, 4).map(t => (
+                          {EVENT_TYPES.map(t => (
                             <button
                               key={t.id}
                               type="button"
                               onClick={() => handleUpdateItem(item.id, { pmType: t.id as any })}
                               className={cn(
-                                "px-2 py-0.5 rounded-lg text-[10.5px] font-black border transition-all",
+                                "px-2.5 py-1 rounded-xl text-xs font-black border transition-all",
                                 item.pmType === t.id ? t.color : "bg-card border-border text-muted-foreground hover:text-foreground"
                               )}
                             >
@@ -684,21 +682,21 @@ export function MonthlySchedulePlanner({
                   )}
                 </div>
 
-                {/* 3. 当番班・お弁当・備考 */}
+                {/* 3. 当番（1班〜4班）・お弁当・備考 */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1 text-xs">
-                  {/* 当番班選択 */}
+                  {/* 当番選択 */}
                   <div>
                     <label className="text-[10px] font-bold text-muted-foreground block mb-1">
-                      お当番班の割り当て
+                      当番
                     </label>
-                    <div className="flex flex-wrap gap-1">
+                    <div className="flex flex-wrap gap-1.5">
                       {DUTY_GROUPS.map(dg => (
                         <button
                           key={dg}
                           type="button"
                           onClick={() => handleUpdateItem(item.id, { dutyGroup: dg })}
                           className={cn(
-                            "px-2 py-1 rounded-lg text-[11px] font-bold border transition-all",
+                            "px-3 py-1.5 rounded-xl text-xs font-bold border transition-all active:scale-95",
                             item.dutyGroup === dg
                               ? "bg-primary text-primary-foreground border-primary font-black shadow-xs"
                               : "bg-muted/40 border-border/60 text-muted-foreground hover:text-foreground"
@@ -713,7 +711,7 @@ export function MonthlySchedulePlanner({
                   {/* お弁当要否 */}
                   <div>
                     <label className="text-[10px] font-bold text-muted-foreground block mb-1">
-                      お弁当 (持参要否)
+                      お弁当
                     </label>
                     <div className="flex gap-1.5">
                       <button
@@ -727,7 +725,7 @@ export function MonthlySchedulePlanner({
                         )}
                       >
                         <Utensils className="w-3 h-3" />
-                        <span>持参要 (終日)</span>
+                        <span>持参要</span>
                       </button>
 
                       <button
@@ -740,7 +738,7 @@ export function MonthlySchedulePlanner({
                             : "bg-muted/40 border-border/60 text-muted-foreground"
                         )}
                       >
-                        <span>不要 (半日)</span>
+                        <span>不要</span>
                       </button>
                     </div>
                   </div>
@@ -748,7 +746,7 @@ export function MonthlySchedulePlanner({
                   {/* 備考・連絡事項 */}
                   <div>
                     <label className="text-[10px] font-bold text-muted-foreground block mb-1">
-                      連絡事項・持ち物メモ
+                      備考・連絡事項
                     </label>
                     <input
                       type="text"
