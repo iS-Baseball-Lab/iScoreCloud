@@ -302,6 +302,25 @@ export function LiffBottomNav() {
                 </div>
               </Link>
             </div>
+
+            {/* 📜 法務・規約リンク */}
+            <div className="pt-3 border-t border-border/40 flex items-center justify-center gap-4 text-[11px] font-bold text-muted-foreground">
+              <Link
+                href="/liff/terms"
+                onClick={() => setIsOtherMenuOpen(false)}
+                className="hover:text-primary hover:underline transition-colors"
+              >
+                利用規約
+              </Link>
+              <span>•</span>
+              <Link
+                href="/liff/privacy"
+                onClick={() => setIsOtherMenuOpen(false)}
+                className="hover:text-primary hover:underline transition-colors"
+              >
+                プライバシーポリシー
+              </Link>
+            </div>
           </div>
         </div>
       )}
