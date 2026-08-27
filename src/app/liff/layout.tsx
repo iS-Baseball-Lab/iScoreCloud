@@ -4,8 +4,8 @@ import { LiffProvider } from "@/components/liff/LiffProvider";
 import { LiffBottomNav } from "@/components/liff/LiffBottomNav";
 
 export const metadata = {
-  title: "i-Score Mini | チーム情報 & 試合動画",
-  description: "LINEで試合動画やスコアをサクサク確認できる草野球チーム向けミニアプリ",
+  title: "iScoreMini | チームHUB",
+  description: "LINEで出欠回答・配車表・予定確認・試合動画がサクサク確認できる草野球・学童野球チーム向けミニアプリ",
 };
 
 export default function LiffLayout({

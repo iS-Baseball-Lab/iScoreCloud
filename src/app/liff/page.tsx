@@ -106,14 +106,9 @@ export default function LiffHubPage() {
 
           {/* 👋 ユーザー挨拶 */}
           <div className="flex items-center justify-between px-1">
-            <div className="flex flex-col">
-              <span className="text-[11px] font-black text-primary uppercase tracking-wider">
-                iScoreMini チームHUB
-              </span>
-              <h2 className="text-xl font-black text-foreground tracking-tight">
-                こんにちは、{userName} さん 👋
-              </h2>
-            </div>
+            <h2 className="text-xl font-black text-foreground tracking-tight">
+              こんにちは、{userName} さん 👋
+            </h2>
 
             <div className="flex items-center gap-1.5">
               {isDemo && (
