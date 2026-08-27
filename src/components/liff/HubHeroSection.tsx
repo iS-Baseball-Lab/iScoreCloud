@@ -12,12 +12,15 @@ import {
   XCircle, 
   Clock, 
   ChevronRight, 
+  ChevronLeft,
   Trophy, 
   Flame, 
   Video,
   Sparkles,
-  CalendarDays
+  CalendarDays,
+  Info
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import type { MatchCardData } from "@/components/liff/MatchScoreCard";
 
 interface HubHeroSectionProps {
@@ -47,6 +50,75 @@ export function HubHeroSection({
   const [playerStatus, setPlayerStatus] = useState<"present" | "absent" | "pending">("pending");
   const [carStatus, setCarStatus] = useState<"can_drive" | "need_ride" | "not_needed">("need_ride");
 
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // 📅 月間カレンダー用ステート & 算出ロジック
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  const [calendarMonth, setCalendarMonth] = useState<Date>(new Date());
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+
+  const currentYear = calendarMonth.getFullYear();
+  const currentMonth = calendarMonth.getMonth(); // 0-11
+
+  const handlePrevMonth = () => {
+    setCalendarMonth(new Date(currentYear, currentMonth - 1, 1));
+  };
+
+  const handleNextMonth = () => {
+    setCalendarMonth(new Date(currentYear, currentMonth + 1, 1));
+  };
+
+  const handleToday = () => {
+    const today = new Date();
+    setCalendarMonth(today);
+    setSelectedDate(today);
+  };
+
+  const formatDateString = (date: Date) => {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, "0");
+    const d = String(date.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  };
+
+  const selectedDateStr = formatDateString(selectedDate);
+  const todayStr = formatDateString(new Date());
+
+  // 42マスのカレンダーグリッド日付算出
+  const getCalendarDays = () => {
+    const days = [];
+    const firstDayOfMonth = new Date(currentYear, currentMonth, 1);
+    const startDayOfWeek = firstDayOfMonth.getDay(); // 0(日) - 6(土)
+
+    const prevMonthLastDate = new Date(currentYear, currentMonth, 0).getDate();
+    for (let i = startDayOfWeek - 1; i >= 0; i--) {
+      days.push({
+        date: new Date(currentYear, currentMonth - 1, prevMonthLastDate - i),
+        isCurrentMonth: false,
+      });
+    }
+
+    const currentMonthLastDate = new Date(currentYear, currentMonth + 1, 0).getDate();
+    for (let i = 1; i <= currentMonthLastDate; i++) {
+      days.push({
+        date: new Date(currentYear, currentMonth, i),
+        isCurrentMonth: true,
+      });
+    }
+
+    const remainingDays = 42 - days.length;
+    for (let i = 1; i <= remainingDays; i++) {
+      days.push({
+        date: new Date(currentYear, currentMonth + 1, i),
+        isCurrentMonth: false,
+      });
+    }
+
+    return days;
+  };
+
+  const calendarDays = getCalendarDays();
+  const weekDays = ["日", "月", "火", "水", "木", "金", "土"];
+
   // デフォルト次回予定
   const event = nextEvent || {
     id: "sample-1",
@@ -60,33 +132,44 @@ export function HubHeroSection({
     needsLunch: true,
   };
 
-  // サンプル直近予定リスト（チームカレンダー用）
+  // チームの直近予定リスト（カレンダー下部に表示）
   const upcomingEvents = [
     {
       id: "ev-1",
       date: "8/30(日)",
+      dateStr: "2026-08-30",
       type: "match",
       title: "秋季大会 2回戦 vs レッドソックス",
       time: "08:30 集合 (09:30 PB)",
       location: "市民第1球場",
+      duty: "B班 (鍵当番・救急)",
     },
     {
       id: "ev-2",
       date: "9/05(土)",
+      dateStr: "2026-09-05",
       type: "practice",
       title: "午後通常練習 & 守備連携強化",
       time: "13:00〜17:00",
       location: "大師河原第3グラウンド",
+      duty: "A班",
     },
     {
       id: "ev-3",
       date: "9/06(日)",
+      dateStr: "2026-09-06",
       type: "match",
       title: "練習試合 vs グリーンライオンズ (Wヘッダー)",
       time: "09:00 集合",
       location: "等々力球場",
+      duty: "C班",
     },
   ];
+
+  // 日付ごとのイベント状態
+  const getDateEvent = (dStr: string) => {
+    return upcomingEvents.find(e => e.dateStr === dStr);
+  };
 
   // 直近の試合速報データ
   const recentMatch = latestMatch || {
@@ -114,8 +197,8 @@ export function HubHeroSection({
           onClick={() => setActiveTab("next")}
           className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-xl text-xs font-black transition-all active:scale-95 ${
             activeTab === "next"
-              ? "bg-primary text-primary-foreground shadow-sm"
-              : "text-muted-foreground hover:text-foreground"
+              ? "bg-primary text-primary-foreground shadow-xs font-black"
+              : "text-muted-foreground hover:text-foreground font-bold"
           }`}
         >
           <Sparkles className="w-3.5 h-3.5" />
@@ -127,8 +210,8 @@ export function HubHeroSection({
           onClick={() => setActiveTab("calendar")}
           className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-xl text-xs font-black transition-all active:scale-95 ${
             activeTab === "calendar"
-              ? "bg-primary text-primary-foreground shadow-sm"
-              : "text-muted-foreground hover:text-foreground"
+              ? "bg-primary text-primary-foreground shadow-xs font-black"
+              : "text-muted-foreground hover:text-foreground font-bold"
           }`}
         >
           <CalendarDays className="w-3.5 h-3.5" />
@@ -140,8 +223,8 @@ export function HubHeroSection({
           onClick={() => setActiveTab("score")}
           className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-xl text-xs font-black transition-all active:scale-95 ${
             activeTab === "score"
-              ? "bg-primary text-primary-foreground shadow-sm"
-              : "text-muted-foreground hover:text-foreground"
+              ? "bg-primary text-primary-foreground shadow-xs font-black"
+              : "text-muted-foreground hover:text-foreground font-bold"
           }`}
         >
           <Flame className="w-3.5 h-3.5" />
@@ -232,7 +315,7 @@ export function HubHeroSection({
                 onClick={() => setPlayerStatus("present")}
                 className={`flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-2xl text-xs font-black transition-all active:scale-95 ${
                   playerStatus === "present"
-                    ? "bg-emerald-600 text-white shadow-sm ring-2 ring-emerald-500/50"
+                    ? "bg-emerald-600 text-white shadow-xs ring-2 ring-emerald-500/50"
                     : "bg-muted hover:bg-muted/80 text-muted-foreground"
                 }`}
               >
@@ -245,7 +328,7 @@ export function HubHeroSection({
                 onClick={() => setPlayerStatus("absent")}
                 className={`flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-2xl text-xs font-black transition-all active:scale-95 ${
                   playerStatus === "absent"
-                    ? "bg-rose-600 text-white shadow-sm ring-2 ring-rose-500/50"
+                    ? "bg-rose-600 text-white shadow-xs ring-2 ring-rose-500/50"
                     : "bg-muted hover:bg-muted/80 text-muted-foreground"
                 }`}
               >
@@ -258,7 +341,7 @@ export function HubHeroSection({
                 onClick={() => setPlayerStatus("pending")}
                 className={`flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-2xl text-xs font-black transition-all active:scale-95 ${
                   playerStatus === "pending"
-                    ? "bg-amber-600 text-white shadow-sm ring-2 ring-amber-500/50"
+                    ? "bg-amber-600 text-white shadow-xs ring-2 ring-amber-500/50"
                     : "bg-muted hover:bg-muted/80 text-muted-foreground"
                 }`}
               >
@@ -319,73 +402,161 @@ export function HubHeroSection({
         </div>
       )}
 
-      {/* 🅱️ 【チームカレンダー】カード（月間・週間直近スケジュール一覧） */}
+      {/* 🅱️ 【チームカレンダー】カード（本家ダッシュボード同等の月間カレンダー ＋ 直近の日程一覧） */}
       {activeTab === "calendar" && (
-        <div className="relative overflow-hidden rounded-3xl bg-card border-2 border-border/80 shadow-md p-4 space-y-3.5 animate-in fade-in duration-200">
-          <div className="flex items-center justify-between">
+        <div className="relative overflow-hidden rounded-3xl bg-card border-2 border-border/80 shadow-md p-4 space-y-4 animate-in fade-in duration-200">
+          
+          {/* ━━ 1. カレンダーヘッダー（年月切り替え & 今日ボタン） ━━ */}
+          <div className="flex items-center justify-between pb-1 border-b border-border/40">
             <div className="flex items-center gap-1.5">
-              <span className="w-6 h-6 rounded-lg bg-amber-500/10 text-amber-600 flex items-center justify-center font-black">
-                <Calendar className="w-3.5 h-3.5" />
+              <span className="w-7 h-7 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
+                <Calendar className="w-4 h-4" />
               </span>
-              <span className="text-xs font-black text-foreground">直近のスケジュール</span>
+              <span className="text-sm font-black text-foreground">
+                {currentYear}年 {currentMonth + 1}月
+              </span>
             </div>
-            <Link
-              href="/liff/schedule"
-              className="text-xs font-black text-primary hover:underline flex items-center gap-0.5"
-            >
-              <span>予定表を開く</span>
-              <ChevronRight className="w-3.5 h-3.5" />
-            </Link>
+
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={handlePrevMonth}
+                className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground active:scale-95 transition-all"
+                title="前月"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={handleNextMonth}
+                className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground active:scale-95 transition-all"
+                title="翌月"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={handleToday}
+                className="px-2.5 py-1 text-[10px] font-black rounded-lg bg-muted hover:bg-muted/80 text-foreground border border-border/60 active:scale-95 transition-all ml-1"
+              >
+                今日
+              </button>
+            </div>
           </div>
 
-          {/* 直近の予定リスト */}
-          <div className="space-y-2">
-            {upcomingEvents.map((ev, idx) => (
-              <Link
-                key={ev.id}
-                href="/liff/schedule"
-                className="flex items-start gap-3 p-2.5 rounded-2xl bg-muted/40 hover:bg-muted/70 border border-border/60 transition-all group"
-              >
-                {/* 日付バッジ */}
-                <div className={`px-2 py-1 rounded-xl flex flex-col items-center justify-center shrink-0 min-w-[50px] ${
-                  ev.type === "match" 
-                    ? "bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20" 
-                    : "bg-primary/10 text-primary border border-primary/20"
-                }`}>
-                  <span className="text-[11px] font-black leading-tight">{ev.date}</span>
-                  <span className="text-[9px] font-bold mt-0.5 opacity-90">{ev.type === "match" ? "試合" : "練習"}</span>
-                </div>
-
-                {/* 予定詳細 */}
-                <div className="min-w-0 flex-1 space-y-0.5">
-                  <h4 className="text-xs font-black text-foreground group-hover:text-primary transition-colors truncate">
-                    {ev.title}
-                  </h4>
-                  <div className="flex items-center gap-2 text-[11px] font-bold text-muted-foreground">
-                    <span className="flex items-center gap-1">
-                      <Clock className="w-3 h-3 text-primary/80" />
-                      <span>{ev.time}</span>
-                    </span>
-                    <span className="flex items-center gap-1 truncate">
-                      <MapPin className="w-3 h-3 text-emerald-500" />
-                      <span className="truncate">{ev.location}</span>
-                    </span>
-                  </div>
-                </div>
-
-                <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-0.5 transition-all shrink-0 mt-2" />
-              </Link>
+          {/* ━━ 2. 曜日ヘッダー ━━ */}
+          <div className="grid grid-cols-7 text-center text-[10px] font-black text-muted-foreground uppercase pb-1 border-b border-border/20">
+            {weekDays.map((day, idx) => (
+              <span key={day} className={cn(idx === 0 && "text-rose-500", idx === 6 && "text-blue-500")}>
+                {day}
+              </span>
             ))}
           </div>
 
-          {/* 出欠確認ボタンへの誘導 */}
-          <Link
-            href="/liff/schedule"
-            className="w-full py-2.5 rounded-2xl bg-muted/60 hover:bg-muted text-foreground text-xs font-black flex items-center justify-center gap-1.5 transition-all border border-border/60"
-          >
-            <CalendarDays className="w-4 h-4 text-primary" />
-            <span>すべての月間予定 & 出欠状況を確認</span>
-          </Link>
+          {/* ━━ 3. 日付グリッド (42マス) ━━ */}
+          <div className="grid grid-cols-7 gap-1">
+            {calendarDays.map((day, idx) => {
+              const dayStr = formatDateString(day.date);
+              const isSelected = selectedDateStr === dayStr;
+              const isToday = todayStr === dayStr;
+              const hasEvent = getDateEvent(dayStr);
+              
+              const dayOfWeek = day.date.getDay();
+              const isSunday = dayOfWeek === 0;
+              const isSaturday = dayOfWeek === 6;
+
+              return (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => setSelectedDate(day.date)}
+                  className={cn(
+                    "relative aspect-square flex flex-col items-center justify-center rounded-xl transition-all active:scale-95 cursor-pointer border border-transparent select-none p-1",
+                    !day.isCurrentMonth && "text-muted-foreground/25",
+                    day.isCurrentMonth && "hover:bg-muted/60",
+                    day.isCurrentMonth && isSunday && "text-rose-500",
+                    day.isCurrentMonth && isSaturday && "text-blue-500",
+                    isToday && !isSelected && "bg-primary/10 border-primary/30 text-primary font-black",
+                    isSelected && "bg-primary text-primary-foreground hover:bg-primary border-primary font-black shadow-xs"
+                  )}
+                >
+                  <span className="text-xs font-black tabular-nums">
+                    {day.date.getDate()}
+                  </span>
+
+                  {/* 試合・練習有無のインジケータードット */}
+                  {hasEvent && (
+                    <span className="absolute bottom-1 flex h-1 w-1 justify-center">
+                      <span
+                        className={cn(
+                          "h-1 w-1 rounded-full",
+                          isSelected ? "bg-white" : 
+                          hasEvent.type === "match" ? "bg-rose-500" : "bg-primary"
+                        )}
+                      />
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* ━━ 4. 選択日 / 直近の日程リスト ━━ */}
+          <div className="pt-3 border-t border-border/50 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-black text-foreground flex items-center gap-1.5">
+                <CalendarDays className="w-3.5 h-3.5 text-primary" />
+                <span>直近の予定一覧</span>
+              </span>
+              <Link
+                href="/liff/schedule"
+                className="text-[11px] font-black text-primary hover:underline flex items-center gap-0.5"
+              >
+                <span>予定表詳細</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+
+            {/* 直近予定リスト */}
+            <div className="space-y-2">
+              {upcomingEvents.map((ev) => (
+                <Link
+                  key={ev.id}
+                  href="/liff/schedule"
+                  className="flex items-start gap-2.5 p-2.5 rounded-2xl bg-muted/40 hover:bg-muted/70 border border-border/60 transition-all group"
+                >
+                  {/* 日付バッジ */}
+                  <div className={`px-2 py-1 rounded-xl flex flex-col items-center justify-center shrink-0 min-w-[48px] ${
+                    ev.type === "match" 
+                      ? "bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20" 
+                      : "bg-primary/10 text-primary border border-primary/20"
+                  }`}>
+                    <span className="text-[11px] font-black leading-tight">{ev.date}</span>
+                    <span className="text-[9px] font-bold mt-0.5 opacity-90">{ev.type === "match" ? "試合" : "練習"}</span>
+                  </div>
+
+                  {/* 予定詳細 */}
+                  <div className="min-w-0 flex-1 space-y-0.5">
+                    <h4 className="text-xs font-black text-foreground group-hover:text-primary transition-colors truncate">
+                      {ev.title}
+                    </h4>
+                    <div className="flex items-center gap-2 text-[10.5px] font-bold text-muted-foreground">
+                      <span className="flex items-center gap-1">
+                        <Clock className="w-3 h-3 text-primary/80" />
+                        <span>{ev.time}</span>
+                      </span>
+                      <span className="flex items-center gap-1 truncate">
+                        <MapPin className="w-3 h-3 text-emerald-500" />
+                        <span className="truncate">{ev.location}</span>
+                      </span>
+                    </div>
+                  </div>
+
+                  <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-0.5 transition-all shrink-0 mt-1.5" />
+                </Link>
+              ))}
+            </div>
+          </div>
         </div>
       )}
 
