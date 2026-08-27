@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { LiffHeader } from "@/components/liff/LiffHeader";
-import { HubHeroCard } from "@/components/liff/HubHeroCard";
+import { HubHeroSection } from "@/components/liff/HubHeroSection";
 import { HubQuickNav } from "@/components/liff/HubQuickNav";
 import { MatchScoreCard, type MatchCardData } from "@/components/liff/MatchScoreCard";
 import { extractYouTubeVideoId } from "@/lib/youtube";
@@ -134,11 +134,12 @@ export default function LiffHubPage() {
             </div>
           </div>
 
-          {/* 🌟 ヒーローセクション：次回予定 & ワンタップ出欠 */}
+          {/* 🌟 ヒーローセクション：タブ切り替え（次回予定 / カレンダー / 試合速報） */}
           <section>
-            <HubHeroCard
+            <HubHeroSection
               teamName={teamName}
               nextEvent={nextEvent}
+              latestMatch={matches[0] || null}
             />
           </section>
         </div>
