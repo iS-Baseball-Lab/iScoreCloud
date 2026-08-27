@@ -16,7 +16,7 @@ interface ScheduleEvent {
   eventType: "match" | "practice" | "meeting" | "camp";
   dutyGroup?: string;
   needsLunch?: boolean;
-  myStatus: "present" | "absent" | "pending";
+  myStatus: "present" | "absent" | "pending" | "late" | "partial";
   attendCount: { present: number; absent: number; pending: number };
 }
 
@@ -49,10 +49,10 @@ export default function LiffSchedulePage() {
     loadSchedule();
   }, [loadSchedule]);
 
-  const handleStatusChange = async (eventId: string, status: "present" | "absent" | "pending") => {
+  const handleStatusChange = async (eventId: string, status: "present" | "absent" | "pending" | "late" | "partial") => {
     // 楽観的更新
     setEvents((prev) =>
-      prev.map((ev) => (ev.id === eventId ? { ...ev, myStatus: status } : ev))
+      prev.map((ev) => (ev.id === eventId ? { ...ev, myStatus: status as any } : ev))
     );
 
     try {
@@ -237,6 +237,7 @@ export default function LiffSchedulePage() {
               </div>
 
               {/* 出欠回答ボタングループ */}
+              {/* 出欠回答セクション (○, △, ×, ？) */}
               <div className="pt-1 space-y-1.5">
                 <div className="flex items-center justify-between text-[11px] font-black text-muted-foreground px-1">
                   <span>出欠回答</span>
@@ -244,57 +245,78 @@ export default function LiffSchedulePage() {
                     className={
                       ev.myStatus === "present"
                         ? "text-emerald-600 font-black"
+                        : ev.myStatus === "late" || ev.myStatus === "partial"
+                        ? "text-amber-600 font-black"
                         : ev.myStatus === "absent"
                         ? "text-rose-600 font-black"
-                        : "text-amber-600 font-black"
+                        : "text-muted-foreground font-black"
                     }
                   >
                     {ev.myStatus === "present"
-                      ? "● 出席"
+                      ? "○ 出席"
+                      : ev.myStatus === "late" || ev.myStatus === "partial"
+                      ? "△ 調整・遅刻"
                       : ev.myStatus === "absent"
-                      ? "● 欠席"
-                      : "○ 未回答"}
+                      ? "× 欠席"
+                      : "？ 未回答"}
                   </span>
                 </div>
 
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-4 gap-1.5">
+                  {/* ○ 出席 */}
                   <button
                     type="button"
                     onClick={() => handleStatusChange(ev.id, "present")}
-                    className={`flex items-center justify-center gap-1 py-2 rounded-xl text-xs font-black transition-all ${
+                    className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black transition-all active:scale-95 ${
                       ev.myStatus === "present"
                         ? "bg-emerald-600 text-white shadow-xs"
                         : "bg-muted/60 text-muted-foreground hover:bg-muted"
                     }`}
                   >
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>出席</span>
+                    <span className="text-sm leading-none mb-0.5">○</span>
+                    <span className="text-[10px]">出席</span>
                   </button>
 
+                  {/* △ 調整 / 遅刻 */}
+                  <button
+                    type="button"
+                    onClick={() => handleStatusChange(ev.id, "late")}
+                    className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black transition-all active:scale-95 ${
+                      ev.myStatus === "late" || ev.myStatus === "partial"
+                        ? "bg-amber-500 text-white shadow-xs"
+                        : "bg-muted/60 text-muted-foreground hover:bg-muted"
+                    }`}
+                  >
+                    <span className="text-sm leading-none mb-0.5">△</span>
+                    <span className="text-[10px]">調整</span>
+                  </button>
+
+                  {/* × 欠席 */}
                   <button
                     type="button"
                     onClick={() => handleStatusChange(ev.id, "absent")}
-                    className={`flex items-center justify-center gap-1 py-2 rounded-xl text-xs font-black transition-all ${
+                    className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black transition-all active:scale-95 ${
                       ev.myStatus === "absent"
                         ? "bg-rose-600 text-white shadow-xs"
                         : "bg-muted/60 text-muted-foreground hover:bg-muted"
                     }`}
                   >
-                    <XCircle className="w-3.5 h-3.5" />
-                    <span>欠席</span>
+                    <span className="text-sm leading-none mb-0.5">×</span>
+                    <span className="text-[10px]">欠席</span>
                   </button>
 
+                  {/* ？ 未定 */}
                   <button
                     type="button"
                     onClick={() => handleStatusChange(ev.id, "pending")}
-                    className={`flex items-center justify-center gap-1 py-2 rounded-xl text-xs font-black transition-all ${
-                      ev.myStatus === "pending"
-                        ? "bg-amber-500 text-white shadow-xs"
+                    className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black transition-all active:scale-95 ${
+                      ev.myStatus === "pending" || !ev.myStatus
+                        ? "bg-slate-700 text-white dark:bg-slate-300 dark:text-slate-900 shadow-xs"
                         : "bg-muted/60 text-muted-foreground hover:bg-muted"
                     }`}
                   >
-                    <HelpCircle className="w-3.5 h-3.5" />
-                    <span>未定</span>
+                    <span className="text-sm leading-none mb-0.5">？</span>
+                    <span className="text-[10px]">未定</span>
                   </button>
                 </div>
               </div>

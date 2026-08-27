@@ -1278,51 +1278,54 @@ export default function AttendancePage() {
 
             <div className="space-y-4 pt-2">
               
-              {/* 出欠の五択ボタン */}
-              <div className="grid grid-cols-5 gap-1">
+              {/* 出欠の四択ボタン (○, △, ×, ？) */}
+              <div className="grid grid-cols-4 gap-1.5">
                 <button
                   type="button"
                   onClick={() => setInputStatus("present")}
                   className={cn(
-                    "py-2 px-0.5 rounded-xl border transition-all cursor-pointer flex flex-col items-center justify-center min-h-[52px]",
-                    inputStatus === "present" ? "bg-emerald-500/10 border-emerald-500 text-emerald-600 dark:text-emerald-400" : "border-border hover:bg-muted"
-                  )}
-                >
-                  <span className="text-[9px] font-black leading-none">当番参加</span>
-                  <span className="text-sm font-black mt-1">◎</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setInputStatus("partial")}
-                  className={cn(
-                    "py-2 px-0.5 rounded-xl border transition-all cursor-pointer flex flex-col items-center justify-center min-h-[52px]",
-                    inputStatus === "partial" ? "bg-sky-500/10 border-sky-500 text-sky-600 dark:text-sky-400" : "border-border hover:bg-muted"
+                    "py-2 px-1 rounded-xl border transition-all cursor-pointer flex flex-col items-center justify-center min-h-[52px]",
+                    inputStatus === "present" ? "bg-emerald-500/10 border-emerald-500 text-emerald-600 dark:text-emerald-400 font-black shadow-xs" : "border-border hover:bg-muted text-muted-foreground"
                   )}
                 >
                   <span className="text-[9px] font-black leading-none">参加</span>
-                  <span className="text-sm font-black mt-1">○</span>
+                  <span className="text-base font-black mt-0.5">○</span>
                 </button>
+
                 <button
                   type="button"
                   onClick={() => setInputStatus("late")}
                   className={cn(
-                    "py-2 px-0.5 rounded-xl border transition-all cursor-pointer flex flex-col items-center justify-center min-h-[52px]",
-                    inputStatus === "late" ? "bg-amber-500/10 border-amber-500 text-amber-600 dark:text-amber-400" : "border-border hover:bg-muted"
+                    "py-2 px-1 rounded-xl border transition-all cursor-pointer flex flex-col items-center justify-center min-h-[52px]",
+                    inputStatus === "late" || inputStatus === "partial" ? "bg-amber-500/10 border-amber-500 text-amber-600 dark:text-amber-400 font-black shadow-xs" : "border-border hover:bg-muted text-muted-foreground"
                   )}
                 >
-                  <span className="text-[8px] font-bold leading-none whitespace-nowrap">試合なら</span>
-                  <span className="text-sm font-black mt-1">△</span>
+                  <span className="text-[9px] font-black leading-none">調整/遅刻</span>
+                  <span className="text-base font-black mt-0.5">△</span>
                 </button>
+
                 <button
                   type="button"
                   onClick={() => setInputStatus("absent")}
                   className={cn(
-                    "py-2 px-0.5 rounded-xl border transition-all cursor-pointer flex flex-col items-center justify-center min-h-[52px]",
-                    inputStatus === "absent" ? "bg-rose-500/10 border-rose-500 text-rose-600 dark:text-rose-400" : "border-border hover:bg-muted"
+                    "py-2 px-1 rounded-xl border transition-all cursor-pointer flex flex-col items-center justify-center min-h-[52px]",
+                    inputStatus === "absent" ? "bg-rose-500/10 border-rose-500 text-rose-600 dark:text-rose-400 font-black shadow-xs" : "border-border hover:bg-muted text-muted-foreground"
                   )}
                 >
                   <span className="text-[9px] font-black leading-none">不参加</span>
-                  <span className="text-sm font-black mt-1">×</span>
+                  <span className="text-base font-black mt-0.5">×</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setInputStatus("pending")}
+                  className={cn(
+                    "py-2 px-1 rounded-xl border transition-all cursor-pointer flex flex-col items-center justify-center min-h-[52px]",
+                    inputStatus === "pending" ? "bg-slate-500/10 border-slate-500 text-slate-700 dark:text-slate-300 font-black shadow-xs" : "border-border hover:bg-muted text-muted-foreground"
+                  )}
+                >
+                  <span className="text-[9px] font-black leading-none">未定</span>
+                  <span className="text-base font-black mt-0.5">？</span>
                 </button>
               </div>
 
@@ -1435,67 +1438,58 @@ export default function AttendancePage() {
 
                     {/* 出欠の選択ボタン群 & 車出し（大人用） & コメント */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {/* 出欠の五択ボタン */}
-                      <div className="grid grid-cols-5 gap-1">
+                      {/* 出欠の四択ボタン (○, △, ×, ？) */}
+                      <div className="grid grid-cols-4 gap-1">
                         <button
                           type="button"
                           onClick={() => updateBatchItem(item.eventId, "status", "present")}
                           className={cn(
                             "py-1.5 px-0.5 rounded-lg border transition-all cursor-pointer flex flex-col items-center justify-center min-h-[44px]",
-                            item.status === "present" ? "bg-emerald-500/10 border-emerald-500 text-emerald-600 dark:text-emerald-400" : "border-border hover:bg-muted"
-                          )}
-                          title="当番参加"
-                        >
-                          <span className="text-[8px] font-black leading-none">当番</span>
-                          <span className="text-xs font-black mt-0.5">◎</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => updateBatchItem(item.eventId, "status", "partial")}
-                          className={cn(
-                            "py-1.5 px-0.5 rounded-lg border transition-all cursor-pointer flex flex-col items-center justify-center min-h-[44px]",
-                            item.status === "partial" ? "bg-sky-500/10 border-sky-500 text-sky-600 dark:text-sky-400" : "border-border hover:bg-muted"
+                            item.status === "present" ? "bg-emerald-500/10 border-emerald-500 text-emerald-600 dark:text-emerald-400 font-black shadow-xs" : "border-border hover:bg-muted text-muted-foreground"
                           )}
                           title="参加"
                         >
                           <span className="text-[8px] font-black leading-none">参加</span>
                           <span className="text-xs font-black mt-0.5">○</span>
                         </button>
+
                         <button
                           type="button"
                           onClick={() => updateBatchItem(item.eventId, "status", "late")}
                           className={cn(
                             "py-1.5 px-0.5 rounded-lg border transition-all cursor-pointer flex flex-col items-center justify-center min-h-[44px]",
-                            item.status === "late" ? "bg-amber-500/10 border-amber-500 text-amber-600 dark:text-amber-400" : "border-border hover:bg-muted"
+                            item.status === "late" || item.status === "partial" ? "bg-amber-500/10 border-amber-500 text-amber-600 dark:text-amber-400 font-black shadow-xs" : "border-border hover:bg-muted text-muted-foreground"
                           )}
-                          title="遅刻・試合なら"
+                          title="調整・遅刻"
                         >
-                          <span className="text-[8px] font-black leading-none">試合なら</span>
+                          <span className="text-[8px] font-black leading-none">調整/遅刻</span>
                           <span className="text-xs font-black mt-0.5">△</span>
                         </button>
+
                         <button
                           type="button"
                           onClick={() => updateBatchItem(item.eventId, "status", "absent")}
                           className={cn(
                             "py-1.5 px-0.5 rounded-lg border transition-all cursor-pointer flex flex-col items-center justify-center min-h-[44px]",
-                            item.status === "absent" ? "bg-rose-500/10 border-rose-500 text-rose-600 dark:text-rose-400" : "border-border hover:bg-muted"
+                            item.status === "absent" ? "bg-rose-500/10 border-rose-500 text-rose-600 dark:text-rose-400 font-black shadow-xs" : "border-border hover:bg-muted text-muted-foreground"
                           )}
                           title="不参加"
                         >
                           <span className="text-[8px] font-black leading-none">不参加</span>
                           <span className="text-xs font-black mt-0.5">×</span>
                         </button>
+
                         <button
                           type="button"
-                          onClick={() => updateBatchItem(item.eventId, "status", "rainout")}
+                          onClick={() => updateBatchItem(item.eventId, "status", "pending")}
                           className={cn(
                             "py-1.5 px-0.5 rounded-lg border transition-all cursor-pointer flex flex-col items-center justify-center min-h-[44px]",
-                            item.status === "rainout" ? "bg-blue-500/10 border-blue-500 text-blue-600 dark:text-blue-400" : "border-border hover:bg-muted"
+                            item.status === "pending" || !item.status ? "bg-slate-500/10 border-slate-500 text-slate-700 dark:text-slate-300 font-black shadow-xs" : "border-border hover:bg-muted text-muted-foreground"
                           )}
-                          title="雨天中止"
+                          title="未定"
                         >
-                          <span className="text-[8px] font-black leading-none">中止</span>
-                          <span className="text-xs font-black mt-0.5">☔</span>
+                          <span className="text-[8px] font-black leading-none">未定</span>
+                          <span className="text-xs font-black mt-0.5">？</span>
                         </button>
                       </div>
 
