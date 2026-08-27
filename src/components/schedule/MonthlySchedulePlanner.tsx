@@ -619,9 +619,9 @@ export function MonthlySchedulePlanner({
                 className="p-4 sm:p-5 rounded-3xl bg-card border-2 border-primary/20 shadow-sm space-y-4 transition-all"
               >
                 {/* 1. カードヘッダー：日付 & スロット切替 & 削除 */}
-                <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-primary/15">
-                  <div className="flex items-center gap-3">
-                    <span className="px-3 py-1.5 rounded-2xl bg-primary text-primary-foreground text-sm font-black tracking-tight">
+                <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-primary/15">
+                  <div className="flex items-center gap-3 flex-1 min-w-[200px]">
+                    <span className="px-3 py-1.5 rounded-2xl bg-primary text-primary-foreground text-sm font-black tracking-tight shrink-0">
                       {item.dayLabel}
                     </span>
                     <input
@@ -629,11 +629,11 @@ export function MonthlySchedulePlanner({
                       value={item.title}
                       onChange={(e) => handleUpdateItem(item.id, { title: e.target.value })}
                       placeholder="予定タイトル（例: 秋季大会 2回戦）"
-                      className="text-sm font-black bg-transparent border-b border-border/60 hover:border-primary focus:border-primary focus:outline-hidden px-1 py-0.5 text-foreground max-w-[200px] sm:max-w-xs"
+                      className="text-sm font-black bg-transparent border-b border-border/60 hover:border-primary focus:border-primary focus:outline-hidden px-1 py-0.5 text-foreground w-full max-w-[240px]"
                     />
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2.5 ml-auto">
                     {/* 時間帯スロット選択（終日 / 午前のみ / 午後のみ） */}
                     <div className="flex items-center p-1 bg-muted/60 rounded-xl border border-border/60 text-xs font-bold">
                       <button
@@ -668,11 +668,11 @@ export function MonthlySchedulePlanner({
                       </button>
                     </div>
 
-                    {/* 活動日削除ボタン */}
+                    {/* 活動日削除ボタン（右寄せ） */}
                     <button
                       type="button"
                       onClick={() => handleDeleteItem(item.id)}
-                      className="p-2 rounded-xl text-rose-500 hover:bg-rose-500/10 active:scale-95 transition-all"
+                      className="p-2 rounded-xl text-rose-500 hover:bg-rose-500/10 active:scale-95 transition-all border border-rose-500/20 hover:border-rose-500/40"
                       title="この活動日を解除"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -801,21 +801,21 @@ export function MonthlySchedulePlanner({
                   )}
                 </div>
 
-                {/* 3. 当番（1班〜4班）・お弁当・備考 */}
+                {/* 3. 当番（1班〜4班 均等割り）・お弁当・備考 */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1 text-xs">
-                  {/* 当番選択 */}
+                  {/* 当番選択（4等分均等割り） */}
                   <div>
                     <label className="text-[10px] font-bold text-muted-foreground block mb-1">
                       当番
                     </label>
-                    <div className="flex flex-wrap gap-1.5">
+                    <div className="grid grid-cols-4 gap-1.5">
                       {DUTY_GROUPS.map(dg => (
                         <button
                           key={dg}
                           type="button"
                           onClick={() => handleUpdateItem(item.id, { dutyGroup: dg })}
                           className={cn(
-                            "px-3 py-1.5 rounded-xl text-xs font-bold border transition-all active:scale-95",
+                            "py-1.5 px-1 text-center rounded-xl text-xs font-bold border transition-all active:scale-95",
                             item.dutyGroup === dg
                               ? "bg-primary text-primary-foreground border-primary font-black shadow-xs"
                               : "bg-muted/40 border-border/60 text-muted-foreground hover:text-foreground"
