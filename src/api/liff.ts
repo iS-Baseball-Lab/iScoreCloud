@@ -764,6 +764,29 @@ app.get("/my-family", async (c) => {
       }
     }
 
+    // 6. 保護者本人の既存出欠一覧を取得
+    const parentAttMap: Record<string, "present" | "absent" | "pending" | "late"> = {};
+    if (member?.id || userId) {
+      const parentConditions = [];
+      if (member?.id) parentConditions.push(eq(attendances.memberId, member.id));
+      if (userId) parentConditions.push(eq(attendances.userId, userId));
+
+      const parentAttList = await db
+        .select({
+          eventId: attendances.eventId,
+          status: attendances.status,
+        })
+        .from(attendances)
+        .where(or(...parentConditions))
+        .all();
+
+      for (const att of parentAttList) {
+        if (att.eventId && att.status) {
+          parentAttMap[att.eventId] = (att.status as any) || "pending";
+        }
+      }
+    }
+
     return c.json({
       success: true,
       isParent: true,
@@ -773,6 +796,7 @@ app.get("/my-family", async (c) => {
       parentOptions,
       allFamilyRelations: allRelations,
       attendances: childAttMap,
+      parentAttendances: parentAttMap,
     });
   } catch (error: any) {
     console.error("Failed to load my-family:", error);
@@ -780,8 +804,10 @@ app.get("/my-family", async (c) => {
       success: false,
       isParent: true,
       children: [],
+      parentOptions: [],
       allFamilyRelations: [],
       attendances: {},
+      parentAttendances: {},
     });
   }
 });
@@ -836,24 +862,26 @@ app.post("/attendance", async (c) => {
     }
 
     // 👨 保護者・メンバー本人の出欠の場合
-    let whereCondition = eq(attendances.eventId, eventId);
-    if (memberId) {
-      whereCondition = and(eq(attendances.eventId, eventId), eq(attendances.memberId, memberId)) as any;
-    } else if (userId) {
-      whereCondition = and(eq(attendances.eventId, eventId), eq(attendances.userId, userId)) as any;
-    }
+    const conditions = [];
+    if (memberId) conditions.push(eq(attendances.memberId, memberId));
+    if (userId) conditions.push(eq(attendances.userId, userId));
 
-    const existing = await db
-      .select()
-      .from(attendances)
-      .where(whereCondition)
-      .get();
+    let existing = null;
+    if (conditions.length > 0) {
+      existing = await db
+        .select()
+        .from(attendances)
+        .where(and(eq(attendances.eventId, eventId), or(...conditions)))
+        .get();
+    }
 
     if (existing) {
       await db
         .update(attendances)
         .set({
           status: status,
+          userId: userId || existing.userId,
+          memberId: memberId || existing.memberId,
           hasCar: hasCar !== undefined ? hasCar : existing.hasCar,
           comment: comment || existing.comment,
           updatedAt: new Date(),

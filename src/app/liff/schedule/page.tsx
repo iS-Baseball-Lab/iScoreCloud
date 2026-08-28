@@ -66,6 +66,14 @@ export default function LiffSchedulePage() {
           if (json.attendances) {
             setChildAttendanceMap(json.attendances);
           }
+
+          // 自分の出欠を復元
+          if (json.parentAttendances && Object.keys(json.parentAttendances).length > 0) {
+            setEvents(prev => prev.map(ev => ({
+              ...ev,
+              myStatus: json.parentAttendances[ev.id] || ev.myStatus
+            })));
+          }
         }
       }
     } catch (err) {
@@ -115,7 +123,7 @@ export default function LiffSchedulePage() {
     try {
       setIsLoading(true);
       const teamId = currentTeam?.id || "demo-team";
-      const userId = profile?.userId || "";
+      const userId = profile?.userId || (typeof window !== "undefined" ? (localStorage.getItem("iscore_user_id") || localStorage.getItem("iscore_userId") || "") : "");
       const res = await fetch(`/api/liff/schedule?teamId=${teamId}&userId=${userId}`);
       if (res.ok) {
         const data = await res.json() as { success: boolean; events?: ScheduleEvent[] };
@@ -141,12 +149,14 @@ export default function LiffSchedulePage() {
     );
 
     try {
+      const uid = profile?.userId || (typeof window !== "undefined" ? (localStorage.getItem("iscore_user_id") || localStorage.getItem("iscore_userId") || "") : "");
       await fetch("/api/liff/attendance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           eventId,
-          userId: profile?.userId,
+          userId: uid,
+          memberId: memberId || undefined,
           status,
         }),
       });

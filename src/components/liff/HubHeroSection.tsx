@@ -64,7 +64,7 @@ export function HubHeroSection({
   const fetchFamilyData = async (targetPid?: string) => {
     try {
       const tid = localStorage.getItem("iscore_selectedTeamId") || "demo-team";
-      const uid = localStorage.getItem("iscore_userId") || "";
+      const uid = localStorage.getItem("iscore_user_id") || localStorage.getItem("iscore_userId") || "";
       const uName = localStorage.getItem("iscore_user_name") || "";
       const pid = targetPid || localStorage.getItem("iscore_selected_parent_id") || "";
 
@@ -96,6 +96,11 @@ export function HubHeroSection({
           if (json.attendances) {
             setChildAttendanceMap(json.attendances);
           }
+
+          // 自分の出欠（親の出欠）をDBから復元
+          if (json.parentAttendances && Object.keys(json.parentAttendances).length > 0) {
+            setAttendanceMap(prev => ({ ...prev, ...json.parentAttendances }));
+          }
         }
       }
     } catch (err) {
@@ -108,6 +113,19 @@ export function HubHeroSection({
     fetchFamilyData();
   }, []);
 
+  // eventsListから初期出欠ステータスを読み込む
+  useEffect(() => {
+    if (Array.isArray(eventsList) && eventsList.length > 0) {
+      const initialMap: Record<string, "present" | "absent" | "pending" | "late"> = {};
+      for (const ev of eventsList) {
+        if (ev.id && ev.myStatus) {
+          initialMap[ev.id] = ev.myStatus;
+        }
+      }
+      setAttendanceMap(prev => ({ ...initialMap, ...prev }));
+    }
+  }, [eventsList]);
+
   const handleSelectParent = (pId: string) => {
     if (typeof window !== "undefined") {
       localStorage.setItem("iscore_selected_parent_id", pId);
@@ -119,11 +137,13 @@ export function HubHeroSection({
   const getChildAttendance = (eventId: string, childId: string) => childAttendanceMap[eventId]?.[childId] || "pending";
   const getEventCarStatus = (id: string) => carStatusMap[id] || "need_ride";
 
-  // 保護者本人の出欠変更（DB保存）
+  // 保護者本人の出欠変更（DB保存 & 即時反映）
   const setEventAttendance = async (id: string, status: "present" | "absent" | "pending" | "late") => {
     setAttendanceMap(prev => ({ ...prev, [id]: status }));
     try {
-      const uid = typeof window !== "undefined" ? localStorage.getItem("iscore_userId") || "" : "";
+      const uid = typeof window !== "undefined" 
+        ? (localStorage.getItem("iscore_user_id") || localStorage.getItem("iscore_userId") || "") 
+        : "";
       await fetch("/api/liff/attendance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
