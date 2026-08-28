@@ -235,6 +235,7 @@ app.post("/join", async (c) => {
 app.get("/hub", async (c) => {
   const db = drizzle(c.env.DB);
   const requestedTeamId = c.req.query("teamId");
+  const userId = c.req.query("userId");
 
   try {
     // 全チーム一覧の取得 (チームスイッチャー用)
@@ -307,6 +308,25 @@ app.get("/hub", async (c) => {
       .orderBy(asc(events.startAt))
       .all();
 
+    // ログインユーザーの出欠リストを取得
+    let userAttendances: Record<string, string> = {};
+    if (userId) {
+      const atts = await db
+        .select({
+          eventId: attendances.eventId,
+          status: attendances.status,
+        })
+        .from(attendances)
+        .where(eq(attendances.userId, userId))
+        .all();
+      
+      for (const a of atts) {
+        if (a.eventId && a.status) {
+          userAttendances[a.eventId] = a.status;
+        }
+      }
+    }
+
     const formattedEventsList = allEventsList.map((ev) => {
       const d = new Date(ev.startAt);
       const y = d.getFullYear();
@@ -330,6 +350,7 @@ app.get("/hub", async (c) => {
         carInfo: "配車調整中",
         needsLunch: !!ev.pmStartAt,
         memo: ev.description || "",
+        myStatus: (userAttendances[ev.id] as any) || "pending",
       };
     });
 
@@ -710,6 +731,23 @@ app.get("/my-family", async (c) => {
             uniformNumber: rel.uniformNumber ? (rel.uniformNumber.startsWith("#") ? rel.uniformNumber : `#${rel.uniformNumber}`) : undefined,
             parentId: member.id,
             parentName: member.name,
+          });
+        }
+      }
+    } else if (allRelations.length > 0) {
+      // ユーザーが未特定の場合、最初の保護者家庭のお子様のみを1人分安全に表示
+      const firstParentId = allRelations[0].parentId;
+      const myRelations = allRelations.filter(r => r.parentId === firstParentId && !!r.childId);
+      const seen = new Set<string>();
+      for (const rel of myRelations) {
+        if (!seen.has(rel.childId)) {
+          seen.add(rel.childId);
+          childrenList.push({
+            id: rel.childId,
+            name: rel.childName || "選手",
+            uniformNumber: rel.uniformNumber ? (rel.uniformNumber.startsWith("#") ? rel.uniformNumber : `#${rel.uniformNumber}`) : undefined,
+            parentId: rel.parentId || undefined,
+            parentName: rel.parentName || undefined,
           });
         }
       }

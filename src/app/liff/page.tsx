@@ -53,8 +53,9 @@ export default function LiffHubPage() {
 
     try {
       setIsLoading(true);
-      const targetTeamId = teamId || currentTeam?.id;
-      const endpoint = targetTeamId ? `/api/liff/hub?teamId=${targetTeamId}` : `/api/liff/hub`;
+      const targetTeamId = teamId || currentTeam?.id || "demo-team";
+      const uid = profile?.userId || (typeof window !== "undefined" ? (localStorage.getItem("iscore_user_id") || localStorage.getItem("iscore_userId") || "") : "");
+      const endpoint = `/api/liff/hub?teamId=${targetTeamId}&userId=${uid}`;
       const res = await fetch(endpoint);
 
       if (res.ok) {
