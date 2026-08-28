@@ -461,33 +461,89 @@ export function HubHeroSection({
   const calendarDays = getCalendarDays();
   const weekDays = ["日", "月", "火", "水", "木", "金", "土"];
 
-  // チームの直近予定リスト（カレンダー下部に表示）
-  const upcomingEvents = eventsList.length > 0 ? eventsList.slice(0, 5) : [
-    {
-      id: "ev-1",
-      date: "8/30(日)",
-      dateStr: "2026-08-30",
-      type: "match",
-      title: "秋季大会 2回戦 vs レッドソックス",
-      time: "08:00〜12:00",
-      location: "市民第1球場",
-      duty: "1班",
-    },
-    {
-      id: "ev-2",
-      date: "9/05(土)",
-      dateStr: "2026-09-05",
-      type: "practice",
-      title: "午後通常練習 & 守備連携強化",
-      time: "12:00〜18:00",
-      location: "大師河原第3グラウンド",
-      duty: "2班",
-    },
-  ];
+  // チームの全予定リスト（午前・午後データ含む）
+  const allParsedEvents = useMemo(() => {
+    if (eventsList && eventsList.length > 0) {
+      return eventsList.map(ev => {
+        const d = new Date(ev.startAt || ev.dateStr);
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+        const dateStr = ev.dateStr || `${y}-${m}-${day}`;
+        const wStr = ["日", "月", "火", "水", "木", "金", "土"][d.getDay()];
+        const dateLabel = `${d.getMonth() + 1}/${d.getDate()}(${wStr})`;
+
+        const hasPm = ev.hasPm !== undefined ? ev.hasPm : (!!ev.pmStartAt || !!ev.pmLocation || !!ev.pmTime);
+        const isMatch = ev.eventType === "match" || ev.amType === "match" || ev.pmType === "match";
+
+        return {
+          id: ev.id,
+          title: ev.title || (isMatch ? "公式戦・練習試合" : "通常練習"),
+          date: dateLabel,
+          dateStr,
+          type: isMatch ? "match" : "practice",
+          amTime: ev.amTime || "08:00〜12:00",
+          amLocation: ev.amLocation || ev.location || "グラウンド",
+          pmTime: hasPm ? (ev.pmTime || "13:00〜17:00") : "",
+          pmLocation: hasPm ? (ev.pmLocation || ev.amLocation || ev.location || "") : "",
+          hasPm,
+          duty: ev.dutyGroup || "1班",
+        };
+      });
+    }
+
+    return [
+      {
+        id: "demo-today",
+        title: "秋季大会 2回戦 vs レッドソックス",
+        date: "8/29(土)",
+        dateStr: "2026-08-29",
+        type: "match",
+        amTime: "08:00〜12:00",
+        amLocation: "市民第1球場",
+        pmTime: "",
+        pmLocation: "",
+        hasPm: false,
+        duty: "1班",
+      },
+      {
+        id: "demo-next",
+        title: "全日通常練習 & 守備連携強化",
+        date: "8/30(日)",
+        dateStr: "2026-08-30",
+        type: "practice",
+        amTime: "08:00〜12:00",
+        amLocation: "大師河原第3G",
+        pmTime: "13:00〜17:00",
+        pmLocation: "大師河原第3G",
+        hasPm: true,
+        duty: "2班",
+      },
+      {
+        id: "demo-future",
+        title: "練習試合 vs ブルースターズ",
+        date: "9/5(土)",
+        dateStr: "2026-09-05",
+        type: "match",
+        amTime: "09:00〜13:00",
+        amLocation: "等々力球場",
+        pmTime: "14:00〜17:00",
+        pmLocation: "等々力第2G",
+        hasPm: true,
+        duty: "3班",
+      },
+    ];
+  }, [eventsList]);
+
+  // 当日予定と今後の予定の切り分け
+  const todayCalendarEvents = allParsedEvents.filter(e => e.dateStr === todayStr);
+  const futureCalendarEvents = allParsedEvents.filter(e => e.dateStr !== todayStr && e.dateStr >= todayStr).slice(0, 5);
+  // もし未来の予定がなければ直近の全件
+  const upcomingEvents = futureCalendarEvents.length > 0 ? futureCalendarEvents : allParsedEvents.slice(0, 5);
 
   // 日付ごとのイベント状態
   const getDateEvent = (dStr: string) => {
-    return upcomingEvents.find(e => (e.dateStr === dStr || e.startAt?.startsWith(dStr)));
+    return allParsedEvents.find(e => e.dateStr === dStr);
   };
 
   // 直近の試合速報データ
@@ -997,26 +1053,26 @@ export function HubHeroSection({
         </div>
       )}
 
-      {/* 🅱️ 【チームカレンダー】カード（本家ダッシュボード同等の月間カレンダー ＋ 直近の日程一覧） */}
+      {/* 🅱️ 【チームカレンダー】カード（月間カレンダー ＋ 当日＆直近の日程一覧） */}
       {activeTab === "calendar" && (
-        <div className="relative overflow-hidden rounded-3xl bg-card border-2 border-primary/25 dark:border-primary/30 shadow-md shadow-primary/5 p-4 space-y-4 animate-in fade-in duration-200">
+        <div className="relative overflow-hidden rounded-3xl bg-card border-2 border-primary/25 dark:border-primary/30 shadow-md shadow-primary/5 p-3.5 space-y-3 animate-in fade-in duration-200">
           
           {/* ━━ 1. カレンダーヘッダー（年月切り替え & 今日ボタン） ━━ */}
           <div className="flex items-center justify-between pb-1 border-b border-primary/15">
             <div className="flex items-center gap-1.5">
-              <span className="w-7 h-7 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
-                <Calendar className="w-4 h-4" />
+              <span className="w-6 h-6 rounded-lg bg-primary/10 text-primary flex items-center justify-center font-black">
+                <Calendar className="w-3.5 h-3.5" />
               </span>
-              <span className="text-sm font-black text-foreground">
+              <span className="text-xs font-black text-foreground">
                 {currentYear}年 {currentMonth + 1}月
               </span>
             </div>
 
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-0.5">
               <button
                 type="button"
                 onClick={handlePrevMonth}
-                className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground active:scale-95 transition-all"
+                className="p-1 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground active:scale-95 transition-all"
                 title="前月"
               >
                 <ChevronLeft className="w-4 h-4" />
@@ -1024,7 +1080,7 @@ export function HubHeroSection({
               <button
                 type="button"
                 onClick={handleNextMonth}
-                className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground active:scale-95 transition-all"
+                className="p-1 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground active:scale-95 transition-all"
                 title="翌月"
               >
                 <ChevronRight className="w-4 h-4" />
@@ -1032,7 +1088,7 @@ export function HubHeroSection({
               <button
                 type="button"
                 onClick={handleToday}
-                className="px-2.5 py-1 text-[10px] font-black rounded-lg bg-muted hover:bg-muted/80 text-foreground border border-border/60 active:scale-95 transition-all ml-1"
+                className="px-2 py-0.5 text-[10px] font-black rounded-lg bg-muted hover:bg-muted/80 text-foreground border border-border/60 active:scale-95 transition-all ml-1"
               >
                 今日
               </button>
@@ -1040,7 +1096,7 @@ export function HubHeroSection({
           </div>
 
           {/* ━━ 2. 曜日ヘッダー ━━ */}
-          <div className="grid grid-cols-7 text-center text-[10px] font-black text-muted-foreground uppercase pb-1 border-b border-primary/10">
+          <div className="grid grid-cols-7 text-center text-[10px] font-black text-muted-foreground uppercase pb-0.5 border-b border-primary/10">
             {weekDays.map((day, idx) => (
               <span key={day} className={cn(idx === 0 && "text-rose-500", idx === 6 && "text-blue-500")}>
                 {day}
@@ -1048,8 +1104,8 @@ export function HubHeroSection({
             ))}
           </div>
 
-          {/* ━━ 3. 日付グリッド (42マス) ━━ */}
-          <div className="grid grid-cols-7 gap-1">
+          {/* ━━ 3. 日付グリッド (42マス・高さをスリム化) ━━ */}
+          <div className="grid grid-cols-7 gap-0.5">
             {calendarDays.map((day, idx) => {
               const dayStr = formatDateString(day.date);
               const isSelected = selectedDateStr === dayStr;
@@ -1066,7 +1122,7 @@ export function HubHeroSection({
                   type="button"
                   onClick={() => setSelectedDate(day.date)}
                   className={cn(
-                    "relative aspect-square flex flex-col items-center justify-center rounded-xl transition-all active:scale-95 cursor-pointer border border-transparent select-none p-1",
+                    "relative h-7 sm:h-8 flex flex-col items-center justify-center rounded-lg transition-all active:scale-95 cursor-pointer border border-transparent select-none py-0.5",
                     !day.isCurrentMonth && "text-muted-foreground/25",
                     day.isCurrentMonth && "hover:bg-muted/60",
                     day.isCurrentMonth && isSunday && "text-rose-500",
@@ -1075,13 +1131,13 @@ export function HubHeroSection({
                     isSelected && "bg-primary text-primary-foreground hover:bg-primary border-primary font-black shadow-xs"
                   )}
                 >
-                  <span className="text-xs font-black tabular-nums">
+                  <span className="text-[11px] font-black tabular-nums leading-none">
                     {day.date.getDate()}
                   </span>
 
                   {/* 試合・練習有無のインジケータードット */}
                   {hasEvent && (
-                    <span className="absolute bottom-1 flex h-1 w-1 justify-center">
+                    <span className="absolute bottom-0.5 flex h-1 w-1 justify-center">
                       <span
                         className={cn(
                           "h-1 w-1 rounded-full",
@@ -1096,60 +1152,169 @@ export function HubHeroSection({
             })}
           </div>
 
-          {/* ━━ 4. 選択日 / 直近の日程リスト ━━ */}
-          <div className="pt-3 border-t border-primary/15 space-y-2.5">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-black text-foreground flex items-center gap-1.5">
-                <CalendarDays className="w-3.5 h-3.5 text-primary" />
-                <span>直近の予定一覧</span>
-              </span>
-              <Link
-                href="/liff/schedule"
-                className="text-[11px] font-black text-primary hover:underline flex items-center gap-0.5"
-              >
-                <span>予定表詳細</span>
-                <ChevronRight className="w-3.5 h-3.5" />
-              </Link>
-            </div>
+          {/* ━━ 4. 予定一覧（当日の予定 ＆ 直近の予定切り分け） ━━ */}
+          <div className="pt-2.5 border-t border-primary/15 space-y-3">
+            
+            {/* 🔴 【当日の活動予定】（今日予定がある場合に大きく切り分け表示） */}
+            {todayCalendarEvents.length > 0 && (
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
+                  <span className="text-xs font-black text-rose-600 dark:text-rose-400 flex items-center gap-1">
+                    <span>本日（{todayCalendarEvents[0].date}）の活動予定</span>
+                  </span>
+                </div>
 
-            {/* 直近予定リスト */}
-            <div className="space-y-2">
-              {upcomingEvents.map((ev) => (
+                <div className="space-y-1.5">
+                  {todayCalendarEvents.map((ev) => (
+                    <Link
+                      key={ev.id}
+                      href="/liff/schedule"
+                      className="block p-2.5 rounded-2xl bg-rose-500/5 dark:bg-rose-500/10 border-2 border-rose-500/30 hover:border-rose-500/50 transition-all group"
+                    >
+                      <div className="flex items-start gap-2.5">
+                        {/* 均一幅（58px固定）の日付・種別バッジ */}
+                        <div className="w-[58px] min-w-[58px] max-w-[58px] shrink-0 px-1 py-1 rounded-xl bg-rose-500 text-white flex flex-col items-center justify-center shadow-xs">
+                          <span className="text-[11px] font-black leading-tight">本日</span>
+                          <span className="text-[9px] font-bold mt-0.5 opacity-90">
+                            {ev.type === "match" ? "⚾ 試合" : "🏃 練習"}
+                          </span>
+                        </div>
+
+                        {/* タイトル & 午前午後（時間・場所） */}
+                        <div className="min-w-0 flex-1 space-y-1.5">
+                          <h4 className="text-xs font-black text-foreground group-hover:text-rose-600 transition-colors truncate">
+                            {ev.title}
+                          </h4>
+
+                          {/* 午前・午後の時間と場所 */}
+                          <div className="space-y-1 text-[10.5px]">
+                            {/* 午前 */}
+                            <div className="flex items-center gap-2 font-bold text-foreground/90">
+                              <span className="px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-700 dark:text-amber-300 text-[9.5px] font-black shrink-0">
+                                ☀️ 午前
+                              </span>
+                              <span className="flex items-center gap-1 shrink-0 text-muted-foreground">
+                                <Clock className="w-3 h-3 text-amber-500" />
+                                <span>{ev.amTime}</span>
+                              </span>
+                              <span className="flex items-center gap-1 truncate text-foreground">
+                                <MapPin className="w-3 h-3 text-emerald-500 shrink-0" />
+                                <span className="truncate">{ev.amLocation}</span>
+                              </span>
+                            </div>
+
+                            {/* 午後（設定がある場合） */}
+                            {ev.hasPm && (
+                              <div className="flex items-center gap-2 font-bold text-foreground/90">
+                                <span className="px-1.5 py-0.2 rounded bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 text-[9.5px] font-black shrink-0">
+                                  🌙 午後
+                                </span>
+                                <span className="flex items-center gap-1 shrink-0 text-muted-foreground">
+                                  <Clock className="w-3 h-3 text-indigo-500" />
+                                  <span>{ev.pmTime || "13:00〜17:00"}</span>
+                                </span>
+                                <span className="flex items-center gap-1 truncate text-foreground">
+                                  <MapPin className="w-3 h-3 text-emerald-500 shrink-0" />
+                                  <span className="truncate">{ev.pmLocation || ev.amLocation}</span>
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        <ChevronRight className="w-4 h-4 text-rose-400 group-hover:translate-x-0.5 transition-all shrink-0 mt-2" />
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 📅 【直近の今後の予定】 */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black text-foreground flex items-center gap-1.5">
+                  <CalendarDays className="w-3.5 h-3.5 text-primary" />
+                  <span>{todayCalendarEvents.length > 0 ? "今後の活動予定" : "直近の活動予定"}</span>
+                </span>
                 <Link
-                  key={ev.id}
                   href="/liff/schedule"
-                  className="flex items-start gap-2.5 p-2.5 rounded-2xl bg-muted/40 hover:bg-muted/70 border border-primary/15 transition-all group"
+                  className="text-[11px] font-black text-primary hover:underline flex items-center gap-0.5"
                 >
-                  {/* 日付バッジ */}
-                  <div className={`px-2 py-1 rounded-xl flex flex-col items-center justify-center shrink-0 min-w-[48px] ${
-                    ev.type === "match" 
-                      ? "bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20" 
-                      : "bg-primary/10 text-primary border border-primary/20"
-                  }`}>
-                    <span className="text-[11px] font-black leading-tight">{ev.date}</span>
-                    <span className="text-[9px] font-bold mt-0.5 opacity-90">{ev.type === "match" ? "試合" : "練習"}</span>
-                  </div>
-
-                  {/* 予定詳細 */}
-                  <div className="min-w-0 flex-1 space-y-0.5">
-                    <h4 className="text-xs font-black text-foreground group-hover:text-primary transition-colors truncate">
-                      {ev.title}
-                    </h4>
-                    <div className="flex items-center gap-2 text-[10.5px] font-bold text-muted-foreground">
-                      <span className="flex items-center gap-1">
-                        <Clock className="w-3 h-3 text-primary/80" />
-                        <span>{ev.time}</span>
-                      </span>
-                      <span className="flex items-center gap-1 truncate">
-                        <MapPin className="w-3 h-3 text-emerald-500" />
-                        <span className="truncate">{ev.location}</span>
-                      </span>
-                    </div>
-                  </div>
-
-                  <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-0.5 transition-all shrink-0 mt-1.5" />
+                  <span>全予定カレンダー</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
                 </Link>
-              ))}
+              </div>
+
+              {/* 直近予定リスト */}
+              <div className="space-y-2">
+                {upcomingEvents.map((ev) => (
+                  <Link
+                    key={ev.id}
+                    href="/liff/schedule"
+                    className="block p-2.5 rounded-2xl bg-muted/40 hover:bg-muted/70 border border-primary/15 transition-all group"
+                  >
+                    <div className="flex items-start gap-2.5">
+                      {/* 均一幅（58px固定）の日付・種別バッジ */}
+                      <div className={`w-[58px] min-w-[58px] max-w-[58px] shrink-0 px-1 py-1 rounded-xl flex flex-col items-center justify-center ${
+                        ev.type === "match" 
+                          ? "bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/25" 
+                          : "bg-primary/10 text-primary border border-primary/25"
+                      }`}>
+                        <span className="text-[11px] font-black leading-tight tracking-tight">{ev.date}</span>
+                        <span className="text-[9px] font-bold mt-0.5 opacity-90">
+                          {ev.type === "match" ? "⚾ 試合" : "🏃 練習"}
+                        </span>
+                      </div>
+
+                      {/* 予定詳細（タイトル & 午前午後の時間・場所） */}
+                      <div className="min-w-0 flex-1 space-y-1">
+                        <h4 className="text-xs font-black text-foreground group-hover:text-primary transition-colors truncate">
+                          {ev.title}
+                        </h4>
+
+                        {/* 午前・午後の時間と場所の表示 */}
+                        <div className="space-y-0.5 text-[10px]">
+                          {/* 午前 */}
+                          <div className="flex items-center gap-1.5 font-bold text-foreground/90">
+                            <span className="px-1 py-0.2 rounded bg-amber-500/10 text-amber-700 dark:text-amber-300 text-[9px] font-black shrink-0">
+                              ☀️ 午前
+                            </span>
+                            <span className="flex items-center gap-0.5 shrink-0 text-muted-foreground">
+                              <Clock className="w-2.5 h-2.5 text-amber-500" />
+                              <span>{ev.amTime}</span>
+                            </span>
+                            <span className="flex items-center gap-0.5 truncate text-foreground">
+                              <MapPin className="w-2.5 h-2.5 text-emerald-500 shrink-0" />
+                              <span className="truncate">{ev.amLocation}</span>
+                            </span>
+                          </div>
+
+                          {/* 午後（設定がある場合） */}
+                          {ev.hasPm && (
+                            <div className="flex items-center gap-1.5 font-bold text-foreground/90">
+                              <span className="px-1 py-0.2 rounded bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 text-[9px] font-black shrink-0">
+                                🌙 午後
+                              </span>
+                              <span className="flex items-center gap-0.5 shrink-0 text-muted-foreground">
+                                <Clock className="w-2.5 h-2.5 text-indigo-500" />
+                                <span>{ev.pmTime || "13:00〜17:00"}</span>
+                              </span>
+                              <span className="flex items-center gap-0.5 truncate text-foreground">
+                                <MapPin className="w-2.5 h-2.5 text-emerald-500 shrink-0" />
+                                <span className="truncate">{ev.pmLocation || ev.amLocation}</span>
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-0.5 transition-all shrink-0 mt-2" />
+                    </div>
+                  </Link>
+                ))}
+              </div>
             </div>
           </div>
         </div>
