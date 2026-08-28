@@ -19,6 +19,7 @@ import {
   teamDocuments,
   teamFaqs,
   parentChildRelations,
+  tournaments,
 } from "@/db/schema";
 import type { WorkerEnv } from "@/types/api";
 
@@ -403,12 +404,32 @@ app.get("/hub", async (c) => {
         opponentScore: matches.opponentScore,
         youtubeUrl: matches.youtubeUrl,
         matchType: matches.matchType,
+        tournamentName: tournaments.name,
+        venueName: venues.name,
+        venueShortName: venues.shortName,
+        surfaceDetails: matches.surfaceDetails,
+        battingOrder: matches.battingOrder,
+        innings: matches.innings,
+        myInningScores: matches.myInningScores,
+        opponentInningScores: matches.opponentInningScores,
+        myHits: matches.myHits,
+        opponentHits: matches.opponentHits,
+        myErrors: matches.myErrors,
+        opponentErrors: matches.opponentErrors,
       })
       .from(matches)
+      .leftJoin(tournaments, eq(matches.tournamentId, tournaments.id))
+      .leftJoin(venues, eq(matches.venueId, venues.id))
       .where(eq(matches.teamId, teamId))
       .orderBy(desc(matches.date), desc(matches.createdAt))
       .limit(10)
       .all();
+
+    const formattedMatches = matchesList.map(m => ({
+      ...m,
+      myInningScores: typeof m.myInningScores === "string" ? JSON.parse(m.myInningScores || "[]") : (m.myInningScores || []),
+      opponentInningScores: typeof m.opponentInningScores === "string" ? JSON.parse(m.opponentInningScores || "[]") : (m.opponentInningScores || []),
+    }));
 
     const liffId = c.env.NEXT_PUBLIC_LIFF_ID || c.env.LIFF_ID || "";
 
@@ -428,7 +449,7 @@ app.get("/hub", async (c) => {
       teams: teamList,
       nextEvent,
       events: formattedEventsList,
-      matches: matchesList,
+      matches: formattedMatches,
     });
   } catch (error: any) {
     console.error("Failed to load liff hub data:", error);
@@ -1952,6 +1973,69 @@ app.delete("/faqs/:id", async (c) => {
   } catch (error: any) {
     console.error("Failed to delete faq:", error);
     return c.json({ success: false, error: error?.message || "Q&Aの削除に失敗しました" }, 500);
+  }
+});
+
+/**
+ * ⚾ 試合一覧取得API (GET /matches?teamId=xxx)
+ */
+app.get("/matches", async (c) => {
+  const db = drizzle(c.env.DB);
+  const teamId = c.req.query("teamId");
+
+  try {
+    if (!teamId || teamId === "demo-team") {
+      return c.json({
+        success: true,
+        isDemo: true,
+        matches: DEMO_MATCHES,
+      });
+    }
+
+    const matchesList = await db
+      .select({
+        id: matches.id,
+        opponent: matches.opponent,
+        date: matches.date,
+        status: matches.status,
+        myScore: matches.myScore,
+        opponentScore: matches.opponentScore,
+        youtubeUrl: matches.youtubeUrl,
+        matchType: matches.matchType,
+        tournamentName: tournaments.name,
+        venueName: venues.name,
+        venueShortName: venues.shortName,
+        surfaceDetails: matches.surfaceDetails,
+        battingOrder: matches.battingOrder,
+        innings: matches.innings,
+        myInningScores: matches.myInningScores,
+        opponentInningScores: matches.opponentInningScores,
+        myHits: matches.myHits,
+        opponentHits: matches.opponentHits,
+        myErrors: matches.myErrors,
+        opponentErrors: matches.opponentErrors,
+      })
+      .from(matches)
+      .leftJoin(tournaments, eq(matches.tournamentId, tournaments.id))
+      .leftJoin(venues, eq(matches.venueId, venues.id))
+      .where(eq(matches.teamId, teamId))
+      .orderBy(desc(matches.date), desc(matches.createdAt))
+      .all();
+
+    const formattedMatches = matchesList.map(m => ({
+      ...m,
+      myInningScores: typeof m.myInningScores === "string" ? JSON.parse(m.myInningScores || "[]") : (m.myInningScores || []),
+      opponentInningScores: typeof m.opponentInningScores === "string" ? JSON.parse(m.opponentInningScores || "[]") : (m.opponentInningScores || []),
+    }));
+
+    return c.json({
+      success: true,
+      isDemo: false,
+      matches: formattedMatches,
+    });
+  } catch (error: any) {
+    console.error("Failed to load liff matches:", error);
+    return c.json({ success: false, error: error?.message || "試合一覧の取得に失敗しました", matches: [] }, 500);
   }
 });
 
