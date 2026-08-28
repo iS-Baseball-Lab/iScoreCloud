@@ -29,26 +29,21 @@ export default function LiffSchedulePage() {
   // ユーザーの立場とお子様リスト
   const [userRole, setUserRole] = useState<"parent" | "coach" | "player" | "staff">("parent");
   const [children, setChildren] = useState<Array<{ id: string; name: string; uniformNumber?: string; parentName?: string }>>([]);
-  const [parentOptions, setParentOptions] = useState<Array<{ parentId: string; parentName: string; children: Array<{ id: string; name: string; uniformNumber?: string }> }>>([]);
   const [memberId, setMemberId] = useState<string | null>(null);
   const [childAttendanceMap, setChildAttendanceMap] = useState<Record<string, Record<string, "present" | "absent" | "pending" | "late">>>({});
 
   // 👨‍👦 DBの親子関係・お子様データおよび出欠の自動取得
-  const fetchFamilyData = async (targetPid?: string) => {
+  const fetchFamilyData = async () => {
     try {
       const tid = currentTeam?.id || localStorage.getItem("iscore_selectedTeamId") || "demo-team";
-      const uid = profile?.userId || localStorage.getItem("iscore_userId") || "";
-      const uName = profile?.displayName || localStorage.getItem("iscore_user_name") || "";
-      const pid = targetPid || localStorage.getItem("iscore_selected_parent_id") || "";
+      const uid = profile?.userId || (typeof window !== "undefined" ? (localStorage.getItem("iscore_user_id") || localStorage.getItem("iscore_userId") || "") : "");
+      const uName = profile?.displayName || (typeof window !== "undefined" ? (localStorage.getItem("iscore_user_name") || "") : "");
 
-      const res = await fetch(`/api/liff/my-family?teamId=${tid}&userId=${uid}&userName=${encodeURIComponent(uName)}&parentId=${pid}`);
+      const res = await fetch(`/api/liff/my-family?teamId=${tid}&userId=${uid}&userName=${encodeURIComponent(uName)}`);
       if (res.ok) {
         const json = await res.json() as any;
         if (json.success) {
           if (json.memberId) setMemberId(json.memberId);
-          if (Array.isArray(json.parentOptions)) {
-            setParentOptions(json.parentOptions);
-          }
 
           if (Array.isArray(json.children) && json.children.length > 0) {
             const uniqueChildren: typeof json.children = [];
@@ -85,13 +80,6 @@ export default function LiffSchedulePage() {
     if (typeof window === "undefined") return;
     fetchFamilyData();
   }, [currentTeam?.id, profile?.displayName, profile?.userId]);
-
-  const handleSelectParent = (pId: string) => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem("iscore_selected_parent_id", pId);
-    }
-    fetchFamilyData(pId);
-  };
 
   const getChildAttendance = (eventId: string, childId: string) => childAttendanceMap[eventId]?.[childId] || "pending";
 
@@ -333,24 +321,6 @@ export default function LiffSchedulePage() {
 
               {/* 出欠回答セクション (○, △, ×, ？) */}
               <div className="pt-2 border-t border-primary/15 space-y-3">
-                {/* 👨‍👦 保護者が複数存在する場合のクイック切り替え */}
-                {userRole === "parent" && parentOptions.length > 1 && (
-                  <div className="flex items-center justify-between px-1 py-1 rounded-xl bg-muted/40 border border-border/60 text-[11px]">
-                    <span className="font-black text-muted-foreground">👨‍👦 表示中のご家庭:</span>
-                    <select
-                      value={memberId || ""}
-                      onChange={(e) => handleSelectParent(e.target.value)}
-                      className="bg-card text-foreground font-black px-2 py-0.5 rounded-lg border border-border text-xs focus:outline-hidden"
-                    >
-                      {parentOptions.map((p) => (
-                        <option key={p.parentId} value={p.parentId}>
-                          {p.parentName} ({p.children.map(c => `${c.name}${c.uniformNumber ? ` ${c.uniformNumber}` : ""}`).join("・")})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
                 {/* 👦 1. 保護者の場合: お子様（選手）の出欠回答 */}
                 {userRole === "parent" && children.map((child) => {
                   const childStatus = getChildAttendance(ev.id, child.id);
