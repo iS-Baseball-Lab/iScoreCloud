@@ -43,6 +43,9 @@ export default function LiffSettingsPage() {
 
   // 1. 個人・利用設定
   const [userRole, setUserRole] = useState<"parent" | "coach" | "player" | "staff">("parent");
+  const [children, setChildren] = useState<Array<{ id: string; name: string; uniformNumber?: string }>>([
+    { id: "child-1", name: "翔太", uniformNumber: "#10" }
+  ]);
   const [defaultCarStatus, setDefaultCarStatus] = useState<"can_drive" | "need_ride" | "not_needed">("need_ride");
   const [defaultTab, setDefaultTab] = useState<"next" | "calendar" | "score">("next");
 
@@ -64,6 +67,14 @@ export default function LiffSettingsPage() {
     try {
       const savedRole = localStorage.getItem("iscore_setting_user_role");
       if (savedRole) setUserRole(savedRole as any);
+
+      const savedChildren = localStorage.getItem("iscore_setting_children");
+      if (savedChildren) {
+        const parsed = JSON.parse(savedChildren);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setChildren(parsed);
+        }
+      }
 
       const savedCar = localStorage.getItem("iscore_setting_default_car");
       if (savedCar) setDefaultCarStatus(savedCar as any);
@@ -187,6 +198,56 @@ export default function LiffSettingsPage() {
               ))}
             </div>
           </div>
+
+          {/* 👦 保護者の場合: お子様（選手）の登録設定 */}
+          {userRole === "parent" && (
+            <div className="p-3 rounded-2xl bg-amber-500/5 dark:bg-amber-500/10 border border-amber-500/25 space-y-2.5 animate-in fade-in duration-200">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black text-amber-800 dark:text-amber-200 flex items-center gap-1.5">
+                  <span>👦</span>
+                  <span>お子様（選手）の出欠設定</span>
+                </span>
+                <span className="text-[10px] font-bold text-amber-700/80 dark:text-amber-300/80">出欠カードに連動表示</span>
+              </div>
+
+              <div className="space-y-2">
+                {children.map((child, index) => (
+                  <div key={child.id} className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={child.name}
+                      onChange={(e) => {
+                        const newName = e.target.value;
+                        setChildren(prev => {
+                          const updated = [...prev];
+                          updated[index] = { ...updated[index], name: newName };
+                          saveSetting("iscore_setting_children", JSON.stringify(updated));
+                          return updated;
+                        });
+                      }}
+                      placeholder="お子様のお名前"
+                      className="flex-1 px-3 py-1.5 rounded-xl bg-card border border-border/80 text-xs font-bold text-foreground focus:outline-hidden focus:ring-1 focus:ring-amber-500"
+                    />
+                    <input
+                      type="text"
+                      value={child.uniformNumber || ""}
+                      onChange={(e) => {
+                        const newNum = e.target.value;
+                        setChildren(prev => {
+                          const updated = [...prev];
+                          updated[index] = { ...updated[index], uniformNumber: newNum };
+                          saveSetting("iscore_setting_children", JSON.stringify(updated));
+                          return updated;
+                        });
+                      }}
+                      placeholder="背番号 (例: #10)"
+                      className="w-24 px-2.5 py-1.5 rounded-xl bg-card border border-border/80 text-xs font-bold text-foreground focus:outline-hidden focus:ring-1 focus:ring-amber-500"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* デフォルト配車希望 */}
           <div className="space-y-1.5 pt-1">

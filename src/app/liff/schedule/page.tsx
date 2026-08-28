@@ -26,6 +26,43 @@ export default function LiffSchedulePage() {
   const [events, setEvents] = useState<ScheduleEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  // ユーザーの立場とお子様リスト
+  const [userRole, setUserRole] = useState<"parent" | "coach" | "player" | "staff">("parent");
+  const [children, setChildren] = useState<Array<{ id: string; name: string; uniformNumber?: string }>>([
+    { id: "child-1", name: "翔太", uniformNumber: "#10" }
+  ]);
+  const [childAttendanceMap, setChildAttendanceMap] = useState<Record<string, Record<string, "present" | "absent" | "pending" | "late">>>({});
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const savedRole = localStorage.getItem("iscore_setting_user_role");
+      if (savedRole) setUserRole(savedRole as any);
+
+      const savedChildren = localStorage.getItem("iscore_setting_children");
+      if (savedChildren) {
+        const parsed = JSON.parse(savedChildren);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setChildren(parsed);
+        }
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
+
+  const getChildAttendance = (eventId: string, childId: string) => childAttendanceMap[eventId]?.[childId] || "pending";
+
+  const handleChildStatusChange = (eventId: string, childId: string, status: "present" | "absent" | "pending" | "late") => {
+    setChildAttendanceMap((prev) => ({
+      ...prev,
+      [eventId]: {
+        ...(prev[eventId] || {}),
+        [childId]: status,
+      }
+    }));
+  };
+
   const loadSchedule = useCallback(async () => {
     try {
       setIsLoading(true);
@@ -236,88 +273,154 @@ export default function LiffSchedulePage() {
                 )}
               </div>
 
-              {/* 出欠回答ボタングループ */}
               {/* 出欠回答セクション (○, △, ×, ？) */}
-              <div className="pt-1 space-y-1.5">
-                <div className="flex items-center justify-between text-[11px] font-black text-muted-foreground px-1">
-                  <span>出欠回答</span>
-                  <span
-                    className={
-                      ev.myStatus === "present"
-                        ? "text-emerald-600 font-black"
-                        : ev.myStatus === "late" || ev.myStatus === "partial"
-                        ? "text-amber-600 font-black"
-                        : ev.myStatus === "absent"
-                        ? "text-rose-600 font-black"
-                        : "text-muted-foreground font-black"
-                    }
-                  >
-                    {ev.myStatus === "present"
-                      ? "○ 出席"
-                      : ev.myStatus === "late" || ev.myStatus === "partial"
-                      ? "△ 調整・遅刻"
-                      : ev.myStatus === "absent"
-                      ? "× 欠席"
-                      : "？ 未回答"}
-                  </span>
-                </div>
+              <div className="pt-2 border-t border-primary/15 space-y-3">
+                {/* 👦 1. 保護者の場合: お子様（選手）の出欠回答 */}
+                {userRole === "parent" && children.map((child) => {
+                  const childStatus = getChildAttendance(ev.id, child.id);
+                  return (
+                    <div key={child.id} className="p-2.5 rounded-2xl bg-amber-500/5 dark:bg-amber-500/10 border border-amber-500/20 space-y-1.5">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-black text-amber-700 dark:text-amber-300 flex items-center gap-1">
+                          <span>👦</span>
+                          <span>お子様（{child.name}{child.uniformNumber ? ` ${child.uniformNumber}` : ""}）の出欠</span>
+                        </span>
+                        <span className="text-[11px] font-bold">
+                          {childStatus === "present" && <span className="text-emerald-600 dark:text-emerald-400 font-black">○ 参加</span>}
+                          {childStatus === "late" && <span className="text-amber-600 dark:text-amber-400 font-black">△ 調整・遅刻</span>}
+                          {childStatus === "absent" && <span className="text-rose-600 dark:text-rose-400 font-black">× 欠席</span>}
+                          {childStatus === "pending" && <span className="text-muted-foreground font-black">？ 未定</span>}
+                        </span>
+                      </div>
 
-                <div className="grid grid-cols-4 gap-1.5">
-                  {/* ○ 出席 */}
-                  <button
-                    type="button"
-                    onClick={() => handleStatusChange(ev.id, "present")}
-                    className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black transition-all active:scale-95 ${
-                      ev.myStatus === "present"
-                        ? "bg-emerald-600 text-white shadow-xs"
-                        : "bg-muted/60 text-muted-foreground hover:bg-muted"
-                    }`}
-                  >
-                    <span className="text-sm leading-none mb-0.5">○</span>
-                    <span className="text-[10px]">出席</span>
-                  </button>
+                      <div className="grid grid-cols-4 gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleChildStatusChange(ev.id, child.id, "present")}
+                          className={`flex flex-col items-center justify-center py-1.5 rounded-xl text-xs font-black transition-all active:scale-95 ${
+                            childStatus === "present"
+                              ? "bg-emerald-600 text-white shadow-xs ring-2 ring-emerald-500/50"
+                              : "bg-background/80 hover:bg-background text-muted-foreground border border-border/60"
+                          }`}
+                        >
+                          <span className="text-sm leading-none">○</span>
+                          <span className="text-[9px]">参加</span>
+                        </button>
 
-                  {/* △ 調整 / 遅刻 */}
-                  <button
-                    type="button"
-                    onClick={() => handleStatusChange(ev.id, "late")}
-                    className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black transition-all active:scale-95 ${
-                      ev.myStatus === "late" || ev.myStatus === "partial"
-                        ? "bg-amber-500 text-white shadow-xs"
-                        : "bg-muted/60 text-muted-foreground hover:bg-muted"
-                    }`}
-                  >
-                    <span className="text-sm leading-none mb-0.5">△</span>
-                    <span className="text-[10px]">調整</span>
-                  </button>
+                        <button
+                          type="button"
+                          onClick={() => handleChildStatusChange(ev.id, child.id, "late")}
+                          className={`flex flex-col items-center justify-center py-1.5 rounded-xl text-xs font-black transition-all active:scale-95 ${
+                            childStatus === "late"
+                              ? "bg-amber-500 text-white shadow-xs ring-2 ring-amber-500/50"
+                              : "bg-background/80 hover:bg-background text-muted-foreground border border-border/60"
+                          }`}
+                        >
+                          <span className="text-sm leading-none">△</span>
+                          <span className="text-[9px]">調整</span>
+                        </button>
 
-                  {/* × 欠席 */}
-                  <button
-                    type="button"
-                    onClick={() => handleStatusChange(ev.id, "absent")}
-                    className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black transition-all active:scale-95 ${
-                      ev.myStatus === "absent"
-                        ? "bg-rose-600 text-white shadow-xs"
-                        : "bg-muted/60 text-muted-foreground hover:bg-muted"
-                    }`}
-                  >
-                    <span className="text-sm leading-none mb-0.5">×</span>
-                    <span className="text-[10px]">欠席</span>
-                  </button>
+                        <button
+                          type="button"
+                          onClick={() => handleChildStatusChange(ev.id, child.id, "absent")}
+                          className={`flex flex-col items-center justify-center py-1.5 rounded-xl text-xs font-black transition-all active:scale-95 ${
+                            childStatus === "absent"
+                              ? "bg-rose-600 text-white shadow-xs ring-2 ring-rose-500/50"
+                              : "bg-background/80 hover:bg-background text-muted-foreground border border-border/60"
+                          }`}
+                        >
+                          <span className="text-sm leading-none">×</span>
+                          <span className="text-[9px]">欠席</span>
+                        </button>
 
-                  {/* ？ 未定 */}
-                  <button
-                    type="button"
-                    onClick={() => handleStatusChange(ev.id, "pending")}
-                    className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black transition-all active:scale-95 ${
-                      ev.myStatus === "pending" || !ev.myStatus
-                        ? "bg-slate-700 text-white dark:bg-slate-300 dark:text-slate-900 shadow-xs"
-                        : "bg-muted/60 text-muted-foreground hover:bg-muted"
-                    }`}
-                  >
-                    <span className="text-sm leading-none mb-0.5">？</span>
-                    <span className="text-[10px]">未定</span>
-                  </button>
+                        <button
+                          type="button"
+                          onClick={() => handleChildStatusChange(ev.id, child.id, "pending")}
+                          className={`flex flex-col items-center justify-center py-1.5 rounded-xl text-xs font-black transition-all active:scale-95 ${
+                            childStatus === "pending"
+                              ? "bg-slate-700 text-white dark:bg-slate-300 dark:text-slate-900 shadow-xs ring-2 ring-slate-500/50"
+                              : "bg-background/80 hover:bg-background text-muted-foreground border border-border/60"
+                          }`}
+                        >
+                          <span className="text-sm leading-none">？</span>
+                          <span className="text-[9px]">未定</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {/* 👨 2. 保護者本人（または選手本人）の出欠回答 */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-black text-foreground">
+                      {userRole === "parent" ? "👨 保護者（自分）の参加・当番" : "あなたの出欠回答"}
+                    </span>
+                    <span className="text-[11px] font-bold">
+                      {ev.myStatus === "present" && <span className="text-emerald-600 dark:text-emerald-400 font-black">○ {userRole === "parent" ? "参加・当番可" : "出席"}</span>}
+                      {(ev.myStatus === "late" || ev.myStatus === "partial") && <span className="text-amber-600 dark:text-amber-400 font-black">△ 調整</span>}
+                      {ev.myStatus === "absent" && <span className="text-rose-600 dark:text-rose-400 font-black">× 欠席</span>}
+                      {(ev.myStatus === "pending" || !ev.myStatus) && <span className="text-muted-foreground font-black">？ 未定</span>}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {/* ○ 出席 */}
+                    <button
+                      type="button"
+                      onClick={() => handleStatusChange(ev.id, "present")}
+                      className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black transition-all active:scale-95 ${
+                        ev.myStatus === "present"
+                          ? "bg-emerald-600 text-white shadow-xs"
+                          : "bg-muted/60 text-muted-foreground hover:bg-muted"
+                      }`}
+                    >
+                      <span className="text-sm leading-none mb-0.5">○</span>
+                      <span className="text-[10px]">{userRole === "parent" ? "参加/当番" : "出席"}</span>
+                    </button>
+
+                    {/* △ 調整 / 遅刻 */}
+                    <button
+                      type="button"
+                      onClick={() => handleStatusChange(ev.id, "late")}
+                      className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black transition-all active:scale-95 ${
+                        ev.myStatus === "late" || ev.myStatus === "partial"
+                          ? "bg-amber-500 text-white shadow-xs"
+                          : "bg-muted/60 text-muted-foreground hover:bg-muted"
+                      }`}
+                    >
+                      <span className="text-sm leading-none mb-0.5">△</span>
+                      <span className="text-[10px]">調整</span>
+                    </button>
+
+                    {/* × 欠席 */}
+                    <button
+                      type="button"
+                      onClick={() => handleStatusChange(ev.id, "absent")}
+                      className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black transition-all active:scale-95 ${
+                        ev.myStatus === "absent"
+                          ? "bg-rose-600 text-white shadow-xs"
+                          : "bg-muted/60 text-muted-foreground hover:bg-muted"
+                      }`}
+                    >
+                      <span className="text-sm leading-none mb-0.5">×</span>
+                      <span className="text-[10px]">欠席</span>
+                    </button>
+
+                    {/* ？ 未定 */}
+                    <button
+                      type="button"
+                      onClick={() => handleStatusChange(ev.id, "pending")}
+                      className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black transition-all active:scale-95 ${
+                        ev.myStatus === "pending" || !ev.myStatus
+                          ? "bg-slate-700 text-white dark:bg-slate-300 dark:text-slate-900 shadow-xs"
+                          : "bg-muted/60 text-muted-foreground hover:bg-muted"
+                      }`}
+                    >
+                      <span className="text-sm leading-none mb-0.5">？</span>
+                      <span className="text-[10px]">未定</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>

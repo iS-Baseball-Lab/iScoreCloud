@@ -1,7 +1,7 @@
 // filepath: src/components/liff/HubHeroSection.tsx
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { 
   Calendar, 
@@ -48,15 +48,52 @@ export function HubHeroSection({
 }: HubHeroSectionProps) {
   const [activeTab, setActiveTab] = useState<"next" | "calendar" | "score">("next");
 
-  // 出欠ステート（イベントIDごとに個別保持）
+  // ユーザーの立場（保護者 / 指導者 / 選手 / 役員）
+  const [userRole, setUserRole] = useState<"parent" | "coach" | "player" | "staff">("parent");
+  const [children, setChildren] = useState<Array<{ id: string; name: string; uniformNumber?: string }>>([
+    { id: "child-1", name: "翔太", uniformNumber: "#10" }
+  ]);
+
+  // 出欠ステート（保護者本人 & お子様）
   const [attendanceMap, setAttendanceMap] = useState<Record<string, "present" | "absent" | "pending" | "late">>({});
+  const [childAttendanceMap, setChildAttendanceMap] = useState<Record<string, Record<string, "present" | "absent" | "pending" | "late">>>({});
   const [carStatusMap, setCarStatusMap] = useState<Record<string, "can_drive" | "need_ride" | "not_needed">>({});
 
+  // localStorageから立場とお子様情報を読み込み
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const savedRole = localStorage.getItem("iscore_setting_user_role");
+      if (savedRole) setUserRole(savedRole as any);
+
+      const savedChildren = localStorage.getItem("iscore_setting_children");
+      if (savedChildren) {
+        const parsed = JSON.parse(savedChildren);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setChildren(parsed);
+        }
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
+
   const getEventAttendance = (id: string) => attendanceMap[id] || "pending";
+  const getChildAttendance = (eventId: string, childId: string) => childAttendanceMap[eventId]?.[childId] || "pending";
   const getEventCarStatus = (id: string) => carStatusMap[id] || "need_ride";
 
   const setEventAttendance = (id: string, status: "present" | "absent" | "pending" | "late") => {
     setAttendanceMap(prev => ({ ...prev, [id]: status }));
+  };
+
+  const setChildAttendance = (eventId: string, childId: string, status: "present" | "absent" | "pending" | "late") => {
+    setChildAttendanceMap(prev => ({
+      ...prev,
+      [eventId]: {
+        ...(prev[eventId] || {}),
+        [childId]: status,
+      }
+    }));
   };
 
   const setEventCarStatus = (id: string, carStatus: "can_drive" | "need_ride" | "not_needed") => {
@@ -411,74 +448,154 @@ export function HubHeroSection({
                   </div>
 
                   {/* 出欠回答エリア (○, △, ×, ？) */}
-                  <div className="pt-2 border-t border-primary/15 space-y-2">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-black text-foreground">あなたの出欠回答</span>
-                      <span className="text-[11px] font-bold">
-                        {pStatus === "present" && <span className="text-emerald-600 dark:text-emerald-400 font-black">○ 出席で回答中</span>}
-                        {pStatus === "late" && <span className="text-amber-600 dark:text-amber-400 font-black">△ 調整で回答中</span>}
-                        {pStatus === "absent" && <span className="text-rose-600 dark:text-rose-400 font-black">× 欠席で回答中</span>}
-                        {pStatus === "pending" && <span className="text-muted-foreground font-black">？ 未定</span>}
-                      </span>
-                    </div>
+                  <div className="pt-2 border-t border-primary/15 space-y-3">
+                    {/* 👦 1. 保護者の場合: お子様（選手）の出欠回答 */}
+                    {userRole === "parent" && children.map((child) => {
+                      const childStatus = getChildAttendance(ev.id, child.id);
+                      return (
+                        <div key={child.id} className="p-2.5 rounded-2xl bg-amber-500/5 dark:bg-amber-500/10 border border-amber-500/20 space-y-1.5">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="font-black text-amber-700 dark:text-amber-300 flex items-center gap-1">
+                              <span>👦</span>
+                              <span>お子様（{child.name}{child.uniformNumber ? ` ${child.uniformNumber}` : ""}）の出欠</span>
+                            </span>
+                            <span className="text-[11px] font-bold">
+                              {childStatus === "present" && <span className="text-emerald-600 dark:text-emerald-400 font-black">○ 参加</span>}
+                              {childStatus === "late" && <span className="text-amber-600 dark:text-amber-400 font-black">△ 調整・遅刻</span>}
+                              {childStatus === "absent" && <span className="text-rose-600 dark:text-rose-400 font-black">× 欠席</span>}
+                              {childStatus === "pending" && <span className="text-muted-foreground font-black">？ 未定</span>}
+                            </span>
+                          </div>
 
-                    {/* ○, △, ×, ？ の4等分グリッド */}
-                    <div className="grid grid-cols-4 gap-1.5">
-                      {/* ○ 出席 */}
-                      <button
-                        type="button"
-                        onClick={() => setEventAttendance(ev.id, "present")}
-                        className={`flex flex-col items-center justify-center py-2 rounded-2xl text-xs font-black transition-all active:scale-95 ${
-                          pStatus === "present"
-                            ? "bg-emerald-600 text-white shadow-xs ring-2 ring-emerald-500/50"
-                            : "bg-muted/70 hover:bg-muted text-muted-foreground"
-                        }`}
-                      >
-                        <span className="text-base leading-none mb-0.5">○</span>
-                        <span className="text-[10px]">出席</span>
-                      </button>
+                          <div className="grid grid-cols-4 gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setChildAttendance(ev.id, child.id, "present")}
+                              className={`flex flex-col items-center justify-center py-1.5 rounded-xl text-xs font-black transition-all active:scale-95 ${
+                                childStatus === "present"
+                                  ? "bg-emerald-600 text-white shadow-xs ring-2 ring-emerald-500/50"
+                                  : "bg-background/80 hover:bg-background text-muted-foreground border border-border/60"
+                              }`}
+                            >
+                              <span className="text-sm leading-none">○</span>
+                              <span className="text-[9px]">参加</span>
+                            </button>
 
-                      {/* △ 調整 / 遅刻 */}
-                      <button
-                        type="button"
-                        onClick={() => setEventAttendance(ev.id, "late")}
-                        className={`flex flex-col items-center justify-center py-2 rounded-2xl text-xs font-black transition-all active:scale-95 ${
-                          pStatus === "late"
-                            ? "bg-amber-500 text-white shadow-xs ring-2 ring-amber-500/50"
-                            : "bg-muted/70 hover:bg-muted text-muted-foreground"
-                        }`}
-                      >
-                        <span className="text-base leading-none mb-0.5">△</span>
-                        <span className="text-[10px]">調整</span>
-                      </button>
+                            <button
+                              type="button"
+                              onClick={() => setChildAttendance(ev.id, child.id, "late")}
+                              className={`flex flex-col items-center justify-center py-1.5 rounded-xl text-xs font-black transition-all active:scale-95 ${
+                                childStatus === "late"
+                                  ? "bg-amber-500 text-white shadow-xs ring-2 ring-amber-500/50"
+                                  : "bg-background/80 hover:bg-background text-muted-foreground border border-border/60"
+                              }`}
+                            >
+                              <span className="text-sm leading-none">△</span>
+                              <span className="text-[9px]">調整</span>
+                            </button>
 
-                      {/* × 欠席 */}
-                      <button
-                        type="button"
-                        onClick={() => setEventAttendance(ev.id, "absent")}
-                        className={`flex flex-col items-center justify-center py-2 rounded-2xl text-xs font-black transition-all active:scale-95 ${
-                          pStatus === "absent"
-                            ? "bg-rose-600 text-white shadow-xs ring-2 ring-rose-500/50"
-                            : "bg-muted/70 hover:bg-muted text-muted-foreground"
-                        }`}
-                      >
-                        <span className="text-base leading-none mb-0.5">×</span>
-                        <span className="text-[10px]">欠席</span>
-                      </button>
+                            <button
+                              type="button"
+                              onClick={() => setChildAttendance(ev.id, child.id, "absent")}
+                              className={`flex flex-col items-center justify-center py-1.5 rounded-xl text-xs font-black transition-all active:scale-95 ${
+                                childStatus === "absent"
+                                  ? "bg-rose-600 text-white shadow-xs ring-2 ring-rose-500/50"
+                                  : "bg-background/80 hover:bg-background text-muted-foreground border border-border/60"
+                              }`}
+                            >
+                              <span className="text-sm leading-none">×</span>
+                              <span className="text-[9px]">欠席</span>
+                            </button>
 
-                      {/* ？ 未定 */}
-                      <button
-                        type="button"
-                        onClick={() => setEventAttendance(ev.id, "pending")}
-                        className={`flex flex-col items-center justify-center py-2 rounded-2xl text-xs font-black transition-all active:scale-95 ${
-                          pStatus === "pending"
-                            ? "bg-slate-700 text-white dark:bg-slate-300 dark:text-slate-900 shadow-xs ring-2 ring-slate-500/50"
-                            : "bg-muted/70 hover:bg-muted text-muted-foreground"
-                        }`}
-                      >
-                        <span className="text-base leading-none mb-0.5">？</span>
-                        <span className="text-[10px]">未定</span>
-                      </button>
+                            <button
+                              type="button"
+                              onClick={() => setChildAttendance(ev.id, child.id, "pending")}
+                              className={`flex flex-col items-center justify-center py-1.5 rounded-xl text-xs font-black transition-all active:scale-95 ${
+                                childStatus === "pending"
+                                  ? "bg-slate-700 text-white dark:bg-slate-300 dark:text-slate-900 shadow-xs ring-2 ring-slate-500/50"
+                                  : "bg-background/80 hover:bg-background text-muted-foreground border border-border/60"
+                              }`}
+                            >
+                              <span className="text-sm leading-none">？</span>
+                              <span className="text-[9px]">未定</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {/* 👨 2. 保護者本人（または選手本人）の出欠回答 */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-black text-foreground">
+                          {userRole === "parent" ? "👨 保護者（自分）の参加・当番" : "あなたの出欠回答"}
+                        </span>
+                        <span className="text-[11px] font-bold">
+                          {pStatus === "present" && <span className="text-emerald-600 dark:text-emerald-400 font-black">○ {userRole === "parent" ? "参加・当番可" : "出席"}</span>}
+                          {pStatus === "late" && <span className="text-amber-600 dark:text-amber-400 font-black">△ 調整</span>}
+                          {pStatus === "absent" && <span className="text-rose-600 dark:text-rose-400 font-black">× 欠席</span>}
+                          {pStatus === "pending" && <span className="text-muted-foreground font-black">？ 未定</span>}
+                        </span>
+                      </div>
+
+                      {/* ○, △, ×, ？ の4等分グリッド */}
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {/* ○ 出席 */}
+                        <button
+                          type="button"
+                          onClick={() => setEventAttendance(ev.id, "present")}
+                          className={`flex flex-col items-center justify-center py-2 rounded-2xl text-xs font-black transition-all active:scale-95 ${
+                            pStatus === "present"
+                              ? "bg-emerald-600 text-white shadow-xs ring-2 ring-emerald-500/50"
+                              : "bg-muted/70 hover:bg-muted text-muted-foreground"
+                          }`}
+                        >
+                          <span className="text-base leading-none mb-0.5">○</span>
+                          <span className="text-[10px]">{userRole === "parent" ? "参加/当番" : "出席"}</span>
+                        </button>
+
+                        {/* △ 調整 / 遅刻 */}
+                        <button
+                          type="button"
+                          onClick={() => setEventAttendance(ev.id, "late")}
+                          className={`flex flex-col items-center justify-center py-2 rounded-2xl text-xs font-black transition-all active:scale-95 ${
+                            pStatus === "late"
+                              ? "bg-amber-500 text-white shadow-xs ring-2 ring-amber-500/50"
+                              : "bg-muted/70 hover:bg-muted text-muted-foreground"
+                          }`}
+                        >
+                          <span className="text-base leading-none mb-0.5">△</span>
+                          <span className="text-[10px]">調整</span>
+                        </button>
+
+                        {/* × 欠席 */}
+                        <button
+                          type="button"
+                          onClick={() => setEventAttendance(ev.id, "absent")}
+                          className={`flex flex-col items-center justify-center py-2 rounded-2xl text-xs font-black transition-all active:scale-95 ${
+                            pStatus === "absent"
+                              ? "bg-rose-600 text-white shadow-xs ring-2 ring-rose-500/50"
+                              : "bg-muted/70 hover:bg-muted text-muted-foreground"
+                          }`}
+                        >
+                          <span className="text-base leading-none mb-0.5">×</span>
+                          <span className="text-[10px]">欠席</span>
+                        </button>
+
+                        {/* ？ 未定 */}
+                        <button
+                          type="button"
+                          onClick={() => setEventAttendance(ev.id, "pending")}
+                          className={`flex flex-col items-center justify-center py-2 rounded-2xl text-xs font-black transition-all active:scale-95 ${
+                            pStatus === "pending"
+                              ? "bg-slate-700 text-white dark:bg-slate-300 dark:text-slate-900 shadow-xs ring-2 ring-slate-500/50"
+                              : "bg-muted/70 hover:bg-muted text-muted-foreground"
+                          }`}
+                        >
+                          <span className="text-base leading-none mb-0.5">？</span>
+                          <span className="text-[10px]">未定</span>
+                        </button>
+                      </div>
                     </div>
 
                     {/* 参加時の配車アンケート */}
