@@ -308,16 +308,28 @@ app.get("/hub", async (c) => {
       .orderBy(asc(events.startAt))
       .all();
 
-    // ログインユーザーの出欠リストを取得
+    // ログインユーザーの出欠リストを取得 (userIdおよびmemberIdから照合)
     let userAttendances: Record<string, string> = {};
+    let currentMemberId: string | null = null;
+
     if (userId) {
+      const member = await db
+        .select({ id: teamMembers.id })
+        .from(teamMembers)
+        .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, userId)))
+        .get();
+      if (member) currentMemberId = member.id;
+
+      const attConditions = [eq(attendances.userId, userId)];
+      if (currentMemberId) attConditions.push(eq(attendances.memberId, currentMemberId));
+
       const atts = await db
         .select({
           eventId: attendances.eventId,
           status: attendances.status,
         })
         .from(attendances)
-        .where(eq(attendances.userId, userId))
+        .where(or(...attConditions))
         .all();
       
       for (const a of atts) {
@@ -570,6 +582,17 @@ app.get("/schedule", async (c) => {
       .orderBy(desc(events.startAt))
       .all();
 
+    // ログインユーザーの memberId を特定
+    let schedMemberId: string | null = null;
+    if (userId) {
+      const member = await db
+        .select({ id: teamMembers.id })
+        .from(teamMembers)
+        .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, userId)))
+        .get();
+      if (member) schedMemberId = member.id;
+    }
+
     // 各イベントの出欠集計
     const formattedEvents = await Promise.all(
       eventList.map(async (ev) => {
@@ -577,6 +600,7 @@ app.get("/schedule", async (c) => {
           .select({
             status: attendances.status,
             userId: attendances.userId,
+            memberId: attendances.memberId,
           })
           .from(attendances)
           .where(eq(attendances.eventId, ev.id))
@@ -586,12 +610,16 @@ app.get("/schedule", async (c) => {
         const absentCount = attList.filter((a) => a.status === "absent").length;
         const pendingCount = attList.filter((a) => a.status === "pending").length;
 
-        let myStatus: "present" | "absent" | "pending" = "pending";
-        if (userId) {
-          const myAtt = attList.find((a) => a.userId === userId);
+        let myStatus: "present" | "absent" | "pending" | "late" = "pending";
+        if (userId || schedMemberId) {
+          const myAtt = attList.find((a) => 
+            (userId && a.userId === userId) || (schedMemberId && a.memberId === schedMemberId)
+          );
           if (myAtt?.status) {
-            myStatus = myAtt.status === "present" || myAtt.status === "late" || myAtt.status === "partial"
+            myStatus = myAtt.status === "present"
               ? "present"
+              : myAtt.status === "late" || myAtt.status === "partial"
+              ? "late"
               : myAtt.status === "absent"
               ? "absent"
               : "pending";
@@ -872,8 +900,18 @@ app.post("/attendance", async (c) => {
     }
 
     // 👨 保護者・メンバー本人の出欠の場合
+    let effectiveMemberId = memberId;
+    if (!effectiveMemberId && userId) {
+      const tm = await db
+        .select({ id: teamMembers.id })
+        .from(teamMembers)
+        .where(eq(teamMembers.userId, userId))
+        .get();
+      if (tm) effectiveMemberId = tm.id;
+    }
+
     const conditions = [];
-    if (memberId) conditions.push(eq(attendances.memberId, memberId));
+    if (effectiveMemberId) conditions.push(eq(attendances.memberId, effectiveMemberId));
     if (userId) conditions.push(eq(attendances.userId, userId));
 
     let existing = null;
@@ -891,7 +929,7 @@ app.post("/attendance", async (c) => {
         .set({
           status: status,
           userId: userId || existing.userId,
-          memberId: memberId || existing.memberId,
+          memberId: effectiveMemberId || existing.memberId,
           hasCar: hasCar !== undefined ? hasCar : existing.hasCar,
           comment: comment || existing.comment,
           updatedAt: new Date(),
@@ -902,7 +940,7 @@ app.post("/attendance", async (c) => {
         id: `att_${crypto.randomUUID()}`,
         eventId,
         userId: userId || null,
-        memberId: memberId || null,
+        memberId: effectiveMemberId || null,
         status: status,
         hasCar: !!hasCar,
         roleInEvent: "parent",

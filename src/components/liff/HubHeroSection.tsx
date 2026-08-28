@@ -89,12 +89,12 @@ export function HubHeroSection({
           }
 
           if (json.attendances) {
-            setChildAttendanceMap(json.attendances);
+            setChildAttendanceMap(prev => ({ ...json.attendances, ...prev }));
           }
 
           // 自分の出欠（親の出欠）をDBから復元
           if (json.parentAttendances && Object.keys(json.parentAttendances).length > 0) {
-            setAttendanceMap(prev => ({ ...prev, ...json.parentAttendances }));
+            setAttendanceMap(prev => ({ ...json.parentAttendances, ...prev }));
           }
         }
       }
@@ -121,13 +121,32 @@ export function HubHeroSection({
     }
   }, [eventsList]);
 
-  const getEventAttendance = (id: string) => attendanceMap[id] || "pending";
-  const getChildAttendance = (eventId: string, childId: string) => childAttendanceMap[eventId]?.[childId] || "pending";
+  const getEventAttendance = (id: string) => {
+    if (attendanceMap[id]) return attendanceMap[id];
+    if (typeof window !== "undefined") {
+      const cached = localStorage.getItem(`iscore_my_att_${id}`);
+      if (cached) return cached as any;
+    }
+    return "pending";
+  };
+
+  const getChildAttendance = (eventId: string, childId: string) => {
+    if (childAttendanceMap[eventId]?.[childId]) return childAttendanceMap[eventId][childId];
+    if (typeof window !== "undefined") {
+      const cached = localStorage.getItem(`iscore_child_att_${eventId}_${childId}`);
+      if (cached) return cached as any;
+    }
+    return "pending";
+  };
+
   const getEventCarStatus = (id: string) => carStatusMap[id] || "need_ride";
 
   // 保護者本人の出欠変更（DB保存 & 即時反映）
   const setEventAttendance = async (id: string, status: "present" | "absent" | "pending" | "late") => {
     setAttendanceMap(prev => ({ ...prev, [id]: status }));
+    if (typeof window !== "undefined") {
+      localStorage.setItem(`iscore_my_att_${id}`, status);
+    }
     try {
       const uid = typeof window !== "undefined" 
         ? (localStorage.getItem("iscore_user_id") || localStorage.getItem("iscore_userId") || "") 
@@ -157,6 +176,9 @@ export function HubHeroSection({
         [childId]: status,
       }
     }));
+    if (typeof window !== "undefined") {
+      localStorage.setItem(`iscore_child_att_${eventId}_${childId}`, status);
+    }
     try {
       await fetch("/api/liff/attendance", {
         method: "POST",
