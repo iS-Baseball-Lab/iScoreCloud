@@ -236,6 +236,7 @@ app.get("/hub", async (c) => {
   const db = drizzle(c.env.DB);
   const requestedTeamId = c.req.query("teamId");
   const userId = c.req.query("userId");
+  const userName = c.req.query("userName");
 
   try {
     // 全チーム一覧の取得 (チームスイッチャー用)
@@ -308,7 +309,7 @@ app.get("/hub", async (c) => {
       .orderBy(asc(events.startAt))
       .all();
 
-    // ログインユーザーの出欠リストを取得 (userIdおよびmemberIdから照合)
+    // ログインユーザーの出欠リストを取得 (userIdおよびuserNameから照合)
     let userAttendances: Record<string, string> = {};
     let currentMemberId: string | null = null;
 
@@ -319,10 +320,34 @@ app.get("/hub", async (c) => {
         .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, userId)))
         .get();
       if (member) currentMemberId = member.id;
+    }
 
-      const attConditions = [eq(attendances.userId, userId)];
-      if (currentMemberId) attConditions.push(eq(attendances.memberId, currentMemberId));
+    if (!currentMemberId && userName) {
+      const memberByName = await db
+        .select({ id: teamMembers.id })
+        .from(teamMembers)
+        .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.name, userName)))
+        .get();
+      if (memberByName) {
+        currentMemberId = memberByName.id;
+      } else {
+        const teamMemberList = await db
+          .select({ id: teamMembers.id, name: teamMembers.name })
+          .from(teamMembers)
+          .where(eq(teamMembers.teamId, teamId))
+          .all();
+        const matched = teamMemberList.find(m => 
+          m.name && (m.name.includes(userName) || userName.includes(m.name))
+        );
+        if (matched) currentMemberId = matched.id;
+      }
+    }
 
+    const attConditions = [];
+    if (userId) attConditions.push(eq(attendances.userId, userId));
+    if (currentMemberId) attConditions.push(eq(attendances.memberId, currentMemberId));
+
+    if (attConditions.length > 0) {
       const atts = await db
         .select({
           eventId: attendances.eventId,
@@ -527,6 +552,7 @@ app.get("/schedule", async (c) => {
   const db = drizzle(c.env.DB);
   const teamId = c.req.query("teamId");
   const userId = c.req.query("userId");
+  const userName = c.req.query("userName");
 
   try {
     if (!teamId || teamId === "demo-team") {
@@ -591,6 +617,27 @@ app.get("/schedule", async (c) => {
         .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, userId)))
         .get();
       if (member) schedMemberId = member.id;
+    }
+
+    if (!schedMemberId && userName) {
+      const memberByName = await db
+        .select({ id: teamMembers.id })
+        .from(teamMembers)
+        .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.name, userName)))
+        .get();
+      if (memberByName) {
+        schedMemberId = memberByName.id;
+      } else {
+        const teamMemberList = await db
+          .select({ id: teamMembers.id, name: teamMembers.name })
+          .from(teamMembers)
+          .where(eq(teamMembers.teamId, teamId))
+          .all();
+        const matched = teamMemberList.find(m => 
+          m.name && (m.name.includes(userName) || userName.includes(m.name))
+        );
+        if (matched) schedMemberId = matched.id;
+      }
     }
 
     // 各イベントの出欠集計

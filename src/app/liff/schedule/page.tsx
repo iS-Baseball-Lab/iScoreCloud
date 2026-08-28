@@ -112,7 +112,8 @@ export default function LiffSchedulePage() {
       setIsLoading(true);
       const teamId = currentTeam?.id || "demo-team";
       const userId = profile?.userId || (typeof window !== "undefined" ? (localStorage.getItem("iscore_user_id") || localStorage.getItem("iscore_userId") || "") : "");
-      const res = await fetch(`/api/liff/schedule?teamId=${teamId}&userId=${userId}`);
+      const uName = profile?.displayName || (typeof window !== "undefined" ? (localStorage.getItem("iscore_user_name") || "") : "");
+      const res = await fetch(`/api/liff/schedule?teamId=${teamId}&userId=${userId}&userName=${encodeURIComponent(uName)}`);
       if (res.ok) {
         const data = await res.json() as { success: boolean; events?: ScheduleEvent[] };
         if (data.events) {

@@ -108,35 +108,45 @@ export function HubHeroSection({
     fetchFamilyData();
   }, []);
 
-  // eventsListから初期出欠ステータスを読み込む
+  // eventsListから初期出欠ステータスを読み込む (有効な回答のみを安全にマージ)
   useEffect(() => {
     if (Array.isArray(eventsList) && eventsList.length > 0) {
       const initialMap: Record<string, "present" | "absent" | "pending" | "late"> = {};
       for (const ev of eventsList) {
-        if (ev.id && ev.myStatus) {
+        if (ev.id && ev.myStatus && ev.myStatus !== "pending") {
           initialMap[ev.id] = ev.myStatus;
         }
       }
-      setAttendanceMap(prev => ({ ...initialMap, ...prev }));
+      if (Object.keys(initialMap).length > 0) {
+        setAttendanceMap(prev => ({ ...initialMap, ...prev }));
+      }
     }
   }, [eventsList]);
 
   const getEventAttendance = (id: string) => {
-    if (attendanceMap[id]) return attendanceMap[id];
+    if (attendanceMap[id] && attendanceMap[id] !== "pending") {
+      return attendanceMap[id];
+    }
     if (typeof window !== "undefined") {
       const cached = localStorage.getItem(`iscore_my_att_${id}`);
-      if (cached) return cached as any;
+      if (cached && (cached === "present" || cached === "absent" || cached === "late")) {
+        return cached as any;
+      }
     }
-    return "pending";
+    return attendanceMap[id] || "pending";
   };
 
   const getChildAttendance = (eventId: string, childId: string) => {
-    if (childAttendanceMap[eventId]?.[childId]) return childAttendanceMap[eventId][childId];
+    if (childAttendanceMap[eventId]?.[childId] && childAttendanceMap[eventId][childId] !== "pending") {
+      return childAttendanceMap[eventId][childId];
+    }
     if (typeof window !== "undefined") {
       const cached = localStorage.getItem(`iscore_child_att_${eventId}_${childId}`);
-      if (cached) return cached as any;
+      if (cached && (cached === "present" || cached === "absent" || cached === "late")) {
+        return cached as any;
+      }
     }
-    return "pending";
+    return childAttendanceMap[eventId]?.[childId] || "pending";
   };
 
   const getEventCarStatus = (id: string) => carStatusMap[id] || "need_ride";
