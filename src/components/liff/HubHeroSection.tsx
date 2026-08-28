@@ -50,7 +50,8 @@ export function HubHeroSection({
 
   // ユーザーの立場とお子様リスト
   const [userRole, setUserRole] = useState<"parent" | "coach" | "player" | "staff">("parent");
-  const [children, setChildren] = useState<Array<{ id: string; name: string; uniformNumber?: string }>>([]);
+  const [children, setChildren] = useState<Array<{ id: string; name: string; uniformNumber?: string; parentName?: string }>>([]);
+  const [allRelations, setAllRelations] = useState<Array<{ id: string; parentId: string; parentName: string; childId: string; childName: string; uniformNumber: string }>>([]);
   const [memberId, setMemberId] = useState<string | null>(null);
 
   // 出欠ステート（保護者本人 & お子様）
@@ -67,23 +68,34 @@ export function HubHeroSection({
         const tid = localStorage.getItem("iscore_selectedTeamId") || "demo-team";
         const uid = localStorage.getItem("iscore_userId") || "";
         const uName = localStorage.getItem("iscore_user_name") || "";
+        const savedParentId = localStorage.getItem("iscore_selected_parent_id") || "";
 
-        const res = await fetch(`/api/liff/my-family?teamId=${tid}&userId=${uid}&userName=${encodeURIComponent(uName)}`);
+        const res = await fetch(`/api/liff/my-family?teamId=${tid}&userId=${uid}&userName=${encodeURIComponent(uName)}&parentId=${savedParentId}`);
         if (res.ok) {
           const json = await res.json() as any;
           if (json.success) {
             if (json.memberId) setMemberId(json.memberId);
-            if (json.isParent) setUserRole("parent");
+            if (Array.isArray(json.allFamilyRelations)) {
+              setAllRelations(json.allFamilyRelations);
+            }
+
             if (Array.isArray(json.children) && json.children.length > 0) {
               setChildren(json.children);
+            } else if (Array.isArray(json.allFamilyRelations) && json.allFamilyRelations.length > 0) {
+              // チームに登録されている親子関係から最初のお子様をフォールバック表示
+              const firstChild = json.allFamilyRelations.map((r: any) => ({
+                id: r.childId,
+                name: r.childName || "選手",
+                uniformNumber: r.uniformNumber ? (r.uniformNumber.startsWith("#") ? r.uniformNumber : `#${r.uniformNumber}`) : undefined,
+                parentId: r.parentId,
+                parentName: r.parentName,
+              }));
+              setChildren(firstChild);
             } else {
-              // DBに未登録の場合のフォールバック
-              const savedChildren = localStorage.getItem("iscore_setting_children");
-              if (savedChildren) {
-                const parsed = JSON.parse(savedChildren);
-                if (Array.isArray(parsed) && parsed.length > 0) setChildren(parsed);
-              }
+              // デモ・初期データフォールバック
+              setChildren([{ id: "demo-player-1", name: "山田 翔太", uniformNumber: "#10" }]);
             }
+
             if (json.attendances) {
               setChildAttendanceMap(json.attendances);
             }

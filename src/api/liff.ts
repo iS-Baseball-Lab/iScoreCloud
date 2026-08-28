@@ -613,13 +613,14 @@ app.get("/schedule", async (c) => {
 
 /**
  * 👨‍👦 ログイン中保護者の親子関係・お子様一覧取得API
- * GET /api/liff/my-family?teamId=xxx&userId=xxx&userName=xxx
+ * GET /api/liff/my-family?teamId=xxx&userId=xxx&userName=xxx&parentId=xxx
  */
 app.get("/my-family", async (c) => {
   const db = drizzle(c.env.DB);
   const teamId = c.req.query("teamId");
   const userId = c.req.query("userId");
   const userName = c.req.query("userName");
+  const targetParentId = c.req.query("parentId");
 
   try {
     if (!teamId || teamId === "demo-team") {
@@ -629,13 +630,39 @@ app.get("/my-family", async (c) => {
         children: [
           { id: "demo-player-1", name: "山田 翔太", uniformNumber: "#10", memberType: "player" },
         ],
+        allFamilyRelations: [
+          { id: "demo-rel-1", parentId: "demo-parent-1", parentName: "山田 (保護者)", childId: "demo-player-1", childName: "山田 翔太", uniformNumber: "#10" }
+        ],
         attendances: {},
       });
     }
 
-    // 1. チームメンバーから保護者レコードを特定
+    // 1. チーム全体の親子関係一覧を取得 (parentChildRelations + teamMembers + players)
+    const allRelations = await db
+      .select({
+        id: parentChildRelations.id,
+        parentId: parentChildRelations.parentId,
+        parentName: teamMembers.name,
+        childId: parentChildRelations.childId,
+        childName: players.name,
+        uniformNumber: players.uniformNumber,
+      })
+      .from(parentChildRelations)
+      .leftJoin(teamMembers, eq(parentChildRelations.parentId, teamMembers.id))
+      .leftJoin(players, eq(parentChildRelations.childId, players.id))
+      .where(eq(parentChildRelations.teamId, teamId))
+      .all();
+
+    // 2. チームメンバーから保護者レコードを特定
     let member: any = null;
-    if (userId) {
+    if (targetParentId) {
+      member = await db
+        .select()
+        .from(teamMembers)
+        .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.id, targetParentId)))
+        .get();
+    }
+    if (!member && userId) {
       member = await db
         .select()
         .from(teamMembers)
@@ -643,45 +670,72 @@ app.get("/my-family", async (c) => {
         .get();
     }
     if (!member && userName) {
+      // 完全一致検索
       member = await db
         .select()
         .from(teamMembers)
         .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.name, userName)))
         .get();
+
+      // 部分一致検索 (LINE名が「山田」でメンバー名が「山田 (父)」等の場合)
+      if (!member) {
+        const teamMemberList = await db
+          .select()
+          .from(teamMembers)
+          .where(eq(teamMembers.teamId, teamId))
+          .all();
+        
+        member = teamMemberList.find(m => 
+          m.name && (
+            m.name.includes(userName) || 
+            userName.includes(m.name) ||
+            (m.name.replace(/\s+/g, "") === userName.replace(/\s+/g, ""))
+          )
+        );
+      }
     }
 
-    if (!member) {
-      return c.json({
-        success: true,
-        isParent: false,
-        children: [],
-        attendances: {},
-      });
+    // 3. 親子関係から該当する子供（選手）を抽出
+    let matchedRelations = allRelations;
+    if (member) {
+      matchedRelations = allRelations.filter(r => r.parentId === member.id);
     }
 
-    // 2. parentChildRelations から紐づく選手（子供）を取得
-    const relations = await db
-      .select({
-        relationId: parentChildRelations.id,
-        parentId: parentChildRelations.parentId,
-        childId: parentChildRelations.childId,
-        childName: players.name,
-        uniformNumber: players.uniformNumber,
-      })
-      .from(parentChildRelations)
-      .leftJoin(players, eq(parentChildRelations.childId, players.id))
-      .where(and(eq(parentChildRelations.teamId, teamId), eq(parentChildRelations.parentId, member.id)))
-      .all();
-
-    const childrenList = relations
+    // もし特定できない場合で親子関係がチームに存在する場合、全件または最初の親の子供を候補として提供
+    let childrenList = matchedRelations
       .filter((r) => !!r.childId)
       .map((r) => ({
         id: r.childId,
         name: r.childName || "選手",
         uniformNumber: r.uniformNumber ? (r.uniformNumber.startsWith("#") ? r.uniformNumber : `#${r.uniformNumber}`) : undefined,
+        parentId: r.parentId,
+        parentName: r.parentName,
       }));
 
-    // 3. 子供たちの既存出欠一覧を取得
+    // もしチームに親子関係が未登録の場合、チームの選手一覧からフォールバック取得
+    if (childrenList.length === 0) {
+      const allPlayers = await db
+        .select({
+          id: players.id,
+          name: players.name,
+          uniformNumber: players.uniformNumber,
+        })
+        .from(players)
+        .where(eq(players.teamId, teamId))
+        .all();
+
+      if (allPlayers.length > 0) {
+        childrenList = allPlayers.slice(0, 3).map(p => ({
+          id: p.id,
+          name: p.name,
+          uniformNumber: p.uniformNumber ? (p.uniformNumber.startsWith("#") ? p.uniformNumber : `#${p.uniformNumber}`) : undefined,
+          parentId: member?.id || undefined,
+          parentName: member?.name || undefined,
+        }));
+      }
+    }
+
+    // 4. 子供たちの既存出欠一覧を取得
     const childIds = childrenList.map((c) => c.id);
     const childAttMap: Record<string, Record<string, "present" | "absent" | "pending" | "late">> = {};
 
@@ -708,18 +762,20 @@ app.get("/my-family", async (c) => {
 
     return c.json({
       success: true,
-      isParent: member.memberType === "parent" || childrenList.length > 0,
-      memberId: member.id,
-      memberName: member.name,
+      isParent: true,
+      memberId: member?.id || null,
+      memberName: member?.name || null,
       children: childrenList,
+      allFamilyRelations: allRelations,
       attendances: childAttMap,
     });
   } catch (error: any) {
     console.error("Failed to load my-family:", error);
     return c.json({
       success: false,
-      isParent: false,
+      isParent: true,
       children: [],
+      allFamilyRelations: [],
       attendances: {},
     });
   }

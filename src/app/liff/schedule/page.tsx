@@ -28,7 +28,7 @@ export default function LiffSchedulePage() {
 
   // ユーザーの立場とお子様リスト
   const [userRole, setUserRole] = useState<"parent" | "coach" | "player" | "staff">("parent");
-  const [children, setChildren] = useState<Array<{ id: string; name: string; uniformNumber?: string }>>([]);
+  const [children, setChildren] = useState<Array<{ id: string; name: string; uniformNumber?: string; parentName?: string }>>([]);
   const [memberId, setMemberId] = useState<string | null>(null);
   const [childAttendanceMap, setChildAttendanceMap] = useState<Record<string, Record<string, "present" | "absent" | "pending" | "late">>>({});
 
@@ -41,21 +41,26 @@ export default function LiffSchedulePage() {
         const tid = currentTeam?.id || localStorage.getItem("iscore_selectedTeamId") || "demo-team";
         const uid = profile?.userId || localStorage.getItem("iscore_userId") || "";
         const uName = profile?.displayName || localStorage.getItem("iscore_user_name") || "";
+        const savedParentId = localStorage.getItem("iscore_selected_parent_id") || "";
 
-        const res = await fetch(`/api/liff/my-family?teamId=${tid}&userId=${uid}&userName=${encodeURIComponent(uName)}`);
+        const res = await fetch(`/api/liff/my-family?teamId=${tid}&userId=${uid}&userName=${encodeURIComponent(uName)}&parentId=${savedParentId}`);
         if (res.ok) {
           const json = await res.json() as any;
           if (json.success) {
             if (json.memberId) setMemberId(json.memberId);
-            if (json.isParent) setUserRole("parent");
             if (Array.isArray(json.children) && json.children.length > 0) {
               setChildren(json.children);
+            } else if (Array.isArray(json.allFamilyRelations) && json.allFamilyRelations.length > 0) {
+              const fallbackChildren = json.allFamilyRelations.map((r: any) => ({
+                id: r.childId,
+                name: r.childName || "選手",
+                uniformNumber: r.uniformNumber ? (r.uniformNumber.startsWith("#") ? r.uniformNumber : `#${r.uniformNumber}`) : undefined,
+                parentId: r.parentId,
+                parentName: r.parentName,
+              }));
+              setChildren(fallbackChildren);
             } else {
-              const savedChildren = localStorage.getItem("iscore_setting_children");
-              if (savedChildren) {
-                const parsed = JSON.parse(savedChildren);
-                if (Array.isArray(parsed) && parsed.length > 0) setChildren(parsed);
-              }
+              setChildren([{ id: "demo-player-1", name: "山田 翔太", uniformNumber: "#10" }]);
             }
             if (json.attendances) {
               setChildAttendanceMap(json.attendances);
