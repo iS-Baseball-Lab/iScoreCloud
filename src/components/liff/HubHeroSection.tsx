@@ -1,7 +1,7 @@
 // filepath: src/components/liff/HubHeroSection.tsx
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { 
   Calendar, 
@@ -213,9 +213,9 @@ export function HubHeroSection({
   };
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  // 📅 直近の土曜日〜金曜日の活動予定を算出
+  // 📅 直近の土曜日〜金曜日の活動予定を算出 (useMemoでメモ化しチラつき防止)
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  const getWeeklyEvents = () => {
+  const { periodLabel: weeklyPeriodLabel, events: weeklyEvents } = useMemo(() => {
     const now = new Date();
     const dayOfWeek = now.getDay(); // 0(日) - 6(土)
     
@@ -259,9 +259,25 @@ export function HubHeroSection({
           }))
         };
       }
+
+      // 実チームで期間内の予定がない場合、直近の直近イベントを表示
+      return {
+        periodLabel,
+        events: eventsList.slice(0, 3).map(ev => ({
+          id: ev.id,
+          title: ev.title || "活動予定",
+          date: ev.date || `${new Date(ev.startAt).getMonth() + 1}/${new Date(ev.startAt).getDate()}(${["日", "月", "火", "水", "木", "金", "土"][new Date(ev.startAt).getDay()]})`,
+          time: ev.time || (ev.pmStartAt ? "08:00〜18:00" : "08:00〜12:00"),
+          location: ev.location || "ホームグラウンド",
+          eventType: (ev.eventType as any) || "practice",
+          dutyGroup: ev.dutyGroup || "1班",
+          carInfo: ev.carInfo || "配車調整中",
+          needsLunch: ev.needsLunch !== undefined ? ev.needsLunch : !!ev.pmStartAt,
+        }))
+      };
     }
 
-    // デモまたはデータ未登録時のデフォルト直近土日活動
+    // デモチームの場合のみデフォルト活動を表示
     const defaultEvents = [
       {
         id: "ev-sat-1",
@@ -288,9 +304,7 @@ export function HubHeroSection({
     ];
 
     return { periodLabel, events: defaultEvents };
-  };
-
-  const { periodLabel: weeklyPeriodLabel, events: weeklyEvents } = getWeeklyEvents();
+  }, [eventsList]);
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   // 📅 月間カレンダー用ステート & 算出ロジック

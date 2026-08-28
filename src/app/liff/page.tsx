@@ -1,7 +1,7 @@
 // filepath: src/app/liff/page.tsx
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { HubHeroSection } from "@/components/liff/HubHeroSection";
 import { HubQuickNav } from "@/components/liff/HubQuickNav";
@@ -39,6 +39,7 @@ export default function LiffHubPage() {
   const [matches, setMatches] = useState<MatchCardData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
+  const hasLoadedRef = useRef(false);
 
   // LINEプロフィール取得時の名前反映
   useEffect(() => {
@@ -52,7 +53,9 @@ export default function LiffHubPage() {
     if (isLoadingTeam && !currentTeam?.id) return;
 
     try {
-      setIsLoading(true);
+      if (!hasLoadedRef.current) {
+        setIsLoading(true);
+      }
       const targetTeamId = teamId || currentTeam?.id || "demo-team";
       const uid = profile?.userId || (typeof window !== "undefined" ? (localStorage.getItem("iscore_user_id") || localStorage.getItem("iscore_userId") || "") : "");
       const uName = profile?.displayName || (typeof window !== "undefined" ? (localStorage.getItem("iscore_user_name") || "") : "");
@@ -68,14 +71,11 @@ export default function LiffHubPage() {
         }
         if (Array.isArray(data.events)) {
           setEvents(data.events);
-        } else {
-          setEvents([]);
         }
         if (Array.isArray(data.matches)) {
           setMatches(data.matches);
-        } else {
-          setMatches([]);
         }
+        hasLoadedRef.current = true;
       }
     } catch (error) {
       console.error("Failed to load hub data:", error);
