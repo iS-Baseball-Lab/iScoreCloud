@@ -189,14 +189,14 @@ export function LiffBottomNav() {
               <Link
                 href="/liff"
                 onClick={() => setIsOtherMenuOpen(false)}
-                className="flex items-center gap-3 p-3 rounded-2xl bg-muted/40 hover:bg-muted border border-border/60 transition-all group active:scale-95"
+                className="flex items-center gap-3 p-3 rounded-2xl bg-white dark:bg-slate-900 hover:bg-slate-50 border border-slate-200/90 dark:border-slate-800 shadow-xs ring-1 ring-black/5 dark:ring-white/5 transition-all group active:scale-95"
               >
-                <span className="w-9 h-9 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform">
+                <span className="w-9 h-9 rounded-xl bg-blue-500/15 text-blue-600 dark:text-blue-400 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform shadow-2xs">
                   <Home className="w-5 h-5" />
                 </span>
                 <div className="min-w-0">
-                  <p className="text-xs font-black text-foreground truncate">ホーム</p>
-                  <p className="text-[10px] text-muted-foreground font-bold truncate">トップページ</p>
+                  <p className="text-xs font-black text-slate-900 dark:text-slate-100 truncate">ホーム</p>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold truncate">トップページ</p>
                 </div>
               </Link>
 
@@ -204,14 +204,14 @@ export function LiffBottomNav() {
               <Link
                 href="/liff/stats"
                 onClick={() => setIsOtherMenuOpen(false)}
-                className="flex items-center gap-3 p-3 rounded-2xl bg-muted/40 hover:bg-muted border border-border/60 transition-all group active:scale-95"
+                className="flex items-center gap-3 p-3 rounded-2xl bg-white dark:bg-slate-900 hover:bg-slate-50 border border-slate-200/90 dark:border-slate-800 shadow-xs ring-1 ring-black/5 dark:ring-white/5 transition-all group active:scale-95"
               >
-                <span className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform">
+                <span className="w-9 h-9 rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform shadow-2xs">
                   <Trophy className="w-5 h-5" />
                 </span>
                 <div className="min-w-0">
-                  <p className="text-xs font-black text-foreground truncate">チーム成績</p>
-                  <p className="text-[10px] text-muted-foreground font-bold truncate">勝敗・打撃個人成績</p>
+                  <p className="text-xs font-black text-slate-900 dark:text-slate-100 truncate">チーム成績</p>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold truncate">勝敗・打撃個人成績</p>
                 </div>
               </Link>
 
@@ -219,14 +219,14 @@ export function LiffBottomNav() {
               <Link
                 href="/liff/matches"
                 onClick={() => setIsOtherMenuOpen(false)}
-                className="flex items-center gap-3 p-3 rounded-2xl bg-muted/40 hover:bg-muted border border-border/60 transition-all group active:scale-95"
+                className="flex items-center gap-3 p-3 rounded-2xl bg-white dark:bg-slate-900 hover:bg-slate-50 border border-slate-200/90 dark:border-slate-800 shadow-xs ring-1 ring-black/5 dark:ring-white/5 transition-all group active:scale-95"
               >
-                <span className="w-9 h-9 rounded-xl bg-red-500/10 text-red-600 dark:text-red-400 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform">
+                <span className="w-9 h-9 rounded-xl bg-red-500/15 text-red-600 dark:text-red-400 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform shadow-2xs">
                   <Video className="w-5 h-5" />
                 </span>
                 <div className="min-w-0">
-                  <p className="text-xs font-black text-foreground truncate">試合情報</p>
-                  <p className="text-[10px] text-muted-foreground font-bold truncate">試合動画 & スコア</p>
+                  <p className="text-xs font-black text-slate-900 dark:text-slate-100 truncate">試合情報</p>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold truncate">試合動画 & スコア</p>
                 </div>
               </Link>
 
@@ -234,14 +234,14 @@ export function LiffBottomNav() {
               <Link
                 href="/liff/grounds"
                 onClick={() => setIsOtherMenuOpen(false)}
-                className="flex items-center gap-3 p-3 rounded-2xl bg-muted/40 hover:bg-muted border border-border/60 transition-all group active:scale-95"
+                className="flex items-center gap-3 p-3 rounded-2xl bg-white dark:bg-slate-900 hover:bg-slate-50 border border-slate-200/90 dark:border-slate-800 shadow-xs ring-1 ring-black/5 dark:ring-white/5 transition-all group active:scale-95"
               >
-                <span className="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform">
+                <span className="w-9 h-9 rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform shadow-2xs">
                   <MapPin className="w-5 h-5" />
                 </span>
                 <div className="min-w-0">
-                  <p className="text-xs font-black text-foreground truncate">球場 & 施設</p>
-                  <p className="text-[10px] text-muted-foreground font-bold truncate">アクセス・駐車場</p>
+                  <p className="text-xs font-black text-slate-900 dark:text-slate-100 truncate">球場 & 施設</p>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold truncate">アクセス・駐車場</p>
                 </div>
               </Link>
 
@@ -249,14 +249,14 @@ export function LiffBottomNav() {
               <Link
                 href="/liff/schedule"
                 onClick={() => setIsOtherMenuOpen(false)}
-                className="flex items-center gap-3 p-3 rounded-2xl bg-muted/40 hover:bg-muted border border-border/60 transition-all group active:scale-95"
+                className="flex items-center gap-3 p-3 rounded-2xl bg-white dark:bg-slate-900 hover:bg-slate-50 border border-slate-200/90 dark:border-slate-800 shadow-xs ring-1 ring-black/5 dark:ring-white/5 transition-all group active:scale-95"
               >
-                <span className="w-9 h-9 rounded-xl bg-orange-500/10 text-orange-600 dark:text-orange-400 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform">
+                <span className="w-9 h-9 rounded-xl bg-orange-500/15 text-orange-600 dark:text-orange-400 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform shadow-2xs">
                   <Calendar className="w-5 h-5" />
                 </span>
                 <div className="min-w-0">
-                  <p className="text-xs font-black text-foreground truncate">予定 & 欠席</p>
-                  <p className="text-[10px] text-muted-foreground font-bold truncate">当番・出欠確認</p>
+                  <p className="text-xs font-black text-slate-900 dark:text-slate-100 truncate">予定 & 欠席</p>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold truncate">当番・出欠確認</p>
                 </div>
               </Link>
 
@@ -264,14 +264,14 @@ export function LiffBottomNav() {
               <Link
                 href="/liff/carpool"
                 onClick={() => setIsOtherMenuOpen(false)}
-                className="flex items-center gap-3 p-3 rounded-2xl bg-muted/40 hover:bg-muted border border-border/60 transition-all group active:scale-95"
+                className="flex items-center gap-3 p-3 rounded-2xl bg-white dark:bg-slate-900 hover:bg-slate-50 border border-slate-200/90 dark:border-slate-800 shadow-xs ring-1 ring-black/5 dark:ring-white/5 transition-all group active:scale-95"
               >
-                <span className="w-9 h-9 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform">
+                <span className="w-9 h-9 rounded-xl bg-blue-500/15 text-blue-600 dark:text-blue-400 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform shadow-2xs">
                   <Car className="w-5 h-5" />
                 </span>
                 <div className="min-w-0">
-                  <p className="text-xs font-black text-foreground truncate">配車表</p>
-                  <p className="text-[10px] text-muted-foreground font-bold truncate">乗車割り・集合時間</p>
+                  <p className="text-xs font-black text-slate-900 dark:text-slate-100 truncate">配車表</p>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold truncate">乗車割り・集合時間</p>
                 </div>
               </Link>
 
@@ -279,14 +279,14 @@ export function LiffBottomNav() {
               <Link
                 href="/liff/documents"
                 onClick={() => setIsOtherMenuOpen(false)}
-                className="flex items-center gap-3 p-3 rounded-2xl bg-muted/40 hover:bg-muted border border-border/60 transition-all group active:scale-95"
+                className="flex items-center gap-3 p-3 rounded-2xl bg-white dark:bg-slate-900 hover:bg-slate-50 border border-slate-200/90 dark:border-slate-800 shadow-xs ring-1 ring-black/5 dark:ring-white/5 transition-all group active:scale-95"
               >
-                <span className="w-9 h-9 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform">
+                <span className="w-9 h-9 rounded-xl bg-purple-500/15 text-purple-600 dark:text-purple-400 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform shadow-2xs">
                   <FileText className="w-5 h-5" />
                 </span>
                 <div className="min-w-0">
-                  <p className="text-xs font-black text-foreground truncate">資料ダウンロード</p>
-                  <p className="text-[10px] text-muted-foreground font-bold truncate">規約・配車マニュアル</p>
+                  <p className="text-xs font-black text-slate-900 dark:text-slate-100 truncate">資料ダウンロード</p>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold truncate">規約・配車マニュアル</p>
                 </div>
               </Link>
 
@@ -294,14 +294,14 @@ export function LiffBottomNav() {
               <Link
                 href="/liff/faq"
                 onClick={() => setIsOtherMenuOpen(false)}
-                className="flex items-center gap-3 p-3 rounded-2xl bg-muted/40 hover:bg-muted border border-border/60 transition-all group active:scale-95"
+                className="flex items-center gap-3 p-3 rounded-2xl bg-white dark:bg-slate-900 hover:bg-slate-50 border border-slate-200/90 dark:border-slate-800 shadow-xs ring-1 ring-black/5 dark:ring-white/5 transition-all group active:scale-95"
               >
-                <span className="w-9 h-9 rounded-xl bg-teal-500/10 text-teal-600 dark:text-teal-400 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform">
+                <span className="w-9 h-9 rounded-xl bg-teal-500/15 text-teal-600 dark:text-teal-400 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform shadow-2xs">
                   <HelpCircle className="w-5 h-5" />
                 </span>
                 <div className="min-w-0">
-                  <p className="text-xs font-black text-foreground truncate">よくある質問</p>
-                  <p className="text-[10px] text-muted-foreground font-bold truncate">雨天判断・用具規定</p>
+                  <p className="text-xs font-black text-slate-900 dark:text-slate-100 truncate">よくある質問</p>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold truncate">雨天判断・用具規定</p>
                 </div>
               </Link>
 
@@ -309,16 +309,16 @@ export function LiffBottomNav() {
               <Link
                 href="/liff/settings"
                 onClick={() => setIsOtherMenuOpen(false)}
-                className="flex items-center gap-3 p-3 rounded-2xl bg-muted/40 hover:bg-muted border border-border/60 transition-all group active:scale-95 col-span-2"
+                className="flex items-center gap-3 p-3 rounded-2xl bg-white dark:bg-slate-900 hover:bg-slate-50 border border-slate-200/90 dark:border-slate-800 shadow-xs ring-1 ring-black/5 dark:ring-white/5 transition-all group active:scale-95 col-span-2"
               >
-                <span className="w-9 h-9 rounded-xl bg-slate-500/10 text-slate-700 dark:text-slate-300 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform">
+                <span className="w-9 h-9 rounded-xl bg-slate-500/15 text-slate-700 dark:text-slate-300 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform shadow-2xs">
                   <Settings className="w-5 h-5" />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="text-xs font-black text-foreground truncate">アプリ設定</p>
-                  <p className="text-[10px] text-muted-foreground font-bold truncate">表示テーマ・立場・スコア入力設定</p>
+                  <p className="text-xs font-black text-slate-900 dark:text-slate-100 truncate">アプリ設定</p>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold truncate">表示テーマ・立場・スコア入力設定</p>
                 </div>
-                <ChevronRight className="w-4 h-4 text-muted-foreground mr-1" />
+                <ChevronRight className="w-4 h-4 text-slate-400 mr-1" />
               </Link>
             </div>
 

@@ -26,6 +26,7 @@ import { MatchScoreCard } from "@/components/liff/MatchScoreCard";
 
 interface HubHeroSectionProps {
   teamName?: string;
+  isDemo?: boolean;
   nextEvent?: {
     id: string;
     title: string;
@@ -43,6 +44,7 @@ interface HubHeroSectionProps {
 
 export function HubHeroSection({
   teamName = "チーム",
+  isDemo = false,
   nextEvent,
   eventsList = [],
   latestMatch,
@@ -67,6 +69,11 @@ export function HubHeroSection({
       const uid = localStorage.getItem("iscore_user_id") || localStorage.getItem("iscore_userId") || "";
       const uName = localStorage.getItem("iscore_user_name") || "";
 
+      // チーム変更時は一旦クリア
+      if (tid !== "demo-team" && !isDemo) {
+        setChildren([]);
+      }
+
       const res = await fetch(`/api/liff/my-family?teamId=${tid}&userId=${uid}&userName=${encodeURIComponent(uName)}`);
       if (res.ok) {
         const json = await res.json() as any;
@@ -85,8 +92,10 @@ export function HubHeroSection({
               }
             }
             setChildren(uniqueChildren);
-          } else {
+          } else if (isDemo || tid === "demo-team") {
             setChildren([{ id: "demo-player-1", name: "山田 翔太", uniformNumber: "#10" }]);
+          } else {
+            setChildren([]);
           }
 
           if (json.attendances) {
@@ -107,7 +116,7 @@ export function HubHeroSection({
   useEffect(() => {
     if (typeof window === "undefined") return;
     fetchFamilyData();
-  }, []);
+  }, [isDemo, teamName]);
 
   // eventsListから初期出欠ステータスを読み込む (有効な回答のみを安全にマージ)
   useEffect(() => {
@@ -278,6 +287,11 @@ export function HubHeroSection({
       };
     }
 
+    // 実チームで予定がない場合は空配列を返す（デモ予定は出さない）
+    if (!isDemo) {
+      return { periodLabel, events: [] };
+    }
+
     // デモチームの場合のみデフォルト活動を表示
     const defaultEvents = [
       {
@@ -305,7 +319,7 @@ export function HubHeroSection({
     ];
 
     return { periodLabel, events: defaultEvents };
-  }, [eventsList]);
+  }, [eventsList, isDemo]);
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   // 📅 月間カレンダー用ステート & 算出ロジック
@@ -425,14 +439,14 @@ export function HubHeroSection({
   return (
     <div className="space-y-2.5">
       {/* 🌟 1. 上部セグメントタブ（活動予定 / カレンダー / 試合速報） */}
-      <div className="flex items-center p-1 bg-background/80 dark:bg-muted/40 backdrop-blur-md rounded-2xl border border-primary/20 dark:border-primary/25 shadow-xs">
+      <div className="flex items-center p-1 bg-slate-200/70 dark:bg-slate-800/60 rounded-2xl border border-slate-300/80 dark:border-slate-700 shadow-xs">
         <button
           type="button"
           onClick={() => setActiveTab("next")}
           className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-xl text-xs font-black transition-all active:scale-95 ${
             activeTab === "next"
-              ? "bg-primary text-primary-foreground shadow-xs font-black"
-              : "text-muted-foreground hover:text-foreground font-bold"
+              ? "bg-primary text-primary-foreground shadow-sm font-black ring-1 ring-primary/30"
+              : "text-slate-600 dark:text-slate-300 hover:text-slate-900 font-bold"
           }`}
         >
           <Sparkles className="w-3.5 h-3.5" />
@@ -444,8 +458,8 @@ export function HubHeroSection({
           onClick={() => setActiveTab("calendar")}
           className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-xl text-xs font-black transition-all active:scale-95 ${
             activeTab === "calendar"
-              ? "bg-primary text-primary-foreground shadow-xs font-black"
-              : "text-muted-foreground hover:text-foreground font-bold"
+              ? "bg-primary text-primary-foreground shadow-sm font-black ring-1 ring-primary/30"
+              : "text-slate-600 dark:text-slate-300 hover:text-slate-900 font-bold"
           }`}
         >
           <CalendarDays className="w-3.5 h-3.5" />
@@ -457,8 +471,8 @@ export function HubHeroSection({
           onClick={() => setActiveTab("score")}
           className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-xl text-xs font-black transition-all active:scale-95 ${
             activeTab === "score"
-              ? "bg-primary text-primary-foreground shadow-xs font-black"
-              : "text-muted-foreground hover:text-foreground font-bold"
+              ? "bg-primary text-primary-foreground shadow-sm font-black ring-1 ring-primary/30"
+              : "text-slate-600 dark:text-slate-300 hover:text-slate-900 font-bold"
           }`}
         >
           <Flame className="w-3.5 h-3.5" />
@@ -485,17 +499,36 @@ export function HubHeroSection({
             )}
           </div>
 
-          {/* 横スクロール カルーセルコンテナ */}
-          <div className="flex overflow-x-auto snap-x snap-mandatory scrollbar-none gap-3 -mx-4 px-4 pb-1 pt-0.5">
-            {weeklyEvents.map((ev, idx) => {
-              const pStatus = getEventAttendance(ev.id);
-              const cStatus = getEventCarStatus(ev.id);
-
-              return (
-                <div
-                  key={ev.id}
-                  className="w-[88vw] max-w-[360px] shrink-0 snap-center rounded-3xl bg-card border-2 border-primary/25 dark:border-primary/30 shadow-md shadow-primary/5 p-4 space-y-3.5 flex flex-col justify-between"
+          {/* 予定が0件の場合のクリーン表示 */}
+          {weeklyEvents.length === 0 ? (
+            <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-sm text-center space-y-2 ring-1 ring-black/5">
+              <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 mx-auto flex items-center justify-center">
+                <Calendar className="w-5 h-5" />
+              </div>
+              <p className="text-sm font-black text-slate-800 dark:text-slate-200">この期間の活動予定はありません</p>
+              <p className="text-xs text-slate-500 font-bold">予定が登録されるとここに表示されます</p>
+              <div className="pt-2">
+                <Link
+                  href="/liff/schedule"
+                  className="inline-flex items-center gap-1 px-4 py-1.5 rounded-full bg-primary text-primary-foreground text-xs font-black shadow-xs active:scale-95"
                 >
+                  <span>全予定カレンダーを見る</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </Link>
+              </div>
+            </div>
+          ) : (
+            /* 横スクロール カルーセルコンテナ */
+            <div className="flex overflow-x-auto snap-x snap-mandatory scrollbar-none gap-3 -mx-4 px-4 pb-1 pt-0.5">
+              {weeklyEvents.map((ev, idx) => {
+                const pStatus = getEventAttendance(ev.id);
+                const cStatus = getEventCarStatus(ev.id);
+
+                return (
+                  <div
+                    key={ev.id}
+                    className="w-[88vw] max-w-[360px] shrink-0 snap-center rounded-3xl bg-white dark:bg-slate-900 border-2 border-slate-200/90 dark:border-slate-800 shadow-md shadow-black/5 p-4 space-y-3.5 flex flex-col justify-between ring-1 ring-black/5"
+                  >
                   <div className="space-y-3">
                     {/* 上部タグ & 日程番号 */}
                     <div className="flex items-center justify-between">
@@ -779,6 +812,7 @@ export function HubHeroSection({
               );
             })}
           </div>
+          )}
         </div>
       )}
 

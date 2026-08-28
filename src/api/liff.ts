@@ -830,23 +830,6 @@ app.get("/my-family", async (c) => {
           });
         }
       }
-    } else if (allRelations.length > 0) {
-      // ユーザーが未特定の場合、最初の保護者家庭のお子様のみを1人分安全に表示
-      const firstParentId = allRelations[0].parentId;
-      const myRelations = allRelations.filter(r => r.parentId === firstParentId && !!r.childId);
-      const seen = new Set<string>();
-      for (const rel of myRelations) {
-        if (!seen.has(rel.childId)) {
-          seen.add(rel.childId);
-          childrenList.push({
-            id: rel.childId,
-            name: rel.childName || "選手",
-            uniformNumber: rel.uniformNumber ? (rel.uniformNumber.startsWith("#") ? rel.uniformNumber : `#${rel.uniformNumber}`) : undefined,
-            parentId: rel.parentId || undefined,
-            parentName: rel.parentName || undefined,
-          });
-        }
-      }
     }
 
     // 4. 子供たちの既存出欠一覧を取得

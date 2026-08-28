@@ -85,8 +85,13 @@ export default function LiffHubPage() {
   }, [currentTeam?.id, isLoadingTeam]);
 
   useEffect(() => {
+    // チーム変更時は一旦クリアして前チームのデータを引きずらない
+    setEvents([]);
+    setMatches([]);
+    setNextEvent(null);
+    hasLoadedRef.current = false;
     loadHubData();
-  }, [loadHubData]);
+  }, [currentTeam?.id]);
 
   const teamName = currentTeam?.name || "チーム";
 
@@ -147,6 +152,7 @@ export default function LiffHubPage() {
           <section>
             <HubHeroSection
               teamName={teamName}
+              isDemo={isDemo}
               nextEvent={nextEvent}
               eventsList={events}
               latestMatch={matches[0] || null}

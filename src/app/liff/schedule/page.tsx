@@ -36,9 +36,14 @@ export default function LiffSchedulePage() {
   // 👨‍👦 DBの親子関係・お子様データおよび出欠の自動取得
   const fetchFamilyData = async () => {
     try {
-      const tid = currentTeam?.id || localStorage.getItem("iscore_selectedTeamId") || "demo-team";
+      const tid = currentTeam?.id || (typeof window !== "undefined" ? (localStorage.getItem("iscore_selectedTeamId") || "demo-team") : "demo-team");
       const uid = profile?.userId || (typeof window !== "undefined" ? (localStorage.getItem("iscore_user_id") || localStorage.getItem("iscore_userId") || "") : "");
       const uName = profile?.displayName || (typeof window !== "undefined" ? (localStorage.getItem("iscore_user_name") || "") : "");
+
+      // チーム変更時は一旦クリア
+      if (tid !== "demo-team" && !currentTeam?.isDemo) {
+        setChildren([]);
+      }
 
       const res = await fetch(`/api/liff/my-family?teamId=${tid}&userId=${uid}&userName=${encodeURIComponent(uName)}`);
       if (res.ok) {
@@ -56,8 +61,10 @@ export default function LiffSchedulePage() {
               }
             }
             setChildren(uniqueChildren);
-          } else {
+          } else if (tid === "demo-team" || currentTeam?.isDemo) {
             setChildren([{ id: "demo-player-1", name: "山田 翔太", uniformNumber: "#10" }]);
+          } else {
+            setChildren([]);
           }
           if (json.attendances) {
             setChildAttendanceMap(prev => ({ ...json.attendances, ...prev }));
@@ -80,6 +87,7 @@ export default function LiffSchedulePage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    setChildren([]);
     fetchFamilyData();
   }, [currentTeam?.id, profile?.displayName, profile?.userId]);
 
