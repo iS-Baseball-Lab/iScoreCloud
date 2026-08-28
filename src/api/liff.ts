@@ -695,47 +695,51 @@ app.get("/my-family", async (c) => {
       }
     }
 
-    // 3. 親子関係から該当する子供（選手）を抽出
-    let matchedRelations = allRelations;
-    if (member) {
-      matchedRelations = allRelations.filter(r => r.parentId === member.id);
-    }
-
-    // もし特定できない場合で親子関係がチームに存在する場合、全件または最初の親の子供を候補として提供
-    let childrenList = matchedRelations
-      .filter((r) => !!r.childId)
-      .map((r) => ({
-        id: r.childId,
-        name: r.childName || "選手",
-        uniformNumber: r.uniformNumber ? (r.uniformNumber.startsWith("#") ? r.uniformNumber : `#${r.uniformNumber}`) : undefined,
-        parentId: r.parentId,
-        parentName: r.parentName,
-      }));
-
-    // もしチームに親子関係が未登録の場合、チームの選手一覧からフォールバック取得
-    if (childrenList.length === 0) {
-      const allPlayers = await db
-        .select({
-          id: players.id,
-          name: players.name,
-          uniformNumber: players.uniformNumber,
-        })
-        .from(players)
-        .where(eq(players.teamId, teamId))
-        .all();
-
-      if (allPlayers.length > 0) {
-        childrenList = allPlayers.slice(0, 3).map(p => ({
-          id: p.id,
-          name: p.name,
-          uniformNumber: p.uniformNumber ? (p.uniformNumber.startsWith("#") ? p.uniformNumber : `#${p.uniformNumber}`) : undefined,
-          parentId: member?.id || undefined,
-          parentName: member?.name || undefined,
-        }));
+    // 3. 親子関係から保護者ごとのグルーピングデータを作成
+    const parentMap = new Map<string, { parentId: string; parentName: string; children: Array<{ id: string; name: string; uniformNumber?: string }> }>();
+    
+    for (const rel of allRelations) {
+      if (!rel.parentId || !rel.childId) continue;
+      if (!parentMap.has(rel.parentId)) {
+        parentMap.set(rel.parentId, {
+          parentId: rel.parentId,
+          parentName: rel.parentName || "保護者",
+          children: [],
+        });
+      }
+      const pEntry = parentMap.get(rel.parentId)!;
+      if (!pEntry.children.some(c => c.id === rel.childId)) {
+        pEntry.children.push({
+          id: rel.childId,
+          name: rel.childName || "選手",
+          uniformNumber: rel.uniformNumber ? (rel.uniformNumber.startsWith("#") ? rel.uniformNumber : `#${rel.uniformNumber}`) : undefined,
+        });
       }
     }
 
-    // 4. 子供たちの既存出欠一覧を取得
+    const parentOptions = Array.from(parentMap.values());
+
+    // 4. 特定された保護者のお子様のみを抽出（重複排除）
+    let childrenList: Array<{ id: string; name: string; uniformNumber?: string; parentId?: string; parentName?: string }> = [];
+
+    if (member && parentMap.has(member.id)) {
+      childrenList = parentMap.get(member.id)!.children.map(c => ({
+        ...c,
+        parentId: member.id,
+        parentName: member.name,
+      }));
+    } else if (parentOptions.length > 0) {
+      // 未特定の時は最初の親のお子様のみを初期セット
+      const firstParent = parentOptions[0];
+      member = { id: firstParent.parentId, name: firstParent.parentName };
+      childrenList = firstParent.children.map(c => ({
+        ...c,
+        parentId: firstParent.parentId,
+        parentName: firstParent.parentName,
+      }));
+    }
+
+    // 5. 子供たちの既存出欠一覧を取得
     const childIds = childrenList.map((c) => c.id);
     const childAttMap: Record<string, Record<string, "present" | "absent" | "pending" | "late">> = {};
 
@@ -766,6 +770,7 @@ app.get("/my-family", async (c) => {
       memberId: member?.id || null,
       memberName: member?.name || null,
       children: childrenList,
+      parentOptions,
       allFamilyRelations: allRelations,
       attendances: childAttMap,
     });

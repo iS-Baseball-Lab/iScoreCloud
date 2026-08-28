@@ -51,8 +51,9 @@ export function HubHeroSection({
   // ユーザーの立場とお子様リスト
   const [userRole, setUserRole] = useState<"parent" | "coach" | "player" | "staff">("parent");
   const [children, setChildren] = useState<Array<{ id: string; name: string; uniformNumber?: string; parentName?: string }>>([]);
-  const [allRelations, setAllRelations] = useState<Array<{ id: string; parentId: string; parentName: string; childId: string; childName: string; uniformNumber: string }>>([]);
+  const [parentOptions, setParentOptions] = useState<Array<{ parentId: string; parentName: string; children: Array<{ id: string; name: string; uniformNumber?: string }> }>>([]);
   const [memberId, setMemberId] = useState<string | null>(null);
+  const [memberName, setMemberName] = useState<string | null>(null);
 
   // 出欠ステート（保護者本人 & お子様）
   const [attendanceMap, setAttendanceMap] = useState<Record<string, "present" | "absent" | "pending" | "late">>({});
@@ -60,54 +61,59 @@ export function HubHeroSection({
   const [carStatusMap, setCarStatusMap] = useState<Record<string, "can_drive" | "need_ride" | "not_needed">>({});
 
   // 👨‍👦 DBの親子関係・お子様データおよび出欠の自動取得
-  useEffect(() => {
-    if (typeof window === "undefined") return;
+  const fetchFamilyData = async (targetPid?: string) => {
+    try {
+      const tid = localStorage.getItem("iscore_selectedTeamId") || "demo-team";
+      const uid = localStorage.getItem("iscore_userId") || "";
+      const uName = localStorage.getItem("iscore_user_name") || "";
+      const pid = targetPid || localStorage.getItem("iscore_selected_parent_id") || "";
 
-    const fetchFamilyData = async () => {
-      try {
-        const tid = localStorage.getItem("iscore_selectedTeamId") || "demo-team";
-        const uid = localStorage.getItem("iscore_userId") || "";
-        const uName = localStorage.getItem("iscore_user_name") || "";
-        const savedParentId = localStorage.getItem("iscore_selected_parent_id") || "";
+      const res = await fetch(`/api/liff/my-family?teamId=${tid}&userId=${uid}&userName=${encodeURIComponent(uName)}&parentId=${pid}`);
+      if (res.ok) {
+        const json = await res.json() as any;
+        if (json.success) {
+          if (json.memberId) setMemberId(json.memberId);
+          if (json.memberName) setMemberName(json.memberName);
+          if (Array.isArray(json.parentOptions)) {
+            setParentOptions(json.parentOptions);
+          }
 
-        const res = await fetch(`/api/liff/my-family?teamId=${tid}&userId=${uid}&userName=${encodeURIComponent(uName)}&parentId=${savedParentId}`);
-        if (res.ok) {
-          const json = await res.json() as any;
-          if (json.success) {
-            if (json.memberId) setMemberId(json.memberId);
-            if (Array.isArray(json.allFamilyRelations)) {
-              setAllRelations(json.allFamilyRelations);
+          if (Array.isArray(json.children) && json.children.length > 0) {
+            // 重複排除
+            const uniqueChildren: typeof json.children = [];
+            const seen = new Set<string>();
+            for (const c of json.children) {
+              if (!seen.has(c.id)) {
+                seen.add(c.id);
+                uniqueChildren.push(c);
+              }
             }
+            setChildren(uniqueChildren);
+          } else {
+            setChildren([{ id: "demo-player-1", name: "山田 翔太", uniformNumber: "#10" }]);
+          }
 
-            if (Array.isArray(json.children) && json.children.length > 0) {
-              setChildren(json.children);
-            } else if (Array.isArray(json.allFamilyRelations) && json.allFamilyRelations.length > 0) {
-              // チームに登録されている親子関係から最初のお子様をフォールバック表示
-              const firstChild = json.allFamilyRelations.map((r: any) => ({
-                id: r.childId,
-                name: r.childName || "選手",
-                uniformNumber: r.uniformNumber ? (r.uniformNumber.startsWith("#") ? r.uniformNumber : `#${r.uniformNumber}`) : undefined,
-                parentId: r.parentId,
-                parentName: r.parentName,
-              }));
-              setChildren(firstChild);
-            } else {
-              // デモ・初期データフォールバック
-              setChildren([{ id: "demo-player-1", name: "山田 翔太", uniformNumber: "#10" }]);
-            }
-
-            if (json.attendances) {
-              setChildAttendanceMap(json.attendances);
-            }
+          if (json.attendances) {
+            setChildAttendanceMap(json.attendances);
           }
         }
-      } catch (err) {
-        console.error("Failed to load family data:", err);
       }
-    };
+    } catch (err) {
+      console.error("Failed to load family data:", err);
+    }
+  };
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
     fetchFamilyData();
   }, []);
+
+  const handleSelectParent = (pId: string) => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("iscore_selected_parent_id", pId);
+    }
+    fetchFamilyData(pId);
+  };
 
   const getEventAttendance = (id: string) => attendanceMap[id] || "pending";
   const getChildAttendance = (eventId: string, childId: string) => childAttendanceMap[eventId]?.[childId] || "pending";
@@ -515,6 +521,24 @@ export function HubHeroSection({
 
                   {/* 出欠回答エリア (○, △, ×, ？) */}
                   <div className="pt-2 border-t border-primary/15 space-y-3">
+                    {/* 👨‍👦 保護者が複数存在する場合のクイック切り替え */}
+                    {userRole === "parent" && parentOptions.length > 1 && (
+                      <div className="flex items-center justify-between px-1 py-1 rounded-xl bg-muted/40 border border-border/60 text-[11px]">
+                        <span className="font-black text-muted-foreground">👨‍👦 表示中のご家庭:</span>
+                        <select
+                          value={memberId || ""}
+                          onChange={(e) => handleSelectParent(e.target.value)}
+                          className="bg-card text-foreground font-black px-2 py-0.5 rounded-lg border border-border text-xs focus:outline-hidden"
+                        >
+                          {parentOptions.map((p) => (
+                            <option key={p.parentId} value={p.parentId}>
+                              {p.parentName} ({p.children.map(c => `${c.name}${c.uniformNumber ? ` ${c.uniformNumber}` : ""}`).join("・")})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
                     {/* 👦 1. 保護者の場合: お子様（選手）の出欠回答 */}
                     {userRole === "parent" && children.map((child) => {
                       const childStatus = getChildAttendance(ev.id, child.id);
