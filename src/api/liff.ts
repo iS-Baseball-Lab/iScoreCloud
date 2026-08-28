@@ -365,12 +365,24 @@ app.get("/hub", async (c) => {
       }
     }
 
+    // 登録球場一覧を取得（略称優先マッピング用）
+    const teamVenues = await db.select({ name: venues.name, shortName: venues.shortName }).from(venues).all();
+    const venueMap = new Map<string, string>();
+    for (const v of teamVenues) {
+      if (v.name && v.shortName && v.shortName.trim()) {
+        venueMap.set(v.name.trim(), v.shortName.trim());
+      }
+    }
+
     const formattedEventsList = allEventsList.map((ev) => {
       const d = new Date(ev.startAt);
       const y = d.getFullYear();
       const m = String(d.getMonth() + 1).padStart(2, "0");
       const day = String(d.getDate()).padStart(2, "0");
       const dateStr = `${y}-${m}-${day}`;
+
+      const rawLocation = ev.location || targetTeam.homeGround || "グラウンド";
+      const displayLocation = venueMap.get(rawLocation.trim()) || rawLocation;
 
       return {
         id: ev.id,
@@ -382,7 +394,7 @@ app.get("/hub", async (c) => {
         pmStartAt: ev.pmStartAt,
         pmEndAt: ev.pmEndAt,
         time: d.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }),
-        location: ev.location || targetTeam.homeGround || "グラウンド",
+        location: displayLocation,
         eventType: ev.eventType || "practice",
         dutyGroup: ev.dutyGroup || "1班",
         carInfo: "配車調整中",
@@ -661,6 +673,15 @@ app.get("/schedule", async (c) => {
       }
     }
 
+    // 登録球場一覧を取得（略称優先マッピング用）
+    const teamVenues = await db.select({ name: venues.name, shortName: venues.shortName }).from(venues).all();
+    const venueMap = new Map<string, string>();
+    for (const v of teamVenues) {
+      if (v.name && v.shortName && v.shortName.trim()) {
+        venueMap.set(v.name.trim(), v.shortName.trim());
+      }
+    }
+
     // 各イベントの出欠集計
     const formattedEvents = await Promise.all(
       eventList.map(async (ev) => {
@@ -698,12 +719,15 @@ app.get("/schedule", async (c) => {
         const startTimeStr = startDate.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
         const endTimeStr = ev.endAt ? new Date(ev.endAt).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }) : "";
 
+        const rawLocation = ev.location || "グラウンド";
+        const displayLocation = venueMap.get(rawLocation.trim()) || rawLocation;
+
         return {
           id: ev.id,
           title: ev.title,
           date: startDate.toLocaleDateString("ja-JP", { month: "numeric", day: "numeric", weekday: "short" }),
           time: endTimeStr ? `${startTimeStr} 〜 ${endTimeStr}` : `${startTimeStr} 集合`,
-          location: ev.location || "グラウンド",
+          location: displayLocation,
           eventType: ev.eventType || "practice",
           dutyGroup: ev.dutyGroup || undefined,
           needsLunch: ev.eventType === "match",

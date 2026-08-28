@@ -66,6 +66,13 @@ const EVENT_TYPES = [
 
 const DUTY_GROUPS = ["1班", "2班", "3班", "4班"];
 
+export interface VenueItem {
+  id: string;
+  name: string;
+  shortName?: string | null;
+  address?: string | null;
+}
+
 export function MonthlySchedulePlanner({
   teamId = "team_1",
   teamName = "東京ジャイアンツ",
@@ -78,6 +85,49 @@ export function MonthlySchedulePlanner({
   const [isLoadingEvents, setIsLoadingEvents] = useState<boolean>(true);
   const [isSaving, setIsSaving] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [venuesList, setVenuesList] = useState<VenueItem[]>([]);
+
+  // 略称優先の球場表示名を取得
+  const getVenueDisplayName = (v: { name: string; shortName?: string | null }) => {
+    return v.shortName && v.shortName.trim() ? v.shortName.trim() : v.name;
+  };
+
+  // 場所名から登録球場の略称を逆引きして返す（略称優先表示用）
+  const formatLocationWithShortName = (locStr: string) => {
+    if (!locStr) return "";
+    const matched = venuesList.find(
+      (v) => v.name === locStr || v.shortName === locStr || (v.shortName && locStr.includes(v.shortName))
+    );
+    if (matched && matched.shortName && matched.shortName.trim()) {
+      return matched.shortName.trim();
+    }
+    return locStr;
+  };
+
+  // 🏟️ 登録済み球場一覧を取得
+  const fetchVenues = async () => {
+    try {
+      const activeTeamId = teamId || "team_1";
+      const res = await fetch(`/api/liff/grounds?teamId=${activeTeamId}`);
+      if (res.ok) {
+        const json = (await res.json()) as any;
+        if (json.success && Array.isArray(json.venues)) {
+          setVenuesList(json.venues);
+          return;
+        }
+      }
+      // フォールバック: /api/venues
+      const res2 = await fetch(`/api/venues`);
+      if (res2.ok) {
+        const json2 = (await res2.json()) as any;
+        if (json2.success && Array.isArray(json2.data)) {
+          setVenuesList(json2.data);
+        }
+      }
+    } catch (e) {
+      console.error("Failed to fetch venues:", e);
+    }
+  };
 
   const currentYear = currentDate.getFullYear();
   const currentMonth = currentDate.getMonth(); // 0-indexed
@@ -212,6 +262,7 @@ export function MonthlySchedulePlanner({
 
   useEffect(() => {
     fetchEvents();
+    fetchVenues();
   }, [teamId]);
 
   // カレンダーグリッド用日付配列（42マス）
@@ -573,8 +624,13 @@ export function MonthlySchedulePlanner({
                     <div className="px-1.5 py-0.5 rounded-md bg-card/80 border border-primary/20 text-[9.5px] font-black text-foreground truncate">
                       {activeItem.amType === "match" ? "⚾ 試合" : activeItem.amType === "camp" ? "🏕️ 合宿" : "🏃 練習"}
                     </div>
+                    {(activeItem.amLocation || activeItem.pmLocation) && (
+                      <div className="text-[8.5px] font-bold text-emerald-600 dark:text-emerald-400 truncate hidden sm:block">
+                        📍{formatLocationWithShortName(activeItem.amLocation || activeItem.pmLocation)}
+                      </div>
+                    )}
                     {activeItem.dutyGroup && (
-                      <div className="text-[9px] font-bold text-primary truncate hidden sm:block">
+                      <div className="text-[8.5px] font-bold text-primary truncate hidden sm:block">
                         当番: {activeItem.dutyGroup}
                       </div>
                     )}
@@ -707,34 +763,71 @@ export function MonthlySchedulePlanner({
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-2 text-xs">
-                        <div>
-                          <label className="text-[10px] font-bold text-muted-foreground block mb-1">活動時間</label>
-                          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-card border border-border/80">
-                            <Clock className="w-3.5 h-3.5 text-primary shrink-0" />
-                            <input
-                              type="text"
-                              value={item.amTime}
-                              onChange={(e) => handleUpdateItem(item.id, { amTime: e.target.value })}
-                              placeholder="08:00〜12:00"
-                              className="bg-transparent text-xs font-bold text-foreground focus:outline-hidden w-full"
-                            />
+                      <div className="space-y-2 text-xs">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-[10px] font-bold text-muted-foreground block mb-1">活動時間</label>
+                            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-card border border-border/80">
+                              <Clock className="w-3.5 h-3.5 text-primary shrink-0" />
+                              <input
+                                type="text"
+                                value={item.amTime}
+                                onChange={(e) => handleUpdateItem(item.id, { amTime: e.target.value })}
+                                placeholder="08:00〜12:00"
+                                className="bg-transparent text-xs font-bold text-foreground focus:outline-hidden w-full"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <div className="flex items-center justify-between mb-1">
+                              <label className="text-[10px] font-bold text-muted-foreground">球場・場所</label>
+                              {venuesList.length > 0 && (
+                                <span className="text-[9.5px] text-primary font-bold">登録球場から選択可</span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-card border border-border/80">
+                              <MapPin className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                              <input
+                                type="text"
+                                value={item.amLocation}
+                                onChange={(e) => handleUpdateItem(item.id, { amLocation: e.target.value })}
+                                placeholder="市民第1球場 または 選択"
+                                className="bg-transparent text-xs font-bold text-foreground focus:outline-hidden w-full"
+                              />
+                            </div>
                           </div>
                         </div>
 
-                        <div>
-                          <label className="text-[10px] font-bold text-muted-foreground block mb-1">球場・場所</label>
-                          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-card border border-border/80">
-                            <MapPin className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                            <input
-                              type="text"
-                              value={item.amLocation}
-                              onChange={(e) => handleUpdateItem(item.id, { amLocation: e.target.value })}
-                              placeholder="市民第1球場"
-                              className="bg-transparent text-xs font-bold text-foreground focus:outline-hidden w-full"
-                            />
+                        {/* 🏟️ 登録球場のクイック選択チップ（略称優先で表示・セット） */}
+                        {venuesList.length > 0 && (
+                          <div className="pt-0.5 space-y-1">
+                            <div className="flex items-center gap-1 overflow-x-auto scrollbar-none pb-0.5">
+                              <span className="text-[9.5px] font-bold text-muted-foreground shrink-0 flex items-center gap-0.5">
+                                <span>候補:</span>
+                              </span>
+                              {venuesList.map((v) => {
+                                const displayName = getVenueDisplayName(v);
+                                const isSelected = item.amLocation === displayName || item.amLocation === v.name;
+                                return (
+                                  <button
+                                    key={v.id}
+                                    type="button"
+                                    onClick={() => handleUpdateItem(item.id, { amLocation: displayName })}
+                                    className={cn(
+                                      "px-2 py-0.5 rounded-lg text-[10px] font-bold shrink-0 transition-all border",
+                                      isSelected
+                                        ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/40 font-black shadow-2xs"
+                                        : "bg-card hover:bg-muted text-muted-foreground hover:text-foreground border-border/70"
+                                    )}
+                                  >
+                                    🏟️ {displayName}
+                                  </button>
+                                );
+                              })}
+                            </div>
                           </div>
-                        </div>
+                        )}
                       </div>
                     </div>
                   )}
@@ -766,34 +859,71 @@ export function MonthlySchedulePlanner({
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-2 text-xs">
-                        <div>
-                          <label className="text-[10px] font-bold text-muted-foreground block mb-1">活動時間</label>
-                          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-card border border-border/80">
-                            <Clock className="w-3.5 h-3.5 text-primary shrink-0" />
-                            <input
-                              type="text"
-                              value={item.pmTime}
-                              onChange={(e) => handleUpdateItem(item.id, { pmTime: e.target.value })}
-                              placeholder="12:00〜18:00"
-                              className="bg-transparent text-xs font-bold text-foreground focus:outline-hidden w-full"
-                            />
+                      <div className="space-y-2 text-xs">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-[10px] font-bold text-muted-foreground block mb-1">活動時間</label>
+                            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-card border border-border/80">
+                              <Clock className="w-3.5 h-3.5 text-primary shrink-0" />
+                              <input
+                                type="text"
+                                value={item.pmTime}
+                                onChange={(e) => handleUpdateItem(item.id, { pmTime: e.target.value })}
+                                placeholder="12:00〜18:00"
+                                className="bg-transparent text-xs font-bold text-foreground focus:outline-hidden w-full"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <div className="flex items-center justify-between mb-1">
+                              <label className="text-[10px] font-bold text-muted-foreground">球場・場所</label>
+                              {venuesList.length > 0 && (
+                                <span className="text-[9.5px] text-primary font-bold">登録球場から選択可</span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-card border border-border/80">
+                              <MapPin className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                              <input
+                                type="text"
+                                value={item.pmLocation}
+                                onChange={(e) => handleUpdateItem(item.id, { pmLocation: e.target.value })}
+                                placeholder="大師河原第3G または 選択"
+                                className="bg-transparent text-xs font-bold text-foreground focus:outline-hidden w-full"
+                              />
+                            </div>
                           </div>
                         </div>
 
-                        <div>
-                          <label className="text-[10px] font-bold text-muted-foreground block mb-1">球場・場所</label>
-                          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-card border border-border/80">
-                            <MapPin className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                            <input
-                              type="text"
-                              value={item.pmLocation}
-                              onChange={(e) => handleUpdateItem(item.id, { pmLocation: e.target.value })}
-                              placeholder="大師河原第3G"
-                              className="bg-transparent text-xs font-bold text-foreground focus:outline-hidden w-full"
-                            />
+                        {/* 🏟️ 登録球場のクイック選択チップ（略称優先で表示・セット） */}
+                        {venuesList.length > 0 && (
+                          <div className="pt-0.5 space-y-1">
+                            <div className="flex items-center gap-1 overflow-x-auto scrollbar-none pb-0.5">
+                              <span className="text-[9.5px] font-bold text-muted-foreground shrink-0 flex items-center gap-0.5">
+                                <span>候補:</span>
+                              </span>
+                              {venuesList.map((v) => {
+                                const displayName = getVenueDisplayName(v);
+                                const isSelected = item.pmLocation === displayName || item.pmLocation === v.name;
+                                return (
+                                  <button
+                                    key={v.id}
+                                    type="button"
+                                    onClick={() => handleUpdateItem(item.id, { pmLocation: displayName })}
+                                    className={cn(
+                                      "px-2 py-0.5 rounded-lg text-[10px] font-bold shrink-0 transition-all border",
+                                      isSelected
+                                        ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/40 font-black shadow-2xs"
+                                        : "bg-card hover:bg-muted text-muted-foreground hover:text-foreground border-border/70"
+                                    )}
+                                  >
+                                    🏟️ {displayName}
+                                  </button>
+                                );
+                              })}
+                            </div>
                           </div>
-                        </div>
+                        )}
                       </div>
                     </div>
                   )}
