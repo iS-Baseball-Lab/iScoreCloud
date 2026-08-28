@@ -18,7 +18,11 @@ import {
   Video,
   Sparkles,
   CalendarDays,
-  Info
+  Info,
+  Sun,
+  Moon,
+  FileText,
+  Users
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { MatchCardData } from "@/components/liff/MatchScoreCard";
@@ -248,43 +252,67 @@ export function HubHeroSection({
     const friStr = `${friDate.getMonth() + 1}/${friDate.getDate()}`;
     const periodLabel = `${satStr}(土)〜${friStr}(金)`;
 
+    const formatTimeFromDates = (start?: any, end?: any, fallback = "08:00〜12:00") => {
+      if (!start) return fallback;
+      try {
+        const d1 = new Date(start);
+        const sStr = isNaN(d1.getTime()) ? "" : d1.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
+        if (end) {
+          const d2 = new Date(end);
+          const eStr = isNaN(d2.getTime()) ? "" : d2.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
+          if (sStr && eStr) return `${sStr}〜${eStr}`;
+        }
+        return sStr ? `${sStr}〜` : fallback;
+      } catch {
+        return fallback;
+      }
+    };
+
     if (eventsList && eventsList.length > 0) {
       const filtered = eventsList.filter(ev => {
         const d = new Date(ev.startAt || ev.dateStr);
         return d >= satDate && d <= friDate;
       });
 
+      const mapEventData = (ev: any) => {
+        const hasPm = !!ev.pmStartAt || !!ev.pmLocation;
+        const amTime = ev.amTime || formatTimeFromDates(ev.startAt, ev.endAt, hasPm ? "08:00〜12:00" : (ev.time || "08:00〜12:00"));
+        const pmTime = ev.pmTime || (hasPm ? formatTimeFromDates(ev.pmStartAt, ev.pmEndAt, "13:00〜17:00") : "");
+        const amLocation = ev.amLocation || ev.location || "ホームグラウンド";
+        const pmLocation = ev.pmLocation || (hasPm ? ev.location : "");
+
+        return {
+          id: ev.id,
+          title: ev.title || "活動予定",
+          date: ev.date || `${new Date(ev.startAt || ev.dateStr).getMonth() + 1}/${new Date(ev.startAt || ev.dateStr).getDate()}(${["日", "月", "火", "水", "木", "金", "土"][new Date(ev.startAt || ev.dateStr).getDay()]})`,
+          hasPm,
+          eventType: (ev.amType || ev.eventType || "practice") as "match" | "practice" | "camp" | "off",
+          time: amTime,
+          location: amLocation,
+          amType: (ev.amType || ev.eventType || "practice") as "match" | "practice" | "camp" | "off",
+          amTime,
+          amLocation,
+          pmType: (ev.pmType || (hasPm ? (ev.eventType || "practice") : "off")) as "match" | "practice" | "camp" | "off",
+          pmTime,
+          pmLocation,
+          dutyGroup: ev.dutyGroup || "1班",
+          carInfo: ev.carInfo || "",
+          needsLunch: ev.needsLunch !== undefined ? ev.needsLunch : (hasPm || ev.eventType === "match"),
+          memo: ev.memo || ev.description || "",
+        };
+      };
+
       if (filtered.length > 0) {
         return {
           periodLabel,
-          events: filtered.map(ev => ({
-            id: ev.id,
-            title: ev.title || "活動予定",
-            date: ev.date || `${new Date(ev.startAt).getMonth() + 1}/${new Date(ev.startAt).getDate()}(${["日", "月", "火", "水", "木", "金", "土"][new Date(ev.startAt).getDay()]})`,
-            time: ev.time || (ev.pmStartAt ? "08:00〜18:00" : "08:00〜12:00"),
-            location: ev.location || "ホームグラウンド",
-            eventType: (ev.eventType as any) || "practice",
-            dutyGroup: ev.dutyGroup || "1班",
-            carInfo: ev.carInfo || "配車調整中",
-            needsLunch: ev.needsLunch !== undefined ? ev.needsLunch : !!ev.pmStartAt,
-          }))
+          events: filtered.map(mapEventData)
         };
       }
 
       // 実チームで期間内の予定がない場合、直近の直近イベントを表示
       return {
         periodLabel,
-        events: eventsList.slice(0, 3).map(ev => ({
-          id: ev.id,
-          title: ev.title || "活動予定",
-          date: ev.date || `${new Date(ev.startAt).getMonth() + 1}/${new Date(ev.startAt).getDate()}(${["日", "月", "火", "水", "木", "金", "土"][new Date(ev.startAt).getDay()]})`,
-          time: ev.time || (ev.pmStartAt ? "08:00〜18:00" : "08:00〜12:00"),
-          location: ev.location || "ホームグラウンド",
-          eventType: (ev.eventType as any) || "practice",
-          dutyGroup: ev.dutyGroup || "1班",
-          carInfo: ev.carInfo || "配車調整中",
-          needsLunch: ev.needsLunch !== undefined ? ev.needsLunch : !!ev.pmStartAt,
-        }))
+        events: eventsList.slice(0, 3).map(mapEventData)
       };
     }
 
@@ -299,23 +327,39 @@ export function HubHeroSection({
         id: "ev-sat-1",
         title: "秋季大会 2回戦 vs レッドソックス",
         date: `${satStr}(土)`,
+        hasPm: false,
+        eventType: "match" as const,
         time: "08:00〜12:00",
         location: "市民第1球場",
-        eventType: "match" as const,
+        amType: "match" as const,
+        amTime: "08:00〜12:00",
+        amLocation: "市民第1球場",
+        pmType: "off" as const,
+        pmTime: "",
+        pmLocation: "",
         dutyGroup: "1班",
         carInfo: "鈴木号・佐藤号",
         needsLunch: false,
+        memo: "ユニフォーム正装・スパイク着用。雨天時は7:00にLINE連絡します。",
       },
       {
         id: "ev-sun-2",
         title: "全日通常練習 & 守備連携・走塁強化",
         date: `${new Date(satDate.getTime() + 86400000).getMonth() + 1}/${new Date(satDate.getTime() + 86400000).getDate()}(日)`,
+        hasPm: true,
+        eventType: "practice" as const,
         time: "08:00〜18:00",
         location: "大師河原第3G",
-        eventType: "practice" as const,
+        amType: "practice" as const,
+        amTime: "08:00〜12:00",
+        amLocation: "大師河原第3G",
+        pmType: "practice" as const,
+        pmTime: "13:00〜17:00",
+        pmLocation: "大師河原第3G",
         dutyGroup: "2班",
         carInfo: "配車調整中",
         needsLunch: true,
+        memo: "水分補給のドリンク多めに持参してください。",
       },
     ];
 
@@ -551,78 +595,166 @@ export function HubHeroSection({
                     className="w-[88vw] max-w-[360px] shrink-0 snap-center rounded-3xl bg-white dark:bg-slate-900 border-2 border-slate-200/90 dark:border-slate-800 shadow-md shadow-black/5 p-4 space-y-3.5 flex flex-col justify-between ring-1 ring-black/5"
                   >
                   <div className="space-y-3">
-                    {/* 上部タグ & 日程番号 */}
+                    {/* 上部ヘッダー：日程・日付 & 全予定リンク */}
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5">
-                        <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-black tracking-tight ${
-                          ev.eventType === "match"
-                            ? "bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30"
-                            : ev.eventType === "camp"
-                            ? "bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/30"
-                            : "bg-primary/15 text-primary border border-primary/30"
-                        }`}>
-                          {ev.eventType === "match" ? "⚾ 試合" : ev.eventType === "camp" ? "🏕️ 合宿" : "🏃 練習"}
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-xl font-black text-foreground tracking-tight">
+                          {ev.date}
                         </span>
                         <span className="px-2 py-0.5 rounded-full bg-muted text-muted-foreground text-[10px] font-bold">
                           {idx + 1} / {weeklyEvents.length}
                         </span>
                       </div>
 
-                      <span className="text-xs font-black text-primary flex items-center gap-0.5">
-                        <Link href="/liff/schedule" className="hover:underline flex items-center">
-                          <span>全予定</span>
-                          <ChevronRight className="w-3.5 h-3.5" />
-                        </Link>
-                      </span>
+                      <Link href="/liff/schedule" className="text-xs font-black text-primary hover:underline flex items-center gap-0.5">
+                        <span>全予定</span>
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </Link>
                     </div>
 
-                    {/* 日時 ＆ タイトル */}
-                    <div className="space-y-1">
-                      <div className="flex items-baseline gap-2">
-                        <span className="text-xl font-black text-foreground tracking-tight">
-                          {ev.date}
-                        </span>
-                        <span className="text-xs font-bold text-muted-foreground flex items-center gap-1">
-                          <Clock className="w-3 h-3 text-primary" />
-                          <span>{ev.time}</span>
-                        </span>
+                    {/* タイトル（大会名や練習内容） */}
+                    <h3 className="text-sm font-black text-foreground line-clamp-1">
+                      {ev.title}
+                    </h3>
+
+                    {/* ☀️ 午前（左） ＆ 🌙 午後（右）の2カラム表示 */}
+                    <div className="grid grid-cols-2 gap-2">
+                      {/* ☀️ 【午前】（左） */}
+                      <div className="p-2.5 rounded-2xl bg-amber-500/5 dark:bg-amber-500/10 border border-amber-500/20 flex flex-col justify-between space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-black text-amber-700 dark:text-amber-300 flex items-center gap-1">
+                            <Sun className="w-3 h-3 text-amber-500" />
+                            <span>午前</span>
+                          </span>
+
+                          {/* ① 活動内容バッジ */}
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                            ev.amType === "match"
+                              ? "bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30"
+                              : ev.amType === "camp"
+                              ? "bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/30"
+                              : "bg-primary/15 text-primary border border-primary/30"
+                          }`}>
+                            {ev.amType === "match" ? "⚾ 試合" : ev.amType === "camp" ? "🏕️ 合宿" : "🏃 練習"}
+                          </span>
+                        </div>
+
+                        {/* ② 活動時間 */}
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-1 text-xs font-black text-foreground">
+                            <Clock className="w-3 h-3 text-amber-500 shrink-0" />
+                            <span>{ev.amTime || "08:00〜12:00"}</span>
+                          </div>
+
+                          {/* ③ 場所 */}
+                          <div className="flex items-center gap-1 text-[11px] font-bold text-foreground/90 truncate">
+                            <MapPin className="w-3 h-3 text-emerald-500 shrink-0" />
+                            <span className="truncate">{ev.amLocation || "グラウンド"}</span>
+                          </div>
+                        </div>
                       </div>
-                      <h3 className="text-sm font-black text-foreground line-clamp-1">
-                        {ev.title}
-                      </h3>
+
+                      {/* 🌙 【午後】（右） */}
+                      <div className={`p-2.5 rounded-2xl border flex flex-col justify-between space-y-2 ${
+                        ev.hasPm && ev.pmType !== "off"
+                          ? "bg-indigo-500/5 dark:bg-indigo-500/10 border-indigo-500/20"
+                          : "bg-muted/30 border-border/60 opacity-75"
+                      }`}>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-black text-indigo-700 dark:text-indigo-300 flex items-center gap-1">
+                            <Moon className="w-3 h-3 text-indigo-500" />
+                            <span>午後</span>
+                          </span>
+
+                          {/* ① 活動内容バッジ */}
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                            !ev.hasPm || ev.pmType === "off"
+                              ? "bg-muted text-muted-foreground border border-border"
+                              : ev.pmType === "match"
+                              ? "bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30"
+                              : ev.pmType === "camp"
+                              ? "bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/30"
+                              : "bg-primary/15 text-primary border border-primary/30"
+                          }`}>
+                            {!ev.hasPm || ev.pmType === "off" ? "🏖️ なし" : ev.pmType === "match" ? "⚾ 試合" : ev.pmType === "camp" ? "🏕️ 合宿" : "🏃 練習"}
+                          </span>
+                        </div>
+
+                        {/* ② 活動時間 */}
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-1 text-xs font-black text-foreground">
+                            <Clock className="w-3 h-3 text-indigo-500 shrink-0" />
+                            <span>{ev.hasPm && ev.pmTime ? ev.pmTime : "解散・なし"}</span>
+                          </div>
+
+                          {/* ③ 場所 */}
+                          <div className="flex items-center gap-1 text-[11px] font-bold text-foreground/90 truncate">
+                            <MapPin className="w-3 h-3 text-emerald-500 shrink-0" />
+                            <span className="truncate">{ev.hasPm && ev.pmLocation ? ev.pmLocation : (ev.hasPm ? ev.amLocation : "—")}</span>
+                          </div>
+                        </div>
+                      </div>
                     </div>
 
-                    {/* 詳細情報グリッド（球場・配車・お弁当・当番） */}
-                    <div className="p-3 rounded-2xl bg-muted/40 border border-primary/15 space-y-2 text-xs">
-                      <div className="flex items-center gap-2 font-bold">
-                        <MapPin className="w-4 h-4 text-emerald-500 shrink-0" />
-                        <span className="text-foreground truncate">{ev.location}</span>
+                    {/* 📋 その他の詳細情報ブロック（上から：お弁当、連絡事項、配車、当番） */}
+                    <div className="p-3 rounded-2xl bg-muted/40 border border-border/80 space-y-2 text-xs">
+                      {/* 1. お弁当 */}
+                      <div className="flex items-center justify-between font-bold">
+                        <span className="text-muted-foreground flex items-center gap-1.5">
+                          <Utensils className="w-3.5 h-3.5 text-amber-500" />
+                          <span>お弁当</span>
+                        </span>
+                        <span className={`px-2 py-0.5 rounded-full text-[10.5px] font-black ${
+                          ev.needsLunch
+                            ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30"
+                            : "text-muted-foreground"
+                        }`}>
+                          {ev.needsLunch ? "🍙 持参要" : "不要"}
+                        </span>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-2 pt-1 border-t border-primary/15">
-                        <div className="flex items-center gap-1.5 font-bold">
+                      {/* 2. 連絡事項・メモ（存在する場合） */}
+                      {ev.memo && (
+                        <div className="pt-1.5 border-t border-border/60 space-y-0.5">
+                          <span className="text-[10px] font-black text-muted-foreground flex items-center gap-1">
+                            <FileText className="w-3 h-3 text-primary" />
+                            <span>連絡事項</span>
+                          </span>
+                          <p className="text-[11px] font-bold text-foreground/90 bg-background/60 p-2 rounded-xl border border-border/50">
+                            {ev.memo}
+                          </p>
+                        </div>
+                      )}
+
+                      {/* 3. 配車（配車情報 ＆ 配車表ページへのリンク） */}
+                      <div className="pt-1.5 border-t border-border/60 flex items-center justify-between font-bold">
+                        <div className="flex items-center gap-1.5 min-w-0">
                           <Car className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                          <div className="min-w-0">
-                            <span className="text-[10px] text-muted-foreground block">配車担当</span>
-                            <span className="text-foreground truncate block">{ev.carInfo || "配車調整中"}</span>
-                          </div>
+                          <span className="text-muted-foreground shrink-0">配車:</span>
+                          <span className="text-foreground truncate font-black text-[11px]">
+                            {ev.carInfo || "配車調整中"}
+                          </span>
                         </div>
 
-                        <div className="flex items-center gap-1.5 font-bold">
-                          <Utensils className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                          <div className="min-w-0">
-                            <span className="text-[10px] text-muted-foreground block">お弁当</span>
-                            <span className="text-foreground truncate block">
-                              {ev.needsLunch ? "持参要" : "不要"}
-                            </span>
-                          </div>
-                        </div>
+                        <Link
+                          href="/liff/carpool"
+                          className="text-[10.5px] font-black text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-0.5 shrink-0 ml-2"
+                        >
+                          <span>配車表へ</span>
+                          <ChevronRight className="w-3 h-3" />
+                        </Link>
                       </div>
 
+                      {/* 4. 一番下に当番 */}
                       {ev.dutyGroup && (
-                        <div className="pt-1.5 border-t border-primary/15 flex items-center justify-between text-[11px] font-bold">
-                          <span className="text-muted-foreground">当番</span>
-                          <span className="text-primary font-black">{ev.dutyGroup}</span>
+                        <div className="pt-1.5 border-t border-border/60 flex items-center justify-between text-[11px] font-bold">
+                          <span className="text-muted-foreground flex items-center gap-1.5">
+                            <Users className="w-3.5 h-3.5 text-primary" />
+                            <span>当番</span>
+                          </span>
+                          <span className="px-2.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/25 font-black">
+                            👥 {ev.dutyGroup}
+                          </span>
                         </div>
                       )}
                     </div>
