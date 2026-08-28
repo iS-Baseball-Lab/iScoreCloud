@@ -252,20 +252,19 @@ export function HubHeroSection({
     const friStr = `${friDate.getMonth() + 1}/${friDate.getDate()}`;
     const periodLabel = `${satStr}(土)〜${friStr}(金)`;
 
-    const formatTimeFromDates = (start?: any, end?: any, fallback = "08:00〜12:00") => {
-      if (!start) return fallback;
-      try {
-        const d1 = new Date(start);
-        const sStr = isNaN(d1.getTime()) ? "" : d1.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
-        if (end) {
-          const d2 = new Date(end);
-          const eStr = isNaN(d2.getTime()) ? "" : d2.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
-          if (sStr && eStr) return `${sStr}〜${eStr}`;
-        }
-        return sStr ? `${sStr}〜` : fallback;
-      } catch {
-        return fallback;
+    const extractTime = (val: any) => {
+      if (!val) return null;
+      if (typeof val === "string") {
+        const match = val.match(/T?(\d{2}):(\d{2})/);
+        if (match) return `${match[1]}:${match[2]}`;
       }
+      try {
+        const d = new Date(val);
+        if (!isNaN(d.getTime())) {
+          return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+        }
+      } catch {}
+      return null;
     };
 
     if (eventsList && eventsList.length > 0) {
@@ -275,11 +274,38 @@ export function HubHeroSection({
       });
 
       const mapEventData = (ev: any) => {
-        const hasPm = !!ev.pmStartAt || !!ev.pmLocation;
-        const amTime = ev.amTime || formatTimeFromDates(ev.startAt, ev.endAt, hasPm ? "08:00〜12:00" : (ev.time || "08:00〜12:00"));
-        const pmTime = ev.pmTime || (hasPm ? formatTimeFromDates(ev.pmStartAt, ev.pmEndAt, "13:00〜17:00") : "");
-        const amLocation = ev.amLocation || ev.location || "ホームグラウンド";
-        const pmLocation = ev.pmLocation || (hasPm ? ev.location : "");
+        const hasPm = ev.hasPm !== undefined ? ev.hasPm : (!!ev.pmStartAt || !!ev.pmLocation || !!ev.pmTime);
+        
+        // 午前時間の算出
+        let amTime = ev.amTime;
+        if (!amTime) {
+          const sHHMM = extractTime(ev.startAt) || "08:00";
+          const eHHMM = extractTime(ev.endAt);
+          const pmSHHMM = extractTime(ev.pmStartAt);
+          amTime = hasPm
+            ? (eHHMM && pmSHHMM && eHHMM <= pmSHHMM ? `${sHHMM}〜${eHHMM}` : `${sHHMM}〜12:00`)
+            : (eHHMM ? `${sHHMM}〜${eHHMM}` : `${sHHMM}〜12:00`);
+        }
+
+        // 午後時間の算出
+        let pmTime = ev.pmTime;
+        if (!pmTime && hasPm) {
+          const pmSHHMM = extractTime(ev.pmStartAt) || "13:00";
+          const pmEHHMM = extractTime(ev.pmEndAt) || extractTime(ev.endAt) || "17:00";
+          pmTime = `${pmSHHMM}〜${pmEHHMM}`;
+        }
+
+        const amLocation = ev.amLocation || ev.location || "グラウンド";
+        const pmLocation = ev.pmLocation || (hasPm && ev.pmLocation !== null ? (ev.pmLocation || "") : "");
+
+        // 🚗 配車は練習の場合は無し（試合・合宿または明示的な配車のみ）
+        const isMatchOrCamp = ev.eventType === "match" || ev.eventType === "camp" || ev.amType === "match" || ev.pmType === "match";
+        let carInfo = "";
+        if (isMatchOrCamp) {
+          carInfo = ev.carInfo || "配車調整中";
+        } else if (ev.carInfo && ev.carInfo !== "配車調整中" && ev.carInfo !== "配車なし") {
+          carInfo = ev.carInfo;
+        }
 
         return {
           id: ev.id,
@@ -293,11 +319,11 @@ export function HubHeroSection({
           amTime,
           amLocation,
           pmType: (ev.pmType || (hasPm ? (ev.eventType || "practice") : "off")) as "match" | "practice" | "camp" | "off",
-          pmTime,
-          pmLocation,
+          pmTime: hasPm ? (pmTime || "13:00〜17:00") : "",
+          pmLocation: hasPm ? (pmLocation || amLocation) : "",
           dutyGroup: ev.dutyGroup || "1班",
-          carInfo: ev.carInfo || "",
-          needsLunch: ev.needsLunch !== undefined ? ev.needsLunch : (hasPm || ev.eventType === "match"),
+          carInfo,
+          needsLunch: ev.needsLunch !== undefined ? ev.needsLunch : (hasPm || isMatchOrCamp),
           memo: ev.memo || ev.description || "",
         };
       };
@@ -348,7 +374,7 @@ export function HubHeroSection({
         date: `${new Date(satDate.getTime() + 86400000).getMonth() + 1}/${new Date(satDate.getTime() + 86400000).getDate()}(日)`,
         hasPm: true,
         eventType: "practice" as const,
-        time: "08:00〜18:00",
+        time: "08:00〜17:00",
         location: "大師河原第3G",
         amType: "practice" as const,
         amTime: "08:00〜12:00",
@@ -357,7 +383,7 @@ export function HubHeroSection({
         pmTime: "13:00〜17:00",
         pmLocation: "大師河原第3G",
         dutyGroup: "2班",
-        carInfo: "配車調整中",
+        carInfo: "", // 練習時は配車なし
         needsLunch: true,
         memo: "水分補給のドリンク多めに持参してください。",
       },
@@ -726,23 +752,25 @@ export function HubHeroSection({
                         </div>
                       )}
 
-                      {/* 3. 配車（配車情報 ＆ 配車表ページへのリンク） */}
+                      {/* 3. 配車（練習の場合は無し、試合・合宿の場合は配車情報 ＆ 配車表リンク） */}
                       <div className="pt-1.5 border-t border-border/60 flex items-center justify-between font-bold">
                         <div className="flex items-center gap-1.5 min-w-0">
                           <Car className="w-3.5 h-3.5 text-blue-500 shrink-0" />
                           <span className="text-muted-foreground shrink-0">配車:</span>
                           <span className="text-foreground truncate font-black text-[11px]">
-                            {ev.carInfo || "配車調整中"}
+                            {ev.carInfo ? ev.carInfo : "なし（現地集合）"}
                           </span>
                         </div>
 
-                        <Link
-                          href="/liff/carpool"
-                          className="text-[10.5px] font-black text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-0.5 shrink-0 ml-2"
-                        >
-                          <span>配車表へ</span>
-                          <ChevronRight className="w-3 h-3" />
-                        </Link>
+                        {ev.carInfo ? (
+                          <Link
+                            href="/liff/carpool"
+                            className="text-[10.5px] font-black text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-0.5 shrink-0 ml-2"
+                          >
+                            <span>配車表へ</span>
+                            <ChevronRight className="w-3 h-3" />
+                          </Link>
+                        ) : null}
                       </div>
 
                       {/* 4. 一番下に当番 */}

@@ -374,6 +374,21 @@ app.get("/hub", async (c) => {
       }
     }
 
+    const extractTime = (val: any) => {
+      if (!val) return null;
+      if (typeof val === "string") {
+        const match = val.match(/T?(\d{2}):(\d{2})/);
+        if (match) return `${match[1]}:${match[2]}`;
+      }
+      try {
+        const d = new Date(val);
+        if (!isNaN(d.getTime())) {
+          return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+        }
+      } catch {}
+      return null;
+    };
+
     const formattedEventsList = allEventsList.map((ev) => {
       const d = new Date(ev.startAt);
       const y = d.getFullYear();
@@ -384,6 +399,29 @@ app.get("/hub", async (c) => {
       const rawLocation = ev.location || targetTeam.homeGround || "グラウンド";
       const displayLocation = venueMap.get(rawLocation.trim()) || rawLocation;
 
+      const rawPmLocation = ev.pmLocation ? ev.pmLocation.trim() : null;
+      const displayPmLocation = rawPmLocation ? (venueMap.get(rawPmLocation) || rawPmLocation) : null;
+
+      const hasPm = !!ev.pmStartAt || !!displayPmLocation;
+
+      // 時間の安全抽出
+      const startHHMM = extractTime(ev.startAt) || "08:00";
+      const endHHMM = extractTime(ev.endAt);
+      const pmStartHHMM = extractTime(ev.pmStartAt);
+      const pmEndHHMM = extractTime(ev.pmEndAt);
+
+      const amTime = hasPm
+        ? (endHHMM && pmStartHHMM && endHHMM <= pmStartHHMM ? `${startHHMM}〜${endHHMM}` : `${startHHMM}〜12:00`)
+        : (endHHMM ? `${startHHMM}〜${endHHMM}` : `${startHHMM}〜12:00`);
+
+      const pmTime = hasPm
+        ? `${pmStartHHMM || "13:00"}〜${pmEndHHMM || endHHMM || "17:00"}`
+        : "";
+
+      // 🚗 練習の場合は配車なし（試合または明示的な配車のみ）
+      const isMatch = ev.eventType === "match" || ev.eventType === "camp";
+      const carInfo = isMatch ? "配車調整中" : "";
+
       return {
         id: ev.id,
         title: ev.title,
@@ -393,12 +431,16 @@ app.get("/hub", async (c) => {
         endAt: ev.endAt,
         pmStartAt: ev.pmStartAt,
         pmEndAt: ev.pmEndAt,
-        time: d.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }),
+        amTime,
+        pmTime,
         location: displayLocation,
+        amLocation: displayLocation,
+        pmLocation: displayPmLocation,
+        hasPm,
         eventType: ev.eventType || "practice",
         dutyGroup: ev.dutyGroup || "1班",
-        carInfo: "配車調整中",
-        needsLunch: !!ev.pmStartAt,
+        carInfo,
+        needsLunch: hasPm || isMatch,
         memo: ev.description || "",
         myStatus: (userAttendances[ev.id] as any) || "pending",
       };
