@@ -18,6 +18,7 @@ import {
   eventCarpoolSettings,
   teamDocuments,
   teamFaqs,
+  parentChildRelations,
 } from "@/db/schema";
 import type { WorkerEnv } from "@/types/api";
 
@@ -611,13 +612,127 @@ app.get("/schedule", async (c) => {
 });
 
 /**
- * 出欠回答送信API
+ * 👨‍👦 ログイン中保護者の親子関係・お子様一覧取得API
+ * GET /api/liff/my-family?teamId=xxx&userId=xxx&userName=xxx
+ */
+app.get("/my-family", async (c) => {
+  const db = drizzle(c.env.DB);
+  const teamId = c.req.query("teamId");
+  const userId = c.req.query("userId");
+  const userName = c.req.query("userName");
+
+  try {
+    if (!teamId || teamId === "demo-team") {
+      return c.json({
+        success: true,
+        isParent: true,
+        children: [
+          { id: "demo-player-1", name: "山田 翔太", uniformNumber: "#10", memberType: "player" },
+        ],
+        attendances: {},
+      });
+    }
+
+    // 1. チームメンバーから保護者レコードを特定
+    let member: any = null;
+    if (userId) {
+      member = await db
+        .select()
+        .from(teamMembers)
+        .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, userId)))
+        .get();
+    }
+    if (!member && userName) {
+      member = await db
+        .select()
+        .from(teamMembers)
+        .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.name, userName)))
+        .get();
+    }
+
+    if (!member) {
+      return c.json({
+        success: true,
+        isParent: false,
+        children: [],
+        attendances: {},
+      });
+    }
+
+    // 2. parentChildRelations から紐づく選手（子供）を取得
+    const relations = await db
+      .select({
+        relationId: parentChildRelations.id,
+        parentId: parentChildRelations.parentId,
+        childId: parentChildRelations.childId,
+        childName: players.name,
+        uniformNumber: players.uniformNumber,
+      })
+      .from(parentChildRelations)
+      .leftJoin(players, eq(parentChildRelations.childId, players.id))
+      .where(and(eq(parentChildRelations.teamId, teamId), eq(parentChildRelations.parentId, member.id)))
+      .all();
+
+    const childrenList = relations
+      .filter((r) => !!r.childId)
+      .map((r) => ({
+        id: r.childId,
+        name: r.childName || "選手",
+        uniformNumber: r.uniformNumber ? (r.uniformNumber.startsWith("#") ? r.uniformNumber : `#${r.uniformNumber}`) : undefined,
+      }));
+
+    // 3. 子供たちの既存出欠一覧を取得
+    const childIds = childrenList.map((c) => c.id);
+    const childAttMap: Record<string, Record<string, "present" | "absent" | "pending" | "late">> = {};
+
+    if (childIds.length > 0) {
+      const attList = await db
+        .select({
+          eventId: attendances.eventId,
+          playerId: attendances.playerId,
+          status: attendances.status,
+        })
+        .from(attendances)
+        .where(sql`${attendances.playerId} IN (${sql.join(childIds.map(id => sql`${id}`), sql`, `)})`)
+        .all();
+
+      for (const att of attList) {
+        if (att.eventId && att.playerId && att.status) {
+          if (!childAttMap[att.eventId]) {
+            childAttMap[att.eventId] = {};
+          }
+          childAttMap[att.eventId][att.playerId] = (att.status as any) || "pending";
+        }
+      }
+    }
+
+    return c.json({
+      success: true,
+      isParent: member.memberType === "parent" || childrenList.length > 0,
+      memberId: member.id,
+      memberName: member.name,
+      children: childrenList,
+      attendances: childAttMap,
+    });
+  } catch (error: any) {
+    console.error("Failed to load my-family:", error);
+    return c.json({
+      success: false,
+      isParent: false,
+      children: [],
+      attendances: {},
+    });
+  }
+});
+
+/**
+ * 出欠回答送信API (保護者本人または選手個別の出欠を保存)
  */
 app.post("/attendance", async (c) => {
   const db = drizzle(c.env.DB);
   try {
     const body = await c.req.json();
-    const { eventId, userId, status, comment } = body;
+    const { eventId, userId, memberId, playerId, status, hasCar, comment } = body;
 
     if (!eventId || !status) {
       return c.json({ success: false, error: "eventId and status are required" }, 400);
@@ -627,10 +742,50 @@ app.post("/attendance", async (c) => {
       return c.json({ success: true, message: "出欠回答を記録しました（デモ）" });
     }
 
+    // 👦 選手の出欠の場合 (playerId が指定されている場合)
+    if (playerId) {
+      const existing = await db
+        .select()
+        .from(attendances)
+        .where(and(eq(attendances.eventId, eventId), eq(attendances.playerId, playerId)))
+        .get();
+
+      if (existing) {
+        await db
+          .update(attendances)
+          .set({
+            status: status,
+            comment: comment || existing.comment,
+            updatedAt: new Date(),
+          })
+          .where(eq(attendances.id, existing.id));
+      } else {
+        await db.insert(attendances).values({
+          id: `att_${crypto.randomUUID()}`,
+          eventId,
+          playerId,
+          status: status,
+          roleInEvent: "player",
+          comment: comment || null,
+          updatedAt: new Date(),
+        });
+      }
+
+      return c.json({ success: true, message: "お子様の出欠回答を保存しました" });
+    }
+
+    // 👨 保護者・メンバー本人の出欠の場合
+    let whereCondition = eq(attendances.eventId, eventId);
+    if (memberId) {
+      whereCondition = and(eq(attendances.eventId, eventId), eq(attendances.memberId, memberId)) as any;
+    } else if (userId) {
+      whereCondition = and(eq(attendances.eventId, eventId), eq(attendances.userId, userId)) as any;
+    }
+
     const existing = await db
       .select()
       .from(attendances)
-      .where(and(eq(attendances.eventId, eventId), eq(attendances.userId, userId || "")))
+      .where(whereCondition)
       .get();
 
     if (existing) {
@@ -638,6 +793,7 @@ app.post("/attendance", async (c) => {
         .update(attendances)
         .set({
           status: status,
+          hasCar: hasCar !== undefined ? hasCar : existing.hasCar,
           comment: comment || existing.comment,
           updatedAt: new Date(),
         })
@@ -647,7 +803,10 @@ app.post("/attendance", async (c) => {
         id: `att_${crypto.randomUUID()}`,
         eventId,
         userId: userId || null,
+        memberId: memberId || null,
         status: status,
+        hasCar: !!hasCar,
+        roleInEvent: "parent",
         comment: comment || null,
         updatedAt: new Date(),
       });

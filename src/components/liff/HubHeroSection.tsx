@@ -48,45 +48,82 @@ export function HubHeroSection({
 }: HubHeroSectionProps) {
   const [activeTab, setActiveTab] = useState<"next" | "calendar" | "score">("next");
 
-  // ユーザーの立場（保護者 / 指導者 / 選手 / 役員）
+  // ユーザーの立場とお子様リスト
   const [userRole, setUserRole] = useState<"parent" | "coach" | "player" | "staff">("parent");
-  const [children, setChildren] = useState<Array<{ id: string; name: string; uniformNumber?: string }>>([
-    { id: "child-1", name: "翔太", uniformNumber: "#10" }
-  ]);
+  const [children, setChildren] = useState<Array<{ id: string; name: string; uniformNumber?: string }>>([]);
+  const [memberId, setMemberId] = useState<string | null>(null);
 
   // 出欠ステート（保護者本人 & お子様）
   const [attendanceMap, setAttendanceMap] = useState<Record<string, "present" | "absent" | "pending" | "late">>({});
   const [childAttendanceMap, setChildAttendanceMap] = useState<Record<string, Record<string, "present" | "absent" | "pending" | "late">>>({});
   const [carStatusMap, setCarStatusMap] = useState<Record<string, "can_drive" | "need_ride" | "not_needed">>({});
 
-  // localStorageから立場とお子様情報を読み込み
+  // 👨‍👦 DBの親子関係・お子様データおよび出欠の自動取得
   useEffect(() => {
     if (typeof window === "undefined") return;
-    try {
-      const savedRole = localStorage.getItem("iscore_setting_user_role");
-      if (savedRole) setUserRole(savedRole as any);
 
-      const savedChildren = localStorage.getItem("iscore_setting_children");
-      if (savedChildren) {
-        const parsed = JSON.parse(savedChildren);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setChildren(parsed);
+    const fetchFamilyData = async () => {
+      try {
+        const tid = localStorage.getItem("iscore_selectedTeamId") || "demo-team";
+        const uid = localStorage.getItem("iscore_userId") || "";
+        const uName = localStorage.getItem("iscore_user_name") || "";
+
+        const res = await fetch(`/api/liff/my-family?teamId=${tid}&userId=${uid}&userName=${encodeURIComponent(uName)}`);
+        if (res.ok) {
+          const json = await res.json() as any;
+          if (json.success) {
+            if (json.memberId) setMemberId(json.memberId);
+            if (json.isParent) setUserRole("parent");
+            if (Array.isArray(json.children) && json.children.length > 0) {
+              setChildren(json.children);
+            } else {
+              // DBに未登録の場合のフォールバック
+              const savedChildren = localStorage.getItem("iscore_setting_children");
+              if (savedChildren) {
+                const parsed = JSON.parse(savedChildren);
+                if (Array.isArray(parsed) && parsed.length > 0) setChildren(parsed);
+              }
+            }
+            if (json.attendances) {
+              setChildAttendanceMap(json.attendances);
+            }
+          }
         }
+      } catch (err) {
+        console.error("Failed to load family data:", err);
       }
-    } catch (e) {
-      console.error(e);
-    }
+    };
+
+    fetchFamilyData();
   }, []);
 
   const getEventAttendance = (id: string) => attendanceMap[id] || "pending";
   const getChildAttendance = (eventId: string, childId: string) => childAttendanceMap[eventId]?.[childId] || "pending";
   const getEventCarStatus = (id: string) => carStatusMap[id] || "need_ride";
 
-  const setEventAttendance = (id: string, status: "present" | "absent" | "pending" | "late") => {
+  // 保護者本人の出欠変更（DB保存）
+  const setEventAttendance = async (id: string, status: "present" | "absent" | "pending" | "late") => {
     setAttendanceMap(prev => ({ ...prev, [id]: status }));
+    try {
+      const uid = typeof window !== "undefined" ? localStorage.getItem("iscore_userId") || "" : "";
+      await fetch("/api/liff/attendance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          eventId: id,
+          userId: uid,
+          memberId: memberId || undefined,
+          status,
+          hasCar: carStatusMap[id] === "can_drive",
+        }),
+      });
+    } catch (e) {
+      console.error(e);
+    }
   };
 
-  const setChildAttendance = (eventId: string, childId: string, status: "present" | "absent" | "pending" | "late") => {
+  // お子様（選手）の出欠変更（DB保存）
+  const setChildAttendance = async (eventId: string, childId: string, status: "present" | "absent" | "pending" | "late") => {
     setChildAttendanceMap(prev => ({
       ...prev,
       [eventId]: {
@@ -94,10 +131,27 @@ export function HubHeroSection({
         [childId]: status,
       }
     }));
+    try {
+      await fetch("/api/liff/attendance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          eventId,
+          playerId: childId,
+          status,
+        }),
+      });
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   const setEventCarStatus = (id: string, carStatus: "can_drive" | "need_ride" | "not_needed") => {
     setCarStatusMap(prev => ({ ...prev, [id]: carStatus }));
+    const currentAtt = attendanceMap[id];
+    if (currentAtt) {
+      setEventAttendance(id, currentAtt);
+    }
   };
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

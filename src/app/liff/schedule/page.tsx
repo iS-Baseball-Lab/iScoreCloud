@@ -28,32 +28,51 @@ export default function LiffSchedulePage() {
 
   // ユーザーの立場とお子様リスト
   const [userRole, setUserRole] = useState<"parent" | "coach" | "player" | "staff">("parent");
-  const [children, setChildren] = useState<Array<{ id: string; name: string; uniformNumber?: string }>>([
-    { id: "child-1", name: "翔太", uniformNumber: "#10" }
-  ]);
+  const [children, setChildren] = useState<Array<{ id: string; name: string; uniformNumber?: string }>>([]);
+  const [memberId, setMemberId] = useState<string | null>(null);
   const [childAttendanceMap, setChildAttendanceMap] = useState<Record<string, Record<string, "present" | "absent" | "pending" | "late">>>({});
 
+  // 👨‍👦 DBの親子関係・お子様データおよび出欠の自動取得
   useEffect(() => {
     if (typeof window === "undefined") return;
-    try {
-      const savedRole = localStorage.getItem("iscore_setting_user_role");
-      if (savedRole) setUserRole(savedRole as any);
 
-      const savedChildren = localStorage.getItem("iscore_setting_children");
-      if (savedChildren) {
-        const parsed = JSON.parse(savedChildren);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setChildren(parsed);
+    const fetchFamilyData = async () => {
+      try {
+        const tid = currentTeam?.id || localStorage.getItem("iscore_selectedTeamId") || "demo-team";
+        const uid = profile?.userId || localStorage.getItem("iscore_userId") || "";
+        const uName = profile?.displayName || localStorage.getItem("iscore_user_name") || "";
+
+        const res = await fetch(`/api/liff/my-family?teamId=${tid}&userId=${uid}&userName=${encodeURIComponent(uName)}`);
+        if (res.ok) {
+          const json = await res.json() as any;
+          if (json.success) {
+            if (json.memberId) setMemberId(json.memberId);
+            if (json.isParent) setUserRole("parent");
+            if (Array.isArray(json.children) && json.children.length > 0) {
+              setChildren(json.children);
+            } else {
+              const savedChildren = localStorage.getItem("iscore_setting_children");
+              if (savedChildren) {
+                const parsed = JSON.parse(savedChildren);
+                if (Array.isArray(parsed) && parsed.length > 0) setChildren(parsed);
+              }
+            }
+            if (json.attendances) {
+              setChildAttendanceMap(json.attendances);
+            }
+          }
         }
+      } catch (err) {
+        console.error("Failed to load family data:", err);
       }
-    } catch (e) {
-      console.error(e);
-    }
-  }, []);
+    };
+
+    fetchFamilyData();
+  }, [currentTeam?.id, profile?.displayName, profile?.userId]);
 
   const getChildAttendance = (eventId: string, childId: string) => childAttendanceMap[eventId]?.[childId] || "pending";
 
-  const handleChildStatusChange = (eventId: string, childId: string, status: "present" | "absent" | "pending" | "late") => {
+  const handleChildStatusChange = async (eventId: string, childId: string, status: "present" | "absent" | "pending" | "late") => {
     setChildAttendanceMap((prev) => ({
       ...prev,
       [eventId]: {
@@ -61,6 +80,20 @@ export default function LiffSchedulePage() {
         [childId]: status,
       }
     }));
+
+    try {
+      await fetch("/api/liff/attendance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          eventId,
+          playerId: childId,
+          status,
+        }),
+      });
+    } catch (err) {
+      console.error("Failed to save child attendance:", err);
+    }
   };
 
   const loadSchedule = useCallback(async () => {
