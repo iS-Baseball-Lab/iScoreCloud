@@ -30,6 +30,7 @@ export default function LiffSchedulePage() {
   const [userRole, setUserRole] = useState<"parent" | "coach" | "player" | "staff">("parent");
   const [children, setChildren] = useState<Array<{ id: string; name: string; uniformNumber?: string; parentName?: string }>>([]);
   const [memberId, setMemberId] = useState<string | null>(null);
+  const [attendanceMap, setAttendanceMap] = useState<Record<string, "present" | "absent" | "pending" | "late">>({});
   const [childAttendanceMap, setChildAttendanceMap] = useState<Record<string, Record<string, "present" | "absent" | "pending" | "late">>>({});
 
   // 👨‍👦 DBの親子関係・お子様データおよび出欠の自動取得
@@ -59,11 +60,12 @@ export default function LiffSchedulePage() {
             setChildren([{ id: "demo-player-1", name: "山田 翔太", uniformNumber: "#10" }]);
           }
           if (json.attendances) {
-            setChildAttendanceMap(json.attendances);
+            setChildAttendanceMap(prev => ({ ...json.attendances, ...prev }));
           }
 
           // 自分の出欠を復元
           if (json.parentAttendances && Object.keys(json.parentAttendances).length > 0) {
+            setAttendanceMap(prev => ({ ...json.parentAttendances, ...prev }));
             setEvents(prev => prev.map(ev => ({
               ...ev,
               myStatus: json.parentAttendances[ev.id] || ev.myStatus
@@ -81,7 +83,31 @@ export default function LiffSchedulePage() {
     fetchFamilyData();
   }, [currentTeam?.id, profile?.displayName, profile?.userId]);
 
-  const getChildAttendance = (eventId: string, childId: string) => childAttendanceMap[eventId]?.[childId] || "pending";
+  const getChildAttendance = (eventId: string, childId: string) => {
+    if (childAttendanceMap[eventId]?.[childId] && childAttendanceMap[eventId][childId] !== "pending") {
+      return childAttendanceMap[eventId][childId];
+    }
+    if (typeof window !== "undefined") {
+      const cached = localStorage.getItem(`iscore_child_att_${eventId}_${childId}`);
+      if (cached && (cached === "present" || cached === "absent" || cached === "late")) {
+        return cached as any;
+      }
+    }
+    return childAttendanceMap[eventId]?.[childId] || "pending";
+  };
+
+  const getEventAttendance = (eventId: string, defaultStatus?: string) => {
+    if (attendanceMap[eventId] && attendanceMap[eventId] !== "pending") {
+      return attendanceMap[eventId];
+    }
+    if (typeof window !== "undefined") {
+      const cached = localStorage.getItem(`iscore_my_att_${eventId}`);
+      if (cached && (cached === "present" || cached === "absent" || cached === "late")) {
+        return cached as any;
+      }
+    }
+    return (attendanceMap[eventId] || defaultStatus || "pending") as any;
+  };
 
   const handleChildStatusChange = async (eventId: string, childId: string, status: "present" | "absent" | "pending" | "late") => {
     setChildAttendanceMap((prev) => ({
@@ -91,6 +117,9 @@ export default function LiffSchedulePage() {
         [childId]: status,
       }
     }));
+    if (typeof window !== "undefined") {
+      localStorage.setItem(`iscore_child_att_${eventId}_${childId}`, status);
+    }
 
     try {
       await fetch("/api/liff/attendance", {
@@ -117,6 +146,15 @@ export default function LiffSchedulePage() {
       if (res.ok) {
         const data = await res.json() as { success: boolean; events?: ScheduleEvent[] };
         if (data.events) {
+          const map: Record<string, "present" | "absent" | "pending" | "late"> = {};
+          for (const ev of data.events) {
+            if (ev.id && ev.myStatus && ev.myStatus !== "pending") {
+              map[ev.id] = ev.myStatus === "partial" ? "late" : (ev.myStatus as "present" | "absent" | "late");
+            }
+          }
+          if (Object.keys(map).length > 0) {
+            setAttendanceMap(prev => ({ ...map, ...prev }));
+          }
           setEvents(data.events);
         }
       }
@@ -125,16 +163,20 @@ export default function LiffSchedulePage() {
     } finally {
       setIsLoading(false);
     }
-  }, [currentTeam?.id, profile?.userId]);
+  }, [currentTeam?.id, profile?.userId, profile?.displayName]);
 
   useEffect(() => {
     loadSchedule();
   }, [loadSchedule]);
 
-  const handleStatusChange = async (eventId: string, status: "present" | "absent" | "pending" | "late" | "partial") => {
+  const handleStatusChange = async (eventId: string, status: "present" | "absent" | "pending" | "late") => {
     // 楽観的更新
+    setAttendanceMap(prev => ({ ...prev, [eventId]: status }));
+    if (typeof window !== "undefined") {
+      localStorage.setItem(`iscore_my_att_${eventId}`, status);
+    }
     setEvents((prev) =>
-      prev.map((ev) => (ev.id === eventId ? { ...ev, myStatus: status as any } : ev))
+      prev.map((ev) => (ev.id === eventId ? { ...ev, myStatus: status } : ev))
     );
 
     try {
@@ -398,77 +440,82 @@ export default function LiffSchedulePage() {
                 })}
 
                 {/* 👨 2. 保護者本人（または選手本人）の出欠回答 */}
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-black text-foreground">
-                      {userRole === "parent" ? "👨 保護者（自分）の参加・当番" : "あなたの出欠回答"}
-                    </span>
-                    <span className="text-[11px] font-bold">
-                      {ev.myStatus === "present" && <span className="text-emerald-600 dark:text-emerald-400 font-black">○ {userRole === "parent" ? "参加・当番可" : "出席"}</span>}
-                      {(ev.myStatus === "late" || ev.myStatus === "partial") && <span className="text-amber-600 dark:text-amber-400 font-black">△ 調整</span>}
-                      {ev.myStatus === "absent" && <span className="text-rose-600 dark:text-rose-400 font-black">× 欠席</span>}
-                      {(ev.myStatus === "pending" || !ev.myStatus) && <span className="text-muted-foreground font-black">？ 未定</span>}
-                    </span>
-                  </div>
+                {(() => {
+                  const pStatus = getEventAttendance(ev.id, ev.myStatus);
+                  return (
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-black text-foreground">
+                          {userRole === "parent" ? "👨 保護者（自分）の参加・当番" : "あなたの出欠回答"}
+                        </span>
+                        <span className="text-[11px] font-bold">
+                          {pStatus === "present" && <span className="text-emerald-600 dark:text-emerald-400 font-black">○ {userRole === "parent" ? "参加・当番可" : "出席"}</span>}
+                          {(pStatus === "late" || pStatus === "partial") && <span className="text-amber-600 dark:text-amber-400 font-black">△ 調整</span>}
+                          {pStatus === "absent" && <span className="text-rose-600 dark:text-rose-400 font-black">× 欠席</span>}
+                          {(pStatus === "pending" || !pStatus) && <span className="text-muted-foreground font-black">？ 未定</span>}
+                        </span>
+                      </div>
 
-                  <div className="grid grid-cols-4 gap-1.5">
-                    {/* ○ 出席 */}
-                    <button
-                      type="button"
-                      onClick={() => handleStatusChange(ev.id, "present")}
-                      className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black transition-all active:scale-95 ${
-                        ev.myStatus === "present"
-                          ? "bg-emerald-600 text-white shadow-xs"
-                          : "bg-muted/60 text-muted-foreground hover:bg-muted"
-                      }`}
-                    >
-                      <span className="text-sm leading-none mb-0.5">○</span>
-                      <span className="text-[10px]">{userRole === "parent" ? "参加/当番" : "出席"}</span>
-                    </button>
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {/* ○ 出席 */}
+                        <button
+                          type="button"
+                          onClick={() => handleStatusChange(ev.id, "present")}
+                          className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black transition-all active:scale-95 ${
+                            pStatus === "present"
+                              ? "bg-emerald-600 text-white shadow-xs ring-2 ring-emerald-500/50"
+                              : "bg-muted/60 text-muted-foreground hover:bg-muted"
+                          }`}
+                        >
+                          <span className="text-sm leading-none mb-0.5">○</span>
+                          <span className="text-[10px]">{userRole === "parent" ? "参加/当番" : "出席"}</span>
+                        </button>
 
-                    {/* △ 調整 / 遅刻 */}
-                    <button
-                      type="button"
-                      onClick={() => handleStatusChange(ev.id, "late")}
-                      className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black transition-all active:scale-95 ${
-                        ev.myStatus === "late" || ev.myStatus === "partial"
-                          ? "bg-amber-500 text-white shadow-xs"
-                          : "bg-muted/60 text-muted-foreground hover:bg-muted"
-                      }`}
-                    >
-                      <span className="text-sm leading-none mb-0.5">△</span>
-                      <span className="text-[10px]">調整</span>
-                    </button>
+                        {/* △ 調整 / 遅刻 */}
+                        <button
+                          type="button"
+                          onClick={() => handleStatusChange(ev.id, "late")}
+                          className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black transition-all active:scale-95 ${
+                            pStatus === "late" || pStatus === "partial"
+                              ? "bg-amber-500 text-white shadow-xs ring-2 ring-amber-500/50"
+                              : "bg-muted/60 text-muted-foreground hover:bg-muted"
+                          }`}
+                        >
+                          <span className="text-sm leading-none mb-0.5">△</span>
+                          <span className="text-[10px]">調整</span>
+                        </button>
 
-                    {/* × 欠席 */}
-                    <button
-                      type="button"
-                      onClick={() => handleStatusChange(ev.id, "absent")}
-                      className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black transition-all active:scale-95 ${
-                        ev.myStatus === "absent"
-                          ? "bg-rose-600 text-white shadow-xs"
-                          : "bg-muted/60 text-muted-foreground hover:bg-muted"
-                      }`}
-                    >
-                      <span className="text-sm leading-none mb-0.5">×</span>
-                      <span className="text-[10px]">欠席</span>
-                    </button>
+                        {/* × 欠席 */}
+                        <button
+                          type="button"
+                          onClick={() => handleStatusChange(ev.id, "absent")}
+                          className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black transition-all active:scale-95 ${
+                            pStatus === "absent"
+                              ? "bg-rose-600 text-white shadow-xs ring-2 ring-rose-500/50"
+                              : "bg-muted/60 text-muted-foreground hover:bg-muted"
+                          }`}
+                        >
+                          <span className="text-sm leading-none mb-0.5">×</span>
+                          <span className="text-[10px]">欠席</span>
+                        </button>
 
-                    {/* ？ 未定 */}
-                    <button
-                      type="button"
-                      onClick={() => handleStatusChange(ev.id, "pending")}
-                      className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black transition-all active:scale-95 ${
-                        ev.myStatus === "pending" || !ev.myStatus
-                          ? "bg-slate-700 text-white dark:bg-slate-300 dark:text-slate-900 shadow-xs"
-                          : "bg-muted/60 text-muted-foreground hover:bg-muted"
-                      }`}
-                    >
-                      <span className="text-sm leading-none mb-0.5">？</span>
-                      <span className="text-[10px]">未定</span>
-                    </button>
-                  </div>
-                </div>
+                        {/* ？ 未定 */}
+                        <button
+                          type="button"
+                          onClick={() => handleStatusChange(ev.id, "pending")}
+                          className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black transition-all active:scale-95 ${
+                            pStatus === "pending" || !pStatus
+                              ? "bg-slate-700 text-white dark:bg-slate-300 dark:text-slate-900 shadow-xs ring-2 ring-slate-500/50"
+                              : "bg-muted/60 text-muted-foreground hover:bg-muted"
+                          }`}
+                        >
+                          <span className="text-sm leading-none mb-0.5">？</span>
+                          <span className="text-[10px]">未定</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
             ))}
