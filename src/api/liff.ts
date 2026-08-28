@@ -812,6 +812,18 @@ app.get("/my-family", async (c) => {
       }
     }
 
+    if (!member && allRelations.length > 0) {
+      // チームに登録された親子関係から保護者を自動特定
+      const firstParentId = allRelations[0].parentId;
+      if (firstParentId) {
+        member = await db
+          .select()
+          .from(teamMembers)
+          .where(eq(teamMembers.id, firstParentId))
+          .get();
+      }
+    }
+
     // 3. 親子関係から該当する保護者のお子様のみを抽出（重複排除）
     let childrenList: Array<{ id: string; name: string; uniformNumber?: string; parentId?: string; parentName?: string }> = [];
 

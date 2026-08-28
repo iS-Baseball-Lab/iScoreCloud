@@ -27,6 +27,8 @@ import { MatchScoreCard } from "@/components/liff/MatchScoreCard";
 interface HubHeroSectionProps {
   teamName?: string;
   isDemo?: boolean;
+  userId?: string;
+  userName?: string;
   nextEvent?: {
     id: string;
     title: string;
@@ -40,14 +42,18 @@ interface HubHeroSectionProps {
   } | null;
   eventsList?: any[];
   latestMatch?: MatchCardData | null;
+  isLoading?: boolean;
 }
 
 export function HubHeroSection({
   teamName = "チーム",
   isDemo = false,
+  userId,
+  userName,
   nextEvent,
   eventsList = [],
   latestMatch,
+  isLoading = false,
 }: HubHeroSectionProps) {
   const [activeTab, setActiveTab] = useState<"next" | "calendar" | "score">("next");
 
@@ -66,13 +72,8 @@ export function HubHeroSection({
   const fetchFamilyData = async () => {
     try {
       const tid = localStorage.getItem("iscore_selectedTeamId") || "demo-team";
-      const uid = localStorage.getItem("iscore_user_id") || localStorage.getItem("iscore_userId") || "";
-      const uName = localStorage.getItem("iscore_user_name") || "";
-
-      // チーム変更時は一旦クリア
-      if (tid !== "demo-team" && !isDemo) {
-        setChildren([]);
-      }
+      const uid = userId || (typeof window !== "undefined" ? (localStorage.getItem("iscore_user_id") || localStorage.getItem("iscore_userId") || "") : "");
+      const uName = userName || (typeof window !== "undefined" ? (localStorage.getItem("iscore_user_name") || "") : "");
 
       const res = await fetch(`/api/liff/my-family?teamId=${tid}&userId=${uid}&userName=${encodeURIComponent(uName)}`);
       if (res.ok) {
@@ -116,7 +117,7 @@ export function HubHeroSection({
   useEffect(() => {
     if (typeof window === "undefined") return;
     fetchFamilyData();
-  }, [isDemo, teamName]);
+  }, [isDemo, teamName, userId, userName]);
 
   // eventsListから初期出欠ステータスを読み込む (有効な回答のみを安全にマージ)
   useEffect(() => {
@@ -438,15 +439,15 @@ export function HubHeroSection({
 
   return (
     <div className="space-y-2.5">
-      {/* 🌟 1. 上部セグメントタブ（活動予定 / カレンダー / 試合速報） */}
-      <div className="flex items-center p-1 bg-slate-200/70 dark:bg-slate-800/60 rounded-2xl border border-slate-300/80 dark:border-slate-700 shadow-xs">
+      {/* 🌟 1. 上部セグメントタブ（カラーテーマ完全連動） */}
+      <div className="flex items-center p-1 bg-primary/10 dark:bg-primary/15 backdrop-blur-md rounded-2xl border border-primary/20 dark:border-primary/25 shadow-xs">
         <button
           type="button"
           onClick={() => setActiveTab("next")}
           className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-xl text-xs font-black transition-all active:scale-95 ${
             activeTab === "next"
-              ? "bg-primary text-primary-foreground shadow-sm font-black ring-1 ring-primary/30"
-              : "text-slate-600 dark:text-slate-300 hover:text-slate-900 font-bold"
+              ? "bg-primary text-primary-foreground shadow-sm shadow-primary/25 font-black ring-1 ring-primary/30"
+              : "text-foreground/75 hover:text-primary hover:bg-primary/10 font-bold"
           }`}
         >
           <Sparkles className="w-3.5 h-3.5" />
@@ -458,8 +459,8 @@ export function HubHeroSection({
           onClick={() => setActiveTab("calendar")}
           className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-xl text-xs font-black transition-all active:scale-95 ${
             activeTab === "calendar"
-              ? "bg-primary text-primary-foreground shadow-sm font-black ring-1 ring-primary/30"
-              : "text-slate-600 dark:text-slate-300 hover:text-slate-900 font-bold"
+              ? "bg-primary text-primary-foreground shadow-sm shadow-primary/25 font-black ring-1 ring-primary/30"
+              : "text-foreground/75 hover:text-primary hover:bg-primary/10 font-bold"
           }`}
         >
           <CalendarDays className="w-3.5 h-3.5" />
@@ -471,8 +472,8 @@ export function HubHeroSection({
           onClick={() => setActiveTab("score")}
           className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-xl text-xs font-black transition-all active:scale-95 ${
             activeTab === "score"
-              ? "bg-primary text-primary-foreground shadow-sm font-black ring-1 ring-primary/30"
-              : "text-slate-600 dark:text-slate-300 hover:text-slate-900 font-bold"
+              ? "bg-primary text-primary-foreground shadow-sm shadow-primary/25 font-black ring-1 ring-primary/30"
+              : "text-foreground/75 hover:text-primary hover:bg-primary/10 font-bold"
           }`}
         >
           <Flame className="w-3.5 h-3.5" />
@@ -482,7 +483,7 @@ export function HubHeroSection({
 
       {/* 🌟 2. タブごとのカードコンテンツ */}
 
-      {/* 🅰️ 【直近の活動日カルーセル】（次の土曜日〜金曜日の全活動予定を横スライド表示） */}
+      {/* 🅰️ 【直近の活動日カルーセル】 */}
       {activeTab === "next" && (
         <div className="space-y-2 animate-in fade-in duration-200">
           {/* カルーセル期間ヘッダー & スワイプ案内 */}
@@ -499,10 +500,30 @@ export function HubHeroSection({
             )}
           </div>
 
-          {/* 予定が0件の場合のクリーン表示 */}
-          {weeklyEvents.length === 0 ? (
+          {/* 🌟 スケルトンローディング中表示 */}
+          {isLoading ? (
+            <div className="flex overflow-x-auto gap-3 -mx-4 px-4 pb-1 pt-0.5">
+              {[1, 2].map((i) => (
+                <div
+                  key={i}
+                  className="w-[88vw] max-w-[360px] shrink-0 rounded-3xl bg-white dark:bg-slate-900 border-2 border-slate-200/80 dark:border-slate-800 p-4 space-y-4 animate-pulse shadow-md ring-1 ring-black/5"
+                >
+                  <div className="flex justify-between items-center">
+                    <div className="h-5 w-20 bg-slate-200 dark:bg-slate-800 rounded-full" />
+                    <div className="h-4 w-12 bg-slate-200 dark:bg-slate-800 rounded" />
+                  </div>
+                  <div className="space-y-2">
+                    <div className="h-6 w-32 bg-slate-200 dark:bg-slate-800 rounded-lg" />
+                    <div className="h-4 w-48 bg-slate-200 dark:bg-slate-800 rounded" />
+                  </div>
+                  <div className="h-20 bg-slate-100 dark:bg-slate-800/60 rounded-2xl" />
+                  <div className="h-24 bg-slate-100 dark:bg-slate-800/60 rounded-2xl" />
+                </div>
+              ))}
+            </div>
+          ) : weeklyEvents.length === 0 ? (
             <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-sm text-center space-y-2 ring-1 ring-black/5">
-              <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 mx-auto flex items-center justify-center">
+              <div className="w-10 h-10 rounded-full bg-primary/10 text-primary mx-auto flex items-center justify-center">
                 <Calendar className="w-5 h-5" />
               </div>
               <p className="text-sm font-black text-slate-800 dark:text-slate-200">この期間の活動予定はありません</p>

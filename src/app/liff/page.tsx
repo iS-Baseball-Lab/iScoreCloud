@@ -153,9 +153,12 @@ export default function LiffHubPage() {
             <HubHeroSection
               teamName={teamName}
               isDemo={isDemo}
+              userId={profile?.userId || undefined}
+              userName={userName || undefined}
               nextEvent={nextEvent}
               eventsList={events}
               latestMatch={matches[0] || null}
+              isLoading={isLoading && !hasLoadedRef.current}
             />
           </section>
         </div>

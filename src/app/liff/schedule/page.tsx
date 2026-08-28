@@ -287,16 +287,31 @@ export default function LiffSchedulePage() {
           </button>
         </div>
 
-        {/* ローディング */}
+        {/* ローディング（美しいスケルトンカード3枚） */}
         {isLoading ? (
-          <div className="flex flex-col items-center justify-center py-16 text-muted-foreground space-y-2">
-            <Loader2 className="w-6 h-6 animate-spin text-primary" />
-            <span className="text-xs font-bold">予定を読み込み中...</span>
+          <div className="space-y-3.5 animate-pulse">
+            {[1, 2, 3].map((i) => (
+              <div
+                key={i}
+                className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-4 shadow-sm space-y-3 ring-1 ring-black/5"
+              >
+                <div className="flex justify-between items-center">
+                  <div className="h-5 w-24 bg-slate-200 dark:bg-slate-800 rounded-full" />
+                  <div className="h-4 w-12 bg-slate-200 dark:bg-slate-800 rounded" />
+                </div>
+                <div className="space-y-1.5">
+                  <div className="h-6 w-40 bg-slate-200 dark:bg-slate-800 rounded-lg" />
+                  <div className="h-4 w-56 bg-slate-200 dark:bg-slate-800 rounded" />
+                </div>
+                <div className="h-16 bg-slate-100 dark:bg-slate-800/60 rounded-2xl" />
+                <div className="h-20 bg-slate-100 dark:bg-slate-800/60 rounded-2xl" />
+              </div>
+            ))}
           </div>
         ) : filteredEvents.length === 0 ? (
           /* 空ステート */
-          <div className="flex flex-col items-center justify-center py-16 text-center bg-card border border-border rounded-3xl p-6 space-y-3">
-            <div className="w-12 h-12 rounded-2xl bg-muted flex items-center justify-center text-muted-foreground">
+          <div className="flex flex-col items-center justify-center py-16 text-center bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-6 space-y-3 ring-1 ring-black/5 shadow-sm">
+            <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center text-primary">
               <Calendar className="w-6 h-6" />
             </div>
             <div className="space-y-1">
@@ -312,7 +327,7 @@ export default function LiffSchedulePage() {
             {filteredEvents.map((ev) => (
             <div
               key={ev.id}
-              className="bg-card border border-border rounded-3xl p-4 shadow-xs space-y-3"
+              className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-4 shadow-sm space-y-3 ring-1 ring-black/5"
             >
               {/* 日時 & 種別バッジ */}
               <div className="flex items-center justify-between">
