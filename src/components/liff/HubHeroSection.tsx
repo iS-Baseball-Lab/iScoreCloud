@@ -795,18 +795,18 @@ export function HubHeroSection({
                         </span>
                       </div>
 
-                      {/* 2. 連絡事項・メモ（存在する場合） */}
-                      {ev.memo && (
-                        <div className="pt-1.5 border-t border-border/60 space-y-0.5">
-                          <span className="text-[10px] font-black text-muted-foreground flex items-center gap-1">
-                            <FileText className="w-3 h-3 text-primary" />
-                            <span>連絡事項</span>
-                          </span>
-                          <p className="text-[11px] font-bold text-foreground/90 bg-background/60 p-2 rounded-xl border border-border/50">
-                            {ev.memo}
-                          </p>
-                        </div>
-                      )}
+                      {/* 2. 連絡事項・メモ（常に表示、ない場合は「特になし」） */}
+                      <div className="pt-1.5 border-t border-border/60 space-y-0.5">
+                        <span className="text-[10px] font-black text-muted-foreground flex items-center gap-1">
+                          <FileText className="w-3 h-3 text-primary" />
+                          <span>連絡事項</span>
+                        </span>
+                        <p className={`text-[11px] font-bold p-2 rounded-xl border border-border/50 ${
+                          ev.memo ? "text-foreground/90 bg-background/60" : "text-muted-foreground bg-muted/20"
+                        }`}>
+                          {ev.memo || "特になし"}
+                        </p>
+                      </div>
 
                       {/* 3. 配車（練習の場合は無し、試合・合宿の場合は配車情報 ＆ 配車表リンク） */}
                       <div className="pt-1.5 border-t border-border/60 flex items-center justify-between font-bold">
