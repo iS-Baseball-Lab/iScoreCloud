@@ -256,8 +256,8 @@ export function MonthlySchedulePlanner({
               pmTime: formatTimeRange(ev.pmStartAt, ev.pmEndAt, "12:00〜18:00"),
               pmLocation: ev.pmLocation || ev.location || "",
               dutyGroup: ev.dutyGroup || "1班",
-              needsLunch: ev.needsLunch !== undefined && ev.needsLunch !== null ? Boolean(ev.needsLunch) : hasPm,
-              needsSnack: ev.needsSnack !== undefined && ev.needsSnack !== null ? Boolean(ev.needsSnack) : false,
+              needsLunch: ev.needsLunch === true || (ev.needsLunch as any) === 1 || (ev.needsLunch as any) === "1" || (ev.needsLunch as any) === "true",
+              needsSnack: ev.needsSnack === true || (ev.needsSnack as any) === 1 || (ev.needsSnack as any) === "1" || (ev.needsSnack as any) === "true",
               memo: ev.description || "",
             };
           });
@@ -1169,7 +1169,7 @@ export function MonthlySchedulePlanner({
                         onClick={() => handleUpdateItem(item.id, { needsLunch: true })}
                         className={cn(
                           "flex-1 py-1 px-1 rounded-lg text-[11px] font-bold border transition-all flex items-center justify-center gap-1",
-                          item.needsLunch
+                          item.needsLunch === true
                             ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/40 font-black"
                             : "bg-card border-border/80 text-muted-foreground"
                         )}
@@ -1183,7 +1183,7 @@ export function MonthlySchedulePlanner({
                         onClick={() => handleUpdateItem(item.id, { needsLunch: false })}
                         className={cn(
                           "flex-1 py-1 px-1 rounded-lg text-[11px] font-bold border transition-all flex items-center justify-center gap-1",
-                          !item.needsLunch
+                          item.needsLunch !== true
                             ? "bg-primary/15 text-primary border-primary/40 font-black"
                             : "bg-card border-border/80 text-muted-foreground"
                         )}
@@ -1202,7 +1202,7 @@ export function MonthlySchedulePlanner({
                         onClick={() => handleUpdateItem(item.id, { needsSnack: true })}
                         className={cn(
                           "flex-1 py-1 px-1 rounded-lg text-[11px] font-bold border transition-all flex items-center justify-center gap-1",
-                          item.needsSnack
+                          item.needsSnack === true
                             ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/40 font-black"
                             : "bg-card border-border/80 text-muted-foreground"
                         )}
@@ -1216,7 +1216,7 @@ export function MonthlySchedulePlanner({
                         onClick={() => handleUpdateItem(item.id, { needsSnack: false })}
                         className={cn(
                           "flex-1 py-1 px-1 rounded-lg text-[11px] font-bold border transition-all flex items-center justify-center gap-1",
-                          !item.needsSnack
+                          item.needsSnack !== true
                             ? "bg-primary/15 text-primary border-primary/40 font-black"
                             : "bg-card border-border/80 text-muted-foreground"
                         )}

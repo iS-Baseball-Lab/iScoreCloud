@@ -25,6 +25,12 @@ import type { WorkerEnv } from "@/types/api";
 
 const app = new Hono<{ Bindings: WorkerEnv }>();
 
+const toBoolean = (val: any, defaultVal = false): boolean => {
+  if (val === true || val === 1 || val === "1" || val === "true") return true;
+  if (val === false || val === 0 || val === "0" || val === "false") return false;
+  return defaultVal;
+};
+
 /**
  * デモチーム（体験用サンプルデータ）
  */
@@ -444,8 +450,8 @@ app.get("/hub", async (c) => {
         eventType: ev.eventType || "practice",
         dutyGroup: ev.dutyGroup || "1班",
         carInfo,
-        needsLunch: ev.needsLunch !== null && ev.needsLunch !== undefined ? Boolean(ev.needsLunch) : (hasPm || isMatch),
-        needsSnack: ev.needsSnack !== null && ev.needsSnack !== undefined ? Boolean(ev.needsSnack) : false,
+        needsLunch: toBoolean(ev.needsLunch, hasPm || isMatch),
+        needsSnack: toBoolean(ev.needsSnack, false),
         memo: ev.description || "",
         myStatus: (userAttendances[ev.id] as any) || "pending",
       };
@@ -813,8 +819,8 @@ app.get("/schedule", async (c) => {
           amType: ev.eventType || "practice",
           pmType: hasPm ? (ev.eventType || "practice") : "off",
           dutyGroup: ev.dutyGroup || undefined,
-          needsLunch: ev.needsLunch !== null && ev.needsLunch !== undefined ? Boolean(ev.needsLunch) : (isMatch || (hasPm && amTime.includes("〜") && pmTime.length > 0)),
-          needsSnack: ev.needsSnack !== null && ev.needsSnack !== undefined ? Boolean(ev.needsSnack) : false,
+          needsLunch: toBoolean(ev.needsLunch, isMatch || (hasPm && amTime.includes("〜") && pmTime.length > 0)),
+          needsSnack: toBoolean(ev.needsSnack, false),
           memo: ev.description || "",
           carInfo: isMatch ? "7:30 集合・配車調整済" : undefined,
           myStatus,

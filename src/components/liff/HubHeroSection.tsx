@@ -325,8 +325,8 @@ export function HubHeroSection({
           targetGroup: ev.targetGroup || (ev.title?.match(/\[(.*?)\]/)?.[1] || "全体"),
           dutyGroup: ev.dutyGroup || "1班",
           carInfo,
-          needsLunch: ev.needsLunch !== undefined ? ev.needsLunch : (hasPm || isMatchOrCamp),
-          needsSnack: ev.needsSnack !== undefined ? ev.needsSnack : false,
+          needsLunch: ev.needsLunch === true || ev.needsLunch === 1 || ev.needsLunch === "1" || ev.needsLunch === "true",
+          needsSnack: ev.needsSnack === true || ev.needsSnack === 1 || ev.needsSnack === "1" || ev.needsSnack === "true",
           memo: ev.memo || ev.description || "",
         };
       };
@@ -498,8 +498,8 @@ export function HubHeroSection({
           pmLocation: hasPm ? (ev.pmLocation || ev.amLocation || ev.location || "") : "",
           hasPm,
           duty: ev.dutyGroup || "1班",
-          needsLunch: ev.needsLunch !== undefined ? Boolean(ev.needsLunch) : isMatch,
-          needsSnack: ev.needsSnack !== undefined ? Boolean(ev.needsSnack) : false,
+          needsLunch: ev.needsLunch === true || ev.needsLunch === 1 || ev.needsLunch === "1" || ev.needsLunch === "true",
+          needsSnack: ev.needsSnack === true || ev.needsSnack === 1 || ev.needsSnack === "1" || ev.needsSnack === "true",
           memo: ev.description || ev.memo || "",
           carInfo: ev.carInfo,
         };

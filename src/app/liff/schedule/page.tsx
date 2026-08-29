@@ -234,8 +234,14 @@ export default function LiffSchedulePage() {
       if (res.ok) {
         const data = await res.json() as { success: boolean; events?: ScheduleEvent[] };
         if (data.events) {
+          const normalizedEvents = data.events.map(ev => ({
+            ...ev,
+            needsLunch: ev.needsLunch === true || (ev.needsLunch as any) === 1 || (ev.needsLunch as any) === "1" || (ev.needsLunch as any) === "true",
+            needsSnack: ev.needsSnack === true || (ev.needsSnack as any) === 1 || (ev.needsSnack as any) === "1" || (ev.needsSnack as any) === "true",
+          }));
+
           const map: Record<string, "present" | "absent" | "pending" | "late"> = {};
-          for (const ev of data.events) {
+          for (const ev of normalizedEvents) {
             if (ev.id && ev.myStatus && ev.myStatus !== "pending") {
               map[ev.id] = ev.myStatus === "partial" ? "late" : (ev.myStatus as "present" | "absent" | "late");
             }
@@ -243,7 +249,7 @@ export default function LiffSchedulePage() {
           if (Object.keys(map).length > 0) {
             setAttendanceMap(prev => ({ ...map, ...prev }));
           }
-          setEvents(data.events);
+          setEvents(normalizedEvents);
         }
       }
     } catch (err) {
@@ -823,11 +829,11 @@ export default function LiffSchedulePage() {
                           <span>お弁当</span>
                         </span>
                         <span className={`px-2 py-0.5 rounded-md text-[10.5px] font-black ${
-                          ev.needsLunch
+                          ev.needsLunch === true
                             ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30"
                             : "text-muted-foreground"
                         }`}>
-                          {ev.needsLunch ? "🍙 持参要" : "不要"}
+                          {ev.needsLunch === true ? "🍙 持参要" : "不要"}
                         </span>
                       </div>
 
@@ -838,11 +844,11 @@ export default function LiffSchedulePage() {
                           <span>補食</span>
                         </span>
                         <span className={`px-2 py-0.5 rounded-md text-[10.5px] font-black ${
-                          ev.needsSnack
+                          ev.needsSnack === true
                             ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30"
                             : "text-muted-foreground"
                         }`}>
-                          {ev.needsSnack ? "🍌 持参要" : "不要"}
+                          {ev.needsSnack === true ? "🍌 持参要" : "不要"}
                         </span>
                       </div>
                     </div>
