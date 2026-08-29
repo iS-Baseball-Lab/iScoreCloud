@@ -62,7 +62,7 @@ export function HubQuickNav() {
           </div>
         </Link>
 
-        {/* 📅 予定 & 欠席 (出欠) */}
+        {/* 📅 予定 & 出欠 */}
         <Link
           href="/liff/schedule"
           className="flex flex-col justify-between p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-sm hover:shadow-md hover:border-amber-500/50 transition-all active:scale-[0.98] group ring-1 ring-black/5 dark:ring-white/5"
@@ -77,7 +77,7 @@ export function HubQuickNav() {
           </div>
           <div className="mt-3.5 space-y-0.5">
             <h4 className="text-base font-black text-slate-900 dark:text-slate-100 tracking-tight">
-              予定 & 欠席
+              予定 & 出欠
             </h4>
             <p className="text-xs font-bold text-slate-500 dark:text-slate-400">
               当番・出欠の確認

@@ -245,7 +245,7 @@ export function LiffBottomNav() {
                 </div>
               </Link>
 
-              {/* ⑤ 📅 予定 & 欠席 */}
+              {/* ⑤ 📅 予定 & 出欠 */}
               <Link
                 href="/liff/schedule"
                 onClick={() => setIsOtherMenuOpen(false)}
@@ -255,7 +255,7 @@ export function LiffBottomNav() {
                   <Calendar className="w-5 h-5" />
                 </span>
                 <div className="min-w-0">
-                  <p className="text-xs font-black text-slate-900 dark:text-slate-100 truncate">予定 & 欠席</p>
+                  <p className="text-xs font-black text-slate-900 dark:text-slate-100 truncate">予定 & 出欠</p>
                   <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold truncate">当番・出欠確認</p>
                 </div>
               </Link>

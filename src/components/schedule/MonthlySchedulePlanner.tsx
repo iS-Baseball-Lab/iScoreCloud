@@ -533,7 +533,7 @@ export function MonthlySchedulePlanner({
         </div>
       )}
 
-      {/* 🌟 1. 上部コントロールバー */}
+      {/* 🌟 1. 上部コントロールバー ＆ 導線 */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-3xl bg-card border-2 border-primary/20 shadow-sm">
         <div className="flex items-center gap-3">
           <span className="w-10 h-10 rounded-2xl bg-primary/10 text-primary flex items-center justify-center font-black">
@@ -547,13 +547,13 @@ export function MonthlySchedulePlanner({
               </span>
             </h2>
             <p className="text-xs text-muted-foreground font-bold">
-              日付タップで活動日をON/OFF ➔ 下部で午前・午後や当番を設定
+              カレンダーの日付をタップして活動日を一括設定・公開
             </p>
           </div>
         </div>
 
         {/* 土日一括追加 & 保存ボタン */}
-        <div className="flex items-center gap-2 pt-1 sm:pt-0">
+        <div className="flex items-center gap-2 pt-1 sm:pt-0 flex-wrap">
           <button
             type="button"
             onClick={handleSelectAllWeekends}
@@ -570,7 +570,7 @@ export function MonthlySchedulePlanner({
             className="py-2 px-4 rounded-2xl bg-primary text-primary-foreground hover:bg-primary/90 active:scale-95 text-xs font-black shadow-xs flex items-center gap-1.5 transition-all disabled:opacity-50"
           >
             <Save className="w-3.5 h-3.5" />
-            <span>{isSaving ? "保存中..." : "一括保存する"}</span>
+            <span>{isSaving ? "保存中..." : "活動日を一括保存"}</span>
           </button>
         </div>
       </div>
@@ -707,7 +707,7 @@ export function MonthlySchedulePlanner({
                           setEditingItemId(it.id);
                         }}
                         className="px-1 py-0.2 rounded bg-card/90 border border-primary/20 text-[8.5px] font-black text-foreground truncate cursor-pointer hover:bg-primary hover:text-primary-foreground transition-all flex items-center justify-between"
-                        title={`${it.targetGroup || "全体"}: ${it.title}（タップで詳細編集）`}
+                        title={`${it.targetGroup || "全体"}: ${it.title}（タップで詳細設定）`}
                       >
                         <span className="truncate">
                           {it.targetGroup && it.targetGroup !== "全体" ? `${it.targetGroup.slice(0, 3)} ` : ""}
@@ -724,19 +724,34 @@ export function MonthlySchedulePlanner({
         </div>
       </div>
 
-      {/* 🌟 3. カレンダー下部：設定された活動日のスマートリスト ＆ 個別詳細編集モーダル */}
+      {/* 🌟 3. カレンダー下部：設定された活動日一覧 ＆ 「予定 & 出欠」ページへの誘導 */}
       <div className="space-y-3">
         <div className="flex items-center justify-between px-1">
           <h3 className="text-base font-black text-foreground flex items-center gap-2">
             <Layers className="w-4 h-4 text-primary" />
-            <span>活動日設定一覧</span>
+            <span>今月設定した活動日一覧</span>
             <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
-              {selectedDayItems.length}件
+              {selectedDayItems.length}日
             </span>
           </h3>
-          <span className="text-xs text-muted-foreground font-bold hidden sm:inline">
-            「✏️ 詳細設定」で時間・場所・当番を設定
-          </span>
+          
+          <a
+            href="/liff/schedule"
+            className="text-xs font-black text-primary hover:underline flex items-center gap-1"
+          >
+            <span>📅 予定 & 出欠一覧で詳細確認</span>
+            <ChevronRight className="w-3.5 h-3.5" />
+          </a>
+        </div>
+
+        {/* ガイドメッセージ */}
+        <div className="p-3.5 rounded-2xl bg-primary/10 border border-primary/20 text-xs font-bold text-foreground space-y-1">
+          <p className="font-black flex items-center gap-1.5 text-primary">
+            <span>💡 活動予定の運用フロー</span>
+          </p>
+          <p className="text-[11px] text-muted-foreground leading-relaxed">
+            このカレンダーで今月の活動日を一括設定して保存した後、対戦相手や球場、時間、当番、お弁当などの詳細情報は<strong className="text-foreground">「予定 & 出欠」ページの各カードからいつでも個別編集</strong>できます。
+          </p>
         </div>
 
         {selectedDayItems.length === 0 ? (
@@ -744,7 +759,7 @@ export function MonthlySchedulePlanner({
             <CalendarIcon className="w-10 h-10 text-muted-foreground/50 mx-auto" />
             <div className="space-y-1">
               <p className="text-sm font-black text-foreground">活動日がまだ選択されていません</p>
-              <p className="text-xs text-muted-foreground">上のカレンダーの日付をタップしてください。</p>
+              <p className="text-xs text-muted-foreground">上のカレンダーの日付をタップするか、「土日を全追加」ボタンを押してください。</p>
             </div>
           </div>
         ) : (
@@ -767,15 +782,16 @@ export function MonthlySchedulePlanner({
                   {/* 詳細サマリー */}
                   <div className="min-w-0 flex-1 space-y-1">
                     <div className="flex items-center gap-1.5 flex-wrap">
+                      {/* 対象チーム切り替えチップ */}
                       <span className="px-2 py-0.2 rounded-md bg-primary/15 text-primary text-[10.5px] font-black shrink-0 border border-primary/25">
                         🏷️ {item.targetGroup || "全体"}
                       </span>
                       <h4 className="text-xs font-black text-foreground truncate">
-                        {item.title || "活動予定"}
+                        {item.title || "活動日"}
                       </h4>
                     </div>
 
-                    {/* 午前 / 午後の時間・場所 & 当番 */}
+                    {/* 午前 / 午後の時間・場所 */}
                     <div className="flex items-center gap-3 flex-wrap text-[11px] font-bold text-muted-foreground">
                       <span className="flex items-center gap-1">
                         <Clock className="w-3 h-3 text-amber-500 shrink-0" />
@@ -794,31 +810,25 @@ export function MonthlySchedulePlanner({
                           当番: {item.dutyGroup}
                         </span>
                       )}
-
-                      {item.needsLunch && (
-                        <span className="text-amber-600 dark:text-amber-400 text-[10.5px]">
-                          🍙 弁当要
-                        </span>
-                      )}
                     </div>
                   </div>
                 </div>
 
-                {/* 右側アクション：個別詳細編集ボタン ＆ 削除 */}
+                {/* 右側アクション：クイック詳細設定 ＆ 削除 */}
                 <div className="flex items-center gap-2 justify-end shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-border/60">
                   <button
                     type="button"
                     onClick={() => setEditingItemId(item.id)}
                     className="py-1.5 px-3 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 active:scale-95 text-xs font-black shadow-2xs flex items-center gap-1.5 transition-all"
                   >
-                    <span>✏️ 詳細設定</span>
+                    <span>✏️ 設定</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => handleDeleteItem(item.id)}
                     className="p-1.5 rounded-xl text-rose-500 hover:bg-rose-500/10 active:scale-95 transition-all border border-rose-500/20 hover:border-rose-500/40"
-                    title="この活動日を削除"
+                    title="この活動日を解除"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -862,7 +872,6 @@ export function MonthlySchedulePlanner({
 
               {/* モーダル本文（スクロール可能） */}
               <div className="p-5 overflow-y-auto space-y-4 text-xs">
-                
                 {/* 1. 予定タイトル & 対象チーム */}
                 <div className="p-3.5 rounded-2xl bg-muted/30 border border-border/80 space-y-3">
                   <div className="space-y-1">

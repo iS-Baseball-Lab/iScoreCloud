@@ -288,6 +288,13 @@
       "when": 1787701706471,
       "tag": "0040_graceful_stranger",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "6",
+      "when": 1787962631099,
+      "tag": "0041_ambitious_ezekiel",
+      "breakpoints": true
     }
   ]
 }
