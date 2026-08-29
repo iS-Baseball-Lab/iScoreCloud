@@ -46,7 +46,7 @@ app.post('/:teamId', async (c) => {
 
   try {
     const body = await c.req.json();
-    const { title, startAt, endAt, eventType, description, location, dutyGroup, pmStartAt, pmEndAt, pmLocation, status } = body;
+    const { title, startAt, endAt, eventType, description, location, dutyGroup, pmStartAt, pmEndAt, pmLocation, targetGroup, status } = body;
 
     if (!title || !startAt) {
       return c.json({ success: false, error: "タイトルと開始日時は必須です。" }, 400);
@@ -68,6 +68,7 @@ app.post('/:teamId', async (c) => {
         pmStartAt: pmStartAt ? new Date(pmStartAt) : null,
         pmEndAt: pmEndAt ? new Date(pmEndAt) : null,
         pmLocation: pmLocation || null,
+        targetGroup: targetGroup || null,
         status: status || 'scheduled',
       })
       .returning();
@@ -93,7 +94,7 @@ app.patch('/:teamId/:eventId', async (c) => {
 
   try {
     const body = await c.req.json();
-    const { title, startAt, endAt, eventType, description, location, dutyGroup, pmStartAt, pmEndAt, pmLocation, status } = body;
+    const { title, startAt, endAt, eventType, description, location, dutyGroup, pmStartAt, pmEndAt, pmLocation, targetGroup, status } = body;
 
     const updateFields: Partial<typeof events.$inferInsert> = {};
     if (title !== undefined) updateFields.title = title;
@@ -106,6 +107,7 @@ app.patch('/:teamId/:eventId', async (c) => {
     if (pmStartAt !== undefined) updateFields.pmStartAt = pmStartAt ? new Date(pmStartAt) : null;
     if (pmEndAt !== undefined) updateFields.pmEndAt = pmEndAt ? new Date(pmEndAt) : null;
     if (pmLocation !== undefined) updateFields.pmLocation = pmLocation;
+    if (targetGroup !== undefined) updateFields.targetGroup = targetGroup;
     if (status !== undefined) updateFields.status = status;
 
     const result = await db.update(events)
@@ -128,9 +130,6 @@ app.patch('/:teamId/:eventId', async (c) => {
   }
 });
 
-/**
- * 📅 イベント一括登録・更新 (月間予定スケジューラー用)
- */
 /**
  * 📅 イベント一括登録・更新・削除 (月間予定スケジューラー用)
  */
@@ -159,34 +158,20 @@ app.post('/:teamId/bulk', async (c) => {
       }
     }
 
-    // 2. チームの既存イベント一覧を取得（同一日チェック用）
+    // 2. チームの既存イベント一覧を取得
     const existingEvents = await db.select()
       .from(events)
       .where(eq(events.teamId, teamId));
-
-    const existingMapByDate = new Map<string, typeof existingEvents[0]>();
-    for (const ev of existingEvents) {
-      const d = new Date(ev.startAt);
-      const y = d.getFullYear();
-      const m = String(d.getMonth() + 1).padStart(2, "0");
-      const day = String(d.getDate()).padStart(2, "0");
-      const dateKey = `${y}-${m}-${day}`;
-      existingMapByDate.set(dateKey, ev);
-    }
 
     const savedResults = [];
 
     for (const item of eventList) {
       const startAtDate = new Date(item.startAt);
-      const y = startAtDate.getFullYear();
-      const m = String(startAtDate.getMonth() + 1).padStart(2, "0");
-      const day = String(startAtDate.getDate()).padStart(2, "0");
-      const dateKey = `${y}-${m}-${day}`;
 
-      // 既存レコードがあるか（IDが一致、または同じ日付のレコード）
-      const existingRecord = (item.id && !item.id.startsWith("new_")) 
+      // 既存レコードがあるか (明確なIDで突合)
+      const existingRecord = (item.id && !item.id.startsWith("new_") && !item.id.startsWith("temp_")) 
         ? existingEvents.find(e => e.id === item.id)
-        : existingMapByDate.get(dateKey);
+        : null;
 
       if (existingRecord) {
         // 既存イベントの更新 (UPDATE)
@@ -202,13 +187,14 @@ app.post('/:teamId/bulk', async (c) => {
             pmStartAt: item.pmStartAt ? new Date(item.pmStartAt) : null,
             pmEndAt: item.pmEndAt ? new Date(item.pmEndAt) : null,
             pmLocation: item.pmLocation || null,
+            targetGroup: item.targetGroup || null,
             status: item.status || 'scheduled',
           })
           .where(and(eq(events.id, existingRecord.id), eq(events.teamId, teamId)))
           .returning();
         if (updated.length > 0) savedResults.push(updated[0]);
       } else {
-        // 新規イベント登録 (INSERT)
+        // 新規イベント登録 (INSERT: 同日複数件でも個別に作成)
         const newId = `event_${crypto.randomUUID().replace(/-/g, '')}`;
         const created = await db.insert(events)
           .values({
@@ -224,6 +210,7 @@ app.post('/:teamId/bulk', async (c) => {
             pmStartAt: item.pmStartAt ? new Date(item.pmStartAt) : null,
             pmEndAt: item.pmEndAt ? new Date(item.pmEndAt) : null,
             pmLocation: item.pmLocation || null,
+            targetGroup: item.targetGroup || null,
             status: item.status || 'scheduled',
           })
           .returning();

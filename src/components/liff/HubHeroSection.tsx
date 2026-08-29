@@ -321,6 +321,7 @@ export function HubHeroSection({
           pmType: (ev.pmType || (hasPm ? (ev.eventType || "practice") : "off")) as "match" | "practice" | "camp" | "off",
           pmTime: hasPm ? (pmTime || "13:00〜17:00") : "",
           pmLocation: hasPm ? (pmLocation || amLocation) : "",
+          targetGroup: ev.targetGroup || (ev.title?.match(/\[(.*?)\]/)?.[1] || "全体"),
           dutyGroup: ev.dutyGroup || "1班",
           carInfo,
           needsLunch: ev.needsLunch !== undefined ? ev.needsLunch : (hasPm || isMatchOrCamp),
@@ -363,6 +364,7 @@ export function HubHeroSection({
         pmType: "off" as const,
         pmTime: "",
         pmLocation: "",
+        targetGroup: "Aチーム",
         dutyGroup: "1班",
         carInfo: "鈴木号・佐藤号",
         needsLunch: false,
@@ -382,6 +384,7 @@ export function HubHeroSection({
         pmType: "practice" as const,
         pmTime: "13:00〜17:00",
         pmLocation: "大師河原第3G",
+        targetGroup: "全体",
         dutyGroup: "2班",
         carInfo: "", // 練習時は配車なし
         needsLunch: true,
@@ -476,12 +479,15 @@ export function HubHeroSection({
         const hasPm = ev.hasPm !== undefined ? ev.hasPm : (!!ev.pmStartAt || !!ev.pmLocation || !!ev.pmTime);
         const isMatch = ev.eventType === "match" || ev.amType === "match" || ev.pmType === "match";
 
+        const targetGroup = ev.targetGroup || (ev.title?.match(/\[(.*?)\]/)?.[1] || null);
+
         return {
           id: ev.id,
           title: ev.title || (isMatch ? "公式戦・練習試合" : "通常練習"),
           date: dateLabel,
           dateStr,
           type: isMatch ? "match" : "practice",
+          targetGroup,
           amTime: ev.amTime || "08:00〜12:00",
           amLocation: ev.amLocation || ev.location || "グラウンド",
           pmTime: hasPm ? (ev.pmTime || "13:00〜17:00") : "",
@@ -499,6 +505,7 @@ export function HubHeroSection({
         date: "8/29(土)",
         dateStr: "2026-08-29",
         type: "match",
+        targetGroup: "Aチーム",
         amTime: "08:00〜12:00",
         amLocation: "市民第1球場",
         pmTime: "",
@@ -512,6 +519,7 @@ export function HubHeroSection({
         date: "8/30(日)",
         dateStr: "2026-08-30",
         type: "practice",
+        targetGroup: "全体",
         amTime: "08:00〜12:00",
         amLocation: "大師河原第3G",
         pmTime: "13:00〜17:00",
@@ -525,6 +533,7 @@ export function HubHeroSection({
         date: "9/5(土)",
         dateStr: "2026-09-05",
         type: "match",
+        targetGroup: "Aチーム",
         amTime: "09:00〜13:00",
         amLocation: "等々力球場",
         pmTime: "14:00〜17:00",
@@ -677,12 +686,20 @@ export function HubHeroSection({
                     className="w-[88vw] max-w-[360px] shrink-0 snap-center rounded-3xl bg-white dark:bg-slate-900 border-2 border-slate-200/90 dark:border-slate-800 shadow-md shadow-black/5 p-4 space-y-3.5 flex flex-col justify-between ring-1 ring-black/5"
                   >
                   <div className="space-y-3">
-                    {/* 上部ヘッダー：日程・日付 & 全予定リンク */}
+                    {/* 上部ヘッダー：日程・日付 & 対象チーム & 全予定リンク */}
                     <div className="flex items-center justify-between">
-                      <div className="flex items-baseline gap-2">
+                      <div className="flex items-center gap-2">
                         <span className="text-xl font-black text-foreground tracking-tight">
                           {ev.date}
                         </span>
+
+                        {/* 🎯 対象チーム・グループバッジ（Aチーム/Bチーム/全体など） */}
+                        {ev.targetGroup && ev.targetGroup !== "全体" && (
+                          <span className="px-2 py-0.5 rounded-lg bg-primary/15 text-primary text-[10.5px] font-black border border-primary/30 shrink-0">
+                            🏷️ {ev.targetGroup}
+                          </span>
+                        )}
+
                         <span className="px-2 py-0.5 rounded-full bg-muted text-muted-foreground text-[10px] font-bold">
                           {idx + 1} / {weeklyEvents.length}
                         </span>
@@ -1183,9 +1200,16 @@ export function HubHeroSection({
 
                         {/* タイトル & 午前午後（時間・場所） */}
                         <div className="min-w-0 flex-1 space-y-1.5">
-                          <h4 className="text-xs font-black text-foreground group-hover:text-rose-600 transition-colors truncate">
-                            {ev.title}
-                          </h4>
+                          <div className="flex items-center gap-1.5 truncate">
+                            {ev.targetGroup && ev.targetGroup !== "全体" && (
+                              <span className="px-1.5 py-0.2 rounded-md bg-rose-500/20 text-rose-700 dark:text-rose-300 text-[9.5px] font-black shrink-0 border border-rose-500/30">
+                                🏷️ {ev.targetGroup}
+                              </span>
+                            )}
+                            <h4 className="text-xs font-black text-foreground group-hover:text-rose-600 transition-colors truncate">
+                              {ev.title}
+                            </h4>
+                          </div>
 
                           {/* 午前・午後の時間と場所 */}
                           <div className="space-y-1 text-[10.5px]">
@@ -1270,9 +1294,16 @@ export function HubHeroSection({
 
                       {/* 予定詳細（タイトル & 午前午後の時間・場所） */}
                       <div className="min-w-0 flex-1 space-y-1">
-                        <h4 className="text-xs font-black text-foreground group-hover:text-primary transition-colors truncate">
-                          {ev.title}
-                        </h4>
+                        <div className="flex items-center gap-1.5 truncate">
+                          {ev.targetGroup && ev.targetGroup !== "全体" && (
+                            <span className="px-1.5 py-0.2 rounded-md bg-primary/15 text-primary text-[9.5px] font-black shrink-0 border border-primary/25">
+                              🏷️ {ev.targetGroup}
+                            </span>
+                          )}
+                          <h4 className="text-xs font-black text-foreground group-hover:text-primary transition-colors truncate">
+                            {ev.title}
+                          </h4>
+                        </div>
 
                         {/* 午前・午後の時間と場所の表示 */}
                         <div className="space-y-0.5 text-[10px]">

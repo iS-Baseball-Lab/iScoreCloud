@@ -14,6 +14,7 @@ interface ScheduleEvent {
   time: string;
   location: string;
   eventType: "match" | "practice" | "meeting" | "camp";
+  targetGroup?: string;
   dutyGroup?: string;
   needsLunch?: boolean;
   myStatus: "present" | "absent" | "pending" | "late" | "partial";
@@ -341,6 +342,14 @@ export default function LiffSchedulePage() {
                   >
                     {ev.eventType === "match" ? "⚾ 試合" : "🏃 練習"}
                   </span>
+
+                  {/* 🎯 対象チーム・グループバッジ */}
+                  {ev.targetGroup && ev.targetGroup !== "全体" && (
+                    <span className="px-2 py-0.5 rounded-md bg-primary/15 text-primary text-[10px] font-black border border-primary/25 shrink-0">
+                      🏷️ {ev.targetGroup}
+                    </span>
+                  )}
+
                   <span className="text-xs font-black text-foreground">{ev.date}</span>
                 </div>
 

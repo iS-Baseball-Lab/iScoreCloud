@@ -422,6 +422,9 @@ app.get("/hub", async (c) => {
       const isMatch = ev.eventType === "match" || ev.eventType === "camp";
       const carInfo = isMatch ? "配車調整中" : "";
 
+      // 🎯 対象チーム・グループ（Aチーム/Bチーム/試合組/練習組/全体など）
+      const extractedTarget = ev.targetGroup || (ev.title?.match(/\[(.*?)\]/)?.[1] || null);
+
       return {
         id: ev.id,
         title: ev.title,
@@ -437,6 +440,7 @@ app.get("/hub", async (c) => {
         amLocation: displayLocation,
         pmLocation: displayPmLocation,
         hasPm,
+        targetGroup: extractedTarget,
         eventType: ev.eventType || "practice",
         dutyGroup: ev.dutyGroup || "1班",
         carInfo,
@@ -764,9 +768,12 @@ app.get("/schedule", async (c) => {
         const rawLocation = ev.location || "グラウンド";
         const displayLocation = venueMap.get(rawLocation.trim()) || rawLocation;
 
+        const extractedTarget = ev.targetGroup || (ev.title?.match(/\[(.*?)\]/)?.[1] || null);
+
         return {
           id: ev.id,
           title: ev.title,
+          targetGroup: extractedTarget,
           date: startDate.toLocaleDateString("ja-JP", { month: "numeric", day: "numeric", weekday: "short" }),
           time: endTimeStr ? `${startTimeStr} 〜 ${endTimeStr}` : `${startTimeStr} 集合`,
           location: displayLocation,

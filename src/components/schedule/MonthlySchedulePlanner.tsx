@@ -30,6 +30,7 @@ export interface ScheduleDayItem {
   dateStr: string; // YYYY-MM-DD
   dayLabel: string; // 8/30(日)
   title: string;
+  targetGroup?: string; // 🎯 対象グループ（全体, Aチーム, Bチーム, 試合組, 練習組, 高学年, 低学年など）
   slotType: "all_day" | "am_only" | "pm_only"; // 終日 / 午前のみ / 午後のみ
   
   // 午前設定
@@ -62,6 +63,16 @@ const EVENT_TYPES = [
   { id: "match", label: "試合", icon: "⚾", color: "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30" },
   { id: "camp", label: "合宿", icon: "🏕️", color: "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/30" },
   { id: "off", label: "休み", icon: "🏖️", color: "bg-muted text-muted-foreground border-border" },
+] as const;
+
+export const TARGET_GROUPS = [
+  "全体",
+  "Aチーム",
+  "Bチーム",
+  "高学年",
+  "低学年",
+  "試合組",
+  "練習組",
 ] as const;
 
 const DUTY_GROUPS = ["1班", "2班", "3班", "4班"];
@@ -225,12 +236,14 @@ export function MonthlySchedulePlanner({
 
             const hasPm = !!ev.pmStartAt;
             const slotType: ScheduleDayItem["slotType"] = hasPm ? "all_day" : "am_only";
+            const targetGroup = ev.targetGroup || (ev.title?.match(/\[(.*?)\]/)?.[1] || "全体");
 
             return {
               id: ev.id,
               dateStr,
               dayLabel,
               title: ev.title || "活動予定",
+              targetGroup,
               slotType,
               amType: (ev.eventType as any) || "practice",
               amTitle: ev.title || "午前活動",
@@ -313,16 +326,18 @@ export function MonthlySchedulePlanner({
   // 日付クリックで「活動日 ON / OFF」をトグル
   const handleToggleDay = (date: Date) => {
     const dateStr = formatDateString(date);
-    const exists = selectedDayItems.find(item => item.dateStr === dateStr);
+    const existing = selectedDayItems.filter(item => item.dateStr === dateStr);
 
-    if (exists) {
-      // OFFにする（削除）
-      if (exists.id && !exists.id.startsWith("new_") && !exists.id.startsWith("temp_")) {
-        setDeletedEventIds(prev => [...prev, exists.id]);
-      }
+    if (existing.length > 0) {
+      // OFFにする（この日の全予定を削除）
+      existing.forEach(exists => {
+        if (exists.id && !exists.id.startsWith("new_") && !exists.id.startsWith("temp_")) {
+          setDeletedEventIds(prev => [...prev, exists.id]);
+        }
+      });
       setSelectedDayItems(prev => prev.filter(item => item.dateStr !== dateStr));
     } else {
-      // ONにする（デフォルト練習として新規追加）
+      // ONにする（デフォルト全体練習として新規追加）
       const isSunday = date.getDay() === 0;
       const dayLabel = formatDayLabel(date);
 
@@ -331,6 +346,7 @@ export function MonthlySchedulePlanner({
         dateStr,
         dayLabel,
         title: isSunday ? "午前練習 / 午後練習" : "通常練習",
+        targetGroup: "全体",
         slotType: "all_day",
         amType: "practice",
         amTitle: "午前練習",
@@ -348,6 +364,40 @@ export function MonthlySchedulePlanner({
       // 日付順にソートして追加
       setSelectedDayItems(prev => [...prev, newItem].sort((a, b) => a.dateStr.localeCompare(b.dateStr)));
     }
+  };
+
+  // ➕ 同一日に「別チーム・別動隊の予定」を追加
+  const handleAddExtraDay = (dateStr: string) => {
+    const [y, m, d] = dateStr.split("-").map(Number);
+    const dateObj = new Date(y, m - 1, d);
+    const dayLabel = formatDayLabel(dateObj);
+
+    // 既存の予定から推測して別チームタグを設定
+    const existingOnDate = selectedDayItems.filter(it => it.dateStr === dateStr);
+    const defaultTarget = existingOnDate.some(it => it.targetGroup === "Aチーム") ? "Bチーム" : "Aチーム";
+
+    const newItem: ScheduleDayItem = {
+      id: `new_${dateStr}_${Date.now()}`,
+      dateStr,
+      dayLabel,
+      title: `${defaultTarget} 活動`,
+      targetGroup: defaultTarget,
+      slotType: "all_day",
+      amType: "match",
+      amTitle: `${defaultTarget} 練習試合`,
+      amTime: "08:00〜12:00",
+      amLocation: "市民第1球場",
+      pmType: "practice",
+      pmTitle: "午後練習",
+      pmTime: "13:00〜17:00",
+      pmLocation: "市民第1球場",
+      dutyGroup: "2班",
+      needsLunch: true,
+      memo: "",
+    };
+
+    setSelectedDayItems(prev => [...prev, newItem].sort((a, b) => a.dateStr.localeCompare(b.dateStr)));
+    showToast(`➕ ${dayLabel} に「${defaultTarget}」の別動予定を追加しました`);
   };
 
   // 今月の土日をすべて一括ON
@@ -434,6 +484,7 @@ export function MonthlySchedulePlanner({
           return {
             id: item.id.startsWith("new_") ? undefined : item.id,
             title: item.title || `${item.amTitle}${item.pmTitle ? ` / ${item.pmTitle}` : ""}`,
+            targetGroup: item.targetGroup || "全体",
             startAt: startAtStr,
             endAt: endAtStr,
             eventType: item.amType,
@@ -674,64 +725,107 @@ export function MonthlySchedulePlanner({
                 key={item.id}
                 className="p-4 sm:p-5 rounded-3xl bg-card border-2 border-primary/20 shadow-sm space-y-4 transition-all"
               >
-                {/* 1. カードヘッダー：日付 & スロット切替 & ゴミ箱（最右寄せ） */}
-                <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-primary/15">
-                  <div className="flex flex-wrap items-center gap-2.5 flex-1 min-w-[200px]">
-                    <span className="px-3 py-1.5 rounded-2xl bg-primary text-primary-foreground text-sm font-black tracking-tight shrink-0">
-                      {item.dayLabel}
-                    </span>
-                    <input
-                      type="text"
-                      value={item.title}
-                      onChange={(e) => handleUpdateItem(item.id, { title: e.target.value })}
-                      placeholder="予定タイトル（例: 秋季大会 2回戦）"
-                      className="text-sm font-black bg-transparent border-b border-border/60 hover:border-primary focus:border-primary focus:outline-hidden px-1 py-0.5 text-foreground w-full max-w-[200px] sm:max-w-[240px]"
-                    />
+                {/* 1. カードヘッダー：日付 & 対象グループ & タイトル & スロット切替 & 別動隊追加 & 削除 */}
+                <div className="space-y-2.5 pb-3 border-b border-primary/15">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[200px]">
+                      <span className="px-3 py-1.5 rounded-2xl bg-primary text-primary-foreground text-sm font-black tracking-tight shrink-0">
+                        {item.dayLabel}
+                      </span>
 
-                    {/* 時間帯スロット選択（終日 / 午前のみ / 午後のみ） */}
-                    <div className="flex items-center p-1 bg-muted/60 rounded-xl border border-border/60 text-xs font-bold shrink-0">
+                      {/* 🎯 対象チーム/グループ バッジ */}
+                      <span className="px-2.5 py-1 rounded-xl bg-primary/15 text-primary text-xs font-black shrink-0 border border-primary/30">
+                        🏷️ {item.targetGroup || "全体"}
+                      </span>
+
+                      <input
+                        type="text"
+                        value={item.title}
+                        onChange={(e) => handleUpdateItem(item.id, { title: e.target.value })}
+                        placeholder="予定タイトル（例: 秋季大会 2回戦）"
+                        className="text-sm font-black bg-transparent border-b border-border/60 hover:border-primary focus:border-primary focus:outline-hidden px-1 py-0.5 text-foreground w-full max-w-[180px] sm:max-w-[220px]"
+                      />
+
+                      {/* 時間帯スロット選択（終日 / 午前のみ / 午後のみ） */}
+                      <div className="flex items-center p-1 bg-muted/60 rounded-xl border border-border/60 text-xs font-bold shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateItem(item.id, { slotType: "all_day" })}
+                          className={cn(
+                            "px-2.5 py-1 rounded-lg transition-all",
+                            item.slotType === "all_day" ? "bg-primary text-primary-foreground font-black shadow-xs" : "text-muted-foreground hover:text-foreground"
+                          )}
+                        >
+                          終日
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateItem(item.id, { slotType: "am_only" })}
+                          className={cn(
+                            "px-2.5 py-1 rounded-lg transition-all",
+                            item.slotType === "am_only" ? "bg-primary text-primary-foreground font-black shadow-xs" : "text-muted-foreground hover:text-foreground"
+                          )}
+                        >
+                          午前のみ
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateItem(item.id, { slotType: "pm_only" })}
+                          className={cn(
+                            "px-2.5 py-1 rounded-lg transition-all",
+                            item.slotType === "pm_only" ? "bg-primary text-primary-foreground font-black shadow-xs" : "text-muted-foreground hover:text-foreground"
+                          )}
+                        >
+                          午後のみ
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* 右側アクション：同一日別動隊追加 ＆ 削除 */}
+                    <div className="flex items-center gap-1.5 ml-auto shrink-0">
                       <button
                         type="button"
-                        onClick={() => handleUpdateItem(item.id, { slotType: "all_day" })}
-                        className={cn(
-                          "px-2.5 py-1 rounded-lg transition-all",
-                          item.slotType === "all_day" ? "bg-primary text-primary-foreground font-black shadow-xs" : "text-muted-foreground hover:text-foreground"
-                        )}
+                        onClick={() => handleAddExtraDay(item.dateStr)}
+                        className="px-2.5 py-1.5 rounded-xl bg-muted/80 hover:bg-primary/10 text-muted-foreground hover:text-primary active:scale-95 transition-all text-xs font-black border border-border/60 flex items-center gap-1"
+                        title="同日に別チーム/別動隊の予定を追加"
                       >
-                        終日
+                        <Plus className="w-3.5 h-3.5 text-primary" />
+                        <span className="hidden sm:inline">別動隊を追加</span>
                       </button>
+
                       <button
                         type="button"
-                        onClick={() => handleUpdateItem(item.id, { slotType: "am_only" })}
-                        className={cn(
-                          "px-2.5 py-1 rounded-lg transition-all",
-                          item.slotType === "am_only" ? "bg-primary text-primary-foreground font-black shadow-xs" : "text-muted-foreground hover:text-foreground"
-                        )}
+                        onClick={() => handleDeleteItem(item.id)}
+                        className="p-2 rounded-xl text-rose-500 hover:bg-rose-500/10 active:scale-95 transition-all border border-rose-500/20 hover:border-rose-500/40"
+                        title="この活動日を削除"
                       >
-                        午前のみ
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleUpdateItem(item.id, { slotType: "pm_only" })}
-                        className={cn(
-                          "px-2.5 py-1 rounded-lg transition-all",
-                          item.slotType === "pm_only" ? "bg-primary text-primary-foreground font-black shadow-xs" : "text-muted-foreground hover:text-foreground"
-                        )}
-                      >
-                        午後のみ
+                        <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
                   </div>
 
-                  {/* 活動日削除ボタン（ゴミ箱だけ最右端に配置） */}
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteItem(item.id)}
-                    className="ml-auto p-2 rounded-xl text-rose-500 hover:bg-rose-500/10 active:scale-95 transition-all border border-rose-500/20 hover:border-rose-500/40 shrink-0"
-                    title="この活動日を解除"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  {/* 🎯 対象チーム/グループ ワンタップ選択チップ */}
+                  <div className="flex items-center gap-1.5 flex-wrap pt-1 text-xs">
+                    <span className="text-[10px] font-bold text-muted-foreground shrink-0">対象:</span>
+                    {TARGET_GROUPS.map((tg) => {
+                      const isSel = (item.targetGroup || "全体") === tg;
+                      return (
+                        <button
+                          key={tg}
+                          type="button"
+                          onClick={() => handleUpdateItem(item.id, { targetGroup: tg })}
+                          className={cn(
+                            "px-2 py-0.5 rounded-lg text-[11px] font-bold border transition-all active:scale-95",
+                            isSel
+                              ? "bg-primary text-primary-foreground border-primary font-black shadow-xs"
+                              : "bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground border-border/60"
+                          )}
+                        >
+                          {tg}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 {/* 2. 午前 / 午後の活動内容設定グリッド */}
