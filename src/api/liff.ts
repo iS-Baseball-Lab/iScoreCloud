@@ -21,6 +21,7 @@ import {
   parentChildRelations,
   tournaments,
 } from "@/db/schema";
+import { ensureEventColumns } from "@/lib/db-helper";
 import type { WorkerEnv } from "@/types/api";
 
 const app = new Hono<{ Bindings: WorkerEnv }>();
@@ -240,6 +241,7 @@ app.post("/join", async (c) => {
  * チームHUB用総合データ取得API
  */
 app.get("/hub", async (c) => {
+  await ensureEventColumns(c.env.DB);
   const db = drizzle(c.env.DB);
   const requestedTeamId = c.req.query("teamId");
   const userId = c.req.query("userId");
@@ -537,6 +539,7 @@ app.get("/hub", async (c) => {
           dutyGroup: "1班",
           carInfo: "鈴木号・佐藤号",
           needsLunch: false,
+          needsSnack: true,
         },
         {
           id: "demo-ev-2",
@@ -549,6 +552,7 @@ app.get("/hub", async (c) => {
           dutyGroup: "2班",
           carInfo: "配車調整中",
           needsLunch: true,
+          needsSnack: false,
         },
       ],
       matches: DEMO_MATCHES,
@@ -635,6 +639,7 @@ app.get("/matches", async (c) => {
  * チームの予定・スケジュール一覧取得API (出欠回答状況つき)
  */
 app.get("/schedule", async (c) => {
+  await ensureEventColumns(c.env.DB);
   const db = drizzle(c.env.DB);
   const teamId = c.req.query("teamId");
   const userId = c.req.query("userId");
@@ -655,6 +660,7 @@ app.get("/schedule", async (c) => {
             eventType: "match",
             dutyGroup: "B班 (鍵・救急)",
             needsLunch: true,
+            needsSnack: true,
             myStatus: "present",
             attendCount: { present: 14, absent: 2, pending: 1 },
           },
@@ -667,6 +673,7 @@ app.get("/schedule", async (c) => {
             eventType: "practice",
             dutyGroup: "C班 (グラウンド整備)",
             needsLunch: false,
+            needsSnack: false,
             myStatus: "pending",
             attendCount: { present: 11, absent: 3, pending: 3 },
           },
@@ -679,6 +686,7 @@ app.get("/schedule", async (c) => {
             eventType: "match",
             dutyGroup: "A班 (審判割当・配車)",
             needsLunch: true,
+            needsSnack: false,
             myStatus: "pending",
             attendCount: { present: 12, absent: 1, pending: 4 },
           },

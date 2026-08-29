@@ -7,6 +7,7 @@ import { Hono } from 'hono';
 import { drizzle } from 'drizzle-orm/d1';
 import { eq, and, desc } from 'drizzle-orm';
 import { events } from '@/db/schema/attendance';
+import { ensureEventColumns } from '@/lib/db-helper';
 import type { WorkerEnv } from '@/types/api';
 
 const app = new Hono<{ Bindings: WorkerEnv }>();
@@ -16,6 +17,7 @@ const app = new Hono<{ Bindings: WorkerEnv }>();
  */
 app.get('/:teamId', async (c) => {
   const teamId = c.req.param('teamId');
+  await ensureEventColumns(c.env.DB);
   const db = drizzle(c.env.DB);
 
   try {
@@ -42,6 +44,7 @@ app.get('/:teamId', async (c) => {
  */
 app.post('/:teamId', async (c) => {
   const teamId = c.req.param('teamId');
+  await ensureEventColumns(c.env.DB);
   const db = drizzle(c.env.DB);
 
   try {
@@ -92,6 +95,7 @@ app.post('/:teamId', async (c) => {
 app.patch('/:teamId/:eventId', async (c) => {
   const teamId = c.req.param('teamId');
   const eventId = c.req.param('eventId');
+  await ensureEventColumns(c.env.DB);
   const db = drizzle(c.env.DB);
 
   try {
@@ -139,6 +143,7 @@ app.patch('/:teamId/:eventId', async (c) => {
  */
 app.post('/:teamId/bulk', async (c) => {
   const teamId = c.req.param('teamId');
+  await ensureEventColumns(c.env.DB);
   const db = drizzle(c.env.DB);
 
   try {
