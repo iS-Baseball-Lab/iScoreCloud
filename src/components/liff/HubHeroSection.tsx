@@ -22,7 +22,8 @@ import {
   Sun,
   Moon,
   FileText,
-  Users
+  Users,
+  ClipboardList
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { MatchCardData } from "@/components/liff/MatchScoreCard";
@@ -883,11 +884,12 @@ export function HubHeroSection({
                       {ev.dutyGroup && (
                         <div className="pt-1.5 border-t border-border/60 flex items-center justify-between text-[11px] font-bold">
                           <span className="text-muted-foreground flex items-center gap-1.5">
-                            <Users className="w-3.5 h-3.5 text-primary" />
-                            <span>当番</span>
+                            <ClipboardList className="w-3.5 h-3.5 text-primary" />
+                            <span>お当番</span>
                           </span>
-                          <span className="px-2.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/25 font-black">
-                            👥 {ev.dutyGroup}
+                          <span className="px-2.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/25 font-black flex items-center gap-1">
+                            <span>📋</span>
+                            <span>{ev.dutyGroup}</span>
                           </span>
                         </div>
                       )}

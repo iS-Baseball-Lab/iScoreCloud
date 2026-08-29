@@ -813,8 +813,8 @@ export function MonthlySchedulePlanner({
                       )}
 
                       {item.dutyGroup && (
-                        <span className="text-primary text-[10.5px]">
-                          当番: {item.dutyGroup}
+                        <span className="text-primary text-[10.5px] font-bold">
+                          📋 当番: {item.dutyGroup}
                         </span>
                       )}
 
@@ -1140,7 +1140,7 @@ export function MonthlySchedulePlanner({
                 <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 p-3.5 rounded-2xl bg-muted/30 border border-border/80">
                   {/* 当番選択 */}
                   <div>
-                    <label className="text-[10px] font-bold text-muted-foreground block mb-1">当番</label>
+                    <label className="text-[10px] font-bold text-muted-foreground block mb-1">📋 当番</label>
                     <div className="grid grid-cols-4 gap-1">
                       {DUTY_GROUPS.map(dg => (
                         <button

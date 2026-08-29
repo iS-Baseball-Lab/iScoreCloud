@@ -15,7 +15,8 @@ import {
   XCircle,
   HelpCircle,
   Utensils,
-  Shield,
+  ClipboardList,
+  ClipboardCheck,
   Filter,
   Loader2,
   Edit3,
@@ -876,12 +877,13 @@ export default function LiffSchedulePage() {
                     {/* 4. 一番下に当番 */}
                     {ev.dutyGroup && (
                       <div className="pt-2 border-t border-border/60 flex items-center justify-between text-primary">
-                        <span className="flex items-center gap-1.5">
-                          <Shield className="w-3.5 h-3.5" />
+                        <span className="flex items-center gap-1.5 font-bold">
+                          <ClipboardList className="w-3.5 h-3.5 text-primary" />
                           <span>お当番</span>
                         </span>
-                        <span className="px-2.5 py-0.5 rounded-full bg-primary/15 border border-primary/30 text-primary font-black text-[11px]">
-                          {ev.dutyGroup}
+                        <span className="px-2.5 py-0.5 rounded-full bg-primary/15 border border-primary/30 text-primary font-black text-[11px] flex items-center gap-1">
+                          <span>📋</span>
+                          <span>{ev.dutyGroup}</span>
                         </span>
                       </div>
                     )}
