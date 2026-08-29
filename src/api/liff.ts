@@ -762,28 +762,59 @@ app.get("/schedule", async (c) => {
         }
 
         const startDate = new Date(ev.startAt);
+        const y = startDate.getFullYear();
+        const m = String(startDate.getMonth() + 1).padStart(2, "0");
+        const d = String(startDate.getDate()).padStart(2, "0");
+        const dateStr = `${y}-${m}-${d}`;
+        const wStr = ["日", "月", "火", "水", "木", "金", "土"][startDate.getDay()];
+
         const startTimeStr = startDate.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
         const endTimeStr = ev.endAt ? new Date(ev.endAt).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }) : "";
+        const amTime = endTimeStr ? `${startTimeStr}〜${endTimeStr}` : `${startTimeStr}〜12:00`;
+
+        const hasPm = !!ev.pmStartAt || !!ev.pmLocation;
+        let pmTime = "";
+        if (ev.pmStartAt) {
+          const pmStartDate = new Date(ev.pmStartAt);
+          const pmStartStr = pmStartDate.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
+          const pmEndStr = ev.pmEndAt ? new Date(ev.pmEndAt).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }) : "";
+          pmTime = pmEndStr ? `${pmStartStr}〜${pmEndStr}` : `${pmStartStr}〜17:00`;
+        } else if (hasPm) {
+          pmTime = "13:00〜17:00";
+        }
 
         const rawLocation = ev.location || "グラウンド";
         const displayLocation = venueMap.get(rawLocation.trim()) || rawLocation;
+        const rawPmLocation = ev.pmLocation || rawLocation;
+        const displayPmLocation = venueMap.get(rawPmLocation.trim()) || rawPmLocation;
 
         const extractedTarget = ev.targetGroup || (ev.title?.match(/\[(.*?)\]/)?.[1] || null);
+
+        const isMatch = ev.eventType === "match";
 
         return {
           id: ev.id,
           title: ev.title,
           targetGroup: extractedTarget,
-          date: startDate.toLocaleDateString("ja-JP", { month: "numeric", day: "numeric", weekday: "short" }),
+          date: `${startDate.getMonth() + 1}/${startDate.getDate()}(${wStr})`,
+          dateStr,
           time: endTimeStr ? `${startTimeStr} 〜 ${endTimeStr}` : `${startTimeStr} 集合`,
           startAt: ev.startAt,
           endAt: ev.endAt,
           location: displayLocation,
           rawLocation,
+          amTime,
+          amLocation: displayLocation,
+          pmTime,
+          pmLocation: displayPmLocation,
+          hasPm,
           eventType: ev.eventType || "practice",
+          amType: ev.eventType || "practice",
+          pmType: hasPm ? (ev.eventType || "practice") : "off",
           dutyGroup: ev.dutyGroup || undefined,
-          needsLunch: ev.eventType === "match",
+          needsLunch: isMatch || (hasPm && amTime.includes("〜") && pmTime.length > 0),
           memo: ev.description || "",
+          carInfo: isMatch ? "7:30 集合・配車調整済" : undefined,
           myStatus,
           attendCount: {
             present: presentCount,

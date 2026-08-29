@@ -1,11 +1,34 @@
 // filepath: src/app/liff/schedule/page.tsx
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
+import Link from "next/link";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { useLiff } from "@/components/liff/LiffProvider";
-import { Calendar, Clock, MapPin, Users, CheckCircle2, XCircle, HelpCircle, Utensils, Shield, Filter, Loader2, Edit3, Trash2, Save, Sun, Moon } from "lucide-react";
+import {
+  Calendar as CalendarIcon,
+  Clock,
+  MapPin,
+  Users,
+  CheckCircle2,
+  XCircle,
+  HelpCircle,
+  Utensils,
+  Shield,
+  Filter,
+  Loader2,
+  Edit3,
+  Trash2,
+  Save,
+  Sun,
+  Moon,
+  Car,
+  FileText,
+  ChevronLeft,
+  ChevronRight,
+  Sparkles,
+} from "lucide-react";
 
 const TARGET_GROUPS = ["全体", "Aチーム", "Bチーム", "高学年", "低学年", "試合組", "練習組"];
 const DUTY_GROUPS = ["1班", "2班", "3班", "4班"];
@@ -20,16 +43,25 @@ interface ScheduleEvent {
   id: string;
   title: string;
   date: string;
+  dateStr?: string;
   time: string;
   startAt?: string;
   endAt?: string;
   location: string;
   rawLocation?: string;
+  amTime?: string;
+  amLocation?: string;
+  pmTime?: string;
+  pmLocation?: string;
+  hasPm?: boolean;
   eventType: "match" | "practice" | "meeting" | "camp";
+  amType?: "match" | "practice" | "meeting" | "camp";
+  pmType?: "match" | "practice" | "meeting" | "camp" | "off";
   targetGroup?: string;
   dutyGroup?: string;
   needsLunch?: boolean;
   memo?: string;
+  carInfo?: string;
   myStatus: "present" | "absent" | "pending" | "late" | "partial";
   attendCount: { present: number; absent: number; pending: number };
 }
@@ -39,6 +71,10 @@ export default function LiffSchedulePage() {
   const [filter, setFilter] = useState<"all" | "match" | "practice">("all");
   const [events, setEvents] = useState<ScheduleEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  // 📅 月間カレンダー用ステート
+  const [currentDate, setCurrentDate] = useState(() => new Date());
+  const [selectedDateStr, setSelectedDateStr] = useState<string | null>(null);
 
   // ✏️ 個別編集モーダル用ステート
   const [editingEvent, setEditingEvent] = useState<ScheduleEvent | null>(null);
@@ -83,7 +119,6 @@ export default function LiffSchedulePage() {
       const uid = profile?.userId || (typeof window !== "undefined" ? (localStorage.getItem("iscore_user_id") || localStorage.getItem("iscore_userId") || "") : "");
       const uName = profile?.displayName || (typeof window !== "undefined" ? (localStorage.getItem("iscore_user_name") || "") : "");
 
-      // チーム変更時は一旦クリア
       if (tid !== "demo-team" && !currentTeam?.isDemo) {
         setChildren([]);
       }
@@ -221,7 +256,6 @@ export default function LiffSchedulePage() {
   }, [loadSchedule]);
 
   const handleStatusChange = async (eventId: string, status: "present" | "absent" | "pending" | "late") => {
-    // 楽観的更新
     setAttendanceMap(prev => ({ ...prev, [eventId]: status }));
     if (typeof window !== "undefined") {
       localStorage.setItem(`iscore_my_att_${eventId}`, status);
@@ -255,7 +289,6 @@ export default function LiffSchedulePage() {
       setIsSavingEdit(true);
       const teamId = currentTeam?.id || "demo-team";
 
-      // 楽観的更新
       setEvents((prev) =>
         prev.map((ev) => (ev.id === editingEvent.id ? { ...editingEvent } : ev))
       );
@@ -287,27 +320,113 @@ export default function LiffSchedulePage() {
     }
   };
 
-  const filteredEvents = events.filter((ev) => {
-    if (filter === "match") return ev.eventType === "match";
-    if (filter === "practice") return ev.eventType === "practice";
-    return true;
-  });
+  // 📅 月間カレンダー計算
+  const currentYear = currentDate.getFullYear();
+  const currentMonth = currentDate.getMonth();
+
+  const handlePrevMonth = () => {
+    setCurrentDate(new Date(currentYear, currentMonth - 1, 1));
+  };
+  const handleNextMonth = () => {
+    setCurrentDate(new Date(currentYear, currentMonth + 1, 1));
+  };
+  const handleToday = () => {
+    setCurrentDate(new Date());
+    setSelectedDateStr(null);
+  };
+
+  const calendarDays = useMemo(() => {
+    const firstDay = new Date(currentYear, currentMonth, 1);
+    const lastDay = new Date(currentYear, currentMonth + 1, 0);
+    const startingDay = firstDay.getDay();
+    const totalDays = lastDay.getDate();
+
+    const days: Array<{ date: Date; dateStr: string; isCurrentMonth: boolean }> = [];
+
+    const prevMonthLastDay = new Date(currentYear, currentMonth, 0).getDate();
+    for (let i = startingDay - 1; i >= 0; i--) {
+      const d = new Date(currentYear, currentMonth - 1, prevMonthLastDay - i);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      days.push({
+        date: d,
+        dateStr: `${y}-${m}-${day}`,
+        isCurrentMonth: false,
+      });
+    }
+
+    for (let i = 1; i <= totalDays; i++) {
+      const d = new Date(currentYear, currentMonth, i);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      days.push({
+        date: d,
+        dateStr: `${y}-${m}-${day}`,
+        isCurrentMonth: true,
+      });
+    }
+
+    const remainingDays = 42 - days.length;
+    for (let i = 1; i <= remainingDays; i++) {
+      const d = new Date(currentYear, currentMonth + 1, i);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      days.push({
+        date: d,
+        dateStr: `${y}-${m}-${day}`,
+        isCurrentMonth: false,
+      });
+    }
+
+    return days;
+  }, [currentYear, currentMonth]);
+
+  const weekDays = ["日", "月", "火", "水", "木", "金", "土"];
+
+  // 日付ごとのイベントマップ
+  const eventsByDate = useMemo(() => {
+    const map = new Map<string, ScheduleEvent[]>();
+    for (const ev of events) {
+      const dStr = ev.dateStr || (ev.startAt ? new Date(ev.startAt).toISOString().split("T")[0] : "");
+      if (dStr) {
+        const list = map.get(dStr) || [];
+        list.push(ev);
+        map.set(dStr, list);
+      }
+    }
+    return map;
+  }, [events]);
+
+  // フィルター & カレンダー選択によるイベント絞り込み
+  const filteredEvents = useMemo(() => {
+    return events.filter((ev) => {
+      // 1. タイプフィルター
+      if (filter === "match" && ev.eventType !== "match") return false;
+      if (filter === "practice" && ev.eventType !== "practice") return false;
+
+      // 2. カレンダー選択日付フィルター
+      if (selectedDateStr) {
+        const dStr = ev.dateStr || (ev.startAt ? new Date(ev.startAt).toISOString().split("T")[0] : "");
+        if (dStr !== selectedDateStr) return false;
+      }
+
+      return true;
+    });
+  }, [events, filter, selectedDateStr]);
 
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col min-h-screen pb-20">
       <LiffHeader />
 
-      <div className="p-4 space-y-5">
-        {/* ページ内ヘッダー */}
+      <div className="p-4 space-y-4">
+        {/* ページ内ヘッダー（メニュー名と統一: 予定 & 出欠） */}
         <LiffPageHeader
-          title="予定 & お当番表"
-          subtitle="今後のスケジュール・出欠・当番確認"
-          icon={
-            <span className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center font-black">
-              <Calendar className="w-4 h-4" />
-            </span>
-          }
-          showBack
+          title="予定 & 出欠"
+          subtitle="チームの活動予定とお当番・出欠確認"
+          icon={<CalendarIcon className="w-5 h-5" />}
           shareData={{
             title: `【スケジュール】今後のチーム予定一覧`,
             text: `出欠未回答の方は確認とご登録をお願いします！`,
@@ -318,19 +437,154 @@ export default function LiffSchedulePage() {
         <div className="flex items-center justify-between p-3 rounded-2xl bg-primary/10 border border-primary/20">
           <div className="flex items-center gap-2">
             <span className="w-8 h-8 rounded-xl bg-primary text-primary-foreground flex items-center justify-center font-black shrink-0">
-              <Calendar className="w-4 h-4" />
+              <CalendarIcon className="w-4 h-4" />
             </span>
             <div>
               <p className="text-xs font-black text-foreground">活動日スケジューラー</p>
-              <p className="text-[10px] font-bold text-muted-foreground">カレンダーで予定・午前午後・当番を一括設定</p>
+              <p className="text-[10px] font-bold text-muted-foreground">月全体の活動日をカレンダーで一括設定</p>
             </div>
           </div>
           <a
             href="/liff/schedule/admin"
             className="py-1.5 px-3 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 active:scale-95 text-xs font-black shadow-xs transition-all shrink-0"
           >
-            予定を設定
+            一括設定へ
           </a>
+        </div>
+
+        {/* 🌟 月間ミニカレンダー（日付選択で予定カードを絞り込み） */}
+        <div className="p-3.5 sm:p-4 rounded-3xl bg-card border-2 border-primary/20 shadow-sm space-y-2.5">
+          {/* 月切り替えヘッダー */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-black text-foreground">
+                {currentYear}年 {currentMonth + 1}月
+              </span>
+              {selectedDateStr && (
+                <span className="text-[10.5px] font-black px-2 py-0.5 rounded-full bg-primary text-primary-foreground">
+                  {selectedDateStr.split("-")[1]}/{selectedDateStr.split("-")[2]} 選択中
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={handlePrevMonth}
+                className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground active:scale-95 transition-all"
+                title="前月"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={handleNextMonth}
+                className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground active:scale-95 transition-all"
+                title="翌月"
+              >
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={handleToday}
+                className="px-2 py-1 text-[10px] font-black rounded-lg bg-muted hover:bg-muted/80 text-foreground border border-border/80 active:scale-95 transition-all ml-0.5"
+              >
+                今月
+              </button>
+            </div>
+          </div>
+
+          {/* 曜日ヘッダー */}
+          <div className="grid grid-cols-7 text-center text-[10px] font-black text-muted-foreground uppercase pb-1 border-b border-primary/10">
+            {weekDays.map((day, idx) => (
+              <span key={day} className={idx === 0 ? "text-rose-500" : idx === 6 ? "text-blue-500" : ""}>
+                {day}
+              </span>
+            ))}
+          </div>
+
+          {/* 42マス日付グリッド（コンパクト） */}
+          <div className="grid grid-cols-7 gap-1">
+            {calendarDays.map((day, idx) => {
+              const dayEvents = eventsByDate.get(day.dateStr) || [];
+              const hasEvents = dayEvents.length > 0;
+              const isSelected = selectedDateStr === day.dateStr;
+              const isToday = new Date().toISOString().split("T")[0] === day.dateStr;
+
+              const dayOfWeek = day.date.getDay();
+              const isSunday = dayOfWeek === 0;
+              const isSaturday = dayOfWeek === 6;
+
+              return (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => {
+                    if (isSelected) {
+                      setSelectedDateStr(null); // 解除
+                    } else {
+                      setSelectedDateStr(day.dateStr);
+                    }
+                  }}
+                  className={`relative min-h-[38px] p-1 rounded-xl flex flex-col justify-between items-center transition-all border text-center ${
+                    !day.isCurrentMonth
+                      ? "opacity-25 bg-transparent border-transparent"
+                      : isSelected
+                      ? "bg-primary text-primary-foreground border-primary font-black shadow-xs ring-2 ring-primary/40"
+                      : hasEvents
+                      ? "bg-primary/10 hover:bg-primary/20 border-primary/30 text-foreground font-bold cursor-pointer"
+                      : "bg-muted/20 hover:bg-muted/50 border-transparent text-muted-foreground cursor-pointer"
+                  } ${isToday && !isSelected ? "ring-1 ring-primary/60 border-primary/40 font-black" : ""}`}
+                >
+                  <span className={`text-[11px] leading-none ${
+                    isSelected
+                      ? "text-primary-foreground"
+                      : isSunday
+                      ? "text-rose-500"
+                      : isSaturday
+                      ? "text-blue-500"
+                      : ""
+                  }`}>
+                    {day.date.getDate()}
+                  </span>
+
+                  {/* 予定インジケーター（ドットまたはバッジ） */}
+                  {hasEvents && (
+                    <div className="flex items-center gap-0.5 mt-0.5">
+                      {dayEvents.map((ev, i) => (
+                        <span
+                          key={i}
+                          className={`w-1.5 h-1.5 rounded-full ${
+                            isSelected
+                              ? "bg-white"
+                              : ev.eventType === "match"
+                              ? "bg-rose-500"
+                              : "bg-primary"
+                          }`}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* カレンダー絞り込み解除ボタン（選択中のみ表示） */}
+          {selectedDateStr && (
+            <div className="flex items-center justify-between pt-1 border-t border-border/60">
+              <span className="text-[11px] font-bold text-muted-foreground">
+                📅 {selectedDateStr} の予定を表示中
+              </span>
+              <button
+                type="button"
+                onClick={() => setSelectedDateStr(null)}
+                className="text-[11px] font-black text-primary hover:underline"
+              >
+                すべての予定を表示 ({events.length}件)
+              </button>
+            </div>
+          )}
         </div>
 
         {/* フィルタータブ */}
@@ -370,286 +624,403 @@ export default function LiffSchedulePage() {
           </button>
         </div>
 
-        {/* ローディング（美しいスケルトンカード3枚） */}
+        {/* ローディング */}
         {isLoading ? (
           <div className="space-y-3.5 animate-pulse">
             {[1, 2, 3].map((i) => (
               <div
                 key={i}
-                className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-4 shadow-sm space-y-3 ring-1 ring-black/5"
+                className="bg-card border border-border rounded-3xl p-4 shadow-sm space-y-3"
               >
                 <div className="flex justify-between items-center">
-                  <div className="h-5 w-24 bg-slate-200 dark:bg-slate-800 rounded-full" />
-                  <div className="h-4 w-12 bg-slate-200 dark:bg-slate-800 rounded" />
+                  <div className="h-5 w-24 bg-muted rounded-full" />
+                  <div className="h-4 w-12 bg-muted rounded" />
                 </div>
                 <div className="space-y-1.5">
-                  <div className="h-6 w-40 bg-slate-200 dark:bg-slate-800 rounded-lg" />
-                  <div className="h-4 w-56 bg-slate-200 dark:bg-slate-800 rounded" />
+                  <div className="h-6 w-40 bg-muted rounded-lg" />
+                  <div className="h-4 w-56 bg-muted rounded" />
                 </div>
-                <div className="h-16 bg-slate-100 dark:bg-slate-800/60 rounded-2xl" />
-                <div className="h-20 bg-slate-100 dark:bg-slate-800/60 rounded-2xl" />
+                <div className="h-20 bg-muted/60 rounded-2xl" />
+                <div className="h-24 bg-muted/60 rounded-2xl" />
               </div>
             ))}
           </div>
         ) : filteredEvents.length === 0 ? (
           /* 空ステート */
-          <div className="flex flex-col items-center justify-center py-16 text-center bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-6 space-y-3 ring-1 ring-black/5 shadow-sm">
+          <div className="flex flex-col items-center justify-center py-12 text-center bg-card border border-border rounded-3xl p-6 space-y-3 shadow-sm">
             <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center text-primary">
-              <Calendar className="w-6 h-6" />
+              <CalendarIcon className="w-6 h-6" />
             </div>
             <div className="space-y-1">
-              <h4 className="text-sm font-black text-foreground">登録されている予定はありません</h4>
+              <h4 className="text-sm font-black text-foreground">
+                {selectedDateStr ? "選択された日の予定はありません" : "登録されている予定はありません"}
+              </h4>
               <p className="text-xs font-bold text-muted-foreground">
-                管理者がWeb版から新しい予定を登録すると、ここに自動反映されます。
+                {selectedDateStr ? "カレンダーの他の日付を選択するか「すべての予定を表示」を押してください。" : "管理者が活動予定スケジューラーから予定を登録すると、ここに反映されます。"}
               </p>
             </div>
+            {selectedDateStr && (
+              <button
+                type="button"
+                onClick={() => setSelectedDateStr(null)}
+                className="py-1.5 px-4 rounded-xl bg-primary text-primary-foreground text-xs font-black shadow-xs active:scale-95 transition-all"
+              >
+                すべての予定を表示
+              </button>
+            )}
           </div>
         ) : (
-          /* 予定カード一覧 */
+          /* 🌟 予定カード一覧（トップページ完全互換フォーマット ＋ 全文・詳細表示） */
           <div className="space-y-4">
-            {filteredEvents.map((ev) => (
-            <div
-              key={ev.id}
-              className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-4 shadow-sm space-y-3 ring-1 ring-black/5"
-            >
-              {/* 日時 & 種別バッジ */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`px-2.5 py-0.5 rounded-full text-[10px] font-black ${
-                      ev.eventType === "match"
-                        ? "bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30"
-                        : "bg-primary/15 text-primary border border-primary/30"
-                    }`}
-                  >
-                    {ev.eventType === "match" ? "⚾ 試合" : "🏃 練習"}
-                  </span>
+            {filteredEvents.map((ev, idx) => {
+              const isMatch = ev.eventType === "match" || ev.amType === "match" || ev.pmType === "match";
+              const isCamp = ev.eventType === "camp" || ev.amType === "camp" || ev.pmType === "camp";
 
-                  {/* 🎯 対象チーム・グループバッジ */}
-                  {ev.targetGroup && ev.targetGroup !== "全体" && (
-                    <span className="px-2 py-0.5 rounded-md bg-primary/15 text-primary text-[10px] font-black border border-primary/25 shrink-0">
-                      🏷️ {ev.targetGroup}
-                    </span>
-                  )}
-
-                  <span className="text-xs font-black text-foreground">{ev.date}</span>
-                </div>
-
-                <div className="flex items-center gap-1.5 text-[11px] font-black text-muted-foreground">
-                  <span className="text-emerald-600">出 {ev.attendCount.present}</span>
-                  <span>/</span>
-                  <span className="text-rose-600">欠 {ev.attendCount.absent}</span>
-                  <span>/</span>
-                  <span className="text-amber-600">未 {ev.attendCount.pending}</span>
-                </div>
-              </div>
-
-              {/* タイトル ＆ ✏️ 編集ボタン */}
-              <div className="flex items-center justify-between gap-2">
-                <h3 className="text-sm font-black text-foreground tracking-tight flex-1">
-                  {ev.title}
-                </h3>
-                <button
-                  type="button"
-                  onClick={() => setEditingEvent({ ...ev })}
-                  className="py-1 px-2.5 rounded-xl bg-primary/10 hover:bg-primary text-primary hover:text-primary-foreground text-xs font-black border border-primary/25 active:scale-95 transition-all flex items-center gap-1 shrink-0"
+              return (
+                <div
+                  key={ev.id}
+                  className="bg-card border-2 border-border/90 hover:border-primary/40 rounded-3xl p-4 shadow-sm space-y-3.5 transition-all"
                 >
-                  <Edit3 className="w-3.5 h-3.5" />
-                  <span>編集</span>
-                </button>
-              </div>
+                  {/* ① 上部ヘッダー：日程・日付 & 対象チーム & 出欠カウント & ✏️ 編集ボタン */}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-lg font-black text-foreground tracking-tight">
+                        {ev.date}
+                      </span>
 
-              {/* 時間・場所・当番詳細 */}
-              <div className="p-3 rounded-2xl bg-muted/40 border border-border/50 space-y-1.5 text-xs font-bold">
-                <div className="flex items-center gap-2 text-foreground">
-                  <Clock className="w-3.5 h-3.5 text-primary shrink-0" />
-                  <span>{ev.time}</span>
-                </div>
-
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <MapPin className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                  <span className="truncate">{ev.location}</span>
-                </div>
-
-                {ev.dutyGroup && (
-                  <div className="flex items-center gap-2 text-primary pt-0.5">
-                    <Shield className="w-3.5 h-3.5 shrink-0" />
-                    <span>当番: {ev.dutyGroup}</span>
-                  </div>
-                )}
-
-                {ev.needsLunch && (
-                  <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
-                    <Utensils className="w-3.5 h-3.5 shrink-0" />
-                    <span>🍙 お弁当持参</span>
-                  </div>
-                )}
-
-                {ev.memo && (
-                  <div className="text-[11px] text-muted-foreground bg-background/80 p-2 rounded-xl border border-border/40 mt-1">
-                    <span className="font-bold text-foreground block text-[10px]">📌 連絡事項:</span>
-                    <span className="whitespace-pre-wrap">{ev.memo}</span>
-                  </div>
-                )}
-              </div>
-
-              {/* 出欠回答セクション (○, △, ×, ？) */}
-              <div className="pt-2 border-t border-primary/15 space-y-3">
-                {/* 👦 1. 保護者の場合: お子様（選手）の出欠回答 */}
-                {userRole === "parent" && children.map((child) => {
-                  const childStatus = getChildAttendance(ev.id, child.id);
-                  return (
-                    <div key={child.id} className="p-2.5 rounded-2xl bg-amber-500/5 dark:bg-amber-500/10 border border-amber-500/20 space-y-1.5">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="font-black text-amber-700 dark:text-amber-300 flex items-center gap-1">
-                          <span>👦</span>
-                          <span>お子様（{child.name}{child.uniformNumber ? ` ${child.uniformNumber}` : ""}）の出欠</span>
+                      {/* 🎯 対象チーム・グループバッジ */}
+                      {ev.targetGroup && ev.targetGroup !== "全体" && (
+                        <span className="px-2 py-0.5 rounded-lg bg-primary/15 text-primary text-[10.5px] font-black border border-primary/30 shrink-0">
+                          🏷️ {ev.targetGroup}
                         </span>
-                        <span className="text-[11px] font-bold">
-                          {childStatus === "present" && <span className="text-emerald-600 dark:text-emerald-400 font-black">○ 参加</span>}
-                          {childStatus === "late" && <span className="text-amber-600 dark:text-amber-400 font-black">△ 調整・遅刻</span>}
-                          {childStatus === "absent" && <span className="text-rose-600 dark:text-rose-400 font-black">× 欠席</span>}
-                          {childStatus === "pending" && <span className="text-muted-foreground font-black">？ 未定</span>}
+                      )}
+
+                      <span className="px-2 py-0.5 rounded-full bg-muted text-muted-foreground text-[10px] font-bold">
+                        {idx + 1} / {filteredEvents.length}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      {/* 出欠カウンター */}
+                      <div className="flex items-center gap-1 text-[11px] font-black text-muted-foreground bg-muted/40 px-2 py-0.5 rounded-lg border border-border/60">
+                        <span className="text-emerald-600 dark:text-emerald-400">出 {ev.attendCount.present}</span>
+                        <span>/</span>
+                        <span className="text-rose-600 dark:text-rose-400">欠 {ev.attendCount.absent}</span>
+                        <span>/</span>
+                        <span className="text-amber-600 dark:text-amber-400">未 {ev.attendCount.pending}</span>
+                      </div>
+
+                      {/* ✏️ 編集ボタン */}
+                      <button
+                        type="button"
+                        onClick={() => setEditingEvent({ ...ev })}
+                        className="py-1 px-2.5 rounded-xl bg-primary/10 hover:bg-primary text-primary hover:text-primary-foreground text-xs font-black border border-primary/25 active:scale-95 transition-all flex items-center gap-1 shrink-0"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                        <span>編集</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* ② タイトル */}
+                  <h3 className="text-sm font-black text-foreground tracking-tight">
+                    {ev.title}
+                  </h3>
+
+                  {/* ③ ☀️ 午前（左） ＆ 🌙 午後（右）の2カラム表示 */}
+                  <div className="grid grid-cols-2 gap-2">
+                    {/* ☀️ 【午前】（左） */}
+                    <div className="p-2.5 rounded-2xl bg-amber-500/5 dark:bg-amber-500/10 border border-amber-500/20 flex flex-col justify-between space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black text-amber-700 dark:text-amber-300 flex items-center gap-1">
+                          <Sun className="w-3 h-3 text-amber-500" />
+                          <span>午前</span>
+                        </span>
+
+                        {/* 活動内容バッジ */}
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                          ev.amType === "match" || ev.eventType === "match"
+                            ? "bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30"
+                            : ev.amType === "camp" || ev.eventType === "camp"
+                            ? "bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/30"
+                            : "bg-primary/15 text-primary border border-primary/30"
+                        }`}>
+                          {ev.amType === "match" || ev.eventType === "match" ? "⚾ 試合" : ev.amType === "camp" || ev.eventType === "camp" ? "🏕️ 合宿" : "🏃 練習"}
                         </span>
                       </div>
 
-                      <div className="grid grid-cols-4 gap-1">
-                        <button
-                          type="button"
-                          onClick={() => handleChildStatusChange(ev.id, child.id, "present")}
-                          className={`flex flex-col items-center justify-center py-1.5 rounded-xl text-xs font-black transition-all active:scale-95 ${
-                            childStatus === "present"
-                              ? "bg-emerald-600 text-white shadow-xs ring-2 ring-emerald-500/50"
-                              : "bg-background/80 hover:bg-background text-muted-foreground border border-border/60"
-                          }`}
-                        >
-                          <span className="text-sm leading-none">○</span>
-                          <span className="text-[9px]">参加</span>
-                        </button>
+                      {/* 活動時間 & 場所 */}
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-1 text-xs font-black text-foreground">
+                          <Clock className="w-3 h-3 text-amber-500 shrink-0" />
+                          <span>{ev.amTime || ev.time || "08:00〜12:00"}</span>
+                        </div>
 
-                        <button
-                          type="button"
-                          onClick={() => handleChildStatusChange(ev.id, child.id, "late")}
-                          className={`flex flex-col items-center justify-center py-1.5 rounded-xl text-xs font-black transition-all active:scale-95 ${
-                            childStatus === "late"
-                              ? "bg-amber-500 text-white shadow-xs ring-2 ring-amber-500/50"
-                              : "bg-background/80 hover:bg-background text-muted-foreground border border-border/60"
-                          }`}
-                        >
-                          <span className="text-sm leading-none">△</span>
-                          <span className="text-[9px]">調整</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleChildStatusChange(ev.id, child.id, "absent")}
-                          className={`flex flex-col items-center justify-center py-1.5 rounded-xl text-xs font-black transition-all active:scale-95 ${
-                            childStatus === "absent"
-                              ? "bg-rose-600 text-white shadow-xs ring-2 ring-rose-500/50"
-                              : "bg-background/80 hover:bg-background text-muted-foreground border border-border/60"
-                          }`}
-                        >
-                          <span className="text-sm leading-none">×</span>
-                          <span className="text-[9px]">欠席</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleChildStatusChange(ev.id, child.id, "pending")}
-                          className={`flex flex-col items-center justify-center py-1.5 rounded-xl text-xs font-black transition-all active:scale-95 ${
-                            childStatus === "pending"
-                              ? "bg-slate-700 text-white dark:bg-slate-300 dark:text-slate-900 shadow-xs ring-2 ring-slate-500/50"
-                              : "bg-background/80 hover:bg-background text-muted-foreground border border-border/60"
-                          }`}
-                        >
-                          <span className="text-sm leading-none">？</span>
-                          <span className="text-[9px]">未定</span>
-                        </button>
+                        <div className="flex items-center gap-1 text-[11px] font-bold text-foreground/90 truncate">
+                          <MapPin className="w-3 h-3 text-emerald-500 shrink-0" />
+                          <span className="truncate">{ev.amLocation || ev.location || "グラウンド"}</span>
+                        </div>
                       </div>
                     </div>
-                  );
-                })}
 
-                {/* 👨 2. 保護者本人（または選手本人）の出欠回答 */}
-                {(() => {
-                  const pStatus = getEventAttendance(ev.id, ev.myStatus);
-                  return (
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="font-black text-foreground">
-                          {userRole === "parent" ? "👨 保護者（自分）の参加・当番" : "あなたの出欠回答"}
+                    {/* 🌙 【午後】（右） */}
+                    <div className={`p-2.5 rounded-2xl border flex flex-col justify-between space-y-2 ${
+                      ev.hasPm && ev.pmType !== "off"
+                        ? "bg-indigo-500/5 dark:bg-indigo-500/10 border-indigo-500/20"
+                        : "bg-muted/30 border-border/60 opacity-75"
+                    }`}>
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black text-indigo-700 dark:text-indigo-300 flex items-center gap-1">
+                          <Moon className="w-3 h-3 text-indigo-500" />
+                          <span>午後</span>
                         </span>
-                        <span className="text-[11px] font-bold">
-                          {pStatus === "present" && <span className="text-emerald-600 dark:text-emerald-400 font-black">○ {userRole === "parent" ? "参加・当番可" : "出席"}</span>}
-                          {(pStatus === "late" || pStatus === "partial") && <span className="text-amber-600 dark:text-amber-400 font-black">△ 調整</span>}
-                          {pStatus === "absent" && <span className="text-rose-600 dark:text-rose-400 font-black">× 欠席</span>}
-                          {(pStatus === "pending" || !pStatus) && <span className="text-muted-foreground font-black">？ 未定</span>}
+
+                        {/* 活動内容バッジ */}
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                          !ev.hasPm || ev.pmType === "off"
+                            ? "bg-muted text-muted-foreground border border-border"
+                            : ev.pmType === "match"
+                            ? "bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30"
+                            : ev.pmType === "camp"
+                            ? "bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/30"
+                            : "bg-primary/15 text-primary border border-primary/30"
+                        }`}>
+                          {!ev.hasPm || ev.pmType === "off" ? "🏖️ なし" : ev.pmType === "match" ? "⚾ 試合" : ev.pmType === "camp" ? "🏕️ 合宿" : "🏃 練習"}
                         </span>
                       </div>
 
-                      <div className="grid grid-cols-4 gap-1.5">
-                        {/* ○ 出席 */}
-                        <button
-                          type="button"
-                          onClick={() => handleStatusChange(ev.id, "present")}
-                          className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black transition-all active:scale-95 ${
-                            pStatus === "present"
-                              ? "bg-emerald-600 text-white shadow-xs ring-2 ring-emerald-500/50"
-                              : "bg-muted/60 text-muted-foreground hover:bg-muted"
-                          }`}
-                        >
-                          <span className="text-sm leading-none mb-0.5">○</span>
-                          <span className="text-[10px]">{userRole === "parent" ? "参加/当番" : "出席"}</span>
-                        </button>
+                      {/* 活動時間 & 場所 */}
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-1 text-xs font-black text-foreground">
+                          <Clock className="w-3 h-3 text-indigo-500 shrink-0" />
+                          <span>{ev.hasPm && ev.pmTime ? ev.pmTime : "解散・なし"}</span>
+                        </div>
 
-                        {/* △ 調整 / 遅刻 */}
-                        <button
-                          type="button"
-                          onClick={() => handleStatusChange(ev.id, "late")}
-                          className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black transition-all active:scale-95 ${
-                            pStatus === "late" || pStatus === "partial"
-                              ? "bg-amber-500 text-white shadow-xs ring-2 ring-amber-500/50"
-                              : "bg-muted/60 text-muted-foreground hover:bg-muted"
-                          }`}
-                        >
-                          <span className="text-sm leading-none mb-0.5">△</span>
-                          <span className="text-[10px]">調整</span>
-                        </button>
-
-                        {/* × 欠席 */}
-                        <button
-                          type="button"
-                          onClick={() => handleStatusChange(ev.id, "absent")}
-                          className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black transition-all active:scale-95 ${
-                            pStatus === "absent"
-                              ? "bg-rose-600 text-white shadow-xs ring-2 ring-rose-500/50"
-                              : "bg-muted/60 text-muted-foreground hover:bg-muted"
-                          }`}
-                        >
-                          <span className="text-sm leading-none mb-0.5">×</span>
-                          <span className="text-[10px]">欠席</span>
-                        </button>
-
-                        {/* ？ 未定 */}
-                        <button
-                          type="button"
-                          onClick={() => handleStatusChange(ev.id, "pending")}
-                          className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black transition-all active:scale-95 ${
-                            pStatus === "pending" || !pStatus
-                              ? "bg-slate-700 text-white dark:bg-slate-300 dark:text-slate-900 shadow-xs ring-2 ring-slate-500/50"
-                              : "bg-muted/60 text-muted-foreground hover:bg-muted"
-                          }`}
-                        >
-                          <span className="text-sm leading-none mb-0.5">？</span>
-                          <span className="text-[10px]">未定</span>
-                        </button>
+                        <div className="flex items-center gap-1 text-[11px] font-bold text-foreground/90 truncate">
+                          <MapPin className="w-3 h-3 text-emerald-500 shrink-0" />
+                          <span className="truncate">{ev.hasPm && ev.pmLocation ? ev.pmLocation : (ev.hasPm ? ev.amLocation : "—")}</span>
+                        </div>
                       </div>
                     </div>
-                  );
-                })()}
-              </div>
-            </div>
-            ))}
+                  </div>
+
+                  {/* ④ 📋 詳細情報ブロック（お弁当、連絡事項、配車、当番） */}
+                  <div className="p-3.5 rounded-2xl bg-muted/40 border border-border/80 space-y-2.5 text-xs font-bold">
+                    {/* 1. お弁当 */}
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground flex items-center gap-1.5">
+                        <Utensils className="w-3.5 h-3.5 text-amber-500" />
+                        <span>お弁当</span>
+                      </span>
+                      <span className={`px-2.5 py-0.5 rounded-full text-[10.5px] font-black ${
+                        ev.needsLunch
+                          ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30"
+                          : "text-muted-foreground"
+                      }`}>
+                        {ev.needsLunch ? "🍙 持参要" : "不要"}
+                      </span>
+                    </div>
+
+                    {/* 2. 連絡事項・持ち物（全文・改行表示） */}
+                    <div className="pt-2 border-t border-border/60 space-y-1">
+                      <span className="text-[10px] font-black text-muted-foreground flex items-center gap-1">
+                        <FileText className="w-3 h-3 text-primary" />
+                        <span>連絡事項・持ち物</span>
+                      </span>
+                      <div className={`text-xs font-bold p-2.5 rounded-xl border border-border/50 whitespace-pre-wrap leading-relaxed ${
+                        ev.memo ? "text-foreground bg-background/80" : "text-muted-foreground bg-muted/20"
+                      }`}>
+                        {ev.memo || "特になし"}
+                      </div>
+                    </div>
+
+                    {/* 3. 配車（配車情報 ＋ 配車表リンク） */}
+                    <div className="pt-2 border-t border-border/60 flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <Car className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                        <span className="text-muted-foreground shrink-0">配車:</span>
+                        <span className="text-foreground truncate font-black text-xs">
+                          {ev.carInfo ? ev.carInfo : (isMatch ? "配車あり" : "なし（現地集合）")}
+                        </span>
+                      </div>
+
+                      <Link
+                        href="/liff/carpool"
+                        className="text-xs font-black text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-0.5 shrink-0 ml-2"
+                      >
+                        <span>配車表へ</span>
+                        <ChevronRight className="w-3 h-3" />
+                      </Link>
+                    </div>
+
+                    {/* 4. 一番下に当番 */}
+                    {ev.dutyGroup && (
+                      <div className="pt-2 border-t border-border/60 flex items-center justify-between text-primary">
+                        <span className="flex items-center gap-1.5">
+                          <Shield className="w-3.5 h-3.5" />
+                          <span>お当番</span>
+                        </span>
+                        <span className="px-2.5 py-0.5 rounded-full bg-primary/15 border border-primary/30 text-primary font-black text-[11px]">
+                          {ev.dutyGroup}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ⑤ 出欠回答セクション (○, △, ×, ？) */}
+                  <div className="pt-2 border-t border-primary/15 space-y-3">
+                    {/* 👦 1. 保護者の場合: お子様（選手）の出欠回答 */}
+                    {userRole === "parent" && children.map((child) => {
+                      const childStatus = getChildAttendance(ev.id, child.id);
+                      return (
+                        <div key={child.id} className="p-2.5 rounded-2xl bg-amber-500/5 dark:bg-amber-500/10 border border-amber-500/20 space-y-1.5">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="font-black text-amber-700 dark:text-amber-300 flex items-center gap-1">
+                              <span>👦</span>
+                              <span>お子様（{child.name}{child.uniformNumber ? ` ${child.uniformNumber}` : ""}）の出欠</span>
+                            </span>
+                            <span className="text-[11px] font-bold">
+                              {childStatus === "present" && <span className="text-emerald-600 dark:text-emerald-400 font-black">○ 参加</span>}
+                              {childStatus === "late" && <span className="text-amber-600 dark:text-amber-400 font-black">△ 調整・遅刻</span>}
+                              {childStatus === "absent" && <span className="text-rose-600 dark:text-rose-400 font-black">× 欠席</span>}
+                              {childStatus === "pending" && <span className="text-muted-foreground font-black">？ 未定</span>}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-4 gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleChildStatusChange(ev.id, child.id, "present")}
+                              className={`flex flex-col items-center justify-center py-1.5 rounded-xl text-xs font-black transition-all active:scale-95 ${
+                                childStatus === "present"
+                                  ? "bg-emerald-600 text-white shadow-xs ring-2 ring-emerald-500/50"
+                                  : "bg-background/80 hover:bg-background text-muted-foreground border border-border/60"
+                              }`}
+                            >
+                              <span className="text-sm leading-none">○</span>
+                              <span className="text-[9px]">参加</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleChildStatusChange(ev.id, child.id, "late")}
+                              className={`flex flex-col items-center justify-center py-1.5 rounded-xl text-xs font-black transition-all active:scale-95 ${
+                                childStatus === "late"
+                                  ? "bg-amber-500 text-white shadow-xs ring-2 ring-amber-500/50"
+                                  : "bg-background/80 hover:bg-background text-muted-foreground border border-border/60"
+                              }`}
+                            >
+                              <span className="text-sm leading-none">△</span>
+                              <span className="text-[9px]">調整</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleChildStatusChange(ev.id, child.id, "absent")}
+                              className={`flex flex-col items-center justify-center py-1.5 rounded-xl text-xs font-black transition-all active:scale-95 ${
+                                childStatus === "absent"
+                                  ? "bg-rose-600 text-white shadow-xs ring-2 ring-rose-500/50"
+                                  : "bg-background/80 hover:bg-background text-muted-foreground border border-border/60"
+                              }`}
+                            >
+                              <span className="text-sm leading-none">×</span>
+                              <span className="text-[9px]">欠席</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleChildStatusChange(ev.id, child.id, "pending")}
+                              className={`flex flex-col items-center justify-center py-1.5 rounded-xl text-xs font-black transition-all active:scale-95 ${
+                                childStatus === "pending"
+                                  ? "bg-slate-700 text-white dark:bg-slate-300 dark:text-slate-900 shadow-xs ring-2 ring-slate-500/50"
+                                  : "bg-background/80 hover:bg-background text-muted-foreground border border-border/60"
+                              }`}
+                            >
+                              <span className="text-sm leading-none">？</span>
+                              <span className="text-[9px]">未定</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {/* 👨 2. 保護者本人（または選手本人）の出欠回答 */}
+                    {(() => {
+                      const pStatus = getEventAttendance(ev.id, ev.myStatus);
+                      return (
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="font-black text-foreground">
+                              {userRole === "parent" ? "👨 保護者（自分）の参加・当番" : "あなたの出欠回答"}
+                            </span>
+                            <span className="text-[11px] font-bold">
+                              {pStatus === "present" && <span className="text-emerald-600 dark:text-emerald-400 font-black">○ {userRole === "parent" ? "参加・当番可" : "出席"}</span>}
+                              {(pStatus === "late" || pStatus === "partial") && <span className="text-amber-600 dark:text-amber-400 font-black">△ 調整</span>}
+                              {pStatus === "absent" && <span className="text-rose-600 dark:text-rose-400 font-black">× 欠席</span>}
+                              {(pStatus === "pending" || !pStatus) && <span className="text-muted-foreground font-black">？ 未定</span>}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-4 gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleStatusChange(ev.id, "present")}
+                              className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black transition-all active:scale-95 ${
+                                pStatus === "present"
+                                  ? "bg-emerald-600 text-white shadow-xs ring-2 ring-emerald-500/50"
+                                  : "bg-muted/60 text-muted-foreground hover:bg-muted"
+                              }`}
+                            >
+                              <span className="text-sm leading-none mb-0.5">○</span>
+                              <span className="text-[10px]">{userRole === "parent" ? "参加/当番" : "出席"}</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleStatusChange(ev.id, "late")}
+                              className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black transition-all active:scale-95 ${
+                                pStatus === "late" || pStatus === "partial"
+                                  ? "bg-amber-500 text-white shadow-xs ring-2 ring-amber-500/50"
+                                  : "bg-muted/60 text-muted-foreground hover:bg-muted"
+                              }`}
+                            >
+                              <span className="text-sm leading-none mb-0.5">△</span>
+                              <span className="text-[10px]">調整</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleStatusChange(ev.id, "absent")}
+                              className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black transition-all active:scale-95 ${
+                                pStatus === "absent"
+                                  ? "bg-rose-600 text-white shadow-xs ring-2 ring-rose-500/50"
+                                  : "bg-muted/60 text-muted-foreground hover:bg-muted"
+                              }`}
+                            >
+                              <span className="text-sm leading-none mb-0.5">×</span>
+                              <span className="text-[10px]">欠席</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleStatusChange(ev.id, "pending")}
+                              className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black transition-all active:scale-95 ${
+                                pStatus === "pending" || !pStatus
+                                  ? "bg-slate-700 text-white dark:bg-slate-300 dark:text-slate-900 shadow-xs ring-2 ring-slate-500/50"
+                                  : "bg-muted/60 text-muted-foreground hover:bg-muted"
+                              }`}
+                            >
+                              <span className="text-sm leading-none mb-0.5">？</span>
+                              <span className="text-[10px]">未定</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
