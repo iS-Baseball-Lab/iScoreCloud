@@ -444,7 +444,8 @@ app.get("/hub", async (c) => {
         eventType: ev.eventType || "practice",
         dutyGroup: ev.dutyGroup || "1班",
         carInfo,
-        needsLunch: hasPm || isMatch,
+        needsLunch: ev.needsLunch !== null && ev.needsLunch !== undefined ? Boolean(ev.needsLunch) : (hasPm || isMatch),
+        needsSnack: ev.needsSnack !== null && ev.needsSnack !== undefined ? Boolean(ev.needsSnack) : false,
         memo: ev.description || "",
         myStatus: (userAttendances[ev.id] as any) || "pending",
       };

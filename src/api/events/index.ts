@@ -46,7 +46,7 @@ app.post('/:teamId', async (c) => {
 
   try {
     const body = await c.req.json();
-    const { title, startAt, endAt, eventType, description, location, dutyGroup, pmStartAt, pmEndAt, pmLocation, targetGroup, status } = body;
+    const { title, startAt, endAt, eventType, description, location, dutyGroup, pmStartAt, pmEndAt, pmLocation, targetGroup, needsLunch, needsSnack, status } = body;
 
     if (!title || !startAt) {
       return c.json({ success: false, error: "タイトルと開始日時は必須です。" }, 400);
@@ -69,6 +69,8 @@ app.post('/:teamId', async (c) => {
         pmEndAt: pmEndAt ? new Date(pmEndAt) : null,
         pmLocation: pmLocation || null,
         targetGroup: targetGroup || null,
+        needsLunch: needsLunch !== undefined ? Boolean(needsLunch) : false,
+        needsSnack: needsSnack !== undefined ? Boolean(needsSnack) : false,
         status: status || 'scheduled',
       })
       .returning();

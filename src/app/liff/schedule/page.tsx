@@ -305,8 +305,8 @@ export default function LiffSchedulePage() {
           targetGroup: editingEvent.targetGroup || "全体",
           dutyGroup: editingEvent.dutyGroup || null,
           description: editingEvent.memo || "",
-          needsLunch: editingEvent.needsLunch || false,
-          needsSnack: editingEvent.needsSnack || false,
+          needsLunch: Boolean(editingEvent.needsLunch),
+          needsSnack: Boolean(editingEvent.needsSnack),
         }),
       });
 
@@ -716,7 +716,12 @@ export default function LiffSchedulePage() {
                       {/* ✏️ 編集ボタン */}
                       <button
                         type="button"
-                        onClick={() => setEditingEvent({ ...ev })}
+                        onClick={() => setEditingEvent({ 
+                          ...ev, 
+                          needsLunch: Boolean(ev.needsLunch), 
+                          needsSnack: Boolean(ev.needsSnack),
+                          memo: ev.memo || ""
+                        })}
                         className="py-1 px-2.5 rounded-xl bg-primary/10 hover:bg-primary text-primary hover:text-primary-foreground text-xs font-black border border-primary/25 active:scale-95 transition-all flex items-center gap-1 shrink-0"
                       >
                         <Edit3 className="w-3.5 h-3.5" />
@@ -1224,7 +1229,7 @@ export default function LiffSchedulePage() {
                         type="button"
                         onClick={() => setEditingEvent({ ...editingEvent, needsLunch: true })}
                         className={`flex-1 py-1 rounded-lg text-[11px] font-bold border transition-all flex items-center justify-center gap-1 ${
-                          editingEvent.needsLunch
+                          editingEvent.needsLunch === true
                             ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/40 font-black"
                             : "bg-card border-border/80 text-muted-foreground"
                         }`}
@@ -1236,7 +1241,7 @@ export default function LiffSchedulePage() {
                         type="button"
                         onClick={() => setEditingEvent({ ...editingEvent, needsLunch: false })}
                         className={`flex-1 py-1 rounded-lg text-[11px] font-bold border transition-all flex items-center justify-center gap-1 ${
-                          !editingEvent.needsLunch
+                          editingEvent.needsLunch !== true
                             ? "bg-primary/15 text-primary border-primary/40 font-black"
                             : "bg-card border-border/80 text-muted-foreground"
                         }`}
@@ -1254,7 +1259,7 @@ export default function LiffSchedulePage() {
                         type="button"
                         onClick={() => setEditingEvent({ ...editingEvent, needsSnack: true })}
                         className={`flex-1 py-1 rounded-lg text-[11px] font-bold border transition-all flex items-center justify-center gap-1 ${
-                          editingEvent.needsSnack
+                          editingEvent.needsSnack === true
                             ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/40 font-black"
                             : "bg-card border-border/80 text-muted-foreground"
                         }`}
@@ -1266,7 +1271,7 @@ export default function LiffSchedulePage() {
                         type="button"
                         onClick={() => setEditingEvent({ ...editingEvent, needsSnack: false })}
                         className={`flex-1 py-1 rounded-lg text-[11px] font-bold border transition-all flex items-center justify-center gap-1 ${
-                          !editingEvent.needsSnack
+                          editingEvent.needsSnack !== true
                             ? "bg-primary/15 text-primary border-primary/40 font-black"
                             : "bg-card border-border/80 text-muted-foreground"
                         }`}
