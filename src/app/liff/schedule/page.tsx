@@ -1060,13 +1060,13 @@ export default function LiffSchedulePage() {
 
       {/* 🌟 予定の個別編集モーダル */}
       {editingEvent && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-150">
+        <div className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-150">
           <div
-            className="bg-card w-full max-w-xl rounded-t-3xl sm:rounded-3xl border-2 border-primary/30 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col animate-in slide-in-from-bottom-4 duration-200"
+            className="bg-card w-full max-w-xl rounded-t-3xl sm:rounded-3xl border-2 border-primary/30 shadow-2xl overflow-hidden max-h-[85vh] flex flex-col animate-in slide-in-from-bottom-4 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
             {/* モーダルヘッダー */}
-            <div className="px-5 py-4 border-b border-border/80 flex items-center justify-between bg-muted/30">
+            <div className="px-5 py-4 border-b border-border/80 flex items-center justify-between bg-muted/30 shrink-0">
               <div className="flex items-center gap-2">
                 <span className="px-2.5 py-1 rounded-xl bg-primary text-primary-foreground text-xs font-black shrink-0">
                   {editingEvent.date}
@@ -1303,11 +1303,11 @@ export default function LiffSchedulePage() {
             </div>
 
             {/* モーダルフッター */}
-            <div className="px-5 py-3.5 border-t border-border/80 flex items-center justify-between bg-muted/20">
+            <div className="px-5 py-3.5 pb-8 sm:pb-3.5 border-t border-border/80 flex items-center justify-between bg-muted/20 shrink-0 gap-3">
               <button
                 type="button"
                 onClick={() => setEditingEvent(null)}
-                className="text-xs font-bold text-muted-foreground hover:text-foreground"
+                className="py-2.5 px-4 rounded-xl text-xs font-bold text-muted-foreground hover:text-foreground hover:bg-muted active:scale-95 transition-all"
               >
                 キャンセル
               </button>
@@ -1316,9 +1316,9 @@ export default function LiffSchedulePage() {
                 type="button"
                 onClick={handleSaveEventEdit}
                 disabled={isSavingEdit}
-                className="py-2 px-5 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-black shadow-xs transition-all active:scale-95 flex items-center gap-1.5 disabled:opacity-50"
+                className="py-2.5 px-6 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-black shadow-md transition-all active:scale-95 flex items-center gap-1.5 disabled:opacity-50"
               >
-                <Save className="w-3.5 h-3.5" />
+                <Save className="w-4 h-4" />
                 <span>{isSavingEdit ? "保存中..." : "予定を更新する"}</span>
               </button>
             </div>

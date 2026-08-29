@@ -864,13 +864,13 @@ export function MonthlySchedulePlanner({
         if (!item) return null;
 
         return (
-          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-150">
+          <div className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-150">
             <div
-              className="bg-card w-full max-w-2xl rounded-t-3xl sm:rounded-3xl border-2 border-primary/30 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col animate-in slide-in-from-bottom-4 duration-200"
+              className="bg-card w-full max-w-2xl rounded-t-3xl sm:rounded-3xl border-2 border-primary/30 shadow-2xl overflow-hidden max-h-[85vh] flex flex-col animate-in slide-in-from-bottom-4 duration-200"
               onClick={(e) => e.stopPropagation()}
             >
               {/* モーダルヘッダー */}
-              <div className="px-5 py-4 border-b border-border/80 flex items-center justify-between bg-muted/30">
+              <div className="px-5 py-4 border-b border-border/80 flex items-center justify-between bg-muted/30 shrink-0">
                 <div className="flex items-center gap-2.5">
                   <span className="px-3 py-1 rounded-xl bg-primary text-primary-foreground text-sm font-black shrink-0">
                     {item.dayLabel}
@@ -1241,11 +1241,11 @@ export function MonthlySchedulePlanner({
               </div>
 
               {/* モーダルフッター */}
-              <div className="px-5 py-3.5 border-t border-border/80 flex items-center justify-between bg-muted/20">
+              <div className="px-5 py-3.5 pb-8 sm:pb-3.5 border-t border-border/80 flex items-center justify-between bg-muted/20 shrink-0 gap-3">
                 <button
                   type="button"
                   onClick={() => handleDeleteItem(item.id)}
-                  className="text-xs font-bold text-rose-500 hover:underline flex items-center gap-1"
+                  className="py-2.5 px-3 rounded-xl text-xs font-bold text-rose-500 hover:bg-rose-500/10 hover:underline flex items-center gap-1 active:scale-95 transition-all"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   <span>この活動日を解除</span>
@@ -1254,7 +1254,7 @@ export function MonthlySchedulePlanner({
                 <button
                   type="button"
                   onClick={() => setEditingItemId(null)}
-                  className="py-2 px-5 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-black shadow-xs transition-all active:scale-95"
+                  className="py-2.5 px-6 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-black shadow-md transition-all active:scale-95"
                 >
                   設定完了
                 </button>
