@@ -60,6 +60,7 @@ interface ScheduleEvent {
   targetGroup?: string;
   dutyGroup?: string;
   needsLunch?: boolean;
+  needsSnack?: boolean;
   memo?: string;
   carInfo?: string;
   myStatus: "present" | "absent" | "pending" | "late" | "partial";
@@ -304,6 +305,7 @@ export default function LiffSchedulePage() {
           dutyGroup: editingEvent.dutyGroup || null,
           description: editingEvent.memo || "",
           needsLunch: editingEvent.needsLunch || false,
+          needsSnack: editingEvent.needsSnack || false,
         }),
       });
 
@@ -804,21 +806,39 @@ export default function LiffSchedulePage() {
                     </div>
                   </div>
 
-                  {/* ④ 📋 詳細情報ブロック（お弁当、連絡事項、配車、当番） */}
+                  {/* ④ 📋 詳細情報ブロック（お弁当、補食、連絡事項、配車、当番） */}
                   <div className="p-3.5 rounded-2xl bg-muted/40 border border-border/80 space-y-2.5 text-xs font-bold">
-                    {/* 1. お弁当 */}
-                    <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground flex items-center gap-1.5">
-                        <Utensils className="w-3.5 h-3.5 text-amber-500" />
-                        <span>お弁当</span>
-                      </span>
-                      <span className={`px-2.5 py-0.5 rounded-full text-[10.5px] font-black ${
-                        ev.needsLunch
-                          ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30"
-                          : "text-muted-foreground"
-                      }`}>
-                        {ev.needsLunch ? "🍙 持参要" : "不要"}
-                      </span>
+                    {/* 1. お弁当 & 補食 */}
+                    <div className="grid grid-cols-2 gap-2">
+                      {/* お弁当 */}
+                      <div className="flex items-center justify-between p-2 rounded-xl bg-background/60 border border-border/50">
+                        <span className="text-muted-foreground flex items-center gap-1.5 text-[11px]">
+                          <Utensils className="w-3.5 h-3.5 text-amber-500" />
+                          <span>お弁当</span>
+                        </span>
+                        <span className={`px-2 py-0.5 rounded-md text-[10.5px] font-black ${
+                          ev.needsLunch
+                            ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30"
+                            : "text-muted-foreground"
+                        }`}>
+                          {ev.needsLunch ? "🍙 持参要" : "不要"}
+                        </span>
+                      </div>
+
+                      {/* 補食（捕食） */}
+                      <div className="flex items-center justify-between p-2 rounded-xl bg-background/60 border border-border/50">
+                        <span className="text-muted-foreground flex items-center gap-1.5 text-[11px]">
+                          <span className="text-sm leading-none">🍌</span>
+                          <span>補食</span>
+                        </span>
+                        <span className={`px-2 py-0.5 rounded-md text-[10.5px] font-black ${
+                          ev.needsSnack
+                            ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30"
+                            : "text-muted-foreground"
+                        }`}>
+                          {ev.needsSnack ? "🍌 持参要" : "不要"}
+                        </span>
+                      </div>
                     </div>
 
                     {/* 2. 連絡事項・持ち物（全文・改行表示） */}
@@ -1171,8 +1191,8 @@ export default function LiffSchedulePage() {
                 </div>
               )}
 
-              {/* 5. 当番・お弁当 */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 rounded-2xl bg-muted/30 border border-border/80">
+              {/* 5. 当番・お弁当・補食 */}
+              <div className="space-y-3 p-3.5 rounded-2xl bg-muted/30 border border-border/80">
                 <div>
                   <label className="text-[10px] font-bold text-muted-foreground block mb-1">当番</label>
                   <div className="grid grid-cols-4 gap-1">
@@ -1193,32 +1213,65 @@ export default function LiffSchedulePage() {
                   </div>
                 </div>
 
-                <div>
-                  <label className="text-[10px] font-bold text-muted-foreground block mb-1">お弁当</label>
-                  <div className="flex gap-1">
-                    <button
-                      type="button"
-                      onClick={() => setEditingEvent({ ...editingEvent, needsLunch: true })}
-                      className={`flex-1 py-1 rounded-lg text-[11px] font-bold border transition-all flex items-center justify-center gap-1 ${
-                        editingEvent.needsLunch
-                          ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/40 font-black"
-                          : "bg-card border-border/80 text-muted-foreground"
-                      }`}
-                    >
-                      <Utensils className="w-3 h-3" />
-                      <span>持参要</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setEditingEvent({ ...editingEvent, needsLunch: false })}
-                      className={`flex-1 py-1 rounded-lg text-[11px] font-bold border transition-all flex items-center justify-center gap-1 ${
-                        !editingEvent.needsLunch
-                          ? "bg-primary/15 text-primary border-primary/40 font-black"
-                          : "bg-card border-border/80 text-muted-foreground"
-                      }`}
-                    >
-                      <span>不要</span>
-                    </button>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-border/60">
+                  {/* お弁当 */}
+                  <div>
+                    <label className="text-[10px] font-bold text-muted-foreground block mb-1">お弁当</label>
+                    <div className="flex gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setEditingEvent({ ...editingEvent, needsLunch: true })}
+                        className={`flex-1 py-1 rounded-lg text-[11px] font-bold border transition-all flex items-center justify-center gap-1 ${
+                          editingEvent.needsLunch
+                            ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/40 font-black"
+                            : "bg-card border-border/80 text-muted-foreground"
+                        }`}
+                      >
+                        <Utensils className="w-3 h-3" />
+                        <span>持参要</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingEvent({ ...editingEvent, needsLunch: false })}
+                        className={`flex-1 py-1 rounded-lg text-[11px] font-bold border transition-all flex items-center justify-center gap-1 ${
+                          !editingEvent.needsLunch
+                            ? "bg-primary/15 text-primary border-primary/40 font-black"
+                            : "bg-card border-border/80 text-muted-foreground"
+                        }`}
+                      >
+                        <span>不要</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 補食（捕食） */}
+                  <div>
+                    <label className="text-[10px] font-bold text-muted-foreground block mb-1">補食（捕食）</label>
+                    <div className="flex gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setEditingEvent({ ...editingEvent, needsSnack: true })}
+                        className={`flex-1 py-1 rounded-lg text-[11px] font-bold border transition-all flex items-center justify-center gap-1 ${
+                          editingEvent.needsSnack
+                            ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/40 font-black"
+                            : "bg-card border-border/80 text-muted-foreground"
+                        }`}
+                      >
+                        <span className="text-xs leading-none">🍌</span>
+                        <span>持参要</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingEvent({ ...editingEvent, needsSnack: false })}
+                        className={`flex-1 py-1 rounded-lg text-[11px] font-bold border transition-all flex items-center justify-center gap-1 ${
+                          !editingEvent.needsSnack
+                            ? "bg-primary/15 text-primary border-primary/40 font-black"
+                            : "bg-card border-border/80 text-muted-foreground"
+                        }`}
+                      >
+                        <span>不要</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>

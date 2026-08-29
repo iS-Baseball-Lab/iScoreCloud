@@ -94,7 +94,7 @@ app.patch('/:teamId/:eventId', async (c) => {
 
   try {
     const body = await c.req.json();
-    const { title, startAt, endAt, eventType, description, location, dutyGroup, pmStartAt, pmEndAt, pmLocation, targetGroup, status } = body;
+    const { title, startAt, endAt, eventType, description, location, dutyGroup, pmStartAt, pmEndAt, pmLocation, targetGroup, needsLunch, needsSnack, status } = body;
 
     const updateFields: Partial<typeof events.$inferInsert> = {};
     if (title !== undefined) updateFields.title = title;
@@ -108,6 +108,8 @@ app.patch('/:teamId/:eventId', async (c) => {
     if (pmEndAt !== undefined) updateFields.pmEndAt = pmEndAt ? new Date(pmEndAt) : null;
     if (pmLocation !== undefined) updateFields.pmLocation = pmLocation;
     if (targetGroup !== undefined) updateFields.targetGroup = targetGroup;
+    if (needsLunch !== undefined) updateFields.needsLunch = Boolean(needsLunch);
+    if (needsSnack !== undefined) updateFields.needsSnack = Boolean(needsSnack);
     if (status !== undefined) updateFields.status = status;
 
     const result = await db.update(events)
@@ -188,6 +190,8 @@ app.post('/:teamId/bulk', async (c) => {
             pmEndAt: item.pmEndAt ? new Date(item.pmEndAt) : null,
             pmLocation: item.pmLocation || null,
             targetGroup: item.targetGroup || null,
+            needsLunch: item.needsLunch !== undefined ? Boolean(item.needsLunch) : false,
+            needsSnack: item.needsSnack !== undefined ? Boolean(item.needsSnack) : false,
             status: item.status || 'scheduled',
           })
           .where(and(eq(events.id, existingRecord.id), eq(events.teamId, teamId)))
@@ -211,6 +215,8 @@ app.post('/:teamId/bulk', async (c) => {
             pmEndAt: item.pmEndAt ? new Date(item.pmEndAt) : null,
             pmLocation: item.pmLocation || null,
             targetGroup: item.targetGroup || null,
+            needsLunch: item.needsLunch !== undefined ? Boolean(item.needsLunch) : false,
+            needsSnack: item.needsSnack !== undefined ? Boolean(item.needsSnack) : false,
             status: item.status || 'scheduled',
           })
           .returning();

@@ -17,6 +17,8 @@ export const events = sqliteTable("events", {
   pmEndAt: integer("pm_end_at", { mode: "timestamp" }),     // 午後の終了時間
   pmLocation: text("pm_location"),                         // 午後の場所
   targetGroup: text("target_group"),                       // 🎯 対象チーム・グループ（Aチーム, Bチーム, 全体, 試合組, 練習組 等）
+  needsLunch: integer("needs_lunch", { mode: "boolean" }).default(false), // 🍙 お弁当要否
+  needsSnack: integer("needs_snack", { mode: "boolean" }).default(false), // 🍌 補食（捕食）要否
   status: text("status").$type<"scheduled" | "rainout">().default("scheduled"), // 📅 イベント全体のステータス (雨天中止など)
 });
 

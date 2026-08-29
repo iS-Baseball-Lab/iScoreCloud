@@ -48,6 +48,7 @@ export interface ScheduleDayItem {
   // 当番・持ち物
   dutyGroup: string; // 1班, 2班, 3班, 4班, なし
   needsLunch: boolean; // お弁当要否
+  needsSnack?: boolean; // 補食（捕食）要否
   memo: string; // 連絡事項
 }
 
@@ -255,7 +256,8 @@ export function MonthlySchedulePlanner({
               pmTime: formatTimeRange(ev.pmStartAt, ev.pmEndAt, "12:00〜18:00"),
               pmLocation: ev.pmLocation || ev.location || "",
               dutyGroup: ev.dutyGroup || "1班",
-              needsLunch: hasPm || ev.needsLunch || false,
+              needsLunch: ev.needsLunch !== undefined && ev.needsLunch !== null ? Boolean(ev.needsLunch) : hasPm,
+              needsSnack: ev.needsSnack !== undefined && ev.needsSnack !== null ? Boolean(ev.needsSnack) : false,
               memo: ev.description || "",
             };
           });
@@ -359,6 +361,7 @@ export function MonthlySchedulePlanner({
         pmLocation: "ホームグラウンド",
         dutyGroup: "1班",
         needsLunch: true,
+        needsSnack: false,
         memo: "",
       };
 
@@ -394,6 +397,7 @@ export function MonthlySchedulePlanner({
       pmLocation: "市民第1球場",
       dutyGroup: "2班",
       needsLunch: true,
+      needsSnack: false,
       memo: "",
     };
 
@@ -428,6 +432,7 @@ export function MonthlySchedulePlanner({
           pmLocation: "ホームグラウンド",
           dutyGroup: "1班",
           needsLunch: true,
+          needsSnack: false,
           memo: "",
         });
       }
@@ -494,6 +499,8 @@ export function MonthlySchedulePlanner({
             pmStartAt: pmStartAtStr,
             pmEndAt: pmEndAtStr,
             pmLocation: item.pmLocation,
+            needsLunch: Boolean(item.needsLunch),
+            needsSnack: Boolean(item.needsSnack),
             description: item.memo,
             status: "scheduled",
           };
@@ -810,6 +817,18 @@ export function MonthlySchedulePlanner({
                           当番: {item.dutyGroup}
                         </span>
                       )}
+
+                      {item.needsLunch && (
+                        <span className="text-amber-600 dark:text-amber-400 text-[10.5px]">
+                          🍙 弁当要
+                        </span>
+                      )}
+
+                      {item.needsSnack && (
+                        <span className="text-emerald-600 dark:text-emerald-400 text-[10.5px]">
+                          🍌 補食要
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1117,8 +1136,8 @@ export function MonthlySchedulePlanner({
                   )}
                 </div>
 
-                {/* 3. 当番・お弁当・連絡事項 */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3.5 rounded-2xl bg-muted/30 border border-border/80">
+                {/* 3. 当番・お弁当・補食・連絡事項 */}
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 p-3.5 rounded-2xl bg-muted/30 border border-border/80">
                   {/* 当番選択 */}
                   <div>
                     <label className="text-[10px] font-bold text-muted-foreground block mb-1">当番</label>
@@ -1156,7 +1175,7 @@ export function MonthlySchedulePlanner({
                         )}
                       >
                         <Utensils className="w-3 h-3" />
-                        <span>持参要</span>
+                        <span>要</span>
                       </button>
 
                       <button
@@ -1174,6 +1193,39 @@ export function MonthlySchedulePlanner({
                     </div>
                   </div>
 
+                  {/* 補食（捕食）要否 */}
+                  <div>
+                    <label className="text-[10px] font-bold text-muted-foreground block mb-1">補食（捕食）</label>
+                    <div className="flex gap-1">
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateItem(item.id, { needsSnack: true })}
+                        className={cn(
+                          "flex-1 py-1 px-1 rounded-lg text-[11px] font-bold border transition-all flex items-center justify-center gap-1",
+                          item.needsSnack
+                            ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/40 font-black"
+                            : "bg-card border-border/80 text-muted-foreground"
+                        )}
+                      >
+                        <span className="text-xs leading-none">🍌</span>
+                        <span>要</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateItem(item.id, { needsSnack: false })}
+                        className={cn(
+                          "flex-1 py-1 px-1 rounded-lg text-[11px] font-bold border transition-all flex items-center justify-center gap-1",
+                          !item.needsSnack
+                            ? "bg-primary/15 text-primary border-primary/40 font-black"
+                            : "bg-card border-border/80 text-muted-foreground"
+                        )}
+                      >
+                        <span>不要</span>
+                      </button>
+                    </div>
+                  </div>
+
                   {/* 備考・連絡事項 */}
                   <div>
                     <label className="text-[10px] font-bold text-muted-foreground block mb-1">連絡事項・持ち物</label>
@@ -1181,7 +1233,7 @@ export function MonthlySchedulePlanner({
                       type="text"
                       value={item.memo}
                       onChange={(e) => handleUpdateItem(item.id, { memo: e.target.value })}
-                      placeholder="ユニフォーム正装、水分多め等"
+                      placeholder="正装、水分多め等"
                       className="w-full px-2.5 py-1.5 rounded-xl bg-card border border-border/80 text-xs font-bold text-foreground focus:outline-hidden focus:border-primary"
                     />
                   </div>

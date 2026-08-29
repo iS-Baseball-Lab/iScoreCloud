@@ -325,6 +325,7 @@ export function HubHeroSection({
           dutyGroup: ev.dutyGroup || "1班",
           carInfo,
           needsLunch: ev.needsLunch !== undefined ? ev.needsLunch : (hasPm || isMatchOrCamp),
+          needsSnack: ev.needsSnack !== undefined ? ev.needsSnack : false,
           memo: ev.memo || ev.description || "",
         };
       };
@@ -368,6 +369,7 @@ export function HubHeroSection({
         dutyGroup: "1班",
         carInfo: "鈴木号・佐藤号",
         needsLunch: false,
+        needsSnack: true,
         memo: "ユニフォーム正装・スパイク着用。雨天時は7:00にLINE連絡します。",
       },
       {
@@ -388,6 +390,7 @@ export function HubHeroSection({
         dutyGroup: "2班",
         carInfo: "", // 練習時は配車なし
         needsLunch: true,
+        needsSnack: false,
         memo: "水分補給のドリンク多めに持参してください。",
       },
     ];
@@ -494,6 +497,10 @@ export function HubHeroSection({
           pmLocation: hasPm ? (ev.pmLocation || ev.amLocation || ev.location || "") : "",
           hasPm,
           duty: ev.dutyGroup || "1班",
+          needsLunch: ev.needsLunch !== undefined ? Boolean(ev.needsLunch) : isMatch,
+          needsSnack: ev.needsSnack !== undefined ? Boolean(ev.needsSnack) : false,
+          memo: ev.description || ev.memo || "",
+          carInfo: ev.carInfo,
         };
       });
     }
@@ -512,6 +519,10 @@ export function HubHeroSection({
         pmLocation: "",
         hasPm: false,
         duty: "1班",
+        needsLunch: true,
+        needsSnack: true,
+        memo: "公式戦ユニフォーム持参、8:00グラウンド集合",
+        carInfo: "7:30 集合・配車調整済",
       },
       {
         id: "demo-next",
@@ -526,6 +537,10 @@ export function HubHeroSection({
         pmLocation: "大師河原第3G",
         hasPm: true,
         duty: "2班",
+        needsLunch: true,
+        needsSnack: false,
+        memo: "終日練習のためお弁当持参。水分多めに持参してください。",
+        carInfo: undefined,
       },
       {
         id: "demo-future",
@@ -795,21 +810,39 @@ export function HubHeroSection({
                       </div>
                     </div>
 
-                    {/* 📋 その他の詳細情報ブロック（上から：お弁当、連絡事項、配車、当番） */}
+                    {/* 📋 その他の詳細情報ブロック（上から：お弁当・補食、連絡事項、配車、当番） */}
                     <div className="p-3 rounded-2xl bg-muted/40 border border-border/80 space-y-2 text-xs">
-                      {/* 1. お弁当 */}
-                      <div className="flex items-center justify-between font-bold">
-                        <span className="text-muted-foreground flex items-center gap-1.5">
-                          <Utensils className="w-3.5 h-3.5 text-amber-500" />
-                          <span>お弁当</span>
-                        </span>
-                        <span className={`px-2 py-0.5 rounded-full text-[10.5px] font-black ${
-                          ev.needsLunch
-                            ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30"
-                            : "text-muted-foreground"
-                        }`}>
-                          {ev.needsLunch ? "🍙 持参要" : "不要"}
-                        </span>
+                      {/* 1. お弁当 & 補食 */}
+                      <div className="grid grid-cols-2 gap-2 font-bold">
+                        {/* お弁当 */}
+                        <div className="flex items-center justify-between p-1.5 rounded-xl bg-background/50 border border-border/40">
+                          <span className="text-muted-foreground flex items-center gap-1 text-[10.5px]">
+                            <Utensils className="w-3 h-3 text-amber-500" />
+                            <span>お弁当</span>
+                          </span>
+                          <span className={`px-1.5 py-0.2 rounded-md text-[10px] font-black ${
+                            ev.needsLunch
+                              ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30"
+                              : "text-muted-foreground"
+                          }`}>
+                            {ev.needsLunch ? "🍙 要" : "不要"}
+                          </span>
+                        </div>
+
+                        {/* 補食 */}
+                        <div className="flex items-center justify-between p-1.5 rounded-xl bg-background/50 border border-border/40">
+                          <span className="text-muted-foreground flex items-center gap-1 text-[10.5px]">
+                            <span className="text-xs leading-none">🍌</span>
+                            <span>補食</span>
+                          </span>
+                          <span className={`px-1.5 py-0.2 rounded-md text-[10px] font-black ${
+                            ev.needsSnack
+                              ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30"
+                              : "text-muted-foreground"
+                          }`}>
+                            {ev.needsSnack ? "🍌 要" : "不要"}
+                          </span>
+                        </div>
                       </div>
 
                       {/* 2. 連絡事項・メモ（常に表示、ない場合は「特になし」） */}
