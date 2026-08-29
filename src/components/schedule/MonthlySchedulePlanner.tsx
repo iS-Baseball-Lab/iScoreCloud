@@ -92,6 +92,7 @@ export function MonthlySchedulePlanner({
 }: MonthlySchedulePlannerProps) {
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const [selectedDayItems, setSelectedDayItems] = useState<ScheduleDayItem[]>([]);
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [deletedEventIds, setDeletedEventIds] = useState<string[]>([]);
   const [isLoadingEvents, setIsLoadingEvents] = useState<boolean>(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -623,11 +624,12 @@ export function MonthlySchedulePlanner({
           ))}
         </div>
 
-        {/* 42マス日付グリッド */}
-        <div className="grid grid-cols-7 gap-1.5 sm:gap-2">
+        {/* 42マス日付グリッド（スリム＆コンパクト化） */}
+        <div className="grid grid-cols-7 gap-1 sm:gap-1.5">
           {calendarDays.map((day, idx) => {
             const dateStr = formatDateString(day.date);
-            const activeItem = selectedDayItems.find(item => item.dateStr === dateStr);
+            const itemsOnDate = selectedDayItems.filter(item => item.dateStr === dateStr);
+            const hasItems = itemsOnDate.length > 0;
             const isToday = formatDateString(new Date()) === dateStr;
 
             const dayOfWeek = day.date.getDay();
@@ -635,33 +637,58 @@ export function MonthlySchedulePlanner({
             const isSaturday = dayOfWeek === 6;
 
             return (
-              <button
+              <div
                 key={idx}
-                type="button"
-                onClick={() => handleToggleDay(day.date)}
                 className={cn(
-                  "relative min-h-[70px] sm:min-h-[85px] p-1.5 rounded-2xl flex flex-col justify-between items-start transition-all active:scale-95 cursor-pointer border text-left",
+                  "relative min-h-[46px] sm:min-h-[54px] p-1 rounded-xl flex flex-col justify-between items-start transition-all border text-left",
                   !day.isCurrentMonth && "opacity-25 bg-transparent border-transparent",
-                  day.isCurrentMonth && !activeItem && "bg-muted/20 hover:bg-muted/50 border-border/60",
-                  activeItem && "bg-primary/10 border-2 border-primary shadow-xs",
-                  isToday && !activeItem && "border-dashed border-primary/60"
+                  day.isCurrentMonth && !hasItems && "bg-muted/20 hover:bg-muted/50 border-border/60 cursor-pointer",
+                  hasItems && "bg-primary/10 border-2 border-primary shadow-xs",
+                  isToday && !hasItems && "border-dashed border-primary/60"
                 )}
+                onClick={() => {
+                  if (day.isCurrentMonth && !hasItems) {
+                    handleToggleDay(day.date);
+                  }
+                }}
               >
-                {/* 上部：日付番号 & ON/OFFバッジ */}
+                {/* 上部：日付番号 & ON/OFFバッジ / 別動隊追加 */}
                 <div className="w-full flex items-center justify-between">
                   <span className={cn(
                     "text-xs font-black leading-none",
                     isSunday && "text-rose-500",
                     isSaturday && "text-blue-500",
-                    activeItem && "text-primary font-black"
+                    hasItems && "text-primary font-black"
                   )}>
                     {day.date.getDate()}
                   </span>
 
-                  {activeItem ? (
-                    <span className="w-4 h-4 rounded-full bg-primary text-primary-foreground text-[9px] font-black flex items-center justify-center shrink-0">
-                      ✓
-                    </span>
+                  {hasItems ? (
+                    <div className="flex items-center gap-0.5">
+                      {/* 同日に別チーム追加 */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleAddExtraDay(dateStr);
+                        }}
+                        className="w-4 h-4 rounded-full bg-primary/20 hover:bg-primary text-primary hover:text-primary-foreground text-[10px] font-black flex items-center justify-center transition-all"
+                        title="同日に別チームを追加"
+                      >
+                        +
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleToggleDay(day.date);
+                        }}
+                        className="w-4 h-4 rounded-full bg-primary text-primary-foreground text-[9px] font-black flex items-center justify-center shrink-0"
+                        title="この日の予定を全削除"
+                      >
+                        ✓
+                      </button>
+                    </div>
                   ) : (
                     <span className="text-[10px] text-muted-foreground/40 font-bold hidden sm:inline">
                       +
@@ -669,32 +696,36 @@ export function MonthlySchedulePlanner({
                   )}
                 </div>
 
-                {/* 下部：活動種別のプレビューバッジ */}
-                {activeItem && (
-                  <div className="w-full space-y-0.5 mt-1">
-                    <div className="px-1.5 py-0.5 rounded-md bg-card/80 border border-primary/20 text-[9.5px] font-black text-foreground truncate">
-                      {activeItem.amType === "match" ? "⚾ 試合" : activeItem.amType === "camp" ? "🏕️ 合宿" : "🏃 練習"}
-                    </div>
-                    {(activeItem.amLocation || activeItem.pmLocation) && (
-                      <div className="text-[8.5px] font-bold text-emerald-600 dark:text-emerald-400 truncate hidden sm:block">
-                        📍{formatLocationWithShortName(activeItem.amLocation || activeItem.pmLocation)}
+                {/* 下部：活動種別プレビューバッジ（複数ある場合はスタック表示） */}
+                {hasItems && (
+                  <div className="w-full space-y-0.5 mt-0.5">
+                    {itemsOnDate.map((it) => (
+                      <div
+                        key={it.id}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingItemId(it.id);
+                        }}
+                        className="px-1 py-0.2 rounded bg-card/90 border border-primary/20 text-[8.5px] font-black text-foreground truncate cursor-pointer hover:bg-primary hover:text-primary-foreground transition-all flex items-center justify-between"
+                        title={`${it.targetGroup || "全体"}: ${it.title}（タップで詳細編集）`}
+                      >
+                        <span className="truncate">
+                          {it.targetGroup && it.targetGroup !== "全体" ? `${it.targetGroup.slice(0, 3)} ` : ""}
+                          {it.amType === "match" ? "⚾" : it.amType === "camp" ? "🏕️" : "🏃"}
+                        </span>
+                        <span className="text-[8px] opacity-70">✏️</span>
                       </div>
-                    )}
-                    {activeItem.dutyGroup && (
-                      <div className="text-[8.5px] font-bold text-primary truncate hidden sm:block">
-                        当番: {activeItem.dutyGroup}
-                      </div>
-                    )}
+                    ))}
                   </div>
                 )}
-              </button>
+              </div>
             );
           })}
         </div>
       </div>
 
-      {/* 🌟 3. カレンダー下部：設定された活動日の一覧エディター */}
-      <div className="space-y-4">
+      {/* 🌟 3. カレンダー下部：設定された活動日のスマートリスト ＆ 個別詳細編集モーダル */}
+      <div className="space-y-3">
         <div className="flex items-center justify-between px-1">
           <h3 className="text-base font-black text-foreground flex items-center gap-2">
             <Layers className="w-4 h-4 text-primary" />
@@ -703,8 +734,8 @@ export function MonthlySchedulePlanner({
               {selectedDayItems.length}件
             </span>
           </h3>
-          <span className="text-xs text-muted-foreground font-bold">
-            午前・午後の種別や当番を設定
+          <span className="text-xs text-muted-foreground font-bold hidden sm:inline">
+            「✏️ 詳細設定」で時間・場所・当番を設定
           </span>
         </div>
 
@@ -713,133 +744,212 @@ export function MonthlySchedulePlanner({
             <CalendarIcon className="w-10 h-10 text-muted-foreground/50 mx-auto" />
             <div className="space-y-1">
               <p className="text-sm font-black text-foreground">活動日がまだ選択されていません</p>
-              <p className="text-xs text-muted-foreground">
-                上のカレンダーの日付をタップするか、「土日を全追加」ボタンを押して活動日を設定してください。
-              </p>
+              <p className="text-xs text-muted-foreground">上のカレンダーの日付をタップしてください。</p>
             </div>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-2">
             {selectedDayItems.map((item) => (
               <div
                 key={item.id}
-                className="p-4 sm:p-5 rounded-3xl bg-card border-2 border-primary/20 shadow-sm space-y-4 transition-all"
+                className="p-3 sm:p-3.5 rounded-2xl bg-card border-2 border-border/80 hover:border-primary/40 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-all"
               >
-                {/* 1. カードヘッダー：日付 & 対象グループ & タイトル & スロット切替 & 別動隊追加 & 削除 */}
-                <div className="space-y-2.5 pb-3 border-b border-primary/15">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[200px]">
-                      <span className="px-3 py-1.5 rounded-2xl bg-primary text-primary-foreground text-sm font-black tracking-tight shrink-0">
-                        {item.dayLabel}
-                      </span>
+                {/* 左側：日付バッジ ＆ 対象チーム ＆ 簡易情報 */}
+                <div className="flex items-start sm:items-center gap-3 flex-1 min-w-0">
+                  {/* 日付バッジ（54px固定） */}
+                  <div className="w-[54px] min-w-[54px] max-w-[54px] shrink-0 px-1 py-1 rounded-xl bg-primary/10 text-primary border border-primary/20 flex flex-col items-center justify-center">
+                    <span className="text-xs font-black leading-tight tracking-tight">{item.dayLabel}</span>
+                    <span className="text-[9px] font-bold mt-0.5 opacity-90">
+                      {item.amType === "match" ? "⚾ 試合" : item.amType === "camp" ? "🏕️ 合宿" : "🏃 練習"}
+                    </span>
+                  </div>
 
-                      {/* 🎯 対象チーム/グループ バッジ */}
-                      <span className="px-2.5 py-1 rounded-xl bg-primary/15 text-primary text-xs font-black shrink-0 border border-primary/30">
+                  {/* 詳細サマリー */}
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="px-2 py-0.2 rounded-md bg-primary/15 text-primary text-[10.5px] font-black shrink-0 border border-primary/25">
                         🏷️ {item.targetGroup || "全体"}
                       </span>
-
-                      <input
-                        type="text"
-                        value={item.title}
-                        onChange={(e) => handleUpdateItem(item.id, { title: e.target.value })}
-                        placeholder="予定タイトル（例: 秋季大会 2回戦）"
-                        className="text-sm font-black bg-transparent border-b border-border/60 hover:border-primary focus:border-primary focus:outline-hidden px-1 py-0.5 text-foreground w-full max-w-[180px] sm:max-w-[220px]"
-                      />
-
-                      {/* 時間帯スロット選択（終日 / 午前のみ / 午後のみ） */}
-                      <div className="flex items-center p-1 bg-muted/60 rounded-xl border border-border/60 text-xs font-bold shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => handleUpdateItem(item.id, { slotType: "all_day" })}
-                          className={cn(
-                            "px-2.5 py-1 rounded-lg transition-all",
-                            item.slotType === "all_day" ? "bg-primary text-primary-foreground font-black shadow-xs" : "text-muted-foreground hover:text-foreground"
-                          )}
-                        >
-                          終日
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleUpdateItem(item.id, { slotType: "am_only" })}
-                          className={cn(
-                            "px-2.5 py-1 rounded-lg transition-all",
-                            item.slotType === "am_only" ? "bg-primary text-primary-foreground font-black shadow-xs" : "text-muted-foreground hover:text-foreground"
-                          )}
-                        >
-                          午前のみ
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleUpdateItem(item.id, { slotType: "pm_only" })}
-                          className={cn(
-                            "px-2.5 py-1 rounded-lg transition-all",
-                            item.slotType === "pm_only" ? "bg-primary text-primary-foreground font-black shadow-xs" : "text-muted-foreground hover:text-foreground"
-                          )}
-                        >
-                          午後のみ
-                        </button>
-                      </div>
+                      <h4 className="text-xs font-black text-foreground truncate">
+                        {item.title || "活動予定"}
+                      </h4>
                     </div>
 
-                    {/* 右側アクション：同一日別動隊追加 ＆ 削除 */}
-                    <div className="flex items-center gap-1.5 ml-auto shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => handleAddExtraDay(item.dateStr)}
-                        className="px-2.5 py-1.5 rounded-xl bg-muted/80 hover:bg-primary/10 text-muted-foreground hover:text-primary active:scale-95 transition-all text-xs font-black border border-border/60 flex items-center gap-1"
-                        title="同日に別チーム/別動隊の予定を追加"
-                      >
-                        <Plus className="w-3.5 h-3.5 text-primary" />
-                        <span className="hidden sm:inline">別動隊を追加</span>
-                      </button>
+                    {/* 午前 / 午後の時間・場所 & 当番 */}
+                    <div className="flex items-center gap-3 flex-wrap text-[11px] font-bold text-muted-foreground">
+                      <span className="flex items-center gap-1">
+                        <Clock className="w-3 h-3 text-amber-500 shrink-0" />
+                        <span className="text-foreground/90">{item.amTime}</span>
+                      </span>
 
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteItem(item.id)}
-                        className="p-2 rounded-xl text-rose-500 hover:bg-rose-500/10 active:scale-95 transition-all border border-rose-500/20 hover:border-rose-500/40"
-                        title="この活動日を削除"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {(item.amLocation || item.pmLocation) && (
+                        <span className="flex items-center gap-1 truncate text-foreground/90">
+                          <MapPin className="w-3 h-3 text-emerald-500 shrink-0" />
+                          <span className="truncate">{formatLocationWithShortName(item.amLocation || item.pmLocation)}</span>
+                        </span>
+                      )}
+
+                      {item.dutyGroup && (
+                        <span className="text-primary text-[10.5px]">
+                          当番: {item.dutyGroup}
+                        </span>
+                      )}
+
+                      {item.needsLunch && (
+                        <span className="text-amber-600 dark:text-amber-400 text-[10.5px]">
+                          🍙 弁当要
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 右側アクション：個別詳細編集ボタン ＆ 削除 */}
+                <div className="flex items-center gap-2 justify-end shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-border/60">
+                  <button
+                    type="button"
+                    onClick={() => setEditingItemId(item.id)}
+                    className="py-1.5 px-3 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 active:scale-95 text-xs font-black shadow-2xs flex items-center gap-1.5 transition-all"
+                  >
+                    <span>✏️ 詳細設定</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteItem(item.id)}
+                    className="p-1.5 rounded-xl text-rose-500 hover:bg-rose-500/10 active:scale-95 transition-all border border-rose-500/20 hover:border-rose-500/40"
+                    title="この活動日を削除"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* 🌟 4. 個別活動日の詳細編集モーダル（ダイアログ） */}
+      {editingItemId && (() => {
+        const item = selectedDayItems.find(it => it.id === editingItemId);
+        if (!item) return null;
+
+        return (
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-150">
+            <div
+              className="bg-card w-full max-w-2xl rounded-t-3xl sm:rounded-3xl border-2 border-primary/30 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col animate-in slide-in-from-bottom-4 duration-200"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* モーダルヘッダー */}
+              <div className="px-5 py-4 border-b border-border/80 flex items-center justify-between bg-muted/30">
+                <div className="flex items-center gap-2.5">
+                  <span className="px-3 py-1 rounded-xl bg-primary text-primary-foreground text-sm font-black shrink-0">
+                    {item.dayLabel}
+                  </span>
+                  <span className="text-sm font-black text-foreground">
+                    活動日の詳細設定
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setEditingItemId(null)}
+                  className="p-1.5 rounded-xl hover:bg-muted text-muted-foreground hover:text-foreground active:scale-95 transition-all"
+                >
+                  <span className="text-lg font-black leading-none">✕</span>
+                </button>
+              </div>
+
+              {/* モーダル本文（スクロール可能） */}
+              <div className="p-5 overflow-y-auto space-y-4 text-xs">
+                
+                {/* 1. 予定タイトル & 対象チーム */}
+                <div className="p-3.5 rounded-2xl bg-muted/30 border border-border/80 space-y-3">
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-black text-foreground">予定タイトル</label>
+                    <input
+                      type="text"
+                      value={item.title}
+                      onChange={(e) => handleUpdateItem(item.id, { title: e.target.value })}
+                      placeholder="予定タイトル（例: 秋季大会 2回戦 vs レッドソックス）"
+                      className="w-full px-3 py-2 rounded-xl bg-card border border-border/80 text-xs font-black text-foreground focus:outline-hidden focus:border-primary"
+                    />
+                  </div>
+
+                  {/* 対象チーム/グループ クイック選択 */}
+                  <div className="space-y-1.5">
+                    <label className="text-[10.5px] font-bold text-muted-foreground">対象チーム・グループ</label>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {TARGET_GROUPS.map((tg) => {
+                        const isSel = (item.targetGroup || "全体") === tg;
+                        return (
+                          <button
+                            key={tg}
+                            type="button"
+                            onClick={() => handleUpdateItem(item.id, { targetGroup: tg })}
+                            className={cn(
+                              "px-2.5 py-1 rounded-xl text-xs font-bold border transition-all active:scale-95",
+                              isSel
+                                ? "bg-primary text-primary-foreground border-primary font-black shadow-xs"
+                                : "bg-card hover:bg-muted text-muted-foreground hover:text-foreground border-border/80"
+                            )}
+                          >
+                            {tg}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
 
-                  {/* 🎯 対象チーム/グループ ワンタップ選択チップ */}
-                  <div className="flex items-center gap-1.5 flex-wrap pt-1 text-xs">
-                    <span className="text-[10px] font-bold text-muted-foreground shrink-0">対象:</span>
-                    {TARGET_GROUPS.map((tg) => {
-                      const isSel = (item.targetGroup || "全体") === tg;
-                      return (
-                        <button
-                          key={tg}
-                          type="button"
-                          onClick={() => handleUpdateItem(item.id, { targetGroup: tg })}
-                          className={cn(
-                            "px-2 py-0.5 rounded-lg text-[11px] font-bold border transition-all active:scale-95",
-                            isSel
-                              ? "bg-primary text-primary-foreground border-primary font-black shadow-xs"
-                              : "bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground border-border/60"
-                          )}
-                        >
-                          {tg}
-                        </button>
-                      );
-                    })}
+                  {/* 時間帯スロット選択（終日 / 午前のみ / 午後のみ） */}
+                  <div className="space-y-1.5 pt-1 border-t border-border/60">
+                    <label className="text-[10.5px] font-bold text-muted-foreground">時間帯</label>
+                    <div className="flex items-center p-1 bg-muted/60 rounded-xl border border-border/60 text-xs font-bold w-fit">
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateItem(item.id, { slotType: "all_day" })}
+                        className={cn(
+                          "px-3 py-1 rounded-lg transition-all",
+                          item.slotType === "all_day" ? "bg-primary text-primary-foreground font-black shadow-xs" : "text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        終日
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateItem(item.id, { slotType: "am_only" })}
+                        className={cn(
+                          "px-3 py-1 rounded-lg transition-all",
+                          item.slotType === "am_only" ? "bg-primary text-primary-foreground font-black shadow-xs" : "text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        午前のみ
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateItem(item.id, { slotType: "pm_only" })}
+                        className={cn(
+                          "px-3 py-1 rounded-lg transition-all",
+                          item.slotType === "pm_only" ? "bg-primary text-primary-foreground font-black shadow-xs" : "text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        午後のみ
+                      </button>
+                    </div>
                   </div>
                 </div>
 
                 {/* 2. 午前 / 午後の活動内容設定グリッド */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                   {/* ☀️ 【午前】 */}
                   {(item.slotType === "all_day" || item.slotType === "am_only") && (
-                    <div className="p-3.5 rounded-2xl bg-muted/30 border border-primary/15 space-y-3">
+                    <div className="p-3.5 rounded-2xl bg-muted/30 border border-primary/20 space-y-3">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-black text-foreground flex items-center gap-1.5">
                           <Sun className="w-3.5 h-3.5 text-amber-500" />
                           <span>午前</span>
                         </span>
 
-                        {/* 種別ピル（練習・試合・合宿・休み） */}
                         <div className="flex flex-wrap gap-1">
                           {EVENT_TYPES.map(t => (
                             <button
@@ -847,8 +957,8 @@ export function MonthlySchedulePlanner({
                               type="button"
                               onClick={() => handleUpdateItem(item.id, { amType: t.id as any })}
                               className={cn(
-                                "px-2.5 py-1 rounded-xl text-xs font-black border transition-all",
-                                item.amType === t.id ? t.color : "bg-card border-border text-muted-foreground hover:text-foreground"
+                                "px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-all active:scale-95",
+                                item.amType === t.id ? t.color + " font-black shadow-2xs" : "bg-card border-border/80 text-muted-foreground hover:text-foreground"
                               )}
                             >
                               {t.icon} {t.label}
@@ -857,69 +967,57 @@ export function MonthlySchedulePlanner({
                         </div>
                       </div>
 
-                      <div className="space-y-2 text-xs">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          <div>
-                            <label className="text-[10px] font-bold text-muted-foreground block mb-1">活動時間</label>
-                            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-card border border-border/80">
-                              <Clock className="w-3.5 h-3.5 text-primary shrink-0" />
-                              <input
-                                type="text"
-                                value={item.amTime}
-                                onChange={(e) => handleUpdateItem(item.id, { amTime: e.target.value })}
-                                placeholder="08:00〜12:00"
-                                className="bg-transparent text-xs font-bold text-foreground focus:outline-hidden w-full"
-                              />
-                            </div>
-                          </div>
-
-                          <div>
-                            <div className="flex items-center justify-between mb-1">
-                              <label className="text-[10px] font-bold text-muted-foreground">球場・場所</label>
-                              {venuesList.length > 0 && (
-                                <span className="text-[9.5px] text-primary font-bold">登録球場から選択可</span>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-card border border-border/80">
-                              <MapPin className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                              <input
-                                type="text"
-                                value={item.amLocation}
-                                onChange={(e) => handleUpdateItem(item.id, { amLocation: e.target.value })}
-                                placeholder="市民第1球場 または 選択"
-                                className="bg-transparent text-xs font-bold text-foreground focus:outline-hidden w-full"
-                              />
-                            </div>
+                      <div className="space-y-2">
+                        <div>
+                          <label className="text-[10px] font-bold text-muted-foreground mb-1 block">活動時間</label>
+                          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-card border border-border/80">
+                            <Clock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                            <input
+                              type="text"
+                              value={item.amTime}
+                              onChange={(e) => handleUpdateItem(item.id, { amTime: e.target.value })}
+                              placeholder="08:00〜12:00"
+                              className="bg-transparent text-xs font-bold text-foreground focus:outline-hidden w-full"
+                            />
                           </div>
                         </div>
 
-                        {/* 🏟️ 登録球場のクイック選択チップ（略称優先で表示・セット） */}
+                        <div>
+                          <label className="text-[10px] font-bold text-muted-foreground mb-1 block">球場・場所</label>
+                          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-card border border-border/80">
+                            <MapPin className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                            <input
+                              type="text"
+                              value={item.amLocation}
+                              onChange={(e) => handleUpdateItem(item.id, { amLocation: e.target.value })}
+                              placeholder="市民第1球場 または 選択"
+                              className="bg-transparent text-xs font-bold text-foreground focus:outline-hidden w-full"
+                            />
+                          </div>
+                        </div>
+
+                        {/* 球場クイック選択チップ */}
                         {venuesList.length > 0 && (
-                          <div className="pt-0.5 space-y-1">
-                            <div className="flex items-center gap-1 overflow-x-auto scrollbar-none pb-0.5">
-                              <span className="text-[9.5px] font-bold text-muted-foreground shrink-0 flex items-center gap-0.5">
-                                <span>候補:</span>
-                              </span>
-                              {venuesList.map((v) => {
-                                const displayName = getVenueDisplayName(v);
-                                const isSelected = item.amLocation === displayName || item.amLocation === v.name;
-                                return (
-                                  <button
-                                    key={v.id}
-                                    type="button"
-                                    onClick={() => handleUpdateItem(item.id, { amLocation: displayName })}
-                                    className={cn(
-                                      "px-2 py-0.5 rounded-lg text-[10px] font-bold shrink-0 transition-all border",
-                                      isSelected
-                                        ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/40 font-black shadow-2xs"
-                                        : "bg-card hover:bg-muted text-muted-foreground hover:text-foreground border-border/70"
-                                    )}
-                                  >
-                                    🏟️ {displayName}
-                                  </button>
-                                );
-                              })}
-                            </div>
+                          <div className="flex items-center gap-1 overflow-x-auto scrollbar-none pt-1">
+                            {venuesList.map((v) => {
+                              const displayName = getVenueDisplayName(v);
+                              const isSelected = item.amLocation === displayName || item.amLocation === v.name;
+                              return (
+                                <button
+                                  key={v.id}
+                                  type="button"
+                                  onClick={() => handleUpdateItem(item.id, { amLocation: displayName })}
+                                  className={cn(
+                                    "px-2 py-0.5 rounded-lg text-[9.5px] font-bold shrink-0 transition-all border",
+                                    isSelected
+                                      ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/40 font-black shadow-2xs"
+                                      : "bg-card hover:bg-muted text-muted-foreground hover:text-foreground border-border/70"
+                                  )}
+                                >
+                                  🏟️ {displayName}
+                                </button>
+                              );
+                            })}
                           </div>
                         )}
                       </div>
@@ -928,14 +1026,13 @@ export function MonthlySchedulePlanner({
 
                   {/* 🌙 【午後】 */}
                   {(item.slotType === "all_day" || item.slotType === "pm_only") && (
-                    <div className="p-3.5 rounded-2xl bg-muted/30 border border-primary/15 space-y-3">
+                    <div className="p-3.5 rounded-2xl bg-muted/30 border border-primary/20 space-y-3">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-black text-foreground flex items-center gap-1.5">
                           <Moon className="w-3.5 h-3.5 text-indigo-500" />
                           <span>午後</span>
                         </span>
 
-                        {/* 種別ピル（練習・試合・合宿・休み） */}
                         <div className="flex flex-wrap gap-1">
                           {EVENT_TYPES.map(t => (
                             <button
@@ -943,8 +1040,8 @@ export function MonthlySchedulePlanner({
                               type="button"
                               onClick={() => handleUpdateItem(item.id, { pmType: t.id as any })}
                               className={cn(
-                                "px-2.5 py-1 rounded-xl text-xs font-black border transition-all",
-                                item.pmType === t.id ? t.color : "bg-card border-border text-muted-foreground hover:text-foreground"
+                                "px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-all active:scale-95",
+                                item.pmType === t.id ? t.color + " font-black shadow-2xs" : "bg-card border-border/80 text-muted-foreground hover:text-foreground"
                               )}
                             >
                               {t.icon} {t.label}
@@ -953,69 +1050,57 @@ export function MonthlySchedulePlanner({
                         </div>
                       </div>
 
-                      <div className="space-y-2 text-xs">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          <div>
-                            <label className="text-[10px] font-bold text-muted-foreground block mb-1">活動時間</label>
-                            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-card border border-border/80">
-                              <Clock className="w-3.5 h-3.5 text-primary shrink-0" />
-                              <input
-                                type="text"
-                                value={item.pmTime}
-                                onChange={(e) => handleUpdateItem(item.id, { pmTime: e.target.value })}
-                                placeholder="12:00〜18:00"
-                                className="bg-transparent text-xs font-bold text-foreground focus:outline-hidden w-full"
-                              />
-                            </div>
-                          </div>
-
-                          <div>
-                            <div className="flex items-center justify-between mb-1">
-                              <label className="text-[10px] font-bold text-muted-foreground">球場・場所</label>
-                              {venuesList.length > 0 && (
-                                <span className="text-[9.5px] text-primary font-bold">登録球場から選択可</span>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-card border border-border/80">
-                              <MapPin className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                              <input
-                                type="text"
-                                value={item.pmLocation}
-                                onChange={(e) => handleUpdateItem(item.id, { pmLocation: e.target.value })}
-                                placeholder="大師河原第3G または 選択"
-                                className="bg-transparent text-xs font-bold text-foreground focus:outline-hidden w-full"
-                              />
-                            </div>
+                      <div className="space-y-2">
+                        <div>
+                          <label className="text-[10px] font-bold text-muted-foreground mb-1 block">活動時間</label>
+                          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-card border border-border/80">
+                            <Clock className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                            <input
+                              type="text"
+                              value={item.pmTime}
+                              onChange={(e) => handleUpdateItem(item.id, { pmTime: e.target.value })}
+                              placeholder="13:00〜17:00"
+                              className="bg-transparent text-xs font-bold text-foreground focus:outline-hidden w-full"
+                            />
                           </div>
                         </div>
 
-                        {/* 🏟️ 登録球場のクイック選択チップ（略称優先で表示・セット） */}
+                        <div>
+                          <label className="text-[10px] font-bold text-muted-foreground mb-1 block">球場・場所</label>
+                          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-card border border-border/80">
+                            <MapPin className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                            <input
+                              type="text"
+                              value={item.pmLocation}
+                              onChange={(e) => handleUpdateItem(item.id, { pmLocation: e.target.value })}
+                              placeholder="大師河原第3G または 選択"
+                              className="bg-transparent text-xs font-bold text-foreground focus:outline-hidden w-full"
+                            />
+                          </div>
+                        </div>
+
+                        {/* 球場クイック選択チップ */}
                         {venuesList.length > 0 && (
-                          <div className="pt-0.5 space-y-1">
-                            <div className="flex items-center gap-1 overflow-x-auto scrollbar-none pb-0.5">
-                              <span className="text-[9.5px] font-bold text-muted-foreground shrink-0 flex items-center gap-0.5">
-                                <span>候補:</span>
-                              </span>
-                              {venuesList.map((v) => {
-                                const displayName = getVenueDisplayName(v);
-                                const isSelected = item.pmLocation === displayName || item.pmLocation === v.name;
-                                return (
-                                  <button
-                                    key={v.id}
-                                    type="button"
-                                    onClick={() => handleUpdateItem(item.id, { pmLocation: displayName })}
-                                    className={cn(
-                                      "px-2 py-0.5 rounded-lg text-[10px] font-bold shrink-0 transition-all border",
-                                      isSelected
-                                        ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/40 font-black shadow-2xs"
-                                        : "bg-card hover:bg-muted text-muted-foreground hover:text-foreground border-border/70"
-                                    )}
-                                  >
-                                    🏟️ {displayName}
-                                  </button>
-                                );
-                              })}
-                            </div>
+                          <div className="flex items-center gap-1 overflow-x-auto scrollbar-none pt-1">
+                            {venuesList.map((v) => {
+                              const displayName = getVenueDisplayName(v);
+                              const isSelected = item.pmLocation === displayName || item.pmLocation === v.name;
+                              return (
+                                <button
+                                  key={v.id}
+                                  type="button"
+                                  onClick={() => handleUpdateItem(item.id, { pmLocation: displayName })}
+                                  className={cn(
+                                    "px-2 py-0.5 rounded-lg text-[9.5px] font-bold shrink-0 transition-all border",
+                                    isSelected
+                                      ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/40 font-black shadow-2xs"
+                                      : "bg-card hover:bg-muted text-muted-foreground hover:text-foreground border-border/70"
+                                  )}
+                                >
+                                  🏟️ {displayName}
+                                </button>
+                              );
+                            })}
                           </div>
                         )}
                       </div>
@@ -1023,24 +1108,22 @@ export function MonthlySchedulePlanner({
                   )}
                 </div>
 
-                {/* 3. 当番（1班〜4班 均等割り）・お弁当・備考 */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1 text-xs">
-                  {/* 当番選択（4等分均等割り） */}
+                {/* 3. 当番・お弁当・連絡事項 */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3.5 rounded-2xl bg-muted/30 border border-border/80">
+                  {/* 当番選択 */}
                   <div>
-                    <label className="text-[10px] font-bold text-muted-foreground block mb-1">
-                      当番
-                    </label>
-                    <div className="grid grid-cols-4 gap-1.5">
+                    <label className="text-[10px] font-bold text-muted-foreground block mb-1">当番</label>
+                    <div className="grid grid-cols-4 gap-1">
                       {DUTY_GROUPS.map(dg => (
                         <button
                           key={dg}
                           type="button"
                           onClick={() => handleUpdateItem(item.id, { dutyGroup: dg })}
                           className={cn(
-                            "py-1.5 px-1 text-center rounded-xl text-xs font-bold border transition-all active:scale-95",
+                            "py-1 px-0.5 text-center rounded-lg text-[11px] font-bold border transition-all active:scale-95",
                             item.dutyGroup === dg
                               ? "bg-primary text-primary-foreground border-primary font-black shadow-xs"
-                              : "bg-muted/40 border-border/60 text-muted-foreground hover:text-foreground"
+                              : "bg-card border-border/80 text-muted-foreground hover:text-foreground"
                           )}
                         >
                           {dg}
@@ -1051,18 +1134,16 @@ export function MonthlySchedulePlanner({
 
                   {/* お弁当要否 */}
                   <div>
-                    <label className="text-[10px] font-bold text-muted-foreground block mb-1">
-                      お弁当
-                    </label>
-                    <div className="flex gap-1.5">
+                    <label className="text-[10px] font-bold text-muted-foreground block mb-1">お弁当</label>
+                    <div className="flex gap-1">
                       <button
                         type="button"
                         onClick={() => handleUpdateItem(item.id, { needsLunch: true })}
                         className={cn(
-                          "flex-1 py-1.5 px-2 rounded-xl text-[11px] font-bold border transition-all flex items-center justify-center gap-1",
+                          "flex-1 py-1 px-1 rounded-lg text-[11px] font-bold border transition-all flex items-center justify-center gap-1",
                           item.needsLunch
                             ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/40 font-black"
-                            : "bg-muted/40 border-border/60 text-muted-foreground"
+                            : "bg-card border-border/80 text-muted-foreground"
                         )}
                       >
                         <Utensils className="w-3 h-3" />
@@ -1073,10 +1154,10 @@ export function MonthlySchedulePlanner({
                         type="button"
                         onClick={() => handleUpdateItem(item.id, { needsLunch: false })}
                         className={cn(
-                          "flex-1 py-1.5 px-2 rounded-xl text-[11px] font-bold border transition-all flex items-center justify-center gap-1",
+                          "flex-1 py-1 px-1 rounded-lg text-[11px] font-bold border transition-all flex items-center justify-center gap-1",
                           !item.needsLunch
                             ? "bg-primary/15 text-primary border-primary/40 font-black"
-                            : "bg-muted/40 border-border/60 text-muted-foreground"
+                            : "bg-card border-border/80 text-muted-foreground"
                         )}
                       >
                         <span>不要</span>
@@ -1086,29 +1167,47 @@ export function MonthlySchedulePlanner({
 
                   {/* 備考・連絡事項 */}
                   <div>
-                    <label className="text-[10px] font-bold text-muted-foreground block mb-1">
-                      備考・連絡事項
-                    </label>
+                    <label className="text-[10px] font-bold text-muted-foreground block mb-1">連絡事項・持ち物</label>
                     <input
                       type="text"
                       value={item.memo}
                       onChange={(e) => handleUpdateItem(item.id, { memo: e.target.value })}
-                      placeholder="鍵当番、救急箱持参など"
+                      placeholder="ユニフォーム正装、水分多め等"
                       className="w-full px-2.5 py-1.5 rounded-xl bg-card border border-border/80 text-xs font-bold text-foreground focus:outline-hidden focus:border-primary"
                     />
                   </div>
                 </div>
               </div>
-            ))}
-          </div>
-        )}
-      </div>
 
-      {/* 🌟 4. 下部固定保存バー */}
+              {/* モーダルフッター */}
+              <div className="px-5 py-3.5 border-t border-border/80 flex items-center justify-between bg-muted/20">
+                <button
+                  type="button"
+                  onClick={() => handleDeleteItem(item.id)}
+                  className="text-xs font-bold text-rose-500 hover:underline flex items-center gap-1"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>この活動日を解除</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setEditingItemId(null)}
+                  className="py-2 px-5 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-black shadow-xs transition-all active:scale-95"
+                >
+                  設定完了
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* 🌟 5. 下部固定保存バー */}
       <div className="sticky bottom-4 z-20 p-4 rounded-3xl bg-card/90 backdrop-blur-md border-2 border-primary/30 shadow-xl flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-xs font-bold text-muted-foreground">
           <CheckCircle2 className="w-4 h-4 text-primary" />
-          <span>合計 {selectedDayItems.length} 日間の活動予定を設定中</span>
+          <span>合計 {selectedDayItems.length} 件の活動日を設定中</span>
         </div>
 
         <button
