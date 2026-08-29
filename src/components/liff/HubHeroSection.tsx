@@ -13,6 +13,8 @@ import {
   Clock, 
   ChevronRight, 
   ChevronLeft,
+  ChevronDown,
+  ChevronUp,
   Trophy, 
   Flame, 
   Video,
@@ -72,6 +74,15 @@ export function HubHeroSection({
   const [attendanceMap, setAttendanceMap] = useState<Record<string, "present" | "absent" | "pending" | "late">>({});
   const [childAttendanceMap, setChildAttendanceMap] = useState<Record<string, Record<string, "present" | "absent" | "pending" | "late">>>({});
   const [carStatusMap, setCarStatusMap] = useState<Record<string, "can_drive" | "need_ride" | "not_needed">>({});
+
+  // 📝 連絡事項のアコーディオン展開ステート (eventId -> boolean)
+  const [expandedMemos, setExpandedMemos] = useState<Record<string, boolean>>({});
+  const toggleMemo = (eventId: string) => {
+    setExpandedMemos(prev => ({
+      ...prev,
+      [eventId]: !prev[eventId]
+    }));
+  };
 
   // 👨‍👦 DBの親子関係・お子様データおよび出欠の自動取得
   const fetchFamilyData = async () => {
@@ -846,18 +857,60 @@ export function HubHeroSection({
                         </div>
                       </div>
 
-                      {/* 2. 連絡事項・メモ（常に表示、ない場合は「特になし」） */}
-                      <div className="pt-1.5 border-t border-border/60 space-y-0.5">
-                        <span className="text-[10px] font-black text-muted-foreground flex items-center gap-1">
-                          <FileText className="w-3 h-3 text-primary" />
-                          <span>連絡事項</span>
-                        </span>
-                        <p className={`text-[11px] font-bold p-2 rounded-xl border border-border/50 ${
-                          ev.memo ? "text-foreground/90 bg-background/60" : "text-muted-foreground bg-muted/20"
-                        }`}>
-                          {ev.memo || "特になし"}
-                        </p>
-                      </div>
+                      {/* 2. 連絡事項・メモ（アコーディオン展開対応） */}
+                      {(() => {
+                        const hasMemo = !!ev.memo && ev.memo.trim() !== "";
+                        const isExpanded = !!expandedMemos[ev.id];
+
+                        if (!hasMemo) {
+                          return (
+                            <div className="pt-1.5 border-t border-border/60 flex items-center justify-between text-[10.5px]">
+                              <span className="text-muted-foreground flex items-center gap-1">
+                                <FileText className="w-3 h-3 text-muted-foreground/70" />
+                                <span>連絡事項</span>
+                              </span>
+                              <span className="text-muted-foreground/80 font-bold">特になし</span>
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <div className="pt-1.5 border-t border-border/60 space-y-1">
+                            {/* アコーディオンヘッダー・開閉トグルボタン */}
+                            <button
+                              type="button"
+                              onClick={() => toggleMemo(ev.id)}
+                              className="w-full flex items-center justify-between p-1.5 -mx-1.5 rounded-xl hover:bg-muted/60 active:scale-[0.99] transition-all cursor-pointer select-none"
+                            >
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <FileText className="w-3.5 h-3.5 text-primary shrink-0" />
+                                <span className="text-[11px] font-black text-foreground">連絡事項</span>
+                                <span className="px-1.5 py-0.2 rounded-md bg-primary/10 text-primary border border-primary/25 text-[9.5px] font-black shrink-0">
+                                  {isExpanded ? "表示中" : "タップで確認"}
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-0.5 text-muted-foreground hover:text-foreground text-[10px] font-bold shrink-0">
+                                <span>{isExpanded ? "閉じる" : "開く"}</span>
+                                {isExpanded ? (
+                                  <ChevronUp className="w-3.5 h-3.5 text-primary transition-transform duration-200" />
+                                ) : (
+                                  <ChevronDown className="w-3.5 h-3.5 text-muted-foreground transition-transform duration-200" />
+                                )}
+                              </div>
+                            </button>
+
+                            {/* アコーディオン本文 */}
+                            {isExpanded && (
+                              <div className="animate-in fade-in slide-in-from-top-1 duration-150 p-2.5 rounded-xl bg-background/80 border border-primary/20 shadow-2xs">
+                                <p className="text-[11px] font-bold text-foreground/90 whitespace-pre-wrap leading-relaxed">
+                                  {ev.memo}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
 
                       {/* 3. 配車（練習の場合は無し、試合・合宿の場合は配車情報 ＆ 配車表リンク） */}
                       <div className="pt-1.5 border-t border-border/60 flex items-center justify-between font-bold">
