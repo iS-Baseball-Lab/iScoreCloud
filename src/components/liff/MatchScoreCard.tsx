@@ -230,13 +230,21 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
               vs {match.opponent}
             </h3>
 
-            {/* 日時 ＆ 球場 */}
+            {/* 日時 ＆ 球場 (略称優先) */}
             <p className="text-[10px] sm:text-[11px] font-bold text-muted-foreground flex items-center gap-1.5 mt-0.5 truncate">
               <Calendar className="h-3 w-3 shrink-0" />
               <span>{formatSafeDate(match.date, "MM/dd(E) HH:mm")}</span>
               <span className="text-border">|</span>
               <MapPin className="h-3 w-3 shrink-0" />
-              <span className="truncate">{match.venueShortName || match.venueName || match.surfaceDetails || "球場未設定"}</span>
+              <span className="truncate">
+                {(match.venueShortName && match.venueShortName.trim() !== "")
+                  ? match.venueShortName.trim()
+                  : (match.venueName && match.venueName.trim() !== "")
+                  ? match.venueName.trim()
+                  : (match.surfaceDetails && match.surfaceDetails.trim() !== "")
+                  ? match.surfaceDetails.trim()
+                  : "球場未設定"}
+              </span>
             </p>
           </div>
 

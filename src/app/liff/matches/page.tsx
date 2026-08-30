@@ -9,7 +9,7 @@ import { YouTubePlayer } from "@/components/liff/YouTubePlayer";
 import { MatchScoreCard, type MatchCardData } from "@/components/liff/MatchScoreCard";
 import { Match } from "@/types/match";
 import { useLiff } from "@/components/liff/LiffProvider";
-import { Calendar, MapPin, Trophy, Users, Shield, Loader2, Video, Filter } from "lucide-react";
+import { Calendar, MapPin, Trophy, Users, Shield, ShieldAlert, Loader2, Video, Filter } from "lucide-react";
 import { EmptyState } from "@/components/layout/EmptyState";
 import { extractYouTubeVideoId } from "@/lib/youtube";
 
@@ -154,7 +154,7 @@ function MatchesContent() {
           {/* ページ内ヘッダー */}
           <LiffPageHeader
             title={`vs ${match.opponent}`}
-            subtitle={`${match.date} ${match.venueName ? `• ${match.venueName}` : ""}`}
+            subtitle={`${match.date} ${(match.venueShortName || match.venueName) ? `• ${match.venueShortName || match.venueName}` : ""}`}
             icon={
               <span className="w-8 h-8 rounded-xl bg-red-500/10 text-red-600 dark:text-red-400 flex items-center justify-center font-black">
                 <Video className="w-4 h-4" />
@@ -167,7 +167,7 @@ function MatchesContent() {
             }}
           />
 
-          {/* 📹 試合動画（YouTube 限定公開プレイヤー） */}
+          {/* 🔒 試合動画（YouTube 限定公開プレイヤー） */}
           {match.youtubeUrl ? (
             <section className="space-y-2">
               <div className="flex items-center justify-between">
@@ -181,6 +181,14 @@ function MatchesContent() {
                 url={match.youtubeUrl}
                 title={`vs ${match.opponent} (${match.date}) 試合動画`}
               />
+
+              {/* ⚠️ 動画取り扱いに関する注意書き */}
+              <div className="p-2.5 rounded-xl bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/25 flex items-start gap-2 text-[11px] text-amber-900 dark:text-amber-200 font-bold">
+                <ShieldAlert className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <p className="leading-snug">
+                  本動画は選手・チームのプライバシー保護のため<strong>YouTube限定公開</strong>です。SNS等への無断転載・拡散はご遠慮ください。
+                </p>
+              </div>
             </section>
           ) : (
             <div className="p-4 rounded-2xl bg-muted/40 border border-border text-center text-xs font-bold text-muted-foreground">
@@ -281,8 +289,8 @@ function MatchesContent() {
       <div className="p-4 space-y-5">
         {/* ページ内ヘッダー */}
         <LiffPageHeader
-          title="試合情報"
-          subtitle="ハイライト動画 & スコアボード"
+          title="試合情報 & ハイライト"
+          subtitle="スコア速報・ハイライト動画・詳細ログ"
           icon={
             <span className="w-8 h-8 rounded-xl bg-red-500/10 text-red-600 dark:text-red-400 flex items-center justify-center font-black">
               <Video className="w-4 h-4" />
@@ -294,6 +302,18 @@ function MatchesContent() {
             text: `試合ハイライト動画・スコアボードはこちらから確認できます！`,
           }}
         />
+
+        {/* 🔒 動画取り扱い・プライバシーに関する重要なお知らせ */}
+        <div className="p-3.5 rounded-2xl bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/30 space-y-1.5 shadow-2xs">
+          <div className="flex items-center gap-2 text-xs font-black text-amber-800 dark:text-amber-300">
+            <ShieldAlert className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+            <span>【重要】試合動画・写真の取り扱いについて</span>
+          </div>
+          <p className="text-[11px] font-bold text-amber-950/85 dark:text-amber-100/90 leading-relaxed pl-6">
+            本アプリ内で配信している試合動画は、選手・チーム関係者のプライバシー保護のため<strong>YouTubeの限定公開（リンクを知っている方のみ閲覧可能）</strong>としています。
+            URLや映像をむやみにSNS（X、Instagram、TikTok、YouTube等）へ転載・拡散しないよう、お取り扱いには十分ご配慮をお願いいたします。
+          </p>
+        </div>
 
         {/* フィルタータブ */}
         <div className="flex items-center gap-1.5 p-1 bg-muted/60 rounded-2xl border border-border">

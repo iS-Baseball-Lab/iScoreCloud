@@ -350,7 +350,15 @@ export function MatchCard({
                 <span>{formatSafeDate(match.date, "MM/dd(E) HH:mm")}</span>
                 <span className="text-border">|</span>
                 <MapPin className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate">{match.venueShortName || match.venueName || match.surfaceDetails || "球場未設定"}</span>
+                <span className="truncate">
+                  {(match.venueShortName && match.venueShortName.trim() !== "")
+                    ? match.venueShortName.trim()
+                    : (match.venueName && match.venueName.trim() !== "")
+                    ? match.venueName.trim()
+                    : (match.surfaceDetails && match.surfaceDetails.trim() !== "")
+                    ? match.surfaceDetails.trim()
+                    : "球場未設定"}
+                </span>
               </p>
             </div>
 
