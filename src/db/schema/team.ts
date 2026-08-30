@@ -202,7 +202,7 @@ export const teamFaqs = sqliteTable('team_faqs', {
 }));
 
 // ==========================================
-// ⚠️ チーム・編成別 注意事項 (Rules/Notices) テーブル
+// ⚠️ チーム・編成別 ルール & 注意事項 (Rules/Notices) テーブル
 // ==========================================
 export const teamRules = sqliteTable('team_rules', {
   id: text('id').primaryKey(),
@@ -213,6 +213,8 @@ export const teamRules = sqliteTable('team_rules', {
   category: text('category').notNull().default('general'), // 'match' | 'carpool' | 'duty' | 'venue' | 'equipment' | 'safety' | 'emergency' | 'general'
   scope: text('scope').$type<'organization' | 'team'>().notNull().default('team'),
   priority: integer('priority').default(0), // 表示順
+  isImportant: integer('is_important', { mode: 'boolean' }).default(false), // 重要フラグ（重要バッジ）
+  imageUrl: text('image_url'), // 添付画像URL (R2またはBase64)
   createdById: text('created_by_id'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(strftime('%s', 'now'))`),
 }, (table) => ({

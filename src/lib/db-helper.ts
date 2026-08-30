@@ -66,10 +66,20 @@ export async function ensureRulesTable(d1?: any) {
         category text NOT NULL DEFAULT 'general',
         scope text NOT NULL DEFAULT 'team',
         priority integer DEFAULT 0,
+        is_important integer DEFAULT 0,
+        image_url text,
         created_by_id text,
         created_at integer NOT NULL DEFAULT (strftime('%s', 'now'))
       )
     `).run().catch(() => {});
+  } catch {}
+
+  try {
+    await d1.prepare("ALTER TABLE team_rules ADD COLUMN is_important integer DEFAULT 0").run().catch(() => {});
+  } catch {}
+
+  try {
+    await d1.prepare("ALTER TABLE team_rules ADD COLUMN image_url text").run().catch(() => {});
   } catch {}
 
   try {

@@ -2177,6 +2177,8 @@ const DEMO_RULES = [
     scope: "organization",
     scopeLabel: "チーム全体",
     priority: 0,
+    isImportant: true,
+    imageUrl: null,
   },
   {
     id: "demo-rule-1",
@@ -2187,6 +2189,8 @@ const DEMO_RULES = [
     scope: "organization",
     scopeLabel: "チーム全体",
     priority: 1,
+    isImportant: true,
+    imageUrl: null,
   },
   {
     id: "demo-rule-2",
@@ -2197,6 +2201,8 @@ const DEMO_RULES = [
     scope: "organization",
     scopeLabel: "チーム全体",
     priority: 2,
+    isImportant: false,
+    imageUrl: null,
   },
   {
     id: "demo-rule-3",
@@ -2207,6 +2213,8 @@ const DEMO_RULES = [
     scope: "organization",
     scopeLabel: "チーム全体",
     priority: 3,
+    isImportant: false,
+    imageUrl: null,
   },
   {
     id: "demo-rule-4",
@@ -2217,6 +2225,8 @@ const DEMO_RULES = [
     scope: "organization",
     scopeLabel: "チーム全体",
     priority: 4,
+    isImportant: false,
+    imageUrl: null,
   },
   {
     id: "demo-rule-5",
@@ -2227,6 +2237,8 @@ const DEMO_RULES = [
     scope: "organization",
     scopeLabel: "チーム全体",
     priority: 5,
+    isImportant: true,
+    imageUrl: null,
   },
   {
     id: "demo-rule-6",
@@ -2237,11 +2249,75 @@ const DEMO_RULES = [
     scope: "organization",
     scopeLabel: "チーム全体",
     priority: 6,
+    isImportant: false,
+    imageUrl: null,
   },
 ];
 
 /**
- * ⚠️ チーム・編成注意事項 (Rules) 一覧取得API
+ * 📷 ルール & 注意事項 画像アップロード API (POST /rules/upload)
+ */
+app.post("/rules/upload", async (c) => {
+  try {
+    let file: File | null = null;
+    let teamId = "general";
+
+    try {
+      const formData = await c.req.formData();
+      file = formData.get("file") as File | null;
+      const t = formData.get("teamId");
+      if (typeof t === "string" && t) teamId = t;
+    } catch {
+      const body = await c.req.parseBody();
+      file = (body["file"] as File) || null;
+      if (typeof body["teamId"] === "string" && body["teamId"]) {
+        teamId = body["teamId"];
+      }
+    }
+
+    if (!file || typeof file === "string" || !file.name) {
+      return c.json({ success: false, error: "ファイルが選択されていません" }, 400);
+    }
+
+    const originalName = file.name || "rule_image.jpg";
+    const ext = originalName.split(".").pop()?.toLowerCase() || "jpg";
+
+    // R2バケットが使える場合
+    if (c.env.BUCKET) {
+      const safeExt = ext.replace(/[^a-z0-9]/gi, "") || "jpg";
+      const filename = `rules/${teamId}/${Date.now()}-${crypto.randomUUID().slice(0, 8)}.${safeExt}`;
+      const mimeType = file.type || "image/jpeg";
+      const arrayBuffer = await file.arrayBuffer();
+
+      await c.env.BUCKET.put(filename, arrayBuffer, {
+        httpMetadata: { contentType: mimeType },
+      });
+
+      const imageUrl = `/api/images/${filename}`;
+      return c.json({ success: true, imageUrl });
+    }
+
+    // R2バケットがないローカル/フォールバック環境: Base64 Data URL
+    const arrayBuffer = await file.arrayBuffer();
+    const bytes = new Uint8Array(arrayBuffer);
+    let binary = "";
+    const len = bytes.byteLength;
+    for (let i = 0; i < len; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    const base64 = btoa(binary);
+    const mimeType = file.type || "image/jpeg";
+    const imageUrl = `data:${mimeType};base64,${base64}`;
+
+    return c.json({ success: true, imageUrl });
+  } catch (error: any) {
+    console.error("Rules image upload error:", error);
+    return c.json({ success: false, error: error?.message || "画像のアップロードに失敗しました" }, 500);
+  }
+});
+
+/**
+ * ⚠️ チーム・編成 ルール & 注意事項 (Rules) 一覧取得API
  */
 app.get("/rules", async (c) => {
   await ensureRulesTable(c.env.DB);
@@ -2283,13 +2359,15 @@ app.get("/rules", async (c) => {
         category: teamRules.category,
         scope: teamRules.scope,
         priority: teamRules.priority,
+        isImportant: teamRules.isImportant,
+        imageUrl: teamRules.imageUrl,
         createdAt: teamRules.createdAt,
         organizationId: teamRules.organizationId,
         teamId: teamRules.teamId,
       })
       .from(teamRules)
       .where(or(...conditions))
-      .orderBy(asc(teamRules.priority), desc(teamRules.createdAt))
+      .orderBy(desc(teamRules.isImportant), asc(teamRules.priority), desc(teamRules.createdAt))
       .all();
 
     const categoryLabels: Record<string, string> = {
@@ -2314,6 +2392,8 @@ app.get("/rules", async (c) => {
         scope: (isOrg ? "organization" : "team") as "organization" | "team",
         scopeLabel: isOrg ? "チーム全体" : (currentTeam?.teamName || "編成"),
         priority: r.priority || 0,
+        isImportant: toBoolean(r.isImportant, false),
+        imageUrl: r.imageUrl || null,
       };
     });
 
@@ -2333,21 +2413,21 @@ app.get("/rules", async (c) => {
 });
 
 /**
- * ⚠️ 注意事項 新規登録API
+ * ⚠️ ルール & 注意事項 新規登録API
  */
 app.post("/rules", async (c) => {
   await ensureRulesTable(c.env.DB);
   const db = drizzle(c.env.DB);
   try {
     const body = await c.req.json();
-    const { teamId, title, content, category, scope, userId, priority } = body;
+    const { teamId, title, content, category, scope, userId, priority, isImportant, imageUrl } = body;
 
     if (!teamId || !title || !content) {
       return c.json({ success: false, error: "teamId, title, content are required" }, 400);
     }
 
     if (teamId === "demo-team") {
-      return c.json({ success: true, message: "注意事項を登録しました（デモ）" });
+      return c.json({ success: true, message: "ルール & 注意事項を登録しました（デモ）" });
     }
 
     const currentTeam = await db
@@ -2371,19 +2451,21 @@ app.post("/rules", async (c) => {
       category: category || "general",
       scope: ruleScope,
       priority: Number(priority) || 0,
+      isImportant: toBoolean(isImportant, false),
+      imageUrl: imageUrl ? imageUrl.trim() : null,
       createdById: userId || null,
       createdAt: new Date(),
     });
 
-    return c.json({ success: true, message: "注意事項を登録しました" });
+    return c.json({ success: true, message: "ルール & 注意事項を登録しました" });
   } catch (error: any) {
     console.error("Failed to create rule:", error);
-    return c.json({ success: false, error: error?.message || "注意事項の登録に失敗しました" }, 500);
+    return c.json({ success: false, error: error?.message || "ルール & 注意事項の登録に失敗しました" }, 500);
   }
 });
 
 /**
- * ⚠️ 注意事項 更新API (PUT /rules/:id)
+ * ⚠️ ルール & 注意事項 更新API (PUT /rules/:id)
  */
 app.put("/rules/:id", async (c) => {
   await ensureRulesTable(c.env.DB);
@@ -2391,15 +2473,15 @@ app.put("/rules/:id", async (c) => {
   const id = c.req.param("id");
   try {
     const body = await c.req.json();
-    const { title, content, category, scope, teamId, priority } = body;
+    const { title, content, category, scope, teamId, priority, isImportant, imageUrl } = body;
 
     if (id.startsWith("demo-")) {
-      return c.json({ success: true, message: "注意事項を更新しました（デモ）" });
+      return c.json({ success: true, message: "ルール & 注意事項を更新しました（デモ）" });
     }
 
     const currentRule = await db.select().from(teamRules).where(eq(teamRules.id, id)).get();
     if (!currentRule) {
-      return c.json({ success: false, error: "指定された注意事項が見つかりません" }, 404);
+      return c.json({ success: false, error: "指定されたルール & 注意事項が見つかりません" }, 404);
     }
 
     let organizationId = currentRule.organizationId;
@@ -2422,20 +2504,22 @@ app.put("/rules/:id", async (c) => {
         category: category || currentRule.category,
         scope: scope || currentRule.scope,
         priority: priority !== undefined ? Number(priority) : currentRule.priority,
+        isImportant: isImportant !== undefined ? toBoolean(isImportant, false) : currentRule.isImportant,
+        imageUrl: imageUrl !== undefined ? (imageUrl ? imageUrl.trim() : null) : currentRule.imageUrl,
         organizationId: scope === "organization" ? organizationId : null,
         teamId: scope === "team" ? targetTeamId : null,
       })
       .where(eq(teamRules.id, id));
 
-    return c.json({ success: true, message: "注意事項を更新しました" });
+    return c.json({ success: true, message: "ルール & 注意事項を更新しました" });
   } catch (error: any) {
     console.error("Failed to update rule:", error);
-    return c.json({ success: false, error: error?.message || "注意事項の更新に失敗しました" }, 500);
+    return c.json({ success: false, error: error?.message || "ルール & 注意事項の更新に失敗しました" }, 500);
   }
 });
 
 /**
- * ⚠️ 注意事項 削除API (DELETE /rules/:id)
+ * ⚠️ ルール & 注意事項 削除API (DELETE /rules/:id)
  */
 app.delete("/rules/:id", async (c) => {
   await ensureRulesTable(c.env.DB);
@@ -2443,14 +2527,14 @@ app.delete("/rules/:id", async (c) => {
   const id = c.req.param("id");
   try {
     if (id.startsWith("demo-")) {
-      return c.json({ success: true, message: "注意事項を削除しました（デモ）" });
+      return c.json({ success: true, message: "ルール & 注意事項を削除しました（デモ）" });
     }
 
     await db.delete(teamRules).where(eq(teamRules.id, id));
-    return c.json({ success: true, message: "注意事項を削除しました" });
+    return c.json({ success: true, message: "ルール & 注意事項を削除しました" });
   } catch (error: any) {
     console.error("Failed to delete rule:", error);
-    return c.json({ success: false, error: error?.message || "注意事項の削除に失敗しました" }, 500);
+    return c.json({ success: false, error: error?.message || "ルール & 注意事項の削除に失敗しました" }, 500);
   }
 });
 

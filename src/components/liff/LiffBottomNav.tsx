@@ -306,7 +306,7 @@ export function LiffBottomNav() {
                 </div>
               </Link>
 
-              {/* ⑨ ⚠️ チーム注意事項 */}
+              {/* ⑨ ⚠️ ルール & 注意事項 */}
               <Link
                 href="/liff/rules"
                 onClick={() => setIsOtherMenuOpen(false)}
@@ -316,8 +316,8 @@ export function LiffBottomNav() {
                   <AlertTriangle className="w-5 h-5" />
                 </span>
                 <div className="min-w-0">
-                  <p className="text-xs font-black text-slate-900 dark:text-slate-100 truncate">チーム注意事項</p>
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold truncate">配車・グラウンド・心得</p>
+                  <p className="text-xs font-black text-slate-900 dark:text-slate-100 truncate">ルール & 注意事項</p>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold truncate">試合・配車・活動心得</p>
                 </div>
               </Link>
 
