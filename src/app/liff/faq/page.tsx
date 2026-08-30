@@ -246,25 +246,12 @@ export default function LiffFaqPage() {
           }}
         />
 
-        {/* ➕ Q&Aを追加ボタン (別行配置) */}
-        <button
-          type="button"
-          onClick={() => {
-            setIsCreateModalOpen(true);
-            setSubmitError(null);
-          }}
-          className="w-full py-3 px-4 rounded-2xl bg-primary text-primary-foreground font-black text-xs shadow-sm hover:bg-primary/90 active:scale-[0.99] transition-all flex items-center justify-center gap-2"
-        >
-          <Plus className="w-4 h-4" />
-          <span>新しいQ&A（質問・回答）を追加する</span>
-        </button>
-
         {/* 🏢 チーム全体 vs 👥 編成限定 スコープ切り替えタブ */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 -mx-4 px-4 scrollbar-none">
           <button
             type="button"
             onClick={() => setSelectedScope("all")}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all ${
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all cursor-pointer ${
               selectedScope === "all"
                 ? "bg-foreground text-background shadow-xs"
                 : "bg-muted/70 text-muted-foreground hover:text-foreground"
@@ -275,7 +262,7 @@ export default function LiffFaqPage() {
           <button
             type="button"
             onClick={() => setSelectedScope("organization")}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all flex items-center gap-1.5 ${
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
               selectedScope === "organization"
                 ? "bg-primary text-primary-foreground shadow-xs"
                 : "bg-muted/70 text-muted-foreground hover:text-foreground"
@@ -287,7 +274,7 @@ export default function LiffFaqPage() {
           <button
             type="button"
             onClick={() => setSelectedScope("team")}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all flex items-center gap-1.5 ${
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
               selectedScope === "team"
                 ? "bg-purple-600 text-white shadow-xs"
                 : "bg-muted/70 text-muted-foreground hover:text-foreground"
@@ -298,16 +285,40 @@ export default function LiffFaqPage() {
           </button>
         </div>
 
-        {/* 検索バー */}
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="知りたいことを検索 (例: 雨天、配車、合宿、スパイク)..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-4 py-2.5 bg-card border border-border rounded-2xl text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/20"
-          />
+        {/* 🔍 検索バー ＆ ➕ 追加ボタン (1行レイアウト) */}
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="知りたいことを検索 (例: 雨天、配車、合宿)..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9.5 pr-8 py-2.5 bg-card border border-border rounded-2xl text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/40 transition-all"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              setIsCreateModalOpen(true);
+              setSubmitError(null);
+            }}
+            className="h-10 px-3.5 rounded-2xl bg-primary text-primary-foreground font-black text-xs shadow-xs hover:bg-primary/90 active:scale-95 transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
+            title="新しいQ&Aを追加"
+          >
+            <Plus className="w-4 h-4" />
+            <span>追加</span>
+          </button>
         </div>
 
         {/* カテゴリフィルター */}
