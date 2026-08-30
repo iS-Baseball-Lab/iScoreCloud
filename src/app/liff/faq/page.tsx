@@ -71,9 +71,6 @@ export default function LiffFaqPage() {
         const data = (await res.json()) as { success: boolean; faqs?: FaqItem[] };
         if (data.faqs) {
           setFaqs(data.faqs);
-          if (data.faqs.length > 0 && openIds.length === 0) {
-            setOpenIds([data.faqs[0].id]);
-          }
         }
       }
     } catch (err) {

@@ -97,9 +97,6 @@ export default function LiffRulesPage() {
         const data = (await res.json()) as { success: boolean; rules?: RuleItem[] };
         if (data.rules) {
           setRules(data.rules);
-          if (data.rules.length > 0 && openIds.length === 0) {
-            setOpenIds([data.rules[0].id]);
-          }
         }
       }
     } catch (err) {
