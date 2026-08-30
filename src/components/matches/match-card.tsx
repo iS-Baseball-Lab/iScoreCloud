@@ -4,6 +4,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { format, differenceInSeconds, intervalToDuration } from "date-fns";
+import { ja } from "date-fns/locale";
 import { Edit2, Calendar, MapPin, Trash2, ChevronDown, ChevronUp, PlayCircle, Users, BookOpen, ClipboardList, Clock, Play } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -37,10 +38,12 @@ const formatScoreDisplay = ({ score, isBottom, isInningFinal, isHomeWinning }: F
   return score;
 };
 
-// 安全に日付をフォーマットするヘルパー（パース失敗時は元の文字列を返す）
+// 安全に日付をフォーマットするヘルパー（日本語曜日対応）
 const formatSafeDate = (dateStr: string, fmt: string) => {
   try {
-    return format(new Date(dateStr), fmt);
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    return format(d, fmt, { locale: ja });
   } catch (e) {
     return dateStr;
   }
@@ -344,7 +347,7 @@ export function MatchCard({
               
               <p className="text-[11px] sm:text-xs font-bold text-muted-foreground flex items-center gap-1.5 mt-1 truncate">
                 <Calendar className="h-3.5 w-3.5 shrink-0" />
-                <span>{formatSafeDate(match.date, "MM/dd HH:mm")}</span>
+                <span>{formatSafeDate(match.date, "MM/dd(E) HH:mm")}</span>
                 <span className="text-border">|</span>
                 <MapPin className="h-3.5 w-3.5 shrink-0" />
                 <span className="truncate">{match.venueShortName || match.venueName || match.surfaceDetails || "球場未設定"}</span>

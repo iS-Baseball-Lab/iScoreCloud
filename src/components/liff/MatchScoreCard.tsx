@@ -3,6 +3,7 @@
 
 import React, { useState, useEffect } from "react";
 import { format, differenceInSeconds, intervalToDuration } from "date-fns";
+import { ja } from "date-fns/locale";
 import { 
   Calendar, 
   MapPin, 
@@ -57,10 +58,12 @@ const formatScoreDisplay = (score: number | null | undefined, isBottom: boolean,
   return score;
 };
 
-// 安全に日付をフォーマットするヘルパー
+// 安全に日付をフォーマットするヘルパー（日本語曜日対応）
 const formatSafeDate = (dateStr: string, fmt: string) => {
   try {
-    return format(new Date(dateStr), fmt);
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    return format(d, fmt, { locale: ja });
   } catch (e) {
     return dateStr;
   }
