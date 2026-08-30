@@ -4,7 +4,7 @@ import { ShieldCheck, Lock, Fingerprint, Eye, Database, Share2, UserCheck, Refre
 
 export const metadata = {
   title: "プライバシーポリシー | iScoreCloud",
-  description: "iScoreCloud（iScoreMiniを含む）における個人情報の取扱い、収集目的、管理体制に関するプライバシーポリシーです。",
+  description: "iScoreCloud（for LINE ミニアプリを含む）における個人情報の取扱い、収集目的、管理体制に関するプライバシーポリシーです。",
 };
 
 export default function PrivacyPage() {
@@ -28,7 +28,7 @@ export default function PrivacyPage() {
           プライバシーポリシー <span className="text-muted-foreground/40 ml-2 text-2xl md:text-3xl font-normal">Privacy Policy</span>
         </h1>
         <div className="flex flex-wrap items-center gap-4 text-[10px] font-bold text-muted-foreground/70 uppercase tracking-widest">
-          <span>最終改訂日: 2026年8月27日</span>
+          <span>最終改訂日: 2026年8月30日</span>
           <span className="w-1 h-1 rounded-full bg-border" />
           <span>制定日: 2026年4月1日</span>
           <span className="w-1 h-1 rounded-full bg-border" />
@@ -42,7 +42,7 @@ export default function PrivacyPage() {
           <div className="flex items-start gap-4">
             <Lock className="h-5 w-5 text-primary/60 shrink-0 mt-1" />
             <p className="text-sm font-medium leading-relaxed italic text-foreground/90">
-              iS Baseball Lab（以下「当運営」）は、提供するスコアブック＆チームマネジメントWebサービス「iScoreCloud」およびLINEミニアプリ「iScoreMini」（以下総称して「本サービス」）において、ユーザーのプライバシーを尊重し、個人情報の保護に関する法律（以下「個人情報保護法」）を遵守して、適切な管理・保護に努めます。
+              iS Baseball Lab（以下「当運営」）は、提供するスコアブック＆チームマネジメントWebサービス「iScoreCloud」および「iScoreCloud for LINE ミニアプリ」（以下総称して「本サービス」）において、ユーザーのプライバシーを尊重し、個人情報の保護に関する法律（以下「個人情報保護法」）を遵守して、適切な管理・保護に努めます。
             </p>
           </div>
         </section>

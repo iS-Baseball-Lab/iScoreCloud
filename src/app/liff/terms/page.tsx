@@ -22,7 +22,7 @@ export default function LiffTermsPage() {
         {/* ページ内ヘッダー */}
         <LiffPageHeader
           title="サービス利用規約"
-          subtitle="iScoreMini ご利用条件と権利義務"
+          subtitle="iScoreCloud for LINE ミニアプリ ご利用条件と権利義務"
           icon={
             <span className="w-8 h-8 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center font-black">
               <Scale className="w-4 h-4" />
@@ -38,7 +38,7 @@ export default function LiffTermsPage() {
             <span>はじめに</span>
           </div>
           <p className="text-xs leading-relaxed text-foreground/90 font-medium">
-            本規約は、iS Baseball Lab（以下「当運営」）が提供するLINEミニアプリ「iScoreMini」および「iScoreCloud」（以下「本サービス」）の利用条件を定めるものです。利用者の皆さまは、本規約に同意の上ご利用ください。
+            本規約は、iS Baseball Lab（以下「当運営」）が提供する「iScoreCloud for LINE ミニアプリ」およびWebサービス「iScoreCloud」（以下総称して「本サービス」）の利用条件を定めるものです。利用者の皆さまは、本規約に同意の上ご利用ください。
           </p>
         </div>
 

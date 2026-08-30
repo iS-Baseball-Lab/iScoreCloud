@@ -4,7 +4,7 @@ import { Scale, FileText, AlertTriangle, ShieldCheck, CheckCircle2, UserCheck, B
 
 export const metadata = {
   title: "サービス利用規約 | iScoreCloud",
-  description: "iScoreCloud（iScoreMiniを含む）のサービス利用条件およびユーザーの権利義務を定める利用規約です。",
+  description: "iScoreCloud（for LINE ミニアプリを含む）のサービス利用条件およびユーザーの権利義務を定める利用規約です。",
 };
 
 export default function TermsPage() {
@@ -28,7 +28,7 @@ export default function TermsPage() {
           サービス利用規約 <span className="text-muted-foreground/40 ml-2 text-2xl md:text-3xl font-normal">Terms of Service</span>
         </h1>
         <div className="flex flex-wrap items-center gap-4 text-[10px] font-bold text-muted-foreground/70 uppercase tracking-widest">
-          <span>最終改訂日: 2026年8月27日</span>
+          <span>最終改訂日: 2026年8月30日</span>
           <span className="w-1 h-1 rounded-full bg-border" />
           <span>制定日: 2026年4月1日</span>
           <span className="w-1 h-1 rounded-full bg-border" />
@@ -43,7 +43,7 @@ export default function TermsPage() {
           <div className="flex items-start gap-4">
             <FileText className="h-5 w-5 text-primary/60 shrink-0 mt-1" />
             <p className="text-sm font-medium leading-relaxed text-foreground/90">
-              この利用規約（以下「本規約」）は、iS Baseball Lab（以下「当運営」）が提供する野球スコアブック＆チームマネジメントWebサービス「iScoreCloud」およびLINEミニアプリ「iScoreMini」（以下総称して「本サービス」）の利用条件を定めるものです。ユーザーの皆さまには、本規約に同意の上、本サービスをご利用いただきます。
+              この利用規約（以下「本規約」）は、iS Baseball Lab（以下「当運営」）が提供する野球スコアブック＆チームマネジメントWebサービス「iScoreCloud」および「iScoreCloud for LINE ミニアプリ」（以下総称して「本サービス」）の利用条件を定めるものです。ユーザーの皆さまには、本規約に同意の上、本サービスをご利用いただきます。
             </p>
           </div>
         </section>

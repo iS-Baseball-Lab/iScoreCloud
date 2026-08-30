@@ -157,7 +157,7 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
     <header className="sticky top-0 z-40 w-full bg-white dark:bg-black backdrop-blur-xl border-b border-border/40 shadow-xs transition-colors duration-200">
       <div className="flex h-14 sm:h-16 items-center justify-between px-3 sm:px-4 gap-2 sm:gap-3">
         
-        {/* 🌟 1. 左側: ロゴ & ブランド (LINEミニアプリ: iScoreMini) */}
+        {/* 🌟 1. 左側: ロゴ & ブランド (iScoreCloud for LINE ミニアプリ) */}
         <Link
           href="/liff"
           className="flex items-center gap-2 shrink-0 group outline-hidden"
@@ -168,10 +168,13 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
             alt="iScore Logo"
             className="h-8 w-8 sm:h-9 sm:w-9 object-contain group-hover:scale-105 transition-transform duration-300"
           />
-          <div className="flex items-center gap-1.5">
-            <h1 className="text-base sm:text-xl font-black italic tracking-tighter text-foreground leading-none group-hover:text-primary transition-colors">
-              iScore<span className="text-primary">Mini</span>
+          <div className="flex flex-col justify-center">
+            <h1 className="text-base sm:text-lg font-black italic tracking-tighter text-foreground leading-none group-hover:text-primary transition-colors">
+              iScore<span className="text-primary">Cloud</span>
             </h1>
+            <span className="text-[9px] sm:text-[9.5px] font-bold text-muted-foreground tracking-tight leading-none mt-0.5 select-none">
+              for LINE ミニアプリ
+            </span>
           </div>
         </Link>
 

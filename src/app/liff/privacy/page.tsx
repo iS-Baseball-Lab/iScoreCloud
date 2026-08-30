@@ -38,7 +38,7 @@ export default function LiffPrivacyPage() {
             <span>個人情報保護への取り組み</span>
           </div>
           <p className="text-xs leading-relaxed text-foreground/90 font-medium">
-            iS Baseball Lab（以下「当運営」）は、LINEミニアプリ「iScoreMini」およびWebサービス「iScoreCloud」において、ユーザーの個人情報を適正に取り扱い、安全に管理いたします。
+            iS Baseball Lab（以下「当運営」）は、「iScoreCloud for LINE ミニアプリ」およびWebサービス「iScoreCloud」（以下総称して「本サービス」）において、ユーザーの個人情報を適正に取り扱い、安全に管理いたします。
           </p>
         </div>
 
