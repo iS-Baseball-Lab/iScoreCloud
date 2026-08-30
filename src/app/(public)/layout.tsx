@@ -75,8 +75,8 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
               <div className="space-y-4 text-left">
                 <h4 className="text-[10px] font-black tracking-widest uppercase text-foreground/50">Legal</h4>
                 <ul className="space-y-2 text-xs text-muted-foreground font-bold">
-                  <li><Link href="/terms" className="hover:text-primary transition-colors">利用規約</Link></li>
-                  <li><Link href="/privacy" className="hover:text-primary transition-colors">ポリシー</Link></li>
+                  <li><Link href="/terms" className="hover:text-primary transition-colors">サービス利用規約</Link></li>
+                  <li><Link href="/privacy" className="hover:text-primary transition-colors">プライバシーポリシー</Link></li>
                 </ul>
               </div>
             </div>

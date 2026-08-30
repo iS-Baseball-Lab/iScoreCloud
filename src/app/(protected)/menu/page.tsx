@@ -72,7 +72,7 @@ export default function MenuPage() {
       title: "サポート",
       items: [
         { icon: HelpCircle, label: "使い方・マニュアル", href: "/help" },
-        { icon: FileText, label: "利用規約", href: "/terms" },
+        { icon: FileText, label: "サービス利用規約", href: "/terms" },
         { icon: ShieldCheck, label: "プライバシーポリシー", href: "/privacy" },
       ],
     },

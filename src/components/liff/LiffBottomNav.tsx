@@ -330,7 +330,7 @@ export function LiffBottomNav() {
                 className="py-2 px-3.5 rounded-full bg-muted/60 hover:bg-muted active:scale-95 border border-border/60 text-xs font-black text-muted-foreground hover:text-foreground transition-all flex items-center gap-1.5"
               >
                 <FileText className="w-3.5 h-3.5 text-primary" />
-                <span>利用規約</span>
+                <span>サービス利用規約</span>
               </Link>
 
               <Link

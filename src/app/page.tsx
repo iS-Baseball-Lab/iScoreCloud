@@ -189,8 +189,8 @@ export default function LandingPage() {
           </div>
           <p className="text-sm text-muted-foreground font-medium italic">© {new Date().getFullYear()} iS Baseball Lab. FIELD LOGIC PROTOCOL.</p>
           <div className="flex gap-4 text-sm text-muted-foreground font-medium">
-            <Link href="/terms" className="hover:text-primary">利用規約</Link>
-            <Link href="/privacy" className="hover:text-primary">プライバシー</Link>
+            <Link href="/terms" className="hover:text-primary">サービス利用規約</Link>
+            <Link href="/privacy" className="hover:text-primary">プライバシーポリシー</Link>
           </div>
         </div>
       </footer>

@@ -575,7 +575,7 @@ export default function LiffSettingsPage() {
             className="p-3 rounded-2xl bg-card border border-border/60 hover:border-primary/40 font-bold text-muted-foreground hover:text-foreground transition-all flex flex-col items-center gap-1 shadow-xs"
           >
             <FileText className="w-4 h-4 text-primary" />
-            <span>利用規約</span>
+            <span>サービス利用規約</span>
           </Link>
 
           <Link
