@@ -46,3 +46,43 @@ export async function ensureEventColumns(d1?: any) {
 
   isEventsSchemaReady = true;
 }
+
+let isRulesSchemaReady = false;
+
+/**
+ * 🛠️ D1 の team_rules テーブルが確実に存在することを保証するセーフティマイグレーション関数
+ */
+export async function ensureRulesTable(d1?: any) {
+  if (!d1 || isRulesSchemaReady) return;
+
+  try {
+    await d1.prepare(`
+      CREATE TABLE IF NOT EXISTS team_rules (
+        id text PRIMARY KEY NOT NULL,
+        organization_id text,
+        team_id text,
+        title text NOT NULL,
+        content text NOT NULL,
+        category text NOT NULL DEFAULT 'general',
+        scope text NOT NULL DEFAULT 'team',
+        priority integer DEFAULT 0,
+        created_by_id text,
+        created_at integer NOT NULL DEFAULT (strftime('%s', 'now'))
+      )
+    `).run().catch(() => {});
+  } catch {}
+
+  try {
+    await d1.prepare(`
+      CREATE INDEX IF NOT EXISTS idx_team_rules_org_id ON team_rules (organization_id)
+    `).run().catch(() => {});
+  } catch {}
+
+  try {
+    await d1.prepare(`
+      CREATE INDEX IF NOT EXISTS idx_team_rules_team_id ON team_rules (team_id)
+    `).run().catch(() => {});
+  } catch {}
+
+  isRulesSchemaReady = true;
+}

@@ -18,10 +18,11 @@ import {
   eventCarpoolSettings,
   teamDocuments,
   teamFaqs,
+  teamRules,
   parentChildRelations,
   tournaments,
 } from "@/db/schema";
-import { ensureEventColumns } from "@/lib/db-helper";
+import { ensureEventColumns, ensureRulesTable } from "@/lib/db-helper";
 import type { WorkerEnv } from "@/types/api";
 
 const app = new Hono<{ Bindings: WorkerEnv }>();
@@ -2159,6 +2160,286 @@ app.get("/matches", async (c) => {
   } catch (error: any) {
     console.error("Failed to load liff matches:", error);
     return c.json({ success: false, error: error?.message || "試合一覧の取得に失敗しました", matches: [] }, 500);
+  }
+});
+
+// ========================================================
+// ⚠️ チーム・編成別 注意事項 (Rules / Guidelines) API
+// ========================================================
+
+const DEMO_RULES = [
+  {
+    id: "demo-rule-1",
+    category: "carpool",
+    categoryLabel: "配車・送迎",
+    title: "配車時のチャイルドシート着用と車内飲食マナー",
+    content: "・小学生未満またはジュニアシートが必要なお子様が同乗する場合は、保護者間で必ず専用シートの貸し借り・装着を行ってください。\n・車内での飲食は原則フタ付きの飲み物（水筒・ペットボトル）のみとし、お菓子やアイス等の車内飲食はご遠慮ください。\n・泥汚れ防止のため、乗車前に靴の泥を落とし、必要に応じてタオル等を座席に敷くようご協力をお願いします。",
+    scope: "organization",
+    scopeLabel: "チーム全体",
+    priority: 1,
+  },
+  {
+    id: "demo-rule-2",
+    category: "duty",
+    categoryLabel: "当番・保護者",
+    title: "お当番の活動服装と救急キット・水分確認",
+    content: "・お当番時は動きやすい服装・運動靴でご参加ください（サンダル・ヒール等は怪我防止のため不可）。\n・集合時にチーム救急箱（AED・冷却パック・テーピング・消毒液）の所在と、予備ジャグの水・スポーツドリンク残量をご確認ください。\n・活動中に体調不良（熱中症の初期症状等）が見られる選手がいた場合は、無理をさせず直ちに日陰で休ませ、指導者へ報告してください。",
+    scope: "organization",
+    scopeLabel: "チーム全体",
+    priority: 2,
+  },
+  {
+    id: "demo-rule-3",
+    category: "venue",
+    categoryLabel: "グラウンド・観戦",
+    title: "球場利用時の駐車マナー・喫煙ルールおよびゴミ持ち帰り",
+    content: "・各グラウンドごとに指定された駐車可能台数・指定エリアを厳守してください（近隣の商業施設や路上への無断駐車は厳禁です）。\n・球場敷地内および周辺道路は【全面禁煙】です。\n・発生したゴミ（空き缶・ペットボトル・テーピング等）は各自およびチームで必ずすべて持ち帰りをお願いします。",
+    scope: "organization",
+    scopeLabel: "チーム全体",
+    priority: 3,
+  },
+  {
+    id: "demo-rule-4",
+    category: "equipment",
+    categoryLabel: "用具・ユニフォーム",
+    title: "試合用ユニフォームの着こなし規定と忘れ物防止",
+    content: "・公式戦・練習試合時は、指定ユニフォーム・帽子・アンダーシャツ・ソックス・ベルトを正しく着用してください。\n・バット・グローブ・ヘルメット・水筒等のすべての持ち物に、必ず油性ペンで【氏名（フルネーム）】を明記してください。\n・ベンチ内での用具整理整頓（バットケース・ヘルメット掛けの活用）を選手自ら徹底するよう指導しています。",
+    scope: "organization",
+    scopeLabel: "チーム全体",
+    priority: 4,
+  },
+  {
+    id: "demo-rule-5",
+    category: "safety",
+    categoryLabel: "熱中症・安全管理",
+    title: "夏期練習時の水分補給（2L以上）と氷嚢持参の徹底",
+    content: "・5月〜10月の活動時は、最低2L以上の水分（スポーツドリンク推奨）と、アイシング用の【氷嚢（または保冷剤）】を必ず持参してください。\n・朝の検温を行い、37.0℃以上の発熱や倦怠感・睡眠不足がある場合は無理をせず参加を見合わせてください。",
+    scope: "organization",
+    scopeLabel: "チーム全体",
+    priority: 5,
+  },
+  {
+    id: "demo-rule-6",
+    category: "emergency",
+    categoryLabel: "雨天・緊急連絡",
+    title: "雨天時の活動可否判断基準とLINE連絡タイミング",
+    content: "・雨天による活動中止・時間変更の判断は、原則として【当日朝 6:30 まで】にLINEグループにて一斉連絡します。\n・連絡があるまでは各自集合場所へ向かう準備をして待機をお願いします。\n・急な天候悪化により現地で活動打ち切りとなる場合も、速やかにLINEにてお迎え等の連絡を行います。",
+    scope: "organization",
+    scopeLabel: "チーム全体",
+    priority: 6,
+  },
+];
+
+/**
+ * ⚠️ チーム・編成注意事項 (Rules) 一覧取得API
+ */
+app.get("/rules", async (c) => {
+  await ensureRulesTable(c.env.DB);
+  const db = drizzle(c.env.DB);
+  const teamId = c.req.query("teamId");
+
+  try {
+    if (!teamId || teamId === "demo-team") {
+      return c.json({
+        success: true,
+        isDemo: true,
+        rules: DEMO_RULES,
+      });
+    }
+
+    const currentTeam = await db
+      .select({
+        id: teams.id,
+        organizationId: teams.organizationId,
+        teamName: teams.name,
+      })
+      .from(teams)
+      .where(eq(teams.id, teamId))
+      .get();
+
+    const organizationId = currentTeam?.organizationId;
+
+    const conditions = [];
+    if (organizationId) {
+      conditions.push(eq(teamRules.organizationId, organizationId));
+    }
+    conditions.push(eq(teamRules.teamId, teamId));
+
+    const rulesList = await db
+      .select({
+        id: teamRules.id,
+        title: teamRules.title,
+        content: teamRules.content,
+        category: teamRules.category,
+        scope: teamRules.scope,
+        priority: teamRules.priority,
+        createdAt: teamRules.createdAt,
+        organizationId: teamRules.organizationId,
+        teamId: teamRules.teamId,
+      })
+      .from(teamRules)
+      .where(or(...conditions))
+      .orderBy(asc(teamRules.priority), desc(teamRules.createdAt))
+      .all();
+
+    const categoryLabels: Record<string, string> = {
+      carpool: "配車・送迎",
+      duty: "当番・保護者",
+      venue: "グラウンド・観戦",
+      equipment: "用具・ユニフォーム",
+      safety: "熱中症・安全管理",
+      emergency: "雨天・緊急連絡",
+      general: "その他・心得",
+    };
+
+    const formattedRules = rulesList.map((r) => {
+      const isOrg = r.scope === "organization" || !!r.organizationId;
+      return {
+        id: r.id,
+        title: r.title,
+        content: r.content,
+        category: r.category,
+        categoryLabel: categoryLabels[r.category] || "その他",
+        scope: (isOrg ? "organization" : "team") as "organization" | "team",
+        scopeLabel: isOrg ? "チーム全体" : (currentTeam?.teamName || "編成"),
+        priority: r.priority || 0,
+      };
+    });
+
+    return c.json({
+      success: true,
+      isDemo: false,
+      rules: formattedRules.length > 0 ? formattedRules : DEMO_RULES,
+    });
+  } catch (error: any) {
+    console.error("Failed to load rules:", error);
+    return c.json({
+      success: true,
+      isDemo: false,
+      rules: DEMO_RULES,
+    });
+  }
+});
+
+/**
+ * ⚠️ 注意事項 新規登録API
+ */
+app.post("/rules", async (c) => {
+  await ensureRulesTable(c.env.DB);
+  const db = drizzle(c.env.DB);
+  try {
+    const body = await c.req.json();
+    const { teamId, title, content, category, scope, userId, priority } = body;
+
+    if (!teamId || !title || !content) {
+      return c.json({ success: false, error: "teamId, title, content are required" }, 400);
+    }
+
+    if (teamId === "demo-team") {
+      return c.json({ success: true, message: "注意事項を登録しました（デモ）" });
+    }
+
+    const currentTeam = await db
+      .select({
+        id: teams.id,
+        organizationId: teams.organizationId,
+      })
+      .from(teams)
+      .where(eq(teams.id, teamId))
+      .get();
+
+    const organizationId = currentTeam?.organizationId || null;
+    const ruleScope = scope === "organization" ? "organization" : "team";
+
+    await db.insert(teamRules).values({
+      id: `rule_${crypto.randomUUID()}`,
+      organizationId: ruleScope === "organization" ? organizationId : null,
+      teamId: ruleScope === "team" ? teamId : null,
+      title: title.trim(),
+      content: content.trim(),
+      category: category || "general",
+      scope: ruleScope,
+      priority: Number(priority) || 0,
+      createdById: userId || null,
+      createdAt: new Date(),
+    });
+
+    return c.json({ success: true, message: "注意事項を登録しました" });
+  } catch (error: any) {
+    console.error("Failed to create rule:", error);
+    return c.json({ success: false, error: error?.message || "注意事項の登録に失敗しました" }, 500);
+  }
+});
+
+/**
+ * ⚠️ 注意事項 更新API (PUT /rules/:id)
+ */
+app.put("/rules/:id", async (c) => {
+  await ensureRulesTable(c.env.DB);
+  const db = drizzle(c.env.DB);
+  const id = c.req.param("id");
+  try {
+    const body = await c.req.json();
+    const { title, content, category, scope, teamId, priority } = body;
+
+    if (id.startsWith("demo-")) {
+      return c.json({ success: true, message: "注意事項を更新しました（デモ）" });
+    }
+
+    const currentRule = await db.select().from(teamRules).where(eq(teamRules.id, id)).get();
+    if (!currentRule) {
+      return c.json({ success: false, error: "指定された注意事項が見つかりません" }, 404);
+    }
+
+    let organizationId = currentRule.organizationId;
+    let targetTeamId = currentRule.teamId;
+
+    if (scope === "organization" && !organizationId && targetTeamId) {
+      const team = await db.select({ orgId: teams.organizationId }).from(teams).where(eq(teams.id, targetTeamId)).get();
+      organizationId = team?.orgId || null;
+      targetTeamId = null;
+    } else if (scope === "team" && teamId) {
+      targetTeamId = teamId;
+      organizationId = null;
+    }
+
+    await db
+      .update(teamRules)
+      .set({
+        title: title ? title.trim() : currentRule.title,
+        content: content ? content.trim() : currentRule.content,
+        category: category || currentRule.category,
+        scope: scope || currentRule.scope,
+        priority: priority !== undefined ? Number(priority) : currentRule.priority,
+        organizationId: scope === "organization" ? organizationId : null,
+        teamId: scope === "team" ? targetTeamId : null,
+      })
+      .where(eq(teamRules.id, id));
+
+    return c.json({ success: true, message: "注意事項を更新しました" });
+  } catch (error: any) {
+    console.error("Failed to update rule:", error);
+    return c.json({ success: false, error: error?.message || "注意事項の更新に失敗しました" }, 500);
+  }
+});
+
+/**
+ * ⚠️ 注意事項 削除API (DELETE /rules/:id)
+ */
+app.delete("/rules/:id", async (c) => {
+  await ensureRulesTable(c.env.DB);
+  const db = drizzle(c.env.DB);
+  const id = c.req.param("id");
+  try {
+    if (id.startsWith("demo-")) {
+      return c.json({ success: true, message: "注意事項を削除しました（デモ）" });
+    }
+
+    await db.delete(teamRules).where(eq(teamRules.id, id));
+    return c.json({ success: true, message: "注意事項を削除しました" });
+  } catch (error: any) {
+    console.error("Failed to delete rule:", error);
+    return c.json({ success: false, error: error?.message || "注意事項の削除に失敗しました" }, 500);
   }
 });
 

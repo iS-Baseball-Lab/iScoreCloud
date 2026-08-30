@@ -14,6 +14,7 @@ import {
   Car,
   FileText,
   HelpCircle,
+  AlertTriangle,
   Calendar,
   LayoutGrid,
   Settings,
@@ -29,7 +30,7 @@ export function LiffBottomNav() {
   const isStats = pathname?.startsWith("/liff/stats");
   const isMatches = pathname?.startsWith("/liff/matches");
   const isSearch = pathname?.startsWith("/liff/grounds");
-  const isOther = isOtherMenuOpen || pathname?.startsWith("/liff/documents") || pathname?.startsWith("/liff/faq") || pathname?.startsWith("/liff/carpool") || pathname?.startsWith("/liff/schedule");
+  const isOther = isOtherMenuOpen || pathname?.startsWith("/liff/documents") || pathname?.startsWith("/liff/faq") || pathname?.startsWith("/liff/rules") || pathname?.startsWith("/liff/carpool") || pathname?.startsWith("/liff/schedule");
 
   return (
     <>
@@ -301,11 +302,26 @@ export function LiffBottomNav() {
                 </span>
                 <div className="min-w-0">
                   <p className="text-xs font-black text-slate-900 dark:text-slate-100 truncate">よくある質問</p>
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold truncate">雨天判断・用具規定</p>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold truncate">雨天判断・Q&A</p>
                 </div>
               </Link>
 
-              {/* ⑨ ⚙️ アプリ設定 */}
+              {/* ⑨ ⚠️ チーム注意事項 */}
+              <Link
+                href="/liff/rules"
+                onClick={() => setIsOtherMenuOpen(false)}
+                className="flex items-center gap-3 p-3 rounded-2xl bg-white dark:bg-slate-900 hover:bg-slate-50 border border-slate-200/90 dark:border-slate-800 shadow-xs ring-1 ring-black/5 dark:ring-white/5 transition-all group active:scale-95"
+              >
+                <span className="w-9 h-9 rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform shadow-2xs">
+                  <AlertTriangle className="w-5 h-5" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-xs font-black text-slate-900 dark:text-slate-100 truncate">チーム注意事項</p>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold truncate">配車・グラウンド・心得</p>
+                </div>
+              </Link>
+
+              {/* ⑩ ⚙️ アプリ設定 */}
               <Link
                 href="/liff/settings"
                 onClick={() => setIsOtherMenuOpen(false)}

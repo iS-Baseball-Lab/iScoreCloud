@@ -25,6 +25,7 @@ import {
   HelpCircle, 
   FileText, 
   ShieldCheck,
+  AlertTriangle,
   Vibrate,
   Layers,
   Type
@@ -561,7 +562,15 @@ export default function LiffSettingsPage() {
         </section>
 
         {/* ━━━ セクション 5: 📜 法務・ヘルプ ━━━ */}
-        <div className="grid grid-cols-3 gap-2 text-center text-xs">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
+          <Link
+            href="/liff/rules"
+            className="p-3 rounded-2xl bg-card border border-border/60 hover:border-amber-500/40 font-bold text-muted-foreground hover:text-foreground transition-all flex flex-col items-center gap-1 shadow-xs"
+          >
+            <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+            <span>チーム注意事項</span>
+          </Link>
+
           <Link
             href="/liff/faq"
             className="p-3 rounded-2xl bg-card border border-border/60 hover:border-primary/40 font-bold text-muted-foreground hover:text-foreground transition-all flex flex-col items-center gap-1 shadow-xs"
