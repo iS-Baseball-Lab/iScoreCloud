@@ -3,15 +3,23 @@
 
 import React from "react";
 import Link from "next/link";
-import { Calendar, Car, FileText, HelpCircle, LayoutGrid, AlertTriangle } from "lucide-react";
+import { 
+  FileText, 
+  HelpCircle, 
+  Car, 
+  AlertTriangle,
+  Calendar,
+  Sparkles,
+  Link2,
+} from "lucide-react";
 
 export function HubQuickNav() {
   return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-1.5 px-1">
-        <LayoutGrid className="w-4 h-4 text-primary" />
-        <h3 className="text-sm font-black text-foreground tracking-tight">
-          クイックメニュー
+    <div className="space-y-2.5">
+      <div className="flex items-center justify-between px-1">
+        <h3 className="text-xs font-black text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+          <Sparkles className="w-3.5 h-3.5 text-primary" />
+          <span>チーム情報 & ガイド</span>
         </h3>
       </div>
 
@@ -85,6 +93,29 @@ export function HubQuickNav() {
           </div>
         </Link>
 
+        {/* 🔗 関連リンク集 */}
+        <Link
+          href="/liff/links"
+          className="flex flex-col justify-between p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-sm hover:shadow-md hover:border-sky-500/50 transition-all active:scale-[0.98] group ring-1 ring-black/5 dark:ring-white/5"
+        >
+          <div className="flex items-center justify-between">
+            <span className="w-10 h-10 rounded-xl bg-sky-500/15 text-sky-600 dark:text-sky-400 flex items-center justify-center font-black shadow-2xs">
+              <Link2 className="w-5 h-5 group-hover:scale-110 transition-transform" />
+            </span>
+            <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-sky-500/15 text-sky-700 dark:text-sky-300 font-mono">
+              リンク
+            </span>
+          </div>
+          <div className="mt-3.5 space-y-0.5">
+            <h4 className="text-base font-black text-slate-900 dark:text-slate-100 tracking-tight">
+              関連リンク集
+            </h4>
+            <p className="text-xs font-bold text-slate-500 dark:text-slate-400">
+              連盟・大会速報・SNS
+            </p>
+          </div>
+        </Link>
+
         {/* 📅 予定 & 出欠 */}
         <Link
           href="/liff/schedule"
@@ -111,7 +142,7 @@ export function HubQuickNav() {
         {/* 🚗 配車表 */}
         <Link
           href="/liff/carpool"
-          className="flex flex-col justify-between p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-sm hover:shadow-md hover:border-blue-500/50 transition-all active:scale-[0.98] group ring-1 ring-black/5 dark:ring-white/5 col-span-2"
+          className="flex flex-col justify-between p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-sm hover:shadow-md hover:border-blue-500/50 transition-all active:scale-[0.98] group ring-1 ring-black/5 dark:ring-white/5"
         >
           <div className="flex items-center justify-between">
             <span className="w-10 h-10 rounded-xl bg-blue-500/15 text-blue-600 dark:text-blue-400 flex items-center justify-center font-black shadow-2xs">

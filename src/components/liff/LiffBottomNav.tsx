@@ -20,6 +20,7 @@ import {
   Settings,
   ChevronRight,
   ShieldCheck,
+  Link2,
 } from "lucide-react";
 
 export function LiffBottomNav() {
@@ -30,7 +31,7 @@ export function LiffBottomNav() {
   const isStats = pathname?.startsWith("/liff/stats");
   const isMatches = pathname?.startsWith("/liff/matches");
   const isSearch = pathname?.startsWith("/liff/grounds");
-  const isOther = isOtherMenuOpen || pathname?.startsWith("/liff/documents") || pathname?.startsWith("/liff/faq") || pathname?.startsWith("/liff/rules") || pathname?.startsWith("/liff/carpool") || pathname?.startsWith("/liff/schedule");
+  const isOther = isOtherMenuOpen || pathname?.startsWith("/liff/documents") || pathname?.startsWith("/liff/faq") || pathname?.startsWith("/liff/rules") || pathname?.startsWith("/liff/links") || pathname?.startsWith("/liff/carpool") || pathname?.startsWith("/liff/schedule");
 
   return (
     <>
@@ -321,7 +322,22 @@ export function LiffBottomNav() {
                 </div>
               </Link>
 
-              {/* ⑩ ⚙️ アプリ設定 */}
+              {/* ⑩ 🔗 関連リンク集 */}
+              <Link
+                href="/liff/links"
+                onClick={() => setIsOtherMenuOpen(false)}
+                className="flex items-center gap-3 p-3 rounded-2xl bg-white dark:bg-slate-900 hover:bg-slate-50 border border-slate-200/90 dark:border-slate-800 shadow-xs ring-1 ring-black/5 dark:ring-white/5 transition-all group active:scale-95"
+              >
+                <span className="w-9 h-9 rounded-xl bg-sky-500/15 text-sky-600 dark:text-sky-400 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform shadow-2xs">
+                  <Link2 className="w-5 h-5" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-xs font-black text-slate-900 dark:text-slate-100 truncate">関連リンク集</p>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold truncate">連盟・大会速報・SNS</p>
+                </div>
+              </Link>
+
+              {/* ⑪ ⚙️ アプリ設定 */}
               <Link
                 href="/liff/settings"
                 onClick={() => setIsOtherMenuOpen(false)}

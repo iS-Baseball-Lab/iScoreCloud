@@ -28,7 +28,8 @@ import {
   AlertTriangle,
   Vibrate,
   Layers,
-  Type
+  Type,
+  Link2
 } from "lucide-react";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { useLiff } from "@/components/liff/LiffProvider";
@@ -562,7 +563,7 @@ export default function LiffSettingsPage() {
         </section>
 
         {/* ━━━ セクション 5: 📜 法務・ヘルプ ━━━ */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-center text-xs">
           <Link
             href="/liff/rules"
             className="p-3 rounded-2xl bg-card border border-border/60 hover:border-amber-500/40 font-bold text-muted-foreground hover:text-foreground transition-all flex flex-col items-center gap-1 shadow-xs"
@@ -577,6 +578,14 @@ export default function LiffSettingsPage() {
           >
             <HelpCircle className="w-4 h-4 text-primary" />
             <span>よくある質問</span>
+          </Link>
+
+          <Link
+            href="/liff/links"
+            className="p-3 rounded-2xl bg-card border border-border/60 hover:border-sky-500/40 font-bold text-muted-foreground hover:text-foreground transition-all flex flex-col items-center gap-1 shadow-xs"
+          >
+            <Link2 className="w-4 h-4 text-sky-600 dark:text-sky-400" />
+            <span>関連リンク集</span>
           </Link>
 
           <Link

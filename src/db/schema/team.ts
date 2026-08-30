@@ -222,5 +222,28 @@ export const teamRules = sqliteTable('team_rules', {
   teamIdx: index("idx_team_rules_team_id").on(table.teamId),
 }));
 
+// ==========================================
+// 🔗 チーム・編成別 関連リンク (Links) テーブル
+// ==========================================
+export const teamLinks = sqliteTable('team_links', {
+  id: text('id').primaryKey(),
+  organizationId: text('organization_id').references(() => organizations.id, { onDelete: 'cascade' }), // チーム全体用
+  teamId: text('team_id').references(() => teams.id, { onDelete: 'cascade' }),                         // 編成限定用 (Nullable)
+  title: text('title').notNull(),
+  url: text('url').notNull(),
+  description: text('description'),
+  category: text('category').notNull().default('other'), // 'league' | 'tournament' | 'sns' | 'grounds' | 'weather' | 'partner' | 'other'
+  scope: text('scope').$type<'organization' | 'team'>().notNull().default('team'),
+  priority: integer('priority').default(0), // 表示順
+  isImportant: integer('is_important', { mode: 'boolean' }).default(false), // おすすめ・公式ピン留め
+  imageUrl: text('image_url'), // ロゴまたはサムネイル
+  createdById: text('created_by_id'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(strftime('%s', 'now'))`),
+}, (table) => ({
+  orgIdx: index("idx_team_links_org_id").on(table.organizationId),
+  teamIdx: index("idx_team_links_team_id").on(table.teamId),
+}));
+
+
 
 

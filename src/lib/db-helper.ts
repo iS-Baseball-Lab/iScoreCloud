@@ -96,3 +96,55 @@ export async function ensureRulesTable(d1?: any) {
 
   isRulesSchemaReady = true;
 }
+
+let isLinksSchemaReady = false;
+
+/**
+ * 🛠️ D1 の team_links テーブルが確実に存在することを保証するセーフティマイグレーション関数
+ */
+export async function ensureLinksTable(d1?: any) {
+  if (!d1 || isLinksSchemaReady) return;
+
+  try {
+    await d1.prepare(`
+      CREATE TABLE IF NOT EXISTS team_links (
+        id text PRIMARY KEY NOT NULL,
+        organization_id text,
+        team_id text,
+        title text NOT NULL,
+        url text NOT NULL,
+        description text,
+        category text NOT NULL DEFAULT 'other',
+        scope text NOT NULL DEFAULT 'team',
+        priority integer DEFAULT 0,
+        is_important integer DEFAULT 0,
+        image_url text,
+        created_by_id text,
+        created_at integer NOT NULL DEFAULT (strftime('%s', 'now'))
+      )
+    `).run().catch(() => {});
+  } catch {}
+
+  try {
+    await d1.prepare("ALTER TABLE team_links ADD COLUMN is_important integer DEFAULT 0").run().catch(() => {});
+  } catch {}
+
+  try {
+    await d1.prepare("ALTER TABLE team_links ADD COLUMN image_url text").run().catch(() => {});
+  } catch {}
+
+  try {
+    await d1.prepare(`
+      CREATE INDEX IF NOT EXISTS idx_team_links_org_id ON team_links (organization_id)
+    `).run().catch(() => {});
+  } catch {}
+
+  try {
+    await d1.prepare(`
+      CREATE INDEX IF NOT EXISTS idx_team_links_team_id ON team_links (team_id)
+    `).run().catch(() => {});
+  } catch {}
+
+  isLinksSchemaReady = true;
+}
+

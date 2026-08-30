@@ -19,10 +19,11 @@ import {
   teamDocuments,
   teamFaqs,
   teamRules,
+  teamLinks,
   parentChildRelations,
   tournaments,
 } from "@/db/schema";
-import { ensureEventColumns, ensureRulesTable } from "@/lib/db-helper";
+import { ensureEventColumns, ensureRulesTable, ensureLinksTable } from "@/lib/db-helper";
 import type { WorkerEnv } from "@/types/api";
 
 const app = new Hono<{ Bindings: WorkerEnv }>();
@@ -2535,6 +2536,376 @@ app.delete("/rules/:id", async (c) => {
   } catch (error: any) {
     console.error("Failed to delete rule:", error);
     return c.json({ success: false, error: error?.message || "ルール & 注意事項の削除に失敗しました" }, 500);
+  }
+});
+
+// ==========================================
+// 🔗 関連リンク (Links) API エンドポイント
+// ==========================================
+
+const DEMO_LINKS = [
+  {
+    id: "demo-link-1",
+    category: "league",
+    categoryLabel: "連盟・協会",
+    title: "公益財団法人 全日本軟式野球連盟 (JSBB)",
+    url: "https://jsbb.or.jp/",
+    description: "公認野球規則、全国大会日程、用具規定（JSBBマーク基準）などの公式情報ポータルです。",
+    scope: "organization",
+    scopeLabel: "チーム全体",
+    priority: 0,
+    isImportant: true,
+    imageUrl: null,
+  },
+  {
+    id: "demo-link-2",
+    category: "weather",
+    categoryLabel: "天気・暑さ指数",
+    title: "環境省 熱中症予防情報サイト (暑さ指数 WBGT速報)",
+    url: "https://www.wbgt.env.go.jp/",
+    description: "各グラウンド地域のリアルタイムWBGT値（暑さ指数）および活動中止・警戒基準を確認できます。",
+    scope: "organization",
+    scopeLabel: "チーム全体",
+    priority: 1,
+    isImportant: true,
+    imageUrl: null,
+  },
+  {
+    id: "demo-link-3",
+    category: "weather",
+    categoryLabel: "天気・暑さ指数",
+    title: "雨雲レーダー・ピンポイント天気 (Yahoo!天気)",
+    url: "https://weather.yahoo.co.jp/weather/zoomradar/",
+    description: "今後の降雨・降雪予想、雷雲の接近予測がリアルタイムで確認できます。",
+    scope: "organization",
+    scopeLabel: "チーム全体",
+    priority: 2,
+    isImportant: false,
+    imageUrl: null,
+  },
+  {
+    id: "demo-link-4",
+    category: "sns",
+    categoryLabel: "公式SNS・HP",
+    title: "チーム公式 Instagram (活動写真・ハイライト)",
+    url: "https://www.instagram.com/",
+    description: "試合風景、イベント写真、練習動画を随時更新中！ぜひフォロー＆いいねをお願いします。",
+    scope: "organization",
+    scopeLabel: "チーム全体",
+    priority: 3,
+    isImportant: true,
+    imageUrl: null,
+  },
+  {
+    id: "demo-link-5",
+    category: "grounds",
+    categoryLabel: "球場・施設予約",
+    title: "自治体 公共スポーツ施設 予約システム",
+    url: "https://www.city.sports-reserve.jp/",
+    description: "グラウンド・体育館の空き状況確認および施設予約の公式ポータルです。",
+    scope: "organization",
+    scopeLabel: "チーム全体",
+    priority: 4,
+    isImportant: false,
+    imageUrl: null,
+  },
+  {
+    id: "demo-link-6",
+    category: "partner",
+    categoryLabel: "提携・ショップ",
+    title: "ベースボールプロショップ (チーム指定用品店)",
+    url: "https://www.baseball-shop-sample.com/",
+    description: "指定ユニフォーム・ヘルメット・グラブのメンテナンス・割引購入が可能です。",
+    scope: "organization",
+    scopeLabel: "チーム全体",
+    priority: 5,
+    isImportant: false,
+    imageUrl: null,
+  },
+];
+
+/**
+ * 📷 関連リンク ロゴ/画像アップロード API (POST /links/upload)
+ */
+app.post("/links/upload", async (c) => {
+  try {
+    let file: File | null = null;
+    let teamId = "general";
+
+    try {
+      const formData = await c.req.formData();
+      file = formData.get("file") as File | null;
+      const t = formData.get("teamId");
+      if (typeof t === "string" && t) teamId = t;
+    } catch {
+      const body = await c.req.parseBody();
+      file = (body["file"] as File) || null;
+      if (typeof body["teamId"] === "string" && body["teamId"]) {
+        teamId = body["teamId"];
+      }
+    }
+
+    if (!file || typeof file === "string" || !file.name) {
+      return c.json({ success: false, error: "ファイルが選択されていません" }, 400);
+    }
+
+    const originalName = file.name || "link_image.jpg";
+    const ext = originalName.split(".").pop()?.toLowerCase() || "jpg";
+
+    if (c.env.BUCKET) {
+      const safeExt = ext.replace(/[^a-z0-9]/gi, "") || "jpg";
+      const filename = `links/${teamId}/${Date.now()}-${crypto.randomUUID().slice(0, 8)}.${safeExt}`;
+      const mimeType = file.type || "image/jpeg";
+      const arrayBuffer = await file.arrayBuffer();
+
+      await c.env.BUCKET.put(filename, arrayBuffer, {
+        httpMetadata: { contentType: mimeType },
+      });
+
+      const imageUrl = `/api/images/${filename}`;
+      return c.json({ success: true, imageUrl });
+    }
+
+    const arrayBuffer = await file.arrayBuffer();
+    const bytes = new Uint8Array(arrayBuffer);
+    let binary = "";
+    const len = bytes.byteLength;
+    for (let i = 0; i < len; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    const base64 = btoa(binary);
+    const mimeType = file.type || "image/jpeg";
+    const imageUrl = `data:${mimeType};base64,${base64}`;
+
+    return c.json({ success: true, imageUrl });
+  } catch (error: any) {
+    console.error("Links image upload error:", error);
+    return c.json({ success: false, error: error?.message || "画像のアップロードに失敗しました" }, 500);
+  }
+});
+
+/**
+ * 🔗 関連リンク (Links) 一覧取得API
+ */
+app.get("/links", async (c) => {
+  await ensureLinksTable(c.env.DB);
+  const db = drizzle(c.env.DB);
+  const teamId = c.req.query("teamId");
+
+  try {
+    if (!teamId || teamId === "demo-team") {
+      return c.json({
+        success: true,
+        isDemo: true,
+        links: DEMO_LINKS,
+      });
+    }
+
+    const currentTeam = await db
+      .select({
+        id: teams.id,
+        organizationId: teams.organizationId,
+        teamName: teams.name,
+      })
+      .from(teams)
+      .where(eq(teams.id, teamId))
+      .get();
+
+    const organizationId = currentTeam?.organizationId;
+
+    const conditions = [];
+    if (organizationId) {
+      conditions.push(eq(teamLinks.organizationId, organizationId));
+    }
+    conditions.push(eq(teamLinks.teamId, teamId));
+
+    const linksList = await db
+      .select({
+        id: teamLinks.id,
+        title: teamLinks.title,
+        url: teamLinks.url,
+        description: teamLinks.description,
+        category: teamLinks.category,
+        scope: teamLinks.scope,
+        priority: teamLinks.priority,
+        isImportant: teamLinks.isImportant,
+        imageUrl: teamLinks.imageUrl,
+        createdAt: teamLinks.createdAt,
+        organizationId: teamLinks.organizationId,
+        teamId: teamLinks.teamId,
+      })
+      .from(teamLinks)
+      .where(or(...conditions))
+      .orderBy(desc(teamLinks.isImportant), asc(teamLinks.priority), desc(teamLinks.createdAt))
+      .all();
+
+    const categoryLabels: Record<string, string> = {
+      league: "連盟・協会",
+      tournament: "大会・速報",
+      sns: "公式SNS・HP",
+      grounds: "球場・施設予約",
+      weather: "天気・暑さ指数",
+      partner: "提携・ショップ",
+      other: "その他・お役立ち",
+    };
+
+    const formattedLinks = linksList.map((l) => {
+      const isOrg = l.scope === "organization" || !!l.organizationId;
+      return {
+        id: l.id,
+        title: l.title,
+        url: l.url,
+        description: l.description || "",
+        category: l.category,
+        categoryLabel: categoryLabels[l.category] || "その他",
+        scope: (isOrg ? "organization" : "team") as "organization" | "team",
+        scopeLabel: isOrg ? "チーム全体" : (currentTeam?.teamName || "編成"),
+        priority: l.priority || 0,
+        isImportant: toBoolean(l.isImportant, false),
+        imageUrl: l.imageUrl || null,
+      };
+    });
+
+    return c.json({
+      success: true,
+      isDemo: false,
+      links: formattedLinks.length > 0 ? formattedLinks : DEMO_LINKS,
+    });
+  } catch (error: any) {
+    console.error("Failed to load links:", error);
+    return c.json({
+      success: true,
+      isDemo: false,
+      links: DEMO_LINKS,
+    });
+  }
+});
+
+/**
+ * 🔗 関連リンク 新規登録API
+ */
+app.post("/links", async (c) => {
+  await ensureLinksTable(c.env.DB);
+  const db = drizzle(c.env.DB);
+  try {
+    const body = await c.req.json();
+    const { teamId, title, url, description, category, scope, userId, priority, isImportant, imageUrl } = body;
+
+    if (!teamId || !title || !url) {
+      return c.json({ success: false, error: "teamId, title, url are required" }, 400);
+    }
+
+    if (teamId === "demo-team") {
+      return c.json({ success: true, message: "関連リンクを登録しました（デモ）" });
+    }
+
+    const currentTeam = await db
+      .select({
+        id: teams.id,
+        organizationId: teams.organizationId,
+      })
+      .from(teams)
+      .where(eq(teams.id, teamId))
+      .get();
+
+    const organizationId = currentTeam?.organizationId || null;
+    const linkScope = scope === "organization" ? "organization" : "team";
+
+    await db.insert(teamLinks).values({
+      id: `link_${crypto.randomUUID()}`,
+      organizationId: linkScope === "organization" ? organizationId : null,
+      teamId: linkScope === "team" ? teamId : null,
+      title: title.trim(),
+      url: url.trim(),
+      description: description ? description.trim() : null,
+      category: category || "other",
+      scope: linkScope,
+      priority: Number(priority) || 0,
+      isImportant: toBoolean(isImportant, false),
+      imageUrl: imageUrl ? imageUrl.trim() : null,
+      createdById: userId || null,
+      createdAt: new Date(),
+    });
+
+    return c.json({ success: true, message: "関連リンクを登録しました" });
+  } catch (error: any) {
+    console.error("Failed to create link:", error);
+    return c.json({ success: false, error: error?.message || "関連リンクの登録に失敗しました" }, 500);
+  }
+});
+
+/**
+ * 🔗 関連リンク 更新API (PUT /links/:id)
+ */
+app.put("/links/:id", async (c) => {
+  await ensureLinksTable(c.env.DB);
+  const db = drizzle(c.env.DB);
+  const id = c.req.param("id");
+  try {
+    const body = await c.req.json();
+    const { title, url, description, category, scope, teamId, priority, isImportant, imageUrl } = body;
+
+    if (id.startsWith("demo-")) {
+      return c.json({ success: true, message: "関連リンクを更新しました（デモ）" });
+    }
+
+    const currentLink = await db.select().from(teamLinks).where(eq(teamLinks.id, id)).get();
+    if (!currentLink) {
+      return c.json({ success: false, error: "指定された関連リンクが見つかりません" }, 404);
+    }
+
+    let organizationId = currentLink.organizationId;
+    let targetTeamId = currentLink.teamId;
+
+    if (scope === "organization" && !organizationId && targetTeamId) {
+      const team = await db.select({ orgId: teams.organizationId }).from(teams).where(eq(teams.id, targetTeamId)).get();
+      organizationId = team?.orgId || null;
+      targetTeamId = null;
+    } else if (scope === "team" && teamId) {
+      targetTeamId = teamId;
+      organizationId = null;
+    }
+
+    await db
+      .update(teamLinks)
+      .set({
+        title: title ? title.trim() : currentLink.title,
+        url: url ? url.trim() : currentLink.url,
+        description: description !== undefined ? (description ? description.trim() : null) : currentLink.description,
+        category: category || currentLink.category,
+        scope: scope || currentLink.scope,
+        priority: priority !== undefined ? Number(priority) : currentLink.priority,
+        isImportant: isImportant !== undefined ? toBoolean(isImportant, false) : currentLink.isImportant,
+        imageUrl: imageUrl !== undefined ? (imageUrl ? imageUrl.trim() : null) : currentLink.imageUrl,
+        organizationId: scope === "organization" ? organizationId : null,
+        teamId: scope === "team" ? targetTeamId : null,
+      })
+      .where(eq(teamLinks.id, id));
+
+    return c.json({ success: true, message: "関連リンクを更新しました" });
+  } catch (error: any) {
+    console.error("Failed to update link:", error);
+    return c.json({ success: false, error: error?.message || "関連リンクの更新に失敗しました" }, 500);
+  }
+});
+
+/**
+ * 🔗 関連リンク 削除API (DELETE /links/:id)
+ */
+app.delete("/links/:id", async (c) => {
+  await ensureLinksTable(c.env.DB);
+  const db = drizzle(c.env.DB);
+  const id = c.req.param("id");
+  try {
+    if (id.startsWith("demo-")) {
+      return c.json({ success: true, message: "関連リンクを削除しました（デモ）" });
+    }
+
+    await db.delete(teamLinks).where(eq(teamLinks.id, id));
+    return c.json({ success: true, message: "関連リンクを削除しました" });
+  } catch (error: any) {
+    console.error("Failed to delete link:", error);
+    return c.json({ success: false, error: error?.message || "関連リンクの削除に失敗しました" }, 500);
   }
 });
 
