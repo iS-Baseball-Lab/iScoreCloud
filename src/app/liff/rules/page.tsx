@@ -537,16 +537,14 @@ export default function LiffRulesPage() {
 
                   {/* 本文エリア */}
                   {isOpen && (
-                    <div className="px-4 pb-4 pt-1 border-t border-border/40 space-y-3 animate-in fade-in slide-in-from-top-1 duration-150">
-                      <div className="p-3.5 rounded-xl bg-muted/40 border border-border/40 space-y-2">
-                        <p className="text-xs text-foreground/90 font-bold whitespace-pre-wrap leading-relaxed">
-                          {rule.content}
-                        </p>
-                      </div>
+                    <div className="px-4 pb-4 pt-2.5 border-t border-border/40 space-y-3 animate-in fade-in slide-in-from-top-1 duration-150">
+                      <p className="text-xs sm:text-[13px] text-foreground/90 font-bold whitespace-pre-wrap leading-relaxed">
+                        {rule.content}
+                      </p>
 
                       {/* 📷 添付画像プレビュー表示 */}
                       {rule.imageUrl && (
-                        <div className="space-y-1.5">
+                        <div className="space-y-1.5 pt-1">
                           <div className="flex items-center justify-between text-[11px] font-bold text-muted-foreground">
                             <span className="flex items-center gap-1">
                               <ImageIcon className="w-3.5 h-3.5 text-blue-500" />
@@ -555,7 +553,7 @@ export default function LiffRulesPage() {
                             <button
                               type="button"
                               onClick={() => setPreviewImageModalUrl(rule.imageUrl || null)}
-                              className="text-primary hover:underline flex items-center gap-0.5 text-[10px]"
+                              className="text-primary hover:underline flex items-center gap-0.5 text-[10px] cursor-pointer"
                             >
                               <span>タップで拡大</span>
                               <ExternalLink className="w-3 h-3" />
