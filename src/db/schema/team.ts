@@ -210,7 +210,7 @@ export const teamRules = sqliteTable('team_rules', {
   teamId: text('team_id').references(() => teams.id, { onDelete: 'cascade' }),                         // 編成限定用 (Nullable)
   title: text('title').notNull(),
   content: text('content').notNull(),
-  category: text('category').notNull().default('general'), // 'carpool' | 'duty' | 'venue' | 'equipment' | 'safety' | 'emergency' | 'general'
+  category: text('category').notNull().default('general'), // 'match' | 'carpool' | 'duty' | 'venue' | 'equipment' | 'safety' | 'emergency' | 'general'
   scope: text('scope').$type<'organization' | 'team'>().notNull().default('team'),
   priority: integer('priority').default(0), // 表示順
   createdById: text('created_by_id'),

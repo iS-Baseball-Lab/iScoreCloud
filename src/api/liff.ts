@@ -2169,6 +2169,16 @@ app.get("/matches", async (c) => {
 
 const DEMO_RULES = [
   {
+    id: "demo-rule-0",
+    category: "match",
+    categoryLabel: "試合・遠征",
+    title: "公式戦・遠征時の集合厳守とお弁当・補食の準備",
+    content: "・公式戦当日は試合開始2時間前集合を原則とし、遅刻・欠席の連絡は集合30分前までに必ず学年幹事へご連絡ください。\n・遠征時のお弁当は消化が良く傷みにくいもの（おにぎり・サンドイッチ等）をご用意ください（ゼリー飲料や塩分補給タブレット等の捕食も推奨）。\n・遠征時のお小遣いは原則2,000円以内とし、財布や貴重品には必ず記名をお願いします。",
+    scope: "organization",
+    scopeLabel: "チーム全体",
+    priority: 0,
+  },
+  {
     id: "demo-rule-1",
     category: "carpool",
     categoryLabel: "配車・送迎",
@@ -2283,6 +2293,7 @@ app.get("/rules", async (c) => {
       .all();
 
     const categoryLabels: Record<string, string> = {
+      match: "試合・遠征",
       carpool: "配車・送迎",
       duty: "当番・保護者",
       venue: "グラウンド・観戦",

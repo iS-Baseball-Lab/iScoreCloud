@@ -26,7 +26,8 @@ import {
   Sun,
   CloudRain,
   HelpCircle,
-  FileText
+  FileText,
+  Trophy,
 } from "lucide-react";
 
 interface RuleItem {
@@ -213,6 +214,7 @@ export default function LiffRulesPage() {
 
   const categories = [
     { id: "all", label: "すべて", icon: BookmarkCheck },
+    { id: "match", label: "試合・遠征", icon: Trophy },
     { id: "carpool", label: "配車・送迎", icon: Car },
     { id: "duty", label: "当番・保護者", icon: ClipboardList },
     { id: "venue", label: "グラウンド", icon: MapPin },
@@ -535,6 +537,7 @@ export default function LiffRulesPage() {
                   onChange={(e) => setNewCategory(e.target.value)}
                   className="w-full px-3 py-2.5 rounded-xl bg-card border border-border text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40"
                 >
+                  <option value="match">🏆 試合・遠征</option>
                   <option value="carpool">🚗 配車・送迎</option>
                   <option value="duty">📋 当番・保護者</option>
                   <option value="venue">🏟️ グラウンド・観戦</option>
@@ -673,6 +676,7 @@ export default function LiffRulesPage() {
                   onChange={(e) => setEditCategory(e.target.value)}
                   className="w-full px-3 py-2.5 rounded-xl bg-card border border-border text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40"
                 >
+                  <option value="match">🏆 試合・遠征</option>
                   <option value="carpool">🚗 配車・送迎</option>
                   <option value="duty">📋 当番・保護者</option>
                   <option value="venue">🏟️ グラウンド・観戦</option>
