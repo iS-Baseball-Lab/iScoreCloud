@@ -2,25 +2,18 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import Link from "next/link";
 import { 
   Calendar as CalendarIcon, 
   ChevronLeft, 
   ChevronRight, 
-  Plus, 
   Trash2, 
   Save, 
   Sparkles, 
-  Clock, 
-  MapPin, 
-  Users, 
-  Utensils, 
   CheckCircle2, 
-  AlertCircle, 
   Layers, 
-  Sun, 
-  Moon, 
-  FileText,
-  HelpCircle
+  X,
+  Check,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -30,26 +23,20 @@ export interface ScheduleDayItem {
   dateStr: string; // YYYY-MM-DD
   dayLabel: string; // 8/30(日)
   title: string;
-  targetGroup?: string; // 🎯 対象グループ（全体, Aチーム, Bチーム, 試合組, 練習組, 高学年, 低学年など）
-  slotType: "all_day" | "am_only" | "pm_only"; // 終日 / 午前のみ / 午後のみ
-  
-  // 午前設定
+  targetGroup?: string;
+  eventType?: "practice" | "match" | "camp" | "meeting";
+  time?: string;
+  location?: string;
   amType: "practice" | "match" | "camp" | "off";
-  amTitle: string;
   amTime: string;
   amLocation: string;
-
-  // 午後設定
   pmType: "practice" | "match" | "camp" | "off";
-  pmTitle: string;
   pmTime: string;
   pmLocation: string;
-
-  // 当番・持ち物
-  dutyGroup: string; // 1班, 2班, 3班, 4班, なし
-  needsLunch: boolean; // お弁当要否
-  needsSnack?: boolean; // 補食（捕食）要否
-  memo: string; // 連絡事項
+  dutyGroup: string;
+  needsLunch: boolean;
+  needsSnack?: boolean;
+  memo: string;
 }
 
 interface MonthlySchedulePlannerProps {
@@ -59,92 +46,21 @@ interface MonthlySchedulePlannerProps {
   onSaved?: () => void;
 }
 
-const EVENT_TYPES = [
-  { id: "practice", label: "練習", icon: "🏃", color: "bg-primary/10 text-primary border-primary/30" },
-  { id: "match", label: "試合", icon: "⚾", color: "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30" },
-  { id: "camp", label: "合宿", icon: "🏕️", color: "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/30" },
-  { id: "off", label: "休み", icon: "🏖️", color: "bg-muted text-muted-foreground border-border" },
-] as const;
-
-export const TARGET_GROUPS = [
-  "全体",
-  "Aチーム",
-  "Bチーム",
-  "高学年",
-  "低学年",
-  "試合組",
-  "練習組",
-] as const;
-
-const DUTY_GROUPS = ["1班", "2班", "3班", "4班"];
-
-export interface VenueItem {
-  id: string;
-  name: string;
-  shortName?: string | null;
-  address?: string | null;
-}
-
 export function MonthlySchedulePlanner({
   teamId = "team_1",
-  teamName = "東京ジャイアンツ",
+  teamName = "チーム",
   isLiff = false,
   onSaved
 }: MonthlySchedulePlannerProps) {
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const [selectedDayItems, setSelectedDayItems] = useState<ScheduleDayItem[]>([]);
-  const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [deletedEventIds, setDeletedEventIds] = useState<string[]>([]);
   const [isLoadingEvents, setIsLoadingEvents] = useState<boolean>(true);
   const [isSaving, setIsSaving] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [venuesList, setVenuesList] = useState<VenueItem[]>([]);
-
-  // 略称優先の球場表示名を取得
-  const getVenueDisplayName = (v: { name: string; shortName?: string | null }) => {
-    return v.shortName && v.shortName.trim() ? v.shortName.trim() : v.name;
-  };
-
-  // 場所名から登録球場の略称を逆引きして返す（略称優先表示用）
-  const formatLocationWithShortName = (locStr: string) => {
-    if (!locStr) return "";
-    const matched = venuesList.find(
-      (v) => v.name === locStr || v.shortName === locStr || (v.shortName && locStr.includes(v.shortName))
-    );
-    if (matched && matched.shortName && matched.shortName.trim()) {
-      return matched.shortName.trim();
-    }
-    return locStr;
-  };
-
-  // 🏟️ 登録済み球場一覧を取得
-  const fetchVenues = async () => {
-    try {
-      const activeTeamId = teamId || "team_1";
-      const res = await fetch(`/api/liff/grounds?teamId=${activeTeamId}`);
-      if (res.ok) {
-        const json = (await res.json()) as any;
-        if (json.success && Array.isArray(json.venues)) {
-          setVenuesList(json.venues);
-          return;
-        }
-      }
-      // フォールバック: /api/venues
-      const res2 = await fetch(`/api/venues`);
-      if (res2.ok) {
-        const json2 = (await res2.json()) as any;
-        if (json2.success && Array.isArray(json2.data)) {
-          setVenuesList(json2.data);
-        }
-      }
-    } catch (e) {
-      console.error("Failed to fetch venues:", e);
-    }
-  };
 
   const currentYear = currentDate.getFullYear();
   const currentMonth = currentDate.getMonth(); // 0-indexed
-
   const weekDays = ["日", "月", "火", "水", "木", "金", "土"];
 
   // 日付文字列生成（YYYY-MM-DD）
@@ -155,62 +71,12 @@ export function MonthlySchedulePlanner({
     return `${y}-${m}-${d}`;
   };
 
-  // 表示用ラベル生成（例: 8/30(日)）
+  // 曜日付きラベル生成（8/30(日)）
   const formatDayLabel = (date: Date) => {
     const m = date.getMonth() + 1;
     const d = date.getDate();
     const w = weekDays[date.getDay()];
     return `${m}/${d}(${w})`;
-  };
-
-  // 時刻フォーマット補助（ISO文字列または時刻文字列から "08:00〜12:00" を安全に抽出）
-  const formatTimeRange = (start?: string | null, end?: string | null, fallback: string = "08:00〜12:00") => {
-    if (!start) return fallback;
-    try {
-      // "YYYY-MM-DDTHH:mm" または "HH:mm" から時:分を直接抽出
-      const extractHHMM = (val: string) => {
-        const match = val.match(/T?(\d{2}):(\d{2})/);
-        if (match) return `${match[1]}:${match[2]}`;
-        const d = new Date(val);
-        if (!isNaN(d.getTime())) {
-          return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-        }
-        return null;
-      };
-
-      const startHHMM = extractHHMM(start);
-      const endHHMM = end ? extractHHMM(end) : null;
-
-      if (startHHMM && endHHMM) {
-        return `${startHHMM}〜${endHHMM}`;
-      } else if (startHHMM) {
-        return `${startHHMM}〜`;
-      }
-      return fallback;
-    } catch {
-      return fallback;
-    }
-  };
-
-  // 入力された文字列（"08:00〜12:00", "8:00-12:00" など）から時:分をパース
-  const parseTimeRange = (timeStr: string, defaultStart: string, defaultEnd: string) => {
-    if (!timeStr) return { start: defaultStart, end: defaultEnd };
-    const matches = timeStr.match(/(\d{1,2}):(\d{2})/g);
-    if (matches && matches.length >= 2) {
-      const sParts = matches[0].split(":");
-      const eParts = matches[1].split(":");
-      return {
-        start: `${sParts[0].padStart(2, "0")}:${sParts[1]}`,
-        end: `${eParts[0].padStart(2, "0")}:${eParts[1]}`,
-      };
-    } else if (matches && matches.length === 1) {
-      const sParts = matches[0].split(":");
-      return {
-        start: `${sParts[0].padStart(2, "0")}:${sParts[1]}`,
-        end: defaultEnd,
-      };
-    }
-    return { start: defaultStart, end: defaultEnd };
   };
 
   // 🌟 DBから保存済みイベント一覧をロード
@@ -223,7 +89,6 @@ export function MonthlySchedulePlanner({
         const json = await res.json() as any;
         if (json.success && Array.isArray(json.data) && json.data.length > 0) {
           const loadedItems: ScheduleDayItem[] = json.data.map((ev: any) => {
-            // startAt から安全に YYYY-MM-DD を抽出
             let dateStr = "";
             if (typeof ev.startAt === "string" && ev.startAt.includes("T")) {
               dateStr = ev.startAt.split("T")[0];
@@ -236,25 +101,20 @@ export function MonthlySchedulePlanner({
             const dateObj = new Date(y, m - 1, d);
             const dayLabel = formatDayLabel(dateObj);
 
-            const hasPm = !!ev.pmStartAt;
-            const slotType: ScheduleDayItem["slotType"] = hasPm ? "all_day" : "am_only";
-            const targetGroup = ev.targetGroup || (ev.title?.match(/\[(.*?)\]/)?.[1] || "全体");
-
             return {
               id: ev.id,
               dateStr,
               dayLabel,
               title: ev.title || "活動予定",
-              targetGroup,
-              slotType,
+              targetGroup: ev.targetGroup || "全体",
+              eventType: (ev.eventType as any) || "practice",
+              location: ev.location || "確認中",
               amType: (ev.eventType as any) || "practice",
-              amTitle: ev.title || "午前活動",
-              amTime: formatTimeRange(ev.startAt, ev.endAt, "08:00〜12:00"),
-              amLocation: ev.location || "",
-              pmType: (ev.eventType as any) || "practice",
-              pmTitle: "午後活動",
-              pmTime: formatTimeRange(ev.pmStartAt, ev.pmEndAt, "12:00〜18:00"),
-              pmLocation: ev.pmLocation || ev.location || "",
+              amTime: "08:00〜12:00",
+              amLocation: ev.location || "確認中",
+              pmType: (ev.pmType as any) || (ev.pmStartAt ? "practice" : "off"),
+              pmTime: "13:00〜17:00",
+              pmLocation: ev.pmLocation || ev.location || "確認中",
               dutyGroup: ev.dutyGroup || "1班",
               needsLunch: ev.needsLunch === true || (ev.needsLunch as any) === 1 || (ev.needsLunch as any) === "1" || (ev.needsLunch as any) === "true",
               needsSnack: ev.needsSnack === true || (ev.needsSnack as any) === 1 || (ev.needsSnack as any) === "1" || (ev.needsSnack as any) === "true",
@@ -262,7 +122,6 @@ export function MonthlySchedulePlanner({
             };
           });
 
-          // 日付昇順でソートして設定
           setSelectedDayItems(loadedItems.sort((a, b) => a.dateStr.localeCompare(b.dateStr)));
           return;
         }
@@ -272,13 +131,10 @@ export function MonthlySchedulePlanner({
     } finally {
       setIsLoadingEvents(false);
     }
-
-    setIsLoadingEvents(false);
   };
 
   useEffect(() => {
     fetchEvents();
-    fetchVenues();
   }, [teamId]);
 
   // カレンダーグリッド用日付配列（42マス）
@@ -290,7 +146,6 @@ export function MonthlySchedulePlanner({
 
     const days: { date: Date; isCurrentMonth: boolean }[] = [];
 
-    // 前月パディング
     const prevMonthLastDay = new Date(currentYear, currentMonth, 0).getDate();
     for (let i = startDayOfWeek - 1; i >= 0; i--) {
       days.push({
@@ -299,7 +154,6 @@ export function MonthlySchedulePlanner({
       });
     }
 
-    // 当月の日付
     for (let i = 1; i <= totalDays; i++) {
       days.push({
         date: new Date(currentYear, currentMonth, i),
@@ -307,7 +161,6 @@ export function MonthlySchedulePlanner({
       });
     }
 
-    // 翌月パディング (計42マス)
     const remainingDays = 42 - days.length;
     for (let i = 1; i <= remainingDays; i++) {
       days.push({
@@ -322,90 +175,56 @@ export function MonthlySchedulePlanner({
   const calendarDays = getCalendarDays();
 
   // 月切り替え
-  const handlePrevMonth = () => setCurrentDate(new Date(currentYear, currentMonth - 1, 1));
-  const handleNextMonth = () => setCurrentDate(new Date(currentYear, currentMonth + 1, 1));
-  const handleToday = () => setCurrentDate(new Date());
+  const handlePrevMonth = () => {
+    setCurrentDate(new Date(currentYear, currentMonth - 1, 1));
+  };
+  const handleNextMonth = () => {
+    setCurrentDate(new Date(currentYear, currentMonth + 1, 1));
+  };
+  const handleToday = () => {
+    setCurrentDate(new Date());
+  };
 
-  // 日付クリックで「活動日 ON / OFF」をトグル
-  const handleToggleDay = (date: Date) => {
+  // 🖱️ カレンダーの日付セルをクリック（活動日 ON / OFF）
+  const handleToggleDate = (date: Date) => {
     const dateStr = formatDateString(date);
-    const existing = selectedDayItems.filter(item => item.dateStr === dateStr);
+    const dayLabel = formatDayLabel(date);
+    const existingIndex = selectedDayItems.findIndex(it => it.dateStr === dateStr);
 
-    if (existing.length > 0) {
-      // OFFにする（この日の全予定を削除）
-      existing.forEach(exists => {
-        if (exists.id && !exists.id.startsWith("new_") && !exists.id.startsWith("temp_")) {
-          setDeletedEventIds(prev => [...prev, exists.id]);
-        }
-      });
-      setSelectedDayItems(prev => prev.filter(item => item.dateStr !== dateStr));
+    if (existingIndex >= 0) {
+      // 解除 (OFF)
+      const targetItem = selectedDayItems[existingIndex];
+      if (targetItem.id && !targetItem.id.startsWith("new_") && !targetItem.id.startsWith("temp_")) {
+        setDeletedEventIds(prev => [...prev, targetItem.id]);
+      }
+      setSelectedDayItems(prev => prev.filter((_, idx) => idx !== existingIndex));
     } else {
-      // ONにする（デフォルト全体練習として新規追加）
-      const isSunday = date.getDay() === 0;
-      const dayLabel = formatDayLabel(date);
-
+      // 追加 (ON) - デフォルトの場所は「確認中」
       const newItem: ScheduleDayItem = {
         id: `new_${dateStr}_${Date.now()}`,
         dateStr,
         dayLabel,
-        title: isSunday ? "午前練習 / 午後練習" : "通常練習",
+        title: "通常練習",
         targetGroup: "全体",
-        slotType: "all_day",
+        eventType: "practice",
+        location: "確認中",
         amType: "practice",
-        amTitle: "午前練習",
         amTime: "08:00〜12:00",
-        amLocation: "ホームグラウンド",
+        amLocation: "確認中",
         pmType: "practice",
-        pmTitle: "午後練習",
-        pmTime: "12:00〜18:00",
-        pmLocation: "ホームグラウンド",
+        pmTime: "13:00〜17:00",
+        pmLocation: "確認中",
         dutyGroup: "1班",
         needsLunch: true,
         needsSnack: false,
         memo: "",
       };
 
-      // 日付順にソートして追加
       setSelectedDayItems(prev => [...prev, newItem].sort((a, b) => a.dateStr.localeCompare(b.dateStr)));
     }
   };
 
-  // ➕ 同一日に「別チーム・別動隊の予定」を追加
-  const handleAddExtraDay = (dateStr: string) => {
-    const [y, m, d] = dateStr.split("-").map(Number);
-    const dateObj = new Date(y, m - 1, d);
-    const dayLabel = formatDayLabel(dateObj);
-
-    // 既存の予定から推測して別チームタグを設定
-    const existingOnDate = selectedDayItems.filter(it => it.dateStr === dateStr);
-    const defaultTarget = existingOnDate.some(it => it.targetGroup === "Aチーム") ? "Bチーム" : "Aチーム";
-
-    const newItem: ScheduleDayItem = {
-      id: `new_${dateStr}_${Date.now()}`,
-      dateStr,
-      dayLabel,
-      title: `${defaultTarget} 活動`,
-      targetGroup: defaultTarget,
-      slotType: "all_day",
-      amType: "match",
-      amTitle: `${defaultTarget} 練習試合`,
-      amTime: "08:00〜12:00",
-      amLocation: "市民第1球場",
-      pmType: "practice",
-      pmTitle: "午後練習",
-      pmTime: "13:00〜17:00",
-      pmLocation: "市民第1球場",
-      dutyGroup: "2班",
-      needsLunch: true,
-      needsSnack: false,
-      memo: "",
-    };
-
-    setSelectedDayItems(prev => [...prev, newItem].sort((a, b) => a.dateStr.localeCompare(b.dateStr)));
-    showToast(`➕ ${dayLabel} に「${defaultTarget}」の別動予定を追加しました`);
-  };
-
-  // 今月の土日をすべて一括ON
+  // 📅 今月の土日をすべて一括選択
   const handleSelectAllWeekends = () => {
     const lastDayOfMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
     const newItems = [...selectedDayItems];
@@ -421,15 +240,15 @@ export function MonthlySchedulePlanner({
           dateStr,
           dayLabel: formatDayLabel(d),
           title: "通常練習",
-          slotType: "all_day",
+          targetGroup: "全体",
+          eventType: "practice",
+          location: "確認中",
           amType: "practice",
-          amTitle: "午前練習",
           amTime: "08:00〜12:00",
-          amLocation: "ホームグラウンド",
+          amLocation: "確認中",
           pmType: "practice",
-          pmTitle: "午後練習",
-          pmTime: "12:00〜18:00",
-          pmLocation: "ホームグラウンド",
+          pmTime: "13:00〜17:00",
+          pmLocation: "確認中",
           dutyGroup: "1班",
           needsLunch: true,
           needsSnack: false,
@@ -442,17 +261,19 @@ export function MonthlySchedulePlanner({
     showToast(`📅 ${currentMonth + 1}月の土日を活動日として追加しました`);
   };
 
-  // 活動日の個別更新
-  const handleUpdateItem = (id: string, updates: Partial<ScheduleDayItem>) => {
-    setSelectedDayItems(prev => prev.map(item => item.id === id ? { ...item, ...updates } : item));
-  };
-
-  // 活動日の削除
-  const handleDeleteItem = (id: string) => {
-    if (id && !id.startsWith("new_") && !id.startsWith("temp_")) {
-      setDeletedEventIds(prev => [...prev, id]);
+  // 🗑️ 今月の選択をすべてクリア
+  const handleClearMonth = () => {
+    const monthPrefix = `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}`;
+    const toRemove = selectedDayItems.filter(it => it.dateStr.startsWith(monthPrefix));
+    
+    for (const item of toRemove) {
+      if (item.id && !item.id.startsWith("new_") && !item.id.startsWith("temp_")) {
+        setDeletedEventIds(prev => [...prev, item.id]);
+      }
     }
-    setSelectedDayItems(prev => prev.filter(item => item.id !== id));
+
+    setSelectedDayItems(prev => prev.filter(it => !it.dateStr.startsWith(monthPrefix)));
+    showToast(`🗑️ ${currentMonth + 1}月の選択を解除しました`);
   };
 
   // トースト表示
@@ -461,50 +282,28 @@ export function MonthlySchedulePlanner({
     setTimeout(() => setToastMessage(null), 3000);
   };
 
-  // 一括保存処理（入力された実際の活動時間を正確に反映）
+  // 一括保存処理
   const handleSaveAll = async () => {
     setIsSaving(true);
     try {
       const payload = {
-        events: selectedDayItems.map(item => {
-          // 入力された amTime / pmTime を正確にパース
-          const amParsed = parseTimeRange(item.amTime, "08:00", "12:00");
-          const pmParsed = parseTimeRange(item.pmTime, "12:00", "18:00");
-
-          const startAtStr = item.slotType === "pm_only"
-            ? `${item.dateStr}T${pmParsed.start}:00`
-            : `${item.dateStr}T${amParsed.start}:00`;
-
-          const endAtStr = item.slotType === "am_only"
-            ? `${item.dateStr}T${amParsed.end}:00`
-            : `${item.dateStr}T${pmParsed.end}:00`;
-
-          const pmStartAtStr = item.slotType !== "am_only"
-            ? `${item.dateStr}T${pmParsed.start}:00`
-            : null;
-
-          const pmEndAtStr = item.slotType !== "am_only"
-            ? `${item.dateStr}T${pmParsed.end}:00`
-            : null;
-
-          return {
-            id: item.id.startsWith("new_") ? undefined : item.id,
-            title: item.title || `${item.amTitle}${item.pmTitle ? ` / ${item.pmTitle}` : ""}`,
-            targetGroup: item.targetGroup || "全体",
-            startAt: startAtStr,
-            endAt: endAtStr,
-            eventType: item.amType,
-            location: item.amLocation || item.pmLocation,
-            dutyGroup: item.dutyGroup,
-            pmStartAt: pmStartAtStr,
-            pmEndAt: pmEndAtStr,
-            pmLocation: item.pmLocation,
-            needsLunch: Boolean(item.needsLunch),
-            needsSnack: Boolean(item.needsSnack),
-            description: item.memo,
-            status: "scheduled",
-          };
-        }),
+        events: selectedDayItems.map(item => ({
+          id: item.id.startsWith("new_") ? undefined : item.id,
+          title: item.title || "通常練習",
+          targetGroup: item.targetGroup || "全体",
+          startAt: `${item.dateStr}T08:00:00`,
+          endAt: `${item.dateStr}T17:00:00`,
+          eventType: item.eventType || item.amType || 'practice',
+          location: item.location || "確認中",
+          dutyGroup: item.dutyGroup || "1班",
+          pmStartAt: item.pmType !== "off" ? `${item.dateStr}T13:00:00` : null,
+          pmEndAt: item.pmType !== "off" ? `${item.dateStr}T17:00:00` : null,
+          pmLocation: item.pmLocation || item.location || "確認中",
+          needsLunch: Boolean(item.needsLunch),
+          needsSnack: Boolean(item.needsSnack),
+          description: item.memo || "",
+          status: "scheduled",
+        })),
         deletedEventIds,
       };
 
@@ -516,771 +315,250 @@ export function MonthlySchedulePlanner({
 
       if (res.ok) {
         setDeletedEventIds([]);
-        await fetchEvents(); // DB最新状態を再取得
-        showToast("✅ 活動日の予定を一括保存しました！LINE出欠表に反映されます。");
+        await fetchEvents();
+        showToast("✅ 活動日を一括保存しました！予定 & 出欠表に反映されます。");
         if (onSaved) onSaved();
       } else {
-        showToast("✅ 活動日の予定を保存しました！");
+        showToast("❌ 保存に失敗しました");
       }
     } catch (err) {
-      console.error(err);
-      showToast("✅ 活動日の予定を保存しました！");
+      console.error("Save error:", err);
+      showToast("❌ 保存エラーが発生しました");
     } finally {
       setIsSaving(false);
     }
   };
 
   return (
-    <div className="space-y-6">
-      {/* 🌟 トースト通知 */}
+    <div className="space-y-4">
+      {/* 🔔 トースト通知 */}
       {toastMessage && (
-        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 py-3 px-5 rounded-2xl bg-foreground text-background font-black text-xs shadow-xl animate-in fade-in slide-in-from-top-3 duration-200 flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-          <span>{toastMessage}</span>
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[200] px-4 py-2.5 rounded-2xl bg-foreground text-background text-xs font-black shadow-xl animate-in fade-in slide-in-from-top-2 duration-200">
+          {toastMessage}
         </div>
       )}
 
-      {/* 🌟 1. 上部コントロールバー ＆ 導線 */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-3xl bg-card border-2 border-primary/20 shadow-sm">
-        <div className="flex items-center gap-3">
-          <span className="w-10 h-10 rounded-2xl bg-primary/10 text-primary flex items-center justify-center font-black">
-            <CalendarIcon className="w-5 h-5" />
-          </span>
-          <div>
-            <h2 className="text-base font-black text-foreground tracking-tight flex items-center gap-2">
-              <span>活動日カレンダー設定</span>
-              <span className="text-xs px-2.5 py-0.5 rounded-full bg-primary/10 text-primary font-bold">
-                {currentMonth + 1}月
-              </span>
-            </h2>
-            <p className="text-xs text-muted-foreground font-bold">
-              カレンダーの日付をタップして活動日を一括設定・公開
-            </p>
-          </div>
-        </div>
-
-        {/* 土日一括追加 & 保存ボタン */}
-        <div className="flex items-center gap-2 pt-1 sm:pt-0 flex-wrap">
-          <button
-            type="button"
-            onClick={handleSelectAllWeekends}
-            className="py-2 px-3 rounded-2xl bg-muted hover:bg-muted/80 active:scale-95 text-foreground text-xs font-black border border-border/80 flex items-center gap-1.5 transition-all"
-          >
-            <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-            <span>土日を全追加</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={handleSaveAll}
-            disabled={isSaving}
-            className="py-2 px-4 rounded-2xl bg-primary text-primary-foreground hover:bg-primary/90 active:scale-95 text-xs font-black shadow-xs flex items-center gap-1.5 transition-all disabled:opacity-50"
-          >
-            <Save className="w-3.5 h-3.5" />
-            <span>{isSaving ? "保存中..." : "活動日を一括保存"}</span>
-          </button>
-        </div>
-      </div>
-
-      {/* 🌟 2. 月間カレンダーグリッド（日付タップでON/OFF） */}
-      <div className="p-4 sm:p-5 rounded-3xl bg-card border-2 border-primary/25 shadow-md shadow-primary/5 space-y-4">
-        {/* 月切り替えヘッダー */}
-        <div className="flex items-center justify-between pb-2 border-b border-primary/15">
+      {/* 🌟 1. ヘッダー：月操作 ＆ アクションボタン */}
+      <div className="p-4 rounded-3xl bg-card border border-border/80 shadow-xs space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          {/* 月移動 */}
           <div className="flex items-center gap-2">
-            <span className="text-lg font-black text-foreground">
-              {currentYear}年 {currentMonth + 1}月
-            </span>
-            <span className="text-xs font-bold text-muted-foreground">
-              (選択中: {selectedDayItems.length}日)
-            </span>
-          </div>
-
-          <div className="flex items-center gap-1">
             <button
               type="button"
               onClick={handlePrevMonth}
-              className="p-2 rounded-xl hover:bg-muted text-muted-foreground hover:text-foreground active:scale-95 transition-all"
-              title="前月"
+              className="p-2 rounded-xl bg-muted hover:bg-muted/80 text-foreground transition-all active:scale-95 cursor-pointer"
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
+
+            <span className="text-lg font-black text-foreground min-w-[120px] text-center tracking-tight">
+              {currentYear}年 {currentMonth + 1}月
+            </span>
+
             <button
               type="button"
               onClick={handleNextMonth}
-              className="p-2 rounded-xl hover:bg-muted text-muted-foreground hover:text-foreground active:scale-95 transition-all"
-              title="翌月"
+              className="p-2 rounded-xl bg-muted hover:bg-muted/80 text-foreground transition-all active:scale-95 cursor-pointer"
             >
               <ChevronRight className="w-4 h-4" />
             </button>
+
             <button
               type="button"
               onClick={handleToday}
-              className="px-3 py-1.5 text-xs font-black rounded-xl bg-muted hover:bg-muted/80 text-foreground border border-border/80 active:scale-95 transition-all ml-1"
+              className="px-3 py-1.5 rounded-xl bg-muted/60 hover:bg-muted text-xs font-black text-foreground transition-all active:scale-95 cursor-pointer"
             >
-              今日
+              今月
+            </button>
+          </div>
+
+          {/* クイック選択 ＆ 一括保存ボタン */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={handleSelectAllWeekends}
+              className="py-2 px-3 rounded-xl bg-primary/10 hover:bg-primary text-primary hover:text-primary-foreground text-xs font-black border border-primary/25 active:scale-95 transition-all flex items-center gap-1 cursor-pointer"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>土日を全選択</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleClearMonth}
+              className="py-2 px-2.5 rounded-xl bg-muted/60 hover:bg-muted text-muted-foreground hover:text-rose-500 text-xs font-bold transition-all active:scale-95 cursor-pointer"
+              title="今月の選択をクリア"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+
+            <button
+              type="button"
+              onClick={handleSaveAll}
+              disabled={isSaving}
+              className="py-2 px-4 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-black shadow-xs active:scale-95 transition-all flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+            >
+              <Save className="w-3.5 h-3.5" />
+              <span>{isSaving ? "保存中..." : "活動日を保存"}</span>
             </button>
           </div>
         </div>
 
+        {/* 案内テキスト */}
+        <p className="text-[11.5px] font-bold text-muted-foreground">
+          💡 カレンダーの日付をタップして<strong className="text-foreground">活動日を選択（ON/OFF）</strong>するだけで登録できます。球場・時間・当番などの詳細は「予定 & 出欠」ページからいつでも個別編集できます（球場初期値: <span className="text-primary font-black">確認中</span>）。
+        </p>
+      </div>
+
+      {/* 🌟 2. 月間カレンダーグリッド */}
+      <div className="p-3.5 bg-card rounded-3xl border border-border/80 shadow-xs space-y-2">
         {/* 曜日ヘッダー */}
-        <div className="grid grid-cols-7 text-center text-xs font-black text-muted-foreground uppercase pb-1 border-b border-primary/10">
-          {weekDays.map((day, idx) => (
-            <span key={day} className={cn(idx === 0 && "text-rose-500", idx === 6 && "text-blue-500")}>
-              {day}
-            </span>
+        <div className="grid grid-cols-7 gap-1 text-center text-xs font-black">
+          {weekDays.map((w, idx) => (
+            <div
+              key={w}
+              className={cn(
+                "py-1.5 rounded-lg",
+                idx === 0 ? "text-rose-500 bg-rose-500/5" : idx === 6 ? "text-blue-500 bg-blue-500/5" : "text-muted-foreground"
+              )}
+            >
+              {w}
+            </div>
           ))}
         </div>
 
-        {/* 42マス日付グリッド（スリム＆コンパクト化） */}
-        <div className="grid grid-cols-7 gap-1 sm:gap-1.5">
-          {calendarDays.map((day, idx) => {
-            const dateStr = formatDateString(day.date);
-            const itemsOnDate = selectedDayItems.filter(item => item.dateStr === dateStr);
-            const hasItems = itemsOnDate.length > 0;
-            const isToday = formatDateString(new Date()) === dateStr;
-
-            const dayOfWeek = day.date.getDay();
-            const isSunday = dayOfWeek === 0;
-            const isSaturday = dayOfWeek === 6;
+        {/* 日付セル一覧 */}
+        <div className="grid grid-cols-7 gap-1">
+          {calendarDays.map((d, idx) => {
+            const dateStr = formatDateString(d.date);
+            const isSelected = selectedDayItems.some(it => it.dateStr === dateStr);
+            const isToday = dateStr === formatDateString(new Date());
+            const isSun = d.date.getDay() === 0;
+            const isSat = d.date.getDay() === 6;
 
             return (
-              <div
+              <button
                 key={idx}
+                type="button"
+                onClick={() => handleToggleDate(d.date)}
                 className={cn(
-                  "relative min-h-[46px] sm:min-h-[54px] p-1 rounded-xl flex flex-col justify-between items-start transition-all border text-left",
-                  !day.isCurrentMonth && "opacity-25 bg-transparent border-transparent",
-                  day.isCurrentMonth && !hasItems && "bg-muted/20 hover:bg-muted/50 border-border/60 cursor-pointer",
-                  hasItems && "bg-primary/10 border-2 border-primary shadow-xs",
-                  isToday && !hasItems && "border-dashed border-primary/60"
+                  "flex flex-col items-center justify-center p-2 rounded-2xl min-h-[58px] sm:min-h-[64px] transition-all relative cursor-pointer active:scale-95",
+                  isSelected
+                    ? "bg-primary text-primary-foreground font-black shadow-md ring-2 ring-primary/40"
+                    : isToday
+                    ? "bg-primary/10 border-2 border-primary/40 text-foreground font-black"
+                    : d.isCurrentMonth
+                    ? "bg-muted/30 hover:bg-muted/70 text-foreground border border-border/50"
+                    : "bg-muted/10 text-muted-foreground/30 border border-transparent"
                 )}
-                onClick={() => {
-                  if (day.isCurrentMonth && !hasItems) {
-                    handleToggleDay(day.date);
-                  }
-                }}
               >
-                {/* 上部：日付番号 & ON/OFFバッジ / 別動隊追加 */}
-                <div className="w-full flex items-center justify-between">
-                  <span className={cn(
-                    "text-xs font-black leading-none",
-                    isSunday && "text-rose-500",
-                    isSaturday && "text-blue-500",
-                    hasItems && "text-primary font-black"
-                  )}>
-                    {day.date.getDate()}
-                  </span>
-
-                  {hasItems ? (
-                    <div className="flex items-center gap-0.5">
-                      {/* 同日に別チーム追加 */}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleAddExtraDay(dateStr);
-                        }}
-                        className="w-4 h-4 rounded-full bg-primary/20 hover:bg-primary text-primary hover:text-primary-foreground text-[10px] font-black flex items-center justify-center transition-all"
-                        title="同日に別チームを追加"
-                      >
-                        +
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleToggleDay(day.date);
-                        }}
-                        className="w-4 h-4 rounded-full bg-primary text-primary-foreground text-[9px] font-black flex items-center justify-center shrink-0"
-                        title="この日の予定を全削除"
-                      >
-                        ✓
-                      </button>
-                    </div>
-                  ) : (
-                    <span className="text-[10px] text-muted-foreground/40 font-bold hidden sm:inline">
-                      +
-                    </span>
+                {/* 日付数字 */}
+                <span
+                  className={cn(
+                    "text-sm",
+                    isSelected
+                      ? "text-primary-foreground font-black"
+                      : isSun
+                      ? "text-rose-500 font-black"
+                      : isSat
+                      ? "text-blue-500 font-black"
+                      : "font-bold"
                   )}
-                </div>
+                >
+                  {d.date.getDate()}
+                </span>
 
-                {/* 下部：活動種別プレビューバッジ（複数ある場合はスタック表示） */}
-                {hasItems && (
-                  <div className="w-full space-y-0.5 mt-0.5">
-                    {itemsOnDate.map((it) => (
-                      <div
-                        key={it.id}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setEditingItemId(it.id);
-                        }}
-                        className="px-1 py-0.2 rounded bg-card/90 border border-primary/20 text-[8.5px] font-black text-foreground truncate cursor-pointer hover:bg-primary hover:text-primary-foreground transition-all flex items-center justify-between"
-                        title={`${it.targetGroup || "全体"}: ${it.title}（タップで詳細設定）`}
-                      >
-                        <span className="truncate">
-                          {it.targetGroup && it.targetGroup !== "全体" ? `${it.targetGroup.slice(0, 3)} ` : ""}
-                          {it.amType === "match" ? "⚾" : it.amType === "camp" ? "🏕️" : "🏃"}
-                        </span>
-                        <span className="text-[8px] opacity-70">✏️</span>
-                      </div>
-                    ))}
-                  </div>
+                {/* 選択状態ラベル */}
+                {isSelected ? (
+                  <span className="mt-1 px-1.5 py-0.2 rounded-md bg-white/20 text-white text-[9.5px] font-black tracking-tight leading-none flex items-center gap-0.5">
+                    <Check className="w-2.5 h-2.5" />
+                    <span>活動日</span>
+                  </span>
+                ) : (
+                  isToday && (
+                    <span className="mt-1 text-[9px] font-bold text-primary opacity-80 leading-none">
+                      今日
+                    </span>
+                  )
                 )}
-              </div>
+              </button>
             );
           })}
         </div>
       </div>
 
-      {/* 🌟 3. カレンダー下部：設定された活動日一覧 ＆ 「予定 & 出欠」ページへの誘導 */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between px-1">
-          <h3 className="text-base font-black text-foreground flex items-center gap-2">
-            <Layers className="w-4 h-4 text-primary" />
-            <span>今月設定した活動日一覧</span>
-            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
-              {selectedDayItems.length}日
-            </span>
-          </h3>
-          
-          <a
-            href="/liff/schedule"
-            className="text-xs font-black text-primary hover:underline flex items-center gap-1"
-          >
-            <span>📅 予定 & 出欠一覧で詳細確認</span>
-            <ChevronRight className="w-3.5 h-3.5" />
-          </a>
-        </div>
-
-        {/* ガイドメッセージ */}
-        <div className="p-3.5 rounded-2xl bg-primary/10 border border-primary/20 text-xs font-bold text-foreground space-y-1">
-          <p className="font-black flex items-center gap-1.5 text-primary">
-            <span>💡 活動予定の運用フロー</span>
-          </p>
-          <p className="text-[11px] text-muted-foreground leading-relaxed">
-            このカレンダーで今月の活動日を一括設定して保存した後、対戦相手や球場、時間、当番、お弁当などの詳細情報は<strong className="text-foreground">「予定 & 出欠」ページの各カードからいつでも個別編集</strong>できます。
-          </p>
-        </div>
-
-        {selectedDayItems.length === 0 ? (
-          <div className="p-8 rounded-3xl bg-muted/20 border-2 border-dashed border-border/80 text-center space-y-3">
-            <CalendarIcon className="w-10 h-10 text-muted-foreground/50 mx-auto" />
-            <div className="space-y-1">
-              <p className="text-sm font-black text-foreground">活動日がまだ選択されていません</p>
-              <p className="text-xs text-muted-foreground">上のカレンダーの日付をタップするか、「土日を全追加」ボタンを押してください。</p>
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {selectedDayItems.map((item) => (
-              <div
-                key={item.id}
-                className="p-3 sm:p-3.5 rounded-2xl bg-card border-2 border-border/80 hover:border-primary/40 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-all"
-              >
-                {/* 左側：日付バッジ ＆ 対象チーム ＆ 簡易情報 */}
-                <div className="flex items-start sm:items-center gap-3 flex-1 min-w-0">
-                  {/* 日付バッジ（54px固定） */}
-                  <div className="w-[54px] min-w-[54px] max-w-[54px] shrink-0 px-1 py-1 rounded-xl bg-primary/10 text-primary border border-primary/20 flex flex-col items-center justify-center">
-                    <span className="text-xs font-black leading-tight tracking-tight">{item.dayLabel}</span>
-                    <span className="text-[9px] font-bold mt-0.5 opacity-90">
-                      {item.amType === "match" ? "⚾ 試合" : item.amType === "camp" ? "🏕️ 合宿" : "🏃 練習"}
-                    </span>
-                  </div>
-
-                  {/* 詳細サマリー */}
-                  <div className="min-w-0 flex-1 space-y-1">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      {/* 対象チーム切り替えチップ */}
-                      <span className="px-2 py-0.2 rounded-md bg-primary/15 text-primary text-[10.5px] font-black shrink-0 border border-primary/25">
-                        🏷️ {item.targetGroup || "全体"}
-                      </span>
-                      <h4 className="text-xs font-black text-foreground truncate">
-                        {item.title || "活動日"}
-                      </h4>
-                    </div>
-
-                    {/* 午前 / 午後の時間・場所 */}
-                    <div className="flex items-center gap-3 flex-wrap text-[11px] font-bold text-muted-foreground">
-                      <span className="flex items-center gap-1">
-                        <Clock className="w-3 h-3 text-amber-500 shrink-0" />
-                        <span className="text-foreground/90">{item.amTime}</span>
-                      </span>
-
-                      {(item.amLocation || item.pmLocation) && (
-                        <span className="flex items-center gap-1 truncate text-foreground/90">
-                          <MapPin className="w-3 h-3 text-emerald-500 shrink-0" />
-                          <span className="truncate">{formatLocationWithShortName(item.amLocation || item.pmLocation)}</span>
-                        </span>
-                      )}
-
-                      {item.dutyGroup && (
-                        <span className="text-primary text-[10.5px] font-bold">
-                          📋 当番: {item.dutyGroup}
-                        </span>
-                      )}
-
-                      {item.needsLunch && (
-                        <span className="text-amber-600 dark:text-amber-400 text-[10.5px]">
-                          🍙 弁当要
-                        </span>
-                      )}
-
-                      {item.needsSnack && (
-                        <span className="text-emerald-600 dark:text-emerald-400 text-[10.5px]">
-                          🍌 補食要
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* 右側アクション：クイック詳細設定 ＆ 削除 */}
-                <div className="flex items-center gap-2 justify-end shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-border/60">
-                  <button
-                    type="button"
-                    onClick={() => setEditingItemId(item.id)}
-                    className="py-1.5 px-3 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 active:scale-95 text-xs font-black shadow-2xs flex items-center gap-1.5 transition-all"
-                  >
-                    <span>✏️ 設定</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteItem(item.id)}
-                    className="p-1.5 rounded-xl text-rose-500 hover:bg-rose-500/10 active:scale-95 transition-all border border-rose-500/20 hover:border-rose-500/40"
-                    title="この活動日を解除"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* 🌟 4. 個別活動日の詳細編集モーダル（ダイアログ） */}
-      {editingItemId && (() => {
-        const item = selectedDayItems.find(it => it.id === editingItemId);
-        if (!item) return null;
+      {/* 🌟 3. 現在表示中の月の活動日一覧（シンプル表示） */}
+      {(() => {
+        const currentMonthPrefix = `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}`;
+        const currentMonthItems = selectedDayItems.filter(it => it.dateStr.startsWith(currentMonthPrefix));
 
         return (
-          <div className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-150">
-            <div
-              className="bg-card w-full max-w-2xl rounded-t-3xl sm:rounded-3xl border-2 border-primary/30 shadow-2xl overflow-hidden max-h-[85vh] flex flex-col animate-in slide-in-from-bottom-4 duration-200"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {/* モーダルヘッダー */}
-              <div className="px-5 py-4 border-b border-border/80 flex items-center justify-between bg-muted/30 shrink-0">
-                <div className="flex items-center gap-2.5">
-                  <span className="px-3 py-1 rounded-xl bg-primary text-primary-foreground text-sm font-black shrink-0">
-                    {item.dayLabel}
-                  </span>
-                  <span className="text-sm font-black text-foreground">
-                    活動日の詳細設定
-                  </span>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setEditingItemId(null)}
-                  className="p-1.5 rounded-xl hover:bg-muted text-muted-foreground hover:text-foreground active:scale-95 transition-all"
-                >
-                  <span className="text-lg font-black leading-none">✕</span>
-                </button>
+          <div className="p-4 rounded-3xl bg-card border border-border/80 shadow-xs space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-black text-foreground flex items-center gap-1.5">
+                  <Layers className="w-4 h-4 text-primary" />
+                  <span>{currentMonth + 1}月の活動日一覧</span>
+                </h3>
+                <span className="px-2 py-0.5 rounded-full bg-primary/15 text-primary text-xs font-black">
+                  {currentMonthItems.length}日
+                </span>
               </div>
 
-              {/* モーダル本文（スクロール可能） */}
-              <div className="p-5 overflow-y-auto space-y-4 text-xs">
-                {/* 1. 予定タイトル & 対象チーム */}
-                <div className="p-3.5 rounded-2xl bg-muted/30 border border-border/80 space-y-3">
-                  <div className="space-y-1">
-                    <label className="text-[11px] font-black text-foreground">予定タイトル</label>
-                    <input
-                      type="text"
-                      value={item.title}
-                      onChange={(e) => handleUpdateItem(item.id, { title: e.target.value })}
-                      placeholder="予定タイトル（例: 秋季大会 2回戦 vs レッドソックス）"
-                      className="w-full px-3 py-2 rounded-xl bg-card border border-border/80 text-xs font-black text-foreground focus:outline-hidden focus:border-primary"
-                    />
-                  </div>
-
-                  {/* 対象チーム/グループ クイック選択 */}
-                  <div className="space-y-1.5">
-                    <label className="text-[10.5px] font-bold text-muted-foreground">対象チーム・グループ</label>
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      {TARGET_GROUPS.map((tg) => {
-                        const isSel = (item.targetGroup || "全体") === tg;
-                        return (
-                          <button
-                            key={tg}
-                            type="button"
-                            onClick={() => handleUpdateItem(item.id, { targetGroup: tg })}
-                            className={cn(
-                              "px-2.5 py-1 rounded-xl text-xs font-bold border transition-all active:scale-95",
-                              isSel
-                                ? "bg-primary text-primary-foreground border-primary font-black shadow-xs"
-                                : "bg-card hover:bg-muted text-muted-foreground hover:text-foreground border-border/80"
-                            )}
-                          >
-                            {tg}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* 時間帯スロット選択（終日 / 午前のみ / 午後のみ） */}
-                  <div className="space-y-1.5 pt-1 border-t border-border/60">
-                    <label className="text-[10.5px] font-bold text-muted-foreground">時間帯</label>
-                    <div className="flex items-center p-1 bg-muted/60 rounded-xl border border-border/60 text-xs font-bold w-fit">
-                      <button
-                        type="button"
-                        onClick={() => handleUpdateItem(item.id, { slotType: "all_day" })}
-                        className={cn(
-                          "px-3 py-1 rounded-lg transition-all",
-                          item.slotType === "all_day" ? "bg-primary text-primary-foreground font-black shadow-xs" : "text-muted-foreground hover:text-foreground"
-                        )}
-                      >
-                        終日
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleUpdateItem(item.id, { slotType: "am_only" })}
-                        className={cn(
-                          "px-3 py-1 rounded-lg transition-all",
-                          item.slotType === "am_only" ? "bg-primary text-primary-foreground font-black shadow-xs" : "text-muted-foreground hover:text-foreground"
-                        )}
-                      >
-                        午前のみ
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleUpdateItem(item.id, { slotType: "pm_only" })}
-                        className={cn(
-                          "px-3 py-1 rounded-lg transition-all",
-                          item.slotType === "pm_only" ? "bg-primary text-primary-foreground font-black shadow-xs" : "text-muted-foreground hover:text-foreground"
-                        )}
-                      >
-                        午後のみ
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 2. 午前 / 午後の活動内容設定グリッド */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                  {/* ☀️ 【午前】 */}
-                  {(item.slotType === "all_day" || item.slotType === "am_only") && (
-                    <div className="p-3.5 rounded-2xl bg-muted/30 border border-primary/20 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-black text-foreground flex items-center gap-1.5">
-                          <Sun className="w-3.5 h-3.5 text-amber-500" />
-                          <span>午前</span>
-                        </span>
-
-                        <div className="flex flex-wrap gap-1">
-                          {EVENT_TYPES.map(t => (
-                            <button
-                              key={t.id}
-                              type="button"
-                              onClick={() => handleUpdateItem(item.id, { amType: t.id as any })}
-                              className={cn(
-                                "px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-all active:scale-95",
-                                item.amType === t.id ? t.color + " font-black shadow-2xs" : "bg-card border-border/80 text-muted-foreground hover:text-foreground"
-                              )}
-                            >
-                              {t.icon} {t.label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div className="space-y-2">
-                        <div>
-                          <label className="text-[10px] font-bold text-muted-foreground mb-1 block">活動時間</label>
-                          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-card border border-border/80">
-                            <Clock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                            <input
-                              type="text"
-                              value={item.amTime}
-                              onChange={(e) => handleUpdateItem(item.id, { amTime: e.target.value })}
-                              placeholder="08:00〜12:00"
-                              className="bg-transparent text-xs font-bold text-foreground focus:outline-hidden w-full"
-                            />
-                          </div>
-                        </div>
-
-                        <div>
-                          <label className="text-[10px] font-bold text-muted-foreground mb-1 block">球場・場所</label>
-                          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-card border border-border/80">
-                            <MapPin className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                            <input
-                              type="text"
-                              value={item.amLocation}
-                              onChange={(e) => handleUpdateItem(item.id, { amLocation: e.target.value })}
-                              placeholder="市民第1球場 または 選択"
-                              className="bg-transparent text-xs font-bold text-foreground focus:outline-hidden w-full"
-                            />
-                          </div>
-                        </div>
-
-                        {/* 球場クイック選択チップ */}
-                        {venuesList.length > 0 && (
-                          <div className="flex items-center gap-1 overflow-x-auto scrollbar-none pt-1">
-                            {venuesList.map((v) => {
-                              const displayName = getVenueDisplayName(v);
-                              const isSelected = item.amLocation === displayName || item.amLocation === v.name;
-                              return (
-                                <button
-                                  key={v.id}
-                                  type="button"
-                                  onClick={() => handleUpdateItem(item.id, { amLocation: displayName })}
-                                  className={cn(
-                                    "px-2 py-0.5 rounded-lg text-[9.5px] font-bold shrink-0 transition-all border",
-                                    isSelected
-                                      ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/40 font-black shadow-2xs"
-                                      : "bg-card hover:bg-muted text-muted-foreground hover:text-foreground border-border/70"
-                                  )}
-                                >
-                                  🏟️ {displayName}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* 🌙 【午後】 */}
-                  {(item.slotType === "all_day" || item.slotType === "pm_only") && (
-                    <div className="p-3.5 rounded-2xl bg-muted/30 border border-primary/20 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-black text-foreground flex items-center gap-1.5">
-                          <Moon className="w-3.5 h-3.5 text-indigo-500" />
-                          <span>午後</span>
-                        </span>
-
-                        <div className="flex flex-wrap gap-1">
-                          {EVENT_TYPES.map(t => (
-                            <button
-                              key={t.id}
-                              type="button"
-                              onClick={() => handleUpdateItem(item.id, { pmType: t.id as any })}
-                              className={cn(
-                                "px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-all active:scale-95",
-                                item.pmType === t.id ? t.color + " font-black shadow-2xs" : "bg-card border-border/80 text-muted-foreground hover:text-foreground"
-                              )}
-                            >
-                              {t.icon} {t.label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div className="space-y-2">
-                        <div>
-                          <label className="text-[10px] font-bold text-muted-foreground mb-1 block">活動時間</label>
-                          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-card border border-border/80">
-                            <Clock className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-                            <input
-                              type="text"
-                              value={item.pmTime}
-                              onChange={(e) => handleUpdateItem(item.id, { pmTime: e.target.value })}
-                              placeholder="13:00〜17:00"
-                              className="bg-transparent text-xs font-bold text-foreground focus:outline-hidden w-full"
-                            />
-                          </div>
-                        </div>
-
-                        <div>
-                          <label className="text-[10px] font-bold text-muted-foreground mb-1 block">球場・場所</label>
-                          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-card border border-border/80">
-                            <MapPin className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                            <input
-                              type="text"
-                              value={item.pmLocation}
-                              onChange={(e) => handleUpdateItem(item.id, { pmLocation: e.target.value })}
-                              placeholder="大師河原第3G または 選択"
-                              className="bg-transparent text-xs font-bold text-foreground focus:outline-hidden w-full"
-                            />
-                          </div>
-                        </div>
-
-                        {/* 球場クイック選択チップ */}
-                        {venuesList.length > 0 && (
-                          <div className="flex items-center gap-1 overflow-x-auto scrollbar-none pt-1">
-                            {venuesList.map((v) => {
-                              const displayName = getVenueDisplayName(v);
-                              const isSelected = item.pmLocation === displayName || item.pmLocation === v.name;
-                              return (
-                                <button
-                                  key={v.id}
-                                  type="button"
-                                  onClick={() => handleUpdateItem(item.id, { pmLocation: displayName })}
-                                  className={cn(
-                                    "px-2 py-0.5 rounded-lg text-[9.5px] font-bold shrink-0 transition-all border",
-                                    isSelected
-                                      ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/40 font-black shadow-2xs"
-                                      : "bg-card hover:bg-muted text-muted-foreground hover:text-foreground border-border/70"
-                                  )}
-                                >
-                                  🏟️ {displayName}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* 3. 当番・お弁当・補食・連絡事項 */}
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 p-3.5 rounded-2xl bg-muted/30 border border-border/80">
-                  {/* 当番選択 */}
-                  <div>
-                    <label className="text-[10px] font-bold text-muted-foreground block mb-1">📋 当番</label>
-                    <div className="grid grid-cols-4 gap-1">
-                      {DUTY_GROUPS.map(dg => (
-                        <button
-                          key={dg}
-                          type="button"
-                          onClick={() => handleUpdateItem(item.id, { dutyGroup: dg })}
-                          className={cn(
-                            "py-1 px-0.5 text-center rounded-lg text-[11px] font-bold border transition-all active:scale-95",
-                            item.dutyGroup === dg
-                              ? "bg-primary text-primary-foreground border-primary font-black shadow-xs"
-                              : "bg-card border-border/80 text-muted-foreground hover:text-foreground"
-                          )}
-                        >
-                          {dg}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* お弁当要否 */}
-                  <div>
-                    <label className="text-[10px] font-bold text-muted-foreground block mb-1">お弁当</label>
-                    <div className="flex gap-1">
-                      <button
-                        type="button"
-                        onClick={() => handleUpdateItem(item.id, { needsLunch: true })}
-                        className={cn(
-                          "flex-1 py-1 px-1 rounded-lg text-[11px] font-bold border transition-all flex items-center justify-center gap-1",
-                          item.needsLunch === true
-                            ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/40 font-black"
-                            : "bg-card border-border/80 text-muted-foreground"
-                        )}
-                      >
-                        <Utensils className="w-3 h-3" />
-                        <span>要</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleUpdateItem(item.id, { needsLunch: false })}
-                        className={cn(
-                          "flex-1 py-1 px-1 rounded-lg text-[11px] font-bold border transition-all flex items-center justify-center gap-1",
-                          item.needsLunch !== true
-                            ? "bg-primary/15 text-primary border-primary/40 font-black"
-                            : "bg-card border-border/80 text-muted-foreground"
-                        )}
-                      >
-                        <span>不要</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* 補食（捕食）要否 */}
-                  <div>
-                    <label className="text-[10px] font-bold text-muted-foreground block mb-1">補食（捕食）</label>
-                    <div className="flex gap-1">
-                      <button
-                        type="button"
-                        onClick={() => handleUpdateItem(item.id, { needsSnack: true })}
-                        className={cn(
-                          "flex-1 py-1 px-1 rounded-lg text-[11px] font-bold border transition-all flex items-center justify-center gap-1",
-                          item.needsSnack === true
-                            ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/40 font-black"
-                            : "bg-card border-border/80 text-muted-foreground"
-                        )}
-                      >
-                        <span className="text-xs leading-none">🍌</span>
-                        <span>要</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleUpdateItem(item.id, { needsSnack: false })}
-                        className={cn(
-                          "flex-1 py-1 px-1 rounded-lg text-[11px] font-bold border transition-all flex items-center justify-center gap-1",
-                          item.needsSnack !== true
-                            ? "bg-primary/15 text-primary border-primary/40 font-black"
-                            : "bg-card border-border/80 text-muted-foreground"
-                        )}
-                      >
-                        <span>不要</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* 備考・連絡事項 */}
-                  <div>
-                    <label className="text-[10px] font-bold text-muted-foreground block mb-1">連絡事項・持ち物</label>
-                    <input
-                      type="text"
-                      value={item.memo}
-                      onChange={(e) => handleUpdateItem(item.id, { memo: e.target.value })}
-                      placeholder="正装、水分多め等"
-                      className="w-full px-2.5 py-1.5 rounded-xl bg-card border border-border/80 text-xs font-bold text-foreground focus:outline-hidden focus:border-primary"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* モーダルフッター */}
-              <div className="px-5 py-3.5 pb-8 sm:pb-3.5 border-t border-border/80 flex items-center justify-between bg-muted/20 shrink-0 gap-3">
-                <button
-                  type="button"
-                  onClick={() => handleDeleteItem(item.id)}
-                  className="py-2.5 px-3 rounded-xl text-xs font-bold text-rose-500 hover:bg-rose-500/10 hover:underline flex items-center gap-1 active:scale-95 transition-all"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>この活動日を解除</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setEditingItemId(null)}
-                  className="py-2.5 px-6 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-black shadow-md transition-all active:scale-95"
-                >
-                  設定完了
-                </button>
-              </div>
+              <Link
+                href="/liff/schedule"
+                className="text-xs font-black text-primary hover:underline flex items-center gap-0.5"
+              >
+                <span>予定 & 出欠表へ</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </Link>
             </div>
+
+            {currentMonthItems.length === 0 ? (
+              <p className="text-xs font-bold text-muted-foreground text-center py-4">
+                {currentMonth + 1}月のカレンダーの日付をタップして活動日を選択してください
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {currentMonthItems.map((it) => (
+                  <div
+                    key={it.id}
+                    className="px-2.5 py-1.5 rounded-xl bg-muted/60 border border-border/80 text-xs font-black text-foreground flex items-center gap-1.5"
+                  >
+                    <span>📅 {it.dayLabel}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const [y, m, d] = it.dateStr.split("-").map(Number);
+                        handleToggleDate(new Date(y, m - 1, d));
+                      }}
+                      className="text-muted-foreground hover:text-rose-500 cursor-pointer transition-all ml-0.5"
+                      title="解除"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* 保存ボタン */}
+            {currentMonthItems.length > 0 && (
+              <div className="pt-2 border-t border-border/60 flex justify-end">
+                <button
+                  type="button"
+                  onClick={handleSaveAll}
+                  disabled={isSaving}
+                  className="py-2.5 px-6 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-black shadow-md active:scale-95 transition-all flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>{isSaving ? "保存中..." : `${currentMonth + 1}月の活動日（${currentMonthItems.length}日）を一括保存`}</span>
+                </button>
+              </div>
+            )}
           </div>
         );
       })()}
-
-      {/* 🌟 5. 下部固定保存バー */}
-      <div className="sticky bottom-4 z-20 p-4 rounded-3xl bg-card/90 backdrop-blur-md border-2 border-primary/30 shadow-xl flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-xs font-bold text-muted-foreground">
-          <CheckCircle2 className="w-4 h-4 text-primary" />
-          <span>合計 {selectedDayItems.length} 件の活動日を設定中</span>
-        </div>
-
-        <button
-          type="button"
-          onClick={handleSaveAll}
-          disabled={isSaving}
-          className="py-2.5 px-6 rounded-2xl bg-primary text-primary-foreground hover:bg-primary/90 active:scale-95 text-xs font-black shadow-md flex items-center gap-2 transition-all disabled:opacity-50"
-        >
-          <Save className="w-4 h-4" />
-          <span>{isSaving ? "一括保存中..." : "活動日予定を一括保存する"}</span>
-        </button>
-      </div>
     </div>
   );
 }
