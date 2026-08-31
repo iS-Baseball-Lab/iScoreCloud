@@ -728,12 +728,12 @@ app.get("/schedule", async (c) => {
       });
     }
 
-    // 実チームのイベント一覧を取得
+    // 実チームのイベント一覧を取得（昇順：直近・古い日付から順に）
     const eventList = await db
       .select()
       .from(events)
       .where(eq(events.teamId, teamId))
-      .orderBy(desc(events.startAt))
+      .orderBy(asc(events.startAt))
       .all();
 
     // ログインユーザーの memberId を特定

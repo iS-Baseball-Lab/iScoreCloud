@@ -90,6 +90,7 @@ export interface ScheduleEvent {
 export default function LiffSchedulePage() {
   const { currentTeam, profile } = useLiff();
   const [filter, setFilter] = useState<"all" | "match" | "practice">("all");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const [events, setEvents] = useState<ScheduleEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -522,14 +523,21 @@ export default function LiffSchedulePage() {
   }, [events]);
 
   const filteredEvents = useMemo(() => {
-    return events.filter((ev) => {
+    const list = events.filter((ev) => {
       if (selectedDateStr && ev.dateStr !== selectedDateStr) return false;
       if (filter === "all") return true;
       if (filter === "match") return ev.eventType === "match" || ev.amType === "match" || ev.pmType === "match" || ev.activityGroups?.some(g => g.eventType === "match");
       if (filter === "practice") return ev.eventType === "practice" || ev.amType === "practice" || ev.pmType === "practice" || ev.activityGroups?.some(g => g.eventType === "practice");
       return true;
     });
-  }, [events, filter, selectedDateStr]);
+
+    // 昇順（直近・古い日付から順に）または降順でソート
+    return list.sort((a, b) => {
+      const keyA = a.dateStr || a.date || "";
+      const keyB = b.dateStr || b.date || "";
+      return sortOrder === "asc" ? keyA.localeCompare(keyB) : keyB.localeCompare(keyA);
+    });
+  }, [events, filter, selectedDateStr, sortOrder]);
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -695,40 +703,52 @@ export default function LiffSchedulePage() {
           </div>
         </div>
 
-        {/* フィルター切り替えタブ */}
-        <div className="flex items-center gap-1.5 p-1 bg-muted/60 rounded-2xl border border-border">
+        {/* フィルター切り替え ＆ 昇順/降順ソート切り替えタブ */}
+        <div className="flex items-center gap-2">
+          <div className="flex-1 flex items-center gap-1 p-1 bg-muted/60 rounded-2xl border border-border">
+            <button
+              type="button"
+              onClick={() => setFilter("all")}
+              className={`flex-1 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                filter === "all"
+                  ? "bg-card text-foreground shadow-xs"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              すべて ({events.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilter("match")}
+              className={`flex-1 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                filter === "match"
+                  ? "bg-card text-rose-600 dark:text-rose-400 shadow-xs"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              ⚾ 試合のみ
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilter("practice")}
+              className={`flex-1 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                filter === "practice"
+                  ? "bg-card text-primary shadow-xs"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              🏃 練習のみ
+            </button>
+          </div>
+
+          {/* 昇順 / 降順 切り替えボタン */}
           <button
             type="button"
-            onClick={() => setFilter("all")}
-            className={`flex-1 py-1.5 rounded-xl text-xs font-black transition-all ${
-              filter === "all"
-                ? "bg-card text-foreground shadow-xs"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
+            onClick={() => setSortOrder(prev => prev === "asc" ? "desc" : "asc")}
+            className="py-2 px-2.5 rounded-2xl bg-muted/60 hover:bg-muted text-muted-foreground hover:text-foreground text-xs font-black border border-border transition-all active:scale-95 flex items-center gap-1 shrink-0 cursor-pointer"
+            title={sortOrder === "asc" ? "現在：昇順（直近から）" : "現在：降順（未来から）"}
           >
-            すべて ({events.length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setFilter("match")}
-            className={`flex-1 py-1.5 rounded-xl text-xs font-black transition-all ${
-              filter === "match"
-                ? "bg-card text-rose-600 dark:text-rose-400 shadow-xs"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            ⚾ 試合のみ
-          </button>
-          <button
-            type="button"
-            onClick={() => setFilter("practice")}
-            className={`flex-1 py-1.5 rounded-xl text-xs font-black transition-all ${
-              filter === "practice"
-                ? "bg-card text-primary shadow-xs"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            🏃 練習のみ
+            <span>{sortOrder === "asc" ? "↑ 昇順" : "↓ 降順"}</span>
           </button>
         </div>
 
