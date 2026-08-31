@@ -29,6 +29,10 @@ import {
   ChevronLeft,
   ChevronRight,
   Sparkles,
+  Layers,
+  Check,
+  Flame,
+  Plus,
 } from "lucide-react";
 
 const TARGET_GROUPS = ["全体", "Aチーム", "Bチーム", "高学年", "低学年", "試合組", "練習組"];
@@ -40,7 +44,17 @@ const EVENT_TYPES = [
   { id: "meeting", label: "ミーティング", icon: "📋", color: "bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30" },
 ];
 
-interface ScheduleEvent {
+export interface ActivityGroup {
+  id: string;
+  name: string;
+  time?: string;
+  location?: string;
+  eventType?: "match" | "practice" | "meeting" | "camp";
+  dutyGroup?: string;
+  carInfo?: string;
+}
+
+export interface ScheduleEvent {
   id: string;
   title: string;
   date: string;
@@ -64,12 +78,15 @@ interface ScheduleEvent {
   needsSnack?: boolean;
   memo?: string;
   carInfo?: string;
+  activityGroups?: ActivityGroup[];
+  groupCounts?: Record<string, number>;
   myStatus: "present" | "absent" | "pending" | "late" | "partial";
+  mySelectedGroupId?: string | null;
   attendCount: { present: number; absent: number; pending: number };
 }
 
 export default function LiffSchedulePage() {
-  const { currentTeam, profile, isLoadingTeam } = useLiff();
+  const { currentTeam, profile } = useLiff();
   const [filter, setFilter] = useState<"all" | "match" | "practice">("all");
   const [events, setEvents] = useState<ScheduleEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -82,6 +99,18 @@ export default function LiffSchedulePage() {
   const [editingEvent, setEditingEvent] = useState<ScheduleEvent | null>(null);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [venuesList, setVenuesList] = useState<Array<{ id: string; name: string; shortName?: string | null }>>([]);
+
+  // 👥 各カードでアクティブなグループタブ
+  const [activeGroupTabMap, setActiveGroupTabMap] = useState<Record<string, string>>({});
+
+  // ユーザーの立場とお子様リスト
+  const [userRole, setUserRole] = useState<"parent" | "coach" | "player" | "staff">("parent");
+  const [children, setChildren] = useState<Array<{ id: string; name: string; uniformNumber?: string; parentName?: string }>>([]);
+  const [memberId, setMemberId] = useState<string | null>(null);
+  const [attendanceMap, setAttendanceMap] = useState<Record<string, "present" | "absent" | "pending" | "late">>({});
+  const [parentGroupMap, setParentGroupMap] = useState<Record<string, string>>({});
+  const [childAttendanceMap, setChildAttendanceMap] = useState<Record<string, Record<string, "present" | "absent" | "pending" | "late">>>({});
+  const [childGroupMap, setChildGroupMap] = useState<Record<string, Record<string, string>>>({});
 
   // 球場一覧の取得
   useEffect(() => {
@@ -106,13 +135,6 @@ export default function LiffSchedulePage() {
   const getVenueDisplayName = (v: { name: string; shortName?: string | null }) => {
     return v.shortName && v.shortName.trim() ? v.shortName.trim() : v.name;
   };
-
-  // ユーザーの立場とお子様リスト
-  const [userRole, setUserRole] = useState<"parent" | "coach" | "player" | "staff">("parent");
-  const [children, setChildren] = useState<Array<{ id: string; name: string; uniformNumber?: string; parentName?: string }>>([]);
-  const [memberId, setMemberId] = useState<string | null>(null);
-  const [attendanceMap, setAttendanceMap] = useState<Record<string, "present" | "absent" | "pending" | "late">>({});
-  const [childAttendanceMap, setChildAttendanceMap] = useState<Record<string, Record<string, "present" | "absent" | "pending" | "late">>>({});
 
   // 👨‍👦 DBの親子関係・お子様データおよび出欠の自動取得
   const fetchFamilyData = async () => {
@@ -149,14 +171,20 @@ export default function LiffSchedulePage() {
           if (json.attendances) {
             setChildAttendanceMap(prev => ({ ...json.attendances, ...prev }));
           }
+          if (json.childGroupMap) {
+            setChildGroupMap(prev => ({ ...json.childGroupMap, ...prev }));
+          }
 
-          // 自分の出欠を復元
+          // 自分の出欠・選択グループを復元
           if (json.parentAttendances && Object.keys(json.parentAttendances).length > 0) {
             setAttendanceMap(prev => ({ ...json.parentAttendances, ...prev }));
             setEvents(prev => prev.map(ev => ({
               ...ev,
               myStatus: json.parentAttendances[ev.id] || ev.myStatus
             })));
+          }
+          if (json.parentGroupMap) {
+            setParentGroupMap(prev => ({ ...json.parentGroupMap, ...prev }));
           }
         }
       }
@@ -184,6 +212,10 @@ export default function LiffSchedulePage() {
     return childAttendanceMap[eventId]?.[childId] || "pending";
   };
 
+  const getChildSelectedGroup = (eventId: string, childId: string, defaultGroupId?: string) => {
+    return childGroupMap[eventId]?.[childId] || defaultGroupId || "";
+  };
+
   const getEventAttendance = (eventId: string, defaultStatus?: string) => {
     if (attendanceMap[eventId] && attendanceMap[eventId] !== "pending") {
       return attendanceMap[eventId];
@@ -197,7 +229,17 @@ export default function LiffSchedulePage() {
     return (attendanceMap[eventId] || defaultStatus || "pending") as any;
   };
 
-  const handleChildStatusChange = async (eventId: string, childId: string, status: "present" | "absent" | "pending" | "late") => {
+  const getParentSelectedGroup = (eventId: string, defaultGroupId?: string) => {
+    return parentGroupMap[eventId] || defaultGroupId || "";
+  };
+
+  // お子様の出欠変更ハンドラー（グループ選択対応）
+  const handleChildStatusChange = async (
+    eventId: string,
+    childId: string,
+    status: "present" | "absent" | "pending" | "late",
+    selectedGroupId?: string
+  ) => {
     setChildAttendanceMap((prev) => ({
       ...prev,
       [eventId]: {
@@ -205,6 +247,17 @@ export default function LiffSchedulePage() {
         [childId]: status,
       }
     }));
+
+    if (selectedGroupId !== undefined) {
+      setChildGroupMap((prev) => ({
+        ...prev,
+        [eventId]: {
+          ...(prev[eventId] || {}),
+          [childId]: selectedGroupId,
+        }
+      }));
+    }
+
     if (typeof window !== "undefined") {
       localStorage.setItem(`iscore_child_att_${eventId}_${childId}`, status);
     }
@@ -217,10 +270,51 @@ export default function LiffSchedulePage() {
           eventId,
           playerId: childId,
           status,
+          selectedGroupId: status === "present" ? (selectedGroupId || childGroupMap[eventId]?.[childId]) : null,
         }),
       });
     } catch (err) {
       console.error("Failed to save child attendance:", err);
+    }
+  };
+
+  // 保護者本人の出欠変更ハンドラー（グループ選択対応）
+  const handleStatusChange = async (
+    eventId: string,
+    status: "present" | "absent" | "pending" | "late",
+    selectedGroupId?: string
+  ) => {
+    setAttendanceMap(prev => ({ ...prev, [eventId]: status }));
+    if (selectedGroupId !== undefined) {
+      setParentGroupMap(prev => ({ ...prev, [eventId]: selectedGroupId }));
+    }
+
+    if (typeof window !== "undefined") {
+      localStorage.setItem(`iscore_my_att_${eventId}`, status);
+    }
+    setEvents((prev) =>
+      prev.map((ev) => (ev.id === eventId ? {
+        ...ev,
+        myStatus: status,
+        mySelectedGroupId: selectedGroupId || ev.mySelectedGroupId,
+      } : ev))
+    );
+
+    try {
+      const uid = profile?.userId || (typeof window !== "undefined" ? (localStorage.getItem("iscore_user_id") || localStorage.getItem("iscore_userId") || "") : "");
+      await fetch("/api/liff/attendance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          eventId,
+          userId: uid,
+          memberId: memberId || undefined,
+          status,
+          selectedGroupId: status === "present" ? (selectedGroupId || parentGroupMap[eventId]) : null,
+        }),
+      });
+    } catch (err) {
+      console.error("Failed to save attendance:", err);
     }
   };
 
@@ -241,13 +335,20 @@ export default function LiffSchedulePage() {
           }));
 
           const map: Record<string, "present" | "absent" | "pending" | "late"> = {};
+          const pGrpMap: Record<string, string> = {};
           for (const ev of normalizedEvents) {
             if (ev.id && ev.myStatus && ev.myStatus !== "pending") {
               map[ev.id] = ev.myStatus === "partial" ? "late" : (ev.myStatus as "present" | "absent" | "late");
             }
+            if (ev.mySelectedGroupId) {
+              pGrpMap[ev.id] = ev.mySelectedGroupId;
+            }
           }
           if (Object.keys(map).length > 0) {
             setAttendanceMap(prev => ({ ...map, ...prev }));
+          }
+          if (Object.keys(pGrpMap).length > 0) {
+            setParentGroupMap(prev => ({ ...pGrpMap, ...prev }));
           }
           setEvents(normalizedEvents);
         }
@@ -262,32 +363,6 @@ export default function LiffSchedulePage() {
   useEffect(() => {
     loadSchedule();
   }, [loadSchedule]);
-
-  const handleStatusChange = async (eventId: string, status: "present" | "absent" | "pending" | "late") => {
-    setAttendanceMap(prev => ({ ...prev, [eventId]: status }));
-    if (typeof window !== "undefined") {
-      localStorage.setItem(`iscore_my_att_${eventId}`, status);
-    }
-    setEvents((prev) =>
-      prev.map((ev) => (ev.id === eventId ? { ...ev, myStatus: status } : ev))
-    );
-
-    try {
-      const uid = profile?.userId || (typeof window !== "undefined" ? (localStorage.getItem("iscore_user_id") || localStorage.getItem("iscore_userId") || "") : "");
-      await fetch("/api/liff/attendance", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          eventId,
-          userId: uid,
-          memberId: memberId || undefined,
-          status,
-        }),
-      });
-    } catch (err) {
-      console.error("Failed to save attendance:", err);
-    }
-  };
 
   // ✏️ 個別予定の保存ハンドラー
   const handleSaveEventEdit = async () => {
@@ -313,6 +388,7 @@ export default function LiffSchedulePage() {
           description: editingEvent.memo || "",
           needsLunch: Boolean(editingEvent.needsLunch),
           needsSnack: Boolean(editingEvent.needsSnack),
+          activityGroups: editingEvent.activityGroups ? JSON.stringify(editingEvent.activityGroups) : null,
         }),
       });
 
@@ -399,130 +475,134 @@ export default function LiffSchedulePage() {
   const eventsByDate = useMemo(() => {
     const map = new Map<string, ScheduleEvent[]>();
     for (const ev of events) {
-      const dStr = ev.dateStr || (ev.startAt ? new Date(ev.startAt).toISOString().split("T")[0] : "");
-      if (dStr) {
-        const list = map.get(dStr) || [];
+      if (ev.dateStr) {
+        const list = map.get(ev.dateStr) || [];
         list.push(ev);
-        map.set(dStr, list);
+        map.set(ev.dateStr, list);
       }
     }
     return map;
   }, [events]);
 
-  // フィルター & カレンダー選択によるイベント絞り込み
   const filteredEvents = useMemo(() => {
     return events.filter((ev) => {
-      // 1. タイプフィルター
-      if (filter === "match" && ev.eventType !== "match") return false;
-      if (filter === "practice" && ev.eventType !== "practice") return false;
-
-      // 2. カレンダー選択日付フィルター
-      if (selectedDateStr) {
-        const dStr = ev.dateStr || (ev.startAt ? new Date(ev.startAt).toISOString().split("T")[0] : "");
-        if (dStr !== selectedDateStr) return false;
-      }
-
+      if (selectedDateStr && ev.dateStr !== selectedDateStr) return false;
+      if (filter === "all") return true;
+      if (filter === "match") return ev.eventType === "match" || ev.amType === "match" || ev.pmType === "match" || ev.activityGroups?.some(g => g.eventType === "match");
+      if (filter === "practice") return ev.eventType === "practice" || ev.amType === "practice" || ev.pmType === "practice" || ev.activityGroups?.some(g => g.eventType === "practice");
       return true;
     });
   }, [events, filter, selectedDateStr]);
 
   return (
-    <div className="flex flex-col min-h-screen pb-20">
+    <div className="flex flex-col min-h-screen">
       <LiffHeader />
 
       <div className="p-4 space-y-4">
-        {/* ページ内ヘッダー（メニュー名と統一: 予定 & 出欠） */}
+        {/* ページ内ヘッダー */}
         <LiffPageHeader
           title="予定 & 出欠"
-          subtitle="チームの活動予定とお当番・出欠確認"
-          icon={<CalendarIcon className="w-5 h-5" />}
+          subtitle="活動日程・球場・集合時間・お当番・出欠回答"
+          icon={
+            <span className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center font-black">
+              <CalendarIcon className="w-4 h-4" />
+            </span>
+          }
+          showBack
           shareData={{
-            title: `【スケジュール】今後のチーム予定一覧`,
-            text: `出欠未回答の方は確認とご登録をお願いします！`,
+            title: `【予定 & 出欠】${currentTeam?.name || "チーム"} 活動スケジュール`,
+            text: `今月の活動予定・球場・集合時間・出欠回答はこちらから確認できます`,
           }}
         />
 
-        {/* 🌟 管理者向け：活動予定スケジューラーへの導線 */}
-        <div className="flex items-center justify-between p-3 rounded-2xl bg-primary/10 border border-primary/20">
+        {/* 🛠️ 管理者・指導者用スケジューラー導線ボタン */}
+        <div className="flex items-center justify-between p-3 rounded-2xl bg-gradient-to-r from-amber-500/10 via-primary/10 to-card border border-amber-500/30">
           <div className="flex items-center gap-2">
-            <span className="w-8 h-8 rounded-xl bg-primary text-primary-foreground flex items-center justify-center font-black shrink-0">
-              <CalendarIcon className="w-4 h-4" />
+            <span className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center font-black shadow-xs">
+              <Sparkles className="w-4 h-4" />
             </span>
             <div>
-              <p className="text-xs font-black text-foreground">活動日スケジューラー</p>
-              <p className="text-[10px] font-bold text-muted-foreground">月全体の活動日をカレンダーで一括設定</p>
+              <p className="text-xs font-black text-foreground">活動予定の一括登録・編集</p>
+              <p className="text-[10.5px] font-bold text-muted-foreground">
+                月間カレンダーで終日/午前/午後・当番を設定
+              </p>
             </div>
           </div>
-          <a
+          <Link
             href="/liff/schedule/admin"
-            className="py-1.5 px-3 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 active:scale-95 text-xs font-black shadow-xs transition-all shrink-0"
+            className="py-1.5 px-3 rounded-xl bg-amber-500 text-white text-xs font-black shadow-xs hover:bg-amber-600 active:scale-95 transition-all flex items-center gap-1 shrink-0"
           >
-            一括設定へ
-          </a>
+            <span>スケジューラー</span>
+            <ChevronRight className="w-3.5 h-3.5" />
+          </Link>
         </div>
 
-        {/* 🌟 月間ミニカレンダー（日付選択で予定カードを絞り込み） */}
-        <div className="p-3.5 sm:p-4 rounded-3xl bg-card border-2 border-primary/20 shadow-sm space-y-2.5">
-          {/* 月切り替えヘッダー */}
+        {/* 📅 月間ミニカレンダー */}
+        <div className="p-3.5 bg-card rounded-3xl border border-border/80 shadow-xs space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="text-sm font-black text-foreground">
                 {currentYear}年 {currentMonth + 1}月
               </span>
               {selectedDateStr && (
-                <span className="text-[10.5px] font-black px-2 py-0.5 rounded-full bg-primary text-primary-foreground">
-                  {selectedDateStr.split("-")[1]}/{selectedDateStr.split("-")[2]} 選択中
-                </span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedDateStr(null)}
+                  className="px-2 py-0.5 text-[10px] font-bold rounded-lg bg-primary/15 text-primary border border-primary/30 active:scale-95"
+                >
+                  絞り込み解除
+                </button>
               )}
             </div>
-
             <div className="flex items-center gap-1">
               <button
                 type="button"
-                onClick={handlePrevMonth}
-                className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground active:scale-95 transition-all"
-                title="前月"
+                onClick={handleToday}
+                className="px-2.5 py-1 text-[11px] font-black rounded-xl bg-muted hover:bg-muted/80 text-foreground transition-all active:scale-95"
               >
-                <ChevronLeft className="w-3.5 h-3.5" />
+                今日
+              </button>
+              <button
+                type="button"
+                onClick={handlePrevMonth}
+                className="p-1 text-muted-foreground hover:text-foreground rounded-lg transition-all"
+              >
+                <ChevronLeft className="w-4 h-4" />
               </button>
               <button
                 type="button"
                 onClick={handleNextMonth}
-                className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground active:scale-95 transition-all"
-                title="翌月"
+                className="p-1 text-muted-foreground hover:text-foreground rounded-lg transition-all"
               >
-                <ChevronRight className="w-3.5 h-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={handleToday}
-                className="px-2 py-1 text-[10px] font-black rounded-lg bg-muted hover:bg-muted/80 text-foreground border border-border/80 active:scale-95 transition-all ml-0.5"
-              >
-                今月
+                <ChevronRight className="w-4 h-4" />
               </button>
             </div>
           </div>
 
           {/* 曜日ヘッダー */}
-          <div className="grid grid-cols-7 text-center text-[10px] font-black text-muted-foreground uppercase pb-1 border-b border-primary/10">
-            {weekDays.map((day, idx) => (
-              <span key={day} className={idx === 0 ? "text-rose-500" : idx === 6 ? "text-blue-500" : ""}>
-                {day}
+          <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-black">
+            {weekDays.map((w, idx) => (
+              <span
+                key={w}
+                className={idx === 0 ? "text-rose-500" : idx === 6 ? "text-blue-500" : "text-muted-foreground"}
+              >
+                {w}
               </span>
             ))}
           </div>
 
-          {/* 42マス日付グリッド（コンパクト） */}
+          {/* 日付グリッド */}
           <div className="grid grid-cols-7 gap-1">
-            {calendarDays.map((day, idx) => {
-              const dayEvents = eventsByDate.get(day.dateStr) || [];
-              const hasEvents = dayEvents.length > 0;
-              const isSelected = selectedDateStr === day.dateStr;
-              const isToday = new Date().toISOString().split("T")[0] === day.dateStr;
+            {calendarDays.map((d, idx) => {
+              const hasEvents = eventsByDate.has(d.dateStr);
+              const dayEvents = eventsByDate.get(d.dateStr) || [];
+              const isSelected = selectedDateStr === d.dateStr;
+              const isToday = d.dateStr === new Date().toISOString().split("T")[0];
+              const isSun = d.date.getDay() === 0;
+              const isSat = d.date.getDay() === 6;
 
-              const dayOfWeek = day.date.getDay();
-              const isSunday = dayOfWeek === 0;
-              const isSaturday = dayOfWeek === 6;
+              const hasMatch = dayEvents.some((e) => e.eventType === "match" || e.amType === "match" || e.pmType === "match" || e.activityGroups?.some(g => g.eventType === "match"));
+              const hasGroups = dayEvents.some((e) => e.activityGroups && e.activityGroups.length > 1);
 
               return (
                 <button
@@ -530,73 +610,55 @@ export default function LiffSchedulePage() {
                   type="button"
                   onClick={() => {
                     if (isSelected) {
-                      setSelectedDateStr(null); // 解除
+                      setSelectedDateStr(null);
                     } else {
-                      setSelectedDateStr(day.dateStr);
+                      setSelectedDateStr(d.dateStr);
                     }
                   }}
-                  className={`relative min-h-[38px] p-1 rounded-xl flex flex-col justify-between items-center transition-all border text-center ${
-                    !day.isCurrentMonth
-                      ? "opacity-25 bg-transparent border-transparent"
-                      : isSelected
-                      ? "bg-primary text-primary-foreground border-primary font-black shadow-xs ring-2 ring-primary/40"
-                      : hasEvents
-                      ? "bg-primary/10 hover:bg-primary/20 border-primary/30 text-foreground font-bold cursor-pointer"
-                      : "bg-muted/20 hover:bg-muted/50 border-transparent text-muted-foreground cursor-pointer"
-                  } ${isToday && !isSelected ? "ring-1 ring-primary/60 border-primary/40 font-black" : ""}`}
-                >
-                  <span className={`text-[11px] leading-none ${
+                  className={`flex flex-col items-center justify-center p-1 rounded-xl min-h-[38px] transition-all relative ${
                     isSelected
-                      ? "text-primary-foreground"
-                      : isSunday
-                      ? "text-rose-500"
-                      : isSaturday
-                      ? "text-blue-500"
-                      : ""
-                  }`}>
-                    {day.date.getDate()}
+                      ? "bg-primary text-primary-foreground font-black shadow-xs ring-2 ring-primary/40"
+                      : isToday
+                      ? "bg-primary/10 border border-primary/40 font-black text-foreground"
+                      : d.isCurrentMonth
+                      ? "hover:bg-muted/60 text-foreground font-bold"
+                      : "text-muted-foreground/40 font-normal"
+                  }`}
+                >
+                  <span
+                    className={`text-xs ${
+                      isSelected
+                        ? "text-primary-foreground font-black"
+                        : isSun
+                        ? "text-rose-500"
+                        : isSat
+                        ? "text-blue-500"
+                        : ""
+                    }`}
+                  >
+                    {d.date.getDate()}
                   </span>
 
-                  {/* 予定インジケーター（ドットまたはバッジ） */}
+                  {/* 予定マーカー */}
                   {hasEvents && (
                     <div className="flex items-center gap-0.5 mt-0.5">
-                      {dayEvents.map((ev, i) => (
-                        <span
-                          key={i}
-                          className={`w-1.5 h-1.5 rounded-full ${
-                            isSelected
-                              ? "bg-white"
-                              : ev.eventType === "match"
-                              ? "bg-rose-500"
-                              : "bg-primary"
-                          }`}
-                        />
-                      ))}
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full ${
+                          hasMatch ? "bg-rose-500" : "bg-emerald-500"
+                        }`}
+                      />
+                      {hasGroups && (
+                        <span className="w-1 h-1 rounded-full bg-amber-500" title="複数グループ活動あり" />
+                      )}
                     </div>
                   )}
                 </button>
               );
             })}
           </div>
-
-          {/* カレンダー絞り込み解除ボタン（選択中のみ表示） */}
-          {selectedDateStr && (
-            <div className="flex items-center justify-between pt-1 border-t border-border/60">
-              <span className="text-[11px] font-bold text-muted-foreground">
-                📅 {selectedDateStr} の予定を表示中
-              </span>
-              <button
-                type="button"
-                onClick={() => setSelectedDateStr(null)}
-                className="text-[11px] font-black text-primary hover:underline"
-              >
-                すべての予定を表示 ({events.length}件)
-              </button>
-            </div>
-          )}
         </div>
 
-        {/* フィルタータブ */}
+        {/* フィルター切り替えタブ */}
         <div className="flex items-center gap-1.5 p-1 bg-muted/60 rounded-2xl border border-border">
           <button
             type="button"
@@ -679,11 +741,15 @@ export default function LiffSchedulePage() {
             )}
           </div>
         ) : (
-          /* 🌟 予定カード一覧（トップページ完全互換フォーマット ＋ 全文・詳細表示） */
+          /* 🌟 予定カード一覧（1日1カード化 ＆ 複数グループ選択 ＆ 時間正確表示） */
           <div className="space-y-4">
             {filteredEvents.map((ev, idx) => {
-              const isMatch = ev.eventType === "match" || ev.amType === "match" || ev.pmType === "match";
-              const isCamp = ev.eventType === "camp" || ev.amType === "camp" || ev.pmType === "camp";
+              const hasActivityGroups = Boolean(ev.activityGroups && ev.activityGroups.length > 0);
+              const activityGroups = ev.activityGroups || [];
+              const activeGroupId = activeGroupTabMap[ev.id] || (activityGroups[0]?.id || "default");
+              const currentGroup = activityGroups.find(g => g.id === activeGroupId) || activityGroups[0];
+
+              const isMatch = ev.eventType === "match" || ev.amType === "match" || ev.pmType === "match" || activityGroups.some(g => g.eventType === "match");
 
               return (
                 <div
@@ -701,6 +767,13 @@ export default function LiffSchedulePage() {
                       {ev.targetGroup && ev.targetGroup !== "全体" && (
                         <span className="px-2 py-0.5 rounded-lg bg-primary/15 text-primary text-[10.5px] font-black border border-primary/30 shrink-0">
                           🏷️ {ev.targetGroup}
+                        </span>
+                      )}
+
+                      {hasActivityGroups && (
+                        <span className="px-2 py-0.5 rounded-lg bg-amber-500/15 text-amber-700 dark:text-amber-300 text-[10px] font-black border border-amber-500/30 flex items-center gap-1 shrink-0">
+                          <Layers className="w-3 h-3 text-amber-500" />
+                          <span>{activityGroups.length}グループ活動</span>
                         </span>
                       )}
 
@@ -741,88 +814,179 @@ export default function LiffSchedulePage() {
                     {ev.title}
                   </h3>
 
-                  {/* ③ ☀️ 午前（左） ＆ 🌙 午後（右）の2カラム表示 */}
-                  <div className="grid grid-cols-2 gap-2">
-                    {/* ☀️ 【午前】（左） */}
-                    <div className="p-2.5 rounded-2xl bg-amber-500/5 dark:bg-amber-500/10 border border-amber-500/20 flex flex-col justify-between space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-black text-amber-700 dark:text-amber-300 flex items-center gap-1">
-                          <Sun className="w-3 h-3 text-amber-500" />
-                          <span>午前</span>
-                        </span>
-
-                        {/* 活動内容バッジ */}
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
-                          ev.amType === "match" || ev.eventType === "match"
-                            ? "bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30"
-                            : ev.amType === "camp" || ev.eventType === "camp"
-                            ? "bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/30"
-                            : "bg-primary/15 text-primary border border-primary/30"
-                        }`}>
-                          {ev.amType === "match" || ev.eventType === "match" ? "⚾ 試合" : ev.amType === "camp" || ev.eventType === "camp" ? "🏕️ 合宿" : "🏃 練習"}
-                        </span>
+                  {/* ③ 活動スケジュール表示 */}
+                  {hasActivityGroups ? (
+                    /* 👥 複数グループ（試合組・練習組など）がある場合 */
+                    <div className="space-y-2">
+                      {/* グループ切り替えタブ */}
+                      <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none">
+                        {activityGroups.map((grp) => {
+                          const isSel = (activeGroupId === grp.id);
+                          const gCount = ev.groupCounts?.[grp.id] || 0;
+                          return (
+                            <button
+                              key={grp.id}
+                              type="button"
+                              onClick={() => setActiveGroupTabMap(prev => ({ ...prev, [ev.id]: grp.id }))}
+                              className={`px-3 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
+                                isSel
+                                  ? "bg-primary text-primary-foreground shadow-xs ring-1 ring-primary"
+                                  : "bg-muted/70 text-muted-foreground hover:text-foreground"
+                              }`}
+                            >
+                              <span>{grp.eventType === "match" ? "⚾" : "🏃"}</span>
+                              <span>{grp.name}</span>
+                              {gCount > 0 && (
+                                <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-mono ${
+                                  isSel ? "bg-white/25 text-white" : "bg-muted text-foreground"
+                                }`}>
+                                  {gCount}名
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
                       </div>
 
-                      {/* 活動時間 & 場所 */}
-                      <div className="space-y-0.5">
-                        <div className="flex items-center gap-1 text-xs font-black text-foreground">
-                          <Clock className="w-3 h-3 text-amber-500 shrink-0" />
-                          <span>{ev.amTime || ev.time || "08:00〜12:00"}</span>
-                        </div>
+                      {/* 選択中グループのスケジュール詳細カード */}
+                      {currentGroup && (
+                        <div className="p-3 rounded-2xl bg-muted/40 border border-border/80 space-y-2.5">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs font-black text-foreground">
+                                {currentGroup.name}
+                              </span>
+                              <span className={`px-2 py-0.5 rounded-full text-[9.5px] font-black ${
+                                currentGroup.eventType === "match"
+                                  ? "bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30"
+                                  : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30"
+                              }`}>
+                                {currentGroup.eventType === "match" ? "⚾ 試合" : "🏃 練習"}
+                              </span>
+                            </div>
 
-                        <div className="flex items-center gap-1 text-[11px] font-bold text-foreground/90 truncate">
-                          <MapPin className="w-3 h-3 text-emerald-500 shrink-0" />
-                          <span className="truncate">{ev.amLocation || ev.location || "グラウンド"}</span>
+                            {currentGroup.dutyGroup && (
+                              <span className="text-[10px] font-black text-primary px-2 py-0.5 rounded-lg bg-primary/10 border border-primary/20">
+                                📋 {currentGroup.dutyGroup}
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs font-bold">
+                            <div className="flex items-center gap-1.5 text-foreground bg-card p-2 rounded-xl border border-border/60">
+                              <Clock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                              <span>{currentGroup.time || ev.time || "時間調整中"}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 text-foreground bg-card p-2 rounded-xl border border-border/60">
+                              <MapPin className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                              <span className="truncate">{currentGroup.location || ev.location || "グラウンド"}</span>
+                            </div>
+                          </div>
+
+                          {currentGroup.carInfo && (
+                            <div className="flex items-center gap-1.5 text-[11px] font-bold text-muted-foreground pt-1 border-t border-border/50">
+                              <Car className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                              <span>配車: {currentGroup.carInfo}</span>
+                            </div>
+                          )}
                         </div>
-                      </div>
+                      )}
                     </div>
-
-                    {/* 🌙 【午後】（右） */}
-                    <div className={`p-2.5 rounded-2xl border flex flex-col justify-between space-y-2 ${
-                      ev.hasPm && ev.pmType !== "off"
-                        ? "bg-indigo-500/5 dark:bg-indigo-500/10 border-indigo-500/20"
-                        : "bg-muted/30 border-border/60 opacity-75"
-                    }`}>
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-black text-indigo-700 dark:text-indigo-300 flex items-center gap-1">
-                          <Moon className="w-3 h-3 text-indigo-500" />
-                          <span>午後</span>
-                        </span>
-
-                        {/* 活動内容バッジ */}
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
-                          !ev.hasPm || ev.pmType === "off"
-                            ? "bg-muted text-muted-foreground border border-border"
-                            : ev.pmType === "match"
-                            ? "bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30"
-                            : ev.pmType === "camp"
-                            ? "bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/30"
-                            : "bg-primary/15 text-primary border border-primary/30"
-                        }`}>
-                          {!ev.hasPm || ev.pmType === "off" ? "🏖️ なし" : ev.pmType === "match" ? "⚾ 試合" : ev.pmType === "camp" ? "🏕️ 合宿" : "🏃 練習"}
-                        </span>
-                      </div>
-
-                      {/* 活動時間 & 場所 */}
-                      <div className="space-y-0.5">
-                        <div className="flex items-center gap-1 text-xs font-black text-foreground">
-                          <Clock className="w-3 h-3 text-indigo-500 shrink-0" />
-                          <span>{ev.hasPm && ev.pmTime ? ev.pmTime : "解散・なし"}</span>
-                        </div>
-
-                        <div className="flex items-center gap-1 text-[11px] font-bold text-foreground/90 truncate">
-                          <MapPin className="w-3 h-3 text-emerald-500 shrink-0" />
-                          <span className="truncate">{ev.hasPm && ev.pmLocation ? ev.pmLocation : (ev.hasPm ? ev.amLocation : "—")}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* ④ 📋 詳細情報ブロック（お弁当、補食、連絡事項、配車、当番） */}
-                  <div className="p-3.5 rounded-2xl bg-muted/40 border border-border/80 space-y-2.5 text-xs font-bold">
-                    {/* 1. お弁当 & 補食 */}
+                  ) : ev.hasPm && ev.pmTime ? (
+                    /* ☀️🌙 午前/午後分割スケジュール */
                     <div className="grid grid-cols-2 gap-2">
-                      {/* お弁当 */}
+                      {/* ☀️ 【午前】 */}
+                      <div className="p-2.5 rounded-2xl bg-amber-500/5 dark:bg-amber-500/10 border border-amber-500/20 flex flex-col justify-between space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-black text-amber-700 dark:text-amber-300 flex items-center gap-1">
+                            <Sun className="w-3 h-3 text-amber-500" />
+                            <span>午前</span>
+                          </span>
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                            ev.amType === "match"
+                              ? "bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30"
+                              : "bg-primary/15 text-primary border border-primary/30"
+                          }`}>
+                            {ev.amType === "match" ? "⚾ 試合" : "🏃 練習"}
+                          </span>
+                        </div>
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-1 text-xs font-black text-foreground">
+                            <Clock className="w-3 h-3 text-amber-500 shrink-0" />
+                            <span>{ev.amTime || "08:00〜12:00"}</span>
+                          </div>
+                          <div className="flex items-center gap-1 text-[11px] font-bold text-foreground/90 truncate">
+                            <MapPin className="w-3 h-3 text-emerald-500 shrink-0" />
+                            <span className="truncate">{ev.amLocation || ev.location || "グラウンド"}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 🌙 【午後】 */}
+                      <div className="p-2.5 rounded-2xl bg-indigo-500/5 dark:bg-indigo-500/10 border border-indigo-500/20 flex flex-col justify-between space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-black text-indigo-700 dark:text-indigo-300 flex items-center gap-1">
+                            <Moon className="w-3 h-3 text-indigo-500" />
+                            <span>午後</span>
+                          </span>
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                            ev.pmType === "match"
+                              ? "bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30"
+                              : "bg-primary/15 text-primary border border-primary/30"
+                          }`}>
+                            {ev.pmType === "match" ? "⚾ 試合" : "🏃 練習"}
+                          </span>
+                        </div>
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-1 text-xs font-black text-foreground">
+                            <Clock className="w-3 h-3 text-indigo-500 shrink-0" />
+                            <span>{ev.pmTime}</span>
+                          </div>
+                          <div className="flex items-center gap-1 text-[11px] font-bold text-foreground/90 truncate">
+                            <MapPin className="w-3 h-3 text-emerald-500 shrink-0" />
+                            <span className="truncate">{ev.pmLocation || ev.amLocation || "グラウンド"}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    /* 🏃 単一活動スケジュール（1ブロック表示） */
+                    <div className="p-3 rounded-2xl bg-muted/40 border border-border/80 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className={`px-2.5 py-0.5 rounded-full text-[10.5px] font-black ${
+                          ev.eventType === "match"
+                            ? "bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30"
+                            : ev.eventType === "camp"
+                            ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30"
+                            : "bg-primary/15 text-primary border border-primary/30"
+                        }`}>
+                          {ev.eventType === "match" ? "⚾ 試合" : ev.eventType === "camp" ? "🏕️ 合宿" : "🏃 練習"}
+                        </span>
+
+                        {ev.dutyGroup && (
+                          <span className="text-[10px] font-black text-primary px-2.5 py-0.5 rounded-lg bg-primary/10 border border-primary/20">
+                            📋 {ev.dutyGroup}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs font-bold">
+                        <div className="flex items-center gap-1.5 text-foreground bg-card p-2 rounded-xl border border-border/60">
+                          <Clock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                          <span>{ev.time || "時間調整中"}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-foreground bg-card p-2 rounded-xl border border-border/60">
+                          <MapPin className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                          <span className="truncate">{ev.location || "グラウンド"}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ④ 📋 詳細情報ブロック（お弁当、補食、連絡事項、配車） */}
+                  <div className="p-3.5 rounded-2xl bg-muted/30 border border-border/70 space-y-2 text-xs font-bold">
+                    {/* お弁当 & 補食 */}
+                    <div className="grid grid-cols-2 gap-2">
                       <div className="flex items-center justify-between p-2 rounded-xl bg-background/60 border border-border/50">
                         <span className="text-muted-foreground flex items-center gap-1.5 text-[11px]">
                           <Utensils className="w-3.5 h-3.5 text-amber-500" />
@@ -837,7 +1001,6 @@ export default function LiffSchedulePage() {
                         </span>
                       </div>
 
-                      {/* 補食（捕食） */}
                       <div className="flex items-center justify-between p-2 rounded-xl bg-background/60 border border-border/50">
                         <span className="text-muted-foreground flex items-center gap-1.5 text-[11px]">
                           <span className="text-sm leading-none">🍌</span>
@@ -853,20 +1016,20 @@ export default function LiffSchedulePage() {
                       </div>
                     </div>
 
-                    {/* 2. 連絡事項・持ち物（全文・改行表示） */}
-                    <div className="pt-2 border-t border-border/60 space-y-1">
-                      <span className="text-[10px] font-black text-muted-foreground flex items-center gap-1">
-                        <FileText className="w-3 h-3 text-primary" />
-                        <span>連絡事項・持ち物</span>
-                      </span>
-                      <div className={`text-xs font-bold p-2.5 rounded-xl border border-border/50 whitespace-pre-wrap leading-relaxed ${
-                        ev.memo ? "text-foreground bg-background/80" : "text-muted-foreground bg-muted/20"
-                      }`}>
-                        {ev.memo || "特になし"}
+                    {/* 連絡事項・持ち物 */}
+                    {ev.memo && (
+                      <div className="pt-2 border-t border-border/60 space-y-1">
+                        <span className="text-[10px] font-black text-muted-foreground flex items-center gap-1">
+                          <FileText className="w-3 h-3 text-primary" />
+                          <span>連絡事項・持ち物</span>
+                        </span>
+                        <div className="text-xs font-bold p-2.5 rounded-xl border border-border/50 whitespace-pre-wrap leading-relaxed text-foreground bg-background/80">
+                          {ev.memo}
+                        </div>
                       </div>
-                    </div>
+                    )}
 
-                    {/* 3. 配車（配車情報 ＋ 配車表リンク） */}
+                    {/* 配車 */}
                     <div className="pt-2 border-t border-border/60 flex items-center justify-between">
                       <div className="flex items-center gap-1.5 min-w-0">
                         <Car className="w-3.5 h-3.5 text-blue-500 shrink-0" />
@@ -884,29 +1047,17 @@ export default function LiffSchedulePage() {
                         <ChevronRight className="w-3 h-3" />
                       </Link>
                     </div>
-
-                    {/* 4. 一番下に当番 */}
-                    {ev.dutyGroup && (
-                      <div className="pt-2 border-t border-border/60 flex items-center justify-between text-primary">
-                        <span className="flex items-center gap-1.5 font-bold">
-                          <ClipboardList className="w-3.5 h-3.5 text-primary" />
-                          <span>お当番</span>
-                        </span>
-                        <span className="px-2.5 py-0.5 rounded-full bg-primary/15 border border-primary/30 text-primary font-black text-[11px] flex items-center gap-1">
-                          <span>📋</span>
-                          <span>{ev.dutyGroup}</span>
-                        </span>
-                      </div>
-                    )}
                   </div>
 
-                  {/* ⑤ 出欠回答セクション (○, △, ×, ？) */}
+                  {/* ⑤ 出欠回答セクション (○, △, ×, ？ ＋ 参加グループ選択) */}
                   <div className="pt-2 border-t border-primary/15 space-y-3">
                     {/* 👦 1. 保護者の場合: お子様（選手）の出欠回答 */}
                     {userRole === "parent" && children.map((child) => {
                       const childStatus = getChildAttendance(ev.id, child.id);
+                      const selectedChildGroup = getChildSelectedGroup(ev.id, child.id, activityGroups[0]?.id);
+
                       return (
-                        <div key={child.id} className="p-2.5 rounded-2xl bg-amber-500/5 dark:bg-amber-500/10 border border-amber-500/20 space-y-1.5">
+                        <div key={child.id} className="p-2.5 rounded-2xl bg-amber-500/5 dark:bg-amber-500/10 border border-amber-500/20 space-y-2">
                           <div className="flex items-center justify-between text-xs">
                             <span className="font-black text-amber-700 dark:text-amber-300 flex items-center gap-1">
                               <span>👦</span>
@@ -923,8 +1074,8 @@ export default function LiffSchedulePage() {
                           <div className="grid grid-cols-4 gap-1">
                             <button
                               type="button"
-                              onClick={() => handleChildStatusChange(ev.id, child.id, "present")}
-                              className={`flex flex-col items-center justify-center py-1.5 rounded-xl text-xs font-black transition-all active:scale-95 ${
+                              onClick={() => handleChildStatusChange(ev.id, child.id, "present", selectedChildGroup || activityGroups[0]?.id)}
+                              className={`flex flex-col items-center justify-center py-1.5 rounded-xl text-xs font-black transition-all active:scale-95 cursor-pointer ${
                                 childStatus === "present"
                                   ? "bg-emerald-600 text-white shadow-xs ring-2 ring-emerald-500/50"
                                   : "bg-background/80 hover:bg-background text-muted-foreground border border-border/60"
@@ -936,8 +1087,8 @@ export default function LiffSchedulePage() {
 
                             <button
                               type="button"
-                              onClick={() => handleChildStatusChange(ev.id, child.id, "late")}
-                              className={`flex flex-col items-center justify-center py-1.5 rounded-xl text-xs font-black transition-all active:scale-95 ${
+                              onClick={() => handleChildStatusChange(ev.id, child.id, "late", selectedChildGroup || activityGroups[0]?.id)}
+                              className={`flex flex-col items-center justify-center py-1.5 rounded-xl text-xs font-black transition-all active:scale-95 cursor-pointer ${
                                 childStatus === "late"
                                   ? "bg-amber-500 text-white shadow-xs ring-2 ring-amber-500/50"
                                   : "bg-background/80 hover:bg-background text-muted-foreground border border-border/60"
@@ -950,7 +1101,7 @@ export default function LiffSchedulePage() {
                             <button
                               type="button"
                               onClick={() => handleChildStatusChange(ev.id, child.id, "absent")}
-                              className={`flex flex-col items-center justify-center py-1.5 rounded-xl text-xs font-black transition-all active:scale-95 ${
+                              className={`flex flex-col items-center justify-center py-1.5 rounded-xl text-xs font-black transition-all active:scale-95 cursor-pointer ${
                                 childStatus === "absent"
                                   ? "bg-rose-600 text-white shadow-xs ring-2 ring-rose-500/50"
                                   : "bg-background/80 hover:bg-background text-muted-foreground border border-border/60"
@@ -963,7 +1114,7 @@ export default function LiffSchedulePage() {
                             <button
                               type="button"
                               onClick={() => handleChildStatusChange(ev.id, child.id, "pending")}
-                              className={`flex flex-col items-center justify-center py-1.5 rounded-xl text-xs font-black transition-all active:scale-95 ${
+                              className={`flex flex-col items-center justify-center py-1.5 rounded-xl text-xs font-black transition-all active:scale-95 cursor-pointer ${
                                 childStatus === "pending"
                                   ? "bg-slate-700 text-white dark:bg-slate-300 dark:text-slate-900 shadow-xs ring-2 ring-slate-500/50"
                                   : "bg-background/80 hover:bg-background text-muted-foreground border border-border/60"
@@ -973,6 +1124,36 @@ export default function LiffSchedulePage() {
                               <span className="text-[9px]">未定</span>
                             </button>
                           </div>
+
+                          {/* 👥 参加時: 参加グループ選択チップ */}
+                          {(childStatus === "present" || childStatus === "late") && hasActivityGroups && (
+                            <div className="pt-1.5 border-t border-amber-500/20 space-y-1">
+                              <span className="text-[10px] font-black text-muted-foreground flex items-center gap-1">
+                                <Layers className="w-3 h-3 text-amber-500" />
+                                <span>参加グループを選択:</span>
+                              </span>
+                              <div className="grid grid-cols-2 gap-1.5">
+                                {activityGroups.map((grp) => {
+                                  const isSel = (selectedChildGroup === grp.id) || (!selectedChildGroup && grp.id === activityGroups[0].id);
+                                  return (
+                                    <button
+                                      key={grp.id}
+                                      type="button"
+                                      onClick={() => handleChildStatusChange(ev.id, child.id, childStatus, grp.id)}
+                                      className={`py-1.5 px-2 rounded-xl text-[11px] font-black border transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                                        isSel
+                                          ? "bg-emerald-600 text-white border-emerald-600 shadow-2xs"
+                                          : "bg-background text-muted-foreground border-border hover:bg-muted"
+                                      }`}
+                                    >
+                                      {isSel && <Check className="w-3 h-3 shrink-0" />}
+                                      <span className="truncate">{grp.name}</span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -980,8 +1161,10 @@ export default function LiffSchedulePage() {
                     {/* 👨 2. 保護者本人（または選手本人）の出欠回答 */}
                     {(() => {
                       const pStatus = getEventAttendance(ev.id, ev.myStatus);
+                      const selectedParentGroup = getParentSelectedGroup(ev.id, ev.mySelectedGroupId || activityGroups[0]?.id);
+
                       return (
-                        <div className="space-y-1.5">
+                        <div className="space-y-2 p-2.5 rounded-2xl bg-muted/40 border border-border/80">
                           <div className="flex items-center justify-between text-xs">
                             <span className="font-black text-foreground">
                               {userRole === "parent" ? "👨 保護者（自分）の参加・当番" : "あなたの出欠回答"}
@@ -997,8 +1180,8 @@ export default function LiffSchedulePage() {
                           <div className="grid grid-cols-4 gap-1.5">
                             <button
                               type="button"
-                              onClick={() => handleStatusChange(ev.id, "present")}
-                              className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black transition-all active:scale-95 ${
+                              onClick={() => handleStatusChange(ev.id, "present", selectedParentGroup || activityGroups[0]?.id)}
+                              className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black transition-all active:scale-95 cursor-pointer ${
                                 pStatus === "present"
                                   ? "bg-emerald-600 text-white shadow-xs ring-2 ring-emerald-500/50"
                                   : "bg-muted/60 text-muted-foreground hover:bg-muted"
@@ -1010,8 +1193,8 @@ export default function LiffSchedulePage() {
 
                             <button
                               type="button"
-                              onClick={() => handleStatusChange(ev.id, "late")}
-                              className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black transition-all active:scale-95 ${
+                              onClick={() => handleStatusChange(ev.id, "late", selectedParentGroup || activityGroups[0]?.id)}
+                              className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black transition-all active:scale-95 cursor-pointer ${
                                 pStatus === "late" || pStatus === "partial"
                                   ? "bg-amber-500 text-white shadow-xs ring-2 ring-amber-500/50"
                                   : "bg-muted/60 text-muted-foreground hover:bg-muted"
@@ -1024,7 +1207,7 @@ export default function LiffSchedulePage() {
                             <button
                               type="button"
                               onClick={() => handleStatusChange(ev.id, "absent")}
-                              className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black transition-all active:scale-95 ${
+                              className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black transition-all active:scale-95 cursor-pointer ${
                                 pStatus === "absent"
                                   ? "bg-rose-600 text-white shadow-xs ring-2 ring-rose-500/50"
                                   : "bg-muted/60 text-muted-foreground hover:bg-muted"
@@ -1037,7 +1220,7 @@ export default function LiffSchedulePage() {
                             <button
                               type="button"
                               onClick={() => handleStatusChange(ev.id, "pending")}
-                              className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black transition-all active:scale-95 ${
+                              className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black transition-all active:scale-95 cursor-pointer ${
                                 pStatus === "pending" || !pStatus
                                   ? "bg-slate-700 text-white dark:bg-slate-300 dark:text-slate-900 shadow-xs ring-2 ring-slate-500/50"
                                   : "bg-muted/60 text-muted-foreground hover:bg-muted"
@@ -1047,6 +1230,36 @@ export default function LiffSchedulePage() {
                               <span className="text-[10px]">未定</span>
                             </button>
                           </div>
+
+                          {/* 👥 参加時: 参加グループ選択チップ */}
+                          {(pStatus === "present" || pStatus === "late" || pStatus === "partial") && hasActivityGroups && (
+                            <div className="pt-1.5 border-t border-border/60 space-y-1">
+                              <span className="text-[10px] font-black text-muted-foreground flex items-center gap-1">
+                                <Layers className="w-3 h-3 text-primary" />
+                                <span>あなたの参加先グループ:</span>
+                              </span>
+                              <div className="grid grid-cols-2 gap-1.5">
+                                {activityGroups.map((grp) => {
+                                  const isSel = (selectedParentGroup === grp.id) || (!selectedParentGroup && grp.id === activityGroups[0].id);
+                                  return (
+                                    <button
+                                      key={grp.id}
+                                      type="button"
+                                      onClick={() => handleStatusChange(ev.id, pStatus, grp.id)}
+                                      className={`py-1.5 px-2 rounded-xl text-[11px] font-black border transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                                        isSel
+                                          ? "bg-primary text-primary-foreground border-primary shadow-2xs"
+                                          : "bg-card text-muted-foreground border-border hover:bg-muted"
+                                      }`}
+                                    >
+                                      {isSel && <Check className="w-3 h-3 shrink-0" />}
+                                      <span className="truncate">{grp.name}</span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       );
                     })()}
@@ -1093,7 +1306,7 @@ export default function LiffSchedulePage() {
                   type="text"
                   value={editingEvent.title}
                   onChange={(e) => setEditingEvent({ ...editingEvent, title: e.target.value })}
-                  placeholder="予定タイトル（例: 秋季大会 2回戦 vs レッドソックス）"
+                  placeholder="予定タイトル（例: 秋季大会 2回戦 ＆ 居残り練習）"
                   className="w-full px-3 py-2 rounded-xl bg-card border border-border/80 text-xs font-black text-foreground focus:outline-hidden focus:border-primary"
                 />
               </div>
@@ -1156,7 +1369,7 @@ export default function LiffSchedulePage() {
                       type="text"
                       value={editingEvent.time}
                       onChange={(e) => setEditingEvent({ ...editingEvent, time: e.target.value })}
-                      placeholder="08:00〜12:00"
+                      placeholder="08:00〜12:00 または 08:30 集合"
                       className="bg-transparent text-xs font-bold text-foreground focus:outline-hidden w-full"
                     />
                   </div>

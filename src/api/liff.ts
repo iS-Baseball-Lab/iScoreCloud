@@ -659,26 +659,53 @@ app.get("/schedule", async (c) => {
         events: [
           {
             id: "demo-ev-1",
-            title: "秋季大会 2回戦 vs レッドソックス",
+            title: "秋季大会 2回戦 ＆ Bチーム合同練習",
             date: "8月30日(日)",
-            time: "08:30 集合 (09:30 PB)",
-            location: "多摩川緑地野球場 (1面)",
+            dateStr: "2026-08-30",
+            time: "08:00 集合",
+            location: "多摩川緑地野球場 / 桜本小",
             eventType: "match",
             dutyGroup: "B班 (鍵・救急)",
             needsLunch: true,
             needsSnack: true,
             myStatus: "present",
-            attendCount: { present: 14, absent: 2, pending: 1 },
+            mySelectedGroupId: "demo-grp-1",
+            activityGroups: [
+              {
+                id: "demo-grp-1",
+                name: "Aチーム（試合組・遠征）",
+                time: "08:00集合 (09:30 PB)",
+                location: "多摩川緑地野球場 (1面)",
+                eventType: "match",
+                dutyGroup: "B班 (鍵・救急)",
+                carInfo: "配車 3台 / 12名乗車",
+              },
+              {
+                id: "demo-grp-2",
+                name: "Bチーム（練習組・学校居残り）",
+                time: "09:00 〜 12:00",
+                location: "桜本小学校 グラウンド",
+                eventType: "practice",
+                dutyGroup: "C班 (用具整備)",
+                carInfo: "現地集合・送迎不要",
+              },
+            ],
+            groupCounts: {
+              "demo-grp-1": 10,
+              "demo-grp-2": 6,
+            },
+            attendCount: { present: 16, absent: 2, pending: 1 },
           },
           {
             id: "demo-ev-2",
-            title: "午後 強化守備・走塁練習",
+            title: "全日 強化守備・走塁練習",
             date: "9月5日(土)",
-            time: "13:00 〜 17:00",
+            dateStr: "2026-09-05",
+            time: "09:00 〜 16:30",
             location: "桜本小学校 グラウンド",
             eventType: "practice",
             dutyGroup: "C班 (グラウンド整備)",
-            needsLunch: false,
+            needsLunch: true,
             needsSnack: false,
             myStatus: "pending",
             attendCount: { present: 11, absent: 3, pending: 3 },
@@ -687,6 +714,7 @@ app.get("/schedule", async (c) => {
             id: "demo-ev-3",
             title: "練習試合 vs グリーンライオンズ (ダブルヘッダー)",
             date: "9月6日(日)",
+            dateStr: "2026-09-06",
             time: "08:00 集合 (第1試合 09:00 / 第2試合 11:30)",
             location: "等々力球場",
             eventType: "match",
@@ -767,6 +795,7 @@ app.get("/schedule", async (c) => {
         const pendingCount = attList.filter((a) => a.status === "pending").length;
 
         let myStatus: "present" | "absent" | "pending" | "late" = "pending";
+        let mySelectedGroupId: string | null = null;
         if (userId || schedMemberId) {
           const myAtt = attList.find((a) => 
             (userId && a.userId === userId) || (schedMemberId && a.memberId === schedMemberId)
@@ -779,6 +808,35 @@ app.get("/schedule", async (c) => {
               : myAtt.status === "absent"
               ? "absent"
               : "pending";
+            mySelectedGroupId = (myAtt as any).selectedGroupId || null;
+          }
+        }
+
+        // 活動グループ（JSON）のパース
+        let parsedGroups: Array<{
+          id: string;
+          name: string;
+          time?: string;
+          location?: string;
+          eventType?: "match" | "practice" | "meeting" | "camp";
+          dutyGroup?: string;
+          carInfo?: string;
+        }> = [];
+
+        if (ev.activityGroups) {
+          try {
+            parsedGroups = typeof ev.activityGroups === "string" ? JSON.parse(ev.activityGroups) : ev.activityGroups;
+          } catch {}
+        }
+
+        // グループ別出席集計の計算
+        const groupCounts: Record<string, number> = {};
+        for (const att of attList) {
+          if (att.status === "present" || att.status === "late" || att.status === "partial") {
+            const gid = (att as any).selectedGroupId;
+            if (gid) {
+              groupCounts[gid] = (groupCounts[gid] || 0) + 1;
+            }
           }
         }
 
@@ -791,7 +849,7 @@ app.get("/schedule", async (c) => {
 
         const startTimeStr = startDate.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
         const endTimeStr = ev.endAt ? new Date(ev.endAt).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }) : "";
-        const amTime = endTimeStr ? `${startTimeStr}〜${endTimeStr}` : `${startTimeStr}〜12:00`;
+        const formattedTime = endTimeStr ? `${startTimeStr} 〜 ${endTimeStr}` : `${startTimeStr} 集合`;
 
         const hasPm = !!ev.pmStartAt || !!ev.pmLocation;
         let pmTime = "";
@@ -799,9 +857,7 @@ app.get("/schedule", async (c) => {
           const pmStartDate = new Date(ev.pmStartAt);
           const pmStartStr = pmStartDate.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
           const pmEndStr = ev.pmEndAt ? new Date(ev.pmEndAt).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }) : "";
-          pmTime = pmEndStr ? `${pmStartStr}〜${pmEndStr}` : `${pmStartStr}〜17:00`;
-        } else if (hasPm) {
-          pmTime = "13:00〜17:00";
+          pmTime = pmEndStr ? `${pmStartStr}〜${pmEndStr}` : `${pmStartStr}〜`;
         }
 
         const rawLocation = ev.location || "グラウンド";
@@ -810,7 +866,6 @@ app.get("/schedule", async (c) => {
         const displayPmLocation = venueMap.get(rawPmLocation.trim()) || rawPmLocation;
 
         const extractedTarget = ev.targetGroup || (ev.title?.match(/\[(.*?)\]/)?.[1] || null);
-
         const isMatch = ev.eventType === "match";
 
         return {
@@ -819,12 +874,12 @@ app.get("/schedule", async (c) => {
           targetGroup: extractedTarget,
           date: `${startDate.getMonth() + 1}/${startDate.getDate()}(${wStr})`,
           dateStr,
-          time: endTimeStr ? `${startTimeStr} 〜 ${endTimeStr}` : `${startTimeStr} 集合`,
+          time: formattedTime,
           startAt: ev.startAt,
           endAt: ev.endAt,
           location: displayLocation,
           rawLocation,
-          amTime,
+          amTime: formattedTime,
           amLocation: displayLocation,
           pmTime,
           pmLocation: displayPmLocation,
@@ -833,11 +888,14 @@ app.get("/schedule", async (c) => {
           amType: ev.eventType || "practice",
           pmType: hasPm ? (ev.eventType || "practice") : "off",
           dutyGroup: ev.dutyGroup || undefined,
-          needsLunch: toBoolean(ev.needsLunch, isMatch || (hasPm && amTime.includes("〜") && pmTime.length > 0)),
+          needsLunch: toBoolean(ev.needsLunch, isMatch || hasPm),
           needsSnack: toBoolean(ev.needsSnack, false),
           memo: ev.description || "",
           carInfo: isMatch ? "7:30 集合・配車調整済" : undefined,
+          activityGroups: parsedGroups.length > 0 ? parsedGroups : undefined,
+          groupCounts,
           myStatus,
+          mySelectedGroupId,
           attendCount: {
             present: presentCount,
             absent: absentCount,
@@ -977,6 +1035,7 @@ app.get("/my-family", async (c) => {
     // 4. 子供たちの既存出欠一覧を取得
     const childIds = childrenList.map((c) => c.id);
     const childAttMap: Record<string, Record<string, "present" | "absent" | "pending" | "late">> = {};
+    const childGroupMap: Record<string, Record<string, string>> = {};
 
     if (childIds.length > 0) {
       const attList = await db
@@ -984,6 +1043,7 @@ app.get("/my-family", async (c) => {
           eventId: attendances.eventId,
           playerId: attendances.playerId,
           status: attendances.status,
+          selectedGroupId: attendances.selectedGroupId,
         })
         .from(attendances)
         .where(sql`${attendances.playerId} IN (${sql.join(childIds.map(id => sql`${id}`), sql`, `)})`)
@@ -995,12 +1055,20 @@ app.get("/my-family", async (c) => {
             childAttMap[att.eventId] = {};
           }
           childAttMap[att.eventId][att.playerId] = (att.status as any) || "pending";
+
+          if (att.selectedGroupId) {
+            if (!childGroupMap[att.eventId]) {
+              childGroupMap[att.eventId] = {};
+            }
+            childGroupMap[att.eventId][att.playerId] = att.selectedGroupId;
+          }
         }
       }
     }
 
     // 6. 保護者本人の既存出欠一覧を取得
     const parentAttMap: Record<string, "present" | "absent" | "pending" | "late"> = {};
+    const parentGroupMap: Record<string, string> = {};
     if (member?.id || userId) {
       const parentConditions = [];
       if (member?.id) parentConditions.push(eq(attendances.memberId, member.id));
@@ -1010,6 +1078,7 @@ app.get("/my-family", async (c) => {
         .select({
           eventId: attendances.eventId,
           status: attendances.status,
+          selectedGroupId: attendances.selectedGroupId,
         })
         .from(attendances)
         .where(or(...parentConditions))
@@ -1018,6 +1087,9 @@ app.get("/my-family", async (c) => {
       for (const att of parentAttList) {
         if (att.eventId && att.status) {
           parentAttMap[att.eventId] = (att.status as any) || "pending";
+          if (att.selectedGroupId) {
+            parentGroupMap[att.eventId] = att.selectedGroupId;
+          }
         }
       }
     }
@@ -1029,7 +1101,9 @@ app.get("/my-family", async (c) => {
       memberName: member?.name || null,
       children: childrenList,
       attendances: childAttMap,
+      childGroupMap,
       parentAttendances: parentAttMap,
+      parentGroupMap,
     });
   } catch (error: any) {
     console.error("Failed to load my-family:", error);
@@ -1050,7 +1124,7 @@ app.post("/attendance", async (c) => {
   const db = drizzle(c.env.DB);
   try {
     const body = await c.req.json();
-    const { eventId, userId, memberId, playerId, status, hasCar, comment } = body;
+    const { eventId, userId, memberId, playerId, status, selectedGroupId, hasCar, comment } = body;
 
     if (!eventId || !status) {
       return c.json({ success: false, error: "eventId and status are required" }, 400);
@@ -1073,6 +1147,7 @@ app.post("/attendance", async (c) => {
           .update(attendances)
           .set({
             status: status,
+            selectedGroupId: status === "present" ? (selectedGroupId || existing.selectedGroupId) : null,
             comment: comment || existing.comment,
             updatedAt: new Date(),
           })
@@ -1083,6 +1158,7 @@ app.post("/attendance", async (c) => {
           eventId,
           playerId,
           status: status,
+          selectedGroupId: status === "present" ? (selectedGroupId || null) : null,
           roleInEvent: "player",
           comment: comment || null,
           updatedAt: new Date(),
@@ -1121,6 +1197,7 @@ app.post("/attendance", async (c) => {
         .update(attendances)
         .set({
           status: status,
+          selectedGroupId: status === "present" ? (selectedGroupId || existing.selectedGroupId) : null,
           userId: userId || existing.userId,
           memberId: effectiveMemberId || existing.memberId,
           hasCar: hasCar !== undefined ? hasCar : existing.hasCar,
@@ -1135,6 +1212,7 @@ app.post("/attendance", async (c) => {
         userId: userId || null,
         memberId: effectiveMemberId || null,
         status: status,
+        selectedGroupId: status === "present" ? (selectedGroupId || null) : null,
         hasCar: !!hasCar,
         roleInEvent: "parent",
         comment: comment || null,

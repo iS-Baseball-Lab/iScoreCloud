@@ -44,6 +44,16 @@ export async function ensureEventColumns(d1?: any) {
     await d1.prepare("ALTER TABLE events ADD COLUMN pm_location text").run().catch(() => {});
   } catch {}
 
+  try {
+    // activity_groups カラムの追加（複数活動グループ情報 JSON）
+    await d1.prepare("ALTER TABLE events ADD COLUMN activity_groups text").run().catch(() => {});
+  } catch {}
+
+  try {
+    // selected_group_id カラムの追加（出欠回答時のグループ選択）
+    await d1.prepare("ALTER TABLE attendances ADD COLUMN selected_group_id text").run().catch(() => {});
+  } catch {}
+
   isEventsSchemaReady = true;
 }
 

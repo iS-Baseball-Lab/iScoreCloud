@@ -19,6 +19,7 @@ export const events = sqliteTable("events", {
   targetGroup: text("target_group"),                       // 🎯 対象チーム・グループ（Aチーム, Bチーム, 全体, 試合組, 練習組 等）
   needsLunch: integer("needs_lunch", { mode: "boolean" }).default(false), // 🍙 お弁当要否
   needsSnack: integer("needs_snack", { mode: "boolean" }).default(false), // 🍌 補食（捕食）要否
+  activityGroups: text("activity_groups"),                                 // 👥 複数活動グループ（JSON: [{ id, name, time, location, eventType, dutyGroup, carInfo }]）
   status: text("status").$type<"scheduled" | "rainout">().default("scheduled"), // 📅 イベント全体のステータス (雨天中止など)
 });
 
@@ -29,6 +30,7 @@ export const attendances = sqliteTable("attendances", {
   memberId: text("member_id").references(() => teamMembers.id, { onDelete: "cascade" }),
   userId: text("user_id").references(() => user.id),
   status: text("status").$type<"present" | "absent" | "pending" | "late" | "partial">().default("pending"),
+  selectedGroupId: text("selected_group_id"), // 👥 選択した活動グループID（試合組/練習組など）
   roleInEvent: text("role_in_event").default("player"),
   hasCar: integer("has_car", { mode: "boolean" }).default(false),
   carId: text("car_id").references(() => memberCars.id, { onDelete: "set null" }),
