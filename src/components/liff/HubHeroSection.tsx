@@ -605,7 +605,7 @@ export function HubHeroSection({
   return (
     <div className="space-y-2.5">
       {/* 🌟 1. 上部セグメントタブ（カラーテーマ完全連動） */}
-      <div className="flex items-center p-1 bg-primary/10 dark:bg-primary/15 backdrop-blur-md rounded-2xl border border-primary/20 dark:border-primary/25 shadow-xs">
+      <div className="flex items-center p-1 bg-primary/10 dark:bg-primary/15 backdrop-blur-md rounded-2xl border-2 border-primary/30 dark:border-primary/40 shadow-xs">
         <button
           type="button"
           onClick={() => setActiveTab("next")}
@@ -671,28 +671,28 @@ export function HubHeroSection({
               {[1, 2].map((i) => (
                 <div
                   key={i}
-                  className="w-[88vw] max-w-[360px] shrink-0 rounded-3xl bg-white dark:bg-slate-900 border-2 border-slate-200/80 dark:border-slate-800 p-4 space-y-4 animate-pulse shadow-md ring-1 ring-black/5"
+                  className="w-[88vw] max-w-[360px] shrink-0 rounded-3xl bg-card border-2 border-primary/30 dark:border-primary/40 p-4 space-y-4 animate-pulse shadow-md shadow-primary/5"
                 >
                   <div className="flex justify-between items-center">
-                    <div className="h-5 w-20 bg-slate-200 dark:bg-slate-800 rounded-full" />
-                    <div className="h-4 w-12 bg-slate-200 dark:bg-slate-800 rounded" />
+                    <div className="h-5 w-20 bg-muted rounded-full" />
+                    <div className="h-4 w-12 bg-muted rounded" />
                   </div>
                   <div className="space-y-2">
-                    <div className="h-6 w-32 bg-slate-200 dark:bg-slate-800 rounded-lg" />
-                    <div className="h-4 w-48 bg-slate-200 dark:bg-slate-800 rounded" />
+                    <div className="h-6 w-32 bg-muted rounded-lg" />
+                    <div className="h-4 w-48 bg-muted rounded" />
                   </div>
-                  <div className="h-20 bg-slate-100 dark:bg-slate-800/60 rounded-2xl" />
-                  <div className="h-24 bg-slate-100 dark:bg-slate-800/60 rounded-2xl" />
+                  <div className="h-20 bg-muted/60 rounded-2xl" />
+                  <div className="h-24 bg-muted/60 rounded-2xl" />
                 </div>
               ))}
             </div>
           ) : weeklyEvents.length === 0 ? (
-            <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-sm text-center space-y-2 ring-1 ring-black/5">
+            <div className="p-6 rounded-3xl bg-card border-2 border-primary/30 dark:border-primary/40 shadow-md shadow-primary/5 text-center space-y-2">
               <div className="w-10 h-10 rounded-full bg-primary/10 text-primary mx-auto flex items-center justify-center">
                 <Calendar className="w-5 h-5" />
               </div>
-              <p className="text-sm font-black text-slate-800 dark:text-slate-200">この期間の活動予定はありません</p>
-              <p className="text-xs text-slate-500 font-bold">予定が登録されるとここに表示されます</p>
+              <p className="text-sm font-black text-foreground">この期間の活動予定はありません</p>
+              <p className="text-xs text-muted-foreground font-bold">予定が登録されるとここに表示されます</p>
               <div className="pt-2">
                 <Link
                   href="/liff/schedule"
@@ -713,7 +713,7 @@ export function HubHeroSection({
                 return (
                   <div
                     key={ev.id}
-                    className="w-[88vw] max-w-[360px] shrink-0 snap-center rounded-3xl bg-white dark:bg-slate-900 border-2 border-slate-200/90 dark:border-slate-800 shadow-md shadow-black/5 p-4 space-y-3.5 flex flex-col justify-between ring-1 ring-black/5"
+                    className="w-[88vw] max-w-[360px] shrink-0 snap-center rounded-3xl bg-card border-2 border-primary/30 dark:border-primary/40 hover:border-primary/50 shadow-md shadow-primary/5 p-4 space-y-3.5 flex flex-col justify-between transition-all"
                   >
                   <div className="space-y-3">
                     {/* 上部ヘッダー：日程・日付 & 対象チーム & 全予定リンク */}
@@ -1204,7 +1204,7 @@ export function HubHeroSection({
 
       {/* 🅱️ 【チームカレンダー】カード（月間カレンダー ＋ 当日＆直近の日程一覧） */}
       {activeTab === "calendar" && (
-        <div className="relative overflow-hidden rounded-3xl bg-card border-2 border-primary/25 dark:border-primary/30 shadow-md shadow-primary/5 p-3.5 space-y-3 animate-in fade-in duration-200">
+        <div className="relative overflow-hidden rounded-3xl bg-card border-2 border-primary/30 dark:border-primary/40 shadow-md shadow-primary/5 p-3.5 space-y-3 animate-in fade-in duration-200">
           
           {/* ━━ 1. カレンダーヘッダー（年月切り替え & 今日ボタン） ━━ */}
           <div className="flex items-center justify-between pb-1 border-b border-primary/15">

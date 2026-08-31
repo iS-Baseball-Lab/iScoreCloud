@@ -143,10 +143,7 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
     <div
       className={cn(
         "group relative overflow-hidden transition-all duration-200 ease-out",
-        "rounded-2xl border shadow-xs",
-        isExpanded
-          ? "border-primary/40 bg-card shadow-sm shadow-primary/5 ring-1 ring-primary/20"
-          : "border-border/60 bg-card hover:border-primary/30"
+        "rounded-3xl border-2 border-primary/30 dark:border-primary/40 bg-card shadow-md shadow-primary/5 hover:border-primary/50"
       )}
     >
       {/* 🌟 1. YouTube 試合動画（本家同様の美しいサムネイル＆インライン埋め込み） */}
