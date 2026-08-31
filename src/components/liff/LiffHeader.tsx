@@ -166,7 +166,7 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
           <img
             src="/logo.webp"
             alt="iScore Logo"
-            className="h-8 w-8 sm:h-9 sm:w-9 object-contain group-hover:scale-105 transition-transform duration-300"
+            className="h-9 w-9 sm:h-9.5 sm:w-9.5 object-contain group-hover:scale-105 transition-transform duration-300"
           />
           <div className="flex flex-col justify-center">
             <h1 className="text-base sm:text-lg font-black italic tracking-tighter text-foreground leading-none group-hover:text-primary transition-colors">
