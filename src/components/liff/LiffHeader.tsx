@@ -185,18 +185,18 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <div
-                className={`flex items-center gap-1.5 sm:gap-2 pl-1 pr-2.5 py-1.5 rounded-full backdrop-blur-md border text-foreground shadow-xs hover:opacity-90 transition-all cursor-pointer flex-1 max-w-[190px] min-[400px]:max-w-[220px] sm:max-w-[280px] outline-hidden select-none ${
+                className={`flex items-center gap-2 pl-1 pr-2.5 py-1 rounded-full backdrop-blur-md border text-foreground shadow-xs hover:opacity-90 transition-all cursor-pointer flex-1 max-w-[200px] min-[400px]:max-w-[230px] sm:max-w-[290px] outline-hidden select-none ${
                   isDemo 
                     ? "bg-amber-500/10 border-amber-500/40 text-amber-950 dark:text-amber-100" 
                     : "bg-primary/10 border-primary/40"
                 }`}
                 title={`${orgDisplayName} (${teamDisplayName})`}
               >
-                <Avatar className="h-7 w-7 border border-primary/30 bg-background shrink-0 overflow-hidden">
+                <Avatar className="h-8 w-8 sm:h-8.5 sm:w-8.5 border border-primary/30 bg-background shrink-0 overflow-hidden">
                   {currentTeam?.logoImageUrl ? (
                     <img src={currentTeam.logoImageUrl} alt="Team Logo" className="h-full w-full object-contain" />
                   ) : (
-                    <AvatarFallback className={`w-full h-full flex items-center justify-center font-black text-[11px] select-none bg-background ${
+                    <AvatarFallback className={`w-full h-full flex items-center justify-center font-black text-xs select-none bg-background ${
                       isDemo ? "text-amber-600" : "text-primary"
                     }`}>
                       {orgDisplayName.slice(0, 2).toUpperCase()}
@@ -205,11 +205,11 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
                 </Avatar>
                 <div className="flex flex-col justify-center overflow-hidden min-w-0 flex-1">
                   {/* 1行目: 組織名 / チーム名 */}
-                  <span className="text-[11px] sm:text-xs font-black tracking-tight text-foreground truncate leading-tight">
+                  <span className="text-[11.5px] sm:text-xs font-black tracking-tight text-foreground truncate leading-tight">
                     {orgDisplayName}
                   </span>
                   {/* 2行目: 編成名 */}
-                  <span className={`text-[9px] font-black uppercase truncate leading-none mt-0.5 ${
+                  <span className={`text-[9.5px] font-black uppercase truncate leading-none mt-0.5 ${
                     isDemo ? "text-amber-600 dark:text-amber-400 font-black" : "text-muted-foreground font-bold"
                   }`}>
                     {teamDisplayName}
@@ -232,11 +232,11 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
                   }`}
                 >
                   <div className="flex items-center gap-2 min-w-0">
-                    <Avatar className="h-6 w-6 border border-border shrink-0">
+                    <Avatar className="h-7 w-7 border border-border shrink-0">
                       {t.logoImageUrl ? (
                         <AvatarImage src={t.logoImageUrl} alt={t.name} />
                       ) : (
-                        <AvatarFallback className="text-[9px] font-black">
+                        <AvatarFallback className="text-[10px] font-black">
                           {(t.orgName || t.name || "チーム").slice(0, 2)}
                         </AvatarFallback>
                       )}
@@ -261,19 +261,19 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* 🌟 ユーザープロフィールメニュー (本家と完全同等のテーマ・UIカスタマイザー搭載) */}
+          {/* 🌟 ユーザープロフィールメニュー */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                className="relative flex items-center justify-center rounded-full ring-2 ring-primary/30 hover:ring-primary transition-all p-0.5 outline-hidden shrink-0 active:scale-95"
+                className="relative flex items-center justify-center rounded-full ring-2 ring-primary/40 hover:ring-primary transition-all p-0 outline-hidden shrink-0 active:scale-95 shadow-xs"
                 aria-label="ユーザーメニュー"
               >
-                <Avatar className="h-7 w-7 sm:h-8 sm:w-8 border border-border">
+                <Avatar className="h-9 w-9 sm:h-9.5 sm:w-9.5 border-0">
                   {profile?.pictureUrl && (
                     <AvatarImage src={profile.pictureUrl} alt={displayName} />
                   )}
-                  <AvatarFallback className="bg-primary/20 text-primary font-black text-xs">
+                  <AvatarFallback className="bg-primary/20 text-primary font-black text-sm">
                     {userInitial}
                   </AvatarFallback>
                 </Avatar>
