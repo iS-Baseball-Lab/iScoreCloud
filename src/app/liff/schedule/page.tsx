@@ -33,10 +33,12 @@ import {
   Check,
   Flame,
   Plus,
+  ArrowRightLeft,
+  Settings2,
 } from "lucide-react";
 
 const TARGET_GROUPS = ["全体", "Aチーム", "Bチーム", "高学年", "低学年", "試合組", "練習組"];
-const DUTY_GROUPS = ["1班", "2班", "3班", "4班"];
+const DUTY_GROUPS = ["1班", "2班", "3班", "4班", "なし"];
 const EVENT_TYPES = [
   { id: "practice", label: "練習", icon: "🏃", color: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30" },
   { id: "match", label: "試合", icon: "⚾", color: "bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/30" },
@@ -97,6 +99,7 @@ export default function LiffSchedulePage() {
 
   // ✏️ 個別編集モーダル用ステート
   const [editingEvent, setEditingEvent] = useState<ScheduleEvent | null>(null);
+  const [editMode, setEditMode] = useState<"ampm" | "groups" | "single">("ampm");
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [venuesList, setVenuesList] = useState<Array<{ id: string; name: string; shortName?: string | null }>>([]);
 
@@ -372,23 +375,57 @@ export default function LiffSchedulePage() {
       setIsSavingEdit(true);
       const teamId = currentTeam?.id || "demo-team";
 
+      // 編集モードに応じたデータ正規化
+      let finalEvent = { ...editingEvent };
+
+      if (editMode === "ampm") {
+        // 午前/午後モード
+        const isPmActive = editingEvent.hasPm && editingEvent.pmType !== "off";
+        finalEvent.activityGroups = undefined;
+        finalEvent.eventType = editingEvent.amType || editingEvent.eventType || "practice";
+        finalEvent.location = editingEvent.amLocation || editingEvent.location || "";
+        finalEvent.time = isPmActive
+          ? `${editingEvent.amTime || "08:00〜12:00"} / ${editingEvent.pmTime || "13:00〜17:00"}`
+          : (editingEvent.amTime || "08:00〜12:00");
+      } else if (editMode === "groups") {
+        // 複数グループモード
+        if (finalEvent.activityGroups && finalEvent.activityGroups.length > 0) {
+          finalEvent.eventType = finalEvent.activityGroups[0].eventType || "practice";
+          finalEvent.location = finalEvent.activityGroups.map(g => g.location).filter(Boolean).join(" / ") || finalEvent.location;
+          finalEvent.time = finalEvent.activityGroups[0].time || finalEvent.time;
+        }
+      } else {
+        // 単一活動モード
+        finalEvent.activityGroups = undefined;
+        finalEvent.hasPm = false;
+        finalEvent.pmTime = undefined;
+        finalEvent.pmLocation = undefined;
+        finalEvent.pmType = "off";
+      }
+
       setEvents((prev) =>
-        prev.map((ev) => (ev.id === editingEvent.id ? { ...editingEvent } : ev))
+        prev.map((ev) => (ev.id === finalEvent.id ? { ...finalEvent } : ev))
       );
 
       const res = await fetch(`/api/events/${teamId}/${editingEvent.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          title: editingEvent.title,
-          eventType: editingEvent.eventType,
-          location: editingEvent.location,
-          targetGroup: editingEvent.targetGroup || "全体",
-          dutyGroup: editingEvent.dutyGroup || null,
-          description: editingEvent.memo || "",
-          needsLunch: Boolean(editingEvent.needsLunch),
-          needsSnack: Boolean(editingEvent.needsSnack),
-          activityGroups: editingEvent.activityGroups ? JSON.stringify(editingEvent.activityGroups) : null,
+          title: finalEvent.title,
+          eventType: finalEvent.eventType,
+          location: finalEvent.location,
+          targetGroup: finalEvent.targetGroup || "全体",
+          dutyGroup: finalEvent.dutyGroup === "なし" ? null : finalEvent.dutyGroup || null,
+          description: finalEvent.memo || "",
+          needsLunch: Boolean(finalEvent.needsLunch),
+          needsSnack: Boolean(finalEvent.needsSnack),
+          amType: finalEvent.amType,
+          amTime: finalEvent.amTime,
+          amLocation: finalEvent.amLocation,
+          pmType: finalEvent.hasPm ? finalEvent.pmType : "off",
+          pmTime: finalEvent.hasPm ? finalEvent.pmTime : null,
+          pmLocation: finalEvent.hasPm ? finalEvent.pmLocation : null,
+          activityGroups: editMode === "groups" && finalEvent.activityGroups ? JSON.stringify(finalEvent.activityGroups) : null,
         }),
       });
 
@@ -804,15 +841,33 @@ export default function LiffSchedulePage() {
                               grps = JSON.parse(ev.activityGroups);
                             } catch {}
                           }
+
+                          // 既存データからモードを自動判定
+                          if (grps && grps.length > 1) {
+                            setEditMode("groups");
+                          } else if (ev.hasPm && ev.pmType !== "off") {
+                            setEditMode("ampm");
+                          } else {
+                            setEditMode("ampm"); // デフォルトは午前・午後モード
+                          }
+
                           setEditingEvent({ 
                             ...ev, 
                             needsLunch: Boolean(ev.needsLunch), 
                             needsSnack: Boolean(ev.needsSnack),
                             memo: ev.memo || "",
+                            amType: ev.amType || ev.eventType || "practice",
+                            amTime: ev.amTime || ev.time || "08:00〜12:00",
+                            amLocation: ev.amLocation || ev.location || "",
+                            pmType: ev.pmType || "practice",
+                            pmTime: ev.pmTime || "13:00〜17:00",
+                            pmLocation: ev.pmLocation || ev.amLocation || ev.location || "",
+                            hasPm: ev.hasPm !== undefined ? ev.hasPm : true,
+                            dutyGroup: ev.dutyGroup || "1班",
                             activityGroups: grps,
                           });
                         }}
-                        className="py-1 px-2.5 rounded-xl bg-primary/10 hover:bg-primary text-primary hover:text-primary-foreground text-xs font-black border border-primary/25 active:scale-95 transition-all flex items-center gap-1 shrink-0"
+                        className="py-1 px-2.5 rounded-xl bg-primary/10 hover:bg-primary text-primary hover:text-primary-foreground text-xs font-black border border-primary/25 active:scale-95 transition-all flex items-center gap-1 shrink-0 cursor-pointer"
                       >
                         <Edit3 className="w-3.5 h-3.5" />
                         <span>編集</span>
@@ -903,7 +958,7 @@ export default function LiffSchedulePage() {
                         </div>
                       )}
                     </div>
-                  ) : ev.hasPm && ev.pmTime ? (
+                  ) : ev.hasPm && ev.pmType !== "off" && ev.pmTime ? (
                     /* ☀️🌙 午前/午後分割スケジュール */
                     <div className="grid grid-cols-2 gap-2">
                       {/* ☀️ 【午前】 */}
@@ -974,7 +1029,7 @@ export default function LiffSchedulePage() {
                           {ev.eventType === "match" ? "⚾ 試合" : ev.eventType === "camp" ? "🏕️ 合宿" : "🏃 練習"}
                         </span>
 
-                        {ev.dutyGroup && (
+                        {ev.dutyGroup && ev.dutyGroup !== "なし" && (
                           <span className="text-[10px] font-black text-primary px-2.5 py-0.5 rounded-lg bg-primary/10 border border-primary/20">
                             📋 {ev.dutyGroup}
                           </span>
@@ -984,11 +1039,11 @@ export default function LiffSchedulePage() {
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs font-bold">
                         <div className="flex items-center gap-1.5 text-foreground bg-card p-2 rounded-xl border border-border/60">
                           <Clock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                          <span>{ev.time || "時間調整中"}</span>
+                          <span>{ev.amTime || ev.time || "時間調整中"}</span>
                         </div>
                         <div className="flex items-center gap-1.5 text-foreground bg-card p-2 rounded-xl border border-border/60">
                           <MapPin className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                          <span className="truncate">{ev.location || "グラウンド"}</span>
+                          <span className="truncate">{ev.amLocation || ev.location || "グラウンド"}</span>
                         </div>
                       </div>
                     </div>
@@ -1282,34 +1337,34 @@ export default function LiffSchedulePage() {
         )}
       </div>
 
-      {/* 🌟 予定の個別編集モーダル */}
+      {/* 🌟 予定の個別詳細編集モーダル（午前・午後 ＆ 複数グループ ＆ 単一活動） */}
       {editingEvent && (
         <div className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-150">
           <div
-            className="bg-card w-full max-w-xl rounded-t-3xl sm:rounded-3xl border-2 border-primary/30 shadow-2xl overflow-hidden max-h-[85vh] flex flex-col animate-in slide-in-from-bottom-4 duration-200"
+            className="bg-card w-full max-w-xl rounded-t-3xl sm:rounded-3xl border-2 border-primary/30 shadow-2xl overflow-hidden max-h-[88vh] flex flex-col animate-in slide-in-from-bottom-4 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
             {/* モーダルヘッダー */}
-            <div className="px-5 py-4 border-b border-border/80 flex items-center justify-between bg-muted/30 shrink-0">
+            <div className="px-5 py-3.5 border-b border-border/80 flex items-center justify-between bg-muted/30 shrink-0">
               <div className="flex items-center gap-2">
                 <span className="px-2.5 py-1 rounded-xl bg-primary text-primary-foreground text-xs font-black shrink-0">
                   {editingEvent.date}
                 </span>
                 <h3 className="text-sm font-black text-foreground">
-                  予定の個別詳細編集
+                  予定の詳細編集
                 </h3>
               </div>
               <button
                 type="button"
                 onClick={() => setEditingEvent(null)}
-                className="p-1.5 rounded-xl hover:bg-muted text-muted-foreground hover:text-foreground active:scale-95 transition-all"
+                className="p-1.5 rounded-xl hover:bg-muted text-muted-foreground hover:text-foreground active:scale-95 transition-all cursor-pointer"
               >
                 <span className="text-base font-black leading-none">✕</span>
               </button>
             </div>
 
             {/* モーダル本文 */}
-            <div className="p-5 overflow-y-auto space-y-4 text-xs">
+            <div className="p-4 sm:p-5 overflow-y-auto space-y-4 text-xs">
               {/* 1. タイトル */}
               <div className="space-y-1">
                 <label className="text-[11px] font-black text-foreground">予定タイトル</label>
@@ -1317,7 +1372,7 @@ export default function LiffSchedulePage() {
                   type="text"
                   value={editingEvent.title}
                   onChange={(e) => setEditingEvent({ ...editingEvent, title: e.target.value })}
-                  placeholder="予定タイトル（例: 秋季大会 2回戦 ＆ 居残り練習）"
+                  placeholder="予定タイトル（例: 秋季大会 2回戦 ＆ 午後練習）"
                   className="w-full px-3 py-2 rounded-xl bg-card border border-border/80 text-xs font-black text-foreground focus:outline-hidden focus:border-primary"
                 />
               </div>
@@ -1333,7 +1388,7 @@ export default function LiffSchedulePage() {
                         key={tg}
                         type="button"
                         onClick={() => setEditingEvent({ ...editingEvent, targetGroup: tg })}
-                        className={`px-2.5 py-1 rounded-xl text-xs font-bold border transition-all active:scale-95 ${
+                        className={`px-2.5 py-1 rounded-xl text-xs font-bold border transition-all active:scale-95 cursor-pointer ${
                           isSel
                             ? "bg-primary text-primary-foreground border-primary font-black shadow-xs"
                             : "bg-card hover:bg-muted text-muted-foreground hover:text-foreground border-border/80"
@@ -1346,138 +1401,332 @@ export default function LiffSchedulePage() {
                 </div>
               </div>
 
-              {/* 3. 種別 */}
+              {/* 🌟 3. 活動パターンの選択（モード切り替えタブ） */}
               <div className="space-y-1.5">
-                <label className="text-[10.5px] font-bold text-muted-foreground">活動種別</label>
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  {EVENT_TYPES.map((t) => {
-                    const isSel = editingEvent.eventType === t.id;
-                    return (
-                      <button
-                        key={t.id}
-                        type="button"
-                        onClick={() => setEditingEvent({ ...editingEvent, eventType: t.id as any })}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all active:scale-95 ${
-                          isSel
-                            ? t.color + " font-black shadow-2xs"
-                            : "bg-card border-border/80 text-muted-foreground hover:text-foreground"
-                        }`}
-                      >
-                        {t.icon} {t.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* 4. 時間帯・球場場所 */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[10px] font-bold text-muted-foreground block mb-1">活動時間</label>
-                  <div className="flex items-center gap-1.5 px-2.5 py-2 rounded-xl bg-card border border-border/80">
-                    <Clock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                    <input
-                      type="text"
-                      value={editingEvent.time}
-                      onChange={(e) => setEditingEvent({ ...editingEvent, time: e.target.value })}
-                      placeholder="08:00〜12:00 または 08:30 集合"
-                      className="bg-transparent text-xs font-bold text-foreground focus:outline-hidden w-full"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-[10px] font-bold text-muted-foreground block mb-1">球場・場所</label>
-                  <div className="flex items-center gap-1.5 px-2.5 py-2 rounded-xl bg-card border border-border/80">
-                    <MapPin className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                    <input
-                      type="text"
-                      value={editingEvent.location}
-                      onChange={(e) => setEditingEvent({ ...editingEvent, location: e.target.value })}
-                      placeholder="市民第1球場 または 選択"
-                      className="bg-transparent text-xs font-bold text-foreground focus:outline-hidden w-full"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* 球場クイック選択候補 */}
-              {venuesList.length > 0 && (
-                <div className="space-y-1">
-                  <div className="flex items-center gap-1 overflow-x-auto scrollbar-none pb-0.5">
-                    <span className="text-[9.5px] font-bold text-muted-foreground shrink-0">候補:</span>
-                    {venuesList.map((v) => {
-                      const displayName = getVenueDisplayName(v);
-                      const isSelected = editingEvent.location === displayName || editingEvent.location === v.name;
-                      return (
-                        <button
-                          key={v.id}
-                          type="button"
-                          onClick={() => setEditingEvent({ ...editingEvent, location: displayName })}
-                          className={`px-2 py-0.5 rounded-lg text-[9.5px] font-bold shrink-0 transition-all border ${
-                            isSelected
-                              ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/40 font-black shadow-2xs"
-                              : "bg-card hover:bg-muted text-muted-foreground hover:text-foreground border-border/70"
-                          }`}
-                        >
-                          🏟️ {displayName}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* 🌟 5. 複数活動グループ設定（試合組・練習組など） */}
-              <div className="p-3.5 rounded-2xl bg-amber-500/5 dark:bg-amber-500/10 border border-amber-500/20 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <label className="text-[11px] font-black text-amber-700 dark:text-amber-300 flex items-center gap-1">
-                      <Layers className="w-3.5 h-3.5 text-amber-500" />
-                      <span>活動グループ分け（試合組・練習組等）</span>
-                    </label>
-                    <p className="text-[10px] font-bold text-muted-foreground">
-                      同日に別行動するチームや班がある場合に設定します
-                    </p>
-                  </div>
+                <label className="text-[11px] font-black text-foreground flex items-center gap-1">
+                  <Settings2 className="w-3.5 h-3.5 text-primary" />
+                  <span>活動パターンの設定</span>
+                </label>
+                <div className="grid grid-cols-3 gap-1 p-1 bg-muted/70 rounded-2xl border border-border/80">
+                  <button
+                    type="button"
+                    onClick={() => setEditMode("ampm")}
+                    className={`py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                      editMode === "ampm"
+                        ? "bg-card text-foreground shadow-xs ring-1 ring-primary/40"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <span>☀️🌙</span>
+                    <span>午前・午後</span>
+                  </button>
 
                   <button
                     type="button"
                     onClick={() => {
-                      const currentGroups = editingEvent.activityGroups || [
-                        {
-                          id: `grp_${Date.now()}_1`,
-                          name: "Aチーム（試合組）",
-                          eventType: "match",
-                          time: editingEvent.time || "08:00 集合",
-                          location: editingEvent.location || "",
-                          dutyGroup: editingEvent.dutyGroup || "1班",
-                        }
-                      ];
-                      const newGrp: ActivityGroup = {
-                        id: `grp_${Date.now()}_${currentGroups.length + 1}`,
-                        name: currentGroups.length === 1 ? "Bチーム（練習組）" : `グループ ${currentGroups.length + 1}`,
-                        eventType: "practice",
-                        time: "09:00 〜 12:00",
-                        location: "学校グラウンド",
-                        dutyGroup: "2班",
-                      };
-                      setEditingEvent({
-                        ...editingEvent,
-                        activityGroups: [...currentGroups, newGrp],
-                      });
+                      setEditMode("groups");
+                      if (!editingEvent.activityGroups || editingEvent.activityGroups.length === 0) {
+                        setEditingEvent({
+                          ...editingEvent,
+                          activityGroups: [
+                            {
+                              id: `grp_${Date.now()}_1`,
+                              name: "Aチーム（試合組）",
+                              eventType: "match",
+                              time: editingEvent.amTime || editingEvent.time || "08:00 集合",
+                              location: editingEvent.amLocation || editingEvent.location || "",
+                              dutyGroup: editingEvent.dutyGroup || "1班",
+                            },
+                            {
+                              id: `grp_${Date.now()}_2`,
+                              name: "Bチーム（練習組）",
+                              eventType: "practice",
+                              time: "09:00 〜 12:00",
+                              location: "学校グラウンド",
+                              dutyGroup: "2班",
+                            }
+                          ]
+                        });
+                      }
                     }}
-                    className="py-1 px-2.5 rounded-xl bg-amber-500 text-white text-[10.5px] font-black shadow-xs active:scale-95 transition-all flex items-center gap-1 shrink-0"
+                    className={`py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                      editMode === "groups"
+                        ? "bg-card text-amber-600 dark:text-amber-400 shadow-xs ring-1 ring-amber-500/40"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
                   >
-                    <Plus className="w-3 h-3" />
-                    <span>グループ追加</span>
+                    <span>👥</span>
+                    <span>グループ別</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setEditMode("single")}
+                    className={`py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                      editMode === "single"
+                        ? "bg-card text-primary shadow-xs ring-1 ring-primary/40"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <span>🏃</span>
+                    <span>単一枠</span>
                   </button>
                 </div>
+              </div>
 
-                {/* グループリスト */}
-                {editingEvent.activityGroups && editingEvent.activityGroups.length > 0 && (
+              {/* ☀️🌙 パターンA: 【午前・午後】設定セクション */}
+              {editMode === "ampm" && (
+                <div className="space-y-3 p-3.5 rounded-2xl bg-muted/40 border border-border/80">
+                  {/* ☀️ 午前ブロック */}
+                  <div className="p-3 rounded-2xl bg-amber-500/5 dark:bg-amber-500/10 border border-amber-500/25 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-amber-700 dark:text-amber-300 flex items-center gap-1">
+                        <Sun className="w-3.5 h-3.5 text-amber-500" />
+                        <span>午前の活動</span>
+                      </span>
+
+                      {/* 午前種別 */}
+                      <div className="flex items-center gap-1">
+                        {EVENT_TYPES.slice(0, 3).map((t) => {
+                          const isSel = (editingEvent.amType || editingEvent.eventType) === t.id;
+                          return (
+                            <button
+                              key={t.id}
+                              type="button"
+                              onClick={() => setEditingEvent({ ...editingEvent, amType: t.id as any })}
+                              className={`px-2 py-0.5 rounded-lg text-[10.5px] font-black border transition-all cursor-pointer ${
+                                isSel ? t.color + " shadow-2xs" : "bg-card border-border/70 text-muted-foreground"
+                              }`}
+                            >
+                              {t.icon} {t.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[10px] font-bold text-muted-foreground block mb-0.5">時間帯</label>
+                        <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-card border border-border/70">
+                          <Clock className="w-3 h-3 text-amber-500 shrink-0" />
+                          <input
+                            type="text"
+                            value={editingEvent.amTime || ""}
+                            onChange={(e) => setEditingEvent({ ...editingEvent, amTime: e.target.value })}
+                            placeholder="08:00〜12:00"
+                            className="bg-transparent text-xs font-bold text-foreground focus:outline-hidden w-full"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-bold text-muted-foreground block mb-0.5">球場・場所</label>
+                        <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-card border border-border/70">
+                          <MapPin className="w-3 h-3 text-emerald-500 shrink-0" />
+                          <input
+                            type="text"
+                            value={editingEvent.amLocation || ""}
+                            onChange={(e) => setEditingEvent({ ...editingEvent, amLocation: e.target.value })}
+                            placeholder="市民第1球場 または 選択"
+                            className="bg-transparent text-xs font-bold text-foreground focus:outline-hidden w-full"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 球場クイック選択候補 */}
+                    {venuesList.length > 0 && (
+                      <div className="flex items-center gap-1 overflow-x-auto scrollbar-none pt-0.5">
+                        <span className="text-[9px] font-bold text-muted-foreground shrink-0">候補:</span>
+                        {venuesList.slice(0, 6).map((v) => {
+                          const displayName = getVenueDisplayName(v);
+                          return (
+                            <button
+                              key={v.id}
+                              type="button"
+                              onClick={() => setEditingEvent({ ...editingEvent, amLocation: displayName })}
+                              className="px-1.5 py-0.5 rounded-md text-[9.5px] font-bold bg-card border border-border/60 text-muted-foreground hover:text-foreground shrink-0 cursor-pointer"
+                            >
+                              🏟️ {displayName}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 🌙 午後ブロック */}
+                  <div className={`p-3 rounded-2xl border space-y-2.5 transition-all ${
+                    editingEvent.hasPm && editingEvent.pmType !== "off"
+                      ? "bg-indigo-500/5 dark:bg-indigo-500/10 border-indigo-500/25"
+                      : "bg-muted/20 border-border/60 opacity-80"
+                  }`}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-black text-indigo-700 dark:text-indigo-300 flex items-center gap-1">
+                          <Moon className="w-3.5 h-3.5 text-indigo-500" />
+                          <span>午後の活動</span>
+                        </span>
+
+                        {/* 午後の活動 ON/OFF 切替スイッチ */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const nextHasPm = !editingEvent.hasPm || editingEvent.pmType === "off";
+                            setEditingEvent({
+                              ...editingEvent,
+                              hasPm: nextHasPm,
+                              pmType: nextHasPm ? (editingEvent.pmType === "off" ? "practice" : editingEvent.pmType || "practice") : "off",
+                              pmTime: nextHasPm ? (editingEvent.pmTime || "13:00〜17:00") : "",
+                              pmLocation: nextHasPm ? (editingEvent.pmLocation || editingEvent.amLocation || "") : "",
+                            });
+                          }}
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-black border transition-all cursor-pointer ${
+                            editingEvent.hasPm && editingEvent.pmType !== "off"
+                              ? "bg-indigo-500 text-white border-indigo-500"
+                              : "bg-muted text-muted-foreground border-border"
+                          }`}
+                        >
+                          {editingEvent.hasPm && editingEvent.pmType !== "off" ? "✓ 午後あり" : "🏖️ なし (午前解散)"}
+                        </button>
+                      </div>
+
+                      {/* 午後種別 */}
+                      {editingEvent.hasPm && editingEvent.pmType !== "off" && (
+                        <div className="flex items-center gap-1">
+                          {EVENT_TYPES.slice(0, 3).map((t) => {
+                            const isSel = editingEvent.pmType === t.id;
+                            return (
+                              <button
+                                key={t.id}
+                                type="button"
+                                onClick={() => setEditingEvent({ ...editingEvent, pmType: t.id as any })}
+                                className={`px-2 py-0.5 rounded-lg text-[10.5px] font-black border transition-all cursor-pointer ${
+                                  isSel ? t.color + " shadow-2xs" : "bg-card border-border/70 text-muted-foreground"
+                                }`}
+                              >
+                                {t.icon} {t.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    {editingEvent.hasPm && editingEvent.pmType !== "off" ? (
+                      <div className="space-y-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-[10px] font-bold text-muted-foreground block mb-0.5">時間帯</label>
+                            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-card border border-border/70">
+                              <Clock className="w-3 h-3 text-indigo-500 shrink-0" />
+                              <input
+                                type="text"
+                                value={editingEvent.pmTime || ""}
+                                onChange={(e) => setEditingEvent({ ...editingEvent, pmTime: e.target.value })}
+                                placeholder="13:00〜17:00"
+                                className="bg-transparent text-xs font-bold text-foreground focus:outline-hidden w-full"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <div className="flex items-center justify-between mb-0.5">
+                              <label className="text-[10px] font-bold text-muted-foreground block">球場・場所</label>
+                              {editingEvent.amLocation && editingEvent.pmLocation !== editingEvent.amLocation && (
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingEvent({ ...editingEvent, pmLocation: editingEvent.amLocation })}
+                                  className="text-[9.5px] font-bold text-primary hover:underline cursor-pointer"
+                                >
+                                  午前と同じ場所
+                                </button>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-card border border-border/70">
+                              <MapPin className="w-3 h-3 text-emerald-500 shrink-0" />
+                              <input
+                                type="text"
+                                value={editingEvent.pmLocation || ""}
+                                onChange={(e) => setEditingEvent({ ...editingEvent, pmLocation: e.target.value })}
+                                placeholder="午後の球場・グラウンド"
+                                className="bg-transparent text-xs font-bold text-foreground focus:outline-hidden w-full"
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* 球場クイック選択候補 */}
+                        {venuesList.length > 0 && (
+                          <div className="flex items-center gap-1 overflow-x-auto scrollbar-none pt-0.5">
+                            <span className="text-[9px] font-bold text-muted-foreground shrink-0">候補:</span>
+                            {venuesList.slice(0, 6).map((v) => {
+                              const displayName = getVenueDisplayName(v);
+                              return (
+                                <button
+                                  key={v.id}
+                                  type="button"
+                                  onClick={() => setEditingEvent({ ...editingEvent, pmLocation: displayName })}
+                                  className="px-1.5 py-0.5 rounded-md text-[9.5px] font-bold bg-card border border-border/60 text-muted-foreground hover:text-foreground shrink-0 cursor-pointer"
+                                >
+                                  🏟️ {displayName}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-[11px] font-bold text-muted-foreground py-1">
+                        午後は予定なし（午前中のみで活動終了・解散）
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* 👥 パターンB: 【複数グループ（試合組/練習組）】設定セクション */}
+              {editMode === "groups" && (
+                <div className="p-3.5 rounded-2xl bg-amber-500/5 dark:bg-amber-500/10 border border-amber-500/20 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <label className="text-[11px] font-black text-amber-700 dark:text-amber-300 flex items-center gap-1">
+                        <Layers className="w-3.5 h-3.5 text-amber-500" />
+                        <span>活動グループ分け（試合組・練習組等）</span>
+                      </label>
+                      <p className="text-[10px] font-bold text-muted-foreground">
+                        同日に別行動するチームや班を設定します
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const currentGroups = editingEvent.activityGroups || [];
+                        const newGrp: ActivityGroup = {
+                          id: `grp_${Date.now()}_${currentGroups.length + 1}`,
+                          name: `グループ ${currentGroups.length + 1}`,
+                          eventType: "practice",
+                          time: "09:00 〜 12:00",
+                          location: "学校グラウンド",
+                          dutyGroup: "2班",
+                        };
+                        setEditingEvent({
+                          ...editingEvent,
+                          activityGroups: [...currentGroups, newGrp],
+                        });
+                      }}
+                      className="py-1 px-2.5 rounded-xl bg-amber-500 text-white text-[10.5px] font-black shadow-xs active:scale-95 transition-all flex items-center gap-1 shrink-0 cursor-pointer"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>グループ追加</span>
+                    </button>
+                  </div>
+
+                  {/* グループリスト */}
                   <div className="space-y-2.5 pt-1">
-                    {editingEvent.activityGroups.map((grp, gIdx) => (
+                    {(editingEvent.activityGroups || []).map((grp, gIdx) => (
                       <div
                         key={grp.id}
                         className="p-3 rounded-2xl bg-card border border-border/80 space-y-2 relative"
@@ -1512,7 +1761,7 @@ export default function LiffSchedulePage() {
                                 };
                                 setEditingEvent({ ...editingEvent, activityGroups: newGroups });
                               }}
-                              className={`px-2 py-0.5 rounded-lg text-[10px] font-black border ${
+                              className={`px-2 py-0.5 rounded-lg text-[10px] font-black border cursor-pointer ${
                                 grp.eventType === "match"
                                   ? "bg-rose-500/15 text-rose-600 border-rose-500/30"
                                   : "bg-emerald-500/15 text-emerald-600 border-emerald-500/30"
@@ -1522,50 +1771,45 @@ export default function LiffSchedulePage() {
                             </button>
 
                             {/* 削除ボタン */}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const newGroups = (editingEvent.activityGroups || []).filter((_, idx) => idx !== gIdx);
-                                setEditingEvent({
-                                  ...editingEvent,
-                                  activityGroups: newGroups.length > 0 ? newGroups : undefined
-                                });
-                              }}
-                              className="p-1 text-muted-foreground hover:text-rose-500 rounded-lg transition-all"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                            {(editingEvent.activityGroups || []).length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const newGroups = (editingEvent.activityGroups || []).filter((_, idx) => idx !== gIdx);
+                                  setEditingEvent({ ...editingEvent, activityGroups: newGroups });
+                                }}
+                                className="p-1 text-muted-foreground hover:text-rose-500 rounded-lg transition-all cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
                         </div>
 
                         {/* 時間 & 場所 */}
                         <div className="grid grid-cols-2 gap-2 text-xs">
-                          <div>
-                            <input
-                              type="text"
-                              value={grp.time || ""}
-                              onChange={(e) => {
-                                const newGroups = [...(editingEvent.activityGroups || [])];
-                                newGroups[gIdx] = { ...grp, time: e.target.value };
-                                setEditingEvent({ ...editingEvent, activityGroups: newGroups });
-                              }}
-                              placeholder="時間 (例: 08:00集合)"
-                              className="w-full px-2 py-1.5 rounded-xl bg-muted/40 border border-border/60 text-[11px] font-bold text-foreground focus:outline-hidden"
-                            />
-                          </div>
-                          <div>
-                            <input
-                              type="text"
-                              value={grp.location || ""}
-                              onChange={(e) => {
-                                const newGroups = [...(editingEvent.activityGroups || [])];
-                                newGroups[gIdx] = { ...grp, location: e.target.value };
-                                setEditingEvent({ ...editingEvent, activityGroups: newGroups });
-                              }}
-                              placeholder="場所・球場"
-                              className="w-full px-2 py-1.5 rounded-xl bg-muted/40 border border-border/60 text-[11px] font-bold text-foreground focus:outline-hidden"
-                            />
-                          </div>
+                          <input
+                            type="text"
+                            value={grp.time || ""}
+                            onChange={(e) => {
+                              const newGroups = [...(editingEvent.activityGroups || [])];
+                              newGroups[gIdx] = { ...grp, time: e.target.value };
+                              setEditingEvent({ ...editingEvent, activityGroups: newGroups });
+                            }}
+                            placeholder="時間 (例: 08:00集合)"
+                            className="w-full px-2 py-1.5 rounded-xl bg-muted/40 border border-border/60 text-[11px] font-bold text-foreground focus:outline-hidden"
+                          />
+                          <input
+                            type="text"
+                            value={grp.location || ""}
+                            onChange={(e) => {
+                              const newGroups = [...(editingEvent.activityGroups || [])];
+                              newGroups[gIdx] = { ...grp, location: e.target.value };
+                              setEditingEvent({ ...editingEvent, activityGroups: newGroups });
+                            }}
+                            placeholder="場所・球場"
+                            className="w-full px-2 py-1.5 rounded-xl bg-muted/40 border border-border/60 text-[11px] font-bold text-foreground focus:outline-hidden"
+                          />
                         </div>
 
                         {/* 当番 & 配車 */}
@@ -1596,23 +1840,82 @@ export default function LiffSchedulePage() {
                       </div>
                     ))}
                   </div>
-                )}
-              </div>
+                </div>
+              )}
 
-              {/* 5. 当番・お弁当・補食 */}
-              <div className="space-y-3 p-3.5 rounded-2xl bg-muted/30 border border-border/80">
+              {/* 🏃 パターンC: 【単一活動枠】設定セクション */}
+              {editMode === "single" && (
+                <div className="p-3.5 rounded-2xl bg-muted/30 border border-border/80 space-y-3">
+                  <div className="space-y-1.5">
+                    <label className="text-[10.5px] font-bold text-muted-foreground">活動種別</label>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {EVENT_TYPES.map((t) => {
+                        const isSel = editingEvent.eventType === t.id;
+                        return (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onClick={() => setEditingEvent({ ...editingEvent, eventType: t.id as any })}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all active:scale-95 cursor-pointer ${
+                              isSel
+                                ? t.color + " font-black shadow-2xs"
+                                : "bg-card border-border/80 text-muted-foreground hover:text-foreground"
+                            }`}
+                          >
+                            {t.icon} {t.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <div>
+                      <label className="text-[10px] font-bold text-muted-foreground block mb-0.5">活動時間</label>
+                      <div className="flex items-center gap-1.5 px-2.5 py-2 rounded-xl bg-card border border-border/80">
+                        <Clock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                        <input
+                          type="text"
+                          value={editingEvent.time}
+                          onChange={(e) => setEditingEvent({ ...editingEvent, time: e.target.value })}
+                          placeholder="09:00〜16:00 または 08:30集合"
+                          className="bg-transparent text-xs font-bold text-foreground focus:outline-hidden w-full"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold text-muted-foreground block mb-0.5">球場・場所</label>
+                      <div className="flex items-center gap-1.5 px-2.5 py-2 rounded-xl bg-card border border-border/80">
+                        <MapPin className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                        <input
+                          type="text"
+                          value={editingEvent.location}
+                          onChange={(e) => setEditingEvent({ ...editingEvent, location: e.target.value })}
+                          placeholder="市民第1球場 または 選択"
+                          className="bg-transparent text-xs font-bold text-foreground focus:outline-hidden w-full"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 📋 4. 共通詳細情報（当番・お弁当・補食・連絡事項） */}
+              <div className="space-y-3 p-3.5 rounded-2xl bg-card border border-border/80">
+                {/* お当番 */}
                 <div>
-                  <label className="text-[10px] font-bold text-muted-foreground block mb-1">当番</label>
-                  <div className="grid grid-cols-4 gap-1">
+                  <label className="text-[10px] font-bold text-muted-foreground block mb-1">お当番班</label>
+                  <div className="grid grid-cols-5 gap-1">
                     {DUTY_GROUPS.map((dg) => (
                       <button
                         key={dg}
                         type="button"
                         onClick={() => setEditingEvent({ ...editingEvent, dutyGroup: dg })}
-                        className={`py-1 text-center rounded-lg text-[11px] font-bold border transition-all active:scale-95 ${
+                        className={`py-1 text-center rounded-lg text-[11px] font-bold border transition-all active:scale-95 cursor-pointer ${
                           editingEvent.dutyGroup === dg
                             ? "bg-primary text-primary-foreground border-primary font-black shadow-xs"
-                            : "bg-card border-border/80 text-muted-foreground hover:text-foreground"
+                            : "bg-muted/40 border-border/70 text-muted-foreground hover:text-foreground"
                         }`}
                       >
                         {dg}
@@ -1621,7 +1924,8 @@ export default function LiffSchedulePage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-border/60">
+                {/* お弁当 & 補食 */}
+                <div className="grid grid-cols-2 gap-2.5 pt-2 border-t border-border/60">
                   {/* お弁当 */}
                   <div>
                     <label className="text-[10px] font-bold text-muted-foreground block mb-1">お弁当</label>
@@ -1629,10 +1933,10 @@ export default function LiffSchedulePage() {
                       <button
                         type="button"
                         onClick={() => setEditingEvent({ ...editingEvent, needsLunch: true })}
-                        className={`flex-1 py-1 rounded-lg text-[11px] font-bold border transition-all flex items-center justify-center gap-1 ${
+                        className={`flex-1 py-1.5 rounded-xl text-[11px] font-bold border transition-all flex items-center justify-center gap-1 cursor-pointer ${
                           editingEvent.needsLunch === true
                             ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/40 font-black"
-                            : "bg-card border-border/80 text-muted-foreground"
+                            : "bg-muted/30 border-border/70 text-muted-foreground"
                         }`}
                       >
                         <Utensils className="w-3 h-3" />
@@ -1641,10 +1945,10 @@ export default function LiffSchedulePage() {
                       <button
                         type="button"
                         onClick={() => setEditingEvent({ ...editingEvent, needsLunch: false })}
-                        className={`flex-1 py-1 rounded-lg text-[11px] font-bold border transition-all flex items-center justify-center gap-1 ${
+                        className={`flex-1 py-1.5 rounded-xl text-[11px] font-bold border transition-all flex items-center justify-center gap-1 cursor-pointer ${
                           editingEvent.needsLunch !== true
                             ? "bg-primary/15 text-primary border-primary/40 font-black"
-                            : "bg-card border-border/80 text-muted-foreground"
+                            : "bg-muted/30 border-border/70 text-muted-foreground"
                         }`}
                       >
                         <span>不要</span>
@@ -1652,17 +1956,17 @@ export default function LiffSchedulePage() {
                     </div>
                   </div>
 
-                  {/* 補食（捕食） */}
+                  {/* 補食 */}
                   <div>
                     <label className="text-[10px] font-bold text-muted-foreground block mb-1">補食（捕食）</label>
                     <div className="flex gap-1">
                       <button
                         type="button"
                         onClick={() => setEditingEvent({ ...editingEvent, needsSnack: true })}
-                        className={`flex-1 py-1 rounded-lg text-[11px] font-bold border transition-all flex items-center justify-center gap-1 ${
+                        className={`flex-1 py-1.5 rounded-xl text-[11px] font-bold border transition-all flex items-center justify-center gap-1 cursor-pointer ${
                           editingEvent.needsSnack === true
                             ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/40 font-black"
-                            : "bg-card border-border/80 text-muted-foreground"
+                            : "bg-muted/30 border-border/70 text-muted-foreground"
                         }`}
                       >
                         <span className="text-xs leading-none">🍌</span>
@@ -1671,10 +1975,10 @@ export default function LiffSchedulePage() {
                       <button
                         type="button"
                         onClick={() => setEditingEvent({ ...editingEvent, needsSnack: false })}
-                        className={`flex-1 py-1 rounded-lg text-[11px] font-bold border transition-all flex items-center justify-center gap-1 ${
+                        className={`flex-1 py-1.5 rounded-xl text-[11px] font-bold border transition-all flex items-center justify-center gap-1 cursor-pointer ${
                           editingEvent.needsSnack !== true
                             ? "bg-primary/15 text-primary border-primary/40 font-black"
-                            : "bg-card border-border/80 text-muted-foreground"
+                            : "bg-muted/30 border-border/70 text-muted-foreground"
                         }`}
                       >
                         <span>不要</span>
@@ -1682,18 +1986,18 @@ export default function LiffSchedulePage() {
                     </div>
                   </div>
                 </div>
-              </div>
 
-              {/* 6. 連絡事項 */}
-              <div className="space-y-1">
-                <label className="text-[11px] font-black text-foreground">連絡事項・持ち物</label>
-                <textarea
-                  rows={2}
-                  value={editingEvent.memo || ""}
-                  onChange={(e) => setEditingEvent({ ...editingEvent, memo: e.target.value })}
-                  placeholder="ユニフォーム正装、スパイク持参、雨天時は7:00連絡など"
-                  className="w-full px-3 py-2 rounded-xl bg-card border border-border/80 text-xs font-bold text-foreground focus:outline-hidden focus:border-primary resize-none"
-                />
+                {/* 連絡事項 */}
+                <div className="space-y-1 pt-2 border-t border-border/60">
+                  <label className="text-[10.5px] font-black text-foreground">連絡事項・持ち物</label>
+                  <textarea
+                    rows={2}
+                    value={editingEvent.memo || ""}
+                    onChange={(e) => setEditingEvent({ ...editingEvent, memo: e.target.value })}
+                    placeholder="ユニフォーム正装、スパイク持参、雨天時は7:00連絡など"
+                    className="w-full px-3 py-2 rounded-xl bg-muted/30 border border-border/80 text-xs font-bold text-foreground focus:outline-hidden focus:border-primary resize-none"
+                  />
+                </div>
               </div>
             </div>
 
@@ -1702,7 +2006,7 @@ export default function LiffSchedulePage() {
               <button
                 type="button"
                 onClick={() => setEditingEvent(null)}
-                className="py-2.5 px-4 rounded-xl text-xs font-bold text-muted-foreground hover:text-foreground hover:bg-muted active:scale-95 transition-all"
+                className="py-2.5 px-4 rounded-xl text-xs font-bold text-muted-foreground hover:text-foreground hover:bg-muted active:scale-95 transition-all cursor-pointer"
               >
                 キャンセル
               </button>
@@ -1711,7 +2015,7 @@ export default function LiffSchedulePage() {
                 type="button"
                 onClick={handleSaveEventEdit}
                 disabled={isSavingEdit}
-                className="py-2.5 px-6 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-black shadow-md transition-all active:scale-95 flex items-center gap-1.5 disabled:opacity-50"
+                className="py-2.5 px-6 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-black shadow-md transition-all active:scale-95 flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
               >
                 <Save className="w-4 h-4" />
                 <span>{isSavingEdit ? "保存中..." : "予定を更新する"}</span>

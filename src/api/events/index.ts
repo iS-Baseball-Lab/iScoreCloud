@@ -101,23 +101,64 @@ app.patch('/:teamId/:eventId', async (c) => {
 
   try {
     const body = await c.req.json();
-    const { title, startAt, endAt, eventType, description, location, dutyGroup, pmStartAt, pmEndAt, pmLocation, targetGroup, needsLunch, needsSnack, status, activityGroups } = body;
+    const { 
+      title, startAt, endAt, eventType, description, location, dutyGroup, 
+      pmStartAt, pmEndAt, pmLocation, targetGroup, needsLunch, needsSnack, status, activityGroups,
+      amTime, pmTime, amLocation, amType, pmType
+    } = body;
+
+    const existingEvent = await db.select().from(events).where(and(eq(events.id, eventId), eq(events.teamId, teamId))).get();
+    if (!existingEvent) {
+      return c.json({ success: false, error: "指定されたイベントが見つかりません。" }, 404);
+    }
+
+    const baseDateStr = existingEvent.startAt 
+      ? new Date(existingEvent.startAt).toISOString().split("T")[0]
+      : new Date().toISOString().split("T")[0];
 
     const updateFields: Partial<typeof events.$inferInsert> = {};
     if (title !== undefined) updateFields.title = title;
-    if (startAt !== undefined) updateFields.startAt = new Date(startAt);
-    if (endAt !== undefined) updateFields.endAt = endAt ? new Date(endAt) : null;
     if (eventType !== undefined) updateFields.eventType = eventType;
     if (description !== undefined) updateFields.description = description;
     if (location !== undefined) updateFields.location = location;
     if (dutyGroup !== undefined) updateFields.dutyGroup = dutyGroup;
-    if (pmStartAt !== undefined) updateFields.pmStartAt = pmStartAt ? new Date(pmStartAt) : null;
-    if (pmEndAt !== undefined) updateFields.pmEndAt = pmEndAt ? new Date(pmEndAt) : null;
-    if (pmLocation !== undefined) updateFields.pmLocation = pmLocation;
     if (targetGroup !== undefined) updateFields.targetGroup = targetGroup;
     if (needsLunch !== undefined) updateFields.needsLunch = Boolean(needsLunch);
     if (needsSnack !== undefined) updateFields.needsSnack = Boolean(needsSnack);
     if (status !== undefined) updateFields.status = status;
+
+    // 時間のスマート計算
+    if (amTime && typeof amTime === "string") {
+      const times = amTime.match(/\d{1,2}:\d{2}/g);
+      if (times && times.length >= 2) {
+        updateFields.startAt = new Date(`${baseDateStr}T${times[0].padStart(5, "0")}:00`);
+        updateFields.endAt = new Date(`${baseDateStr}T${times[1].padStart(5, "0")}:00`);
+      } else if (times && times.length === 1) {
+        updateFields.startAt = new Date(`${baseDateStr}T${times[0].padStart(5, "0")}:00`);
+      }
+    } else if (startAt !== undefined) {
+      updateFields.startAt = new Date(startAt);
+      if (endAt !== undefined) updateFields.endAt = endAt ? new Date(endAt) : null;
+    }
+
+    if (pmTime && typeof pmTime === "string") {
+      const times = pmTime.match(/\d{1,2}:\d{2}/g);
+      if (times && times.length >= 2) {
+        updateFields.pmStartAt = new Date(`${baseDateStr}T${times[0].padStart(5, "0")}:00`);
+        updateFields.pmEndAt = new Date(`${baseDateStr}T${times[1].padStart(5, "0")}:00`);
+      } else if (times && times.length === 1) {
+        updateFields.pmStartAt = new Date(`${baseDateStr}T${times[0].padStart(5, "0")}:00`);
+      }
+    } else if (pmStartAt !== undefined) {
+      updateFields.pmStartAt = pmStartAt ? new Date(pmStartAt) : null;
+      if (pmEndAt !== undefined) updateFields.pmEndAt = pmEndAt ? new Date(pmEndAt) : null;
+    } else if (pmType === "off") {
+      updateFields.pmStartAt = null;
+      updateFields.pmEndAt = null;
+      updateFields.pmLocation = null;
+    }
+
+    if (pmLocation !== undefined) updateFields.pmLocation = pmLocation;
     if (activityGroups !== undefined) {
       updateFields.activityGroups = typeof activityGroups === "string" ? activityGroups : (activityGroups ? JSON.stringify(activityGroups) : null);
     }
