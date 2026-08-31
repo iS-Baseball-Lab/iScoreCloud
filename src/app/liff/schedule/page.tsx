@@ -549,7 +549,7 @@ export default function LiffSchedulePage() {
           title="予定 & 出欠"
           subtitle="活動日程・球場・集合時間・お当番・出欠回答"
           icon={
-            <span className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center font-black">
+            <span className="w-8 h-8 rounded-xl bg-primary/15 text-primary flex items-center justify-center font-black">
               <CalendarIcon className="w-4 h-4" />
             </span>
           }
@@ -560,27 +560,25 @@ export default function LiffSchedulePage() {
           }}
         />
 
-        {/* 🛠️ 管理者・指導者用スケジューラー導線ボタン */}
-        <div className="flex items-center justify-between p-3 rounded-2xl bg-gradient-to-r from-amber-500/10 via-primary/10 to-card border border-amber-500/30">
-          <div className="flex items-center gap-2">
-            <span className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center font-black shadow-xs">
-              <Sparkles className="w-4 h-4" />
+        {/* 🛠️ 活動予定の一括登録・編集（スケジューラー導線） */}
+        <Link
+          href="/liff/schedule/admin"
+          className="flex items-center justify-between p-2.5 px-3.5 rounded-2xl bg-card hover:bg-primary/5 border border-primary/25 hover:border-primary/45 shadow-2xs active:scale-[0.99] transition-all group"
+        >
+          <div className="flex items-center gap-2.5">
+            <span className="w-7 h-7 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black shrink-0">
+              <Sparkles className="w-3.5 h-3.5" />
             </span>
-            <div>
-              <p className="text-xs font-black text-foreground">活動予定の一括登録・編集</p>
-              <p className="text-[10.5px] font-bold text-muted-foreground">
-                月間カレンダーで終日/午前/午後・当番を設定
-              </p>
-            </div>
+            <span className="text-xs font-black text-foreground">
+              活動予定の一括登録・編集
+            </span>
           </div>
-          <Link
-            href="/liff/schedule/admin"
-            className="py-1.5 px-3 rounded-xl bg-amber-500 text-white text-xs font-black shadow-xs hover:bg-amber-600 active:scale-95 transition-all flex items-center gap-1 shrink-0"
-          >
-            <span>スケジューラー</span>
-            <ChevronRight className="w-3.5 h-3.5" />
-          </Link>
-        </div>
+
+          <div className="flex items-center gap-1 text-xs font-black text-primary shrink-0">
+            <span>開く</span>
+            <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+          </div>
+        </Link>
 
         {/* 📅 月間ミニカレンダー */}
         <div className="p-3.5 bg-card rounded-3xl border border-border/80 shadow-xs space-y-3">
