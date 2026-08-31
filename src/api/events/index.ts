@@ -49,7 +49,7 @@ app.post('/:teamId', async (c) => {
 
   try {
     const body = await c.req.json();
-    const { title, startAt, endAt, eventType, description, location, dutyGroup, pmStartAt, pmEndAt, pmLocation, targetGroup, needsLunch, needsSnack, status } = body;
+    const { title, startAt, endAt, eventType, description, location, dutyGroup, pmStartAt, pmEndAt, pmLocation, targetGroup, needsLunch, needsSnack, status, activityGroups } = body;
 
     if (!title || !startAt) {
       return c.json({ success: false, error: "タイトルと開始日時は必須です。" }, 400);
@@ -75,6 +75,7 @@ app.post('/:teamId', async (c) => {
         needsLunch: needsLunch !== undefined ? Boolean(needsLunch) : false,
         needsSnack: needsSnack !== undefined ? Boolean(needsSnack) : false,
         status: status || 'scheduled',
+        activityGroups: activityGroups ? (typeof activityGroups === "string" ? activityGroups : JSON.stringify(activityGroups)) : null,
       })
       .returning();
 
@@ -100,7 +101,7 @@ app.patch('/:teamId/:eventId', async (c) => {
 
   try {
     const body = await c.req.json();
-    const { title, startAt, endAt, eventType, description, location, dutyGroup, pmStartAt, pmEndAt, pmLocation, targetGroup, needsLunch, needsSnack, status } = body;
+    const { title, startAt, endAt, eventType, description, location, dutyGroup, pmStartAt, pmEndAt, pmLocation, targetGroup, needsLunch, needsSnack, status, activityGroups } = body;
 
     const updateFields: Partial<typeof events.$inferInsert> = {};
     if (title !== undefined) updateFields.title = title;
@@ -117,6 +118,9 @@ app.patch('/:teamId/:eventId', async (c) => {
     if (needsLunch !== undefined) updateFields.needsLunch = Boolean(needsLunch);
     if (needsSnack !== undefined) updateFields.needsSnack = Boolean(needsSnack);
     if (status !== undefined) updateFields.status = status;
+    if (activityGroups !== undefined) {
+      updateFields.activityGroups = typeof activityGroups === "string" ? activityGroups : (activityGroups ? JSON.stringify(activityGroups) : null);
+    }
 
     const result = await db.update(events)
       .set(updateFields)
@@ -200,6 +204,7 @@ app.post('/:teamId/bulk', async (c) => {
             needsLunch: item.needsLunch !== undefined ? Boolean(item.needsLunch) : false,
             needsSnack: item.needsSnack !== undefined ? Boolean(item.needsSnack) : false,
             status: item.status || 'scheduled',
+            activityGroups: item.activityGroups ? (typeof item.activityGroups === "string" ? item.activityGroups : JSON.stringify(item.activityGroups)) : null,
           })
           .where(and(eq(events.id, existingRecord.id), eq(events.teamId, teamId)))
           .returning();
@@ -225,6 +230,7 @@ app.post('/:teamId/bulk', async (c) => {
             needsLunch: item.needsLunch !== undefined ? Boolean(item.needsLunch) : false,
             needsSnack: item.needsSnack !== undefined ? Boolean(item.needsSnack) : false,
             status: item.status || 'scheduled',
+            activityGroups: item.activityGroups ? (typeof item.activityGroups === "string" ? item.activityGroups : JSON.stringify(item.activityGroups)) : null,
           })
           .returning();
         if (created.length > 0) savedResults.push(created[0]);

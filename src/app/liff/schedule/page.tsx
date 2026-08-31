@@ -795,12 +795,23 @@ export default function LiffSchedulePage() {
                       {/* ✏️ 編集ボタン */}
                       <button
                         type="button"
-                        onClick={() => setEditingEvent({ 
-                          ...ev, 
-                          needsLunch: Boolean(ev.needsLunch), 
-                          needsSnack: Boolean(ev.needsSnack),
-                          memo: ev.memo || ""
-                        })}
+                        onClick={() => {
+                          let grps: ActivityGroup[] | undefined = undefined;
+                          if (Array.isArray(ev.activityGroups) && ev.activityGroups.length > 0) {
+                            grps = ev.activityGroups;
+                          } else if (typeof ev.activityGroups === "string") {
+                            try {
+                              grps = JSON.parse(ev.activityGroups);
+                            } catch {}
+                          }
+                          setEditingEvent({ 
+                            ...ev, 
+                            needsLunch: Boolean(ev.needsLunch), 
+                            needsSnack: Boolean(ev.needsSnack),
+                            memo: ev.memo || "",
+                            activityGroups: grps,
+                          });
+                        }}
                         className="py-1 px-2.5 rounded-xl bg-primary/10 hover:bg-primary text-primary hover:text-primary-foreground text-xs font-black border border-primary/25 active:scale-95 transition-all flex items-center gap-1 shrink-0"
                       >
                         <Edit3 className="w-3.5 h-3.5" />
@@ -1416,6 +1427,177 @@ export default function LiffSchedulePage() {
                   </div>
                 </div>
               )}
+
+              {/* 🌟 5. 複数活動グループ設定（試合組・練習組など） */}
+              <div className="p-3.5 rounded-2xl bg-amber-500/5 dark:bg-amber-500/10 border border-amber-500/20 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="text-[11px] font-black text-amber-700 dark:text-amber-300 flex items-center gap-1">
+                      <Layers className="w-3.5 h-3.5 text-amber-500" />
+                      <span>活動グループ分け（試合組・練習組等）</span>
+                    </label>
+                    <p className="text-[10px] font-bold text-muted-foreground">
+                      同日に別行動するチームや班がある場合に設定します
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const currentGroups = editingEvent.activityGroups || [
+                        {
+                          id: `grp_${Date.now()}_1`,
+                          name: "Aチーム（試合組）",
+                          eventType: "match",
+                          time: editingEvent.time || "08:00 集合",
+                          location: editingEvent.location || "",
+                          dutyGroup: editingEvent.dutyGroup || "1班",
+                        }
+                      ];
+                      const newGrp: ActivityGroup = {
+                        id: `grp_${Date.now()}_${currentGroups.length + 1}`,
+                        name: currentGroups.length === 1 ? "Bチーム（練習組）" : `グループ ${currentGroups.length + 1}`,
+                        eventType: "practice",
+                        time: "09:00 〜 12:00",
+                        location: "学校グラウンド",
+                        dutyGroup: "2班",
+                      };
+                      setEditingEvent({
+                        ...editingEvent,
+                        activityGroups: [...currentGroups, newGrp],
+                      });
+                    }}
+                    className="py-1 px-2.5 rounded-xl bg-amber-500 text-white text-[10.5px] font-black shadow-xs active:scale-95 transition-all flex items-center gap-1 shrink-0"
+                  >
+                    <Plus className="w-3 h-3" />
+                    <span>グループ追加</span>
+                  </button>
+                </div>
+
+                {/* グループリスト */}
+                {editingEvent.activityGroups && editingEvent.activityGroups.length > 0 && (
+                  <div className="space-y-2.5 pt-1">
+                    {editingEvent.activityGroups.map((grp, gIdx) => (
+                      <div
+                        key={grp.id}
+                        className="p-3 rounded-2xl bg-card border border-border/80 space-y-2 relative"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 flex-1">
+                            <span className="w-5 h-5 rounded-full bg-primary/10 text-primary text-[10px] font-black flex items-center justify-center shrink-0">
+                              {gIdx + 1}
+                            </span>
+                            <input
+                              type="text"
+                              value={grp.name}
+                              onChange={(e) => {
+                                const newGroups = [...(editingEvent.activityGroups || [])];
+                                newGroups[gIdx] = { ...grp, name: e.target.value };
+                                setEditingEvent({ ...editingEvent, activityGroups: newGroups });
+                              }}
+                              placeholder="グループ名（例: Aチーム試合組）"
+                              className="font-black text-xs text-foreground bg-transparent border-b border-border/80 focus:border-primary focus:outline-hidden py-0.5 flex-1"
+                            />
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            {/* 種別切替 */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const newGroups = [...(editingEvent.activityGroups || [])];
+                                newGroups[gIdx] = {
+                                  ...grp,
+                                  eventType: grp.eventType === "match" ? "practice" : "match"
+                                };
+                                setEditingEvent({ ...editingEvent, activityGroups: newGroups });
+                              }}
+                              className={`px-2 py-0.5 rounded-lg text-[10px] font-black border ${
+                                grp.eventType === "match"
+                                  ? "bg-rose-500/15 text-rose-600 border-rose-500/30"
+                                  : "bg-emerald-500/15 text-emerald-600 border-emerald-500/30"
+                              }`}
+                            >
+                              {grp.eventType === "match" ? "⚾ 試合" : "🏃 練習"}
+                            </button>
+
+                            {/* 削除ボタン */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const newGroups = (editingEvent.activityGroups || []).filter((_, idx) => idx !== gIdx);
+                                setEditingEvent({
+                                  ...editingEvent,
+                                  activityGroups: newGroups.length > 0 ? newGroups : undefined
+                                });
+                              }}
+                              className="p-1 text-muted-foreground hover:text-rose-500 rounded-lg transition-all"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* 時間 & 場所 */}
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                          <div>
+                            <input
+                              type="text"
+                              value={grp.time || ""}
+                              onChange={(e) => {
+                                const newGroups = [...(editingEvent.activityGroups || [])];
+                                newGroups[gIdx] = { ...grp, time: e.target.value };
+                                setEditingEvent({ ...editingEvent, activityGroups: newGroups });
+                              }}
+                              placeholder="時間 (例: 08:00集合)"
+                              className="w-full px-2 py-1.5 rounded-xl bg-muted/40 border border-border/60 text-[11px] font-bold text-foreground focus:outline-hidden"
+                            />
+                          </div>
+                          <div>
+                            <input
+                              type="text"
+                              value={grp.location || ""}
+                              onChange={(e) => {
+                                const newGroups = [...(editingEvent.activityGroups || [])];
+                                newGroups[gIdx] = { ...grp, location: e.target.value };
+                                setEditingEvent({ ...editingEvent, activityGroups: newGroups });
+                              }}
+                              placeholder="場所・球場"
+                              className="w-full px-2 py-1.5 rounded-xl bg-muted/40 border border-border/60 text-[11px] font-bold text-foreground focus:outline-hidden"
+                            />
+                          </div>
+                        </div>
+
+                        {/* 当番 & 配車 */}
+                        <div className="grid grid-cols-2 gap-2 text-xs pt-1">
+                          <input
+                            type="text"
+                            value={grp.dutyGroup || ""}
+                            onChange={(e) => {
+                              const newGroups = [...(editingEvent.activityGroups || [])];
+                              newGroups[gIdx] = { ...grp, dutyGroup: e.target.value };
+                              setEditingEvent({ ...editingEvent, activityGroups: newGroups });
+                            }}
+                            placeholder="お当番班 (例: 1班)"
+                            className="w-full px-2 py-1 rounded-lg bg-muted/30 border border-border/50 text-[10.5px] font-bold text-foreground focus:outline-hidden"
+                          />
+                          <input
+                            type="text"
+                            value={grp.carInfo || ""}
+                            onChange={(e) => {
+                              const newGroups = [...(editingEvent.activityGroups || [])];
+                              newGroups[gIdx] = { ...grp, carInfo: e.target.value };
+                              setEditingEvent({ ...editingEvent, activityGroups: newGroups });
+                            }}
+                            placeholder="配車メモ (例: 3台/現地集合)"
+                            className="w-full px-2 py-1 rounded-lg bg-muted/30 border border-border/50 text-[10.5px] font-bold text-foreground focus:outline-hidden"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
 
               {/* 5. 当番・お弁当・補食 */}
               <div className="space-y-3 p-3.5 rounded-2xl bg-muted/30 border border-border/80">
