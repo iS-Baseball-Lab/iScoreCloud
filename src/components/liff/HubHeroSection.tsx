@@ -674,24 +674,56 @@ export function HubHeroSection({
             )}
           </div>
 
-          {/* 🌟 スケルトンローディング中表示 */}
+          {/* 🌟 スケルトンローディング中表示（実カードと高さを完全一致） */}
           {isLoading ? (
-            <div className="flex overflow-x-auto gap-3 -mx-4 px-4 pb-1 pt-0.5">
+            <div className="flex overflow-x-auto gap-3 -mx-4 px-4 pb-1 pt-0.5 scrollbar-none">
               {[1, 2].map((i) => (
                 <div
                   key={i}
-                  className="w-[88vw] max-w-[360px] shrink-0 rounded-3xl bg-card border-2 border-primary/30 dark:border-primary/40 p-4 space-y-4 animate-pulse shadow-md shadow-primary/5"
+                  className="w-[88vw] max-w-[360px] shrink-0 rounded-3xl bg-card border-2 border-primary/30 dark:border-primary/40 p-4 space-y-3.5 animate-pulse shadow-md shadow-primary/5 flex flex-col justify-between"
                 >
-                  <div className="flex justify-between items-center">
-                    <div className="h-5 w-20 bg-muted rounded-full" />
-                    <div className="h-4 w-12 bg-muted rounded" />
+                  <div className="space-y-3">
+                    {/* 上部ヘッダー（日付、バッジ、リンク） */}
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-2">
+                        <div className="h-6 w-24 bg-muted rounded-lg" />
+                        <div className="h-4 w-12 bg-muted/60 rounded-md" />
+                      </div>
+                      <div className="h-4 w-10 bg-muted/60 rounded" />
+                    </div>
+
+                    {/* タイトル */}
+                    <div className="h-4 w-44 bg-muted rounded-md" />
+
+                    {/* スケジュール（午前・午後） */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="h-[62px] bg-muted/50 rounded-2xl p-2 space-y-1.5 border border-border/40">
+                        <div className="h-3 w-10 bg-muted rounded" />
+                        <div className="h-3 w-20 bg-muted/70 rounded" />
+                      </div>
+                      <div className="h-[62px] bg-muted/50 rounded-2xl p-2 space-y-1.5 border border-border/40">
+                        <div className="h-3 w-10 bg-muted rounded" />
+                        <div className="h-3 w-20 bg-muted/70 rounded" />
+                      </div>
+                    </div>
+
+                    {/* お弁当・配車・当番ブロック */}
+                    <div className="p-3 rounded-2xl bg-muted/30 border border-border/50 space-y-2">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="h-6 bg-muted/50 rounded-xl" />
+                        <div className="h-6 bg-muted/50 rounded-xl" />
+                      </div>
+                      <div className="h-4 bg-muted/40 rounded-xl w-3/4" />
+                    </div>
                   </div>
-                  <div className="space-y-2">
-                    <div className="h-6 w-32 bg-muted rounded-lg" />
-                    <div className="h-4 w-48 bg-muted rounded" />
+
+                  {/* 出欠アコーディオンバー（閉じた状態の高さ） */}
+                  <div className="pt-2 border-t border-primary/15">
+                    <div className="h-9 bg-muted/40 rounded-2xl border border-border/60 flex items-center justify-between px-3">
+                      <div className="h-4 w-28 bg-muted rounded" />
+                      <div className="h-3 w-8 bg-muted/60 rounded" />
+                    </div>
                   </div>
-                  <div className="h-20 bg-muted/60 rounded-2xl" />
-                  <div className="h-24 bg-muted/60 rounded-2xl" />
                 </div>
               ))}
             </div>
