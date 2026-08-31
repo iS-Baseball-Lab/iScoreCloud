@@ -522,8 +522,19 @@ export default function LiffSchedulePage() {
     return map;
   }, [events]);
 
+  // 現在カレンダーで表示中の月プレフィックス（YYYY-MM）
+  const currentMonthPrefix = `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}`;
+
+  // 現在表示月の全イベント
+  const eventsInCurrentMonth = useMemo(() => {
+    return events.filter((ev) => {
+      if (!ev.dateStr) return true;
+      return ev.dateStr.startsWith(currentMonthPrefix);
+    });
+  }, [events, currentMonthPrefix]);
+
   const filteredEvents = useMemo(() => {
-    const list = events.filter((ev) => {
+    const list = eventsInCurrentMonth.filter((ev) => {
       if (selectedDateStr && ev.dateStr !== selectedDateStr) return false;
       if (filter === "all") return true;
       if (filter === "match") return ev.eventType === "match" || ev.amType === "match" || ev.pmType === "match" || ev.activityGroups?.some(g => g.eventType === "match");
@@ -537,7 +548,7 @@ export default function LiffSchedulePage() {
       const keyB = b.dateStr || b.date || "";
       return sortOrder === "asc" ? keyA.localeCompare(keyB) : keyB.localeCompare(keyA);
     });
-  }, [events, filter, selectedDateStr, sortOrder]);
+  }, [eventsInCurrentMonth, filter, selectedDateStr, sortOrder]);
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -713,7 +724,7 @@ export default function LiffSchedulePage() {
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              すべて ({events.length})
+              すべて ({eventsInCurrentMonth.length})
             </button>
             <button
               type="button"
@@ -779,10 +790,14 @@ export default function LiffSchedulePage() {
             </div>
             <div className="space-y-1">
               <h4 className="text-sm font-black text-foreground">
-                {selectedDateStr ? "選択された日の予定はありません" : "登録されている予定はありません"}
+                {selectedDateStr
+                  ? "選択された日の予定はありません"
+                  : `${currentYear}年${currentMonth + 1}月の予定はありません`}
               </h4>
               <p className="text-xs font-bold text-muted-foreground">
-                {selectedDateStr ? "カレンダーの他の日付を選択するか「すべての予定を表示」を押してください。" : "管理者が活動予定スケジューラーから予定を登録すると、ここに反映されます。"}
+                {selectedDateStr
+                  ? "カレンダーの他の日付を選択するか「すべての予定を表示」を押してください。"
+                  : "上のカレンダーで別の月を選択するか、スケジューラーから予定を登録してください。"}
               </p>
             </div>
             {selectedDateStr && (
@@ -791,7 +806,7 @@ export default function LiffSchedulePage() {
                 onClick={() => setSelectedDateStr(null)}
                 className="py-1.5 px-4 rounded-xl bg-primary text-primary-foreground text-xs font-black shadow-xs active:scale-95 transition-all"
               >
-                すべての予定を表示
+                {currentMonth + 1}月のすべての予定を表示
               </button>
             )}
           </div>
