@@ -5,10 +5,10 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { HubHeroSection } from "@/components/liff/HubHeroSection";
 import { HubQuickNav } from "@/components/liff/HubQuickNav";
-import { MatchScoreCard, type MatchCardData } from "@/components/liff/MatchScoreCard";
-import { extractYouTubeVideoId } from "@/lib/youtube";
+import { HubCalendarSection } from "@/components/liff/HubCalendarSection";
+import type { MatchCardData } from "@/components/liff/MatchScoreCard";
 import { useLiff } from "@/components/liff/LiffProvider";
-import { Video, ChevronRight, UserPlus } from "lucide-react";
+import { UserPlus } from "lucide-react";
 import { DemoBanner } from "@/components/liff/DemoBanner";
 import { JoinTeamModal } from "@/components/liff/JoinTeamModal";
 
@@ -95,9 +95,6 @@ export default function LiffHubPage() {
 
   const teamName = currentTeam?.name || "チーム";
 
-  // 最新の動画付き試合
-  const latestVideoMatch = matches.find((m) => !!extractYouTubeVideoId(m.youtubeUrl));
-
   return (
     <div className="flex flex-col min-h-screen">
       {/* 🌟 本家 iScoreCloud と完全統一されたヘッダー（選択チームは全画面で自動維持） */}
@@ -148,7 +145,7 @@ export default function LiffHubPage() {
             </div>
           </div>
 
-          {/* 🌟 ヒーローセクション：タブ切り替え（活動予定（カルーセル） / カレンダー / 試合速報） */}
+          {/* 🌟 ヒーローセクション：タブ切り替え（直近の試合 / 直近の予定） */}
           <section>
             <HubHeroSection
               teamName={teamName}
@@ -171,27 +168,10 @@ export default function LiffHubPage() {
           <HubQuickNav />
         </section>
 
-        {/* 🎬 最新の試合動画ハイライト */}
-        {latestVideoMatch && (
-          <section className="space-y-3 pt-2 border-t border-border/50">
-            <div className="flex items-center justify-between px-1">
-              <div className="flex items-center gap-1.5 text-sm font-black text-foreground">
-                <Video className="w-4 h-4 text-red-500" />
-                <span>最新の試合動画</span>
-              </div>
-
-              <a
-                href="/liff/matches"
-                className="flex items-center gap-0.5 text-xs font-black text-primary hover:underline"
-              >
-                <span>一覧を見る</span>
-                <ChevronRight className="w-3.5 h-3.5" />
-              </a>
-            </div>
-
-            <MatchScoreCard match={latestVideoMatch} />
-          </section>
-        )}
+        {/* 📅 チームカレンダー（月間カレンダー ＆ 直近スケジュール一覧） */}
+        <section>
+          <HubCalendarSection eventsList={events} isDemo={isDemo} />
+        </section>
       </div>
 
       {/* チーム参加申請モーダル */}
