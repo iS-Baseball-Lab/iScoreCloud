@@ -137,7 +137,7 @@ export function LiffBottomNav() {
                 <span className="text-[9.5px] leading-none tracking-tight">球場 & 施設</span>
               </Link>
 
-              {/* ⑤ ⋯ その他 */}
+              {/* ⑤ ⋯ メニュー */}
               <button
                 type="button"
                 onClick={() => setIsOtherMenuOpen((prev) => !prev)}
@@ -148,7 +148,7 @@ export function LiffBottomNav() {
                 }`}
               >
                 <Menu className={`w-5 h-5 transition-transform ${isOtherMenuOpen ? "rotate-90 scale-110" : ""}`} />
-                <span className="text-[10px] leading-none tracking-tight">その他</span>
+                <span className="text-[10px] leading-none tracking-tight">メニュー</span>
               </button>
 
             </div>

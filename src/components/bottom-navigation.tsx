@@ -99,7 +99,7 @@ export function BottomNavigation({ activeTab, onNavigate, onOpenDrawer }: Bottom
               <Menu className="h-5 w-5" />
               <div className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-red-500 animate-pulse border border-background" />
             </div>
-            <span className="text-[9px] font-black tracking-tighter">その他</span>
+            <span className="text-[9px] font-black tracking-tighter">メニュー</span>
           </button>
         </div>
 
