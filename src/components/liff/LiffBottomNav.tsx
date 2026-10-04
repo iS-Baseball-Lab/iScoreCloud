@@ -16,6 +16,7 @@ import {
   HelpCircle,
   AlertTriangle,
   Calendar,
+  CalendarDays,
   LayoutGrid,
   Settings,
   ChevronRight,
@@ -35,6 +36,22 @@ const MENU_TABS = [
 const MENU_ITEMS = [
   // 📅 活動・予定
   {
+    title: "試合情報",
+    subtitle: "試合動画 & スコア",
+    href: "/liff/matches",
+    icon: Video,
+    colorClass: "bg-red-500/15 text-red-600 dark:text-red-400",
+    category: "schedule" as const,
+  },
+  {
+    title: "チーム成績",
+    subtitle: "勝敗・打撃個人成績",
+    href: "/liff/stats",
+    icon: Trophy,
+    colorClass: "bg-amber-500/15 text-amber-600 dark:text-amber-400",
+    category: "schedule" as const,
+  },
+  {
     title: "予定 & 出欠",
     subtitle: "当番・出欠確認",
     href: "/liff/schedule",
@@ -48,6 +65,22 @@ const MENU_ITEMS = [
     href: "/liff/carpool",
     icon: Car,
     colorClass: "bg-blue-500/15 text-blue-600 dark:text-blue-400",
+    category: "schedule" as const,
+  },
+  {
+    title: "球場 & 施設",
+    subtitle: "アクセス・駐車場",
+    href: "/liff/grounds",
+    icon: MapPin,
+    colorClass: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
+    category: "schedule" as const,
+  },
+  {
+    title: "予定スケジューラー",
+    subtitle: "月間カレンダー・活動日設定",
+    href: "/liff/schedule/admin",
+    icon: CalendarDays,
+    colorClass: "bg-indigo-500/15 text-indigo-600 dark:text-indigo-400",
     category: "schedule" as const,
   },
 
