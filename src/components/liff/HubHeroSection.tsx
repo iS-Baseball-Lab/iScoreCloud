@@ -29,7 +29,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { MatchCardData } from "@/components/liff/MatchScoreCard";
-import { MatchScoreCard } from "@/components/liff/MatchScoreCard";
+import { MatchScoreCard, MatchScoreCardSkeleton } from "@/components/liff/MatchScoreCard";
 
 interface HubHeroSectionProps {
   teamName?: string;
@@ -422,8 +422,8 @@ export function HubHeroSection({
     return { periodLabel, events: defaultEvents };
   }, [eventsList, isDemo]);
 
-  // 直近の試合速報データ
-  const recentMatch = latestMatch || {
+  // 直近の試合速報データ（ローディング中や実環境ではサンプル動画付きダミーを表示せず、デモモード時のみフォールバック）
+  const recentMatch = latestMatch ?? (isDemo ? {
     id: "sample-match",
     date: "2026/08/23(日)",
     matchType: "official",
@@ -434,10 +434,7 @@ export function HubHeroSection({
     opponentScore: 4,
     status: "finished",
     youtubeUrl: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-  };
-
-  const isWin = recentMatch.status === "finished" && recentMatch.myScore > recentMatch.opponentScore;
-  const isLose = recentMatch.status === "finished" && recentMatch.myScore < recentMatch.opponentScore;
+  } : null);
 
   return (
     <div className="space-y-2.5">
@@ -491,7 +488,17 @@ export function HubHeroSection({
             </Link>
           </div>
 
-          <MatchScoreCard match={recentMatch as any} teamName={teamName} initialExpanded={true} />
+          {isLoading ? (
+            <MatchScoreCardSkeleton hasVideo={true} />
+          ) : recentMatch ? (
+            <MatchScoreCard match={recentMatch as any} teamName={teamName} initialExpanded={true} />
+          ) : (
+            <div className="p-8 rounded-2xl bg-card border border-border/60 text-center space-y-2">
+              <Trophy className="w-8 h-8 text-muted-foreground/40 mx-auto" />
+              <p className="text-xs font-black text-foreground">直近の試合記録はありません</p>
+              <p className="text-[11px] text-muted-foreground">新しい試合が行われるとここに速報が表示されます</p>
+            </div>
+          )}
         </div>
       )}
 

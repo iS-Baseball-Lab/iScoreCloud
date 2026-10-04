@@ -6,7 +6,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { YouTubePlayer } from "@/components/liff/YouTubePlayer";
-import { MatchScoreCard, type MatchCardData } from "@/components/liff/MatchScoreCard";
+import { MatchScoreCard, MatchScoreCardSkeleton, type MatchCardData } from "@/components/liff/MatchScoreCard";
 import { Match } from "@/types/match";
 import { useLiff } from "@/components/liff/LiffProvider";
 import { Calendar, MapPin, Trophy, Users, Shield, ShieldAlert, Loader2, Video, Filter } from "lucide-react";
@@ -356,19 +356,9 @@ function MatchesContent() {
 
         {/* 試合カード一覧 */}
         {isListLoading ? (
-          <div className="space-y-3.5 animate-pulse">
+          <div className="space-y-3.5">
             {[1, 2].map((i) => (
-              <div
-                key={i}
-                className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl p-4 shadow-sm space-y-3 ring-1 ring-black/5"
-              >
-                <div className="flex justify-between items-center">
-                  <div className="h-5 w-28 bg-slate-200 dark:bg-slate-800 rounded-full" />
-                  <div className="h-4 w-16 bg-slate-200 dark:bg-slate-800 rounded" />
-                </div>
-                <div className="h-40 bg-slate-100 dark:bg-slate-800/60 rounded-2xl" />
-                <div className="h-14 bg-slate-100 dark:bg-slate-800/60 rounded-2xl" />
-              </div>
+              <MatchScoreCardSkeleton key={i} hasVideo={true} />
             ))}
           </div>
         ) : filteredMatches.length === 0 ? (

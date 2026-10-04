@@ -42,9 +42,54 @@ export interface MatchCardData {
 }
 
 interface MatchScoreCardProps {
-  match: MatchCardData;
+  match?: MatchCardData | null;
   teamName?: string;
   initialExpanded?: boolean;
+  isLoading?: boolean;
+}
+
+// 🌟 試合カード用スケルトンローダー（動画エリア含む）
+export function MatchScoreCardSkeleton({ hasVideo = true }: { hasVideo?: boolean }) {
+  return (
+    <div className="rounded-2xl border border-border/60 bg-card overflow-hidden shadow-xs animate-pulse">
+      {/* 📹 試合動画プレースホルダー（スケルトン表示） */}
+      {hasVideo && (
+        <div className="w-full aspect-video bg-muted/60 relative flex flex-col items-center justify-center border-b border-border/40">
+          <div className="w-12 h-12 rounded-full bg-muted/90 flex items-center justify-center shadow-xs">
+            <Video className="w-6 h-6 text-muted-foreground/30 animate-pulse" />
+          </div>
+          <div className="mt-2.5 h-2.5 w-28 bg-muted/80 rounded-full" />
+        </div>
+      )}
+
+      {/* カードヘッダー */}
+      <div className="p-3.5 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="h-4 w-32 bg-muted/70 rounded-md" />
+          <div className="h-4 w-16 bg-muted/70 rounded-md" />
+        </div>
+
+        {/* スコア対戦エリア */}
+        <div className="flex items-center justify-between py-2 border-y border-border/40">
+          <div className="space-y-1.5 flex-1">
+            <div className="h-4 w-24 bg-muted/70 rounded" />
+            <div className="h-7 w-10 bg-muted/80 rounded" />
+          </div>
+          <div className="h-6 w-14 bg-muted/60 rounded-full mx-2" />
+          <div className="space-y-1.5 flex-1 text-right flex flex-col items-end">
+            <div className="h-4 w-24 bg-muted/70 rounded" />
+            <div className="h-7 w-10 bg-muted/80 rounded" />
+          </div>
+        </div>
+
+        {/* 下部情報 */}
+        <div className="flex items-center justify-between pt-1">
+          <div className="h-3.5 w-28 bg-muted/50 rounded" />
+          <div className="h-3.5 w-16 bg-muted/50 rounded" />
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // 現場仕様：スコアのフォーマット関数
@@ -113,9 +158,15 @@ function MatchCountdown({ date }: { date: string }) {
   );
 }
 
-export function MatchScoreCard({ match, teamName = "自チーム", initialExpanded = false }: MatchScoreCardProps) {
+export function MatchScoreCard({ match, teamName = "自チーム", initialExpanded = false, isLoading = false }: MatchScoreCardProps) {
   const [isExpanded, setIsExpanded] = useState(initialExpanded);
   const [isPlayingVideo, setIsPlayingVideo] = useState(false);
+  const [isThumbLoaded, setIsThumbLoaded] = useState(false);
+
+  if (isLoading || !match) {
+    return <MatchScoreCardSkeleton />;
+  }
+
   const youtubeVideoId = getYoutubeVideoId(match.youtubeUrl);
 
   const isFuture = new Date(match.date) > new Date() && match.status !== "finished";
@@ -162,13 +213,26 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
           ) : (
             <div
               onClick={() => setIsPlayingVideo(true)}
-              className="relative w-full h-full cursor-pointer overflow-hidden group/thumb"
+              className="relative w-full h-full cursor-pointer overflow-hidden group/thumb bg-muted/60"
             >
+              {/* 🌟 サムネイル読み込み中スケルトン */}
+              {!isThumbLoaded && (
+                <div className="absolute inset-0 bg-muted/70 animate-pulse flex flex-col items-center justify-center z-0">
+                  <div className="w-12 h-12 rounded-full bg-muted/90 flex items-center justify-center shadow-xs">
+                    <Video className="w-6 h-6 text-muted-foreground/30 animate-pulse" />
+                  </div>
+                </div>
+              )}
+
               {/* サムネイル画像 */}
               <img
                 src={`https://img.youtube.com/vi/${youtubeVideoId}/hqdefault.jpg`}
                 alt="Game Video Thumbnail"
-                className="w-full h-full object-cover transition-transform duration-500 group-hover/thumb:scale-105"
+                onLoad={() => setIsThumbLoaded(true)}
+                className={cn(
+                  "w-full h-full object-cover transition-transform duration-500 group-hover/thumb:scale-105",
+                  !isThumbLoaded && "opacity-0"
+                )}
               />
 
               {/* グラデーションオーバーレイ */}
