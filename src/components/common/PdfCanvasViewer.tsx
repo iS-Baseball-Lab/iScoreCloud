@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Loader2, AlertCircle, ExternalLink, ChevronLeft, ChevronRight } from "lucide-react";
 
 interface PdfCanvasViewerProps {
@@ -57,124 +57,127 @@ export function PdfCanvasViewer({
   className = "",
   aspectRatioA4 = true,
 }: PdfCanvasViewerProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [numPages, setNumPages] = useState<number>(1);
   const [currentPage, setCurrentPage] = useState<number>(1);
-  const [pdfDoc, setPdfDoc] = useState<any>(null);
+  const [renderedImageUrl, setRenderedImageUrl] = useState<string | null>(null);
   const [fallbackToIframe, setFallbackToIframe] = useState(false);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const renderTaskRef = useRef<any>(null);
 
-  // PDFドキュメントの読み込み
+  // ページごとのレンダリング結果キャッシュ (ページ切替時のチカチカ・再描画を完全防止)
+  const pageCacheRef = useRef<Record<number, string>>({});
+  const pdfDocRef = useRef<any>(null);
+  const isRenderingRef = useRef(false);
+
+  // 1. PDFドキュメント読み込み
   useEffect(() => {
     let isCancelled = false;
     setLoading(true);
     setError(null);
     setFallbackToIframe(false);
+    pageCacheRef.current = {};
+    setRenderedImageUrl(null);
 
     const targetUrl = getAbsoluteUrl(url);
 
     loadPdfJs()
       .then((pdfjs) => {
-        if (isCancelled) return;
-        const loadingTask = pdfjs.getDocument({
+        if (isCancelled) return null;
+        return pdfjs.getDocument({
           url: targetUrl,
           withCredentials: false,
-        });
-
-        return loadingTask.promise;
+        }).promise;
       })
       .then((doc) => {
         if (isCancelled || !doc) return;
-        setPdfDoc(doc);
+        pdfDocRef.current = doc;
         setNumPages(doc.numPages || 1);
         setCurrentPage(1);
-        setLoading(false);
+        // 最初のページをオフスクリーン描画
+        renderPageOffscreen(doc, 1, isCancelled);
       })
       .catch((err) => {
         if (isCancelled) return;
-        console.warn("[PdfCanvasViewer] PDF.js failed, falling back to viewer iframe:", err);
+        console.warn("[PdfCanvasViewer] PDF.js load error, fallback to iframe:", err);
         setFallbackToIframe(true);
         setLoading(false);
       });
 
     return () => {
       isCancelled = true;
+      pdfDocRef.current = null;
     };
   }, [url]);
 
-  // 指定ページのCanvas描画
-  const renderPage = useCallback(
-    async (pageNumber: number) => {
-      if (!pdfDoc || !canvasRef.current || !containerRef.current) return;
+  // 2. オフスクリーンCanvasで描画し、DataURLとして画像化する (チカチカ/ピカピカを完全防止)
+  const renderPageOffscreen = async (doc: any, pageNumber: number, isCancelledCheck = false) => {
+    if (!doc || isRenderingRef.current) return;
 
-      try {
-        if (renderTaskRef.current) {
-          renderTaskRef.current.cancel();
-        }
-
-        const page = await pdfDoc.getPage(pageNumber);
-        const canvas = canvasRef.current;
-        const ctx = canvas.getContext("2d", { alpha: false });
-        if (!ctx) return;
-
-        const containerWidth = containerRef.current.clientWidth || 360;
-        // 未スケーリング時のビューポートから横幅に合わせたスケールを算出
-        const unscaledViewport = page.getViewport({ scale: 1.0 });
-        const scale = containerWidth / unscaledViewport.width;
-        const viewport = page.getViewport({ scale });
-
-        // レティナディスプレイ対応 (超高精細・文字の滲みを防止)
-        const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
-        canvas.width = Math.floor(viewport.width * dpr);
-        canvas.height = Math.floor(viewport.height * dpr);
-        canvas.style.width = "100%";
-        canvas.style.height = "auto";
-
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.scale(dpr, dpr);
-
-        // 背景を純白で塗りつぶす (黒余白を完全排除)
-        ctx.fillStyle = "#FFFFFF";
-        ctx.fillRect(0, 0, viewport.width, viewport.height);
-
-        const renderContext = {
-          canvasContext: ctx,
-          viewport: viewport,
-        };
-
-        const task = page.render(renderContext);
-        renderTaskRef.current = task;
-        await task.promise;
-      } catch (err: any) {
-        if (err?.name !== "RenderingCancelledException") {
-          console.error("[PdfCanvasViewer] Render error:", err);
-        }
-      }
-    },
-    [pdfDoc]
-  );
-
-  useEffect(() => {
-    if (pdfDoc && !loading) {
-      renderPage(currentPage);
+    // すでにキャッシュがある場合は即時適用
+    if (pageCacheRef.current[pageNumber]) {
+      setRenderedImageUrl(pageCacheRef.current[pageNumber]);
+      setLoading(false);
+      return;
     }
-  }, [pdfDoc, currentPage, loading, renderPage]);
 
-  // リサイズ検知で再描画
-  useEffect(() => {
-    const handleResize = () => {
-      if (pdfDoc && !loading) {
-        renderPage(currentPage);
+    try {
+      isRenderingRef.current = true;
+      const page = await doc.getPage(pageNumber);
+      if (isCancelledCheck) return;
+
+      // 高解像度（Retina/ピンチズームでも文字が綺麗）でオフスクリーン描画
+      // 基準幅1200px（スマホ〜タブレットで超鮮明）
+      const baseViewport = page.getViewport({ scale: 1.0 });
+      const targetWidth = 1200;
+      const scale = targetWidth / baseViewport.width;
+      const viewport = page.getViewport({ scale });
+
+      const offscreenCanvas = document.createElement("canvas");
+      offscreenCanvas.width = Math.floor(viewport.width);
+      offscreenCanvas.height = Math.floor(viewport.height);
+
+      const ctx = offscreenCanvas.getContext("2d", { alpha: false });
+      if (!ctx) return;
+
+      // 背景を純白で塗りつぶす (黒余白ゼロ)
+      ctx.fillStyle = "#FFFFFF";
+      ctx.fillRect(0, 0, offscreenCanvas.width, offscreenCanvas.height);
+
+      await page.render({
+        canvasContext: ctx,
+        viewport: viewport,
+      }).promise;
+
+      // WebP または PNG で画像データ化
+      let dataUrl = offscreenCanvas.toDataURL("image/webp", 0.95);
+      if (!dataUrl || !dataUrl.startsWith("data:image/webp")) {
+        dataUrl = offscreenCanvas.toDataURL("image/png");
       }
-    };
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, [pdfDoc, currentPage, loading, renderPage]);
 
-  // フォールバック（PDF.jsがブロックされた場合など）
+      // キャッシュに保存
+      pageCacheRef.current[pageNumber] = dataUrl;
+      setRenderedImageUrl(dataUrl);
+      setLoading(false);
+    } catch (err) {
+      console.error("[PdfCanvasViewer] Render error:", err);
+      // 万が一失敗した場合はIframeフォールバック
+      setFallbackToIframe(true);
+      setLoading(false);
+    } finally {
+      isRenderingRef.current = false;
+    }
+  };
+
+  // ページ切り替え時
+  const handlePageChange = (newPage: number) => {
+    if (newPage === currentPage || newPage < 1 || newPage > numPages) return;
+    setCurrentPage(newPage);
+    if (pdfDocRef.current) {
+      renderPageOffscreen(pdfDocRef.current, newPage);
+    }
+  };
+
+  // Iframeフォールバック
   if (fallbackToIframe) {
     const abs = getAbsoluteUrl(url);
     const viewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(abs)}&embedded=true`;
@@ -195,13 +198,12 @@ export function PdfCanvasViewer({
 
   return (
     <div
-      ref={containerRef}
-      className={`relative w-full rounded-2xl overflow-hidden border border-border bg-white shadow-xs flex flex-col items-center justify-start ${className}`}
+      className={`relative w-full rounded-2xl overflow-hidden border border-border bg-white shadow-xs flex flex-col items-center justify-start select-none ${className}`}
       style={aspectRatioA4 ? { aspectRatio: "210 / 297" } : undefined}
     >
-      {/* 読込中スピナー */}
-      {loading && (
-        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-white/90 backdrop-blur-2xs gap-2">
+      {/* 読込中インジケーター (初回のみ) */}
+      {loading && !renderedImageUrl && (
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-white gap-2">
           <Loader2 className="w-6 h-6 animate-spin text-primary" />
           <span className="text-[11px] font-bold text-muted-foreground">PDFを高画質展開中...</span>
         </div>
@@ -224,12 +226,16 @@ export function PdfCanvasViewer({
         </div>
       )}
 
-      {/* 📄 Canvas描画領域 (純白・黒余白なし・A4幅ジャストフィット) */}
+      {/* 📄 高画質オフスクリーン描画画像 (チカチカ/ピカピカせず完全に静止表示) */}
       <div className="w-full h-full overflow-y-auto overflow-x-hidden flex flex-col items-center bg-white">
-        <canvas
-          ref={canvasRef}
-          className="w-full h-auto block select-none bg-white shadow-2xs"
-        />
+        {renderedImageUrl && (
+          <img
+            src={renderedImageUrl}
+            alt={`${title} - ページ ${currentPage}`}
+            className="w-full h-auto block object-contain bg-white shadow-2xs"
+            draggable={false}
+          />
+        )}
       </div>
 
       {/* 複数ページ時のページネーションバー */}
@@ -238,8 +244,8 @@ export function PdfCanvasViewer({
           <button
             type="button"
             disabled={currentPage <= 1}
-            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-            className="p-0.5 rounded-full hover:bg-white/20 disabled:opacity-30 cursor-pointer"
+            onClick={() => handlePageChange(currentPage - 1)}
+            className="p-0.5 rounded-full hover:bg-white/20 disabled:opacity-30 cursor-pointer transition-colors"
           >
             <ChevronLeft className="w-3.5 h-3.5" />
           </button>
@@ -249,8 +255,8 @@ export function PdfCanvasViewer({
           <button
             type="button"
             disabled={currentPage >= numPages}
-            onClick={() => setCurrentPage((p) => Math.min(numPages, p + 1))}
-            className="p-0.5 rounded-full hover:bg-white/20 disabled:opacity-30 cursor-pointer"
+            onClick={() => handlePageChange(currentPage + 1)}
+            className="p-0.5 rounded-full hover:bg-white/20 disabled:opacity-30 cursor-pointer transition-colors"
           >
             <ChevronRight className="w-3.5 h-3.5" />
           </button>
