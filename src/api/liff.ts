@@ -1430,20 +1430,24 @@ app.get("/grounds", async (c) => {
 
   const DEMO_VENUES = [
     {
-      id: "venue-1",
-      name: "多摩川緑地野球場 (多摩川緑地広場)",
-      shortName: "多摩川緑地 (1面・2面)",
-      address: "神奈川県川崎市高津区二子地先",
-      mapUrl: "https://maps.google.com/?q=多摩川緑地野球場",
-      surface: "土 (内野) / 天然芝 (外野)",
-      spikeRule: "金具スパイク可 / ポイント推奨",
-      parkingInfo: "第1駐車場（土日祝は1台500円）。チーム枠4台まで。河川敷道路は徐行厳守。",
-      notes: "水道あり・簡易トイレあり。自販機は土手上にあり。雨天後はグラウンド水はけ注意。",
+      id: "venue-3",
+      name: "桜本小学校 グラウンド (ホーム)",
+      shortName: "桜本小 (ホーム)",
+      category: "home",
+      categoryLabel: "本拠地・ホーム",
+      address: "神奈川県川崎市川崎区桜本1-10-1",
+      mapUrl: "https://maps.google.com/?q=川崎市立桜本小学校",
+      surface: "土 (クレー)",
+      spikeRule: "ポイントスパイクまたはトレーニングシューズ",
+      parkingInfo: "正門から入り体育館裏へ（事前登録車のみ3台まで駐車可）。近隣コインPあり。",
+      notes: "学校敷地内です。近隣住宅へのボール飛び出し防止ネットの確認必須。ゴミは全て持ち帰り。",
     },
     {
       id: "venue-2",
       name: "川崎市等々力球場",
       shortName: "等々力球場",
+      category: "stadium",
+      categoryLabel: "球場・公営",
       address: "神奈川県川崎市中原区等々力1-1",
       mapUrl: "https://maps.google.com/?q=等々力球場",
       surface: "人工芝 (全面)",
@@ -1452,15 +1456,43 @@ app.get("/grounds", async (c) => {
       notes: "屋根付きスタンドあり。更衣室・シャワー完備。敷地内全面禁煙。",
     },
     {
-      id: "venue-3",
-      name: "桜本小学校 グラウンド (ホーム)",
-      shortName: "桜本小 (ホーム)",
-      address: "神奈川県川崎市川崎区桜本1-10-1",
-      mapUrl: "https://maps.google.com/?q=川崎市立桜本小学校",
+      id: "venue-1",
+      name: "多摩川緑地野球場 (多摩川緑地広場)",
+      shortName: "多摩川緑地 (1面・2面)",
+      category: "stadium",
+      categoryLabel: "球場・公営",
+      address: "神奈川県川崎市高津区二子地先",
+      mapUrl: "https://maps.google.com/?q=多摩川緑地野球場",
+      surface: "土 (内野) / 天然芝 (外野)",
+      spikeRule: "金具スパイク可 / ポイント推奨",
+      parkingInfo: "第1駐車場（土日祝は1台500円）。チーム枠4台まで。河川敷道路は徐行厳守。",
+      notes: "水道あり・簡易トイレあり。自販機は土手上にあり。雨天後はグラウンド水はけ注意。",
+    },
+    {
+      id: "venue-4",
+      name: "宮崎中学校 野球場",
+      shortName: "宮崎中",
+      category: "school",
+      categoryLabel: "学校・地域",
+      address: "神奈川県川崎市宮前区宮崎100",
+      mapUrl: "https://maps.google.com/?q=川崎市立宮崎中学校",
       surface: "土 (クレー)",
-      spikeRule: "ポイントスパイクまたはトレーニングシューズ",
-      parkingInfo: "正門から入り体育館裏へ（事前登録車のみ3台まで駐車可）。近隣コインPあり。",
-      notes: "学校敷地内です。近隣住宅へのボール飛び出し防止ネットの確認必須。ゴミは全て持ち帰り。",
+      spikeRule: "金具禁止・ポイントスパイクのみ",
+      parkingInfo: "体育館横スペース（チーム最大4台・要駐車証掲示）。",
+      notes: "校内完全禁煙。通用門の施錠確認を徹底してください。",
+    },
+    {
+      id: "venue-5",
+      name: "かわさきベースボールラボ (室内練習場)",
+      shortName: "川崎インドア",
+      category: "indoor",
+      categoryLabel: "室内・練習場",
+      address: "神奈川県川崎市幸区南幸町2-15",
+      mapUrl: "https://maps.google.com/?q=川崎市幸区南幸町2-15",
+      surface: "人工芝 (室内)",
+      spikeRule: "⚠️ スパイク禁止 (アップシューズ・スニーカーのみ)",
+      parkingInfo: "施設前2台のみ。満車時は隣接コインパーキングをご利用ください。",
+      notes: "雨天練習・夜間バッティング対応。マシン打席・ピッチングレーンあり。",
     },
   ];
 
@@ -1483,17 +1515,36 @@ app.get("/grounds", async (c) => {
       });
     }
 
-    const formatted = venuesList.map((v) => ({
-      id: v.id,
-      name: v.name,
-      shortName: v.shortName || v.name,
-      address: v.address || "住所未登録",
-      mapUrl: v.mapUrl || `https://maps.google.com/?q=${encodeURIComponent(v.name)}`,
-      surface: v.surfaceType === "artificial_turf" ? "人工芝" : v.surfaceType === "natural_turf" ? "天然芝" : "土 (クレー)",
-      spikeRule: "ポイントスパイクまたはトレーニングシューズ",
-      parkingInfo: "駐車場ルールは管理者にお問い合わせください",
-      notes: v.notes || "",
-    }));
+    const inferCategory = (name: string, shortName?: string | null, notes?: string | null): { category: string; categoryLabel: string } => {
+      const text = `${name} ${shortName || ""} ${notes || ""}`;
+      if (text.includes("ホーム") || text.includes("本拠地") || text.includes("専用") || text.includes("拠点")) {
+        return { category: "home", categoryLabel: "本拠地・ホーム" };
+      }
+      if (text.includes("小学校") || text.includes("中学校") || text.includes("高校") || text.includes("大学") || text.includes("学校")) {
+        return { category: "school", categoryLabel: "学校・地域" };
+      }
+      if (text.includes("室内") || text.includes("インドア") || text.includes("ドーム") || text.includes("練習場") || text.includes("バッティング")) {
+        return { category: "indoor", categoryLabel: "室内・練習場" };
+      }
+      return { category: "stadium", categoryLabel: "球場・公営" };
+    };
+
+    const formatted = venuesList.map((v) => {
+      const catInfo = inferCategory(v.name, v.shortName, v.notes);
+      return {
+        id: v.id,
+        name: v.name,
+        shortName: v.shortName || v.name,
+        category: catInfo.category,
+        categoryLabel: catInfo.categoryLabel,
+        address: v.address || "住所未登録",
+        mapUrl: v.mapUrl || `https://maps.google.com/?q=${encodeURIComponent(v.name)}`,
+        surface: v.surfaceType === "artificial_turf" ? "人工芝" : v.surfaceType === "natural_turf" ? "天然芝" : "土 (クレー)",
+        spikeRule: "ポイントスパイクまたはトレーニングシューズ",
+        parkingInfo: "駐車場ルールは管理者にお問い合わせください",
+        notes: v.notes || "",
+      };
+    });
 
     return c.json({
       success: true,
