@@ -2312,6 +2312,8 @@ const DEMO_RULES = [
     priority: 0,
     isImportant: true,
     imageUrl: null,
+    pdfUrl: null,
+    pdfName: null,
   },
   {
     id: "demo-rule-1",
@@ -2324,6 +2326,8 @@ const DEMO_RULES = [
     priority: 1,
     isImportant: true,
     imageUrl: null,
+    pdfUrl: null,
+    pdfName: null,
   },
   {
     id: "demo-rule-2",
@@ -2336,6 +2340,8 @@ const DEMO_RULES = [
     priority: 2,
     isImportant: false,
     imageUrl: null,
+    pdfUrl: null,
+    pdfName: null,
   },
   {
     id: "demo-rule-3",
@@ -2348,6 +2354,8 @@ const DEMO_RULES = [
     priority: 3,
     isImportant: false,
     imageUrl: null,
+    pdfUrl: null,
+    pdfName: null,
   },
   {
     id: "demo-rule-4",
@@ -2360,6 +2368,8 @@ const DEMO_RULES = [
     priority: 4,
     isImportant: false,
     imageUrl: null,
+    pdfUrl: null,
+    pdfName: null,
   },
   {
     id: "demo-rule-5",
@@ -2372,6 +2382,8 @@ const DEMO_RULES = [
     priority: 5,
     isImportant: true,
     imageUrl: null,
+    pdfUrl: null,
+    pdfName: null,
   },
   {
     id: "demo-rule-6",
@@ -2384,11 +2396,13 @@ const DEMO_RULES = [
     priority: 6,
     isImportant: false,
     imageUrl: null,
+    pdfUrl: null,
+    pdfName: null,
   },
 ];
 
 /**
- * 📷 ルール & 注意事項 画像アップロード API (POST /rules/upload)
+ * 📷 / 📄 ルール & 注意事項 添付ファイル（画像・PDF）アップロード API (POST /rules/upload)
  */
 app.post("/rules/upload", async (c) => {
   try {
@@ -2412,22 +2426,33 @@ app.post("/rules/upload", async (c) => {
       return c.json({ success: false, error: "ファイルが選択されていません" }, 400);
     }
 
-    const originalName = file.name || "rule_image.jpg";
-    const ext = originalName.split(".").pop()?.toLowerCase() || "jpg";
+    const originalName = file.name || "rule_file";
+    const ext = originalName.split(".").pop()?.toLowerCase() || "";
+    const isPdf = ext === "pdf" || file.type === "application/pdf";
 
     // R2バケットが使える場合
     if (c.env.BUCKET) {
-      const safeExt = ext.replace(/[^a-z0-9]/gi, "") || "jpg";
+      const safeExt = ext.replace(/[^a-z0-9]/gi, "") || (isPdf ? "pdf" : "jpg");
       const filename = `rules/${teamId}/${Date.now()}-${crypto.randomUUID().slice(0, 8)}.${safeExt}`;
-      const mimeType = file.type || "image/jpeg";
+      const mimeType = file.type || (isPdf ? "application/pdf" : "image/jpeg");
       const arrayBuffer = await file.arrayBuffer();
 
       await c.env.BUCKET.put(filename, arrayBuffer, {
-        httpMetadata: { contentType: mimeType },
+        httpMetadata: {
+          contentType: mimeType,
+          contentDisposition: `inline; filename="${encodeURIComponent(originalName)}"`,
+        },
       });
 
-      const imageUrl = `/api/images/${filename}`;
-      return c.json({ success: true, imageUrl });
+      const fileUrl = `/api/images/${filename}`;
+      return c.json({
+        success: true,
+        fileUrl,
+        imageUrl: isPdf ? null : fileUrl,
+        pdfUrl: isPdf ? fileUrl : null,
+        fileName: originalName,
+        isPdf,
+      });
     }
 
     // R2バケットがないローカル/フォールバック環境: Base64 Data URL
@@ -2439,13 +2464,20 @@ app.post("/rules/upload", async (c) => {
       binary += String.fromCharCode(bytes[i]);
     }
     const base64 = btoa(binary);
-    const mimeType = file.type || "image/jpeg";
-    const imageUrl = `data:${mimeType};base64,${base64}`;
+    const mimeType = file.type || (isPdf ? "application/pdf" : "image/jpeg");
+    const dataUrl = `data:${mimeType};base64,${base64}`;
 
-    return c.json({ success: true, imageUrl });
+    return c.json({
+      success: true,
+      fileUrl: dataUrl,
+      imageUrl: isPdf ? null : dataUrl,
+      pdfUrl: isPdf ? dataUrl : null,
+      fileName: originalName,
+      isPdf,
+    });
   } catch (error: any) {
-    console.error("Rules image upload error:", error);
-    return c.json({ success: false, error: error?.message || "画像のアップロードに失敗しました" }, 500);
+    console.error("Rules file upload error:", error);
+    return c.json({ success: false, error: error?.message || "ファイルのアップロードに失敗しました" }, 500);
   }
 });
 
@@ -2494,6 +2526,8 @@ app.get("/rules", async (c) => {
         priority: teamRules.priority,
         isImportant: teamRules.isImportant,
         imageUrl: teamRules.imageUrl,
+        pdfUrl: teamRules.pdfUrl,
+        pdfName: teamRules.pdfName,
         createdAt: teamRules.createdAt,
         organizationId: teamRules.organizationId,
         teamId: teamRules.teamId,
@@ -2527,6 +2561,8 @@ app.get("/rules", async (c) => {
         priority: r.priority || 0,
         isImportant: toBoolean(r.isImportant, false),
         imageUrl: r.imageUrl || null,
+        pdfUrl: r.pdfUrl || null,
+        pdfName: r.pdfName || null,
       };
     });
 
@@ -2553,7 +2589,7 @@ app.post("/rules", async (c) => {
   const db = drizzle(c.env.DB);
   try {
     const body = await c.req.json();
-    const { teamId, title, content, category, scope, userId, priority, isImportant, imageUrl } = body;
+    const { teamId, title, content, category, scope, userId, priority, isImportant, imageUrl, pdfUrl, pdfName } = body;
 
     if (!teamId || !title || !content) {
       return c.json({ success: false, error: "teamId, title, content are required" }, 400);
@@ -2586,6 +2622,8 @@ app.post("/rules", async (c) => {
       priority: Number(priority) || 0,
       isImportant: toBoolean(isImportant, false),
       imageUrl: imageUrl ? imageUrl.trim() : null,
+      pdfUrl: pdfUrl ? pdfUrl.trim() : null,
+      pdfName: pdfName ? pdfName.trim() : null,
       createdById: userId || null,
       createdAt: new Date(),
     });
@@ -2606,7 +2644,7 @@ app.put("/rules/:id", async (c) => {
   const id = c.req.param("id");
   try {
     const body = await c.req.json();
-    const { title, content, category, scope, teamId, priority, isImportant, imageUrl } = body;
+    const { title, content, category, scope, teamId, priority, isImportant, imageUrl, pdfUrl, pdfName } = body;
 
     if (id.startsWith("demo-")) {
       return c.json({ success: true, message: "ルール & 注意事項を更新しました（デモ）" });
@@ -2639,6 +2677,8 @@ app.put("/rules/:id", async (c) => {
         priority: priority !== undefined ? Number(priority) : currentRule.priority,
         isImportant: isImportant !== undefined ? toBoolean(isImportant, false) : currentRule.isImportant,
         imageUrl: imageUrl !== undefined ? (imageUrl ? imageUrl.trim() : null) : currentRule.imageUrl,
+        pdfUrl: pdfUrl !== undefined ? (pdfUrl ? pdfUrl.trim() : null) : currentRule.pdfUrl,
+        pdfName: pdfName !== undefined ? (pdfName ? pdfName.trim() : null) : currentRule.pdfName,
         organizationId: scope === "organization" ? organizationId : null,
         teamId: scope === "team" ? targetTeamId : null,
       })

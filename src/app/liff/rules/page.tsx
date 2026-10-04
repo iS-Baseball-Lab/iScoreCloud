@@ -46,6 +46,8 @@ interface RuleItem {
   priority?: number;
   isImportant?: boolean;
   imageUrl?: string | null;
+  pdfUrl?: string | null;
+  pdfName?: string | null;
 }
 
 export default function LiffRulesPage() {
@@ -67,10 +69,14 @@ export default function LiffRulesPage() {
   const [newScope, setNewScope] = useState<"organization" | "team">("team");
   const [newIsImportant, setNewIsImportant] = useState(false);
   const [newImageUrl, setNewImageUrl] = useState<string>("");
+  const [newPdfUrl, setNewPdfUrl] = useState<string>("");
+  const [newPdfName, setNewPdfName] = useState<string>("");
   const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [isUploadingPdf, setIsUploadingPdf] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const pdfInputRef = useRef<HTMLInputElement>(null);
 
   // 編集モーダル用ステート
   const [editingRule, setEditingRule] = useState<RuleItem | null>(null);
@@ -80,9 +86,13 @@ export default function LiffRulesPage() {
   const [editScope, setEditScope] = useState<"organization" | "team">("team");
   const [editIsImportant, setEditIsImportant] = useState(false);
   const [editImageUrl, setEditImageUrl] = useState<string>("");
+  const [editPdfUrl, setEditPdfUrl] = useState<string>("");
+  const [editPdfName, setEditPdfName] = useState<string>("");
   const [isEditUploadingImage, setIsEditUploadingImage] = useState(false);
+  const [isEditUploadingPdf, setIsEditUploadingPdf] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const editFileInputRef = useRef<HTMLInputElement>(null);
+  const editPdfInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -148,6 +158,66 @@ export default function LiffRulesPage() {
     }
   };
 
+  // PDFアップロードハンドラー
+  const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>, isEdit: boolean) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.toLowerCase().endsWith(".pdf") && file.type !== "application/pdf") {
+      setSubmitError("PDFファイル（.pdf）を選択してください");
+      return;
+    }
+
+    try {
+      if (isEdit) setIsEditUploadingPdf(true);
+      else setIsUploadingPdf(true);
+      setSubmitError(null);
+
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("teamId", currentTeam?.id || "general");
+
+      const res = await fetch("/api/liff/rules/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = (await res.json()) as {
+        success: boolean;
+        pdfUrl?: string;
+        fileUrl?: string;
+        fileName?: string;
+        error?: string;
+      };
+
+      if (!data.success) {
+        throw new Error(data.error || "PDFのアップロードに失敗しました");
+      }
+
+      const url = data.pdfUrl || data.fileUrl || "";
+      const name = data.fileName || file.name || "規約・ルール資料.pdf";
+
+      if (isEdit) {
+        setEditPdfUrl(url);
+        setEditPdfName(name);
+      } else {
+        setNewPdfUrl(url);
+        setNewPdfName(name);
+      }
+    } catch (err: any) {
+      console.error("PDF upload failed:", err);
+      setSubmitError(err.message || "PDFのアップロードに失敗しました");
+    } finally {
+      if (isEdit) {
+        setIsEditUploadingPdf(false);
+        if (editPdfInputRef.current) editPdfInputRef.current.value = "";
+      } else {
+        setIsUploadingPdf(false);
+        if (pdfInputRef.current) pdfInputRef.current.value = "";
+      }
+    }
+  };
+
   // 編集モーダルを開く
   const openEditModal = (rule: RuleItem) => {
     setEditingRule(rule);
@@ -157,6 +227,8 @@ export default function LiffRulesPage() {
     setEditScope(rule.scope);
     setEditIsImportant(!!rule.isImportant);
     setEditImageUrl(rule.imageUrl || "");
+    setEditPdfUrl(rule.pdfUrl || "");
+    setEditPdfName(rule.pdfName || "");
     setSubmitError(null);
   };
 
@@ -181,6 +253,8 @@ export default function LiffRulesPage() {
           scope: newScope,
           isImportant: newIsImportant,
           imageUrl: newImageUrl.trim() || null,
+          pdfUrl: newPdfUrl.trim() || null,
+          pdfName: newPdfName.trim() || null,
           userId: profile?.userId,
         }),
       });
@@ -195,6 +269,8 @@ export default function LiffRulesPage() {
       setNewContent("");
       setNewIsImportant(false);
       setNewImageUrl("");
+      setNewPdfUrl("");
+      setNewPdfName("");
       loadRules();
     } catch (err: any) {
       console.error("Error creating rule:", err);
@@ -225,6 +301,8 @@ export default function LiffRulesPage() {
           scope: editScope,
           isImportant: editIsImportant,
           imageUrl: editImageUrl.trim() || null,
+          pdfUrl: editPdfUrl.trim() || null,
+          pdfName: editPdfName.trim() || null,
         }),
       });
 
@@ -500,6 +578,14 @@ export default function LiffRulesPage() {
                               <span>写真あり</span>
                             </span>
                           )}
+
+                          {/* PDF添付バッジ */}
+                          {rule.pdfUrl && (
+                            <span className="px-1.5 py-0.5 rounded-md bg-rose-500/10 text-rose-600 dark:text-rose-400 text-[9.5px] font-black shrink-0 flex items-center gap-0.5 border border-rose-500/20">
+                              <FileText className="w-2.5 h-2.5" />
+                              <span>PDFあり</span>
+                            </span>
+                          )}
                         </div>
 
                         <h3 className="text-xs sm:text-sm font-black text-foreground leading-snug">
@@ -570,6 +656,43 @@ export default function LiffRulesPage() {
                               loading="lazy"
                             />
                           </div>
+                        </div>
+                      )}
+
+                      {/* 📄 添付PDF資料 */}
+                      {rule.pdfUrl && (
+                        <div className="space-y-1.5 pt-1">
+                          <div className="flex items-center justify-between text-[11px] font-bold text-muted-foreground">
+                            <span className="flex items-center gap-1">
+                              <FileText className="w-3.5 h-3.5 text-rose-500" />
+                              <span>添付PDF資料</span>
+                            </span>
+                            <span className="text-[10px] text-muted-foreground">タップで閲覧</span>
+                          </div>
+                          <a
+                            href={rule.pdfUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center justify-between p-3 rounded-2xl border border-border bg-card hover:bg-muted/40 transition-colors group cursor-pointer"
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className="w-9 h-9 rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+                                <FileText className="w-5 h-5" />
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-xs font-black text-foreground truncate group-hover:text-primary transition-colors">
+                                  {rule.pdfName || "添付PDF資料.pdf"}
+                                </p>
+                                <p className="text-[10px] text-muted-foreground font-bold">
+                                  別タブでPDFを開く・ダウンロード
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1 text-xs font-black text-primary px-2.5 py-1.5 rounded-lg bg-primary/10 shrink-0">
+                              <span>開く</span>
+                              <ExternalLink className="w-3.5 h-3.5" />
+                            </div>
+                          </a>
                         </div>
                       )}
                     </div>
@@ -802,6 +925,90 @@ export default function LiffRulesPage() {
                 )}
               </div>
 
+              {/* 📄 PDF添付エリア */}
+              <div className="space-y-2 p-3 rounded-2xl bg-muted/40 border border-border/70">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black text-foreground flex items-center gap-1.5">
+                    <FileText className="w-4 h-4 text-rose-500" />
+                    <span>PDF資料・規約の添付 (任意)</span>
+                  </span>
+                  {newPdfUrl && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNewPdfUrl("");
+                        setNewPdfName("");
+                      }}
+                      className="text-[10px] text-destructive hover:underline font-bold cursor-pointer"
+                    >
+                      PDFを削除
+                    </button>
+                  )}
+                </div>
+
+                {newPdfUrl ? (
+                  <div className="flex items-center justify-between p-2.5 rounded-xl border border-border bg-card">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="w-8 h-8 rounded-lg bg-rose-500/10 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+                        <FileText className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-black text-foreground truncate">
+                          {newPdfName || "添付PDFファイル"}
+                        </p>
+                        <a
+                          href={newPdfUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[10px] text-primary hover:underline font-bold flex items-center gap-0.5 mt-0.5"
+                        >
+                          <span>プレビュー確認</span>
+                          <ExternalLink className="w-2.5 h-2.5" />
+                        </a>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNewPdfUrl("");
+                        setNewPdfName("");
+                      }}
+                      className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <div>
+                    <input
+                      ref={pdfInputRef}
+                      type="file"
+                      accept="application/pdf,.pdf"
+                      onChange={(e) => handlePdfUpload(e, false)}
+                      className="hidden"
+                    />
+                    <button
+                      type="button"
+                      disabled={isUploadingPdf}
+                      onClick={() => pdfInputRef.current?.click()}
+                      className="w-full py-2.5 px-3 rounded-xl border border-dashed border-border hover:border-primary/50 bg-card hover:bg-muted/50 text-muted-foreground hover:text-foreground font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+                    >
+                      {isUploadingPdf ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                          <span>アップロード中...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="w-4 h-4 text-rose-500" />
+                          <span>PDFファイルを選択 (規約・マニュアル等)</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+              </div>
+
               <div className="flex items-center justify-end gap-2 pt-2 border-t border-border/60">
                 <button
                   type="button"
@@ -1015,6 +1222,90 @@ export default function LiffRulesPage() {
                         <>
                           <Upload className="w-4 h-4 text-primary" />
                           <span>写真・画像を選択または撮影</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* 📄 PDF添付エリア */}
+              <div className="space-y-2 p-3 rounded-2xl bg-muted/40 border border-border/70">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black text-foreground flex items-center gap-1.5">
+                    <FileText className="w-4 h-4 text-rose-500" />
+                    <span>PDF資料・規約の添付 (任意)</span>
+                  </span>
+                  {editPdfUrl && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditPdfUrl("");
+                        setEditPdfName("");
+                      }}
+                      className="text-[10px] text-destructive hover:underline font-bold cursor-pointer"
+                    >
+                      PDFを削除
+                    </button>
+                  )}
+                </div>
+
+                {editPdfUrl ? (
+                  <div className="flex items-center justify-between p-2.5 rounded-xl border border-border bg-card">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="w-8 h-8 rounded-lg bg-rose-500/10 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+                        <FileText className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-black text-foreground truncate">
+                          {editPdfName || "添付PDFファイル"}
+                        </p>
+                        <a
+                          href={editPdfUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[10px] text-primary hover:underline font-bold flex items-center gap-0.5 mt-0.5"
+                        >
+                          <span>プレビュー確認</span>
+                          <ExternalLink className="w-2.5 h-2.5" />
+                        </a>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditPdfUrl("");
+                        setEditPdfName("");
+                      }}
+                      className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <div>
+                    <input
+                      ref={editPdfInputRef}
+                      type="file"
+                      accept="application/pdf,.pdf"
+                      onChange={(e) => handlePdfUpload(e, true)}
+                      className="hidden"
+                    />
+                    <button
+                      type="button"
+                      disabled={isEditUploadingPdf}
+                      onClick={() => editPdfInputRef.current?.click()}
+                      className="w-full py-2.5 px-3 rounded-xl border border-dashed border-border hover:border-primary/50 bg-card hover:bg-muted/50 text-muted-foreground hover:text-foreground font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+                    >
+                      {isEditUploadingPdf ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                          <span>アップロード中...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="w-4 h-4 text-rose-500" />
+                          <span>PDFファイルを選択 (規約・マニュアル等)</span>
                         </>
                       )}
                     </button>

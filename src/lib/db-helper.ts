@@ -83,6 +83,8 @@ export async function ensureRulesTable(d1?: any) {
         priority integer DEFAULT 0,
         is_important integer DEFAULT 0,
         image_url text,
+        pdf_url text,
+        pdf_name text,
         created_by_id text,
         created_at integer NOT NULL DEFAULT (strftime('%s', 'now'))
       )
@@ -95,6 +97,14 @@ export async function ensureRulesTable(d1?: any) {
 
   try {
     await d1.prepare("ALTER TABLE team_rules ADD COLUMN image_url text").run().catch(() => {});
+  } catch {}
+
+  try {
+    await d1.prepare("ALTER TABLE team_rules ADD COLUMN pdf_url text").run().catch(() => {});
+  } catch {}
+
+  try {
+    await d1.prepare("ALTER TABLE team_rules ADD COLUMN pdf_name text").run().catch(() => {});
   } catch {}
 
   try {

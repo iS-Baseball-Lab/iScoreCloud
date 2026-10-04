@@ -215,6 +215,8 @@ export const teamRules = sqliteTable('team_rules', {
   priority: integer('priority').default(0), // 表示順
   isImportant: integer('is_important', { mode: 'boolean' }).default(false), // 重要フラグ（重要バッジ）
   imageUrl: text('image_url'), // 添付画像URL (R2またはBase64)
+  pdfUrl: text('pdf_url'), // 添付PDF URL (R2またはBase64)
+  pdfName: text('pdf_name'), // 添付PDFファイル名
   createdById: text('created_by_id'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(strftime('%s', 'now'))`),
 }, (table) => ({

@@ -41,26 +41,45 @@ app.post('/upload', async (c) => {
 })
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 💡 2. 画像配信 API (GET /api/images/:folder/:filename)
+// 💡 2. 画像・添付ファイル配信 API (GET /api/images/:folder/:filename & /api/images/:folder/:subfolder/:filename)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-app.get('/:folder/:filename', async (c) => {
-  const folder = c.req.param('folder')
-  const filename = c.req.param('filename')
-  const path = `${folder}/${filename}`
+async function serveImage(c: any, path: string) {
+  if (!c.env.BUCKET) return c.text('Not found', 404)
 
-  // R2バケットから画像を取り出す
-  const object = await c.env.BUCKET!.get(path)
+  // R2バケットから画像/ファイルを取り出す
+  const object = await c.env.BUCKET.get(path)
   if (!object) return c.text('Not found', 404)
 
   const headers = new Headers()
   object.writeHttpMetadata(headers)
   headers.set('etag', object.httpEtag)
 
-  // 💡 究極のパフォーマンス最適化：ブラウザに1年間キャッシュさせる！
-  // これにより、同じアバター画像は2回目以降APIを叩かずブラウザが一瞬で表示します（無料枠の超節約）
+  if (path.endsWith('.pdf')) {
+    if (!headers.has('content-type')) {
+      headers.set('content-type', 'application/pdf')
+    }
+    if (!headers.has('content-disposition')) {
+      headers.set('content-disposition', 'inline')
+    }
+  }
+
+  // 💡 究極のパフォーマンス最適化：ブラウザにキャッシュさせる！
   headers.set('Cache-Control', 'public, max-age=31536000, immutable')
 
   return new Response(object.body, { headers })
+}
+
+app.get('/:folder/:filename', async (c) => {
+  const folder = c.req.param('folder')
+  const filename = c.req.param('filename')
+  return serveImage(c, `${folder}/${filename}`)
+})
+
+app.get('/:folder/:subfolder/:filename', async (c) => {
+  const folder = c.req.param('folder')
+  const subfolder = c.req.param('subfolder')
+  const filename = c.req.param('filename')
+  return serveImage(c, `${folder}/${subfolder}/${filename}`)
 })
 
 export default app
