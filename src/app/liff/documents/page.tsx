@@ -41,6 +41,33 @@ interface TeamDocument {
   scopeLabel: string;
 }
 
+// 📄 PDFをスマートフォンやLINE WebViewで確実に表示するためのURL変換ヘルパー
+function getAbsoluteUrl(url: string | null | undefined): string {
+  if (!url) return "";
+  if (url.startsWith("http://") || url.startsWith("https://")) return url;
+  if (typeof window !== "undefined") {
+    return `${window.location.origin}${url.startsWith("/") ? "" : "/"}${url}`;
+  }
+  return `https://iscorecloud.com${url.startsWith("/") ? "" : "/"}${url}`;
+}
+
+function getPdfViewerUrl(url: string | null | undefined): string {
+  if (!url) return "";
+  if (url.startsWith("data:")) return url;
+  const abs = getAbsoluteUrl(url);
+  if (abs.includes("localhost") || abs.includes("127.0.0.1")) {
+    return url;
+  }
+  return `https://docs.google.com/viewer?url=${encodeURIComponent(abs)}&embedded=true`;
+}
+
+function getExternalBrowserUrl(url: string | null | undefined): string {
+  const abs = getAbsoluteUrl(url);
+  if (!abs) return "";
+  const sep = abs.includes("?") ? "&" : "?";
+  return `${abs}${sep}openExternalBrowser=1`;
+}
+
 export default function LiffDocumentsPage() {
   const { currentTeam, profile } = useLiff();
   const [documents, setDocuments] = useState<TeamDocument[]>([]);
@@ -1401,12 +1428,24 @@ export default function LiffDocumentsPage() {
                     </p>
                   </div>
                 ) : previewDoc.fileType === "PDF" || previewDoc.fileUrl.startsWith("data:application/pdf") || previewDoc.fileUrl.endsWith(".pdf") ? (
-                  <div className="w-full h-[60vh] flex flex-col items-center justify-center space-y-3">
+                  <div className="w-full h-[60vh] flex flex-col items-center justify-center space-y-2">
                     <iframe
-                      src={previewDoc.fileUrl}
+                      src={getPdfViewerUrl(previewDoc.fileUrl)}
                       title={previewDoc.title}
-                      className="w-full h-full rounded-2xl border border-border shadow-xs bg-card"
+                      className="w-full h-full rounded-2xl border border-border shadow-xs bg-muted/20"
                     />
+                    <div className="flex items-center justify-between w-full px-1 text-[10px] text-muted-foreground font-medium">
+                      <span>💡 端末によって表示されない場合は右のボタンをお試しください</span>
+                      <a
+                        href={getExternalBrowserUrl(previewDoc.fileUrl)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary font-black hover:underline flex items-center gap-0.5 shrink-0"
+                      >
+                        <span>ブラウザで開く</span>
+                        <ExternalLink className="w-2.5 h-2.5" />
+                      </a>
+                    </div>
                   </div>
                 ) : previewDoc.fileType === "XLSX" || previewDoc.fileUrl.match(/\.(xlsx?|csv|xlsm)($|\?)/i) ? (
                   <div className="flex flex-col items-center justify-center py-8 px-4 text-center space-y-4 max-w-sm w-full">

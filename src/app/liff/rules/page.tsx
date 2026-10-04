@@ -34,7 +34,36 @@ import {
   ExternalLink,
   CheckCircle2,
   Eye,
+  Download,
 } from "lucide-react";
+
+// 📄 PDFをスマートフォンやLINE WebViewで確実に表示するためのURL変換ヘルパー
+function getAbsoluteUrl(url: string | null | undefined): string {
+  if (!url) return "";
+  if (url.startsWith("http://") || url.startsWith("https://")) return url;
+  if (typeof window !== "undefined") {
+    return `${window.location.origin}${url.startsWith("/") ? "" : "/"}${url}`;
+  }
+  return `https://iscorecloud.com${url.startsWith("/") ? "" : "/"}${url}`;
+}
+
+function getPdfViewerUrl(url: string | null | undefined): string {
+  if (!url) return "";
+  if (url.startsWith("data:")) return url;
+  const abs = getAbsoluteUrl(url);
+  // ローカル環境（localhost）はGoogle Docs Viewerから到達できないため直接URLを返す
+  if (abs.includes("localhost") || abs.includes("127.0.0.1")) {
+    return url;
+  }
+  return `https://docs.google.com/viewer?url=${encodeURIComponent(abs)}&embedded=true`;
+}
+
+function getExternalBrowserUrl(url: string | null | undefined): string {
+  const abs = getAbsoluteUrl(url);
+  if (!abs) return "";
+  const sep = abs.includes("?") ? "&" : "?";
+  return `${abs}${sep}openExternalBrowser=1`;
+}
 
 interface RuleItem {
   id: string;
@@ -669,7 +698,7 @@ export default function LiffRulesPage() {
                               <FileText className="w-3.5 h-3.5 text-rose-500 shrink-0" />
                               <span className="truncate">{rule.pdfName || "添付PDF資料"}</span>
                             </span>
-                            <div className="flex items-center gap-2 shrink-0">
+                            <div className="flex items-center gap-1.5 shrink-0">
                               <button
                                 type="button"
                                 onClick={() =>
@@ -678,50 +707,58 @@ export default function LiffRulesPage() {
                                     name: rule.pdfName || "添付PDF資料.pdf",
                                   })
                                 }
-                                className="text-primary hover:underline flex items-center gap-1 text-[11px] font-black cursor-pointer"
+                                className="px-2 py-1 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 flex items-center gap-1 text-[11px] font-black cursor-pointer transition-colors"
                               >
-                                <Eye className="w-3.5 h-3.5" />
-                                <span>全画面で見る</span>
+                                <Eye className="w-3 h-3" />
+                                <span>全画面</span>
                               </button>
                               <a
-                                href={rule.pdfUrl}
+                                href={getExternalBrowserUrl(rule.pdfUrl)}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="text-muted-foreground hover:text-foreground flex items-center gap-1 text-[11px] font-bold"
+                                className="px-2 py-1 rounded-lg border border-border hover:bg-muted text-muted-foreground hover:text-foreground flex items-center gap-1 text-[11px] font-bold transition-colors"
                               >
                                 <ExternalLink className="w-3 h-3" />
-                                <span>別タブ</span>
+                                <span>ブラウザ</span>
                               </a>
                             </div>
                           </div>
 
-                          {/* 📄 PDF インラインプレビュー枠 */}
-                          <div className="relative w-full h-80 sm:h-96 rounded-2xl overflow-hidden border border-border bg-card shadow-xs">
+                          {/* 📄 PDF インラインプレビュー枠 (Google Docs Viewerでスマホ・LINEでも高精度描画) */}
+                          <div className="relative w-full h-80 sm:h-96 rounded-2xl overflow-hidden border border-border bg-muted/20 shadow-xs">
                             <iframe
-                              src={rule.pdfUrl}
+                              src={getPdfViewerUrl(rule.pdfUrl)}
                               title={rule.pdfName || "添付PDF資料"}
                               className="w-full h-full border-none"
+                              loading="lazy"
                             />
                           </div>
 
                           {/* 補助ボタンバー */}
-                          <div className="flex items-center justify-between px-1">
-                            <span className="text-[10px] text-muted-foreground font-bold">
-                              💡 上記枠内でPDFをスクロール・閲覧できます
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 px-1 pt-0.5">
+                            <span className="text-[10px] text-muted-foreground font-medium">
+                              💡 枠内でスクロール閲覧できます。表示されない場合は「ブラウザで開く」をお試しください。
                             </span>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setPreviewPdfModal({
-                                  url: rule.pdfUrl!,
-                                  name: rule.pdfName || "添付PDF資料.pdf",
-                                })
-                              }
-                              className="text-[10px] font-black text-primary hover:underline flex items-center gap-0.5 cursor-pointer"
-                            >
-                              <span>大きく表示する</span>
-                              <ExternalLink className="w-2.5 h-2.5" />
-                            </button>
+                            <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                              <a
+                                href={getExternalBrowserUrl(rule.pdfUrl)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-[10px] font-black text-primary hover:underline flex items-center gap-0.5"
+                              >
+                                <span>ブラウザで開く</span>
+                                <ExternalLink className="w-2.5 h-2.5" />
+                              </a>
+                              <span className="text-border">•</span>
+                              <a
+                                href={getAbsoluteUrl(rule.pdfUrl)}
+                                download={rule.pdfName || "添付資料.pdf"}
+                                className="text-[10px] font-black text-muted-foreground hover:text-foreground flex items-center gap-0.5"
+                              >
+                                <span>保存</span>
+                                <Download className="w-2.5 h-2.5" />
+                              </a>
+                            </div>
                           </div>
                         </div>
                       )}
@@ -785,13 +822,22 @@ export default function LiffRulesPage() {
 
               <div className="flex items-center gap-2 shrink-0">
                 <a
-                  href={previewPdfModal.url}
+                  href={getExternalBrowserUrl(previewPdfModal.url)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="px-2.5 py-1.5 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 text-xs font-black flex items-center gap-1 transition-colors"
                 >
                   <ExternalLink className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">ブラウザで開く</span>
+                </a>
+                <a
+                  href={getAbsoluteUrl(previewPdfModal.url)}
+                  download={previewPdfModal.name}
+                  className="px-2.5 py-1.5 rounded-xl border border-border hover:bg-muted text-muted-foreground hover:text-foreground text-xs font-black flex items-center gap-1 transition-colors"
+                  title="ダウンロード"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">保存</span>
                 </a>
                 <button
                   type="button"
@@ -805,7 +851,7 @@ export default function LiffRulesPage() {
 
             <div className="flex-1 bg-muted/20 relative w-full h-full">
               <iframe
-                src={previewPdfModal.url}
+                src={getPdfViewerUrl(previewPdfModal.url)}
                 title={previewPdfModal.name}
                 className="w-full h-full border-none"
               />
