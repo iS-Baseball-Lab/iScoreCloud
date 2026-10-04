@@ -24,36 +24,16 @@ import {
   BookOpen,
 } from "lucide-react";
 
-type MenuCategory = "all" | "match_data" | "schedule" | "manual_rules" | "settings";
+type MenuCategory = "schedule" | "manual" | "settings";
 
 const MENU_TABS = [
-  { id: "all" as const, label: "すべて", icon: LayoutGrid },
-  { id: "match_data" as const, label: "試合・データ", icon: Trophy },
-  { id: "schedule" as const, label: "スケジュール", icon: Calendar },
-  { id: "manual_rules" as const, label: "マニュアル・規約", icon: BookOpen },
+  { id: "schedule" as const, label: "活動・予定", icon: Calendar },
+  { id: "manual" as const, label: "マニュアル", icon: BookOpen },
   { id: "settings" as const, label: "設定", icon: Settings },
 ];
 
 const MENU_ITEMS = [
-  // ⚾ 試合・データ
-  {
-    title: "試合情報",
-    subtitle: "試合動画 & スコア",
-    href: "/liff/matches",
-    icon: Video,
-    colorClass: "bg-red-500/15 text-red-600 dark:text-red-400",
-    category: "match_data" as const,
-  },
-  {
-    title: "チーム成績",
-    subtitle: "勝敗・打撃個人成績",
-    href: "/liff/stats",
-    icon: Trophy,
-    colorClass: "bg-amber-500/15 text-amber-600 dark:text-amber-400",
-    category: "match_data" as const,
-  },
-
-  // 📅 スケジュール
+  // 📅 活動・予定
   {
     title: "予定 & 出欠",
     subtitle: "当番・出欠確認",
@@ -70,31 +50,15 @@ const MENU_ITEMS = [
     colorClass: "bg-blue-500/15 text-blue-600 dark:text-blue-400",
     category: "schedule" as const,
   },
-  {
-    title: "球場 & 施設",
-    subtitle: "アクセス・駐車場",
-    href: "/liff/grounds",
-    icon: MapPin,
-    colorClass: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
-    category: "schedule" as const,
-  },
-  {
-    title: "ホーム",
-    subtitle: "トップページ",
-    href: "/liff",
-    icon: Home,
-    colorClass: "bg-blue-500/15 text-blue-600 dark:text-blue-400",
-    category: "schedule" as const,
-  },
 
-  // 📖 マニュアル・規約
+  // 📖 マニュアル
   {
     title: "ルール & 注意事項",
     subtitle: "試合・配車・活動心得",
     href: "/liff/rules",
     icon: AlertTriangle,
     colorClass: "bg-amber-500/15 text-amber-600 dark:text-amber-400",
-    category: "manual_rules" as const,
+    category: "manual" as const,
   },
   {
     title: "資料ダウンロード",
@@ -102,7 +66,7 @@ const MENU_ITEMS = [
     href: "/liff/documents",
     icon: FileText,
     colorClass: "bg-purple-500/15 text-purple-600 dark:text-purple-400",
-    category: "manual_rules" as const,
+    category: "manual" as const,
   },
   {
     title: "よくある質問",
@@ -110,7 +74,7 @@ const MENU_ITEMS = [
     href: "/liff/faq",
     icon: HelpCircle,
     colorClass: "bg-teal-500/15 text-teal-600 dark:text-teal-400",
-    category: "manual_rules" as const,
+    category: "manual" as const,
   },
   {
     title: "関連リンク集",
@@ -118,7 +82,7 @@ const MENU_ITEMS = [
     href: "/liff/links",
     icon: Link2,
     colorClass: "bg-sky-500/15 text-sky-600 dark:text-sky-400",
-    category: "manual_rules" as const,
+    category: "manual" as const,
   },
 
   // ⚙️ 設定
@@ -131,31 +95,14 @@ const MENU_ITEMS = [
     category: "settings" as const,
     fullWidth: true,
   },
-  {
-    title: "利用規約",
-    subtitle: "利用ガイドライン",
-    href: "/liff/terms",
-    icon: FileText,
-    colorClass: "bg-indigo-500/15 text-indigo-600 dark:text-indigo-400",
-    category: "settings" as const,
-  },
-  {
-    title: "プライバシーポリシー",
-    subtitle: "個人情報の取り扱い",
-    href: "/liff/privacy",
-    icon: ShieldCheck,
-    colorClass: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
-    category: "settings" as const,
-  },
 ];
 
 export function LiffBottomNav() {
   const pathname = usePathname();
   const [isOtherMenuOpen, setIsOtherMenuOpen] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState<MenuCategory>("all");
+  const [selectedCategory, setSelectedCategory] = useState<MenuCategory>("schedule");
 
   const filteredItems = useMemo(() => {
-    if (selectedCategory === "all") return MENU_ITEMS;
     return MENU_ITEMS.filter((item) => item.category === selectedCategory);
   }, [selectedCategory]);
 
@@ -303,15 +250,12 @@ export function LiffBottomNav() {
           />
 
           <div className="w-full max-w-lg bg-card rounded-t-3xl border-t border-x border-border shadow-2xl p-5 pb-36 space-y-4 relative z-10 animate-in slide-in-from-bottom duration-200 max-h-[85vh] overflow-y-auto">
-            {/* 🏷️ スティッキーヘッダー & カテゴリタブ */}
+            {/* 🏷️ スティッキーヘッダー & 3分割カテゴリタブ */}
             <div className="sticky -top-5 -mt-5 pt-5 pb-3 bg-card/95 backdrop-blur-md z-10 border-b border-border/50 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <LayoutGrid className="w-4 h-4 text-primary" />
                   <h4 className="text-sm font-black text-foreground">メニュー一覧</h4>
-                  <span className="text-[11px] font-bold text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
-                    {filteredItems.length}件
-                  </span>
                 </div>
                 <button
                   type="button"
@@ -322,28 +266,26 @@ export function LiffBottomNav() {
                 </button>
               </div>
 
-              {/* 🏷️ カテゴリ切り替えタブ（横スクロール対応ピルバー） */}
-              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 -mx-1 px-1">
+              {/* 🏷️ 均等3分割セグメントタブ（横スクロール一切なし・全画面幅フィット） */}
+              <div className="grid grid-cols-3 gap-1 p-1 bg-muted/60 rounded-2xl border border-border/40">
                 {MENU_TABS.map((tab) => {
                   const isSelected = selectedCategory === tab.id;
                   const TabIcon = tab.icon;
-                  const count = tab.id === "all" 
-                    ? MENU_ITEMS.length 
-                    : MENU_ITEMS.filter((i) => i.category === tab.id).length;
+                  const count = MENU_ITEMS.filter((i) => i.category === tab.id).length;
 
                   return (
                     <button
                       key={tab.id}
                       type="button"
                       onClick={() => setSelectedCategory(tab.id)}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all active:scale-95 shrink-0 ${
+                      className={`flex items-center justify-center gap-1.5 py-2 px-1 rounded-xl text-xs transition-all active:scale-95 ${
                         isSelected
                           ? "bg-primary text-primary-foreground shadow-sm shadow-primary/25 font-black"
-                          : "bg-muted/70 hover:bg-muted text-muted-foreground hover:text-foreground border border-border/40"
+                          : "text-muted-foreground hover:text-foreground hover:bg-background/50 font-bold"
                       }`}
                     >
                       <TabIcon className="w-3.5 h-3.5 shrink-0" />
-                      <span>{tab.label}</span>
+                      <span className="truncate">{tab.label}</span>
                       <span
                         className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
                           isSelected 
