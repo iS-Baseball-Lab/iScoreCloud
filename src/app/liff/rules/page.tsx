@@ -36,6 +36,7 @@ import {
   Eye,
   Download,
 } from "lucide-react";
+import { PdfCanvasViewer } from "@/components/common/PdfCanvasViewer";
 
 // 📄 PDFをスマートフォンやLINE WebViewで確実に表示するためのURL変換ヘルパー
 function getAbsoluteUrl(url: string | null | undefined): string {
@@ -724,18 +725,12 @@ export default function LiffRulesPage() {
                             </div>
                           </div>
 
-                          {/* 📄 PDF インラインプレビュー枠 (A4縦横比 210:297 でジャストフィット) */}
-                          <div
-                            className="relative w-full aspect-[210/297] rounded-2xl overflow-hidden border border-border bg-muted/20 shadow-xs"
-                            style={{ aspectRatio: "210 / 297" }}
-                          >
-                            <iframe
-                              src={getPdfViewerUrl(rule.pdfUrl)}
-                              title={rule.pdfName || "添付PDF資料"}
-                              className="w-full h-full border-none"
-                              loading="lazy"
-                            />
-                          </div>
+                          {/* 📄 PDF インラインプレビュー (純白・黒余白ゼロ・A4比率) */}
+                          <PdfCanvasViewer
+                            url={rule.pdfUrl}
+                            title={rule.pdfName || "添付PDF資料"}
+                            aspectRatioA4={true}
+                          />
 
                           {/* 補助ボタンバー */}
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 px-1 pt-0.5">
@@ -852,15 +847,12 @@ export default function LiffRulesPage() {
               </div>
             </div>
 
-            <div className="flex-1 bg-muted/20 relative w-full h-full flex items-center justify-center p-1 sm:p-4 overflow-hidden">
-              <div
-                className="w-full h-full max-h-full aspect-[210/297] rounded-2xl overflow-hidden shadow-lg border border-border bg-card mx-auto"
-                style={{ aspectRatio: "210 / 297" }}
-              >
-                <iframe
-                  src={getPdfViewerUrl(previewPdfModal.url)}
+            <div className="flex-1 bg-neutral-100 dark:bg-neutral-900 relative w-full h-full overflow-y-auto p-2 sm:p-4 flex items-center justify-center">
+              <div className="w-full max-w-2xl h-auto my-auto shadow-2xl rounded-2xl overflow-hidden">
+                <PdfCanvasViewer
+                  url={previewPdfModal.url}
                   title={previewPdfModal.name}
-                  className="w-full h-full border-none"
+                  aspectRatioA4={true}
                 />
               </div>
             </div>

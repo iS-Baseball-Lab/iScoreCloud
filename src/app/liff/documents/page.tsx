@@ -26,6 +26,7 @@ import {
   Download,
   FileSpreadsheet,
 } from "lucide-react";
+import { PdfCanvasViewer } from "@/components/common/PdfCanvasViewer";
 
 interface TeamDocument {
   id: string;
@@ -1429,17 +1430,11 @@ export default function LiffDocumentsPage() {
                   </div>
                 ) : previewDoc.fileType === "PDF" || previewDoc.fileUrl.startsWith("data:application/pdf") || previewDoc.fileUrl.endsWith(".pdf") ? (
                   <div className="w-full flex flex-col items-center justify-center space-y-2">
-                    <div
-                      className="w-full aspect-[210/297] rounded-2xl overflow-hidden border border-border shadow-xs bg-muted/20"
-                      style={{ aspectRatio: "210 / 297" }}
-                    >
-                      <iframe
-                        src={getPdfViewerUrl(previewDoc.fileUrl)}
-                        title={previewDoc.title}
-                        className="w-full h-full border-none"
-                        loading="lazy"
-                      />
-                    </div>
+                    <PdfCanvasViewer
+                      url={previewDoc.fileUrl}
+                      title={previewDoc.title}
+                      aspectRatioA4={true}
+                    />
                     <div className="flex items-center justify-between w-full px-1 text-[10px] text-muted-foreground font-medium">
                       <span>💡 端末によって表示されない場合は右のボタンをお試しください</span>
                       <a
