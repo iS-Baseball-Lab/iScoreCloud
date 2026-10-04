@@ -9,10 +9,11 @@ const nextConfig: NextConfig = {
   images: {
     unoptimized: true,
   },
-  // TypeScript チェックはビルドプロセスと分離して実行
-  // (next build 時の OOM 対策 — tsc は別途 `npx tsc --noEmit` で確認)
+  // TypeScript 型チェックはビルドプロセスと分離して高速化
+  // (next build 時の高速化 — 型チェックは別途 `npm run check` 等で確認)
+  // ※ Next.js 16 では build 時に ESLint は自動スキップされます
   typescript: {
-    ignoreBuildErrors: false,
+    ignoreBuildErrors: true,
   },
   // 静的エクスポートでは Middleware や Server Components (SSR) が使えないため、
   // サーバー側の設定は最小限にします。
