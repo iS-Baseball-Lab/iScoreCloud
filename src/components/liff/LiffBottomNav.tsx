@@ -1,7 +1,7 @@
 // filepath: src/components/liff/LiffBottomNav.tsx
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { 
@@ -21,11 +21,143 @@ import {
   ChevronRight,
   ShieldCheck,
   Link2,
+  BookOpen,
 } from "lucide-react";
+
+type MenuCategory = "all" | "match_data" | "schedule" | "manual_rules" | "settings";
+
+const MENU_TABS = [
+  { id: "all" as const, label: "すべて", icon: LayoutGrid },
+  { id: "match_data" as const, label: "試合・データ", icon: Trophy },
+  { id: "schedule" as const, label: "スケジュール", icon: Calendar },
+  { id: "manual_rules" as const, label: "マニュアル・規約", icon: BookOpen },
+  { id: "settings" as const, label: "設定", icon: Settings },
+];
+
+const MENU_ITEMS = [
+  // ⚾ 試合・データ
+  {
+    title: "試合情報",
+    subtitle: "試合動画 & スコア",
+    href: "/liff/matches",
+    icon: Video,
+    colorClass: "bg-red-500/15 text-red-600 dark:text-red-400",
+    category: "match_data" as const,
+  },
+  {
+    title: "チーム成績",
+    subtitle: "勝敗・打撃個人成績",
+    href: "/liff/stats",
+    icon: Trophy,
+    colorClass: "bg-amber-500/15 text-amber-600 dark:text-amber-400",
+    category: "match_data" as const,
+  },
+
+  // 📅 スケジュール
+  {
+    title: "予定 & 出欠",
+    subtitle: "当番・出欠確認",
+    href: "/liff/schedule",
+    icon: Calendar,
+    colorClass: "bg-orange-500/15 text-orange-600 dark:text-orange-400",
+    category: "schedule" as const,
+  },
+  {
+    title: "配車表",
+    subtitle: "乗車割り・集合時間",
+    href: "/liff/carpool",
+    icon: Car,
+    colorClass: "bg-blue-500/15 text-blue-600 dark:text-blue-400",
+    category: "schedule" as const,
+  },
+  {
+    title: "球場 & 施設",
+    subtitle: "アクセス・駐車場",
+    href: "/liff/grounds",
+    icon: MapPin,
+    colorClass: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
+    category: "schedule" as const,
+  },
+  {
+    title: "ホーム",
+    subtitle: "トップページ",
+    href: "/liff",
+    icon: Home,
+    colorClass: "bg-blue-500/15 text-blue-600 dark:text-blue-400",
+    category: "schedule" as const,
+  },
+
+  // 📖 マニュアル・規約
+  {
+    title: "ルール & 注意事項",
+    subtitle: "試合・配車・活動心得",
+    href: "/liff/rules",
+    icon: AlertTriangle,
+    colorClass: "bg-amber-500/15 text-amber-600 dark:text-amber-400",
+    category: "manual_rules" as const,
+  },
+  {
+    title: "資料ダウンロード",
+    subtitle: "規約・配車マニュアル",
+    href: "/liff/documents",
+    icon: FileText,
+    colorClass: "bg-purple-500/15 text-purple-600 dark:text-purple-400",
+    category: "manual_rules" as const,
+  },
+  {
+    title: "よくある質問",
+    subtitle: "雨天判断・Q&A",
+    href: "/liff/faq",
+    icon: HelpCircle,
+    colorClass: "bg-teal-500/15 text-teal-600 dark:text-teal-400",
+    category: "manual_rules" as const,
+  },
+  {
+    title: "関連リンク集",
+    subtitle: "連盟・大会速報・SNS",
+    href: "/liff/links",
+    icon: Link2,
+    colorClass: "bg-sky-500/15 text-sky-600 dark:text-sky-400",
+    category: "manual_rules" as const,
+  },
+
+  // ⚙️ 設定
+  {
+    title: "アプリ設定",
+    subtitle: "表示テーマ・立場・スコア入力設定",
+    href: "/liff/settings",
+    icon: Settings,
+    colorClass: "bg-slate-500/15 text-slate-700 dark:text-slate-300",
+    category: "settings" as const,
+    fullWidth: true,
+  },
+  {
+    title: "利用規約",
+    subtitle: "利用ガイドライン",
+    href: "/liff/terms",
+    icon: FileText,
+    colorClass: "bg-indigo-500/15 text-indigo-600 dark:text-indigo-400",
+    category: "settings" as const,
+  },
+  {
+    title: "プライバシーポリシー",
+    subtitle: "個人情報の取り扱い",
+    href: "/liff/privacy",
+    icon: ShieldCheck,
+    colorClass: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
+    category: "settings" as const,
+  },
+];
 
 export function LiffBottomNav() {
   const pathname = usePathname();
   const [isOtherMenuOpen, setIsOtherMenuOpen] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<MenuCategory>("all");
+
+  const filteredItems = useMemo(() => {
+    if (selectedCategory === "all") return MENU_ITEMS;
+    return MENU_ITEMS.filter((item) => item.category === selectedCategory);
+  }, [selectedCategory]);
 
   const isHome = pathname === "/liff";
   const isStats = pathname?.startsWith("/liff/stats");
@@ -171,204 +303,111 @@ export function LiffBottomNav() {
           />
 
           <div className="w-full max-w-lg bg-card rounded-t-3xl border-t border-x border-border shadow-2xl p-5 pb-36 space-y-4 relative z-10 animate-in slide-in-from-bottom duration-200 max-h-[85vh] overflow-y-auto">
-            <div className="flex items-center justify-between pb-3 border-b border-border/50 sticky top-0 bg-card z-10">
-              <div className="flex items-center gap-2">
-                <LayoutGrid className="w-4 h-4 text-primary" />
-                <h4 className="text-sm font-black text-foreground">すべてのメニュー</h4>
+            {/* 🏷️ スティッキーヘッダー & カテゴリタブ */}
+            <div className="sticky -top-5 -mt-5 pt-5 pb-3 bg-card/95 backdrop-blur-md z-10 border-b border-border/50 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <LayoutGrid className="w-4 h-4 text-primary" />
+                  <h4 className="text-sm font-black text-foreground">メニュー一覧</h4>
+                  <span className="text-[11px] font-bold text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
+                    {filteredItems.length}件
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsOtherMenuOpen(false)}
+                  className="p-1.5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground active:scale-90 transition-all"
+                >
+                  <X className="w-5 h-5" />
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => setIsOtherMenuOpen(false)}
-                className="p-1.5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground active:scale-90 transition-all"
-              >
-                <X className="w-5 h-5" />
-              </button>
+
+              {/* 🏷️ カテゴリ切り替えタブ（横スクロール対応ピルバー） */}
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 -mx-1 px-1">
+                {MENU_TABS.map((tab) => {
+                  const isSelected = selectedCategory === tab.id;
+                  const TabIcon = tab.icon;
+                  const count = tab.id === "all" 
+                    ? MENU_ITEMS.length 
+                    : MENU_ITEMS.filter((i) => i.category === tab.id).length;
+
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setSelectedCategory(tab.id)}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all active:scale-95 shrink-0 ${
+                        isSelected
+                          ? "bg-primary text-primary-foreground shadow-sm shadow-primary/25 font-black"
+                          : "bg-muted/70 hover:bg-muted text-muted-foreground hover:text-foreground border border-border/40"
+                      }`}
+                    >
+                      <TabIcon className="w-3.5 h-3.5 shrink-0" />
+                      <span>{tab.label}</span>
+                      <span
+                        className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                          isSelected 
+                            ? "bg-primary-foreground/20 text-primary-foreground" 
+                            : "bg-background/80 text-muted-foreground"
+                        }`}
+                      >
+                        {count}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
-            {/* 🌟 すべてのメニュー項目 (全8機能) */}
+            {/* 🌟 フィルタリングされたメニュー項目グリッド */}
             <div className="grid grid-cols-2 gap-2.5">
-              {/* ① 🏠 ホーム */}
-              <Link
-                href="/liff"
-                onClick={() => setIsOtherMenuOpen(false)}
-                className="flex items-center gap-3 p-3 rounded-2xl bg-white dark:bg-slate-900 hover:bg-slate-50 border border-slate-200/90 dark:border-slate-800 shadow-xs ring-1 ring-black/5 dark:ring-white/5 transition-all group active:scale-95"
-              >
-                <span className="w-9 h-9 rounded-xl bg-blue-500/15 text-blue-600 dark:text-blue-400 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform shadow-2xs">
-                  <Home className="w-5 h-5" />
-                </span>
-                <div className="min-w-0">
-                  <p className="text-xs font-black text-slate-900 dark:text-slate-100 truncate">ホーム</p>
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold truncate">トップページ</p>
-                </div>
-              </Link>
+              {filteredItems.map((item) => {
+                const ItemIcon = item.icon;
+                const isFullWidth = item.fullWidth;
 
-              {/* ② 🏆 チーム成績 */}
-              <Link
-                href="/liff/stats"
-                onClick={() => setIsOtherMenuOpen(false)}
-                className="flex items-center gap-3 p-3 rounded-2xl bg-white dark:bg-slate-900 hover:bg-slate-50 border border-slate-200/90 dark:border-slate-800 shadow-xs ring-1 ring-black/5 dark:ring-white/5 transition-all group active:scale-95"
-              >
-                <span className="w-9 h-9 rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform shadow-2xs">
-                  <Trophy className="w-5 h-5" />
-                </span>
-                <div className="min-w-0">
-                  <p className="text-xs font-black text-slate-900 dark:text-slate-100 truncate">チーム成績</p>
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold truncate">勝敗・打撃個人成績</p>
-                </div>
-              </Link>
-
-              {/* ③ 📹 試合情報 */}
-              <Link
-                href="/liff/matches"
-                onClick={() => setIsOtherMenuOpen(false)}
-                className="flex items-center gap-3 p-3 rounded-2xl bg-white dark:bg-slate-900 hover:bg-slate-50 border border-slate-200/90 dark:border-slate-800 shadow-xs ring-1 ring-black/5 dark:ring-white/5 transition-all group active:scale-95"
-              >
-                <span className="w-9 h-9 rounded-xl bg-red-500/15 text-red-600 dark:text-red-400 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform shadow-2xs">
-                  <Video className="w-5 h-5" />
-                </span>
-                <div className="min-w-0">
-                  <p className="text-xs font-black text-slate-900 dark:text-slate-100 truncate">試合情報</p>
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold truncate">試合動画 & スコア</p>
-                </div>
-              </Link>
-
-              {/* ④ 📍 球場 & 施設 */}
-              <Link
-                href="/liff/grounds"
-                onClick={() => setIsOtherMenuOpen(false)}
-                className="flex items-center gap-3 p-3 rounded-2xl bg-white dark:bg-slate-900 hover:bg-slate-50 border border-slate-200/90 dark:border-slate-800 shadow-xs ring-1 ring-black/5 dark:ring-white/5 transition-all group active:scale-95"
-              >
-                <span className="w-9 h-9 rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform shadow-2xs">
-                  <MapPin className="w-5 h-5" />
-                </span>
-                <div className="min-w-0">
-                  <p className="text-xs font-black text-slate-900 dark:text-slate-100 truncate">球場 & 施設</p>
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold truncate">アクセス・駐車場</p>
-                </div>
-              </Link>
-
-              {/* ⑤ 📅 予定 & 出欠 */}
-              <Link
-                href="/liff/schedule"
-                onClick={() => setIsOtherMenuOpen(false)}
-                className="flex items-center gap-3 p-3 rounded-2xl bg-white dark:bg-slate-900 hover:bg-slate-50 border border-slate-200/90 dark:border-slate-800 shadow-xs ring-1 ring-black/5 dark:ring-white/5 transition-all group active:scale-95"
-              >
-                <span className="w-9 h-9 rounded-xl bg-orange-500/15 text-orange-600 dark:text-orange-400 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform shadow-2xs">
-                  <Calendar className="w-5 h-5" />
-                </span>
-                <div className="min-w-0">
-                  <p className="text-xs font-black text-slate-900 dark:text-slate-100 truncate">予定 & 出欠</p>
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold truncate">当番・出欠確認</p>
-                </div>
-              </Link>
-
-              {/* ⑥ 🚗 配車表 */}
-              <Link
-                href="/liff/carpool"
-                onClick={() => setIsOtherMenuOpen(false)}
-                className="flex items-center gap-3 p-3 rounded-2xl bg-white dark:bg-slate-900 hover:bg-slate-50 border border-slate-200/90 dark:border-slate-800 shadow-xs ring-1 ring-black/5 dark:ring-white/5 transition-all group active:scale-95"
-              >
-                <span className="w-9 h-9 rounded-xl bg-blue-500/15 text-blue-600 dark:text-blue-400 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform shadow-2xs">
-                  <Car className="w-5 h-5" />
-                </span>
-                <div className="min-w-0">
-                  <p className="text-xs font-black text-slate-900 dark:text-slate-100 truncate">配車表</p>
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold truncate">乗車割り・集合時間</p>
-                </div>
-              </Link>
-
-              {/* ⑦ 📄 資料ダウンロード */}
-              <Link
-                href="/liff/documents"
-                onClick={() => setIsOtherMenuOpen(false)}
-                className="flex items-center gap-3 p-3 rounded-2xl bg-white dark:bg-slate-900 hover:bg-slate-50 border border-slate-200/90 dark:border-slate-800 shadow-xs ring-1 ring-black/5 dark:ring-white/5 transition-all group active:scale-95"
-              >
-                <span className="w-9 h-9 rounded-xl bg-purple-500/15 text-purple-600 dark:text-purple-400 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform shadow-2xs">
-                  <FileText className="w-5 h-5" />
-                </span>
-                <div className="min-w-0">
-                  <p className="text-xs font-black text-slate-900 dark:text-slate-100 truncate">資料ダウンロード</p>
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold truncate">規約・配車マニュアル</p>
-                </div>
-              </Link>
-
-              {/* ⑧ ❓ よくある質問 */}
-              <Link
-                href="/liff/faq"
-                onClick={() => setIsOtherMenuOpen(false)}
-                className="flex items-center gap-3 p-3 rounded-2xl bg-white dark:bg-slate-900 hover:bg-slate-50 border border-slate-200/90 dark:border-slate-800 shadow-xs ring-1 ring-black/5 dark:ring-white/5 transition-all group active:scale-95"
-              >
-                <span className="w-9 h-9 rounded-xl bg-teal-500/15 text-teal-600 dark:text-teal-400 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform shadow-2xs">
-                  <HelpCircle className="w-5 h-5" />
-                </span>
-                <div className="min-w-0">
-                  <p className="text-xs font-black text-slate-900 dark:text-slate-100 truncate">よくある質問</p>
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold truncate">雨天判断・Q&A</p>
-                </div>
-              </Link>
-
-              {/* ⑨ ⚠️ ルール & 注意事項 */}
-              <Link
-                href="/liff/rules"
-                onClick={() => setIsOtherMenuOpen(false)}
-                className="flex items-center gap-3 p-3 rounded-2xl bg-white dark:bg-slate-900 hover:bg-slate-50 border border-slate-200/90 dark:border-slate-800 shadow-xs ring-1 ring-black/5 dark:ring-white/5 transition-all group active:scale-95"
-              >
-                <span className="w-9 h-9 rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform shadow-2xs">
-                  <AlertTriangle className="w-5 h-5" />
-                </span>
-                <div className="min-w-0">
-                  <p className="text-xs font-black text-slate-900 dark:text-slate-100 truncate">ルール & 注意事項</p>
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold truncate">試合・配車・活動心得</p>
-                </div>
-              </Link>
-
-              {/* ⑩ 🔗 関連リンク集 */}
-              <Link
-                href="/liff/links"
-                onClick={() => setIsOtherMenuOpen(false)}
-                className="flex items-center gap-3 p-3 rounded-2xl bg-white dark:bg-slate-900 hover:bg-slate-50 border border-slate-200/90 dark:border-slate-800 shadow-xs ring-1 ring-black/5 dark:ring-white/5 transition-all group active:scale-95"
-              >
-                <span className="w-9 h-9 rounded-xl bg-sky-500/15 text-sky-600 dark:text-sky-400 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform shadow-2xs">
-                  <Link2 className="w-5 h-5" />
-                </span>
-                <div className="min-w-0">
-                  <p className="text-xs font-black text-slate-900 dark:text-slate-100 truncate">関連リンク集</p>
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold truncate">連盟・大会速報・SNS</p>
-                </div>
-              </Link>
-
-              {/* ⑪ ⚙️ アプリ設定 */}
-              <Link
-                href="/liff/settings"
-                onClick={() => setIsOtherMenuOpen(false)}
-                className="flex items-center gap-3 p-3 rounded-2xl bg-white dark:bg-slate-900 hover:bg-slate-50 border border-slate-200/90 dark:border-slate-800 shadow-xs ring-1 ring-black/5 dark:ring-white/5 transition-all group active:scale-95 col-span-2"
-              >
-                <span className="w-9 h-9 rounded-xl bg-slate-500/15 text-slate-700 dark:text-slate-300 flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform shadow-2xs">
-                  <Settings className="w-5 h-5" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs font-black text-slate-900 dark:text-slate-100 truncate">アプリ設定</p>
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold truncate">表示テーマ・立場・スコア入力設定</p>
-                </div>
-                <ChevronRight className="w-4 h-4 text-slate-400 mr-1" />
-              </Link>
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={() => setIsOtherMenuOpen(false)}
+                    className={`flex items-center gap-3 p-3 rounded-2xl bg-white dark:bg-slate-900 hover:bg-slate-50 border border-slate-200/90 dark:border-slate-800 shadow-xs ring-1 ring-black/5 dark:ring-white/5 transition-all group active:scale-95 ${
+                      isFullWidth ? "col-span-2" : ""
+                    }`}
+                  >
+                    <span className={`w-9 h-9 rounded-xl flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform shadow-2xs ${item.colorClass}`}>
+                      <ItemIcon className="w-5 h-5" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-black text-slate-900 dark:text-slate-100 truncate">
+                        {item.title}
+                      </p>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold truncate">
+                        {item.subtitle}
+                      </p>
+                    </div>
+                    {isFullWidth && (
+                      <ChevronRight className="w-4 h-4 text-slate-400 mr-1 shrink-0" />
+                    )}
+                  </Link>
+                );
+              })}
             </div>
 
-            {/* 📜 法務・規約リンク（アイコン付きゆったりタッチできるボタン形式） */}
-            <div className="pt-4 border-t border-border/40 flex items-center justify-center gap-3">
+            {/* 📜 法務・規約リンク */}
+            <div className="pt-3 border-t border-border/40 flex items-center justify-center gap-3">
               <Link
                 href="/liff/terms"
                 onClick={() => setIsOtherMenuOpen(false)}
-                className="py-2 px-3.5 rounded-full bg-muted/60 hover:bg-muted active:scale-95 border border-border/60 text-xs font-black text-muted-foreground hover:text-foreground transition-all flex items-center gap-1.5"
+                className="py-1.5 px-3 rounded-full bg-muted/60 hover:bg-muted active:scale-95 border border-border/60 text-[11px] font-bold text-muted-foreground hover:text-foreground transition-all flex items-center gap-1.5"
               >
                 <FileText className="w-3.5 h-3.5 text-primary" />
-                <span>サービス利用規約</span>
+                <span>利用規約</span>
               </Link>
 
               <Link
                 href="/liff/privacy"
                 onClick={() => setIsOtherMenuOpen(false)}
-                className="py-2 px-3.5 rounded-full bg-muted/60 hover:bg-muted active:scale-95 border border-border/60 text-xs font-black text-muted-foreground hover:text-foreground transition-all flex items-center gap-1.5"
+                className="py-1.5 px-3 rounded-full bg-muted/60 hover:bg-muted active:scale-95 border border-border/60 text-[11px] font-bold text-muted-foreground hover:text-foreground transition-all flex items-center gap-1.5"
               >
                 <ShieldCheck className="w-3.5 h-3.5 text-primary" />
                 <span>プライバシーポリシー</span>
