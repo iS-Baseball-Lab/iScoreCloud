@@ -724,8 +724,11 @@ export default function LiffRulesPage() {
                             </div>
                           </div>
 
-                          {/* 📄 PDF インラインプレビュー枠 (Google Docs Viewerでスマホ・LINEでも高精度描画) */}
-                          <div className="relative w-full h-80 sm:h-96 rounded-2xl overflow-hidden border border-border bg-muted/20 shadow-xs">
+                          {/* 📄 PDF インラインプレビュー枠 (A4縦横比 210:297 でジャストフィット) */}
+                          <div
+                            className="relative w-full aspect-[210/297] rounded-2xl overflow-hidden border border-border bg-muted/20 shadow-xs"
+                            style={{ aspectRatio: "210 / 297" }}
+                          >
                             <iframe
                               src={getPdfViewerUrl(rule.pdfUrl)}
                               title={rule.pdfName || "添付PDF資料"}
@@ -849,12 +852,17 @@ export default function LiffRulesPage() {
               </div>
             </div>
 
-            <div className="flex-1 bg-muted/20 relative w-full h-full">
-              <iframe
-                src={getPdfViewerUrl(previewPdfModal.url)}
-                title={previewPdfModal.name}
-                className="w-full h-full border-none"
-              />
+            <div className="flex-1 bg-muted/20 relative w-full h-full flex items-center justify-center p-1 sm:p-4 overflow-hidden">
+              <div
+                className="w-full h-full max-h-full aspect-[210/297] rounded-2xl overflow-hidden shadow-lg border border-border bg-card mx-auto"
+                style={{ aspectRatio: "210 / 297" }}
+              >
+                <iframe
+                  src={getPdfViewerUrl(previewPdfModal.url)}
+                  title={previewPdfModal.name}
+                  className="w-full h-full border-none"
+                />
+              </div>
             </div>
           </div>
         </div>,
