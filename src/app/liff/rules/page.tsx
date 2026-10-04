@@ -33,6 +33,7 @@ import {
   Upload,
   ExternalLink,
   CheckCircle2,
+  Eye,
 } from "lucide-react";
 
 interface RuleItem {
@@ -59,6 +60,7 @@ export default function LiffRulesPage() {
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [openIds, setOpenIds] = useState<string[]>([]);
   const [previewImageModalUrl, setPreviewImageModalUrl] = useState<string | null>(null);
+  const [previewPdfModal, setPreviewPdfModal] = useState<{ url: string; name: string } | null>(null);
 
   // 新規登録モーダル用ステート
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -628,71 +630,99 @@ export default function LiffRulesPage() {
                         {rule.content}
                       </p>
 
-                      {/* 📷 添付画像プレビュー表示 */}
+                      {/* 📷 添付画像表示 */}
                       {rule.imageUrl && (
                         <div className="space-y-1.5 pt-1">
                           <div className="flex items-center justify-between text-[11px] font-bold text-muted-foreground">
-                            <span className="flex items-center gap-1">
+                            <span className="flex items-center gap-1 font-black text-foreground/80">
                               <ImageIcon className="w-3.5 h-3.5 text-blue-500" />
                               <span>参考画像・図解</span>
                             </span>
                             <button
                               type="button"
                               onClick={() => setPreviewImageModalUrl(rule.imageUrl || null)}
-                              className="text-primary hover:underline flex items-center gap-0.5 text-[10px] cursor-pointer"
+                              className="text-primary hover:underline flex items-center gap-1 text-[11px] font-black cursor-pointer"
                             >
+                              <Eye className="w-3.5 h-3.5" />
                               <span>タップで拡大</span>
-                              <ExternalLink className="w-3 h-3" />
                             </button>
                           </div>
                           <div
                             onClick={() => setPreviewImageModalUrl(rule.imageUrl || null)}
-                            className="relative overflow-hidden rounded-2xl border border-border bg-black/5 dark:bg-white/5 cursor-pointer group max-h-60 flex items-center justify-center"
+                            className="relative overflow-hidden rounded-2xl border border-border bg-black/5 dark:bg-white/5 cursor-pointer group flex items-center justify-center p-1"
                           >
                             <img
                               src={rule.imageUrl}
                               alt={rule.title}
-                              className="w-full h-auto object-cover max-h-60 group-hover:scale-[1.02] transition-transform duration-200"
+                              className="w-full h-auto object-contain max-h-80 sm:max-h-96 rounded-xl group-hover:scale-[1.01] transition-transform duration-200"
                               loading="lazy"
                             />
                           </div>
                         </div>
                       )}
 
-                      {/* 📄 添付PDF資料 */}
+                      {/* 📄 添付PDF資料（インライン表示＆拡大・ダウンロード） */}
                       {rule.pdfUrl && (
-                        <div className="space-y-1.5 pt-1">
+                        <div className="space-y-2 pt-1">
                           <div className="flex items-center justify-between text-[11px] font-bold text-muted-foreground">
-                            <span className="flex items-center gap-1">
-                              <FileText className="w-3.5 h-3.5 text-rose-500" />
-                              <span>添付PDF資料</span>
+                            <span className="flex items-center gap-1.5 font-black text-foreground/80 min-w-0">
+                              <FileText className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                              <span className="truncate">{rule.pdfName || "添付PDF資料"}</span>
                             </span>
-                            <span className="text-[10px] text-muted-foreground">タップで閲覧</span>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setPreviewPdfModal({
+                                    url: rule.pdfUrl!,
+                                    name: rule.pdfName || "添付PDF資料.pdf",
+                                  })
+                                }
+                                className="text-primary hover:underline flex items-center gap-1 text-[11px] font-black cursor-pointer"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                                <span>全画面で見る</span>
+                              </button>
+                              <a
+                                href={rule.pdfUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-muted-foreground hover:text-foreground flex items-center gap-1 text-[11px] font-bold"
+                              >
+                                <ExternalLink className="w-3 h-3" />
+                                <span>別タブ</span>
+                              </a>
+                            </div>
                           </div>
-                          <a
-                            href={rule.pdfUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center justify-between p-3 rounded-2xl border border-border bg-card hover:bg-muted/40 transition-colors group cursor-pointer"
-                          >
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              <div className="w-9 h-9 rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
-                                <FileText className="w-5 h-5" />
-                              </div>
-                              <div className="min-w-0">
-                                <p className="text-xs font-black text-foreground truncate group-hover:text-primary transition-colors">
-                                  {rule.pdfName || "添付PDF資料.pdf"}
-                                </p>
-                                <p className="text-[10px] text-muted-foreground font-bold">
-                                  別タブでPDFを開く・ダウンロード
-                                </p>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-1 text-xs font-black text-primary px-2.5 py-1.5 rounded-lg bg-primary/10 shrink-0">
-                              <span>開く</span>
-                              <ExternalLink className="w-3.5 h-3.5" />
-                            </div>
-                          </a>
+
+                          {/* 📄 PDF インラインプレビュー枠 */}
+                          <div className="relative w-full h-80 sm:h-96 rounded-2xl overflow-hidden border border-border bg-card shadow-xs">
+                            <iframe
+                              src={rule.pdfUrl}
+                              title={rule.pdfName || "添付PDF資料"}
+                              className="w-full h-full border-none"
+                            />
+                          </div>
+
+                          {/* 補助ボタンバー */}
+                          <div className="flex items-center justify-between px-1">
+                            <span className="text-[10px] text-muted-foreground font-bold">
+                              💡 上記枠内でPDFをスクロール・閲覧できます
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setPreviewPdfModal({
+                                  url: rule.pdfUrl!,
+                                  name: rule.pdfName || "添付PDF資料.pdf",
+                                })
+                              }
+                              className="text-[10px] font-black text-primary hover:underline flex items-center gap-0.5 cursor-pointer"
+                            >
+                              <span>大きく表示する</span>
+                              <ExternalLink className="w-2.5 h-2.5" />
+                            </button>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -725,6 +755,61 @@ export default function LiffRulesPage() {
               alt="拡大画像"
               className="max-h-[85vh] max-w-full rounded-2xl object-contain shadow-2xl border border-white/20"
             />
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+      {/* 📄 PDF全画面閲覧モーダル */}
+      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+      {mounted && previewPdfModal && createPortal(
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/85 backdrop-blur-sm animate-in fade-in duration-200">
+          <div
+            className="absolute inset-0"
+            onClick={() => setPreviewPdfModal(null)}
+          />
+          <div className="relative w-full max-w-4xl h-[92vh] bg-card rounded-3xl border border-border shadow-2xl overflow-hidden flex flex-col z-10 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between p-3.5 sm:p-4 border-b border-border bg-card/95">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="w-8 h-8 rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+                  <FileText className="w-4 h-4" />
+                </span>
+                <div className="min-w-0">
+                  <h3 className="text-xs sm:text-sm font-black text-foreground truncate">
+                    {previewPdfModal.name}
+                  </h3>
+                  <p className="text-[10px] text-muted-foreground font-bold">PDFプレビュー表示</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <a
+                  href={previewPdfModal.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-2.5 py-1.5 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 text-xs font-black flex items-center gap-1 transition-colors"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">ブラウザで開く</span>
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setPreviewPdfModal(null)}
+                  className="p-1.5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 bg-muted/20 relative w-full h-full">
+              <iframe
+                src={previewPdfModal.url}
+                title={previewPdfModal.name}
+                className="w-full h-full border-none"
+              />
+            </div>
           </div>
         </div>,
         document.body
