@@ -35,10 +35,13 @@ export const venues = sqliteTable("venues", {
   id: text("id").primaryKey(),
   name: text("name").notNull(), // 例: "多摩川緑地野球場"
   shortName: text("short_name"), // 画面表示用の略称
+  category: text("category").default("stadium"), // 'home' | 'stadium' | 'school' | 'indoor'
   address: text("address"), // 住所
   mapUrl: text("map_url"), // Google Map等のURL（配車や集合時にメンバーへ共有）
   surfaceType: text("surface_type"), // 'dirt'(土), 'turf'(人工芝), 'grass'(天然芝) ※スパイク指定用
   dimensions: text("dimensions"), // 球場の広さ 例: "両翼90m センター110m"
+  parkingInfo: text("parking_info"), // 駐車場ルール・台数情報
+  spikeRule: text("spike_rule"), // スパイク規定（金具可/金具禁止/ポイント等）
   notes: text("notes"), // 例: "駐車場から遠い", "ファウルボール注意" などのローカルメモ
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(strftime('%s', 'now'))`),
 });

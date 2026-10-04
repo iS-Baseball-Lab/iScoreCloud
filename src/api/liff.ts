@@ -1505,6 +1505,7 @@ app.get("/grounds", async (c) => {
       });
     }
 
+    await ensureVenuesColumns(c.env.DB);
     const venuesList = await db.select().from(venues).all();
 
     if (venuesList.length === 0) {
@@ -1515,7 +1516,17 @@ app.get("/grounds", async (c) => {
       });
     }
 
-    const inferCategory = (name: string, shortName?: string | null, notes?: string | null): { category: string; categoryLabel: string } => {
+    const categoryLabels: Record<string, string> = {
+      home: "本拠地・ホーム",
+      stadium: "球場・公営",
+      school: "学校・地域",
+      indoor: "室内・練習場",
+    };
+
+    const inferCategory = (name: string, shortName?: string | null, notes?: string | null, cat?: string | null): { category: string; categoryLabel: string } => {
+      if (cat && categoryLabels[cat]) {
+        return { category: cat, categoryLabel: categoryLabels[cat] };
+      }
       const text = `${name} ${shortName || ""} ${notes || ""}`;
       if (text.includes("ホーム") || text.includes("本拠地") || text.includes("専用") || text.includes("拠点")) {
         return { category: "home", categoryLabel: "本拠地・ホーム" };
@@ -1530,7 +1541,7 @@ app.get("/grounds", async (c) => {
     };
 
     const formatted = venuesList.map((v) => {
-      const catInfo = inferCategory(v.name, v.shortName, v.notes);
+      const catInfo = inferCategory(v.name, v.shortName, v.notes, v.category);
       return {
         id: v.id,
         name: v.name,
@@ -1538,10 +1549,14 @@ app.get("/grounds", async (c) => {
         category: catInfo.category,
         categoryLabel: catInfo.categoryLabel,
         address: v.address || "住所未登録",
-        mapUrl: v.mapUrl || `https://maps.google.com/?q=${encodeURIComponent(v.name)}`,
-        surface: v.surfaceType === "artificial_turf" ? "人工芝" : v.surfaceType === "natural_turf" ? "天然芝" : "土 (クレー)",
-        spikeRule: "ポイントスパイクまたはトレーニングシューズ",
-        parkingInfo: "駐車場ルールは管理者にお問い合わせください",
+        mapUrl: v.mapUrl || `https://maps.google.com/?q=${encodeURIComponent(v.address || v.name)}`,
+        surface: v.surfaceType === "artificial_turf" || v.surfaceType === "turf"
+          ? "人工芝"
+          : v.surfaceType === "natural_turf" || v.surfaceType === "grass"
+          ? "天然芝"
+          : (v.surfaceType || "土 (クレー)"),
+        spikeRule: v.spikeRule || "ポイントスパイクまたはトレーニングシューズ",
+        parkingInfo: v.parkingInfo || "駐車場ルールは管理者にお問い合わせください",
         notes: v.notes || "",
       };
     });
@@ -1554,6 +1569,140 @@ app.get("/grounds", async (c) => {
   } catch (error: any) {
     console.error("Failed to load liff grounds:", error);
     return c.json({ success: true, isDemo: true, venues: DEMO_VENUES });
+  }
+});
+
+/**
+ * 🏟️ 球場・施設 テーブルカラムの安全な存在確認
+ */
+async function ensureVenuesColumns(d1: any) {
+  try {
+    await d1.prepare("ALTER TABLE venues ADD COLUMN category TEXT DEFAULT 'stadium'").run();
+  } catch {}
+  try {
+    await d1.prepare("ALTER TABLE venues ADD COLUMN parking_info TEXT").run();
+  } catch {}
+  try {
+    await d1.prepare("ALTER TABLE venues ADD COLUMN spike_rule TEXT").run();
+  } catch {}
+}
+
+/**
+ * ➕ 球場・施設 新規登録API
+ */
+app.post("/grounds", async (c) => {
+  await ensureVenuesColumns(c.env.DB);
+  const db = drizzle(c.env.DB);
+
+  try {
+    const body = await c.req.json<{
+      name: string;
+      shortName?: string;
+      category?: string;
+      address?: string;
+      mapUrl?: string;
+      surface?: string;
+      parkingInfo?: string;
+      spikeRule?: string;
+      notes?: string;
+      teamId?: string;
+    }>();
+
+    if (!body.name || !body.name.trim()) {
+      return c.json({ success: false, error: "球場・施設名は必須です" }, 400);
+    }
+
+    if (body.teamId === "demo-team") {
+      return c.json({ success: true, id: `demo-venue-${Date.now()}`, message: "施設を登録しました（デモ）" });
+    }
+
+    const newId = crypto.randomUUID();
+    const mapUrl = body.mapUrl?.trim() || `https://maps.google.com/?q=${encodeURIComponent(body.address || body.name)}`;
+
+    await db.insert(venues).values({
+      id: newId,
+      name: body.name.trim(),
+      shortName: body.shortName?.trim() || body.name.trim(),
+      category: body.category || "stadium",
+      address: body.address?.trim() || null,
+      mapUrl: mapUrl,
+      surfaceType: body.surface?.trim() || "土 (クレー)",
+      parkingInfo: body.parkingInfo?.trim() || null,
+      spikeRule: body.spikeRule?.trim() || null,
+      notes: body.notes?.trim() || null,
+    });
+
+    return c.json({ success: true, id: newId });
+  } catch (error: any) {
+    console.error("Failed to create ground:", error);
+    return c.json({ success: false, error: error.message || "球場・施設の登録に失敗しました" }, 500);
+  }
+});
+
+/**
+ * ✏️ 球場・施設 更新API
+ */
+app.patch("/grounds/:id", async (c) => {
+  await ensureVenuesColumns(c.env.DB);
+  const db = drizzle(c.env.DB);
+  const id = c.req.param("id");
+
+  try {
+    const body = await c.req.json<{
+      name?: string;
+      shortName?: string;
+      category?: string;
+      address?: string;
+      mapUrl?: string;
+      surface?: string;
+      parkingInfo?: string;
+      spikeRule?: string;
+      notes?: string;
+    }>();
+
+    if (id.startsWith("venue-") || id.startsWith("demo-")) {
+      return c.json({ success: true, message: "施設情報を更新しました（デモ）" });
+    }
+
+    const updateData: any = {};
+    if (body.name !== undefined) updateData.name = body.name.trim();
+    if (body.shortName !== undefined) updateData.shortName = body.shortName ? body.shortName.trim() : null;
+    if (body.category !== undefined) updateData.category = body.category;
+    if (body.address !== undefined) updateData.address = body.address ? body.address.trim() : null;
+    if (body.mapUrl !== undefined) {
+      updateData.mapUrl = body.mapUrl ? body.mapUrl.trim() : `https://maps.google.com/?q=${encodeURIComponent(body.address || body.name || "")}`;
+    }
+    if (body.surface !== undefined) updateData.surfaceType = body.surface ? body.surface.trim() : null;
+    if (body.parkingInfo !== undefined) updateData.parkingInfo = body.parkingInfo ? body.parkingInfo.trim() : null;
+    if (body.spikeRule !== undefined) updateData.spikeRule = body.spikeRule ? body.spikeRule.trim() : null;
+    if (body.notes !== undefined) updateData.notes = body.notes ? body.notes.trim() : null;
+
+    await db.update(venues).set(updateData).where(eq(venues.id, id));
+
+    return c.json({ success: true });
+  } catch (error: any) {
+    console.error("Failed to update ground:", error);
+    return c.json({ success: false, error: error.message || "球場・施設の更新に失敗しました" }, 500);
+  }
+});
+
+/**
+ * 🗑️ 球場・施設 削除API
+ */
+app.delete("/grounds/:id", async (c) => {
+  const db = drizzle(c.env.DB);
+  const id = c.req.param("id");
+
+  try {
+    if (id.startsWith("venue-") || id.startsWith("demo-")) {
+      return c.json({ success: true, message: "施設を削除しました（デモ）" });
+    }
+
+    await db.delete(venues).where(eq(venues.id, id));
+    return c.json({ success: true });
+  } catch (error: any) {
+    console.error("Failed to delete ground:", error);
+    return c.json({ success: false, error: error.message || "球場・施設の削除に失敗しました" }, 500);
   }
 });
 
