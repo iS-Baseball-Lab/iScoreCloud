@@ -600,43 +600,64 @@ export default function AttendanceMatrixBoardPage() {
           <div className="relative bg-card rounded-2xl border border-border shadow-xs overflow-hidden">
             <div className="overflow-x-auto max-h-[75vh] relative no-scrollbar">
               <table className="w-full text-left border-collapse select-none">
-                {/* 📌 ヘッダー行 (メンバー一覧) */}
+                {/* 📌 ヘッダー行 (メンバー一覧 & 出欠記号別集計ヘッダー) */}
                 <thead className="sticky top-0 z-30 bg-muted/95 backdrop-blur-md border-b border-border shadow-2xs">
                   <tr>
-                    {/* 左上固定セル: イベント情報列 */}
-                    <th className="sticky left-0 z-40 bg-muted/95 min-w-[200px] sm:min-w-[240px] max-w-[260px] p-2.5 text-xs font-black text-foreground border-r border-border shadow-xs">
+                    {/* 左上固定セル: イベント情報列 (コンパクト) */}
+                    <th className="sticky left-0 z-40 bg-muted/95 min-w-[125px] sm:min-w-[150px] max-w-[160px] p-1.5 text-xs font-black text-foreground border-r border-border shadow-xs">
                       <div className="flex items-center justify-between">
                         <span>日付 / 班 / イベント</span>
                         <span className="text-[10px] text-muted-foreground font-bold">
-                          {events.length}日程
+                          {events.length}日
                         </span>
                       </div>
                     </th>
 
-                    {/* 集計固定列 */}
-                    <th className="min-w-[130px] p-2 text-center text-xs font-black text-foreground border-r border-border bg-muted/80">
-                      出席集計 (名)
+                    {/* 📊 出欠集計列 (各記号ごとの専用タイトル列) */}
+                    <th className="w-8 min-w-[32px] p-1 text-center text-[11px] font-black text-foreground border-r border-border/70 bg-muted/80" title="出席合計 (◎+○+▲+△)">
+                      計
+                    </th>
+                    <th className="w-8 min-w-[30px] p-1 text-center border-r border-border/70 bg-red-500/10 text-red-600 dark:text-red-400 font-black text-xs" title="◎ 出席（当番）">
+                      ◎
+                    </th>
+                    <th className="w-8 min-w-[30px] p-1 text-center border-r border-border/70 bg-blue-500/10 text-blue-600 dark:text-blue-400 font-black text-xs" title="○ 出席（ヘルプ）">
+                      ○
+                    </th>
+                    <th className="w-8 min-w-[30px] p-1 text-center border-r border-border/70 bg-amber-500/10 text-amber-600 dark:text-amber-400 font-black text-xs" title="▲ 出席（設営・撤収のみ）">
+                      ▲
+                    </th>
+                    <th className="w-8 min-w-[30px] p-1 text-center border-r border-border/70 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-black text-xs" title="△ 出席（試合のみ）">
+                      △
+                    </th>
+                    <th className="w-8 min-w-[30px] p-1 text-center border-r border-border bg-slate-500/10 text-slate-500 dark:text-slate-400 font-black text-xs" title="× 欠席">
+                      ×
                     </th>
 
-                    {/* メンバー列 */}
+                    {/* メンバー列 (超コンパクト) */}
                     {currentMembers.map((person) => {
                       const isMe = person.id === myInfo.memberId || myInfo.playerIds.includes(person.id);
                       return (
                         <th
                           key={person.id}
-                          className={`min-w-[76px] max-w-[90px] p-2 text-center border-r border-border/60 transition-colors ${
+                          className={`w-11 min-w-[44px] max-w-[50px] p-1 text-center border-r border-border/50 transition-colors ${
                             isMe ? "bg-primary/10" : ""
                           }`}
                         >
-                          <div className="flex flex-col items-center justify-center">
-                            <span className={`text-[11px] font-black truncate max-w-[80px] ${isMe ? "text-primary font-black" : "text-foreground"}`}>
-                              {person.name}
-                            </span>
-                            {person.subText && (
-                              <span className="text-[9px] text-muted-foreground font-bold truncate max-w-[80px]">
-                                {person.subText}
+                          <div className="flex flex-col items-center justify-center leading-tight">
+                            {person.uniformNumber ? (
+                              <span className="text-[9px] font-black text-primary px-1 rounded bg-primary/10">
+                                #{person.uniformNumber}
                               </span>
-                            )}
+                            ) : person.groupType === "mother" ? (
+                              <span className="text-[9px] font-black text-rose-600 dark:text-rose-400">母</span>
+                            ) : person.groupType === "father" ? (
+                              <span className="text-[9px] font-black text-blue-600 dark:text-blue-400">父</span>
+                            ) : person.groupType === "staff" ? (
+                              <span className="text-[9px] font-black text-purple-600 dark:text-purple-400">指導</span>
+                            ) : null}
+                            <span className={`text-[10px] font-black truncate max-w-[42px] ${isMe ? "text-primary" : "text-foreground"}`}>
+                              {person.name.length > 3 ? person.name.slice(0, 3) : person.name}
+                            </span>
                           </div>
                         </th>
                       );
@@ -653,68 +674,86 @@ export default function AttendanceMatrixBoardPage() {
 
                     return (
                       <tr key={ev.id} className="hover:bg-muted/30 transition-colors group">
-                        {/* ① 左側固定セル: 日付・班・イベント */}
-                        <td className="sticky left-0 z-20 bg-card group-hover:bg-card/95 border-r border-border p-2.5 shadow-xs">
-                          <div className="space-y-1">
-                            {/* 日付 ＆ 班 */}
-                            <div className="flex items-center gap-1.5">
+                        {/* ① 左側固定セル: 日付・班・イベント (コンパクト表示) */}
+                        <td className="sticky left-0 z-20 bg-card group-hover:bg-card/95 border-r border-border p-1.5 shadow-xs">
+                          <div className="flex items-center justify-between gap-1 leading-tight">
+                            <div className="flex items-center gap-1">
                               <span
-                                className={`text-xs font-black px-1.5 py-0.5 rounded-md ${
+                                className={`text-[11px] font-black px-1 rounded ${
                                   isSunday
-                                    ? "bg-red-500/15 text-red-600 dark:text-red-400 font-black"
+                                    ? "bg-red-500/15 text-red-600 dark:text-red-400"
                                     : isSaturday
-                                    ? "bg-blue-500/15 text-blue-600 dark:text-blue-400 font-black"
-                                    : "bg-muted text-foreground font-bold"
+                                    ? "bg-blue-500/15 text-blue-600 dark:text-blue-400"
+                                    : "bg-muted text-foreground"
                                 }`}
                               >
-                                {ev.date} ({ev.dayOfWeek})
+                                {ev.date}({ev.dayOfWeek})
                               </span>
-
                               {ev.dutyGroup && ev.dutyGroup !== "なし" && (
-                                <span className="text-[10px] font-black px-1.5 py-0.5 rounded-md bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30">
+                                <span className="text-[9px] font-black px-1 rounded bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30">
                                   {ev.dutyGroup}
                                 </span>
                               )}
-
-                              {/* LINE集計コピーボタン */}
-                              <button
-                                type="button"
-                                onClick={() => handleCopyLineSummary(ev)}
-                                title="LINE連絡用に集計コピー"
-                                className="ml-auto p-1 text-muted-foreground hover:text-primary rounded-md hover:bg-muted active:scale-90 transition-all cursor-pointer"
-                              >
-                                <ClipboardCopy className="w-3.5 h-3.5" />
-                              </button>
                             </div>
 
-                            {/* イベント名 & 場所 */}
-                            <p className="text-[11px] font-black text-foreground truncate max-w-[210px]" title={ev.title}>
-                              {ev.title}
-                            </p>
-                            <p className="text-[10px] text-muted-foreground font-bold truncate max-w-[210px]">
-                              📍 {ev.location}
-                            </p>
+                            {/* LINE集計コピーボタン */}
+                            <button
+                              type="button"
+                              onClick={() => handleCopyLineSummary(ev)}
+                              title="LINE連絡用に集計コピー"
+                              className="p-0.5 text-muted-foreground hover:text-primary rounded hover:bg-muted active:scale-90 transition-all cursor-pointer shrink-0"
+                            >
+                              <ClipboardCopy className="w-3 h-3" />
+                            </button>
                           </div>
+
+                          <p className="text-[10px] font-black text-foreground truncate max-w-[145px] mt-0.5" title={ev.title}>
+                            {ev.title}
+                          </p>
                         </td>
 
-                        {/* ② 行単位の出欠集計列 */}
-                        <td className="p-2 border-r border-border text-center bg-muted/20">
-                          <div className="flex flex-col items-center justify-center gap-1">
-                            <div className="flex items-center gap-1 text-[11px] font-black">
-                              <span className="text-muted-foreground">出席計:</span>
-                              <span className="text-primary font-black text-xs">{summary.totalPresent}名</span>
-                            </div>
-                            <div className="flex items-center gap-1 text-[9px] font-bold text-muted-foreground">
-                              <span title="当番" className="text-red-600 dark:text-red-400">◎{summary.duty}</span>
-                              <span title="ヘルプ" className="text-blue-600 dark:text-blue-400">○{summary.help}</span>
-                              <span title="設営撤収" className="text-amber-600 dark:text-amber-400">▲{summary.setup}</span>
-                              <span title="試合のみ" className="text-emerald-600 dark:text-emerald-400">△{summary.game}</span>
-                              <span title="欠席" className="text-slate-400">×{summary.absent}</span>
-                            </div>
-                          </div>
+                        {/* ② 出欠集計 各記号ごとの集計値セル */}
+                        {/* 計 */}
+                        <td className="p-1 text-center border-r border-border/70 bg-muted/20 font-black text-[11px] text-primary">
+                          {summary.totalPresent}
                         </td>
 
-                        {/* ③ メンバー別 出欠セル */}
+                        {/* ◎ 当番 */}
+                        <td className={`p-1 text-center border-r border-border/70 font-black text-[11px] ${
+                          summary.duty > 0 ? "text-red-600 dark:text-red-400 bg-red-500/5 font-black" : "text-muted-foreground/40"
+                        }`}>
+                          {summary.duty}
+                        </td>
+
+                        {/* ○ ヘルプ */}
+                        <td className={`p-1 text-center border-r border-border/70 font-black text-[11px] ${
+                          summary.help > 0 ? "text-blue-600 dark:text-blue-400 bg-blue-500/5 font-black" : "text-muted-foreground/40"
+                        }`}>
+                          {summary.help}
+                        </td>
+
+                        {/* ▲ 設営撤収 */}
+                        <td className={`p-1 text-center border-r border-border/70 font-black text-[11px] ${
+                          summary.setup > 0 ? "text-amber-600 dark:text-amber-400 bg-amber-500/5 font-black" : "text-muted-foreground/40"
+                        }`}>
+                          {summary.setup}
+                        </td>
+
+                        {/* △ 試合のみ */}
+                        <td className={`p-1 text-center border-r border-border/70 font-black text-[11px] ${
+                          summary.game > 0 ? "text-emerald-600 dark:text-emerald-400 bg-emerald-500/5 font-black" : "text-muted-foreground/40"
+                        }`}>
+                          {summary.game}
+                        </td>
+
+                        {/* × 欠席 */}
+                        <td className={`p-1 text-center border-r border-border font-bold text-[11px] ${
+                          summary.absent > 0 ? "text-slate-500 dark:text-slate-400 bg-slate-500/5" : "text-muted-foreground/40"
+                        }`}>
+                          {summary.absent}
+                        </td>
+
+                        {/* ③ メンバー別 出欠セル (超コンパクト) */}
                         {currentMembers.map((person) => {
                           const att = matrix[ev.id]?.[person.id] || { status: "pending", comment: "" };
                           const statusConfig = ATTENDANCE_STATUSES[att.status as AttendanceMarkType] || ATTENDANCE_STATUSES.pending;
@@ -725,31 +764,27 @@ export default function AttendanceMatrixBoardPage() {
                             <td
                               key={person.id}
                               onClick={() => handleCellClick(ev, person)}
-                              className={`p-1.5 text-center border-r border-border/60 transition-all ${
+                              className={`p-1 text-center border-r border-border/50 transition-all ${
                                 isEditable
-                                  ? "cursor-pointer hover:bg-primary/5 active:scale-95"
+                                  ? "cursor-pointer hover:bg-primary/10 active:scale-90"
                                   : "opacity-90"
                               } ${isMe ? "bg-primary/5" : ""}`}
                             >
-                              <div className="flex flex-col items-center justify-center gap-0.5">
+                              <div className="relative inline-flex items-center justify-center">
                                 <span
-                                  className={`w-7 h-7 rounded-xl flex items-center justify-center text-xs transition-transform ${statusConfig.badgeClass} ${
+                                  className={`w-6 h-6 rounded-md flex items-center justify-center text-xs font-black transition-transform ${statusConfig.badgeClass} ${
                                     isEditable ? "group-hover:scale-105" : ""
                                   }`}
                                 >
                                   {statusConfig.mark}
                                 </span>
 
-                                {/* コメント/メモのプレビュー表示 */}
-                                {att.comment ? (
+                                {/* コメント/メモがある場合のドットインジケータ */}
+                                {att.comment && (
                                   <span
-                                    className="text-[9px] text-muted-foreground font-bold truncate max-w-[65px] px-1 rounded bg-muted/60"
+                                    className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-amber-400 border border-card ring-1 ring-black/20"
                                     title={att.comment}
-                                  >
-                                    💬 {att.comment}
-                                  </span>
-                                ) : (
-                                  <span className="text-[9px] opacity-0">－</span>
+                                  />
                                 )}
                               </div>
                             </td>
