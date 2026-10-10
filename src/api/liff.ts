@@ -930,6 +930,485 @@ app.get("/schedule", async (c) => {
 });
 
 /**
+ * 📊 出欠マトリクス・一覧表取得API
+ * GET /api/liff/attendance-matrix?teamId=xxx&userId=xxx&userName=xxx&month=YYYY-MM
+ */
+app.get("/attendance-matrix", async (c) => {
+  await ensureEventColumns(c.env.DB);
+  const db = drizzle(c.env.DB);
+  const teamId = c.req.query("teamId");
+  const userId = c.req.query("userId");
+  const userName = c.req.query("userName");
+  const monthParam = c.req.query("month"); // e.g. "2026-10"
+
+  try {
+    if (!teamId || teamId === "demo-team") {
+      return c.json({
+        success: true,
+        isDemo: true,
+        myInfo: {
+          memberId: "demo-mother-1",
+          playerIds: ["demo-p-1"],
+          isManager: true,
+          name: "山田 (母)",
+        },
+        events: [
+          {
+            id: "demo-ev-1",
+            title: "秋季大会 2回戦 vs ライオンズ",
+            dateStr: "2026-10-11",
+            date: "10/11",
+            dayOfWeek: "日",
+            dutyGroup: "1班",
+            location: "多摩川緑地第1",
+            eventType: "match",
+            statusSummary: { duty: 2, help: 5, setup: 2, game: 3, absent: 1, totalPresent: 12 },
+          },
+          {
+            id: "demo-ev-2",
+            title: "午前合同練習 ＆ 午後練習試合",
+            dateStr: "2026-10-17",
+            date: "10/17",
+            dayOfWeek: "土",
+            dutyGroup: "2班",
+            location: "桜本小グラウンド",
+            eventType: "practice",
+            statusSummary: { duty: 2, help: 6, setup: 1, game: 2, absent: 2, totalPresent: 11 },
+          },
+          {
+            id: "demo-ev-3",
+            title: "支部大会 準決勝",
+            dateStr: "2026-10-18",
+            date: "10/18",
+            dayOfWeek: "日",
+            dutyGroup: "3班",
+            location: "等々力球場",
+            eventType: "match",
+            statusSummary: { duty: 2, help: 7, setup: 2, game: 1, absent: 1, totalPresent: 12 },
+          },
+          {
+            id: "demo-ev-4",
+            title: "全日 基礎強化練習",
+            dateStr: "2026-10-24",
+            date: "10/24",
+            dayOfWeek: "土",
+            dutyGroup: "4班",
+            location: "桜本小グラウンド",
+            eventType: "practice",
+            statusSummary: { duty: 2, help: 4, setup: 3, game: 1, absent: 3, totalPresent: 10 },
+          },
+          {
+            id: "demo-ev-5",
+            title: "練習試合 vs ブルースカイ",
+            dateStr: "2026-10-25",
+            date: "10/25",
+            dayOfWeek: "日",
+            dutyGroup: "1班",
+            location: "市民第2球場",
+            eventType: "match",
+            statusSummary: { duty: 2, help: 6, setup: 1, game: 2, absent: 2, totalPresent: 11 },
+          },
+        ],
+        groups: {
+          players: [
+            { id: "demo-p-1", name: "山田 翔太", uniformNumber: "1", subText: "#1", groupType: "player" },
+            { id: "demo-p-2", name: "佐藤 陸", uniformNumber: "2", subText: "#2", groupType: "player" },
+            { id: "demo-p-3", name: "鈴木 大地", uniformNumber: "3", subText: "#3", groupType: "player" },
+            { id: "demo-p-4", name: "高橋 蓮", uniformNumber: "5", subText: "#5", groupType: "player" },
+            { id: "demo-p-5", name: "田中 颯真", uniformNumber: "7", subText: "#7", groupType: "player" },
+            { id: "demo-p-6", name: "渡辺 湊", uniformNumber: "10", subText: "#10", groupType: "player" },
+          ],
+          mothers: [
+            { id: "demo-mother-1", name: "山田 (母)", subText: "翔太の母 (1班)", groupType: "mother" },
+            { id: "demo-mother-2", name: "佐藤 (母)", subText: "陸の母 (2班)", groupType: "mother" },
+            { id: "demo-mother-3", name: "鈴木 (母)", subText: "大地の母 (3班)", groupType: "mother" },
+            { id: "demo-mother-4", name: "高橋 (母)", subText: "蓮の母 (4班)", groupType: "mother" },
+            { id: "demo-mother-5", name: "田中 (母)", subText: "颯真の母 (1班)", groupType: "mother" },
+          ],
+          fathers: [
+            { id: "demo-father-1", name: "山田 (父)", subText: "翔太の父 (審判)", groupType: "father" },
+            { id: "demo-father-2", name: "佐藤 (父)", subText: "陸の父 (車出し)", groupType: "father" },
+            { id: "demo-father-3", name: "鈴木 (父)", subText: "大地の父 (設営)", groupType: "father" },
+            { id: "demo-father-4", name: "田中 (父)", subText: "颯真の父 (審判)", groupType: "father" },
+          ],
+          staff: [
+            { id: "demo-staff-1", name: "中村 監督", subText: "監督", groupType: "staff" },
+            { id: "demo-staff-2", name: "小林 コーチ", subText: "ヘッドコーチ", groupType: "staff" },
+            { id: "demo-staff-3", name: "伊藤 コーチ", subText: "守備走塁コーチ", groupType: "staff" },
+          ],
+        },
+        matrix: {
+          "demo-ev-1": {
+            "demo-p-1": { status: "game", comment: "" },
+            "demo-p-2": { status: "game", comment: "" },
+            "demo-p-3": { status: "game", comment: "" },
+            "demo-p-4": { status: "absent", comment: "法事のため" },
+            "demo-p-5": { status: "game", comment: "" },
+            "demo-p-6": { status: "game", comment: "" },
+            "demo-mother-1": { status: "duty", comment: "救急箱持参" },
+            "demo-mother-2": { status: "help", comment: "午前のみ可" },
+            "demo-mother-3": { status: "absent", comment: "" },
+            "demo-mother-4": { status: "help", comment: "" },
+            "demo-mother-5": { status: "duty", comment: "鍵当番" },
+            "demo-father-1": { status: "setup", comment: "朝のグラウンド設営" },
+            "demo-father-2": { status: "help", comment: "車出し配車3名可" },
+            "demo-father-3": { status: "absent", comment: "仕事" },
+            "demo-father-4": { status: "setup", comment: "撤収手伝い" },
+            "demo-staff-1": { status: "duty", comment: "" },
+            "demo-staff-2": { status: "duty", comment: "塁審対応可" },
+            "demo-staff-3": { status: "help", comment: "" },
+          },
+          "demo-ev-2": {
+            "demo-p-1": { status: "game", comment: "" },
+            "demo-p-2": { status: "game", comment: "" },
+            "demo-p-3": { status: "absent", comment: "学校行事" },
+            "demo-p-4": { status: "game", comment: "" },
+            "demo-p-5": { status: "game", comment: "" },
+            "demo-p-6": { status: "game", comment: "" },
+            "demo-mother-1": { status: "help", comment: "" },
+            "demo-mother-2": { status: "duty", comment: "当番" },
+            "demo-mother-3": { status: "help", comment: "" },
+            "demo-mother-4": { status: "help", comment: "" },
+            "demo-mother-5": { status: "absent", comment: "" },
+            "demo-father-1": { status: "help", comment: "" },
+            "demo-father-2": { status: "duty", comment: "配車当番" },
+            "demo-father-3": { status: "setup", comment: "ネット設営のみ" },
+            "demo-father-4": { status: "help", comment: "" },
+            "demo-staff-1": { status: "duty", comment: "" },
+            "demo-staff-2": { status: "help", comment: "" },
+            "demo-staff-3": { status: "duty", comment: "" },
+          },
+          "demo-ev-3": {
+            "demo-p-1": { status: "game", comment: "" },
+            "demo-p-2": { status: "game", comment: "" },
+            "demo-p-3": { status: "game", comment: "" },
+            "demo-p-4": { status: "game", comment: "" },
+            "demo-p-5": { status: "game", comment: "" },
+            "demo-p-6": { status: "game", comment: "" },
+            "demo-mother-1": { status: "help", comment: "" },
+            "demo-mother-2": { status: "help", comment: "" },
+            "demo-mother-3": { status: "duty", comment: "アナウンス担当" },
+            "demo-mother-4": { status: "duty", comment: "スコアブック" },
+            "demo-mother-5": { status: "help", comment: "" },
+            "demo-father-1": { status: "help", comment: "審判" },
+            "demo-father-2": { status: "setup", comment: "撤収のみ" },
+            "demo-father-3": { status: "help", comment: "配車4名" },
+            "demo-father-4": { status: "help", comment: "" },
+            "demo-staff-1": { status: "duty", comment: "" },
+            "demo-staff-2": { status: "duty", comment: "" },
+            "demo-staff-3": { status: "duty", comment: "" },
+          },
+        },
+      });
+    }
+
+    // 1. ログインユーザー特定
+    let currentMember: any = null;
+    if (userId) {
+      currentMember = await db
+        .select()
+        .from(teamMembers)
+        .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, userId)))
+        .get();
+    }
+    if (!currentMember && userName) {
+      const allMembers = await db.select().from(teamMembers).where(eq(teamMembers.teamId, teamId)).all();
+      currentMember = allMembers.find(m => m.name && (m.name.includes(userName) || userName.includes(m.name)));
+    }
+
+    const myMemberId = currentMember?.id || null;
+    const isManager = Boolean(
+      currentMember?.role === "manager" ||
+      currentMember?.role === "admin" ||
+      currentMember?.role === "coach" ||
+      currentMember?.role === "scorer"
+    );
+
+    // 2. 親子関係の取得
+    const relations = await db
+      .select({
+        parentId: parentChildRelations.parentId,
+        childId: parentChildRelations.childId,
+      })
+      .from(parentChildRelations)
+      .where(eq(parentChildRelations.teamId, teamId))
+      .all();
+
+    const myPlayerIds = myMemberId ? relations.filter(r => r.parentId === myMemberId).map(r => r.childId) : [];
+
+    // 3. 選手一覧取得
+    const allPlayers = await db
+      .select()
+      .from(players)
+      .where(eq(players.teamId, teamId))
+      .all();
+
+    const formattedPlayers = allPlayers
+      .map(p => ({
+        id: p.id,
+        name: p.name,
+        uniformNumber: p.uniformNumber || "",
+        subText: p.uniformNumber ? `#${p.uniformNumber}` : "",
+        groupType: "player" as const,
+      }))
+      .sort((a, b) => {
+        const numA = parseInt(a.uniformNumber.replace(/\D/g, "") || "999", 10);
+        const numB = parseInt(b.uniformNumber.replace(/\D/g, "") || "999", 10);
+        return numA - numB;
+      });
+
+    // 4. 大人のメンバー一覧取得 & 分類 (母, 父, 指導者)
+    const allTeamMembers = await db
+      .select()
+      .from(teamMembers)
+      .where(eq(teamMembers.teamId, teamId))
+      .all();
+
+    // 親ID -> 子供名リストのマッピング
+    const parentChildrenMap = new Map<string, string[]>();
+    for (const rel of relations) {
+      const player = allPlayers.find(p => p.id === rel.childId);
+      if (player && rel.parentId) {
+        const currentList = parentChildrenMap.get(rel.parentId) || [];
+        currentList.push(player.name);
+        parentChildrenMap.set(rel.parentId, currentList);
+      }
+    }
+
+    const mothersList: Array<any> = [];
+    const fathersList: Array<any> = [];
+    const staffList: Array<any> = [];
+
+    for (const m of allTeamMembers) {
+      const name = m.name || "";
+      const kids = parentChildrenMap.get(m.id) || [];
+      const kidsStr = kids.length > 0 ? `${kids.join("・")}の保護者` : "";
+
+      if (m.role === "manager" || m.role === "coach" || m.memberType === "staff" || name.includes("監督") || name.includes("コーチ")) {
+        const roleLabel = name.includes("監督") ? "監督" : name.includes("コーチ") ? "コーチ" : m.role === "manager" ? "管理者" : "スタッフ";
+        staffList.push({
+          id: m.id,
+          name: name,
+          subText: roleLabel,
+          groupType: "staff" as const,
+        });
+      } else if (name.includes("父") || name.includes("パパ") || name.includes("夫")) {
+        fathersList.push({
+          id: m.id,
+          name: name,
+          subText: kids.length > 0 ? `${kids.join("・")}の父` : "保護者(父)",
+          groupType: "father" as const,
+        });
+      } else {
+        // デフォルト母または保護者
+        mothersList.push({
+          id: m.id,
+          name: name,
+          subText: kids.length > 0 ? `${kids.join("・")}の母` : "保護者(母)",
+          groupType: "mother" as const,
+        });
+      }
+    }
+
+    // 5. イベント一覧取得
+    const allEvents = await db
+      .select()
+      .from(events)
+      .where(eq(events.teamId, teamId))
+      .orderBy(asc(events.startAt))
+      .all();
+
+    const wStr = ["日", "月", "火", "水", "木", "金", "土"];
+    const formattedEvents = allEvents.map(ev => {
+      const st = new Date(ev.startAt);
+      const y = st.getFullYear();
+      const m = String(st.getMonth() + 1).padStart(2, "0");
+      const d = String(st.getDate()).padStart(2, "0");
+      const dateStr = `${y}-${m}-${d}`;
+      const day = wStr[st.getDay()];
+
+      return {
+        id: ev.id,
+        title: ev.title,
+        dateStr,
+        date: `${st.getMonth() + 1}/${st.getDate()}`,
+        dayOfWeek: day,
+        dutyGroup: ev.dutyGroup || "なし",
+        location: ev.location || "グラウンド",
+        eventType: ev.eventType || "practice",
+      };
+    });
+
+    // 6. 出欠レコードの取得 & マトリクス構築
+    const allAttendances = await db
+      .select()
+      .from(attendances)
+      .all();
+
+    const matrix: Record<string, Record<string, { status: string; comment: string }>> = {};
+    const eventSummaries: Record<string, any> = {};
+
+    for (const ev of formattedEvents) {
+      matrix[ev.id] = {};
+      let duty = 0;
+      let help = 0;
+      let setup = 0;
+      let game = 0;
+      let absent = 0;
+
+      const evAtts = allAttendances.filter(a => a.eventId === ev.id);
+      for (const att of evAtts) {
+        const key = att.playerId || att.memberId;
+        if (!key) continue;
+
+        let st: string = (att.status as string) || "pending";
+        // 互換性マッピング
+        if (st === "present") st = "help";
+        if (st === "late" || st === "partial") st = "setup";
+
+        matrix[ev.id][key] = {
+          status: st,
+          comment: att.comment || "",
+        };
+
+        if (st === "duty") duty++;
+        else if (st === "help") help++;
+        else if (st === "setup") setup++;
+        else if (st === "game") game++;
+        else if (st === "absent") absent++;
+      }
+
+      eventSummaries[ev.id] = {
+        duty,
+        help,
+        setup,
+        game,
+        absent,
+        totalPresent: duty + help + setup + game,
+      };
+    }
+
+    const eventsWithSummary = formattedEvents.map(ev => ({
+      ...ev,
+      statusSummary: eventSummaries[ev.id] || { duty: 0, help: 0, setup: 0, game: 0, absent: 0, totalPresent: 0 },
+    }));
+
+    return c.json({
+      success: true,
+      isDemo: false,
+      myInfo: {
+        memberId: myMemberId,
+        playerIds: myPlayerIds,
+        isManager,
+        name: currentMember?.name || userName || "ゲスト",
+      },
+      events: eventsWithSummary,
+      groups: {
+        players: formattedPlayers,
+        mothers: mothersList,
+        fathers: fathersList,
+        staff: staffList,
+      },
+      matrix,
+    });
+  } catch (error: any) {
+    console.error("Failed to load attendance matrix:", error);
+    return c.json({ success: false, error: error?.message || "出欠マトリクスの取得に失敗しました" }, 500);
+  }
+});
+
+/**
+ * 📊 出欠マトリクス・セル更新API
+ * POST /api/liff/attendance-matrix
+ */
+app.post("/attendance-matrix", async (c) => {
+  const db = drizzle(c.env.DB);
+  try {
+    const body = await c.req.json();
+    const { eventId, personId, personType, status, comment, userId } = body;
+
+    if (!eventId || !personId || !status) {
+      return c.json({ success: false, error: "eventId, personId, and status are required" }, 400);
+    }
+
+    if (eventId.startsWith("demo-")) {
+      return c.json({
+        success: true,
+        message: "出欠を更新しました（デモ）",
+        updated: { eventId, personId, status, comment: comment || "" },
+      });
+    }
+
+    if (personType === "player") {
+      const existing = await db
+        .select()
+        .from(attendances)
+        .where(and(eq(attendances.eventId, eventId), eq(attendances.playerId, personId)))
+        .get();
+
+      if (existing) {
+        await db
+          .update(attendances)
+          .set({
+            status: status as any,
+            comment: comment !== undefined ? comment : existing.comment,
+            updatedAt: new Date(),
+          })
+          .where(eq(attendances.id, existing.id));
+      } else {
+        await db.insert(attendances).values({
+          id: `att_${crypto.randomUUID()}`,
+          eventId,
+          playerId: personId,
+          status: status as any,
+          roleInEvent: "player",
+          comment: comment || null,
+          updatedAt: new Date(),
+        });
+      }
+    } else {
+      // メンバー（保護者・スタッフ）
+      const existing = await db
+        .select()
+        .from(attendances)
+        .where(and(eq(attendances.eventId, eventId), eq(attendances.memberId, personId)))
+        .get();
+
+      if (existing) {
+        await db
+          .update(attendances)
+          .set({
+            status: status as any,
+            comment: comment !== undefined ? comment : existing.comment,
+            updatedAt: new Date(),
+          })
+          .where(eq(attendances.id, existing.id));
+      } else {
+        await db.insert(attendances).values({
+          id: `att_${crypto.randomUUID()}`,
+          eventId,
+          memberId: personId,
+          userId: userId || null,
+          status: status as any,
+          roleInEvent: "parent",
+          comment: comment || null,
+          updatedAt: new Date(),
+        });
+      }
+    }
+
+    return c.json({
+      success: true,
+      message: "出欠を保存しました",
+      updated: { eventId, personId, status, comment: comment || "" },
+    });
+  } catch (error: any) {
+    console.error("Failed to update attendance matrix cell:", error);
+    return c.json({ success: false, error: error?.message || "更新に失敗しました" }, 500);
+  }
+});
+
+/**
  * 👨‍👦 ログイン中保護者の親子関係・お子様一覧取得API
  * GET /api/liff/my-family?teamId=xxx&userId=xxx&userName=xxx&parentId=xxx
  */

@@ -23,6 +23,7 @@ import {
   ShieldCheck,
   Link2,
   BookOpen,
+  ClipboardCheck,
 } from "lucide-react";
 
 type MenuCategory = "schedule" | "manual" | "settings";
@@ -57,6 +58,14 @@ const MENU_ITEMS = [
     href: "/liff/schedule",
     icon: Calendar,
     colorClass: "bg-orange-500/15 text-orange-600 dark:text-orange-400",
+    category: "schedule" as const,
+  },
+  {
+    title: "出欠一覧表",
+    subtitle: "マトリクス・当番集計",
+    href: "/liff/schedule/board",
+    icon: ClipboardCheck,
+    colorClass: "bg-indigo-500/15 text-indigo-600 dark:text-indigo-400",
     category: "schedule" as const,
   },
   {

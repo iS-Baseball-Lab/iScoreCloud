@@ -657,25 +657,50 @@ export default function LiffSchedulePage() {
           }}
         />
 
-        {/* 🛠️ 活動予定の一括登録・編集（スケジューラー導線） */}
-        <Link
-          href="/liff/schedule/admin"
-          className="flex items-center justify-between p-2.5 px-3.5 rounded-2xl bg-card hover:bg-primary/5 border border-primary/25 hover:border-primary/45 shadow-2xs active:scale-[0.99] transition-all group"
-        >
-          <div className="flex items-center gap-2.5">
-            <span className="w-7 h-7 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black shrink-0">
-              <Sparkles className="w-3.5 h-3.5" />
-            </span>
-            <span className="text-xs font-black text-foreground">
-              活動予定の一括登録・編集
-            </span>
-          </div>
+        {/* 🛠️ ナビゲーションショートカット (一括登録 & 出欠一覧表) */}
+        <div className="grid grid-cols-2 gap-2">
+          {/* ① 📊 簡易出欠一覧表 (マトリクス) */}
+          <Link
+            href="/liff/schedule/board"
+            className="flex items-center justify-between p-2.5 px-3 rounded-2xl bg-indigo-500/10 hover:bg-indigo-500/15 border border-indigo-500/30 hover:border-indigo-500/50 shadow-2xs active:scale-[0.98] transition-all group"
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="w-7 h-7 rounded-xl bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-black shrink-0">
+                <Users className="w-3.5 h-3.5" />
+              </span>
+              <div className="min-w-0">
+                <span className="text-xs font-black text-foreground block truncate">
+                  出欠一覧表
+                </span>
+                <span className="text-[10px] text-muted-foreground font-bold block truncate">
+                  マトリクス・当番集計
+                </span>
+              </div>
+            </div>
+            <ChevronRight className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 group-hover:translate-x-0.5 transition-transform shrink-0" />
+          </Link>
 
-          <div className="flex items-center gap-1 text-xs font-black text-primary shrink-0">
-            <span>開く</span>
-            <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
-          </div>
-        </Link>
+          {/* ② 🛠️ 活動予定の一括登録・編集（スケジューラー導線） */}
+          <Link
+            href="/liff/schedule/admin"
+            className="flex items-center justify-between p-2.5 px-3 rounded-2xl bg-card hover:bg-primary/5 border border-primary/25 hover:border-primary/45 shadow-2xs active:scale-[0.98] transition-all group"
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="w-7 h-7 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black shrink-0">
+                <Sparkles className="w-3.5 h-3.5" />
+              </span>
+              <div className="min-w-0">
+                <span className="text-xs font-black text-foreground block truncate">
+                  予定の一括登録
+                </span>
+                <span className="text-[10px] text-muted-foreground font-bold block truncate">
+                  スケジューラー
+                </span>
+              </div>
+            </div>
+            <ChevronRight className="w-3.5 h-3.5 text-primary group-hover:translate-x-0.5 transition-transform shrink-0" />
+          </Link>
+        </div>
 
         {/* 📅 月間ミニカレンダー */}
         <div className="p-3.5 bg-card rounded-3xl border border-border/80 shadow-xs space-y-3">

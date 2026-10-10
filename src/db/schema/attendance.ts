@@ -30,7 +30,7 @@ export const attendances = sqliteTable("attendances", {
   playerId: text("player_id").references(() => players.id, { onDelete: "cascade" }),
   memberId: text("member_id").references(() => teamMembers.id, { onDelete: "cascade" }),
   userId: text("user_id").references(() => user.id),
-  status: text("status").$type<"present" | "absent" | "pending" | "late" | "partial">().default("pending"),
+  status: text("status").$type<"present" | "absent" | "pending" | "late" | "partial" | "duty" | "help" | "setup" | "game">().default("pending"),
   selectedGroupId: text("selected_group_id"), // 👥 選択した活動グループID（試合組/練習組など）
   roleInEvent: text("role_in_event").default("player"),
   hasCar: integer("has_car", { mode: "boolean" }).default(false),
