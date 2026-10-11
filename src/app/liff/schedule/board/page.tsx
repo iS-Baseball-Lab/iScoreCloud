@@ -642,9 +642,12 @@ export default function AttendanceMatrixBoardPage() {
               <table className="w-max min-w-full text-left border-separate border-spacing-0 select-none">
                 {/* 📌 ヘッダー行 (メンバー一覧 & 出欠記号別集計ヘッダー) */}
                 <thead className="z-30">
-                  <tr className="h-11">
+                  <tr className="h-12">
                     {/* 左上固定セル: イベント情報列 (不透明bg-muted・最上位z-50・完全固定幅145px) */}
-                    <th className="sticky top-0 left-0 z-50 bg-muted border-b-2 border-r border-border w-[145px] min-w-[145px] max-w-[145px] p-2 text-xs font-black text-foreground shadow-xs align-middle">
+                    <th
+                      style={{ WebkitTransform: "translateZ(0)", transform: "translateZ(0)" }}
+                      className="sticky top-0 left-0 z-50 bg-muted border-b-2 border-r border-border w-[145px] min-w-[145px] max-w-[145px] p-2 text-xs font-black text-foreground shadow-xs align-middle"
+                    >
                       <div className="flex items-center justify-between gap-1">
                         <span className="text-xs font-black truncate">日付 / 班 / イベント</span>
                         <span className="text-[10px] text-muted-foreground font-bold shrink-0">
@@ -654,22 +657,39 @@ export default function AttendanceMatrixBoardPage() {
                     </th>
 
                     {/* 📊 出欠集計列 (各記号ごとの専用タイトル列・100%完全不透明背景) */}
-                    <th className="sticky top-0 z-30 w-8 min-w-[32px] max-w-[32px] p-1 text-center text-xs font-black text-foreground border-b-2 border-r border-border/80 bg-muted align-middle" title="出席合計 (◎+○+▲+△)">
-                      計
-                    </th>
-                    <th className="sticky top-0 z-30 w-8 min-w-[30px] max-w-[30px] p-1 text-center border-b-2 border-r border-border/80 bg-red-100 dark:bg-red-950/70 text-red-600 dark:text-red-400 font-black text-xs align-middle" title="◎ 出席（当番）">
+                    <th
+                      style={{ WebkitTransform: "translateZ(0)", transform: "translateZ(0)" }}
+                      className="sticky top-0 z-40 w-8 min-w-[30px] max-w-[30px] p-1 text-center border-b-2 border-r border-border/80 bg-red-100 dark:bg-red-950/70 text-red-600 dark:text-red-400 font-black text-xs align-middle"
+                      title="◎ 出席（当番）"
+                    >
                       ◎
                     </th>
-                    <th className="sticky top-0 z-30 w-8 min-w-[30px] max-w-[30px] p-1 text-center border-b-2 border-r border-border/80 bg-blue-100 dark:bg-blue-950/70 text-blue-600 dark:text-blue-400 font-black text-xs align-middle" title="○ 出席（ヘルプ）">
+                    <th
+                      style={{ WebkitTransform: "translateZ(0)", transform: "translateZ(0)" }}
+                      className="sticky top-0 z-40 w-8 min-w-[30px] max-w-[30px] p-1 text-center border-b-2 border-r border-border/80 bg-blue-100 dark:bg-blue-950/70 text-blue-600 dark:text-blue-400 font-black text-xs align-middle"
+                      title="○ 出席（ヘルプ）"
+                    >
                       ○
                     </th>
-                    <th className="sticky top-0 z-30 w-8 min-w-[30px] max-w-[30px] p-1 text-center border-b-2 border-r border-border/80 bg-amber-100 dark:bg-amber-950/70 text-amber-600 dark:text-amber-400 font-black text-xs align-middle" title="▲ 出席（設営・撤収のみ）">
+                    <th
+                      style={{ WebkitTransform: "translateZ(0)", transform: "translateZ(0)" }}
+                      className="sticky top-0 z-40 w-8 min-w-[30px] max-w-[30px] p-1 text-center border-b-2 border-r border-border/80 bg-amber-100 dark:bg-amber-950/70 text-amber-600 dark:text-amber-400 font-black text-xs align-middle"
+                      title="▲ 出席（設営・撤収のみ）"
+                    >
                       ▲
                     </th>
-                    <th className="sticky top-0 z-30 w-8 min-w-[30px] max-w-[30px] p-1 text-center border-b-2 border-r border-border/80 bg-emerald-100 dark:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400 font-black text-xs align-middle" title="△ 出席（試合のみ）">
+                    <th
+                      style={{ WebkitTransform: "translateZ(0)", transform: "translateZ(0)" }}
+                      className="sticky top-0 z-40 w-8 min-w-[30px] max-w-[30px] p-1 text-center border-b-2 border-r border-border/80 bg-emerald-100 dark:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400 font-black text-xs align-middle"
+                      title="△ 出席（試合のみ）"
+                    >
                       △
                     </th>
-                    <th className="sticky top-0 z-30 w-8 min-w-[30px] max-w-[30px] p-1 text-center border-b-2 border-r border-border bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-black text-xs align-middle" title="× 欠席">
+                    <th
+                      style={{ WebkitTransform: "translateZ(0)", transform: "translateZ(0)" }}
+                      className="sticky top-0 z-40 w-8 min-w-[30px] max-w-[30px] p-1 text-center border-b-2 border-r border-border bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-black text-xs align-middle"
+                      title="× 欠席"
+                    >
                       ×
                     </th>
 
@@ -679,11 +699,12 @@ export default function AttendanceMatrixBoardPage() {
                       return (
                         <th
                           key={person.id}
-                          className={`sticky top-0 z-30 w-11 min-w-[44px] max-w-[44px] p-1 text-center border-b-2 border-r border-border/70 bg-muted align-middle transition-colors ${
+                          style={{ WebkitTransform: "translateZ(0)", transform: "translateZ(0)" }}
+                          className={`sticky top-0 z-40 w-11 min-w-[44px] max-w-[44px] p-1 text-center border-b-2 border-r border-border/70 bg-muted align-middle transition-colors ${
                             isMe ? "bg-primary/20" : ""
                           }`}
                         >
-                          <div className="flex flex-col items-center justify-center leading-tight">
+                          <div className="flex flex-col items-center justify-center leading-tight py-0.5">
                             {person.uniformNumber ? (
                               <span className="text-[9px] font-black text-primary px-1 rounded bg-primary/10">
                                 #{person.uniformNumber}
@@ -740,7 +761,10 @@ export default function AttendanceMatrixBoardPage() {
                     return (
                       <tr key={ev.id} className="hover:bg-muted/30 transition-colors group">
                         {/* ① 左側固定セル: 日付・班・イベント (完全不透明bg-card・固定幅145px) */}
-                        <td className="sticky left-0 z-20 bg-card border-b border-r border-border w-[145px] min-w-[145px] max-w-[145px] p-2 shadow-xs">
+                        <td
+                          style={{ WebkitTransform: "translateZ(0)", transform: "translateZ(0)" }}
+                          className="sticky left-0 z-20 bg-card border-b border-r border-border w-[145px] min-w-[145px] max-w-[145px] p-2 shadow-xs"
+                        >
                           <div className="flex items-center justify-between gap-1 leading-tight">
                             <div className="flex items-center gap-1 min-w-0">
                               <span
@@ -777,12 +801,7 @@ export default function AttendanceMatrixBoardPage() {
                           </p>
                         </td>
 
-                        {/* ② 出欠集計 各記号ごとの集計値セル */}
-                        {/* 計 */}
-                        <td className="w-8 min-w-[32px] max-w-[32px] p-1 text-center border-b border-r border-border/70 bg-muted/40 font-black text-[11px] text-primary">
-                          {summary.totalPresent}
-                        </td>
-
+                        {/* ② 出欠集計 各記号ごとの集計値セル (計列はユーザー要望により削除) */}
                         {/* ◎ 当番 */}
                         <td className={`w-8 min-w-[30px] max-w-[30px] p-1 text-center border-b border-r border-border/70 font-black text-[11px] ${
                           summary.duty > 0 ? "text-red-600 dark:text-red-400 bg-red-500/10 font-black" : "text-muted-foreground/30 bg-card"
@@ -829,13 +848,13 @@ export default function AttendanceMatrixBoardPage() {
                             <td
                               key={person.id}
                               onClick={() => handleCellClick(ev, person)}
-                              className={`w-11 min-w-[44px] max-w-[44px] p-1 text-center border-b border-r border-border/50 bg-card transition-all ${
+                              className={`w-11 min-w-[44px] max-w-[44px] p-1 text-center border-b border-r border-border/50 bg-card transition-all overflow-hidden ${
                                 isEditable
                                   ? "cursor-pointer hover:bg-primary/10 active:scale-90"
                                   : "opacity-90"
                               } ${isMe ? "bg-primary/5" : ""}`}
                             >
-                              <div className="relative inline-flex items-center justify-center">
+                              <div className="relative z-0 inline-flex items-center justify-center">
                                 <span
                                   className={`w-6 h-6 rounded-md flex items-center justify-center text-xs font-black transition-transform ${statusConfig.badgeClass} ${
                                     isEditable ? "group-hover:scale-105" : ""
