@@ -1128,11 +1128,13 @@ app.get("/attendance-matrix", async (c) => {
     }
 
     const myMemberId = currentMember?.id || null;
+    const roleLower = currentMember?.role?.toLowerCase() || "";
     const isManager = Boolean(
-      currentMember?.role === "manager" ||
-      currentMember?.role === "admin" ||
-      currentMember?.role === "coach" ||
-      currentMember?.role === "scorer"
+      roleLower === "manager" ||
+      roleLower === "admin" ||
+      roleLower === "coach" ||
+      roleLower === "scorer" ||
+      roleLower === "system_admin"
     );
 
     // 2. 親子関係の取得

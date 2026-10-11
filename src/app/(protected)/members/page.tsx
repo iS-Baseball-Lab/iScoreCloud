@@ -76,6 +76,7 @@ export default function UnifiedMembersPage() {
   const [teamId, setTeamId] = useState<string | null>(null);
   const [myUserId, setMyUserId] = useState("");
   const [myRole, setMyRole] = useState("");
+  const [isSystemAdmin, setIsSystemAdmin] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -215,11 +216,16 @@ export default function UnifiedMembersPage() {
           success: boolean;
           data: {
             id: string;
+            role?: string;
+            systemRole?: string;
             memberships: { teamId: string; role: string }[];
           };
         };
         if (meJson.success && meJson.data) {
           setMyUserId(meJson.data.id);
+          if (meJson.data.systemRole === "SYSTEM_ADMIN" || meJson.data.role === "SYSTEM_ADMIN") {
+            setIsSystemAdmin(true);
+          }
           const membership = meJson.data.memberships.find(m => m.teamId === tid);
           if (membership) setMyRole(membership.role);
         }
@@ -232,7 +238,7 @@ export default function UnifiedMembersPage() {
     fetchAllData(tid);
   }, [fetchAllData]);
 
-  const canManage = canManageTeam(myRole);
+  const canManage = isSystemAdmin || canManageTeam(myRole);
 
   // ━━ 選手 (Player) 操作 ━━
   const handleAddPlayer = async (formData: PlayerFormData) => {
@@ -1706,12 +1712,12 @@ export default function UnifiedMembersPage() {
             <div className="space-y-3 pt-1 border-t border-border/40">
               <div className="space-y-1">
                 <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">
-                  メイン役割 (基本権限) {editMemberTarget?.userId === myUserId && "(自身の権限は変更不可)"}
+                  メイン役割 (基本権限)
                 </label>
                 <Select 
                   value={memberFormRole} 
                   onChange={(e: any) => setMemberFormRole(e.target.value)} 
-                  disabled={editMemberTarget?.userId === myUserId || !canManage}
+                  disabled={!canManage}
                   className="h-11 rounded-xl bg-card"
                 >
                   <option value="manager">{resolveRoleLabel("manager", roleSettings)} (代表・監督)</option>

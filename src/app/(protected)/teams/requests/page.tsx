@@ -324,7 +324,9 @@ function TeamRequestsContent() {
 
   // ─── 権限チェック ─────────────────────
   const canManage =
-    myRole === "MANAGER" || myRole === "manager" || myRole === "SYSTEM_ADMIN";
+    myRole?.toLowerCase() === "manager" ||
+    myRole?.toLowerCase() === "admin" ||
+    myRole === "SYSTEM_ADMIN";
 
   // ─── ローディング ─────────────────────
   if (isLoading) {

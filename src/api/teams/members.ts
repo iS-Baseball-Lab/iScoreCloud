@@ -177,8 +177,10 @@ export const handlePutRoleSettings = async (c: Context) => {
   const db = drizzle(c.env.DB)
 
   try {
+    const team = await db.select({ createdBy: teams.createdBy }).from(teams).where(eq(teams.id, teamId)).get()
+    const isFounder = team?.createdBy === session.user.id
     const myMembership = await db.select().from(teamMembers).where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, session.user.id))).get()
-    if (!myMembership || !canManageTeam(myMembership.role)) return c.json({ error: '権限がありません' }, 403)
+    if (!isFounder && (!myMembership || !canManageTeam(myMembership.role))) return c.json({ error: '権限がありません' }, 403)
 
     try {
       await c.env.DB.prepare(`DELETE FROM team_role_settings WHERE team_id = ?`).bind(teamId).run()
@@ -211,9 +213,11 @@ export const handlePatchMemberRole = async (c: Context) => {
   const db = drizzle(c.env.DB)
 
   try {
+    const team = await db.select({ createdBy: teams.createdBy }).from(teams).where(eq(teams.id, teamId)).get()
+    const isFounder = team?.createdBy === session.user.id
     const myMembership = await db.select().from(teamMembers).where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, session.user.id))).get()
     const isAdmin = (session.user as AuthUser).role === 'SYSTEM_ADMIN' || (session.user as AuthUser).role === 'admin'
-    if (!isAdmin && (!myMembership || !canManageTeam(myMembership.role))) {
+    if (!isAdmin && !isFounder && (!myMembership || !canManageTeam(myMembership.role))) {
       return c.json({ error: '権限がありません' }, 403)
     }
 
@@ -245,9 +249,11 @@ export const handleRemoveMember = async (c: Context) => {
   const db = drizzle(c.env.DB)
 
   try {
+    const team = await db.select({ createdBy: teams.createdBy }).from(teams).where(eq(teams.id, teamId)).get()
+    const isFounder = team?.createdBy === session.user.id
     const myMembership = await db.select().from(teamMembers).where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, session.user.id))).get()
     const isAdmin = (session.user as AuthUser).role === 'SYSTEM_ADMIN' || (session.user as AuthUser).role === 'admin'
-    if (!isAdmin && (!myMembership || !canManageTeam(myMembership.role))) {
+    if (!isAdmin && !isFounder && (!myMembership || !canManageTeam(myMembership.role))) {
       return c.json({ error: '権限がありません' }, 403)
     }
 
@@ -277,9 +283,11 @@ export const handleCreateMember = async (c: Context) => {
   const db = drizzle(c.env.DB)
 
   try {
+    const team = await db.select({ createdBy: teams.createdBy }).from(teams).where(eq(teams.id, teamId)).get()
+    const isFounder = team?.createdBy === session.user.id
     const myMembership = await db.select().from(teamMembers).where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, session.user.id))).get()
     const isAdmin = (session.user as AuthUser).role === 'SYSTEM_ADMIN' || (session.user as AuthUser).role === 'admin'
-    if (!isAdmin && (!myMembership || !canManageTeam(myMembership.role))) {
+    if (!isAdmin && !isFounder && (!myMembership || !canManageTeam(myMembership.role))) {
       return c.json({ error: '権限がありません' }, 403)
     }
 
@@ -330,9 +338,11 @@ export const handleUpdateMemberInfo = async (c: Context) => {
   const db = drizzle(c.env.DB)
 
   try {
+    const team = await db.select({ createdBy: teams.createdBy }).from(teams).where(eq(teams.id, teamId)).get()
+    const isFounder = team?.createdBy === session.user.id
     const myMembership = await db.select().from(teamMembers).where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, session.user.id))).get()
     const isAdmin = (session.user as AuthUser).role === 'SYSTEM_ADMIN' || (session.user as AuthUser).role === 'admin'
-    if (!isAdmin && (!myMembership || !canManageTeam(myMembership.role))) {
+    if (!isAdmin && !isFounder && (!myMembership || !canManageTeam(myMembership.role))) {
       return c.json({ error: '権限がありません' }, 403)
     }
 
