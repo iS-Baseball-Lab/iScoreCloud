@@ -5,7 +5,9 @@
 
 import { Hono } from 'hono';
 import { drizzle } from 'drizzle-orm/d1';
+import { eq } from 'drizzle-orm';
 import { attendances } from '@/db/schema/attendance';
+import { user } from '@/db/schema';
 import type { WorkerEnv } from '@/types/api';
 
 const app = new Hono<{ Bindings: WorkerEnv }>();
@@ -35,6 +37,17 @@ app.post('/update', async (c) => {
       return c.json({ success: false, error: "イベントID、および選手IDまたはメンバーIDが不足しています。" }, 400);
     }
 
+    // 💡 外部キー整合性チェック (userId は user.id を参照するため、存在確認を行う)
+    let validUserId: string | null = null;
+    if (userId) {
+      try {
+        const u = await db.select({ id: user.id }).from(user).where(eq(user.id, userId)).get();
+        if (u) validUserId = u.id;
+      } catch (err) {
+        console.warn("Could not check userId in user table:", err);
+      }
+    }
+
     const attendanceId = `attend_${crypto.randomUUID().replace(/-/g, '')}`;
     let result;
 
@@ -46,7 +59,7 @@ app.post('/update', async (c) => {
           eventId,
           playerId,
           memberId: null,
-          userId: userId || null,
+          userId: validUserId,
           status: status || 'pending',
           roleInEvent: roleInEvent || 'player',
           hasCar: !!hasCar,
@@ -57,7 +70,7 @@ app.post('/update', async (c) => {
         .onConflictDoUpdate({
           target: [attendances.eventId, attendances.playerId],
           set: {
-            userId: userId || null,
+            userId: validUserId,
             status: status || 'pending',
             roleInEvent: roleInEvent || 'player',
             hasCar: !!hasCar,
@@ -76,7 +89,7 @@ app.post('/update', async (c) => {
           eventId,
           playerId: null,
           memberId,
-          userId: userId || null,
+          userId: validUserId,
           status: status || 'pending',
           roleInEvent: roleInEvent || 'player',
           hasCar: !!hasCar,
@@ -87,7 +100,7 @@ app.post('/update', async (c) => {
         .onConflictDoUpdate({
           target: [attendances.eventId, attendances.memberId],
           set: {
-            userId: userId || null,
+            userId: validUserId,
             status: status || 'pending',
             roleInEvent: roleInEvent || 'player',
             hasCar: !!hasCar,

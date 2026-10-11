@@ -330,12 +330,15 @@ export default function AttendanceMatrixBoardPage() {
         }),
       });
 
-      if (!res.ok) throw new Error("Save error");
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as any;
+        throw new Error(data.error || "更新に失敗しました");
+      }
       toast.success(`${person.name} さんの出欠を更新しました`);
       setEditingCell(null);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Save error:", err);
-      toast.error("出欠の保存に失敗しました");
+      toast.error(err?.message || "出欠の保存に失敗しました");
       // ロールバック
       if (prevCell) {
         setMatrix(prev => ({

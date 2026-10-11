@@ -1441,7 +1441,37 @@ app.post("/attendance-matrix", async (c) => {
       });
     }
 
-    if (personType === "player") {
+    // 💡 外部キー整合性チェック (userId は BetterAuth の user.id を参照するため、LINEのユーザーIDが直接入ると制約違反787になるのを防止)
+    let validUserId: string | null = null;
+    if (userId) {
+      try {
+        const u = await db.select({ id: user.id }).from(user).where(eq(user.id, userId)).get();
+        if (u) validUserId = u.id;
+      } catch (err) {
+        console.warn("Could not check userId in user table:", err);
+      }
+    }
+
+    // 選手かメンバーかを判定
+    let isPlayer = personType === "player";
+    if (!isPlayer) {
+      const p = await db.select({ id: players.id }).from(players).where(eq(players.id, personId)).get();
+      if (p) isPlayer = true;
+    }
+
+    if (!validUserId && !isPlayer) {
+      try {
+        const tm = await db.select({ userId: teamMembers.userId }).from(teamMembers).where(eq(teamMembers.id, personId)).get();
+        if (tm?.userId) {
+          const u = await db.select({ id: user.id }).from(user).where(eq(user.id, tm.userId)).get();
+          if (u) validUserId = u.id;
+        }
+      } catch (err) {
+        console.warn("Could not check member userId:", err);
+      }
+    }
+
+    if (isPlayer) {
       const existing = await db
         .select()
         .from(attendances)
@@ -1458,15 +1488,27 @@ app.post("/attendance-matrix", async (c) => {
           })
           .where(eq(attendances.id, existing.id));
       } else {
-        await db.insert(attendances).values({
-          id: `att_${crypto.randomUUID()}`,
-          eventId,
-          playerId: personId,
-          status: status as any,
-          roleInEvent: "player",
-          comment: comment || null,
-          updatedAt: new Date(),
-        });
+        try {
+          await db.insert(attendances).values({
+            id: `att_${crypto.randomUUID()}`,
+            eventId,
+            playerId: personId,
+            userId: validUserId,
+            status: status as any,
+            roleInEvent: "player",
+            comment: comment || null,
+            updatedAt: new Date(),
+          });
+        } catch (insertErr: any) {
+          await db
+            .update(attendances)
+            .set({
+              status: status as any,
+              comment: comment !== undefined ? comment : null,
+              updatedAt: new Date(),
+            })
+            .where(and(eq(attendances.eventId, eventId), eq(attendances.playerId, personId)));
+        }
       }
     } else {
       // メンバー（保護者・スタッフ）
@@ -1486,16 +1528,27 @@ app.post("/attendance-matrix", async (c) => {
           })
           .where(eq(attendances.id, existing.id));
       } else {
-        await db.insert(attendances).values({
-          id: `att_${crypto.randomUUID()}`,
-          eventId,
-          memberId: personId,
-          userId: userId || null,
-          status: status as any,
-          roleInEvent: "parent",
-          comment: comment || null,
-          updatedAt: new Date(),
-        });
+        try {
+          await db.insert(attendances).values({
+            id: `att_${crypto.randomUUID()}`,
+            eventId,
+            memberId: personId,
+            userId: validUserId,
+            status: status as any,
+            roleInEvent: "parent",
+            comment: comment || null,
+            updatedAt: new Date(),
+          });
+        } catch (insertErr: any) {
+          await db
+            .update(attendances)
+            .set({
+              status: status as any,
+              comment: comment !== undefined ? comment : null,
+              updatedAt: new Date(),
+            })
+            .where(and(eq(attendances.eventId, eventId), eq(attendances.memberId, personId)));
+        }
       }
     }
 
@@ -1762,20 +1815,37 @@ app.post("/attendance", async (c) => {
       return c.json({ success: true, message: "お子様の出欠回答を保存しました" });
     }
 
+    // 💡 外部キー整合性チェック (BetterAuth user.id)
+    let validUserId: string | null = null;
+    if (userId) {
+      try {
+        const u = await db.select({ id: user.id }).from(user).where(eq(user.id, userId)).get();
+        if (u) validUserId = u.id;
+      } catch (err) {
+        console.warn("Could not check userId in user table:", err);
+      }
+    }
+
     // 👨 保護者・メンバー本人の出欠の場合
     let effectiveMemberId = memberId;
     if (!effectiveMemberId && userId) {
       const tm = await db
-        .select({ id: teamMembers.id })
+        .select({ id: teamMembers.id, userId: teamMembers.userId })
         .from(teamMembers)
         .where(eq(teamMembers.userId, userId))
         .get();
-      if (tm) effectiveMemberId = tm.id;
+      if (tm) {
+        effectiveMemberId = tm.id;
+        if (!validUserId && tm.userId) {
+          const u = await db.select({ id: user.id }).from(user).where(eq(user.id, tm.userId)).get();
+          if (u) validUserId = u.id;
+        }
+      }
     }
 
     const conditions = [];
     if (effectiveMemberId) conditions.push(eq(attendances.memberId, effectiveMemberId));
-    if (userId) conditions.push(eq(attendances.userId, userId));
+    if (validUserId) conditions.push(eq(attendances.userId, validUserId));
 
     let existing = null;
     if (conditions.length > 0) {
@@ -1792,7 +1862,7 @@ app.post("/attendance", async (c) => {
         .set({
           status: status,
           selectedGroupId: status === "present" ? (selectedGroupId || existing.selectedGroupId) : null,
-          userId: userId || existing.userId,
+          userId: validUserId || existing.userId || null,
           memberId: effectiveMemberId || existing.memberId,
           hasCar: hasCar !== undefined ? hasCar : existing.hasCar,
           comment: comment || existing.comment,
@@ -1803,7 +1873,7 @@ app.post("/attendance", async (c) => {
       await db.insert(attendances).values({
         id: `att_${crypto.randomUUID()}`,
         eventId,
-        userId: userId || null,
+        userId: validUserId,
         memberId: effectiveMemberId || null,
         status: status,
         selectedGroupId: status === "present" ? (selectedGroupId || null) : null,
