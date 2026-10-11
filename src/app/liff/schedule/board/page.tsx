@@ -638,49 +638,49 @@ export default function AttendanceMatrixBoardPage() {
           </div>
         ) : (
           <div className="relative bg-card rounded-2xl border border-border shadow-xs overflow-hidden">
-            <div className="overflow-x-auto max-h-[75vh] relative no-scrollbar">
-              <table className="w-full text-left border-collapse select-none">
+            <div className="overflow-x-auto max-h-[75vh] relative no-scrollbar overscroll-x-contain" style={{ WebkitOverflowScrolling: "touch" }}>
+              <table className="w-max min-w-full text-left border-separate border-spacing-0 select-none">
                 {/* 📌 ヘッダー行 (メンバー一覧 & 出欠記号別集計ヘッダー) */}
-                <thead className="sticky top-0 z-30 bg-muted/95 backdrop-blur-md border-b border-border shadow-2xs">
+                <thead className="sticky top-0 z-30 shadow-2xs">
                   <tr>
-                    {/* 左上固定セル: イベント情報列 (コンパクト) */}
-                    <th className="sticky left-0 z-40 bg-muted/95 min-w-[125px] sm:min-w-[150px] max-w-[160px] p-1.5 text-xs font-black text-foreground border-r border-border shadow-xs">
+                    {/* 左上固定セル: イベント情報列 (不透明ソリッド背景・最上位z-index) */}
+                    <th className="sticky top-0 left-0 z-50 bg-background border-b border-r border-border w-[130px] min-w-[130px] max-w-[130px] p-1.5 text-xs font-black text-foreground shadow-xs">
                       <div className="flex items-center justify-between">
-                        <span>日付 / 班 / イベント</span>
-                        <span className="text-[10px] text-muted-foreground font-bold">
+                        <span className="truncate">日付/班/行事</span>
+                        <span className="text-[10px] text-muted-foreground font-bold shrink-0">
                           {events.length}日
                         </span>
                       </div>
                     </th>
 
                     {/* 📊 出欠集計列 (各記号ごとの専用タイトル列) */}
-                    <th className="w-8 min-w-[32px] p-1 text-center text-[11px] font-black text-foreground border-r border-border/70 bg-muted/80" title="出席合計 (◎+○+▲+△)">
+                    <th className="sticky top-0 z-30 w-8 min-w-[32px] max-w-[32px] p-1 text-center text-[11px] font-black text-foreground border-b border-r border-border/70 bg-muted" title="出席合計 (◎+○+▲+△)">
                       計
                     </th>
-                    <th className="w-8 min-w-[30px] p-1 text-center border-r border-border/70 bg-red-500/10 text-red-600 dark:text-red-400 font-black text-xs" title="◎ 出席（当番）">
+                    <th className="sticky top-0 z-30 w-8 min-w-[30px] max-w-[30px] p-1 text-center border-b border-r border-border/70 bg-red-500/15 text-red-600 dark:text-red-400 font-black text-xs" title="◎ 出席（当番）">
                       ◎
                     </th>
-                    <th className="w-8 min-w-[30px] p-1 text-center border-r border-border/70 bg-blue-500/10 text-blue-600 dark:text-blue-400 font-black text-xs" title="○ 出席（ヘルプ）">
+                    <th className="sticky top-0 z-30 w-8 min-w-[30px] max-w-[30px] p-1 text-center border-b border-r border-border/70 bg-blue-500/15 text-blue-600 dark:text-blue-400 font-black text-xs" title="○ 出席（ヘルプ）">
                       ○
                     </th>
-                    <th className="w-8 min-w-[30px] p-1 text-center border-r border-border/70 bg-amber-500/10 text-amber-600 dark:text-amber-400 font-black text-xs" title="▲ 出席（設営・撤収のみ）">
+                    <th className="sticky top-0 z-30 w-8 min-w-[30px] max-w-[30px] p-1 text-center border-b border-r border-border/70 bg-amber-500/15 text-amber-600 dark:text-amber-400 font-black text-xs" title="▲ 出席（設営・撤収のみ）">
                       ▲
                     </th>
-                    <th className="w-8 min-w-[30px] p-1 text-center border-r border-border/70 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-black text-xs" title="△ 出席（試合のみ）">
+                    <th className="sticky top-0 z-30 w-8 min-w-[30px] max-w-[30px] p-1 text-center border-b border-r border-border/70 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-black text-xs" title="△ 出席（試合のみ）">
                       △
                     </th>
-                    <th className="w-8 min-w-[30px] p-1 text-center border-r border-border bg-slate-500/10 text-slate-500 dark:text-slate-400 font-black text-xs" title="× 欠席">
+                    <th className="sticky top-0 z-30 w-8 min-w-[30px] max-w-[30px] p-1 text-center border-b border-r border-border bg-slate-500/15 text-slate-500 dark:text-slate-400 font-black text-xs" title="× 欠席">
                       ×
                     </th>
 
-                    {/* メンバー列 (超コンパクト) */}
+                    {/* メンバー列 (超コンパクト・固定幅) */}
                     {currentMembers.map((person) => {
                       const isMe = person.id === myInfo.memberId || myInfo.playerIds.includes(person.id);
                       return (
                         <th
                           key={person.id}
-                          className={`w-11 min-w-[44px] max-w-[50px] p-1 text-center border-r border-border/50 transition-colors ${
-                            isMe ? "bg-primary/10" : ""
+                          className={`sticky top-0 z-30 w-11 min-w-[44px] max-w-[44px] p-1 text-center border-b border-r border-border/70 bg-muted transition-colors ${
+                            isMe ? "bg-primary/15" : ""
                           }`}
                         >
                           <div className="flex flex-col items-center justify-center leading-tight">
@@ -697,7 +697,7 @@ export default function AttendanceMatrixBoardPage() {
                             ) : (
                               <span className="text-[9px] font-black text-amber-600 dark:text-amber-400">保護</span>
                             )}
-                            <span className={`text-[10px] font-black truncate max-w-[42px] ${isMe ? "text-primary" : "text-foreground"}`}>
+                            <span className={`text-[10px] font-black truncate max-w-[40px] ${isMe ? "text-primary" : "text-foreground"}`}>
                               {person.name.length > 3 ? person.name.slice(0, 3) : person.name}
                             </span>
                           </div>
@@ -708,7 +708,7 @@ export default function AttendanceMatrixBoardPage() {
                 </thead>
 
                 {/* 📌 ボディ行 (イベントごと) */}
-                <tbody className="divide-y divide-border/60">
+                <tbody>
                   {events.map((ev) => {
                     const isSaturday = ev.dayOfWeek === "土";
                     const isSunday = ev.dayOfWeek === "日";
@@ -739,12 +739,12 @@ export default function AttendanceMatrixBoardPage() {
 
                     return (
                       <tr key={ev.id} className="hover:bg-muted/30 transition-colors group">
-                        {/* ① 左側固定セル: 日付・班・イベント (コンパクト表示) */}
-                        <td className="sticky left-0 z-20 bg-card group-hover:bg-card/95 border-r border-border p-1.5 shadow-xs">
+                        {/* ① 左側固定セル: 日付・班・イベント (完全不透明bg-card・固定幅130px) */}
+                        <td className="sticky left-0 z-20 bg-card border-b border-r border-border w-[130px] min-w-[130px] max-w-[130px] p-1.5 shadow-xs">
                           <div className="flex items-center justify-between gap-1 leading-tight">
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-1 min-w-0">
                               <span
-                                className={`text-[11px] font-black px-1 rounded ${
+                                className={`text-[11px] font-black px-1 rounded whitespace-nowrap shrink-0 ${
                                   isSunday
                                     ? "bg-red-500/15 text-red-600 dark:text-red-400"
                                     : isSaturday
@@ -755,7 +755,7 @@ export default function AttendanceMatrixBoardPage() {
                                 {ev.date}({ev.dayOfWeek})
                               </span>
                               {ev.dutyGroup && ev.dutyGroup !== "なし" && (
-                                <span className="text-[9px] font-black px-1 rounded bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30">
+                                <span className="text-[9px] font-black px-1 rounded bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 whitespace-nowrap shrink-0">
                                   {ev.dutyGroup}
                                 </span>
                               )}
@@ -772,53 +772,53 @@ export default function AttendanceMatrixBoardPage() {
                             </button>
                           </div>
 
-                          <p className="text-[10px] font-black text-foreground truncate max-w-[145px] mt-0.5" title={ev.title}>
+                          <p className="text-[10px] font-black text-foreground truncate max-w-[120px] mt-0.5" title={ev.title}>
                             {ev.title}
                           </p>
                         </td>
 
                         {/* ② 出欠集計 各記号ごとの集計値セル */}
                         {/* 計 */}
-                        <td className="p-1 text-center border-r border-border/70 bg-muted/20 font-black text-[11px] text-primary">
+                        <td className="w-8 min-w-[32px] max-w-[32px] p-1 text-center border-b border-r border-border/70 bg-muted/40 font-black text-[11px] text-primary">
                           {summary.totalPresent}
                         </td>
 
                         {/* ◎ 当番 */}
-                        <td className={`p-1 text-center border-r border-border/70 font-black text-[11px] ${
-                          summary.duty > 0 ? "text-red-600 dark:text-red-400 bg-red-500/5 font-black" : "text-muted-foreground/40"
+                        <td className={`w-8 min-w-[30px] max-w-[30px] p-1 text-center border-b border-r border-border/70 font-black text-[11px] ${
+                          summary.duty > 0 ? "text-red-600 dark:text-red-400 bg-red-500/10 font-black" : "text-muted-foreground/30 bg-card"
                         }`}>
                           {summary.duty}
                         </td>
 
                         {/* ○ ヘルプ */}
-                        <td className={`p-1 text-center border-r border-border/70 font-black text-[11px] ${
-                          summary.help > 0 ? "text-blue-600 dark:text-blue-400 bg-blue-500/5 font-black" : "text-muted-foreground/40"
+                        <td className={`w-8 min-w-[30px] max-w-[30px] p-1 text-center border-b border-r border-border/70 font-black text-[11px] ${
+                          summary.help > 0 ? "text-blue-600 dark:text-blue-400 bg-blue-500/10 font-black" : "text-muted-foreground/30 bg-card"
                         }`}>
                           {summary.help}
                         </td>
 
                         {/* ▲ 設営撤収 */}
-                        <td className={`p-1 text-center border-r border-border/70 font-black text-[11px] ${
-                          summary.setup > 0 ? "text-amber-600 dark:text-amber-400 bg-amber-500/5 font-black" : "text-muted-foreground/40"
+                        <td className={`w-8 min-w-[30px] max-w-[30px] p-1 text-center border-b border-r border-border/70 font-black text-[11px] ${
+                          summary.setup > 0 ? "text-amber-600 dark:text-amber-400 bg-amber-500/10 font-black" : "text-muted-foreground/30 bg-card"
                         }`}>
                           {summary.setup}
                         </td>
 
                         {/* △ 試合のみ */}
-                        <td className={`p-1 text-center border-r border-border/70 font-black text-[11px] ${
-                          summary.game > 0 ? "text-emerald-600 dark:text-emerald-400 bg-emerald-500/5 font-black" : "text-muted-foreground/40"
+                        <td className={`w-8 min-w-[30px] max-w-[30px] p-1 text-center border-b border-r border-border/70 font-black text-[11px] ${
+                          summary.game > 0 ? "text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 font-black" : "text-muted-foreground/30 bg-card"
                         }`}>
                           {summary.game}
                         </td>
 
                         {/* × 欠席 */}
-                        <td className={`p-1 text-center border-r border-border font-bold text-[11px] ${
-                          summary.absent > 0 ? "text-slate-500 dark:text-slate-400 bg-slate-500/5" : "text-muted-foreground/40"
+                        <td className={`w-8 min-w-[30px] max-w-[30px] p-1 text-center border-b border-r border-border font-bold text-[11px] ${
+                          summary.absent > 0 ? "text-slate-500 dark:text-slate-400 bg-slate-500/10" : "text-muted-foreground/30 bg-card"
                         }`}>
                           {summary.absent}
                         </td>
 
-                        {/* ③ メンバー別 出欠セル (超コンパクト) */}
+                        {/* ③ メンバー別 出欠セル (超コンパクト・完全不透明背景) */}
                         {currentMembers.map((person) => {
                           const att = matrix[ev.id]?.[person.id] || { status: "pending", comment: "" };
                           const statusConfig = ATTENDANCE_STATUSES[att.status as AttendanceMarkType] || ATTENDANCE_STATUSES.pending;
@@ -829,7 +829,7 @@ export default function AttendanceMatrixBoardPage() {
                             <td
                               key={person.id}
                               onClick={() => handleCellClick(ev, person)}
-                              className={`p-1 text-center border-r border-border/50 transition-all ${
+                              className={`w-11 min-w-[44px] max-w-[44px] p-1 text-center border-b border-r border-border/50 bg-card transition-all ${
                                 isEditable
                                   ? "cursor-pointer hover:bg-primary/10 active:scale-90"
                                   : "opacity-90"
