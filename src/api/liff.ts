@@ -24,7 +24,8 @@ import {
   tournaments,
 } from "@/db/schema";
 import { ensureEventColumns, ensureRulesTable, ensureLinksTable } from "@/lib/db-helper";
-import type { WorkerEnv } from "@/types/api";
+import type { WorkerEnv, AuthUser } from "@/types/api";
+import { getAuth } from "@/lib/auth";
 
 const app = new Hono<{ Bindings: WorkerEnv }>();
 
@@ -1113,23 +1114,49 @@ app.get("/attendance-matrix", async (c) => {
       });
     }
 
-    // 1. ログインユーザー特定
+    // 1. ログインユーザー特定（Session cookie / LINE LIFF / チーム創設者のハイブリッド判定）
+    const auth = getAuth(c.env.DB, c.env);
+    const session = await auth.api.getSession({ headers: c.req.raw.headers as any }).catch(() => null);
+    const authUserId = session?.user?.id;
+    const authUserName = session?.user?.name;
+    const isSysAdmin = (session?.user as AuthUser)?.role === "SYSTEM_ADMIN";
+
+    // チーム創設者（オーナー）チェック
+    const teamRecord = await db.select({ createdBy: teams.createdBy }).from(teams).where(eq(teams.id, teamId)).get();
+    const isTeamCreator = Boolean(authUserId && teamRecord?.createdBy === authUserId);
+
     let currentMember: any = null;
-    if (userId) {
+    const searchUserIds = [userId, authUserId].filter(Boolean) as string[];
+    for (const uid of searchUserIds) {
       currentMember = await db
         .select()
         .from(teamMembers)
-        .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, userId)))
+        .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, uid)))
         .get();
+      if (currentMember) break;
     }
-    if (!currentMember && userName) {
-      const allMembers = await db.select().from(teamMembers).where(eq(teamMembers.teamId, teamId)).all();
-      currentMember = allMembers.find(m => m.name && (m.name.includes(userName) || userName.includes(m.name)));
+
+    if (!currentMember) {
+      const searchNames = [userName, authUserName].filter(Boolean) as string[];
+      if (searchNames.length > 0) {
+        const allMembers = await db.select().from(teamMembers).where(eq(teamMembers.teamId, teamId)).all();
+        for (const sn of searchNames) {
+          const cleanSn = sn.replace(/\s+/g, "");
+          currentMember = allMembers.find(m => {
+            if (!m.name) return false;
+            const cleanMn = m.name.replace(/\s+/g, "");
+            return cleanMn.includes(cleanSn) || cleanSn.includes(cleanMn);
+          });
+          if (currentMember) break;
+        }
+      }
     }
 
     const myMemberId = currentMember?.id || null;
     const roleLower = currentMember?.role?.toLowerCase() || "";
     const isManager = Boolean(
+      isSysAdmin ||
+      isTeamCreator ||
       roleLower === "manager" ||
       roleLower === "admin" ||
       roleLower === "coach" ||

@@ -270,11 +270,11 @@ export default function AttendanceMatrixBoardPage() {
   // 編集権限チェック
   const canEditPerson = useCallback((personId: string, groupType: string) => {
     if (isDemo) return true; // デモ時は自由に操作可能
-    if (myInfo.isManager && isManagerOverrideMode) return true;
+    if (myInfo.isManager) return true; // 🌟 管理者は全員の出欠を自由にメンテ・登録可能！
     if (myInfo.memberId && myInfo.memberId === personId) return true;
     if (myInfo.playerIds && myInfo.playerIds.includes(personId)) return true;
     return false;
-  }, [isDemo, myInfo, isManagerOverrideMode]);
+  }, [isDemo, myInfo]);
 
   // セルクリック時の処理
   const handleCellClick = (event: EventItem, person: MemberPerson) => {

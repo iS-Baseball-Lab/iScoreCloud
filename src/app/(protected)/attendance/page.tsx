@@ -106,6 +106,8 @@ export default function AttendancePage() {
   const [groupRelations, setGroupRelations] = useState<GroupMemberRelation[]>([]);
   const [myUserId, setMyUserId] = useState<string | null>(null);
   const [myRole, setMyRole] = useState<string>("");
+  const [isSystemAdmin, setIsSystemAdmin] = useState<boolean>(false);
+  const [isFounder, setIsFounder] = useState<boolean>(false);
   const [allCars, setAllCars] = useState<any[]>([]); // 🌟 車両マスタ用状態
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -271,11 +273,27 @@ export default function AttendancePage() {
         const meJson = await meRes.json() as any;
         if (meJson.success && meJson.data) {
           setMyUserId(meJson.data.id);
+          const isSys = meJson.data.systemRole === "SYSTEM_ADMIN" || meJson.data.role === "SYSTEM_ADMIN";
+          if (isSys) setIsSystemAdmin(true);
           const membership = meJson.data.memberships?.find((m: any) => m.teamId === tid);
           if (membership) {
             setMyRole(membership.role || "");
           }
         }
+      }
+
+      // チーム情報取得（創設者チェック）
+      try {
+        const teamsRes = await fetch("/api/teams", { cache: "no-store" });
+        if (teamsRes.ok) {
+          const teamsData = (await teamsRes.json()) as any[];
+          const currentT = teamsData.find((t: any) => t.id === tid);
+          if (currentT?.isFounder) {
+            setIsFounder(true);
+          }
+        }
+      } catch (err) {
+        console.warn("Founder check skipped", err);
       }
 
       // 統合出欠データのフェッチ
@@ -330,9 +348,10 @@ export default function AttendancePage() {
 
   // 管理者権限判定
   const canManage = useMemo(() => {
-    const roleUpper = myRole.toUpperCase();
+    if (isSystemAdmin || isFounder) return true;
+    const roleUpper = (myRole || "").toUpperCase();
     return roleUpper === "ADMIN" || roleUpper === "MANAGER" || roleUpper === "SYSTEM_ADMIN";
-  }, [myRole]);
+  }, [myRole, isSystemAdmin, isFounder]);
 
   // 2. 出欠表のグリッド向けデータ構成
   const filteredMemberIdsByGroup = useMemo(() => {
