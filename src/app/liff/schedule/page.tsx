@@ -1106,10 +1106,6 @@ export default function LiffSchedulePage() {
                               <span className="text-[9px] font-black mr-0.5">△</span>{ev.attendCount.game ?? 0}
                             </span>
                             <span className="text-border/80">|</span>
-                            <span className="text-foreground font-black flex items-center" title="出席合計 (◎+○+▲+△)">
-                              <span className="text-[9px] font-medium opacity-75 mr-0.5">計</span>{ev.attendCount.present}
-                            </span>
-                            <span className="text-border/80">|</span>
                             <span className="text-slate-500 dark:text-slate-400 font-black flex items-center" title="× 欠席">
                               <span className="text-[9px] font-black mr-0.5">×</span>{ev.attendCount.absent}
                             </span>
