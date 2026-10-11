@@ -236,11 +236,17 @@ export default function AttendanceMatrixBoardPage() {
     const allParents = groups.parents.length > 0 ? groups.parents : [...groups.mothers, ...groups.fathers];
 
     if (selectedGroupTab === "all") {
-      list = [
+      const combined = [
         ...groups.players,
         ...allParents,
         ...groups.staff,
       ];
+      const seen = new Set<string>();
+      list = combined.filter(m => {
+        if (seen.has(m.id)) return false;
+        seen.add(m.id);
+        return true;
+      });
     } else if (selectedGroupTab === "player") {
       list = groups.players;
     } else if (selectedGroupTab === "parent") {
@@ -511,7 +517,7 @@ export default function AttendanceMatrixBoardPage() {
             >
               <span>👥 全員</span>
               <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/10 dark:bg-white/10">
-                {groups.players.length + (groups.parents.length > 0 ? groups.parents.length : groups.mothers.length + groups.fathers.length) + groups.staff.length}
+                {new Set([...groups.players, ...(groups.parents.length > 0 ? groups.parents : [...groups.mothers, ...groups.fathers]), ...groups.staff].map(m => m.id)).size}
               </span>
             </button>
 

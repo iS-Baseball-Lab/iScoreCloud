@@ -1206,40 +1206,76 @@ app.get("/attendance-matrix", async (c) => {
       const hasKids = kids.length > 0;
       const kidsName = hasKids ? kids.join("・") : "";
 
-      const hasFatherKeyword = name.includes("父") || name.includes("パパ") || name.includes("夫") || name.includes("お父さん");
-      const hasMotherKeyword = name.includes("母") || name.includes("ママ") || name.includes("妻") || name.includes("お母さん");
-      const isStaff = m.role === "manager" || m.role === "coach" || m.role === "scorer" || m.memberType === "staff" || name.includes("監督") || name.includes("コーチ") || name.includes("代表");
+      const hasFatherKeyword =
+        name.includes("父") ||
+        name.includes("パパ") ||
+        name.includes("夫") ||
+        name.includes("お父さん") ||
+        name.includes("守"); // 💡 佐藤守様等の男性名や父表記に対応
+      const hasMotherKeyword =
+        name.includes("母") ||
+        name.includes("ママ") ||
+        name.includes("妻") ||
+        name.includes("お母さん");
 
-      if (isStaff) {
-        const roleLabel = name.includes("監督") ? "監督" : name.includes("コーチ") ? "コーチ" : name.includes("代表") ? "代表" : m.role === "manager" ? "管理者" : "スタッフ";
+      const isManagerOrAdmin = m.role === "manager" || m.role === "admin";
+      const isScorerOrCoach = m.role === "coach" || m.role === "scorer";
+      const isStaffKeyword = name.includes("監督") || name.includes("コーチ") || name.includes("代表");
+      const isStaffExplicit = m.memberType === "staff" || isStaffKeyword;
+      const isParentExplicit = m.memberType === "parent" || hasKids;
+
+      // 👔 指導者・スタッフ判定（純粋なスタッフ、またはIT管理者・役員）
+      const shouldIncludeInStaff = isStaffExplicit || isScorerOrCoach || isManagerOrAdmin;
+
+      // 👪 保護者判定（保護者区分、子どもがいる、または純粋な指導者でない管理者）
+      const shouldIncludeInParent = isParentExplicit || (!isStaffKeyword && !isScorerOrCoach);
+
+      // 指導者・スタッフリストへの登録
+      if (shouldIncludeInStaff) {
+        const roleLabel = name.includes("監督")
+          ? "監督"
+          : name.includes("コーチ")
+          ? "コーチ"
+          : name.includes("代表")
+          ? "代表"
+          : isManagerOrAdmin
+          ? "IT管理者"
+          : m.role === "scorer"
+          ? "スコアラー"
+          : "スタッフ";
         staffList.push({
           id: m.id,
           name: name,
           subText: hasKids ? `${kidsName} / ${roleLabel}` : roleLabel,
           groupType: "staff" as const,
         });
-      } else if (hasFatherKeyword) {
-        fathersList.push({
-          id: m.id,
-          name: name,
-          subText: hasKids ? `${kidsName}の父` : "保護者(父)",
-          groupType: "father" as const,
-        });
-      } else if (hasMotherKeyword) {
-        mothersList.push({
-          id: m.id,
-          name: name,
-          subText: hasKids ? `${kidsName}の母` : "保護者(母)",
-          groupType: "mother" as const,
-        });
-      } else {
-        // 🌟 どちらの明示的キーワードもない保護者（勝手に母にせず、安全に保護者として扱う）
-        otherParentsList.push({
-          id: m.id,
-          name: name,
-          subText: hasKids ? `${kidsName}の保護者` : "保護者",
-          groupType: "parent" as const,
-        });
+      }
+
+      // 保護者リストへの登録（母・父・その他の保護者）
+      if (shouldIncludeInParent) {
+        const adminTag = isManagerOrAdmin ? " (IT管理者)" : "";
+        if (hasFatherKeyword) {
+          fathersList.push({
+            id: m.id,
+            name: name,
+            subText: (hasKids ? `${kidsName}の父` : "保護者(父)") + adminTag,
+            groupType: "father" as const,
+          });
+        } else if (hasMotherKeyword) {
+          mothersList.push({
+            id: m.id,
+            name: name,
+            subText: (hasKids ? `${kidsName}の母` : "保護者(母)") + adminTag,
+            groupType: "mother" as const,
+          });
+        } else {
+          otherParentsList.push({
+            id: m.id,
+            name: name,
+            subText: (hasKids ? `${kidsName}の保護者` : "保護者") + adminTag,
+            groupType: "parent" as const,
+          });
+        }
       }
     }
 
