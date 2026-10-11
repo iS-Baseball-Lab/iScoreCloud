@@ -129,10 +129,10 @@ interface MemberPerson {
   name: string;
   uniformNumber?: string;
   subText?: string;
-  groupType: "player" | "mother" | "father" | "staff";
+  groupType: "player" | "parent" | "mother" | "father" | "staff";
 }
 
-type GroupTabType = "all" | "player" | "mother" | "father" | "staff";
+type GroupTabType = "all" | "player" | "parent" | "mother" | "father" | "staff";
 
 export default function AttendanceMatrixBoardPage() {
   const { profile, currentTeam, isDemo } = useLiff();
@@ -141,11 +141,13 @@ export default function AttendanceMatrixBoardPage() {
   const [events, setEvents] = useState<EventItem[]>([]);
   const [groups, setGroups] = useState<{
     players: MemberPerson[];
+    parents: MemberPerson[];
     mothers: MemberPerson[];
     fathers: MemberPerson[];
     staff: MemberPerson[];
   }>({
     players: [],
+    parents: [],
     mothers: [],
     fathers: [],
     staff: [],
@@ -196,7 +198,17 @@ export default function AttendanceMatrixBoardPage() {
       const data = (await res.json()) as any;
       if (data.success) {
         setEvents(data.events || []);
-        setGroups(data.groups || { players: [], mothers: [], fathers: [], staff: [] });
+        const g = data.groups || {};
+        const mothers = g.mothers || [];
+        const fathers = g.fathers || [];
+        const parents = g.parents || [...mothers, ...fathers];
+        setGroups({
+          players: g.players || [],
+          parents: parents,
+          mothers: mothers,
+          fathers: fathers,
+          staff: g.staff || [],
+        });
         setMatrix(data.matrix || {});
         if (data.myInfo) {
           setMyInfo(data.myInfo);
@@ -221,15 +233,18 @@ export default function AttendanceMatrixBoardPage() {
   // 選択されたタブに応じたメンバー一覧
   const currentMembers = useMemo(() => {
     let list: MemberPerson[] = [];
+    const allParents = groups.parents.length > 0 ? groups.parents : [...groups.mothers, ...groups.fathers];
+
     if (selectedGroupTab === "all") {
       list = [
         ...groups.players,
-        ...groups.mothers,
-        ...groups.fathers,
+        ...allParents,
         ...groups.staff,
       ];
     } else if (selectedGroupTab === "player") {
       list = groups.players;
+    } else if (selectedGroupTab === "parent") {
+      list = allParents;
     } else if (selectedGroupTab === "mother") {
       list = groups.mothers;
     } else if (selectedGroupTab === "father") {
@@ -340,8 +355,9 @@ export default function AttendanceMatrixBoardPage() {
     const absentNames: string[] = [];
 
     // メンバー名を取得
+    const allParents = groups.parents.length > 0 ? groups.parents : [...groups.mothers, ...groups.fathers];
     const allMembersMap = new Map<string, string>();
-    [...groups.players, ...groups.mothers, ...groups.fathers, ...groups.staff].forEach(m => {
+    [...groups.players, ...allParents, ...groups.staff].forEach(m => {
       allMembersMap.set(m.id, m.name);
     });
 
@@ -495,7 +511,7 @@ export default function AttendanceMatrixBoardPage() {
             >
               <span>👥 全員</span>
               <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/10 dark:bg-white/10">
-                {groups.players.length + groups.mothers.length + groups.fathers.length + groups.staff.length}
+                {groups.players.length + (groups.parents.length > 0 ? groups.parents.length : groups.mothers.length + groups.fathers.length) + groups.staff.length}
               </span>
             </button>
 
@@ -511,6 +527,21 @@ export default function AttendanceMatrixBoardPage() {
               <span>⚾ 選手</span>
               <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/10 dark:bg-white/10">
                 {groups.players.length}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setSelectedGroupTab("parent")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all active:scale-95 shrink-0 ${
+                selectedGroupTab === "parent"
+                  ? "bg-amber-600 text-white font-black shadow-xs"
+                  : "bg-card hover:bg-muted text-muted-foreground border border-border/60"
+              }`}
+            >
+              <span>👪 保護者(全)</span>
+              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/10 dark:bg-white/10">
+                {groups.parents.length > 0 ? groups.parents.length : groups.mothers.length + groups.fathers.length}
               </span>
             </button>
 
@@ -654,7 +685,9 @@ export default function AttendanceMatrixBoardPage() {
                               <span className="text-[9px] font-black text-blue-600 dark:text-blue-400">父</span>
                             ) : person.groupType === "staff" ? (
                               <span className="text-[9px] font-black text-purple-600 dark:text-purple-400">指導</span>
-                            ) : null}
+                            ) : (
+                              <span className="text-[9px] font-black text-amber-600 dark:text-amber-400">保護</span>
+                            )}
                             <span className={`text-[10px] font-black truncate max-w-[42px] ${isMe ? "text-primary" : "text-foreground"}`}>
                               {person.name.length > 3 ? person.name.slice(0, 3) : person.name}
                             </span>
@@ -670,7 +703,30 @@ export default function AttendanceMatrixBoardPage() {
                   {events.map((ev) => {
                     const isSaturday = ev.dayOfWeek === "土";
                     const isSunday = ev.dayOfWeek === "日";
-                    const summary = ev.statusSummary;
+
+                    // 🌟 表示中メンバー(currentMembers)に基づいた動的集計を算出
+                    let duty = 0;
+                    let help = 0;
+                    let setup = 0;
+                    let game = 0;
+                    let absent = 0;
+                    const evMatrix = matrix[ev.id] || {};
+                    for (const p of currentMembers) {
+                      const st = evMatrix[p.id]?.status;
+                      if (st === "duty") duty++;
+                      else if (st === "help") help++;
+                      else if (st === "setup") setup++;
+                      else if (st === "game") game++;
+                      else if (st === "absent") absent++;
+                    }
+                    const summary = {
+                      duty,
+                      help,
+                      setup,
+                      game,
+                      absent,
+                      totalPresent: duty + help + setup + game,
+                    };
 
                     return (
                       <tr key={ev.id} className="hover:bg-muted/30 transition-colors group">

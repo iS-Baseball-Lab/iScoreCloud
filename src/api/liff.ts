@@ -1018,6 +1018,17 @@ app.get("/attendance-matrix", async (c) => {
             { id: "demo-p-5", name: "田中 颯真", uniformNumber: "7", subText: "#7", groupType: "player" },
             { id: "demo-p-6", name: "渡辺 湊", uniformNumber: "10", subText: "#10", groupType: "player" },
           ],
+          parents: [
+            { id: "demo-mother-1", name: "山田 (母)", subText: "翔太の母 (1班)", groupType: "mother" },
+            { id: "demo-mother-2", name: "佐藤 (母)", subText: "陸の母 (2班)", groupType: "mother" },
+            { id: "demo-mother-3", name: "鈴木 (母)", subText: "大地の母 (3班)", groupType: "mother" },
+            { id: "demo-mother-4", name: "高橋 (母)", subText: "蓮の母 (4班)", groupType: "mother" },
+            { id: "demo-mother-5", name: "田中 (母)", subText: "颯真の母 (1班)", groupType: "mother" },
+            { id: "demo-father-1", name: "山田 (父)", subText: "翔太の父 (審判)", groupType: "father" },
+            { id: "demo-father-2", name: "佐藤 (父)", subText: "陸の父 (車出し)", groupType: "father" },
+            { id: "demo-father-3", name: "鈴木 (父)", subText: "大地の父 (設営)", groupType: "father" },
+            { id: "demo-father-4", name: "田中 (父)", subText: "颯真の父 (審判)", groupType: "father" },
+          ],
           mothers: [
             { id: "demo-mother-1", name: "山田 (母)", subText: "翔太の母 (1班)", groupType: "mother" },
             { id: "demo-mother-2", name: "佐藤 (母)", subText: "陸の母 (2班)", groupType: "mother" },
@@ -1137,11 +1148,14 @@ app.get("/attendance-matrix", async (c) => {
     const myPlayerIds = myMemberId ? relations.filter(r => r.parentId === myMemberId).map(r => r.childId) : [];
 
     // 3. 選手一覧取得
-    const allPlayers = await db
+    // 3. 選手一覧取得（在籍選手のみ）
+    const allPlayersRaw = await db
       .select()
       .from(players)
       .where(eq(players.teamId, teamId))
       .all();
+
+    const allPlayers = allPlayersRaw.filter(p => p.isActive !== false);
 
     const formattedPlayers = allPlayers
       .map(p => ({
@@ -1157,12 +1171,18 @@ app.get("/attendance-matrix", async (c) => {
         return numA - numB;
       });
 
-    // 4. 大人のメンバー一覧取得 & 分類 (母, 父, 指導者)
-    const allTeamMembers = await db
+    // 4. 大人のメンバー一覧取得 & 分類 (選手除外 & 承認済みのみ)
+    const allTeamMembersRaw = await db
       .select()
       .from(teamMembers)
       .where(eq(teamMembers.teamId, teamId))
       .all();
+
+    // 🌟 選手を除外 & 承認済みアクティブのみ
+    const allTeamMembers = allTeamMembersRaw.filter(m => 
+      m.memberType !== "player" && 
+      (m.status === "active" || !m.status)
+    );
 
     // 親ID -> 子供名リストのマッピング
     const parentChildrenMap = new Map<string, string[]>();
@@ -1178,37 +1198,53 @@ app.get("/attendance-matrix", async (c) => {
     const mothersList: Array<any> = [];
     const fathersList: Array<any> = [];
     const staffList: Array<any> = [];
+    const otherParentsList: Array<any> = [];
 
     for (const m of allTeamMembers) {
       const name = m.name || "";
       const kids = parentChildrenMap.get(m.id) || [];
-      const kidsStr = kids.length > 0 ? `${kids.join("・")}の保護者` : "";
+      const hasKids = kids.length > 0;
+      const kidsName = hasKids ? kids.join("・") : "";
 
-      if (m.role === "manager" || m.role === "coach" || m.memberType === "staff" || name.includes("監督") || name.includes("コーチ")) {
-        const roleLabel = name.includes("監督") ? "監督" : name.includes("コーチ") ? "コーチ" : m.role === "manager" ? "管理者" : "スタッフ";
+      const hasFatherKeyword = name.includes("父") || name.includes("パパ") || name.includes("夫") || name.includes("お父さん");
+      const hasMotherKeyword = name.includes("母") || name.includes("ママ") || name.includes("妻") || name.includes("お母さん");
+      const isStaff = m.role === "manager" || m.role === "coach" || m.role === "scorer" || m.memberType === "staff" || name.includes("監督") || name.includes("コーチ") || name.includes("代表");
+
+      if (isStaff) {
+        const roleLabel = name.includes("監督") ? "監督" : name.includes("コーチ") ? "コーチ" : name.includes("代表") ? "代表" : m.role === "manager" ? "管理者" : "スタッフ";
         staffList.push({
           id: m.id,
           name: name,
-          subText: roleLabel,
+          subText: hasKids ? `${kidsName} / ${roleLabel}` : roleLabel,
           groupType: "staff" as const,
         });
-      } else if (name.includes("父") || name.includes("パパ") || name.includes("夫")) {
+      } else if (hasFatherKeyword) {
         fathersList.push({
           id: m.id,
           name: name,
-          subText: kids.length > 0 ? `${kids.join("・")}の父` : "保護者(父)",
+          subText: hasKids ? `${kidsName}の父` : "保護者(父)",
           groupType: "father" as const,
         });
-      } else {
-        // デフォルト母または保護者
+      } else if (hasMotherKeyword) {
         mothersList.push({
           id: m.id,
           name: name,
-          subText: kids.length > 0 ? `${kids.join("・")}の母` : "保護者(母)",
+          subText: hasKids ? `${kidsName}の母` : "保護者(母)",
           groupType: "mother" as const,
+        });
+      } else {
+        // 🌟 どちらの明示的キーワードもない保護者（勝手に母にせず、安全に保護者として扱う）
+        otherParentsList.push({
+          id: m.id,
+          name: name,
+          subText: hasKids ? `${kidsName}の保護者` : "保護者",
+          groupType: "parent" as const,
         });
       }
     }
+
+    // 👪 保護者全体（母 + 父 + 一般保護者）
+    const allParentsList = [...mothersList, ...fathersList, ...otherParentsList];
 
     // 5. イベント一覧取得
     const allEvents = await db
@@ -1305,6 +1341,7 @@ app.get("/attendance-matrix", async (c) => {
       events: eventsWithSummary,
       groups: {
         players: formattedPlayers,
+        parents: allParentsList,
         mothers: mothersList,
         fathers: fathersList,
         staff: staffList,
