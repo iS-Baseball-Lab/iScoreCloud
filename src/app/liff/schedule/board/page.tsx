@@ -415,310 +415,230 @@ export default function AttendanceMatrixBoardPage() {
       {/* ヘッダー */}
       <LiffHeader />
 
-      <main className="max-w-7xl mx-auto px-2 sm:px-4 pt-3 space-y-3">
-        {/* ページタイトル & 戻る導線 */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-1">
-          <div className="flex items-center gap-2">
-            <span className="w-8 h-8 rounded-xl bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-black shrink-0">
-              <Users className="w-4 h-4" />
+      <main className="max-w-7xl mx-auto px-1 sm:px-2 pt-1.5 space-y-1.5">
+        {/* ページタイトル & 戻る導線 (極限までコンパクト化) */}
+        <div className="flex items-center justify-between gap-1.5 px-0.5">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="w-6 h-6 rounded-lg bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-black shrink-0">
+              <Users className="w-3.5 h-3.5" />
             </span>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-base sm:text-lg font-black text-foreground tracking-tight">
-                  出欠一覧表（マトリクス）
-                </h1>
-                <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20">
-                  簡易集計
-                </span>
-              </div>
-              <p className="text-[11px] text-muted-foreground font-bold">
-                日付・班・イベントと各メンバーの出欠を一覧で確認・登録
-              </p>
-            </div>
+            <h1 className="text-xs sm:text-sm font-black text-foreground truncate">
+              出欠一覧表（マトリクス）
+            </h1>
           </div>
 
-          {/* 📅 通常のカレンダー予定表示への切り替えボタン */}
           <Link
             href="/liff/schedule"
-            className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl bg-card hover:bg-muted border border-border/80 text-xs font-black text-foreground shadow-2xs active:scale-95 transition-all self-start sm:self-auto"
+            className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-card hover:bg-muted border border-border/80 text-[10.5px] font-black text-foreground shadow-2xs active:scale-95 transition-all shrink-0"
           >
-            <CalendarIcon className="w-3.5 h-3.5 text-primary" />
-            <span>カレンダー表示に戻る</span>
-            <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
+            <CalendarIcon className="w-3 h-3 text-primary" />
+            <span>予定へ戻る</span>
+            <ChevronRight className="w-3 h-3 text-muted-foreground" />
           </Link>
         </div>
 
-        {/* 凡例 & 管理者モードトグル */}
-        <div className="bg-card rounded-2xl p-3 border border-border/80 shadow-2xs space-y-2.5">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            {/* 凡例ラベル */}
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[11px] font-black text-muted-foreground flex items-center gap-1">
-                <Info className="w-3.5 h-3.5 text-primary" /> 記号凡例:
-              </span>
-              <span className="inline-flex items-center gap-1 text-[11px] font-bold">
-                <span className="w-4 h-4 rounded-full bg-red-500 text-white flex items-center justify-center text-[10px] font-black">◎</span>
-                <span>当番</span>
-              </span>
-              <span className="inline-flex items-center gap-1 text-[11px] font-bold">
-                <span className="w-4 h-4 rounded-full bg-blue-600 text-white flex items-center justify-center text-[10px] font-black">○</span>
-                <span>ヘルプ</span>
-              </span>
-              <span className="inline-flex items-center gap-1 text-[11px] font-bold">
-                <span className="w-4 h-4 rounded-full bg-amber-500 text-white flex items-center justify-center text-[10px] font-black">▲</span>
-                <span>設営・撤収</span>
-              </span>
-              <span className="inline-flex items-center gap-1 text-[11px] font-bold">
-                <span className="w-4 h-4 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[10px] font-black">△</span>
-                <span>試合のみ</span>
-              </span>
-              <span className="inline-flex items-center gap-1 text-[11px] font-bold">
-                <span className="w-4 h-4 rounded-full bg-slate-400 text-white flex items-center justify-center text-[10px] font-bold">×</span>
-                <span>欠席</span>
-              </span>
-            </div>
-
-            {/* 管理者代理入力トグル */}
-            {myInfo.isManager && (
-              <button
-                type="button"
-                onClick={() => setIsManagerOverrideMode(prev => !prev)}
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-black transition-all active:scale-95 border ${
-                  isManagerOverrideMode
-                    ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/40 shadow-xs"
-                    : "bg-muted text-muted-foreground border-border/60 hover:text-foreground"
-                }`}
-              >
-                {isManagerOverrideMode ? (
-                  <>
-                    <Unlock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-                    <span>管理者代理入力ON（全編集可）</span>
-                  </>
-                ) : (
-                  <>
-                    <Lock className="w-3.5 h-3.5" />
-                    <span>本人・家族のみ編集</span>
-                  </>
-                )}
-              </button>
-            )}
+        {/* 凡例 & 管理者モードトグル (1行・超薄型コンパクト) */}
+        <div className="bg-card rounded-xl px-2 py-1 border border-border/80 shadow-2xs flex flex-wrap items-center justify-between gap-1 text-[9.5px]">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="font-black text-muted-foreground">凡例:</span>
+            <span className="inline-flex items-center gap-0.5 font-bold">
+              <span className="w-3.5 h-3.5 rounded-full bg-red-500 text-white flex items-center justify-center text-[9px] font-black">◎</span>
+              <span>当番</span>
+            </span>
+            <span className="inline-flex items-center gap-0.5 font-bold">
+              <span className="w-3.5 h-3.5 rounded-full bg-blue-600 text-white flex items-center justify-center text-[9px] font-black">○</span>
+              <span>ヘルプ</span>
+            </span>
+            <span className="inline-flex items-center gap-0.5 font-bold">
+              <span className="w-3.5 h-3.5 rounded-full bg-amber-500 text-white flex items-center justify-center text-[9px] font-black">▲</span>
+              <span>設営撤収</span>
+            </span>
+            <span className="inline-flex items-center gap-0.5 font-bold">
+              <span className="w-3.5 h-3.5 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[9px] font-black">△</span>
+              <span>試合のみ</span>
+            </span>
+            <span className="inline-flex items-center gap-0.5 font-bold">
+              <span className="w-3.5 h-3.5 rounded-full bg-slate-400 text-white flex items-center justify-center text-[9px] font-bold">×</span>
+              <span>欠席</span>
+            </span>
           </div>
+
+          {myInfo.isManager && (
+            <button
+              type="button"
+              onClick={() => setIsManagerOverrideMode(prev => !prev)}
+              className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9.5px] font-black transition-all active:scale-95 border ${
+                isManagerOverrideMode
+                  ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/40 shadow-xs"
+                  : "bg-muted text-muted-foreground border-border/60 hover:text-foreground"
+              }`}
+            >
+              {isManagerOverrideMode ? (
+                <>
+                  <Unlock className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                  <span>代理入力ON</span>
+                </>
+              ) : (
+                <>
+                  <Lock className="w-3 h-3" />
+                  <span>通常入力</span>
+                </>
+              )}
+            </button>
+          )}
         </div>
 
-        {/* 👥 グループ切り分けタブ ＆ 検索バー */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
+        {/* 👥 グループ切り分けタブ ＆ 検索バー (超スリム化) */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-1">
           {/* グループタブ */}
-          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 -mx-1 px-1">
-            <button
-              type="button"
-              onClick={() => setSelectedGroupTab("all")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all active:scale-95 shrink-0 ${
-                selectedGroupTab === "all"
-                  ? "bg-primary text-primary-foreground font-black shadow-xs shadow-primary/20"
-                  : "bg-card hover:bg-muted text-muted-foreground border border-border/60"
-              }`}
-            >
-              <span>👥 全員</span>
-              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/10 dark:bg-white/10">
-                {new Set([...groups.players, ...(groups.parents.length > 0 ? groups.parents : [...groups.mothers, ...groups.fathers]), ...groups.staff].map(m => m.id)).size}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setSelectedGroupTab("player")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all active:scale-95 shrink-0 ${
-                selectedGroupTab === "player"
-                  ? "bg-emerald-600 text-white font-black shadow-xs"
-                  : "bg-card hover:bg-muted text-muted-foreground border border-border/60"
-              }`}
-            >
-              <span>⚾ 選手</span>
-              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/10 dark:bg-white/10">
-                {groups.players.length}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setSelectedGroupTab("parent")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all active:scale-95 shrink-0 ${
-                selectedGroupTab === "parent"
-                  ? "bg-amber-600 text-white font-black shadow-xs"
-                  : "bg-card hover:bg-muted text-muted-foreground border border-border/60"
-              }`}
-            >
-              <span>👪 保護者(全)</span>
-              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/10 dark:bg-white/10">
-                {groups.parents.length > 0 ? groups.parents.length : groups.mothers.length + groups.fathers.length}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setSelectedGroupTab("mother")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all active:scale-95 shrink-0 ${
-                selectedGroupTab === "mother"
-                  ? "bg-rose-500 text-white font-black shadow-xs"
-                  : "bg-card hover:bg-muted text-muted-foreground border border-border/60"
-              }`}
-            >
-              <span>👩 保護者（母）</span>
-              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/10 dark:bg-white/10">
-                {groups.mothers.length}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setSelectedGroupTab("father")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all active:scale-95 shrink-0 ${
-                selectedGroupTab === "father"
-                  ? "bg-blue-600 text-white font-black shadow-xs"
-                  : "bg-card hover:bg-muted text-muted-foreground border border-border/60"
-              }`}
-            >
-              <span>👨 保護者（父）</span>
-              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/10 dark:bg-white/10">
-                {groups.fathers.length}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setSelectedGroupTab("staff")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all active:scale-95 shrink-0 ${
-                selectedGroupTab === "staff"
-                  ? "bg-purple-600 text-white font-black shadow-xs"
-                  : "bg-card hover:bg-muted text-muted-foreground border border-border/60"
-              }`}
-            >
-              <span>👔 指導者・スタッフ</span>
-              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/10 dark:bg-white/10">
-                {groups.staff.length}
-              </span>
-            </button>
+          <div className="flex items-center gap-1 overflow-x-auto no-scrollbar py-0.5 -mx-0.5 px-0.5">
+            {[
+              { id: "all", label: "全員", count: new Set([...groups.players, ...(groups.parents.length > 0 ? groups.parents : [...groups.mothers, ...groups.fathers]), ...groups.staff].map(m => m.id)).size, activeClass: "bg-primary text-primary-foreground font-black shadow-xs shadow-primary/20" },
+              { id: "player", label: "選手", count: groups.players.length, activeClass: "bg-emerald-600 text-white font-black shadow-xs" },
+              { id: "parent", label: "保護者", count: groups.parents.length > 0 ? groups.parents.length : groups.mothers.length + groups.fathers.length, activeClass: "bg-amber-600 text-white font-black shadow-xs" },
+              { id: "mother", label: "母", count: groups.mothers.length, activeClass: "bg-rose-500 text-white font-black shadow-xs" },
+              { id: "father", label: "父", count: groups.fathers.length, activeClass: "bg-blue-600 text-white font-black shadow-xs" },
+              { id: "staff", label: "指導・スタッフ", count: groups.staff.length, activeClass: "bg-purple-600 text-white font-black shadow-xs" },
+            ].map(tab => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setSelectedGroupTab(tab.id as any)}
+                className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap transition-all active:scale-95 shrink-0 ${
+                  selectedGroupTab === tab.id
+                    ? tab.activeClass
+                    : "bg-card hover:bg-muted text-muted-foreground border border-border/60"
+                }`}
+              >
+                <span>{tab.label}</span>
+                <span className="text-[9px] px-1 py-0 rounded-full bg-black/10 dark:bg-white/10">
+                  {tab.count}
+                </span>
+              </button>
+            ))}
           </div>
 
           {/* 氏名検索インプット */}
-          <div className="relative shrink-0 sm:w-48">
-            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <div className="relative shrink-0 sm:w-36">
+            <Search className="w-3 h-3 absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="メンバー名検索..."
-              className="w-full pl-8 pr-3 py-1 text-xs rounded-xl bg-card border border-border/80 focus:outline-none focus:ring-1 focus:ring-primary text-foreground placeholder:text-muted-foreground"
+              className="w-full pl-6 pr-2 py-0.5 text-[10px] rounded-lg bg-card border border-border/80 focus:outline-none focus:ring-1 focus:ring-primary text-foreground placeholder:text-muted-foreground h-6"
             />
             {searchQuery && (
               <button
                 type="button"
                 onClick={() => setSearchQuery("")}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
               >
-                <X className="w-3 h-3" />
+                <X className="w-2.5 h-2.5" />
               </button>
             )}
           </div>
         </div>
 
         {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            📊 出欠マトリクス表（スプレッドシート型UI）
+            📊 出欠マトリクス表（スプレッドシート型UI・余白極小・不透明完全固定）
             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
         {isLoading ? (
-          <div className="p-12 flex flex-col items-center justify-center gap-2 bg-card rounded-2xl border border-border">
-            <Loader2 className="w-6 h-6 animate-spin text-primary" />
-            <p className="text-xs text-muted-foreground font-bold">出欠一覧表を読み込み中...</p>
+          <div className="p-8 flex flex-col items-center justify-center gap-2 bg-card rounded-xl border border-border">
+            <Loader2 className="w-5 h-5 animate-spin text-primary" />
+            <p className="text-[11px] text-muted-foreground font-bold">出欠一覧表を読み込み中...</p>
           </div>
         ) : events.length === 0 ? (
-          <div className="p-8 text-center bg-card rounded-2xl border border-border">
-            <AlertCircle className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
-            <p className="text-sm font-black text-foreground">表示する予定・イベントがありません</p>
-            <p className="text-xs text-muted-foreground mt-1">「活動予定の一括登録」から予定を追加してください。</p>
+          <div className="p-6 text-center bg-card rounded-xl border border-border">
+            <AlertCircle className="w-6 h-6 text-muted-foreground mx-auto mb-1.5" />
+            <p className="text-xs font-black text-foreground">表示する予定・イベントがありません</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">「活動予定の一括登録」から予定を追加してください。</p>
           </div>
         ) : (
-          <div className="relative bg-card rounded-2xl border border-border shadow-xs overflow-hidden">
-            <div className="overflow-x-auto max-h-[75vh] relative no-scrollbar overscroll-x-contain" style={{ WebkitOverflowScrolling: "touch" }}>
-              <table className="w-max min-w-full text-left border-separate border-spacing-0 select-none">
-                {/* 📌 ヘッダー行 (メンバー一覧 & 出欠記号別集計ヘッダー) */}
+          <div className="relative bg-card rounded-xl border border-border shadow-xs overflow-hidden">
+            <div className="overflow-auto max-h-[82vh] relative no-scrollbar" style={{ WebkitOverflowScrolling: "touch" }}>
+              <table className="w-max min-w-full text-left border-separate border-spacing-0 select-none" style={{ borderCollapse: "separate", borderSpacing: 0 }}>
+                {/* 📌 ヘッダー行 (メンバー一覧 & 出欠記号別集計ヘッダー: 100%完全不透明・半透明排除) */}
                 <thead className="z-30">
-                  <tr className="h-12">
-                    {/* 左上固定セル: イベント情報列 (不透明bg-muted・最上位z-50・完全固定幅145px) */}
+                  <tr className="h-9">
+                    {/* 左上固定セル: イベント情報列 (完全不透明bg-slate-100・最上位z-50・完全固定幅124px) */}
                     <th
                       style={{ WebkitTransform: "translateZ(0)", transform: "translateZ(0)" }}
-                      className="sticky top-0 left-0 z-50 bg-muted border-b-2 border-r border-border w-[145px] min-w-[145px] max-w-[145px] p-2 text-xs font-black text-foreground shadow-xs align-middle"
+                      className="sticky top-0 left-0 z-50 bg-slate-100 dark:bg-zinc-800 border-b-2 border-r border-border w-[124px] min-w-[124px] max-w-[124px] p-1 text-[11px] font-black text-foreground shadow-xs align-middle"
                     >
                       <div className="flex items-center justify-between gap-1">
-                        <span className="text-xs font-black truncate">日付 / 班 / イベント</span>
-                        <span className="text-[10px] text-muted-foreground font-bold shrink-0">
+                        <span className="text-[11px] font-black truncate">日付 / 班 / イベント</span>
+                        <span className="text-[9px] text-muted-foreground font-bold shrink-0">
                           {events.length}日
                         </span>
                       </div>
                     </th>
 
-                    {/* 📊 出欠集計列 (各記号ごとの専用タイトル列・100%完全不透明背景) */}
+                    {/* 📊 出欠集計列 (各記号ごとの専用タイトル列・100%完全不透明ソリッド背景・計列削除済み) */}
                     <th
                       style={{ WebkitTransform: "translateZ(0)", transform: "translateZ(0)" }}
-                      className="sticky top-0 z-40 w-8 min-w-[30px] max-w-[30px] p-1 text-center border-b-2 border-r border-border/80 bg-red-100 dark:bg-red-950/70 text-red-600 dark:text-red-400 font-black text-xs align-middle"
+                      className="sticky top-0 z-40 w-6 min-w-[25px] max-w-[25px] p-0.5 text-center border-b-2 border-r border-border bg-[#fee2e2] dark:bg-[#450a0a] text-red-700 dark:text-red-300 font-black text-[11px] align-middle"
                       title="◎ 出席（当番）"
                     >
                       ◎
                     </th>
                     <th
                       style={{ WebkitTransform: "translateZ(0)", transform: "translateZ(0)" }}
-                      className="sticky top-0 z-40 w-8 min-w-[30px] max-w-[30px] p-1 text-center border-b-2 border-r border-border/80 bg-blue-100 dark:bg-blue-950/70 text-blue-600 dark:text-blue-400 font-black text-xs align-middle"
+                      className="sticky top-0 z-40 w-6 min-w-[25px] max-w-[25px] p-0.5 text-center border-b-2 border-r border-border bg-[#dbeafe] dark:bg-[#172554] text-blue-700 dark:text-blue-300 font-black text-[11px] align-middle"
                       title="○ 出席（ヘルプ）"
                     >
                       ○
                     </th>
                     <th
                       style={{ WebkitTransform: "translateZ(0)", transform: "translateZ(0)" }}
-                      className="sticky top-0 z-40 w-8 min-w-[30px] max-w-[30px] p-1 text-center border-b-2 border-r border-border/80 bg-amber-100 dark:bg-amber-950/70 text-amber-600 dark:text-amber-400 font-black text-xs align-middle"
+                      className="sticky top-0 z-40 w-6 min-w-[25px] max-w-[25px] p-0.5 text-center border-b-2 border-r border-border bg-[#fef3c7] dark:bg-[#451a03] text-amber-700 dark:text-amber-300 font-black text-[11px] align-middle"
                       title="▲ 出席（設営・撤収のみ）"
                     >
                       ▲
                     </th>
                     <th
                       style={{ WebkitTransform: "translateZ(0)", transform: "translateZ(0)" }}
-                      className="sticky top-0 z-40 w-8 min-w-[30px] max-w-[30px] p-1 text-center border-b-2 border-r border-border/80 bg-emerald-100 dark:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400 font-black text-xs align-middle"
+                      className="sticky top-0 z-40 w-6 min-w-[25px] max-w-[25px] p-0.5 text-center border-b-2 border-r border-border bg-[#d1fae5] dark:bg-[#064e3b] text-emerald-700 dark:text-emerald-300 font-black text-[11px] align-middle"
                       title="△ 出席（試合のみ）"
                     >
                       △
                     </th>
                     <th
                       style={{ WebkitTransform: "translateZ(0)", transform: "translateZ(0)" }}
-                      className="sticky top-0 z-40 w-8 min-w-[30px] max-w-[30px] p-1 text-center border-b-2 border-r border-border bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-black text-xs align-middle"
+                      className="sticky top-0 z-40 w-6 min-w-[25px] max-w-[25px] p-0.5 text-center border-b-2 border-r border-border bg-[#e2e8f0] dark:bg-[#1e293b] text-slate-700 dark:text-slate-300 font-black text-[11px] align-middle"
                       title="× 欠席"
                     >
                       ×
                     </th>
 
-                    {/* メンバー列 (超コンパクト・固定幅・完全不透明背景) */}
+                    {/* メンバー列 (超コンパクト・幅35px・100%完全不透明背景) */}
                     {currentMembers.map((person) => {
                       const isMe = person.id === myInfo.memberId || myInfo.playerIds.includes(person.id);
                       return (
                         <th
                           key={person.id}
                           style={{ WebkitTransform: "translateZ(0)", transform: "translateZ(0)" }}
-                          className={`sticky top-0 z-40 w-11 min-w-[44px] max-w-[44px] p-1 text-center border-b-2 border-r border-border/70 bg-muted align-middle transition-colors ${
-                            isMe ? "bg-primary/20" : ""
+                          className={`sticky top-0 z-40 w-9 min-w-[35px] max-w-[35px] p-0.5 text-center border-b-2 border-r border-border align-middle transition-colors ${
+                            isMe
+                              ? "bg-blue-200 dark:bg-blue-900 text-blue-950 dark:text-blue-100 ring-1 ring-inset ring-blue-500 font-black"
+                              : "bg-slate-100 dark:bg-zinc-800 text-foreground"
                           }`}
                         >
-                          <div className="flex flex-col items-center justify-center leading-tight py-0.5">
+                          <div className="flex flex-col items-center justify-center leading-none py-0.5">
                             {person.uniformNumber ? (
-                              <span className="text-[9px] font-black text-primary px-1 rounded bg-primary/10">
+                              <span className="text-[8.5px] font-black text-primary px-0.5 py-0.1 rounded bg-primary/10">
                                 #{person.uniformNumber}
                               </span>
                             ) : person.groupType === "mother" ? (
-                              <span className="text-[9px] font-black text-rose-600 dark:text-rose-400">母</span>
+                              <span className="text-[8.5px] font-black text-rose-600 dark:text-rose-400">母</span>
                             ) : person.groupType === "father" ? (
-                              <span className="text-[9px] font-black text-blue-600 dark:text-blue-400">父</span>
+                              <span className="text-[8.5px] font-black text-blue-600 dark:text-blue-400">父</span>
                             ) : person.groupType === "staff" ? (
-                              <span className="text-[9px] font-black text-purple-600 dark:text-purple-400">指導</span>
+                              <span className="text-[8.5px] font-black text-purple-600 dark:text-purple-400">指導</span>
                             ) : (
-                              <span className="text-[9px] font-black text-amber-600 dark:text-amber-400">保護</span>
+                              <span className="text-[8.5px] font-black text-amber-600 dark:text-amber-400">保護</span>
                             )}
-                            <span className={`text-[10px] font-black truncate max-w-[40px] mt-0.5 ${isMe ? "text-primary" : "text-foreground"}`}>
+                            <span className={`text-[9.5px] font-black truncate max-w-[33px] mt-0.5 ${isMe ? "text-blue-950 dark:text-blue-100 font-black" : "text-foreground"}`}>
                               {person.name.length > 3 ? person.name.slice(0, 3) : person.name}
                             </span>
                           </div>
@@ -760,15 +680,16 @@ export default function AttendanceMatrixBoardPage() {
 
                     return (
                       <tr key={ev.id} className="hover:bg-muted/30 transition-colors group">
-                        {/* ① 左側固定セル: 日付・班・イベント (完全不透明bg-card・固定幅145px) */}
+                        {/* ① 左側固定セル: 日付・班・イベント (完全不透明bg-white/zinc-900・幅124px・日付幅52px完全統一) */}
                         <td
                           style={{ WebkitTransform: "translateZ(0)", transform: "translateZ(0)" }}
-                          className="sticky left-0 z-20 bg-card border-b border-r border-border w-[145px] min-w-[145px] max-w-[145px] p-2 shadow-xs"
+                          className="sticky left-0 z-20 bg-white dark:bg-zinc-900 border-b border-r border-border w-[124px] min-w-[124px] max-w-[124px] p-1 shadow-xs"
                         >
-                          <div className="flex items-center justify-between gap-1 leading-tight">
+                          <div className="flex items-center justify-between gap-0.5 leading-tight">
                             <div className="flex items-center gap-1 min-w-0">
+                              {/* 統一幅の日付バッジ (幅52px固定) */}
                               <span
-                                className={`text-[11px] font-black px-1 rounded whitespace-nowrap shrink-0 ${
+                                className={`w-[52px] min-w-[52px] max-w-[52px] text-center inline-block tabular-nums font-bold text-[10px] py-0.5 px-0.5 rounded shrink-0 ${
                                   isSunday
                                     ? "bg-red-500/15 text-red-600 dark:text-red-400"
                                     : isSaturday
@@ -779,7 +700,7 @@ export default function AttendanceMatrixBoardPage() {
                                 {ev.date}({ev.dayOfWeek})
                               </span>
                               {ev.dutyGroup && ev.dutyGroup !== "なし" && (
-                                <span className="text-[9px] font-black px-1 rounded bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 whitespace-nowrap shrink-0">
+                                <span className="text-[8.5px] font-black px-1 py-0.2 rounded bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 whitespace-nowrap shrink-0">
                                   {ev.dutyGroup}
                                 </span>
                               )}
@@ -792,52 +713,52 @@ export default function AttendanceMatrixBoardPage() {
                               title="LINE連絡用に集計コピー"
                               className="p-0.5 text-muted-foreground hover:text-primary rounded hover:bg-muted active:scale-90 transition-all cursor-pointer shrink-0"
                             >
-                              <ClipboardCopy className="w-3 h-3" />
+                              <ClipboardCopy className="w-2.5 h-2.5" />
                             </button>
                           </div>
 
-                          <p className="text-[10px] font-black text-foreground truncate max-w-[130px] mt-1" title={ev.title}>
+                          <p className="text-[9.5px] font-black text-foreground truncate max-w-[115px] mt-0.5 leading-tight" title={ev.title}>
                             {ev.title}
                           </p>
                         </td>
 
-                        {/* ② 出欠集計 各記号ごとの集計値セル (計列はユーザー要望により削除) */}
+                        {/* ② 出欠集計 各記号ごとの集計値セル (計列削除・幅25px・完全不透明) */}
                         {/* ◎ 当番 */}
-                        <td className={`w-8 min-w-[30px] max-w-[30px] p-1 text-center border-b border-r border-border/70 font-black text-[11px] ${
-                          summary.duty > 0 ? "text-red-600 dark:text-red-400 bg-red-500/10 font-black" : "text-muted-foreground/30 bg-card"
+                        <td className={`w-6 min-w-[25px] max-w-[25px] p-0.5 text-center border-b border-r border-border font-black text-[10.5px] ${
+                          summary.duty > 0 ? "text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-950 font-black" : "text-muted-foreground/30 bg-white dark:bg-zinc-900"
                         }`}>
                           {summary.duty}
                         </td>
 
                         {/* ○ ヘルプ */}
-                        <td className={`w-8 min-w-[30px] max-w-[30px] p-1 text-center border-b border-r border-border/70 font-black text-[11px] ${
-                          summary.help > 0 ? "text-blue-600 dark:text-blue-400 bg-blue-500/10 font-black" : "text-muted-foreground/30 bg-card"
+                        <td className={`w-6 min-w-[25px] max-w-[25px] p-0.5 text-center border-b border-r border-border font-black text-[10.5px] ${
+                          summary.help > 0 ? "text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-950 font-black" : "text-muted-foreground/30 bg-white dark:bg-zinc-900"
                         }`}>
                           {summary.help}
                         </td>
 
                         {/* ▲ 設営撤収 */}
-                        <td className={`w-8 min-w-[30px] max-w-[30px] p-1 text-center border-b border-r border-border/70 font-black text-[11px] ${
-                          summary.setup > 0 ? "text-amber-600 dark:text-amber-400 bg-amber-500/10 font-black" : "text-muted-foreground/30 bg-card"
+                        <td className={`w-6 min-w-[25px] max-w-[25px] p-0.5 text-center border-b border-r border-border font-black text-[10.5px] ${
+                          summary.setup > 0 ? "text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-950 font-black" : "text-muted-foreground/30 bg-white dark:bg-zinc-900"
                         }`}>
                           {summary.setup}
                         </td>
 
                         {/* △ 試合のみ */}
-                        <td className={`w-8 min-w-[30px] max-w-[30px] p-1 text-center border-b border-r border-border/70 font-black text-[11px] ${
-                          summary.game > 0 ? "text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 font-black" : "text-muted-foreground/30 bg-card"
+                        <td className={`w-6 min-w-[25px] max-w-[25px] p-0.5 text-center border-b border-r border-border font-black text-[10.5px] ${
+                          summary.game > 0 ? "text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-950 font-black" : "text-muted-foreground/30 bg-white dark:bg-zinc-900"
                         }`}>
                           {summary.game}
                         </td>
 
                         {/* × 欠席 */}
-                        <td className={`w-8 min-w-[30px] max-w-[30px] p-1 text-center border-b border-r border-border font-bold text-[11px] ${
-                          summary.absent > 0 ? "text-slate-500 dark:text-slate-400 bg-slate-500/10" : "text-muted-foreground/30 bg-card"
+                        <td className={`w-6 min-w-[25px] max-w-[25px] p-0.5 text-center border-b border-r border-border font-bold text-[10.5px] ${
+                          summary.absent > 0 ? "text-slate-600 dark:text-slate-300 bg-slate-200 dark:bg-slate-800" : "text-muted-foreground/30 bg-white dark:bg-zinc-900"
                         }`}>
                           {summary.absent}
                         </td>
 
-                        {/* ③ メンバー別 出欠セル (超コンパクト・完全不透明背景) */}
+                        {/* ③ メンバー別 出欠セル (超コンパクト・幅35px・完全不透明背景・記号w-5 h-5) */}
                         {currentMembers.map((person) => {
                           const att = matrix[ev.id]?.[person.id] || { status: "pending", comment: "" };
                           const statusConfig = ATTENDANCE_STATUSES[att.status as AttendanceMarkType] || ATTENDANCE_STATUSES.pending;
@@ -848,15 +769,15 @@ export default function AttendanceMatrixBoardPage() {
                             <td
                               key={person.id}
                               onClick={() => handleCellClick(ev, person)}
-                              className={`w-11 min-w-[44px] max-w-[44px] p-1 text-center border-b border-r border-border/50 bg-card transition-all overflow-hidden ${
+                              className={`w-9 min-w-[35px] max-w-[35px] p-0.5 text-center border-b border-r border-border/50 bg-white dark:bg-zinc-900 transition-all overflow-hidden ${
                                 isEditable
                                   ? "cursor-pointer hover:bg-primary/10 active:scale-90"
                                   : "opacity-90"
-                              } ${isMe ? "bg-primary/5" : ""}`}
+                              } ${isMe ? "bg-blue-50/50 dark:bg-blue-950/30" : ""}`}
                             >
                               <div className="relative z-0 inline-flex items-center justify-center">
                                 <span
-                                  className={`w-6 h-6 rounded-md flex items-center justify-center text-xs font-black transition-transform ${statusConfig.badgeClass} ${
+                                  className={`w-5 h-5 rounded-md flex items-center justify-center text-[10.5px] font-black transition-transform ${statusConfig.badgeClass} ${
                                     isEditable ? "group-hover:scale-105" : ""
                                   }`}
                                 >
@@ -866,7 +787,7 @@ export default function AttendanceMatrixBoardPage() {
                                 {/* コメント/メモがある場合のドットインジケータ */}
                                 {att.comment && (
                                   <span
-                                    className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-amber-400 border border-card ring-1 ring-black/20"
+                                    className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-amber-400 border border-card ring-1 ring-black/20"
                                     title={att.comment}
                                   />
                                 )}
