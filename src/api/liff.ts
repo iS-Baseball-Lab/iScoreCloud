@@ -791,24 +791,22 @@ app.get("/schedule", async (c) => {
           .where(eq(attendances.eventId, ev.id))
           .all();
 
-        const presentCount = attList.filter((a) => a.status === "present" || a.status === "late" || a.status === "partial").length;
+        const dutyCount = attList.filter((a) => a.status === "duty").length;
+        const helpCount = attList.filter((a) => a.status === "help" || a.status === "present").length;
+        const setupCount = attList.filter((a) => a.status === "setup" || a.status === "late" || a.status === "partial").length;
+        const gameCount = attList.filter((a) => a.status === "game").length;
         const absentCount = attList.filter((a) => a.status === "absent").length;
-        const pendingCount = attList.filter((a) => a.status === "pending").length;
+        const pendingCount = attList.filter((a) => a.status === "pending" || !a.status).length;
+        const presentCount = dutyCount + helpCount + setupCount + gameCount;
 
-        let myStatus: "present" | "absent" | "pending" | "late" = "pending";
+        let myStatus: string = "pending";
         let mySelectedGroupId: string | null = null;
         if (userId || schedMemberId) {
           const myAtt = attList.find((a) => 
             (userId && a.userId === userId) || (schedMemberId && a.memberId === schedMemberId)
           );
           if (myAtt?.status) {
-            myStatus = myAtt.status === "present"
-              ? "present"
-              : myAtt.status === "late" || myAtt.status === "partial"
-              ? "late"
-              : myAtt.status === "absent"
-              ? "absent"
-              : "pending";
+            myStatus = myAtt.status;
             mySelectedGroupId = (myAtt as any).selectedGroupId || null;
           }
         }
@@ -914,6 +912,10 @@ app.get("/schedule", async (c) => {
             present: presentCount,
             absent: absentCount,
             pending: pendingCount,
+            duty: dutyCount,
+            help: helpCount,
+            setup: setupCount,
+            game: gameCount,
           },
         };
       })
@@ -1789,12 +1791,13 @@ app.post("/attendance", async (c) => {
         .where(and(eq(attendances.eventId, eventId), eq(attendances.playerId, playerId)))
         .get();
 
+      const isAttending = status !== "absent" && status !== "pending";
       if (existing) {
         await db
           .update(attendances)
           .set({
             status: status,
-            selectedGroupId: status === "present" ? (selectedGroupId || existing.selectedGroupId) : null,
+            selectedGroupId: isAttending ? (selectedGroupId || existing.selectedGroupId) : null,
             comment: comment || existing.comment,
             updatedAt: new Date(),
           })
@@ -1805,7 +1808,7 @@ app.post("/attendance", async (c) => {
           eventId,
           playerId,
           status: status,
-          selectedGroupId: status === "present" ? (selectedGroupId || null) : null,
+          selectedGroupId: isAttending ? (selectedGroupId || null) : null,
           roleInEvent: "player",
           comment: comment || null,
           updatedAt: new Date(),
@@ -1856,12 +1859,13 @@ app.post("/attendance", async (c) => {
         .get();
     }
 
+    const isAttending = status !== "absent" && status !== "pending";
     if (existing) {
       await db
         .update(attendances)
         .set({
           status: status,
-          selectedGroupId: status === "present" ? (selectedGroupId || existing.selectedGroupId) : null,
+          selectedGroupId: isAttending ? (selectedGroupId || existing.selectedGroupId) : null,
           userId: validUserId || existing.userId || null,
           memberId: effectiveMemberId || existing.memberId,
           hasCar: hasCar !== undefined ? hasCar : existing.hasCar,
@@ -1876,7 +1880,7 @@ app.post("/attendance", async (c) => {
         userId: validUserId,
         memberId: effectiveMemberId || null,
         status: status,
-        selectedGroupId: status === "present" ? (selectedGroupId || null) : null,
+        selectedGroupId: isAttending ? (selectedGroupId || null) : null,
         hasCar: !!hasCar,
         roleInEvent: "parent",
         comment: comment || null,
