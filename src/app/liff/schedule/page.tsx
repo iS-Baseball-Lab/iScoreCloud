@@ -733,87 +733,42 @@ export default function LiffSchedulePage() {
       <div className="p-4 space-y-4">
         {/* ページ内ヘッダー */}
         <LiffPageHeader
-          title="予定 & 出欠"
-          subtitle="活動日程・球場・集合時間・お当番・出欠回答"
+          title="活動予定"
+          subtitle="活動日程・球場・集合時間・お当番"
           icon={
-            <span className="w-8 h-8 rounded-xl bg-primary/15 text-primary flex items-center justify-center font-black">
+            <span className="w-8 h-8 rounded-xl bg-orange-500/15 text-orange-600 dark:text-orange-400 flex items-center justify-center font-black">
               <CalendarIcon className="w-4 h-4" />
             </span>
           }
           showBack
           shareData={{
-            title: `【予定 & 出欠】${currentTeam?.name || "チーム"} 活動スケジュール`,
-            text: `今月の活動予定・球場・集合時間・出欠回答はこちらから確認できます`,
+            title: `【活動予定】${currentTeam?.name || "チーム"} 活動スケジュール`,
+            text: `今月の活動予定・球場・集合時間・お当番はこちらから確認できます`,
           }}
         />
 
-        {/* 🛠️ ナビゲーションショートカット (一括登録 & 出欠一覧表) */}
-        <div className="grid grid-cols-2 gap-2">
-          {/* ① 📊 簡易出欠一覧表 */}
-          <Link
-            href="/liff/schedule/board"
-            className="flex items-center justify-between p-2.5 px-3 rounded-2xl bg-indigo-500/10 hover:bg-indigo-500/15 border border-indigo-500/30 hover:border-indigo-500/50 shadow-2xs active:scale-[0.98] transition-all group"
-          >
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="w-7 h-7 rounded-xl bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-black shrink-0">
-                <ClipboardCheck className="w-3.5 h-3.5" />
-              </span>
-              <div className="min-w-0">
-                <span className="text-xs font-black text-foreground block truncate">
-                  出欠一覧表
-                </span>
-                <span className="text-[10px] text-muted-foreground font-bold block truncate">
-                  当番集計・出欠確認
-                </span>
-              </div>
-            </div>
-            <ChevronRight className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 group-hover:translate-x-0.5 transition-transform shrink-0" />
-          </Link>
-
-          {/* ② 🛠️ 活動予定の一括登録・編集（スケジューラー導線） */}
-          <Link
-            href="/liff/schedule/admin"
-            className="flex items-center justify-between p-2.5 px-3 rounded-2xl bg-card hover:bg-primary/5 border border-primary/25 hover:border-primary/45 shadow-2xs active:scale-[0.98] transition-all group"
-          >
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="w-7 h-7 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black shrink-0">
-                <Sparkles className="w-3.5 h-3.5" />
-              </span>
-              <div className="min-w-0">
-                <span className="text-xs font-black text-foreground block truncate">
-                  予定の一括登録
-                </span>
-                <span className="text-[10px] text-muted-foreground font-bold block truncate">
-                  スケジューラー
-                </span>
-              </div>
-            </div>
-            <ChevronRight className="w-3.5 h-3.5 text-primary group-hover:translate-x-0.5 transition-transform shrink-0" />
-          </Link>
-        </div>
-
-        {/* 📅 月間ミニカレンダー */}
-        <div className="p-3.5 bg-card rounded-3xl border border-border/80 shadow-xs space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-black text-foreground">
+        {/* 📅 月間ミニカレンダー (コンパクト設計) */}
+        <div className="p-2.5 sm:p-3 bg-card rounded-2xl border border-border/80 shadow-xs space-y-1.5">
+          <div className="flex items-center justify-between pb-0.5">
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs sm:text-sm font-black text-foreground">
                 {currentYear}年 {currentMonth + 1}月
               </span>
               {selectedDateStr && (
                 <button
                   type="button"
                   onClick={() => setSelectedDateStr(null)}
-                  className="px-2 py-0.5 text-[10px] font-bold rounded-lg bg-primary/15 text-primary border border-primary/30 active:scale-95"
+                  className="px-1.5 py-0.2 text-[9.5px] font-bold rounded-md bg-primary/15 text-primary border border-primary/30 active:scale-95 cursor-pointer"
                 >
-                  絞り込み解除
+                  絞込解除
                 </button>
               )}
             </div>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-0.5">
               <button
                 type="button"
                 onClick={handleToday}
-                className="px-2.5 py-1 text-[11px] font-black rounded-xl bg-muted hover:bg-muted/80 text-foreground transition-all active:scale-95 cursor-pointer"
+                className="px-2 py-0.5 text-[10.5px] font-black rounded-lg bg-muted hover:bg-muted/80 text-foreground transition-all active:scale-95 cursor-pointer"
               >
                 今日
               </button>
@@ -822,20 +777,20 @@ export default function LiffSchedulePage() {
                 onClick={handlePrevMonth}
                 className="p-1 text-muted-foreground hover:text-foreground rounded-lg transition-all cursor-pointer"
               >
-                <ChevronLeft className="w-4 h-4" />
+                <ChevronLeft className="w-3.5 h-3.5" />
               </button>
               <button
                 type="button"
                 onClick={handleNextMonth}
                 className="p-1 text-muted-foreground hover:text-foreground rounded-lg transition-all cursor-pointer"
               >
-                <ChevronRight className="w-4 h-4" />
+                <ChevronRight className="w-3.5 h-3.5" />
               </button>
             </div>
           </div>
 
           {/* 曜日ヘッダー */}
-          <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-black">
+          <div className="grid grid-cols-7 gap-0.5 text-center text-[10px] font-black pb-0.5">
             {weekDays.map((w, idx) => (
               <span
                 key={w}
@@ -847,7 +802,7 @@ export default function LiffSchedulePage() {
           </div>
 
           {/* 日付グリッド */}
-          <div className="grid grid-cols-7 gap-1">
+          <div className="grid grid-cols-7 gap-0.5">
             {calendarDays.map((d, idx) => {
               const hasEvents = eventsByDate.has(d.dateStr);
               const dayEvents = eventsByDate.get(d.dateStr) || [];
@@ -870,18 +825,18 @@ export default function LiffSchedulePage() {
                       setSelectedDateStr(d.dateStr);
                     }
                   }}
-                  className={`flex flex-col items-center justify-center p-1 rounded-xl min-h-[38px] transition-all relative cursor-pointer ${
+                  className={`flex flex-col items-center justify-center py-1 px-0.5 rounded-lg min-h-[30px] sm:min-h-[32px] transition-all relative cursor-pointer ${
                     isSelected
                       ? "bg-primary text-primary-foreground font-black shadow-xs ring-2 ring-primary/40"
                       : isToday
                       ? "bg-primary/10 border border-primary/40 font-black text-foreground"
                       : d.isCurrentMonth
                       ? "hover:bg-muted/60 text-foreground font-bold"
-                      : "text-muted-foreground/40 font-normal"
+                      : "text-muted-foreground/35 font-normal"
                   }`}
                 >
                   <span
-                    className={`text-xs ${
+                    className={`text-[11px] leading-tight ${
                       isSelected
                         ? "text-primary-foreground font-black"
                         : isSun
@@ -1024,8 +979,6 @@ export default function LiffSchedulePage() {
               const displayDutyGroup = (hasActivityGroups && currentGroup?.dutyGroup) ? currentGroup.dutyGroup : ev.dutyGroup;
               const displayCarInfo = (hasActivityGroups && currentGroup?.carInfo) ? currentGroup.carInfo : ev.carInfo;
               const displayTargetGroup = (hasActivityGroups && currentGroup?.targetGroup) ? currentGroup.targetGroup : ev.targetGroup;
-              const isAttendanceOpen = !collapsedAttendance[ev.id];
-              const pStatus = getEventAttendance(ev.id, ev.myStatus);
 
               // 🗓️ 日付の曜日パース（土=青、日=赤の明確なカレンダー色分け）
               const dateMatch = ev.date?.match(/^(.*?)(?:\((.)\))?$/);
@@ -1089,48 +1042,6 @@ export default function LiffSchedulePage() {
                     </div>
 
                     <div className="flex items-center gap-2 shrink-0 ml-auto">
-                      {/* 出欠カウンター (5マーク対応: ◎ 当番, ○ ヘルプ, ▲ 設営撤収, △ 試合のみ, × 欠席, 未 未定) */}
-                      <div className="flex items-center gap-1.5 text-[10.5px] font-bold bg-muted/50 dark:bg-muted/30 px-2.5 py-1 rounded-full border border-border/70">
-                        {(ev.attendCount.duty !== undefined || ev.attendCount.setup !== undefined || ev.attendCount.game !== undefined) ? (
-                          <>
-                            <span className="text-red-500 font-black flex items-center" title="◎ 当番">
-                              <span className="text-[9px] font-black mr-0.5">◎</span>{ev.attendCount.duty ?? 0}
-                            </span>
-                            <span className="text-blue-600 dark:text-blue-400 font-black flex items-center" title="○ ヘルプ">
-                              <span className="text-[9px] font-black mr-0.5">○</span>{ev.attendCount.help ?? 0}
-                            </span>
-                            <span className="text-amber-500 font-black flex items-center" title="▲ 設営撤収">
-                              <span className="text-[9px] font-black mr-0.5">▲</span>{ev.attendCount.setup ?? 0}
-                            </span>
-                            <span className="text-emerald-600 dark:text-emerald-400 font-black flex items-center" title="△ 試合のみ">
-                              <span className="text-[9px] font-black mr-0.5">△</span>{ev.attendCount.game ?? 0}
-                            </span>
-                            <span className="text-border/80">|</span>
-                            <span className="text-slate-500 dark:text-slate-400 font-black flex items-center" title="× 欠席">
-                              <span className="text-[9px] font-black mr-0.5">×</span>{ev.attendCount.absent}
-                            </span>
-                            <span className="text-border/80">|</span>
-                            <span className="text-amber-600 dark:text-amber-400 font-black flex items-center" title="未定">
-                              <span className="text-[9px] font-medium opacity-75 mr-0.5">未</span>{ev.attendCount.pending}
-                            </span>
-                          </>
-                        ) : (
-                          <>
-                            <span className="text-emerald-600 dark:text-emerald-400 font-black">
-                              <span className="text-[9px] font-medium opacity-75">出</span> {ev.attendCount.present}
-                            </span>
-                            <span className="text-border/80">|</span>
-                            <span className="text-rose-600 dark:text-rose-400 font-black">
-                              <span className="text-[9px] font-medium opacity-75">欠</span> {ev.attendCount.absent}
-                            </span>
-                            <span className="text-border/80">|</span>
-                            <span className="text-amber-600 dark:text-amber-400 font-black">
-                              <span className="text-[9px] font-medium opacity-75">未</span> {ev.attendCount.pending}
-                            </span>
-                          </>
-                        )}
-                      </div>
-
                       {/* ✏️ 編集ボタン */}
                       <button
                         type="button"
@@ -1212,13 +1123,6 @@ export default function LiffSchedulePage() {
                                   isSel ? "bg-white/20 text-white" : "bg-primary/10 text-primary"
                                 }`}>
                                   {grp.targetGroup}
-                                </span>
-                              )}
-                              {gCount > 0 && (
-                                <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-mono ${
-                                  isSel ? "bg-white/25 text-white" : "bg-muted text-foreground"
-                                }`}>
-                                  {gCount}名
                                 </span>
                               )}
                             </button>
@@ -1620,219 +1524,6 @@ export default function LiffSchedulePage() {
                           <span>📋</span>
                           <span>{displayDutyGroup}</span>
                         </span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* ⑤ 🌟 出欠回答エリア (アコーディオン化・予定&出欠ページではデフォルト開いた状態) */}
-                  <div className="pt-2 border-t border-border/60 space-y-2">
-                    {/* アコーディオントグルボタン */}
-                    <button
-                      type="button"
-                      onClick={() => toggleAttendance(ev.id)}
-                      className="w-full flex items-center justify-between p-2.5 rounded-2xl bg-muted/40 hover:bg-muted/70 border border-border/80 transition-all cursor-pointer group select-none"
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="w-7 h-7 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
-                          <Users className="w-4 h-4" />
-                        </span>
-                        <div className="flex items-center gap-2 text-xs font-black text-foreground">
-                          <span>出欠を回答・確認</span>
-                          {/* 現在のステータス要約バッジ */}
-                          {(() => {
-                            const badge = getAttendanceBadgeInfo(pStatus);
-                            return (
-                              <span className={`px-2.5 py-0.5 rounded-full text-[10.5px] font-black border ${badge.bgLight}`}>
-                                {badge.mark} {badge.label}
-                              </span>
-                            );
-                          })()}
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-1 text-[11px] font-bold text-muted-foreground group-hover:text-foreground">
-                        <span>{isAttendanceOpen ? "閉じる" : "開く"}</span>
-                        {isAttendanceOpen ? (
-                          <ChevronUp className="w-4 h-4 text-primary shrink-0" />
-                        ) : (
-                          <ChevronDown className="w-4 h-4 text-muted-foreground group-hover:text-primary shrink-0" />
-                        )}
-                      </div>
-                    </button>
-
-                    {/* 展開時の中身（デフォルト開いている状態） */}
-                    {isAttendanceOpen && (
-                      <div className="space-y-3 pt-1 animate-in fade-in slide-in-from-top-1 duration-150">
-                        {/* 👦 1. 保護者の場合: お子様（選手）の出欠回答 */}
-                        {userRole === "parent" && children.map((child) => {
-                          const childStatus = getChildAttendance(ev.id, child.id);
-                          const selectedChildGroup = getChildSelectedGroup(ev.id, child.id, activityGroups[0]?.id);
-
-                          return (
-                            <div key={child.id} className="p-3 rounded-2xl bg-muted/30 dark:bg-muted/20 border border-border/80 space-y-2.5">
-                              <div className="flex items-center justify-between text-xs">
-                                <span className="font-black text-foreground flex items-center gap-1.5">
-                                  <span>👦</span>
-                                  <span>お子様（{child.name}{child.uniformNumber ? ` ${child.uniformNumber}` : ""}）の出欠</span>
-                                </span>
-                                <span className="text-[11px] font-bold">
-                                  {(() => {
-                                    const badge = getAttendanceBadgeInfo(childStatus);
-                                    return (
-                                      <span className={`px-2 py-0.5 rounded-full font-black border ${badge.bgLight}`}>
-                                        {badge.mark} {badge.label}
-                                      </span>
-                                    );
-                                  })()}
-                                </span>
-                              </div>
-
-                              <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
-                                {ATTENDANCE_BUTTONS.map((btn) => {
-                                  const isActive =
-                                    btn.id === "help"
-                                      ? childStatus === "help" || childStatus === "present"
-                                      : btn.id === "game"
-                                      ? childStatus === "game" || childStatus === "late" || childStatus === "partial"
-                                      : btn.id === "pending"
-                                      ? childStatus === "pending" || !childStatus
-                                      : childStatus === btn.id;
-
-                                  return (
-                                    <button
-                                      key={btn.id}
-                                      type="button"
-                                      onClick={() => handleChildStatusChange(ev.id, child.id, btn.id, selectedChildGroup || activityGroups[0]?.id)}
-                                      className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black transition-all active:scale-95 cursor-pointer ${
-                                        isActive
-                                          ? btn.activeClass
-                                          : "bg-card hover:bg-muted text-muted-foreground border border-border"
-                                      }`}
-                                    >
-                                      <span className="text-base leading-none mb-0.5 font-black">{btn.mark}</span>
-                                      <span className="text-[10px]">{btn.label}</span>
-                                    </button>
-                                  );
-                                })}
-                              </div>
-
-                              {/* 👥 参加時: 参加グループ選択チップ */}
-                              {childStatus !== "absent" && childStatus !== "pending" && hasActivityGroups && (
-                                <div className="pt-2 border-t border-border/60 space-y-1.5">
-                                  <span className="text-[10.5px] font-black text-muted-foreground flex items-center gap-1">
-                                    <Layers className="w-3.5 h-3.5 text-primary" />
-                                    <span>参加グループを選択:</span>
-                                  </span>
-                                  <div className="grid grid-cols-2 gap-1.5">
-                                    {activityGroups.map((grp) => {
-                                      const isSel = (selectedChildGroup === grp.id) || (!selectedChildGroup && grp.id === activityGroups[0].id);
-                                      return (
-                                        <button
-                                          key={grp.id}
-                                          type="button"
-                                          onClick={() => handleChildStatusChange(ev.id, child.id, childStatus, grp.id)}
-                                          className={`py-1.5 px-2 rounded-xl text-[11px] font-black border transition-all flex items-center justify-center gap-1 cursor-pointer ${
-                                            isSel
-                                              ? "bg-primary text-primary-foreground border-primary shadow-2xs"
-                                              : "bg-card text-muted-foreground border-border hover:bg-muted"
-                                          }`}
-                                        >
-                                          {isSel && <Check className="w-3 h-3 shrink-0" />}
-                                          <span className="truncate">{grp.name}</span>
-                                        </button>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-
-                        {/* 👨 2. 保護者本人（または選手本人）の出欠回答 */}
-                        {(() => {
-                          const selectedParentGroup = getParentSelectedGroup(ev.id, ev.mySelectedGroupId || activityGroups[0]?.id);
-
-                          return (
-                            <div className="space-y-2.5 p-3 rounded-2xl bg-muted/30 dark:bg-muted/20 border border-border/80">
-                              <div className="flex items-center justify-between text-xs">
-                                <span className="font-black text-foreground flex items-center gap-1.5">
-                                  <span>{userRole === "parent" ? "👨" : "⚾"}</span>
-                                  <span>{userRole === "parent" ? "保護者（自分）の参加・当番" : "あなたの出欠回答"}</span>
-                                </span>
-                                <span className="text-[11px] font-bold">
-                                  {(() => {
-                                    const badge = getAttendanceBadgeInfo(pStatus);
-                                    return (
-                                      <span className={`px-2 py-0.5 rounded-full font-black border ${badge.bgLight}`}>
-                                        {badge.mark} {badge.label}
-                                      </span>
-                                    );
-                                  })()}
-                                </span>
-                              </div>
-
-                              <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
-                                {ATTENDANCE_BUTTONS.map((btn) => {
-                                  const isActive =
-                                    btn.id === "help"
-                                      ? pStatus === "help" || pStatus === "present"
-                                      : btn.id === "game"
-                                      ? pStatus === "game" || pStatus === "late" || pStatus === "partial"
-                                      : btn.id === "pending"
-                                      ? pStatus === "pending" || !pStatus
-                                      : pStatus === btn.id;
-
-                                  return (
-                                    <button
-                                      key={btn.id}
-                                      type="button"
-                                      onClick={() => handleStatusChange(ev.id, btn.id, selectedParentGroup || activityGroups[0]?.id)}
-                                      className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black transition-all active:scale-95 cursor-pointer ${
-                                        isActive
-                                          ? btn.activeClass
-                                          : "bg-card hover:bg-muted text-muted-foreground border border-border"
-                                      }`}
-                                    >
-                                      <span className="text-base leading-none mb-0.5 font-black">{btn.mark}</span>
-                                      <span className="text-[10px]">{btn.label}</span>
-                                    </button>
-                                  );
-                                })}
-                              </div>
-
-                              {/* 👥 参加時: 参加グループ選択チップ */}
-                              {pStatus !== "absent" && pStatus !== "pending" && hasActivityGroups && (
-                                <div className="pt-2 border-t border-border/60 space-y-1.5">
-                                  <span className="text-[10.5px] font-black text-muted-foreground flex items-center gap-1">
-                                    <Layers className="w-3.5 h-3.5 text-primary" />
-                                    <span>あなたの参加先グループ:</span>
-                                  </span>
-                                  <div className="grid grid-cols-2 gap-1.5">
-                                    {activityGroups.map((grp) => {
-                                      const isSel = (selectedParentGroup === grp.id) || (!selectedParentGroup && grp.id === activityGroups[0].id);
-                                      return (
-                                        <button
-                                          key={grp.id}
-                                          type="button"
-                                          onClick={() => handleStatusChange(ev.id, pStatus, grp.id)}
-                                          className={`py-1.5 px-2 rounded-xl text-[11px] font-black border transition-all flex items-center justify-center gap-1 cursor-pointer ${
-                                            isSel
-                                              ? "bg-primary text-primary-foreground border-primary shadow-2xs"
-                                              : "bg-card text-muted-foreground border-border hover:bg-muted"
-                                          }`}
-                                        >
-                                          {isSel && <Check className="w-3 h-3 shrink-0" />}
-                                          <span className="truncate">{grp.name}</span>
-                                        </button>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })()}
                       </div>
                     )}
                   </div>
