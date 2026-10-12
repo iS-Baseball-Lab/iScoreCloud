@@ -53,8 +53,8 @@ const MENU_ITEMS = [
     category: "schedule" as const,
   },
   {
-    title: "予定 & 出欠",
-    subtitle: "当番・出欠確認",
+    title: "活動予定",
+    subtitle: "当番・イベントスケジュール",
     href: "/liff/schedule",
     icon: Calendar,
     colorClass: "bg-orange-500/15 text-orange-600 dark:text-orange-400",
@@ -149,10 +149,10 @@ export function LiffBottomNav() {
   }, [selectedCategory]);
 
   const isHome = pathname === "/liff";
-  const isStats = pathname?.startsWith("/liff/stats");
+  const isSchedule = pathname === "/liff/schedule" || pathname === "/liff/schedule/admin";
   const isMatches = pathname?.startsWith("/liff/matches");
-  const isSearch = pathname?.startsWith("/liff/grounds");
-  const isOther = isOtherMenuOpen || pathname?.startsWith("/liff/documents") || pathname?.startsWith("/liff/faq") || pathname?.startsWith("/liff/rules") || pathname?.startsWith("/liff/links") || pathname?.startsWith("/liff/carpool") || pathname?.startsWith("/liff/schedule");
+  const isBoard = pathname?.startsWith("/liff/schedule/board");
+  const isOther = isOtherMenuOpen || (!isHome && !isSchedule && !isMatches && !isBoard);
 
   return (
     <>
@@ -227,35 +227,35 @@ export function LiffBottomNav() {
                 <span className="text-[10px] leading-none tracking-tight">ホーム</span>
               </Link>
 
-              {/* ② 🏆 チーム成績 */}
+              {/* ② 📅 活動予定 */}
               <Link
-                href="/liff/stats"
+                href="/liff/schedule"
                 onClick={() => setIsOtherMenuOpen(false)}
                 className={`flex flex-col items-center justify-center gap-1 transition-all select-none active:scale-90 ${
-                  isStats && !isOtherMenuOpen
+                  isSchedule && !isOtherMenuOpen
                     ? "text-primary font-black"
                     : "text-muted-foreground hover:text-foreground font-bold"
                 }`}
               >
-                <Trophy className={`w-5 h-5 transition-transform ${isStats && !isOtherMenuOpen ? "scale-110" : ""}`} />
-                <span className="text-[10px] leading-none tracking-tight">チーム成績</span>
+                <Calendar className={`w-5 h-5 transition-transform ${isSchedule && !isOtherMenuOpen ? "scale-110" : ""}`} />
+                <span className="text-[10px] leading-none tracking-tight">活動予定</span>
               </Link>
 
               {/* ③ 中央プレースホルダー */}
               <div className="pointer-events-none" />
 
-              {/* ④ 📍 球場 & 施設 */}
+              {/* ④ 📋 出欠一覧表 */}
               <Link
-                href="/liff/grounds"
+                href="/liff/schedule/board"
                 onClick={() => setIsOtherMenuOpen(false)}
                 className={`flex flex-col items-center justify-center gap-1 transition-all select-none active:scale-90 ${
-                  isSearch && !isOtherMenuOpen
+                  isBoard && !isOtherMenuOpen
                     ? "text-primary font-black"
                     : "text-muted-foreground hover:text-foreground font-bold"
                 }`}
               >
-                <MapPin className={`w-5 h-5 transition-transform ${isSearch && !isOtherMenuOpen ? "scale-110" : ""}`} />
-                <span className="text-[9.5px] leading-none tracking-tight">球場 & 施設</span>
+                <ClipboardCheck className={`w-5 h-5 transition-transform ${isBoard && !isOtherMenuOpen ? "scale-110" : ""}`} />
+                <span className="text-[9.5px] leading-none tracking-tight">出欠一覧表</span>
               </Link>
 
               {/* ⑤ ⋯ メニュー */}
