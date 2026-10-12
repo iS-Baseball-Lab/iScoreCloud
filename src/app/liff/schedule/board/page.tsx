@@ -111,6 +111,53 @@ const ATTENDANCE_STATUSES: Record<AttendanceMarkType, AttendanceStatusConfig> = 
 };
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 🏷️ グループ別 凡例定義 (横幅いっぱい5分割)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+interface LegendItem {
+  mark: string;
+  label: string;
+  bgClass: string;
+}
+
+const GROUP_LEGENDS: Record<string, LegendItem[]> = {
+  player: [
+    { mark: "◎", label: "出席", bgClass: "bg-red-500" },
+    { mark: "○", label: "ヘルプ", bgClass: "bg-blue-600" },
+    { mark: "▲", label: "設営撤収", bgClass: "bg-amber-500" },
+    { mark: "△", label: "試合のみ", bgClass: "bg-emerald-600" },
+    { mark: "×", label: "欠席", bgClass: "bg-slate-400" },
+  ],
+  mother: [
+    { mark: "◎", label: "当番", bgClass: "bg-red-500" },
+    { mark: "○", label: "ヘルプ", bgClass: "bg-blue-600" },
+    { mark: "▲", label: "設営撤収", bgClass: "bg-amber-500" },
+    { mark: "△", label: "試合のみ", bgClass: "bg-emerald-600" },
+    { mark: "×", label: "欠席", bgClass: "bg-slate-400" },
+  ],
+  father: [
+    { mark: "◎", label: "当番", bgClass: "bg-red-500" },
+    { mark: "○", label: "ヘルプ", bgClass: "bg-blue-600" },
+    { mark: "▲", label: "設営撤収", bgClass: "bg-amber-500" },
+    { mark: "△", label: "試合のみ", bgClass: "bg-emerald-600" },
+    { mark: "×", label: "欠席", bgClass: "bg-slate-400" },
+  ],
+  staff: [
+    { mark: "◎", label: "当番", bgClass: "bg-red-500" },
+    { mark: "○", label: "ヘルプ", bgClass: "bg-blue-600" },
+    { mark: "▲", label: "設営撤収", bgClass: "bg-amber-500" },
+    { mark: "△", label: "試合のみ", bgClass: "bg-emerald-600" },
+    { mark: "×", label: "欠席", bgClass: "bg-slate-400" },
+  ],
+  all: [
+    { mark: "◎", label: "当番", bgClass: "bg-red-500" },
+    { mark: "○", label: "ヘルプ", bgClass: "bg-blue-600" },
+    { mark: "▲", label: "設営撤収", bgClass: "bg-amber-500" },
+    { mark: "△", label: "試合のみ", bgClass: "bg-emerald-600" },
+    { mark: "×", label: "欠席", bgClass: "bg-slate-400" },
+  ],
+};
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // 型定義
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 interface EventItem {
@@ -776,123 +823,101 @@ export default function AttendanceMatrixBoardPage() {
           </Link>
         </div>
 
-        {/* 凡例 & 管理者モードトグル (1行・超薄型コンパクト) */}
-        <div className="bg-card rounded-xl px-2 py-1 border border-border/80 shadow-2xs flex flex-wrap items-center justify-between gap-1 text-[9.5px]">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="font-black text-muted-foreground">凡例:</span>
-            <span className="inline-flex items-center gap-0.5 font-bold">
-              <span className="w-3.5 h-3.5 rounded-full bg-red-500 text-white flex items-center justify-center text-[9px] font-black">◎</span>
-              <span>当番</span>
-            </span>
-            <span className="inline-flex items-center gap-0.5 font-bold">
-              <span className="w-3.5 h-3.5 rounded-full bg-blue-600 text-white flex items-center justify-center text-[9px] font-black">○</span>
-              <span>ヘルプ</span>
-            </span>
-            <span className="inline-flex items-center gap-0.5 font-bold">
-              <span className="w-3.5 h-3.5 rounded-full bg-amber-500 text-white flex items-center justify-center text-[9px] font-black">▲</span>
-              <span>設営撤収</span>
-            </span>
-            <span className="inline-flex items-center gap-0.5 font-bold">
-              <span className="w-3.5 h-3.5 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[9px] font-black">△</span>
-              <span>試合のみ</span>
-            </span>
-            <span className="inline-flex items-center gap-0.5 font-bold">
-              <span className="w-3.5 h-3.5 rounded-full bg-slate-400 text-white flex items-center justify-center text-[9px] font-bold">×</span>
-              <span>欠席</span>
-            </span>
-          </div>
-
-          <div className="flex items-center gap-1 shrink-0">
-            {/* メンバー並び順設定ボタン */}
+        {/* ① 👥 グループ切り分けタブ（上段・横幅いっぱいに均等配置） */}
+        <div className="grid grid-cols-5 gap-1 w-full bg-muted/40 p-1 rounded-2xl border border-border/70 shadow-2xs">
+          {[
+            { id: "player", label: "選手", count: groups.players.length, activeClass: "bg-emerald-600 text-white font-black shadow-xs" },
+            { id: "mother", label: "母", count: groups.mothers.length, activeClass: "bg-rose-500 text-white font-black shadow-xs" },
+            { id: "father", label: "父", count: groups.fathers.length, activeClass: "bg-blue-600 text-white font-black shadow-xs" },
+            { id: "staff", label: "スタッフ", count: groups.staff.length, activeClass: "bg-purple-600 text-white font-black shadow-xs" },
+            { id: "all", label: "全員", count: new Set([...groups.players, ...(groups.parents.length > 0 ? groups.parents : [...groups.mothers, ...groups.fathers]), ...groups.staff].map(m => m.id)).size, activeClass: "bg-primary text-primary-foreground font-black shadow-xs shadow-primary/20" },
+          ].map(tab => (
             <button
+              key={tab.id}
               type="button"
-              onClick={handleOpenOrderModal}
-              className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9.5px] font-bold bg-muted hover:bg-muted/80 text-foreground border border-border/70 active:scale-95 transition-all shrink-0"
-              title="グループ内のメンバー列の並び順を設定"
+              onClick={() => setSelectedGroupTab(tab.id as any)}
+              className={`flex items-center justify-center gap-1 py-1.5 px-0.5 rounded-xl text-[10.5px] font-black transition-all active:scale-95 ${
+                selectedGroupTab === tab.id
+                  ? tab.activeClass
+                  : "bg-card hover:bg-muted text-muted-foreground border border-border/60"
+              }`}
             >
-              <ArrowUpDown className="w-3 h-3 text-primary" />
-              <span>並び順設定</span>
+              <span>{tab.label}</span>
+              <span className={`text-[8.5px] px-1 py-0 rounded-full font-bold leading-none ${
+                selectedGroupTab === tab.id ? "bg-white/20 text-white" : "bg-black/5 dark:bg-white/10 text-muted-foreground"
+              }`}>
+                {tab.count}
+              </span>
             </button>
-
-            {myInfo.isManager && (
-              <button
-                type="button"
-                onClick={() => setIsManagerOverrideMode(prev => !prev)}
-                className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9.5px] font-black transition-all active:scale-95 border ${
-                  isManagerOverrideMode
-                    ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/40 shadow-xs"
-                    : "bg-muted text-muted-foreground border-border/60 hover:text-foreground"
-                }`}
-              >
-                {isManagerOverrideMode ? (
-                  <>
-                    <Unlock className="w-3 h-3 text-amber-600 dark:text-amber-400" />
-                    <span>代理入力ON</span>
-                  </>
-                ) : (
-                  <>
-                    <Lock className="w-3 h-3" />
-                    <span>通常入力</span>
-                  </>
-                )}
-              </button>
-            )}
-          </div>
+          ))}
         </div>
 
-        {/* 👥 グループ切り分けタブ ＆ 検索バー (超スリム化) */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-1">
-          {/* グループタブ */}
-          <div className="flex items-center gap-1 overflow-x-auto no-scrollbar py-0.5 -mx-0.5 px-0.5">
-            {[
-              { id: "player", label: "選手", count: groups.players.length, activeClass: "bg-emerald-600 text-white font-black shadow-xs" },
-              { id: "mother", label: "母", count: groups.mothers.length, activeClass: "bg-rose-500 text-white font-black shadow-xs" },
-              { id: "father", label: "父", count: groups.fathers.length, activeClass: "bg-blue-600 text-white font-black shadow-xs" },
-              { id: "staff", label: "スタッフ", count: groups.staff.length, activeClass: "bg-purple-600 text-white font-black shadow-xs" },
-              { id: "all", label: "全員", count: new Set([...groups.players, ...(groups.parents.length > 0 ? groups.parents : [...groups.mothers, ...groups.fathers]), ...groups.staff].map(m => m.id)).size, activeClass: "bg-primary text-primary-foreground font-black shadow-xs shadow-primary/20" },
-            ].map(tab => (
+        {/* ② 🏷️ 凡例 ＆ アクション操作バー（グループ別の凡例を横幅いっぱいに均等配置） */}
+        <div className="bg-card rounded-xl px-2.5 py-1.5 border border-border/80 shadow-2xs space-y-1.5">
+          <div className="flex items-center justify-between gap-1 text-[9.5px]">
+            <div className="flex items-center gap-1.5 font-black text-muted-foreground">
+              <span className="w-1.5 h-1.5 rounded-full bg-primary" />
+              <span>
+                凡例（{selectedGroupTab === "player" ? "選手" : selectedGroupTab === "mother" ? "母" : selectedGroupTab === "father" ? "父" : selectedGroupTab === "staff" ? "スタッフ" : "全員"}）:
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1 shrink-0">
+              {/* メンバー並び順設定ボタン */}
               <button
-                key={tab.id}
                 type="button"
-                onClick={() => setSelectedGroupTab(tab.id as any)}
-                className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap transition-all active:scale-95 shrink-0 ${
-                  selectedGroupTab === tab.id
-                    ? tab.activeClass
-                    : "bg-card hover:bg-muted text-muted-foreground border border-border/60"
-                }`}
+                onClick={handleOpenOrderModal}
+                className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9.5px] font-bold bg-muted hover:bg-muted/80 text-foreground border border-border/70 active:scale-95 transition-all shrink-0"
+                title="グループ内のメンバー列の並び順を設定"
               >
-                <span>{tab.label}</span>
-                <span className="text-[9px] px-1 py-0 rounded-full bg-black/10 dark:bg-white/10">
-                  {tab.count}
-                </span>
+                <ArrowUpDown className="w-3 h-3 text-primary" />
+                <span>並び順設定</span>
               </button>
+
+              {myInfo.isManager && (
+                <button
+                  type="button"
+                  onClick={() => setIsManagerOverrideMode(prev => !prev)}
+                  className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9.5px] font-black transition-all active:scale-95 border ${
+                    isManagerOverrideMode
+                      ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/40 shadow-xs"
+                      : "bg-muted text-muted-foreground border-border/60 hover:text-foreground"
+                  }`}
+                >
+                  {isManagerOverrideMode ? (
+                    <>
+                      <Unlock className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                      <span>代理入力ON</span>
+                    </>
+                  ) : (
+                    <>
+                      <Lock className="w-3 h-3" />
+                      <span>通常入力</span>
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* 凡例アイコン（5分割・横幅いっぱい均等配置） */}
+          <div className="grid grid-cols-5 gap-1 text-[9.5px] pt-1 border-t border-border/50">
+            {(GROUP_LEGENDS[selectedGroupTab] || GROUP_LEGENDS.all).map((item) => (
+              <div
+                key={item.mark}
+                className="flex items-center justify-center gap-1 font-bold py-1 px-0.5 rounded-lg bg-muted/40 border border-border/40"
+              >
+                <span className={`w-3.5 h-3.5 rounded-full ${item.bgClass} text-white flex items-center justify-center text-[9px] font-black shrink-0`}>
+                  {item.mark}
+                </span>
+                <span className="truncate text-foreground text-[9px]">{item.label}</span>
+              </div>
             ))}
           </div>
-
-          {/* 氏名検索インプット */}
-          <div className="relative shrink-0 sm:w-36">
-            <Search className="w-3 h-3 absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="メンバー名検索..."
-              className="w-full pl-6 pr-2 py-0.5 text-[10px] rounded-lg bg-card border border-border/80 focus:outline-none focus:ring-1 focus:ring-primary text-foreground placeholder:text-muted-foreground h-6"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery("")}
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              >
-                <X className="w-2.5 h-2.5" />
-              </button>
-            )}
-          </div>
         </div>
 
-        {/* 📅 月単位選択 ＆ 過去日表示切替バー (超コンパクト) */}
-        <div className="bg-card rounded-xl px-2 py-1 border border-border/80 shadow-2xs flex flex-wrap items-center justify-between gap-1.5 text-[9.5px]">
+        {/* ③ 📅 月単位選択 ＆ 過去日表示切替 ＆ 検索バー (コンパクト統合) */}
+        <div className="bg-card rounded-xl p-1.5 border border-border/80 shadow-2xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-1.5 text-[9.5px]">
           {/* 月選択ピル */}
           <div className="flex items-center gap-1 overflow-x-auto no-scrollbar py-0.5">
             <span className="font-black text-muted-foreground shrink-0 flex items-center gap-0.5 mr-0.5">
@@ -934,28 +959,52 @@ export default function AttendanceMatrixBoardPage() {
             })}
           </div>
 
-          {/* 過去日 表示・非表示トグル */}
-          <button
-            type="button"
-            onClick={() => setShowPastDates(prev => !prev)}
-            className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9.5px] font-bold transition-all active:scale-95 border shrink-0 ${
-              showPastDates
-                ? "bg-primary/15 text-primary border-primary/40 font-black"
-                : "bg-muted text-muted-foreground border-border/60 hover:text-foreground"
-            }`}
-          >
-            {showPastDates ? (
-              <>
-                <Eye className="w-3 h-3" />
-                <span>過去日: 表示中</span>
-              </>
-            ) : (
-              <>
-                <EyeOff className="w-3 h-3" />
-                <span>過去日: 非表示</span>
-              </>
-            )}
-          </button>
+          {/* 過去日トグル ＆ メンバー名検索 */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {/* 過去日 表示・非表示トグル */}
+            <button
+              type="button"
+              onClick={() => setShowPastDates(prev => !prev)}
+              className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9.5px] font-bold transition-all active:scale-95 border shrink-0 ${
+                showPastDates
+                  ? "bg-primary/15 text-primary border-primary/40 font-black"
+                  : "bg-muted text-muted-foreground border-border/60 hover:text-foreground"
+              }`}
+            >
+              {showPastDates ? (
+                <>
+                  <Eye className="w-3 h-3" />
+                  <span>過去日: 表示中</span>
+                </>
+              ) : (
+                <>
+                  <EyeOff className="w-3 h-3" />
+                  <span>過去日: 非表示</span>
+                </>
+              )}
+            </button>
+
+            {/* 氏名検索インプット */}
+            <div className="relative shrink-0 flex-1 sm:w-36">
+              <Search className="w-3 h-3 absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="メンバー名検索..."
+                className="w-full pl-6 pr-5 py-0.5 text-[10px] rounded-lg bg-card border border-border/80 focus:outline-none focus:ring-1 focus:ring-primary text-foreground placeholder:text-muted-foreground h-6"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  <X className="w-2.5 h-2.5" />
+                </button>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
