@@ -966,6 +966,7 @@ app.get("/attendance-matrix", async (c) => {
             dutyGroup: "1班",
             location: "多摩川緑地第1",
             eventType: "match",
+            description: "8:30現地集合。お弁当・補食持参",
             statusSummary: { duty: 2, help: 5, setup: 2, game: 3, absent: 1, totalPresent: 12 },
           },
           {
@@ -977,6 +978,7 @@ app.get("/attendance-matrix", async (c) => {
             dutyGroup: "2班",
             location: "桜本小グラウンド",
             eventType: "practice",
+            description: "雨天時は7時までにLINE連絡。車出し3台必要",
             statusSummary: { duty: 2, help: 6, setup: 1, game: 2, absent: 2, totalPresent: 11 },
           },
           {
@@ -988,6 +990,7 @@ app.get("/attendance-matrix", async (c) => {
             dutyGroup: "3班",
             location: "等々力球場",
             eventType: "match",
+            description: "白ユニフォーム着用。アナウンス当番あり",
             statusSummary: { duty: 2, help: 7, setup: 2, game: 1, absent: 1, totalPresent: 12 },
           },
           {
@@ -999,6 +1002,7 @@ app.get("/attendance-matrix", async (c) => {
             dutyGroup: "4班",
             location: "桜本小グラウンド",
             eventType: "practice",
+            description: "水分多めに用意してください",
             statusSummary: { duty: 2, help: 4, setup: 3, game: 1, absent: 3, totalPresent: 10 },
           },
           {
@@ -1334,6 +1338,7 @@ app.get("/attendance-matrix", async (c) => {
       return {
         id: ev.id,
         title: ev.title,
+        description: ev.description || "",
         dateStr,
         date: `${st.getMonth() + 1}/${st.getDate()}`,
         dayOfWeek: day,
@@ -1596,6 +1601,31 @@ app.post("/attendance-matrix/member-order", async (c) => {
   } catch (err: any) {
     console.error("Failed to save member sort order:", err);
     return c.json({ success: false, error: err?.message || "並び順の保存に失敗しました" }, 500);
+  }
+});
+
+/**
+ * 📝 イベント（日程）ごとのメモ・備考保存API
+ * POST /api/liff/attendance-matrix/event-note
+ */
+app.post("/attendance-matrix/event-note", async (c) => {
+  await ensureEventColumns(c.env.DB);
+  const db = drizzle(c.env.DB);
+  try {
+    const body = await c.req.json();
+    const { eventId, description } = body;
+    if (!eventId) {
+      return c.json({ success: false, error: "eventId is required" }, 400);
+    }
+
+    await db.update(events)
+      .set({ description: description || null })
+      .where(eq(events.id, eventId));
+
+    return c.json({ success: true, message: "日別メモを保存しました" });
+  } catch (err: any) {
+    console.error("Failed to save event description:", err);
+    return c.json({ success: false, error: err?.message || "日別メモの保存に失敗しました" }, 500);
   }
 });
 

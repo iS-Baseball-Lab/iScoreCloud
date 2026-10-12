@@ -32,6 +32,7 @@ import {
   ArrowUpDown,
   ChevronUp,
   ChevronDown,
+  FileText,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -113,6 +114,7 @@ const ATTENDANCE_STATUSES: Record<AttendanceMarkType, AttendanceStatusConfig> = 
 interface EventItem {
   id: string;
   title: string;
+  description?: string;
   dateStr: string;
   date: string;
   dayOfWeek: string;
@@ -222,6 +224,15 @@ export default function AttendanceMatrixBoardPage() {
     comment: string;
   } | null>(null);
   const [isSavingCell, setIsSavingCell] = useState(false);
+
+  // 日別メモ編集状態
+  const [editingDayNote, setEditingDayNote] = useState<{
+    eventId: string;
+    eventTitle: string;
+    eventDate: string;
+    description: string;
+  } | null>(null);
+  const [isSavingDayNote, setIsSavingDayNote] = useState(false);
 
   // データ取得
   const loadMatrixData = useCallback(async () => {
@@ -593,6 +604,7 @@ export default function AttendanceMatrixBoardPage() {
       `【出欠集計】${event.date}(${event.dayOfWeek}) ${event.dutyGroup !== "なし" ? `[${event.dutyGroup}]` : ""}`,
       `📌 ${event.title}`,
       `📍 ${event.location}`,
+      ...(event.description ? [`📝 備考: ${event.description}`] : []),
       `━━━━━━━━━━━━━━`,
       `👥 出席計: ${totalCount}名`,
       `◎ 当番 (${dutyNames.length}): ${dutyNames.join(", ") || "なし"}`,
@@ -610,6 +622,44 @@ export default function AttendanceMatrixBoardPage() {
       toast.success("LINE連絡用の集計テキストをクリップボードにコピーしました！");
     } else {
       toast.error("クリップボードへのアクセスに失敗しました");
+    }
+  };
+
+  // 日別メモモーダルを開く
+  const handleOpenDayNoteModal = (ev: EventItem) => {
+    setEditingDayNote({
+      eventId: ev.id,
+      eventTitle: ev.title,
+      eventDate: `${ev.date}(${ev.dayOfWeek})`,
+      description: ev.description || "",
+    });
+  };
+
+  // 日別メモ保存処理
+  const handleSaveDayNote = async (newDescription: string) => {
+    if (!editingDayNote) return;
+    setIsSavingDayNote(true);
+    const { eventId } = editingDayNote;
+
+    // 楽観的更新
+    setEvents(prev => prev.map(ev => ev.id === eventId ? { ...ev, description: newDescription } : ev));
+
+    try {
+      const teamId = currentTeam?.id || "demo-team";
+      if (teamId !== "demo-team") {
+        await fetch("/api/liff/attendance-matrix/event-note", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ eventId, description: newDescription }),
+        });
+      }
+      toast.success("日別メモを保存しました");
+      setEditingDayNote(null);
+    } catch (err: any) {
+      console.error("Save day note error:", err);
+      toast.error("日別メモの保存に失敗しました");
+    } finally {
+      setIsSavingDayNote(false);
     }
   };
 
@@ -993,20 +1043,48 @@ export default function AttendanceMatrixBoardPage() {
                               )}
                             </div>
 
-                            {/* LINE集計コピーボタン */}
-                            <button
-                              type="button"
-                              onClick={() => handleCopyLineSummary(ev)}
-                              title="LINE連絡用に集計コピー"
-                              className="p-0.5 text-muted-foreground hover:text-primary rounded hover:bg-muted active:scale-90 transition-all cursor-pointer shrink-0"
-                            >
-                              <ClipboardCopy className="w-2.5 h-2.5" />
-                            </button>
+                            <div className="flex items-center gap-0.5 shrink-0">
+                              {/* 日別メモ・備考ボタン */}
+                              <button
+                                type="button"
+                                onClick={() => handleOpenDayNoteModal(ev)}
+                                title={ev.description ? `備考: ${ev.description} (タップして編集)` : "日別の備考・メモを入力"}
+                                className={`p-0.5 rounded transition-all cursor-pointer ${
+                                  ev.description
+                                    ? "text-amber-600 dark:text-amber-400 bg-amber-500/15 hover:bg-amber-500/25"
+                                    : "text-muted-foreground/60 hover:text-foreground hover:bg-muted"
+                                }`}
+                              >
+                                <FileText className="w-2.5 h-2.5" />
+                              </button>
+
+                              {/* LINE集計コピーボタン */}
+                              <button
+                                type="button"
+                                onClick={() => handleCopyLineSummary(ev)}
+                                title="LINE連絡用に集計コピー"
+                                className="p-0.5 text-muted-foreground hover:text-primary rounded hover:bg-muted active:scale-90 transition-all cursor-pointer"
+                              >
+                                <ClipboardCopy className="w-2.5 h-2.5" />
+                              </button>
+                            </div>
                           </div>
 
                           <p className="text-[9.5px] font-black text-foreground truncate max-w-[115px] mt-0.5 leading-tight" title={ev.title}>
                             {ev.title}
                           </p>
+
+                          {/* 💬 日別メモ・備考の表示 */}
+                          {ev.description && (
+                            <p
+                              onClick={() => handleOpenDayNoteModal(ev)}
+                              className="text-[8.5px] text-amber-700 dark:text-amber-300 font-bold truncate max-w-[115px] mt-0.5 cursor-pointer hover:underline flex items-center gap-0.5 leading-tight bg-amber-500/10 px-1 py-0.5 rounded border border-amber-500/20"
+                              title={`備考: ${ev.description} (タップして編集)`}
+                            >
+                              <MessageSquare className="w-2 h-2 shrink-0 text-amber-600 dark:text-amber-400" />
+                              <span className="truncate">{ev.description}</span>
+                            </p>
+                          )}
                         </td>
 
                         {/* ② 出欠集計 各記号ごとの集計値セル (計列削除・幅25px・完全不透明) */}
@@ -1092,16 +1170,16 @@ export default function AttendanceMatrixBoardPage() {
         )}
 
         {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            ✏️ セルタップ時の出欠変更モーダル
+            ✏️ セルタップ時の出欠変更モーダル (ボトムナビと重ならない中央フロート配置)
             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
         {editingCell && (
-          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-xs p-0 sm:p-4 animate-in fade-in duration-150">
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-3.5 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
             <div
               className="absolute inset-0"
               onClick={() => !isSavingCell && setEditingCell(null)}
             />
 
-            <div className="relative w-full max-w-md bg-card rounded-t-3xl sm:rounded-3xl border border-border shadow-2xl p-5 space-y-4 animate-in slide-in-from-bottom duration-200">
+            <div className="relative w-full max-w-md bg-card rounded-2xl border border-border shadow-2xl p-4 sm:p-5 space-y-3.5 max-h-[85vh] overflow-y-auto no-scrollbar">
               {/* モーダルヘッダー */}
               <div className="flex items-start justify-between pb-2 border-b border-border/60">
                 <div>
@@ -1194,10 +1272,110 @@ export default function AttendanceMatrixBoardPage() {
         )}
 
         {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            📝 日別メモ・備考入力モーダル
+            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+        {editingDayNote && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-3.5 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+            <div
+              className="absolute inset-0"
+              onClick={() => !isSavingDayNote && setEditingDayNote(null)}
+            />
+
+            <div className="relative w-full max-w-md bg-card rounded-2xl border border-border shadow-2xl p-4 sm:p-5 space-y-3.5 max-h-[85vh] overflow-y-auto no-scrollbar">
+              <div className="flex items-start justify-between pb-2 border-b border-border/60">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="w-6 h-6 rounded-lg bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center font-black shrink-0">
+                    <FileText className="w-3.5 h-3.5" />
+                  </span>
+                  <div>
+                    <h3 className="text-xs font-black text-foreground">日別の備考・メモ</h3>
+                    <p className="text-[9.5px] text-muted-foreground">
+                      📅 {editingDayNote.eventDate} : {editingDayNote.eventTitle}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  disabled={isSavingDayNote}
+                  onClick={() => setEditingDayNote(null)}
+                  className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* クイック入力タグ */}
+              <div className="space-y-1">
+                <p className="text-[9.5px] font-bold text-muted-foreground">よく使う定型文・タグ:</p>
+                <div className="flex flex-wrap gap-1">
+                  {[
+                    "持ち物: お弁当・水筒多め",
+                    "雨天時は7時までにLINE連絡",
+                    "白ユニフォーム着用",
+                    "現地8:30集合",
+                    "配車3台必要",
+                    "アナウンス当番あり",
+                  ].map(tag => (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() => setEditingDayNote(prev => prev ? {
+                        ...prev,
+                        description: prev.description ? `${prev.description} / ${tag}` : tag
+                      } : null)}
+                      className="px-2 py-0.5 rounded-md bg-muted hover:bg-muted/80 text-[9.5px] font-bold text-foreground border border-border/70 active:scale-95 transition-all"
+                    >
+                      + {tag}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* メモ本文入力欄 */}
+              <div className="space-y-1">
+                <label className="text-xs font-black text-foreground flex items-center justify-between">
+                  <span>備考・メモ内容:</span>
+                  <span className="text-[9.5px] text-muted-foreground font-normal">
+                    LINE集計コピーにも自動反映されます
+                  </span>
+                </label>
+                <textarea
+                  rows={3}
+                  value={editingDayNote.description}
+                  onChange={(e) => setEditingDayNote(prev => prev ? { ...prev, description: e.target.value } : null)}
+                  placeholder="例: 雨天時は7時にLINE連絡。持ち物は多めの水分とお弁当..."
+                  className="w-full px-3 py-2 text-xs rounded-xl bg-muted/50 border border-border focus:outline-none focus:ring-1 focus:ring-primary text-foreground placeholder:text-muted-foreground resize-none leading-relaxed"
+                />
+              </div>
+
+              {/* フッター操作ボタン */}
+              <div className="flex items-center justify-end gap-2 pt-1 border-t border-border">
+                <button
+                  type="button"
+                  onClick={() => setEditingDayNote(null)}
+                  className="px-3 py-1.5 rounded-xl border border-border text-xs font-bold text-muted-foreground hover:bg-muted active:scale-95 transition-all"
+                >
+                  キャンセル
+                </button>
+                <button
+                  type="button"
+                  disabled={isSavingDayNote}
+                  onClick={() => handleSaveDayNote(editingDayNote.description)}
+                  className="px-4 py-1.5 rounded-xl bg-primary text-primary-foreground text-xs font-black hover:brightness-110 active:scale-95 transition-all flex items-center gap-1"
+                >
+                  {isSavingDayNote ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                  <span>備考を保存</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
             ⚙️ メンバー並び順設定モーダル
             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
         {isOrderModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-3 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
             <div className="w-full max-w-md bg-card rounded-2xl border border-border shadow-xl p-3.5 space-y-3">
               <div className="flex items-center justify-between border-b border-border pb-2">
                 <div className="flex items-center gap-1.5 min-w-0">
