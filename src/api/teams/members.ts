@@ -2,7 +2,18 @@
 import type { Context } from 'hono'
 import { getAuth } from "@/lib/auth"
 import { drizzle } from 'drizzle-orm/d1'
-import { teams, teamMembers, teamRoleSettings } from '@/db/schema'
+import { 
+  teams, 
+  teamMembers, 
+  teamRoleSettings,
+  parentChildRelations,
+  attendances,
+  memberCars,
+  eventCarpools,
+  eventCarpoolRiders,
+  teamGroupMembers,
+  eventEquipments,
+} from '@/db/schema'
 import { and, eq } from 'drizzle-orm'
 import { canManageTeam, ROLES } from '@/lib/roles'
 import type { AuthUser } from '@/types/api'
@@ -370,5 +381,156 @@ export const handleUpdateMemberInfo = async (c: Context) => {
     return c.json({ success: true })
   } catch (e: any) {
     return c.json({ success: false, error: '更新に失敗しました', details: e.message }, 500)
+  }
+}
+
+/** 🔗 メンバー統合（手動登録メンバーとソーシャルログインメンバーのマージ） */
+export const handleMergeMembers = async (c: Context) => {
+  const auth = getAuth(c.env.DB, c.env)
+  const session = await auth.api.getSession({ headers: c.req.raw.headers as any })
+  if (!session || !session.user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const teamId = c.req.param('id')!
+  if (!teamId) return c.json({ error: 'パラメータが不足しています' }, 400)
+
+  const { targetMemberId, sourceMemberId } = await c.req.json<{
+    targetMemberId: string; // 残す手動登録メンバー (またはマスター側)
+    sourceMemberId: string; // 統合元 (ソーシャルログインで生成された重複メンバー)
+  }>()
+
+  if (!targetMemberId || !sourceMemberId) {
+    return c.json({ error: '統合対象のメンバーIDが指定されていません' }, 400)
+  }
+  if (targetMemberId === sourceMemberId) {
+    return c.json({ error: '同じメンバー同士を統合することはできません' }, 400)
+  }
+
+  const db = drizzle(c.env.DB)
+
+  try {
+    const team = await db.select({ createdBy: teams.createdBy }).from(teams).where(eq(teams.id, teamId)).get()
+    const isFounder = team?.createdBy === session.user.id
+    const myMembership = await db.select().from(teamMembers).where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, session.user.id))).get()
+    const isAdmin = (session.user as AuthUser).role === 'SYSTEM_ADMIN' || (session.user as AuthUser).role === 'admin'
+    if (!isAdmin && !isFounder && (!myMembership || !canManageTeam(myMembership.role))) {
+      return c.json({ error: 'メンバーを統合する権限がありません' }, 403)
+    }
+
+    const target = await db.select().from(teamMembers).where(and(eq(teamMembers.id, targetMemberId), eq(teamMembers.teamId, teamId))).get()
+    const source = await db.select().from(teamMembers).where(and(eq(teamMembers.id, sourceMemberId), eq(teamMembers.teamId, teamId))).get()
+
+    if (!target) return c.json({ error: '統合先のメンバーが見つかりません' }, 404)
+    if (!source) return c.json({ error: '統合元のメンバーが見つかりません' }, 404)
+
+    const resolvedUserId = target.userId || source.userId
+    if (target.userId && source.userId && target.userId !== source.userId) {
+      return c.json({ error: '両方のメンバーに異なるログインアカウントが紐付いているため統合できません。' }, 400)
+    }
+
+    // 1. 🔗 親子関係の統合 (parentChildRelations)
+    const sourceRelations = await db.select().from(parentChildRelations)
+      .where(and(eq(parentChildRelations.teamId, teamId), eq(parentChildRelations.parentId, sourceMemberId))).all()
+    for (const rel of sourceRelations) {
+      const existing = await db.select().from(parentChildRelations)
+        .where(and(eq(parentChildRelations.teamId, teamId), eq(parentChildRelations.parentId, targetMemberId), eq(parentChildRelations.childId, rel.childId))).get()
+      if (existing) {
+        await db.delete(parentChildRelations).where(eq(parentChildRelations.id, rel.id))
+      } else {
+        await db.update(parentChildRelations).set({ parentId: targetMemberId }).where(eq(parentChildRelations.id, rel.id))
+      }
+    }
+
+    // 2. 📊 出欠記録の統合 (attendances)
+    const sourceAttendances = await db.select().from(attendances)
+      .where(eq(attendances.memberId, sourceMemberId)).all()
+    for (const att of sourceAttendances) {
+      const targetAtt = await db.select().from(attendances)
+        .where(and(eq(attendances.eventId, att.eventId), eq(attendances.memberId, targetMemberId))).get()
+      if (targetAtt) {
+        if (targetAtt.status === 'pending' && att.status !== 'pending') {
+          await db.update(attendances).set({
+            status: att.status,
+            comment: att.comment || targetAtt.comment,
+            selectedGroupId: att.selectedGroupId || targetAtt.selectedGroupId,
+            hasCar: att.hasCar || targetAtt.hasCar,
+            carId: att.carId || targetAtt.carId,
+            userId: resolvedUserId,
+            updatedAt: new Date(),
+          }).where(eq(attendances.id, targetAtt.id))
+        }
+        await db.delete(attendances).where(eq(attendances.id, att.id))
+      } else {
+        await db.update(attendances).set({
+          memberId: targetMemberId,
+          userId: resolvedUserId,
+        }).where(eq(attendances.id, att.id))
+      }
+    }
+
+    // 3. 🚗 登録車両の統合 (memberCars)
+    await db.update(memberCars).set({ ownerId: targetMemberId })
+      .where(and(eq(memberCars.teamId, teamId), eq(memberCars.ownerId, sourceMemberId)))
+    await db.update(memberCars).set({ ownerId2: targetMemberId })
+      .where(and(eq(memberCars.teamId, teamId), eq(memberCars.ownerId2, sourceMemberId)))
+
+    // 4. 🚙 配車ドライバーの統合 (eventCarpools)
+    await db.update(eventCarpools).set({ driverId: targetMemberId })
+      .where(eq(eventCarpools.driverId, sourceMemberId))
+
+    // 5. 👥 配車同乗者の統合 (eventCarpoolRiders)
+    const sourceRiders = await db.select().from(eventCarpoolRiders)
+      .where(eq(eventCarpoolRiders.memberId, sourceMemberId)).all()
+    for (const rider of sourceRiders) {
+      const existing = await db.select().from(eventCarpoolRiders)
+        .where(and(eq(eventCarpoolRiders.carpoolId, rider.carpoolId), eq(eventCarpoolRiders.memberId, targetMemberId))).get()
+      if (existing) {
+        await db.delete(eventCarpoolRiders).where(eq(eventCarpoolRiders.id, rider.id))
+      } else {
+        await db.update(eventCarpoolRiders).set({ memberId: targetMemberId }).where(eq(eventCarpoolRiders.id, rider.id))
+      }
+    }
+
+    // 6. 🏷️ チームグループ所属の統合 (teamGroupMembers)
+    const sourceGroupMembers = await db.select().from(teamGroupMembers)
+      .where(eq(teamGroupMembers.teamMemberId, sourceMemberId)).all()
+    for (const tgm of sourceGroupMembers) {
+      const existing = await db.select().from(teamGroupMembers)
+        .where(and(eq(teamGroupMembers.groupId, tgm.groupId), eq(teamGroupMembers.teamMemberId, targetMemberId))).get()
+      if (existing) {
+        await db.delete(teamGroupMembers).where(eq(teamGroupMembers.id, tgm.id))
+      } else {
+        await db.update(teamGroupMembers).set({ teamMemberId: targetMemberId }).where(eq(teamGroupMembers.id, tgm.id))
+      }
+    }
+
+    // 7. 📦 用具積載担当の統合 (eventEquipments)
+    await db.update(eventEquipments).set({ responsibleMemberId: targetMemberId })
+      .where(eq(eventEquipments.responsibleMemberId, sourceMemberId))
+
+    // 8. 👤 ターゲットメンバーの更新 (userId, contact, status)
+    const newAvatar = target.avatarUrl || source.avatarUrl || null
+    const newPhone = target.phone || source.phone || null
+    const newEmail = target.email || source.email || null
+    const newNameKana = target.nameKana || source.nameKana || null
+
+    await db.update(teamMembers).set({
+      userId: resolvedUserId,
+      avatarUrl: newAvatar,
+      phone: newPhone,
+      email: newEmail,
+      nameKana: newNameKana,
+      status: 'active',
+    }).where(eq(teamMembers.id, targetMemberId))
+
+    // 9. 🗑️ 統合元メンバー（重複したソーシャル参加レコード）の削除
+    await db.delete(teamMembers).where(eq(teamMembers.id, sourceMemberId))
+
+    return c.json({
+      success: true,
+      message: `「${target.name || 'メンバー'}」に「${source.name || 'アカウント'}」を正常に統合しました！`
+    })
+  } catch (e: any) {
+    console.error('[iScore Merge Error]:', e)
+    return c.json({ success: false, error: 'メンバーの統合に失敗しました', details: e.message }, 500)
   }
 }

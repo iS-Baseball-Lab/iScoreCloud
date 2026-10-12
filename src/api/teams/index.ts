@@ -16,7 +16,8 @@ import {
   handlePatchMemberRole, 
   handleRemoveMember,
   handleCreateMember,
-  handleUpdateMemberInfo
+  handleUpdateMemberInfo,
+  handleMergeMembers
 } from './members'
 
 // 他の子ルーターのインポート
@@ -33,6 +34,7 @@ const app = new Hono<{ Bindings: WorkerEnv }>()
 app.post('/join', handleJoinTeam)
 app.get('/search/:id', handleSearchTeam)
 app.get('/:id/members', handleGetMembers)
+app.post('/:id/members/merge', handleMergeMembers) // 🔗 メンバー統合（マージ）
 app.post('/:id/members', handleCreateMember) // 💡 新規：アカウントなしメンバー登録
 app.patch('/:id/members/:memberId/info', handleUpdateMemberInfo) // 💡 新規：メンバー情報更新 & アカウント紐付け
 app.put('/:id/roles/settings', handlePutRoleSettings)

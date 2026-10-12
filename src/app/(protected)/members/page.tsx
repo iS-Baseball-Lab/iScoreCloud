@@ -10,7 +10,8 @@ import { Select } from "@/components/ui/select";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { 
   Search, UserPlus, Loader2, UserCircle, Users, Settings, Plus, Trash2, Edit2, 
-  ChevronRight, Link, Shield, MessageCircle, Phone, Mail, FolderPlus, UserCheck, Layers, Settings2, RefreshCw, Check, X, Info
+  ChevronRight, Link, Shield, MessageCircle, Phone, Mail, FolderPlus, UserCheck, Layers, Settings2, RefreshCw, Check, X, Info,
+  GitMerge, Sparkles
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -103,6 +104,11 @@ export default function UnifiedMembersPage() {
   const [linkTarget, setLinkTarget] = useState<Member | null>(null);
   const [linkPlayerTarget, setLinkPlayerTarget] = useState<Player | null>(null); // 選手用紐付けターゲット
   const [selectedUserId, setSelectedUserId] = useState<string>("");
+
+  // ━━ メンバー統合ダイアログ状態 ━━
+  const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
+  const [mergeTargetId, setMergeTargetId] = useState<string>(""); // 残す手動登録メンバー
+  const [mergeSourceId, setMergeSourceId] = useState<string>(""); // 統合元（ソーシャルログイン等の重複アカウント）
 
   // Member 登録・編集フォーム用状態
   const [memberFormAvatarUrl, setMemberFormAvatarUrl] = useState("");
@@ -454,29 +460,110 @@ export default function UnifiedMembersPage() {
     }
   };
 
-  // ユーザー紐付け処理
+  // ユーザー紐付け / 統合処理
   const handleLinkUser = async () => {
     if (!teamId || !linkTarget || !selectedUserId) return;
     setIsSubmitting(true);
     try {
       const selectedUser = members.find(m => m.userId === selectedUserId);
-      const userEmail = selectedUser?.email || null;
 
-      const res = await fetch(`/api/teams/${teamId}/members/${linkTarget.memberId}/info`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          userId: selectedUserId,
-          email: userEmail
-        })
-      });
-      if (!res.ok) {
-        const err = (await res.json()) as { error?: string };
-        throw new Error(err.error || "紐付けに失敗しました");
+      // 🌟 もし選択されたユーザーがすでに別のteamMembersとして存在する場合 -> メンバー統合APIを呼び出す
+      if (selectedUser && selectedUser.memberId !== linkTarget.memberId) {
+        const res = await fetch(`/api/teams/${teamId}/members/merge`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            targetMemberId: linkTarget.memberId,
+            sourceMemberId: selectedUser.memberId,
+          })
+        });
+        const data = await res.json() as { success: boolean; message?: string; error?: string };
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || "メンバー統合に失敗しました");
+        }
+        toast.success(data.message || `「${linkTarget.name}」と「${selectedUser.name}」のアカウントを統合しました！`);
+      } else {
+        const userEmail = selectedUser?.email || null;
+        const res = await fetch(`/api/teams/${teamId}/members/${linkTarget.memberId}/info`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ 
+            userId: selectedUserId,
+            email: userEmail
+          })
+        });
+        if (!res.ok) {
+          const err = (await res.json()) as { error?: string };
+          throw new Error(err.error || "紐付けに失敗しました");
+        }
+        toast.success("ログインユーザーとメンバー情報の紐付けが完了しました");
       }
-      toast.success("ログインユーザーとメンバー情報の紐付けが完了しました");
       setLinkTarget(null);
       setSelectedUserId("");
+      await fetchMembers(teamId);
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // メンバー統合モーダルを開く
+  const openMergeModal = (initialTarget?: Member) => {
+    if (initialTarget) {
+      if (!initialTarget.userId) {
+        setMergeTargetId(initialTarget.memberId);
+        const socialCandidate = members.find(m => m.userId && m.memberId !== initialTarget.memberId);
+        setMergeSourceId(socialCandidate ? socialCandidate.memberId : "");
+      } else {
+        setMergeSourceId(initialTarget.memberId);
+        const manualCandidate = members.find(m => !m.userId && m.memberId !== initialTarget.memberId);
+        setMergeTargetId(manualCandidate ? manualCandidate.memberId : "");
+      }
+    } else {
+      const firstManual = members.find(m => !m.userId);
+      const firstSocial = members.find(m => m.userId);
+      setMergeTargetId(firstManual?.memberId || "");
+      setMergeSourceId(firstSocial?.memberId || "");
+    }
+    setIsMergeModalOpen(true);
+  };
+
+  // メンバー統合実行
+  const handleExecuteMerge = async () => {
+    if (!teamId || !mergeTargetId || !mergeSourceId) return;
+    if (mergeTargetId === mergeSourceId) {
+      toast.error("同じメンバー同士を統合することはできません");
+      return;
+    }
+
+    const target = members.find(m => m.memberId === mergeTargetId);
+    const source = members.find(m => m.memberId === mergeSourceId);
+    if (!target || !source) return;
+
+    if (!confirm(`「${target.name}（手動登録）」に「${source.name}（ログイン連携）」を統合しますか？\n\n統合すると、過去の記録（出欠履歴・配車・子供との親子関係等）を保持したまま、重複アカウントが1つに合流されます。`)) {
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const res = await fetch(`/api/teams/${teamId}/members/merge`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          targetMemberId: mergeTargetId,
+          sourceMemberId: mergeSourceId,
+        }),
+      });
+
+      const data = await res.json() as { success: boolean; message?: string; error?: string };
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "メンバー統合に失敗しました");
+      }
+
+      toast.success(data.message || "メンバーの統合が完了しました！");
+      setIsMergeModalOpen(false);
+      setLinkTarget(null);
       await fetchMembers(teamId);
     } catch (err: any) {
       toast.error(err.message);
@@ -1106,6 +1193,18 @@ export default function UnifiedMembersPage() {
               <div className="flex items-center gap-2">
                 {canManage && (
                   <Button
+                    onClick={() => openMergeModal()}
+                    size="sm"
+                    variant="outline"
+                    className="h-9 px-3 rounded-[var(--radius-lg)] font-black gap-1.5 border-border shadow-sm text-primary hover:bg-primary/5 cursor-pointer"
+                    title="手動登録メンバーとソーシャルログインアカウントを合流・統合"
+                  >
+                    <GitMerge className="h-4 w-4" />
+                    メンバー統合
+                  </Button>
+                )}
+                {canManage && (
+                  <Button
                     onClick={() => setIsRoleSettingsOpen(true)}
                     size="sm"
                     variant="outline"
@@ -1296,6 +1395,19 @@ export default function UnifiedMembersPage() {
                           title="アカウント紐付け"
                         >
                           <Link className="h-4 w-4" />
+                        </Button>
+                      )}
+
+                      {/* 🔗 メンバー統合ボタン */}
+                      {canManage && (
+                        <Button
+                          onClick={() => openMergeModal(m)}
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8 text-zinc-400 hover:text-primary shrink-0"
+                          title="他のメンバーと統合（マージ）"
+                        >
+                          <GitMerge className="h-4 w-4" />
                         </Button>
                       )}
                       
@@ -1818,37 +1930,206 @@ export default function UnifiedMembersPage() {
         </DialogContent>
       </Dialog>
 
-      {/* アカウント紐付けダイアログ */}
+      {/* アカウント紐付け & メンバー統合ダイアログ */}
       <Dialog open={!!linkTarget} onOpenChange={(open) => !open && setLinkTarget(null)}>
         <DialogContent className="rounded-[var(--radius-2xl)] bg-card border-border sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="font-black text-xl">アカウント紐付け</DialogTitle>
+            <DialogTitle className="font-black text-xl flex items-center gap-2">
+              <GitMerge className="h-5 w-5 text-primary" />
+              <span>アカウント紐付け / 統合</span>
+            </DialogTitle>
             <DialogDescription className="text-xs font-bold text-muted-foreground">
-              名簿メンバー「{linkTarget?.name}」をアプリのログインユーザーに紐付けます。
+              名簿メンバー「{linkTarget?.name}」をアプリのログインユーザーに紐付け・統合します。
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 pt-3">
             <div className="space-y-1">
-              <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">チームの参加メンバーから選択</label>
-              {members.filter(m => m.userId && !members.some(x => x.userId === m.userId && x.memberId !== m.memberId && !x.userId)).length === 0 ? (
-                <div className="text-xs text-muted-foreground py-2 text-center">選択可能な参加ユーザーがいません。先にチームへ招待・参加申請を行ってください。</div>
+              <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">
+                チームのソーシャル参加アカウントから選択
+              </label>
+              {members.filter(m => m.userId && m.userId !== linkTarget?.userId).length === 0 ? (
+                <div className="text-xs text-muted-foreground py-2 text-center bg-muted/40 rounded-xl p-3">
+                  選択可能なログインユーザーがいません。先にチームへ招待・参加申請を行ってください。
+                </div>
               ) : (
-                <Select value={selectedUserId} onChange={(e: any) => setSelectedUserId(e.target.value)} className="h-11 rounded-xl bg-card">
-                  <option value="">ユーザーを選択...</option>
+                <Select value={selectedUserId} onChange={(e: any) => setSelectedUserId(e.target.value)} className="h-11 rounded-xl bg-card border-border">
+                  <option value="">アカウントを選択...</option>
                   {members
                     .filter(m => m.userId && m.userId !== linkTarget?.userId)
-                    .map(m => (
-                      <option key={m.userId!} value={m.userId!}>{m.name} ({m.email || 'メールなし'})</option>
-                    ))
+                    .map(m => {
+                      const prov = m.authProviders?.join(", ") || "";
+                      return (
+                        <option key={m.userId!} value={m.userId!}>
+                          {m.name} {prov ? `(${prov})` : ""} {m.email ? `[${m.email}]` : ""}
+                        </option>
+                      );
+                    })
                   }
                 </Select>
               )}
             </div>
 
+            {/* 選択したユーザーが既存メンバーである場合の統合プレビュー説明 */}
+            {(() => {
+              const selectedMember = members.find(m => m.userId === selectedUserId);
+              if (!selectedMember || selectedMember.memberId === linkTarget?.memberId) return null;
+
+              return (
+                <div className="p-3.5 rounded-2xl bg-amber-500/10 dark:bg-amber-950/20 border border-amber-500/30 space-y-2 text-xs animate-in fade-in duration-150">
+                  <div className="flex items-center gap-1.5 font-black text-amber-700 dark:text-amber-300">
+                    <Sparkles className="w-4 h-4 shrink-0" />
+                    <span>メンバー統合（マージ）が実行されます</span>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-card border border-border/70 space-y-1 text-[11px] font-bold">
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">残す名簿データ:</span>
+                      <span className="font-black text-foreground">{linkTarget?.name} (手動登録)</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">統合するアカウント:</span>
+                      <span className="font-black text-primary">{selectedMember.name} (ログイン連携)</span>
+                    </div>
+                  </div>
+                  <p className="text-[10.5px] text-muted-foreground font-medium leading-relaxed">
+                    💡 統合すると、手動登録の記録（出欠履歴・配車・子供との親子関係等）を残したまま、重複してできたソーシャル参加レコードが1つに合流されます。
+                  </p>
+                </div>
+              );
+            })()}
+
             <div className="flex gap-3 pt-3">
-              <Button type="button" variant="outline" onClick={() => setLinkTarget(null)} className="flex-1 h-12 rounded-xl font-black">キャンセル</Button>
-              <Button type="button" onClick={handleLinkUser} disabled={isSubmitting || !selectedUserId} className="flex-1 h-12 rounded-xl font-black">
-                {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "紐付ける"}
+              <Button type="button" variant="outline" onClick={() => setLinkTarget(null)} className="flex-1 h-12 rounded-xl font-black">
+                キャンセル
+              </Button>
+              <Button 
+                type="button" 
+                onClick={handleLinkUser} 
+                disabled={isSubmitting || !selectedUserId} 
+                className="flex-1 h-12 rounded-xl font-black bg-primary text-primary-foreground hover:brightness-110 active:scale-95"
+              >
+                {isSubmitting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  members.some(m => m.userId === selectedUserId && m.memberId !== linkTarget?.memberId)
+                    ? "メンバーを統合する"
+                    : "紐付ける"
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 🔗 メンバー統合（マージ）専用ダイアログ */}
+      <Dialog open={isMergeModalOpen} onOpenChange={setIsMergeModalOpen}>
+        <DialogContent className="rounded-[var(--radius-2xl)] bg-card border-border sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="font-black text-xl flex items-center gap-2">
+              <GitMerge className="h-5 w-5 text-primary" />
+              <span>メンバー統合（マージ）</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs font-bold text-muted-foreground">
+              手動登録した名簿データと、ソーシャルログイン等で重複追加されたアカウントを1つに合流・統合します。
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 pt-2">
+            {/* ① 手動登録メンバー（マスター側） */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-black text-foreground flex items-center gap-1.5">
+                <span className="w-5 h-5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-[10px] font-black shrink-0">1</span>
+                <span>残すメンバーデータ（手動登録側）</span>
+              </label>
+              <Select 
+                value={mergeTargetId} 
+                onChange={(e: any) => setMergeTargetId(e.target.value)} 
+                className="h-11 rounded-xl bg-card border-border text-xs font-bold"
+              >
+                <option value="">手動登録メンバーを選択...</option>
+                {members.map(m => (
+                  <option key={m.memberId} value={m.memberId}>
+                    {m.name} {m.nameKana ? `(${m.nameKana})` : ""} - {m.userId ? "【紐付け済】" : "【未紐付け・手動】"}
+                  </option>
+                ))}
+              </Select>
+              <p className="text-[10px] text-muted-foreground font-medium px-1">
+                ※こちらの氏名・フリガナ・役割・過去の出欠記録・配車・子供との親子関係がマスターとして保持されます。
+              </p>
+            </div>
+
+            {/* ② 統合するソーシャルアカウント（ログイン側） */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-black text-foreground flex items-center gap-1.5">
+                <span className="w-5 h-5 rounded-full bg-primary/15 text-primary flex items-center justify-center text-[10px] font-black shrink-0">2</span>
+                <span>引き継ぐアカウント（ソーシャルログイン側）</span>
+              </label>
+              <Select 
+                value={mergeSourceId} 
+                onChange={(e: any) => setMergeSourceId(e.target.value)} 
+                className="h-11 rounded-xl bg-card border-border text-xs font-bold"
+              >
+                <option value="">ソーシャル参加アカウントを選択...</option>
+                {members
+                  .filter(m => m.userId && m.memberId !== mergeTargetId)
+                  .map(m => {
+                    const prov = m.authProviders?.join(", ") || "";
+                    return (
+                      <option key={m.memberId} value={m.memberId}>
+                        {m.name} {prov ? `(${prov})` : ""} {m.email ? `[${m.email}]` : ""}
+                      </option>
+                    );
+                  })
+                }
+              </Select>
+              <p className="text-[10px] text-muted-foreground font-medium px-1">
+                ※こちらのログインアカウント（LINE / Google等）およびアバター・連絡先を手動メンバーへ合流させます。
+              </p>
+            </div>
+
+            {/* 統合プレビュー */}
+            {(() => {
+              const target = members.find(m => m.memberId === mergeTargetId);
+              const source = members.find(m => m.memberId === mergeSourceId);
+              if (!target || !source) return null;
+
+              return (
+                <div className="p-3.5 rounded-2xl bg-amber-500/10 dark:bg-amber-950/20 border border-amber-500/30 space-y-2 text-xs animate-in fade-in duration-150">
+                  <div className="flex items-center gap-1.5 font-black text-amber-700 dark:text-amber-300">
+                    <Sparkles className="w-4 h-4 shrink-0" />
+                    <span>統合後の状態プレビュー</span>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-card border border-border/70 space-y-1.5 text-[11px] font-bold">
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">残るメンバー名:</span>
+                      <span className="font-black text-foreground">{target.name} {target.nameKana ? `(${target.nameKana})` : ""}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">紐付くアカウント:</span>
+                      <span className="font-black text-primary">{source.name} ({source.authProviders?.join(", ") || "ソーシャル連携"})</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">引き継ぐデータ:</span>
+                      <span className="font-bold text-foreground">出欠記録、配車・車両、子供との親子関係、班所属</span>
+                    </div>
+                  </div>
+                  <p className="text-[10.5px] text-muted-foreground font-medium leading-relaxed">
+                    統合を実行すると、「{source.name}」の重複メンバーレコードは削除され、「{target.name}」のアカウントとして1本化されます。
+                  </p>
+                </div>
+              );
+            })()}
+
+            <div className="flex gap-3 pt-3">
+              <Button type="button" variant="outline" onClick={() => setIsMergeModalOpen(false)} className="flex-1 h-12 rounded-xl font-black">
+                キャンセル
+              </Button>
+              <Button 
+                type="button" 
+                onClick={handleExecuteMerge} 
+                disabled={isSubmitting || !mergeTargetId || !mergeSourceId || mergeTargetId === mergeSourceId} 
+                className="flex-1 h-12 rounded-xl font-black bg-primary text-primary-foreground hover:brightness-110 active:scale-95"
+              >
+                {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "統合を実行する"}
               </Button>
             </div>
           </div>
