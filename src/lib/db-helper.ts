@@ -186,3 +186,16 @@ export async function ensureMemberOrderColumn(d1?: any) {
   isMemberOrderSchemaReady = true;
 }
 
+let isStatusConfigSchemaReady = false;
+
+/**
+ * 🛠️ D1 の teams テーブルに attendance_status_config カラムが存在することを保証する関数
+ */
+export async function ensureStatusConfigColumn(d1?: any) {
+  if (!d1 || isStatusConfigSchemaReady) return;
+  try {
+    await d1.prepare("ALTER TABLE teams ADD COLUMN attendance_status_config text").run().catch(() => {});
+  } catch {}
+  isStatusConfigSchemaReady = true;
+}
+

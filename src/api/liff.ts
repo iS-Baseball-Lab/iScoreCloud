@@ -23,7 +23,7 @@ import {
   parentChildRelations,
   tournaments,
 } from "@/db/schema";
-import { ensureEventColumns, ensureRulesTable, ensureLinksTable, ensureMemberOrderColumn } from "@/lib/db-helper";
+import { ensureEventColumns, ensureRulesTable, ensureLinksTable, ensureMemberOrderColumn, ensureStatusConfigColumn } from "@/lib/db-helper";
 import type { WorkerEnv, AuthUser } from "@/types/api";
 import { getAuth } from "@/lib/auth";
 
@@ -939,6 +939,7 @@ app.get("/schedule", async (c) => {
 app.get("/attendance-matrix", async (c) => {
   await ensureEventColumns(c.env.DB);
   await ensureMemberOrderColumn(c.env.DB);
+  await ensureStatusConfigColumn(c.env.DB);
   const db = drizzle(c.env.DB);
   const teamId = c.req.query("teamId");
   const userId = c.req.query("userId");
@@ -1129,7 +1130,11 @@ app.get("/attendance-matrix", async (c) => {
     const isSysAdmin = (session?.user as AuthUser)?.role === "SYSTEM_ADMIN";
 
     // チーム創設者（オーナー）チェック
-    const teamRecord = await db.select({ createdBy: teams.createdBy, memberSortOrder: teams.memberSortOrder }).from(teams).where(eq(teams.id, teamId)).get();
+    const teamRecord = await db.select({ 
+      createdBy: teams.createdBy, 
+      memberSortOrder: teams.memberSortOrder,
+      attendanceStatusConfig: teams.attendanceStatusConfig,
+    }).from(teams).where(eq(teams.id, teamId)).get();
     const isTeamCreator = Boolean(authUserId && teamRecord?.createdBy === authUserId);
 
     let currentMember: any = null;
@@ -1409,10 +1414,18 @@ app.get("/attendance-matrix", async (c) => {
       }
     } catch {}
 
+    let attendanceStatusConfig = null;
+    try {
+      if (teamRecord?.attendanceStatusConfig) {
+        attendanceStatusConfig = JSON.parse(teamRecord.attendanceStatusConfig);
+      }
+    } catch {}
+
     return c.json({
       success: true,
       isDemo: false,
       memberSortOrder,
+      attendanceStatusConfig,
       myInfo: {
         memberId: myMemberId,
         playerIds: myPlayerIds,
@@ -1626,6 +1639,31 @@ app.post("/attendance-matrix/event-note", async (c) => {
   } catch (err: any) {
     console.error("Failed to save event description:", err);
     return c.json({ success: false, error: err?.message || "日別メモの保存に失敗しました" }, 500);
+  }
+});
+
+/**
+ * 🏷️ グループ別 出欠ステータス設定保存API
+ * POST /api/liff/attendance-matrix/status-config
+ */
+app.post("/attendance-matrix/status-config", async (c) => {
+  await ensureStatusConfigColumn(c.env.DB);
+  const db = drizzle(c.env.DB);
+  try {
+    const body = await c.req.json();
+    const { teamId, statusConfig } = body;
+    if (!teamId || !statusConfig) {
+      return c.json({ success: false, error: "teamId and statusConfig are required" }, 400);
+    }
+
+    await db.update(teams)
+      .set({ attendanceStatusConfig: JSON.stringify(statusConfig) })
+      .where(eq(teams.id, teamId));
+
+    return c.json({ success: true, message: "ステータス設定を保存しました" });
+  } catch (err: any) {
+    console.error("Failed to save status config:", err);
+    return c.json({ success: false, error: err?.message || "ステータス設定の保存に失敗しました" }, 500);
   }
 });
 
