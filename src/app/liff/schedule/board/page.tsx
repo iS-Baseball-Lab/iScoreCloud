@@ -33,7 +33,9 @@ import {
   ChevronUp,
   ChevronDown,
   FileText,
+  GripVertical,
 } from "lucide-react";
+import { Reorder, useDragControls } from "motion/react";
 import { toast } from "sonner";
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -162,6 +164,90 @@ function getTodayJST(): string {
   const m = parts.find(p => p.type === "month")?.value || String(d.getMonth() + 1).padStart(2, "0");
   const day = parts.find(p => p.type === "day")?.value || String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 🔀 並び替え可能なメンバー行コンポーネント (Drag & Drop + ボタン)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function SortableMemberRow({
+  person,
+  index,
+  total,
+  onMoveUp,
+  onMoveDown,
+}: {
+  person: MemberPerson;
+  index: number;
+  total: number;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+}) {
+  const controls = useDragControls();
+
+  return (
+    <Reorder.Item
+      as="div"
+      value={person}
+      id={person.id}
+      dragListener={false}
+      dragControls={controls}
+      className="flex items-center justify-between p-1.5 rounded-xl bg-card border border-border/70 hover:border-primary/40 shadow-xs transition-colors select-none"
+      whileDrag={{
+        scale: 1.02,
+        boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.25), 0 8px 10px -6px rgba(0, 0, 0, 0.2)",
+        borderColor: "var(--primary)",
+        backgroundColor: "var(--card)",
+        zIndex: 50,
+      }}
+    >
+      <div className="flex items-center gap-1.5 min-w-0 flex-1">
+        {/* ドラッグハンドル */}
+        <div
+          onPointerDown={(e) => controls.start(e)}
+          className="p-1 -ml-0.5 text-muted-foreground/60 hover:text-foreground active:text-primary cursor-grab active:cursor-grabbing touch-none shrink-0 rounded-md hover:bg-muted"
+          title="ドラッグして並び替え"
+        >
+          <GripVertical className="w-4 h-4" />
+        </div>
+
+        <span className="w-4 h-4 rounded-full bg-black/10 dark:bg-white/10 text-[9px] font-black flex items-center justify-center text-muted-foreground shrink-0">
+          {index + 1}
+        </span>
+        {person.uniformNumber && (
+          <span className="text-[9px] font-black text-primary px-1 py-0.2 rounded bg-primary/10 shrink-0">
+            #{person.uniformNumber}
+          </span>
+        )}
+        <div className="min-w-0 flex-1">
+          <p className="text-[11px] font-black text-foreground truncate">{person.name}</p>
+          {person.subText && (
+            <p className="text-[8.5px] text-muted-foreground truncate leading-none">{person.subText}</p>
+          )}
+        </div>
+      </div>
+
+      <div className="flex items-center gap-0.5 shrink-0 ml-1">
+        <button
+          type="button"
+          disabled={index === 0}
+          onClick={onMoveUp}
+          className="p-1 rounded-md bg-muted/50 hover:bg-muted disabled:opacity-20 disabled:pointer-events-none border border-border/60 text-foreground active:scale-95 transition-all"
+          title="1つ上へ"
+        >
+          <ChevronUp className="w-3.5 h-3.5" />
+        </button>
+        <button
+          type="button"
+          disabled={index === total - 1}
+          onClick={onMoveDown}
+          className="p-1 rounded-md bg-muted/50 hover:bg-muted disabled:opacity-20 disabled:pointer-events-none border border-border/60 text-foreground active:scale-95 transition-all"
+          title="1つ下へ"
+        >
+          <ChevronDown className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    </Reorder.Item>
+  );
 }
 
 export default function AttendanceMatrixBoardPage() {
@@ -1449,57 +1535,42 @@ export default function AttendanceMatrixBoardPage() {
                 </div>
               </div>
 
-              {/* メンバー並び順リスト */}
-              <div className="space-y-1 max-h-[45vh] overflow-y-auto pr-0.5 no-scrollbar">
+              {/* 操作ガイド */}
+              <div className="flex items-center gap-1.5 text-[9.5px] text-muted-foreground bg-muted/40 px-2.5 py-1.5 rounded-lg border border-border/50">
+                <GripVertical className="w-3.5 h-3.5 shrink-0 text-muted-foreground/70" />
+                <span>左側のハンドル（⋮⋮）をつかんでドラッグ＆ドロップで並び替えできます</span>
+              </div>
+
+              {/* メンバー並び順リスト (Drag & Drop対応) */}
+              <div className="max-h-[45vh] overflow-y-auto pr-0.5 no-scrollbar">
                 {(tempOrders[orderModalGroup] || []).length === 0 ? (
                   <div className="py-6 text-center text-xs text-muted-foreground">
                     このグループに所属するメンバーはいません
                   </div>
                 ) : (
-                  (tempOrders[orderModalGroup] || []).map((person, index) => (
-                    <div
-                      key={person.id}
-                      className="flex items-center justify-between p-1.5 rounded-xl bg-muted/40 border border-border/60 hover:bg-muted/70 transition-colors"
-                    >
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <span className="w-4 h-4 rounded-full bg-black/10 dark:bg-white/10 text-[9px] font-black flex items-center justify-center text-muted-foreground shrink-0">
-                          {index + 1}
-                        </span>
-                        {person.uniformNumber && (
-                          <span className="text-[9px] font-black text-primary px-1 py-0.2 rounded bg-primary/10 shrink-0">
-                            #{person.uniformNumber}
-                          </span>
-                        )}
-                        <div className="min-w-0">
-                          <p className="text-[11px] font-black text-foreground truncate">{person.name}</p>
-                          {person.subText && (
-                            <p className="text-[8.5px] text-muted-foreground truncate leading-none">{person.subText}</p>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-0.5 shrink-0">
-                        <button
-                          type="button"
-                          disabled={index === 0}
-                          onClick={() => handleMoveItem(index, -1)}
-                          className="p-1 rounded-md bg-card hover:bg-muted disabled:opacity-20 disabled:pointer-events-none border border-border/70 text-foreground active:scale-95 transition-all"
-                          title="1つ上へ"
-                        >
-                          <ChevronUp className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          disabled={index === (tempOrders[orderModalGroup] || []).length - 1}
-                          onClick={() => handleMoveItem(index, 1)}
-                          className="p-1 rounded-md bg-card hover:bg-muted disabled:opacity-20 disabled:pointer-events-none border border-border/70 text-foreground active:scale-95 transition-all"
-                          title="1つ下へ"
-                        >
-                          <ChevronDown className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  ))
+                  <Reorder.Group
+                    as="div"
+                    axis="y"
+                    values={tempOrders[orderModalGroup] || []}
+                    onReorder={(newList) => {
+                      setTempOrders((prev) => ({
+                        ...prev,
+                        [orderModalGroup]: newList,
+                      }));
+                    }}
+                    className="space-y-1.5"
+                  >
+                    {(tempOrders[orderModalGroup] || []).map((person, index, arr) => (
+                      <SortableMemberRow
+                        key={person.id}
+                        person={person}
+                        index={index}
+                        total={arr.length}
+                        onMoveUp={() => handleMoveItem(index, -1)}
+                        onMoveDown={() => handleMoveItem(index, 1)}
+                      />
+                    ))}
+                  </Reorder.Group>
                 )}
               </div>
 
