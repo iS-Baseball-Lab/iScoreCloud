@@ -556,15 +556,14 @@ export default function AttendanceMatrixBoardPage() {
           </div>
         ) : (
           <div className="relative bg-card rounded-xl border border-border shadow-xs overflow-hidden">
-            <div className="overflow-auto max-h-[82vh] relative no-scrollbar" style={{ WebkitOverflowScrolling: "touch" }}>
+            <div className="overflow-x-auto relative" style={{ WebkitOverflowScrolling: "touch" }}>
               <table className="w-max min-w-full text-left border-separate border-spacing-0 select-none" style={{ borderCollapse: "separate", borderSpacing: 0 }}>
-                {/* 📌 ヘッダー行 (メンバー一覧 & 出欠記号別集計ヘッダー: 100%完全不透明・半透明排除) */}
-                <thead className="z-30">
+                {/* 📌 ヘッダー行 (メンバー一覧 & 出欠記号別集計ヘッダー: 縦固定化なし) */}
+                <thead>
                   <tr className="h-9">
-                    {/* 左上固定セル: イベント情報列 (完全不透明bg-slate-100・最上位z-50・完全固定幅124px) */}
+                    {/* 左側固定セル: イベント情報列 (横スクロール時のみ左固定・完全固定幅124px) */}
                     <th
-                      style={{ WebkitTransform: "translateZ(0)", transform: "translateZ(0)" }}
-                      className="sticky top-0 left-0 z-50 bg-slate-100 dark:bg-zinc-800 border-b-2 border-r border-border w-[124px] min-w-[124px] max-w-[124px] p-1 text-[11px] font-black text-foreground shadow-xs align-middle"
+                      className="sticky left-0 z-20 bg-slate-100 dark:bg-zinc-800 border-b-2 border-r border-border w-[124px] min-w-[124px] max-w-[124px] p-1 text-[11px] font-black text-foreground shadow-xs align-middle"
                     >
                       <div className="flex items-center justify-between gap-1">
                         <span className="text-[11px] font-black truncate">日付 / 班 / イベント</span>
@@ -574,51 +573,45 @@ export default function AttendanceMatrixBoardPage() {
                       </div>
                     </th>
 
-                    {/* 📊 出欠集計列 (各記号ごとの専用タイトル列・100%完全不透明ソリッド背景・計列削除済み) */}
+                    {/* 📊 出欠集計列 (各記号ごとの専用タイトル列・幅25px) */}
                     <th
-                      style={{ WebkitTransform: "translateZ(0)", transform: "translateZ(0)" }}
-                      className="sticky top-0 z-40 w-6 min-w-[25px] max-w-[25px] p-0.5 text-center border-b-2 border-r border-border bg-[#fee2e2] dark:bg-[#450a0a] text-red-700 dark:text-red-300 font-black text-[11px] align-middle"
+                      className="w-6 min-w-[25px] max-w-[25px] p-0.5 text-center border-b-2 border-r border-border bg-[#fee2e2] dark:bg-[#450a0a] text-red-700 dark:text-red-300 font-black text-[11px] align-middle"
                       title="◎ 出席（当番）"
                     >
                       ◎
                     </th>
                     <th
-                      style={{ WebkitTransform: "translateZ(0)", transform: "translateZ(0)" }}
-                      className="sticky top-0 z-40 w-6 min-w-[25px] max-w-[25px] p-0.5 text-center border-b-2 border-r border-border bg-[#dbeafe] dark:bg-[#172554] text-blue-700 dark:text-blue-300 font-black text-[11px] align-middle"
+                      className="w-6 min-w-[25px] max-w-[25px] p-0.5 text-center border-b-2 border-r border-border bg-[#dbeafe] dark:bg-[#172554] text-blue-700 dark:text-blue-300 font-black text-[11px] align-middle"
                       title="○ 出席（ヘルプ）"
                     >
                       ○
                     </th>
                     <th
-                      style={{ WebkitTransform: "translateZ(0)", transform: "translateZ(0)" }}
-                      className="sticky top-0 z-40 w-6 min-w-[25px] max-w-[25px] p-0.5 text-center border-b-2 border-r border-border bg-[#fef3c7] dark:bg-[#451a03] text-amber-700 dark:text-amber-300 font-black text-[11px] align-middle"
+                      className="w-6 min-w-[25px] max-w-[25px] p-0.5 text-center border-b-2 border-r border-border bg-[#fef3c7] dark:bg-[#451a03] text-amber-700 dark:text-amber-300 font-black text-[11px] align-middle"
                       title="▲ 出席（設営・撤収のみ）"
                     >
                       ▲
                     </th>
                     <th
-                      style={{ WebkitTransform: "translateZ(0)", transform: "translateZ(0)" }}
-                      className="sticky top-0 z-40 w-6 min-w-[25px] max-w-[25px] p-0.5 text-center border-b-2 border-r border-border bg-[#d1fae5] dark:bg-[#064e3b] text-emerald-700 dark:text-emerald-300 font-black text-[11px] align-middle"
+                      className="w-6 min-w-[25px] max-w-[25px] p-0.5 text-center border-b-2 border-r border-border bg-[#d1fae5] dark:bg-[#064e3b] text-emerald-700 dark:text-emerald-300 font-black text-[11px] align-middle"
                       title="△ 出席（試合のみ）"
                     >
                       △
                     </th>
                     <th
-                      style={{ WebkitTransform: "translateZ(0)", transform: "translateZ(0)" }}
-                      className="sticky top-0 z-40 w-6 min-w-[25px] max-w-[25px] p-0.5 text-center border-b-2 border-r border-border bg-[#e2e8f0] dark:bg-[#1e293b] text-slate-700 dark:text-slate-300 font-black text-[11px] align-middle"
+                      className="w-6 min-w-[25px] max-w-[25px] p-0.5 text-center border-b-2 border-r border-border bg-[#e2e8f0] dark:bg-[#1e293b] text-slate-700 dark:text-slate-300 font-black text-[11px] align-middle"
                       title="× 欠席"
                     >
                       ×
                     </th>
 
-                    {/* メンバー列 (超コンパクト・幅35px・100%完全不透明背景) */}
+                    {/* メンバー列 (超コンパクト・幅35px) */}
                     {currentMembers.map((person) => {
                       const isMe = person.id === myInfo.memberId || myInfo.playerIds.includes(person.id);
                       return (
                         <th
                           key={person.id}
-                          style={{ WebkitTransform: "translateZ(0)", transform: "translateZ(0)" }}
-                          className={`sticky top-0 z-40 w-9 min-w-[35px] max-w-[35px] p-0.5 text-center border-b-2 border-r border-border align-middle transition-colors ${
+                          className={`w-9 min-w-[35px] max-w-[35px] p-0.5 text-center border-b-2 border-r border-border align-middle transition-colors ${
                             isMe
                               ? "bg-blue-200 dark:bg-blue-900 text-blue-950 dark:text-blue-100 ring-1 ring-inset ring-blue-500 font-black"
                               : "bg-slate-100 dark:bg-zinc-800 text-foreground"
@@ -682,8 +675,7 @@ export default function AttendanceMatrixBoardPage() {
                       <tr key={ev.id} className="hover:bg-muted/30 transition-colors group">
                         {/* ① 左側固定セル: 日付・班・イベント (完全不透明bg-white/zinc-900・幅124px・日付幅52px完全統一) */}
                         <td
-                          style={{ WebkitTransform: "translateZ(0)", transform: "translateZ(0)" }}
-                          className="sticky left-0 z-20 bg-white dark:bg-zinc-900 border-b border-r border-border w-[124px] min-w-[124px] max-w-[124px] p-1 shadow-xs"
+                          className="sticky left-0 z-10 bg-white dark:bg-zinc-900 border-b border-r border-border w-[124px] min-w-[124px] max-w-[124px] p-1 shadow-xs"
                         >
                           <div className="flex items-center justify-between gap-0.5 leading-tight">
                             <div className="flex items-center gap-1 min-w-0">
