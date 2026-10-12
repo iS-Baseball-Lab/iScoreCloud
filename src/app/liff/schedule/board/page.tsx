@@ -27,6 +27,8 @@ import {
   HelpCircle,
   ArrowRight,
   Info,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -134,6 +136,21 @@ interface MemberPerson {
 
 type GroupTabType = "all" | "player" | "parent" | "mother" | "father" | "staff";
 
+function getTodayJST(): string {
+  const d = new Date();
+  const jstFormatter = new Intl.DateTimeFormat("ja-JP", {
+    timeZone: "Asia/Tokyo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const parts = jstFormatter.formatToParts(d);
+  const y = parts.find(p => p.type === "year")?.value || String(d.getFullYear());
+  const m = parts.find(p => p.type === "month")?.value || String(d.getMonth() + 1).padStart(2, "0");
+  const day = parts.find(p => p.type === "day")?.value || String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 export default function AttendanceMatrixBoardPage() {
   const { profile, currentTeam, isDemo } = useLiff();
 
@@ -169,6 +186,8 @@ export default function AttendanceMatrixBoardPage() {
   const [selectedGroupTab, setSelectedGroupTab] = useState<GroupTabType>("player");
   const [searchQuery, setSearchQuery] = useState("");
   const [isManagerOverrideMode, setIsManagerOverrideMode] = useState(false);
+  const [selectedMonth, setSelectedMonth] = useState<string>("all");
+  const [showPastDates, setShowPastDates] = useState<boolean>(false);
 
   // 編集モーダル状態
   const [editingCell, setEditingCell] = useState<{
@@ -229,6 +248,41 @@ export default function AttendanceMatrixBoardPage() {
   useEffect(() => {
     loadMatrixData();
   }, [loadMatrixData]);
+
+  const todayStr = useMemo(() => getTodayJST(), []);
+  const currentMonthStr = useMemo(() => todayStr.slice(0, 7), [todayStr]);
+
+  // 利用可能な月リスト（イベント一覧からユニーク抽出）
+  const availableMonths = useMemo(() => {
+    const set = new Set<string>();
+    if (currentMonthStr) set.add(currentMonthStr);
+    for (const ev of events) {
+      if (ev.dateStr && ev.dateStr.length >= 7) {
+        set.add(ev.dateStr.slice(0, 7));
+      }
+    }
+    return Array.from(set).sort();
+  }, [events, currentMonthStr]);
+
+  // 絞り込み済みイベントリスト（月選択 ＆ 過去日表示トグル反映）
+  const filteredEvents = useMemo(() => {
+    let list = events;
+
+    // 1. 月フィルター
+    if (selectedMonth !== "all") {
+      list = list.filter(ev => ev.dateStr.startsWith(selectedMonth));
+    }
+
+    // 2. 過去日フィルター
+    if (!showPastDates) {
+      const isSpecificPastMonth = selectedMonth !== "all" && selectedMonth < currentMonthStr;
+      if (!isSpecificPastMonth) {
+        list = list.filter(ev => ev.dateStr >= todayStr);
+      }
+    }
+
+    return list;
+  }, [events, selectedMonth, showPastDates, todayStr, currentMonthStr]);
 
   // 選択されたタブに応じたメンバー一覧
   const currentMembers = useMemo(() => {
@@ -540,6 +594,73 @@ export default function AttendanceMatrixBoardPage() {
           </div>
         </div>
 
+        {/* 📅 月単位選択 ＆ 過去日表示切替バー (超コンパクト) */}
+        <div className="bg-card rounded-xl px-2 py-1 border border-border/80 shadow-2xs flex flex-wrap items-center justify-between gap-1.5 text-[9.5px]">
+          {/* 月選択ピル */}
+          <div className="flex items-center gap-1 overflow-x-auto no-scrollbar py-0.5">
+            <span className="font-black text-muted-foreground shrink-0 flex items-center gap-0.5 mr-0.5">
+              <CalendarIcon className="w-3 h-3 text-primary" />
+              <span>月:</span>
+            </span>
+
+            <button
+              type="button"
+              onClick={() => setSelectedMonth("all")}
+              className={`px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap transition-all active:scale-95 shrink-0 ${
+                selectedMonth === "all"
+                  ? "bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900 font-black shadow-xs"
+                  : "bg-muted/70 hover:bg-muted text-muted-foreground border border-border/60"
+              }`}
+            >
+              全期間
+            </button>
+
+            {availableMonths.map(m => {
+              const parts = m.split("-");
+              const mNum = parseInt(parts[1], 10);
+              const label = `${mNum}月`;
+              const isCurrent = m === currentMonthStr;
+              return (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setSelectedMonth(m)}
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap transition-all active:scale-95 shrink-0 ${
+                    selectedMonth === m
+                      ? "bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900 font-black shadow-xs"
+                      : "bg-muted/70 hover:bg-muted text-muted-foreground border border-border/60"
+                  }`}
+                >
+                  {label}{isCurrent ? "(今月)" : ""}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* 過去日 表示・非表示トグル */}
+          <button
+            type="button"
+            onClick={() => setShowPastDates(prev => !prev)}
+            className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9.5px] font-bold transition-all active:scale-95 border shrink-0 ${
+              showPastDates
+                ? "bg-primary/15 text-primary border-primary/40 font-black"
+                : "bg-muted text-muted-foreground border-border/60 hover:text-foreground"
+            }`}
+          >
+            {showPastDates ? (
+              <>
+                <Eye className="w-3 h-3" />
+                <span>過去日: 表示中</span>
+              </>
+            ) : (
+              <>
+                <EyeOff className="w-3 h-3" />
+                <span>過去日: 非表示</span>
+              </>
+            )}
+          </button>
+        </div>
+
         {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
             📊 出欠マトリクス表（スプレッドシート型UI・余白極小・不透明完全固定）
             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
@@ -548,11 +669,24 @@ export default function AttendanceMatrixBoardPage() {
             <Loader2 className="w-5 h-5 animate-spin text-primary" />
             <p className="text-[11px] text-muted-foreground font-bold">出欠一覧表を読み込み中...</p>
           </div>
-        ) : events.length === 0 ? (
+        ) : filteredEvents.length === 0 ? (
           <div className="p-6 text-center bg-card rounded-xl border border-border">
             <AlertCircle className="w-6 h-6 text-muted-foreground mx-auto mb-1.5" />
             <p className="text-xs font-black text-foreground">表示する予定・イベントがありません</p>
-            <p className="text-[10px] text-muted-foreground mt-0.5">「活動予定の一括登録」から予定を追加してください。</p>
+            {events.length > 0 && !showPastDates ? (
+              <div className="mt-2 space-y-1">
+                <p className="text-[10px] text-muted-foreground">過去の予定が非表示になっている可能性があります。</p>
+                <button
+                  type="button"
+                  onClick={() => setShowPastDates(true)}
+                  className="px-2.5 py-1 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary text-[10px] font-black transition-all"
+                >
+                  過去日の予定を表示する
+                </button>
+              </div>
+            ) : (
+              <p className="text-[10px] text-muted-foreground mt-0.5">「活動予定の一括登録」から予定を追加してください。</p>
+            )}
           </div>
         ) : (
           <div className="relative bg-card rounded-xl border border-border shadow-xs overflow-hidden">
@@ -568,7 +702,7 @@ export default function AttendanceMatrixBoardPage() {
                       <div className="flex items-center justify-between gap-1">
                         <span className="text-[11px] font-black truncate">日付 / 班 / イベント</span>
                         <span className="text-[9px] text-muted-foreground font-bold shrink-0">
-                          {events.length}日
+                          {filteredEvents.length}日
                         </span>
                       </div>
                     </th>
@@ -643,7 +777,7 @@ export default function AttendanceMatrixBoardPage() {
 
                 {/* 📌 ボディ行 (イベントごと) */}
                 <tbody>
-                  {events.map((ev) => {
+                  {filteredEvents.map((ev) => {
                     const isSaturday = ev.dayOfWeek === "土";
                     const isSunday = ev.dayOfWeek === "日";
 
