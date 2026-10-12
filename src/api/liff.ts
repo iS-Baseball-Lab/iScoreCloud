@@ -23,7 +23,7 @@ import {
   parentChildRelations,
   tournaments,
 } from "@/db/schema";
-import { ensureEventColumns, ensureRulesTable, ensureLinksTable } from "@/lib/db-helper";
+import { ensureEventColumns, ensureRulesTable, ensureLinksTable, ensureMemberOrderColumn } from "@/lib/db-helper";
 import type { WorkerEnv, AuthUser } from "@/types/api";
 import { getAuth } from "@/lib/auth";
 
@@ -938,6 +938,7 @@ app.get("/schedule", async (c) => {
  */
 app.get("/attendance-matrix", async (c) => {
   await ensureEventColumns(c.env.DB);
+  await ensureMemberOrderColumn(c.env.DB);
   const db = drizzle(c.env.DB);
   const teamId = c.req.query("teamId");
   const userId = c.req.query("userId");
@@ -1124,7 +1125,7 @@ app.get("/attendance-matrix", async (c) => {
     const isSysAdmin = (session?.user as AuthUser)?.role === "SYSTEM_ADMIN";
 
     // チーム創設者（オーナー）チェック
-    const teamRecord = await db.select({ createdBy: teams.createdBy }).from(teams).where(eq(teams.id, teamId)).get();
+    const teamRecord = await db.select({ createdBy: teams.createdBy, memberSortOrder: teams.memberSortOrder }).from(teams).where(eq(teams.id, teamId)).get();
     const isTeamCreator = Boolean(authUserId && teamRecord?.createdBy === authUserId);
 
     let currentMember: any = null;
@@ -1396,9 +1397,17 @@ app.get("/attendance-matrix", async (c) => {
       statusSummary: eventSummaries[ev.id] || { duty: 0, help: 0, setup: 0, game: 0, absent: 0, totalPresent: 0 },
     }));
 
+    let memberSortOrder = {};
+    try {
+      if (teamRecord?.memberSortOrder) {
+        memberSortOrder = JSON.parse(teamRecord.memberSortOrder);
+      }
+    } catch {}
+
     return c.json({
       success: true,
       isDemo: false,
+      memberSortOrder,
       myInfo: {
         memberId: myMemberId,
         playerIds: myPlayerIds,
@@ -1562,6 +1571,31 @@ app.post("/attendance-matrix", async (c) => {
   } catch (error: any) {
     console.error("Failed to update attendance matrix cell:", error);
     return c.json({ success: false, error: error?.message || "更新に失敗しました" }, 500);
+  }
+});
+
+/**
+ * 📊 出欠マトリクス・メンバー表示順（グループ内並び順）保存API
+ * POST /api/liff/attendance-matrix/member-order
+ */
+app.post("/attendance-matrix/member-order", async (c) => {
+  await ensureMemberOrderColumn(c.env.DB);
+  const db = drizzle(c.env.DB);
+  try {
+    const body = await c.req.json();
+    const { teamId, memberSortOrder } = body;
+    if (!teamId || !memberSortOrder) {
+      return c.json({ success: false, error: "teamId and memberSortOrder are required" }, 400);
+    }
+
+    await db.update(teams)
+      .set({ memberSortOrder: JSON.stringify(memberSortOrder) })
+      .where(eq(teams.id, teamId));
+
+    return c.json({ success: true, message: "並び順を保存しました" });
+  } catch (err: any) {
+    console.error("Failed to save member sort order:", err);
+    return c.json({ success: false, error: err?.message || "並び順の保存に失敗しました" }, 500);
   }
 });
 

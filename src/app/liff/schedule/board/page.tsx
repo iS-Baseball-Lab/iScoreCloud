@@ -29,6 +29,9 @@ import {
   Info,
   Eye,
   EyeOff,
+  ArrowUpDown,
+  ChevronUp,
+  ChevronDown,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -135,6 +138,14 @@ interface MemberPerson {
 }
 
 type GroupTabType = "all" | "player" | "parent" | "mother" | "father" | "staff";
+type SortGroupKey = "player" | "mother" | "father" | "staff";
+
+type MemberSortOrderMap = {
+  player?: string[];
+  mother?: string[];
+  father?: string[];
+  staff?: string[];
+};
 
 function getTodayJST(): string {
   const d = new Date();
@@ -189,6 +200,18 @@ export default function AttendanceMatrixBoardPage() {
   const [selectedMonth, setSelectedMonth] = useState<string>("all");
   const [showPastDates, setShowPastDates] = useState<boolean>(false);
 
+  // メンバー並び順状態
+  const [memberSortOrder, setMemberSortOrder] = useState<MemberSortOrderMap>({});
+  const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
+  const [orderModalGroup, setOrderModalGroup] = useState<SortGroupKey>("player");
+  const [tempOrders, setTempOrders] = useState<Record<SortGroupKey, MemberPerson[]>>({
+    player: [],
+    mother: [],
+    father: [],
+    staff: [],
+  });
+  const [isSavingOrder, setIsSavingOrder] = useState(false);
+
   // 編集モーダル状態
   const [editingCell, setEditingCell] = useState<{
     eventId: string;
@@ -236,6 +259,19 @@ export default function AttendanceMatrixBoardPage() {
             setIsManagerOverrideMode(true);
           }
         }
+
+        // メンバー並び順の復元（LocalStorage ＆ サーバー設定）
+        let effectiveOrder: MemberSortOrderMap = {};
+        try {
+          const localKey = `iscore_matrix_order_${teamId}`;
+          const localSaved = localStorage.getItem(localKey);
+          if (localSaved) effectiveOrder = JSON.parse(localSaved);
+        } catch {}
+
+        if (data.memberSortOrder && Object.keys(data.memberSortOrder).length > 0) {
+          effectiveOrder = { ...effectiveOrder, ...data.memberSortOrder };
+        }
+        setMemberSortOrder(effectiveOrder);
       }
     } catch (err) {
       console.error("Matrix load error:", err);
@@ -284,16 +320,39 @@ export default function AttendanceMatrixBoardPage() {
     return list;
   }, [events, selectedMonth, showPastDates, todayStr, currentMonthStr]);
 
-  // 選択されたタブに応じたメンバー一覧
+  // メンバー並び替えヘルパー関数
+  const sortMembersByCustomOrder = useCallback((members: MemberPerson[], orderIds?: string[]) => {
+    if (!orderIds || orderIds.length === 0) return members;
+    const orderMap = new Map<string, number>();
+    orderIds.forEach((id, idx) => orderMap.set(id, idx));
+
+    return [...members].sort((a, b) => {
+      const idxA = orderMap.has(a.id) ? orderMap.get(a.id)! : 9999;
+      const idxB = orderMap.has(b.id) ? orderMap.get(b.id)! : 9999;
+      if (idxA !== idxB) return idxA - idxB;
+      return a.name.localeCompare(b.name, "ja");
+    });
+  }, []);
+
+  // 選択されたタブに応じたメンバー一覧（カスタム並び順適用）
   const currentMembers = useMemo(() => {
     let list: MemberPerson[] = [];
-    const allParents = groups.parents.length > 0 ? groups.parents : [...groups.mothers, ...groups.fathers];
+
+    const sortedPlayers = sortMembersByCustomOrder(groups.players, memberSortOrder.player);
+    const sortedMothers = sortMembersByCustomOrder(groups.mothers, memberSortOrder.mother);
+    const sortedFathers = sortMembersByCustomOrder(groups.fathers, memberSortOrder.father);
+    const sortedStaff = sortMembersByCustomOrder(groups.staff, memberSortOrder.staff);
+    const otherParents = groups.parents.filter(
+      p => !groups.mothers.some(m => m.id === p.id) && !groups.fathers.some(f => f.id === p.id)
+    );
 
     if (selectedGroupTab === "all") {
       const combined = [
-        ...groups.players,
-        ...allParents,
-        ...groups.staff,
+        ...sortedPlayers,
+        ...sortedMothers,
+        ...sortedFathers,
+        ...sortedStaff,
+        ...otherParents,
       ];
       const seen = new Set<string>();
       list = combined.filter(m => {
@@ -302,15 +361,15 @@ export default function AttendanceMatrixBoardPage() {
         return true;
       });
     } else if (selectedGroupTab === "player") {
-      list = groups.players;
-    } else if (selectedGroupTab === "parent") {
-      list = allParents;
+      list = sortedPlayers;
     } else if (selectedGroupTab === "mother") {
-      list = groups.mothers;
+      list = sortedMothers;
     } else if (selectedGroupTab === "father") {
-      list = groups.fathers;
+      list = sortedFathers;
     } else if (selectedGroupTab === "staff") {
-      list = groups.staff;
+      list = sortedStaff;
+    } else if (selectedGroupTab === "parent") {
+      list = [...sortedMothers, ...sortedFathers, ...otherParents];
     }
 
     if (!searchQuery.trim()) return list;
@@ -319,7 +378,97 @@ export default function AttendanceMatrixBoardPage() {
       m.name.toLowerCase().includes(q) ||
       (m.subText && m.subText.toLowerCase().includes(q))
     );
-  }, [selectedGroupTab, groups, searchQuery]);
+  }, [selectedGroupTab, groups, memberSortOrder, sortMembersByCustomOrder, searchQuery]);
+
+  // モーダルを開く処理
+  const handleOpenOrderModal = () => {
+    setOrderModalGroup(
+      selectedGroupTab === "all" || selectedGroupTab === "parent" ? "player" : selectedGroupTab
+    );
+    setTempOrders({
+      player: sortMembersByCustomOrder(groups.players, memberSortOrder.player),
+      mother: sortMembersByCustomOrder(groups.mothers, memberSortOrder.mother),
+      father: sortMembersByCustomOrder(groups.fathers, memberSortOrder.father),
+      staff: sortMembersByCustomOrder(groups.staff, memberSortOrder.staff),
+    });
+    setIsOrderModalOpen(true);
+  };
+
+  // アイテムの上下移動処理
+  const handleMoveItem = (fromIndex: number, direction: -1 | 1) => {
+    const toIndex = fromIndex + direction;
+    const currentList = tempOrders[orderModalGroup];
+    if (toIndex < 0 || toIndex >= currentList.length) return;
+
+    const newList = [...currentList];
+    const [moved] = newList.splice(fromIndex, 1);
+    newList.splice(toIndex, 0, moved);
+
+    setTempOrders(prev => ({
+      ...prev,
+      [orderModalGroup]: newList,
+    }));
+  };
+
+  // プリセット整列処理
+  const handlePresetSort = (type: "number" | "name" | "reset") => {
+    let original = groups.players;
+    if (orderModalGroup === "mother") original = groups.mothers;
+    else if (orderModalGroup === "father") original = groups.fathers;
+    else if (orderModalGroup === "staff") original = groups.staff;
+
+    let sorted = [...original];
+    if (type === "number") {
+      sorted.sort((a, b) => {
+        const numA = parseInt(a.uniformNumber?.replace(/\D/g, "") || "999", 10);
+        const numB = parseInt(b.uniformNumber?.replace(/\D/g, "") || "999", 10);
+        return numA - numB;
+      });
+    } else if (type === "name") {
+      sorted.sort((a, b) => a.name.localeCompare(b.name, "ja"));
+    }
+
+    setTempOrders(prev => ({
+      ...prev,
+      [orderModalGroup]: sorted,
+    }));
+  };
+
+  // 並び順の保存処理
+  const handleSaveOrder = async () => {
+    setIsSavingOrder(true);
+    const newOrder: MemberSortOrderMap = {
+      player: tempOrders.player.map(p => p.id),
+      mother: tempOrders.mother.map(p => p.id),
+      father: tempOrders.father.map(p => p.id),
+      staff: tempOrders.staff.map(p => p.id),
+    };
+
+    setMemberSortOrder(newOrder);
+
+    const teamId = currentTeam?.id || "demo-team";
+    try {
+      localStorage.setItem(`iscore_matrix_order_${teamId}`, JSON.stringify(newOrder));
+    } catch {}
+
+    try {
+      if (teamId && teamId !== "demo-team") {
+        await fetch("/api/liff/attendance-matrix/member-order", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ teamId, memberSortOrder: newOrder }),
+        });
+      }
+      toast.success("メンバー列の並び順を保存しました！");
+      setIsOrderModalOpen(false);
+    } catch (err: any) {
+      console.error("Order save error:", err);
+      toast.success("並び順を端末に保存しました");
+      setIsOrderModalOpen(false);
+    } finally {
+      setIsSavingOrder(false);
+    }
+  };
 
   // 編集権限チェック
   const canEditPerson = useCallback((personId: string, groupType: string) => {
@@ -517,29 +666,42 @@ export default function AttendanceMatrixBoardPage() {
             </span>
           </div>
 
-          {myInfo.isManager && (
+          <div className="flex items-center gap-1 shrink-0">
+            {/* メンバー並び順設定ボタン */}
             <button
               type="button"
-              onClick={() => setIsManagerOverrideMode(prev => !prev)}
-              className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9.5px] font-black transition-all active:scale-95 border ${
-                isManagerOverrideMode
-                  ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/40 shadow-xs"
-                  : "bg-muted text-muted-foreground border-border/60 hover:text-foreground"
-              }`}
+              onClick={handleOpenOrderModal}
+              className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9.5px] font-bold bg-muted hover:bg-muted/80 text-foreground border border-border/70 active:scale-95 transition-all shrink-0"
+              title="グループ内のメンバー列の並び順を設定"
             >
-              {isManagerOverrideMode ? (
-                <>
-                  <Unlock className="w-3 h-3 text-amber-600 dark:text-amber-400" />
-                  <span>代理入力ON</span>
-                </>
-              ) : (
-                <>
-                  <Lock className="w-3 h-3" />
-                  <span>通常入力</span>
-                </>
-              )}
+              <ArrowUpDown className="w-3 h-3 text-primary" />
+              <span>並び順設定</span>
             </button>
-          )}
+
+            {myInfo.isManager && (
+              <button
+                type="button"
+                onClick={() => setIsManagerOverrideMode(prev => !prev)}
+                className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9.5px] font-black transition-all active:scale-95 border ${
+                  isManagerOverrideMode
+                    ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/40 shadow-xs"
+                    : "bg-muted text-muted-foreground border-border/60 hover:text-foreground"
+                }`}
+              >
+                {isManagerOverrideMode ? (
+                  <>
+                    <Unlock className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                    <span>代理入力ON</span>
+                  </>
+                ) : (
+                  <>
+                    <Lock className="w-3 h-3" />
+                    <span>通常入力</span>
+                  </>
+                )}
+              </button>
+            )}
+          </div>
         </div>
 
         {/* 👥 グループ切り分けタブ ＆ 検索バー (超スリム化) */}
@@ -1026,6 +1188,161 @@ export default function AttendanceMatrixBoardPage() {
                     {isSavingCell ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "メモ保存"}
                   </button>
                 </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            ⚙️ メンバー並び順設定モーダル
+            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+        {isOrderModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+            <div className="w-full max-w-md bg-card rounded-2xl border border-border shadow-xl p-3.5 space-y-3">
+              <div className="flex items-center justify-between border-b border-border pb-2">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="w-6 h-6 rounded-lg bg-primary/10 text-primary flex items-center justify-center font-black shrink-0">
+                    <ArrowUpDown className="w-3.5 h-3.5" />
+                  </span>
+                  <div>
+                    <h3 className="text-xs font-black text-foreground">メンバー表示順の設定</h3>
+                    <p className="text-[9.5px] text-muted-foreground">グループ内での列の並び順を変更できます</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsOrderModalOpen(false)}
+                  className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* グループ切り替えタブ */}
+              <div className="flex items-center gap-1 border-b border-border/60 pb-1.5">
+                {[
+                  { key: "player" as const, label: "選手", count: groups.players.length },
+                  { key: "mother" as const, label: "母", count: groups.mothers.length },
+                  { key: "father" as const, label: "父", count: groups.fathers.length },
+                  { key: "staff" as const, label: "スタッフ", count: groups.staff.length },
+                ].map(tab => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setOrderModalGroup(tab.key)}
+                    className={`flex-1 py-1 text-center rounded-lg text-[10.5px] font-bold transition-all ${
+                      orderModalGroup === tab.key
+                        ? "bg-primary text-primary-foreground font-black shadow-xs"
+                        : "bg-muted/50 text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {tab.label} ({tab.count})
+                  </button>
+                ))}
+              </div>
+
+              {/* プリセット並び替えボタン */}
+              <div className="flex items-center justify-between gap-1 text-[9.5px]">
+                <span className="text-muted-foreground font-bold">自動整列:</span>
+                <div className="flex items-center gap-1">
+                  {orderModalGroup === "player" && (
+                    <button
+                      type="button"
+                      onClick={() => handlePresetSort("number")}
+                      className="px-2 py-0.5 rounded-md bg-muted hover:bg-muted/80 text-foreground border border-border/70 font-bold"
+                    >
+                      背番号順
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => handlePresetSort("name")}
+                    className="px-2 py-0.5 rounded-md bg-muted hover:bg-muted/80 text-foreground border border-border/70 font-bold"
+                  >
+                    五十音順
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handlePresetSort("reset")}
+                    className="px-2 py-0.5 rounded-md bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground border border-border/70"
+                  >
+                    初期順
+                  </button>
+                </div>
+              </div>
+
+              {/* メンバー並び順リスト */}
+              <div className="space-y-1 max-h-[45vh] overflow-y-auto pr-0.5 no-scrollbar">
+                {(tempOrders[orderModalGroup] || []).length === 0 ? (
+                  <div className="py-6 text-center text-xs text-muted-foreground">
+                    このグループに所属するメンバーはいません
+                  </div>
+                ) : (
+                  (tempOrders[orderModalGroup] || []).map((person, index) => (
+                    <div
+                      key={person.id}
+                      className="flex items-center justify-between p-1.5 rounded-xl bg-muted/40 border border-border/60 hover:bg-muted/70 transition-colors"
+                    >
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="w-4 h-4 rounded-full bg-black/10 dark:bg-white/10 text-[9px] font-black flex items-center justify-center text-muted-foreground shrink-0">
+                          {index + 1}
+                        </span>
+                        {person.uniformNumber && (
+                          <span className="text-[9px] font-black text-primary px-1 py-0.2 rounded bg-primary/10 shrink-0">
+                            #{person.uniformNumber}
+                          </span>
+                        )}
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-black text-foreground truncate">{person.name}</p>
+                          {person.subText && (
+                            <p className="text-[8.5px] text-muted-foreground truncate leading-none">{person.subText}</p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-0.5 shrink-0">
+                        <button
+                          type="button"
+                          disabled={index === 0}
+                          onClick={() => handleMoveItem(index, -1)}
+                          className="p-1 rounded-md bg-card hover:bg-muted disabled:opacity-20 disabled:pointer-events-none border border-border/70 text-foreground active:scale-95 transition-all"
+                          title="1つ上へ"
+                        >
+                          <ChevronUp className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          disabled={index === (tempOrders[orderModalGroup] || []).length - 1}
+                          onClick={() => handleMoveItem(index, 1)}
+                          className="p-1 rounded-md bg-card hover:bg-muted disabled:opacity-20 disabled:pointer-events-none border border-border/70 text-foreground active:scale-95 transition-all"
+                          title="1つ下へ"
+                        >
+                          <ChevronDown className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* フッター操作ボタン */}
+              <div className="flex items-center justify-end gap-2 pt-1 border-t border-border">
+                <button
+                  type="button"
+                  onClick={() => setIsOrderModalOpen(false)}
+                  className="px-3 py-1.5 rounded-xl border border-border text-xs font-bold text-muted-foreground hover:bg-muted active:scale-95 transition-all"
+                >
+                  キャンセル
+                </button>
+                <button
+                  type="button"
+                  disabled={isSavingOrder}
+                  onClick={handleSaveOrder}
+                  className="px-4 py-1.5 rounded-xl bg-primary text-primary-foreground text-xs font-black hover:brightness-110 active:scale-95 transition-all flex items-center gap-1"
+                >
+                  {isSavingOrder ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                  <span>並び順を保存</span>
+                </button>
               </div>
             </div>
           </div>

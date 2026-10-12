@@ -38,6 +38,7 @@ export const teams = sqliteTable('teams', {
   reportGameSetEnabled: integer('report_game_set_enabled', { mode: 'boolean' }).notNull().default(true),
   createdBy: text('created_by').notNull().references(() => user.id),
   scorebookLegendUrl: text('scorebook_legend_url'),
+  memberSortOrder: text('member_sort_order'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(strftime('%s', 'now'))`),
 });
 

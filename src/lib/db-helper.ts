@@ -173,3 +173,16 @@ export async function ensureLinksTable(d1?: any) {
   isLinksSchemaReady = true;
 }
 
+let isMemberOrderSchemaReady = false;
+
+/**
+ * 🛠️ D1 の teams テーブルに member_sort_order カラムが存在することを保証する関数
+ */
+export async function ensureMemberOrderColumn(d1?: any) {
+  if (!d1 || isMemberOrderSchemaReady) return;
+  try {
+    await d1.prepare("ALTER TABLE teams ADD COLUMN member_sort_order text").run().catch(() => {});
+  } catch {}
+  isMemberOrderSchemaReady = true;
+}
+
