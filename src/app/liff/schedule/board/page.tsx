@@ -550,8 +550,7 @@ export default function AttendanceMatrixBoardPage() {
               { id: "player", label: "選手", count: groups.players.length, activeClass: "bg-emerald-600 text-white font-black shadow-xs" },
               { id: "mother", label: "母", count: groups.mothers.length, activeClass: "bg-rose-500 text-white font-black shadow-xs" },
               { id: "father", label: "父", count: groups.fathers.length, activeClass: "bg-blue-600 text-white font-black shadow-xs" },
-              { id: "parent", label: "保護者", count: groups.parents.length > 0 ? groups.parents.length : groups.mothers.length + groups.fathers.length, activeClass: "bg-amber-600 text-white font-black shadow-xs" },
-              { id: "staff", label: "指導・スタッフ", count: groups.staff.length, activeClass: "bg-purple-600 text-white font-black shadow-xs" },
+              { id: "staff", label: "スタッフ", count: groups.staff.length, activeClass: "bg-purple-600 text-white font-black shadow-xs" },
               { id: "all", label: "全員", count: new Set([...groups.players, ...(groups.parents.length > 0 ? groups.parents : [...groups.mothers, ...groups.fathers]), ...groups.staff].map(m => m.id)).size, activeClass: "bg-primary text-primary-foreground font-black shadow-xs shadow-primary/20" },
             ].map(tab => (
               <button
