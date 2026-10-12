@@ -290,7 +290,7 @@ export default function LiffGroundsPage() {
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-background">
+    <div className="flex flex-col min-h-screen">
       <LiffHeader />
 
       <div className="p-4 space-y-4 max-w-lg mx-auto w-full">

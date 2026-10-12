@@ -105,8 +105,8 @@ export default function LiffHubPage() {
         }}
       />
 
-      {/* 🌟 上部〜ヒーローセクション：薄いプライマリーカラー背景ゾーン */}
-      <div className="bg-gradient-to-b from-primary/12 via-primary/6 to-transparent pb-2">
+      {/* 🌟 上部〜ヒーローセクション */}
+      <div className="pb-2">
         <div className="p-4 space-y-5">
           {/* 🌟 デモ体験モード時の案内バナー */}
           {isDemo && (
