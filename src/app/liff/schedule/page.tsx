@@ -749,21 +749,21 @@ export default function LiffSchedulePage() {
 
         {/* 🛠️ ナビゲーションショートカット (一括登録 & 出欠一覧表) */}
         <div className="grid grid-cols-2 gap-2">
-          {/* ① 📊 簡易出欠一覧表 (マトリクス) */}
+          {/* ① 📊 簡易出欠一覧表 */}
           <Link
             href="/liff/schedule/board"
             className="flex items-center justify-between p-2.5 px-3 rounded-2xl bg-indigo-500/10 hover:bg-indigo-500/15 border border-indigo-500/30 hover:border-indigo-500/50 shadow-2xs active:scale-[0.98] transition-all group"
           >
             <div className="flex items-center gap-2 min-w-0">
               <span className="w-7 h-7 rounded-xl bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-black shrink-0">
-                <Users className="w-3.5 h-3.5" />
+                <ClipboardCheck className="w-3.5 h-3.5" />
               </span>
               <div className="min-w-0">
                 <span className="text-xs font-black text-foreground block truncate">
                   出欠一覧表
                 </span>
                 <span className="text-[10px] text-muted-foreground font-bold block truncate">
-                  マトリクス・当番集計
+                  当番集計・出欠確認
                 </span>
               </div>
             </div>

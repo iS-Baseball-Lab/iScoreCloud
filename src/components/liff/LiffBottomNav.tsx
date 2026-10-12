@@ -62,7 +62,7 @@ const MENU_ITEMS = [
   },
   {
     title: "出欠一覧表",
-    subtitle: "マトリクス・当番集計",
+    subtitle: "当番集計・出欠確認",
     href: "/liff/schedule/board",
     icon: ClipboardCheck,
     colorClass: "bg-indigo-500/15 text-indigo-600 dark:text-indigo-400",

@@ -35,6 +35,7 @@ import {
   FileText,
   GripVertical,
   SlidersHorizontal,
+  ClipboardCheck,
 } from "lucide-react";
 import { Reorder, useDragControls } from "motion/react";
 import { toast } from "sonner";
@@ -927,25 +928,22 @@ export default function AttendanceMatrixBoardPage() {
       <LiffHeader />
 
       <main className="max-w-7xl mx-auto px-1 sm:px-2 pt-1.5 space-y-1.5">
-        {/* ページタイトル & 戻る導線 (極限までコンパクト化) */}
-        <div className="flex items-center justify-between gap-1.5 px-0.5">
-          <div className="flex items-center gap-1.5 min-w-0">
-            <span className="w-6 h-6 rounded-lg bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-black shrink-0">
-              <Users className="w-3.5 h-3.5" />
-            </span>
-            <h1 className="text-xs sm:text-sm font-black text-foreground truncate">
-              出欠一覧表（マトリクス）
-            </h1>
-          </div>
-
-          <Link
-            href="/liff/schedule"
-            className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-card hover:bg-muted border border-border/80 text-[10.5px] font-black text-foreground shadow-2xs active:scale-95 transition-all shrink-0"
-          >
-            <CalendarIcon className="w-3 h-3 text-primary" />
-            <span>予定へ戻る</span>
-            <ChevronRight className="w-3 h-3 text-muted-foreground" />
-          </Link>
+        {/* ページ内ヘッダー */}
+        <div className="px-1 pt-1 pb-1">
+          <LiffPageHeader
+            title="出欠一覧表"
+            subtitle="当番集計・出欠確認"
+            icon={
+              <span className="w-8 h-8 rounded-xl bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-black">
+                <ClipboardCheck className="w-4 h-4" />
+              </span>
+            }
+            showBack
+            shareData={{
+              title: `【出欠一覧表】${currentTeam?.name || "チーム"} 出欠・当番状況`,
+              text: `月別の活動予定と出欠一覧・当番集計はこちらから確認できます`,
+            }}
+          />
         </div>
 
         {/* ① 👥 グループ切り分けタブ（上段・横幅いっぱいに均等配置） */}
