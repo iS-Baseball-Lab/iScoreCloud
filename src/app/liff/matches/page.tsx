@@ -109,7 +109,7 @@ function MatchesContent() {
       return (
         <div className="flex flex-col min-h-screen">
           <LiffHeader />
-          <div className="p-6 space-y-4">
+          <div className="p-4 space-y-4">
             <LiffPageHeader title="試合情報" showBack />
             <EmptyState
               icon={Shield}
@@ -150,7 +150,7 @@ function MatchesContent() {
       <div className="flex flex-col min-h-screen">
         <LiffHeader />
 
-        <div className="p-4 space-y-5">
+        <div className="p-4 space-y-4">
           {/* ページ内ヘッダー */}
           <LiffPageHeader
             title={`vs ${match.opponent}`}
@@ -286,7 +286,7 @@ function MatchesContent() {
     <div className="flex flex-col min-h-screen">
       <LiffHeader />
 
-      <div className="p-4 space-y-5">
+      <div className="p-4 space-y-4">
         {/* ページ内ヘッダー */}
         <LiffPageHeader
           title="試合情報 & ハイライト"

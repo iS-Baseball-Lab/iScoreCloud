@@ -32,6 +32,7 @@ import {
   Link2
 } from "lucide-react";
 import { LiffHeader } from "@/components/liff/LiffHeader";
+import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { useLiff } from "@/components/liff/LiffProvider";
 import { toast } from "sonner";
 
@@ -144,7 +145,7 @@ export default function LiffSettingsPage() {
   ];
 
   return (
-    <div className="flex flex-col min-h-screen pb-32">
+    <div className="flex flex-col min-h-screen">
       {/* ヘッダー */}
       <LiffHeader
         shareData={{
@@ -153,17 +154,22 @@ export default function LiffSettingsPage() {
         }}
       />
 
-      <div className="p-4 space-y-6 max-w-lg mx-auto w-full">
-        {/* ページタイトル */}
-        <div className="flex items-center gap-2 px-1">
-          <span className="w-8 h-8 rounded-2xl bg-primary/10 text-primary flex items-center justify-center font-black shadow-xs">
-            <Settings className="w-4 h-4" />
-          </span>
-          <div>
-            <h1 className="text-lg font-black text-foreground tracking-tight">アプリ設定</h1>
-            <p className="text-[11px] font-bold text-muted-foreground">利用環境・表示・スコア入力の個別カスタマイズ</p>
-          </div>
-        </div>
+      <div className="p-4 space-y-4 max-w-lg mx-auto w-full">
+        {/* ページ内ヘッダー */}
+        <LiffPageHeader
+          title="アプリ設定"
+          subtitle="利用環境・表示・スコア入力の個別カスタマイズ"
+          icon={
+            <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
+              <Settings className="w-4 h-4" />
+            </span>
+          }
+          showBack
+          shareData={{
+            title: "アプリ設定 - iScoreCloud",
+            text: "使いやすさ・表示・スコア入力のカスタマイズ設定",
+          }}
+        />
 
         {/* ━━━ セクション 1: 👤 個人・利用設定 ━━━ */}
         <section className="rounded-3xl bg-card border-2 border-primary/20 p-4 space-y-4 shadow-sm">

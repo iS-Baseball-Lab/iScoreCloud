@@ -923,31 +923,29 @@ export default function AttendanceMatrixBoardPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background pb-32">
+    <div className="flex flex-col min-h-screen">
       {/* ヘッダー */}
       <LiffHeader />
 
-      <main className="max-w-7xl mx-auto px-1 sm:px-2 pt-1.5 space-y-1.5">
+      <div className="p-4 space-y-4 max-w-lg mx-auto w-full">
         {/* ページ内ヘッダー */}
-        <div className="px-1 pt-1 pb-1">
-          <LiffPageHeader
-            title="出欠一覧表"
-            subtitle="当番集計・出欠確認"
-            icon={
-              <span className="w-8 h-8 rounded-xl bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-black">
-                <ClipboardCheck className="w-4 h-4" />
-              </span>
-            }
-            showBack
-            shareData={{
-              title: `【出欠一覧表】${currentTeam?.name || "チーム"} 出欠・当番状況`,
-              text: `月別の活動予定と出欠一覧・当番集計はこちらから確認できます`,
-            }}
-          />
-        </div>
+        <LiffPageHeader
+          title="出欠一覧表"
+          subtitle="当番集計・出欠確認"
+          icon={
+            <span className="w-8 h-8 rounded-xl bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-black">
+              <ClipboardCheck className="w-4 h-4" />
+            </span>
+          }
+          showBack
+          shareData={{
+            title: `【出欠一覧表】${currentTeam?.name || "チーム"} 出欠・当番状況`,
+            text: `月別の活動予定と出欠一覧・当番集計はこちらから確認できます`,
+          }}
+        />
 
         {/* ① 👥 グループ切り分けタブ（上段・横幅いっぱいに均等配置） */}
-        <div className="grid grid-cols-5 gap-1 w-full bg-muted/40 p-1 rounded-2xl border border-border/70 shadow-2xs">
+        <div className="grid grid-cols-5 gap-1.5 w-full bg-muted/40 p-1.5 rounded-2xl border border-border/70 shadow-2xs">
           {[
             { id: "player", label: "選手", count: groups.players.length, activeClass: "bg-emerald-600 text-white font-black shadow-xs" },
             { id: "mother", label: "母", count: groups.mothers.length, activeClass: "bg-rose-500 text-white font-black shadow-xs" },
@@ -976,7 +974,7 @@ export default function AttendanceMatrixBoardPage() {
         </div>
 
         {/* ② 🏷️ 凡例 ＆ アクション操作バー（グループ別の凡例を横幅いっぱいに均等配置） */}
-        <div className="bg-card rounded-xl px-2.5 py-1.5 border border-border/80 shadow-2xs space-y-1.5">
+        <div className="bg-card rounded-2xl px-3 py-2 border border-border/80 shadow-2xs space-y-2">
           <div className="flex items-center justify-between gap-1 text-[9.5px]">
             <div className="flex items-center gap-1.5 font-black text-muted-foreground">
               <span className="w-1.5 h-1.5 rounded-full bg-primary" />
@@ -1055,7 +1053,7 @@ export default function AttendanceMatrixBoardPage() {
         </div>
 
         {/* ③ 📅 月単位選択 ＆ 過去日表示切替 ＆ 検索バー (コンパクト統合) */}
-        <div className="bg-card rounded-xl p-1.5 border border-border/80 shadow-2xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-1.5 text-[9.5px]">
+        <div className="bg-card rounded-2xl p-2 sm:p-2.5 border border-border/80 shadow-2xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 text-[9.5px]">
           {/* 月選択ピル */}
           <div className="flex items-center gap-1 overflow-x-auto no-scrollbar py-0.5">
             <span className="font-black text-muted-foreground shrink-0 flex items-center gap-0.5 mr-0.5">
@@ -1173,7 +1171,7 @@ export default function AttendanceMatrixBoardPage() {
             )}
           </div>
         ) : (
-          <div className="relative bg-card rounded-xl border border-border shadow-xs overflow-hidden">
+          <div className="relative bg-card rounded-2xl border border-border shadow-xs overflow-hidden">
             <div className="overflow-x-auto relative" style={{ WebkitOverflowScrolling: "touch" }}>
               <table className="w-max min-w-full text-left border-separate border-spacing-0 select-none" style={{ borderCollapse: "separate", borderSpacing: 0 }}>
                 {/* 📌 ヘッダー行 (メンバー一覧 & 出欠記号別集計ヘッダー: 縦固定化なし) */}
@@ -1928,7 +1926,7 @@ export default function AttendanceMatrixBoardPage() {
             </div>
           </div>
         )}
-      </main>
+      </div>
     </div>
   );
 }

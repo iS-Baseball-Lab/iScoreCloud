@@ -68,7 +68,7 @@ export default function LiffCarpoolPage() {
     <div className="flex flex-col min-h-screen">
       <LiffHeader />
 
-      <div className="p-4 space-y-5">
+      <div className="p-4 space-y-4">
         {/* ページ内ヘッダー */}
         <LiffPageHeader
           title="配車表 & 集合案内"

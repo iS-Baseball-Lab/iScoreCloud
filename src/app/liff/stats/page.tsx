@@ -87,7 +87,7 @@ export default function LiffStatsPage() {
     <div className="flex flex-col min-h-screen">
       <LiffHeader />
 
-      <div className="p-4 space-y-5">
+      <div className="p-4 space-y-4">
         {/* ページ内ヘッダー */}
         <LiffPageHeader
           title="成績 & ランキング"
