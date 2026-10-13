@@ -1358,38 +1358,48 @@ export default function AttendanceMatrixBoardPage() {
                           )}
                         </td>
 
-                        {/* ② 出欠集計 各記号ごとの集計値セル (計列削除・幅25px・完全不透明) */}
+                        {/* ② 出欠集計 各記号ごとの集計値セル (タイトル色と同色の薄い背景色) */}
                         {/* ◎ 当番 */}
                         <td className={`w-6 min-w-[25px] max-w-[25px] p-0.5 text-center border-b border-r border-border font-black text-[10.5px] ${
-                          summary.duty > 0 ? "text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-950 font-black" : "text-muted-foreground/30 bg-white dark:bg-zinc-900"
+                          summary.duty > 0
+                            ? "text-red-700 dark:text-red-300 bg-red-50/90 dark:bg-red-950/40 font-black"
+                            : "text-red-400/40 dark:text-red-400/25 bg-red-50/40 dark:bg-red-950/20 font-medium"
                         }`}>
                           {summary.duty}
                         </td>
 
                         {/* ○ ヘルプ */}
                         <td className={`w-6 min-w-[25px] max-w-[25px] p-0.5 text-center border-b border-r border-border font-black text-[10.5px] ${
-                          summary.help > 0 ? "text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-950 font-black" : "text-muted-foreground/30 bg-white dark:bg-zinc-900"
+                          summary.help > 0
+                            ? "text-blue-700 dark:text-blue-300 bg-blue-50/90 dark:bg-blue-950/40 font-black"
+                            : "text-blue-400/40 dark:text-blue-400/25 bg-blue-50/40 dark:bg-blue-950/20 font-medium"
                         }`}>
                           {summary.help}
                         </td>
 
                         {/* ▲ 設営撤収 */}
                         <td className={`w-6 min-w-[25px] max-w-[25px] p-0.5 text-center border-b border-r border-border font-black text-[10.5px] ${
-                          summary.setup > 0 ? "text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-950 font-black" : "text-muted-foreground/30 bg-white dark:bg-zinc-900"
+                          summary.setup > 0
+                            ? "text-amber-700 dark:text-amber-300 bg-amber-50/90 dark:bg-amber-950/40 font-black"
+                            : "text-amber-400/40 dark:text-amber-400/25 bg-amber-50/40 dark:bg-amber-950/20 font-medium"
                         }`}>
                           {summary.setup}
                         </td>
 
                         {/* △ 試合のみ */}
                         <td className={`w-6 min-w-[25px] max-w-[25px] p-0.5 text-center border-b border-r border-border font-black text-[10.5px] ${
-                          summary.game > 0 ? "text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-950 font-black" : "text-muted-foreground/30 bg-white dark:bg-zinc-900"
+                          summary.game > 0
+                            ? "text-emerald-700 dark:text-emerald-300 bg-emerald-50/90 dark:bg-emerald-950/40 font-black"
+                            : "text-emerald-400/40 dark:text-emerald-400/25 bg-emerald-50/40 dark:bg-emerald-950/20 font-medium"
                         }`}>
                           {summary.game}
                         </td>
 
                         {/* × 欠席 */}
                         <td className={`w-6 min-w-[25px] max-w-[25px] p-0.5 text-center border-b border-r border-border font-bold text-[10.5px] ${
-                          summary.absent > 0 ? "text-slate-600 dark:text-slate-300 bg-slate-200 dark:bg-slate-800" : "text-muted-foreground/30 bg-white dark:bg-zinc-900"
+                          summary.absent > 0
+                            ? "text-slate-700 dark:text-slate-300 bg-slate-100/80 dark:bg-slate-800/50 font-black"
+                            : "text-slate-400/40 dark:text-slate-400/25 bg-slate-50/40 dark:bg-slate-900/20 font-medium"
                         }`}>
                           {summary.absent}
                         </td>
