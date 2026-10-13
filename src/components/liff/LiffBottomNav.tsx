@@ -16,7 +16,6 @@ import {
   HelpCircle,
   AlertTriangle,
   Calendar,
-  CalendarDays,
   LayoutGrid,
   Settings,
   ChevronRight,
@@ -82,14 +81,6 @@ const MENU_ITEMS = [
     href: "/liff/grounds",
     icon: MapPin,
     colorClass: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
-    category: "schedule" as const,
-  },
-  {
-    title: "予定スケジューラー",
-    subtitle: "月間カレンダー・活動日設定",
-    href: "/liff/schedule?tab=planner",
-    icon: CalendarDays,
-    colorClass: "bg-indigo-500/15 text-indigo-600 dark:text-indigo-400",
     category: "schedule" as const,
   },
 
