@@ -16,6 +16,7 @@ import {
   User,
   Users,
   Square,
+  RectangleHorizontal,
   AppWindow,
   Circle,
   Smartphone,
@@ -49,6 +50,7 @@ const THEMES = [
 
 const DESIGNS = [
   { id: "sharp", icon: Square, label: "Sharp" },
+  { id: "sleek", icon: RectangleHorizontal, label: "Sleek" },
   { id: "modern", icon: AppWindow, label: "Modern" },
   { id: "rounded", icon: Circle, label: "Rounded" },
 ];

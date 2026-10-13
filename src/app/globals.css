@@ -259,7 +259,12 @@
 
 .design-sharp {
   --radius: 0rem;
-  /* カクカク（e-Sports風） */
+  /* カクカク（e-Sports風） (0px) */
+}
+
+.design-sleek {
+  --radius: 0.375rem;
+  /* スリーク・微角丸（洗練されたシャープ寄り） (6px) */
 }
 
 .design-rounded {

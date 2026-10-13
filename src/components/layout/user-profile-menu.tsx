@@ -5,7 +5,7 @@ import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 // 🌟 修正: ultra用に「縮小」を意味する Shrink アイコンを追加
-import { BellRing, LogOut, Settings, Sun, Moon, Monitor, Square, AppWindow, Circle, Smartphone, Maximize, Shrink } from "lucide-react";
+import { BellRing, LogOut, Settings, Sun, Moon, Monitor, Square, RectangleHorizontal, AppWindow, Circle, Smartphone, Maximize, Shrink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -32,6 +32,7 @@ const THEMES = [
 
 const DESIGNS = [
   { id: "sharp", icon: Square, label: "Sharp" },
+  { id: "sleek", icon: RectangleHorizontal, label: "Sleek" },
   { id: "modern", icon: AppWindow, label: "Modern" },
   { id: "rounded", icon: Circle, label: "Rounded" },
 ];
