@@ -87,7 +87,7 @@ const MENU_ITEMS = [
   {
     title: "予定スケジューラー",
     subtitle: "月間カレンダー・活動日設定",
-    href: "/liff/schedule/admin",
+    href: "/liff/schedule?tab=planner",
     icon: CalendarDays,
     colorClass: "bg-indigo-500/15 text-indigo-600 dark:text-indigo-400",
     category: "schedule" as const,

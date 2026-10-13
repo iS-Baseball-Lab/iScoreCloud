@@ -6,6 +6,8 @@ import Link from "next/link";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { useLiff } from "@/components/liff/LiffProvider";
+import { cn } from "@/lib/utils";
+import { MonthlySchedulePlanner } from "@/components/schedule/MonthlySchedulePlanner";
 import {
   Calendar as CalendarIcon,
   Clock,
@@ -194,6 +196,31 @@ export default function LiffSchedulePage() {
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const [events, setEvents] = useState<ScheduleEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  // 🔀 タブ切り替え（予定一覧 / スケジューラー）
+  const [activeTab, setActiveTab] = useState<"list" | "planner">("list");
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("tab") === "planner") {
+        setActiveTab("planner");
+      }
+    }
+  }, []);
+
+  const handleTabChange = (tab: "list" | "planner") => {
+    setActiveTab(tab);
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      if (tab === "planner") {
+        url.searchParams.set("tab", "planner");
+      } else {
+        url.searchParams.delete("tab");
+      }
+      window.history.replaceState({}, "", url.toString());
+    }
+  };
 
   // 📅 月間カレンダー用ステート
   const [currentDate, setCurrentDate] = useState(() => new Date());
@@ -747,7 +774,48 @@ export default function LiffSchedulePage() {
           }}
         />
 
-        {/* 📅 月間ミニカレンダー (コンパクト設計) */}
+        {/* 🔀 タブ切り替え（予定一覧 / スケジューラー） */}
+        <div className="flex bg-muted/60 p-1 rounded-2xl border border-border/50 gap-1 shadow-2xs">
+          <button
+            type="button"
+            onClick={() => handleTabChange("list")}
+            className={cn(
+              "flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl text-xs font-black transition-all cursor-pointer",
+              activeTab === "list"
+                ? "bg-background text-foreground shadow-xs border border-border/50"
+                : "text-muted-foreground hover:text-foreground active:scale-95"
+            )}
+          >
+            <CalendarIcon className="w-3.5 h-3.5 text-orange-500" />
+            <span>予定一覧・カレンダー</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleTabChange("planner")}
+            className={cn(
+              "flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl text-xs font-black transition-all cursor-pointer",
+              activeTab === "planner"
+                ? "bg-background text-foreground shadow-xs border border-border/50"
+                : "text-muted-foreground hover:text-foreground active:scale-95"
+            )}
+          >
+            <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
+            <span>予定スケジューラー</span>
+          </button>
+        </div>
+
+        {activeTab === "planner" ? (
+          <MonthlySchedulePlanner
+            teamId={currentTeam?.id || "team_1"}
+            teamName={currentTeam?.name || "チーム"}
+            isLiff={true}
+            onSaved={() => {
+              loadSchedule();
+            }}
+          />
+        ) : (
+          <>
+            {/* 📅 月間ミニカレンダー (コンパクト設計) */}
         <div className="p-2.5 sm:p-3 bg-card rounded-2xl border border-border/80 shadow-xs space-y-1.5">
           <div className="flex items-center justify-between pb-0.5">
             <div className="flex items-center gap-1.5">
@@ -1531,6 +1599,8 @@ export default function LiffSchedulePage() {
               );
             })}
           </div>
+        )}
+          </>
         )}
       </div>
 
