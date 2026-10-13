@@ -57,13 +57,7 @@ export default function LiffSettingsPage() {
   const [fontSizeScale, setFontSizeScale] = useState<"normal" | "large">("normal");
   const [hapticsEnabled, setHapticsEnabled] = useState<boolean>(true);
 
-  // 3. 試合・スコア入力デフォルト
-  const [defaultInnings, setDefaultInnings] = useState<number>(7);
-  const [mercyRule, setMercyRule] = useState<string>("standard"); // standard: 3回10点4回7点, loose: 4回10点5回7点, none: なし
-  const [positionNotation, setPositionNotation] = useState<"kanji" | "number" | "english">("kanji");
-  const [dhDefault, setDhDefault] = useState<boolean>(false);
-
-  // 4. マウント時にローカルストレージから読み込み
+  // 3. マウント時にローカルストレージから読み込み
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -93,18 +87,6 @@ export default function LiffSettingsPage() {
 
       const savedHaptics = localStorage.getItem("iscore_setting_haptics");
       if (savedHaptics !== null) setHapticsEnabled(savedHaptics === "true");
-
-      const savedInnings = localStorage.getItem("iscore_setting_default_innings");
-      if (savedInnings) setDefaultInnings(Number(savedInnings));
-
-      const savedMercy = localStorage.getItem("iscore_setting_mercy_rule");
-      if (savedMercy) setMercyRule(savedMercy);
-
-      const savedNotation = localStorage.getItem("iscore_setting_position_notation");
-      if (savedNotation) setPositionNotation(savedNotation as any);
-
-      const savedDh = localStorage.getItem("iscore_setting_dh_default");
-      if (savedDh !== null) setDhDefault(savedDh === "true");
     } catch (e) {
       console.error("Failed to load settings from localStorage", e);
     }
@@ -158,7 +140,7 @@ export default function LiffSettingsPage() {
         {/* ページ内ヘッダー */}
         <LiffPageHeader
           title="アプリ設定"
-          subtitle="利用環境・表示・スコア入力の個別カスタマイズ"
+          subtitle="利用環境・表示・個人プロファイルのカスタマイズ"
           icon={
             <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
               <Settings className="w-4 h-4" />
@@ -420,122 +402,22 @@ export default function LiffSettingsPage() {
           </div>
         </section>
 
-        {/* ━━━ セクション 3: ⚾ 試合・スコア入力初期値 ━━━ */}
-        <section className="rounded-3xl bg-card border-2 border-primary/20 p-4 space-y-4 shadow-sm">
-          <div className="flex items-center gap-2 pb-2 border-b border-border/60">
-            <Sliders className="w-4 h-4 text-primary" />
-            <h2 className="text-sm font-black text-foreground">試合ルール・スコア初期値</h2>
-          </div>
-
-          {/* 規定イニング */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-black text-foreground">規定イニング数</label>
-            <div className="grid grid-cols-3 gap-1.5">
-              {[
-                { count: 6, label: "6回 (学童)" },
-                { count: 7, label: "7回 (中学・一般)" },
-                { count: 9, label: "9回 (高校・大学)" },
-              ].map((item) => (
-                <button
-                  key={item.count}
-                  type="button"
-                  onClick={() => {
-                    setDefaultInnings(item.count);
-                    saveSetting("iscore_setting_default_innings", String(item.count));
-                  }}
-                  className={`py-2 px-1 rounded-2xl text-xs font-bold transition-all active:scale-95 border ${
-                    defaultInnings === item.count
-                      ? "bg-primary text-primary-foreground border-primary shadow-xs font-black"
-                      : "bg-muted/50 border-border/60 text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  {item.label}
-                </button>
-              ))}
+        {/* ━━━ セクション 3: 🛡️ チーム設定へのショートカット案内 ━━━ */}
+        <Link
+          href="/liff/settings/team"
+          className="p-4 rounded-3xl bg-primary/10 border-2 border-primary/30 hover:border-primary/60 transition-all flex items-center justify-between group active:scale-95 shadow-xs"
+        >
+          <div className="flex items-center gap-3">
+            <span className="w-10 h-10 rounded-2xl bg-primary text-primary-foreground flex items-center justify-center font-black shadow-xs group-hover:scale-105 transition-transform">
+              <ShieldCheck className="w-5 h-5" />
+            </span>
+            <div>
+              <p className="text-xs font-black text-foreground">チーム設定・競技ルールはこちら</p>
+              <p className="text-[10px] text-muted-foreground font-bold">チーム情報・活動班・規定イニング・球場マスタ</p>
             </div>
           </div>
-
-          {/* コールド規定 */}
-          <div className="space-y-1.5 pt-1">
-            <label className="text-xs font-black text-foreground">コールドゲーム規定</label>
-            <div className="grid grid-cols-3 gap-1.5">
-              {[
-                { id: "standard", label: "3回10/4回7点" },
-                { id: "loose", label: "4回10/5回7点" },
-                { id: "none", label: "コールドなし" },
-              ].map((m) => (
-                <button
-                  key={m.id}
-                  type="button"
-                  onClick={() => {
-                    setMercyRule(m.id);
-                    saveSetting("iscore_setting_mercy_rule", m.id);
-                  }}
-                  className={`py-2 px-1 rounded-2xl text-xs font-bold transition-all active:scale-95 border ${
-                    mercyRule === m.id
-                      ? "bg-primary text-primary-foreground border-primary shadow-xs font-black"
-                      : "bg-muted/50 border-border/60 text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  {m.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* 守備位置の表示形式 */}
-          <div className="space-y-1.5 pt-1">
-            <label className="text-xs font-black text-foreground">守備位置の表記形式</label>
-            <div className="grid grid-cols-3 gap-1.5">
-              {[
-                { id: "kanji", label: "漢字 (投・捕・一)" },
-                { id: "number", label: "守備番号 (1・2・3)" },
-                { id: "english", label: "英語 (P・C・1B)" },
-              ].map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => {
-                    setPositionNotation(p.id as any);
-                    saveSetting("iscore_setting_position_notation", p.id);
-                  }}
-                  className={`py-2 px-1 rounded-2xl text-xs font-bold transition-all active:scale-95 border ${
-                    positionNotation === p.id
-                      ? "bg-primary text-primary-foreground border-primary shadow-xs font-black"
-                      : "bg-muted/50 border-border/60 text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* DH制初期値 */}
-          <div className="pt-1 flex items-center justify-between">
-            <div className="space-y-0.5">
-              <div className="text-xs font-black text-foreground">DH制（指名打者）初期値</div>
-              <p className="text-[10px] text-muted-foreground font-bold">試合作成時にDH制をデフォルトで有効化</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                const next = !dhDefault;
-                setDhDefault(next);
-                saveSetting("iscore_setting_dh_default", String(next));
-              }}
-              className={`w-12 h-6 rounded-full transition-colors relative p-0.5 ${
-                dhDefault ? "bg-primary" : "bg-muted border border-border"
-              }`}
-            >
-              <div
-                className={`w-5 h-5 rounded-full bg-white transition-transform ${
-                  dhDefault ? "translate-x-6 shadow-xs" : "translate-x-0"
-                }`}
-              />
-            </button>
-          </div>
-        </section>
+          <ChevronRight className="w-5 h-5 text-primary group-hover:translate-x-1 transition-transform shrink-0" />
+        </Link>
 
         {/* ━━━ セクション 4: 💾 システム・キャッシュ管理 ━━━ */}
         <section className="rounded-3xl bg-card border-2 border-primary/20 p-4 space-y-3.5 shadow-sm">

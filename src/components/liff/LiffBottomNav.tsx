@@ -27,13 +27,23 @@ import {
 
 type MenuCategory = "schedule" | "manual" | "settings";
 
+interface MenuItem {
+  title: string;
+  subtitle: string;
+  href: string;
+  icon: any;
+  colorClass: string;
+  category: MenuCategory;
+  fullWidth?: boolean;
+}
+
 const MENU_TABS = [
   { id: "schedule" as const, label: "活動・予定", icon: Calendar },
   { id: "manual" as const, label: "マニュアル", icon: BookOpen },
   { id: "settings" as const, label: "設定", icon: Settings },
 ];
 
-const MENU_ITEMS = [
+const MENU_ITEMS: MenuItem[] = [
   // 📅 活動・予定
   {
     title: "試合情報",
@@ -121,12 +131,19 @@ const MENU_ITEMS = [
   // ⚙️ 設定
   {
     title: "アプリ設定",
-    subtitle: "表示テーマ・立場・スコア入力設定",
+    subtitle: "個人設定・表示・配車初期値",
     href: "/liff/settings",
     icon: Settings,
     colorClass: "bg-slate-500/15 text-slate-700 dark:text-slate-300",
     category: "settings" as const,
-    fullWidth: true,
+  },
+  {
+    title: "チーム設定",
+    subtitle: "チーム情報・競技規定・マスタ管理",
+    href: "/liff/settings/team",
+    icon: ShieldCheck,
+    colorClass: "bg-primary/15 text-primary",
+    category: "settings" as const,
   },
 ];
 
