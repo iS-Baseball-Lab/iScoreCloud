@@ -348,14 +348,14 @@ export function HubCalendarSection({
 
                         <div className="space-y-1 text-[10.5px]">
                           <div className="flex items-center gap-2 font-bold text-foreground/90">
-                            <span className="px-1.5 py-0.2 rounded bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 text-[9.5px] font-black shrink-0 border border-amber-200 dark:border-amber-900/40">
+                            <span className="w-[48px] min-w-[48px] max-w-[48px] py-0.5 rounded bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 text-[9.5px] font-black shrink-0 border border-amber-200 dark:border-amber-900/40 flex items-center justify-center">
                               ☀️ 午前
                             </span>
-                            <span className="flex items-center gap-1 shrink-0 text-muted-foreground">
-                              <Clock className="w-3 h-3 text-amber-600 dark:text-amber-400" />
-                              <span>{ev.amTime}</span>
+                            <span className="w-[88px] min-w-[88px] max-w-[88px] flex items-center gap-1 shrink-0 text-muted-foreground tabular-nums text-[10px]">
+                              <Clock className="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0" />
+                              <span className="truncate">{ev.amTime}</span>
                             </span>
-                            <span className="flex items-center gap-1 truncate text-foreground">
+                            <span className="flex items-center gap-1 truncate text-foreground min-w-0 flex-1 text-[10px]">
                               <MapPin className="w-3 h-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
                               <span className="truncate">{ev.amLocation}</span>
                             </span>
@@ -363,14 +363,14 @@ export function HubCalendarSection({
 
                           {ev.hasPm && (
                             <div className="flex items-center gap-2 font-bold text-foreground/90">
-                              <span className="px-1.5 py-0.2 rounded bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 text-[9.5px] font-black shrink-0 border border-indigo-200 dark:border-indigo-900/40">
+                              <span className="w-[48px] min-w-[48px] max-w-[48px] py-0.5 rounded bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 text-[9.5px] font-black shrink-0 border border-indigo-200 dark:border-indigo-900/40 flex items-center justify-center">
                                 🌙 午後
                               </span>
-                              <span className="flex items-center gap-1 shrink-0 text-muted-foreground">
-                                <Clock className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
-                                <span>{ev.pmTime || "13:00〜17:00"}</span>
+                              <span className="w-[88px] min-w-[88px] max-w-[88px] flex items-center gap-1 shrink-0 text-muted-foreground tabular-nums text-[10px]">
+                                <Clock className="w-3 h-3 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                                <span className="truncate">{ev.pmTime || "13:00〜17:00"}</span>
                               </span>
-                              <span className="flex items-center gap-1 truncate text-foreground">
+                              <span className="flex items-center gap-1 truncate text-foreground min-w-0 flex-1 text-[10px]">
                                 <MapPin className="w-3 h-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
                                 <span className="truncate">{ev.pmLocation || ev.amLocation}</span>
                               </span>
@@ -423,30 +423,30 @@ export function HubCalendarSection({
 
                         <div className="space-y-0.5 text-[10px]">
                           <div className="flex items-center gap-1.5 font-bold text-foreground/90">
-                            <span className="px-1 py-0.2 rounded bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 text-[9px] font-black shrink-0 border border-amber-200 dark:border-amber-900/40">
+                            <span className="w-[46px] min-w-[46px] max-w-[46px] py-0.2 rounded bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 text-[9px] font-black shrink-0 border border-amber-200 dark:border-amber-900/40 flex items-center justify-center">
                               ☀️ 午前
                             </span>
-                            <span className="flex items-center gap-0.5 shrink-0 text-muted-foreground">
-                              <Clock className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400" />
-                              <span>{ev.amTime}</span>
+                            <span className="w-[84px] min-w-[84px] max-w-[84px] flex items-center gap-0.5 shrink-0 text-muted-foreground tabular-nums">
+                              <Clock className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                              <span className="truncate">{ev.amTime}</span>
                             </span>
-                            <span className="flex items-center gap-0.5 truncate text-foreground">
-                              <MapPin className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400" />
+                            <span className="flex items-center gap-0.5 truncate text-foreground min-w-0 flex-1">
+                              <MapPin className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
                               <span className="truncate">{ev.amLocation}</span>
                             </span>
                           </div>
 
                           {ev.hasPm && (
                             <div className="flex items-center gap-1.5 font-bold text-foreground/90">
-                              <span className="px-1 py-0.2 rounded bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 text-[9px] font-black shrink-0 border border-indigo-200 dark:border-indigo-900/40">
+                              <span className="w-[46px] min-w-[46px] max-w-[46px] py-0.2 rounded bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 text-[9px] font-black shrink-0 border border-indigo-200 dark:border-indigo-900/40 flex items-center justify-center">
                                 🌙 午後
                               </span>
-                              <span className="flex items-center gap-0.5 shrink-0 text-muted-foreground">
-                                <Clock className="w-2.5 h-2.5 text-indigo-600 dark:text-indigo-400" />
-                                <span>{ev.pmTime || "13:00〜17:00"}</span>
+                              <span className="w-[84px] min-w-[84px] max-w-[84px] flex items-center gap-0.5 shrink-0 text-muted-foreground tabular-nums">
+                                <Clock className="w-2.5 h-2.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                                <span className="truncate">{ev.pmTime || "13:00〜17:00"}</span>
                               </span>
-                              <span className="flex items-center gap-0.5 truncate text-foreground">
-                                <MapPin className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400" />
+                              <span className="flex items-center gap-0.5 truncate text-foreground min-w-0 flex-1">
+                                <MapPin className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
                                 <span className="truncate">{ev.pmLocation || ev.amLocation}</span>
                               </span>
                             </div>
@@ -516,15 +516,15 @@ export function HubCalendarSection({
                       <div className="space-y-0.5 text-[10px]">
                         {/* 午前 */}
                         <div className="flex items-center gap-1.5 font-bold text-foreground/90">
-                          <span className="px-1 py-0.2 rounded bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 text-[9px] font-black shrink-0 border border-amber-200 dark:border-amber-900/40">
+                          <span className="w-[46px] min-w-[46px] max-w-[46px] py-0.2 rounded bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 text-[9px] font-black shrink-0 border border-amber-200 dark:border-amber-900/40 flex items-center justify-center">
                             ☀️ 午前
                           </span>
-                          <span className="flex items-center gap-0.5 shrink-0 text-muted-foreground">
-                            <Clock className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400" />
-                            <span>{ev.amTime}</span>
+                          <span className="w-[84px] min-w-[84px] max-w-[84px] flex items-center gap-0.5 shrink-0 text-muted-foreground tabular-nums">
+                            <Clock className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                            <span className="truncate">{ev.amTime}</span>
                           </span>
-                          <span className="flex items-center gap-0.5 truncate text-foreground">
-                            <MapPin className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400" />
+                          <span className="flex items-center gap-0.5 truncate text-foreground min-w-0 flex-1">
+                            <MapPin className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
                             <span className="truncate">{ev.amLocation}</span>
                           </span>
                         </div>
@@ -532,15 +532,15 @@ export function HubCalendarSection({
                         {/* 午後（設定がある場合） */}
                         {ev.hasPm && (
                           <div className="flex items-center gap-1.5 font-bold text-foreground/90">
-                            <span className="px-1 py-0.2 rounded bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 text-[9px] font-black shrink-0 border border-indigo-200 dark:border-indigo-900/40">
+                            <span className="w-[46px] min-w-[46px] max-w-[46px] py-0.2 rounded bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 text-[9px] font-black shrink-0 border border-indigo-200 dark:border-indigo-900/40 flex items-center justify-center">
                               🌙 午後
                             </span>
-                            <span className="flex items-center gap-0.5 shrink-0 text-muted-foreground">
-                              <Clock className="w-2.5 h-2.5 text-indigo-600 dark:text-indigo-400" />
-                              <span>{ev.pmTime || "13:00〜17:00"}</span>
+                            <span className="w-[84px] min-w-[84px] max-w-[84px] flex items-center gap-0.5 shrink-0 text-muted-foreground tabular-nums">
+                              <Clock className="w-2.5 h-2.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                              <span className="truncate">{ev.pmTime || "13:00〜17:00"}</span>
                             </span>
-                            <span className="flex items-center gap-0.5 truncate text-foreground">
-                              <MapPin className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400" />
+                            <span className="flex items-center gap-0.5 truncate text-foreground min-w-0 flex-1">
+                              <MapPin className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
                               <span className="truncate">{ev.pmLocation || ev.amLocation}</span>
                             </span>
                           </div>
