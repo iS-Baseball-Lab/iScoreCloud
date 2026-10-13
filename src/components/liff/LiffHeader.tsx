@@ -427,20 +427,22 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
                 </div>
               </div>
 
-              <DropdownMenuSeparator className="bg-border/50" />
-
               {/* LINEシェア */}
               {shareData && (
-                <DropdownMenuItem
-                  onClick={handleShare}
-                  className="flex items-center gap-2 p-2 cursor-pointer font-bold text-xs rounded-xl"
-                >
-                  <Share2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                  <span>LINEでチームに共有</span>
-                </DropdownMenuItem>
+                <>
+                  <DropdownMenuSeparator className="bg-border/50" />
+                  <DropdownMenuItem
+                    onClick={handleShare}
+                    className="flex items-center gap-2 p-2 cursor-pointer font-bold text-xs rounded-xl"
+                  >
+                    <Share2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                    <span>LINEでチームに共有</span>
+                  </DropdownMenuItem>
+                </>
               )}
 
-              {/* Web版 iScoreCloud を開く */}
+              {/* Web版 iScoreCloud を開く（一時的に無効化） */}
+              {/*
               <DropdownMenuItem
                 onClick={() => window.open("/dashboard", "_blank")}
                 className="flex items-center gap-2 p-2 cursor-pointer font-bold text-xs text-primary rounded-xl"
@@ -448,6 +450,7 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
                 <ExternalLink className="w-4 h-4" />
                 <span>Web版 iScoreCloud を開く</span>
               </DropdownMenuItem>
+              */}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
