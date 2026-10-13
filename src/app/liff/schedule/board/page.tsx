@@ -328,7 +328,7 @@ export default function AttendanceMatrixBoardPage() {
   });
 
   // UI状態
-  const [selectedGroupTab, setSelectedGroupTab] = useState<GroupTabType>("player");
+  const [selectedGroupTab, setSelectedGroupTab] = useState<GroupTabType | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [isManagerOverrideMode, setIsManagerOverrideMode] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState<string>("all");
@@ -457,6 +457,7 @@ export default function AttendanceMatrixBoardPage() {
       console.error("Matrix load error:", err);
       toast.error("出欠一覧表データの読み込みに失敗しました");
     } finally {
+      setSelectedGroupTab(prev => prev ?? "player");
       setIsLoading(false);
     }
   }, [currentTeam?.id, profile?.userId, profile?.displayName]);
@@ -563,7 +564,7 @@ export default function AttendanceMatrixBoardPage() {
   // モーダルを開く処理
   const handleOpenOrderModal = () => {
     setOrderModalGroup(
-      selectedGroupTab === "all" || selectedGroupTab === "parent" ? "player" : selectedGroupTab
+      !selectedGroupTab || selectedGroupTab === "all" || selectedGroupTab === "parent" ? "player" : selectedGroupTab
     );
     setTempOrders({
       player: sortMembersByCustomOrder(groups.players, memberSortOrder.player),
@@ -653,7 +654,7 @@ export default function AttendanceMatrixBoardPage() {
   // 🏷️ ステータス設定モーダルを開く
   const handleOpenStatusConfigModal = () => {
     setStatusModalGroup(
-      selectedGroupTab === "all" || selectedGroupTab === "parent" ? "player" : selectedGroupTab
+      !selectedGroupTab || selectedGroupTab === "all" || selectedGroupTab === "parent" ? "player" : selectedGroupTab
     );
     setTempStatusConfig(JSON.parse(JSON.stringify(groupStatusConfig)));
     setIsStatusConfigModalOpen(true);
@@ -726,6 +727,7 @@ export default function AttendanceMatrixBoardPage() {
 
   // 凡例に表示するアイテム（グループ別に有効なもの）
   const activeLegendItems = useMemo(() => {
+    if (!selectedGroupTab) return [];
     if (selectedGroupTab === "all" || selectedGroupTab === "parent") {
       const map = new Map<AttendanceMarkType, StatusSettingItem>();
       Object.values(groupStatusConfig).forEach(list => {
@@ -952,25 +954,28 @@ export default function AttendanceMatrixBoardPage() {
             { id: "father", label: "父", count: groups.fathers.length, activeClass: "bg-blue-600 text-white font-black shadow-xs" },
             { id: "staff", label: "スタッフ", count: groups.staff.length, activeClass: "bg-purple-600 text-white font-black shadow-xs" },
             { id: "all", label: "全員", count: new Set([...groups.players, ...(groups.parents.length > 0 ? groups.parents : [...groups.mothers, ...groups.fathers]), ...groups.staff].map(m => m.id)).size, activeClass: "bg-primary text-primary-foreground font-black shadow-xs shadow-primary/20" },
-          ].map(tab => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setSelectedGroupTab(tab.id as any)}
-              className={`flex items-center justify-center gap-1 py-1.5 px-0.5 rounded-xl text-[10.5px] font-black transition-all active:scale-95 ${
-                selectedGroupTab === tab.id
-                  ? tab.activeClass
-                  : "bg-card hover:bg-muted text-muted-foreground border border-border/60"
-              }`}
-            >
-              <span>{tab.label}</span>
-              <span className={`text-[8.5px] px-1 py-0 rounded-full font-bold leading-none ${
-                selectedGroupTab === tab.id ? "bg-white/20 text-white" : "bg-black/5 dark:bg-white/10 text-muted-foreground"
-              }`}>
-                {tab.count}
-              </span>
-            </button>
-          ))}
+          ].map(tab => {
+            const isTabActive = !isLoading && selectedGroupTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setSelectedGroupTab(tab.id as any)}
+                className={`flex items-center justify-center gap-1 py-1.5 px-0.5 rounded-xl text-[10.5px] font-black transition-all active:scale-95 ${
+                  isTabActive
+                    ? tab.activeClass
+                    : "bg-card hover:bg-muted text-muted-foreground border border-border/60"
+                }`}
+              >
+                <span>{tab.label}</span>
+                <span className={`text-[8.5px] px-1 py-0 rounded-full font-bold leading-none ${
+                  isTabActive ? "bg-white/20 text-white" : "bg-black/5 dark:bg-white/10 text-muted-foreground"
+                }`}>
+                  {isLoading ? "-" : tab.count}
+                </span>
+              </button>
+            );
+          })}
         </div>
 
         {/* ② 🏷️ 凡例 ＆ アクション操作バー（グループ別の凡例を横幅いっぱいに均等配置） */}
@@ -979,7 +984,7 @@ export default function AttendanceMatrixBoardPage() {
             <div className="flex items-center gap-1.5 font-black text-muted-foreground">
               <span className="w-1.5 h-1.5 rounded-full bg-primary" />
               <span>
-                凡例（{selectedGroupTab === "player" ? "選手" : selectedGroupTab === "mother" ? "母" : selectedGroupTab === "father" ? "父" : selectedGroupTab === "staff" ? "スタッフ" : "全員"}）:
+                凡例（{isLoading ? "読み込み中..." : selectedGroupTab === "player" ? "選手" : selectedGroupTab === "mother" ? "母" : selectedGroupTab === "father" ? "父" : selectedGroupTab === "staff" ? "スタッフ" : selectedGroupTab === "all" ? "全員" : "未選択"}）:
               </span>
             </div>
 
