@@ -104,14 +104,25 @@ export default function LiffPrivacyPage() {
         <div className={styles.card}>
           <h3 className={styles.h3}>
             <span className="w-5 h-5 rounded-lg bg-primary/10 text-primary text-[11px] font-black flex items-center justify-center">4</span>
-            安全管理・お問い合わせ
+            安全管理・お問い合わせ窓口
           </h3>
           <p className={styles.p}>
-            通信の暗号化（SSL/TLS）など適切なセキュリティ対策を講じています。開示・訂正・削除のご請求はチーム管理者またはお問い合わせ窓口へご連絡ください。
+            通信の暗号化（SSL/TLS）など適切なセキュリティ対策を講じています。保有個人データの開示・訂正・利用停止・削除等のご請求およびお問い合わせは、下記窓口までご連絡ください。
           </p>
+          <div className="p-3 rounded-2xl bg-muted/50 border border-border/50 space-y-1.5 text-xs">
+            <div className="font-bold text-foreground">
+              運営者: iS Baseball Lab（iScoreCloud 運営事務局）
+            </div>
+            <div className="text-muted-foreground flex items-center gap-1.5 flex-wrap">
+              <span>お問い合わせ窓口:</span>
+              <a href="mailto:info@iscorecloud.com" className="text-primary font-black hover:underline">
+                info@iscorecloud.com
+              </a>
+            </div>
+          </div>
           <div className="pt-2 border-t border-border/40 text-[10px] font-bold text-muted-foreground flex justify-between">
             <span>制定: 2026年4月1日</span>
-            <span>改訂: 2026年8月27日</span>
+            <span>改訂: 2026年10月14日</span>
           </div>
         </div>
       </div>

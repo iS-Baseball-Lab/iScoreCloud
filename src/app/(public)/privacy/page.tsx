@@ -178,10 +178,16 @@ export default function PrivacyPage() {
             お問い合わせ窓口
           </h3>
           <p className="text-xs leading-relaxed text-muted-foreground">
-            本ポリシーおよび個人情報の取扱いに関するご質問、ご相談、開示等の請求は、本サービス内のお問い合わせフォームまたはチーム管理者を通じてご連絡ください。
+            本ポリシーおよび個人情報の取扱いに関するご質問、ご相談、開示等の請求は、下記お問い合わせ窓口までご連絡ください。
           </p>
-          <div className="text-xs font-bold text-foreground pt-1">
-            iS Baseball Lab 個人情報保護担当
+          <div className="text-xs font-bold text-foreground pt-1 space-y-1">
+            <div>iS Baseball Lab（iScoreCloud 運営事務局）個人情報保護担当</div>
+            <div className="text-muted-foreground font-normal flex items-center gap-1.5">
+              <span>お問い合わせメール:</span>
+              <a href="mailto:info@iscorecloud.com" className="text-primary font-bold hover:underline">
+                info@iscorecloud.com
+              </a>
+            </div>
           </div>
         </section>
       </div>

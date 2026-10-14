@@ -99,14 +99,25 @@ export default function LiffTermsPage() {
         <div className={styles.card}>
           <h3 className={styles.h3}>
             <span className="w-5 h-5 rounded-lg bg-primary/10 text-primary text-[11px] font-black flex items-center justify-center">4</span>
-            免責事項・規約変更
+            免責事項・規約変更・お問い合わせ
           </h3>
           <p className={styles.p}>
-            当運営は、本サービスに起因して生じた損害について故意または重過失がある場合を除き責任を負いません。本規約は必要に応じて随時改訂されます。
+            当運営は、本サービスに起因して生じた損害について故意または重過失がある場合を除き責任を負いません。本規約は必要に応じて随時改訂されます。規約に関するお問い合わせは下記までご連絡ください。
           </p>
+          <div className="p-3 rounded-2xl bg-muted/50 border border-border/50 space-y-1.5 text-xs">
+            <div className="font-bold text-foreground">
+              運営者: iS Baseball Lab（iScoreCloud 運営事務局）
+            </div>
+            <div className="text-muted-foreground flex items-center gap-1.5 flex-wrap">
+              <span>お問い合わせ窓口:</span>
+              <a href="mailto:info@iscorecloud.com" className="text-primary font-black hover:underline">
+                info@iscorecloud.com
+              </a>
+            </div>
+          </div>
           <div className="pt-2 border-t border-border/40 text-[10px] font-bold text-muted-foreground flex justify-between">
             <span>制定: 2026年4月1日</span>
-            <span>改訂: 2026年8月27日</span>
+            <span>改訂: 2026年10月14日</span>
           </div>
         </div>
       </div>
