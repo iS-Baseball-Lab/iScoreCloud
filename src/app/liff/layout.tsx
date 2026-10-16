@@ -22,7 +22,7 @@ export default function LiffLayout({
             aria-hidden="true"
             className="pointer-events-none absolute top-0 left-0 right-0 h-[480px] bg-gradient-to-b from-primary/12 via-primary/6 to-transparent z-0"
           />
-          <div className="relative z-10 flex flex-col flex-1">
+          <div className="relative flex flex-col flex-1">
             {children}
           </div>
           {/* 🌟 画像様フローティングボトムメニュー */}

@@ -2,6 +2,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
@@ -192,10 +193,15 @@ const getAttendanceBadgeInfo = (st: string | undefined) => {
 
 export default function LiffSchedulePage() {
   const { currentTeam, profile } = useLiff();
+  const [mounted, setMounted] = useState(false);
   const [filter, setFilter] = useState<"all" | "match" | "practice">("all");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const [events, setEvents] = useState<ScheduleEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // 🔀 タブ切り替え（予定一覧 / スケジューラー）
   const [activeTab, setActiveTab] = useState<"list" | "planner">("list");
@@ -1605,7 +1611,8 @@ export default function LiffSchedulePage() {
       </div>
 
       {/* 🌟 予定の個別詳細編集モーダル（広々レイアウト ＆ 午前午後常に設定 ＆ 横並び入力） */}
-      {editingEvent && (() => {
+      {mounted && editingEvent && createPortal(
+        (() => {
         const hasGroups = Boolean(editingEvent.activityGroups && editingEvent.activityGroups.length > 0);
         const groups = editingEvent.activityGroups || [];
 
@@ -1661,9 +1668,9 @@ export default function LiffSchedulePage() {
         };
 
         return (
-          <div className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-150">
+          <div className="fixed inset-0 z-[9999] bg-black/75 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-150">
             <div
-              className="bg-card w-full max-w-2xl rounded-t-3xl sm:rounded-3xl border-2 border-primary/30 shadow-2xl overflow-hidden max-h-[92vh] flex flex-col animate-in slide-in-from-bottom-4 duration-200"
+              className="bg-card w-full max-w-2xl rounded-t-3xl sm:rounded-3xl border-2 border-primary/30 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col animate-in slide-in-from-bottom-4 duration-200"
               onClick={(e) => e.stopPropagation()}
             >
               {/* モーダルヘッダー */}
@@ -2364,7 +2371,7 @@ export default function LiffSchedulePage() {
               </div>
 
               {/* モーダルフッター */}
-              <div className="px-5 py-3.5 pb-8 sm:pb-3.5 border-t border-border/80 flex items-center justify-between bg-muted/20 shrink-0 gap-3">
+              <div className="px-5 py-3.5 pb-[max(env(safe-area-inset-bottom),24px)] sm:pb-3.5 border-t border-border/80 flex items-center justify-between bg-card shrink-0 gap-3 shadow-lg">
                 <button
                   type="button"
                   onClick={() => setEditingEvent(null)}
@@ -2386,7 +2393,9 @@ export default function LiffSchedulePage() {
             </div>
           </div>
         );
-      })()}
+      })(),
+      document.body
+    )}
     </div>
   );
 }
