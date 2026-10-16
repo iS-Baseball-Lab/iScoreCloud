@@ -131,7 +131,7 @@ export default function LiffSettingsPage() {
       {/* ヘッダー */}
       <LiffHeader
         shareData={{
-          title: "アプリ設定 - iScoreCloud",
+          title: "アプリ設定 - iScore for LINEミニアプリ",
           text: "使いやすさ・表示・スコア入力のカスタマイズ設定",
         }}
       />
@@ -148,7 +148,7 @@ export default function LiffSettingsPage() {
           }
           showBack
           shareData={{
-            title: "アプリ設定 - iScoreCloud",
+            title: "アプリ設定 - iScore for LINEミニアプリ",
             text: "使いやすさ・表示・スコア入力のカスタマイズ設定",
           }}
         />
@@ -446,7 +446,7 @@ export default function LiffSettingsPage() {
 
           <div className="pt-2 border-t border-border/50 flex items-center justify-between text-xs">
             <span className="font-bold text-muted-foreground">アプリバージョン</span>
-            <span className="font-black text-foreground">iScoreCloud v2.5.0</span>
+            <span className="font-black text-foreground">iScore for LINEミニアプリ v2.5.0</span>
           </div>
         </section>
 

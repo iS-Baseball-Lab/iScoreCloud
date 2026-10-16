@@ -133,7 +133,7 @@ export default function LiffTeamSettingsPage() {
     <div className="flex flex-col min-h-screen">
       <LiffHeader
         shareData={{
-          title: "チーム設定 - iScoreCloud",
+          title: "チーム設定 - iScore for LINEミニアプリ",
           text: "チーム基本情報・競技規定・各種マスタ設定",
         }}
       />
