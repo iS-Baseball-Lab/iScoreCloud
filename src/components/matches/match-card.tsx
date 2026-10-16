@@ -218,7 +218,7 @@ export function MatchCard({
 
   const topScores = match.battingOrder === 'first' ? myScores : oppScores;
   const bottomScores = match.battingOrder === 'second' ? myScores : oppScores;
-  const isHomeWinning = secondScore > firstScore;
+  const isHomeWinning = !isFuture && secondScore > firstScore;
 
   return (
     <div className={cn(
@@ -406,49 +406,47 @@ export function MatchCard({
             <div className="mt-4 pt-2 animate-in fade-in slide-in-from-top-2 duration-300">
               <div className="w-full overflow-hidden rounded-xl border border-border bg-card shadow-sm flex flex-col pointer-events-auto">
                 
-                {!isFuture && (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-center whitespace-nowrap">
-                      <thead className="bg-primary/5 border-b border-border/50">
-                        <tr>
-                          <th className="py-2 px-3 text-left font-normal text-muted-foreground text-xs w-20 md:w-32">TEAM</th>
-                          {Array.from({ length: inningCount }).map((_, i) => (
-                            <th key={i} className="py-2 px-1 sm:px-2 text-sm md:text-base font-semibold text-foreground">{i + 1}</th>
-                          ))}
-                          <th className="py-2 px-3 text-sm md:text-base font-bold text-primary">R</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border/50 text-xs sm:text-sm font-medium tabular-nums">
-                        <tr>
-                          <td className="py-2 px-3 text-left">
-                            <div className="w-16 truncate md:w-auto md:whitespace-normal">
-                              {match.battingOrder === 'first' ? (teamFullName || "自チーム") : (match.opponent || "相手")}
-                            </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-center whitespace-nowrap">
+                    <thead className="bg-primary/5 border-b border-border/50">
+                      <tr>
+                        <th className="py-2 px-3 text-left font-normal text-muted-foreground text-xs w-20 md:w-32">TEAM</th>
+                        {Array.from({ length: inningCount }).map((_, i) => (
+                          <th key={i} className="py-2 px-1 sm:px-2 text-sm md:text-base font-semibold text-foreground">{i + 1}</th>
+                        ))}
+                        <th className="py-2 px-3 text-sm md:text-base font-bold text-primary">R</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border/50 text-xs sm:text-sm font-medium tabular-nums">
+                      <tr>
+                        <td className="py-2 px-3 text-left">
+                          <div className="w-16 truncate md:w-auto md:whitespace-normal">
+                            {match.battingOrder === 'first' ? (teamFullName || "自チーム") : (match.opponent || "相手")}
+                          </div>
+                        </td>
+                        {Array.from({ length: inningCount }).map((_, i) => (
+                          <td key={`top-${i}`} className="py-2 text-muted-foreground">
+                            {formatScoreDisplay({ score: topScores[i], isBottom: false, isInningFinal: i === inningCount - 1, isHomeWinning })}
                           </td>
-                          {Array.from({ length: inningCount }).map((_, i) => (
-                            <td key={`top-${i}`} className="py-2 text-muted-foreground">
-                              {formatScoreDisplay({ score: topScores[i], isBottom: false, isInningFinal: i === inningCount - 1, isHomeWinning })}
-                            </td>
-                          ))}
-                          <td className="py-2 px-3 font-bold text-primary">{firstScore}</td>
-                        </tr>
-                        <tr>
-                          <td className="py-2 px-3 text-left">
-                            <div className="w-16 truncate md:w-auto md:whitespace-normal">
-                              {match.battingOrder === 'second' ? (teamFullName || "自チーム") : (match.opponent || "相手")}
-                            </div>
+                        ))}
+                        <td className="py-2 px-3 font-bold text-primary">{isFuture ? "-" : firstScore}</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2 px-3 text-left">
+                          <div className="w-16 truncate md:w-auto md:whitespace-normal">
+                            {match.battingOrder === 'second' ? (teamFullName || "自チーム") : (match.opponent || "相手")}
+                          </div>
+                        </td>
+                        {Array.from({ length: inningCount }).map((_, i) => (
+                          <td key={`bottom-${i}`} className="py-2 text-foreground font-semibold">
+                            {formatScoreDisplay({ score: bottomScores[i], isBottom: true, isInningFinal: i === inningCount - 1, isHomeWinning })}
                           </td>
-                          {Array.from({ length: inningCount }).map((_, i) => (
-                            <td key={`bottom-${i}`} className="py-2 text-foreground font-semibold">
-                              {formatScoreDisplay({ score: bottomScores[i], isBottom: true, isInningFinal: i === inningCount - 1, isHomeWinning })}
-                            </td>
-                          ))}
-                          <td className="py-2 px-3 font-bold text-primary">{secondScore}</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+                        ))}
+                        <td className="py-2 px-3 font-bold text-primary">{isFuture ? "-" : secondScore}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
                 
                 <div className="p-3 border-t border-border/50 bg-muted/20 flex gap-2">
                   {match.status === 'live' ? (

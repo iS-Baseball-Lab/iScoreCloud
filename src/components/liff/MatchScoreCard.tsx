@@ -178,7 +178,7 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
 
   const firstScore = match.battingOrder === "second" ? match.opponentScore : match.myScore;
   const secondScore = match.battingOrder === "second" ? match.myScore : match.opponentScore;
-  const isHomeWinning = secondScore > firstScore;
+  const isHomeWinning = !isFuture && secondScore > firstScore;
 
   const myScores = match.myInningScores || [];
   const oppScores = match.opponentInningScores || [];
@@ -370,66 +370,64 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
         {isExpanded && (
           <div className="mt-3 pt-3 border-t border-border/60 animate-in fade-in slide-in-from-top-2 duration-200">
             <div className="w-full overflow-hidden rounded-xl border border-border bg-card shadow-xs flex flex-col">
-              {!isFuture && (
-                <div className="overflow-x-auto scrollbar-none">
-                  <table className="w-full text-center whitespace-nowrap text-xs">
-                    <thead>
-                      <tr className="border-b border-border bg-muted/40 text-[10px] text-muted-foreground font-black">
-                        <th className="p-1.5 text-left pl-2.5 min-w-[90px]">TEAM</th>
-                        {Array.from({ length: inningCount }).map((_, i) => (
-                          <th key={i} className="w-6 p-1.5 font-mono">{i + 1}</th>
-                        ))}
-                        <th className="w-8 p-1.5 bg-primary/10 text-primary font-black border-l border-border font-mono">R</th>
-                        <th className="w-6 p-1.5 font-mono">H</th>
-                        <th className="w-6 p-1.5 pr-2.5 font-mono">E</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border text-xs font-black">
-                      {/* 先攻チーム */}
-                      <tr className="hover:bg-muted/20">
-                        <td className="p-1.5 text-left pl-2.5 font-bold truncate max-w-[100px] text-foreground">
-                          {topTeamName}
+              <div className="overflow-x-auto scrollbar-none">
+                <table className="w-full text-center whitespace-nowrap text-xs">
+                  <thead>
+                    <tr className="border-b border-border bg-muted/40 text-[10px] text-muted-foreground font-black">
+                      <th className="p-1.5 text-left pl-2.5 min-w-[90px]">TEAM</th>
+                      {Array.from({ length: inningCount }).map((_, i) => (
+                        <th key={i} className="w-6 p-1.5 font-mono">{i + 1}</th>
+                      ))}
+                      <th className="w-8 p-1.5 bg-primary/10 text-primary font-black border-l border-border font-mono">R</th>
+                      <th className="w-6 p-1.5 font-mono">H</th>
+                      <th className="w-6 p-1.5 pr-2.5 font-mono">E</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border text-xs font-black">
+                    {/* 先攻チーム */}
+                    <tr className="hover:bg-muted/20">
+                      <td className="p-1.5 text-left pl-2.5 font-bold truncate max-w-[100px] text-foreground">
+                        {topTeamName}
+                      </td>
+                      {Array.from({ length: inningCount }).map((_, i) => (
+                        <td key={i} className="p-1.5 font-mono font-bold text-muted-foreground">
+                          {formatScoreDisplay(topScores[i], false, false, false)}
                         </td>
-                        {Array.from({ length: inningCount }).map((_, i) => (
-                          <td key={i} className="p-1.5 font-mono font-bold text-muted-foreground">
-                            {formatScoreDisplay(topScores[i], false, false, false)}
-                          </td>
-                        ))}
-                        <td className="p-1.5 font-mono bg-primary/10 text-primary font-black border-l border-border text-sm">
-                          {firstScore}
-                        </td>
-                        <td className="p-1.5 font-mono text-muted-foreground text-[11px]">
-                          {match.battingOrder === "second" ? match.opponentHits ?? "-" : match.myHits ?? "-"}
-                        </td>
-                        <td className="p-1.5 pr-2.5 font-mono text-muted-foreground text-[11px]">
-                          {match.battingOrder === "second" ? match.opponentErrors ?? "-" : match.myErrors ?? "-"}
-                        </td>
-                      </tr>
+                      ))}
+                      <td className="p-1.5 font-mono bg-primary/10 text-primary font-black border-l border-border text-sm">
+                        {isFuture ? "-" : firstScore}
+                      </td>
+                      <td className="p-1.5 font-mono text-muted-foreground text-[11px]">
+                        {isFuture ? "-" : (match.battingOrder === "second" ? match.opponentHits ?? "-" : match.myHits ?? "-")}
+                      </td>
+                      <td className="p-1.5 pr-2.5 font-mono text-muted-foreground text-[11px]">
+                        {isFuture ? "-" : (match.battingOrder === "second" ? match.opponentErrors ?? "-" : match.myErrors ?? "-")}
+                      </td>
+                    </tr>
 
-                      {/* 後攻チーム */}
-                      <tr className="hover:bg-muted/20">
-                        <td className="p-1.5 text-left pl-2.5 font-bold truncate max-w-[100px] text-foreground">
-                          {bottomTeamName}
+                    {/* 後攻チーム */}
+                    <tr className="hover:bg-muted/20">
+                      <td className="p-1.5 text-left pl-2.5 font-bold truncate max-w-[100px] text-foreground">
+                        {bottomTeamName}
+                      </td>
+                      {Array.from({ length: inningCount }).map((_, i) => (
+                        <td key={i} className="p-1.5 font-mono font-bold text-muted-foreground">
+                          {formatScoreDisplay(bottomScores[i], true, i === inningCount - 1, isHomeWinning)}
                         </td>
-                        {Array.from({ length: inningCount }).map((_, i) => (
-                          <td key={i} className="p-1.5 font-mono font-bold text-muted-foreground">
-                            {formatScoreDisplay(bottomScores[i], true, i === inningCount - 1, isHomeWinning)}
-                          </td>
-                        ))}
-                        <td className="p-1.5 font-mono bg-primary/10 text-primary font-black border-l border-border text-sm">
-                          {secondScore}
-                        </td>
-                        <td className="p-1.5 font-mono text-muted-foreground text-[11px]">
-                          {match.battingOrder === "second" ? match.myHits ?? "-" : match.opponentHits ?? "-"}
-                        </td>
-                        <td className="p-1.5 pr-2.5 font-mono text-muted-foreground text-[11px]">
-                          {match.battingOrder === "second" ? match.myErrors ?? "-" : match.opponentErrors ?? "-"}
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                      ))}
+                      <td className="p-1.5 font-mono bg-primary/10 text-primary font-black border-l border-border text-sm">
+                        {isFuture ? "-" : secondScore}
+                      </td>
+                      <td className="p-1.5 font-mono text-muted-foreground text-[11px]">
+                        {isFuture ? "-" : (match.battingOrder === "second" ? match.myHits ?? "-" : match.opponentHits ?? "-")}
+                      </td>
+                      <td className="p-1.5 pr-2.5 font-mono text-muted-foreground text-[11px]">
+                        {isFuture ? "-" : (match.battingOrder === "second" ? match.myErrors ?? "-" : match.opponentErrors ?? "-")}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
 
               {/* フッターアクション：詳細スコアブックへの遷移 */}
               <div className="p-2 bg-muted/30 border-t border-border flex items-center justify-between gap-2">
