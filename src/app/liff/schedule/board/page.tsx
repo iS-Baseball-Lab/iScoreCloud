@@ -36,6 +36,7 @@ import {
   GripVertical,
   SlidersHorizontal,
   ClipboardCheck,
+  Tag,
 } from "lucide-react";
 import { Reorder, useDragControls } from "motion/react";
 import { toast } from "sonner";
@@ -353,6 +354,20 @@ export default function AttendanceMatrixBoardPage() {
   const [tempStatusConfig, setTempStatusConfig] = useState<GroupStatusConfigMap>(DEFAULT_GROUP_STATUS_CONFIG);
   const [isSavingStatusConfig, setIsSavingStatusConfig] = useState(false);
 
+  // 🏷️ メンバーサブラベル（班・役職等）状態
+  const [memberSubLabels, setMemberSubLabels] = useState<Record<string, string>>({});
+  const [isSubLabelsModalOpen, setIsSubLabelsModalOpen] = useState(false);
+  const [subLabelsModalGroup, setSubLabelsModalGroup] = useState<SortGroupKey>("player");
+  const [tempSubLabels, setTempSubLabels] = useState<Record<string, string>>({});
+  const [isSavingSubLabels, setIsSavingSubLabels] = useState(false);
+
+  // 単一メンバーのサブラベル即時編集モーダル
+  const [editingSingleSubLabel, setEditingSingleSubLabel] = useState<{
+    person: MemberPerson;
+    label: string;
+  } | null>(null);
+  const [isSavingSingleSubLabel, setIsSavingSingleSubLabel] = useState(false);
+
   // 編集モーダル状態
   const [editingCell, setEditingCell] = useState<{
     eventId: string;
@@ -452,6 +467,19 @@ export default function AttendanceMatrixBoardPage() {
           effectiveOrder = { ...effectiveOrder, ...data.memberSortOrder };
         }
         setMemberSortOrder(effectiveOrder);
+
+        // 🏷️ メンバーサブラベル（班・役職等）の復元（LocalStorage ＆ サーバー設定）
+        let effectiveSubLabels: Record<string, string> = {};
+        try {
+          const localKey = `iscore_matrix_sublabels_${teamId}`;
+          const localSaved = localStorage.getItem(localKey);
+          if (localSaved) effectiveSubLabels = JSON.parse(localSaved);
+        } catch {}
+
+        if (data.memberSubLabels && Object.keys(data.memberSubLabels).length > 0) {
+          effectiveSubLabels = { ...effectiveSubLabels, ...data.memberSubLabels };
+        }
+        setMemberSubLabels(effectiveSubLabels);
       }
     } catch (err) {
       console.error("Matrix load error:", err);
@@ -557,9 +585,10 @@ export default function AttendanceMatrixBoardPage() {
     const q = searchQuery.toLowerCase().trim();
     return list.filter(m => 
       m.name.toLowerCase().includes(q) ||
-      (m.subText && m.subText.toLowerCase().includes(q))
+      (m.subText && m.subText.toLowerCase().includes(q)) ||
+      (memberSubLabels[m.id] && memberSubLabels[m.id].toLowerCase().includes(q))
     );
-  }, [selectedGroupTab, groups, memberSortOrder, sortMembersByCustomOrder, searchQuery]);
+  }, [selectedGroupTab, groups, memberSortOrder, sortMembersByCustomOrder, searchQuery, memberSubLabels]);
 
   // モーダルを開く処理
   const handleOpenOrderModal = () => {
@@ -722,6 +751,92 @@ export default function AttendanceMatrixBoardPage() {
       toast.error("ステータス設定の保存に失敗しました");
     } finally {
       setIsSavingStatusConfig(false);
+    }
+  };
+
+  // 🏷️ メンバーサブラベル（班・役職等）一括編集モーダルを開く
+  const handleOpenSubLabelsModal = () => {
+    setSubLabelsModalGroup(
+      !selectedGroupTab || selectedGroupTab === "all" || selectedGroupTab === "parent" ? "player" : selectedGroupTab
+    );
+    setTempSubLabels({ ...memberSubLabels });
+    setIsSubLabelsModalOpen(true);
+  };
+
+  // メンバーサブラベルの一括保存処理
+  const handleSaveSubLabels = async () => {
+    setIsSavingSubLabels(true);
+    setMemberSubLabels(tempSubLabels);
+
+    const teamId = currentTeam?.id || "demo-team";
+    try {
+      localStorage.setItem(`iscore_matrix_sublabels_${teamId}`, JSON.stringify(tempSubLabels));
+    } catch {}
+
+    try {
+      if (teamId && teamId !== "demo-team") {
+        await fetch("/api/liff/attendance-matrix/sub-labels", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ teamId, memberSubLabels: tempSubLabels }),
+        });
+      }
+      toast.success("班・サブラベル設定を保存しました！");
+      setIsSubLabelsModalOpen(false);
+    } catch (err: any) {
+      console.error("SubLabels save error:", err);
+      toast.success("班・サブラベルを端末に保存しました");
+      setIsSubLabelsModalOpen(false);
+    } finally {
+      setIsSavingSubLabels(false);
+    }
+  };
+
+  // 単一メンバーのサブラベル編集モーダルを開く
+  const handleOpenSingleSubLabelModal = (person: MemberPerson) => {
+    setEditingSingleSubLabel({
+      person,
+      label: memberSubLabels[person.id] || "",
+    });
+  };
+
+  // 単一メンバーのサブラベル保存処理
+  const handleSaveSingleSubLabel = async (newLabel: string) => {
+    if (!editingSingleSubLabel) return;
+    setIsSavingSingleSubLabel(true);
+    const personId = editingSingleSubLabel.person.id;
+    const cleanLabel = newLabel.trim();
+
+    const updated = { ...memberSubLabels };
+    if (cleanLabel) {
+      updated[personId] = cleanLabel;
+    } else {
+      delete updated[personId];
+    }
+
+    setMemberSubLabels(updated);
+
+    const teamId = currentTeam?.id || "demo-team";
+    try {
+      localStorage.setItem(`iscore_matrix_sublabels_${teamId}`, JSON.stringify(updated));
+    } catch {}
+
+    try {
+      if (teamId && teamId !== "demo-team") {
+        await fetch("/api/liff/attendance-matrix/sub-labels", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ teamId, memberSubLabels: updated }),
+        });
+      }
+      toast.success(`${editingSingleSubLabel.person.name} さんのラベルを更新しました`);
+      setEditingSingleSubLabel(null);
+    } catch (err: any) {
+      console.error("Single SubLabel save error:", err);
+      toast.success("ラベルを端末に保存しました");
+      setEditingSingleSubLabel(null);
+    } finally {
+      setIsSavingSingleSubLabel(false);
     }
   };
 
@@ -1011,6 +1126,19 @@ export default function AttendanceMatrixBoardPage() {
                 <span>並び順設定</span>
               </button>
 
+              {/* 🏷️ メンバー班・サブラベル設定ボタン */}
+              {myInfo.isManager && (
+                <button
+                  type="button"
+                  onClick={handleOpenSubLabelsModal}
+                  className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9.5px] font-bold bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-500/40 active:scale-95 transition-all shrink-0"
+                  title="メンバーの班（1班・2班等）やサブラベルを一括設定"
+                >
+                  <Tag className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                  <span>班・ラベル</span>
+                </button>
+              )}
+
               {myInfo.isManager && (
                 <button
                   type="button"
@@ -1229,14 +1357,19 @@ export default function AttendanceMatrixBoardPage() {
                     {/* メンバー列 (超コンパクト・幅35px) */}
                     {currentMembers.map((person) => {
                       const isMe = person.id === myInfo.memberId || myInfo.playerIds.includes(person.id);
+                      const subLabel = memberSubLabels[person.id];
                       return (
                         <th
                           key={person.id}
-                          className={`w-9 min-w-[35px] max-w-[35px] p-0.5 text-center border-b-2 border-r border-border align-middle transition-colors ${
+                          onClick={myInfo.isManager ? () => handleOpenSingleSubLabelModal(person) : undefined}
+                          className={`w-9 min-w-[35px] max-w-[35px] p-0.5 text-center border-b-2 border-r border-border align-middle transition-colors select-none ${
+                            myInfo.isManager ? "cursor-pointer hover:brightness-95" : ""
+                          } ${
                             isMe
                               ? "bg-blue-200 dark:bg-blue-900 text-blue-950 dark:text-blue-100 ring-1 ring-inset ring-blue-500 font-black"
                               : "bg-slate-100 dark:bg-zinc-800 text-foreground"
                           }`}
+                          title={myInfo.isManager ? `${person.name}: タップして班・ラベルを変更` : person.name}
                         >
                           <div className="flex flex-col items-center justify-center leading-none py-0.5">
                             {person.uniformNumber ? (
@@ -1255,6 +1388,24 @@ export default function AttendanceMatrixBoardPage() {
                             <span className={`text-[9.5px] font-black truncate max-w-[33px] mt-0.5 ${isMe ? "text-blue-950 dark:text-blue-100 font-black" : "text-foreground"}`}>
                               {person.name.length > 3 ? person.name.slice(0, 3) : person.name}
                             </span>
+                            {/* 3行目: 班・サブラベル (班バッジ風スタイル) */}
+                            <div className="min-h-[14px] flex items-center justify-center mt-0.5">
+                              {subLabel ? (
+                                <span
+                                  className="text-[8px] font-black px-1 py-0.2 rounded bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 truncate max-w-[33px] whitespace-nowrap leading-tight"
+                                  title={subLabel}
+                                >
+                                  {subLabel}
+                                </span>
+                              ) : myInfo.isManager ? (
+                                <span
+                                  className="text-[7.5px] font-bold text-muted-foreground/50 hover:text-amber-600 dark:hover:text-amber-400 px-0.5 py-0.2 rounded hover:bg-amber-500/15 leading-tight transition-colors"
+                                  title="タップして班・ラベルを設定"
+                                >
+                                  +班
+                                </span>
+                              ) : null}
+                            </div>
                           </div>
                         </th>
                       );
@@ -1937,6 +2088,319 @@ export default function AttendanceMatrixBoardPage() {
                     <span>設定を保存</span>
                   </button>
                 </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            🏷️ メンバー班・サブラベル一括設定モーダル
+            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+        {isSubLabelsModalOpen && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-3 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+            <div className="w-full max-w-md bg-card rounded-2xl border border-border shadow-2xl p-4 sm:p-5 space-y-3.5 max-h-[88vh] overflow-y-auto no-scrollbar">
+              {/* ヘッダー */}
+              <div className="flex items-start justify-between border-b border-border pb-2.5">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="w-7 h-7 rounded-xl bg-amber-500/15 text-amber-700 dark:text-amber-400 flex items-center justify-center font-black shrink-0 border border-amber-500/30">
+                    <Tag className="w-4 h-4" />
+                  </span>
+                  <div>
+                    <h3 className="text-sm font-black text-foreground">メンバー班・サブラベル設定</h3>
+                    <p className="text-[10px] text-muted-foreground">出欠表の氏名の下に表示する班番号（1班等）や役割を設定</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsSubLabelsModalOpen(false)}
+                  className="p-1.5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground active:scale-90"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* グループ切り替えタブ */}
+              <div className="flex items-center gap-1 bg-muted/40 p-1 rounded-xl border border-border/60">
+                {[
+                  { key: "player" as const, label: "選手", count: groups.players.length },
+                  { key: "mother" as const, label: "母", count: groups.mothers.length },
+                  { key: "father" as const, label: "父", count: groups.fathers.length },
+                  { key: "staff" as const, label: "スタッフ", count: groups.staff.length },
+                ].map(tab => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setSubLabelsModalGroup(tab.key)}
+                    className={`flex-1 py-1 text-center rounded-lg text-[10.5px] font-bold transition-all ${
+                      subLabelsModalGroup === tab.key
+                        ? "bg-primary text-primary-foreground font-black shadow-xs"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {tab.label} ({tab.count})
+                  </button>
+                ))}
+              </div>
+
+              {/* クイック入力ガイド */}
+              <div className="flex items-center justify-between text-[9.5px] text-muted-foreground px-1 bg-muted/30 py-1.5 rounded-lg border border-border/40">
+                <span className="font-bold flex items-center gap-1">
+                  <Info className="w-3 h-3 text-amber-500" />
+                  各行の [1班]〜[4班] タップで簡単入力
+                </span>
+                <span>全角・半角どちらもOK</span>
+              </div>
+
+              {/* メンバー一覧リスト */}
+              <div className="space-y-1.5 max-h-[46vh] overflow-y-auto pr-0.5 no-scrollbar">
+                {((subLabelsModalGroup === "player"
+                  ? groups.players
+                  : subLabelsModalGroup === "mother"
+                  ? groups.mothers
+                  : subLabelsModalGroup === "father"
+                  ? groups.fathers
+                  : groups.staff) || []).length === 0 ? (
+                  <div className="py-8 text-center text-xs text-muted-foreground">
+                    このグループに登録されているメンバーはいません
+                  </div>
+                ) : (
+                  (subLabelsModalGroup === "player"
+                    ? groups.players
+                    : subLabelsModalGroup === "mother"
+                    ? groups.mothers
+                    : subLabelsModalGroup === "father"
+                    ? groups.fathers
+                    : groups.staff
+                  ).map((person) => {
+                    const currentVal = tempSubLabels[person.id] || "";
+                    return (
+                      <div
+                        key={person.id}
+                        className="flex items-center justify-between gap-1.5 p-2 rounded-xl border border-border/80 bg-card hover:border-amber-500/30 transition-all"
+                      >
+                        {/* メンバー表示（番号/区分 ＋ 氏名） */}
+                        <div className="flex items-center gap-1.5 min-w-[75px] max-w-[95px] shrink-0">
+                          {person.uniformNumber ? (
+                            <span className="text-[9px] font-black text-primary px-1 py-0.2 rounded bg-primary/10 shrink-0">
+                              #{person.uniformNumber}
+                            </span>
+                          ) : person.groupType === "mother" ? (
+                            <span className="text-[9px] font-black text-rose-600 dark:text-rose-400 shrink-0">母</span>
+                          ) : person.groupType === "father" ? (
+                            <span className="text-[9px] font-black text-blue-600 dark:text-blue-400 shrink-0">父</span>
+                          ) : person.groupType === "staff" ? (
+                            <span className="text-[9px] font-black text-purple-600 dark:text-purple-400 shrink-0">指導</span>
+                          ) : (
+                            <span className="text-[9px] font-black text-amber-600 dark:text-amber-400 shrink-0">保護</span>
+                          )}
+                          <span className="text-xs font-black text-foreground truncate" title={person.name}>
+                            {person.name}
+                          </span>
+                        </div>
+
+                        {/* クイック選択チップ (1班, 2班, 3班, 4班) */}
+                        <div className="flex items-center gap-1 shrink-0">
+                          {["1班", "2班", "3班", "4班"].map((preset) => (
+                            <button
+                              key={preset}
+                              type="button"
+                              onClick={() => {
+                                setTempSubLabels(prev => ({
+                                  ...prev,
+                                  [person.id]: prev[person.id] === preset ? "" : preset,
+                                }));
+                              }}
+                              className={`px-1.5 py-0.5 rounded text-[9.5px] font-black transition-all active:scale-95 border ${
+                                currentVal === preset
+                                  ? "bg-amber-500 text-white border-amber-600 shadow-xs"
+                                  : "bg-muted/60 hover:bg-muted text-muted-foreground border-border/70 hover:text-foreground"
+                              }`}
+                            >
+                              {preset}
+                            </button>
+                          ))}
+                        </div>
+
+                        {/* 自由入力欄 ＆ クリア */}
+                        <div className="relative flex-1 min-w-[60px] max-w-[90px]">
+                          <input
+                            type="text"
+                            value={currentVal}
+                            maxLength={8}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setTempSubLabels(prev => ({
+                                ...prev,
+                                [person.id]: val,
+                              }));
+                            }}
+                            placeholder="自由入力"
+                            className="w-full px-2 py-0.5 text-[10.5px] font-bold rounded-lg bg-muted/40 border border-border/70 focus:outline-none focus:ring-1 focus:ring-amber-500 text-foreground text-center"
+                          />
+                          {currentVal && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setTempSubLabels(prev => {
+                                  const next = { ...prev };
+                                  delete next[person.id];
+                                  return next;
+                                });
+                              }}
+                              className="absolute -right-1 -top-1 w-3.5 h-3.5 rounded-full bg-muted-foreground/30 text-white flex items-center justify-center hover:bg-muted-foreground/60 transition-colors"
+                              title="クリア"
+                            >
+                              <X className="w-2 h-2" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* フッター操作ボタン */}
+              <div className="flex items-center justify-between gap-2 pt-2 border-t border-border">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (confirm("選択中グループのラベルをすべてクリアしますか？")) {
+                      const targetGroup = subLabelsModalGroup === "player"
+                        ? groups.players
+                        : subLabelsModalGroup === "mother"
+                        ? groups.mothers
+                        : subLabelsModalGroup === "father"
+                        ? groups.fathers
+                        : groups.staff;
+                      setTempSubLabels(prev => {
+                        const next = { ...prev };
+                        targetGroup.forEach(p => delete next[p.id]);
+                        return next;
+                      });
+                    }
+                  }}
+                  className="px-2.5 py-1.5 rounded-xl border border-border text-[10.5px] font-bold text-muted-foreground hover:bg-muted active:scale-95 transition-all"
+                >
+                  グループ一括クリア
+                </button>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsSubLabelsModalOpen(false)}
+                    className="px-3 py-1.5 rounded-xl border border-border text-xs font-bold text-muted-foreground hover:bg-muted active:scale-95 transition-all"
+                  >
+                    キャンセル
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isSavingSubLabels}
+                    onClick={handleSaveSubLabels}
+                    className="px-4 py-1.5 rounded-xl bg-amber-600 text-white text-xs font-black hover:bg-amber-700 active:scale-95 transition-all flex items-center gap-1 shadow-xs"
+                  >
+                    {isSavingSubLabels ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                    <span>設定を保存</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            🏷️ 単一メンバーのクイック表示ラベル設定ポップアップ
+            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+        {editingSingleSubLabel && (
+          <div className="fixed inset-0 z-[75] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
+            <div className="w-full max-w-xs bg-card rounded-2xl border border-border shadow-2xl p-4 space-y-3">
+              {/* ヘッダー */}
+              <div className="flex items-start justify-between border-b border-border pb-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="w-6 h-6 rounded-lg bg-amber-500/15 text-amber-700 dark:text-amber-400 flex items-center justify-center font-black shrink-0 border border-amber-500/30">
+                    <Tag className="w-3.5 h-3.5" />
+                  </span>
+                  <div className="min-w-0">
+                    <h3 className="text-xs font-black text-foreground truncate">
+                      {editingSingleSubLabel.person.name}
+                    </h3>
+                    <p className="text-[9.5px] text-muted-foreground">名前の下に表示する班・役割</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditingSingleSubLabel(null)}
+                  className="p-1 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* クイック選択候補 */}
+              <div className="space-y-1">
+                <span className="text-[9.5px] font-bold text-muted-foreground">候補をワンタップ選択:</span>
+                <div className="flex flex-wrap gap-1">
+                  {["1班", "2班", "3班", "4班", "配車", "審判", "主将", "副将"].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setEditingSingleSubLabel(prev => prev ? { ...prev, label: preset } : null)}
+                      className={`px-2 py-0.5 rounded text-[10px] font-black transition-all active:scale-95 border ${
+                        editingSingleSubLabel.label === preset
+                          ? "bg-amber-500 text-white border-amber-600 shadow-xs"
+                          : "bg-muted/70 hover:bg-muted text-foreground border-border/80"
+                      }`}
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setEditingSingleSubLabel(prev => prev ? { ...prev, label: "" } : null)}
+                    className="px-2 py-0.5 rounded text-[10px] font-bold bg-muted/40 hover:bg-muted text-muted-foreground border border-border/60"
+                  >
+                    クリア
+                  </button>
+                </div>
+              </div>
+
+              {/* 自由入力フォーム */}
+              <div className="space-y-1 pt-1">
+                <span className="text-[9.5px] font-bold text-muted-foreground">直接入力（最大8文字）:</span>
+                <input
+                  type="text"
+                  maxLength={8}
+                  value={editingSingleSubLabel.label}
+                  onChange={(e) => setEditingSingleSubLabel(prev => prev ? { ...prev, label: e.target.value } : null)}
+                  placeholder="例: 1班, 審判, 配車..."
+                  autoFocus
+                  className="w-full px-2.5 py-1 text-xs font-black rounded-lg bg-muted/50 border border-border focus:outline-none focus:ring-1 focus:ring-amber-500 text-foreground"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      handleSaveSingleSubLabel(editingSingleSubLabel.label);
+                    }
+                  }}
+                />
+              </div>
+
+              {/* フッター */}
+              <div className="flex items-center justify-end gap-1.5 pt-2 border-t border-border">
+                <button
+                  type="button"
+                  onClick={() => setEditingSingleSubLabel(null)}
+                  className="px-3 py-1 rounded-lg border border-border text-[11px] font-bold text-muted-foreground hover:bg-muted transition-all"
+                >
+                  キャンセル
+                </button>
+                <button
+                  type="button"
+                  disabled={isSavingSingleSubLabel}
+                  onClick={() => handleSaveSingleSubLabel(editingSingleSubLabel.label)}
+                  className="px-3.5 py-1 rounded-lg bg-amber-600 text-white text-[11px] font-black hover:bg-amber-700 active:scale-95 transition-all flex items-center gap-1 shadow-xs"
+                >
+                  {isSavingSingleSubLabel ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                  <span>保存</span>
+                </button>
               </div>
             </div>
           </div>

@@ -199,3 +199,16 @@ export async function ensureStatusConfigColumn(d1?: any) {
   isStatusConfigSchemaReady = true;
 }
 
+let isMemberSubLabelsSchemaReady = false;
+
+/**
+ * 🛠️ D1 の teams テーブルに member_sub_labels カラムが存在することを保証する関数
+ */
+export async function ensureMemberSubLabelsColumn(d1?: any) {
+  if (!d1 || isMemberSubLabelsSchemaReady) return;
+  try {
+    await d1.prepare("ALTER TABLE teams ADD COLUMN member_sub_labels text").run().catch(() => {});
+  } catch {}
+  isMemberSubLabelsSchemaReady = true;
+}
+

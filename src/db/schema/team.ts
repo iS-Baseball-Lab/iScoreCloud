@@ -40,6 +40,7 @@ export const teams = sqliteTable('teams', {
   scorebookLegendUrl: text('scorebook_legend_url'),
   memberSortOrder: text('member_sort_order'),
   attendanceStatusConfig: text('attendance_status_config'),
+  memberSubLabels: text('member_sub_labels'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(strftime('%s', 'now'))`),
 });
 

@@ -23,7 +23,7 @@ import {
   parentChildRelations,
   tournaments,
 } from "@/db/schema";
-import { ensureEventColumns, ensureRulesTable, ensureLinksTable, ensureMemberOrderColumn, ensureStatusConfigColumn } from "@/lib/db-helper";
+import { ensureEventColumns, ensureRulesTable, ensureLinksTable, ensureMemberOrderColumn, ensureStatusConfigColumn, ensureMemberSubLabelsColumn } from "@/lib/db-helper";
 import type { WorkerEnv, AuthUser } from "@/types/api";
 import { getAuth } from "@/lib/auth";
 
@@ -940,6 +940,7 @@ app.get("/attendance-matrix", async (c) => {
   await ensureEventColumns(c.env.DB);
   await ensureMemberOrderColumn(c.env.DB);
   await ensureStatusConfigColumn(c.env.DB);
+  await ensureMemberSubLabelsColumn(c.env.DB);
   const db = drizzle(c.env.DB);
   const teamId = c.req.query("teamId");
   const userId = c.req.query("userId");
@@ -951,6 +952,23 @@ app.get("/attendance-matrix", async (c) => {
       return c.json({
         success: true,
         isDemo: true,
+        memberSubLabels: {
+          "demo-p-1": "1班",
+          "demo-p-2": "2班",
+          "demo-p-3": "3班",
+          "demo-p-4": "4班",
+          "demo-p-5": "1班",
+          "demo-p-6": "2班",
+          "demo-mother-1": "1班",
+          "demo-mother-2": "2班",
+          "demo-mother-3": "3班",
+          "demo-mother-4": "4班",
+          "demo-mother-5": "1班",
+          "demo-father-1": "1班",
+          "demo-father-2": "2班",
+          "demo-father-3": "3班",
+          "demo-father-4": "1班",
+        },
         myInfo: {
           memberId: "demo-mother-1",
           playerIds: ["demo-p-1"],
@@ -1134,6 +1152,7 @@ app.get("/attendance-matrix", async (c) => {
       createdBy: teams.createdBy, 
       memberSortOrder: teams.memberSortOrder,
       attendanceStatusConfig: teams.attendanceStatusConfig,
+      memberSubLabels: teams.memberSubLabels,
     }).from(teams).where(eq(teams.id, teamId)).get();
     const isTeamCreator = Boolean(authUserId && teamRecord?.createdBy === authUserId);
 
@@ -1421,11 +1440,19 @@ app.get("/attendance-matrix", async (c) => {
       }
     } catch {}
 
+    let memberSubLabels = {};
+    try {
+      if (teamRecord?.memberSubLabels) {
+        memberSubLabels = JSON.parse(teamRecord.memberSubLabels);
+      }
+    } catch {}
+
     return c.json({
       success: true,
       isDemo: false,
       memberSortOrder,
       attendanceStatusConfig,
+      memberSubLabels,
       myInfo: {
         memberId: myMemberId,
         playerIds: myPlayerIds,
@@ -1664,6 +1691,31 @@ app.post("/attendance-matrix/status-config", async (c) => {
   } catch (err: any) {
     console.error("Failed to save status config:", err);
     return c.json({ success: false, error: err?.message || "ステータス設定の保存に失敗しました" }, 500);
+  }
+});
+
+/**
+ * 🏷️ メンバーサブラベル（班・役職等）保存API
+ * POST /api/liff/attendance-matrix/sub-labels
+ */
+app.post("/attendance-matrix/sub-labels", async (c) => {
+  await ensureMemberSubLabelsColumn(c.env.DB);
+  const db = drizzle(c.env.DB);
+  try {
+    const body = await c.req.json();
+    const { teamId, memberSubLabels } = body;
+    if (!teamId || !memberSubLabels) {
+      return c.json({ success: false, error: "teamId and memberSubLabels are required" }, 400);
+    }
+
+    await db.update(teams)
+      .set({ memberSubLabels: JSON.stringify(memberSubLabels) })
+      .where(eq(teams.id, teamId));
+
+    return c.json({ success: true, message: "サブラベルを保存しました" });
+  } catch (err: any) {
+    console.error("Failed to save member sub labels:", err);
+    return c.json({ success: false, error: err?.message || "サブラベルの保存に失敗しました" }, 500);
   }
 });
 
