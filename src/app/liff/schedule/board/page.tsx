@@ -1313,7 +1313,7 @@ export default function AttendanceMatrixBoardPage() {
                                 {ev.date}({ev.dayOfWeek})
                               </span>
                               {ev.dutyGroup && ev.dutyGroup !== "なし" && (
-                                <span className="text-[8.5px] font-black px-1 py-0.2 rounded bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 whitespace-nowrap shrink-0">
+                                <span className="w-[28px] min-w-[28px] max-w-[28px] text-center inline-flex items-center justify-center text-[8.5px] font-black py-0.5 rounded bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 whitespace-nowrap shrink-0">
                                   {ev.dutyGroup}
                                 </span>
                               )}
