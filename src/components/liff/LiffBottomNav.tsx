@@ -182,7 +182,7 @@ export function LiffBottomNav() {
             <svg
               viewBox="0 -26 375 94"
               preserveAspectRatio="none"
-              className="absolute -top-[26px] inset-x-0 w-full h-[94px] overflow-visible filter drop-shadow-[0_-3px_8px_rgba(0,0,0,0.10)]"
+              className="absolute -top-[26px] inset-x-0 w-full h-[94px] overflow-visible filter drop-shadow-[0_-3px_8px_rgba(0,0,0,0.10)] pointer-events-none"
               fill="none"
             >
               <path

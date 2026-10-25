@@ -1040,11 +1040,11 @@ export default function AttendanceMatrixBoardPage() {
   };
 
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col min-h-screen pb-36 sm:pb-44">
       {/* ヘッダー */}
       <LiffHeader />
 
-      <div className="p-4 space-y-4 max-w-lg mx-auto w-full">
+      <div className="p-4 space-y-4 max-w-lg mx-auto w-full pb-32 sm:pb-40">
         {/* ページ内ヘッダー */}
         <LiffPageHeader
           title="出欠一覧表"
@@ -1605,6 +1605,9 @@ export default function AttendanceMatrixBoardPage() {
             </div>
           </div>
         )}
+
+        {/* 🌟 最下部マージン確保スペーサー（ボトムナビに隠れず最下行・最終日セルを確実にタップ可能にする） */}
+        <div className="h-28 sm:h-36 w-full shrink-0 pointer-events-none select-none" aria-hidden="true" />
 
         {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
             ✏️ セルタップ時の出欠変更モーダル (ボトムナビと重ならない中央フロート配置)
