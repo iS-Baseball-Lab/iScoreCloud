@@ -42,6 +42,8 @@ import {
   Settings2,
   X,
   RotateCcw,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 
 const TARGET_GROUPS = ["全体", "Aチーム", "Bチーム", "高学年", "低学年", "試合組", "練習組"];
@@ -196,7 +198,17 @@ export default function LiffSchedulePage() {
   const [mounted, setMounted] = useState(false);
   const [filter, setFilter] = useState<"all" | "match" | "practice">("all");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+  const [showPastDates, setShowPastDates] = useState<boolean>(false);
   const [events, setEvents] = useState<ScheduleEvent[]>([]);
+
+  // 本日の日付文字列 (YYYY-MM-DD)
+  const todayStr = useMemo(() => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, "0");
+    const d = String(now.getDate()).padStart(2, "0");
+    return y + "-" + m + "-" + d;
+  }, []);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -743,7 +755,7 @@ export default function LiffSchedulePage() {
   }, [events, currentMonthPrefix]);
 
   const filteredEvents = useMemo(() => {
-    const list = eventsInCurrentMonth.filter((ev) => {
+    let list = eventsInCurrentMonth.filter((ev) => {
       if (selectedDateStr && ev.dateStr !== selectedDateStr) return false;
       if (filter === "all") return true;
       if (filter === "match") return ev.eventType === "match" || ev.amType === "match" || ev.pmType === "match" || ev.activityGroups?.some(g => g.eventType === "match");
@@ -751,13 +763,24 @@ export default function LiffSchedulePage() {
       return true;
     });
 
+    // 🌟 過去日フィルター (出欠一覧表と同様の挙動)
+    // showPastDates が false の場合:
+    // カレンダーで過去の月を選択している場合、または特定の日付を選択している場合を除き、
+    // 本日以降の予定（ev.dateStr >= todayStr）のみに絞り込む
+    if (!showPastDates && !selectedDateStr) {
+      const isPastMonth = currentMonthPrefix < todayStr.slice(0, 7);
+      if (!isPastMonth) {
+        list = list.filter((ev) => !ev.dateStr || ev.dateStr >= todayStr);
+      }
+    }
+
     // 昇順（直近・古い日付から順に）または降順でソート
     return list.sort((a, b) => {
       const keyA = a.dateStr || a.date || "";
       const keyB = b.dateStr || b.date || "";
       return sortOrder === "asc" ? keyA.localeCompare(keyB) : keyB.localeCompare(keyA);
     });
-  }, [eventsInCurrentMonth, filter, selectedDateStr, sortOrder]);
+  }, [eventsInCurrentMonth, filter, selectedDateStr, sortOrder, showPastDates, currentMonthPrefix, todayStr]);
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -942,8 +965,8 @@ export default function LiffSchedulePage() {
           </div>
         </div>
 
-        {/* フィルター切り替え ＆ 昇順/降順ソート切り替えタブ */}
-        <div className="flex items-center gap-2">
+        {/* フィルター切り替え ＆ 過去日トグル ＆ 昇順/降順ソート */}
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex-1 flex items-center gap-1 p-1 bg-muted/60 rounded-2xl border border-border">
             <button
               type="button"
@@ -980,15 +1003,41 @@ export default function LiffSchedulePage() {
             </button>
           </div>
 
+          <div className="flex items-center gap-1.5 shrink-0">
+            {/* 過去日 表示・非表示トグル */}
+            <button
+              type="button"
+              onClick={() => setShowPastDates(prev => !prev)}
+              className={`flex items-center gap-1 px-2.5 py-2 rounded-2xl text-xs font-bold transition-all active:scale-95 border cursor-pointer ${
+                showPastDates
+                  ? "bg-primary/15 text-primary border-primary/40 font-black shadow-xs"
+                  : "bg-muted/60 text-muted-foreground border-border hover:text-foreground hover:bg-muted"
+              }`}
+              title={showPastDates ? "過去日を表示中（クリックで非表示）" : "過去日を非表示中（クリックで表示）"}
+            >
+              {showPastDates ? (
+                <>
+                  <Eye className="w-3.5 h-3.5" />
+                  <span>過去日: 表示中</span>
+                </>
+              ) : (
+                <>
+                  <EyeOff className="w-3.5 h-3.5" />
+                  <span>過去日: 非表示</span>
+                </>
+              )}
+            </button>
+
           {/* 昇順 / 降順 切り替えボタン */}
-          <button
-            type="button"
-            onClick={() => setSortOrder(prev => prev === "asc" ? "desc" : "asc")}
-            className="py-2 px-2.5 rounded-2xl bg-muted/60 hover:bg-muted text-muted-foreground hover:text-foreground text-xs font-black border border-border transition-all active:scale-95 flex items-center gap-1 shrink-0 cursor-pointer"
-            title={sortOrder === "asc" ? "現在：昇順（直近から）" : "現在：降順（未来から）"}
-          >
-            <span>{sortOrder === "asc" ? "↑ 昇順" : "↓ 降順"}</span>
-          </button>
+            <button
+              type="button"
+              onClick={() => setSortOrder(prev => prev === "asc" ? "desc" : "asc")}
+              className="py-2 px-2.5 rounded-2xl bg-muted/60 hover:bg-muted text-muted-foreground hover:text-foreground text-xs font-black border border-border transition-all active:scale-95 flex items-center gap-1 shrink-0 cursor-pointer"
+              title={sortOrder === "asc" ? "現在：昇順（直近から）" : "現在：降順（未来から）"}
+            >
+              <span>{sortOrder === "asc" ? "↑ 昇順" : "↓ 降順"}</span>
+            </button>
+          </div>
         </div>
 
         {/* ローディング */}
@@ -1029,6 +1078,11 @@ export default function LiffSchedulePage() {
                   ? "カレンダーの他の日付を選択するか「すべての予定を表示」を押してください。"
                   : "上のカレンダーで別の月を選択するか、スケジューラーから予定を登録してください。"}
               </p>
+              {!showPastDates && eventsInCurrentMonth.length > 0 && !selectedDateStr && (
+                <p className="text-xs text-amber-600 dark:text-amber-400 font-bold mt-2">
+                  ※ 過去日の予定が非表示になっています。「過去日: 非表示」ボタンをタップすると表示できます。
+                </p>
+              )}
             </div>
             {selectedDateStr && (
               <button
@@ -1604,6 +1658,19 @@ export default function LiffSchedulePage() {
                 </div>
               );
             })}
+
+            {/* 過去日非表示の案内 */}
+            {!showPastDates && !selectedDateStr && eventsInCurrentMonth.some(ev => ev.dateStr && ev.dateStr < todayStr) && (
+              <div className="text-center py-2 pb-4">
+                <button
+                  type="button"
+                  onClick={() => setShowPastDates(true)}
+                  className="text-xs font-bold text-muted-foreground hover:text-primary transition-colors underline underline-offset-4 cursor-pointer"
+                >
+                  ※ 本日より前の過去日は非表示です（タップして表示）
+                </button>
+              </div>
+            )}
           </div>
         )}
           </>
