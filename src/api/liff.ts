@@ -23,6 +23,7 @@ import {
   parentChildRelations,
   tournaments,
   eventEquipments,
+  teamGroupMembers,
 } from "@/db/schema";
 import { ensureEventColumns, ensureRulesTable, ensureLinksTable, ensureMemberOrderColumn, ensureStatusConfigColumn, ensureMemberSubLabelsColumn } from "@/lib/db-helper";
 import type { WorkerEnv, AuthUser } from "@/types/api";
