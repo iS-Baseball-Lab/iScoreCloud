@@ -22,6 +22,7 @@ import {
   teamLinks,
   parentChildRelations,
   tournaments,
+  eventEquipments,
 } from "@/db/schema";
 import { ensureEventColumns, ensureRulesTable, ensureLinksTable, ensureMemberOrderColumn, ensureStatusConfigColumn, ensureMemberSubLabelsColumn } from "@/lib/db-helper";
 import type { WorkerEnv, AuthUser } from "@/types/api";
@@ -4552,6 +4553,151 @@ app.post("/admin/members/update", async (c) => {
   } catch (error: any) {
     console.error("Failed to update member:", error);
     return c.json({ success: false, error: error?.message || "更新に失敗しました" }, 500);
+  }
+});
+
+/**
+ * 🔗 メンバー統合（マージ）実行API (POST /admin/members/merge)
+ * 手動登録メンバーとLINE等で参加承認されたアカウントを1つに合流・統合
+ */
+app.post("/admin/members/merge", async (c) => {
+  const db = drizzle(c.env.DB);
+  try {
+    const body = await c.req.json();
+    const { teamId, targetMemberId, sourceMemberId } = body;
+
+    if (!teamId || !targetMemberId || !sourceMemberId) {
+      return c.json({ success: false, error: "統合対象のメンバーが正しく指定されていません" }, 400);
+    }
+
+    if (targetMemberId === sourceMemberId) {
+      return c.json({ success: false, error: "同じメンバー同士を統合することはできません" }, 400);
+    }
+
+    // デモモード時のフォールバック
+    if (teamId === "demo-team" || targetMemberId.startsWith("demo-") || sourceMemberId.startsWith("demo-")) {
+      return c.json({
+        success: true,
+        message: "メンバーを正常に統合しました（デモ）",
+      });
+    }
+
+    const target = await db.select().from(teamMembers).where(and(eq(teamMembers.id, targetMemberId), eq(teamMembers.teamId, teamId))).get();
+    const source = await db.select().from(teamMembers).where(and(eq(teamMembers.id, sourceMemberId), eq(teamMembers.teamId, teamId))).get();
+
+    if (!target) return c.json({ success: false, error: "統合先のメンバーが見つかりません" }, 404);
+    if (!source) return c.json({ success: false, error: "統合元のメンバーが見つかりません" }, 404);
+
+    const resolvedUserId = target.userId || source.userId;
+    if (target.userId && source.userId && target.userId !== source.userId) {
+      return c.json({ success: false, error: "両方のメンバーに異なるログインアカウントが紐付いているため統合できません。" }, 400);
+    }
+
+    // 1. 🔗 親子関係の統合 (parentChildRelations)
+    const sourceRelations = await db.select().from(parentChildRelations)
+      .where(and(eq(parentChildRelations.teamId, teamId), eq(parentChildRelations.parentId, sourceMemberId))).all();
+    for (const rel of sourceRelations) {
+      const existing = await db.select().from(parentChildRelations)
+        .where(and(eq(parentChildRelations.teamId, teamId), eq(parentChildRelations.parentId, targetMemberId), eq(parentChildRelations.childId, rel.childId))).get();
+      if (existing) {
+        await db.delete(parentChildRelations).where(eq(parentChildRelations.id, rel.id));
+      } else {
+        await db.update(parentChildRelations).set({ parentId: targetMemberId }).where(eq(parentChildRelations.id, rel.id));
+      }
+    }
+
+    // 2. 📊 出欠記録の統合 (attendances)
+    const sourceAttendances = await db.select().from(attendances)
+      .where(eq(attendances.memberId, sourceMemberId)).all();
+    for (const att of sourceAttendances) {
+      const targetAtt = await db.select().from(attendances)
+        .where(and(eq(attendances.eventId, att.eventId), eq(attendances.memberId, targetMemberId))).get();
+      if (targetAtt) {
+        if (targetAtt.status === 'pending' && att.status !== 'pending') {
+          await db.update(attendances).set({
+            status: att.status,
+            comment: att.comment || targetAtt.comment,
+            selectedGroupId: att.selectedGroupId || targetAtt.selectedGroupId,
+            hasCar: att.hasCar || targetAtt.hasCar,
+            carId: att.carId || targetAtt.carId,
+            userId: resolvedUserId,
+            updatedAt: new Date(),
+          }).where(eq(attendances.id, targetAtt.id));
+        }
+        await db.delete(attendances).where(eq(attendances.id, att.id));
+      } else {
+        await db.update(attendances).set({
+          memberId: targetMemberId,
+          userId: resolvedUserId,
+        }).where(eq(attendances.id, att.id));
+      }
+    }
+
+    // 3. 🚗 登録車両の統合 (memberCars)
+    await db.update(memberCars).set({ ownerId: targetMemberId })
+      .where(and(eq(memberCars.teamId, teamId), eq(memberCars.ownerId, sourceMemberId)));
+    await db.update(memberCars).set({ ownerId2: targetMemberId })
+      .where(and(eq(memberCars.teamId, teamId), eq(memberCars.ownerId2, sourceMemberId)));
+
+    // 4. 🚙 配車ドライバーの統合 (eventCarpools)
+    await db.update(eventCarpools).set({ driverId: targetMemberId })
+      .where(eq(eventCarpools.driverId, sourceMemberId));
+
+    // 5. 👥 配車同乗者の統合 (eventCarpoolRiders)
+    const sourceRiders = await db.select().from(eventCarpoolRiders)
+      .where(eq(eventCarpoolRiders.memberId, sourceMemberId)).all();
+    for (const rider of sourceRiders) {
+      const existing = await db.select().from(eventCarpoolRiders)
+        .where(and(eq(eventCarpoolRiders.carpoolId, rider.carpoolId), eq(eventCarpoolRiders.memberId, targetMemberId))).get();
+      if (existing) {
+        await db.delete(eventCarpoolRiders).where(eq(eventCarpoolRiders.id, rider.id));
+      } else {
+        await db.update(eventCarpoolRiders).set({ memberId: targetMemberId }).where(eq(eventCarpoolRiders.id, rider.id));
+      }
+    }
+
+    // 6. 🏷️ チームグループ所属の統合 (teamGroupMembers)
+    const sourceGroupMembers = await db.select().from(teamGroupMembers)
+      .where(eq(teamGroupMembers.teamMemberId, sourceMemberId)).all();
+    for (const tgm of sourceGroupMembers) {
+      const existing = await db.select().from(teamGroupMembers)
+        .where(and(eq(teamGroupMembers.groupId, tgm.groupId), eq(teamGroupMembers.teamMemberId, targetMemberId))).get();
+      if (existing) {
+        await db.delete(teamGroupMembers).where(eq(teamGroupMembers.id, tgm.id));
+      } else {
+        await db.update(teamGroupMembers).set({ teamMemberId: targetMemberId }).where(eq(teamGroupMembers.id, tgm.id));
+      }
+    }
+
+    // 7. 📦 用具積載担当の統合 (eventEquipments)
+    await db.update(eventEquipments).set({ responsibleMemberId: targetMemberId })
+      .where(eq(eventEquipments.responsibleMemberId, sourceMemberId));
+
+    // 8. 👤 ターゲットメンバーの更新 (userId, contact, status)
+    const newAvatar = target.avatarUrl || source.avatarUrl || null;
+    const newPhone = target.phone || source.phone || null;
+    const newEmail = target.email || source.email || null;
+    const newNameKana = target.nameKana || source.nameKana || null;
+
+    await db.update(teamMembers).set({
+      userId: resolvedUserId,
+      avatarUrl: newAvatar,
+      phone: newPhone,
+      email: newEmail,
+      nameKana: newNameKana,
+      status: 'active',
+    }).where(eq(teamMembers.id, targetMemberId));
+
+    // 9. 🗑️ 統合元メンバー（重複した参加レコード）の削除
+    await db.delete(teamMembers).where(eq(teamMembers.id, sourceMemberId));
+
+    return c.json({
+      success: true,
+      message: `「${target.name || 'メンバー'}」に「${source.name || 'アカウント'}」を正常に統合しました！`,
+    });
+  } catch (error: any) {
+    console.error("Failed to merge members:", error);
+    return c.json({ success: false, error: error?.message || "メンバー統合に失敗しました" }, 500);
   }
 });
 

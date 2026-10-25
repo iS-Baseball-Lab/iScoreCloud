@@ -25,7 +25,9 @@ import {
   Edit2,
   Lock,
   Sparkles,
-  UserPlus
+  UserPlus,
+  GitMerge,
+  Loader2
 } from "lucide-react";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
@@ -107,6 +109,12 @@ export default function LiffAdminDashboardPage() {
   const [editRole, setEditRole] = useState("parent");
   const [editSubLabel, setEditSubLabel] = useState("");
   const [isSavingMember, setIsSavingMember] = useState(false);
+
+  // 🔗 メンバー統合（マージ）モーダル
+  const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
+  const [mergeTargetMember, setMergeTargetMember] = useState<ActiveMember | null>(null);
+  const [selectedSourceMemberId, setSelectedSourceMemberId] = useState("");
+  const [isMerging, setIsMerging] = useState(false);
 
   // 招待コードコピーフィードバック
   const [isCopied, setIsCopied] = useState(false);
@@ -238,6 +246,71 @@ export default function LiffAdminDashboardPage() {
       toast.error("更新処理に失敗しました");
     } finally {
       setIsSavingMember(false);
+    }
+  };
+
+  // ─── メンバー統合モーダル操作 ─────────────────────────
+  const handleOpenMergeModal = (targetMember?: ActiveMember) => {
+    if (targetMember) {
+      setMergeTargetMember(targetMember);
+      const candidate = data?.activeMembers?.find(
+        (m) => m.memberId !== targetMember.memberId && (m.userId || m.name === targetMember.name)
+      );
+      setSelectedSourceMemberId(candidate ? candidate.memberId : "");
+    } else {
+      const unlinked = data?.activeMembers?.find((m) => !m.userId);
+      setMergeTargetMember(unlinked || data?.activeMembers?.[0] || null);
+      setSelectedSourceMemberId("");
+    }
+    setIsMergeModalOpen(true);
+  };
+
+  const handleExecuteMerge = async () => {
+    if (!mergeTargetMember || !selectedSourceMemberId) {
+      toast.error("残す名簿メンバーと、統合するアカウントの両方を選択してください");
+      return;
+    }
+    if (mergeTargetMember.memberId === selectedSourceMemberId) {
+      toast.error("同じメンバー同士を統合することはできません");
+      return;
+    }
+
+    const source = data?.activeMembers?.find((m) => m.memberId === selectedSourceMemberId);
+    if (!confirm(`「${mergeTargetMember.name}（手動名簿）」に「${source?.name || "アカウント"}（LINE連携側）」を統合しますか？\n\n統合すると、過去の記録（出欠履歴・配車・子供との親子関係等）を残したまま、重複アカウントが1つに合流されます。`)) {
+      return;
+    }
+
+    try {
+      setIsMerging(true);
+      const tid = currentTeam?.id || (typeof window !== "undefined" ? localStorage.getItem("iscore_selectedTeamId") : "") || "demo-team";
+      const uid = profile?.userId || (typeof window !== "undefined" ? localStorage.getItem("iscore_user_id") : "") || "";
+
+      const res = await fetch("/api/liff/admin/members/merge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          teamId: tid,
+          targetMemberId: mergeTargetMember.memberId,
+          sourceMemberId: selectedSourceMemberId,
+          userId: uid,
+        }),
+      });
+
+      const json = await res.json() as { success?: boolean; message?: string; error?: string };
+      if (res.ok && json.success) {
+        toast.success(json.message || "メンバーを正常に統合しました！");
+        setIsMergeModalOpen(false);
+        setMergeTargetMember(null);
+        setSelectedSourceMemberId("");
+        await loadDashboardData(true);
+      } else {
+        toast.error(json.error || "メンバーの統合に失敗しました");
+      }
+    } catch (err: any) {
+      console.error("Failed to merge members:", err);
+      toast.error(err?.message || "メンバー統合処理に失敗しました");
+    } finally {
+      setIsMerging(false);
     }
   };
 
@@ -594,6 +667,23 @@ export default function LiffAdminDashboardPage() {
                       </button>
                     ))}
                   </div>
+
+                  {/* メンバー統合バー */}
+                  <div className="flex items-center justify-between pt-1">
+                    <span className="text-[11px] font-black text-muted-foreground">
+                      メンバー一覧 ({filteredActiveMembers.length}名)
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleOpenMergeModal()}
+                      className="h-7 px-2.5 rounded-xl text-[11px] font-black border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 bg-indigo-50/50 dark:bg-indigo-950/20 hover:bg-indigo-100 flex items-center gap-1 shadow-2xs"
+                    >
+                      <GitMerge className="w-3 h-3" />
+                      <span>メンバー統合</span>
+                    </Button>
+                  </div>
                 </div>
 
                 {/* メンバー一覧 */}
@@ -609,10 +699,20 @@ export default function LiffAdminDashboardPage() {
                         className="p-3 rounded-2xl bg-card border border-border shadow-2xs flex items-center justify-between gap-2"
                       >
                         <div className="min-w-0">
-                          <div className="flex items-center gap-1.5 mb-0.5">
+                          <div className="flex items-center gap-1.5 mb-1 flex-wrap">
                             <span className="text-[10px] font-black px-1.5 py-0.2 rounded bg-muted text-muted-foreground border border-border">
                               {ROLE_OPTIONS.find((r) => r.id === member.role)?.label || member.role}
                             </span>
+                            {member.userId ? (
+                              <span className="text-[10px] font-black px-1.5 py-0.2 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 flex items-center gap-0.5">
+                                <UserCheck className="w-2.5 h-2.5" />
+                                <span>連携済</span>
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-slate-500/10 text-slate-500 dark:text-slate-400 border border-slate-500/20">
+                                手動名簿
+                              </span>
+                            )}
                             {member.subLabel && (
                               <span className="text-[10px] font-black px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30">
                                 {member.subLabel}
@@ -629,20 +729,34 @@ export default function LiffAdminDashboardPage() {
                           )}
                         </div>
 
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setEditingMember(member);
-                            setEditRole(member.role || "parent");
-                            setEditSubLabel(member.subLabel || "");
-                          }}
-                          className="h-8 px-2.5 rounded-xl text-xs font-bold border-border bg-muted/40 hover:bg-muted gap-1 shrink-0"
-                        >
-                          <Edit2 className="w-3 h-3 text-primary" />
-                          <span>変更</span>
-                        </Button>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleOpenMergeModal(member)}
+                            title="他のアカウントと統合（マージ）"
+                            className="h-8 px-2 rounded-xl text-xs font-bold border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 bg-indigo-50/40 dark:bg-indigo-950/20 hover:bg-indigo-100/60 gap-1"
+                          >
+                            <GitMerge className="w-3 h-3" />
+                            <span>統合</span>
+                          </Button>
+
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setEditingMember(member);
+                              setEditRole(member.role || "parent");
+                              setEditSubLabel(member.subLabel || "");
+                            }}
+                            className="h-8 px-2.5 rounded-xl text-xs font-bold border-border bg-muted/40 hover:bg-muted gap-1"
+                          >
+                            <Edit2 className="w-3 h-3 text-primary" />
+                            <span>変更</span>
+                          </Button>
+                        </div>
                       </div>
                     ))
                   )}
@@ -869,6 +983,144 @@ export default function LiffAdminDashboardPage() {
               >
                 {isSavingMember ? "保存中..." : "変更を保存"}
               </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          🔗 メンバー統合（マージ）ダイアログ
+      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+      {isMergeModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-background/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-md bg-card rounded-3xl border border-border shadow-2xl p-5 space-y-4 max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-200">
+            {/* ヘッダー */}
+            <div className="flex items-center justify-between pb-3 border-b border-border/50">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-2xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+                  <GitMerge className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-foreground">メンバー統合（マージ）</h3>
+                  <p className="text-[10px] font-bold text-muted-foreground">手動登録名簿とLINE参加アカウントを合流</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsMergeModalOpen(false)}
+                className="p-1.5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground transition-all"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs">
+              {/* ① 残す名簿メンバー（手動登録・マスター側） */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-black text-foreground flex items-center gap-1.5">
+                  <span className="w-5 h-5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-[10px] font-black shrink-0">1</span>
+                  <span>残す名簿データ（手動登録・マスター側）</span>
+                </label>
+                <select
+                  value={mergeTargetMember?.memberId || ""}
+                  onChange={(e) => {
+                    const found = data?.activeMembers?.find((m) => m.memberId === e.target.value);
+                    setMergeTargetMember(found || null);
+                  }}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/20"
+                >
+                  <option value="">残すメンバーを選択...</option>
+                  {data?.activeMembers?.map((m) => (
+                    <option key={m.memberId} value={m.memberId}>
+                      {m.name} {!m.userId ? "(手動登録・未連携)" : "(LINE連携済)"} {m.subLabel ? `[${m.subLabel}]` : ""}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-muted-foreground font-medium px-1">
+                  ※ 出欠履歴・配車当番・子供との親子関係などの過去データが引き継がれます。
+                </p>
+              </div>
+
+              {/* ② 統合するアカウント（LINE参加・連携側） */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-black text-foreground flex items-center gap-1.5">
+                  <span className="w-5 h-5 rounded-full bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-[10px] font-black shrink-0">2</span>
+                  <span>合流・統合するアカウント（LINE参加側）</span>
+                </label>
+                <select
+                  value={selectedSourceMemberId}
+                  onChange={(e) => setSelectedSourceMemberId(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/20"
+                >
+                  <option value="">統合するアカウントを選択...</option>
+                  {data?.activeMembers
+                    ?.filter((m) => m.memberId !== mergeTargetMember?.memberId)
+                    .map((m) => (
+                      <option key={m.memberId} value={m.memberId}>
+                        {m.name} {m.userId ? "(LINE連携アカウント)" : "(手動)"} {m.phone ? `[${m.phone}]` : ""}
+                      </option>
+                    ))}
+                </select>
+                <p className="text-[10px] text-muted-foreground font-medium px-1">
+                  ※ このアカウントのログイン権限が上記の名簿メンバーに合流され、重複側は削除されます。
+                </p>
+              </div>
+
+              {/* プレビューカード */}
+              {(() => {
+                const source = data?.activeMembers?.find((m) => m.memberId === selectedSourceMemberId);
+                if (!mergeTargetMember || !source) return null;
+
+                return (
+                  <div className="p-3.5 rounded-2xl bg-indigo-500/10 dark:bg-indigo-950/20 border border-indigo-500/30 space-y-2 animate-in fade-in duration-150">
+                    <div className="flex items-center gap-1.5 font-black text-indigo-700 dark:text-indigo-300">
+                      <Sparkles className="w-4 h-4 shrink-0" />
+                      <span>メンバー統合（マージ）プレビュー</span>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-card border border-border/70 space-y-1 text-[11px] font-bold">
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted-foreground">残す名簿データ:</span>
+                        <span className="font-black text-foreground">{mergeTargetMember.name} (出欠・過去記録を保持)</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted-foreground">合流するアカウント:</span>
+                        <span className="font-black text-indigo-600 dark:text-indigo-400">{source.name} (LINEログインを付与)</span>
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground font-medium leading-relaxed">
+                      💡 統合完了後、{source.name} さんのLINEアカウントから開くと {mergeTargetMember.name} さんの過去履歴や予定・出欠がそのまま引き継がれます。
+                    </p>
+                  </div>
+                );
+              })()}
+
+              {/* ボタン */}
+              <div className="flex items-center gap-2 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsMergeModalOpen(false)}
+                  disabled={isMerging}
+                  className="flex-1 h-11 rounded-xl font-black text-xs"
+                >
+                  キャンセル
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleExecuteMerge}
+                  disabled={isMerging || !mergeTargetMember || !selectedSourceMemberId}
+                  className="flex-1 h-11 rounded-xl font-black text-xs bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm"
+                >
+                  {isMerging ? (
+                    <span className="flex items-center gap-1.5">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>統合中...</span>
+                    </span>
+                  ) : (
+                    <span>アカウントを統合する</span>
+                  )}
+                </Button>
+              </div>
             </div>
           </div>
         </div>
