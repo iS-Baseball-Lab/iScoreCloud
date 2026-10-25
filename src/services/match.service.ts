@@ -31,6 +31,7 @@ export const MatchService = {
       battingOrder: matches.battingOrder,
       surfaceDetails: matches.surfaceDetails,
       tournamentName: tournaments.name,
+      tournamentId: matches.tournamentId,
       venueName: venues.name,
       venueShortName: venues.shortName,
       innings: matches.innings,
@@ -62,6 +63,7 @@ export const MatchService = {
     // DBのJSON文字列を配列に変換してフロントエンドに返す
     return rows.map((r) => ({
       ...r,
+      tournamentName: r.tournamentName || (r.tournamentId && !r.tournamentId.includes("-") ? r.tournamentId : null),
       // status / matchType / battingOrder はスキーマ上 string だがアプリ内では限定値のみ使用
       status: r.status as "scheduled" | "live" | "finished" | "rainout",
       matchType: r.matchType as "official" | "practice" | "exchange",
@@ -76,7 +78,7 @@ export const MatchService = {
 
   // 2. 特定の試合の取得
   async getMatchById(db: DrizzleDB, matchId: string) {
-    return await db.select({
+    const row = await db.select({
       id: matches.id,
       teamId: matches.teamId,
       opponent: matches.opponent,
@@ -88,6 +90,7 @@ export const MatchService = {
       surfaceDetails: matches.surfaceDetails,
       innings: matches.innings,
       tournamentName: tournaments.name,
+      tournamentId: matches.tournamentId,
       venueName: venues.name,
       venueShortName: venues.shortName,
       myScore: matches.myScore,
@@ -121,6 +124,13 @@ export const MatchService = {
       .leftJoin(venues, eq(matches.venueId, venues.id))
       .where(eq(matches.id, matchId))
       .get();
+
+    if (!row) return null;
+
+    return {
+      ...row,
+      tournamentName: row.tournamentName || (row.tournamentId && !row.tournamentId.includes("-") ? row.tournamentId : null),
+    };
   },
 
   // 3. イニングスコアの取得と整形
@@ -150,16 +160,25 @@ export const MatchService = {
   async _resolveTournament(db: DrizzleDB, matchType: string, tournamentName?: string): Promise<string | null> {
     if ((matchType !== "official" && matchType !== "exchange") || !tournamentName) return null;
 
+    const tName = tournamentName.trim();
+    if (!tName) return null;
+
+    // 1. UUIDで既存大会テーブルに存在するかチェック
+    const byId = await db.select().from(tournaments).where(eq(tournaments.id, tName)).get();
+    if (byId) return byId.id;
+
+    // 2. 名前で検索
     const existingTournament = await db.select().from(tournaments)
-      .where(eq(tournaments.name, tournamentName)).get();
+      .where(eq(tournaments.name, tName)).get();
 
     if (existingTournament) return existingTournament.id;
 
     const newId = crypto.randomUUID();
     await db.insert(tournaments).values({
       id: newId,
-      name: tournamentName,
+      name: tName,
       season: new Date().getFullYear().toString(),
+      category: 'other',
     });
     return newId;
   },

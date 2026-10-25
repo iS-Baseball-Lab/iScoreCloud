@@ -283,7 +283,13 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
                 {match.matchType === "official" ? "公式戦" : match.matchType === "exchange" ? "交流戦" : "OP戦"}
               </span>
               <span className="text-[11px] sm:text-xs font-bold text-muted-foreground truncate">
-                {match.tournamentName || (match.matchType === "official" ? "公式戦" : match.matchType === "exchange" ? "交流戦" : "練習試合")}
+                {match.tournamentName && match.tournamentName !== "公式戦" && match.tournamentName !== "OP戦"
+                  ? match.tournamentName
+                  : match.matchType === "official"
+                  ? "大会名未登録"
+                  : match.matchType === "exchange"
+                  ? "交流戦"
+                  : "練習試合"}
               </span>
             </div>
 

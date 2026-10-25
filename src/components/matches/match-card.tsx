@@ -337,7 +337,13 @@ export function MatchCard({
                   {match.matchType === 'official' ? '公式戦' : match.matchType === 'exchange' ? '交流戦' : 'OP戦'}
                 </span>
                 <span className="text-xs sm:text-sm font-bold text-muted-foreground truncate">
-                  {match.tournamentName || (match.matchType === 'official' ? "大会名未登録" : match.matchType === 'exchange' ? "交流戦" : "OP戦")}
+                  {match.tournamentName && match.tournamentName !== "公式戦" && match.tournamentName !== "OP戦"
+                    ? match.tournamentName
+                    : match.matchType === 'official'
+                    ? "大会名未登録"
+                    : match.matchType === 'exchange'
+                    ? "交流戦"
+                    : "OP戦"}
                 </span>
               </div>
 

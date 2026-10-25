@@ -66,22 +66,24 @@ const DEMO_NEXT_EVENT = {
 const DEMO_MATCHES = [
   {
     id: "demo-match-1",
-    opponent: "レッドソックス",
+    opponent: "横浜ベイブルース",
+    tournamentName: "川崎市秋季大会 1回戦",
     date: "2026/08/23",
     status: "finished",
     myScore: 7,
-    opponentScore: 3,
+    opponentScore: 4,
     youtubeUrl: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
     matchType: "official",
-    venueName: "多摩川緑地野球場",
-    venueShortName: "多摩川G",
+    venueName: "市民第2球場",
+    venueShortName: "市民第2",
     innings: 7,
     myInningScores: [2, 0, 1, 3, 0, 1, 0],
-    opponentInningScores: [0, 1, 0, 0, 2, 0, 0],
+    opponentInningScores: [0, 1, 0, 0, 2, 1, 0],
   },
   {
     id: "demo-match-2",
     opponent: "ブルーサンダース",
+    tournamentName: "練習試合",
     date: "2026/08/09",
     status: "finished",
     myScore: 4,
@@ -477,6 +479,7 @@ app.get("/hub", async (c) => {
         youtubeUrl: matches.youtubeUrl,
         matchType: matches.matchType,
         tournamentName: tournaments.name,
+        tournamentId: matches.tournamentId,
         venueName: venues.name,
         venueShortName: venues.shortName,
         surfaceDetails: matches.surfaceDetails,
@@ -499,6 +502,7 @@ app.get("/hub", async (c) => {
 
     const formattedMatches = matchesList.map(m => ({
       ...m,
+      tournamentName: m.tournamentName || (m.tournamentId && !m.tournamentId.includes("-") ? m.tournamentId : null),
       myInningScores: typeof m.myInningScores === "string" ? JSON.parse(m.myInningScores || "[]") : (m.myInningScores || []),
       opponentInningScores: typeof m.opponentInningScores === "string" ? JSON.parse(m.opponentInningScores || "[]") : (m.opponentInningScores || []),
     }));
@@ -591,6 +595,8 @@ app.get("/matches", async (c) => {
         opponentScore: matches.opponentScore,
         youtubeUrl: matches.youtubeUrl,
         matchType: matches.matchType,
+        tournamentName: tournaments.name,
+        tournamentId: matches.tournamentId,
         venueName: venues.name,
         venueShortName: venues.shortName,
         surfaceDetails: matches.surfaceDetails,
@@ -599,6 +605,7 @@ app.get("/matches", async (c) => {
         opponentInningScores: matches.opponentInningScores,
       })
       .from(matches)
+      .leftJoin(tournaments, eq(matches.tournamentId, tournaments.id))
       .leftJoin(venues, eq(matches.venueId, venues.id))
       .where(eq(matches.teamId, teamId))
       .orderBy(desc(matches.date), desc(matches.createdAt))
@@ -626,6 +633,7 @@ app.get("/matches", async (c) => {
 
       return {
         ...m,
+        tournamentName: m.tournamentName || (m.tournamentId && !m.tournamentId.includes("-") ? m.tournamentId : null),
         myInningScores: myInnings,
         opponentInningScores: opponentInnings,
       };

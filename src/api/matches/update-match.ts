@@ -2,7 +2,7 @@
 import { Hono } from 'hono';
 import { drizzle } from 'drizzle-orm/d1';
 import { eq } from 'drizzle-orm';
-import { matches } from '@/db/schema/match';
+import { matches, tournaments } from '@/db/schema/match';
 import type { WorkerEnv } from '@/types/api';
 
 const app = new Hono<{ Bindings: WorkerEnv }>();
@@ -37,15 +37,44 @@ app.patch('/:id', async (c) => {
     // 💡 徹底的に null 変換するヘルパー
     const n = (val: string | undefined | null) => (val === "" || val === undefined || val === null ? null : val);
 
+    // 💡 大会名（tournamentName）が送られてきた場合、自動的に解決・新規生成する
+    let tournamentId: string | null | undefined = undefined;
+    if (body.tournamentName !== undefined) {
+      const tName = (body.tournamentName || "").trim();
+      if (!tName) {
+        tournamentId = null;
+      } else {
+        // 1. UUIDで既存大会テーブルに存在するかチェック（IDが送られてきた場合）
+        const byId = await db.select().from(tournaments).where(eq(tournaments.id, tName)).get();
+        if (byId) {
+          tournamentId = byId.id;
+        } else {
+          // 2. 名前で検索
+          const existing = await db.select().from(tournaments).where(eq(tournaments.name, tName)).get();
+          if (existing) {
+            tournamentId = existing.id;
+          } else {
+            // 3. なければ新規作成
+            const newId = crypto.randomUUID();
+            await db.insert(tournaments).values({
+              id: newId,
+              name: tName,
+              season: new Date().getFullYear().toString(),
+              category: 'other',
+            });
+            tournamentId = newId;
+          }
+        }
+      }
+    }
+
     // 💡 更新データのマッピング
     // ※フロント側（edit/page.tsx）の body: JSON.stringify({...}) とキーを合わせています
     const updateData = {
       opponent: body.opponent,
       date: body.date, // ※フロント側で "YYYY-MM-DD HH:mm" に結合済みであることを想定
       matchType: body.matchType,
-      // tournamentNameをtournamentIdとして扱うか、別途変換処理を入れるか。
-      // 現在のフロント仕様上、tournamentName（= 実はtournamentIdが入っている）を保存する想定とします。
-      tournamentId: n(body.tournamentName),
+      tournamentId: tournamentId !== undefined ? tournamentId : undefined,
       battingOrder: body.battingOrder,
       benchSide: body.benchSide,
       innings: body.innings,
