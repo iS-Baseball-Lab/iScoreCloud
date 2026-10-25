@@ -1430,14 +1430,13 @@ app.get("/attendance-matrix", async (c) => {
       // 保護者リストへの登録（母・父・その他の保護者）
       if (shouldIncludeInParent) {
         const adminTag = isManagerOrAdmin ? " (IT管理者)" : "";
-        if (hasFatherKeyword) {
-          fathersList.push({
-            id: m.id,
-            name: name,
-            subText: (hasKids ? `${kidsName}の父` : "保護者(父)") + adminTag,
-            groupType: "father" as const,
-          });
-        } else if (hasMotherKeyword) {
+        const isMother =
+          m.memberType === "mother" ||
+          m.role === "mother" ||
+          (typeof m.subRoles === "string" && m.subRoles.toLowerCase().includes("mother")) ||
+          hasMotherKeyword;
+
+        if (isMother) {
           mothersList.push({
             id: m.id,
             name: name,
@@ -1445,11 +1444,12 @@ app.get("/attendance-matrix", async (c) => {
             groupType: "mother" as const,
           });
         } else {
-          otherParentsList.push({
+          // 母設定・キーワードがない保護者は父グループとして扱い、タブ未所属による孤立や選手誤判定を防ぐ
+          fathersList.push({
             id: m.id,
             name: name,
-            subText: (hasKids ? `${kidsName}の保護者` : "保護者") + adminTag,
-            groupType: "parent" as const,
+            subText: (hasKids ? `${kidsName}の父` : "保護者(父)") + adminTag,
+            groupType: "father" as const,
           });
         }
       }
@@ -1571,6 +1571,12 @@ app.get("/attendance-matrix", async (c) => {
       memberSubLabels,
       myInfo: {
         memberId: myMemberId,
+        groupType: myMemberId ? (
+          fathersList.some(f => f.id === myMemberId) ? "father" :
+          mothersList.some(m => m.id === myMemberId) ? "mother" :
+          staffList.some(s => s.id === myMemberId) ? "staff" :
+          allPlayers.some(p => p.id === myMemberId) ? "player" : "father"
+        ) : "father",
         playerIds: myPlayerIds,
         isManager,
         name: currentMember?.name || userName || "ゲスト",

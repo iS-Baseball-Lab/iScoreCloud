@@ -29,7 +29,12 @@ export const getAuth = (d1: D1Database, env?: AuthEnv) => {
   const db = drizzle(d1);
   const auth = betterAuth({
     baseURL: env?.BETTER_AUTH_URL, // 💡 追加：Cloudflare 環境での baseURL ズレ防止
-    trustedHeaders: ["x-forwarded-host", "x-forwarded-proto"], // 💡 追加：プロキシ背後での State 整合性を保証
+    trustedHeaders: ["x-forwarded-host", "x-forwarded-proto"],
+    advanced: {
+      database: {
+        validateSchema: false,
+      },
+    }, // 💡 追加：プロキシ背後での State 整合性を保証
     user: {
       additionalFields: {
         role: {

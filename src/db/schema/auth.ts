@@ -28,6 +28,7 @@ export const session = sqliteTable("session", {
   ipAddress: text("ip_address"),
   userAgent: text("user_agent"),
   userId: text("user_id").notNull().references(() => user.id),
+  impersonatedBy: text("impersonated_by"),
 });
 
 export const account = sqliteTable("account", {

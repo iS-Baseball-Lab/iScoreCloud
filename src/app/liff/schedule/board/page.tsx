@@ -427,14 +427,24 @@ export default function AttendanceMatrixBoardPage() {
 
         // 🌟 1. 自分が所属するグループの初期選択 (父・母・スタッフ・選手)
         const myId = data.myInfo?.memberId;
-        if (myId) {
+        const myGroupType = data.myInfo?.groupType;
+
+        if (myGroupType === "father") {
+          setSelectedGroupTab("father");
+        } else if (myGroupType === "mother") {
+          setSelectedGroupTab("mother");
+        } else if (myGroupType === "staff") {
+          setSelectedGroupTab("staff");
+        } else if (myId) {
           if (fathers.some((f: MemberPerson) => f.id === myId)) {
             setSelectedGroupTab("father");
           } else if (mothers.some((m: MemberPerson) => m.id === myId)) {
             setSelectedGroupTab("mother");
           } else if ((g.staff || []).some((s: MemberPerson) => s.id === myId)) {
             setSelectedGroupTab("staff");
-          } else if ((g.players || []).some((p: MemberPerson) => p.id === myId || data.myInfo.playerIds?.includes(p.id))) {
+          } else if (parents.some((p: MemberPerson) => p.id === myId)) {
+            setSelectedGroupTab("father");
+          } else if ((g.players || []).some((p: MemberPerson) => p.id === myId)) {
             setSelectedGroupTab("player");
           }
         }
@@ -485,7 +495,7 @@ export default function AttendanceMatrixBoardPage() {
       console.error("Matrix load error:", err);
       toast.error("出欠一覧表データの読み込みに失敗しました");
     } finally {
-      setSelectedGroupTab(prev => prev ?? "player");
+      setSelectedGroupTab(prev => prev ?? "father");
       setIsLoading(false);
     }
   }, [currentTeam?.id, profile?.userId, profile?.displayName]);
