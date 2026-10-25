@@ -8,7 +8,8 @@ import { HubQuickNav } from "@/components/liff/HubQuickNav";
 import { HubCalendarSection } from "@/components/liff/HubCalendarSection";
 import type { MatchCardData } from "@/components/liff/MatchScoreCard";
 import { useLiff } from "@/components/liff/LiffProvider";
-import { UserPlus } from "lucide-react";
+import Link from "next/link";
+import { UserPlus, ShieldCheck } from "lucide-react";
 import { DemoBanner } from "@/components/liff/DemoBanner";
 import { JoinTeamModal } from "@/components/liff/JoinTeamModal";
 
@@ -122,6 +123,14 @@ export default function LiffHubPage() {
             </h2>
 
             <div className="flex items-center gap-1.5">
+              <Link
+                href="/liff/admin"
+                className="px-3 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-black text-[11px] shadow-xs transition-all flex items-center gap-1 shrink-0"
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>IT管理</span>
+              </Link>
+
               {isDemo && (
                 <button
                   type="button"
@@ -137,7 +146,7 @@ export default function LiffHubPage() {
                 <button
                   type="button"
                   onClick={login}
-                  className="px-3 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-black text-[11px] shadow-xs transition-all flex items-center gap-1 shrink-0"
+                  className="px-3 py-1.5 rounded-full bg-slate-700 hover:bg-slate-800 active:scale-95 text-white font-black text-[11px] shadow-xs transition-all flex items-center gap-1 shrink-0"
                 >
                   <span>LINE連携</span>
                 </button>

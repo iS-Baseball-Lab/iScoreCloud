@@ -17,7 +17,9 @@ import {
   handleRemoveMember,
   handleCreateMember,
   handleUpdateMemberInfo,
-  handleMergeMembers
+  handleMergeMembers,
+  handleGetJoinRequests,
+  handleActionJoinRequest
 } from './members'
 
 // 他の子ルーターのインポート
@@ -33,6 +35,8 @@ const app = new Hono<{ Bindings: WorkerEnv }>()
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 app.post('/join', handleJoinTeam)
 app.get('/search/:id', handleSearchTeam)
+app.get('/:id/requests', handleGetJoinRequests) // 📩 参加申請一覧取得
+app.patch('/:id/requests/:memberId', handleActionJoinRequest) // 📩 参加申請の承認・却下
 app.get('/:id/members', handleGetMembers)
 app.post('/:id/members/merge', handleMergeMembers) // 🔗 メンバー統合（マージ）
 app.post('/:id/members', handleCreateMember) // 💡 新規：アカウントなしメンバー登録

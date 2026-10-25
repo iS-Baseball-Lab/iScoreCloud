@@ -400,7 +400,7 @@ function TeamRequestsContent() {
         <div className="flex items-start gap-3 p-4 rounded-2xl bg-muted/40 border border-border/40">
           <AlertCircle className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
           <p className="text-sm font-bold text-muted-foreground">
-            申請の承認・拒否には監督（MANAGER）権限が必要です。
+            申請の承認・拒否には管理者権限（IT管理者・監督）が必要です。
           </p>
         </div>
       )}
@@ -433,7 +433,7 @@ function TeamRequestsContent() {
               onAction={(r, a) =>
                 canManage
                   ? setConfirmTarget({ req: r, action: a })
-                  : toast.error("この操作には監督権限が必要です")
+                  : toast.error("この操作には管理者権限（IT管理者・監督）が必要です")
               }
             />
           ))}

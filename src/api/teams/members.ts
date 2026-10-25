@@ -534,3 +534,93 @@ export const handleMergeMembers = async (c: Context) => {
     return c.json({ success: false, error: 'メンバーの統合に失敗しました', details: e.message }, 500)
   }
 }
+
+/** 🌟 参加申請一覧取得 */
+export const handleGetJoinRequests = async (c: Context) => {
+  const auth = getAuth(c.env.DB, c.env)
+  const session = await auth.api.getSession({ headers: c.req.raw.headers as any })
+  if (!session) return c.json({ error: 'Unauthorized' }, 401)
+
+  const teamId = c.req.param('id')!
+  const db = drizzle(c.env.DB)
+
+  try {
+    const myMembership = await db.select().from(teamMembers).where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, session.user.id))).get()
+    const isAdmin = (session.user as AuthUser).role === 'SYSTEM_ADMIN' || (session.user as AuthUser).role === 'admin'
+    if (!isAdmin && (!myMembership || !canManageTeam(myMembership.role))) {
+      return c.json({ error: '権限がありません' }, 403)
+    }
+
+    const { results } = await c.env.DB.prepare(`
+      SELECT
+        tm.id              AS memberId,
+        tm.user_id         AS userId,
+        tm.role,
+        tm.status,
+        tm.joined_at       AS joinedAt,
+        tm.name            AS memberName,
+        tm.name_kana       AS nameKana,
+        tm.member_type     AS memberType,
+        tm.phone,
+        tm.email           AS memberEmail,
+        u.name             AS userName,
+        COALESCE(tm.avatar_url, u.image) AS avatarUrl,
+        u.email            AS userEmail
+      FROM team_members tm
+      LEFT JOIN user u ON tm.user_id = u.id
+      WHERE tm.team_id = ?
+        AND tm.status = 'pending'
+      ORDER BY tm.joined_at DESC
+    `).bind(teamId).all();
+
+    const formatted = (results || []).map((row: any) => ({
+      memberId: row.memberId,
+      userId: row.userId,
+      name: row.memberName || row.userName || '新規メンバー',
+      kana: row.nameKana,
+      email: row.memberEmail || row.userEmail,
+      phone: row.phone,
+      memberType: row.memberType || 'parent',
+      role: row.role || 'player',
+      createdAt: row.joinedAt ? new Date(row.joinedAt).toISOString() : new Date().toISOString(),
+      avatarUrl: row.avatarUrl,
+    }));
+
+    return c.json({ success: true, requests: formatted })
+  } catch (e: any) {
+    return c.json({ success: false, error: '申請一覧の取得に失敗しました', details: e.message }, 500)
+  }
+}
+
+/** 🌟 参加申請の承認・却下 */
+export const handleActionJoinRequest = async (c: Context) => {
+  const auth = getAuth(c.env.DB, c.env)
+  const session = await auth.api.getSession({ headers: c.req.raw.headers as any })
+  if (!session) return c.json({ error: 'Unauthorized' }, 401)
+
+  const teamId = c.req.param('id')!
+  const memberId = c.req.param('memberId')!
+  const { action } = await c.req.json<{ action: 'approve' | 'reject' }>()
+  const db = drizzle(c.env.DB)
+
+  try {
+    const myMembership = await db.select().from(teamMembers).where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, session.user.id))).get()
+    const isAdmin = (session.user as AuthUser).role === 'SYSTEM_ADMIN' || (session.user as AuthUser).role === 'admin'
+    if (!isAdmin && (!myMembership || !canManageTeam(myMembership.role))) {
+      return c.json({ error: '権限がありません' }, 403)
+    }
+
+    if (action === 'approve') {
+      await db.update(teamMembers)
+        .set({ status: 'active', role: 'parent' })
+        .where(and(eq(teamMembers.id, memberId), eq(teamMembers.teamId, teamId)))
+      return c.json({ success: true, message: '参加を承認しました' })
+    } else {
+      await db.delete(teamMembers)
+        .where(and(eq(teamMembers.id, memberId), eq(teamMembers.teamId, teamId)))
+      return c.json({ success: true, message: '申請を却下しました' })
+    }
+  } catch (e: any) {
+    return c.json({ success: false, error: '処理に失敗しました', details: e.message }, 500)
+  }
+}

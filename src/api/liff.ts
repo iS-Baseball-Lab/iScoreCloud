@@ -26,6 +26,7 @@ import {
 import { ensureEventColumns, ensureRulesTable, ensureLinksTable, ensureMemberOrderColumn, ensureStatusConfigColumn, ensureMemberSubLabelsColumn } from "@/lib/db-helper";
 import type { WorkerEnv, AuthUser } from "@/types/api";
 import { getAuth } from "@/lib/auth";
+import { canManageTeam } from "@/lib/roles";
 
 const app = new Hono<{ Bindings: WorkerEnv }>();
 
@@ -188,59 +189,164 @@ app.post("/join", async (c) => {
     const body = await c.req.json();
     const { teamId, inviteCode, userId, userName, memberType = "parent", phone } = body;
 
-    let targetTeamId = teamId;
+    const code = (inviteCode || teamId || "").trim();
 
-    if (!targetTeamId && inviteCode) {
-      const code = inviteCode.trim();
-      const foundTeam = await db
-        .select({ id: teams.id })
+    // 1. デモモード・デモコードの即時判定
+    if (
+      code.toUpperCase() === "DEMO2026" ||
+      code.toLowerCase() === "demo" ||
+      code === "demo-team" ||
+      teamId === "demo-team"
+    ) {
+      return c.json({
+        success: true,
+        message: "チーム参加申請を受け付けました！管理者の承認をお待ちください。（デモ）",
+        status: "pending",
+        teamId: "demo-team",
+      });
+    }
+
+    // 2. チーム特定ロジック（完全一致・前方一致・チーム名あいまい検索）
+    let targetTeam: { id: string; name: string } | undefined = undefined;
+
+    if (code) {
+      // ① ID完全一致
+      targetTeam = await db
+        .select({ id: teams.id, name: teams.name })
         .from(teams)
         .where(eq(teams.id, code))
         .get();
-      
-      if (foundTeam) {
-        targetTeamId = foundTeam.id;
+
+      // ② ID大文字小文字無視 または 前方一致 (UUID先頭8文字など)
+      if (!targetTeam) {
+        targetTeam = await db
+          .select({ id: teams.id, name: teams.name })
+          .from(teams)
+          .where(sql`lower(${teams.id}) LIKE lower(${code + '%'})`)
+          .get();
+      }
+
+      // ③ チーム名でのあいまい検索
+      if (!targetTeam) {
+        targetTeam = await db
+          .select({ id: teams.id, name: teams.name })
+          .from(teams)
+          .where(sql`lower(${teams.name}) LIKE lower(${'%' + code + '%'})`)
+          .get();
       }
     }
 
-    if (!targetTeamId) {
-      return c.json({ success: false, error: "指定されたチームが見つかりませんでした。招待コードを確認してください。" }, 404);
+    // ④ もし指定チームが見つからず、DBにチームが1件のみ存在する場合はそのチームをフォールバック
+    if (!targetTeam) {
+      const allTeams = await db.select({ id: teams.id, name: teams.name }).from(teams).limit(2).all();
+      if (allTeams.length === 1) {
+        targetTeam = allTeams[0];
+      }
     }
 
-    const existing = await db
-      .select()
-      .from(teamMembers)
-      .where(and(eq(teamMembers.teamId, targetTeamId), eq(teamMembers.userId, userId || "")))
-      .get();
+    if (!targetTeam) {
+      return c.json({
+        success: false,
+        error: "指定されたチームが見つかりませんでした。招待コードやチーム名をご確認ください。",
+      }, 404);
+    }
+
+    const targetTeamId = targetTeam.id;
+
+    // 3. ユーザーの整合性チェック (外部キー制約違反を絶対に防止)
+    let validUserId: string | null = null;
+    if (userId && typeof userId === "string" && userId.trim()) {
+      const uId = userId.trim();
+      try {
+        const userExists = await db.select({ id: user.id }).from(user).where(eq(user.id, uId)).get();
+        if (userExists) {
+          validUserId = userExists.id;
+        } else {
+          // LINEユーザー用のレコードをuserテーブルに安全に作成
+          await db.insert(user).values({
+            id: uId,
+            name: userName?.trim() || "LINEユーザー",
+            email: `${uId}@line.user`,
+            emailVerified: false,
+            role: "GUEST",
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          });
+          validUserId = uId;
+        }
+      } catch (userInsertErr) {
+        // 万が一の重複や制約エラー時は null にフォールバック（team_members.user_id は Nullable なので安全）
+        validUserId = null;
+      }
+    }
+
+    // 4. 重複申請チェック (userId または phone または 名前)
+    let existing = null;
+    if (validUserId) {
+      existing = await db
+        .select()
+        .from(teamMembers)
+        .where(and(eq(teamMembers.teamId, targetTeamId), eq(teamMembers.userId, validUserId)))
+        .get();
+    }
+    if (!existing && phone && phone.trim()) {
+      existing = await db
+        .select()
+        .from(teamMembers)
+        .where(and(eq(teamMembers.teamId, targetTeamId), eq(teamMembers.phone, phone.trim())))
+        .get();
+    }
+    if (!existing && userName && userName.trim()) {
+      existing = await db
+        .select()
+        .from(teamMembers)
+        .where(and(eq(teamMembers.teamId, targetTeamId), eq(teamMembers.name, userName.trim()), eq(teamMembers.status, "pending")))
+        .get();
+    }
 
     if (existing) {
       if (existing.status === "active") {
-        return c.json({ success: true, message: "すでにこのチームのメンバーとして登録されています", status: "active", teamId: targetTeamId });
+        return c.json({
+          success: true,
+          message: "すでにこのチームのメンバーとして登録されています",
+          status: "active",
+          teamId: targetTeamId,
+        });
       }
-      return c.json({ success: true, message: "参加申請はすでに送信済みです。管理者の承認をお待ちください", status: "pending", teamId: targetTeamId });
+      return c.json({
+        success: true,
+        message: "参加申請はすでに送信済みです。管理者の承認をお待ちください",
+        status: "pending",
+        teamId: targetTeamId,
+      });
     }
 
+    // 5. 参加申請の新規登録
     const newMemberId = `tm_${crypto.randomUUID()}`;
     await db.insert(teamMembers).values({
       id: newMemberId,
       teamId: targetTeamId,
-      userId: userId || null,
-      name: userName || "新規メンバー",
+      userId: validUserId,
+      name: userName?.trim() || "新規メンバー",
       memberType: memberType || "parent",
-      phone: phone || null,
-      role: "player",
+      phone: phone?.trim() || null,
+      role: "parent",
       status: "pending",
+      joinedAt: new Date(),
     });
 
     return c.json({
       success: true,
-      message: "チーム参加申請を受け付けました！管理者の承認をお待ちください。",
+      message: `「${targetTeam.name}」への参加申請を受け付けました！管理者の承認をお待ちください。`,
       status: "pending",
       teamId: targetTeamId,
     });
   } catch (error: any) {
     console.error("Failed to submit join request:", error);
-    return c.json({ success: false, error: error?.message || "参加申請の送信に失敗しました" }, 500);
+    return c.json({
+      success: false,
+      error: error?.message || "参加申請の送信に失敗しました",
+    }, 500);
   }
 });
 
@@ -4079,22 +4185,296 @@ app.put("/links/:id", async (c) => {
 });
 
 /**
- * 🔗 関連リンク 削除API (DELETE /links/:id)
+ * 🛡️ IT管理者ダッシュボード情報取得API (GET /admin/dashboard)
  */
-app.delete("/links/:id", async (c) => {
-  await ensureLinksTable(c.env.DB);
+app.get("/admin/dashboard", async (c) => {
   const db = drizzle(c.env.DB);
-  const id = c.req.param("id");
+  const teamId = c.req.query("teamId");
+  const userId = c.req.query("userId");
+
+  // 1. デモモードまたはチーム未指定時のフォールバック
+  if (!teamId || teamId === "demo-team") {
+    return c.json({
+      success: true,
+      isDemo: true,
+      canManage: true,
+      myRole: "admin",
+      team: {
+        id: "demo-team",
+        name: DEMO_TEAM.name,
+        orgName: DEMO_TEAM.orgName,
+        inviteCode: "DEMO2026",
+      },
+      stats: {
+        pendingCount: 2,
+        activeCount: 18,
+        playerCount: 14,
+      },
+      pendingRequests: [
+        {
+          memberId: "demo-pending-1",
+          userId: null,
+          name: "鈴木 健一",
+          nameKana: "スズキ ケンイチ",
+          memberType: "father",
+          phone: "090-1234-5678",
+          email: "kenichi.suzuki@example.com",
+          joinedAt: "2026-10-24T14:30:00Z",
+          role: "pending",
+        },
+        {
+          memberId: "demo-pending-2",
+          userId: null,
+          name: "佐藤 美咲",
+          nameKana: "サトウ ミサキ",
+          memberType: "mother",
+          phone: "080-9876-5432",
+          email: "misaki.sato@example.com",
+          joinedAt: "2026-10-25T08:15:00Z",
+          role: "pending",
+        },
+      ],
+      activeMembers: [
+        {
+          memberId: "demo-mem-1",
+          userId: "user-1",
+          name: "田中 監督",
+          role: "manager",
+          memberType: "staff",
+          subLabel: "監督",
+          phone: "090-0000-1111",
+        },
+        {
+          memberId: "demo-mem-2",
+          userId: "user-2",
+          name: "山田 IT担当",
+          role: "admin",
+          memberType: "staff",
+          subLabel: "IT管理",
+          phone: "090-0000-2222",
+        },
+        {
+          memberId: "demo-mem-3",
+          userId: "user-3",
+          name: "高橋 コーチ",
+          role: "coach",
+          memberType: "staff",
+          subLabel: "1班",
+          phone: "090-0000-3333",
+        },
+        {
+          memberId: "demo-mem-4",
+          userId: "user-4",
+          name: "伊藤 父母会長",
+          role: "parent",
+          memberType: "mother",
+          subLabel: "1班",
+          phone: "090-0000-4444",
+        },
+      ],
+    });
+  }
+
   try {
-    if (id.startsWith("demo-")) {
-      return c.json({ success: true, message: "関連リンクを削除しました（デモ）" });
+    // 2. チーム情報の取得
+    const targetTeam = await db
+      .select({
+        id: teams.id,
+        name: teams.name,
+        orgName: organizations.name,
+        createdBy: teams.createdBy,
+        memberSubLabels: teams.memberSubLabels,
+      })
+      .from(teams)
+      .leftJoin(organizations, eq(teams.organizationId, organizations.id))
+      .where(eq(teams.id, teamId))
+      .get();
+
+    if (!targetTeam) {
+      return c.json({ success: false, error: "チームが見つかりません" }, 404);
     }
 
-    await db.delete(teamLinks).where(eq(teamLinks.id, id));
-    return c.json({ success: true, message: "関連リンクを削除しました" });
+    // 3. ユーザーの所属・権限チェック
+    let myRole: string = "viewer";
+    let isFounder = false;
+    if (userId) {
+      const myMembership = await db
+        .select()
+        .from(teamMembers)
+        .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, userId)))
+        .get();
+
+      if (myMembership) {
+        myRole = myMembership.role || "viewer";
+      }
+      isFounder = targetTeam.createdBy === userId;
+    }
+
+    const canManage = isFounder || canManageTeam(myRole);
+
+    // 4. サブラベルパース
+    let subLabelsMap: Record<string, string> = {};
+    try {
+      if (targetTeam.memberSubLabels) {
+        subLabelsMap = JSON.parse(targetTeam.memberSubLabels);
+      }
+    } catch {}
+
+    // 5. メンバー一覧クエリ
+    const allMembers = await db
+      .select({
+        memberId: teamMembers.id,
+        userId: teamMembers.userId,
+        name: teamMembers.name,
+        nameKana: teamMembers.nameKana,
+        memberType: teamMembers.memberType,
+        phone: teamMembers.phone,
+        email: teamMembers.email,
+        role: teamMembers.role,
+        status: teamMembers.status,
+        joinedAt: teamMembers.joinedAt,
+      })
+      .from(teamMembers)
+      .where(eq(teamMembers.teamId, teamId))
+      .orderBy(desc(teamMembers.joinedAt))
+      .all();
+
+    const pendingRequests = allMembers
+      .filter((m) => m.status === "pending")
+      .map((m) => ({
+        ...m,
+        joinedAt: m.joinedAt ? new Date(m.joinedAt).toISOString() : new Date().toISOString(),
+      }));
+
+    const activeMembers = allMembers
+      .filter((m) => m.status === "active")
+      .map((m) => ({
+        ...m,
+        subLabel: subLabelsMap[m.memberId] || "",
+        joinedAt: m.joinedAt ? new Date(m.joinedAt).toISOString() : undefined,
+      }));
+
+    // 選手数カウント
+    const playersList = await db
+      .select({ id: players.id })
+      .from(players)
+      .where(eq(players.teamId, teamId))
+      .all();
+
+    return c.json({
+      success: true,
+      isDemo: false,
+      canManage,
+      myRole,
+      team: {
+        id: targetTeam.id,
+        name: `${targetTeam.orgName ? `${targetTeam.orgName} ` : ""}${targetTeam.name}`.trim(),
+        shortName: targetTeam.name,
+        inviteCode: targetTeam.id,
+      },
+      stats: {
+        pendingCount: pendingRequests.length,
+        activeCount: activeMembers.length,
+        playerCount: playersList.length,
+      },
+      pendingRequests,
+      activeMembers,
+    });
   } catch (error: any) {
-    console.error("Failed to delete link:", error);
-    return c.json({ success: false, error: error?.message || "関連リンクの削除に失敗しました" }, 500);
+    console.error("Failed to load admin dashboard:", error);
+    return c.json({ success: false, error: error?.message || "データの取得に失敗しました" }, 500);
+  }
+});
+
+/**
+ * 🛡️ 参加申請の承認・却下実行API (POST /admin/requests/action)
+ */
+app.post("/admin/requests/action", async (c) => {
+  const db = drizzle(c.env.DB);
+  try {
+    const body = await c.req.json();
+    const { teamId, memberId, action, role = "parent" } = body;
+
+    if (!teamId || !memberId || !action) {
+      return c.json({ success: false, error: "パラメーターが不足しています" }, 400);
+    }
+
+    if (teamId === "demo-team" || memberId.startsWith("demo-")) {
+      return c.json({
+        success: true,
+        message: action === "approve" ? "参加申請を承認しました（デモ）" : "参加申請を却下しました（デモ）",
+      });
+    }
+
+    if (action === "approve") {
+      await db
+        .update(teamMembers)
+        .set({ status: "active", role: role })
+        .where(and(eq(teamMembers.id, memberId), eq(teamMembers.teamId, teamId)));
+
+      return c.json({ success: true, message: "参加申請を承認しました" });
+    } else {
+      await db
+        .delete(teamMembers)
+        .where(and(eq(teamMembers.id, memberId), eq(teamMembers.teamId, teamId)));
+
+      return c.json({ success: true, message: "参加申請を却下しました" });
+    }
+  } catch (error: any) {
+    console.error("Failed to execute request action:", error);
+    return c.json({ success: false, error: error?.message || "処理に失敗しました" }, 500);
+  }
+});
+
+/**
+ * 🛡️ メンバーの役割・班更新API (POST /admin/members/update)
+ */
+app.post("/admin/members/update", async (c) => {
+  const db = drizzle(c.env.DB);
+  try {
+    const body = await c.req.json();
+    const { teamId, memberId, role, subLabel } = body;
+
+    if (!teamId || !memberId) {
+      return c.json({ success: false, error: "パラメーターが不足しています" }, 400);
+    }
+
+    if (teamId === "demo-team" || memberId.startsWith("demo-")) {
+      return c.json({ success: true, message: "設定を更新しました（デモ）" });
+    }
+
+    if (role) {
+      await db
+        .update(teamMembers)
+        .set({ role })
+        .where(and(eq(teamMembers.id, memberId), eq(teamMembers.teamId, teamId)));
+    }
+
+    if (subLabel !== undefined) {
+      const teamRow = await db.select({ memberSubLabels: teams.memberSubLabels }).from(teams).where(eq(teams.id, teamId)).get();
+      let currentMap: Record<string, string> = {};
+      try {
+        if (teamRow?.memberSubLabels) {
+          currentMap = JSON.parse(teamRow.memberSubLabels);
+        }
+      } catch {}
+
+      if (subLabel) {
+        currentMap[memberId] = subLabel.trim();
+      } else {
+        delete currentMap[memberId];
+      }
+
+      await db
+        .update(teams)
+        .set({ memberSubLabels: JSON.stringify(currentMap) })
+        .where(eq(teams.id, teamId));
+    }
+
+    return c.json({ success: true, message: "メンバー情報を更新しました" });
+  } catch (error: any) {
+    console.error("Failed to update member:", error);
+    return c.json({ success: false, error: error?.message || "更新に失敗しました" }, 500);
   }
 });
 

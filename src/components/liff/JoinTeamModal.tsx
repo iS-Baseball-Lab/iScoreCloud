@@ -13,7 +13,7 @@ interface JoinTeamModalProps {
 }
 
 export function JoinTeamModal({ isOpen, onClose, onSuccess }: JoinTeamModalProps) {
-  const { profile } = useLiff();
+  const { profile, currentTeam } = useLiff();
   const [mounted, setMounted] = useState(false);
   const [inviteCode, setInviteCode] = useState("");
   const [name, setName] = useState(profile?.displayName || "");
@@ -25,7 +25,20 @@ export function JoinTeamModal({ isOpen, onClose, onSuccess }: JoinTeamModalProps
 
   useEffect(() => {
     setMounted(true);
+    if (typeof window !== "undefined") {
+      const urlParams = new URLSearchParams(window.location.search);
+      const joinParam = urlParams.get("join") || urlParams.get("teamId") || urlParams.get("code");
+      if (joinParam) {
+        setInviteCode(joinParam);
+      }
+    }
   }, []);
+
+  useEffect(() => {
+    if (profile?.displayName && !name) {
+      setName(profile.displayName);
+    }
+  }, [profile?.displayName, name]);
 
   if (!isOpen || !mounted) return null;
 
