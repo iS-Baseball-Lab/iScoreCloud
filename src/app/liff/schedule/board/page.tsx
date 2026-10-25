@@ -381,6 +381,16 @@ export default function AttendanceMatrixBoardPage() {
   } | null>(null);
   const [isSavingCell, setIsSavingCell] = useState(false);
 
+  // 💬 コメント閲覧モーダル状態（編集権限がないユーザー用）
+  const [viewingComment, setViewingComment] = useState<{
+    eventId: string;
+    eventTitle: string;
+    eventDate: string;
+    person: MemberPerson;
+    status: AttendanceMarkType;
+    comment: string;
+  } | null>(null);
+
   // 日別メモ編集状態
   const [editingDayNote, setEditingDayNote] = useState<{
     eventId: string;
@@ -942,6 +952,18 @@ export default function AttendanceMatrixBoardPage() {
     const currentAtt = matrix[event.id]?.[person.id] || { status: "pending", comment: "" };
 
     if (!isAllowed) {
+      // 💬 編集権限がなくても、コメントがある場合はコメント閲覧モーダルを表示！
+      if (currentAtt.comment && currentAtt.comment.trim()) {
+        setViewingComment({
+          eventId: event.id,
+          eventTitle: event.title,
+          eventDate: `${event.date}(${event.dayOfWeek})`,
+          person,
+          status: currentAtt.status as AttendanceMarkType,
+          comment: currentAtt.comment.trim(),
+        });
+        return;
+      }
       toast.info(`${person.name} さんの出欠変更権限がありません（本人または管理者のみ編集可能）`);
       return;
     }
@@ -1593,6 +1615,8 @@ export default function AttendanceMatrixBoardPage() {
                               className={`w-9 min-w-[35px] max-w-[35px] p-0.5 text-center border-b border-r border-border/50 bg-white dark:bg-zinc-900 transition-all overflow-hidden ${
                                 isEditable
                                   ? "cursor-pointer hover:bg-primary/10 active:scale-90"
+                                  : att.comment
+                                  ? "cursor-pointer hover:bg-amber-500/15 active:scale-90"
                                   : "opacity-90"
                               } ${isMe ? "bg-blue-50/50 dark:bg-blue-950/30" : ""}`}
                             >
@@ -1742,6 +1766,97 @@ export default function AttendanceMatrixBoardPage() {
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            💬 コメント・連絡事項閲覧モーダル (閲覧専用・権限なし時用)
+            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+        {viewingComment && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-3.5 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+            <div
+              className="absolute inset-0"
+              onClick={() => setViewingComment(null)}
+            />
+            <div className="relative w-full max-w-sm bg-card rounded-2xl border border-border shadow-2xl p-4 sm:p-5 space-y-3.5 animate-in zoom-in-95 duration-150">
+              {/* モーダルヘッダー */}
+              <div className="flex items-start justify-between pb-2 border-b border-border/60">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                    <MessageSquare className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-black text-foreground truncate">
+                      {viewingComment.person.name} さんの連絡事項
+                    </h3>
+                    <p className="text-[10.5px] text-muted-foreground font-bold mt-0.5 truncate">
+                      📅 {viewingComment.eventDate} : {viewingComment.eventTitle}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setViewingComment(null)}
+                  className="p-1.5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground active:scale-90 shrink-0 ml-1"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* 出欠ステータス & グループ情報 */}
+              <div className="flex items-center justify-between p-2.5 rounded-xl bg-muted/40 border border-border/50">
+                <div className="flex items-center gap-2">
+                  {(() => {
+                    const statusConfig = ATTENDANCE_STATUSES[viewingComment.status] || ATTENDANCE_STATUSES.pending;
+                    return (
+                      <>
+                        <span className={`w-6 h-6 rounded-md flex items-center justify-center text-[10.5px] font-black shrink-0 ${statusConfig.badgeClass}`}>
+                          {statusConfig.mark}
+                        </span>
+                        <div>
+                          <p className="text-xs font-black text-foreground">
+                            {statusConfig.label}
+                          </p>
+                          <p className="text-[9.5px] text-muted-foreground">
+                            出欠ステータス
+                          </p>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+                {viewingComment.person.subText && (
+                  <span className="text-[10px] font-bold text-muted-foreground px-2 py-0.5 rounded-full bg-background border border-border/60">
+                    {viewingComment.person.subText}
+                  </span>
+                )}
+              </div>
+
+              {/* コメント本文表示カード */}
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-black text-foreground flex items-center gap-1">
+                  <span>コメント・備考メモ:</span>
+                </label>
+                <div className="p-3 rounded-xl bg-amber-500/5 dark:bg-amber-500/10 border border-amber-500/30 text-xs font-medium text-foreground whitespace-pre-wrap break-words leading-relaxed select-text shadow-2xs">
+                  {viewingComment.comment}
+                </div>
+              </div>
+
+              {/* 権限注記 */}
+              <p className="text-[10px] text-muted-foreground/80 text-center font-bold">
+                ※ 出欠の変更はご本人、またはIT管理者のみ可能です
+              </p>
+
+              {/* 閉じるボタン */}
+              <button
+                type="button"
+                onClick={() => setViewingComment(null)}
+                className="w-full py-2.5 rounded-xl bg-muted hover:bg-muted/80 text-foreground font-black text-xs active:scale-95 transition-all border border-border/60"
+              >
+                閉じる
+              </button>
             </div>
           </div>
         )}
