@@ -422,10 +422,8 @@ export const handleMergeMembers = async (c: Context) => {
     if (!target) return c.json({ error: '統合先のメンバーが見つかりません' }, 404)
     if (!source) return c.json({ error: '統合元のメンバーが見つかりません' }, 404)
 
-    const resolvedUserId = target.userId || source.userId
-    if (target.userId && source.userId && target.userId !== source.userId) {
-      return c.json({ error: '両方のメンバーに異なるログインアカウントが紐付いているため統合できません。' }, 400)
-    }
+    // 💡 統合後のユーザーID: targetのuserIdを優先し、なければsourceのuserIdを採用
+    const resolvedUserId = target.userId || source.userId;
 
     // 1. 🔗 親子関係の統合 (parentChildRelations)
     const sourceRelations = await db.select().from(parentChildRelations)

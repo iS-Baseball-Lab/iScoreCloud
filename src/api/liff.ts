@@ -12,6 +12,7 @@ import {
   teamMembers,
   players,
   user,
+  account,
   eventCarpools,
   eventCarpoolRiders,
   memberCars,
@@ -363,6 +364,55 @@ app.get("/hub", async (c) => {
   const userName = c.req.query("userName");
 
   try {
+    // ユーザー特定（セッション or LINE userId or accountテーブル連携）
+    let sessionUser: any = null;
+    try {
+      const auth = getAuth(c.env.DB, c.env);
+      const session = await auth.api.getSession({ headers: c.req.raw.headers as any }).catch(() => null);
+      sessionUser = session?.user;
+    } catch {}
+
+    const authUserId = sessionUser?.id;
+    const isSysAdmin = (sessionUser as AuthUser)?.role === "SYSTEM_ADMIN";
+
+    // 候補となるすべてのユーザーID（LINE userId + Web Better-Auth ID）
+    const candidateUserIds = new Set<string>();
+    if (userId) candidateUserIds.add(userId);
+    if (authUserId) candidateUserIds.add(authUserId);
+
+    if (userId) {
+      try {
+        const linked = await db
+          .select({ userId: account.userId })
+          .from(account)
+          .where(and(eq(account.providerId, "line"), eq(account.accountId, userId)))
+          .all();
+        for (const item of linked) {
+          if (item.userId) candidateUserIds.add(item.userId);
+        }
+      } catch {}
+    }
+
+    const candidateIdsArray = Array.from(candidateUserIds);
+
+    // ユーザーが所属（承認済み）しているチームID一覧を取得
+    const userTeamIds = new Set<string>();
+    if (candidateIdsArray.length > 0) {
+      const memberships = await db
+        .select({ teamId: teamMembers.teamId })
+        .from(teamMembers)
+        .where(
+          and(
+            or(...candidateIdsArray.map((uid) => eq(teamMembers.userId, uid))),
+            or(eq(teamMembers.status, "active"), sql`${teamMembers.status} IS NULL`)
+          )
+        )
+        .all();
+      for (const m of memberships) {
+        if (m.teamId) userTeamIds.add(m.teamId);
+      }
+    }
+
     // 全チーム一覧の取得 (チームスイッチャー用)
     const allTeams = await db
       .select({
@@ -377,7 +427,13 @@ app.get("/hub", async (c) => {
       .orderBy(desc(teams.createdAt))
       .all();
 
-    const teamList = allTeams.map((t) => ({
+    // 🛡️ チームリストの安全な制限:
+    // システム管理者は全チーム、参加済みユーザーは所属チームのみ、未参加ユーザーはデモのみ
+    const allowedTeams = isSysAdmin
+      ? allTeams
+      : allTeams.filter((t) => userTeamIds.has(t.id));
+
+    const teamList = allowedTeams.map((t) => ({
       id: t.id,
       name: `${t.orgName ? `${t.orgName} ` : ""}${t.name}`.trim(),
       orgName: t.orgName || t.name,
@@ -387,26 +443,29 @@ app.get("/hub", async (c) => {
       isDemo: false,
     }));
 
-    // ログインメンバーもいつでも体験できるよう、末尾にデモチームを追加
+    // 体験デモチームは常時追加
     teamList.push(DEMO_TEAM);
 
     let targetTeam: any = null;
 
     if (requestedTeamId && requestedTeamId !== "demo-team") {
-      targetTeam = await db
-        .select({
-          id: teams.id,
-          name: teams.name,
-          managerName: teams.managerName,
-          homeGround: teams.homeGround,
-          year: teams.year,
-          orgName: organizations.name,
-          logoImageUrl: organizations.logoImageUrl,
-        })
-        .from(teams)
-        .leftJoin(organizations, eq(teams.organizationId, organizations.id))
-        .where(eq(teams.id, requestedTeamId))
-        .get();
+      // 🛡️ 所属しているチームまたはシステム管理者のみ targetTeam としてアクセス可能
+      if (isSysAdmin || userTeamIds.has(requestedTeamId)) {
+        targetTeam = await db
+          .select({
+            id: teams.id,
+            name: teams.name,
+            managerName: teams.managerName,
+            homeGround: teams.homeGround,
+            year: teams.year,
+            orgName: organizations.name,
+            logoImageUrl: organizations.logoImageUrl,
+          })
+          .from(teams)
+          .leftJoin(organizations, eq(teams.organizationId, organizations.id))
+          .where(eq(teams.id, requestedTeamId))
+          .get();
+      }
     }
 
     if (!targetTeam) {
@@ -1272,8 +1331,26 @@ app.get("/attendance-matrix", async (c) => {
     }).from(teams).where(eq(teams.id, teamId)).get();
     const isTeamCreator = Boolean(authUserId && teamRecord?.createdBy === authUserId);
 
+    // 候補となるすべてのユーザーID（LINE userId + Web Better-Auth ID）
+    const candidateUserIds = new Set<string>();
+    if (userId) candidateUserIds.add(userId);
+    if (authUserId) candidateUserIds.add(authUserId);
+
+    if (userId) {
+      try {
+        const linked = await db
+          .select({ userId: account.userId })
+          .from(account)
+          .where(and(eq(account.providerId, "line"), eq(account.accountId, userId)))
+          .all();
+        for (const item of linked) {
+          if (item.userId) candidateUserIds.add(item.userId);
+        }
+      } catch {}
+    }
+
     let currentMember: any = null;
-    const searchUserIds = [userId, authUserId].filter(Boolean) as string[];
+    const searchUserIds = Array.from(candidateUserIds);
     for (const uid of searchUserIds) {
       currentMember = await db
         .select()
@@ -1301,14 +1378,17 @@ app.get("/attendance-matrix", async (c) => {
 
     const myMemberId = currentMember?.id || null;
     const roleLower = currentMember?.role?.toLowerCase() || "";
-    const isManager = Boolean(
+    const isITAdmin = Boolean(
       isSysAdmin ||
       isTeamCreator ||
-      roleLower === "manager" ||
       roleLower === "admin" ||
-      roleLower === "coach" ||
-      roleLower === "scorer" ||
       roleLower === "system_admin"
+    );
+    const isManager = Boolean(
+      isITAdmin ||
+      roleLower === "manager" ||
+      roleLower === "coach" ||
+      roleLower === "scorer"
     );
 
     // 2. 親子関係の取得
@@ -1571,6 +1651,7 @@ app.get("/attendance-matrix", async (c) => {
       memberSubLabels,
       myInfo: {
         memberId: myMemberId,
+        isITAdmin,
         groupType: myMemberId ? (
           fathersList.some(f => f.id === myMemberId) ? "father" :
           mothersList.some(m => m.id === myMemberId) ? "mother" :
@@ -4595,10 +4676,8 @@ app.post("/admin/members/merge", async (c) => {
     if (!target) return c.json({ success: false, error: "統合先のメンバーが見つかりません" }, 404);
     if (!source) return c.json({ success: false, error: "統合元のメンバーが見つかりません" }, 404);
 
+    // 💡 統合後のユーザーID: targetのuserIdを優先し、なければsourceのuserIdを採用
     const resolvedUserId = target.userId || source.userId;
-    if (target.userId && source.userId && target.userId !== source.userId) {
-      return c.json({ success: false, error: "両方のメンバーに異なるログインアカウントが紐付いているため統合できません。" }, 400);
-    }
 
     // 1. 🔗 親子関係の統合 (parentChildRelations)
     const sourceRelations = await db.select().from(parentChildRelations)

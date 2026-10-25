@@ -319,11 +319,13 @@ export default function AttendanceMatrixBoardPage() {
   const [myInfo, setMyInfo] = useState<{
     memberId: string | null;
     playerIds: string[];
+    isITAdmin: boolean;
     isManager: boolean;
     name: string;
   }>({
     memberId: null,
     playerIds: [],
+    isITAdmin: false,
     isManager: false,
     name: "",
   });
@@ -418,11 +420,15 @@ export default function AttendanceMatrixBoardPage() {
         });
         setMatrix(data.matrix || {});
         if (data.myInfo) {
-          setMyInfo(data.myInfo);
-          // 管理者ならデフォルトで管理モードをオンにできる
-          if (data.myInfo.isManager) {
-            setIsManagerOverrideMode(true);
-          }
+          setMyInfo({
+            memberId: data.myInfo.memberId || null,
+            playerIds: data.myInfo.playerIds || [],
+            isITAdmin: !!data.myInfo.isITAdmin,
+            isManager: !!data.myInfo.isManager,
+            name: data.myInfo.name || "",
+          });
+          // 🛡️ 初期状態は誤操作防止のため「通常入力（OFF）」
+          setIsManagerOverrideMode(false);
         }
 
         // 🌟 1. 自分が所属するグループの初期選択 (父・母・スタッフ・選手)
@@ -922,11 +928,13 @@ export default function AttendanceMatrixBoardPage() {
   // 編集権限チェック
   const canEditPerson = useCallback((personId: string, groupType: string) => {
     if (isDemo) return true; // デモ時は自由に操作可能
-    if (myInfo.isManager) return true; // 🌟 管理者は全員の出欠を自由にメンテ・登録可能！
+    // 🌟 IT管理者が「代理入力ON」を有効にしている場合のみ、全メンバーを代理入力可能！
+    if (myInfo.isITAdmin && isManagerOverrideMode) return true;
+    // 通常（OFF時、および一般保護者・選手）は、自分自身または自分の子ども選手のみ編集可能
     if (myInfo.memberId && myInfo.memberId === personId) return true;
     if (myInfo.playerIds && myInfo.playerIds.includes(personId)) return true;
     return false;
-  }, [isDemo, myInfo]);
+  }, [isDemo, myInfo, isManagerOverrideMode]);
 
   // セルクリック時の処理
   const handleCellClick = (event: EventItem, person: MemberPerson) => {
@@ -1202,7 +1210,7 @@ export default function AttendanceMatrixBoardPage() {
                 </button>
               )}
 
-              {myInfo.isManager && (
+              {myInfo.isITAdmin && (
                 <button
                   type="button"
                   onClick={() => setIsManagerOverrideMode(prev => !prev)}
