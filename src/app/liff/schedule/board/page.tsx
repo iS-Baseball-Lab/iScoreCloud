@@ -1706,31 +1706,15 @@ export default function AttendanceMatrixBoardPage() {
                               )}
                             </div>
 
-                            <div className="flex items-center gap-0.5 shrink-0">
-                              {/* 日別メモ・備考ボタン */}
-                              <button
-                                type="button"
-                                onClick={() => handleOpenDayNoteModal(ev)}
-                                title={ev.description ? `備考: ${ev.description} (タップして編集)` : "日別の備考・メモを入力"}
-                                className={`p-0.5 rounded transition-all cursor-pointer ${
-                                  ev.description
-                                    ? "text-amber-600 dark:text-amber-400 bg-amber-500/15 hover:bg-amber-500/25"
-                                    : "text-muted-foreground/60 hover:text-foreground hover:bg-muted"
-                                }`}
-                              >
-                                <FileText className="w-2.5 h-2.5" />
-                              </button>
-
-                              {/* LINE集計コピーボタン */}
-                              <button
-                                type="button"
-                                onClick={() => handleCopyLineSummary(ev)}
-                                title="LINE連絡用に集計コピー"
-                                className="p-0.5 text-muted-foreground hover:text-primary rounded hover:bg-muted active:scale-90 transition-all cursor-pointer"
-                              >
-                                <ClipboardCopy className="w-2.5 h-2.5" />
-                              </button>
-                            </div>
+                            {/* LINE集計コピーボタン (タップしやすいよう大きめに調整) */}
+                            <button
+                              type="button"
+                              onClick={() => handleCopyLineSummary(ev)}
+                              title="LINE連絡用に集計コピー"
+                              className="w-6 h-6 flex items-center justify-center text-muted-foreground hover:text-primary active:text-primary bg-muted/50 hover:bg-primary/10 active:bg-primary/20 rounded border border-border/40 active:scale-95 transition-all cursor-pointer shrink-0"
+                            >
+                              <ClipboardCopy className="w-3.5 h-3.5" />
+                            </button>
                           </div>
 
                           <p className="text-[9.5px] font-black text-foreground truncate max-w-[115px] mt-0.5 leading-tight" title={ev.title}>
