@@ -469,10 +469,24 @@ app.get("/hub", async (c) => {
     // 体験デモチームは常時追加
     teamList.push(DEMO_TEAM);
 
+    // 🌟 0. 明示的に体験デモチームが要求された場合は、所属チームによる上書きを行わず即座にデモチームとして返却
+    if (requestedTeamId === "demo-team") {
+      const liffId = c.env.NEXT_PUBLIC_LIFF_ID || c.env.LIFF_ID || "";
+      return c.json({
+        success: true,
+        liffId,
+        isDemo: true,
+        team: DEMO_TEAM,
+        teams: teamList,
+        nextEvent: DEMO_NEXT_EVENT,
+        matches: DEMO_MATCHES,
+      });
+    }
+
     let targetTeam: any = null;
 
     // 1. 指定チームが存在すれば確実にロード（アクセス遮断を解除し、正常表示）
-    if (requestedTeamId && requestedTeamId !== "demo-team") {
+    if (requestedTeamId) {
       targetTeam = await db
         .select({
           id: teams.id,
@@ -489,7 +503,7 @@ app.get("/hub", async (c) => {
         .get();
     }
 
-    // 2. 指定がない場合、またはデモ指定時でユーザーに所属チームがある場合は所属チームを自動選択
+    // 2. 指定がない場合でユーザーに所属チームがある場合は所属チームを自動選択
     if (!targetTeam) {
       if (userTeamIds.size > 0) {
         const firstUserTeamId = Array.from(userTeamIds)[0];
@@ -498,7 +512,7 @@ app.get("/hub", async (c) => {
     }
 
     // 3. それでも無ければ全チームの先頭チームを採用（チームがあればデモではなく本番チームへ）
-    if (!targetTeam && allTeams.length > 0 && requestedTeamId !== "demo-team") {
+    if (!targetTeam && allTeams.length > 0) {
       targetTeam = allTeams[0];
     }
 

@@ -132,12 +132,22 @@ export function LiffProvider({
     if (teamId === "demo-team") {
       setIsDemo(true);
       localStorage.setItem("iscore_isDemo", "true");
+      localStorage.setItem("iscore_selectedTeamId", "demo-team");
       setTeams((prevTeams) => {
-        const found = prevTeams.find((t) => t.id === "demo-team");
-        if (found) {
-          setCurrentTeam(found);
-          localStorage.setItem("iscore_currentTeam_json", JSON.stringify(found));
+        let found = prevTeams.find((t) => t.id === "demo-team");
+        if (!found) {
+          found = {
+            id: "demo-team",
+            name: "iScoreドリームス",
+            orgName: "iScoreドリームス",
+            teamName: "体験デモチーム",
+            shortName: "ドリームス",
+            isDemo: true,
+          };
         }
+        setCurrentTeam(found);
+        localStorage.setItem("iscore_selectedTeamName", found.name);
+        localStorage.setItem("iscore_currentTeam_json", JSON.stringify(found));
         return prevTeams;
       });
     } else {
@@ -162,11 +172,21 @@ export function LiffProvider({
       const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
       const urlTeamId = urlParams?.get("teamId");
       const storedTeamId = typeof window !== "undefined" ? localStorage.getItem("iscore_selectedTeamId") : null;
+      const storedIsDemo = typeof window !== "undefined" ? localStorage.getItem("iscore_isDemo") === "true" : false;
       const storedUserId = typeof window !== "undefined" ? (localStorage.getItem("iscore_user_id") || localStorage.getItem("iscore_userId") || "") : "";
       const storedUserName = typeof window !== "undefined" ? (localStorage.getItem("iscore_user_name") || "") : "";
 
-      // 過去のエラー等で storedTeamId が "demo-team" になってしまっていた場合、URL指定がなければクリアして本番チームの再判定を優先
-      const targetTeamId = urlTeamId || (storedTeamId && storedTeamId !== "demo-team" ? storedTeamId : null);
+      // 明示的なURL指定を最優先。なければ保存されたチームIDを使用
+      let targetTeamId: string | null = null;
+      if (urlTeamId) {
+        targetTeamId = urlTeamId;
+      } else if (storedTeamId) {
+        if (storedTeamId === "demo-team") {
+          if (storedIsDemo) targetTeamId = "demo-team";
+        } else {
+          targetTeamId = storedTeamId;
+        }
+      }
 
       const params = new URLSearchParams();
       if (targetTeamId) params.set("teamId", targetTeamId);
@@ -193,9 +213,19 @@ export function LiffProvider({
 
         // 選択中チームの特定
         let activeTeam: LiffTeamItem | null = null;
-        if (targetTeamId && !demoFlag) {
+        if (demoFlag || targetTeamId === "demo-team") {
+          activeTeam = teamList.find((t) => t.id === "demo-team") || {
+            id: "demo-team",
+            name: "iScoreドリームス",
+            orgName: "iScoreドリームス",
+            teamName: "体験デモチーム",
+            shortName: "ドリームス",
+            isDemo: true,
+          };
+        } else if (targetTeamId) {
           activeTeam = teamList.find((t) => t.id === targetTeamId) || null;
         }
+
         if (!activeTeam && data.team?.id) {
           activeTeam = {
             id: data.team.id,
@@ -214,10 +244,8 @@ export function LiffProvider({
         if (activeTeam) {
           setCurrentTeam(activeTeam);
           localStorage.setItem("iscore_currentTeam_json", JSON.stringify(activeTeam));
-          if (!demoFlag && activeTeam.id !== "demo-team") {
-            localStorage.setItem("iscore_selectedTeamId", activeTeam.id);
-            localStorage.setItem("iscore_selectedTeamName", activeTeam.name);
-          }
+          localStorage.setItem("iscore_selectedTeamId", activeTeam.id);
+          localStorage.setItem("iscore_selectedTeamName", activeTeam.name);
         }
       }
     } catch (err) {
