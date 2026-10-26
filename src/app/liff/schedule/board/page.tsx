@@ -1037,57 +1037,198 @@ export default function AttendanceMatrixBoardPage() {
   };
 
   // 📋 LINE連絡用テキストコピー
-  const handleCopyLineSummary = (event: EventItem) => {
+  const handleCopyLineSummary = async (event: EventItem) => {
     const evMatrix = matrix[event.id] || {};
-    const dutyNames: string[] = [];
-    const helpNames: string[] = [];
-    const setupNames: string[] = [];
-    const gameNames: string[] = [];
-    const absentNames: string[] = [];
 
-    // メンバー名を取得
-    const allParents = groups.parents.length > 0 ? groups.parents : [...groups.mothers, ...groups.fathers];
-    const allMembersMap = new Map<string, string>();
-    [...groups.players, ...allParents, ...groups.staff].forEach(m => {
-      allMembersMap.set(m.id, m.name);
+    // 1. 日付 & 当番日のフォーマット (例: 10月25日（日）3班当番日)
+    let dateStr = "";
+    if (event.dateStr) {
+      const parts = event.dateStr.split("-");
+      const m = parseInt(parts[1], 10);
+      const d = parseInt(parts[2], 10);
+      dateStr = `${m}月${d}日（${event.dayOfWeek}）`;
+    } else if (event.date) {
+      const [m, d] = event.date.split("/");
+      dateStr = `${parseInt(m, 10)}月${parseInt(d, 10)}日（${event.dayOfWeek}）`;
+    } else {
+      dateStr = `（${event.dayOfWeek}）`;
+    }
+
+    let dutySuffix = "";
+    if (event.dutyGroup && event.dutyGroup !== "なし") {
+      const rawDuty = event.dutyGroup.trim();
+      if (rawDuty.endsWith("日") || rawDuty.includes("当番日")) {
+        dutySuffix = rawDuty;
+      } else if (rawDuty.includes("当番")) {
+        dutySuffix = `${rawDuty}日`;
+      } else {
+        dutySuffix = `${rawDuty}当番日`;
+      }
+    }
+    const line1 = dutySuffix ? `${dateStr}${dutySuffix}` : (event.title ? `${dateStr} ${event.title}` : dateStr);
+
+    // 2. チーム名 ＋ グループ名（敬称略） (例: 29期父の参加状況（敬称略）)
+    let groupLabel = "メンバー";
+    if (selectedGroupTab === "father") groupLabel = "父";
+    else if (selectedGroupTab === "mother") groupLabel = "母";
+    else if (selectedGroupTab === "player") groupLabel = "選手";
+    else if (selectedGroupTab === "staff") groupLabel = "指導者・スタッフ";
+    else if (selectedGroupTab === "parent") groupLabel = "保護者";
+
+    let teamPrefix = currentTeam?.teamName || currentTeam?.shortName || currentTeam?.name || "";
+    // 「29期」などの期表記があれば抽出、無ければチーム名をそのまま使用
+    const kiMatch = teamPrefix.match(/\d+期/);
+    if (kiMatch) {
+      teamPrefix = kiMatch[0];
+    }
+    const line2 = `${teamPrefix}${groupLabel}の参加状況（敬称略）`;
+
+    // 苗字の抽出関数（スペース区切りなら苗字、無ければ登録名）
+    const getLastName = (fullName: string): string => {
+      if (!fullName) return "";
+      const trimmed = fullName.trim();
+      if (trimmed.includes(" ")) return trimmed.split(" ")[0];
+      if (trimmed.includes("　")) return trimmed.split("　")[0];
+      return trimmed;
+    };
+
+    // 当番班の一致判定
+    const isDutyGroupMatch = (memberGroup: string, eventDuty: string): boolean => {
+      if (!memberGroup || !eventDuty || eventDuty === "なし") return false;
+      const mg = memberGroup.trim();
+      const eg = eventDuty.trim();
+      if (mg === eg) return true;
+      if (eg.includes(mg) || mg.includes(eg)) return true;
+      const mNum = mg.match(/\d+/)?.[0];
+      const eNum = eg.match(/\d+/)?.[0];
+      if (mNum && eNum && mNum === eNum) return true;
+      const mAlpha = mg.match(/[a-zA-Z]/)?.[0]?.toUpperCase();
+      const eAlpha = eg.match(/[a-zA-Z]/)?.[0]?.toUpperCase();
+      if (mAlpha && eAlpha && mAlpha === eAlpha) return true;
+      return false;
+    };
+
+    // 対象メンバーの抽出 (現在表示中のタブのメンバーを優先)
+    const targetMembers = currentMembers.length > 0 ? currentMembers : groups.players;
+
+    const dutyList: Array<{ name: string; comment: string }> = [];
+    const helpList: Array<{ name: string; comment: string }> = [];
+    const setupList: Array<{ name: string; comment: string }> = [];
+    const gameList: Array<{ name: string; comment: string }> = [];
+    const dutyAbsentList: Array<{ name: string; comment: string }> = [];
+    const playerAbsentList: Array<{ name: string; comment: string }> = [];
+
+    targetMembers.forEach((person) => {
+      const cellData = evMatrix[person.id] as { status: AttendanceMarkType; comment: string } | undefined;
+      const status = cellData?.status || "pending";
+      const comment = cellData?.comment?.trim() || "";
+      const memberGroup = memberSubLabels[person.id] || person.subText || "";
+      const isDutyMember = isDutyGroupMatch(memberGroup, event.dutyGroup);
+
+      if (status === "absent" && (isDutyMember || comment.includes("当番欠席"))) {
+        dutyAbsentList.push({ name: person.name, comment });
+      } else if (status === "duty") {
+        dutyList.push({ name: person.name, comment });
+      } else if (status === "help") {
+        helpList.push({ name: person.name, comment });
+      } else if (status === "setup") {
+        setupList.push({ name: person.name, comment });
+      } else if (status === "game") {
+        gameList.push({ name: person.name, comment });
+      } else if (status === "absent") {
+        if (selectedGroupTab === "player") {
+          playerAbsentList.push({ name: person.name, comment });
+        }
+      }
     });
 
-    Object.entries(evMatrix).forEach(([pid, data]) => {
-      const name = allMembersMap.get(pid);
-      if (!name) return;
-      const cellData = data as { status: AttendanceMarkType; comment: string };
-      const note = cellData.comment ? `(${cellData.comment})` : "";
-      const display = `${name}${note}`;
+    // セクション生成関数（コメントなしはカンマ区切り、コメントありは個別行）
+    const formatSection = (title: string, list: Array<{ name: string; comment: string }>): string[] => {
+      if (list.length === 0) return [];
+      const res: string[] = [];
+      res.push(`・${title}（${list.length}名）`);
 
-      if (cellData.status === "duty") dutyNames.push(display);
-      else if (cellData.status === "help") helpNames.push(display);
-      else if (cellData.status === "setup") setupNames.push(display);
-      else if (cellData.status === "game") gameNames.push(display);
-      else if (cellData.status === "absent") absentNames.push(display);
-    });
+      const noCommentMembers = list.filter((m) => !m.comment);
+      const commentMembers = list.filter((m) => !!m.comment);
 
-    const totalCount = dutyNames.length + helpNames.length + setupNames.length + gameNames.length;
-    const enabledSet = new Set<AttendanceMarkType>(activeSummaryStatuses.map(s => s.id));
+      if (noCommentMembers.length > 0) {
+        const names = noCommentMembers.map((m) => getLastName(m.name)).join("、");
+        res.push(`　${names}`);
+      }
 
-    const lines = [
-      `【出欠集計】${event.date}(${event.dayOfWeek}) ${event.dutyGroup !== "なし" ? `[${event.dutyGroup}]` : ""}`,
-      `📌 ${event.title}`,
-      `📍 ${event.location}`,
-      ...(event.description ? [`📝 備考: ${event.description}`] : []),
-      `━━━━━━━━━━━━━━`,
-      `👥 出席計: ${totalCount}名`,
-      ...(enabledSet.has("duty") || dutyNames.length > 0 ? [`◎ 当番 (${dutyNames.length}): ${dutyNames.join(", ") || "なし"}`] : []),
-      ...(enabledSet.has("help") || helpNames.length > 0 ? [`○ ヘルプ (${helpNames.length}): ${helpNames.join(", ") || "なし"}`] : []),
-      ...(enabledSet.has("setup") || setupNames.length > 0 ? [`▲ 設営・撤収 (${setupNames.length}): ${setupNames.join(", ") || "なし"}`] : []),
-      ...(enabledSet.has("game") || gameNames.length > 0 ? [`△ 試合のみ (${gameNames.length}): ${gameNames.join(", ") || "なし"}`] : []),
-      ...(enabledSet.has("absent") || absentNames.length > 0 ? [`× 欠席 (${absentNames.length}): ${absentNames.join(", ") || "なし"}`] : []),
-      `━━━━━━━━━━━━━━`,
-      `#iScoreCloud`,
-    ];
+      for (const m of commentMembers) {
+        res.push(`　${getLastName(m.name)}（${m.comment}）`);
+      }
+
+      return res;
+    };
+
+    // ステータス名称のカスタマイズ対応
+    const currentConfigList =
+      selectedGroupTab && selectedGroupTab in groupStatusConfig
+        ? groupStatusConfig[selectedGroupTab as SortGroupKey] || []
+        : [];
+    const getCustomLabel = (id: AttendanceMarkType) => currentConfigList.find((i) => i.id === id)?.label;
+
+    const isPlayer = selectedGroupTab === "player";
+    const cleanTitle = (raw: string, fallback: string) => {
+      if (!raw) return fallback;
+      if (raw === "当番") return "当番参加";
+      if (raw === "ヘルプ") return "ヘルプ参加";
+      if (raw === "試合のみ") return "試合なら参加";
+      if (raw === "設営撤収") return "設営撤収参加";
+      return raw;
+    };
+
+    const lines: string[] = [];
+    lines.push(line1);
+    lines.push(line2);
+
+    // 当番参加 (選手時は出席)
+    lines.push(...formatSection(cleanTitle(getCustomLabel("duty") || "", isPlayer ? "出席" : "当番参加"), dutyList));
+
+    // ヘルプ参加
+    lines.push(...formatSection(cleanTitle(getCustomLabel("help") || "", "ヘルプ参加"), helpList));
+
+    // 設営撤収参加
+    lines.push(...formatSection(cleanTitle(getCustomLabel("setup") || "", "設営撤収参加"), setupList));
+
+    // 試合なら参加
+    lines.push(...formatSection(cleanTitle(getCustomLabel("game") || "", "試合なら参加"), gameList));
+
+    // 当番欠席 (当番担当の欠席者がいる場合のみ作成)
+    lines.push(...formatSection("当番欠席", dutyAbsentList));
+
+    // 選手タブ時の欠席
+    if (isPlayer && playerAbsentList.length > 0) {
+      lines.push(...formatSection("欠席", playerAbsentList));
+    }
 
     const text = lines.join("\n");
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(text);
+
+    let copied = false;
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        copied = true;
+      }
+    } catch {}
+
+    if (!copied) {
+      try {
+        const textarea = document.createElement("textarea");
+        textarea.value = text;
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        copied = document.execCommand("copy");
+        document.body.removeChild(textarea);
+      } catch {}
+    }
+
+    if (copied) {
       toast.success("LINE連絡用の集計テキストをクリップボードにコピーしました！");
     } else {
       toast.error("クリップボードへのアクセスに失敗しました");
