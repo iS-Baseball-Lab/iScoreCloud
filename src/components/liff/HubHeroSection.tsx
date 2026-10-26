@@ -433,7 +433,7 @@ export function HubHeroSection({
     myScore: 7,
     opponentScore: 4,
     status: "finished",
-    youtubeUrl: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    youtubeUrl: "https://www.youtube.com/watch?v=qkRUcYHJ1JI", // 2023 WBC 決勝 日本代表 優勝ハイライト (MLB公式)
   } : null);
 
   return (

@@ -76,7 +76,7 @@ const DEMO_MATCHES = [
     status: "finished",
     myScore: 7,
     opponentScore: 4,
-    youtubeUrl: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    youtubeUrl: "https://www.youtube.com/watch?v=qkRUcYHJ1JI", // 2023 WBC 決勝 日本代表 優勝ハイライト (MLB公式)
     matchType: "official",
     venueName: "市民第2球場",
     venueShortName: "市民第2",
@@ -92,7 +92,7 @@ const DEMO_MATCHES = [
     status: "finished",
     myScore: 4,
     opponentScore: 5,
-    youtubeUrl: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    youtubeUrl: "https://www.youtube.com/watch?v=L25-Iw6kJ7w", // 2023 WBC 優勝決定 最終イニング 大谷vsトラウト (MLB公式)
     matchType: "practice",
     venueName: "等々力球場",
     venueShortName: "等々力",
