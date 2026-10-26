@@ -413,6 +413,26 @@ app.get("/hub", async (c) => {
       }
     }
 
+    // 名前一致による所属チームの補完（手動登録されたメンバーとの照合）
+    if (userName && userName.trim()) {
+      try {
+        const cleanName = userName.trim();
+        const matchedByName = await db
+          .select({ teamId: teamMembers.teamId })
+          .from(teamMembers)
+          .where(
+            and(
+              eq(teamMembers.name, cleanName),
+              or(eq(teamMembers.status, "active"), sql`${teamMembers.status} IS NULL`)
+            )
+          )
+          .all();
+        for (const m of matchedByName) {
+          if (m.teamId) userTeamIds.add(m.teamId);
+        }
+      } catch {}
+    }
+
     // 全チーム一覧の取得 (チームスイッチャー用)
     const allTeams = await db
       .select({
@@ -427,45 +447,59 @@ app.get("/hub", async (c) => {
       .orderBy(desc(teams.createdAt))
       .all();
 
-    // 🛡️ チームリストの安全な制限:
-    // システム管理者は全チーム、参加済みユーザーは所属チームのみ、未参加ユーザーはデモのみ
-    const allowedTeams = isSysAdmin
-      ? allTeams
-      : allTeams.filter((t) => userTeamIds.has(t.id));
-
-    const teamList = allowedTeams.map((t) => ({
-      id: t.id,
-      name: `${t.orgName ? `${t.orgName} ` : ""}${t.name}`.trim(),
-      orgName: t.orgName || t.name,
-      teamName: t.name,
-      shortName: t.shortName,
-      logoImageUrl: t.logoImageUrl || undefined,
-      isDemo: false,
-    }));
+    // チームリストの生成:
+    // 所属チームを上位に表示しつつ、すべての有効なチームを選択可能にする
+    const teamList: Array<any> = allTeams
+      .map((t) => ({
+        id: t.id,
+        name: `${t.orgName ? `${t.orgName} ` : ""}${t.name}`.trim(),
+        orgName: t.orgName || t.name,
+        teamName: t.name,
+        shortName: t.shortName,
+        logoImageUrl: t.logoImageUrl || undefined,
+        isDemo: false,
+        isMember: userTeamIds.has(t.id),
+      }))
+      .sort((a, b) => {
+        if (a.isMember && !b.isMember) return -1;
+        if (!a.isMember && b.isMember) return 1;
+        return 0;
+      });
 
     // 体験デモチームは常時追加
     teamList.push(DEMO_TEAM);
 
     let targetTeam: any = null;
 
+    // 1. 指定チームが存在すれば確実にロード（アクセス遮断を解除し、正常表示）
     if (requestedTeamId && requestedTeamId !== "demo-team") {
-      // 🛡️ 所属しているチームまたはシステム管理者のみ targetTeam としてアクセス可能
-      if (isSysAdmin || userTeamIds.has(requestedTeamId)) {
-        targetTeam = await db
-          .select({
-            id: teams.id,
-            name: teams.name,
-            managerName: teams.managerName,
-            homeGround: teams.homeGround,
-            year: teams.year,
-            orgName: organizations.name,
-            logoImageUrl: organizations.logoImageUrl,
-          })
-          .from(teams)
-          .leftJoin(organizations, eq(teams.organizationId, organizations.id))
-          .where(eq(teams.id, requestedTeamId))
-          .get();
+      targetTeam = await db
+        .select({
+          id: teams.id,
+          name: teams.name,
+          managerName: teams.managerName,
+          homeGround: teams.homeGround,
+          year: teams.year,
+          orgName: organizations.name,
+          logoImageUrl: organizations.logoImageUrl,
+        })
+        .from(teams)
+        .leftJoin(organizations, eq(teams.organizationId, organizations.id))
+        .where(eq(teams.id, requestedTeamId))
+        .get();
+    }
+
+    // 2. 指定がない場合、またはデモ指定時でユーザーに所属チームがある場合は所属チームを自動選択
+    if (!targetTeam) {
+      if (userTeamIds.size > 0) {
+        const firstUserTeamId = Array.from(userTeamIds)[0];
+        targetTeam = allTeams.find(t => t.id === firstUserTeamId) || null;
       }
+    }
+
+    // 3. それでも無ければ全チームの先頭チームを採用（チームがあればデモではなく本番チームへ）
+    if (!targetTeam && allTeams.length > 0 && requestedTeamId !== "demo-team") {
+      targetTeam = allTeams[0];
     }
 
     if (!targetTeam) {

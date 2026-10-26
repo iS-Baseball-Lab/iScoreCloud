@@ -162,9 +162,18 @@ export function LiffProvider({
       const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
       const urlTeamId = urlParams?.get("teamId");
       const storedTeamId = typeof window !== "undefined" ? localStorage.getItem("iscore_selectedTeamId") : null;
-      const targetTeamId = urlTeamId || storedTeamId;
+      const storedUserId = typeof window !== "undefined" ? (localStorage.getItem("iscore_user_id") || localStorage.getItem("iscore_userId") || "") : "";
+      const storedUserName = typeof window !== "undefined" ? (localStorage.getItem("iscore_user_name") || "") : "";
 
-      const endpoint = targetTeamId ? `/api/liff/hub?teamId=${targetTeamId}` : `/api/liff/hub`;
+      // 過去のエラー等で storedTeamId が "demo-team" になってしまっていた場合、URL指定がなければクリアして本番チームの再判定を優先
+      const targetTeamId = urlTeamId || (storedTeamId && storedTeamId !== "demo-team" ? storedTeamId : null);
+
+      const params = new URLSearchParams();
+      if (targetTeamId) params.set("teamId", targetTeamId);
+      if (storedUserId) params.set("userId", storedUserId);
+      if (storedUserName) params.set("userName", storedUserName);
+
+      const endpoint = `/api/liff/hub?${params.toString()}`;
       const res = await fetch(endpoint);
 
       if (res.ok) {
