@@ -35,6 +35,7 @@ import {
 } from "lucide-react";
 
 type MenuCategory = "schedule" | "manual" | "settings";
+type MenuSubGroup = "match_team" | "schedule_access" | "docs" | "tools";
 
 interface MenuItem {
   title: string;
@@ -43,18 +44,38 @@ interface MenuItem {
   icon: React.ComponentType<{ className?: string }>;
   colorClass: string;
   category: MenuCategory;
-  subGroup?: "docs" | "tools";
+  subGroup?: MenuSubGroup;
   fullWidth?: boolean;
 }
 
 const MENU_TABS = [
-  { id: "schedule" as const, label: "活動・予定", icon: Calendar },
+  { id: "schedule" as const, label: "試合・予定", icon: Calendar },
   { id: "manual" as const, label: "資料・ツール", icon: BookOpen },
   { id: "settings" as const, label: "設定", icon: Settings },
 ];
 
+const CATEGORY_SECTIONS: Partial<
+  Record<
+    MenuCategory,
+    Array<{
+      key: MenuSubGroup;
+      label: string;
+      icon: React.ComponentType<{ className?: string }>;
+    }>
+  >
+> = {
+  schedule: [
+    { key: "match_team", label: "試合・チーム", icon: Trophy },
+    { key: "schedule_access", label: "予定・配車・施設", icon: Calendar },
+  ],
+  manual: [
+    { key: "docs", label: "資料・マニュアル", icon: BookOpen },
+    { key: "tools", label: "便利ツール", icon: Wrench },
+  ],
+};
+
 const MENU_ITEMS: MenuItem[] = [
-  // 📅 活動・予定
+  // 🏆 試合・予定（試合・チーム）
   {
     title: "試合情報",
     subtitle: "試合動画 & スコア",
@@ -62,14 +83,7 @@ const MENU_ITEMS: MenuItem[] = [
     icon: Video,
     colorClass: "bg-red-500/15 text-red-600 dark:text-red-400",
     category: "schedule" as const,
-  },
-  {
-    title: "チーム成績",
-    subtitle: "勝敗・打撃個人成績",
-    href: "/liff/stats",
-    icon: Trophy,
-    colorClass: "bg-amber-500/15 text-amber-600 dark:text-amber-400",
-    category: "schedule" as const,
+    subGroup: "match_team",
   },
   {
     title: "スタメン・出欠登録",
@@ -78,6 +92,16 @@ const MENU_ITEMS: MenuItem[] = [
     icon: Users,
     colorClass: "bg-primary/15 text-primary",
     category: "schedule" as const,
+    subGroup: "match_team",
+  },
+  {
+    title: "チーム成績",
+    subtitle: "勝敗・打撃個人成績",
+    href: "/liff/stats",
+    icon: Trophy,
+    colorClass: "bg-amber-500/15 text-amber-600 dark:text-amber-400",
+    category: "schedule" as const,
+    subGroup: "match_team",
   },
   {
     title: "選手名鑑",
@@ -86,7 +110,10 @@ const MENU_ITEMS: MenuItem[] = [
     icon: IdCard,
     colorClass: "bg-cyan-500/15 text-cyan-600 dark:text-cyan-400",
     category: "schedule" as const,
+    subGroup: "match_team",
   },
+
+  // 📅 試合・予定（予定・配車・施設）
   {
     title: "活動予定",
     subtitle: "当番・イベントスケジュール",
@@ -94,6 +121,7 @@ const MENU_ITEMS: MenuItem[] = [
     icon: Calendar,
     colorClass: "bg-orange-500/15 text-orange-600 dark:text-orange-400",
     category: "schedule" as const,
+    subGroup: "schedule_access",
   },
   {
     title: "出欠一覧表",
@@ -102,6 +130,7 @@ const MENU_ITEMS: MenuItem[] = [
     icon: ClipboardCheck,
     colorClass: "bg-indigo-500/15 text-indigo-600 dark:text-indigo-400",
     category: "schedule" as const,
+    subGroup: "schedule_access",
   },
   {
     title: "配車表",
@@ -110,6 +139,7 @@ const MENU_ITEMS: MenuItem[] = [
     icon: Car,
     colorClass: "bg-blue-500/15 text-blue-600 dark:text-blue-400",
     category: "schedule" as const,
+    subGroup: "schedule_access",
   },
   {
     title: "球場 & 施設",
@@ -118,6 +148,7 @@ const MENU_ITEMS: MenuItem[] = [
     icon: MapPin,
     colorClass: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
     category: "schedule" as const,
+    subGroup: "schedule_access",
   },
 
   // 📖 資料・ツール
@@ -455,20 +486,9 @@ export function LiffBottomNav() {
             </div>
 
             {/* 🌟 フィルタリングされたメニュー項目グリッド */}
-            {selectedCategory === "manual" ? (
+            {CATEGORY_SECTIONS[selectedCategory] ? (
               <div className="space-y-4">
-                {[
-                  {
-                    key: "docs" as const,
-                    label: "資料・マニュアル",
-                    icon: BookOpen,
-                  },
-                  {
-                    key: "tools" as const,
-                    label: "便利ツール",
-                    icon: Wrench,
-                  },
-                ].map((section) => {
+                {CATEGORY_SECTIONS[selectedCategory]?.map((section) => {
                   const SectionIcon = section.icon;
                   const sectionItems = filteredItems.filter((item) => item.subGroup === section.key);
                   return (
