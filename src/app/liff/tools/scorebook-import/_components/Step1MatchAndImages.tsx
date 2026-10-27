@@ -65,6 +65,7 @@ interface Step1MatchAndImagesProps {
   onSelectLegendOverride: (file: File | null) => void;
   onStartAnalyzeStructure: () => void;
   isAnalyzingStructure: boolean;
+  structureProgressLabel?: string;
 }
 
 export function Step1MatchAndImages({
@@ -86,6 +87,7 @@ export function Step1MatchAndImages({
   onSelectLegendOverride,
   onStartAnalyzeStructure,
   isAnalyzingStructure,
+  structureProgressLabel,
 }: Step1MatchAndImagesProps) {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newOpponent, setNewOpponent] = useState("");
@@ -610,8 +612,11 @@ export function Step1MatchAndImages({
       >
         {isAnalyzingStructure ? (
           <>
-            <Loader2 className="w-5 h-5 animate-spin" />
-            <span>AIが打順・途中交代・各回得点をスキャン中...</span>
+            <Loader2 className="w-5 h-5 animate-spin shrink-0" />
+            <span className="truncate">
+              {structureProgressLabel ||
+                "AIが打順・途中交代・各回得点をスキャン中..."}
+            </span>
           </>
         ) : (
           <>

@@ -106,6 +106,7 @@ export default function LiffScorebookImportPage() {
 
   const [isCreatingMatch, setIsCreatingMatch] = useState(false);
   const [isAnalyzingStructure, setIsAnalyzingStructure] = useState(false);
+  const [structureProgressLabel, setStructureProgressLabel] = useState("");
   const [isAnalyzingInnings, setIsAnalyzingInnings] = useState(false);
   const [analysisProgressLabel, setAnalysisProgressLabel] = useState("");
   const [isSaving, setIsSaving] = useState(false);
@@ -487,7 +488,7 @@ export default function LiffScorebookImportPage() {
     }
   };
 
-  // 4. Stage 1: AI骨格スキャン実行
+  // 4. Stage 1: AI骨格スキャン実行（503過負荷防止のため1枚ずつ直列実行＋自動リトライ）
   const handleStartAnalyzeStructure = async () => {
     if (!selectedMatchId) return;
     setIsAnalyzingStructure(true);
@@ -497,8 +498,9 @@ export default function LiffScorebookImportPage() {
       const needTop = importScope === "both" || importScope === "top_only";
       const needBottom =
         importScope === "both" || importScope === "bottom_only";
+      const totalSides = (needTop ? 1 : 0) + (needBottom ? 1 : 0);
 
-      const analyzeOneSide = async (
+      const callStructureApiOnce = async (
         isTop: boolean,
         imgState: SheetImageState
       ): Promise<ScorebookSheetStructure> => {
@@ -529,21 +531,59 @@ export default function LiffScorebookImportPage() {
         return data.structure;
       };
 
-      const [resTop, resBottom] = await Promise.all([
-        needTop ? analyzeOneSide(true, topImage) : Promise.resolve(null),
-        needBottom
-          ? analyzeOneSide(false, bottomImage)
-          : Promise.resolve(null),
-      ]);
+      const analyzeOneSideWithRetry = async (
+        isTop: boolean,
+        imgState: SheetImageState,
+        stepNum: number
+      ): Promise<ScorebookSheetStructure> => {
+        const sideLabel = isTop ? "先攻（表）" : "後攻（裏）";
+        setStructureProgressLabel(
+          `${sideLabel}シートの打順・得点をスキャン中... (${stepNum}/${totalSides})`
+        );
+        try {
+          return await callStructureApiOnce(isTop, imgState);
+        } catch (firstErr) {
+          setStructureProgressLabel(
+            `${sideLabel}シートを再スキャン中（AI混雑回避）... (${stepNum}/${totalSides})`
+          );
+          await new Promise((r) => setTimeout(r, 2400));
+          void firstErr;
+          return await callStructureApiOnce(isTop, imgState);
+        }
+      };
 
-      setTopStructure(resTop);
-      setBottomStructure(resBottom);
+      let stepCounter = 0;
+      let resTop: ScorebookSheetStructure | null = null;
+      let resBottom: ScorebookSheetStructure | null = null;
+
+      if (needTop) {
+        stepCounter += 1;
+        resTop = await analyzeOneSideWithRetry(true, topImage, stepCounter);
+        setTopStructure(resTop);
+      }
+
+      if (needBottom) {
+        if (needTop) {
+          await new Promise((r) => setTimeout(r, 400));
+        }
+        stepCounter += 1;
+        resBottom = await analyzeOneSideWithRetry(
+          false,
+          bottomImage,
+          stepCounter
+        );
+        setBottomStructure(resBottom);
+      }
+
+      if (!needTop) setTopStructure(null);
+      if (!needBottom) setBottomStructure(null);
       setStep(2);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setErrorBanner(msg);
     } finally {
       setIsAnalyzingStructure(false);
+      setStructureProgressLabel("");
     }
   };
 
@@ -920,6 +960,7 @@ export default function LiffScorebookImportPage() {
                 onSelectLegendOverride={handleSelectLegendOverride}
                 onStartAnalyzeStructure={handleStartAnalyzeStructure}
                 isAnalyzingStructure={isAnalyzingStructure}
+                structureProgressLabel={structureProgressLabel}
               />
             )}
 

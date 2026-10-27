@@ -152,23 +152,47 @@ interface GeminiModelAttemptConfig {
   model: string;
   timeoutMs: number;
   thinkingMode: "level_low" | "budget" | "none";
+  backoffBeforeMs: number;
+  retryOnlyOnCongestion?: boolean;
 }
 
 const GEMINI_MODEL_CONFIGS: readonly GeminiModelAttemptConfig[] = [
   {
     model: "gemini-3.8-flash",
-    timeoutMs: 52_000,
+    timeoutMs: 32_000,
     thinkingMode: "level_low",
+    backoffBeforeMs: 0,
+  },
+  {
+    model: "gemini-3.8-flash",
+    timeoutMs: 32_000,
+    thinkingMode: "level_low",
+    backoffBeforeMs: 1_800,
+    retryOnlyOnCongestion: true,
+  },
+  {
+    model: "gemini-3.5-flash-lite",
+    timeoutMs: 24_000,
+    thinkingMode: "level_low",
+    backoffBeforeMs: 900,
   },
   {
     model: "gemini-3.5-flash",
-    timeoutMs: 38_000,
+    timeoutMs: 26_000,
     thinkingMode: "level_low",
+    backoffBeforeMs: 900,
+  },
+  {
+    model: "gemini-2.5-flash-lite",
+    timeoutMs: 22_000,
+    thinkingMode: "budget",
+    backoffBeforeMs: 900,
   },
   {
     model: "gemini-2.5-flash",
-    timeoutMs: 38_000,
+    timeoutMs: 24_000,
     thinkingMode: "budget",
+    backoffBeforeMs: 900,
   },
 ];
 
@@ -568,81 +592,58 @@ ${battingTeamContext}${scoreboardHintText}
    - 実際に試合が行われたイニング（1回〜最終回、空欄の回は除く）のみを抽出してください。
    - **打者一巡の列折り返し検出（超重要）**: 1イニングで打者が10人以上打席に立ち、2列を使って記録されている回は columnCount: 2 としてください（通常は columnCount: 1）。
    - 各イニングの上部スコア欄・下部計欄・およびマス内の本塁生還印（●や赤丸）を突き合わせ、その回の正確な得点数(runs)と安打数(hits)を出力してください。
-   - 各イニング列の全体領域を 0〜1000 の正規化座標 (ymin, xmin, ymax, xmax) で出力してください。`;
+   - 各イニング列の全体領域を 0〜1000 の正規化座標 (ymin, xmin, ymax, xmax) で出力してください。
 
-    const schemaSpec = {
-      type: "OBJECT",
-      properties: {
-        batters: {
-          type: "ARRAY",
-          items: {
-            type: "OBJECT",
-            properties: {
-              battingOrder: { type: "INTEGER" },
-              name: { type: "STRING" },
-              uniformNumber: { type: "STRING" },
-              position: { type: "STRING" },
-              substitutions: {
-                type: "ARRAY",
-                items: {
-                  type: "OBJECT",
-                  properties: {
-                    inningEntered: { type: "INTEGER" },
-                    subType: { type: "STRING" },
-                    name: { type: "STRING" },
-                    uniformNumber: { type: "STRING" },
-                    position: { type: "STRING" },
-                  },
-                  required: ["inningEntered", "subType", "name", "uniformNumber", "position"],
-                },
-              },
-            },
-            required: ["battingOrder", "name", "uniformNumber", "position", "substitutions"],
-          },
-        },
-        pitchers: {
-          type: "ARRAY",
-          items: {
-            type: "OBJECT",
-            properties: {
-              order: { type: "INTEGER" },
-              name: { type: "STRING" },
-              uniformNumber: { type: "STRING" },
-              fromInning: { type: "INTEGER" },
-              toInning: { type: "INTEGER" },
-            },
-            required: ["order", "name", "uniformNumber", "fromInning", "toInning"],
-          },
-        },
-        innings: {
-          type: "ARRAY",
-          items: {
-            type: "OBJECT",
-            properties: {
-              inning: { type: "INTEGER" },
-              columnCount: { type: "INTEGER" },
-              runs: { type: "INTEGER" },
-              hits: { type: "INTEGER" },
-              ymin: { type: "INTEGER" },
-              xmin: { type: "INTEGER" },
-              ymax: { type: "INTEGER" },
-              xmax: { type: "INTEGER" },
-            },
-            required: ["inning", "columnCount", "runs", "hits", "ymin", "xmin", "ymax", "xmax"],
-          },
-        },
-        totalRuns: { type: "INTEGER" },
-        totalHits: { type: "INTEGER" },
-        totalErrors: { type: "INTEGER" },
-      },
-      required: ["batters", "pitchers", "innings", "totalRuns", "totalHits", "totalErrors"],
-    };
+【出力JSONフォーマット（以下の厳密なキー構造のJSONオブジェクトのみを返してください）】
+{
+  "batters": [
+    {
+      "battingOrder": 1,
+      "name": "選手名",
+      "uniformNumber": "10",
+      "position": "6",
+      "substitutions": [
+        {
+          "inningEntered": 5,
+          "subType": "PH",
+          "name": "交代選手名",
+          "uniformNumber": "24",
+          "position": "P"
+        }
+      ]
+    }
+  ],
+  "pitchers": [
+    {
+      "order": 1,
+      "name": "投手名",
+      "uniformNumber": "18",
+      "fromInning": 1,
+      "toInning": 7
+    }
+  ],
+  "innings": [
+    {
+      "inning": 1,
+      "columnCount": 1,
+      "runs": 0,
+      "hits": 1,
+      "ymin": 120,
+      "xmin": 210,
+      "ymax": 880,
+      "xmax": 300
+    }
+  ],
+  "totalRuns": 0,
+  "totalHits": 1,
+  "totalErrors": 0
+}`;
 
     const raw = await callGeminiStructuredJson<RawGeminiStructureResponse>(
       apiKey,
       prompt,
       imageParts,
-      schemaSpec
+      512
     );
 
     const maxInningFromSheet =
@@ -931,81 +932,48 @@ ${targetInningMetaLines.join("\n")}
 
 【超重要 4: マス座標（ymin, xmin, ymax, xmax）と確信度（confidence）】
 - 各打席マスの画像上の位置を 0〜1000 の正規化座標で返してください。
-- 文字のかすれ・消しゴム跡・複雑な走塁などで少しでも解釈に迷った場合は confidence: "low" とし、confidenceReason に確認してほしいポイント（例: "BSOの2球目と3球目が重なっている", "7飛か7安打か線が薄い"）を簡潔に書いてください。`;
+- 文字のかすれ・消しゴム跡・複雑な走塁などで少しでも解釈に迷った場合は confidence: "low" とし、confidenceReason に確認してほしいポイント（例: "BSOの2球目と3球目が重なっている", "7飛か7安打か線が薄い"）を簡潔に書いてください。
 
-    const chunkSchema = {
-      type: "OBJECT",
-      properties: {
-        atBats: {
-          type: "ARRAY",
-          items: {
-            type: "OBJECT",
-            properties: {
-              inning: { type: "INTEGER" },
-              columnIndex: { type: "INTEGER" },
-              battingOrder: { type: "INTEGER" },
-              resultCode: { type: "STRING" },
-              resultLabel: { type: "STRING" },
-              rbi: { type: "INTEGER" },
-              outsInPlay: { type: "INTEGER" },
-              endingOuts: { type: "INTEGER" },
-              runsInPlay: { type: "INTEGER" },
-              pitches: {
-                type: "ARRAY",
-                items: { type: "STRING" },
-              },
-              advances: {
-                type: "ARRAY",
-                items: {
-                  type: "OBJECT",
-                  properties: {
-                    runnerName: { type: "STRING" },
-                    from: { type: "STRING" },
-                    to: { type: "STRING" },
-                    method: { type: "STRING" },
-                    isOut: { type: "BOOLEAN" },
-                    pitchNumber: { type: "INTEGER" },
-                  },
-                  required: ["runnerName", "from", "to", "method", "isOut"],
-                },
-              },
-              confidence: { type: "STRING" },
-              confidenceReason: { type: "STRING" },
-              ymin: { type: "INTEGER" },
-              xmin: { type: "INTEGER" },
-              ymax: { type: "INTEGER" },
-              xmax: { type: "INTEGER" },
-            },
-            required: [
-              "inning",
-              "columnIndex",
-              "battingOrder",
-              "resultCode",
-              "resultLabel",
-              "rbi",
-              "outsInPlay",
-              "endingOuts",
-              "runsInPlay",
-              "pitches",
-              "advances",
-              "confidence",
-              "ymin",
-              "xmin",
-              "ymax",
-              "xmax",
-            ],
-          },
-        },
-      },
-      required: ["atBats"],
-    };
+【出力JSONフォーマット（以下の厳密なキー構造のJSONオブジェクトのみを返してください）】
+{
+  "atBats": [
+    {
+      "inning": 1,
+      "columnIndex": 1,
+      "battingOrder": 1,
+      "resultCode": "single",
+      "resultLabel": "左前安打",
+      "rbi": 0,
+      "outsInPlay": 0,
+      "endingOuts": 0,
+      "runsInPlay": 0,
+      "pitches": ["ball", "strike", "foul", "hit"],
+      "advances": [
+        {
+          "runnerName": "選手名",
+          "from": "BAT",
+          "to": "1B",
+          "method": "hit",
+          "isOut": false,
+          "pitchNumber": 4
+        }
+      ],
+      "confidence": "high",
+      "confidenceReason": "",
+      "ymin": 150,
+      "xmin": 210,
+      "ymax": 230,
+      "xmax": 300
+    }
+  ]
+}
+※ resultCode は必ず "single" | "double" | "triple" | "home_run" | "walk" | "hit_by_pitch" | "strikeout" | "dropped_third_strike" | "groundout" | "flyout" | "double_play" | "sac_bunt" | "sac_fly" | "error" | "fc" | "other" のいずれか、confidence は "high" | "medium" | "low" のいずれかとしてください。`;
 
     const rawChunk = await callGeminiStructuredJson<RawGeminiChunkResponse>(
       apiKey,
       prompt,
       imageParts,
-      chunkSchema,
-      1024
+      768
     );
 
     const targetSet = new Set(sortedTargets);
@@ -1594,19 +1562,29 @@ async function callGeminiStructuredJson<T>(
   apiKey: string,
   prompt: string,
   imageParts: GeminiContentPart[],
-  responseSchema: Record<string, unknown>,
-  thinkingBudget = 1024
+  thinkingBudget = 768
 ): Promise<T> {
   const attemptErrors: string[] = [];
   const overallStart = Date.now();
   const MAX_TOTAL_BUDGET_MS = 86_000;
+  let lastFailureWasCongestion = false;
 
   for (const cfg of GEMINI_MODEL_CONFIGS) {
+    if (cfg.retryOnlyOnCongestion && !lastFailureWasCongestion) {
+      continue;
+    }
+
+    if (cfg.backoffBeforeMs > 0) {
+      const jitter = Math.floor(Math.random() * 450);
+      await new Promise((r) => setTimeout(r, cfg.backoffBeforeMs + jitter));
+    }
+
     const remainingMs = MAX_TOTAL_BUDGET_MS - (Date.now() - overallStart);
-    if (remainingMs < 8_000) {
+    if (remainingMs < 7_000) {
       break;
     }
 
+    lastFailureWasCongestion = false;
     const effectiveTimeoutMs = Math.min(cfg.timeoutMs, remainingMs);
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${cfg.model}:streamGenerateContent?alt=sse&key=${apiKey}`;
     const controller = new AbortController();
@@ -1616,7 +1594,6 @@ async function callGeminiStructuredJson<T>(
       const generationConfig: Record<string, unknown> = {
         temperature: 0.1,
         responseMimeType: "application/json",
-        responseSchema,
       };
       if (cfg.thinkingMode === "level_low") {
         generationConfig.thinkingConfig = {
@@ -1649,7 +1626,6 @@ async function callGeminiStructuredJson<T>(
           const fallbackGenConfig: Record<string, unknown> = {
             temperature: 0.1,
             responseMimeType: "application/json",
-            responseSchema,
           };
           res = await fetch(endpoint, {
             method: "POST",
@@ -1665,7 +1641,7 @@ async function callGeminiStructuredJson<T>(
             }),
           });
         } else {
-          const errSummary = `[${cfg.model}] HTTP 400: ${firstErrText.slice(0, 200)}`;
+          const errSummary = `[${cfg.model}] HTTP 400: ${firstErrText.slice(0, 180)}`;
           attemptErrors.push(errSummary);
           continue;
         }
@@ -1673,7 +1649,9 @@ async function callGeminiStructuredJson<T>(
 
       if (!res.ok) {
         const errText = await res.text();
-        const errSummary = `[${cfg.model}] HTTP ${res.status}: ${errText.slice(0, 200)}`;
+        lastFailureWasCongestion =
+          res.status === 429 || res.status === 503 || res.status === 502;
+        const errSummary = `[${cfg.model}] HTTP ${res.status}: ${errText.slice(0, 180)}`;
         attemptErrors.push(errSummary);
         if (
           res.status === 400 ||
@@ -1733,7 +1711,7 @@ async function callGeminiStructuredJson<T>(
 
   throw new Error(
     attemptErrors.join(" / ") ||
-      "利用可能なGeminiモデルからの応答取得に失敗しました"
+      "AIサーバーが一時的に大変混雑しています。数秒置いてもう一度ボタンを押してください。"
   );
 }
 
