@@ -32,7 +32,7 @@ export const LIFF_TOOLS: LiffToolMeta[] = [
     shortTitle: "スコア取込",
     subtitle: "手書きのスコアブック画像を高精度AIでデータ化",
     href: "/liff/tools/scorebook-import",
-    statusLabel: "準備中",
+    statusLabel: "v2稼働中",
     statusTone: "indigo",
     icon: ScanLine,
     iconColorClass: "bg-indigo-500/15 text-indigo-600 dark:text-indigo-400",
