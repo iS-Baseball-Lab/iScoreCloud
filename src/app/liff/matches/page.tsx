@@ -672,12 +672,12 @@ function MatchesContent() {
             </div>
           </section>
 
-          {/* 👥 3. 出場メンバー（見出しはカード外） */}
+          {/* 👥 3. 出場メンバー（見出しはカード外・内部3ブロックもすべて見出しを枠外に統一） */}
           <section className="space-y-2">
             <div className="flex items-center justify-between gap-2 px-1">
               <h2 className="flex items-center gap-1.5 text-xs font-black text-foreground min-w-0">
                 <Users className="w-4 h-4 text-primary shrink-0" />
-                <span className="truncate">出場メンバー（スタメン・控え・欠席）</span>
+                <span className="truncate">出場メンバー</span>
               </h2>
 
               <Link
@@ -689,145 +689,194 @@ function MatchesContent() {
               </Link>
             </div>
 
-            <div className="bg-card border border-border rounded-2xl p-3.5 shadow-xs space-y-3">
-              {/* スターティングメンバー表示 */}
-              {filledStarters.length === 0 ? (
-                <div className="rounded-xl bg-muted/40 border border-dashed border-border p-5 text-center space-y-3">
-                  <p className="text-xs font-black text-foreground">
-                    スタメンがまだ登録されていません
-                  </p>
-                  <p className="text-[11px] font-bold text-muted-foreground">
-                    この試合のスターティングメンバー・控え・欠席をスマホから簡単に設定できます
-                  </p>
-                  <Link
-                    href={`/liff/matches/lineup?id=${match.id}`}
-                    className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-xs font-black shadow-xs hover:bg-primary/90 active:scale-95 transition-all"
-                  >
-                    <Users className="w-4 h-4" />
-                    <span>スタメン・控え・欠席を登録する</span>
-                  </Link>
+            <div className="bg-card border border-border rounded-2xl p-3.5 shadow-xs space-y-3.5">
+              {/* ① スターティングメンバー（見出しは内枠の外） */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between px-0.5">
+                  <span className="text-[11px] font-black text-foreground flex items-center gap-1.5">
+                    <Shield className="w-3.5 h-3.5 text-primary shrink-0" />
+                    <span>スターティングメンバー</span>
+                  </span>
+                  <span className="text-[10px] font-black font-mono tabular-nums px-2 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20">
+                    {filledStarters.length}名
+                  </span>
                 </div>
-              ) : (
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between px-1">
-                    <span className="text-[11px] font-black text-primary flex items-center gap-1">
-                      <Shield className="w-3.5 h-3.5" />
-                      スターティングメンバー
-                    </span>
-                    <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-primary/10 text-primary">
-                      {filledStarters.length}名
-                    </span>
-                  </div>
-                  <div className="divide-y divide-border/50 rounded-xl border border-border overflow-hidden bg-background">
-                    {filledStarters.map((slot) => {
-                      const posInfo = getPositionBadgeInfo(slot.position);
-                      return (
-                        <div
-                          key={`${slot.order}-${slot.playerId || slot.name}`}
-                          className="flex items-center gap-2.5 px-3 py-2 text-xs"
-                        >
-                          <span className="w-5 text-center font-black italic text-primary shrink-0">
-                            {slot.order}
-                          </span>
-                          {posInfo ? (
-                            <span
-                              className={cn(
-                                "px-2 py-0.5 rounded-md text-white font-black text-[10px] shrink-0 min-w-[40px] text-center",
-                                posInfo.color
-                              )}
-                            >
-                              {posInfo.label}
-                            </span>
-                          ) : (
-                            <span className="px-2 py-0.5 rounded-md bg-muted text-muted-foreground font-black text-[10px] shrink-0 min-w-[40px] text-center">
-                              未設定
-                            </span>
-                          )}
-                          <span className="text-[11px] font-black text-primary/80 min-w-[26px] shrink-0">
-                            {slot.uniformNumber ? `#${slot.uniformNumber}` : "-"}
-                          </span>
-                          <span className="font-black text-foreground truncate flex-1">
-                            {slot.name}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
 
-              {/* 控え・欠席メンバー一覧 */}
+                {filledStarters.length === 0 ? (
+                  <div className="rounded-xl bg-background border border-dashed border-border p-4 text-center space-y-2.5">
+                    <div className="space-y-0.5">
+                      <p className="text-xs font-black text-foreground">
+                        スタメンがまだ登録されていません
+                      </p>
+                      <p className="text-[11px] font-bold text-muted-foreground">
+                        スマホからスターティングメンバー・控え・欠席を設定できます
+                      </p>
+                    </div>
+                    <Link
+                      href={`/liff/matches/lineup?id=${match.id}`}
+                      className="inline-flex items-center justify-center gap-1.5 h-9 px-4 rounded-xl bg-primary text-primary-foreground text-xs font-black shadow-2xs hover:bg-primary/90 active:scale-95 transition-all"
+                    >
+                      <Users className="w-3.5 h-3.5" />
+                      <span>出場メンバーを登録する</span>
+                    </Link>
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-border overflow-hidden bg-background">
+                    {/* スコアボード風カラムヘッダー */}
+                    <div className="grid grid-cols-[2.25rem_3.25rem_1fr_2.75rem] items-center bg-muted/40 border-b border-border px-2 py-1 text-[9px] font-black text-muted-foreground font-mono tracking-wider">
+                      <span className="text-center">ORD</span>
+                      <span className="text-center">POS</span>
+                      <span className="pl-2">PLAYER</span>
+                      <span className="pr-1 text-right">NO.</span>
+                    </div>
+
+                    <div className="divide-y divide-border/60">
+                      {filledStarters.map((slot) => {
+                        const posInfo = getPositionBadgeInfo(slot.position);
+                        return (
+                          <div
+                            key={`${slot.order}-${slot.playerId || slot.name}`}
+                            className="grid grid-cols-[2.25rem_3.25rem_1fr_2.75rem] items-center px-2 py-1.5 even:bg-muted/15"
+                          >
+                            {/* 打順バッジ */}
+                            <div className="flex items-center justify-center">
+                              <span className="w-6 h-6 rounded-md bg-primary/10 text-primary font-mono tabular-nums text-[11px] font-black inline-flex items-center justify-center">
+                                {slot.order}
+                              </span>
+                            </div>
+
+                            {/* 守備位置バッジ（固定幅で縦ライン整列） */}
+                            <div className="flex items-center justify-center">
+                              {posInfo ? (
+                                <span
+                                  className={cn(
+                                    "inline-flex items-center justify-center w-11 py-0.5 rounded-md text-white font-black text-[10px] leading-tight shadow-2xs",
+                                    posInfo.color
+                                  )}
+                                >
+                                  {posInfo.label}
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center justify-center w-11 py-0.5 rounded-md bg-muted text-muted-foreground font-black text-[10px] leading-tight border border-border">
+                                  未設定
+                                </span>
+                              )}
+                            </div>
+
+                            {/* 選手名 */}
+                            <span className="pl-2 font-black text-xs sm:text-[13px] text-foreground truncate tracking-tight">
+                              {slot.name}
+                            </span>
+
+                            {/* 背番号 */}
+                            <span className="pr-1 text-right font-mono tabular-nums text-xs font-black">
+                              {slot.uniformNumber ? (
+                                <>
+                                  <span className="text-[10px] text-muted-foreground/60 mr-0.5">
+                                    #
+                                  </span>
+                                  <span className="text-foreground/85">{slot.uniformNumber}</span>
+                                </>
+                              ) : (
+                                <span className="text-muted-foreground/40">-</span>
+                              )}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* ② 控え ＆ ③ 欠席（どちらも見出しを内枠の外に統一） */}
               {teamPlayers.length > 0 && (
-                <div className="grid grid-cols-1 gap-2.5 pt-0.5">
-                  {/* 控えメンバー */}
-                  <div className="rounded-xl border border-emerald-500/25 bg-background p-3 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-black text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
-                        <UserCheck className="w-3.5 h-3.5" />
-                        控え（ベンチ入り）
+                <>
+                  {/* ② 控え（ベンチ入り） */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between px-0.5">
+                      <span className="text-[11px] font-black text-foreground flex items-center gap-1.5">
+                        <UserCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                        <span>控え（ベンチ入り）</span>
                       </span>
-                      <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">
+                      <span className="text-[10px] font-black font-mono tabular-nums px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20">
                         {benchPlayers.length}名
                       </span>
                     </div>
 
-                    {benchPlayers.length === 0 ? (
-                      <p className="text-[11px] font-bold text-muted-foreground">該当なし</p>
-                    ) : (
-                      <div className="flex flex-wrap gap-1.5">
-                        {benchPlayers.map((p) => (
-                          <span
-                            key={p.id}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-foreground text-[11px] font-black"
-                          >
-                            {p.uniformNumber && (
-                              <span className="text-emerald-700 dark:text-emerald-400 text-[10px]">
-                                #{p.uniformNumber}
-                              </span>
-                            )}
-                            <span>{p.name}</span>
-                          </span>
-                        ))}
-                      </div>
-                    )}
+                    <div className="rounded-xl border border-border bg-background p-2.5">
+                      {benchPlayers.length === 0 ? (
+                        <p className="text-[11px] font-bold text-muted-foreground px-0.5">
+                          該当なし
+                        </p>
+                      ) : (
+                        <div className="flex flex-wrap gap-1.5">
+                          {benchPlayers.map((p) => (
+                            <span
+                              key={p.id}
+                              className={cn(
+                                "inline-flex items-center gap-1.5 py-1 rounded-lg bg-card border border-border shadow-2xs text-[11px] font-black text-foreground",
+                                p.uniformNumber ? "pl-1.5 pr-2.5" : "px-2.5"
+                              )}
+                            >
+                              {p.uniformNumber && (
+                                <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 font-mono tabular-nums text-[10px] font-black leading-none">
+                                  #{p.uniformNumber}
+                                </span>
+                              )}
+                              <span>{p.name}</span>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
 
-                  {/* 欠席メンバー */}
-                  <div className="rounded-xl border border-rose-500/25 bg-background p-3 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-black text-rose-700 dark:text-rose-400 flex items-center gap-1">
-                        <UserMinus className="w-3.5 h-3.5" />
-                        欠席
+                  {/* ③ 欠席 */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between px-0.5">
+                      <span className="text-[11px] font-black text-foreground flex items-center gap-1.5">
+                        <UserMinus className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400 shrink-0" />
+                        <span>欠席</span>
                       </span>
-                      <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-700 dark:text-rose-300">
+                      <span className="text-[10px] font-black font-mono tabular-nums px-2 py-0.5 rounded-md bg-rose-500/10 text-rose-700 dark:text-rose-300 border border-rose-500/20">
                         {absentPlayers.length}名
                       </span>
                     </div>
 
-                    {absentPlayers.length === 0 ? (
-                      <p className="text-[11px] font-bold text-muted-foreground">欠席者なし</p>
-                    ) : (
-                      <div className="flex flex-wrap gap-1.5">
-                        {absentPlayers.map((p) => (
-                          <span
-                            key={p.id}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-700 dark:text-rose-300 text-[11px] font-bold"
-                          >
-                            {p.uniformNumber && (
-                              <span className="text-[10px] opacity-80">#{p.uniformNumber}</span>
-                            )}
-                            <span>{p.name}</span>
-                          </span>
-                        ))}
-                      </div>
-                    )}
+                    <div className="rounded-xl border border-border bg-background p-2.5">
+                      {absentPlayers.length === 0 ? (
+                        <p className="text-[11px] font-bold text-muted-foreground px-0.5">
+                          欠席者なし
+                        </p>
+                      ) : (
+                        <div className="flex flex-wrap gap-1.5">
+                          {absentPlayers.map((p) => (
+                            <span
+                              key={p.id}
+                              className={cn(
+                                "inline-flex items-center gap-1.5 py-1 rounded-lg bg-muted/40 border border-border/80 text-[11px] font-bold text-muted-foreground",
+                                p.uniformNumber ? "pl-1.5 pr-2.5" : "px-2.5"
+                              )}
+                            >
+                              {p.uniformNumber && (
+                                <span className="px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-700 dark:text-rose-300 font-mono tabular-nums text-[10px] font-black leading-none">
+                                  #{p.uniformNumber}
+                                </span>
+                              )}
+                              <span>{p.name}</span>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
+                </>
               )}
             </div>
           </section>
 
-          {/* 🏟️ 4. 球場・グラウンド（見出しはカード外） */}
+          {/* 🏟️ 4. 球場・グラウンド（上部フルワイドGoogle Map ＋ 2行コンパクト情報 ＋ 最下部リンクボタン） */}
           <section className="space-y-2">
             <div className="flex items-center justify-between gap-2 px-1">
               <h2 className="flex items-center gap-1.5 text-xs font-black text-foreground min-w-0">
@@ -844,99 +893,80 @@ function MatchesContent() {
               </Link>
             </div>
 
-            <div className="bg-card border border-border rounded-2xl p-3.5 shadow-xs space-y-3">
-              {/* 正式名・略称・住所（フォントサイズ・行間・ラベル幅を完全統一） */}
-              <div className="divide-y divide-border/50 rounded-xl border border-border bg-background overflow-hidden">
-                {/* 正式名 */}
-                <div className="grid grid-cols-[3.25rem_1fr] items-baseline gap-2.5 px-3.5 py-2.5">
-                  <span className="text-[11px] font-bold text-muted-foreground leading-5">
-                    正式名
-                  </span>
-                  <div className="min-w-0">
-                    {venueInfo.officialName ? (
-                      <p className="text-xs font-black text-foreground leading-5 break-words">
-                        {venueInfo.officialName}
-                        {venueInfo.surfaceNote && (
-                          <span className="ml-1.5 font-bold text-muted-foreground">
-                            ({venueInfo.surfaceNote})
-                          </span>
-                        )}
-                      </p>
-                    ) : (
-                      <span className="text-xs font-medium text-muted-foreground leading-5">
-                        未設定
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* 略称 */}
-                <div className="grid grid-cols-[3.25rem_1fr] items-baseline gap-2.5 px-3.5 py-2.5">
-                  <span className="text-[11px] font-bold text-muted-foreground leading-5">
-                    略称
-                  </span>
-                  <div className="min-w-0">
-                    {venueInfo.shortName ? (
-                      <p className="text-xs font-bold text-foreground leading-5 break-words">
-                        {venueInfo.shortName}
-                      </p>
-                    ) : (
-                      <span className="text-xs font-medium text-muted-foreground leading-5">
-                        未設定
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* 住所 */}
-                <div className="grid grid-cols-[3.25rem_1fr] items-baseline gap-2.5 px-3.5 py-2.5">
-                  <span className="text-[11px] font-bold text-muted-foreground leading-5">
-                    住所
-                  </span>
-                  <div className="min-w-0 flex items-start justify-between gap-2">
-                    {venueInfo.address ? (
-                      <>
-                        <p className="text-xs font-bold text-foreground leading-5 break-words flex-1">
-                          {venueInfo.address}
-                        </p>
-                        <button
-                          type="button"
-                          onClick={() => handleCopyVenueAddress(venueInfo.address)}
-                          className="w-6 h-6 -my-0.5 rounded-lg inline-flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted shrink-0 transition-colors cursor-pointer"
-                          title="住所をコピー"
-                          aria-label="住所をコピー"
-                        >
-                          {isAddressCopied ? (
-                            <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                          ) : (
-                            <Copy className="w-3.5 h-3.5" />
-                          )}
-                        </button>
-                      </>
-                    ) : (
-                      <span className="text-xs font-medium text-muted-foreground leading-5">
-                        未登録
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* 🗺️ Google Map（登録URLベース・大きめ表示） */}
+            <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-xs">
+              {/* 上部：枠いっぱい（パディングなし）の Google Map */}
               {venueInfo.embedUrl ? (
-                <div className="space-y-2.5">
-                  <div className="w-full h-[340px] sm:h-[420px] rounded-xl overflow-hidden border border-border bg-muted/30">
-                    <iframe
-                      src={venueInfo.embedUrl}
-                      title={`${venueInfo.officialName || "球場・グラウンド"} Google Map`}
-                      loading="lazy"
-                      allowFullScreen
-                      referrerPolicy="no-referrer-when-downgrade"
-                      className="w-full h-full border-0"
-                    />
+                <div className="relative w-full h-[300px] sm:h-[380px] bg-muted/30 border-b border-border">
+                  <iframe
+                    src={venueInfo.embedUrl}
+                    title={`${venueInfo.officialName || "球場・グラウンド"} Google Map`}
+                    loading="lazy"
+                    allowFullScreen
+                    referrerPolicy="no-referrer-when-downgrade"
+                    className="block w-full h-full border-0"
+                  />
+                </div>
+              ) : (
+                <div className="w-full py-7 px-4 bg-muted/40 border-b border-border flex flex-col items-center justify-center text-center gap-2">
+                  <div className="w-10 h-10 rounded-2xl bg-card border border-border flex items-center justify-center text-muted-foreground shadow-2xs">
+                    <MapPin className="w-5 h-5" />
+                  </div>
+                  <div className="space-y-0.5">
+                    <p className="text-xs font-black text-foreground">
+                      地図を表示するURL・球場情報がありません
+                    </p>
+                    <p className="text-[11px] font-bold text-muted-foreground">
+                      「球場一覧」からGoogle Map URLや住所を登録できます
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* 下部：2行情報（1行目: 正式名（略称） / 2行目: 住所）＋ 最下部リンクボタン */}
+              <div className="p-3.5 space-y-2.5">
+                <div className="space-y-1">
+                  {/* 1行目: 正式名（略称） */}
+                  <div className="flex items-baseline flex-wrap gap-x-1.5 gap-y-0.5 leading-tight">
+                    <h3 className="text-sm font-black text-foreground leading-tight tracking-tight break-words">
+                      {venueInfo.officialName || "球場未設定"}
+                      {venueInfo.shortName && venueInfo.shortName !== venueInfo.officialName && (
+                        <span className="text-xs font-bold text-muted-foreground">
+                          （{venueInfo.shortName}）
+                        </span>
+                      )}
+                    </h3>
+                    {venueInfo.surfaceNote && venueInfo.surfaceNote !== venueInfo.shortName && (
+                      <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[10px] font-black leading-none">
+                        {venueInfo.surfaceNote}
+                      </span>
+                    )}
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2">
+                  {/* 2行目: 住所 */}
+                  <div className="flex items-center gap-1 text-xs font-bold text-muted-foreground leading-snug">
+                    <MapPin className="w-3.5 h-3.5 shrink-0 text-primary/80" />
+                    <span className="break-words">{venueInfo.address || "住所未登録"}</span>
+                    {venueInfo.address && (
+                      <button
+                        type="button"
+                        onClick={() => handleCopyVenueAddress(venueInfo.address)}
+                        className="p-1 -my-1 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors shrink-0 cursor-pointer"
+                        title="住所をコピー"
+                        aria-label="住所をコピー"
+                      >
+                        {isAddressCopied ? (
+                          <Check className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                        ) : (
+                          <Copy className="w-3 h-3" />
+                        )}
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* 最下部：リンクボタン */}
+                {venueInfo.embedUrl ? (
+                  <div className="pt-2.5 border-t border-border/60 grid grid-cols-2 gap-2">
                     <a
                       href={venueInfo.externalUrl}
                       target="_blank"
@@ -950,30 +980,24 @@ function MatchesContent() {
                       href={venueInfo.directionsUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="h-9 px-3 rounded-xl border border-border bg-background hover:bg-muted text-foreground text-xs font-bold flex items-center justify-center gap-1.5 active:scale-95 transition-all"
+                      className="h-9 px-3 rounded-xl border border-border bg-background hover:bg-muted text-foreground text-xs font-black flex items-center justify-center gap-1.5 active:scale-95 transition-all"
                     >
                       <Compass className="w-3.5 h-3.5 shrink-0 text-primary" />
                       <span>ルート案内</span>
                     </a>
                   </div>
-                </div>
-              ) : (
-                <div className="rounded-xl bg-muted/40 border border-dashed border-border p-5 text-center space-y-2.5">
-                  <p className="text-xs font-black text-foreground leading-5">
-                    地図を表示するURL・球場情報がありません
-                  </p>
-                  <p className="text-[11px] font-bold text-muted-foreground leading-relaxed">
-                    「球場一覧」からグラウンドの正式名・略称・Google Map URLを登録できます
-                  </p>
-                  <Link
-                    href="/liff/grounds"
-                    className="inline-flex items-center justify-center gap-1.5 h-9 px-4 rounded-xl bg-primary text-primary-foreground text-xs font-black shadow-xs hover:bg-primary/90 active:scale-95 transition-all"
-                  >
-                    <MapPin className="w-3.5 h-3.5" />
-                    <span>球場一覧を開く</span>
-                  </Link>
-                </div>
-              )}
+                ) : (
+                  <div className="pt-2.5 border-t border-border/60">
+                    <Link
+                      href="/liff/grounds"
+                      className="w-full h-9 px-4 rounded-xl bg-primary text-primary-foreground text-xs font-black shadow-2xs hover:bg-primary/90 active:scale-95 transition-all flex items-center justify-center gap-1.5"
+                    >
+                      <MapPin className="w-3.5 h-3.5" />
+                      <span>球場一覧から登録する</span>
+                    </Link>
+                  </div>
+                )}
+              </div>
             </div>
           </section>
 
