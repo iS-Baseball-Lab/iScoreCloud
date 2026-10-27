@@ -18,7 +18,8 @@ import {
   Info,
   Calendar,
   Building,
-  Bell
+  Bell,
+  BookOpen
 } from "lucide-react";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
@@ -373,6 +374,24 @@ export default function LiffTeamSettingsPage() {
           <p className="text-[11px] font-black text-muted-foreground uppercase tracking-widest pl-1">
             チームマスタ管理（専用画面）
           </p>
+
+          <Link
+            href="/liff/settings/score"
+            className="p-3.5 rounded-2xl bg-card border-2 border-indigo-500/35 hover:border-indigo-500/60 shadow-xs flex items-center gap-3 group active:scale-98 transition-all"
+          >
+            <span className="w-10 h-10 rounded-xl bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-black shrink-0 shadow-2xs group-hover:scale-105 transition-transform">
+              <BookOpen className="w-5 h-5" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-black text-foreground truncate">
+                スコア設定（記号早見表の登録）
+              </p>
+              <p className="text-[10px] text-muted-foreground font-bold truncate">
+                毎回自動でAIが参照する早見表画像・読取初期値
+              </p>
+            </div>
+            <ChevronRight className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+          </Link>
 
           <div className="grid grid-cols-2 gap-2.5">
             <Link

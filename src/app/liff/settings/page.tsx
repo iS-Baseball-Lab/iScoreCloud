@@ -28,6 +28,7 @@ import {
   Monitor,
   Maximize,
   Check,
+  BookOpen,
 } from "lucide-react";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
@@ -307,7 +308,27 @@ export default function LiffSettingsPage() {
           </div>
         </section>
 
-        {/* ━━━ セクション 2: 🛡️ チーム設定へのショートカット案内 ━━━ */}
+        {/* ━━━ セクション 2: 📘 スコア設定・🛡️ チーム設定へのショートカット案内 ━━━ */}
+        <Link
+          href="/liff/settings/score"
+          className="p-4 rounded-3xl bg-indigo-500/10 border-2 border-indigo-500/35 hover:border-indigo-500/60 transition-all flex items-center justify-between group active:scale-[0.99] shadow-xs"
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center font-black shadow-xs group-hover:scale-105 transition-transform shrink-0">
+              <BookOpen className="w-5 h-5" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-xs font-black text-foreground truncate">
+                スコア設定はこちら
+              </p>
+              <p className="text-[10px] text-muted-foreground font-bold truncate">
+                スコア記号早見表の事前登録・AI読取初期値・規定イニング
+              </p>
+            </div>
+          </div>
+          <ChevronRight className="w-5 h-5 text-indigo-600 dark:text-indigo-400 group-hover:translate-x-1 transition-transform shrink-0" />
+        </Link>
+
         <Link
           href="/liff/settings/team"
           className="p-4 rounded-3xl bg-primary/10 border-2 border-primary/30 hover:border-primary/60 transition-all flex items-center justify-between group active:scale-[0.99] shadow-xs"

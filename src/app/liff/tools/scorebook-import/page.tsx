@@ -19,6 +19,7 @@ import {
   reconstructFileFromDataUrl,
   saveScorebookDraft,
 } from "@/lib/liff/scorebook-draft";
+import { loadLiffScoreSettings } from "@/lib/liff/score-settings";
 import {
   Step1MatchAndImages,
   type SheetImageState,
@@ -45,6 +46,7 @@ import {
   Save,
   Trash2,
   X,
+  Settings,
 } from "lucide-react";
 
 type WizardStep = 1 | 2 | 3 | 4;
@@ -72,10 +74,12 @@ interface SaveSummaryData {
   opponentHits: number;
 }
 
-const createInitialSheetImageState = (): SheetImageState => ({
+const createInitialSheetImageState = (
+  enhancePencil = false
+): SheetImageState => ({
   file: null,
   rotationDeg: 0,
-  enhancePencil: false,
+  enhancePencil,
   cropTop: 0,
   cropBottom: 0,
   cropLeft: 0,
@@ -163,12 +167,14 @@ export default function LiffScorebookImportPage() {
   const [matches, setMatches] = useState<ScorebookMatchSummary[]>([]);
   const [selectedMatchId, setSelectedMatchId] = useState<string>("");
 
-  const [importScope, setImportScope] = useState<ImportScopeMode>("both");
-  const [topImage, setTopImage] = useState<SheetImageState>(
-    createInitialSheetImageState
+  const [importScope, setImportScope] = useState<ImportScopeMode>(
+    () => loadLiffScoreSettings().defaultImportScope
   );
-  const [bottomImage, setBottomImage] = useState<SheetImageState>(
-    createInitialSheetImageState
+  const [topImage, setTopImage] = useState<SheetImageState>(() =>
+    createInitialSheetImageState(loadLiffScoreSettings().defaultEnhancePencil)
+  );
+  const [bottomImage, setBottomImage] = useState<SheetImageState>(() =>
+    createInitialSheetImageState(loadLiffScoreSettings().defaultEnhancePencil)
   );
 
   const [legendOverride, setLegendOverride] = useState<{
@@ -305,8 +311,16 @@ export default function LiffScorebookImportPage() {
 
           setLastAutoSavedAt(draft.savedAt);
           setRestoredDraftBannerAt(draft.savedAt);
-        } else if (fetchedMatches.length > 0) {
-          setSelectedMatchId((prev) => prev || fetchedMatches[0].id);
+        } else {
+          const prefs = loadLiffScoreSettings();
+          setImportScope(prefs.defaultImportScope);
+          setTopImage(createInitialSheetImageState(prefs.defaultEnhancePencil));
+          setBottomImage(
+            createInitialSheetImageState(prefs.defaultEnhancePencil)
+          );
+          if (fetchedMatches.length > 0) {
+            setSelectedMatchId((prev) => prev || fetchedMatches[0].id);
+          }
         }
         setIsDraftReady(true);
       } else if (fetchedMatches.length > 0) {
@@ -324,6 +338,37 @@ export default function LiffScorebookImportPage() {
   useEffect(() => {
     fetchContext();
   }, [fetchContext]);
+
+  // スコア設定画面から戻ってきた際、登録された早見表URLや初期設定を即時反映
+  useEffect(() => {
+    const syncScoreSettingsFromReturn = async () => {
+      try {
+        const qTeam = resolvedTeamId || currentTeam?.id || "";
+        const res = await fetch(
+          `/api/liff/scorebook/context?teamId=${encodeURIComponent(qTeam)}`
+        );
+        const data = (await res.json()) as ContextApiResponse;
+        if (data.success && data.team) {
+          setTeamLegendUrl(data.team.scorebookLegendUrl);
+        }
+      } catch {
+        // ignore background sync error
+      }
+    };
+
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === "visible") {
+        void syncScoreSettingsFromReturn();
+      }
+    };
+
+    window.addEventListener("focus", handleVisibilityOrFocus);
+    document.addEventListener("visibilitychange", handleVisibilityOrFocus);
+    return () => {
+      window.removeEventListener("focus", handleVisibilityOrFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityOrFocus);
+    };
+  }, [resolvedTeamId, currentTeam?.id]);
 
   // 1-B. 入力途中のデータ（画像・Step2骨格・Step3の1球修正）を端末に自動下書き保存
   useEffect(() => {
@@ -406,8 +451,10 @@ export default function LiffScorebookImportPage() {
   const handleDiscardDraft = async () => {
     const teamKey = resolvedTeamId || currentTeam?.id || "default";
     await clearScorebookDraft(teamKey);
-    setTopImage(createInitialSheetImageState());
-    setBottomImage(createInitialSheetImageState());
+    const prefs = loadLiffScoreSettings();
+    setImportScope(prefs.defaultImportScope);
+    setTopImage(createInitialSheetImageState(prefs.defaultEnhancePencil));
+    setBottomImage(createInitialSheetImageState(prefs.defaultEnhancePencil));
     setLegendOverride(null);
     setTopStructure(null);
     setBottomStructure(null);
@@ -424,7 +471,11 @@ export default function LiffScorebookImportPage() {
   const runPreprocess = async (isTop: boolean, nextState: SheetImageState) => {
     const setter = isTop ? setTopImage : setBottomImage;
     if (!nextState.file) {
-      setter(createInitialSheetImageState());
+      setter(
+        createInitialSheetImageState(
+          loadLiffScoreSettings().defaultEnhancePencil
+        )
+      );
       return;
     }
 
@@ -451,7 +502,12 @@ export default function LiffScorebookImportPage() {
 
   const handleSelectSheetFile = (isTop: boolean, file: File | null) => {
     if (!file) {
-      runPreprocess(isTop, createInitialSheetImageState());
+      runPreprocess(
+        isTop,
+        createInitialSheetImageState(
+          loadLiffScoreSettings().defaultEnhancePencil
+        )
+      );
       return;
     }
     const base = isTop ? topImage : bottomImage;
@@ -1068,6 +1124,15 @@ export default function LiffScorebookImportPage() {
             </span>
           }
           showBack
+          rightElement={
+            <Link
+              href="/liff/settings/score"
+              className="px-2.5 py-1.5 rounded-2xl bg-card border border-border hover:bg-muted text-foreground text-[11px] font-black flex items-center gap-1 shadow-xs active:scale-95 transition-all"
+            >
+              <Settings className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+              <span>スコア設定</span>
+            </Link>
+          }
         />
 
         {/* ツール切替バー（Step 1時のみ表示し、作業中は画面集中） */}

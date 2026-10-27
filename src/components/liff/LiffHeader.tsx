@@ -16,6 +16,7 @@ import {
   Users,
   UserCircle,
   Settings,
+  BookOpen,
 } from "lucide-react";
 import { useLiff } from "./LiffProvider";
 import { shareTargetPicker } from "@/lib/liff/liff-client";
@@ -309,6 +310,26 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
                         <span className="text-xs font-black text-foreground">プロフィール</span>
                         <span className="text-[10px] font-bold text-muted-foreground truncate">
                           表示名・お子様・マイカー設定
+                        </span>
+                      </div>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                  </Link>
+                </DropdownMenuItem>
+
+                <DropdownMenuItem asChild>
+                  <Link
+                    href="/liff/settings/score"
+                    className="flex items-center justify-between p-2 cursor-pointer rounded-xl hover:bg-muted transition-colors"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span className="w-8 h-8 rounded-lg bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                        <BookOpen className="w-4 h-4" />
+                      </span>
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-xs font-black text-foreground">スコア設定</span>
+                        <span className="text-[10px] font-bold text-muted-foreground truncate">
+                          記号早見表の登録・AI読取設定
                         </span>
                       </div>
                     </div>

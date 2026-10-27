@@ -1,7 +1,8 @@
 // filepath: src/app/liff/tools/scorebook-import/_components/Step1MatchAndImages.tsx
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import Link from "next/link";
 import {
   Camera,
   ImagePlus,
@@ -16,7 +17,10 @@ import {
   ChevronUp,
   Loader2,
   BookOpen,
+  Settings,
+  X,
 } from "lucide-react";
+import { loadLiffScoreSettings } from "@/lib/liff/score-settings";
 import type {
   ImportScopeMode,
   ScorebookMatchSummary,
@@ -102,6 +106,12 @@ export function Step1MatchAndImages({
     "first"
   );
   const [newInnings, setNewInnings] = useState<number>(7);
+
+  useEffect(() => {
+    const saved = loadLiffScoreSettings();
+    setNewInnings(saved.defaultInnings);
+    setNewMatchType(saved.defaultMatchType);
+  }, []);
 
   const [openCropSide, setOpenCropSide] = useState<"top" | "bottom" | null>(
     null
@@ -491,6 +501,7 @@ export function Step1MatchAndImages({
                   onChange={(e) => setNewInnings(Number(e.target.value))}
                   className="w-full h-10 px-2.5 rounded-xl bg-card border border-border text-xs font-bold text-foreground"
                 >
+                  <option value={5}>5回制（低学年等）</option>
                   <option value={6}>6回制（学童等）</option>
                   <option value={7}>7回制（中学・草野球）</option>
                   <option value={9}>9回制</option>
@@ -563,42 +574,119 @@ export function Step1MatchAndImages({
         {needBottom && renderSheetUploader(false)}
       </div>
 
-      {/* ④ 記号早見表（レジェンド）連携ステータス */}
-      <section className="rounded-3xl bg-card border border-border shadow-xs p-4 space-y-2.5">
+      {/* ④ 記号早見表（スコア設定との自動連携） */}
+      <section className="rounded-3xl bg-card border border-border shadow-xs p-4 space-y-3">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
             <BookOpen className="w-4 h-4 text-indigo-500 shrink-0" />
-            <div className="min-w-0">
-              <p className="text-xs font-black text-foreground">
-                スコア記号早見表の参照（任意）
-              </p>
-              <p className="text-[10px] font-bold text-muted-foreground truncate">
-                {legendOverrideDataUrl
-                  ? "今回指定した早見表画像を最優先で適用します"
-                  : teamLegendUrl
-                  ? "チーム設定に登録済みの記号早見表を自動適用します"
-                  : "標準の早稲田式・成美堂式ルールで解析します"}
-              </p>
-            </div>
+            <p className="text-xs font-black text-foreground truncate">
+              スコア記号早見表
+            </p>
           </div>
 
-          <label className="px-2.5 py-1.5 rounded-xl bg-muted hover:bg-muted/80 border border-border text-[10px] font-black text-foreground shrink-0 cursor-pointer">
-            {legendOverrideDataUrl ? "変更" : "早見表を添付"}
-            <input
-              type="file"
-              accept="image/*"
-              onChange={(e) =>
-                onSelectLegendOverride(e.target.files?.[0] || null)
-              }
-              className="hidden"
-            />
-          </label>
+          <Link
+            href="/liff/settings/score"
+            className="px-2.5 py-1.5 rounded-xl bg-indigo-500/12 hover:bg-indigo-500/20 border border-indigo-500/30 text-[11px] font-black text-indigo-700 dark:text-indigo-300 flex items-center gap-1 shrink-0 active:scale-95 transition-all"
+          >
+            <Settings className="w-3.5 h-3.5" />
+            <span>スコア設定</span>
+          </Link>
         </div>
 
-        {(legendOverrideDataUrl || teamLegendUrl) && (
-          <div className="flex items-center gap-2 text-[10px] font-black text-emerald-600 dark:text-emerald-400">
-            <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-            <span>チーム固有の安打・投球・進塁記号ルールを参照して解析します</span>
+        {legendOverrideDataUrl ? (
+          <div className="p-2.5 rounded-2xl bg-indigo-500/8 border border-indigo-500/30 flex items-center justify-between gap-2.5">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <img
+                src={legendOverrideDataUrl}
+                alt="一時指定した早見表"
+                className="w-11 h-11 rounded-lg object-cover border border-border bg-slate-950 shrink-0"
+              />
+              <div className="min-w-0 space-y-0.5">
+                <p className="text-[11px] font-black text-foreground truncate">
+                  この試合のみ一時添付した早見表を適用中
+                </p>
+                <p className="text-[10px] font-bold text-muted-foreground leading-snug">
+                  毎回使う場合は右上の「スコア設定」に登録すると次回から添付不要です
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => onSelectLegendOverride(null)}
+              className="p-1.5 rounded-xl bg-card border border-border text-muted-foreground hover:text-destructive shrink-0 cursor-pointer"
+              title="一時添付を解除"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ) : teamLegendUrl ? (
+          <div className="space-y-2">
+            <div className="p-2.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between gap-2.5">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <img
+                  src={teamLegendUrl}
+                  alt="登録済みの早見表"
+                  className="w-11 h-11 rounded-lg object-cover border border-emerald-500/30 bg-slate-950 shrink-0"
+                />
+                <div className="min-w-0 space-y-0.5">
+                  <div className="flex items-center gap-1 text-[11px] font-black text-emerald-700 dark:text-emerald-300">
+                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">登録済み（毎回自動適用）</span>
+                  </div>
+                  <p className="text-[10px] font-bold text-muted-foreground leading-snug">
+                    スコア設定の早見表を自動で参照します。毎回の添付は不要です
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end">
+              <label className="text-[10px] font-bold text-muted-foreground hover:text-foreground underline underline-offset-2 cursor-pointer">
+                この試合だけ別の早見表を一時添付する
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    onSelectLegendOverride(e.target.files?.[0] || null);
+                    e.currentTarget.value = "";
+                  }}
+                  className="hidden"
+                />
+              </label>
+            </div>
+          </div>
+        ) : (
+          <div className="p-3 rounded-2xl bg-muted/45 border border-border space-y-2.5">
+            <p className="text-[11px] font-bold text-muted-foreground leading-relaxed">
+              現在は標準の早稲田式・成美堂式ルールで解析します。お使いのスコアブック記載例を
+              <strong className="text-foreground font-black">
+                「スコア設定」に1度登録しておけば、毎回添付する手間なく自動適用
+              </strong>
+              できます。
+            </p>
+            <div className="flex items-center gap-2">
+              <Link
+                href="/liff/settings/score"
+                className="flex-1 py-2.5 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all"
+              >
+                <Settings className="w-3.5 h-3.5 shrink-0" />
+                <span>スコア設定で早見表を登録する</span>
+              </Link>
+
+              <label className="py-2.5 px-3 rounded-xl bg-card hover:bg-muted border border-border text-[10px] font-black text-muted-foreground hover:text-foreground shrink-0 cursor-pointer active:scale-95 transition-all">
+                今回のみ添付
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    onSelectLegendOverride(e.target.files?.[0] || null);
+                    e.currentTarget.value = "";
+                  }}
+                  className="hidden"
+                />
+              </label>
+            </div>
           </div>
         )}
       </section>

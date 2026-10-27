@@ -387,6 +387,145 @@ liffScorebookRouter.get("/context", async (c) => {
 });
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 1-B. スコア設定：チーム共通「スコア記号早見表」の登録・更新・削除
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+interface UpdateTeamLegendPayload {
+  teamId: string;
+  clear?: boolean;
+  imageBase64?: string;
+  mimeType?: string;
+}
+
+liffScorebookRouter.post("/legend", async (c) => {
+  await ensureMatchLineupColumns(c.env.DB);
+  const db = drizzle(c.env.DB, { schema });
+
+  try {
+    const body = (await c.req.json()) as UpdateTeamLegendPayload;
+    let targetTeam = body.teamId
+      ? await db
+          .select({
+            id: teams.id,
+            scorebookLegendUrl: teams.scorebookLegendUrl,
+          })
+          .from(teams)
+          .where(eq(teams.id, body.teamId))
+          .get()
+      : undefined;
+
+    if (!targetTeam) {
+      targetTeam = await db
+        .select({
+          id: teams.id,
+          scorebookLegendUrl: teams.scorebookLegendUrl,
+        })
+        .from(teams)
+        .get();
+    }
+
+    if (!targetTeam) {
+      return c.json({ success: false, error: "対象チームが見つかりません" }, 404);
+    }
+
+    const oldUrl = targetTeam.scorebookLegendUrl || "";
+    const oldMarker = `/api/images/teams/legend-${targetTeam.id}-`;
+
+    const cleanupPreviousR2Object = async () => {
+      if (c.env.BUCKET && oldUrl.startsWith(oldMarker)) {
+        const oldR2Key = oldUrl.slice("/api/images/".length);
+        try {
+          await c.env.BUCKET.delete(oldR2Key);
+        } catch {
+          // ignore R2 cleanup error
+        }
+      }
+    };
+
+    if (body.clear) {
+      await cleanupPreviousR2Object();
+      await db
+        .update(teams)
+        .set({
+          scorebookLegendUrl: null,
+        })
+        .where(eq(teams.id, targetTeam.id));
+
+      return c.json({
+        success: true,
+        teamId: targetTeam.id,
+        scorebookLegendUrl: null,
+      });
+    }
+
+    const rawBase64 = (body.imageBase64 || "").trim();
+    if (!rawBase64) {
+      return c.json({ success: false, error: "早見表の画像データがありません" }, 400);
+    }
+
+    const cleanBase64 = rawBase64.includes(",")
+      ? (rawBase64.split(",")[1] || "").trim()
+      : rawBase64;
+    const bytes = base64ToUint8Array(cleanBase64);
+
+    if (bytes.byteLength === 0 || bytes.byteLength > 2_400_000) {
+      return c.json(
+        {
+          success: false,
+          error: "画像サイズが大きすぎます（2.4MB以下に圧縮して再度お試しください）",
+        },
+        400
+      );
+    }
+
+    const rawMime = (body.mimeType || "image/jpeg").toLowerCase();
+    const safeMimeType =
+      rawMime === "image/png"
+        ? "image/png"
+        : rawMime === "image/webp"
+        ? "image/webp"
+        : "image/jpeg";
+    const ext =
+      safeMimeType === "image/png"
+        ? "png"
+        : safeMimeType === "image/webp"
+        ? "webp"
+        : "jpg";
+
+    let nextLegendUrl: string;
+    if (c.env.BUCKET) {
+      const r2Key = `teams/legend-${targetTeam.id}-${Date.now()}.${ext}`;
+      const arrayBuf = bytes.buffer.slice(
+        bytes.byteOffset,
+        bytes.byteOffset + bytes.byteLength
+      ) as ArrayBuffer;
+      await c.env.BUCKET.put(r2Key, arrayBuf, {
+        httpMetadata: { contentType: safeMimeType },
+      });
+      await cleanupPreviousR2Object();
+      nextLegendUrl = `/api/images/${r2Key}`;
+    } else {
+      nextLegendUrl = `data:${safeMimeType};base64,${cleanBase64}`;
+    }
+
+    await db
+      .update(teams)
+      .set({
+        scorebookLegendUrl: nextLegendUrl,
+      })
+      .where(eq(teams.id, targetTeam.id));
+
+    return c.json({
+      success: true,
+      teamId: targetTeam.id,
+      scorebookLegendUrl: nextLegendUrl,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return c.json({ success: false, error: `早見表の保存に失敗しました: ${msg}` }, 500);
+  }
+});
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // 2. スコア取込画面内でのクイック新規試合枠作成
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 interface QuickCreateMatchPayload {
@@ -2161,7 +2300,7 @@ async function resolveLegendImagePart(
     if (legendUrl.startsWith("data:")) {
       const [header, b64] = legendUrl.split(",");
       const mimeMatch = header?.match(/data:(.*?);/);
-      if (b64 && b64.length <= 1_600_000) {
+      if (b64 && b64.length <= 3_200_000) {
         return {
           inlineData: {
             mimeType: mimeMatch ? mimeMatch[1] : "image/png",
@@ -2179,7 +2318,7 @@ async function resolveLegendImagePart(
       const obj = await c.env.BUCKET.get(r2Key);
       if (obj) {
         const buf = await obj.arrayBuffer();
-        if (buf.byteLength <= 1_200_000) {
+        if (buf.byteLength <= 2_500_000) {
           return {
             inlineData: {
               mimeType: obj.httpMetadata?.contentType || "image/png",
@@ -2197,7 +2336,7 @@ async function resolveLegendImagePart(
     const res = await fetch(targetUrl);
     if (res.ok) {
       const buf = await res.arrayBuffer();
-      if (buf.byteLength <= 1_200_000) {
+      if (buf.byteLength <= 2_500_000) {
         return {
           inlineData: {
             mimeType: res.headers.get("content-type") || "image/png",
@@ -2549,6 +2688,19 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
     binary += String.fromCharCode(...Array.from(chunk));
   }
   return btoa(binary);
+}
+
+function base64ToUint8Array(base64: string): Uint8Array {
+  if (typeof Buffer !== "undefined") {
+    const buf = Buffer.from(base64, "base64");
+    return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+  }
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
 }
 
 export default liffScorebookRouter;
