@@ -73,6 +73,19 @@ export function Step2StructureCheck({
     return null;
   }
 
+  const maxInningOption = Math.max(
+    12,
+    current.innings[current.innings.length - 1]?.inning || 7,
+    ...current.pitchers.flatMap((p) => [p.fromInning, p.toInning]),
+    ...current.batters.flatMap((b) =>
+      b.substitutions.map((s) => s.inningEntered)
+    )
+  );
+  const inningOptions = Array.from(
+    { length: maxInningOption },
+    (_, i) => i + 1
+  );
+
   const updateInningMeta = (
     inningNum: number,
     patch: Partial<ScorebookInningMeta>
@@ -498,7 +511,7 @@ export function Step2StructureCheck({
                         }
                         className="h-8 px-1 rounded-lg bg-card border border-border text-[10px] font-black text-foreground shrink-0"
                       >
-                        {Array.from({ length: 12 }, (_, i) => i + 1).map((n) => (
+                        {inningOptions.map((n) => (
                           <option key={n} value={n}>
                             {n}回〜
                           </option>
@@ -608,86 +621,109 @@ export function Step2StructureCheck({
           {current.pitchers.map((pt, idx) => (
             <div
               key={pt.id}
-              className="flex items-center gap-1.5 p-2.5 rounded-2xl bg-muted/35 border border-border/80"
+              className="p-2.5 rounded-2xl bg-muted/35 border border-border/80 space-y-2"
             >
-              <span className="px-1.5 py-0.5 rounded-md bg-muted text-[10px] font-black text-muted-foreground shrink-0">
-                {idx === 0 ? "先発" : `${idx + 1}番手`}
-              </span>
+              <div className="flex items-center gap-1.5">
+                <span className="px-2 py-1 rounded-lg bg-foreground text-background text-[10px] font-black shrink-0">
+                  {idx === 0 ? "先発" : `${idx + 1}番手`}
+                </span>
 
-              {!current.isMyTeamBatting && roster.length > 0 ? (
-                <select
-                  value={pt.playerId || ""}
-                  onChange={(e) => {
-                    const found = roster.find((p) => p.id === e.target.value);
-                    if (found) {
-                      updatePitcher(pt.id, {
-                        playerId: found.id,
-                        name: found.name,
-                        uniformNumber: found.uniformNumber,
-                      });
-                    } else {
-                      updatePitcher(pt.id, { playerId: null });
-                    }
-                  }}
-                  className="flex-1 min-w-0 h-9 px-2 rounded-xl bg-card border border-border text-xs font-black text-foreground"
-                >
-                  <option value="">
-                    {pt.name ? `未登録: ${pt.name}` : "-- 自チーム投手を選択 --"}
-                  </option>
-                  {roster.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      #{p.uniformNumber} {p.name}
+                {!current.isMyTeamBatting && roster.length > 0 ? (
+                  <select
+                    value={pt.playerId || ""}
+                    onChange={(e) => {
+                      const found = roster.find((p) => p.id === e.target.value);
+                      if (found) {
+                        updatePitcher(pt.id, {
+                          playerId: found.id,
+                          name: found.name,
+                          uniformNumber: found.uniformNumber,
+                        });
+                      } else {
+                        updatePitcher(pt.id, { playerId: null });
+                      }
+                    }}
+                    className="flex-1 min-w-0 h-9 px-2.5 rounded-xl bg-card border border-border text-xs font-black text-foreground"
+                  >
+                    <option value="">
+                      {pt.name ? `未登録: ${pt.name}` : "-- 自チーム投手を選択 --"}
                     </option>
-                  ))}
-                </select>
-              ) : (
-                <input
-                  type="text"
-                  value={pt.name}
-                  onChange={(e) => updatePitcher(pt.id, { name: e.target.value })}
-                  placeholder="相手投手名"
-                  className="flex-1 min-w-0 h-9 px-2.5 rounded-xl bg-card border border-border text-xs font-black text-foreground"
-                />
-              )}
+                    {roster.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        #{p.uniformNumber} {p.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    value={pt.name}
+                    onChange={(e) =>
+                      updatePitcher(pt.id, { name: e.target.value })
+                    }
+                    placeholder="相手投手名"
+                    className="flex-1 min-w-0 h-9 px-2.5 rounded-xl bg-card border border-border text-xs font-black text-foreground"
+                  />
+                )}
 
-              <div className="flex items-center gap-1 text-[11px] font-black shrink-0">
-                <input
-                  type="number"
-                  min={1}
-                  max={15}
-                  value={pt.fromInning}
-                  onChange={(e) =>
-                    updatePitcher(pt.id, {
-                      fromInning: Math.max(1, Number(e.target.value) || 1),
-                    })
-                  }
-                  className="w-10 h-9 rounded-xl bg-card border border-border text-center text-xs font-black"
-                />
-                <span>〜</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={15}
-                  value={pt.toInning}
-                  onChange={(e) =>
-                    updatePitcher(pt.id, {
-                      toInning: Math.max(1, Number(e.target.value) || 1),
-                    })
-                  }
-                  className="w-10 h-9 rounded-xl bg-card border border-border text-center text-xs font-black"
-                />
-                <span className="text-[10px] text-muted-foreground">回</span>
+                {current.pitchers.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => removePitcher(pt.id)}
+                    className="h-9 w-9 rounded-xl bg-card border border-border flex items-center justify-center text-destructive hover:bg-destructive/10 shrink-0 cursor-pointer"
+                    aria-label="投手を削除"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
               </div>
 
-              {current.pitchers.length > 1 && (
-                <button
-                  type="button"
-                  onClick={() => removePitcher(pt.id)}
-                  className="p-1 text-destructive cursor-pointer"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              )}
+              <div className="flex items-center justify-between gap-2 pl-1">
+                <span className="text-[11px] font-bold text-muted-foreground">
+                  担当イニング
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <select
+                    aria-label="登板開始イニング"
+                    value={pt.fromInning}
+                    onChange={(e) => {
+                      const nextFrom = Number(e.target.value);
+                      updatePitcher(pt.id, {
+                        fromInning: nextFrom,
+                        toInning: Math.max(pt.toInning, nextFrom),
+                      });
+                    }}
+                    className="h-9 min-w-[4.5rem] px-2.5 rounded-xl bg-card border border-border text-xs font-black text-foreground cursor-pointer"
+                  >
+                    {inningOptions.map((n) => (
+                      <option key={n} value={n}>
+                        {n}回
+                      </option>
+                    ))}
+                  </select>
+                  <span className="text-xs font-black text-muted-foreground">
+                    〜
+                  </span>
+                  <select
+                    aria-label="登板終了イニング"
+                    value={pt.toInning}
+                    onChange={(e) => {
+                      const nextTo = Number(e.target.value);
+                      updatePitcher(pt.id, {
+                        fromInning: Math.min(pt.fromInning, nextTo),
+                        toInning: nextTo,
+                      });
+                    }}
+                    className="h-9 min-w-[4.5rem] px-2.5 rounded-xl bg-card border border-border text-xs font-black text-foreground cursor-pointer"
+                  >
+                    {inningOptions.map((n) => (
+                      <option key={n} value={n}>
+                        {n}回
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
             </div>
           ))}
         </div>
