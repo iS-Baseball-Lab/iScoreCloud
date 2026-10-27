@@ -2,6 +2,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import {
   IdCard,
@@ -838,15 +839,17 @@ export default function LiffPlayersDirectoryPage() {
           .map((sp) => resolvePositionMeta(sp).shortLabel)
           .filter(Boolean);
 
-        return (
-          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/65 p-0 sm:p-4 animate-in fade-in duration-150">
+        if (typeof document === "undefined") return null;
+
+        return createPortal(
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-xs p-3 sm:p-4 animate-in fade-in duration-150">
             {/* 背景タップで明示的クローズ */}
             <div
               className="absolute inset-0"
               onClick={() => setSelectedPlayerId(null)}
             />
 
-            <div className="relative z-10 w-full max-w-md rounded-t-3xl sm:rounded-3xl bg-card border border-border shadow-2xl overflow-hidden max-h-[88vh] flex flex-col animate-in slide-in-from-bottom duration-200">
+            <div className="relative z-10 w-full max-w-md rounded-3xl bg-card border border-border shadow-2xl overflow-hidden max-h-[88dvh] flex flex-col animate-in zoom-in-95 duration-200">
               {/* 選手カードヒーローヘッダー */}
               <div className={`relative p-5 text-white overflow-hidden shrink-0 ${style.stageBg}`}>
                 <span
@@ -936,7 +939,7 @@ export default function LiffPlayersDirectoryPage() {
               </div>
 
               {/* スクロール可能な詳細ボディ */}
-              <div className="p-4 space-y-4 overflow-y-auto">
+              <div className="p-4 pb-[max(env(safe-area-inset-bottom),20px)] space-y-4 overflow-y-auto">
                 {/* 基本スペック 4グリッド */}
                 <div className="grid grid-cols-4 gap-2 text-center">
                   <div className="p-2.5 rounded-2xl bg-muted/60 border border-border/70">
@@ -1092,7 +1095,8 @@ export default function LiffPlayersDirectoryPage() {
                 </Link>
               </div>
             </div>
-          </div>
+          </div>,
+          document.body
         );
       })()}
     </div>
