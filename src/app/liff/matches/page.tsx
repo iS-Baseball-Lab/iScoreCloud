@@ -574,10 +574,17 @@ function MatchesContent() {
       "bg-slate-100 dark:bg-white/[0.06] text-foreground/85 border-slate-200/90 dark:border-border";
 
     const rawTournament = (match.tournamentName || match.tournament || "").trim();
-    const displayTournamentName =
+    const customTournamentName =
       rawTournament && !["公式戦", "OP戦", "練習試合", "交流戦"].includes(rawTournament)
         ? rawTournament
         : "";
+    const displayTournamentName =
+      customTournamentName ||
+      (match.matchType === "official"
+        ? "大会名未登録"
+        : match.matchType === "exchange"
+          ? "交流戦"
+          : "OP戦");
 
     const battingOrderLabel =
       match.battingOrder === "first"
@@ -612,7 +619,7 @@ function MatchesContent() {
     const shareBenchText =
       match.benchSide === "1B" || match.benchSide === "3B" ? ` • ${benchSideLabel}` : "";
     const shareBasicLine = `\n🏷️ ${matchTypeLabel} • ${inningsBadgeLabel} • ${battingOrderLabel}${shareBenchText}${
-      displayTournamentName ? `\n🏆 ${displayTournamentName}` : ""
+      customTournamentName ? `\n🏆 ${customTournamentName}` : ""
     }`;
     const shareVenueLine = venueInfo.officialName
       ? `\n📍 ${venueInfo.officialName}${venueInfo.address ? ` (${venueInfo.address})` : ""}`
