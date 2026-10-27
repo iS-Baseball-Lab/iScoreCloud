@@ -583,7 +583,49 @@ export const MatchService = {
           let pitchResult = "strike";
           const lowerP = pText.toLowerCase();
 
-          if (lowerP.includes("ボール") || lowerP.includes("ball") || lowerP.includes("b")) {
+          if (
+            lowerP.includes("バントファウル") ||
+            lowerP.includes("バントf") ||
+            lowerP === "bunt_foul" ||
+            lowerP === "bf"
+          ) {
+            pitchResult = "bunt_foul";
+          } else if (
+            lowerP.includes("バント空") ||
+            lowerP === "bunt_swinging" ||
+            lowerP === "bs"
+          ) {
+            pitchResult = "bunt_swinging";
+          } else if (
+            lowerP.includes("ボーク") ||
+            lowerP === "balk" ||
+            lowerP === "bk"
+          ) {
+            pitchResult = "balk";
+          } else if (
+            lowerP.includes("1塁牽") ||
+            lowerP.includes("１塁牽") ||
+            lowerP.includes("一塁牽") ||
+            lowerP === "pickoff_1b"
+          ) {
+            pitchResult = "pickoff_1b";
+          } else if (
+            lowerP.includes("2塁牽") ||
+            lowerP.includes("２塁牽") ||
+            lowerP.includes("二塁牽") ||
+            lowerP === "pickoff_2b"
+          ) {
+            pitchResult = "pickoff_2b";
+          } else if (
+            lowerP.includes("3塁牽") ||
+            lowerP.includes("３塁牽") ||
+            lowerP.includes("三塁牽") ||
+            lowerP === "pickoff_3b"
+          ) {
+            pitchResult = "pickoff_3b";
+          } else if (lowerP.includes("牽制") || lowerP.includes("pickoff")) {
+            pitchResult = "pickoff";
+          } else if (lowerP.includes("ボール") || lowerP.includes("ball") || lowerP.includes("b")) {
             pitchResult = "ball";
           } else if (lowerP.includes("空振り") || lowerP.includes("swing")) {
             pitchResult = "swinging_strike";
@@ -606,7 +648,12 @@ export const MatchService = {
 
           if (pitchResult === "ball") {
             ballsBefore = Math.min(3, ballsBefore + 1);
-          } else if (pitchResult === "strike" || pitchResult === "swinging_strike") {
+          } else if (
+            pitchResult === "strike" ||
+            pitchResult === "swinging_strike" ||
+            pitchResult === "bunt_swinging" ||
+            pitchResult === "bunt_foul"
+          ) {
             strikesBefore = Math.min(2, strikesBefore + 1);
           } else if (pitchResult === "foul") {
             if (strikesBefore < 2) {
@@ -650,7 +697,19 @@ export const MatchService = {
       
       let pitchesStr = "";
       if (e.pitches && e.pitches.length > 0) {
-        pitchesStr = `\n===PITCHES===\n${e.pitches.map((p, i) => `${i + 1}球目: ${p}`).join("\n")}`;
+        let realSeq = 0;
+        pitchesStr = `\n===PITCHES===\n${e.pitches
+          .map((p) => {
+            if (p.includes("牽制") || p.startsWith("pickoff")) {
+              return `牽制: ${p}`;
+            }
+            if (p.includes("ボーク") || p === "balk") {
+              return `ボーク: ${p}`;
+            }
+            realSeq += 1;
+            return `${realSeq}球目: ${p}`;
+          })
+          .join("\n")}`;
       }
       
       const balls = e.balls || 0;

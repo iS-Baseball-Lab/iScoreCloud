@@ -530,6 +530,7 @@ app.get("/:id/stats", async (c) => {
     const dbPitches = await db.select({
       id: pitches.id,
       atBatId: pitches.atBatId,
+      result: pitches.result,
     })
     .from(pitches)
     .innerJoin(atBats, eq(pitches.atBatId, atBats.id))
@@ -578,13 +579,17 @@ app.get("/:id/stats", async (c) => {
       }
 
       const p = batterMap.get(batterId);
-      p.plateAppearances++;
-
       const res = ab.result || "";
-      const isWalk = res.includes("BB") || res.includes("四球");
-      const isHbp = res.includes("HP") || res.includes("DB") || res.includes("死球");
-      const isSacBunt = res.includes("SH") || res.includes("犠打") || (res.includes("犠") && !res.includes("飛"));
-      const isSacFly = res.includes("SF") || res.includes("犠飛");
+      if (res === "other" || res.includes("途中断")) {
+        continue;
+      }
+
+      p.plateAppearances++;
+      const isWalk = res === "walk" || res === "intentional_walk" || res.includes("BB") || res.includes("四球") || res.includes("敬遠");
+      const isHbp = res === "hit_by_pitch" || res.includes("HP") || res.includes("DB") || res.includes("死球");
+      const isSacBunt = res === "sac_bunt" || res.includes("SH") || res.includes("犠打") || (res.includes("犠") && !res.includes("飛"));
+      const isSacFly = res === "sac_fly" || res.includes("SF") || res.includes("犠飛");
+      const isInterferenceReach = res === "interference" || res.includes("打撃妨害");
 
       if (isWalk) p.walks++;
       if (isHbp) p.hitByPitch++;
@@ -592,15 +597,15 @@ app.get("/:id/stats", async (c) => {
       if (isSacFly) p.sacFlies++;
 
       // 打数 (AB) = 四球・死球・犠打・犠飛 以外の打席
-      if (!isWalk && !isHbp && !isSacBunt && !isSacFly) {
+      if (!isWalk && !isHbp && !isSacBunt && !isSacFly && !isInterferenceReach) {
         p.atBats++;
       }
 
       // 安打・長打判別
-      const is2B = res.includes("2B") || res.includes("二塁打") || res.includes("２塁打");
-      const is3B = res.includes("3B") || res.includes("三塁打") || res.includes("３塁打");
-      const isHR = res.includes("HR") || res.includes("本塁打");
-      const is1B = res.includes("1B") || res.includes("単打") || (res.includes("安") && !is2B && !is3B && !isHR);
+      const is2B = res === "double" || res.includes("2B") || res.includes("二塁打") || res.includes("２塁打");
+      const is3B = res === "triple" || res.includes("3B") || res.includes("三塁打") || res.includes("３塁打");
+      const isHR = res === "home_run" || res.includes("HR") || res.includes("本塁打");
+      const is1B = res === "single" || res.includes("1B") || res.includes("単打") || (res.includes("安") && !is2B && !is3B && !isHR);
 
       if (isHR) {
         p.homeRuns++;
@@ -616,15 +621,15 @@ app.get("/:id/stats", async (c) => {
         p.hits++;
       }
 
-      if (res.includes("K") || res.includes("三振")) {
+      if (res === "strikeout" || res === "dropped_third_strike" || res === "dropped_third_strike_out" || res.includes("K") || res.includes("三振") || res.includes("振逃")) {
         p.strikeouts++;
       }
 
-      if (res.includes("DP") || res.includes("併殺") || res.includes("ゲッツー")) {
+      if (res === "double_play" || res === "triple_play" || res.includes("DP") || res.includes("併殺") || res.includes("三重殺") || res.includes("ゲッツー")) {
         p.doublePlays++;
       }
 
-      if (res.includes("E") || res.includes("失策") || res.includes("エラー")) {
+      if (res === "error" || res.includes("E") || res.includes("失策") || res.includes("エラー")) {
         p.errors++;
       }
 
@@ -645,13 +650,13 @@ app.get("/:id/stats", async (c) => {
 
         // 盗塁
         const reasonStr = String(adv.reason || '');
-        if (reasonStr.includes('stolen') || reasonStr.includes('SB') || reasonStr.includes('盗塁')) {
+        if (reasonStr === 'steal' || reasonStr.includes('stolen') || reasonStr.includes('SB') || reasonStr.includes('盗塁')) {
           if (adv.isOut) {
             runner.caughtStealing++;
           } else {
             runner.stolenBases++;
           }
-        } else if (reasonStr.includes('CS') || reasonStr.includes('盗塁刺') || reasonStr.includes('盗塁死')) {
+        } else if (reasonStr === 'caught_stealing' || reasonStr.includes('CS') || reasonStr.includes('盗塁刺') || reasonStr.includes('盗塁死')) {
           runner.caughtStealing++;
         }
       }
@@ -705,17 +710,17 @@ app.get("/:id/stats", async (c) => {
       const res = ab.result || "";
 
       // 投球数 (その打席の投球データをカウント)
-      const pitchCountForAtBat = dbPitches.filter(pt => pt.atBatId === ab.id).length;
+      const pitchCountForAtBat = dbPitches.filter(pt => pt.atBatId === ab.id && !pt.result.startsWith("pickoff") && pt.result !== "balk").length;
       p.pitches += pitchCountForAtBat;
 
       // 対戦打者
-      p.battersFaced++;
+      if (res !== "other" && !res.includes("途中断")) p.battersFaced++;
 
       // 被安打 (単打, 二塁打, 三塁打, 本塁打)
-      const is2B = res.includes("2B") || res.includes("二塁打") || res.includes("２塁打");
-      const is3B = res.includes("3B") || res.includes("三塁打") || res.includes("３塁打");
-      const isHR = res.includes("HR") || res.includes("本塁打");
-      const is1B = res.includes("1B") || res.includes("単打") || (res.includes("安") && !is2B && !is3B && !isHR);
+      const is2B = res === "double" || res.includes("2B") || res.includes("二塁打") || res.includes("２塁打");
+      const is3B = res === "triple" || res.includes("3B") || res.includes("三塁打") || res.includes("３塁打");
+      const isHR = res === "home_run" || res.includes("HR") || res.includes("本塁打");
+      const is1B = res === "single" || res.includes("1B") || res.includes("単打") || (res.includes("安") && !is2B && !is3B && !isHR);
       if (is1B || is2B || is3B || isHR) {
         p.hits++;
       }
@@ -726,29 +731,30 @@ app.get("/:id/stats", async (c) => {
       }
 
       // 被犠打
-      const isSacBunt = res.includes("SH") || res.includes("犠打") || (res.includes("犠") && !res.includes("飛"));
+      const isSacBunt = res === "sac_bunt" || res.includes("SH") || res.includes("犠打") || (res.includes("犠") && !res.includes("飛"));
       if (isSacBunt) {
         p.sacBunts++;
       }
 
       // 被犠飛
-      const isSacFly = res.includes("SF") || res.includes("犠飛");
+      const isSacFly = res === "sac_fly" || res.includes("SF") || res.includes("犠飛");
+      const isInterferenceReach = res === "interference" || res.includes("打撃妨害");
       if (isSacFly) {
         p.sacFlies++;
       }
 
       // 奪三振
-      if (res.includes("K") || res.includes("三振")) {
+      if (res === "strikeout" || res === "dropped_third_strike" || res === "dropped_third_strike_out" || res.includes("K") || res.includes("三振") || res.includes("振逃")) {
         p.strikeouts++;
       }
 
       // 与四球
-      if (res.includes("BB") || res.includes("四球")) {
+      if (res === "walk" || res === "intentional_walk" || res.includes("BB") || res.includes("四球") || res.includes("敬遠")) {
         p.walks++;
       }
 
       // 与死球
-      if (res.includes("HP") || res.includes("DB") || res.includes("死球")) {
+      if (res === "hit_by_pitch" || res.includes("HP") || res.includes("DB") || res.includes("死球")) {
         p.hitByPitch++;
       }
 
@@ -758,10 +764,12 @@ app.get("/:id/stats", async (c) => {
                     /^[1-9]-[1-9]$/.test(res) || 
                     /^[1-9]F$/.test(res) || 
                     /^[1-9]L$/.test(res) || 
-                    res.includes("DP");
+                    res === "groundout" || res === "flyout" || res === "infield_fly" || res === "strikeout" || res === "dropped_third_strike_out" || res === "sac_bunt" || res === "sac_fly" || res === "interference_out" || res === "double_play" || res === "triple_play" || res.includes("DP") || res.includes("TP");
 
       if (isOut) {
-        if (res.includes("併殺") || res.includes("DP")) {
+        if (res === "triple_play" || res.includes("三重殺") || res.includes("TP")) {
+          p.outs += 3;
+        } else if (res === "double_play" || res.includes("併殺") || res.includes("DP")) {
           p.outs += 2;
         } else {
           p.outs += 1;
@@ -777,6 +785,9 @@ app.get("/:id/stats", async (c) => {
         const reasonStr = String(adv.reason || '');
         if (reasonStr.includes('wp') || reasonStr.includes('wp_advance') || reasonStr.includes('暴投')) {
           p.wildPitches++;
+        }
+        if (adv.isOut && adv.fromBase > 0 && (reasonStr === 'caught_stealing' || reasonStr === 'pickoff_out' || reasonStr === 'interference_out' || reasonStr === 'appeal_out' || reasonStr === 'out_on_base' || reasonStr.includes('盗塁') || reasonStr.includes('牽制'))) {
+          p.outs++;
         }
         if (reasonStr.includes('balk') || reasonStr.includes('balk_advance') || reasonStr.includes('ボーク')) {
           p.balks++;

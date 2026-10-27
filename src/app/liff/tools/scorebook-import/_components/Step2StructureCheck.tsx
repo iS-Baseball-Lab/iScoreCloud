@@ -666,13 +666,18 @@ export function Step2StructureCheck({
                         value={sub.subType}
                         onChange={(e) =>
                           updateSubstitution(slot.battingOrder, sub.id, {
-                            subType: e.target.value as "PH" | "PR" | "DEF",
+                            subType: e.target.value as
+                              | "PH"
+                              | "PR"
+                              | "TR"
+                              | "DEF",
                           })
                         }
                         className="h-8 px-1 rounded-lg bg-card border border-border text-[10px] font-black text-amber-700 dark:text-amber-300 shrink-0"
                       >
                         <option value="PH">代打</option>
                         <option value="PR">代走</option>
+                        <option value="TR">臨時代走</option>
                         <option value="DEF">守備</option>
                       </select>
 

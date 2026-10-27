@@ -6,15 +6,15 @@ app.get('/:id/stats', async (c) => {
   const teamId = c.req.param('id');
   try {
     const { results } = await c.env.DB.prepare(`
-      SELECT p.name as playerName, COUNT(ab.result) as plateAppearances,
-          SUM(CASE WHEN ab.result IN ('single', 'double', 'triple', 'home_run', 'groundout', 'flyout', 'double_play', 'strikeout') THEN 1 ELSE 0 END) as atBats,
+      SELECT p.name as playerName, SUM(CASE WHEN ab.result != 'other' THEN 1 ELSE 0 END) as plateAppearances,
+          SUM(CASE WHEN ab.result IN ('single', 'double', 'triple', 'home_run', 'groundout', 'flyout', 'infield_fly', 'double_play', 'triple_play', 'interference_out', 'strikeout', 'dropped_third_strike_out', 'dropped_third_strike', 'error', 'fc') THEN 1 ELSE 0 END) as atBats,
           SUM(CASE WHEN ab.result IN ('single', 'double', 'triple', 'home_run') THEN 1 ELSE 0 END) as hits,
           SUM(CASE WHEN ab.result = 'single' THEN 1 ELSE 0 END) as singles, 
           SUM(CASE WHEN ab.result = 'double' THEN 1 ELSE 0 END) as doubles,
           SUM(CASE WHEN ab.result = 'triple' THEN 1 ELSE 0 END) as triples, 
           SUM(CASE WHEN ab.result = 'home_run' THEN 1 ELSE 0 END) as homeRuns,
-          SUM(CASE WHEN ab.result = 'walk' THEN 1 ELSE 0 END) as walks, 
-          SUM(CASE WHEN ab.result = 'strikeout' THEN 1 ELSE 0 END) as strikeouts
+          SUM(CASE WHEN ab.result IN ('walk', 'intentional_walk') THEN 1 ELSE 0 END) as walks, 
+          SUM(CASE WHEN ab.result IN ('strikeout', 'dropped_third_strike_out', 'dropped_third_strike') THEN 1 ELSE 0 END) as strikeouts
       FROM at_bats ab 
       JOIN matches m ON ab.match_id = m.id
       LEFT JOIN players p ON ab.batter_id = p.id
@@ -30,11 +30,11 @@ app.get('/:id/pitcher-stats', async (c) => {
   const teamId = c.req.param('id');
   try {
     const { results } = await c.env.DB.prepare(`
-      SELECT p.name as playerName, COUNT(ab.result) as battersFaced, 
-          SUM(CASE WHEN ab.result = 'strikeout' THEN 1 ELSE 0 END) as strikeouts,
-          SUM(CASE WHEN ab.result = 'walk' THEN 1 ELSE 0 END) as walks, 
+      SELECT p.name as playerName, SUM(CASE WHEN ab.result != 'other' THEN 1 ELSE 0 END) as battersFaced, 
+          SUM(CASE WHEN ab.result IN ('strikeout', 'dropped_third_strike_out', 'dropped_third_strike') THEN 1 ELSE 0 END) as strikeouts,
+          SUM(CASE WHEN ab.result IN ('walk', 'intentional_walk') THEN 1 ELSE 0 END) as walks, 
           SUM(CASE WHEN ab.result IN ('single', 'double', 'triple', 'home_run') THEN 1 ELSE 0 END) as hitsAllowed,
-          SUM(CASE WHEN ab.result IN ('groundout', 'flyout', 'strikeout') THEN 1 WHEN ab.result = 'double_play' THEN 2 ELSE 0 END) as outs
+          SUM(CASE WHEN ab.result IN ('groundout', 'flyout', 'infield_fly', 'strikeout', 'dropped_third_strike_out', 'sac_bunt', 'sac_fly', 'interference_out') THEN 1 WHEN ab.result = 'double_play' THEN 2 WHEN ab.result = 'triple_play' THEN 3 ELSE 0 END) as outs
       FROM at_bats ab 
       JOIN matches m ON ab.match_id = m.id
       LEFT JOIN players p ON ab.pitcher_id = p.id

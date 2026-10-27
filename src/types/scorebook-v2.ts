@@ -6,14 +6,20 @@ export type CanonicalAtBatResult =
   | "triple"
   | "home_run"
   | "walk"
+  | "intentional_walk"
   | "hit_by_pitch"
-  | "strikeout"
-  | "dropped_third_strike"
-  | "groundout"
-  | "flyout"
-  | "double_play"
+  | "interference"
   | "sac_bunt"
   | "sac_fly"
+  | "groundout"
+  | "flyout"
+  | "infield_fly"
+  | "strikeout"
+  | "dropped_third_strike_out"
+  | "dropped_third_strike"
+  | "double_play"
+  | "triple_play"
+  | "interference_out"
   | "error"
   | "fc"
   | "other";
@@ -22,11 +28,31 @@ export type CanonicalPitchResult =
   | "ball"
   | "strike"
   | "swinging_strike"
+  | "bunt_swinging"
   | "foul"
+  | "bunt_foul"
+  | "pickoff_1b"
+  | "pickoff_2b"
+  | "pickoff_3b"
+  | "pickoff"
+  | "balk"
   | "in_play"
   | "hit"
-  | "pickoff"
   | "hbp";
+
+export function isPickoffPitch(code: CanonicalPitchResult): boolean {
+  return (
+    code === "pickoff_1b" ||
+    code === "pickoff_2b" ||
+    code === "pickoff_3b" ||
+    code === "pickoff"
+  );
+}
+
+/** 牽制球・ボークなど「投手の正式投球数（球数）およびB/Sカウントに含めない」マウンドイベントか判定 */
+export function isNonPitchMoundEvent(code: CanonicalPitchResult): boolean {
+  return isPickoffPitch(code) || code === "balk";
+}
 
 export type BaseCode = "BAT" | "1B" | "2B" | "3B" | "HP";
 
@@ -36,6 +62,7 @@ export type AdvanceMethodCode =
   | "error"
   | "fc"
   | "sac"
+  | "throw_advance"
   | "steal"
   | "caught_stealing"
   | "pickoff_out"
@@ -43,6 +70,10 @@ export type AdvanceMethodCode =
   | "wp"
   | "pb"
   | "balk"
+  | "obstruction"
+  | "interference_out"
+  | "appeal_out"
+  | "tiebreak"
   | "out_on_base"
   | "other";
 
@@ -56,7 +87,7 @@ export type ConfidenceLevel = "high" | "medium" | "low";
 export interface ScorebookSubstitution {
   id: string;
   inningEntered: number;
-  subType: "PH" | "PR" | "DEF";
+  subType: "PH" | "PR" | "TR" | "DEF";
   name: string;
   uniformNumber: string;
   position: string;
@@ -174,6 +205,7 @@ export interface ScorebookMatchSummary {
 }
 
 export interface AtBatResultPreset {
+  id: string;
   code: CanonicalAtBatResult;
   shortLabel: string;
   defaultLabel: string;
@@ -182,22 +214,31 @@ export interface AtBatResultPreset {
 }
 
 export const AT_BAT_RESULT_PRESETS: AtBatResultPreset[] = [
-  { code: "single", shortLabel: "単打", defaultLabel: "安打", group: "hit", defaultOuts: 0 },
-  { code: "double", shortLabel: "二塁打", defaultLabel: "二塁打", group: "hit", defaultOuts: 0 },
-  { code: "triple", shortLabel: "三塁打", defaultLabel: "三塁打", group: "hit", defaultOuts: 0 },
-  { code: "home_run", shortLabel: "本塁打", defaultLabel: "本塁打", group: "hit", defaultOuts: 0 },
-  { code: "walk", shortLabel: "四球", defaultLabel: "四球", group: "walk_sac", defaultOuts: 0 },
-  { code: "hit_by_pitch", shortLabel: "死球", defaultLabel: "死球", group: "walk_sac", defaultOuts: 0 },
-  { code: "sac_bunt", shortLabel: "犠打", defaultLabel: "犠打", group: "walk_sac", defaultOuts: 1 },
-  { code: "sac_fly", shortLabel: "犠飛", defaultLabel: "犠飛", group: "walk_sac", defaultOuts: 1 },
-  { code: "groundout", shortLabel: "ゴロ", defaultLabel: "内ゴロ", group: "out", defaultOuts: 1 },
-  { code: "flyout", shortLabel: "飛/直", defaultLabel: "飛球", group: "out", defaultOuts: 1 },
-  { code: "strikeout", shortLabel: "三振", defaultLabel: "三振", group: "out", defaultOuts: 1 },
-  { code: "double_play", shortLabel: "併殺打", defaultLabel: "併殺打", group: "out", defaultOuts: 2 },
-  { code: "error", shortLabel: "失策", defaultLabel: "失策出塁", group: "reach", defaultOuts: 0 },
-  { code: "fc", shortLabel: "野選", defaultLabel: "野選", group: "reach", defaultOuts: 0 },
-  { code: "dropped_third_strike", shortLabel: "振り逃げ", defaultLabel: "振り逃げ", group: "reach", defaultOuts: 0 },
-  { code: "other", shortLabel: "その他", defaultLabel: "その他", group: "reach", defaultOuts: 0 },
+  { id: "single", code: "single", shortLabel: "単打", defaultLabel: "安打", group: "hit", defaultOuts: 0 },
+  { id: "double", code: "double", shortLabel: "二塁打", defaultLabel: "二塁打", group: "hit", defaultOuts: 0 },
+  { id: "triple", code: "triple", shortLabel: "三塁打", defaultLabel: "三塁打", group: "hit", defaultOuts: 0 },
+  { id: "home_run", code: "home_run", shortLabel: "本塁打", defaultLabel: "本塁打", group: "hit", defaultOuts: 0 },
+  { id: "walk", code: "walk", shortLabel: "四球", defaultLabel: "四球", group: "walk_sac", defaultOuts: 0 },
+  { id: "intentional_walk", code: "intentional_walk", shortLabel: "敬遠四球", defaultLabel: "申告敬遠", group: "walk_sac", defaultOuts: 0 },
+  { id: "hit_by_pitch", code: "hit_by_pitch", shortLabel: "死球", defaultLabel: "死球", group: "walk_sac", defaultOuts: 0 },
+  { id: "interference", code: "interference", shortLabel: "打撃妨害", defaultLabel: "打撃妨害 (INT)", group: "walk_sac", defaultOuts: 0 },
+  { id: "sac_bunt", code: "sac_bunt", shortLabel: "犠打", defaultLabel: "犠打", group: "walk_sac", defaultOuts: 1 },
+  { id: "sac_fly", code: "sac_fly", shortLabel: "犠飛", defaultLabel: "犠飛", group: "walk_sac", defaultOuts: 1 },
+  { id: "groundout", code: "groundout", shortLabel: "ゴロ/封殺", defaultLabel: "内ゴロ", group: "out", defaultOuts: 1 },
+  { id: "flyout", code: "flyout", shortLabel: "フライ/邪飛", defaultLabel: "飛球", group: "out", defaultOuts: 1 },
+  { id: "lineout", code: "flyout", shortLabel: "ライナー", defaultLabel: "直（ライナー）", group: "out", defaultOuts: 1 },
+  { id: "infield_fly", code: "infield_fly", shortLabel: "インフィールドF", defaultLabel: "インフィールドフライ", group: "out", defaultOuts: 1 },
+  { id: "so_swing", code: "strikeout", shortLabel: "空振り三振", defaultLabel: "空振り三振", group: "out", defaultOuts: 1 },
+  { id: "so_look", code: "strikeout", shortLabel: "見逃し三振", defaultLabel: "見逃し三振", group: "out", defaultOuts: 1 },
+  { id: "so_3bunt", code: "strikeout", shortLabel: "3バント失敗", defaultLabel: "スリーバント失敗", group: "out", defaultOuts: 1 },
+  { id: "dropped_third_strike_out", code: "dropped_third_strike_out", shortLabel: "振逃アウト", defaultLabel: "振り逃げアウト (K 2-3)", group: "out", defaultOuts: 1 },
+  { id: "dropped_third_strike", code: "dropped_third_strike", shortLabel: "振逃セーフ", defaultLabel: "振り逃げ出塁", group: "reach", defaultOuts: 0 },
+  { id: "double_play", code: "double_play", shortLabel: "併殺打", defaultLabel: "併殺打", group: "out", defaultOuts: 2 },
+  { id: "triple_play", code: "triple_play", shortLabel: "三重殺", defaultLabel: "三重殺 (TP)", group: "out", defaultOuts: 3 },
+  { id: "interference_out", code: "interference_out", shortLabel: "守備妨害", defaultLabel: "守備妨害アウト (INT)", group: "out", defaultOuts: 1 },
+  { id: "error", code: "error", shortLabel: "失策出塁", defaultLabel: "失策出塁", group: "reach", defaultOuts: 0 },
+  { id: "fc", code: "fc", shortLabel: "野選出塁", defaultLabel: "野選", group: "reach", defaultOuts: 0 },
+  { id: "other", code: "other", shortLabel: "途中断/他", defaultLabel: "打席途中断（走塁死チェンジ）", group: "reach", defaultOuts: 0 },
 ];
 
 export interface PitchResultPreset {
@@ -233,10 +274,16 @@ export const PITCH_RESULT_PRESETS: PitchResultPreset[] = [
     toneClass: "bg-sky-500/15 text-sky-700 dark:text-sky-300 border-sky-500/30",
   },
   {
-    code: "pickoff",
-    shortLabel: "牽制",
-    badgeLabel: "牽 牽制球",
-    toneClass: "bg-slate-500/15 text-slate-700 dark:text-slate-300 border-slate-500/30",
+    code: "bunt_foul",
+    shortLabel: "バントF",
+    badgeLabel: "BF バントファウル",
+    toneClass: "bg-pink-500/15 text-pink-700 dark:text-pink-300 border-pink-500/30",
+  },
+  {
+    code: "bunt_swinging",
+    shortLabel: "バント空S",
+    badgeLabel: "BS バント空振り",
+    toneClass: "bg-fuchsia-500/15 text-fuchsia-700 dark:text-fuchsia-300 border-fuchsia-500/30",
   },
   {
     code: "hit",
@@ -256,22 +303,58 @@ export const PITCH_RESULT_PRESETS: PitchResultPreset[] = [
     badgeLabel: "死 デッドボール",
     toneClass: "bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-500/30",
   },
+  {
+    code: "pickoff_1b",
+    shortLabel: "1塁牽制",
+    badgeLabel: "牽1 1塁牽制",
+    toneClass: "bg-slate-500/15 text-slate-700 dark:text-slate-200 border-slate-500/35",
+  },
+  {
+    code: "pickoff_2b",
+    shortLabel: "2塁牽制",
+    badgeLabel: "牽2 2塁牽制",
+    toneClass: "bg-teal-500/15 text-teal-700 dark:text-teal-300 border-teal-500/35",
+  },
+  {
+    code: "pickoff_3b",
+    shortLabel: "3塁牽制",
+    badgeLabel: "牽3 3塁牽制",
+    toneClass: "bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 border-cyan-500/35",
+  },
+  {
+    code: "balk",
+    shortLabel: "ボーク",
+    badgeLabel: "BK ボーク",
+    toneClass: "bg-amber-600/15 text-amber-800 dark:text-amber-200 border-amber-600/35",
+  },
 ];
+
+export const LEGACY_PICKOFF_PRESET: PitchResultPreset = {
+  code: "pickoff",
+  shortLabel: "牽制",
+  badgeLabel: "牽 牽制（塁未指定）",
+  toneClass: "bg-slate-500/15 text-slate-700 dark:text-slate-300 border-slate-500/30",
+};
 
 export const ADVANCE_METHOD_LABELS: Record<AdvanceMethodCode, string> = {
   hit: "安打・打撃進塁",
-  walk: "四死球押し出し",
-  error: "失策・悪送球",
-  fc: "野手選択",
-  sac: "犠打・犠飛進塁",
+  walk: "四死球・妨害押出",
+  error: "失策・悪送球 (E)",
+  fc: "野手選択 (FC/OB)",
+  sac: "犠打・犠飛・タッチアップ",
+  throw_advance: "送球間進塁 (T)",
   steal: "盗塁 (S)",
   caught_stealing: "盗塁死 (CS)",
   pickoff_out: "牽制死 (PO)",
   pickoff_error: "牽制悪送球",
   wp: "暴投 (WP)",
   pb: "捕逸 (PB)",
-  balk: "ボーク (BK)",
-  out_on_base: "走塁死・封殺",
+  balk: "ボーク進塁 (BK)",
+  obstruction: "走塁妨害 (OBS)",
+  interference_out: "守備妨害死 (INT)",
+  appeal_out: "アピール・離塁死",
+  tiebreak: "タイブレーク走者",
+  out_on_base: "走塁死・封殺・挟殺",
   other: "その他進塁",
 };
 

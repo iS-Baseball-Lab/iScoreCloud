@@ -1,15 +1,18 @@
 // filepath: src/lib/liff/scorebook-validator.ts
-import type {
-  CanonicalAtBatResult,
-  CanonicalPitchResult,
-  ScorebookRosterPlayer,
-  ScorebookSheetStructure,
-  ScorebookV2AtBat,
-  ScorebookValidationIssue,
+import {
+  isPickoffPitch,
+  type CanonicalAtBatResult,
+  type CanonicalPitchResult,
+  type ScorebookRosterPlayer,
+  type ScorebookSheetStructure,
+  type ScorebookV2AtBat,
+  type ScorebookValidationIssue,
 } from "@/types/scorebook-v2";
 
 /**
  * 1球ごとの投球履歴からボールカウント・ストライクカウントを厳密計算する
+ * - バントファウル (bunt_foul) は 2ストライク後でもスリーバント失敗として 3ストライクに到達する
+ * - 牽制球 (pickoff_1b / pickoff_2b / pickoff_3b / pickoff) は B/S カウントを増やさない
  */
 export function computeCountFromPitches(pitches: CanonicalPitchResult[]): {
   balls: number;
@@ -21,7 +24,12 @@ export function computeCountFromPitches(pitches: CanonicalPitchResult[]): {
   for (const p of pitches) {
     if (p === "ball") {
       balls = Math.min(4, balls + 1);
-    } else if (p === "strike" || p === "swinging_strike") {
+    } else if (
+      p === "strike" ||
+      p === "swinging_strike" ||
+      p === "bunt_swinging" ||
+      p === "bunt_foul"
+    ) {
       strikes = Math.min(3, strikes + 1);
     } else if (p === "foul") {
       if (strikes < 2) {
@@ -29,8 +37,10 @@ export function computeCountFromPitches(pitches: CanonicalPitchResult[]): {
       }
     } else if (p === "hbp") {
       balls = Math.min(4, balls + 1);
+    } else if (isPickoffPitch(p) || p === "balk") {
+      // 1塁牽制 / 2塁牽制 / 3塁牽制 / ボーク は B/S カウントを増やさない
     }
-    // pickoff / in_play / hit は B/S の事前カウントを直接増やさない
+    // in_play / hit も事前 B/S カウントを増やさない
   }
 
   return { balls, strikes };
@@ -49,14 +59,20 @@ export function inferCanonicalResultCode(
     "triple",
     "home_run",
     "walk",
+    "intentional_walk",
     "hit_by_pitch",
-    "strikeout",
-    "dropped_third_strike",
-    "groundout",
-    "flyout",
-    "double_play",
+    "interference",
     "sac_bunt",
     "sac_fly",
+    "groundout",
+    "flyout",
+    "infield_fly",
+    "strikeout",
+    "dropped_third_strike_out",
+    "dropped_third_strike",
+    "double_play",
+    "triple_play",
+    "interference_out",
     "error",
     "fc",
     "other",
@@ -90,13 +106,54 @@ export function inferCanonicalResultCode(
   if (upper.includes("HBP") || label.includes("死球") || label.includes("デッド")) {
     return "hit_by_pitch";
   }
-  if (upper === "BB" || upper === "IBB" || label.includes("四球") || label.includes("敬遠")) {
+  if (upper === "IBB" || label.includes("申告敬遠") || label.includes("敬遠")) {
+    return "intentional_walk";
+  }
+  if (upper === "BB" || label.includes("四球")) {
     return "walk";
+  }
+  // インターフェア（打撃妨害 vs 守備妨害・反則打球）
+  if (
+    label.includes("守備妨害") ||
+    label.includes("守妨") ||
+    label.includes("反則打球") ||
+    ((upper.includes("INT") || label.includes("インターフェア")) &&
+      (label.includes("アウト") || label.includes("死")))
+  ) {
+    return "interference_out";
+  }
+  if (
+    label.includes("打撃妨害") ||
+    label.includes("打妨") ||
+    upper === "INT" ||
+    upper === "CI" ||
+    label.includes("インターフェア")
+  ) {
+    return "interference";
+  }
+  // 振り逃げアウト vs 振り逃げセーフ（出塁）
+  if (
+    ((label.includes("振逃") || label.includes("振り逃げ")) &&
+      (label.includes("アウト") ||
+        label.includes("死") ||
+        label.includes("失敗") ||
+        /[1-9]-[1-9]/.test(upper))) ||
+    /^K\s*2-3/i.test(upper) ||
+    /^SO\s*2-3/i.test(upper)
+  ) {
+    return "dropped_third_strike_out";
   }
   if (label.includes("振逃") || label.includes("振り逃げ")) {
     return "dropped_third_strike";
   }
-  if (upper === "K" || upper === "SO" || label.includes("三振")) {
+  if (
+    upper === "K" ||
+    upper === "SO" ||
+    label.includes("三振") ||
+    label.includes("スリーバント失敗") ||
+    label.includes("3バント失敗") ||
+    label.includes("３バント失敗")
+  ) {
     return "strikeout";
   }
   if (label.includes("犠飛")) {
@@ -105,13 +162,33 @@ export function inferCanonicalResultCode(
   if (upper === "SAC" || upper === "SH" || label.includes("犠打") || label.includes("バント")) {
     return "sac_bunt";
   }
-  if (upper.includes("DP") || label.includes("併殺") || label.includes("ゲッツー")) {
+  if (upper.includes("TP") || label.includes("三重殺") || label.includes("トリプルプレー")) {
+    return "triple_play";
+  }
+  if (
+    upper.includes("DP") ||
+    label.includes("併殺") ||
+    label.includes("ゲッツー")
+  ) {
     return "double_play";
+  }
+  if (
+    label.includes("インフィールド") ||
+    upper.includes("IFF") ||
+    /\bIF\b/.test(upper) ||
+    /^[1-9]IF$/i.test(upper)
+  ) {
+    return "infield_fly";
   }
   if (upper.startsWith("E") || label.includes("失策") || label.includes("エラー")) {
     return "error";
   }
-  if (upper.includes("FC") || label.includes("野選")) {
+  if (
+    upper.includes("FC") ||
+    upper === "OB" ||
+    upper === "O.B." ||
+    label.includes("野選")
+  ) {
     return "fc";
   }
   if (
@@ -316,7 +393,12 @@ export function resolveActiveMatchupFromStructure(
 
   if (slot && slot.substitutions.length > 0) {
     const applicableSubs = slot.substitutions
-      .filter((s) => s.inningEntered <= inning && s.name.trim() !== "")
+      .filter(
+        (s) =>
+          s.subType !== "TR" &&
+          s.inningEntered <= inning &&
+          s.name.trim() !== ""
+      )
       .sort((a, b) => a.inningEntered - b.inningEntered);
     if (applicableSubs.length > 0) {
       const latest = applicableSubs[applicableSubs.length - 1];
@@ -444,7 +526,16 @@ export function validateScorebookSheet(
       }
 
       // 3. 1球履歴(必須要件)の整合性チェック
-      if (!ab.pitches || ab.pitches.length === 0) {
+      const isIntentionalWalk =
+        ab.resultCode === "intentional_walk" ||
+        ab.resultLabel.includes("敬遠") ||
+        ab.resultLabel.toUpperCase().includes("IBB");
+      const isZeroPitchAllowed =
+        isIntentionalWalk ||
+        (ab.resultCode === "other" &&
+          ab.advances.some((a) => a.isOut && a.from !== "BAT"));
+
+      if ((!ab.pitches || ab.pitches.length === 0) && !isZeroPitchAllowed) {
         issues.push({
           id: `pitch-empty-${ab.id}`,
           severity: "warning",
@@ -455,9 +546,9 @@ export function validateScorebookSheet(
           category: "count",
           message: `1球ごとの投球順序が空になっています。BSO欄の投球記号を確認して追加してください。`,
         });
-      } else {
+      } else if (ab.pitches && ab.pitches.length > 0) {
         const calc = computeCountFromPitches(ab.pitches);
-        if (ab.resultCode === "walk" && calc.balls < 4) {
+        if (ab.resultCode === "walk" && !isIntentionalWalk && calc.balls < 4) {
           issues.push({
             id: `pitch-bb-${ab.id}`,
             severity: "warning",
@@ -466,10 +557,15 @@ export function validateScorebookSheet(
             isTop,
             battingOrder: ab.battingOrder,
             category: "count",
-            message: `打席結果が「四球」ですが、投球履歴のボール数が${calc.balls}球です（敬遠でない場合はボール4球か確認してください）。`,
+            message: `打席結果が「四球」ですが、投球履歴のボール数が${calc.balls}球です（申告敬遠の場合は「敬遠四球」を選択するかボール4球を確認してください）。`,
           });
         }
-        if (ab.resultCode === "strikeout" && calc.strikes < 3) {
+        if (
+          (ab.resultCode === "strikeout" ||
+            ab.resultCode === "dropped_third_strike_out" ||
+            ab.resultCode === "dropped_third_strike") &&
+          calc.strikes < 3
+        ) {
           issues.push({
             id: `pitch-so-${ab.id}`,
             severity: "warning",
@@ -478,7 +574,154 @@ export function validateScorebookSheet(
             isTop,
             battingOrder: ab.battingOrder,
             category: "count",
-            message: `打席結果が「三振」ですが、投球履歴のストライク数が${calc.strikes}球です。見逃し/空振り/ファウルの抜けを確認してください。`,
+            message: `打席結果が三振・振り逃げですが、投球履歴のストライク数が${calc.strikes}球です。見逃し/空振り/バントファウルの抜けを確認してください。`,
+          });
+        }
+
+        // 2ストライク後のバントファウル（スリーバント失敗）整合チェック
+        let runningStrikes = 0;
+        let hasThreeBuntFoul = false;
+        for (const p of ab.pitches) {
+          if (p === "bunt_foul" && runningStrikes >= 2) {
+            hasThreeBuntFoul = true;
+          }
+          if (
+            p === "strike" ||
+            p === "swinging_strike" ||
+            p === "bunt_swinging" ||
+            p === "bunt_foul"
+          ) {
+            runningStrikes = Math.min(3, runningStrikes + 1);
+          } else if (p === "foul" && runningStrikes < 2) {
+            runningStrikes += 1;
+          }
+        }
+        if (
+          hasThreeBuntFoul &&
+          ab.resultCode !== "strikeout" &&
+          ab.resultCode !== "dropped_third_strike_out"
+        ) {
+          issues.push({
+            id: `pitch-3bunt-${ab.id}`,
+            severity: "warning",
+            atBatId: ab.id,
+            inning,
+            isTop,
+            battingOrder: ab.battingOrder,
+            category: "count",
+            message: `2ストライク後に「バントファウル」が記録されています（公認野球規則によりスリーバント失敗＝三振）。通常のファウルか打席結果を確認してください。`,
+          });
+        }
+
+        // 牽制球と塁上走者の整合チェック（1塁牽制 / 2塁牽制 / 3塁牽制）
+        if (ab.pitches.some((p) => p === "pickoff")) {
+          issues.push({
+            id: `pitch-po-generic-${ab.id}`,
+            severity: "warning",
+            atBatId: ab.id,
+            inning,
+            isTop,
+            battingOrder: ab.battingOrder,
+            category: "runner",
+            message: `塁未指定の「牽制」が含まれています。1塁牽制・2塁牽制・3塁牽制のいずれかを選択してください。`,
+          });
+        }
+        const had1B =
+          Boolean(bases["1B"]) ||
+          ab.advances.some(
+            (a) => a.from === "1B" || (a.from !== "BAT" && a.to === "1B")
+          );
+        const had2B =
+          Boolean(bases["2B"]) ||
+          ab.advances.some(
+            (a) => a.from === "2B" || (a.from !== "BAT" && a.to === "2B")
+          );
+        const had3B =
+          Boolean(bases["3B"]) ||
+          ab.advances.some(
+            (a) => a.from === "3B" || (a.from !== "BAT" && a.to === "3B")
+          );
+        if (ab.pitches.includes("pickoff_1b") && !had1B) {
+          issues.push({
+            id: `pitch-po1-${ab.id}`,
+            severity: "warning",
+            atBatId: ab.id,
+            inning,
+            isTop,
+            battingOrder: ab.battingOrder,
+            category: "runner",
+            message: `1塁走者がいない場面で「1塁牽制」が記録されています。ボール記号（ー）や他塁牽制との見間違いがないか確認してください。`,
+          });
+        }
+        if (ab.pitches.includes("pickoff_2b") && !had2B) {
+          issues.push({
+            id: `pitch-po2-${ab.id}`,
+            severity: "warning",
+            atBatId: ab.id,
+            inning,
+            isTop,
+            battingOrder: ab.battingOrder,
+            category: "runner",
+            message: `2塁走者がいない場面で「2塁牽制」が記録されています。1塁牽制やボール記号との見間違いがないか確認してください。`,
+          });
+        }
+        if (ab.pitches.includes("pickoff_3b") && !had3B) {
+          issues.push({
+            id: `pitch-po3-${ab.id}`,
+            severity: "warning",
+            atBatId: ab.id,
+            inning,
+            isTop,
+            battingOrder: ab.battingOrder,
+            category: "runner",
+            message: `3塁走者がいない場面で「3塁牽制」が記録されています。他塁牽制やボール記号との見間違いがないか確認してください。`,
+          });
+        }
+        if (ab.pitches.includes("balk")) {
+          if (!had1B && !had2B && !had3B) {
+            issues.push({
+              id: `pitch-balk-empty-${ab.id}`,
+              severity: "warning",
+              atBatId: ab.id,
+              inning,
+              isTop,
+              battingOrder: ab.battingOrder,
+              category: "runner",
+              message: `無走者の場面で「ボーク」が記録されています（無走者時の反則投球はボールになります）。`,
+            });
+          } else if (!ab.advances.some((a) => a.method === "balk")) {
+            issues.push({
+              id: `pitch-balk-adv-${ab.id}`,
+              severity: "warning",
+              atBatId: ab.id,
+              inning,
+              isTop,
+              battingOrder: ab.battingOrder,
+              category: "runner",
+              message: `「ボーク」が記録されていますが、走者のボーク進塁（BK）が未登録です。走者進塁を確認してください。`,
+            });
+          }
+        }
+      }
+
+      // インフィールドフライの宣告条件チェック（無死または一死、かつ一・二塁または満塁）
+      if (ab.resultCode === "infield_fly") {
+        const hasTiebreakOrRunner1B =
+          Boolean(bases["1B"]) ||
+          ab.advances.some((a) => a.from === "1B" || a.method === "tiebreak");
+        const hasTiebreakOrRunner2B =
+          Boolean(bases["2B"]) ||
+          ab.advances.some((a) => a.from === "2B" || a.method === "tiebreak");
+        if (inningOuts >= 2 || !hasTiebreakOrRunner1B || !hasTiebreakOrRunner2B) {
+          issues.push({
+            id: `iff-cond-${ab.id}`,
+            severity: "warning",
+            atBatId: ab.id,
+            inning,
+            isTop,
+            battingOrder: ab.battingOrder,
+            category: "outs",
+            message: `インフィールドフライは無死または一死で走者一・二塁（または満塁）の場面でのみ成立します。通常の内野フライでないか確認してください。`,
           });
         }
       }
@@ -546,7 +789,16 @@ export function validateScorebookSheet(
         ab.advances.filter((a) => a.from === "BAT").length === 0 &&
         ab.outsInPlay === 0
       ) {
-        if (ab.resultCode === "single" || ab.resultCode === "walk" || ab.resultCode === "hit_by_pitch" || ab.resultCode === "error" || ab.resultCode === "fc" || ab.resultCode === "dropped_third_strike") {
+        if (
+          ab.resultCode === "single" ||
+          ab.resultCode === "walk" ||
+          ab.resultCode === "intentional_walk" ||
+          ab.resultCode === "hit_by_pitch" ||
+          ab.resultCode === "interference" ||
+          ab.resultCode === "error" ||
+          ab.resultCode === "fc" ||
+          ab.resultCode === "dropped_third_strike"
+        ) {
           bases["1B"] = ab.batterName;
         } else if (ab.resultCode === "double") {
           bases["2B"] = ab.batterName;
@@ -588,14 +840,18 @@ export function validateScorebookSheet(
     }
 
     // 次イニングの先頭打者を算出
-    // ※最終打席で打者自身が完了せず走者盗塁死/牽制死のみで3アウトになった場合は同じ打者が次回先頭になるケースも考慮
+    // ※最終打席で打者自身が完了せず走者盗塁死/牽制死/走塁死のみで3アウトになった場合は同じ打者が次回先頭になる
     const lastAb = inningEvents[inningEvents.length - 1];
     const endedByRunnerOutOnly =
       lastAb.resultCode === "other" &&
       lastAb.advances.some(
         (a) =>
           a.isOut &&
-          (a.method === "caught_stealing" || a.method === "pickoff_out")
+          (a.method === "caught_stealing" ||
+            a.method === "pickoff_out" ||
+            a.method === "interference_out" ||
+            a.method === "appeal_out" ||
+            a.method === "out_on_base")
       );
     expectedNextBatterOrder = endedByRunnerOutOnly
       ? lastAb.battingOrder

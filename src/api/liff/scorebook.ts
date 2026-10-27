@@ -13,23 +13,25 @@ import {
   validateScorebookSheet,
 } from "@/lib/liff/scorebook-validator";
 import type { WorkerEnv } from "@/types/api";
-import type {
-  AdvanceMethodCode,
-  CanonicalAtBatResult,
-  CanonicalPitchResult,
-  ConfidenceLevel,
-  ImportScopeMode,
-  NormalizedBox,
-  ScorebookBatterSlot,
-  ScorebookInningMeta,
-  ScorebookMatchSummary,
-  ScorebookPitcherStint,
-  ScorebookRosterPlayer,
-  ScorebookSheetStructure,
-  ScorebookSubstitution,
-  ScorebookV2Advance,
-  ScorebookV2AtBat,
-  ScorebookValidationIssue,
+import {
+  isNonPitchMoundEvent,
+  isPickoffPitch,
+  type AdvanceMethodCode,
+  type CanonicalAtBatResult,
+  type CanonicalPitchResult,
+  type ConfidenceLevel,
+  type ImportScopeMode,
+  type NormalizedBox,
+  type ScorebookBatterSlot,
+  type ScorebookInningMeta,
+  type ScorebookMatchSummary,
+  type ScorebookPitcherStint,
+  type ScorebookRosterPlayer,
+  type ScorebookSheetStructure,
+  type ScorebookSubstitution,
+  type ScorebookV2Advance,
+  type ScorebookV2AtBat,
+  type ScorebookValidationIssue,
 } from "@/types/scorebook-v2";
 
 const liffScorebookRouter = new Hono<{ Bindings: WorkerEnv }>();
@@ -239,8 +241,14 @@ const PITCH_DISPLAY_JA: Record<CanonicalPitchResult, string> = {
   ball: "ボール",
   strike: "見逃しストライク",
   swinging_strike: "空振りストライク",
+  bunt_swinging: "バント空振り",
   foul: "ファウル",
+  bunt_foul: "バントファウル",
+  pickoff_1b: "1塁牽制",
+  pickoff_2b: "2塁牽制",
+  pickoff_3b: "3塁牽制",
   pickoff: "牽制",
+  balk: "ボーク",
   hit: "ヒット（インプレー）",
   in_play: "インプレー",
   hbp: "死球",
@@ -762,8 +770,14 @@ ${battingTeamContext}${scoreboardHintText}
           const subMatched = isMyTeamBatting
             ? matchRosterPlayer(s.name, s.uniformNumber, roster)
             : null;
-          const normalizedSubType: "PH" | "PR" | "DEF" =
-            s.subType === "PR" ? "PR" : s.subType === "DEF" ? "DEF" : "PH";
+          const normalizedSubType: "PH" | "PR" | "TR" | "DEF" =
+            s.subType === "PR"
+              ? "PR"
+              : s.subType === "TR"
+              ? "TR"
+              : s.subType === "DEF"
+              ? "DEF"
+              : "PH";
 
           return {
             id: crypto.randomUUID(),
@@ -1069,7 +1083,7 @@ liffScorebookRouter.post("/analyze-inning-chunk", async (c) => {
       : `\n🔥【絶対制約: 先頭打者】1回${sideLabel}の最初の打者は必ず【1番打者】の行からスタートします。列最上部のイニング見出し番号「1」の列だけを読み取り、右隣の2回の列を絶対に1回に混ぜないでください！`;
 
     const legendConstraint = legendImageIndex > 0
-      ? `\n🔥【最優先: 添付画像${legendImageIndex}「チームのスコア記号早見表」】安打・アウト・投球記号・牽制等の書き方は画像${legendImageIndex}の定義を最優先で適用してください。`
+      ? `\n🔥【最優先: 添付画像${legendImageIndex}「チームのスコア記号早見表」】安打・アウト・投球記号・バントファウル・1塁牽制/2塁牽制/3塁牽制の書き方は画像${legendImageIndex}の定義を最優先で厳密に適用してください。`
       : "";
 
     const prompt = `あなたは日本の早稲田式・成美堂式スコアブックを1球単位まで完璧に読み解くプロ公式記録員AIです。
@@ -1093,30 +1107,41 @@ ${targetInningMetaLines.join("\n")}
 - 1つのイニングは先頭打者から打順が1つずつ下へ進み（9番の次は1番へ戻る）、アウト丸数字 ① ➔ ② ➔ ③（3アウトチェンジ）が出た時点でそのイニングは終了です！
 - ③（3アウト目）が出た後に、右隣の次イニング列に書かれたマスを同じイニングとして読み続けるミスは絶対にしないでください。
 
-【超重要 2: 1球ごとの投球順序（p）の完全抽出（必須）】
-各打席マスの投球記号欄（BSO欄）を拡大画像で1球目から最後の一球まで順番に読み取り、以下の1文字短縮コード配列 p で出力してください:
-- "B": ボール（『ー』『・』『B欄の●』『B』）
+【超重要 2: 1球ごとの投球・牽制・ボーク順序（p）の完全抽出（必須）】
+各打席マスの投球記号欄（BSO欄）および各塁周辺の牽制・ボーク記号を拡大画像で1球目から順番に読み取り、以下の短縮コード配列 p で出力してください:
+- "B": ボール（『ー』『・』『B欄の●』『B』 ※無走者の打席では牽制やボークは存在しないため横棒『ー』は必ず "B"）
 - "S": 見逃しストライク（『○』『見逃しS』）
 - "W": 空振りストライク（『●』『／』『空振り』）
-- "F": ファウル（『V』『△』『レ』『F』、バントファウル含む）
-- "P": 牽制球（『牽』『k』『1』『塁への牽制線』）
+- "BS": バント空振り（『／』に点・半黒丸『◐』・『BS』、または早見表のバント空振り記号）
+- "F": 通常のファウル（『△』『▽』『V』『レ』『F』などの白抜き三角・チェック記号）
+- "BF": バントファウル（『▲』『▼』などの黒塗り三角・二重三角・点や線入り△・『BF』、または早見表のバントファウル記号。2ストライク後の "BF" はスリーバント失敗＝三振）
+- "P1": 1塁牽制（早見表の1塁牽制記号、またはBSO欄の1本線付きカギ線『∟』『┬』・『1』『牽1』『一牽』『k1』・1塁ベース角への牽制線）
+- "P2": 2塁牽制（早見表の2塁牽制記号、またはBSO欄の2本線付き二重カギ線『∏』『キ』・『2』『牽2』『二牽』『k2』・2塁ベース角への牽制線）
+- "P3": 3塁牽制（早見表の3塁牽制記号、またはBSO欄の3本線付き三重カギ線・『3』『牽3』『三牽』『k3』・3塁ベース角への牽制線）
+- "BK": ボーク（『BK』・早見表のボーク記号。発生時は走者全員の1個進塁も a に m:"balk" で記録すること）
 - "H": 安打になった最終球（単打・二塁打・三塁打・本塁打は末尾を必ず "H" にする）
-- "X": 安打以外のインプレー打球（ゴロ・フライ・ライナー・犠打・犠飛・失策・野選は末尾を必ず "X" にする）
+- "X": 安打以外のインプレー打球（ゴロ・フライ・ライナー・インフィールドフライ・犠打・犠飛・失策・野選・妨害は末尾を "X" にする）
 - "D": 死球になった球
-※BSO合計のみ書かれたマスも最終カウントと結果に整合する配列を構成し、絶対に空配列にしないでください。
+※【牽制・ボークと走者の整合ルール】: 牽制球（P1/P2/P3）およびボーク（BK）は走者がいる場面でのみ記録されます（走者1塁のみなら "P1"、2塁のみなら "P2"、3塁のみなら "P3"）。1塁・2塁・3塁の牽制記号の違いと塁上走者の位置の両方を照合して厳密に判別してください。
+※申告敬遠（rc: "intentional_walk"）以外の打席は、BSO合計のみ書かれたマスも最終カウントと結果に整合する配列を構成し、空配列にしないでください。
 
 【超重要 3: 打撃結果コード（rc）と日本語表記（rl）の厳密判定】
 - 安打とアウトを絶対に混同しないでください！右下の1塁線〜進塁線に実線・赤線・斜線（/ = 単打, // = 二塁打, /// = 三塁打, //// = 本塁打）があり打者自身のアウト丸数字（①②③）が無い場合は安打です。
 - 中央『7』『8』『9』等の守備番号＋斜線/赤線 ➔ rc: "single"（または "double"/"triple"/"home_run"）, rl: "左前安打" / "中前安打" 等。
-- 『6-3』『4-3』等の送球ハイフン＋①②③ ➔ rc: "groundout"（併殺は "double_play"）, rl: "遊ゴロ (6-3)" 等。
-- 『8』『7F』『9飛』『6直』＋①②③ ➔ rc: "flyout", rl: "中飛" / "遊直" 等。
-- 『K』『SO』＋①②③ ➔ rc: "strikeout", rl: "空振り三振" / "見逃し三振"（振り逃げ出塁は rc: "dropped_third_strike"）。
-- 四球 ➔ rc: "walk", 死球 ➔ rc: "hit_by_pitch", 犠打 ➔ rc: "sac_bunt", 犠飛 ➔ rc: "sac_fly", 失策 ➔ rc: "error", 野選 ➔ rc: "fc"。
-- 打席途中に走者が盗塁死・牽制死して3アウトチェンジになった未完了マス ➔ rc: "other", rl: "打席途中断（走塁死チェンジ）", o: 1。
+- 『6-3』『4-3』等の送球ハイフン＋①②③ ➔ rc: "groundout"（併殺は "double_play"、三重殺は "triple_play"）, rl: "遊ゴロ (6-3)" 等。
+- 『8』『7F』『9飛』『6直』『2邪飛』＋①②③ ➔ rc: "flyout", rl: "中飛" / "遊直" / "捕邪飛" 等。
+- 『IF』『IFF』『(IF)』『インフィールドフライ』＋①② ➔ rc: "infield_fly", rl: "インフィールドフライ", o: 1。
+- 『K』『SO』または2ストライク後のバントファウル（スリーバント失敗）＋①②③ ➔ rc: "strikeout", rl: "空振り三振" / "見逃し三振" / "スリーバント失敗", o: 1。
+- 振り逃げアウト（『K 2-3』『振逃2-3』＋アウト丸数字 ①②③）➔ rc: "dropped_third_strike_out", rl: "振り逃げアウト (K 2-3)", o: 1。
+- 振り逃げセーフ出塁（『K』＋WP/PB/E2等で1塁進塁、打者のアウト丸数字なし）➔ rc: "dropped_third_strike", rl: "振り逃げ出塁", o: 0。
+- 打撃妨害・インターフェア出塁（『I』『INT』『CI』『打妨』で1塁出塁、o: 0）➔ rc: "interference", rl: "打撃妨害 (INT)", o: 0。
+- 守備妨害・インターフェアアウト・反則打球（『INT』『守妨』『反則打球』＋①②③）➔ rc: "interference_out", rl: "守備妨害アウト (INT)", o: 1。
+- 四球 ➔ rc: "walk"、敬遠・申告敬遠（『IBB』『敬遠』）➔ rc: "intentional_walk"、死球 ➔ rc: "hit_by_pitch"、犠打（犠打失策・犠打野選で0死の場合も rc は "sac_bunt"）➔ rc: "sac_bunt"、犠飛 ➔ rc: "sac_fly"、失策 ➔ rc: "error"、野選（『FC』『O.B.』）➔ rc: "fc"。
+- 打席途中に走者が盗塁死・牽制死・走塁死して3アウトチェンジになった未完了マス ➔ rc: "other", rl: "打席途中断（走塁死チェンジ）", o: 1。
 
 【超重要 4: アウト数（o / eo）と進塁・得点（ru / a）】
 - 1イニングの o の合計は（最終回裏のサヨナラ勝ちを除き）必ず 3 です。丸数字 ①②③ から eo (1,2,3) を設定してください。
-- 盗塁(m:"steal")・盗塁死(m:"caught_stealing",io:true)・牽制死(m:"pickoff_out",io:true)・暴投(m:"wp")・捕逸(m:"pb")・打撃進塁(m:"hit"/"sac"/"fc"/"error")を a に記録してください。進塁が無い凡退等は a:[] としてください。
+- 盗塁(m:"steal")・盗塁死(m:"caught_stealing",io:true)・牽制死(m:"pickoff_out",io:true)・牽制悪送球(m:"pickoff_error")・暴投(m:"wp")・捕逸(m:"pb")・ボーク進塁(m:"balk")・送球間進塁『T』(m:"throw_advance")・走塁妨害『OBS』(m:"obstruction")・走者の守備妨害死『INT』(m:"interference_out",io:true)・アピール/離塁死(m:"appeal_out",io:true)・タイブレーク配置走者(m:"tiebreak")・走塁死/挟殺『TO』(m:"out_on_base",io:true)・打撃進塁(m:"hit"/"sac"/"fc"/"error"/"walk")を a に記録してください。進塁が無い凡退等は a:[] としてください。
 - 本塁生還は t:"HP", io:false とし、その打席の生還人数を ru に設定（イニング内の ru 合計＝確定得点）。
 
 【超重要 5: マス座標 box と確信度 cf】
@@ -1125,7 +1150,7 @@ ${targetInningMetaLines.join("\n")}
 
 【出力JSONフォーマット（改行・インデント無しのコンパクト短縮キーJSONのみを返してください）】
 {"ab":[{"i":1,"c":1,"bo":1,"rc":"single","rl":"左前安打","rbi":0,"o":0,"eo":0,"ru":0,"p":["B","S","F","H"],"a":[{"rn":"選手名","f":"BAT","t":"1B","m":"hit","io":false,"pn":4}],"cf":"h","box":[150,210,230,300]}]}
-※ rc は必ず "single"|"double"|"triple"|"home_run"|"walk"|"hit_by_pitch"|"strikeout"|"dropped_third_strike"|"groundout"|"flyout"|"double_play"|"sac_bunt"|"sac_fly"|"error"|"fc"|"other" のいずれかとしてください。`;
+※ rc は必ず "single"|"double"|"triple"|"home_run"|"walk"|"intentional_walk"|"hit_by_pitch"|"interference"|"sac_bunt"|"sac_fly"|"groundout"|"flyout"|"infield_fly"|"strikeout"|"dropped_third_strike_out"|"dropped_third_strike"|"double_play"|"triple_play"|"interference_out"|"error"|"fc"|"other" のいずれかとしてください。`;
 
     const rawChunk = await callGeminiStructuredJson<RawGeminiChunkResponse>(
       apiKey,
@@ -1140,8 +1165,20 @@ ${targetInningMetaLines.join("\n")}
       targetSet.has((ab.i ?? ab.inning) || 0)
     );
 
+    let currentTrackingInning = -1;
+    let activeBases: Record<"1B" | "2B" | "3B", boolean> = {
+      "1B": false,
+      "2B": false,
+      "3B": false,
+    };
+
     const mappedAtBats: ScorebookV2AtBat[] = rawList.map((ab) => {
       const inning = (ab.i ?? ab.inning) || sortedTargets[0];
+      if (inning !== currentTrackingInning) {
+        currentTrackingInning = inning;
+        activeBases = { "1B": false, "2B": false, "3B": false };
+      }
+
       const battingOrder = Math.max(1, (ab.bo ?? ab.battingOrder) || 1);
       const resolved = resolveActiveMatchupFromStructure(
         body.structure,
@@ -1152,23 +1189,6 @@ ${targetInningMetaLines.join("\n")}
       const rawResultCode = ab.rc ?? ab.resultCode;
       const rawResultLabel = ab.rl ?? ab.resultLabel;
       const resultCode = inferCanonicalResultCode(rawResultCode, rawResultLabel);
-      const normalizedPitches = normalizePitchArray(
-        ab.p || ab.pitches || [],
-        resultCode
-      );
-      const { balls, strikes } = computeCountFromPitches(normalizedPitches);
-      const boxArr = Array.isArray(ab.box) && ab.box.length >= 4 ? ab.box : undefined;
-      const cellBox = boxArr
-        ? sanitizeBox(boxArr[0], boxArr[1], boxArr[2], boxArr[3])
-        : sanitizeBox(ab.ymin, ab.xmin, ab.ymax, ab.xmax);
-
-      const rawConf = (ab.cf ?? ab.confidence ?? "h").toLowerCase();
-      const confidence: ConfidenceLevel =
-        rawConf === "l" || rawConf === "low"
-          ? "low"
-          : rawConf === "m" || rawConf === "medium"
-          ? "medium"
-          : "high";
 
       const rawAdvances = ab.a || ab.advances || [];
       const advances: ScorebookV2Advance[] = rawAdvances.map((adv) => {
@@ -1184,6 +1204,57 @@ ${targetInningMetaLines.join("\n")}
             typeof pnVal === "number" && pnVal > 0 ? pnVal : undefined,
         };
       });
+
+      const normalizedPitches = normalizePitchArray(
+        ab.p || ab.pitches || [],
+        resultCode,
+        advances,
+        activeBases
+      );
+      const { balls, strikes } = computeCountFromPitches(normalizedPitches);
+      const boxArr = Array.isArray(ab.box) && ab.box.length >= 4 ? ab.box : undefined;
+      const cellBox = boxArr
+        ? sanitizeBox(boxArr[0], boxArr[1], boxArr[2], boxArr[3])
+        : sanitizeBox(ab.ymin, ab.xmin, ab.ymax, ab.xmax);
+
+      const rawConf = (ab.cf ?? ab.confidence ?? "h").toLowerCase();
+      const confidence: ConfidenceLevel =
+        rawConf === "l" || rawConf === "low"
+          ? "low"
+          : rawConf === "m" || rawConf === "medium"
+          ? "medium"
+          : "high";
+
+      // 次打席向けに簡易ランナー位置を更新
+      for (const adv of advances) {
+        if (adv.from === "1B" || adv.from === "2B" || adv.from === "3B") {
+          activeBases[adv.from] = false;
+        }
+      }
+      for (const adv of advances) {
+        if (!adv.isOut && (adv.to === "1B" || adv.to === "2B" || adv.to === "3B")) {
+          activeBases[adv.to] = true;
+        }
+      }
+      const outsVal = Math.max(0, Math.min(3, ab.o ?? ab.outsInPlay ?? 0));
+      if (advances.filter((a) => a.from === "BAT").length === 0 && outsVal === 0) {
+        if (
+          resultCode === "single" ||
+          resultCode === "walk" ||
+          resultCode === "intentional_walk" ||
+          resultCode === "hit_by_pitch" ||
+          resultCode === "interference" ||
+          resultCode === "error" ||
+          resultCode === "fc" ||
+          resultCode === "dropped_third_strike"
+        ) {
+          activeBases["1B"] = true;
+        } else if (resultCode === "double") {
+          activeBases["2B"] = true;
+        } else if (resultCode === "triple") {
+          activeBases["3B"] = true;
+        }
+      }
 
       const hpCount = advances.filter((a) => a.to === "HP" && !a.isOut).length;
       const isHr = resultCode === "home_run";
@@ -1231,7 +1302,11 @@ ${targetInningMetaLines.join("\n")}
         lastAb.advances.some(
           (a) =>
             a.isOut &&
-            (a.method === "caught_stealing" || a.method === "pickoff_out")
+            (a.method === "caught_stealing" ||
+              a.method === "pickoff_out" ||
+              a.method === "interference_out" ||
+              a.method === "appeal_out" ||
+              a.method === "out_on_base")
         );
       nextLeadOffOrder = endedByRunnerOutOnly
         ? lastAb.battingOrder
@@ -1474,7 +1549,7 @@ liffScorebookRouter.post("/save", async (c) => {
         })
       );
 
-      // B. 1球ごとの pitches 挿入
+      // B. 1球ごとの pitches 挿入（牽制球・バントファウルも区別して保存）
       const pitchIdByNum: Record<number, string> = {};
       let ballsBefore = 0;
       let strikesBefore = 0;
@@ -1487,8 +1562,6 @@ liffScorebookRouter.post("/save", async (c) => {
         const dbPitchResult =
           pCode === "in_play"
             ? "strike"
-            : pCode === "pickoff"
-            ? "ball"
             : pCode === "hbp"
             ? "ball"
             : pCode;
@@ -1506,7 +1579,12 @@ liffScorebookRouter.post("/save", async (c) => {
 
         if (pCode === "ball") {
           ballsBefore = Math.min(3, ballsBefore + 1);
-        } else if (pCode === "strike" || pCode === "swinging_strike") {
+        } else if (
+          pCode === "strike" ||
+          pCode === "swinging_strike" ||
+          pCode === "bunt_swinging" ||
+          pCode === "bunt_foul"
+        ) {
           strikesBefore = Math.min(2, strikesBefore + 1);
         } else if (pCode === "foul" && strikesBefore < 2) {
           strikesBefore += 1;
@@ -1553,10 +1631,20 @@ liffScorebookRouter.post("/save", async (c) => {
 
       // D. play_logs 挿入（タイムライン表示用に日本語表記と1球履歴テキストを格納）
       const inningText = `${ab.inning}回${ab.isTop ? "表" : "裏"}`;
+      let realPitchSeq = 0;
       const pitchLines =
         ab.pitches.length > 0
           ? `\n===PITCHES===\n${ab.pitches
-              .map((p, idx) => `${idx + 1}球目: ${PITCH_DISPLAY_JA[p] || p}`)
+              .map((p) => {
+                if (isPickoffPitch(p)) {
+                  return `牽制: ${PITCH_DISPLAY_JA[p] || p}`;
+                }
+                if (p === "balk") {
+                  return `ボーク: ${PITCH_DISPLAY_JA[p] || p}`;
+                }
+                realPitchSeq += 1;
+                return `${realPitchSeq}球目: ${PITCH_DISPLAY_JA[p] || p}`;
+              })
               .join("\n")}`
           : "";
 
@@ -1710,7 +1798,8 @@ liffScorebookRouter.post("/save", async (c) => {
         matchId: match.id,
         savedAtBatsCount: combinedIncoming.length,
         savedPitchesCount: combinedIncoming.reduce(
-          (sum, ab) => sum + ab.pitches.length,
+          (sum, ab) =>
+            sum + ab.pitches.filter((p) => !isNonPitchMoundEvent(p)).length,
           0
         ),
         myScore: finalMyScore,
@@ -2124,17 +2213,108 @@ async function resolveLegendImagePart(
   return null;
 }
 
+function inferPickoffCodeFromContext(
+  advances?: ScorebookV2Advance[],
+  activeBases?: Record<"1B" | "2B" | "3B", boolean>
+): CanonicalPitchResult {
+  const poAdv = advances?.find(
+    (a) => a.method === "pickoff_out" || a.method === "pickoff_error"
+  );
+  if (poAdv) {
+    if (poAdv.from === "1B") return "pickoff_1b";
+    if (poAdv.from === "2B") return "pickoff_2b";
+    if (poAdv.from === "3B") return "pickoff_3b";
+  }
+
+  if (activeBases) {
+    const occupied: Array<"1B" | "2B" | "3B"> = [];
+    if (activeBases["1B"]) occupied.push("1B");
+    if (activeBases["2B"]) occupied.push("2B");
+    if (activeBases["3B"]) occupied.push("3B");
+    if (occupied.length === 1) {
+      if (occupied[0] === "1B") return "pickoff_1b";
+      if (occupied[0] === "2B") return "pickoff_2b";
+      if (occupied[0] === "3B") return "pickoff_3b";
+    }
+  }
+
+  return "pickoff";
+}
+
 function normalizePitchArray(
   rawPitches: string[],
-  resultCode: CanonicalAtBatResult
+  resultCode: CanonicalAtBatResult,
+  advances?: ScorebookV2Advance[],
+  activeBases?: Record<"1B" | "2B" | "3B", boolean>
 ): CanonicalPitchResult[] {
   const mapped: CanonicalPitchResult[] = [];
+  const contextualPickoff = inferPickoffCodeFromContext(advances, activeBases);
 
   for (const raw of rawPitches) {
     const s = (raw || "").trim().toLowerCase();
     if (!s) continue;
 
-    if (s === "ball" || s === "b" || s.includes("ボール")) {
+    if (
+      s === "bunt_foul" ||
+      s === "bf" ||
+      s === "▲" ||
+      s === "▼" ||
+      s.includes("バントファウル") ||
+      s.includes("バントf") ||
+      s.includes("スリーバント")
+    ) {
+      mapped.push("bunt_foul");
+    } else if (
+      s === "bunt_swinging" ||
+      s === "bs" ||
+      s.includes("バント空")
+    ) {
+      mapped.push("bunt_swinging");
+    } else if (
+      s === "balk" ||
+      s === "bk" ||
+      s.includes("ボーク")
+    ) {
+      mapped.push("balk");
+    } else if (
+      s === "pickoff_1b" ||
+      s === "p1" ||
+      s === "k1" ||
+      s === "1" ||
+      s.includes("1塁牽") ||
+      s.includes("１塁牽") ||
+      s.includes("一塁牽") ||
+      s.includes("牽1") ||
+      s.includes("一牽")
+    ) {
+      mapped.push("pickoff_1b");
+    } else if (
+      s === "pickoff_2b" ||
+      s === "p2" ||
+      s === "k2" ||
+      s === "2" ||
+      s.includes("2塁牽") ||
+      s.includes("２塁牽") ||
+      s.includes("二塁牽") ||
+      s.includes("牽2") ||
+      s.includes("二牽")
+    ) {
+      mapped.push("pickoff_2b");
+    } else if (
+      s === "pickoff_3b" ||
+      s === "p3" ||
+      s === "k3" ||
+      s === "3" ||
+      s.includes("3塁牽") ||
+      s.includes("３塁牽") ||
+      s.includes("三塁牽") ||
+      s.includes("牽3") ||
+      s.includes("三牽")
+    ) {
+      mapped.push("pickoff_3b");
+    } else if (s === "pickoff" || s === "p" || s === "k" || s.includes("牽")) {
+      mapped.push(contextualPickoff);
+    } else if (s === "ball" || s === "b" || s.includes("ボール")) {
       mapped.push("ball");
     } else if (
       s === "swinging_strike" ||
@@ -2152,8 +2332,6 @@ function normalizePitchArray(
       mapped.push("strike");
     } else if (s === "foul" || s === "f" || s.includes("ファウル")) {
       mapped.push("foul");
-    } else if (s === "pickoff" || s === "p" || s.includes("牽")) {
-      mapped.push("pickoff");
     } else if (s === "hbp" || s === "d" || s.includes("死球")) {
       mapped.push("hbp");
     } else if (
@@ -2180,20 +2358,40 @@ function normalizePitchArray(
   const isInPlayOutOrReach =
     resultCode === "groundout" ||
     resultCode === "flyout" ||
+    resultCode === "infield_fly" ||
     resultCode === "double_play" ||
+    resultCode === "triple_play" ||
     resultCode === "sac_bunt" ||
     resultCode === "sac_fly" ||
+    resultCode === "interference" ||
+    resultCode === "interference_out" ||
     resultCode === "error" ||
     resultCode === "fc";
 
   // 投球配列が空の場合の最低限の補完、または末尾球の整合性補正
   if (mapped.length === 0) {
+    if (resultCode === "intentional_walk") return [];
     if (isHitResult) return ["hit"];
     if (isInPlayOutOrReach) return ["in_play"];
     if (resultCode === "walk") return ["ball", "ball", "ball", "ball"];
     if (resultCode === "hit_by_pitch") return ["hbp"];
-    if (resultCode === "strikeout" || resultCode === "dropped_third_strike") {
+    if (
+      resultCode === "strikeout" ||
+      resultCode === "dropped_third_strike_out" ||
+      resultCode === "dropped_third_strike"
+    ) {
       return ["strike", "strike", "swinging_strike"];
+    }
+    if (
+      resultCode === "other" &&
+      advances?.some(
+        (a) => a.method === "pickoff_out" || a.method === "pickoff_error"
+      )
+    ) {
+      return [contextualPickoff];
+    }
+    if (resultCode === "other" && advances?.some((a) => a.method === "balk")) {
+      return ["balk"];
     }
     return [];
   }
@@ -2231,7 +2429,7 @@ function normalizeToBase(raw?: string): "1B" | "2B" | "3B" | "HP" {
 function normalizeAdvanceMethod(raw?: string): AdvanceMethodCode {
   const s = (raw || "").trim();
   const u = s.toUpperCase();
-  if (u === "STEAL" || u === "S" || s.includes("盗塁") && !s.includes("死")) {
+  if (u === "STEAL" || u === "S" || (s.includes("盗塁") && !s.includes("死"))) {
     return "steal";
   }
   if (u === "CAUGHT_STEALING" || u === "CS" || s.includes("盗塁死")) {
@@ -2246,15 +2444,30 @@ function normalizeAdvanceMethod(raw?: string): AdvanceMethodCode {
   if (u === "WP" || s.includes("暴投")) return "wp";
   if (u === "PB" || s.includes("捕逸") || s.includes("パスボール")) return "pb";
   if (u === "BALK" || u === "BK" || s.includes("ボーク")) return "balk";
+  if (u === "OBSTRUCTION" || u === "OBS" || s.includes("走塁妨害") || s.includes("オブストラクション")) {
+    return "obstruction";
+  }
+  if (u === "INTERFERENCE_OUT" || u === "INT" || s.includes("守備妨害") || s.includes("インターフェア")) {
+    return "interference_out";
+  }
+  if (u === "APPEAL_OUT" || s.includes("アピール") || s.includes("離塁") || s.includes("踏み忘れ")) {
+    return "appeal_out";
+  }
+  if (u === "TIEBREAK" || u === "TB" || s.includes("タイブレーク")) {
+    return "tiebreak";
+  }
+  if (u === "THROW_ADVANCE" || u === "T" || u === "(T)" || s.includes("送球間")) {
+    return "throw_advance";
+  }
   if (u === "WALK" || u === "BB" || s.includes("四球") || s.includes("死球") || s.includes("押出")) {
     return "walk";
   }
   if (u === "ERROR" || u.startsWith("E") || s.includes("失策") || s.includes("エラー")) {
     return "error";
   }
-  if (u === "FC" || s.includes("野選")) return "fc";
-  if (u === "SAC" || s.includes("犠")) return "sac";
-  if (u === "OUT_ON_BASE" || s.includes("走塁死") || s.includes("封殺")) {
+  if (u === "FC" || u === "OB" || u === "O.B." || s.includes("野選")) return "fc";
+  if (u === "SAC" || s.includes("犠") || s.includes("タッチアップ")) return "sac";
+  if (u === "OUT_ON_BASE" || u === "TO" || s.includes("走塁死") || s.includes("封殺") || s.includes("挟殺")) {
     return "out_on_base";
   }
   if (u === "HIT" || s.includes("安") || s.includes("ヒット") || s.includes("本塁打")) {
