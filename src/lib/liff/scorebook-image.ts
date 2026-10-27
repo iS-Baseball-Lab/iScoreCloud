@@ -142,6 +142,55 @@ export async function preprocessScorebookImage(
 }
 
 /**
+ * API送信直前に長辺1536px（Gemini Vision 2x2タイル境界）・JPEG品質0.80以内へ軽量化する。
+ * 既に軽量な場合は再エンコードせず即座に返し、自動下書き復元された高解像度画像（2000px等）も確実に高速化する。
+ * （※クライアント側の Step 3 マス拡大プレビュー用の高精細 dataUrl はそのまま保持される）
+ */
+export async function ensureCompactApiImage(
+  processed: PreprocessedScorebookImage,
+  maxLongEdge = 1536,
+  quality = 0.8
+): Promise<{ base64: string; mimeType: string }> {
+  const currentLong = Math.max(processed.width, processed.height);
+  if (currentLong <= maxLongEdge && processed.base64.length <= 520_000) {
+    return {
+      base64: processed.base64,
+      mimeType: processed.mimeType,
+    };
+  }
+
+  const img = await loadImageFromUrl(processed.dataUrl);
+  const srcW = img.naturalWidth || processed.width;
+  const srcH = img.naturalHeight || processed.height;
+  const longEdge = Math.max(srcW, srcH);
+  const scale = longEdge > maxLongEdge ? maxLongEdge / longEdge : 1;
+  const outW = Math.max(64, Math.round(srcW * scale));
+  const outH = Math.max(64, Math.round(srcH * scale));
+
+  const canvas = document.createElement("canvas");
+  canvas.width = outW;
+  canvas.height = outH;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    return {
+      base64: processed.base64,
+      mimeType: processed.mimeType,
+    };
+  }
+
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(img, 0, 0, outW, outH);
+
+  const mimeType = "image/jpeg";
+  const dataUrl = canvas.toDataURL(mimeType, quality);
+  const commaIdx = dataUrl.indexOf(",");
+  const base64 = commaIdx !== -1 ? dataUrl.slice(commaIdx + 1) : dataUrl;
+
+  return { base64, mimeType };
+}
+
+/**
  * ページ画像(DataURL)から特定の1マスまたは領域([ymin, xmin, ymax, xmax] 0..1000)を切り抜いて拡大プレビューDataURLを生成する
  */
 export async function cropScorebookRegion(

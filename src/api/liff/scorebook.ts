@@ -114,30 +114,52 @@ interface RawGeminiStructureResponse {
 
 interface RawGeminiAdvance {
   runnerName?: string;
+  rn?: string;
   from?: string;
+  f?: string;
   to?: string;
+  t?: string;
   method?: string;
+  m?: string;
   isOut?: boolean;
+  io?: boolean;
   pitchNumber?: number;
+  pn?: number;
 }
 
 interface RawGeminiAtBat {
   inning?: number;
+  i?: number;
   columnIndex?: number;
+  c?: number;
   battingOrder?: number;
+  bo?: number;
   batterName?: string;
+  b?: string;
   pitcherName?: string;
+  pt?: string;
   resultCode?: string;
+  rc?: string;
   resultLabel?: string;
+  rl?: string;
   battedDirection?: string;
+  dir?: string;
   rbi?: number;
   outsInPlay?: number;
+  o?: number;
   endingOuts?: number;
+  eo?: number;
   runsInPlay?: number;
+  ru?: number;
   pitches?: string[];
+  p?: string[];
   advances?: RawGeminiAdvance[];
+  a?: RawGeminiAdvance[];
   confidence?: string;
+  cf?: string;
   confidenceReason?: string;
+  cr?: string;
+  box?: number[];
   ymin?: number;
   xmin?: number;
   ymax?: number;
@@ -146,53 +168,65 @@ interface RawGeminiAtBat {
 
 interface RawGeminiChunkResponse {
   atBats?: RawGeminiAtBat[];
+  ab?: RawGeminiAtBat[];
 }
 
 interface GeminiModelAttemptConfig {
   model: string;
-  timeoutMs: number;
-  thinkingMode: "level_low" | "budget" | "none";
+  /** 初動応答（HTTP 200＋最初のSSEチャンク到達）までの最大待機ミリ秒。混雑キュー滞留を素早く見切る */
+  firstChunkTimeoutMs: number;
+  /** 非思考の本文JSONテキストが出始めるまでの最大待機ミリ秒 */
+  firstTextTimeoutMs: number;
+  thinkingMode: "level_low" | "budget" | "budget_zero" | "none";
   backoffBeforeMs: number;
-  retryOnlyOnCongestion?: boolean;
 }
 
+/**
+ * 特定モデルの 503 スパイク時に同プールで長時間滞留しないよう、
+ * 異なる世代・サービングプール（3.8-flash ➔ 2.5-flash ➔ 2.5-flash-lite ➔ 3.5-flash-lite ➔ 3.5-flash）へ即座にフェイルオーバーする
+ */
 const GEMINI_MODEL_CONFIGS: readonly GeminiModelAttemptConfig[] = [
   {
     model: "gemini-3.8-flash",
-    timeoutMs: 32_000,
+    firstChunkTimeoutMs: 14_000,
+    firstTextTimeoutMs: 25_000,
     thinkingMode: "level_low",
     backoffBeforeMs: 0,
   },
   {
-    model: "gemini-3.8-flash",
-    timeoutMs: 32_000,
-    thinkingMode: "level_low",
-    backoffBeforeMs: 1_800,
-    retryOnlyOnCongestion: true,
-  },
-  {
-    model: "gemini-3.5-flash-lite",
-    timeoutMs: 24_000,
-    thinkingMode: "level_low",
-    backoffBeforeMs: 900,
-  },
-  {
-    model: "gemini-3.5-flash",
-    timeoutMs: 26_000,
-    thinkingMode: "level_low",
-    backoffBeforeMs: 900,
+    model: "gemini-2.5-flash",
+    firstChunkTimeoutMs: 15_000,
+    firstTextTimeoutMs: 25_000,
+    thinkingMode: "budget",
+    backoffBeforeMs: 350,
   },
   {
     model: "gemini-2.5-flash-lite",
-    timeoutMs: 22_000,
-    thinkingMode: "budget",
-    backoffBeforeMs: 900,
+    firstChunkTimeoutMs: 13_000,
+    firstTextTimeoutMs: 20_000,
+    thinkingMode: "budget_zero",
+    backoffBeforeMs: 350,
   },
   {
-    model: "gemini-2.5-flash",
-    timeoutMs: 24_000,
-    thinkingMode: "budget",
-    backoffBeforeMs: 900,
+    model: "gemini-3.5-flash-lite",
+    firstChunkTimeoutMs: 13_000,
+    firstTextTimeoutMs: 22_000,
+    thinkingMode: "level_low",
+    backoffBeforeMs: 400,
+  },
+  {
+    model: "gemini-3.5-flash",
+    firstChunkTimeoutMs: 15_000,
+    firstTextTimeoutMs: 25_000,
+    thinkingMode: "level_low",
+    backoffBeforeMs: 500,
+  },
+  {
+    model: "gemini-3.8-flash",
+    firstChunkTimeoutMs: 16_000,
+    firstTextTimeoutMs: 26_000,
+    thinkingMode: "level_low",
+    backoffBeforeMs: 1_400,
   },
 ];
 
@@ -637,13 +671,14 @@ ${battingTeamContext}${scoreboardHintText}
   "totalRuns": 0,
   "totalHits": 1,
   "totalErrors": 0
-}`;
+}
+※余分な改行・空白インデントを省いた1行のコンパクトなJSON文字列で高速に出力してください。`;
 
     const raw = await callGeminiStructuredJson<RawGeminiStructureResponse>(
       apiKey,
       prompt,
       imageParts,
-      512
+      256
     );
 
     const maxInningFromSheet =
@@ -901,124 +936,103 @@ ${pitcherSpecLines.join("\n")}
 【対象イニングの確定スコア＆列情報（必ずこの得点数・列数と整合させること）】
 ${targetInningMetaLines.join("\n")}
 
-【超重要 1: 1球ごとの投球順序（pitches）の完全抽出（必須）】
-各打席マスの端にある投球記号欄（BSO欄）を1球目から順番に最後の一球まで漏れなく読み取り、以下のコード配列で出力してください:
-- "ball": ボール（記号例: 『ー』『・』『B欄の●』『B』）
-- "strike": 見逃しストライク（記号例: 『○』『見逃しS』）
-- "swinging_strike": 空振りストライク（記号例: 『●』『／』『空振り記号』）
-- "foul": ファウル（記号例: 『V』『△』『レ』『F』、バントファウル含む）
-- "pickoff": 牽制球（記号例: 『牽』『k』『1』『塁への牽制線』）
-- "hit": 安打になった最終球（単打・二塁打・三塁打・本塁打のときは配列の最後を必ず "hit" にする）
-- "in_play": 安打以外のインプレー打球（ゴロ・フライ・ライナー・犠打・犠飛・失策・野選のときは配列の最後を必ず "in_play" にする）
-- "hbp": 死球になった球
-※万が一、BSOの合計点のみ書かれて順序記号がないマスでも、最終カウントと結果に矛盾しない投球配列を構成し、絶対に空配列にしないでください。
+【超重要 1: 1球ごとの投球順序（p）の完全抽出（必須）】
+各打席マスの投球記号欄（BSO欄）を1球目から最後の一球まで順番に読み取り、以下の1文字短縮コード配列 p で出力してください:
+- "B": ボール（『ー』『・』『B欄の●』『B』）
+- "S": 見逃しストライク（『○』『見逃しS』）
+- "W": 空振りストライク（『●』『／』『空振り』）
+- "F": ファウル（『V』『△』『レ』『F』、バントファウル含む）
+- "P": 牽制球（『牽』『k』『1』『塁への牽制線』）
+- "H": 安打になった最終球（単打・二塁打・三塁打・本塁打は末尾を必ず "H" にする）
+- "X": 安打以外のインプレー打球（ゴロ・フライ・ライナー・犠打・犠飛・失策・野選は末尾を必ず "X" にする）
+- "D": 死球になった球
+※BSO合計のみ書かれたマスも最終カウントと結果に整合する配列を構成し、絶対に空配列にしないでください。
 
-【超重要 2: 打撃結果コード（resultCode）と日本語表記（resultLabel）の厳密判定】
-- 安打とアウトを絶対に混同しないでください！
-  - 右下の1塁線〜進塁線に実線・赤線・斜線（/ = 単打, // = 二塁打, /// = 三塁打, //// またはひし形塗り = 本塁打）があり、その打者自身のアウト丸数字（①②③）が無い場合は安打です。
-  - 中央に『7』『8』『9』等の守備番号＋斜線や赤線 ➔ resultCode: "single"（または進塁数に応じ "double"/"triple"/"home_run"）, resultLabel: "左前安打" / "中前安打" 等。
-  - 『6-3』『4-3』『1-3』等の送球ハイフン＋丸数字①②③ ➔ resultCode: "groundout"（2アウト同時なら "double_play"）, resultLabel: "遊ゴロ (6-3)" 等。
-  - 『8』『7F』『9飛』『6直』等のフライ/ライナー記号＋丸数字①②③ ➔ resultCode: "flyout", resultLabel: "中飛" / "遊直" 等。
-  - 『K』『SO』＋丸数字①②③ ➔ resultCode: "strikeout"（空振りなら "空振り三振"、見逃しなら "見逃し三振"）。振り逃げで1塁へ生きた場合は "dropped_third_strike"。
-  - 『B』『四球』 ➔ resultCode: "walk", 『死球』『DB』『HBP』 ➔ resultCode: "hit_by_pitch"。
-  - バント記号（◇や△に送球番号）で走者を進めたアウト ➔ resultCode: "sac_bunt"。外野フライで3塁走者がタッチアップ生還 ➔ resultCode: "sac_fly"。
-  - 『E6』『6E』等の失策出塁 ➔ resultCode: "error"。野手選択 ➔ resultCode: "fc"。
-  - 打席途中で走者が盗塁死・牽制死して3アウトチェンジになり打席未完了で終わったマス ➔ resultCode: "other", resultLabel: "打席途中断（走塁死チェンジ）", outsInPlay: 1。
+【超重要 2: 打撃結果コード（rc）と日本語表記（rl）の厳密判定】
+- 安打とアウトを絶対に混同しないでください！右下の1塁線〜進塁線に実線・赤線・斜線（/ = 単打, // = 二塁打, /// = 三塁打, //// = 本塁打）があり打者自身のアウト丸数字（①②③）が無い場合は安打です。
+- 中央『7』『8』『9』等の守備番号＋斜線/赤線 ➔ rc: "single"（または "double"/"triple"/"home_run"）, rl: "左前安打" / "中前安打" 等。
+- 『6-3』『4-3』等の送球ハイフン＋①②③ ➔ rc: "groundout"（併殺は "double_play"）, rl: "遊ゴロ (6-3)" 等。
+- 『8』『7F』『9飛』『6直』＋①②③ ➔ rc: "flyout", rl: "中飛" / "遊直" 等。
+- 『K』『SO』＋①②③ ➔ rc: "strikeout", rl: "空振り三振" / "見逃し三振"（振り逃げ出塁は rc: "dropped_third_strike"）。
+- 四球 ➔ rc: "walk", 死球 ➔ rc: "hit_by_pitch", 犠打 ➔ rc: "sac_bunt", 犠飛 ➔ rc: "sac_fly", 失策 ➔ rc: "error", 野選 ➔ rc: "fc"。
+- 打席途中に走者が盗塁死・牽制死して3アウトチェンジになった未完了マス ➔ rc: "other", rl: "打席途中断（走塁死チェンジ）", o: 1。
 
-【超重要 3: アウトカウントと進塁・得点（runsInPlay / advances）】
-- 1イニングの outsInPlay の合計は（最終回のサヨナラ勝ちを除き）必ず 3 になります。丸数字 ①, ②, ③ を正確に読み取り endingOuts (1, 2, 3) を設定してください。
-- 走者の盗塁（S / 盗 ➔ method: "steal"）、盗塁死（CS ➔ method: "caught_stealing", isOut: true）、牽制死（PO ➔ method: "pickoff_out", isOut: true）、暴投（WP ➔ method: "wp"）、捕逸（PB ➔ method: "pb"）、打撃による進塁（method: "hit" / "sac" / "fc" / "error"）を advances に記録してください。
-- 本塁へ生還した走者は to: "HP", isOut: false とし、その打席で生還した合計人数を runsInPlay に設定してください。イニング内の runsInPlay の合計が上記の「確定得点」と一致するよう特に注意して確認してください。
+【超重要 3: アウト数（o / eo）と進塁・得点（ru / a）】
+- 1イニングの o の合計は（サヨナラ勝ちを除き）必ず 3 です。丸数字 ①②③ から eo (1,2,3) を設定してください。
+- 盗塁(m:"steal")・盗塁死(m:"caught_stealing",io:true)・牽制死(m:"pickoff_out",io:true)・暴投(m:"wp")・捕逸(m:"pb")・打撃進塁(m:"hit"/"sac"/"fc"/"error")を a に記録してください。進塁が無い凡退等は a:[] としてください。
+- 本塁生還は t:"HP", io:false とし、その打席の生還人数を ru に設定（イニング内の ru 合計＝確定得点）。
 
-【超重要 4: マス座標（ymin, xmin, ymax, xmax）と確信度（confidence）】
-- 各打席マスの画像上の位置を 0〜1000 の正規化座標で返してください。
-- 文字のかすれ・消しゴム跡・複雑な走塁などで少しでも解釈に迷った場合は confidence: "low" とし、confidenceReason に確認してほしいポイント（例: "BSOの2球目と3球目が重なっている", "7飛か7安打か線が薄い"）を簡潔に書いてください。
+【超重要 4: マス座標 box と確信度 cf】
+- box は [ymin, xmin, ymax, xmax]（0〜1000整数4要素配列）。
+- cf は "h"(高)・"m"(中)・"l"(低)。迷いがあるマスのみ cf:"l" とし cr に短い理由を記載（通常は cr 省略可）。
 
-【出力JSONフォーマット（以下の厳密なキー構造のJSONオブジェクトのみを返してください）】
-{
-  "atBats": [
-    {
-      "inning": 1,
-      "columnIndex": 1,
-      "battingOrder": 1,
-      "resultCode": "single",
-      "resultLabel": "左前安打",
-      "rbi": 0,
-      "outsInPlay": 0,
-      "endingOuts": 0,
-      "runsInPlay": 0,
-      "pitches": ["ball", "strike", "foul", "hit"],
-      "advances": [
-        {
-          "runnerName": "選手名",
-          "from": "BAT",
-          "to": "1B",
-          "method": "hit",
-          "isOut": false,
-          "pitchNumber": 4
-        }
-      ],
-      "confidence": "high",
-      "confidenceReason": "",
-      "ymin": 150,
-      "xmin": 210,
-      "ymax": 230,
-      "xmax": 300
-    }
-  ]
-}
-※ resultCode は必ず "single" | "double" | "triple" | "home_run" | "walk" | "hit_by_pitch" | "strikeout" | "dropped_third_strike" | "groundout" | "flyout" | "double_play" | "sac_bunt" | "sac_fly" | "error" | "fc" | "other" のいずれか、confidence は "high" | "medium" | "low" のいずれかとしてください。`;
+【出力JSONフォーマット（高速応答のため改行・インデント無しのコンパクト短縮キーJSONのみを返してください）】
+{"ab":[{"i":1,"c":1,"bo":1,"rc":"single","rl":"左前安打","rbi":0,"o":0,"eo":0,"ru":0,"p":["B","S","F","H"],"a":[{"rn":"選手名","f":"BAT","t":"1B","m":"hit","io":false,"pn":4}],"cf":"h","box":[150,210,230,300]}]}
+※ rc は必ず "single"|"double"|"triple"|"home_run"|"walk"|"hit_by_pitch"|"strikeout"|"dropped_third_strike"|"groundout"|"flyout"|"double_play"|"sac_bunt"|"sac_fly"|"error"|"fc"|"other" のいずれかとしてください。`;
 
     const rawChunk = await callGeminiStructuredJson<RawGeminiChunkResponse>(
       apiKey,
       prompt,
       imageParts,
-      768
+      256
     );
 
     const targetSet = new Set(sortedTargets);
-    const rawList = (rawChunk.atBats || []).filter((ab) =>
-      targetSet.has(ab.inning || 0)
+    const rawItems = rawChunk.ab || rawChunk.atBats || [];
+    const rawList = rawItems.filter((ab) =>
+      targetSet.has((ab.i ?? ab.inning) || 0)
     );
 
     const mappedAtBats: ScorebookV2AtBat[] = rawList.map((ab) => {
-      const inning = ab.inning || sortedTargets[0];
-      const battingOrder = Math.max(1, ab.battingOrder || 1);
+      const inning = (ab.i ?? ab.inning) || sortedTargets[0];
+      const battingOrder = Math.max(1, (ab.bo ?? ab.battingOrder) || 1);
       const resolved = resolveActiveMatchupFromStructure(
         body.structure,
         inning,
         battingOrder
       );
 
-      const resultCode = inferCanonicalResultCode(ab.resultCode, ab.resultLabel);
-      const normalizedPitches = normalizePitchArray(ab.pitches || [], resultCode);
+      const rawResultCode = ab.rc ?? ab.resultCode;
+      const rawResultLabel = ab.rl ?? ab.resultLabel;
+      const resultCode = inferCanonicalResultCode(rawResultCode, rawResultLabel);
+      const normalizedPitches = normalizePitchArray(
+        ab.p || ab.pitches || [],
+        resultCode
+      );
       const { balls, strikes } = computeCountFromPitches(normalizedPitches);
-      const cellBox = sanitizeBox(ab.ymin, ab.xmin, ab.ymax, ab.xmax);
+      const boxArr = Array.isArray(ab.box) && ab.box.length >= 4 ? ab.box : undefined;
+      const cellBox = boxArr
+        ? sanitizeBox(boxArr[0], boxArr[1], boxArr[2], boxArr[3])
+        : sanitizeBox(ab.ymin, ab.xmin, ab.ymax, ab.xmax);
 
+      const rawConf = (ab.cf ?? ab.confidence ?? "h").toLowerCase();
       const confidence: ConfidenceLevel =
-        ab.confidence === "low"
+        rawConf === "l" || rawConf === "low"
           ? "low"
-          : ab.confidence === "medium"
+          : rawConf === "m" || rawConf === "medium"
           ? "medium"
           : "high";
 
-      const advances: ScorebookV2Advance[] = (ab.advances || []).map((adv) => ({
-        id: crypto.randomUUID(),
-        runnerName: (adv.runnerName || "").trim(),
-        from: normalizeFromBase(adv.from),
-        to: normalizeToBase(adv.to),
-        method: normalizeAdvanceMethod(adv.method),
-        isOut: Boolean(adv.isOut),
-        pitchNumber:
-          typeof adv.pitchNumber === "number" && adv.pitchNumber > 0
-            ? adv.pitchNumber
-            : undefined,
-      }));
+      const rawAdvances = ab.a || ab.advances || [];
+      const advances: ScorebookV2Advance[] = rawAdvances.map((adv) => {
+        const pnVal = adv.pn ?? adv.pitchNumber;
+        return {
+          id: crypto.randomUUID(),
+          runnerName: (adv.rn ?? adv.runnerName ?? "").trim(),
+          from: normalizeFromBase(adv.f ?? adv.from),
+          to: normalizeToBase(adv.t ?? adv.to),
+          method: normalizeAdvanceMethod(adv.m ?? adv.method),
+          isOut: Boolean(adv.io ?? adv.isOut),
+          pitchNumber:
+            typeof pnVal === "number" && pnVal > 0 ? pnVal : undefined,
+        };
+      });
 
       const hpCount = advances.filter((a) => a.to === "HP" && !a.isOut).length;
       const isHr = resultCode === "home_run";
+      const rawRunsInPlay = ab.ru ?? ab.runsInPlay ?? 0;
       const effectiveRuns = Math.max(
-        ab.runsInPlay ?? 0,
+        rawRunsInPlay,
         hpCount,
         isHr ? 1 : 0
       );
@@ -1027,25 +1041,25 @@ ${targetInningMetaLines.join("\n")}
         id: crypto.randomUUID(),
         inning,
         isTop: body.isTop,
-        columnIndex: Math.max(1, ab.columnIndex || 1),
+        columnIndex: Math.max(1, (ab.c ?? ab.columnIndex) || 1),
         battingOrder,
-        batterName: resolved.batterName || (ab.batterName || "").trim(),
+        batterName: resolved.batterName || (ab.b ?? ab.batterName ?? "").trim(),
         batterPlayerId: resolved.batterPlayerId,
-        pitcherName: resolved.pitcherName || (ab.pitcherName || "").trim(),
+        pitcherName: resolved.pitcherName || (ab.pt ?? ab.pitcherName ?? "").trim(),
         pitcherPlayerId: resolved.pitcherPlayerId,
         resultCode,
-        resultLabel: (ab.resultLabel || resultCode).trim(),
-        battedDirection: (ab.battedDirection || "").trim(),
+        resultLabel: (rawResultLabel || resultCode).trim(),
+        battedDirection: (ab.dir ?? ab.battedDirection ?? "").trim(),
         rbi: Math.max(0, ab.rbi ?? effectiveRuns),
-        outsInPlay: Math.max(0, Math.min(3, ab.outsInPlay ?? 0)),
-        endingOuts: Math.max(0, Math.min(3, ab.endingOuts ?? 0)),
+        outsInPlay: Math.max(0, Math.min(3, ab.o ?? ab.outsInPlay ?? 0)),
+        endingOuts: Math.max(0, Math.min(3, ab.eo ?? ab.endingOuts ?? 0)),
         runsInPlay: effectiveRuns,
         balls,
         strikes,
         pitches: normalizedPitches,
         advances,
         confidence,
-        confidenceReason: (ab.confidenceReason || "").trim() || undefined,
+        confidenceReason: (ab.cr ?? ab.confidenceReason ?? "").trim() || undefined,
         cellBox,
       };
     });
@@ -1562,33 +1576,49 @@ async function callGeminiStructuredJson<T>(
   apiKey: string,
   prompt: string,
   imageParts: GeminiContentPart[],
-  thinkingBudget = 768
+  thinkingBudget = 256
 ): Promise<T> {
   const attemptErrors: string[] = [];
   const overallStart = Date.now();
-  const MAX_TOTAL_BUDGET_MS = 86_000;
-  let lastFailureWasCongestion = false;
+  const MAX_TOTAL_BUDGET_MS = 88_000;
 
   for (const cfg of GEMINI_MODEL_CONFIGS) {
-    if (cfg.retryOnlyOnCongestion && !lastFailureWasCongestion) {
-      continue;
-    }
-
     if (cfg.backoffBeforeMs > 0) {
-      const jitter = Math.floor(Math.random() * 450);
+      const jitter = Math.floor(Math.random() * 300);
       await new Promise((r) => setTimeout(r, cfg.backoffBeforeMs + jitter));
     }
 
-    const remainingMs = MAX_TOTAL_BUDGET_MS - (Date.now() - overallStart);
-    if (remainingMs < 7_000) {
+    const remainingBeforeStart =
+      MAX_TOTAL_BUDGET_MS - (Date.now() - overallStart);
+    if (remainingBeforeStart < 6_000) {
       break;
     }
 
-    lastFailureWasCongestion = false;
-    const effectiveTimeoutMs = Math.min(cfg.timeoutMs, remainingMs);
+    const attemptStart = Date.now();
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${cfg.model}:streamGenerateContent?alt=sse&key=${apiKey}`;
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), effectiveTimeoutMs);
+    let activeTimer: ReturnType<typeof setTimeout> | undefined;
+    let abortReason = "";
+
+    const scheduleWatchdog = (ms: number, reason: string) => {
+      if (activeTimer !== undefined) {
+        clearTimeout(activeTimer);
+      }
+      const totalLeft = Math.max(
+        1_000,
+        MAX_TOTAL_BUDGET_MS - (Date.now() - overallStart)
+      );
+      const boundedMs = Math.min(ms, totalLeft);
+      const isTotalCap = totalLeft < ms;
+      activeTimer = setTimeout(() => {
+        abortReason = isTotalCap
+          ? "全体制限時間到達"
+          : `${reason} (${Math.round(boundedMs / 1000)}秒)`;
+        controller.abort();
+      }, boundedMs);
+    };
+
+    scheduleWatchdog(cfg.firstChunkTimeoutMs, "初動待機タイムアウト");
 
     try {
       const generationConfig: Record<string, unknown> = {
@@ -1602,6 +1632,10 @@ async function callGeminiStructuredJson<T>(
       } else if (cfg.thinkingMode === "budget") {
         generationConfig.thinkingConfig = {
           thinkingBudget,
+        };
+      } else if (cfg.thinkingMode === "budget_zero") {
+        generationConfig.thinkingConfig = {
+          thinkingBudget: 0,
         };
       }
 
@@ -1623,6 +1657,7 @@ async function callGeminiStructuredJson<T>(
       if (!res.ok && res.status === 400 && cfg.thinkingMode !== "none") {
         const firstErrText = await res.text();
         if (firstErrText.toLowerCase().includes("thinking")) {
+          scheduleWatchdog(cfg.firstChunkTimeoutMs, "初動待機タイムアウト");
           const fallbackGenConfig: Record<string, unknown> = {
             temperature: 0.1,
             responseMimeType: "application/json",
@@ -1641,7 +1676,7 @@ async function callGeminiStructuredJson<T>(
             }),
           });
         } else {
-          const errSummary = `[${cfg.model}] HTTP 400: ${firstErrText.slice(0, 180)}`;
+          const errSummary = `[${cfg.model}] HTTP 400: ${firstErrText.slice(0, 140)}`;
           attemptErrors.push(errSummary);
           continue;
         }
@@ -1649,9 +1684,7 @@ async function callGeminiStructuredJson<T>(
 
       if (!res.ok) {
         const errText = await res.text();
-        lastFailureWasCongestion =
-          res.status === 429 || res.status === 503 || res.status === 502;
-        const errSummary = `[${cfg.model}] HTTP ${res.status}: ${errText.slice(0, 180)}`;
+        const errSummary = `[${cfg.model}] HTTP ${res.status}: ${errText.slice(0, 140)}`;
         attemptErrors.push(errSummary);
         if (
           res.status === 400 ||
@@ -1665,7 +1698,29 @@ async function callGeminiStructuredJson<T>(
         throw new Error(attemptErrors.join(" / "));
       }
 
-      const { text, finishReason } = await readGeminiSseResponse(res);
+      let sawCandidateChunk = false;
+      let sawTextChunk = false;
+
+      const { text, finishReason } = await readGeminiSseResponse(res, {
+        onCandidateChunk: () => {
+          if (!sawCandidateChunk) {
+            sawCandidateChunk = true;
+            if (!sawTextChunk) {
+              const elapsedAttempt = Date.now() - attemptStart;
+              const leftForText = Math.max(
+                7_000,
+                cfg.firstTextTimeoutMs - elapsedAttempt
+              );
+              scheduleWatchdog(leftForText, "思考フェーズ超過");
+            }
+          }
+        },
+        onTextChunk: () => {
+          sawTextChunk = true;
+          // 本文トークンが流れている間はチャンク間14秒のアイドル監視のみに切り替え、生成途中の切断を防ぐ
+          scheduleWatchdog(14_000, "ストリーム無応答");
+        },
+      });
 
       if (!text.trim()) {
         attemptErrors.push(
@@ -1695,9 +1750,7 @@ async function callGeminiStructuredJson<T>(
     } catch (err) {
       if (controller.signal.aborted) {
         attemptErrors.push(
-          `[${cfg.model}] 応答タイムアウト (${Math.round(
-            effectiveTimeoutMs / 1000
-          )}秒超過)`
+          `[${cfg.model}] ${abortReason || "応答タイムアウト"}`
         );
         continue;
       }
@@ -1705,7 +1758,9 @@ async function callGeminiStructuredJson<T>(
       attemptErrors.push(`[${cfg.model}] ${msg}`);
       continue;
     } finally {
-      clearTimeout(timer);
+      if (activeTimer !== undefined) {
+        clearTimeout(activeTimer);
+      }
     }
   }
 
@@ -1715,12 +1770,23 @@ async function callGeminiStructuredJson<T>(
   );
 }
 
+interface SseStreamCallbacks {
+  onCandidateChunk?: () => void;
+  onTextChunk?: () => void;
+}
+
 async function readGeminiSseResponse(
-  res: Response
+  res: Response,
+  callbacks?: SseStreamCallbacks
 ): Promise<{ text: string; finishReason: string }> {
   if (!res.body) {
     const raw = await res.text();
-    return parseGeminiRawOrSseText(raw);
+    const parsed = parseGeminiRawOrSseText(raw);
+    if (parsed.text) {
+      callbacks?.onCandidateChunk?.();
+      callbacks?.onTextChunk?.();
+    }
+    return parsed;
   }
 
   const reader = res.body.getReader();
@@ -1738,13 +1804,17 @@ async function readGeminiSseResponse(
     try {
       const parsed = JSON.parse(payload) as GeminiApiResponse;
       const cand = parsed.candidates?.[0];
+      if (cand) {
+        callbacks?.onCandidateChunk?.();
+      }
       if (cand?.finishReason) {
         finishReason = cand.finishReason;
       }
       const parts = cand?.content?.parts || [];
       for (const p of parts) {
-        if (!p.thought && typeof p.text === "string") {
+        if (!p.thought && typeof p.text === "string" && p.text.length > 0) {
           assembledText += p.text;
+          callbacks?.onTextChunk?.();
         }
       }
     } catch {
@@ -1832,7 +1902,7 @@ async function resolveLegendImagePart(
     if (legendUrl.startsWith("data:")) {
       const [header, b64] = legendUrl.split(",");
       const mimeMatch = header?.match(/data:(.*?);/);
-      if (b64) {
+      if (b64 && b64.length <= 1_600_000) {
         return {
           inlineData: {
             mimeType: mimeMatch ? mimeMatch[1] : "image/png",
@@ -1850,12 +1920,15 @@ async function resolveLegendImagePart(
       const obj = await c.env.BUCKET.get(r2Key);
       if (obj) {
         const buf = await obj.arrayBuffer();
-        return {
-          inlineData: {
-            mimeType: obj.httpMetadata?.contentType || "image/png",
-            data: arrayBufferToBase64(buf),
-          },
-        };
+        if (buf.byteLength <= 1_200_000) {
+          return {
+            inlineData: {
+              mimeType: obj.httpMetadata?.contentType || "image/png",
+              data: arrayBufferToBase64(buf),
+            },
+          };
+        }
+        return null;
       }
     }
 
@@ -1865,12 +1938,14 @@ async function resolveLegendImagePart(
     const res = await fetch(targetUrl);
     if (res.ok) {
       const buf = await res.arrayBuffer();
-      return {
-        inlineData: {
-          mimeType: res.headers.get("content-type") || "image/png",
-          data: arrayBufferToBase64(buf),
-        },
-      };
+      if (buf.byteLength <= 1_200_000) {
+        return {
+          inlineData: {
+            mimeType: res.headers.get("content-type") || "image/png",
+            data: arrayBufferToBase64(buf),
+          },
+        };
+      }
     }
   } catch (err) {
     console.warn("[LiffScorebookV2] Legend load skipped:", err);
@@ -1893,6 +1968,7 @@ function normalizePitchArray(
       mapped.push("ball");
     } else if (
       s === "swinging_strike" ||
+      s === "w" ||
       s.includes("空振") ||
       s.includes("swing")
     ) {
@@ -1906,13 +1982,22 @@ function normalizePitchArray(
       mapped.push("strike");
     } else if (s === "foul" || s === "f" || s.includes("ファウル")) {
       mapped.push("foul");
-    } else if (s === "pickoff" || s.includes("牽")) {
+    } else if (s === "pickoff" || s === "p" || s.includes("牽")) {
       mapped.push("pickoff");
-    } else if (s === "hbp" || s.includes("死球")) {
+    } else if (s === "hbp" || s === "d" || s.includes("死球")) {
       mapped.push("hbp");
-    } else if (s === "hit" || s.includes("安") || s.includes("ヒット")) {
+    } else if (
+      s === "hit" ||
+      s === "h" ||
+      s.includes("安") ||
+      s.includes("ヒット")
+    ) {
       mapped.push("hit");
-    } else if (s === "in_play" || s.includes("インプレー")) {
+    } else if (
+      s === "in_play" ||
+      s === "x" ||
+      s.includes("インプレー")
+    ) {
       mapped.push("in_play");
     }
   }

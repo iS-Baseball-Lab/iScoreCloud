@@ -7,7 +7,10 @@ import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { useLiff } from "@/components/liff/LiffProvider";
 import { LiffToolSubNav } from "@/components/liff/LiffToolSubNav";
-import { preprocessScorebookImage } from "@/lib/liff/scorebook-image";
+import {
+  ensureCompactApiImage,
+  preprocessScorebookImage,
+} from "@/lib/liff/scorebook-image";
 import {
   clearScorebookDraft,
   loadScorebookDraft,
@@ -120,6 +123,9 @@ export default function LiffScorebookImportPage() {
   const [saveSummary, setSaveSummary] = useState<SaveSummaryData | null>(null);
 
   const hasRestoredTeamRef = useRef<string | null>(null);
+  const completedChunkCacheRef = useRef<
+    Map<string, { atBats: ScorebookV2AtBat[]; nextLeadOffOrder?: number }>
+  >(new Map());
   const [isDraftReady, setIsDraftReady] = useState(false);
   const [lastAutoSavedAt, setLastAutoSavedAt] = useState<number | null>(null);
   const [restoredDraftBannerAt, setRestoredDraftBannerAt] = useState<
@@ -495,6 +501,7 @@ export default function LiffScorebookImportPage() {
     setErrorBanner(null);
 
     try {
+      completedChunkCacheRef.current.clear();
       const needTop = importScope === "both" || importScope === "top_only";
       const needBottom =
         importScope === "both" || importScope === "bottom_only";
@@ -502,11 +509,8 @@ export default function LiffScorebookImportPage() {
 
       const callStructureApiOnce = async (
         isTop: boolean,
-        imgState: SheetImageState
+        apiImg: { base64: string; mimeType: string }
       ): Promise<ScorebookSheetStructure> => {
-        if (!imgState.processed) {
-          throw new Error("画像が準備されていません");
-        }
         const res = await fetch("/api/liff/scorebook/analyze-structure", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -514,8 +518,8 @@ export default function LiffScorebookImportPage() {
             teamId: resolvedTeamId || currentTeam?.id || "",
             matchId: selectedMatchId,
             isTop,
-            imageBase64: imgState.processed.base64,
-            mimeType: imgState.processed.mimeType,
+            imageBase64: apiImg.base64,
+            mimeType: apiImg.mimeType,
             legendBase64: legendOverride?.base64,
             legendMimeType: legendOverride?.mimeType,
           }),
@@ -536,19 +540,27 @@ export default function LiffScorebookImportPage() {
         imgState: SheetImageState,
         stepNum: number
       ): Promise<ScorebookSheetStructure> => {
+        if (!imgState.processed) {
+          throw new Error("画像が準備されていません");
+        }
         const sideLabel = isTop ? "先攻（表）" : "後攻（裏）";
         setStructureProgressLabel(
           `${sideLabel}シートの打順・得点をスキャン中... (${stepNum}/${totalSides})`
         );
+        const apiImg = await ensureCompactApiImage(
+          imgState.processed,
+          1536,
+          0.8
+        );
         try {
-          return await callStructureApiOnce(isTop, imgState);
+          return await callStructureApiOnce(isTop, apiImg);
         } catch (firstErr) {
           setStructureProgressLabel(
             `${sideLabel}シートを再スキャン中（AI混雑回避）... (${stepNum}/${totalSides})`
           );
           await new Promise((r) => setTimeout(r, 2400));
           void firstErr;
-          return await callStructureApiOnce(isTop, imgState);
+          return await callStructureApiOnce(isTop, apiImg);
         }
       };
 
@@ -587,7 +599,7 @@ export default function LiffScorebookImportPage() {
     }
   };
 
-  // 5. Stage 2: イニング分割ディープ解析（1〜2回ずつの高速チャンク＋自動分割リトライ＆先頭打順連鎖）
+  // 5. Stage 2: イニング分割ディープ解析（軽量1536px送信＋完了イニング即時キャッシュ＋自動分割リトライ）
   const handleStartDeepAnalysis = async () => {
     if (!selectedMatchId) return;
     setIsAnalyzingInnings(true);
@@ -604,8 +616,8 @@ export default function LiffScorebookImportPage() {
         let buf: number[] = [];
 
         for (const meta of sortedMeta) {
-          // 打者一巡(2列)や大量得点(3点以上)の回は単独1イニングで集中解析しタイムアウトを防止
-          const isHeavyInning = meta.columnCount >= 2 || meta.runs >= 3;
+          // 打者一巡(2列)や複数得点(2点以上)の回は単独1イニングで集中解析し応答を高速化
+          const isHeavyInning = meta.columnCount >= 2 || meta.runs >= 2;
           if (isHeavyInning) {
             if (buf.length > 0) {
               chunks.push(buf);
@@ -626,16 +638,41 @@ export default function LiffScorebookImportPage() {
         return chunks;
       };
 
+      const buildStructureFingerprint = (
+        structure: ScorebookSheetStructure
+      ): string =>
+        JSON.stringify({
+          b: structure.batters.map((x) => [
+            x.battingOrder,
+            x.name,
+            x.substitutions.map((s) => [s.inningEntered, s.name]),
+          ]),
+          p: structure.pitchers.map((x) => [x.name, x.fromInning, x.toInning]),
+          i: structure.innings.map((x) => [x.inning, x.runs, x.columnCount]),
+        });
+
       const requestSingleChunk = async (
         isTop: boolean,
         structure: ScorebookSheetStructure,
-        imgState: SheetImageState,
+        apiImg: { base64: string; mimeType: string },
+        structureFp: string,
         targetInnings: number[],
         expectedLeadOff: number
       ): Promise<{
         atBats: ScorebookV2AtBat[];
         nextLeadOffOrder?: number;
+        fromCache?: boolean;
       }> => {
+        const cacheKey = `${selectedMatchId}:${
+          isTop ? "top" : "bottom"
+        }:${apiImg.base64.length}:${structureFp}:${expectedLeadOff}:${targetInnings.join(
+          ","
+        )}`;
+        const cached = completedChunkCacheRef.current.get(cacheKey);
+        if (cached) {
+          return { ...cached, fromCache: true };
+        }
+
         const sideLabel = isTop ? "先攻（表）" : "後攻（裏）";
         const res = await fetch("/api/liff/scorebook/analyze-inning-chunk", {
           method: "POST",
@@ -644,8 +681,8 @@ export default function LiffScorebookImportPage() {
             teamId: resolvedTeamId || currentTeam?.id || "",
             matchId: selectedMatchId,
             isTop,
-            imageBase64: imgState.processed!.base64,
-            mimeType: imgState.processed!.mimeType,
+            imageBase64: apiImg.base64,
+            mimeType: apiImg.mimeType,
             structure,
             targetInnings,
             expectedLeadOffOrder: expectedLeadOff,
@@ -667,10 +704,53 @@ export default function LiffScorebookImportPage() {
           );
         }
 
-        return {
+        const result = {
           atBats: data.atBats,
           nextLeadOffOrder: data.nextLeadOffOrder,
         };
+        completedChunkCacheRef.current.set(cacheKey, result);
+        return result;
+      };
+
+      const requestSingleInningWithRetries = async (
+        isTop: boolean,
+        structure: ScorebookSheetStructure,
+        apiImg: { base64: string; mimeType: string },
+        structureFp: string,
+        singleInn: number,
+        expectedLeadOff: number,
+        progressSuffix: string
+      ): Promise<{
+        atBats: ScorebookV2AtBat[];
+        nextLeadOffOrder?: number;
+      }> => {
+        const sideLabel = isTop ? "先攻（表）" : "後攻（裏）";
+        const retryDelays = [2200, 4200];
+        let lastErr: unknown = null;
+
+        for (let attempt = 0; attempt <= retryDelays.length; attempt++) {
+          if (attempt > 0) {
+            setAnalysisProgressLabel(
+              `${sideLabel} ${singleInn}回 を混雑回避リトライ中 (${attempt}/${retryDelays.length})... ${progressSuffix}`
+            );
+            await new Promise((r) => setTimeout(r, retryDelays[attempt - 1]));
+          }
+          try {
+            return await requestSingleChunk(
+              isTop,
+              structure,
+              apiImg,
+              structureFp,
+              [singleInn],
+              expectedLeadOff
+            );
+          } catch (err) {
+            lastErr = err;
+          }
+        }
+        throw lastErr instanceof Error
+          ? lastErr
+          : new Error(`${sideLabel} ${singleInn}回の解析に失敗しました`);
       };
 
       const analyzeSheetByChunks = async (
@@ -680,6 +760,12 @@ export default function LiffScorebookImportPage() {
       ): Promise<ScorebookV2AtBat[]> => {
         if (!imgState.processed) return [];
         const sideLabel = isTop ? "先攻（表）" : "後攻（裏）";
+        const apiImg = await ensureCompactApiImage(
+          imgState.processed,
+          1536,
+          0.8
+        );
+        const structureFp = buildStructureFingerprint(structure);
         const chunks = buildSmartInningChunks(structure);
 
         const collected: ScorebookV2AtBat[] = [];
@@ -687,6 +773,7 @@ export default function LiffScorebookImportPage() {
 
         for (let cIdx = 0; cIdx < chunks.length; cIdx++) {
           const targetInnings = chunks[cIdx];
+          const progressSuffix = `(${cIdx + 1}/${chunks.length})`;
           const rangeText =
             targetInnings.length === 1
               ? `${targetInnings[0]}回`
@@ -695,16 +782,15 @@ export default function LiffScorebookImportPage() {
                 }回`;
 
           setAnalysisProgressLabel(
-            `${sideLabel} ${rangeText} の1球順序・進塁を解析中... (${
-              cIdx + 1
-            }/${chunks.length})`
+            `${sideLabel} ${rangeText} の1球順序・進塁を解析中... ${progressSuffix}`
           );
 
           try {
             const chunkRes = await requestSingleChunk(
               isTop,
               structure,
-              imgState,
+              apiImg,
+              structureFp,
               targetInnings,
               expectedLeadOff
             );
@@ -712,21 +798,25 @@ export default function LiffScorebookImportPage() {
             if (chunkRes.nextLeadOffOrder) {
               expectedLeadOff = chunkRes.nextLeadOffOrder;
             }
+            if (!chunkRes.fromCache && cIdx < chunks.length - 1) {
+              await new Promise((r) => setTimeout(r, 350));
+            }
           } catch (chunkErr) {
-            // 2イニング同時チャンクがタイムアウト等になった場合は自動的に1イニングずつに分割して再試行
+            // 2イニング同時チャンクが失敗した場合は小休止後に1イニングずつへ自動分割＆個別キャッシュ
             if (targetInnings.length > 1) {
+              await new Promise((r) => setTimeout(r, 1800));
               for (const singleInn of targetInnings) {
                 setAnalysisProgressLabel(
-                  `${sideLabel} ${singleInn}回 を精密再解析中... (${
-                    cIdx + 1
-                  }/${chunks.length})`
+                  `${sideLabel} ${singleInn}回 を1回単位で精密解析中... ${progressSuffix}`
                 );
-                const singleRes = await requestSingleChunk(
+                const singleRes = await requestSingleInningWithRetries(
                   isTop,
                   structure,
-                  imgState,
-                  [singleInn],
-                  expectedLeadOff
+                  apiImg,
+                  structureFp,
+                  singleInn,
+                  expectedLeadOff,
+                  progressSuffix
                 );
                 collected.push(...singleRes.atBats);
                 if (singleRes.nextLeadOffOrder) {
@@ -734,23 +824,18 @@ export default function LiffScorebookImportPage() {
                 }
               }
             } else {
-              // 単独1イニングの一時エラー時は1回だけ自動リトライ
-              setAnalysisProgressLabel(
-                `${sideLabel} ${rangeText} を再試行中... (${cIdx + 1}/${
-                  chunks.length
-                })`
-              );
-              await new Promise((r) => setTimeout(r, 800));
-              const retryRes = await requestSingleChunk(
+              const singleRes = await requestSingleInningWithRetries(
                 isTop,
                 structure,
-                imgState,
-                targetInnings,
-                expectedLeadOff
+                apiImg,
+                structureFp,
+                targetInnings[0],
+                expectedLeadOff,
+                progressSuffix
               );
-              collected.push(...retryRes.atBats);
-              if (retryRes.nextLeadOffOrder) {
-                expectedLeadOff = retryRes.nextLeadOffOrder;
+              collected.push(...singleRes.atBats);
+              if (singleRes.nextLeadOffOrder) {
+                expectedLeadOff = singleRes.nextLeadOffOrder;
               }
             }
             void chunkErr;
@@ -768,6 +853,10 @@ export default function LiffScorebookImportPage() {
         needTop && topStructure
           ? await analyzeSheetByChunks(true, topStructure, topImage)
           : [];
+
+      if (needTop && needBottom) {
+        await new Promise((r) => setTimeout(r, 400));
+      }
 
       const nextBottomAtBats =
         needBottom && bottomStructure
