@@ -165,7 +165,7 @@ export default function LiffScorebookImportPage() {
           left: nextState.cropLeft,
           right: nextState.cropRight,
         },
-        maxLongEdge: 2200,
+        maxLongEdge: 2000,
       });
       setter({ ...nextState, processed, isProcessing: false });
     } catch (err) {
@@ -274,6 +274,22 @@ export default function LiffScorebookImportPage() {
     }
   };
 
+  const parseSafeJson = async <T,>(
+    res: Response,
+    fallbackMsg: string
+  ): Promise<T> => {
+    const rawText = await res.text();
+    try {
+      return JSON.parse(rawText) as T;
+    } catch {
+      throw new Error(
+        `${fallbackMsg} (HTTP ${res.status}${
+          rawText ? `: ${rawText.slice(0, 120)}` : ""
+        })`
+      );
+    }
+  };
+
   // 4. Stage 1: AI骨格スキャン実行
   const handleStartAnalyzeStructure = async () => {
     if (!selectedMatchId) return;
@@ -305,11 +321,11 @@ export default function LiffScorebookImportPage() {
             legendMimeType: legendOverride?.mimeType,
           }),
         });
-        const data = (await res.json()) as {
+        const data = await parseSafeJson<{
           success: boolean;
           structure?: ScorebookSheetStructure;
           error?: string;
-        };
+        }>(res, "骨格スキャン通信エラー");
         if (!data.success || !data.structure) {
           throw new Error(data.error || "骨格スキャンに失敗しました");
         }
@@ -334,13 +350,92 @@ export default function LiffScorebookImportPage() {
     }
   };
 
-  // 5. Stage 2: イニング分割ディープ解析（先頭打順を次チャンクへ厳密連鎖！）
+  // 5. Stage 2: イニング分割ディープ解析（1〜2回ずつの高速チャンク＋自動分割リトライ＆先頭打順連鎖）
   const handleStartDeepAnalysis = async () => {
     if (!selectedMatchId) return;
     setIsAnalyzingInnings(true);
     setErrorBanner(null);
 
     try {
+      const buildSmartInningChunks = (
+        structure: ScorebookSheetStructure
+      ): number[][] => {
+        const sortedMeta = [...structure.innings].sort(
+          (a, b) => a.inning - b.inning
+        );
+        const chunks: number[][] = [];
+        let buf: number[] = [];
+
+        for (const meta of sortedMeta) {
+          // 打者一巡(2列)や大量得点(3点以上)の回は単独1イニングで集中解析しタイムアウトを防止
+          const isHeavyInning = meta.columnCount >= 2 || meta.runs >= 3;
+          if (isHeavyInning) {
+            if (buf.length > 0) {
+              chunks.push(buf);
+              buf = [];
+            }
+            chunks.push([meta.inning]);
+          } else {
+            buf.push(meta.inning);
+            if (buf.length >= 2) {
+              chunks.push(buf);
+              buf = [];
+            }
+          }
+        }
+        if (buf.length > 0) {
+          chunks.push(buf);
+        }
+        return chunks;
+      };
+
+      const requestSingleChunk = async (
+        isTop: boolean,
+        structure: ScorebookSheetStructure,
+        imgState: SheetImageState,
+        targetInnings: number[],
+        expectedLeadOff: number
+      ): Promise<{
+        atBats: ScorebookV2AtBat[];
+        nextLeadOffOrder?: number;
+      }> => {
+        const sideLabel = isTop ? "先攻（表）" : "後攻（裏）";
+        const res = await fetch("/api/liff/scorebook/analyze-inning-chunk", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            teamId: resolvedTeamId || currentTeam?.id || "",
+            matchId: selectedMatchId,
+            isTop,
+            imageBase64: imgState.processed!.base64,
+            mimeType: imgState.processed!.mimeType,
+            structure,
+            targetInnings,
+            expectedLeadOffOrder: expectedLeadOff,
+            legendBase64: legendOverride?.base64,
+            legendMimeType: legendOverride?.mimeType,
+          }),
+        });
+
+        const data = await parseSafeJson<{
+          success: boolean;
+          atBats?: ScorebookV2AtBat[];
+          nextLeadOffOrder?: number;
+          error?: string;
+        }>(res, `${sideLabel}イニング解析通信エラー`);
+
+        if (!data.success || !data.atBats) {
+          throw new Error(
+            data.error || `${sideLabel}のイニング解析に失敗しました`
+          );
+        }
+
+        return {
+          atBats: data.atBats,
+          nextLeadOffOrder: data.nextLeadOffOrder,
+        };
+      };
+
       const analyzeSheetByChunks = async (
         isTop: boolean,
         structure: ScorebookSheetStructure,
@@ -348,57 +443,80 @@ export default function LiffScorebookImportPage() {
       ): Promise<ScorebookV2AtBat[]> => {
         if (!imgState.processed) return [];
         const sideLabel = isTop ? "先攻（表）" : "後攻（裏）";
-        const allInningNums = structure.innings.map((m) => m.inning);
-        const chunks: number[][] = [];
-        // 2〜3イニングずつの集中チャンクに分割（トークン切れゼロ＆高精度）
-        for (let i = 0; i < allInningNums.length; i += 3) {
-          chunks.push(allInningNums.slice(i, i + 3));
-        }
+        const chunks = buildSmartInningChunks(structure);
 
         const collected: ScorebookV2AtBat[] = [];
         let expectedLeadOff = 1;
 
         for (let cIdx = 0; cIdx < chunks.length; cIdx++) {
           const targetInnings = chunks[cIdx];
+          const rangeText =
+            targetInnings.length === 1
+              ? `${targetInnings[0]}回`
+              : `${targetInnings[0]}〜${
+                  targetInnings[targetInnings.length - 1]
+                }回`;
+
           setAnalysisProgressLabel(
-            `${sideLabel} ${targetInnings[0]}〜${
-              targetInnings[targetInnings.length - 1]
-            }回 の1球順序・進塁を解析中... (${cIdx + 1}/${chunks.length})`
+            `${sideLabel} ${rangeText} の1球順序・進塁を解析中... (${
+              cIdx + 1
+            }/${chunks.length})`
           );
 
-          const res = await fetch("/api/liff/scorebook/analyze-inning-chunk", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              teamId: resolvedTeamId || currentTeam?.id || "",
-              matchId: selectedMatchId,
+          try {
+            const chunkRes = await requestSingleChunk(
               isTop,
-              imageBase64: imgState.processed.base64,
-              mimeType: imgState.processed.mimeType,
               structure,
+              imgState,
               targetInnings,
-              expectedLeadOffOrder: expectedLeadOff,
-              legendBase64: legendOverride?.base64,
-              legendMimeType: legendOverride?.mimeType,
-            }),
-          });
-
-          const data = (await res.json()) as {
-            success: boolean;
-            atBats?: ScorebookV2AtBat[];
-            nextLeadOffOrder?: number;
-            error?: string;
-          };
-
-          if (!data.success || !data.atBats) {
-            throw new Error(
-              data.error || `${sideLabel}のイニング解析に失敗しました`
+              expectedLeadOff
             );
-          }
-
-          collected.push(...data.atBats);
-          if (data.nextLeadOffOrder) {
-            expectedLeadOff = data.nextLeadOffOrder;
+            collected.push(...chunkRes.atBats);
+            if (chunkRes.nextLeadOffOrder) {
+              expectedLeadOff = chunkRes.nextLeadOffOrder;
+            }
+          } catch (chunkErr) {
+            // 2イニング同時チャンクがタイムアウト等になった場合は自動的に1イニングずつに分割して再試行
+            if (targetInnings.length > 1) {
+              for (const singleInn of targetInnings) {
+                setAnalysisProgressLabel(
+                  `${sideLabel} ${singleInn}回 を精密再解析中... (${
+                    cIdx + 1
+                  }/${chunks.length})`
+                );
+                const singleRes = await requestSingleChunk(
+                  isTop,
+                  structure,
+                  imgState,
+                  [singleInn],
+                  expectedLeadOff
+                );
+                collected.push(...singleRes.atBats);
+                if (singleRes.nextLeadOffOrder) {
+                  expectedLeadOff = singleRes.nextLeadOffOrder;
+                }
+              }
+            } else {
+              // 単独1イニングの一時エラー時は1回だけ自動リトライ
+              setAnalysisProgressLabel(
+                `${sideLabel} ${rangeText} を再試行中... (${cIdx + 1}/${
+                  chunks.length
+                })`
+              );
+              await new Promise((r) => setTimeout(r, 800));
+              const retryRes = await requestSingleChunk(
+                isTop,
+                structure,
+                imgState,
+                targetInnings,
+                expectedLeadOff
+              );
+              collected.push(...retryRes.atBats);
+              if (retryRes.nextLeadOffOrder) {
+                expectedLeadOff = retryRes.nextLeadOffOrder;
+              }
+            }
+            void chunkErr;
           }
         }
 

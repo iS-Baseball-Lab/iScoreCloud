@@ -49,10 +49,15 @@ interface GeminiTextPart {
 
 type GeminiContentPart = GeminiInlineDataPart | GeminiTextPart;
 
+interface GeminiCandidatePart {
+  text?: string;
+  thought?: boolean;
+}
+
 interface GeminiApiCandidate {
   finishReason?: string;
   content?: {
-    parts?: Array<{ text?: string }>;
+    parts?: GeminiCandidatePart[];
   };
 }
 
@@ -143,10 +148,17 @@ interface RawGeminiChunkResponse {
   atBats?: RawGeminiAtBat[];
 }
 
-const GEMINI_MODEL_FALLBACKS = [
-  "gemini-2.5-flash",
-  "gemini-2.5-pro",
-  "gemini-2.0-flash",
+const GEMINI_MODEL_CONFIGS = [
+  {
+    model: "gemini-2.5-flash",
+    timeoutMs: 48_000,
+    supportsThinkingBudget: true,
+  },
+  {
+    model: "gemini-2.0-flash",
+    timeoutMs: 35_000,
+    supportsThinkingBudget: false,
+  },
 ] as const;
 
 const PITCH_DISPLAY_JA: Record<CanonicalPitchResult, string> = {
@@ -921,11 +933,8 @@ ${targetInningMetaLines.join("\n")}
               inning: { type: "INTEGER" },
               columnIndex: { type: "INTEGER" },
               battingOrder: { type: "INTEGER" },
-              batterName: { type: "STRING" },
-              pitcherName: { type: "STRING" },
               resultCode: { type: "STRING" },
               resultLabel: { type: "STRING" },
-              battedDirection: { type: "STRING" },
               rbi: { type: "INTEGER" },
               outsInPlay: { type: "INTEGER" },
               endingOuts: { type: "INTEGER" },
@@ -960,8 +969,6 @@ ${targetInningMetaLines.join("\n")}
               "inning",
               "columnIndex",
               "battingOrder",
-              "batterName",
-              "pitcherName",
               "resultCode",
               "resultLabel",
               "rbi",
@@ -986,7 +993,8 @@ ${targetInningMetaLines.join("\n")}
       apiKey,
       prompt,
       imageParts,
-      chunkSchema
+      chunkSchema,
+      1024
     );
 
     const targetSet = new Set(sortedTargets);
@@ -1575,61 +1583,186 @@ async function callGeminiStructuredJson<T>(
   apiKey: string,
   prompt: string,
   imageParts: GeminiContentPart[],
-  responseSchema: Record<string, unknown>
+  responseSchema: Record<string, unknown>,
+  thinkingBudget = 1024
 ): Promise<T> {
   let lastError = "";
 
-  for (const modelName of GEMINI_MODEL_FALLBACKS) {
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+  for (const cfg of GEMINI_MODEL_CONFIGS) {
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${cfg.model}:streamGenerateContent?alt=sse&key=${apiKey}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), cfg.timeoutMs);
 
-    const res = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [{ text: prompt }, ...imageParts],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.0,
-          responseMimeType: "application/json",
-          responseSchema,
-        },
-      }),
-    });
+    try {
+      const generationConfig: Record<string, unknown> = {
+        temperature: 0.0,
+        responseMimeType: "application/json",
+        responseSchema,
+      };
+      if (cfg.supportsThinkingBudget) {
+        generationConfig.thinkingConfig = {
+          thinkingBudget,
+        };
+      }
 
-    if (!res.ok) {
-      const errText = await res.text();
-      lastError = `[${modelName}] HTTP ${res.status}: ${errText.slice(0, 300)}`;
-      // 404 (モデル未提供) や 503/429 (一時過負荷) は次のフォールバックモデルを試行
-      if (res.status === 404 || res.status === 503 || res.status === 429) {
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [{ text: prompt }, ...imageParts],
+            },
+          ],
+          generationConfig,
+        }),
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        lastError = `[${cfg.model}] HTTP ${res.status}: ${errText.slice(0, 260)}`;
+        if (
+          res.status === 400 ||
+          res.status === 404 ||
+          res.status === 408 ||
+          res.status === 429 ||
+          res.status >= 500
+        ) {
+          continue;
+        }
+        throw new Error(lastError);
+      }
+
+      const { text, finishReason } = await readGeminiSseResponse(res);
+
+      if (!text.trim()) {
+        lastError = `[${cfg.model}] 応答が空でした (finishReason: ${finishReason})`;
         continue;
       }
-      throw new Error(lastError);
-    }
 
-    const data = (await res.json()) as GeminiApiResponse;
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    const finishReason = data.candidates?.[0]?.finishReason || "UNKNOWN";
+      let cleaned = text.trim();
+      if (cleaned.startsWith("```")) {
+        cleaned = cleaned
+          .replace(/^```[a-zA-Z0-9]*\n?/, "")
+          .replace(/\n?```$/, "")
+          .trim();
+      }
 
-    if (!text) {
-      lastError = `[${modelName}] 応答が空でした (finishReason: ${finishReason})`;
+      try {
+        return JSON.parse(cleaned) as T;
+      } catch (parseErr) {
+        const msg =
+          parseErr instanceof Error ? parseErr.message : String(parseErr);
+        lastError = `[${cfg.model}] JSON解析失敗 (${finishReason}): ${msg}`;
+        continue;
+      }
+    } catch (err) {
+      if (controller.signal.aborted) {
+        lastError = `[${cfg.model}] 応答タイムアウト (${Math.round(
+          cfg.timeoutMs / 1000
+        )}秒超過)`;
+        continue;
+      }
+      const msg = err instanceof Error ? err.message : String(err);
+      lastError = `[${cfg.model}] ${msg}`;
       continue;
+    } finally {
+      clearTimeout(timer);
     }
-
-    let cleaned = text.trim();
-    if (cleaned.startsWith("```")) {
-      cleaned = cleaned
-        .replace(/^```[a-zA-Z0-9]*\n?/, "")
-        .replace(/\n?```$/, "")
-        .trim();
-    }
-
-    return JSON.parse(cleaned) as T;
   }
 
-  throw new Error(lastError || "利用可能なGeminiモデルからの応答取得に失敗しました");
+  throw new Error(
+    lastError || "利用可能なGeminiモデルからの応答取得に失敗しました"
+  );
+}
+
+async function readGeminiSseResponse(
+  res: Response
+): Promise<{ text: string; finishReason: string }> {
+  if (!res.body) {
+    const raw = await res.text();
+    return parseGeminiRawOrSseText(raw);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let sseBuffer = "";
+  let rawAll = "";
+  let assembledText = "";
+  let finishReason = "UNKNOWN";
+
+  const processLine = (rawLine: string) => {
+    const line = rawLine.trim();
+    if (!line.startsWith("data:")) return;
+    const payload = line.slice(5).trim();
+    if (!payload || payload === "[DONE]") return;
+    try {
+      const parsed = JSON.parse(payload) as GeminiApiResponse;
+      const cand = parsed.candidates?.[0];
+      if (cand?.finishReason) {
+        finishReason = cand.finishReason;
+      }
+      const parts = cand?.content?.parts || [];
+      for (const p of parts) {
+        if (!p.thought && typeof p.text === "string") {
+          assembledText += p.text;
+        }
+      }
+    } catch {
+      // partial or non-json line ignored
+    }
+  };
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    const chunkStr = decoder.decode(value, { stream: true });
+    rawAll += chunkStr;
+    sseBuffer += chunkStr;
+    const lines = sseBuffer.split("\n");
+    sseBuffer = lines.pop() ?? "";
+    for (const ln of lines) {
+      processLine(ln);
+    }
+  }
+
+  const tail = decoder.decode();
+  if (tail) {
+    rawAll += tail;
+    sseBuffer += tail;
+  }
+  if (sseBuffer) {
+    for (const ln of sseBuffer.split("\n")) {
+      processLine(ln);
+    }
+  }
+
+  if (!assembledText && rawAll.trim().startsWith("{")) {
+    return parseGeminiRawOrSseText(rawAll);
+  }
+
+  return { text: assembledText, finishReason };
+}
+
+function parseGeminiRawOrSseText(
+  raw: string
+): { text: string; finishReason: string } {
+  const trimmed = raw.trim();
+  if (trimmed.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(trimmed) as GeminiApiResponse;
+      const cand = parsed.candidates?.[0];
+      const text = (cand?.content?.parts || [])
+        .filter((p) => !p.thought && typeof p.text === "string")
+        .map((p) => p.text || "")
+        .join("");
+      return { text, finishReason: cand?.finishReason || "UNKNOWN" };
+    } catch {
+      // fall through
+    }
+  }
+  return { text: "", finishReason: "UNKNOWN" };
 }
 
 async function resolveLegendImagePart(
