@@ -392,20 +392,30 @@ export interface AdjacentMatchSummary {
 export function getDemoAdjacentMatches(matchId: string): {
   prevMatch: AdjacentMatchSummary | null;
   nextMatch: AdjacentMatchSummary | null;
+  matchOrderNumber: number | null;
+  totalMatches: number;
 } {
   const targetId = matchId === "sample-match" ? "demo-match-1" : matchId;
   const sorted = [...getHydratedDemoMatchCards()].sort((a, b) =>
     b.date.replace(/\//g, "-").localeCompare(a.date.replace(/\//g, "-"))
   );
+  const totalMatches = sorted.length;
   const idx = sorted.findIndex((m) => m.id === targetId);
   if (idx === -1) {
-    return { prevMatch: null, nextMatch: null };
+    return {
+      prevMatch: null,
+      nextMatch: null,
+      matchOrderNumber: null,
+      totalMatches,
+    };
   }
-  const prev = idx < sorted.length - 1 ? sorted[idx + 1] : null;
+  const prev = idx < totalMatches - 1 ? sorted[idx + 1] : null;
   const next = idx > 0 ? sorted[idx - 1] : null;
   return {
     prevMatch: prev ? { id: prev.id, opponent: prev.opponent, date: prev.date } : null,
     nextMatch: next ? { id: next.id, opponent: next.opponent, date: next.date } : null,
+    matchOrderNumber: totalMatches - idx,
+    totalMatches,
   };
 }
 

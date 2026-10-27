@@ -55,8 +55,12 @@ app.get("/:id", async (c) => {
     );
 
     const currentIndex = matchesList.findIndex((m) => m.id === matchId);
+    const totalMatches = matchesList.length;
+    // 時系列順の通し番号（最古=1, 最新=totalMatches。例: 最新試合なら 17/17）
+    const matchOrderNumber =
+      currentIndex !== -1 ? totalMatches - currentIndex : null;
     const prevMatch =
-      currentIndex !== -1 && currentIndex < matchesList.length - 1
+      currentIndex !== -1 && currentIndex < totalMatches - 1
         ? matchesList[currentIndex + 1]
         : null; // 時系列で古い試合 (DESCなので index が後ろ)
     const nextMatch =
@@ -71,6 +75,8 @@ app.get("/:id", async (c) => {
       nextMatchId: nextMatch?.id ?? null,
       prevMatch,
       nextMatch,
+      matchOrderNumber,
+      totalMatches,
     });
   } catch (error) {
     return c.json({ success: false, error: "Failed to fetch match" }, 500);

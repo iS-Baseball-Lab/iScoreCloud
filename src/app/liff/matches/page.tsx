@@ -65,6 +65,8 @@ interface MatchDetailApiResponse {
   nextMatchId?: string | null;
   prevMatch?: AdjacentMatchSummary | null;
   nextMatch?: AdjacentMatchSummary | null;
+  matchOrderNumber?: number | null;
+  totalMatches?: number | null;
   error?: string;
 }
 
@@ -207,6 +209,10 @@ function MatchesContent() {
   const [match, setMatch] = useState<Match | null>(null);
   const [prevMatch, setPrevMatch] = useState<AdjacentMatchSummary | null>(null);
   const [nextMatch, setNextMatch] = useState<AdjacentMatchSummary | null>(null);
+  const [matchPosition, setMatchPosition] = useState<{
+    current: number;
+    total: number;
+  } | null>(null);
   const [myLineup, setMyLineup] = useState<MyLineupSlot[]>([]);
   const [myAttendance, setMyAttendance] = useState<PlayerMatchAttendanceMap>({});
   const [teamPlayers, setTeamPlayers] = useState<LineupPlayer[]>([]);
@@ -237,6 +243,7 @@ function MatchesContent() {
       setDetailError(null);
       setPrevMatch(null);
       setNextMatch(null);
+      setMatchPosition(null);
       return;
     }
 
@@ -259,6 +266,14 @@ function MatchesContent() {
           setMatch(demoMatch);
           setPrevMatch(demoAdjacent.prevMatch);
           setNextMatch(demoAdjacent.nextMatch);
+          setMatchPosition(
+            demoAdjacent.matchOrderNumber && demoAdjacent.totalMatches > 0
+              ? {
+                  current: demoAdjacent.matchOrderNumber,
+                  total: demoAdjacent.totalMatches,
+                }
+              : null
+          );
           setTeamPlayers(DEMO_LINEUP_PLAYERS);
           const demoLineups = loadDemoMatchLineups(targetMatchId);
           setMyLineup(demoLineups.myLineup || []);
@@ -290,6 +305,13 @@ function MatchesContent() {
         setNextMatch(
           data.nextMatch ??
             (data.nextMatchId ? { id: data.nextMatchId, opponent: "次の試合", date: "" } : null)
+        );
+        setMatchPosition(
+          typeof data.matchOrderNumber === "number" &&
+            typeof data.totalMatches === "number" &&
+            data.totalMatches > 0
+            ? { current: data.matchOrderNumber, total: data.totalMatches }
+            : null
         );
 
         if (lineupsRes.ok) {
@@ -656,7 +678,7 @@ function MatchesContent() {
             }
             showBack
             rightElement={
-              prevMatch || nextMatch ? (
+              prevMatch || nextMatch || matchPosition ? (
                 <div
                   role="navigation"
                   aria-label="前後の試合切替"
@@ -668,16 +690,24 @@ function MatchesContent() {
                       replace
                       aria-label={`前の試合: vs ${prevMatch.opponent}`}
                       title={`前の試合: vs ${prevMatch.opponent}`}
-                      className="w-8 h-full flex items-center justify-center text-foreground hover:bg-muted active:bg-muted/80 transition-colors"
+                      className="w-7 sm:w-8 h-full flex items-center justify-center text-foreground hover:bg-muted active:bg-muted/80 transition-colors"
                     >
                       <ChevronLeft className="w-4 h-4" />
                     </Link>
                   ) : (
                     <span
                       aria-disabled="true"
-                      className="w-8 h-full flex items-center justify-center text-muted-foreground/30 select-none"
+                      className="w-7 sm:w-8 h-full flex items-center justify-center text-muted-foreground/30 select-none"
                     >
                       <ChevronLeft className="w-4 h-4" />
+                    </span>
+                  )}
+
+                  {matchPosition && (
+                    <span className="px-2 h-full flex items-center justify-center text-[11px] font-black tabular-nums text-muted-foreground select-none whitespace-nowrap bg-slate-50/70 dark:bg-white/[0.03]">
+                      <span className="text-foreground">{matchPosition.current}</span>
+                      <span className="mx-0.5 text-muted-foreground/60">/</span>
+                      <span>{matchPosition.total}</span>
                     </span>
                   )}
 
@@ -687,14 +717,14 @@ function MatchesContent() {
                       replace
                       aria-label={`次の試合: vs ${nextMatch.opponent}`}
                       title={`次の試合: vs ${nextMatch.opponent}`}
-                      className="w-8 h-full flex items-center justify-center text-foreground hover:bg-muted active:bg-muted/80 transition-colors"
+                      className="w-7 sm:w-8 h-full flex items-center justify-center text-foreground hover:bg-muted active:bg-muted/80 transition-colors"
                     >
                       <ChevronRight className="w-4 h-4" />
                     </Link>
                   ) : (
                     <span
                       aria-disabled="true"
-                      className="w-8 h-full flex items-center justify-center text-muted-foreground/30 select-none"
+                      className="w-7 sm:w-8 h-full flex items-center justify-center text-muted-foreground/30 select-none"
                     >
                       <ChevronRight className="w-4 h-4" />
                     </span>
