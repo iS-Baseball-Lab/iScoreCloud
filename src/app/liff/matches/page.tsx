@@ -16,6 +16,7 @@ import {
   ShieldAlert,
   Loader2,
   Video,
+  UserStar,
   UserCheck,
   UserMinus,
   Plus,
@@ -694,7 +695,7 @@ function MatchesContent() {
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between px-0.5">
                   <span className="text-[11px] font-black text-foreground flex items-center gap-1.5">
-                    <Shield className="w-3.5 h-3.5 text-primary shrink-0" />
+                    <UserStar className="w-3.5 h-3.5 text-primary shrink-0" />
                     <span>スターティングメンバー</span>
                   </span>
                   <span className="text-[10px] font-black font-mono tabular-nums px-2 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20">
@@ -703,7 +704,7 @@ function MatchesContent() {
                 </div>
 
                 {filledStarters.length === 0 ? (
-                  <div className="rounded-xl bg-background border border-dashed border-border p-4 text-center space-y-2.5">
+                  <div className="rounded-xl bg-slate-50 dark:bg-muted/25 border border-dashed border-border p-4 text-center space-y-2.5">
                     <div className="space-y-0.5">
                       <p className="text-xs font-black text-foreground">
                         スタメンがまだ登録されていません
@@ -721,9 +722,9 @@ function MatchesContent() {
                     </Link>
                   </div>
                 ) : (
-                  <div className="rounded-xl border border-border overflow-hidden bg-background">
+                  <div className="rounded-xl border border-border overflow-hidden bg-card">
                     {/* スコアボード風カラムヘッダー */}
-                    <div className="grid grid-cols-[2.25rem_3.25rem_1fr_2.75rem] items-center bg-muted/40 border-b border-border px-2 py-1 text-[9px] font-black text-muted-foreground font-mono tracking-wider">
+                    <div className="grid grid-cols-[2.25rem_3.25rem_1fr_2.75rem] items-center bg-slate-100 dark:bg-white/[0.07] border-b border-border px-2 py-1 text-[9px] font-black text-muted-foreground font-mono tracking-wider">
                       <span className="text-center">ORD</span>
                       <span className="text-center">POS</span>
                       <span className="pl-2">PLAYER</span>
@@ -736,7 +737,7 @@ function MatchesContent() {
                         return (
                           <div
                             key={`${slot.order}-${slot.playerId || slot.name}`}
-                            className="grid grid-cols-[2.25rem_3.25rem_1fr_2.75rem] items-center px-2 py-1.5 even:bg-muted/15"
+                            className="grid grid-cols-[2.25rem_3.25rem_1fr_2.75rem] items-center px-2 py-1.5 odd:bg-card even:bg-slate-100/90 dark:odd:bg-card dark:even:bg-white/[0.045]"
                           >
                             {/* 打順バッジ */}
                             <div className="flex items-center justify-center">
@@ -804,7 +805,7 @@ function MatchesContent() {
                       </span>
                     </div>
 
-                    <div className="rounded-xl border border-border bg-background p-2.5">
+                    <div className="rounded-xl border border-border bg-slate-50/90 dark:bg-muted/25 p-2.5">
                       {benchPlayers.length === 0 ? (
                         <p className="text-[11px] font-bold text-muted-foreground px-0.5">
                           該当なし
@@ -844,7 +845,7 @@ function MatchesContent() {
                       </span>
                     </div>
 
-                    <div className="rounded-xl border border-border bg-background p-2.5">
+                    <div className="rounded-xl border border-border bg-slate-50/90 dark:bg-muted/25 p-2.5">
                       {absentPlayers.length === 0 ? (
                         <p className="text-[11px] font-bold text-muted-foreground px-0.5">
                           欠席者なし
@@ -855,7 +856,7 @@ function MatchesContent() {
                             <span
                               key={p.id}
                               className={cn(
-                                "inline-flex items-center gap-1.5 py-1 rounded-lg bg-muted/40 border border-border/80 text-[11px] font-bold text-muted-foreground",
+                                "inline-flex items-center gap-1.5 py-1 rounded-lg bg-card/90 border border-border/80 text-[11px] font-bold text-muted-foreground",
                                 p.uniformNumber ? "pl-1.5 pr-2.5" : "px-2.5"
                               )}
                             >

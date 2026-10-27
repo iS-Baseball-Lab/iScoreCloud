@@ -16,6 +16,7 @@ import {
   Shield,
   Swords,
   Save,
+  UserStar,
   UserMinus,
   UserCheck,
   CheckCircle2,
@@ -1198,7 +1199,7 @@ function LiffLineupContent() {
             <section className="space-y-2.5">
               <div className="flex items-center justify-between px-1">
                 <h3 className="text-xs font-black text-foreground flex items-center gap-1.5">
-                  <Shield className="w-4 h-4 text-primary" />
+                  <UserStar className="w-4 h-4 text-primary" />
                   <span>スターティングメンバー</span>
                 </h3>
                 {activeTab === "myTeam" && (
