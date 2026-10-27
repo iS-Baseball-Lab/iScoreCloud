@@ -28,6 +28,8 @@ import {
   Check,
   Building2,
   Trophy,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/layout/EmptyState";
@@ -40,6 +42,7 @@ import {
 import { cn } from "@/lib/utils";
 import {
   DEMO_LINEUP_PLAYERS,
+  getDemoAdjacentMatches,
   getDemoMatchById,
   getHydratedDemoMatchCards,
   getPositionBadgeInfo,
@@ -48,6 +51,7 @@ import {
   loadDemoMatchLineups,
   formatLineupShareText,
   parseSafeMatchDate,
+  type AdjacentMatchSummary,
   type LineupPlayer,
   type MyLineupSlot,
   type PlayerMatchAttendanceMap,
@@ -57,6 +61,10 @@ import {
 interface MatchDetailApiResponse {
   success?: boolean;
   match?: Match & { teamId?: string };
+  prevMatchId?: string | null;
+  nextMatchId?: string | null;
+  prevMatch?: AdjacentMatchSummary | null;
+  nextMatch?: AdjacentMatchSummary | null;
   error?: string;
 }
 
@@ -107,6 +115,22 @@ function formatBasicMatchDateTime(rawDate: string | undefined | null): string {
 
   const normalizedSuffix = suffix ? suffix.trim() : "～";
   return `${datePart} ${hhmm}${normalizedSuffix}`;
+}
+
+/**
+ * 前後試合ナビゲーション用に日付部分（YYYY-MM-DD）をコンパクトに抽出する
+ */
+function formatAdjacentMatchDate(rawDate: string | undefined | null): string {
+  const trimmed = (rawDate || "").trim();
+  if (!trimmed) return "";
+
+  const matched = trimmed.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (!matched) {
+    return trimmed;
+  }
+
+  const [, yyyy, mm, dd] = matched;
+  return `${yyyy}-${mm.padStart(2, "0")}-${dd.padStart(2, "0")}`;
 }
 
 /**
@@ -181,6 +205,8 @@ function MatchesContent() {
 
   // 単一試合詳細用ステート
   const [match, setMatch] = useState<Match | null>(null);
+  const [prevMatch, setPrevMatch] = useState<AdjacentMatchSummary | null>(null);
+  const [nextMatch, setNextMatch] = useState<AdjacentMatchSummary | null>(null);
   const [myLineup, setMyLineup] = useState<MyLineupSlot[]>([]);
   const [myAttendance, setMyAttendance] = useState<PlayerMatchAttendanceMap>({});
   const [teamPlayers, setTeamPlayers] = useState<LineupPlayer[]>([]);
@@ -209,6 +235,8 @@ function MatchesContent() {
     setIsAddressCopied(false);
     if (!matchId) {
       setDetailError(null);
+      setPrevMatch(null);
+      setNextMatch(null);
       return;
     }
 
@@ -227,7 +255,10 @@ function MatchesContent() {
             throw new Error("指定されたデモ試合が見つかりませんでした");
           }
           if (isCancelled) return;
+          const demoAdjacent = getDemoAdjacentMatches(targetMatchId);
           setMatch(demoMatch);
+          setPrevMatch(demoAdjacent.prevMatch);
+          setNextMatch(demoAdjacent.nextMatch);
           setTeamPlayers(DEMO_LINEUP_PLAYERS);
           const demoLineups = loadDemoMatchLineups(targetMatchId);
           setMyLineup(demoLineups.myLineup || []);
@@ -252,6 +283,14 @@ function MatchesContent() {
 
         if (isCancelled) return;
         setMatch(data.match);
+        setPrevMatch(
+          data.prevMatch ??
+            (data.prevMatchId ? { id: data.prevMatchId, opponent: "前の試合", date: "" } : null)
+        );
+        setNextMatch(
+          data.nextMatch ??
+            (data.nextMatchId ? { id: data.nextMatchId, opponent: "次の試合", date: "" } : null)
+        );
 
         if (lineupsRes.ok) {
           const lineupsJson = (await lineupsRes.json()) as MatchLineupsApiResponse;
@@ -600,7 +639,7 @@ function MatchesContent() {
         <LiffHeader />
 
         <div className="p-4 space-y-5">
-          {/* ページ内ヘッダー（サブタイトルを廃止し、vs 相手チーム名のみに統一） */}
+          {/* ページ内ヘッダー（サブタイトルを廃止し、vs 相手チーム名のみ＋前後切替ピル） */}
           <LiffPageHeader
             title={`vs ${match.opponent}`}
             icon={
@@ -609,6 +648,53 @@ function MatchesContent() {
               </span>
             }
             showBack
+            rightElement={
+              prevMatch || nextMatch ? (
+                <div
+                  role="navigation"
+                  aria-label="前後の試合切替"
+                  className="inline-flex items-center h-[34px] rounded-2xl bg-card border border-border shadow-xs divide-x divide-border overflow-hidden"
+                >
+                  {prevMatch ? (
+                    <Link
+                      href={`/liff/matches?id=${encodeURIComponent(prevMatch.id)}`}
+                      replace
+                      aria-label={`前の試合: vs ${prevMatch.opponent}`}
+                      title={`前の試合: vs ${prevMatch.opponent}`}
+                      className="w-8 h-full flex items-center justify-center text-foreground hover:bg-muted active:bg-muted/80 transition-colors"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </Link>
+                  ) : (
+                    <span
+                      aria-disabled="true"
+                      className="w-8 h-full flex items-center justify-center text-muted-foreground/30 select-none"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </span>
+                  )}
+
+                  {nextMatch ? (
+                    <Link
+                      href={`/liff/matches?id=${encodeURIComponent(nextMatch.id)}`}
+                      replace
+                      aria-label={`次の試合: vs ${nextMatch.opponent}`}
+                      title={`次の試合: vs ${nextMatch.opponent}`}
+                      className="w-8 h-full flex items-center justify-center text-foreground hover:bg-muted active:bg-muted/80 transition-colors"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </Link>
+                  ) : (
+                    <span
+                      aria-disabled="true"
+                      className="w-8 h-full flex items-center justify-center text-muted-foreground/30 select-none"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </span>
+                  )}
+                </div>
+              ) : undefined
+            }
             shareData={{
               title: `vs ${match.opponent} 試合情報 & 出場メンバー`,
               text: shareText,
@@ -1143,6 +1229,86 @@ function MatchesContent() {
               </div>
             </div>
           </section>
+
+          {/* ↔️ 5. 前後の試合ナビゲーション */}
+          {(prevMatch || nextMatch) && (
+            <nav
+              aria-label="前後の試合への移動"
+              className="grid grid-cols-2 gap-2.5 pt-2 border-t border-border/60"
+            >
+              {prevMatch ? (
+                <Link
+                  href={`/liff/matches?id=${encodeURIComponent(prevMatch.id)}`}
+                  replace
+                  className="group flex items-center gap-2 rounded-2xl border border-border bg-card hover:bg-slate-50 dark:hover:bg-white/[0.04] px-3 py-2.5 shadow-xs active:scale-[0.98] transition-all min-w-0"
+                >
+                  <span className="w-7 h-7 rounded-xl bg-slate-100 dark:bg-muted flex items-center justify-center text-muted-foreground group-hover:text-primary group-hover:-translate-x-0.5 transition-all shrink-0">
+                    <ChevronLeft className="w-4 h-4" />
+                  </span>
+                  <div className="min-w-0 flex-1 text-left">
+                    <p className="text-[10px] font-black text-muted-foreground leading-none mb-1">
+                      前の試合
+                    </p>
+                    <p className="text-xs font-black text-foreground truncate leading-tight">
+                      vs {prevMatch.opponent}
+                    </p>
+                    {prevMatch.date && (
+                      <p className="text-[10px] font-bold tabular-nums text-muted-foreground truncate leading-tight mt-0.5">
+                        {formatAdjacentMatchDate(prevMatch.date)}
+                      </p>
+                    )}
+                  </div>
+                </Link>
+              ) : (
+                <div className="flex items-center gap-2 rounded-2xl border border-dashed border-border/70 bg-card/40 px-3 py-2.5 opacity-55 select-none">
+                  <span className="w-7 h-7 rounded-xl bg-muted/60 flex items-center justify-center text-muted-foreground/40 shrink-0">
+                    <ChevronLeft className="w-4 h-4" />
+                  </span>
+                  <div className="min-w-0 flex-1 text-left">
+                    <p className="text-[10px] font-bold text-muted-foreground leading-tight">
+                      前の試合なし
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {nextMatch ? (
+                <Link
+                  href={`/liff/matches?id=${encodeURIComponent(nextMatch.id)}`}
+                  replace
+                  className="group flex items-center justify-end gap-2 rounded-2xl border border-border bg-card hover:bg-slate-50 dark:hover:bg-white/[0.04] px-3 py-2.5 shadow-xs active:scale-[0.98] transition-all min-w-0"
+                >
+                  <div className="min-w-0 flex-1 text-right">
+                    <p className="text-[10px] font-black text-muted-foreground leading-none mb-1">
+                      次の試合
+                    </p>
+                    <p className="text-xs font-black text-foreground truncate leading-tight">
+                      vs {nextMatch.opponent}
+                    </p>
+                    {nextMatch.date && (
+                      <p className="text-[10px] font-bold tabular-nums text-muted-foreground truncate leading-tight mt-0.5">
+                        {formatAdjacentMatchDate(nextMatch.date)}
+                      </p>
+                    )}
+                  </div>
+                  <span className="w-7 h-7 rounded-xl bg-slate-100 dark:bg-muted flex items-center justify-center text-muted-foreground group-hover:text-primary group-hover:translate-x-0.5 transition-all shrink-0">
+                    <ChevronRight className="w-4 h-4" />
+                  </span>
+                </Link>
+              ) : (
+                <div className="flex items-center justify-end gap-2 rounded-2xl border border-dashed border-border/70 bg-card/40 px-3 py-2.5 opacity-55 select-none">
+                  <div className="min-w-0 flex-1 text-right">
+                    <p className="text-[10px] font-bold text-muted-foreground leading-tight">
+                      次の試合なし
+                    </p>
+                  </div>
+                  <span className="w-7 h-7 rounded-xl bg-muted/60 flex items-center justify-center text-muted-foreground/40 shrink-0">
+                    <ChevronRight className="w-4 h-4" />
+                  </span>
+                </div>
+              )}
+            </nav>
+          )}
 
           <div className="h-8 w-full shrink-0" aria-hidden="true" />
         </div>

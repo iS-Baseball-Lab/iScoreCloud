@@ -38,23 +38,40 @@ app.get("/:id", async (c) => {
     const matchData = await MatchService.getMatchById(db, matchId);
     if (!matchData) return c.json({ success: false, error: "Match not found" }, 404);
 
-    // 前後の試合を取得
-    const matchesList = await db.select({ id: matches.id })
+    // 前後の試合を取得（日付区切り文字揺れも吸収して降順整列）
+    const rawMatchesList = await db
+      .select({
+        id: matches.id,
+        opponent: matches.opponent,
+        date: matches.date,
+      })
       .from(matches)
       .where(eq(matches.teamId, matchData.teamId))
       .orderBy(desc(matches.date), desc(matches.createdAt))
       .all();
-      
-    const currentIndex = matchesList.findIndex(m => m.id === matchId);
-    let prevMatchId = null; // 時系列で古い試合 (DESCなので index が後ろ)
-    let nextMatchId = null; // 時系列で新しい試合 (DESCなので index が前)
-    
-    if (currentIndex !== -1) {
-      if (currentIndex < matchesList.length - 1) prevMatchId = matchesList[currentIndex + 1].id;
-      if (currentIndex > 0) nextMatchId = matchesList[currentIndex - 1].id;
-    }
 
-    return c.json({ success: true, match: matchData, prevMatchId, nextMatchId });
+    const matchesList = [...rawMatchesList].sort((a, b) =>
+      b.date.replace(/\//g, "-").localeCompare(a.date.replace(/\//g, "-"))
+    );
+
+    const currentIndex = matchesList.findIndex((m) => m.id === matchId);
+    const prevMatch =
+      currentIndex !== -1 && currentIndex < matchesList.length - 1
+        ? matchesList[currentIndex + 1]
+        : null; // 時系列で古い試合 (DESCなので index が後ろ)
+    const nextMatch =
+      currentIndex !== -1 && currentIndex > 0
+        ? matchesList[currentIndex - 1]
+        : null; // 時系列で新しい試合 (DESCなので index が前)
+
+    return c.json({
+      success: true,
+      match: matchData,
+      prevMatchId: prevMatch?.id ?? null,
+      nextMatchId: nextMatch?.id ?? null,
+      prevMatch,
+      nextMatch,
+    });
   } catch (error) {
     return c.json({ success: false, error: "Failed to fetch match" }, 500);
   }
