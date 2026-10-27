@@ -212,3 +212,50 @@ export async function ensureMemberSubLabelsColumn(d1?: any) {
   isMemberSubLabelsSchemaReady = true;
 }
 
+let isMatchLineupSchemaReady = false;
+
+/**
+ * 🛠️ D1 の matches テーブルのスタメン・出欠関連カラムおよび lineup_templates テーブルを保証する関数
+ */
+export async function ensureMatchLineupColumns(d1?: any) {
+  if (!d1 || isMatchLineupSchemaReady) return;
+
+  const alterQueries = [
+    "ALTER TABLE matches ADD COLUMN my_lineup text DEFAULT '[]'",
+    "ALTER TABLE matches ADD COLUMN opponent_lineup text DEFAULT '[]'",
+    "ALTER TABLE matches ADD COLUMN my_attendance text DEFAULT '{}'",
+    "ALTER TABLE matches ADD COLUMN my_hits integer DEFAULT 0",
+    "ALTER TABLE matches ADD COLUMN opponent_hits integer DEFAULT 0",
+    "ALTER TABLE matches ADD COLUMN my_errors integer DEFAULT 0",
+    "ALTER TABLE matches ADD COLUMN opponent_errors integer DEFAULT 0",
+    "ALTER TABLE matches ADD COLUMN bench_side text DEFAULT 'unknown'",
+  ];
+
+  for (const sqlText of alterQueries) {
+    try {
+      await d1.prepare(sqlText).run().catch(() => {});
+    } catch {}
+  }
+
+  try {
+    await d1.prepare(`
+      CREATE TABLE IF NOT EXISTS lineup_templates (
+        id text PRIMARY KEY NOT NULL,
+        team_id text NOT NULL,
+        name text NOT NULL,
+        lineup_data text NOT NULL,
+        created_at integer NOT NULL DEFAULT (strftime('%s', 'now'))
+      )
+    `).run().catch(() => {});
+  } catch {}
+
+  try {
+    await d1.prepare(`
+      CREATE INDEX IF NOT EXISTS idx_lineup_templates_team_id ON lineup_templates (team_id)
+    `).run().catch(() => {});
+  } catch {}
+
+  isMatchLineupSchemaReady = true;
+}
+
+

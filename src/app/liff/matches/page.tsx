@@ -1,99 +1,302 @@
 // filepath: src/app/liff/matches/page.tsx
 "use client";
 
-import React, { useState, useEffect, Suspense, useCallback } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import React, { useState, useEffect, Suspense, useCallback, useMemo } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { YouTubePlayer } from "@/components/liff/YouTubePlayer";
 import { MatchScoreCard, MatchScoreCardSkeleton, type MatchCardData } from "@/components/liff/MatchScoreCard";
 import { Match } from "@/types/match";
 import { useLiff } from "@/components/liff/LiffProvider";
-import { Calendar, MapPin, Trophy, Users, Shield, ShieldAlert, Loader2, Video, Filter } from "lucide-react";
+import {
+  Users,
+  Shield,
+  ShieldAlert,
+  Loader2,
+  Video,
+  UserCheck,
+  UserMinus,
+  Plus,
+  Edit3,
+} from "lucide-react";
 import { EmptyState } from "@/components/layout/EmptyState";
 import { extractYouTubeVideoId } from "@/lib/youtube";
+import { cn } from "@/lib/utils";
+import {
+  DEMO_LINEUP_PLAYERS,
+  getDemoMatchById,
+  getHydratedDemoMatchCards,
+  getPositionBadgeInfo,
+  isDemoMatchId,
+  isDemoTeamId,
+  loadDemoMatchLineups,
+  formatLineupShareText,
+  type LineupPlayer,
+  type MyLineupSlot,
+  type PlayerMatchAttendanceMap,
+} from "@/lib/liff/demo-lineup";
+
+// ━━━ APIレスポンス型定義 (any排除) ━━━
+interface MatchDetailApiResponse {
+  success?: boolean;
+  match?: Match & { teamId?: string };
+  error?: string;
+}
+
+interface MatchLineupsApiResponse {
+  success?: boolean;
+  lineups?: {
+    myLineup?: MyLineupSlot[];
+    myAttendance?: PlayerMatchAttendanceMap;
+  };
+  error?: string;
+}
+
+interface LiffMatchesApiResponse {
+  success?: boolean;
+  isDemo?: boolean;
+  matches?: MatchCardData[];
+}
 
 function MatchesContent() {
   const searchParams = useSearchParams();
-  const router = useRouter();
   const matchId = searchParams.get("id");
-  const { currentTeam, isLoadingTeam } = useLiff();
+  const { currentTeam, isLoadingTeam, isDemo } = useLiff();
 
   // 単一試合詳細用ステート
   const [match, setMatch] = useState<Match | null>(null);
-  const [lineup, setLineup] = useState<any[]>([]);
-  const [isDetailLoading, setIsDetailLoading] = useState(false);
+  const [myLineup, setMyLineup] = useState<MyLineupSlot[]>([]);
+  const [myAttendance, setMyAttendance] = useState<PlayerMatchAttendanceMap>({});
+  const [teamPlayers, setTeamPlayers] = useState<LineupPlayer[]>([]);
+  const [isDetailLoading, setIsDetailLoading] = useState<boolean>(() => Boolean(matchId));
+  const [loadedMatchId, setLoadedMatchId] = useState<string | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
 
   // 試合一覧用ステート
   const [matchesList, setMatchesList] = useState<MatchCardData[]>([]);
   const [isListLoading, setIsListLoading] = useState(true);
-  const [filter, setFilter] = useState<"all" | "video" | "official">("all");
+  const [filter, setFilter] = useState<"all" | "scheduled" | "video" | "official">("all");
 
-  // 1. 試合詳細のロード (matchId がある場合)
+  // 1. 試合詳細 ＆ 出場メンバー（スタメン・控え・欠席）のロード (matchId がある場合)
   useEffect(() => {
-    if (!matchId) return;
+    if (!matchId) {
+      setDetailError(null);
+      return;
+    }
+
+    const targetMatchId = matchId;
+    let isCancelled = false;
 
     async function loadMatch() {
       try {
         setIsDetailLoading(true);
-        const res = await fetch(`/api/matches/${matchId}`);
-        if (!res.ok) {
+        setDetailError(null);
+
+        // 🅰️ デモ試合IDの場合のみデモデータを参照（実試合UUIDがデモ扱いされる誤判定を完全防止）
+        if (isDemoMatchId(targetMatchId)) {
+          const demoMatch = getDemoMatchById(targetMatchId);
+          if (!demoMatch) {
+            throw new Error("指定されたデモ試合が見つかりませんでした");
+          }
+          if (isCancelled) return;
+          setMatch(demoMatch);
+          setTeamPlayers(DEMO_LINEUP_PLAYERS);
+          const demoLineups = loadDemoMatchLineups(targetMatchId);
+          setMyLineup(demoLineups.myLineup || []);
+          setMyAttendance(demoLineups.myAttendance || {});
+          return;
+        }
+
+        // 🅱️ 実チームDB処理（試合詳細 + スタメン・出欠を並列取得）
+        const [matchRes, lineupsRes] = await Promise.all([
+          fetch(`/api/matches/${encodeURIComponent(targetMatchId)}`, { cache: "no-store" }),
+          fetch(`/api/matches/${encodeURIComponent(targetMatchId)}/lineups`, { cache: "no-store" }),
+        ]);
+
+        if (!matchRes.ok) {
           throw new Error("試合データの取得に失敗しました");
         }
-        const data = (await res.json()) as { success?: boolean; match?: Match & { lineups?: any[] }; error?: string };
-        if (data.match) {
-          setMatch(data.match);
-          if (data.match.lineups) {
-            setLineup(data.match.lineups);
-          }
-        } else {
+
+        const data = (await matchRes.json()) as MatchDetailApiResponse;
+        if (!data.match) {
           throw new Error(data.error || "試合が見つかりませんでした");
         }
-      } catch (err: any) {
+
+        if (isCancelled) return;
+        setMatch(data.match);
+
+        if (lineupsRes.ok) {
+          const lineupsJson = (await lineupsRes.json()) as MatchLineupsApiResponse;
+          if (!isCancelled) {
+            if (lineupsJson.success && lineupsJson.lineups) {
+              setMyLineup(lineupsJson.lineups.myLineup || []);
+              setMyAttendance(lineupsJson.lineups.myAttendance || {});
+            } else {
+              setMyLineup([]);
+              setMyAttendance({});
+            }
+          }
+        }
+
+        // 控え・欠席一覧を表示するため、試合レコード自身の teamId を最優先して選手名簿を取得
+        const targetTeamId =
+          data.match.teamId ||
+          currentTeam?.id ||
+          (typeof window !== "undefined" ? localStorage.getItem("iscore_selectedTeamId") : null);
+
+        if (targetTeamId && !isDemoTeamId(targetTeamId)) {
+          const playersRes = await fetch(`/api/teams/${encodeURIComponent(targetTeamId)}/players`, {
+            cache: "no-store",
+          });
+          if (playersRes.ok && !isCancelled) {
+            const playersData = (await playersRes.json()) as LineupPlayer[];
+            const activePlayers = (Array.isArray(playersData) ? playersData : []).filter(
+              (p) => p.isActive !== false && p.isActive !== 0
+            );
+            setTeamPlayers(activePlayers);
+          }
+        } else if (!isCancelled) {
+          setTeamPlayers([]);
+        }
+      } catch (err) {
+        if (isCancelled) return;
         console.error("Error loading match detail:", err);
-        setDetailError(err.message || "エラーが発生しました");
+        setDetailError(err instanceof Error ? err.message : "エラーが発生しました");
       } finally {
-        setIsDetailLoading(false);
+        if (!isCancelled) {
+          setLoadedMatchId(targetMatchId);
+          setIsDetailLoading(false);
+        }
       }
     }
 
     loadMatch();
-  }, [matchId]);
+    return () => {
+      isCancelled = true;
+    };
+  }, [matchId, currentTeam?.id]);
 
   // 2. 試合一覧のロード (matchId がない場合、選択中チームに応じてフェッチ)
   const loadMatchesList = useCallback(async () => {
     if (matchId) return;
     if (isLoadingTeam && !currentTeam?.id) return;
 
+    const storedTeamId =
+      typeof window !== "undefined" ? localStorage.getItem("iscore_selectedTeamId") : null;
+    const storedIsDemo =
+      typeof window !== "undefined" ? localStorage.getItem("iscore_isDemo") === "true" : false;
+
+    let resolvedTeamId =
+      currentTeam?.id ||
+      (storedTeamId && (storedTeamId !== "demo-team" || storedIsDemo) ? storedTeamId : null);
+
     try {
       setIsListLoading(true);
-      const teamParam = currentTeam?.id ? `?teamId=${currentTeam.id}` : "";
-      const res = await fetch(`/api/liff/matches${teamParam}`);
+
+      // 初回アクセス等でまだ teamId が未確定の場合は /api/liff/hub から実チームIDを解決
+      if (!resolvedTeamId) {
+        try {
+          const hubRes = await fetch("/api/liff/hub", { cache: "no-store" });
+          if (hubRes.ok) {
+            const hubData = (await hubRes.json()) as {
+              isDemo?: boolean;
+              team?: { id?: string | null };
+            };
+            resolvedTeamId = hubData.team?.id || "demo-team";
+          } else {
+            resolvedTeamId = "demo-team";
+          }
+        } catch {
+          resolvedTeamId = "demo-team";
+        }
+      }
+
+      const effectiveListTeamId = resolvedTeamId || "demo-team";
+
+      if (isDemoTeamId(effectiveListTeamId)) {
+        try {
+          const res = await fetch(`/api/liff/matches?teamId=demo-team`, { cache: "no-store" });
+          if (res.ok) {
+            const data = (await res.json()) as LiffMatchesApiResponse;
+            setMatchesList(
+              getHydratedDemoMatchCards(Array.isArray(data.matches) ? data.matches : undefined)
+            );
+            return;
+          }
+        } catch {}
+        setMatchesList(getHydratedDemoMatchCards());
+        return;
+      }
+
+      const res = await fetch(
+        `/api/liff/matches?teamId=${encodeURIComponent(effectiveListTeamId)}`,
+        { cache: "no-store" }
+      );
       if (res.ok) {
-        const data = (await res.json()) as { success?: boolean; matches?: MatchCardData[] };
+        const data = (await res.json()) as LiffMatchesApiResponse;
         if (Array.isArray(data.matches)) {
-          setMatchesList(data.matches);
+          const hydrated = data.matches.map((m) => {
+            if (isDemoMatchId(m.id)) {
+              const demoPayload = loadDemoMatchLineups(m.id);
+              const hasSavedStarters = demoPayload.myLineup.some((s) => Boolean(s.playerId || s.name));
+              return { ...m, hasLineup: hasSavedStarters };
+            }
+            return m;
+          });
+          setMatchesList(hydrated);
         } else {
           setMatchesList([]);
         }
       }
     } catch (err) {
       console.error("Error loading matches list:", err);
+      if (isDemo || isDemoTeamId(resolvedTeamId)) {
+        setMatchesList(getHydratedDemoMatchCards());
+      }
     } finally {
       setIsListLoading(false);
     }
-  }, [matchId, currentTeam?.id, isLoadingTeam]);
+  }, [matchId, currentTeam?.id, isLoadingTeam, isDemo]);
 
   useEffect(() => {
     loadMatchesList();
   }, [loadMatchesList]);
 
+  // スタメン・控え・欠席の派生リスト計算
+  const filledStarters = useMemo(
+    () => myLineup.filter((slot) => Boolean(slot.playerId || (slot.name && slot.name.trim() !== ""))),
+    [myLineup]
+  );
+
+  const starterPlayerIds = useMemo(
+    () => filledStarters.map((slot) => slot.playerId).filter(Boolean),
+    [filledStarters]
+  );
+
+  const remainingPlayers = useMemo(
+    () => teamPlayers.filter((p) => !starterPlayerIds.includes(p.id)),
+    [teamPlayers, starterPlayerIds]
+  );
+
+  const benchPlayers = useMemo(
+    () => remainingPlayers.filter((p) => myAttendance[p.id] !== "absent"),
+    [remainingPlayers, myAttendance]
+  );
+
+  const absentPlayers = useMemo(
+    () => remainingPlayers.filter((p) => myAttendance[p.id] === "absent"),
+    [remainingPlayers, myAttendance]
+  );
+
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   // 🅰️ 試合詳細画面 (matchId が指定されている場合)
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   if (matchId) {
-    if (isDetailLoading) {
+    const isDetailPending = isDetailLoading || (loadedMatchId !== matchId && !detailError);
+
+    if (isDetailPending) {
       return (
         <div className="flex flex-col flex-1">
           <LiffHeader />
@@ -125,11 +328,11 @@ function MatchesContent() {
     const inningsCount = match.innings || 7;
     const inningsArray = Array.from({ length: inningsCount }, (_, i) => i + 1);
 
-    const parseScores = (raw: any): (number | null)[] => {
-      if (Array.isArray(raw)) return raw;
+    const parseScores = (raw: unknown): (number | null)[] => {
+      if (Array.isArray(raw)) return raw as (number | null)[];
       if (typeof raw === "string") {
         try {
-          return JSON.parse(raw);
+          return JSON.parse(raw) as (number | null)[];
         } catch {
           return [];
         }
@@ -141,10 +344,25 @@ function MatchesContent() {
     const opponentInningScores = parseScores(match.opponentInningScores);
 
     const isFinished = match.status === "finished";
+    const isScheduled = match.status === "scheduled";
+    const isRainout = match.status === "rainout";
     const isWin = isFinished && match.myScore > match.opponentScore;
     const isLose = isFinished && match.myScore < match.opponentScore;
 
-    const shareText = `【試合結果】\nvs ${match.opponent}\n${match.myScore} - ${match.opponentScore} (${isWin ? "勝利 🏆" : isLose ? "敗戦" : "引分"})\n📅 ${match.date}${match.venueName ? `\n📍 ${match.venueName}` : ""}`;
+    const baseShareText = isScheduled
+      ? `【試合予定】\nvs ${match.opponent}\n📅 ${match.date}${match.venueName ? `\n📍 ${match.venueName}` : ""}`
+      : `【試合結果】\nvs ${match.opponent}\n${match.myScore} - ${match.opponentScore} (${isWin ? "勝利 🏆" : isLose ? "敗戦" : "引分"})\n📅 ${match.date}${match.venueName ? `\n📍 ${match.venueName}` : ""}`;
+
+    const shareText =
+      filledStarters.length > 0
+        ? `${baseShareText}\n\n${formatLineupShareText(
+            match.opponent,
+            match.date,
+            myLineup,
+            remainingPlayers,
+            myAttendance
+          )}`
+        : baseShareText;
 
     return (
       <div className="flex flex-col flex-1">
@@ -161,8 +379,17 @@ function MatchesContent() {
               </span>
             }
             showBack
+            rightElement={
+              <Link
+                href={`/liff/matches/lineup?id=${match.id}`}
+                className="px-2.5 py-1.5 rounded-xl bg-primary/10 hover:bg-primary/20 text-primary text-[11px] font-black flex items-center gap-1 active:scale-95 transition-all"
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span>{filledStarters.length > 0 ? "メンバー編集" : "スタメン登録"}</span>
+              </Link>
+            }
             shareData={{
-              title: `vs ${match.opponent} 試合情報 & 動画`,
+              title: `vs ${match.opponent} 試合情報 & 出場メンバー`,
               text: shareText,
             }}
           />
@@ -202,14 +429,29 @@ function MatchesContent() {
               <h2 className="text-xs font-black text-foreground tracking-tight">
                 スコアボード
               </h2>
-              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
-                isWin
-                  ? "bg-emerald-500/10 text-emerald-600"
-                  : isLose
-                  ? "bg-rose-500/10 text-rose-600"
-                  : "bg-muted text-muted-foreground"
-              }`}>
-                {isFinished ? (isWin ? "勝利" : isLose ? "敗戦" : "引分") : "試合中"}
+              <span
+                className={cn(
+                  "px-2 py-0.5 rounded-full text-[10px] font-black",
+                  isWin
+                    ? "bg-emerald-500/10 text-emerald-600"
+                    : isLose
+                    ? "bg-rose-500/10 text-rose-600"
+                    : isScheduled
+                    ? "bg-primary/10 text-primary"
+                    : "bg-muted text-muted-foreground"
+                )}
+              >
+                {isFinished
+                  ? isWin
+                    ? "勝利"
+                    : isLose
+                    ? "敗戦"
+                    : "引分"
+                  : isScheduled
+                  ? "試合予定"
+                  : isRainout
+                  ? "雨天中止"
+                  : "試合中"}
               </span>
             </div>
 
@@ -232,7 +474,7 @@ function MatchesContent() {
                   {/* 自チーム */}
                   <tr>
                     <td className="py-2.5 text-left px-2 font-black text-foreground truncate max-w-[110px]">
-                      {currentTeam?.shortName || "自チーム"}
+                      {currentTeam?.shortName || currentTeam?.name || "自チーム"}
                     </td>
                     {inningsArray.map((_, i) => (
                       <td key={i} className="py-2.5 px-2 text-muted-foreground">
@@ -242,7 +484,7 @@ function MatchesContent() {
                       </td>
                     ))}
                     <td className="py-2.5 px-2 font-black text-base text-primary border-l border-border/40">
-                      {match.myScore}
+                      {isScheduled ? "-" : match.myScore}
                     </td>
                   </tr>
 
@@ -259,12 +501,163 @@ function MatchesContent() {
                       </td>
                     ))}
                     <td className="py-2.5 px-2 font-black text-base text-foreground border-l border-border/40">
-                      {match.opponentScore}
+                      {isScheduled ? "-" : match.opponentScore}
                     </td>
                   </tr>
                 </tbody>
               </table>
             </div>
+          </section>
+
+          {/* 👥 出場メンバー（スタメン・控え・欠席） */}
+          <section className="bg-card border border-border rounded-3xl p-4 shadow-xs space-y-4">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <Users className="w-4 h-4 text-primary shrink-0" />
+                <h2 className="text-xs font-black text-foreground tracking-tight truncate">
+                  出場メンバー（スタメン・控え・欠席）
+                </h2>
+              </div>
+
+              <Link
+                href={`/liff/matches/lineup?id=${match.id}`}
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-[11px] font-black transition-all active:scale-95 shrink-0 shadow-2xs"
+              >
+                <Edit3 className="w-3 h-3" />
+                <span>{filledStarters.length > 0 ? "編集する" : "登録する"}</span>
+              </Link>
+            </div>
+
+            {/* スターティングメンバー表示 */}
+            {filledStarters.length === 0 ? (
+              <div className="rounded-2xl bg-muted/40 border border-dashed border-border p-5 text-center space-y-3">
+                <p className="text-xs font-black text-foreground">
+                  スタメンがまだ登録されていません
+                </p>
+                <p className="text-[11px] font-bold text-muted-foreground">
+                  この試合のスターティングメンバー・控え・欠席をスマホから簡単に設定できます
+                </p>
+                <Link
+                  href={`/liff/matches/lineup?id=${match.id}`}
+                  className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-xs font-black shadow-xs hover:bg-primary/90 active:scale-95 transition-all"
+                >
+                  <Users className="w-4 h-4" />
+                  <span>スタメン・控え・欠席を登録する</span>
+                </Link>
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between px-1">
+                  <span className="text-[11px] font-black text-muted-foreground">
+                    ⚾ スターティングメンバー ({filledStarters.length}名)
+                  </span>
+                </div>
+                <div className="divide-y divide-border/50 rounded-2xl border border-border overflow-hidden bg-background">
+                  {filledStarters.map((slot) => {
+                    const posInfo = getPositionBadgeInfo(slot.position);
+                    return (
+                      <div
+                        key={`${slot.order}-${slot.playerId || slot.name}`}
+                        className="flex items-center gap-2.5 px-3 py-2 text-xs"
+                      >
+                        <span className="w-5 text-center font-black italic text-primary shrink-0">
+                          {slot.order}
+                        </span>
+                        {posInfo ? (
+                          <span
+                            className={cn(
+                              "px-2 py-0.5 rounded-md text-white font-black text-[10px] shrink-0 min-w-[40px] text-center",
+                              posInfo.color
+                            )}
+                          >
+                            {posInfo.label}
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-md bg-muted text-muted-foreground font-black text-[10px] shrink-0 min-w-[40px] text-center">
+                            未設定
+                          </span>
+                        )}
+                        <span className="text-[11px] font-black text-primary/80 min-w-[26px] shrink-0">
+                          {slot.uniformNumber ? `#${slot.uniformNumber}` : "-"}
+                        </span>
+                        <span className="font-black text-foreground truncate flex-1">
+                          {slot.name}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* 控え・欠席メンバー一覧 */}
+            {teamPlayers.length > 0 && (
+              <div className="grid grid-cols-1 gap-2.5 pt-1">
+                {/* 控えメンバー */}
+                <div className="rounded-2xl border border-emerald-500/25 bg-card p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-black text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
+                      <UserCheck className="w-3.5 h-3.5" />
+                      控え（ベンチ入り）
+                    </span>
+                    <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">
+                      {benchPlayers.length}名
+                    </span>
+                  </div>
+
+                  {benchPlayers.length === 0 ? (
+                    <p className="text-[11px] font-bold text-muted-foreground">該当なし</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5">
+                      {benchPlayers.map((p) => (
+                        <span
+                          key={p.id}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-foreground text-[11px] font-black"
+                        >
+                          {p.uniformNumber && (
+                            <span className="text-emerald-700 dark:text-emerald-400 text-[10px]">
+                              #{p.uniformNumber}
+                            </span>
+                          )}
+                          <span>{p.name}</span>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* 欠席メンバー */}
+                <div className="rounded-2xl border border-rose-500/25 bg-card p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-black text-rose-700 dark:text-rose-400 flex items-center gap-1">
+                      <UserMinus className="w-3.5 h-3.5" />
+                      欠席
+                    </span>
+                    <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-700 dark:text-rose-300">
+                      {absentPlayers.length}名
+                    </span>
+                  </div>
+
+                  {absentPlayers.length === 0 ? (
+                    <p className="text-[11px] font-bold text-muted-foreground">欠席者なし</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5">
+                      {absentPlayers.map((p) => (
+                        <span
+                          key={p.id}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-700 dark:text-rose-300 text-[11px] font-bold"
+                        >
+                          {p.uniformNumber && (
+                            <span className="text-[10px] opacity-80">#{p.uniformNumber}</span>
+                          )}
+                          <span>{p.name}</span>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </section>
 
           <div className="h-8 w-full shrink-0" aria-hidden="true" />
@@ -277,11 +670,15 @@ function MatchesContent() {
   // 🅱️ 試合一覧画面 (matchId がない場合)
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   const filteredMatches = matchesList.filter((m) => {
+    if (filter === "scheduled") return m.status === "scheduled" || m.status === "live";
     if (filter === "video") return !!extractYouTubeVideoId(m.youtubeUrl);
     if (filter === "official") return m.matchType === "official" || m.matchType === "tournament";
     return true;
   });
 
+  const scheduledMatchesCount = matchesList.filter(
+    (m) => m.status === "scheduled" || m.status === "live"
+  ).length;
   const videoMatchesCount = matchesList.filter((m) => !!extractYouTubeVideoId(m.youtubeUrl)).length;
 
   return (
@@ -292,13 +689,22 @@ function MatchesContent() {
         {/* ページ内ヘッダー */}
         <LiffPageHeader
           title="試合情報 & ハイライト"
-          subtitle="スコア速報・ハイライト動画・詳細ログ"
+          subtitle="スコア速報・スタメン登録・ハイライト動画"
           icon={
             <span className="w-8 h-8 rounded-xl bg-red-500/10 text-red-600 dark:text-red-400 flex items-center justify-center font-black">
               <Video className="w-4 h-4" />
             </span>
           }
           showBack
+          rightElement={
+            <Link
+              href="/liff/matches/lineup"
+              className="px-2.5 py-1.5 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-[11px] font-black flex items-center gap-1 active:scale-95 transition-all shadow-2xs"
+            >
+              <Users className="w-3.5 h-3.5" />
+              <span>スタメン登録</span>
+            </Link>
+          }
           shareData={{
             title: `【試合情報】${currentTeam?.name || "チーム"} 試合一覧`,
             text: `試合ハイライト動画・スコアボードはこちらから確認できます！`,
@@ -318,11 +724,11 @@ function MatchesContent() {
         </div>
 
         {/* フィルタータブ */}
-        <div className="flex items-center gap-1.5 p-1 bg-muted/60 rounded-2xl border border-border">
+        <div className="grid grid-cols-4 gap-1 p-1 bg-muted/60 rounded-2xl border border-border">
           <button
             type="button"
             onClick={() => setFilter("all")}
-            className={`flex-1 py-1.5 rounded-xl text-xs font-black transition-all ${
+            className={`py-1.5 px-1 rounded-xl text-[11px] font-black transition-all truncate ${
               filter === "all"
                 ? "bg-card text-foreground shadow-xs"
                 : "text-muted-foreground hover:text-foreground"
@@ -333,22 +739,34 @@ function MatchesContent() {
 
           <button
             type="button"
+            onClick={() => setFilter("scheduled")}
+            className={`py-1.5 px-1 rounded-xl text-[11px] font-black transition-all truncate ${
+              filter === "scheduled"
+                ? "bg-card text-primary shadow-xs"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            ⚾ 予定 ({scheduledMatchesCount})
+          </button>
+
+          <button
+            type="button"
             onClick={() => setFilter("video")}
-            className={`flex-1 py-1.5 rounded-xl text-xs font-black transition-all ${
+            className={`py-1.5 px-1 rounded-xl text-[11px] font-black transition-all truncate ${
               filter === "video"
                 ? "bg-card text-red-600 dark:text-red-400 shadow-xs"
                 : "text-muted-foreground hover:text-foreground"
             }`}
           >
-            📹 動画あり ({videoMatchesCount})
+            📹 動画 ({videoMatchesCount})
           </button>
 
           <button
             type="button"
             onClick={() => setFilter("official")}
-            className={`flex-1 py-1.5 rounded-xl text-xs font-black transition-all ${
+            className={`py-1.5 px-1 rounded-xl text-[11px] font-black transition-all truncate ${
               filter === "official"
-                ? "bg-card text-primary shadow-xs"
+                ? "bg-card text-amber-600 dark:text-amber-400 shadow-xs"
                 : "text-muted-foreground hover:text-foreground"
             }`}
           >
@@ -364,17 +782,30 @@ function MatchesContent() {
             ))}
           </div>
         ) : filteredMatches.length === 0 ? (
-          <div className="py-12">
+          <div className="py-8 space-y-4">
             <EmptyState
               icon={Shield}
               title="試合データがありません"
               description="該当する試合がまだ登録されていないか、フィルター条件に一致しません"
             />
+            <div className="flex justify-center">
+              <Link
+                href="/liff/matches/lineup"
+                className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-2xl bg-primary text-primary-foreground text-xs font-black shadow-xs hover:bg-primary/90 active:scale-95 transition-all"
+              >
+                <Plus className="w-4 h-4" />
+                <span>試合予定を作成してスタメンを登録する</span>
+              </Link>
+            </div>
           </div>
         ) : (
           <div className="space-y-3.5">
             {filteredMatches.map((m) => (
-              <MatchScoreCard key={m.id} match={m} />
+              <MatchScoreCard
+                key={m.id}
+                match={m}
+                teamName={currentTeam?.shortName || currentTeam?.name || "自チーム"}
+              />
             ))}
           </div>
         )}

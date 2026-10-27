@@ -1,7 +1,7 @@
 // filepath: src/components/liff/LiffBottomNav.tsx
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { 
@@ -23,6 +23,7 @@ import {
   Link2,
   BookOpen,
   ClipboardCheck,
+  Users,
 } from "lucide-react";
 
 type MenuCategory = "schedule" | "manual" | "settings";
@@ -31,7 +32,7 @@ interface MenuItem {
   title: string;
   subtitle: string;
   href: string;
-  icon: any;
+  icon: React.ComponentType<{ className?: string }>;
   colorClass: string;
   category: MenuCategory;
   fullWidth?: boolean;
@@ -60,6 +61,15 @@ const MENU_ITEMS: MenuItem[] = [
     icon: Trophy,
     colorClass: "bg-amber-500/15 text-amber-600 dark:text-amber-400",
     category: "schedule" as const,
+  },
+  {
+    title: "スタメン・出欠登録",
+    subtitle: "試合ごとのスタメン・控え・欠席設定",
+    href: "/liff/matches/lineup",
+    icon: Users,
+    colorClass: "bg-primary/15 text-primary",
+    category: "schedule" as const,
+    fullWidth: true,
   },
   {
     title: "活動予定",
@@ -159,6 +169,10 @@ export function LiffBottomNav() {
   const pathname = usePathname();
   const [isOtherMenuOpen, setIsOtherMenuOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<MenuCategory>("schedule");
+
+  useEffect(() => {
+    setIsOtherMenuOpen(false);
+  }, [pathname]);
 
   const filteredItems = useMemo(() => {
     return MENU_ITEMS.filter((item) => item.category === selectedCategory);

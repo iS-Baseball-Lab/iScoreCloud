@@ -26,7 +26,7 @@ import {
   eventEquipments,
   teamGroupMembers,
 } from "@/db/schema";
-import { ensureEventColumns, ensureRulesTable, ensureLinksTable, ensureMemberOrderColumn, ensureStatusConfigColumn, ensureMemberSubLabelsColumn } from "@/lib/db-helper";
+import { ensureEventColumns, ensureRulesTable, ensureLinksTable, ensureMemberOrderColumn, ensureStatusConfigColumn, ensureMemberSubLabelsColumn, ensureMatchLineupColumns } from "@/lib/db-helper";
 import type { WorkerEnv, AuthUser } from "@/types/api";
 import { getAuth } from "@/lib/auth";
 import { canManageTeam } from "@/lib/roles";
@@ -78,11 +78,13 @@ const DEMO_MATCHES = [
     opponentScore: 4,
     youtubeUrl: "https://www.youtube.com/watch?v=qkRUcYHJ1JI", // 2023 WBC 決勝 日本代表 優勝ハイライト (MLB公式)
     matchType: "official",
+    battingOrder: "first" as const,
     venueName: "市民第2球場",
     venueShortName: "市民第2",
     innings: 7,
     myInningScores: [2, 0, 1, 3, 0, 1, 0],
     opponentInningScores: [0, 1, 0, 0, 2, 1, 0],
+    hasLineup: true,
   },
   {
     id: "demo-match-2",
@@ -94,11 +96,31 @@ const DEMO_MATCHES = [
     opponentScore: 5,
     youtubeUrl: "https://www.youtube.com/watch?v=L25-Iw6kJ7w", // 2023 WBC 優勝決定 最終イニング 大谷vsトラウト (MLB公式)
     matchType: "practice",
+    battingOrder: "second" as const,
     venueName: "等々力球場",
     venueShortName: "等々力",
     innings: 7,
     myInningScores: [0, 1, 0, 2, 0, 1, 0],
     opponentInningScores: [1, 0, 2, 0, 1, 1, 0],
+    hasLineup: true,
+  },
+  {
+    id: "demo-match-3",
+    opponent: "レッドソックス",
+    tournamentName: "秋季大会 2回戦",
+    date: "2026/11/08 09:30",
+    status: "scheduled",
+    myScore: 0,
+    opponentScore: 0,
+    youtubeUrl: null,
+    matchType: "official",
+    battingOrder: "first" as const,
+    venueName: "多摩川緑地野球場 (1面)",
+    venueShortName: "多摩川緑地",
+    innings: 7,
+    myInningScores: [],
+    opponentInningScores: [],
+    hasLineup: false,
   },
 ];
 
@@ -358,6 +380,7 @@ app.post("/join", async (c) => {
  */
 app.get("/hub", async (c) => {
   await ensureEventColumns(c.env.DB);
+  await ensureMatchLineupColumns(c.env.DB);
   const db = drizzle(c.env.DB);
   const requestedTeamId = c.req.query("teamId");
   const userId = c.req.query("userId");
@@ -706,6 +729,7 @@ app.get("/hub", async (c) => {
         opponentHits: matches.opponentHits,
         myErrors: matches.myErrors,
         opponentErrors: matches.opponentErrors,
+        myLineup: matches.myLineup,
       })
       .from(matches)
       .leftJoin(tournaments, eq(matches.tournamentId, tournaments.id))
@@ -715,12 +739,21 @@ app.get("/hub", async (c) => {
       .limit(10)
       .all();
 
-    const formattedMatches = matchesList.map(m => ({
-      ...m,
-      tournamentName: m.tournamentName || (m.tournamentId && !m.tournamentId.includes("-") ? m.tournamentId : null),
-      myInningScores: typeof m.myInningScores === "string" ? JSON.parse(m.myInningScores || "[]") : (m.myInningScores || []),
-      opponentInningScores: typeof m.opponentInningScores === "string" ? JSON.parse(m.opponentInningScores || "[]") : (m.opponentInningScores || []),
-    }));
+    const formattedMatches = matchesList.map(m => {
+      let hasLineup = false;
+      try {
+        const parsed = typeof m.myLineup === "string" ? JSON.parse(m.myLineup) : m.myLineup;
+        hasLineup = Array.isArray(parsed) && parsed.some((item: { playerId?: string }) => Boolean(item?.playerId));
+      } catch {}
+      const { myLineup: _omittedLineup, ...rest } = m;
+      return {
+        ...rest,
+        hasLineup,
+        tournamentName: m.tournamentName || (m.tournamentId && !m.tournamentId.includes("-") ? m.tournamentId : null),
+        myInningScores: typeof m.myInningScores === "string" ? JSON.parse(m.myInningScores || "[]") : (m.myInningScores || []),
+        opponentInningScores: typeof m.opponentInningScores === "string" ? JSON.parse(m.opponentInningScores || "[]") : (m.opponentInningScores || []),
+      };
+    });
 
     const liffId = c.env.NEXT_PUBLIC_LIFF_ID || c.env.LIFF_ID || "";
 
@@ -788,6 +821,7 @@ app.get("/hub", async (c) => {
  * チームの試合一覧取得API (動画付き試合含む)
  */
 app.get("/matches", async (c) => {
+  await ensureMatchLineupColumns(c.env.DB);
   const db = drizzle(c.env.DB);
   let teamId = c.req.query("teamId");
 
@@ -815,9 +849,15 @@ app.get("/matches", async (c) => {
         venueName: venues.name,
         venueShortName: venues.shortName,
         surfaceDetails: matches.surfaceDetails,
+        battingOrder: matches.battingOrder,
         innings: matches.innings,
         myInningScores: matches.myInningScores,
         opponentInningScores: matches.opponentInningScores,
+        myHits: matches.myHits,
+        opponentHits: matches.opponentHits,
+        myErrors: matches.myErrors,
+        opponentErrors: matches.opponentErrors,
+        myLineup: matches.myLineup,
       })
       .from(matches)
       .leftJoin(tournaments, eq(matches.tournamentId, tournaments.id))
@@ -829,6 +869,7 @@ app.get("/matches", async (c) => {
     const formattedMatches = rawMatches.map((m) => {
       let myInnings: number[] = [];
       let opponentInnings: number[] = [];
+      let hasLineup = false;
 
       try {
         if (typeof m.myInningScores === "string") {
@@ -846,8 +887,16 @@ app.get("/matches", async (c) => {
         }
       } catch {}
 
+      try {
+        const parsedLineup = typeof m.myLineup === "string" ? JSON.parse(m.myLineup) : m.myLineup;
+        hasLineup = Array.isArray(parsedLineup) && parsedLineup.some((item: { playerId?: string }) => Boolean(item?.playerId));
+      } catch {}
+
+      const { myLineup: _omittedLineup, ...rest } = m;
+
       return {
-        ...m,
+        ...rest,
+        hasLineup,
         tournamentName: m.tournamentName || (m.tournamentId && !m.tournamentId.includes("-") ? m.tournamentId : null),
         myInningScores: myInnings,
         opponentInningScores: opponentInnings,
@@ -3497,6 +3546,7 @@ app.delete("/faqs/:id", async (c) => {
  * ⚾ 試合一覧取得API (GET /matches?teamId=xxx)
  */
 app.get("/matches", async (c) => {
+  await ensureMatchLineupColumns(c.env.DB);
   const db = drizzle(c.env.DB);
   const teamId = c.req.query("teamId");
 

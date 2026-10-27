@@ -1,11 +1,14 @@
+// filepath: src/api/teams/lineups.ts
 import { Hono } from 'hono'
 import { drizzle } from 'drizzle-orm/d1'
 import { lineupTemplates } from '@/db/schema'
 import { desc, eq } from 'drizzle-orm'
+import { ensureMatchLineupColumns } from '@/lib/db-helper'
 
 const app = new Hono<{ Bindings: { DB: D1Database } }>()
 
 app.get('/:teamId/lineup-templates', async (c) => {
+  await ensureMatchLineupColumns(c.env.DB)
   const db = drizzle(c.env.DB)
   const teamId = c.req.param('teamId')
   try {
@@ -15,6 +18,7 @@ app.get('/:teamId/lineup-templates', async (c) => {
 })
 
 app.post('/:teamId/lineup-templates', async (c) => {
+  await ensureMatchLineupColumns(c.env.DB)
   const db = drizzle(c.env.DB)
   const teamId = c.req.param('teamId')
   const body = await c.req.json()
@@ -26,6 +30,7 @@ app.post('/:teamId/lineup-templates', async (c) => {
 })
 
 app.delete('/:teamId/lineup-templates/:id', async (c) => {
+  await ensureMatchLineupColumns(c.env.DB)
   const db = drizzle(c.env.DB)
   const id = c.req.param('id')
   try {

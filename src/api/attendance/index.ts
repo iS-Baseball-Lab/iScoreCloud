@@ -9,6 +9,7 @@ import { eq, and, inArray } from 'drizzle-orm';
 import { events, attendances } from '@/db/schema/attendance';
 import { players, teamMembers } from '@/db/schema/team';
 import { user } from '@/db/schema/auth';
+import { ensureEventColumns } from '@/lib/db-helper';
 import type { WorkerEnv } from '@/types/api';
 
 const app = new Hono<{ Bindings: WorkerEnv }>();
@@ -23,6 +24,7 @@ app.get('/', async (c) => {
     return c.json({ success: false, error: "teamId が必要です。" }, 400);
   }
 
+  await ensureEventColumns(c.env.DB);
   const db = drizzle(c.env.DB);
 
   try {

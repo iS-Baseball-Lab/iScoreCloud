@@ -2,6 +2,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import Link from "next/link";
 import { format, differenceInSeconds, intervalToDuration } from "date-fns";
 import { ja } from "date-fns/locale";
 import { 
@@ -17,6 +18,7 @@ import {
   FileText
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { parseSafeMatchDate, hasMatchTime } from "@/lib/liff/demo-lineup";
 
 export interface MatchCardData {
   id: string;
@@ -39,6 +41,7 @@ export interface MatchCardData {
   opponentHits?: number;
   myErrors?: number;
   opponentErrors?: number;
+  hasLineup?: boolean;
 }
 
 interface MatchScoreCardProps {
@@ -103,15 +106,30 @@ const formatScoreDisplay = (score: number | null | undefined, isBottom: boolean,
   return score;
 };
 
-// 安全に日付をフォーマットするヘルパー（日本語曜日対応）
+// 安全に日付をフォーマットするヘルパー（日本語曜日・Safari/iOS LINE内ブラウザ対応）
 const formatSafeDate = (dateStr: string, fmt: string) => {
   try {
-    const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return dateStr;
-    return format(d, fmt, { locale: ja });
+    const d = parseSafeMatchDate(dateStr);
+    if (!d || isNaN(d.getTime())) return dateStr;
+    const effectiveFmt = fmt === "MM/dd(E) HH:mm" && !hasMatchTime(dateStr) ? "MM/dd(E)" : fmt;
+    return format(d, effectiveFmt, { locale: ja });
   } catch (e) {
     return dateStr;
   }
+};
+
+// イニング配列を安全に取り出すヘルパー
+const normalizeInningScores = (raw: unknown): number[] => {
+  if (Array.isArray(raw)) return raw as number[];
+  if (typeof raw === "string") {
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? (parsed as number[]) : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
 };
 
 // YouTube 動画ID 抽出ユーティリティ
@@ -122,28 +140,36 @@ function getYoutubeVideoId(url: string | null | undefined): string | null {
   return match && match[2].length === 11 ? match[2] : null;
 }
 
-// 🌟 カウントダウン用サブコンポーネント
+// 🌟 カウントダウン用サブコンポーネント（不正日付によるRangeErrorクラッシュを完全防止）
 function MatchCountdown({ date }: { date: string }) {
   const [timeLeft, setTimeLeft] = useState("00:00:00");
 
   useEffect(() => {
     const update = () => {
-      const target = new Date(date);
-      const now = new Date();
-      const diff = differenceInSeconds(target, now);
+      try {
+        const target = parseSafeMatchDate(date);
+        if (!target || isNaN(target.getTime())) {
+          setTimeLeft("--:--:--");
+          return;
+        }
+        const now = new Date();
+        const diff = differenceInSeconds(target, now);
 
-      if (diff <= 0) {
-        setTimeLeft("START");
-        return;
+        if (isNaN(diff) || diff <= 0) {
+          setTimeLeft("START");
+          return;
+        }
+
+        const duration = intervalToDuration({ start: now, end: target });
+        const d = duration.days ? `${duration.days}日 ` : "";
+        const h = String(duration.hours || 0).padStart(2, "0");
+        const m = String(duration.minutes || 0).padStart(2, "0");
+        const s = String(duration.seconds || 0).padStart(2, "0");
+
+        setTimeLeft(`${d}${h}:${m}:${s}`);
+      } catch {
+        setTimeLeft("--:--:--");
       }
-
-      const duration = intervalToDuration({ start: now, end: target });
-      const d = duration.days ? `${duration.days}日 ` : "";
-      const h = String(duration.hours || 0).padStart(2, "0");
-      const m = String(duration.minutes || 0).padStart(2, "0");
-      const s = String(duration.seconds || 0).padStart(2, "0");
-
-      setTimeLeft(`${d}${h}:${m}:${s}`);
     };
 
     update();
@@ -169,7 +195,10 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
 
   const youtubeVideoId = getYoutubeVideoId(match.youtubeUrl);
 
-  const isFuture = new Date(match.date) > new Date() && match.status !== "finished";
+  const parsedMatchDate = parseSafeMatchDate(match.date);
+  const isFuture = Boolean(
+    parsedMatchDate && parsedMatchDate.getTime() > Date.now() && match.status !== "finished"
+  );
   const isLive = match.status === "live";
   const isRainout = match.status === "rainout";
   const isWin = match.status === "finished" && match.myScore > match.opponentScore;
@@ -178,10 +207,10 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
 
   const firstScore = match.battingOrder === "second" ? match.opponentScore : match.myScore;
   const secondScore = match.battingOrder === "second" ? match.myScore : match.opponentScore;
-  const isHomeWinning = !isFuture && secondScore > firstScore;
+  const isHomeWinning = !isFuture && match.status !== "scheduled" && secondScore > firstScore;
 
-  const myScores = match.myInningScores || [];
-  const oppScores = match.opponentInningScores || [];
+  const myScores = normalizeInningScores(match.myInningScores);
+  const oppScores = normalizeInningScores(match.opponentInningScores);
   const topScores = match.battingOrder === "second" ? oppScores : myScores;
   const bottomScores = match.battingOrder === "second" ? myScores : oppScores;
 
@@ -372,6 +401,35 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
           </div>
         </div>
 
+        {/* 🌟 2.5 折りたたみ時のワンタップ・クイックアクション（スタメン登録 / 詳細） */}
+        {!isExpanded && !isRainout && (
+          <div
+            className="mt-3 pt-2.5 border-t border-border/50 flex items-center justify-between gap-2"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Link
+              href={`/liff/matches/lineup?id=${match.id}`}
+              className={cn(
+                "flex-1 inline-flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-xl text-[11px] font-black transition-all active:scale-95",
+                !match.hasLineup && (isFuture || isLive || match.status === "scheduled")
+                  ? "bg-primary text-primary-foreground shadow-2xs hover:bg-primary/90"
+                  : "bg-primary/10 text-primary border border-primary/25 hover:bg-primary/15"
+              )}
+            >
+              <Users className="w-3.5 h-3.5 shrink-0" />
+              <span>{match.hasLineup ? "スタメン・出欠編集" : "スタメン・出欠登録"}</span>
+            </Link>
+
+            <Link
+              href={`/liff/matches?id=${match.id}`}
+              className="inline-flex items-center justify-center gap-1 py-1.5 px-3 rounded-xl bg-muted hover:bg-muted/80 border border-border text-foreground text-[11px] font-black transition-all active:scale-95 shrink-0"
+            >
+              <FileText className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+              <span>詳細</span>
+            </Link>
+          </div>
+        )}
+
         {/* 🌟 3. アコーディオン展開：本家同等のイニングスコアボード */}
         {isExpanded && (
           <div className="mt-3 pt-3 border-t border-border/60 animate-in fade-in slide-in-from-top-2 duration-200">
@@ -435,20 +493,31 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
                 </table>
               </div>
 
-              {/* フッターアクション：詳細スコアブックへの遷移 */}
-              <div className="p-2 bg-muted/30 border-t border-border flex items-center justify-between gap-2">
+              {/* フッターアクション：スタメン登録 ＆ 詳細スコアブックへの遷移 */}
+              <div
+                className="p-2 bg-muted/30 border-t border-border flex items-center justify-between gap-2 flex-wrap"
+                onClick={(e) => e.stopPropagation()}
+              >
                 <span className="text-[10px] font-bold text-muted-foreground pl-1">
                   {match.status === "finished" ? "試合終了" : isLive ? "試合中" : "予定"}
                 </span>
-                <a
-                  href={`/liff/matches?id=${match.id}`}
-                  className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-black transition-all active:scale-95 shadow-2xs"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <FileText className="w-3.5 h-3.5" />
-                  <span>スコアブック・詳細</span>
-                  <ExternalLink className="w-3 h-3 ml-0.5 opacity-70" />
-                </a>
+                <div className="flex items-center gap-1.5">
+                  <Link
+                    href={`/liff/matches/lineup?id=${match.id}`}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-card border border-primary/30 text-primary hover:bg-primary/10 text-xs font-black transition-all active:scale-95 shadow-2xs"
+                  >
+                    <Users className="w-3.5 h-3.5" />
+                    <span>{match.hasLineup ? "スタメン編集" : "スタメン登録"}</span>
+                  </Link>
+                  <Link
+                    href={`/liff/matches?id=${match.id}`}
+                    className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-black transition-all active:scale-95 shadow-2xs"
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>スコア・詳細</span>
+                    <ExternalLink className="w-3 h-3 ml-0.5 opacity-70" />
+                  </Link>
+                </div>
               </div>
             </div>
           </div>

@@ -1,4 +1,5 @@
-// src/api/matches.ts
+// filepath: src/api/matches.ts
+import { ensureMatchLineupColumns } from "@/lib/db-helper";
 import { Hono } from "hono";
 import { drizzle } from "drizzle-orm/d1";
 import { MatchService } from "@/services/match.service";
@@ -33,6 +34,7 @@ app.get("/:id", async (c) => {
   try {
     const db = drizzle(c.env.DB);
     const matchId = c.req.param("id");
+    await ensureMatchLineupColumns(c.env.DB);
     const matchData = await MatchService.getMatchById(db, matchId);
     if (!matchData) return c.json({ success: false, error: "Match not found" }, 404);
 
@@ -88,6 +90,7 @@ app.get("/:id/innings", async (c) => {
 
 app.get("/:id/lineups", async (c) => {
   try {
+    await ensureMatchLineupColumns(c.env.DB);
     const lineups = await MatchService.getMatchLineups(drizzle(c.env.DB), c.req.param("id"));
     return c.json({ success: true, lineups });
   } catch (error) {
@@ -150,6 +153,7 @@ app.delete("/:id/reset-logs", async (c) => {
 app.put("/:id/lineups", async (c) => {
   try {
     const body = await c.req.json();
+    await ensureMatchLineupColumns(c.env.DB);
     await MatchService.saveMatchLineups(drizzle(c.env.DB), c.req.param("id"), body.myLineup || [], body.opponentLineup || [], body.myAttendance || {});
     return c.json({ success: true });
   } catch (error) {

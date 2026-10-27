@@ -4,6 +4,7 @@ import { drizzle } from 'drizzle-orm/d1';
 import { eq } from 'drizzle-orm';
 import { matches, tournaments } from '@/db/schema/match';
 import { teams } from '@/db/schema/team'; // 🌟 チーム実在チェック用
+import { ensureMatchLineupColumns } from '@/lib/db-helper';
 import type { WorkerEnv } from '@/types/api';
 
 const app = new Hono<{ Bindings: WorkerEnv }>();
@@ -28,6 +29,7 @@ interface CreateMatchRequest {
 }
 
 app.post('/create', async (c) => {
+  await ensureMatchLineupColumns(c.env.DB);
   const db = drizzle(c.env.DB);
 
   try {
