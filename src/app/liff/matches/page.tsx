@@ -28,7 +28,6 @@ import {
   Check,
   Building2,
   Trophy,
-  ClipboardList,
 } from "lucide-react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/layout/EmptyState";
@@ -616,15 +615,8 @@ function MatchesContent() {
             }}
           />
 
-          {/* 📋 1. 基本情報（見出しはカード外・1行目バッジ群＋2行目サマリー） */}
-          <section className="space-y-2">
-            <div className="flex items-center justify-between gap-2 px-1">
-              <h2 className="flex items-center gap-1.5 text-xs font-black text-foreground">
-                <ClipboardList className="w-4 h-4 text-primary shrink-0" />
-                <span>基本情報</span>
-              </h2>
-            </div>
-
+          {/* 📋 1. 基本情報カード（見出しなし・1行目バッジ群＋2行目サマリー） */}
+          <section aria-label="基本情報">
             <div className="rounded-2xl border border-border bg-card shadow-xs px-3.5 py-3 space-y-2">
               {/* 1行目：すべてバッジ（試合種別・イニング制・先攻後攻・一塁側/三塁側） */}
               <div className="flex items-center flex-wrap gap-1.5">
