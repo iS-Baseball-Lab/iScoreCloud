@@ -8,6 +8,7 @@ import {
   computeCountFromPitches,
   inferCanonicalResultCode,
   matchRosterPlayer,
+  normalizePositionCode,
   resolveActiveMatchupFromStructure,
   validateScorebookSheet,
 } from "@/lib/liff/scorebook-validator";
@@ -171,64 +172,68 @@ interface RawGeminiChunkResponse {
   ab?: RawGeminiAtBat[];
 }
 
+type GeminiCallMode = "structure" | "chunk";
+
 interface GeminiModelAttemptConfig {
   model: string;
   /** 初動応答（HTTP 200＋最初のSSEチャンク到達）までの最大待機ミリ秒。混雑キュー滞留を素早く見切る */
   firstChunkTimeoutMs: number;
   /** 非思考の本文JSONテキストが出始めるまでの最大待機ミリ秒 */
   firstTextTimeoutMs: number;
-  thinkingMode: "level_low" | "budget" | "budget_zero" | "none";
+  thinkingMode: "level_medium" | "level_low" | "budget" | "none";
+  thinkingBudget?: number;
   backoffBeforeMs: number;
 }
 
 /**
- * 特定モデルの 503 スパイク時に同プールで長時間滞留しないよう、
- * 異なる世代・サービングプール（3.8-flash ➔ 2.5-flash ➔ 2.5-flash-lite ➔ 3.5-flash-lite ➔ 3.5-flash）へ即座にフェイルオーバーする
+ * 精度最優先のマルチプール・ルーティング:
+ * - 手書き漢字・背番号・早稲田式記号の誤読原因だった flash-lite (思考ゼロ) を完全排除
+ * - 3.8-flash 混雑(503)時は別サービングプールの Pro 推論モデル (gemini-2.5-pro) および思考付き 2.5-flash / 3.5-flash へ即座にフェイルオーバーし、常に最高水準の認識精度を維持する
  */
-const GEMINI_MODEL_CONFIGS: readonly GeminiModelAttemptConfig[] = [
-  {
-    model: "gemini-3.8-flash",
-    firstChunkTimeoutMs: 14_000,
-    firstTextTimeoutMs: 25_000,
-    thinkingMode: "level_low",
-    backoffBeforeMs: 0,
-  },
-  {
-    model: "gemini-2.5-flash",
-    firstChunkTimeoutMs: 15_000,
-    firstTextTimeoutMs: 25_000,
-    thinkingMode: "budget",
-    backoffBeforeMs: 350,
-  },
-  {
-    model: "gemini-2.5-flash-lite",
-    firstChunkTimeoutMs: 13_000,
-    firstTextTimeoutMs: 20_000,
-    thinkingMode: "budget_zero",
-    backoffBeforeMs: 350,
-  },
-  {
-    model: "gemini-3.5-flash-lite",
-    firstChunkTimeoutMs: 13_000,
-    firstTextTimeoutMs: 22_000,
-    thinkingMode: "level_low",
-    backoffBeforeMs: 400,
-  },
-  {
-    model: "gemini-3.5-flash",
-    firstChunkTimeoutMs: 15_000,
-    firstTextTimeoutMs: 25_000,
-    thinkingMode: "level_low",
-    backoffBeforeMs: 500,
-  },
-  {
-    model: "gemini-3.8-flash",
-    firstChunkTimeoutMs: 16_000,
-    firstTextTimeoutMs: 26_000,
-    thinkingMode: "level_low",
-    backoffBeforeMs: 1_400,
-  },
-];
+function getGeminiModelConfigs(
+  mode: GeminiCallMode
+): readonly GeminiModelAttemptConfig[] {
+  const isStructure = mode === "structure";
+  return [
+    {
+      model: "gemini-3.8-flash",
+      firstChunkTimeoutMs: 18_000,
+      firstTextTimeoutMs: 38_000,
+      thinkingMode: isStructure ? "level_medium" : "level_low",
+      backoffBeforeMs: 0,
+    },
+    {
+      model: "gemini-2.5-pro",
+      firstChunkTimeoutMs: 20_000,
+      firstTextTimeoutMs: 42_000,
+      thinkingMode: "budget",
+      thinkingBudget: isStructure ? 2048 : 1280,
+      backoffBeforeMs: 350,
+    },
+    {
+      model: "gemini-2.5-flash",
+      firstChunkTimeoutMs: 16_000,
+      firstTextTimeoutMs: 35_000,
+      thinkingMode: "budget",
+      thinkingBudget: isStructure ? 2048 : 1024,
+      backoffBeforeMs: 400,
+    },
+    {
+      model: "gemini-3.5-flash",
+      firstChunkTimeoutMs: 16_000,
+      firstTextTimeoutMs: 35_000,
+      thinkingMode: isStructure ? "level_medium" : "level_low",
+      backoffBeforeMs: 450,
+    },
+    {
+      model: "gemini-3.8-flash",
+      firstChunkTimeoutMs: 18_000,
+      firstTextTimeoutMs: 36_000,
+      thinkingMode: "level_low",
+      backoffBeforeMs: 1_800,
+    },
+  ];
+}
 
 const PITCH_DISPLAY_JA: Record<CanonicalPitchResult, string> = {
   ball: "ボール",
@@ -483,8 +488,38 @@ interface AnalyzeStructurePayload {
   isTop: boolean;
   imageBase64: string;
   mimeType: string;
+  lineupCropBase64?: string;
+  lineupCropMimeType?: string;
+  summaryCropBase64?: string;
+  summaryCropMimeType?: string;
   legendBase64?: string;
   legendMimeType?: string;
+}
+
+interface SavedJsonLineupEntry {
+  order?: number;
+  battingOrder?: number;
+  name?: string;
+  uniformNumber?: string;
+  position?: string;
+}
+
+function safeParseLineupArray(
+  jsonStr: string | null | undefined
+): SavedJsonLineupEntry[] {
+  if (!jsonStr) return [];
+  try {
+    const parsed = JSON.parse(jsonStr) as unknown;
+    if (Array.isArray(parsed)) {
+      return parsed.filter(
+        (item): item is SavedJsonLineupEntry =>
+          typeof item === "object" && item !== null
+      );
+    }
+  } catch {
+    // ignore invalid json
+  }
+  return [];
 }
 
 liffScorebookRouter.post("/analyze-structure", async (c) => {
@@ -564,11 +599,25 @@ liffScorebookRouter.post("/analyze-structure", async (c) => {
             .join(", ")
         : "未登録";
 
+    const fallbackJsonLineup = safeParseLineupArray(
+      isMyTeamBatting ? match.myLineup : match.opponentLineup
+    );
+
     const myStarterHint =
       savedLineups.length > 0
         ? savedLineups
             .filter((l) => l.isStarting)
-            .map((l) => `${l.battingOrder}番: #${l.uniformNumber} ${l.playerName}(守備:${l.position})`)
+            .map(
+              (l) =>
+                `${l.battingOrder}番: #${l.uniformNumber} ${l.playerName}(守備:${l.position})`
+            )
+            .join(", ")
+        : fallbackJsonLineup.length > 0
+        ? fallbackJsonLineup
+            .map(
+              (l, idx) =>
+                `${l.order ?? l.battingOrder ?? idx + 1}番: #${l.uniformNumber || ""} ${l.name || ""}(守備:${l.position || ""})`
+            )
             .join(", ")
         : "";
 
@@ -576,12 +625,15 @@ liffScorebookRouter.post("/analyze-structure", async (c) => {
       ? safeParseNumberArray(match.myInningScores)
       : safeParseNumberArray(match.opponentInningScores);
 
-    const scoreboardHintText =
-      scoreboardHintScores.length > 0
-        ? `\n参考（事前登録済みの各回得点）: ${scoreboardHintScores
-            .map((r, i) => `${i + 1}回=${r}点`)
-            .join(", ")}`
-        : "";
+    const hasMeaningfulScoreHint =
+      scoreboardHintScores.length > 0 &&
+      (scoreboardHintScores.some((r) => r > 0) || scoreboardHintScores.length >= 3);
+
+    const scoreboardHintText = hasMeaningfulScoreHint
+      ? `\n📌【試合テーブルに登録済みの各回得点データ（画像と照合してください）】: ${scoreboardHintScores
+          .map((r, i) => `${i + 1}回=${r}点`)
+          .join(", ")}（計${scoreboardHintScores.reduce((s, r) => s + r, 0)}点）`
+      : "";
 
     const imageParts: GeminiContentPart[] = [
       {
@@ -591,6 +643,33 @@ liffScorebookRouter.post("/analyze-structure", async (c) => {
         },
       },
     ];
+    const imageDescriptions: string[] = [
+      "・画像1: スコアブック片面全体画像（全体のグリッド列構造と 0〜1000 座標の算出基準）",
+    ];
+
+    if (body.lineupCropBase64) {
+      imageParts.push({
+        inlineData: {
+          mimeType: body.lineupCropMimeType || "image/jpeg",
+          data: body.lineupCropBase64,
+        },
+      });
+      imageDescriptions.push(
+        `・画像${imageParts.length}: シート左側の「打順・守備位置・背番号・選手氏名・途中交代欄」の高精細拡大画像（※手書き選手名・背番号・守備位置番号はこの拡大画像を最優先で1文字ずつ精確に読み取ってください！）`
+      );
+    }
+
+    if (body.summaryCropBase64) {
+      imageParts.push({
+        inlineData: {
+          mimeType: body.summaryCropMimeType || "image/jpeg",
+          data: body.summaryCropBase64,
+        },
+      });
+      imageDescriptions.push(
+        `・画像${imageParts.length}: 上段が「上部スコアボード＆各列上端のイニング見出し番号」、紺色の境界線より下段が「各イニング列下端の得点/安打合計欄＆投手成績欄」の高精細拡大画像（※イニング見出し番号の列折り返し確認、各回得点、投手名の読み取りに活用してください！）`
+      );
+    }
 
     const legendPart = await resolveLegendImagePart(
       c,
@@ -601,84 +680,64 @@ liffScorebookRouter.post("/analyze-structure", async (c) => {
     );
     if (legendPart) {
       imageParts.push(legendPart);
+      imageDescriptions.push(
+        `・画像${imageParts.length}: チーム公式のスコア記号早見表`
+      );
     }
 
     const sideText = body.isTop ? "先攻（表の攻撃）" : "後攻（裏の攻撃）";
     const battingTeamContext = isMyTeamBatting
-      ? `このシートの攻撃チームは【自チーム】です。打者名は必ず画像の手書き文字と背番号を読み取った上で、可能な限り以下の自チーム登録選手リストに名寄せしてください。\n自チーム登録選手リスト: [${rosterHint}]${
-          myStarterHint ? `\n事前登録スタメン: [${myStarterHint}]` : ""
-        }\nまた、相手投手の欄（このシートに対して投げた相手チームのピッチャー）は画像の手書き文字/背番号をそのまま読み取ってください。`
-      : `このシートの攻撃チームは【対戦相手（${match.opponent}）】です。打者名は画像の手書き文字・背番号を読み取ってください（絶対に自チームの選手名を当てはめないでください）。\n一方、このシートに対して投げた登板投手（pitchers）は【自チームの投手】ですので、自チーム登録選手リスト [${rosterHint}] に名寄せしてください。`;
+      ? `このシートの攻撃チームは【自チーム】です。拡大画像の手書き氏名と背番号を一字一句丁寧に読み取った上で、一致または類似する選手を以下の自チーム登録選手リストから名寄せしてください（登録リストに無い助っ人選手の場合は手書き文字をそのまま出力し、絶対に別人の名前を無理やり当てはめないでください）。\n自チーム登録選手リスト: [${rosterHint}]${
+          myStarterHint ? `\n事前登録スタメン情報: [${myStarterHint}]` : ""
+        }\nまた、相手投手の欄（このシートの打者に対して投げた相手チームのピッチャー）は手書き文字・背番号をそのまま読み取ってください。`
+      : `このシートの攻撃チームは【対戦相手（${match.opponent}）】です。打者名は拡大画像の手書き文字・背番号を忠実に読み取ってください（絶対に自チーム登録選手の名前を打者欄に当てはめないでください！）。${
+          myStarterHint ? `\n事前登録相手打順情報: [${myStarterHint}]` : ""
+        }\n一方、このシートの打者に対して投げた登板投手（pitchers）は【自チームの投手】ですので、自チーム登録選手リスト [${rosterHint}] に名寄せしてください。`;
 
-    const prompt = `あなたは日本の野球スコアブック（早稲田式・成美堂式・草野球/学童野球手書きスコア）の構造解析エキスパートです。
-添付されたスコアブックの片面画像（${sideText}シート）から、まず「シート全体の骨格情報（打順・途中交代・登板投手・イニングごとの列構造と得点）」のみを精確に抽出してください。
+    const prompt = `あなたは日本の野球スコアブック（早稲田式・成美堂式・草野球/少年野球手書きスコア）の構造解析エキスパートです。
+添付された画像群（${sideText}シート）を隅々まで観察し、「シート全体の骨格情報（打順・途中交代・登板投手・イニングごとの列構造と得点）」を極めて高い精度で抽出してください。
+
+【添付画像の構成】
+${imageDescriptions.join("\n")}
 
 ${battingTeamContext}${scoreboardHintText}
 
-【厳守ルール】
-1. **打順枠（batters）**:
-   - 1番〜9番（全員打ち制で10番以降が書かれている場合は10番以降もすべて）の先発選手の「打順(battingOrder)」「背番号(uniformNumber)」「選手名(name)」「先発守備位置番号(position: 1〜9 または DH)」を抽出してください。
-   - 同じ打順枠の2段目・3段目に途中出場の選手（代打PH・代走PR・守備交代DEF）が書かれている場合、マス内の交代波線・二重線・斜線の位置と照合して「何回の攻撃または守備から出場したか(inningEntered)」を特定し、substitutions 配列にすべて格納してください。
-2. **登板投手（pitchers）**:
-   - このシートの打者たちに対して投げた相手側のピッチャー（先発および継投した救援投手）を登板順に抽出してください。
-   - スコアブック下部や右側の投手成績欄、および打席マス間の投手交代線（横波線や二重線）を確認し、各投手が「何回から何回まで投げたか（fromInning, toInning）」を設定してください。投手欄が空欄で1人しかいない場合は order:1, fromInning:1, toInning:最終回 としてください。
-3. **イニング構造と各回得点（innings）**:
-   - 実際に試合が行われたイニング（1回〜最終回、空欄の回は除く）のみを抽出してください。
-   - **打者一巡の列折り返し検出（超重要）**: 1イニングで打者が10人以上打席に立ち、2列を使って記録されている回は columnCount: 2 としてください（通常は columnCount: 1）。
-   - 各イニングの上部スコア欄・下部計欄・およびマス内の本塁生還印（●や赤丸）を突き合わせ、その回の正確な得点数(runs)と安打数(hits)を出力してください。
-   - 各イニング列の全体領域を 0〜1000 の正規化座標 (ymin, xmin, ymax, xmax) で出力してください。
+【絶対厳守の解析ルール】
+1. **打順枠（batters）の高精度抽出**:
+   - 左側の拡大画像を見て、1番〜9番（全員打ち制で10番以降が書かれている場合はその最終打順まで漏れなく）の先発選手を抽出してください。
+   - **⚠️守備位置欄と背番号欄の取り違え厳禁**:
+     - 日本のスコアブックの選手欄は「打順 | 守備位置 | 背番号 | 選手氏名」または「打順 | 選手氏名 | 背番号 | 守備位置」の列構造です。
+     - **守備位置（position）** は 1〜9 または DH が1人ずつ割り振られる列です。漢字（投・捕・一・二・三・遊・左・中・右・指）や英語（P,C,1B..DH）で書かれていても、出力時は必ず **"1","2","3","4","5","6","7","8","9","D"** の1文字コードに変換してください（1=投, 2=捕, 3=一, 4=二, 5=三, 6=遊, 7=左, 8=中, 9=右, D=DH）。
+     - **背番号（uniformNumber）** は 0〜99 等のユニフォーム番号です。背番号欄が空欄のときに守備位置番号（1〜9）を uniformNumber に入れるミスを絶対にしないでください！空欄なら "" を返してください。
+   - **先発と途中交代（substitutions）の分離**:
+     - 各打順枠が上下2〜3段に分かれている場合、**一番上の段が先発選手（starter）**です。
+     - 2段目・3段目に実際に別の選手名が手書きされている場合のみ substitutions 配列に追加し、シート1全体の打席グリッド内の交代線（波線・二重線・斜線・『PH』『PR』表記）がある列から出場イニング（inningEntered: 1以上の整数）と種別（"PH"=代打, "PR"=代走, "DEF"=守備交代）を特定してください。空欄の段は絶対に出力しないでください。
+
+2. **登板投手（pitchers）の敵味方検証と継投抽出**:
+   - このシートの打者たちに対して投げた**守備側チームのピッチャー**を登板順（order: 1, 2...）に抽出してください。
+   - **⚠️スコアブック様式による投手欄の取り違え防止（超重要）**:
+     スコアブックの製品によっては、ページ下部/右下の投手欄に「相手投手」を書く様式と、「このページの攻撃チーム自身の投手」を書く様式があります。
+     下部投手欄に書かれた投手名が、**このページの打順（batters）にいる選手（特に position:"1" の投手）と同一人物である場合、それは攻撃チーム自身の投手成績欄なので、相手投手として pitchers に入れてはいけません！** その場合は打席グリッド内の相手投手メモを探すか、書かれていなければ pitchers: [] を返してください。
+   - 複数投手の継投がある場合は、投手欄の投球回数および打席グリッド内の投手交代横線（波線・二重線）の位置から、各投手の担当回（fromInning, toInning）を正確に設定してください。
+
+3. **イニング構造・打者一巡（2列）・各回得点（innings）の三重照合**:
+   - 各縦列の**最上部に印字・手書きされているイニング見出し番号（1, 2, 3...）**を必ず確認してください（拡大画像の上段参照）。
+   - **🔥打者一巡（columnCount: 2）の厳密判定**:
+     1イニングに打者が10人以上立つと、隣の2列目へ折り返して同じイニングが記録されます（2列目の見出し番号が同じ回に書き直されている、または1列目で3アウト③になる前に9人一巡して右隣列へ続いている状態）。
+     この場合は必ず1つのイニング要素にまとめて **columnCount: 2** とし、後続のイニング番号が +1 ズレないよう見出し番号と照合してください！
+   - 試合が行われていない空白のイニング列（最終回より右側の空列）は出力しないでください。
+   - 各回の得点（runs）は、①上部スコアボードの数字、②各列最下部の得点計、③その回のマス内の本塁生還印（●や赤塗りダイヤ）の個数の**3箇所を突き合わせて完全一致**させてください。
+   - 各イニング列の座標 (ymin, xmin, ymax, xmax) は必ず **画像1（シート全体画像）に対する 0〜1000 の正規化整数** で出力してください（columnCount:2 の場合は2列分を囲む xmin〜xmax）。
 
 【出力JSONフォーマット（以下の厳密なキー構造のJSONオブジェクトのみを返してください）】
-{
-  "batters": [
-    {
-      "battingOrder": 1,
-      "name": "選手名",
-      "uniformNumber": "10",
-      "position": "6",
-      "substitutions": [
-        {
-          "inningEntered": 5,
-          "subType": "PH",
-          "name": "交代選手名",
-          "uniformNumber": "24",
-          "position": "P"
-        }
-      ]
-    }
-  ],
-  "pitchers": [
-    {
-      "order": 1,
-      "name": "投手名",
-      "uniformNumber": "18",
-      "fromInning": 1,
-      "toInning": 7
-    }
-  ],
-  "innings": [
-    {
-      "inning": 1,
-      "columnCount": 1,
-      "runs": 0,
-      "hits": 1,
-      "ymin": 120,
-      "xmin": 210,
-      "ymax": 880,
-      "xmax": 300
-    }
-  ],
-  "totalRuns": 0,
-  "totalHits": 1,
-  "totalErrors": 0
-}
-※余分な改行・空白インデントを省いた1行のコンパクトなJSON文字列で高速に出力してください。`;
+{"batters":[{"battingOrder":1,"name":"選手名","uniformNumber":"10","position":"6","substitutions":[{"inningEntered":5,"subType":"PH","name":"交代選手名","uniformNumber":"24","position":"D"}]}],"pitchers":[{"order":1,"name":"投手名","uniformNumber":"18","fromInning":1,"toInning":7}],"innings":[{"inning":1,"columnCount":1,"runs":0,"hits":1,"ymin":120,"xmin":210,"ymax":880,"xmax":300}],"totalRuns":0,"totalHits":1,"totalErrors":0}
+※余分な説明文やMarkdownコードブロックは一切付けず、1行のコンパクトなJSON文字列のみを出力してください。`;
 
     const raw = await callGeminiStructuredJson<RawGeminiStructureResponse>(
       apiKey,
       prompt,
       imageParts,
-      256
+      "structure"
     );
 
     const maxInningFromSheet =
@@ -690,37 +749,44 @@ ${battingTeamContext}${scoreboardHintText}
     const rawBatters = Array.isArray(raw.batters) ? raw.batters : [];
     const normalizedBatters: ScorebookBatterSlot[] = rawBatters.map((b, idx) => {
       const order = b.battingOrder || idx + 1;
+      const normPos = normalizePositionCode(b.position);
+      // もし背番号と守備位置が全く同じ1桁数字で、登録名鑑にその背番号が存在しない場合は守備位置重複転記の可能性をケア
+      const rawUniform = (b.uniformNumber || "").trim();
       const matched = isMyTeamBatting
-        ? matchRosterPlayer(b.name, b.uniformNumber, roster)
+        ? matchRosterPlayer(b.name, rawUniform, roster)
         : null;
 
-      const subs: ScorebookSubstitution[] = (b.substitutions || []).map((s) => {
-        const subMatched = isMyTeamBatting
-          ? matchRosterPlayer(s.name, s.uniformNumber, roster)
-          : null;
-        const normalizedSubType: "PH" | "PR" | "DEF" =
-          s.subType === "PR" ? "PR" : s.subType === "DEF" ? "DEF" : "PH";
+      const subs: ScorebookSubstitution[] = (b.substitutions || [])
+        .filter((s) => Boolean((s.name || "").trim() || (s.uniformNumber || "").trim()))
+        .map((s) => {
+          const subMatched = isMyTeamBatting
+            ? matchRosterPlayer(s.name, s.uniformNumber, roster)
+            : null;
+          const normalizedSubType: "PH" | "PR" | "DEF" =
+            s.subType === "PR" ? "PR" : s.subType === "DEF" ? "DEF" : "PH";
 
-        return {
-          id: crypto.randomUUID(),
-          inningEntered: Math.max(1, s.inningEntered || 1),
-          subType: normalizedSubType,
-          name: subMatched ? subMatched.name : (s.name || "").trim(),
-          uniformNumber: subMatched
-            ? subMatched.uniformNumber
-            : (s.uniformNumber || "").trim(),
-          position: (s.position || "").trim(),
-          playerId: subMatched ? subMatched.id : null,
-        };
-      });
+          return {
+            id: crypto.randomUUID(),
+            inningEntered: Math.max(1, s.inningEntered || 1),
+            subType: normalizedSubType,
+            name: subMatched ? subMatched.name : (s.name || "").trim(),
+            uniformNumber: subMatched
+              ? subMatched.uniformNumber
+              : (s.uniformNumber || "").trim(),
+            position: normalizePositionCode(s.position),
+            playerId: subMatched ? subMatched.id : null,
+          };
+        });
 
       return {
         battingOrder: order,
         name: matched ? matched.name : (b.name || "").trim(),
-        uniformNumber: matched
-          ? matched.uniformNumber
-          : (b.uniformNumber || "").trim(),
-        position: (b.position || "").trim(),
+        uniformNumber: matched ? matched.uniformNumber : rawUniform,
+        position:
+          normPos ||
+          (matched?.primaryPosition
+            ? normalizePositionCode(matched.primaryPosition)
+            : ""),
         playerId: matched ? matched.id : null,
         substitutions: subs,
       };
@@ -736,15 +802,42 @@ ${battingTeamContext}${scoreboardHintText}
         name: isMyTeamBatting && savedStarter ? savedStarter.playerName : "",
         uniformNumber:
           isMyTeamBatting && savedStarter ? savedStarter.uniformNumber : "",
-        position: isMyTeamBatting && savedStarter ? savedStarter.position : "",
+        position:
+          isMyTeamBatting && savedStarter
+            ? normalizePositionCode(savedStarter.position)
+            : "",
         playerId: isMyTeamBatting && savedStarter ? savedStarter.playerId : null,
         substitutions: [],
       });
     }
     normalizedBatters.sort((a, b) => a.battingOrder - b.battingOrder);
 
-    // 投手データの正規化（相手攻撃シートの場合は自チーム投手に名寄せ）
-    const rawPitchers = Array.isArray(raw.pitchers) ? raw.pitchers : [];
+    // 攻撃チーム自身の投手（position === "1"）を相手投手として誤抽出していないかチェック
+    const ownBattingSidePitcherNames = new Set(
+      normalizedBatters
+        .filter((b) => b.position === "1" && b.name.trim() !== "")
+        .map((b) => b.name.replace(/\s+/g, ""))
+    );
+
+    const rawPitchers = (Array.isArray(raw.pitchers) ? raw.pitchers : []).filter(
+      (p) => {
+        const cleanPName = (p.name || "").replace(/\s+/g, "");
+        if (!cleanPName) return false;
+        // このシートの打順にいる投手と完全同名なら、攻撃側自身の投手欄を読んだものなので除外
+        if (ownBattingSidePitcherNames.has(cleanPName)) {
+          return false;
+        }
+        return true;
+      }
+    );
+
+    // 相手攻撃シート（＝自チームが守備・登板）で投手欄が空の場合、事前登録スタメンに自チーム先発投手がいれば自動セット
+    const savedMyStartingPitcher = !isMyTeamBatting
+      ? savedLineups.find(
+          (l) => l.isStarting && normalizePositionCode(l.position) === "1"
+        )
+      : undefined;
+
     const normalizedPitchers: ScorebookPitcherStint[] =
       rawPitchers.length > 0
         ? rawPitchers.map((p, idx) => {
@@ -769,27 +862,59 @@ ${battingTeamContext}${scoreboardHintText}
             {
               id: crypto.randomUUID(),
               order: 1,
-              name: isMyTeamBatting ? "相手投手" : "",
-              uniformNumber: "",
-              playerId: null,
+              name: isMyTeamBatting
+                ? "相手投手"
+                : savedMyStartingPitcher
+                ? savedMyStartingPitcher.playerName
+                : "",
+              uniformNumber:
+                !isMyTeamBatting && savedMyStartingPitcher
+                  ? savedMyStartingPitcher.uniformNumber
+                  : "",
+              playerId:
+                !isMyTeamBatting && savedMyStartingPitcher
+                  ? savedMyStartingPitcher.playerId
+                  : null,
               fromInning: 1,
               toInning: maxInningFromSheet,
             },
           ];
 
-    const normalizedInnings: ScorebookInningMeta[] = (raw.innings || [])
-      .filter((inn) => (inn.inning || 0) >= 1)
-      .sort((a, b) => (a.inning || 1) - (b.inning || 1))
-      .map((inn) => {
-        const box = sanitizeBox(inn.ymin, inn.xmin, inn.ymax, inn.xmax);
-        return {
-          inning: inn.inning || 1,
+    // 重複イニング番号が返った場合はマージして整列
+    const inningMergeMap = new Map<number, ScorebookInningMeta>();
+    for (const inn of raw.innings || []) {
+      const innNum = inn.inning || 0;
+      if (innNum < 1) continue;
+      const box = sanitizeBox(inn.ymin, inn.xmin, inn.ymax, inn.xmax);
+      const existing = inningMergeMap.get(innNum);
+      if (!existing) {
+        inningMergeMap.set(innNum, {
+          inning: innNum,
           columnCount: Math.max(1, inn.columnCount || 1),
           runs: Math.max(0, inn.runs ?? 0),
           hits: Math.max(0, inn.hits ?? 0),
           columnBox: box,
-        };
-      });
+        });
+      } else {
+        existing.columnCount += Math.max(1, inn.columnCount || 1);
+        existing.runs += Math.max(0, inn.runs ?? 0);
+        existing.hits += Math.max(0, inn.hits ?? 0);
+        if (existing.columnBox && box) {
+          existing.columnBox = [
+            Math.min(existing.columnBox[0], box[0]),
+            Math.min(existing.columnBox[1], box[1]),
+            Math.max(existing.columnBox[2], box[2]),
+            Math.max(existing.columnBox[3], box[3]),
+          ];
+        } else if (box) {
+          existing.columnBox = box;
+        }
+      }
+    }
+
+    const normalizedInnings: ScorebookInningMeta[] = Array.from(
+      inningMergeMap.values()
+    ).sort((a, b) => a.inning - b.inning);
 
     const calculatedRuns = normalizedInnings.reduce((acc, cur) => acc + cur.runs, 0);
     const calculatedHits = normalizedInnings.reduce((acc, cur) => acc + cur.hits, 0);
@@ -808,7 +933,7 @@ ${battingTeamContext}${scoreboardHintText}
               runs: scoreboardHintScores[i] ?? 0,
               hits: 0,
             })),
-      totalRuns: raw.totalRuns ?? calculatedRuns,
+      totalRuns: calculatedRuns,
       totalHits: raw.totalHits ?? calculatedHits,
       totalErrors: Math.max(0, raw.totalErrors ?? 0),
     };
@@ -832,6 +957,8 @@ interface AnalyzeInningChunkPayload {
   isTop: boolean;
   imageBase64: string;
   mimeType: string;
+  focusCropBase64?: string;
+  focusCropMimeType?: string;
   structure: ScorebookSheetStructure;
   targetInnings: number[];
   expectedLeadOffOrder?: number;
@@ -858,6 +985,9 @@ liffScorebookRouter.post("/analyze-inning-chunk", async (c) => {
       return c.json({ success: false, error: "解析パラメータが不足しています" }, 400);
     }
 
+    const sideLabel = body.isTop ? "表（先攻）" : "裏（後攻）";
+    const sortedTargets = [...body.targetInnings].sort((a, b) => a - b);
+
     const imageParts: GeminiContentPart[] = [
       {
         inlineData: {
@@ -866,6 +996,25 @@ liffScorebookRouter.post("/analyze-inning-chunk", async (c) => {
         },
       },
     ];
+    const stage2ImageGuide: string[] = [
+      "・画像1: スコアブック片面全体画像（※出力する box 座標 [ymin, xmin, ymax, xmax] は必ずこの画像1全体の 0〜1000 座標系で指定してください）",
+    ];
+
+    if (body.focusCropBase64) {
+      imageParts.push({
+        inlineData: {
+          mimeType: body.focusCropMimeType || "image/jpeg",
+          data: body.focusCropBase64,
+        },
+      });
+      stage2ImageGuide.push(
+        `・画像${imageParts.length}: 【${sortedTargets.join(
+          "・"
+        )}回専用・水平整列ズーム画像】左側に「打順・選手名欄」、水色の縦線のすぐ右側に「今回抽出対象の ${sortedTargets.join(
+          "・"
+        )}回 の列付近」を全く同じ行高さで横並び拡大した画像です！左の打順行から真横に視線を動かして対象イニング列のマスを特定し、隣のイニング列の打席を絶対に混ぜないでください！`
+      );
+    }
 
     const legendPart = await resolveLegendImagePart(
       c,
@@ -874,13 +1023,14 @@ liffScorebookRouter.post("/analyze-inning-chunk", async (c) => {
       body.legendBase64,
       body.legendMimeType
     );
-    const hasLegend = Boolean(legendPart);
+    let legendImageIndex = 0;
     if (legendPart) {
       imageParts.push(legendPart);
+      legendImageIndex = imageParts.length;
+      stage2ImageGuide.push(
+        `・画像${legendImageIndex}: チーム公式のスコア記号早見表（最優先で参照）`
+      );
     }
-
-    const sideLabel = body.isTop ? "表（先攻）" : "裏（後攻）";
-    const sortedTargets = [...body.targetInnings].sort((a, b) => a - b);
 
     // 確定済み打順＆途中交代テキストを構築
     const lineupSpecLines = body.structure.batters.map((b) => {
@@ -909,22 +1059,25 @@ liffScorebookRouter.post("/analyze-inning-chunk", async (c) => {
           ? `⚠️打者一巡のため【${meta.columnCount}列】使用（1列目の下端まで行ったら右隣の同イニング2列目の上端・該当打順へ続く！）`
           : "1列使用";
       const boxNote = meta.columnBox
-        ? ` (列の目安座標 ymin:${meta.columnBox[0]}, xmin:${meta.columnBox[1]}, ymax:${meta.columnBox[2]}, xmax:${meta.columnBox[3]})`
+        ? ` (画像1での列座標目安 ymin:${meta.columnBox[0]}, xmin:${meta.columnBox[1]}, ymax:${meta.columnBox[2]}, xmax:${meta.columnBox[3]})`
         : "";
       return `・${innNum}回${sideLabel}: 確定得点=${meta.runs}点, 安打目安=${meta.hits}本, ${colNote}${boxNote}`;
     });
 
     const leadOffConstraint = body.expectedLeadOffOrder
-      ? `\n🔥【絶対制約: 先頭打者】${sortedTargets[0]}回${sideLabel}の最初の打者（先頭打者）は必ず【${body.expectedLeadOffOrder}番打者】の行からスタートします！空欄マスを読み飛ばして別の打順から始めないでください。`
-      : `\n🔥【絶対制約: 先頭打者】1回${sideLabel}の最初の打者は必ず【1番打者】の行からスタートします。`;
+      ? `\n🔥【絶対制約: 先頭打者】${sortedTargets[0]}回${sideLabel}の最初の打者（先頭打者）は必ず【${body.expectedLeadOffOrder}番打者】の行からスタートします！列最上部のイニング見出し番号「${sortedTargets[0]}」を必ず確認し、隣の列の打席を混入させたり空欄マスを読み飛ばしたりしないでください。`
+      : `\n🔥【絶対制約: 先頭打者】1回${sideLabel}の最初の打者は必ず【1番打者】の行からスタートします。列最上部のイニング見出し番号「1」の列だけを読み取り、右隣の2回の列を絶対に1回に混ぜないでください！`;
 
-    const legendConstraint = hasLegend
-      ? `\n🔥【最優先: 添付画像2「チームのスコア記号早見表」】画像2はチーム公式の記号早見表です。安打・アウト・投球記号・牽制等の書き方は画像2の定義を最優先で適用してください。`
+    const legendConstraint = legendImageIndex > 0
+      ? `\n🔥【最優先: 添付画像${legendImageIndex}「チームのスコア記号早見表」】安打・アウト・投球記号・牽制等の書き方は画像${legendImageIndex}の定義を最優先で適用してください。`
       : "";
 
     const prompt = `あなたは日本の早稲田式・成美堂式スコアブックを1球単位まで完璧に読み解くプロ公式記録員AIです。
-添付されたスコアブック画像（画像1）のうち、**【${sortedTargets.join("回, ")}回（${sideLabel}）】の打席のみ** に全神経を集中して、時系列順に全打席・全投球・全進塁を抽出してください。
-（※${sortedTargets.join(", ")}回以外のイニングは絶対に出力しないでください！）
+以下の添付画像を照合し、**【${sortedTargets.join("回, ")}回（${sideLabel}）】の打席のみ** を時系列順に全打席・全投球・全進塁漏れなく抽出してください。
+（※列最上部のイニング番号を厳密に確認し、${sortedTargets.join(", ")}回以外のイニングの打席は絶対に出力しないでください！）
+
+【添付画像の構成】
+${stage2ImageGuide.join("\n")}
 ${legendConstraint}${leadOffConstraint}
 
 【確定済みの打順・途中交代リスト（この名前を厳密に使用すること）】
@@ -933,11 +1086,15 @@ ${lineupSpecLines.join("\n")}
 【確定済みの相手登板投手リスト】
 ${pitcherSpecLines.join("\n")}
 
-【対象イニングの確定スコア＆列情報（必ずこの得点数・列数と整合させること）】
+【対象イニングの確定スコア＆列情報（必ずこの得点数・列数・3アウト交代と整合させること）】
 ${targetInningMetaLines.join("\n")}
 
-【超重要 1: 1球ごとの投球順序（p）の完全抽出（必須）】
-各打席マスの投球記号欄（BSO欄）を1球目から最後の一球まで順番に読み取り、以下の1文字短縮コード配列 p で出力してください:
+【超重要 1: 列ズレ・イニング混入の完全防止】
+- 1つのイニングは先頭打者から打順が1つずつ下へ進み（9番の次は1番へ戻る）、アウト丸数字 ① ➔ ② ➔ ③（3アウトチェンジ）が出た時点でそのイニングは終了です！
+- ③（3アウト目）が出た後に、右隣の次イニング列に書かれたマスを同じイニングとして読み続けるミスは絶対にしないでください。
+
+【超重要 2: 1球ごとの投球順序（p）の完全抽出（必須）】
+各打席マスの投球記号欄（BSO欄）を拡大画像で1球目から最後の一球まで順番に読み取り、以下の1文字短縮コード配列 p で出力してください:
 - "B": ボール（『ー』『・』『B欄の●』『B』）
 - "S": 見逃しストライク（『○』『見逃しS』）
 - "W": 空振りストライク（『●』『／』『空振り』）
@@ -948,7 +1105,7 @@ ${targetInningMetaLines.join("\n")}
 - "D": 死球になった球
 ※BSO合計のみ書かれたマスも最終カウントと結果に整合する配列を構成し、絶対に空配列にしないでください。
 
-【超重要 2: 打撃結果コード（rc）と日本語表記（rl）の厳密判定】
+【超重要 3: 打撃結果コード（rc）と日本語表記（rl）の厳密判定】
 - 安打とアウトを絶対に混同しないでください！右下の1塁線〜進塁線に実線・赤線・斜線（/ = 単打, // = 二塁打, /// = 三塁打, //// = 本塁打）があり打者自身のアウト丸数字（①②③）が無い場合は安打です。
 - 中央『7』『8』『9』等の守備番号＋斜線/赤線 ➔ rc: "single"（または "double"/"triple"/"home_run"）, rl: "左前安打" / "中前安打" 等。
 - 『6-3』『4-3』等の送球ハイフン＋①②③ ➔ rc: "groundout"（併殺は "double_play"）, rl: "遊ゴロ (6-3)" 等。
@@ -957,16 +1114,16 @@ ${targetInningMetaLines.join("\n")}
 - 四球 ➔ rc: "walk", 死球 ➔ rc: "hit_by_pitch", 犠打 ➔ rc: "sac_bunt", 犠飛 ➔ rc: "sac_fly", 失策 ➔ rc: "error", 野選 ➔ rc: "fc"。
 - 打席途中に走者が盗塁死・牽制死して3アウトチェンジになった未完了マス ➔ rc: "other", rl: "打席途中断（走塁死チェンジ）", o: 1。
 
-【超重要 3: アウト数（o / eo）と進塁・得点（ru / a）】
-- 1イニングの o の合計は（サヨナラ勝ちを除き）必ず 3 です。丸数字 ①②③ から eo (1,2,3) を設定してください。
+【超重要 4: アウト数（o / eo）と進塁・得点（ru / a）】
+- 1イニングの o の合計は（最終回裏のサヨナラ勝ちを除き）必ず 3 です。丸数字 ①②③ から eo (1,2,3) を設定してください。
 - 盗塁(m:"steal")・盗塁死(m:"caught_stealing",io:true)・牽制死(m:"pickoff_out",io:true)・暴投(m:"wp")・捕逸(m:"pb")・打撃進塁(m:"hit"/"sac"/"fc"/"error")を a に記録してください。進塁が無い凡退等は a:[] としてください。
 - 本塁生還は t:"HP", io:false とし、その打席の生還人数を ru に設定（イニング内の ru 合計＝確定得点）。
 
-【超重要 4: マス座標 box と確信度 cf】
-- box は [ymin, xmin, ymax, xmax]（0〜1000整数4要素配列）。
+【超重要 5: マス座標 box と確信度 cf】
+- box は画像1（全体画像）上での [ymin, xmin, ymax, xmax]（0〜1000整数4要素配列）。
 - cf は "h"(高)・"m"(中)・"l"(低)。迷いがあるマスのみ cf:"l" とし cr に短い理由を記載（通常は cr 省略可）。
 
-【出力JSONフォーマット（高速応答のため改行・インデント無しのコンパクト短縮キーJSONのみを返してください）】
+【出力JSONフォーマット（改行・インデント無しのコンパクト短縮キーJSONのみを返してください）】
 {"ab":[{"i":1,"c":1,"bo":1,"rc":"single","rl":"左前安打","rbi":0,"o":0,"eo":0,"ru":0,"p":["B","S","F","H"],"a":[{"rn":"選手名","f":"BAT","t":"1B","m":"hit","io":false,"pn":4}],"cf":"h","box":[150,210,230,300]}]}
 ※ rc は必ず "single"|"double"|"triple"|"home_run"|"walk"|"hit_by_pitch"|"strikeout"|"dropped_third_strike"|"groundout"|"flyout"|"double_play"|"sac_bunt"|"sac_fly"|"error"|"fc"|"other" のいずれかとしてください。`;
 
@@ -974,7 +1131,7 @@ ${targetInningMetaLines.join("\n")}
       apiKey,
       prompt,
       imageParts,
-      256
+      "chunk"
     );
 
     const targetSet = new Set(sortedTargets);
@@ -1576,13 +1733,14 @@ async function callGeminiStructuredJson<T>(
   apiKey: string,
   prompt: string,
   imageParts: GeminiContentPart[],
-  thinkingBudget = 256
+  mode: GeminiCallMode = "structure"
 ): Promise<T> {
   const attemptErrors: string[] = [];
   const overallStart = Date.now();
-  const MAX_TOTAL_BUDGET_MS = 88_000;
+  const MAX_TOTAL_BUDGET_MS = 95_000;
+  const modelConfigs = getGeminiModelConfigs(mode);
 
-  for (const cfg of GEMINI_MODEL_CONFIGS) {
+  for (const cfg of modelConfigs) {
     if (cfg.backoffBeforeMs > 0) {
       const jitter = Math.floor(Math.random() * 300);
       await new Promise((r) => setTimeout(r, cfg.backoffBeforeMs + jitter));
@@ -1622,20 +1780,21 @@ async function callGeminiStructuredJson<T>(
 
     try {
       const generationConfig: Record<string, unknown> = {
-        temperature: 0.1,
+        temperature: 0.05,
         responseMimeType: "application/json",
+        mediaResolution: "MEDIA_RESOLUTION_HIGH",
       };
-      if (cfg.thinkingMode === "level_low") {
+      if (cfg.thinkingMode === "level_medium") {
+        generationConfig.thinkingConfig = {
+          thinkingLevel: "MEDIUM",
+        };
+      } else if (cfg.thinkingMode === "level_low") {
         generationConfig.thinkingConfig = {
           thinkingLevel: "LOW",
         };
       } else if (cfg.thinkingMode === "budget") {
         generationConfig.thinkingConfig = {
-          thinkingBudget,
-        };
-      } else if (cfg.thinkingMode === "budget_zero") {
-        generationConfig.thinkingConfig = {
-          thinkingBudget: 0,
+          thinkingBudget: cfg.thinkingBudget ?? 1024,
         };
       }
 
@@ -1653,15 +1812,26 @@ async function callGeminiStructuredJson<T>(
         }),
       });
 
-      // 万一 thinkingConfig パラメータ仕様差異で 400 が返った場合は即座に thinkingConfig なしで同モデル再送
-      if (!res.ok && res.status === 400 && cfg.thinkingMode !== "none") {
+      // 万一 mediaResolution や thinkingConfig パラメータ仕様差異で 400 が返った場合は非対応項目を除去して即座に同モデル再送
+      if (!res.ok && res.status === 400) {
         const firstErrText = await res.text();
-        if (firstErrText.toLowerCase().includes("thinking")) {
+        const lowerErr = firstErrText.toLowerCase();
+        const isConfigParamIssue =
+          lowerErr.includes("thinking") ||
+          lowerErr.includes("mediaresolution") ||
+          lowerErr.includes("media_resolution");
+        if (isConfigParamIssue) {
           scheduleWatchdog(cfg.firstChunkTimeoutMs, "初動待機タイムアウト");
           const fallbackGenConfig: Record<string, unknown> = {
-            temperature: 0.1,
+            temperature: 0.05,
             responseMimeType: "application/json",
           };
+          if (
+            !lowerErr.includes("mediaresolution") &&
+            !lowerErr.includes("media_resolution")
+          ) {
+            fallbackGenConfig.mediaResolution = "MEDIA_RESOLUTION_HIGH";
+          }
           res = await fetch(endpoint, {
             method: "POST",
             headers: { "Content-Type": "application/json" },

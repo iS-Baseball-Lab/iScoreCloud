@@ -12,6 +12,10 @@ import {
   Columns2,
   ShieldCheck,
   UserPlus,
+  Eye,
+  EyeOff,
+  RotateCcw,
+  ZoomIn,
 } from "lucide-react";
 import type {
   ImportScopeMode,
@@ -27,9 +31,13 @@ interface Step2StructureCheckProps {
   importScope: ImportScopeMode;
   roster: ScorebookRosterPlayer[];
   opponentName: string;
+  topImageDataUrl?: string | null;
+  bottomImageDataUrl?: string | null;
   topStructure: ScorebookSheetStructure | null;
   bottomStructure: ScorebookSheetStructure | null;
   onChangeStructure: (isTop: boolean, updated: ScorebookSheetStructure) => void;
+  onRescanSide?: (isTop: boolean) => void;
+  isRescanningSide?: boolean;
   onBack: () => void;
   onStartDeepAnalysis: () => void;
   isAnalyzingInnings: boolean;
@@ -54,9 +62,13 @@ export function Step2StructureCheck({
   importScope,
   roster,
   opponentName,
+  topImageDataUrl,
+  bottomImageDataUrl,
   topStructure,
   bottomStructure,
   onChangeStructure,
+  onRescanSide,
+  isRescanningSide = false,
   onBack,
   onStartDeepAnalysis,
   isAnalyzingInnings,
@@ -65,9 +77,14 @@ export function Step2StructureCheck({
   const [activeSide, setActiveSide] = useState<"top" | "bottom">(
     importScope === "bottom_only" ? "bottom" : "top"
   );
+  const [previewMode, setPreviewMode] = useState<"lineup" | "full" | "hidden">(
+    "lineup"
+  );
 
   const isTop = activeSide === "top";
   const current = isTop ? topStructure : bottomStructure;
+  const activeSheetDataUrl = isTop ? topImageDataUrl : bottomImageDataUrl;
+  const isBusy = isAnalyzingInnings || isRescanningSide;
 
   if (!current) {
     return null;
@@ -246,14 +263,37 @@ export function Step2StructureCheck({
     <div className="space-y-4">
       {/* ガイドバナー */}
       <section className="rounded-3xl bg-card border border-indigo-500/35 shadow-xs p-4 space-y-1.5">
-        <div className="flex items-center gap-2">
-          <ShieldCheck className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
-          <h2 className="text-xs font-black text-foreground">
-            10秒骨格チェック（列ズレ・名寄せミスをゼロにします）
-          </h2>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <ShieldCheck className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+            <h2 className="text-xs font-black text-foreground truncate">
+              骨格確認（打順・登板投手・各回得点の確認）
+            </h2>
+          </div>
+
+          {onRescanSide && (
+            <button
+              type="button"
+              disabled={isBusy}
+              onClick={() => onRescanSide(isTop)}
+              className="px-2.5 py-1 rounded-xl bg-indigo-500/12 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-700 dark:text-indigo-300 text-[10px] font-black flex items-center gap-1 shrink-0 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+            >
+              {isRescanningSide ? (
+                <>
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  <span>再スキャン中...</span>
+                </>
+              ) : (
+                <>
+                  <RotateCcw className="w-3 h-3" />
+                  <span>この面を再スキャン</span>
+                </>
+              )}
+            </button>
+          )}
         </div>
         <p className="text-[11px] font-bold text-muted-foreground leading-relaxed">
-          ここで確定した「各回の得点」「打者一巡(2列)の有無」「打順・途中交代・投手」を絶対正解の制約として、次のステップで全投球・全打席を精密解析します。
+          ここで確定した「各回の得点」「打者一巡(2列)の有無」「打順・途中交代・投手」を正解アンカーとして、次のステップで全投球・全打席を精密解析します。
         </p>
       </section>
 
@@ -283,6 +323,84 @@ export function Step2StructureCheck({
             後攻（裏）: {bottomStructure?.isMyTeamBatting ? "自チーム" : opponentName}
           </button>
         </div>
+      )}
+
+      {/* 手書き原本シート照合ビューア（画面を戻らずその場で打順欄・全体を見比べ可能） */}
+      {activeSheetDataUrl && (
+        <section className="rounded-3xl bg-card border border-border shadow-xs overflow-hidden">
+          <div className="px-3.5 py-2.5 bg-muted/45 border-b border-border flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <ZoomIn className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+              <span className="text-[11px] font-black text-foreground truncate">
+                手書き原本シート（{isTop ? "先攻・表" : "後攻・裏"}）
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1 shrink-0">
+              <button
+                type="button"
+                onClick={() => setPreviewMode("lineup")}
+                className={`px-2 py-1 rounded-lg text-[10px] font-black cursor-pointer transition-colors ${
+                  previewMode === "lineup"
+                    ? "bg-indigo-600 text-white"
+                    : "bg-card text-muted-foreground border border-border"
+                }`}
+              >
+                打順欄ズーム
+              </button>
+              <button
+                type="button"
+                onClick={() => setPreviewMode("full")}
+                className={`px-2 py-1 rounded-lg text-[10px] font-black cursor-pointer transition-colors ${
+                  previewMode === "full"
+                    ? "bg-indigo-600 text-white"
+                    : "bg-card text-muted-foreground border border-border"
+                }`}
+              >
+                全体表示
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setPreviewMode((prev) =>
+                    prev === "hidden" ? "lineup" : "hidden"
+                  )
+                }
+                className="px-2 py-1 rounded-lg bg-card border border-border text-[10px] font-black text-muted-foreground flex items-center gap-0.5 cursor-pointer"
+              >
+                {previewMode === "hidden" ? (
+                  <>
+                    <Eye className="w-3 h-3" />
+                    <span>表示</span>
+                  </>
+                ) : (
+                  <>
+                    <EyeOff className="w-3 h-3" />
+                    <span>隠す</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {previewMode !== "hidden" && (
+            <div className="bg-slate-950 overflow-auto max-h-60">
+              {previewMode === "lineup" ? (
+                <img
+                  src={activeSheetDataUrl}
+                  alt="打順欄ズームプレビュー"
+                  className="w-[210%] max-w-none h-auto block"
+                />
+              ) : (
+                <img
+                  src={activeSheetDataUrl}
+                  alt="スコアブック全体プレビュー"
+                  className="w-full h-auto object-contain block"
+                />
+              )}
+            </div>
+          )}
+        </section>
       )}
 
       {/* A. イニング別得点 ＆ 打者一巡(2列)設定 */}
@@ -493,6 +611,32 @@ export function Step2StructureCheck({
                   <span>交代</span>
                 </button>
               </div>
+
+              {/* 自チームで未登録（助っ人・手書き名）状態のときは直接テキスト修正も可能にする */}
+              {current.isMyTeamBatting && roster.length > 0 && !slot.playerId && (
+                <div className="pl-7 flex items-center gap-1.5">
+                  <input
+                    type="text"
+                    value={slot.uniformNumber}
+                    onChange={(e) =>
+                      updateBatter(slot.battingOrder, {
+                        uniformNumber: e.target.value,
+                      })
+                    }
+                    placeholder="背番号"
+                    className="w-14 h-8 px-1.5 rounded-lg bg-card border border-border text-center text-[11px] font-black text-foreground"
+                  />
+                  <input
+                    type="text"
+                    value={slot.name}
+                    onChange={(e) =>
+                      updateBatter(slot.battingOrder, { name: e.target.value })
+                    }
+                    placeholder="助っ人・未登録選手名を直接入力"
+                    className="flex-1 min-w-0 h-8 px-2.5 rounded-lg bg-card border border-border text-[11px] font-black text-foreground"
+                  />
+                </div>
+              )}
 
               {/* 途中交代（代打・代走・守備交代） */}
               {slot.substitutions.length > 0 && (
@@ -748,7 +892,7 @@ export function Step2StructureCheck({
         <div className="flex gap-2.5">
           <button
             type="button"
-            disabled={isAnalyzingInnings}
+            disabled={isBusy}
             onClick={onBack}
             className="h-13 px-4 rounded-2xl bg-card border border-border text-xs font-black text-foreground flex items-center gap-1 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
           >
@@ -758,7 +902,7 @@ export function Step2StructureCheck({
 
           <button
             type="button"
-            disabled={isAnalyzingInnings}
+            disabled={isBusy}
             onClick={onStartDeepAnalysis}
             className="flex-1 h-13 px-4 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs sm:text-sm font-black shadow-md flex items-center justify-center gap-2 active:scale-98 transition-all cursor-pointer disabled:opacity-50"
           >

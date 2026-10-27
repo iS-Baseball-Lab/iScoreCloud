@@ -9,6 +9,8 @@ import { useLiff } from "@/components/liff/LiffProvider";
 import { LiffToolSubNav } from "@/components/liff/LiffToolSubNav";
 import {
   ensureCompactApiImage,
+  extractInningChunkCompositeCrop,
+  extractStructureFocusCrops,
   preprocessScorebookImage,
 } from "@/lib/liff/scorebook-image";
 import {
@@ -25,7 +27,9 @@ import { Step2StructureCheck } from "./_components/Step2StructureCheck";
 import { Step3PinpointReview } from "./_components/Step3PinpointReview";
 import type {
   ImportScopeMode,
+  NormalizedBox,
   ScorebookMatchSummary,
+  ScorebookPitcherStint,
   ScorebookRosterPlayer,
   ScorebookSheetStructure,
   ScorebookV2AtBat,
@@ -71,7 +75,7 @@ interface SaveSummaryData {
 const createInitialSheetImageState = (): SheetImageState => ({
   file: null,
   rotationDeg: 0,
-  enhancePencil: true,
+  enhancePencil: false,
   cropTop: 0,
   cropBottom: 0,
   cropLeft: 0,
@@ -79,6 +83,72 @@ const createInitialSheetImageState = (): SheetImageState => ({
   processed: null,
   isProcessing: false,
 });
+
+/**
+ * 2枚セット読込時、片面の投手欄が未記載（「相手投手」または空欄）の場合に、
+ * 反対側シートの打順にある投手（position === "1"）および投手交代から登板投手を自動補完する
+ */
+function crossFillOppositePitchers(
+  target: ScorebookSheetStructure,
+  opposite: ScorebookSheetStructure | null
+): ScorebookSheetStructure {
+  if (!opposite) return target;
+  const hasRealPitcher = target.pitchers.some(
+    (p) => p.name.trim() !== "" && p.name.trim() !== "相手投手"
+  );
+  if (hasRealPitcher) return target;
+
+  const starterSlot = opposite.batters.find(
+    (b) => b.position === "1" && b.name.trim() !== ""
+  );
+  if (!starterSlot) return target;
+
+  const maxInn =
+    target.innings[target.innings.length - 1]?.inning ||
+    opposite.innings[opposite.innings.length - 1]?.inning ||
+    7;
+
+  const reliefSubs = opposite.batters
+    .flatMap((b) => b.substitutions)
+    .filter((s) => s.position === "1" && s.name.trim() !== "")
+    .sort((a, b) => a.inningEntered - b.inningEntered);
+
+  const builtPitchers: ScorebookPitcherStint[] = [];
+  const starterTo =
+    reliefSubs.length > 0
+      ? Math.max(1, reliefSubs[0].inningEntered - 1)
+      : maxInn;
+
+  builtPitchers.push({
+    id: crypto.randomUUID(),
+    order: 1,
+    name: starterSlot.name,
+    uniformNumber: starterSlot.uniformNumber,
+    playerId: starterSlot.playerId,
+    fromInning: 1,
+    toInning: starterTo,
+  });
+
+  reliefSubs.forEach((rel, idx) => {
+    const nextRel = reliefSubs[idx + 1];
+    builtPitchers.push({
+      id: crypto.randomUUID(),
+      order: idx + 2,
+      name: rel.name,
+      uniformNumber: rel.uniformNumber,
+      playerId: rel.playerId,
+      fromInning: rel.inningEntered,
+      toInning: nextRel
+        ? Math.max(rel.inningEntered, nextRel.inningEntered - 1)
+        : maxInn,
+    });
+  });
+
+  return {
+    ...target,
+    pitchers: builtPitchers,
+  };
+}
 
 export default function LiffScorebookImportPage() {
   const { currentTeam } = useLiff();
@@ -369,7 +439,7 @@ export default function LiffScorebookImportPage() {
           left: nextState.cropLeft,
           right: nextState.cropRight,
         },
-        maxLongEdge: 2000,
+        maxLongEdge: 2200,
       });
       setter({ ...nextState, processed, isProcessing: false });
     } catch (err) {
@@ -494,7 +564,66 @@ export default function LiffScorebookImportPage() {
     }
   };
 
-  // 4. Stage 1: AI骨格スキャン実行（503過負荷防止のため1枚ずつ直列実行＋自動リトライ）
+  // 4. Stage 1: AI骨格スキャン実行（高精細2200px＋打順欄・スコア欄の拡大クロップ併用＋直列実行）
+  const scanSingleSheetStructure = async (
+    isTop: boolean,
+    imgState: SheetImageState,
+    progressSuffix: string
+  ): Promise<ScorebookSheetStructure> => {
+    if (!imgState.processed) {
+      throw new Error("画像が準備されていません");
+    }
+    const sideLabel = isTop ? "先攻（表）" : "後攻（裏）";
+    setStructureProgressLabel(
+      `${sideLabel}シートの打順・投手・得点を高精度スキャン中... ${progressSuffix}`
+    );
+
+    const [apiImg, focusCrops] = await Promise.all([
+      ensureCompactApiImage(imgState.processed, 2200, 0.9),
+      extractStructureFocusCrops(imgState.processed.dataUrl),
+    ]);
+
+    const callOnce = async (): Promise<ScorebookSheetStructure> => {
+      const res = await fetch("/api/liff/scorebook/analyze-structure", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          teamId: resolvedTeamId || currentTeam?.id || "",
+          matchId: selectedMatchId,
+          isTop,
+          imageBase64: apiImg.base64,
+          mimeType: apiImg.mimeType,
+          lineupCropBase64: focusCrops?.lineupCropBase64,
+          lineupCropMimeType: focusCrops?.mimeType,
+          summaryCropBase64: focusCrops?.summaryCropBase64,
+          summaryCropMimeType: focusCrops?.mimeType,
+          legendBase64: legendOverride?.base64,
+          legendMimeType: legendOverride?.mimeType,
+        }),
+      });
+      const data = await parseSafeJson<{
+        success: boolean;
+        structure?: ScorebookSheetStructure;
+        error?: string;
+      }>(res, "骨格スキャン通信エラー");
+      if (!data.success || !data.structure) {
+        throw new Error(data.error || "骨格スキャンに失敗しました");
+      }
+      return data.structure;
+    };
+
+    try {
+      return await callOnce();
+    } catch (firstErr) {
+      setStructureProgressLabel(
+        `${sideLabel}シートを再スキャン中（AI混雑回避）... ${progressSuffix}`
+      );
+      await new Promise((r) => setTimeout(r, 2400));
+      void firstErr;
+      return await callOnce();
+    }
+  };
+
   const handleStartAnalyzeStructure = async () => {
     if (!selectedMatchId) return;
     setIsAnalyzingStructure(true);
@@ -507,70 +636,17 @@ export default function LiffScorebookImportPage() {
         importScope === "both" || importScope === "bottom_only";
       const totalSides = (needTop ? 1 : 0) + (needBottom ? 1 : 0);
 
-      const callStructureApiOnce = async (
-        isTop: boolean,
-        apiImg: { base64: string; mimeType: string }
-      ): Promise<ScorebookSheetStructure> => {
-        const res = await fetch("/api/liff/scorebook/analyze-structure", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            teamId: resolvedTeamId || currentTeam?.id || "",
-            matchId: selectedMatchId,
-            isTop,
-            imageBase64: apiImg.base64,
-            mimeType: apiImg.mimeType,
-            legendBase64: legendOverride?.base64,
-            legendMimeType: legendOverride?.mimeType,
-          }),
-        });
-        const data = await parseSafeJson<{
-          success: boolean;
-          structure?: ScorebookSheetStructure;
-          error?: string;
-        }>(res, "骨格スキャン通信エラー");
-        if (!data.success || !data.structure) {
-          throw new Error(data.error || "骨格スキャンに失敗しました");
-        }
-        return data.structure;
-      };
-
-      const analyzeOneSideWithRetry = async (
-        isTop: boolean,
-        imgState: SheetImageState,
-        stepNum: number
-      ): Promise<ScorebookSheetStructure> => {
-        if (!imgState.processed) {
-          throw new Error("画像が準備されていません");
-        }
-        const sideLabel = isTop ? "先攻（表）" : "後攻（裏）";
-        setStructureProgressLabel(
-          `${sideLabel}シートの打順・得点をスキャン中... (${stepNum}/${totalSides})`
-        );
-        const apiImg = await ensureCompactApiImage(
-          imgState.processed,
-          1536,
-          0.8
-        );
-        try {
-          return await callStructureApiOnce(isTop, apiImg);
-        } catch (firstErr) {
-          setStructureProgressLabel(
-            `${sideLabel}シートを再スキャン中（AI混雑回避）... (${stepNum}/${totalSides})`
-          );
-          await new Promise((r) => setTimeout(r, 2400));
-          void firstErr;
-          return await callStructureApiOnce(isTop, apiImg);
-        }
-      };
-
       let stepCounter = 0;
       let resTop: ScorebookSheetStructure | null = null;
       let resBottom: ScorebookSheetStructure | null = null;
 
       if (needTop) {
         stepCounter += 1;
-        resTop = await analyzeOneSideWithRetry(true, topImage, stepCounter);
+        resTop = await scanSingleSheetStructure(
+          true,
+          topImage,
+          `(${stepCounter}/${totalSides})`
+        );
         setTopStructure(resTop);
       }
 
@@ -579,11 +655,19 @@ export default function LiffScorebookImportPage() {
           await new Promise((r) => setTimeout(r, 400));
         }
         stepCounter += 1;
-        resBottom = await analyzeOneSideWithRetry(
+        resBottom = await scanSingleSheetStructure(
           false,
           bottomImage,
-          stepCounter
+          `(${stepCounter}/${totalSides})`
         );
+        setBottomStructure(resBottom);
+      }
+
+      // 両面読込時は反対側シートの「1 投」から未記載の相手投手を自動相互補完
+      if (resTop && resBottom) {
+        resTop = crossFillOppositePitchers(resTop, resBottom);
+        resBottom = crossFillOppositePitchers(resBottom, resTop);
+        setTopStructure(resTop);
         setBottomStructure(resBottom);
       }
 
@@ -599,7 +683,33 @@ export default function LiffScorebookImportPage() {
     }
   };
 
-  // 5. Stage 2: イニング分割ディープ解析（軽量1536px送信＋完了イニング即時キャッシュ＋自動分割リトライ）
+  const handleRescanSingleSide = async (isTop: boolean) => {
+    if (!selectedMatchId) return;
+    const imgState = isTop ? topImage : bottomImage;
+    if (!imgState.processed) return;
+
+    setIsAnalyzingStructure(true);
+    setErrorBanner(null);
+    try {
+      completedChunkCacheRef.current.clear();
+      let rescanned = await scanSingleSheetStructure(isTop, imgState, "(1/1)");
+      if (isTop) {
+        rescanned = crossFillOppositePitchers(rescanned, bottomStructure);
+        setTopStructure(rescanned);
+      } else {
+        rescanned = crossFillOppositePitchers(rescanned, topStructure);
+        setBottomStructure(rescanned);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setErrorBanner(msg);
+    } finally {
+      setIsAnalyzingStructure(false);
+      setStructureProgressLabel("");
+    }
+  };
+
+  // 5. Stage 2: イニング分割ディープ解析（高精細2200px＋打順×対象イニング水平整列ズーム併用＋完了キャッシュ）
   const handleStartDeepAnalysis = async () => {
     if (!selectedMatchId) return;
     setIsAnalyzingInnings(true);
@@ -654,6 +764,7 @@ export default function LiffScorebookImportPage() {
       const requestSingleChunk = async (
         isTop: boolean,
         structure: ScorebookSheetStructure,
+        sourceDataUrl: string,
         apiImg: { base64: string; mimeType: string },
         structureFp: string,
         targetInnings: number[],
@@ -673,6 +784,18 @@ export default function LiffScorebookImportPage() {
           return { ...cached, fromCache: true };
         }
 
+        const targetBoxes: NormalizedBox[] = targetInnings
+          .map(
+            (innNum) =>
+              structure.innings.find((m) => m.inning === innNum)?.columnBox
+          )
+          .filter((b): b is NormalizedBox => Array.isArray(b));
+
+        const focusCrop =
+          targetBoxes.length > 0
+            ? await extractInningChunkCompositeCrop(sourceDataUrl, targetBoxes)
+            : null;
+
         const sideLabel = isTop ? "先攻（表）" : "後攻（裏）";
         const res = await fetch("/api/liff/scorebook/analyze-inning-chunk", {
           method: "POST",
@@ -683,6 +806,8 @@ export default function LiffScorebookImportPage() {
             isTop,
             imageBase64: apiImg.base64,
             mimeType: apiImg.mimeType,
+            focusCropBase64: focusCrop?.base64,
+            focusCropMimeType: focusCrop?.mimeType,
             structure,
             targetInnings,
             expectedLeadOffOrder: expectedLeadOff,
@@ -715,6 +840,7 @@ export default function LiffScorebookImportPage() {
       const requestSingleInningWithRetries = async (
         isTop: boolean,
         structure: ScorebookSheetStructure,
+        sourceDataUrl: string,
         apiImg: { base64: string; mimeType: string },
         structureFp: string,
         singleInn: number,
@@ -739,6 +865,7 @@ export default function LiffScorebookImportPage() {
             return await requestSingleChunk(
               isTop,
               structure,
+              sourceDataUrl,
               apiImg,
               structureFp,
               [singleInn],
@@ -760,10 +887,11 @@ export default function LiffScorebookImportPage() {
       ): Promise<ScorebookV2AtBat[]> => {
         if (!imgState.processed) return [];
         const sideLabel = isTop ? "先攻（表）" : "後攻（裏）";
+        const sourceDataUrl = imgState.processed.dataUrl;
         const apiImg = await ensureCompactApiImage(
           imgState.processed,
-          1536,
-          0.8
+          2200,
+          0.9
         );
         const structureFp = buildStructureFingerprint(structure);
         const chunks = buildSmartInningChunks(structure);
@@ -789,6 +917,7 @@ export default function LiffScorebookImportPage() {
             const chunkRes = await requestSingleChunk(
               isTop,
               structure,
+              sourceDataUrl,
               apiImg,
               structureFp,
               targetInnings,
@@ -812,6 +941,7 @@ export default function LiffScorebookImportPage() {
                 const singleRes = await requestSingleInningWithRetries(
                   isTop,
                   structure,
+                  sourceDataUrl,
                   apiImg,
                   structureFp,
                   singleInn,
@@ -827,6 +957,7 @@ export default function LiffScorebookImportPage() {
               const singleRes = await requestSingleInningWithRetries(
                 isTop,
                 structure,
+                sourceDataUrl,
                 apiImg,
                 structureFp,
                 targetInnings[0],
@@ -947,7 +1078,7 @@ export default function LiffScorebookImportPage() {
           <div className="grid grid-cols-3 gap-1.5">
             {[
               { num: 1 as const, label: "1. 撮影・前処理" },
-              { num: 2 as const, label: "2. 骨格10秒確認" },
+              { num: 2 as const, label: "2. 骨格確認" },
               { num: 3 as const, label: "3. 1球検算・保存" },
             ].map((s) => {
               const active = step === s.num || (step === 4 && s.num === 3);
@@ -1058,11 +1189,15 @@ export default function LiffScorebookImportPage() {
                 importScope={importScope}
                 roster={roster}
                 opponentName={selectedMatch?.opponent || "対戦相手"}
+                topImageDataUrl={topImage.processed?.dataUrl || null}
+                bottomImageDataUrl={bottomImage.processed?.dataUrl || null}
                 topStructure={topStructure}
                 bottomStructure={bottomStructure}
                 onChangeStructure={(isTop, updated) =>
                   isTop ? setTopStructure(updated) : setBottomStructure(updated)
                 }
+                onRescanSide={handleRescanSingleSide}
+                isRescanningSide={isAnalyzingStructure}
                 onBack={() => setStep(1)}
                 onStartDeepAnalysis={handleStartDeepAnalysis}
                 isAnalyzingInnings={isAnalyzingInnings}

@@ -135,8 +135,102 @@ export function inferCanonicalResultCode(
   return "other";
 }
 
+const KANJI_VARIANT_MAP: ReadonlyArray<readonly [RegExp, string]> = [
+  [/髙/g, "高"],
+  [/[﨑嵜]/g, "崎"],
+  [/[齋齊]/g, "斎"],
+  [/[邊邉]/g, "辺"],
+  [/澤/g, "沢"],
+  [/[濱濵]/g, "浜"],
+  [/廣/g, "広"],
+  [/櫻/g, "桜"],
+  [/國/g, "国"],
+  [/德/g, "徳"],
+  [/栁/g, "柳"],
+  [/[嶋嶌]/g, "島"],
+  [/峯/g, "峰"],
+  [/渡部/g, "渡部"],
+];
+
+function normalizePlayerNameForMatch(raw: string): string {
+  let s = raw
+    .replace(/[\s　・.()（）[\]【】#＃背番号選手代打代走守備投手]+/g, "")
+    .trim()
+    .toLowerCase();
+  for (const [pattern, replacement] of KANJI_VARIANT_MAP) {
+    s = s.replace(pattern, replacement);
+  }
+  // カタカナをひらがなに統一（よみがな比較用）
+  s = s.replace(/[\u30a1-\u30f6]/g, (ch) =>
+    String.fromCharCode(ch.charCodeAt(0) - 0x60)
+  );
+  return s;
+}
+
+function countOrderedCharOverlap(a: string, b: string): number {
+  if (!a || !b) return 0;
+  let bIdx = 0;
+  let matches = 0;
+  for (let i = 0; i < a.length; i++) {
+    const ch = a[i];
+    const foundAt = b.indexOf(ch, bIdx);
+    if (foundAt !== -1) {
+      matches += 1;
+      bIdx = foundAt + 1;
+    }
+  }
+  return matches;
+}
+
 /**
- * 選手名・背番号からチーム登録選手IDをファジーマッチングする
+ * 守備位置の表記揺れ（漢字・英語略称・数字）を UI/DB 共通コード（"1"〜"9" | "D" | ""）へ正規化する
+ */
+export function normalizePositionCode(
+  rawPos: string | undefined | null
+): string {
+  const s = (rawPos || "").trim();
+  if (!s) return "";
+  const u = s.toUpperCase();
+
+  if (u === "D" || u === "DH" || u === "DP" || s.includes("指")) return "D";
+  if (u === "1" || u === "P" || s.startsWith("投") || s.includes("ピッチャー")) {
+    return "1";
+  }
+  if (u === "2" || u === "C" || s.startsWith("捕") || s.includes("キャッチャー")) {
+    return "2";
+  }
+  if (u === "3" || u === "1B" || s.startsWith("一") || s.includes("ファースト")) {
+    return "3";
+  }
+  if (u === "4" || u === "2B" || s.startsWith("二") || s.includes("セカンド")) {
+    return "4";
+  }
+  if (u === "5" || u === "3B" || s.startsWith("三") || s.includes("サード")) {
+    return "5";
+  }
+  if (u === "6" || u === "SS" || s.startsWith("遊") || s.includes("ショート")) {
+    return "6";
+  }
+  if (u === "7" || u === "LF" || s.startsWith("左") || s.includes("レフト")) {
+    return "7";
+  }
+  if (u === "8" || u === "CF" || s.startsWith("中") || s.includes("センター")) {
+    return "8";
+  }
+  if (u === "9" || u === "RF" || s.startsWith("右") || s.includes("ライト")) {
+    return "9";
+  }
+
+  const digitMatch = u.match(/^([1-9])\b/);
+  if (digitMatch) return digitMatch[1];
+
+  return "";
+}
+
+/**
+ * 選手名・背番号からチーム登録選手IDを高精度ファジーマッチングする
+ * ※重要: 手書き守備番号と背番号の取り違えで別人の名前に誤変換される事故を防ぐため、
+ *   名前が明記されているのに1文字も一致しない選手へ背番号だけで強制置換しない安全設計。
  */
 export function matchRosterPlayer(
   rawName: string | undefined | null,
@@ -146,56 +240,61 @@ export function matchRosterPlayer(
   if (roster.length === 0) return null;
 
   const cleanNum = (rawNumber || "").replace(/[^0-9]/g, "").trim();
-  const normalizeName = (s: string) =>
-    s
-      .replace(/[\s　・.()（）#＃背番号]+/g, "")
-      .toLowerCase();
+  const cleanName = normalizePlayerNameForMatch(rawName || "");
 
-  const cleanName = normalizeName(rawName || "");
+  let bestPlayer: ScorebookRosterPlayer | null = null;
+  let bestScore = 0;
 
-  // 1. 背番号＋苗字または名前一致（最も信頼性が高い）
-  if (cleanNum) {
-    const numMatches = roster.filter(
-      (p) => p.uniformNumber.replace(/[^0-9]/g, "") === cleanNum
-    );
-    if (numMatches.length === 1) {
-      return numMatches[0];
+  for (const p of roster) {
+    const pNum = p.uniformNumber.replace(/[^0-9]/g, "").trim();
+    const pName = normalizePlayerNameForMatch(p.name);
+    const pKana = p.nameKana ? normalizePlayerNameForMatch(p.nameKana) : "";
+
+    const isExactNum = Boolean(cleanNum && pNum && cleanNum === pNum);
+    let score = 0;
+
+    if (cleanName && pName) {
+      if (cleanName === pName || (pKana && cleanName === pKana)) {
+        // フルネームまたはよみがな完全一致
+        score = isExactNum ? 100 : 92;
+      } else if (
+        (cleanName.length >= 2 && pName.startsWith(cleanName)) ||
+        (pName.length >= 2 && cleanName.startsWith(pName)) ||
+        (cleanName.length >= 2 && pKana && pKana.startsWith(cleanName))
+      ) {
+        // 苗字（2文字以上）前方一致
+        score = isExactNum ? 96 : 82;
+      } else if (cleanName.length === 1 && pName.startsWith(cleanName)) {
+        // 1文字苗字（森・林・原など）前方一致
+        score = isExactNum ? 90 : 68;
+      } else {
+        // 手書き1文字誤読の救済（例: 3〜4文字中 length-1 文字以上が順序一致）
+        const overlap = Math.max(
+          countOrderedCharOverlap(cleanName, pName),
+          countOrderedCharOverlap(pName, cleanName)
+        );
+        const minLen = Math.min(cleanName.length, pName.length);
+        if (minLen >= 3 && overlap >= minLen - 1) {
+          score = isExactNum ? 88 : 74;
+        } else if (minLen >= 2 && overlap >= 2) {
+          score = isExactNum ? 85 : 70;
+        } else if (isExactNum && overlap >= 1) {
+          // 背番号が完全一致し、かつ最低1文字（苗字の片方など）が一致する場合は高信頼
+          score = 84;
+        }
+      }
+    } else if (!cleanName && isExactNum) {
+      // 名前が空欄で背番号のみ書かれている場合のみ背番号単独一致を許可
+      score = 65;
     }
-    if (numMatches.length > 1 && cleanName) {
-      const both = numMatches.find((p) => {
-        const n = normalizeName(p.name);
-        return n.includes(cleanName) || cleanName.includes(n);
-      });
-      if (both) return both;
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestPlayer = p;
     }
   }
 
-  if (!cleanName) return null;
-
-  // 2. 正規化フルネーム完全一致
-  const exact = roster.find((p) => normalizeName(p.name) === cleanName);
-  if (exact) return exact;
-
-  // 3. よみがな一致
-  const kanaExact = roster.find(
-    (p) => p.nameKana && normalizeName(p.nameKana) === cleanName
-  );
-  if (kanaExact) return kanaExact;
-
-  // 4. 苗字・前方一致（スコアブックは苗字のみ記載が多いため）
-  const partials = roster.filter((p) => {
-    const n = normalizeName(p.name);
-    return (
-      (cleanName.length >= 1 && n.startsWith(cleanName)) ||
-      (n.length >= 2 && cleanName.startsWith(n))
-    );
-  });
-
-  if (partials.length === 1) {
-    return partials[0];
-  }
-
-  return partials[0] || null;
+  return bestScore >= 65 ? bestPlayer : null;
 }
 
 /**

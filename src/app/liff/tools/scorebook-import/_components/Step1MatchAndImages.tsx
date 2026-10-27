@@ -224,7 +224,7 @@ export function Step1MatchAndImages({
                 <div className="flex flex-col items-center gap-2 text-white">
                   <Loader2 className="w-6 h-6 animate-spin text-indigo-400" />
                   <span className="text-[11px] font-bold">
-                    高精細コントラスト最適化中...
+                    高精細画像を準備中...
                   </span>
                 </div>
               ) : (
@@ -258,12 +258,12 @@ export function Step1MatchAndImages({
                 className={`py-2 px-2 rounded-xl border text-[11px] font-black flex items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer ${
                   state.enhancePencil
                     ? "bg-indigo-600 text-white border-indigo-600"
-                    : "bg-muted text-muted-foreground border-border"
+                    : "bg-muted text-foreground border-border"
                 }`}
               >
-                <Sparkles className="w-3.5 h-3.5 shrink-0" />
+                <Sparkles className="w-3.5 h-3.5 shrink-0 text-indigo-500" />
                 <span className="truncate">
-                  {state.enhancePencil ? "くっきりON" : "補正OFF"}
+                  {state.enhancePencil ? "濃さ強調ON" : "原本高精細"}
                 </span>
               </button>
 
