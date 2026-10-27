@@ -3,6 +3,7 @@ import { eq, desc, asc, sql } from "drizzle-orm";
 import { matches, tournaments, venues, matchLineups } from "@/db/schema/match";
 import { playLogs, atBats, baseAdvances, pitches, matchUndoHistories } from "@/db/schema/score";
 import { players } from "@/db/schema/team";
+import { buildGoogleMapsEmbedFromUrl, expandGoogleMapsShortUrl } from "@/lib/google-maps";
 import type {
   DrizzleDB,
   CreateMatchBody,
@@ -190,6 +191,12 @@ export const MatchService = {
       }
     }
 
+    let venueEmbedMapUrl: string | null = null;
+    if (resolvedVenueMapUrl && resolvedVenueMapUrl.trim()) {
+      const expandedMapUrl = await expandGoogleMapsShortUrl(resolvedVenueMapUrl);
+      venueEmbedMapUrl = buildGoogleMapsEmbedFromUrl(expandedMapUrl) || null;
+    }
+
     return {
       ...row,
       venueId: resolvedVenueId,
@@ -197,6 +204,7 @@ export const MatchService = {
       venueShortName: resolvedVenueShortName,
       venueAddress: resolvedVenueAddress,
       venueMapUrl: resolvedVenueMapUrl,
+      venueEmbedMapUrl,
       tournamentName: row.tournamentName || (row.tournamentId && !row.tournamentId.includes("-") ? row.tournamentId : null),
     };
   },

@@ -42,9 +42,14 @@ export interface Match {
   venueShortName?: string | null;
   venueAddress?: string | null;
   venueMapUrl?: string | null;
+  venueEmbedMapUrl?: string | null;
   innings?: number;
   myInningScores?: (number | null)[];
   opponentInningScores?: (number | null)[];
+  myHits?: number | null;
+  opponentHits?: number | null;
+  myErrors?: number | null;
+  opponentErrors?: number | null;
   liveMyScore?: number;
   liveOpponentScore?: number;
   liveMyInningScores?: (number | null)[];
