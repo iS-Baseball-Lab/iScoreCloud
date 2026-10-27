@@ -27,6 +27,11 @@ import {
   UserCircle,
   SlidersHorizontal,
   IdCard,
+  Wrench,
+  ScanLine,
+  Megaphone,
+  Music,
+  Wand2,
 } from "lucide-react";
 
 type MenuCategory = "schedule" | "manual" | "settings";
@@ -38,12 +43,13 @@ interface MenuItem {
   icon: React.ComponentType<{ className?: string }>;
   colorClass: string;
   category: MenuCategory;
+  subGroup?: "docs" | "tools";
   fullWidth?: boolean;
 }
 
 const MENU_TABS = [
   { id: "schedule" as const, label: "活動・予定", icon: Calendar },
-  { id: "manual" as const, label: "マニュアル", icon: BookOpen },
+  { id: "manual" as const, label: "資料・ツール", icon: BookOpen },
   { id: "settings" as const, label: "設定", icon: Settings },
 ];
 
@@ -114,7 +120,7 @@ const MENU_ITEMS: MenuItem[] = [
     category: "schedule" as const,
   },
 
-  // 📖 マニュアル
+  // 📖 資料・ツール
   {
     title: "ルール & 注意事項",
     subtitle: "試合・配車・活動心得",
@@ -122,6 +128,7 @@ const MENU_ITEMS: MenuItem[] = [
     icon: AlertTriangle,
     colorClass: "bg-amber-500/15 text-amber-600 dark:text-amber-400",
     category: "manual" as const,
+    subGroup: "docs",
   },
   {
     title: "資料ダウンロード",
@@ -130,6 +137,7 @@ const MENU_ITEMS: MenuItem[] = [
     icon: FileText,
     colorClass: "bg-purple-500/15 text-purple-600 dark:text-purple-400",
     category: "manual" as const,
+    subGroup: "docs",
   },
   {
     title: "よくある質問",
@@ -138,6 +146,7 @@ const MENU_ITEMS: MenuItem[] = [
     icon: HelpCircle,
     colorClass: "bg-teal-500/15 text-teal-600 dark:text-teal-400",
     category: "manual" as const,
+    subGroup: "docs",
   },
   {
     title: "関連リンク集",
@@ -146,6 +155,43 @@ const MENU_ITEMS: MenuItem[] = [
     icon: Link2,
     colorClass: "bg-sky-500/15 text-sky-600 dark:text-sky-400",
     category: "manual" as const,
+    subGroup: "docs",
+  },
+  {
+    title: "スコアブック取り込み",
+    subtitle: "手書きスコア画像データ化",
+    href: "/liff/tools/scorebook-import",
+    icon: ScanLine,
+    colorClass: "bg-indigo-500/15 text-indigo-600 dark:text-indigo-400",
+    category: "manual" as const,
+    subGroup: "tools",
+  },
+  {
+    title: "試合速報ジェネレータ",
+    subtitle: "簡易入力で速報文を作成",
+    href: "/liff/tools/news-generator",
+    icon: Megaphone,
+    colorClass: "bg-rose-500/15 text-rose-600 dark:text-rose-400",
+    category: "manual" as const,
+    subGroup: "tools",
+  },
+  {
+    title: "応援歌あんちょこ",
+    subtitle: "選手名入り歌詞・コール",
+    href: "/liff/tools/cheer-songs",
+    icon: Music,
+    colorClass: "bg-orange-500/15 text-orange-600 dark:text-orange-400",
+    category: "manual" as const,
+    subGroup: "tools",
+  },
+  {
+    title: "配車ジェネレータ",
+    subtitle: "配車割り作成支援 (検討中)",
+    href: "/liff/tools/carpool-generator",
+    icon: Wand2,
+    colorClass: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
+    category: "manual" as const,
+    subGroup: "tools",
   },
 
   // ⚙️ 設定
@@ -200,7 +246,8 @@ export function LiffBottomNav() {
       pathname?.startsWith("/liff/rules") ||
       pathname?.startsWith("/liff/documents") ||
       pathname?.startsWith("/liff/faq") ||
-      pathname?.startsWith("/liff/links")
+      pathname?.startsWith("/liff/links") ||
+      pathname?.startsWith("/liff/tools")
     ) {
       setSelectedCategory("manual");
     } else {
@@ -408,38 +455,100 @@ export function LiffBottomNav() {
             </div>
 
             {/* 🌟 フィルタリングされたメニュー項目グリッド */}
-            <div className="grid grid-cols-2 gap-2.5">
-              {filteredItems.map((item) => {
-                const ItemIcon = item.icon;
-                const isFullWidth = item.fullWidth;
+            {selectedCategory === "manual" ? (
+              <div className="space-y-4">
+                {[
+                  {
+                    key: "docs" as const,
+                    label: "資料・マニュアル",
+                    icon: BookOpen,
+                  },
+                  {
+                    key: "tools" as const,
+                    label: "便利ツール",
+                    icon: Wrench,
+                  },
+                ].map((section) => {
+                  const SectionIcon = section.icon;
+                  const sectionItems = filteredItems.filter((item) => item.subGroup === section.key);
+                  return (
+                    <div key={section.key} className="space-y-2">
+                      <div className="flex items-center gap-1.5 px-1">
+                        <SectionIcon className="w-3.5 h-3.5 text-primary" />
+                        <span className="text-[11px] font-black tracking-tight text-slate-600 dark:text-slate-300">
+                          {section.label}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2.5">
+                        {sectionItems.map((item) => {
+                          const ItemIcon = item.icon;
+                          const isFullWidth = item.fullWidth;
 
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    onClick={() => setIsOtherMenuOpen(false)}
-                    className={`flex items-center gap-3 p-3 rounded-2xl bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-850 border border-slate-300 dark:border-slate-800 shadow-sm ring-1 ring-black/5 dark:ring-white/5 transition-all group active:scale-95 ${
-                      isFullWidth ? "col-span-2" : ""
-                    }`}
-                  >
-                    <span className={`w-9 h-9 rounded-xl flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform shadow-2xs ${item.colorClass}`}>
-                      <ItemIcon className="w-5 h-5" />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-black text-slate-900 dark:text-slate-100 truncate">
-                        {item.title}
-                      </p>
-                      <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold truncate">
-                        {item.subtitle}
-                      </p>
+                          return (
+                            <Link
+                              key={item.href}
+                              href={item.href}
+                              onClick={() => setIsOtherMenuOpen(false)}
+                              className={`flex items-center gap-3 p-3 rounded-2xl bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-850 border border-slate-300 dark:border-slate-800 shadow-sm ring-1 ring-black/5 dark:ring-white/5 transition-all group active:scale-95 ${
+                                isFullWidth ? "col-span-2" : ""
+                              }`}
+                            >
+                              <span className={`w-9 h-9 rounded-xl flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform shadow-2xs ${item.colorClass}`}>
+                                <ItemIcon className="w-5 h-5" />
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <p className="text-xs font-black text-slate-900 dark:text-slate-100 truncate">
+                                  {item.title}
+                                </p>
+                                <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold truncate">
+                                  {item.subtitle}
+                                </p>
+                              </div>
+                              {isFullWidth && (
+                                <ChevronRight className="w-4 h-4 text-slate-400 mr-1 shrink-0" />
+                              )}
+                            </Link>
+                          );
+                        })}
+                      </div>
                     </div>
-                    {isFullWidth && (
-                      <ChevronRight className="w-4 h-4 text-slate-400 mr-1 shrink-0" />
-                    )}
-                  </Link>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-2.5">
+                {filteredItems.map((item) => {
+                  const ItemIcon = item.icon;
+                  const isFullWidth = item.fullWidth;
+
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      onClick={() => setIsOtherMenuOpen(false)}
+                      className={`flex items-center gap-3 p-3 rounded-2xl bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-850 border border-slate-300 dark:border-slate-800 shadow-sm ring-1 ring-black/5 dark:ring-white/5 transition-all group active:scale-95 ${
+                        isFullWidth ? "col-span-2" : ""
+                      }`}
+                    >
+                      <span className={`w-9 h-9 rounded-xl flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform shadow-2xs ${item.colorClass}`}>
+                        <ItemIcon className="w-5 h-5" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-black text-slate-900 dark:text-slate-100 truncate">
+                          {item.title}
+                        </p>
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold truncate">
+                          {item.subtitle}
+                        </p>
+                      </div>
+                      {isFullWidth && (
+                        <ChevronRight className="w-4 h-4 text-slate-400 mr-1 shrink-0" />
+                      )}
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
 
             {/* 📜 法務・規約リンク */}
             <div className="pt-3 border-t border-slate-200 dark:border-border/40 flex items-center justify-center gap-3">
