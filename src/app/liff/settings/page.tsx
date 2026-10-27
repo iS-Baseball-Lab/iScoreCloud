@@ -4,143 +4,122 @@
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useTheme } from "next-themes";
-import { 
-  Settings, 
-  User, 
-  Palette, 
-  ShieldAlert, 
-  Sliders, 
-  Check, 
-  Sun, 
-  Moon, 
-  Laptop, 
-  Car, 
-  Sparkles, 
-  CalendarDays, 
-  Flame, 
-  Trash2, 
-  RefreshCw, 
-  CheckCircle2, 
-  ChevronRight, 
-  HelpCircle, 
-  FileText, 
+import {
+  Settings,
+  UserCircle,
+  Palette,
+  Sun,
+  Moon,
+  Laptop,
+  RefreshCw,
+  ChevronRight,
+  HelpCircle,
+  FileText,
   ShieldCheck,
   AlertTriangle,
-  Vibrate,
   Layers,
-  Type,
-  Link2
+  Link2,
+  Square,
+  RectangleHorizontal,
+  AppWindow,
+  Circle,
+  Shrink,
+  Smartphone,
+  Monitor,
+  Maximize,
+  Check,
 } from "lucide-react";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
-import { useLiff } from "@/components/liff/LiffProvider";
+import { useDensity, type Density } from "@/components/providers/density-provider";
+import {
+  LIFF_COLOR_THEMES,
+  LIFF_DESIGN_STYLES,
+  LIFF_THEME_CHANGE_EVENT,
+  applyLiffColorTheme,
+  applyLiffDesignStyle,
+  syncLiffThemeClasses,
+  type LiffColorThemeId,
+  type LiffDesignStyleId,
+} from "@/lib/liff/theme-settings";
 import { toast } from "sonner";
+
+const DESIGN_ICONS: Record<LiffDesignStyleId, React.ComponentType<{ className?: string }>> = {
+  sharp: Square,
+  sleek: RectangleHorizontal,
+  modern: AppWindow,
+  rounded: Circle,
+};
+
+const DENSITY_OPTIONS: ReadonlyArray<{
+  id: Density;
+  label: string;
+  desc: string;
+  icon: React.ComponentType<{ className?: string }>;
+}> = [
+  { id: "ultra", label: "高密度", desc: "情報量重視", icon: Shrink },
+  { id: "compact", label: "コンパクト", desc: "やや小さめ", icon: Smartphone },
+  { id: "standard", label: "標準", desc: "おすすめ", icon: Monitor },
+  { id: "comfortable", label: "大きめ", desc: "屋外で見やすい", icon: Maximize },
+];
 
 export default function LiffSettingsPage() {
   const { theme, setTheme } = useTheme();
-  const { currentTeam } = useLiff();
+  const { density, setDensity } = useDensity();
 
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  // 💾 各種設定ステート（localStorage連動）
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  const [activeColor, setActiveColor] = useState<LiffColorThemeId>("blue");
+  const [activeDesign, setActiveDesign] = useState<LiffDesignStyleId>("modern");
 
-  // 1. 個人・利用設定
-  const [userRole, setUserRole] = useState<"parent" | "coach" | "player" | "staff">("parent");
-  const [children, setChildren] = useState<Array<{ id: string; name: string; uniformNumber?: string }>>([
-    { id: "child-1", name: "翔太", uniformNumber: "#10" }
-  ]);
-  const [defaultCarStatus, setDefaultCarStatus] = useState<"can_drive" | "need_ride" | "not_needed">("need_ride");
-  const [defaultTab, setDefaultTab] = useState<"next" | "calendar" | "score">("next");
-
-  // 2. 表示・外観設定
-  const [themeColor, setThemeColor] = useState<string>("emerald");
-  const [fontSizeScale, setFontSizeScale] = useState<"normal" | "large">("normal");
-  const [hapticsEnabled, setHapticsEnabled] = useState<boolean>(true);
-
-  // 3. マウント時にローカルストレージから読み込み
   useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    try {
-      const savedRole = localStorage.getItem("iscore_setting_user_role");
-      if (savedRole) setUserRole(savedRole as any);
-
-      const savedChildren = localStorage.getItem("iscore_setting_children");
-      if (savedChildren) {
-        const parsed = JSON.parse(savedChildren);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setChildren(parsed);
-        }
-      }
-
-      const savedCar = localStorage.getItem("iscore_setting_default_car");
-      if (savedCar) setDefaultCarStatus(savedCar as any);
-
-      const savedTab = localStorage.getItem("iscore_setting_default_tab");
-      if (savedTab) setDefaultTab(savedTab as any);
-
-      const savedColor = localStorage.getItem("iscore_setting_theme_color");
-      if (savedColor) setThemeColor(savedColor);
-
-      const savedFont = localStorage.getItem("iscore_setting_font_scale");
-      if (savedFont) setFontSizeScale(savedFont as any);
-
-      const savedHaptics = localStorage.getItem("iscore_setting_haptics");
-      if (savedHaptics !== null) setHapticsEnabled(savedHaptics === "true");
-    } catch (e) {
-      console.error("Failed to load settings from localStorage", e);
-    }
+    const sync = () => {
+      const current = syncLiffThemeClasses();
+      setActiveColor(current.color);
+      setActiveDesign(current.design);
+    };
+    sync();
+    window.addEventListener(LIFF_THEME_CHANGE_EVENT, sync);
+    return () => window.removeEventListener(LIFF_THEME_CHANGE_EVENT, sync);
   }, []);
-
-  // 設定保存ヘルパー
-  const saveSetting = (key: string, value: string) => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem(key, value);
-    }
-    toast.success("設定を更新しました");
-  };
 
   // キャッシュクリア処理
   const handleClearCache = () => {
     if (typeof window === "undefined") return;
     try {
-      // 重要なログイン情報以外の一時データをクリア
-      const keysToKeep = ["iscore_user_name", "iscore_token", "iscore_current_team_id"];
-      const allKeys = Object.keys(localStorage);
-      allKeys.forEach((key) => {
-        if (!keysToKeep.includes(key) && key.startsWith("iscore_temp_")) {
-          localStorage.removeItem(key);
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (
+          key &&
+          (key.startsWith("iscore_temp_") ||
+            key === "iscore_setting_default_tab" ||
+            key === "iscore_setting_font_scale" ||
+            key === "iscore_setting_haptics" ||
+            key === "iscore_setting_theme_color" ||
+            key === "iscore_setting_children")
+        ) {
+          keysToRemove.push(key);
         }
-      });
-      toast.success("アプリキャッシュをクリアしました");
-    } catch (e) {
+      }
+      keysToRemove.forEach((key) => localStorage.removeItem(key));
+      toast.success("一時キャッシュをクリアしました");
+    } catch {
       toast.error("キャッシュのクリアに失敗しました");
     }
   };
 
-  const themeColors = [
-    { id: "emerald", name: "エメラルド", bg: "bg-emerald-600", border: "border-emerald-500" },
-    { id: "blue", name: "オーシャン", bg: "bg-blue-600", border: "border-blue-500" },
-    { id: "orange", name: "オレンジ", bg: "bg-orange-600", border: "border-orange-500" },
-    { id: "red", name: "クリムゾン", bg: "bg-rose-600", border: "border-rose-500" },
-    { id: "purple", name: "バイオレット", bg: "bg-purple-600", border: "border-purple-500" },
-  ];
-
   return (
     <div className="flex flex-col flex-1">
-      {/* ヘッダー */}
       <LiffHeader
         shareData={{
           title: "アプリ設定 - iScore for LINEミニアプリ",
-          text: "使いやすさ・表示・スコア入力のカスタマイズ設定",
+          text: "カラーテーマ・デザインスタイル・表示サイズのカスタマイズ設定",
         }}
       />
 
       <div className="p-4 space-y-4 max-w-lg mx-auto w-full">
-        {/* ページ内ヘッダー */}
         <LiffPageHeader
           title="アプリ設定"
-          subtitle="利用環境・表示・個人プロファイルのカスタマイズ"
+          subtitle="カラー・デザイン・表示サイズ・システム管理"
           icon={
             <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
               <Settings className="w-4 h-4" />
@@ -149,167 +128,154 @@ export default function LiffSettingsPage() {
           showBack
           shareData={{
             title: "アプリ設定 - iScore for LINEミニアプリ",
-            text: "使いやすさ・表示・スコア入力のカスタマイズ設定",
+            text: "カラーテーマ・デザインスタイル・表示サイズのカスタマイズ設定",
           }}
         />
 
-        {/* ━━━ セクション 1: 👤 個人・利用設定 ━━━ */}
-        <section className="rounded-3xl bg-card border-2 border-primary/20 p-4 space-y-4 shadow-sm">
+        {/* ━━━ ショートカット: 👤 プロフィール設定はこちら ━━━ */}
+        <Link
+          href="/liff/profile"
+          className="p-4 rounded-3xl bg-card border-2 border-primary/30 hover:border-primary/60 transition-all flex items-center justify-between group active:scale-[0.99] shadow-sm"
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="w-10 h-10 rounded-2xl bg-primary/15 text-primary flex items-center justify-center font-black shrink-0 group-hover:scale-105 transition-transform">
+              <UserCircle className="w-5 h-5" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-xs sm:text-sm font-black text-foreground truncate">
+                プロフィール・個人設定はこちら
+              </p>
+              <p className="text-[10px] text-muted-foreground font-bold truncate">
+                チーム内表示名・役割・お子様紐付け・マイカー登録
+              </p>
+            </div>
+          </div>
+          <ChevronRight className="w-5 h-5 text-primary group-hover:translate-x-1 transition-transform shrink-0" />
+        </Link>
+
+        {/* ━━━ セクション 1: 🎨 表示・デザイン設定 ━━━ */}
+        <section className="rounded-3xl bg-card border-2 border-primary/20 p-4 space-y-5 shadow-sm">
           <div className="flex items-center gap-2 pb-2 border-b border-border/60">
-            <User className="w-4 h-4 text-primary" />
-            <h2 className="text-sm font-black text-foreground">個人・利用設定</h2>
+            <Palette className="w-4 h-4 text-primary" />
+            <h2 className="text-sm font-black text-foreground">表示・デザイン設定</h2>
           </div>
 
-          {/* 立場・役割 */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-black text-foreground">チームでの立場・役割</label>
-            <div className="grid grid-cols-4 gap-1.5">
-              {[
-                { id: "parent", label: "保護者" },
-                { id: "coach", label: "指導者" },
-                { id: "player", label: "選手" },
-                { id: "staff", label: "役員・他" },
-              ].map((role) => (
-                <button
-                  key={role.id}
-                  type="button"
-                  onClick={() => {
-                    setUserRole(role.id as any);
-                    saveSetting("iscore_setting_user_role", role.id);
-                  }}
-                  className={`py-2 px-1 rounded-2xl text-xs font-bold transition-all active:scale-95 border ${
-                    userRole === role.id
-                      ? "bg-primary text-primary-foreground border-primary shadow-xs font-black"
-                      : "bg-muted/50 border-border/60 text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  {role.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* 👦 保護者の場合: お子様（選手）の登録設定 */}
-          {userRole === "parent" && (
-            <div className="p-3 rounded-2xl bg-amber-500/5 dark:bg-amber-500/10 border border-amber-500/25 space-y-2.5 animate-in fade-in duration-200">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-black text-amber-800 dark:text-amber-200 flex items-center gap-1.5">
-                  <span>👦</span>
-                  <span>お子様（選手）の出欠設定</span>
-                </span>
-                <span className="text-[10px] font-bold text-amber-700/80 dark:text-amber-300/80">出欠カードに連動表示</span>
-              </div>
-
-              <div className="space-y-2">
-                {children.map((child, index) => (
-                  <div key={child.id} className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      value={child.name}
-                      onChange={(e) => {
-                        const newName = e.target.value;
-                        setChildren(prev => {
-                          const updated = [...prev];
-                          updated[index] = { ...updated[index], name: newName };
-                          saveSetting("iscore_setting_children", JSON.stringify(updated));
-                          return updated;
-                        });
-                      }}
-                      placeholder="お子様のお名前"
-                      className="flex-1 px-3 py-1.5 rounded-xl bg-card border border-border/80 text-xs font-bold text-foreground focus:outline-hidden focus:ring-1 focus:ring-amber-500"
-                    />
-                    <input
-                      type="text"
-                      value={child.uniformNumber || ""}
-                      onChange={(e) => {
-                        const newNum = e.target.value;
-                        setChildren(prev => {
-                          const updated = [...prev];
-                          updated[index] = { ...updated[index], uniformNumber: newNum };
-                          saveSetting("iscore_setting_children", JSON.stringify(updated));
-                          return updated;
-                        });
-                      }}
-                      placeholder="背番号 (例: #10)"
-                      className="w-24 px-2.5 py-1.5 rounded-xl bg-card border border-border/80 text-xs font-bold text-foreground focus:outline-hidden focus:ring-1 focus:ring-amber-500"
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* デフォルト配車希望 */}
-          <div className="space-y-1.5 pt-1">
-            <label className="text-xs font-black text-foreground">出席時のデフォルト配車希望</label>
-            <div className="grid grid-cols-3 gap-1.5">
-              {[
-                { id: "can_drive", label: "🚗 車出し可" },
-                { id: "need_ride", label: "🙋 送迎希望" },
-                { id: "not_needed", label: "🚶 自走・不要" },
-              ].map((car) => (
-                <button
-                  key={car.id}
-                  type="button"
-                  onClick={() => {
-                    setDefaultCarStatus(car.id as any);
-                    saveSetting("iscore_setting_default_car", car.id);
-                  }}
-                  className={`py-2 px-1 rounded-2xl text-xs font-bold transition-all active:scale-95 border ${
-                    defaultCarStatus === car.id
-                      ? "bg-primary text-primary-foreground border-primary shadow-xs font-black"
-                      : "bg-muted/50 border-border/60 text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  {car.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* トップ初期表示タブ */}
-          <div className="space-y-1.5 pt-1">
-            <label className="text-xs font-black text-foreground">トップページの初期表示タブ</label>
-            <div className="grid grid-cols-3 gap-1.5">
-              {[
-                { id: "next", label: "直近の活動", icon: Sparkles },
-                { id: "calendar", label: "カレンダー", icon: CalendarDays },
-                { id: "score", label: "試合速報", icon: Flame },
-              ].map((tab) => {
-                const Icon = tab.icon;
+          {/* 1. アクセントカラー */}
+          <div className="space-y-2">
+            <label className="text-xs font-black text-foreground block">
+              アクセントカラー
+            </label>
+            <div className="grid grid-cols-7 gap-1.5 pt-0.5">
+              {LIFF_COLOR_THEMES.map((item) => {
+                const isActive = activeColor === item.id;
                 return (
                   <button
-                    key={tab.id}
+                    key={item.id}
                     type="button"
                     onClick={() => {
-                      setDefaultTab(tab.id as any);
-                      saveSetting("iscore_setting_default_tab", tab.id);
+                      applyLiffColorTheme(item.id);
+                      setActiveColor(item.id);
+                      toast.success(`カラーを「${item.label}」に変更しました`);
                     }}
-                    className={`py-2 px-1 rounded-2xl text-xs font-bold transition-all active:scale-95 border flex flex-col items-center gap-1 ${
-                      defaultTab === tab.id
-                        ? "bg-primary text-primary-foreground border-primary shadow-xs font-black"
-                        : "bg-muted/50 border-border/60 text-muted-foreground hover:text-foreground"
-                    }`}
+                    className="flex flex-col items-center gap-1 group focus:outline-hidden"
+                    title={item.label}
                   >
-                    <Icon className="w-3.5 h-3.5" />
-                    <span>{tab.label}</span>
+                    <span
+                      className={`w-8 h-8 rounded-full flex items-center justify-center transition-transform active:scale-90 ${
+                        isActive
+                          ? "ring-2 ring-offset-2 ring-offset-card ring-primary scale-110 shadow-sm"
+                          : "opacity-85 hover:opacity-100 hover:scale-105"
+                      }`}
+                      style={{ backgroundColor: item.color }}
+                    >
+                      {isActive && <Check className="w-4 h-4 text-white stroke-[3]" />}
+                    </span>
+                    <span
+                      className={`text-[9.5px] leading-none truncate max-w-full ${
+                        isActive ? "font-black text-foreground" : "font-bold text-muted-foreground"
+                      }`}
+                    >
+                      {item.label}
+                    </span>
                   </button>
                 );
               })}
             </div>
           </div>
-        </section>
 
-        {/* ━━━ セクション 2: 🎨 表示・テーマ設定 ━━━ */}
-        <section className="rounded-3xl bg-card border-2 border-primary/20 p-4 space-y-4 shadow-sm">
-          <div className="flex items-center gap-2 pb-2 border-b border-border/60">
-            <Palette className="w-4 h-4 text-primary" />
-            <h2 className="text-sm font-black text-foreground">表示・テーマ設定</h2>
+          {/* 2. デザインスタイル (角丸・枠) */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-black text-foreground block">
+              デザインスタイル
+            </label>
+            <div className="grid grid-cols-4 gap-1.5">
+              {LIFF_DESIGN_STYLES.map((style) => {
+                const Icon = DESIGN_ICONS[style.id];
+                const isActive = activeDesign === style.id;
+                return (
+                  <button
+                    key={style.id}
+                    type="button"
+                    onClick={() => {
+                      applyLiffDesignStyle(style.id);
+                      setActiveDesign(style.id);
+                      toast.success(`スタイルを「${style.description}」に変更しました`);
+                    }}
+                    className={`flex flex-col items-center justify-center py-2.5 px-1 rounded-2xl border transition-all active:scale-95 gap-1 ${
+                      isActive
+                        ? "bg-primary text-primary-foreground border-primary shadow-xs font-black"
+                        : "bg-muted/50 border-border/60 text-muted-foreground hover:text-foreground font-bold"
+                    }`}
+                  >
+                    <Icon className="w-4 h-4" />
+                    <span className="text-[11px] leading-tight">{style.description}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
-          {/* 外観テーマ (ライト / ダーク / システム) */}
+          {/* 3. 画面サイズ・情報密度 */}
           <div className="space-y-1.5">
-            <label className="text-xs font-black text-foreground">外観モード</label>
+            <label className="text-xs font-black text-foreground block">
+              表示サイズ・情報密度（グラウンド視認性）
+            </label>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+              {DENSITY_OPTIONS.map((opt) => {
+                const Icon = opt.icon;
+                const isActive = density === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => {
+                      setDensity(opt.id);
+                      toast.success(`表示サイズを「${opt.label}」に変更しました`);
+                    }}
+                    className={`flex flex-col items-center justify-center py-2.5 px-2 rounded-2xl border transition-all active:scale-95 gap-0.5 ${
+                      isActive
+                        ? "bg-primary text-primary-foreground border-primary shadow-xs font-black"
+                        : "bg-muted/50 border-border/60 text-muted-foreground hover:text-foreground font-bold"
+                    }`}
+                  >
+                    <Icon className="w-4 h-4 mb-0.5" />
+                    <span className="text-xs leading-tight">{opt.label}</span>
+                    <span
+                      className={`text-[9.5px] leading-tight ${
+                        isActive ? "text-primary-foreground/85" : "text-muted-foreground"
+                      }`}
+                    >
+                      {opt.desc}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 4. 外観モード (ライト / ダーク / 端末連動) */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-black text-foreground block">外観モード</label>
             <div className="grid grid-cols-3 gap-2">
               {[
                 { id: "light", label: "ライト", icon: Sun },
@@ -324,7 +290,7 @@ export default function LiffSettingsPage() {
                     type="button"
                     onClick={() => {
                       setTheme(mode.id);
-                      toast.success(`外観を${mode.label}に変更しました`);
+                      toast.success(`外観を「${mode.label}」に変更しました`);
                     }}
                     className={`flex flex-col items-center justify-center py-2.5 rounded-2xl border transition-all active:scale-95 ${
                       isActive
@@ -339,98 +305,41 @@ export default function LiffSettingsPage() {
               })}
             </div>
           </div>
-
-          {/* 文字サイズ・スケール */}
-          <div className="space-y-1.5 pt-1">
-            <label className="text-xs font-black text-foreground flex items-center gap-1.5">
-              <Type className="w-3.5 h-3.5 text-primary" />
-              <span>文字サイズ（グラウンド視認性）</span>
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              {[
-                { id: "normal", label: "標準サイズ" },
-                { id: "large", label: "大きめ (見やすい)" },
-              ].map((scale) => (
-                <button
-                  key={scale.id}
-                  type="button"
-                  onClick={() => {
-                    setFontSizeScale(scale.id as any);
-                    saveSetting("iscore_setting_font_scale", scale.id);
-                  }}
-                  className={`py-2 px-2 rounded-2xl text-xs font-bold transition-all active:scale-95 border ${
-                    fontSizeScale === scale.id
-                      ? "bg-primary text-primary-foreground border-primary shadow-xs font-black"
-                      : "bg-muted/50 border-border/60 text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  {scale.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* 操作時の振動 (ハプティクス) */}
-          <div className="pt-1 flex items-center justify-between">
-            <div className="space-y-0.5">
-              <div className="text-xs font-black text-foreground flex items-center gap-1.5">
-                <Vibrate className="w-3.5 h-3.5 text-primary" />
-                <span>ボタンタップ時の微振動</span>
-              </div>
-              <p className="text-[10px] text-muted-foreground font-bold">出欠やスコア入力時の感触フィードバック</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                const next = !hapticsEnabled;
-                setHapticsEnabled(next);
-                saveSetting("iscore_setting_haptics", String(next));
-                if (next && typeof window !== "undefined" && window.navigator?.vibrate) {
-                  window.navigator.vibrate(20);
-                }
-              }}
-              className={`w-12 h-6 rounded-full transition-colors relative p-0.5 ${
-                hapticsEnabled ? "bg-primary" : "bg-muted border border-border"
-              }`}
-            >
-              <div
-                className={`w-5 h-5 rounded-full bg-white transition-transform ${
-                  hapticsEnabled ? "translate-x-6 shadow-xs" : "translate-x-0"
-                }`}
-              />
-            </button>
-          </div>
         </section>
 
-        {/* ━━━ セクション 3: 🛡️ チーム設定へのショートカット案内 ━━━ */}
+        {/* ━━━ セクション 2: 🛡️ チーム設定へのショートカット案内 ━━━ */}
         <Link
           href="/liff/settings/team"
-          className="p-4 rounded-3xl bg-primary/10 border-2 border-primary/30 hover:border-primary/60 transition-all flex items-center justify-between group active:scale-95 shadow-xs"
+          className="p-4 rounded-3xl bg-primary/10 border-2 border-primary/30 hover:border-primary/60 transition-all flex items-center justify-between group active:scale-[0.99] shadow-xs"
         >
-          <div className="flex items-center gap-3">
-            <span className="w-10 h-10 rounded-2xl bg-primary text-primary-foreground flex items-center justify-center font-black shadow-xs group-hover:scale-105 transition-transform">
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="w-10 h-10 rounded-2xl bg-primary text-primary-foreground flex items-center justify-center font-black shadow-xs group-hover:scale-105 transition-transform shrink-0">
               <ShieldCheck className="w-5 h-5" />
             </span>
-            <div>
-              <p className="text-xs font-black text-foreground">チーム設定・競技ルールはこちら</p>
-              <p className="text-[10px] text-muted-foreground font-bold">チーム情報・活動班・規定イニング・球場マスタ</p>
+            <div className="min-w-0">
+              <p className="text-xs font-black text-foreground truncate">
+                チーム設定・競技ルールはこちら
+              </p>
+              <p className="text-[10px] text-muted-foreground font-bold truncate">
+                チーム情報・活動班・規定イニング・球場マスタ
+              </p>
             </div>
           </div>
           <ChevronRight className="w-5 h-5 text-primary group-hover:translate-x-1 transition-transform shrink-0" />
         </Link>
 
-        {/* ━━━ セクション 4: 💾 システム・キャッシュ管理 ━━━ */}
+        {/* ━━━ セクション 3: 💾 システム・キャッシュ管理 ━━━ */}
         <section className="rounded-3xl bg-card border-2 border-primary/20 p-4 space-y-3.5 shadow-sm">
           <div className="flex items-center gap-2 pb-2 border-b border-border/60">
             <Layers className="w-4 h-4 text-primary" />
             <h2 className="text-sm font-black text-foreground">システム & データ管理</h2>
           </div>
 
-          <div className="flex items-center justify-between py-1">
+          <div className="flex items-center justify-between py-1 gap-3">
             <div className="space-y-0.5">
               <span className="text-xs font-black text-foreground block">一時キャッシュのクリア</span>
               <span className="text-[10px] text-muted-foreground font-bold block">
-                表示の不具合やデータ同期の遅延を解消します
+                表示の不具合や不要な一時データを解消します
               </span>
             </div>
 
@@ -446,11 +355,11 @@ export default function LiffSettingsPage() {
 
           <div className="pt-2 border-t border-border/50 flex items-center justify-between text-xs">
             <span className="font-bold text-muted-foreground">アプリバージョン</span>
-            <span className="font-black text-foreground">iScore for LINEミニアプリ v2.5.0</span>
+            <span className="font-black text-foreground">iScore for LINEミニアプリ v2.6.0</span>
           </div>
         </section>
 
-        {/* ━━━ セクション 5: 📜 法務・ヘルプ ━━━ */}
+        {/* ━━━ セクション 4: 📜 法務・ヘルプ ━━━ */}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-center text-xs">
           <Link
             href="/liff/rules"

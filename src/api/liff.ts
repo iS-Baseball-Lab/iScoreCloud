@@ -24,6 +24,7 @@ import {
   parentChildRelations,
   tournaments,
   eventEquipments,
+  teamGroups,
   teamGroupMembers,
 } from "@/db/schema";
 import { ensureEventColumns, ensureRulesTable, ensureLinksTable, ensureMemberOrderColumn, ensureStatusConfigColumn, ensureMemberSubLabelsColumn, ensureMatchLineupColumns } from "@/lib/db-helper";
@@ -4882,6 +4883,716 @@ app.post("/admin/members/merge", async (c) => {
   } catch (error: any) {
     console.error("Failed to merge members:", error);
     return c.json({ success: false, error: error?.message || "メンバー統合に失敗しました" }, 500);
+  }
+});
+
+// ==========================================
+// 👤 個人プロフィール設定・親子紐付け・マイカー登録 API
+// ==========================================
+
+async function resolveProfileMember(
+  c: { env: WorkerEnv; req: { raw: Request } },
+  db: ReturnType<typeof drizzle>,
+  params: {
+    teamId: string;
+    memberId?: string | null;
+    userId?: string | null;
+    userName?: string | null;
+    createIfMissing?: boolean;
+    initialName?: string | null;
+    initialMemberType?: string | null;
+  }
+) {
+  const { teamId, memberId, userId, userName, createIfMissing = false, initialName, initialMemberType } = params;
+
+  let sessionUser: { id?: string; name?: string | null; role?: string | null } | null = null;
+  try {
+    const auth = getAuth(c.env.DB, c.env);
+    const session = await auth.api.getSession({ headers: c.req.raw.headers as unknown as Headers }).catch(() => null);
+    sessionUser = session?.user || null;
+  } catch {}
+
+  const candidateIdsSet = new Set<string>();
+  const cleanUid = userId?.trim();
+  if (cleanUid && cleanUid !== "cached-user" && cleanUid !== "mock-user-12345") {
+    candidateIdsSet.add(cleanUid);
+  }
+  if (sessionUser?.id) {
+    candidateIdsSet.add(sessionUser.id);
+  }
+
+  if (cleanUid && cleanUid !== "cached-user" && cleanUid !== "mock-user-12345") {
+    try {
+      const linked = await db
+        .select({ userId: account.userId })
+        .from(account)
+        .where(and(eq(account.providerId, "line"), eq(account.accountId, cleanUid)))
+        .all();
+      for (const item of linked) {
+        if (item.userId) candidateIdsSet.add(item.userId);
+      }
+    } catch {}
+  }
+
+  const candidateIds = Array.from(candidateIdsSet);
+
+  // `user` テーブル整合性付きの有効な userId 確保
+  let validUserId: string | null = null;
+  const preferredUid = sessionUser?.id || (cleanUid && cleanUid !== "cached-user" && cleanUid !== "mock-user-12345" ? cleanUid : null);
+  if (preferredUid) {
+    try {
+      const userExists = await db.select({ id: user.id }).from(user).where(eq(user.id, preferredUid)).get();
+      if (userExists) {
+        validUserId = userExists.id;
+      } else if (createIfMissing) {
+        await db.insert(user).values({
+          id: preferredUid,
+          name: (initialName || userName || sessionUser?.name || "LINEユーザー").trim(),
+          email: `${preferredUid}@line.user`,
+          emailVerified: false,
+          role: "GUEST",
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+        validUserId = preferredUid;
+      }
+    } catch {
+      validUserId = null;
+    }
+  }
+
+  let foundMember: typeof teamMembers.$inferSelect | undefined;
+
+  // 1. memberId 明示指定
+  if (memberId && memberId.trim() && !memberId.startsWith("demo-")) {
+    foundMember = await db
+      .select()
+      .from(teamMembers)
+      .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.id, memberId.trim())))
+      .get();
+  }
+
+  // 2. userId 照合
+  if (!foundMember && candidateIds.length > 0) {
+    foundMember = await db
+      .select()
+      .from(teamMembers)
+      .where(
+        and(
+          eq(teamMembers.teamId, teamId),
+          or(...candidateIds.map((uid) => eq(teamMembers.userId, uid)))
+        )
+      )
+      .get();
+  }
+
+  // 3. 名前照合
+  const targetName = (userName || sessionUser?.name || "").trim();
+  if (!foundMember && targetName) {
+    const normalizedTarget = targetName.replace(/\s+/g, "");
+    const allTeamMembers = await db
+      .select()
+      .from(teamMembers)
+      .where(eq(teamMembers.teamId, teamId))
+      .all();
+
+    foundMember = allTeamMembers.find((m) => {
+      if (!m.name) return false;
+      const normalizedMember = m.name.replace(/\s+/g, "");
+      return (
+        normalizedMember === normalizedTarget ||
+        normalizedMember.includes(normalizedTarget) ||
+        normalizedTarget.includes(normalizedMember)
+      );
+    });
+
+    if (foundMember && validUserId && !foundMember.userId) {
+      try {
+        await db
+          .update(teamMembers)
+          .set({ userId: validUserId })
+          .where(eq(teamMembers.id, foundMember.id));
+        foundMember = { ...foundMember, userId: validUserId };
+      } catch {}
+    }
+  }
+
+  // 4. 未登録かつ createIfMissing の場合は安全に自動作成
+  if (!foundMember && createIfMissing) {
+    const teamExists = await db
+      .select({ id: teams.id })
+      .from(teams)
+      .where(eq(teams.id, teamId))
+      .get();
+
+    if (teamExists) {
+      const newMemberId = `tm_${crypto.randomUUID()}`;
+      const mType = initialMemberType || "parent";
+      const createdRow = {
+        id: newMemberId,
+        teamId,
+        userId: validUserId,
+        name: (initialName || targetName || "メンバー").trim(),
+        nameKana: null as string | null,
+        memberType: mType,
+        phone: null as string | null,
+        email: null as string | null,
+        avatarUrl: null as string | null,
+        role: mType === "staff" ? "staff" : "parent",
+        subRoles: null as string | null,
+        status: "active",
+        joinedAt: new Date(),
+      };
+      await db.insert(teamMembers).values(createdRow);
+      foundMember = createdRow;
+    }
+  }
+
+  return foundMember || null;
+}
+
+/**
+ * 📋 個人プロフィール・親子紐付け・マイカー一覧取得 (GET /api/liff/profile)
+ */
+app.get("/profile", async (c) => {
+  await ensureMemberSubLabelsColumn(c.env.DB);
+  const db = drizzle(c.env.DB);
+  const teamId = c.req.query("teamId") || "demo-team";
+  const memberId = c.req.query("memberId");
+  const userId = c.req.query("userId");
+  const userName = c.req.query("userName");
+
+  if (teamId === "demo-team") {
+    return c.json({
+      success: true,
+      isDemo: true,
+      member: {
+        id: "demo-parent-1",
+        name: userName || "山田 太郎（翔太父）",
+        nameKana: "ヤマダ タロウ",
+        phone: "090-1234-5678",
+        email: "",
+        memberType: "parent",
+        role: "parent",
+        subLabel: "2班",
+        status: "active",
+      },
+      groups: [{ groupId: "demo-grp-1", groupName: "保護者会・2班", role: "配車サポート" }],
+      players: [
+        { id: "demo-player-1", name: "山田 翔太", nameKana: "ヤマダ ショウタ", uniformNumber: "10", primaryPosition: "遊撃手" },
+        { id: "demo-player-2", name: "佐藤 健太", nameKana: "サトウ ケンタ", uniformNumber: "1", primaryPosition: "投手" },
+        { id: "demo-player-3", name: "鈴木 大輔", nameKana: "スズキ ダイスケ", uniformNumber: "2", primaryPosition: "捕手" },
+        { id: "demo-player-4", name: "高橋 陸", nameKana: "タカハシ リク", uniformNumber: "8", primaryPosition: "中堅手" },
+      ],
+      myChildren: [
+        { relationId: "demo-rel-1", childId: "demo-player-1", childName: "山田 翔太", uniformNumber: "10" },
+      ],
+      myCars: [
+        {
+          id: "demo-car-1",
+          name: "日産 セレナ",
+          color: "パールホワイト",
+          numberPlate: "12-34",
+          capacity: 5,
+          fuelEfficiency: 12,
+          carType: "normal",
+        },
+      ],
+    });
+  }
+
+  try {
+    const teamRow = await db
+      .select({ id: teams.id, memberSubLabels: teams.memberSubLabels })
+      .from(teams)
+      .where(eq(teams.id, teamId))
+      .get();
+
+    if (!teamRow) {
+      return c.json({ success: false, error: "指定されたチームが見つかりません" }, 404);
+    }
+
+    let subLabelsMap: Record<string, string> = {};
+    try {
+      if (teamRow.memberSubLabels) {
+        subLabelsMap = JSON.parse(teamRow.memberSubLabels);
+      }
+    } catch {}
+
+    const member = await resolveProfileMember(c, db, {
+      teamId,
+      memberId,
+      userId,
+      userName,
+      createIfMissing: false,
+    });
+
+    // チーム選手一覧（背番号順ソート）
+    const rawPlayers = await db
+      .select({
+        id: players.id,
+        name: players.name,
+        nameKana: players.nameKana,
+        uniformNumber: players.uniformNumber,
+        primaryPosition: players.primaryPosition,
+        isActive: players.isActive,
+      })
+      .from(players)
+      .where(eq(players.teamId, teamId))
+      .all();
+
+    const activePlayers = rawPlayers
+      .filter((p) => p.isActive !== false)
+      .sort((a, b) => {
+        const numA = parseInt((a.uniformNumber || "").replace(/[^0-9]/g, ""), 10);
+        const numB = parseInt((b.uniformNumber || "").replace(/[^0-9]/g, ""), 10);
+        if (!Number.isNaN(numA) && !Number.isNaN(numB)) return numA - numB;
+        if (!Number.isNaN(numA)) return -1;
+        if (!Number.isNaN(numB)) return 1;
+        return (a.name || "").localeCompare(b.name || "", "ja");
+      })
+      .map((p) => ({
+        id: p.id,
+        name: p.name,
+        nameKana: p.nameKana,
+        uniformNumber: p.uniformNumber,
+        primaryPosition: p.primaryPosition,
+      }));
+
+    let myGroups: Array<{ groupId: string; groupName: string; role: string | null }> = [];
+    let myChildren: Array<{ relationId: string; childId: string; childName: string; uniformNumber: string }> = [];
+    let myCars: Array<{
+      id: string;
+      name: string;
+      color: string | null;
+      numberPlate: string | null;
+      capacity: number;
+      fuelEfficiency: number;
+      carType: "normal" | "cargo" | "bus";
+    }> = [];
+
+    if (member) {
+      try {
+        const grpRows = await db
+          .select({
+            groupId: teamGroups.id,
+            groupName: teamGroups.name,
+            role: teamGroupMembers.role,
+          })
+          .from(teamGroupMembers)
+          .innerJoin(teamGroups, eq(teamGroupMembers.groupId, teamGroups.id))
+          .where(and(eq(teamGroups.teamId, teamId), eq(teamGroupMembers.teamMemberId, member.id)))
+          .all();
+        myGroups = grpRows;
+      } catch {}
+
+      const relRows = await db
+        .select({
+          relationId: parentChildRelations.id,
+          childId: parentChildRelations.childId,
+          childName: players.name,
+          uniformNumber: players.uniformNumber,
+        })
+        .from(parentChildRelations)
+        .leftJoin(players, eq(parentChildRelations.childId, players.id))
+        .where(and(eq(parentChildRelations.teamId, teamId), eq(parentChildRelations.parentId, member.id)))
+        .all();
+
+      myChildren = relRows
+        .filter((r) => Boolean(r.childId))
+        .map((r) => ({
+          relationId: r.relationId,
+          childId: r.childId,
+          childName: r.childName || "選手",
+          uniformNumber: r.uniformNumber || "",
+        }));
+
+      const carRows = await db
+        .select()
+        .from(memberCars)
+        .where(
+          and(
+            eq(memberCars.teamId, teamId),
+            or(eq(memberCars.ownerId, member.id), eq(memberCars.ownerId2, member.id))
+          )
+        )
+        .all();
+
+      myCars = carRows.map((car) => ({
+        id: car.id,
+        name: car.name,
+        color: car.color,
+        numberPlate: car.numberPlate,
+        capacity: car.capacity,
+        fuelEfficiency: car.fuelEfficiency,
+        carType: (car.carType as "normal" | "cargo" | "bus") || "normal",
+      }));
+    }
+
+    return c.json({
+      success: true,
+      isDemo: false,
+      member: member
+        ? {
+            id: member.id,
+            name: member.name || userName || "",
+            nameKana: member.nameKana || "",
+            phone: member.phone || "",
+            email: member.email || "",
+            memberType: member.memberType || "parent",
+            role: member.role || "parent",
+            subLabel: subLabelsMap[member.id] || "",
+            status: member.status || "active",
+          }
+        : null,
+      groups: myGroups,
+      players: activePlayers,
+      myChildren,
+      myCars,
+    });
+  } catch (err: unknown) {
+    console.error("Failed to fetch LIFF profile:", err);
+    return c.json(
+      { success: false, error: err instanceof Error ? err.message : "プロフィールの取得に失敗しました" },
+      500
+    );
+  }
+});
+
+/**
+ * 💾 基本プロフィールの更新 (POST /api/liff/profile)
+ */
+app.post("/profile", async (c) => {
+  await ensureMemberSubLabelsColumn(c.env.DB);
+  const db = drizzle(c.env.DB);
+
+  try {
+    const body = (await c.req.json()) as {
+      teamId?: string;
+      memberId?: string;
+      userId?: string;
+      userName?: string;
+      name?: string;
+      nameKana?: string;
+      phone?: string;
+      memberType?: string;
+      subLabel?: string;
+    };
+
+    const teamId = body.teamId || "demo-team";
+    const trimmedName = (body.name || "").trim();
+    if (!trimmedName) {
+      return c.json({ success: false, error: "チーム内の表示名を入力してください" }, 400);
+    }
+
+    const allowedMemberTypes = ["parent", "staff", "player", "other"];
+    const nextMemberType = allowedMemberTypes.includes(body.memberType || "") ? (body.memberType as string) : "parent";
+
+    if (teamId === "demo-team") {
+      return c.json({
+        success: true,
+        isDemo: true,
+        memberId: "demo-parent-1",
+        message: "プロフィールを保存しました（デモ）",
+      });
+    }
+
+    const member = await resolveProfileMember(c, db, {
+      teamId,
+      memberId: body.memberId,
+      userId: body.userId,
+      userName: body.userName || trimmedName,
+      createIfMissing: true,
+      initialName: trimmedName,
+      initialMemberType: nextMemberType,
+    });
+
+    if (!member) {
+      return c.json({ success: false, error: "メンバー情報の特定に失敗しました" }, 404);
+    }
+
+    await db
+      .update(teamMembers)
+      .set({
+        name: trimmedName,
+        nameKana: body.nameKana?.trim() || null,
+        phone: body.phone?.trim() || null,
+        memberType: nextMemberType,
+      })
+      .where(and(eq(teamMembers.id, member.id), eq(teamMembers.teamId, teamId)));
+
+    // サブラベル（担当班・役割タグ）の同期
+    if (body.subLabel !== undefined) {
+      const teamRow = await db
+        .select({ memberSubLabels: teams.memberSubLabels })
+        .from(teams)
+        .where(eq(teams.id, teamId))
+        .get();
+      let currentMap: Record<string, string> = {};
+      try {
+        if (teamRow?.memberSubLabels) {
+          currentMap = JSON.parse(teamRow.memberSubLabels);
+        }
+      } catch {}
+
+      const cleanSub = body.subLabel.trim();
+      if (cleanSub) {
+        currentMap[member.id] = cleanSub;
+      } else {
+        delete currentMap[member.id];
+      }
+
+      await db
+        .update(teams)
+        .set({ memberSubLabels: JSON.stringify(currentMap) })
+        .where(eq(teams.id, teamId));
+    }
+
+    return c.json({
+      success: true,
+      isDemo: false,
+      memberId: member.id,
+      message: "プロフィールを保存しました",
+    });
+  } catch (err: unknown) {
+    console.error("Failed to update LIFF profile:", err);
+    return c.json(
+      { success: false, error: err instanceof Error ? err.message : "プロフィールの保存に失敗しました" },
+      500
+    );
+  }
+});
+
+/**
+ * 🔗 お子様（選手）との親子紐付け追加 (POST /api/liff/profile/family)
+ */
+app.post("/profile/family", async (c) => {
+  const db = drizzle(c.env.DB);
+  try {
+    const body = (await c.req.json()) as {
+      teamId?: string;
+      memberId?: string;
+      userId?: string;
+      userName?: string;
+      childId?: string;
+    };
+
+    const teamId = body.teamId || "demo-team";
+    const childId = (body.childId || "").trim();
+    if (!childId) {
+      return c.json({ success: false, error: "紐付ける選手を選択してください" }, 400);
+    }
+
+    if (teamId === "demo-team") {
+      return c.json({
+        success: true,
+        isDemo: true,
+        relationId: `demo-rel-${childId}`,
+        memberId: "demo-parent-1",
+      });
+    }
+
+    const member = await resolveProfileMember(c, db, {
+      teamId,
+      memberId: body.memberId,
+      userId: body.userId,
+      userName: body.userName,
+      createIfMissing: true,
+      initialName: body.userName,
+      initialMemberType: "parent",
+    });
+
+    if (!member) {
+      return c.json({ success: false, error: "保護者メンバー情報が見つかりません" }, 404);
+    }
+
+    const existing = await db
+      .select()
+      .from(parentChildRelations)
+      .where(
+        and(
+          eq(parentChildRelations.teamId, teamId),
+          eq(parentChildRelations.parentId, member.id),
+          eq(parentChildRelations.childId, childId)
+        )
+      )
+      .get();
+
+    if (existing) {
+      return c.json({
+        success: true,
+        isDemo: false,
+        relationId: existing.id,
+        memberId: member.id,
+      });
+    }
+
+    const relationId = `pc_${crypto.randomUUID().replace(/-/g, "")}`;
+    await db.insert(parentChildRelations).values({
+      id: relationId,
+      teamId,
+      parentId: member.id,
+      childId,
+    });
+
+    return c.json({
+      success: true,
+      isDemo: false,
+      relationId,
+      memberId: member.id,
+    });
+  } catch (err: unknown) {
+    console.error("Failed to link child in LIFF profile:", err);
+    return c.json(
+      { success: false, error: err instanceof Error ? err.message : "お子様の紐付けに失敗しました" },
+      500
+    );
+  }
+});
+
+/**
+ * 🗑️ お子様（選手）との親子紐付け解除 (DELETE /api/liff/profile/family/:relationId)
+ */
+app.delete("/profile/family/:relationId", async (c) => {
+  const relationId = c.req.param("relationId");
+  if (relationId.startsWith("demo-")) {
+    return c.json({ success: true, isDemo: true });
+  }
+
+  const db = drizzle(c.env.DB);
+  try {
+    await db.delete(parentChildRelations).where(eq(parentChildRelations.id, relationId));
+    return c.json({ success: true, isDemo: false });
+  } catch (err: unknown) {
+    console.error("Failed to unlink child in LIFF profile:", err);
+    return c.json(
+      { success: false, error: err instanceof Error ? err.message : "紐付けの解除に失敗しました" },
+      500
+    );
+  }
+});
+
+/**
+ * 🚗 マイカー情報の登録・更新 (POST /api/liff/profile/cars)
+ */
+app.post("/profile/cars", async (c) => {
+  const db = drizzle(c.env.DB);
+  try {
+    const body = (await c.req.json()) as {
+      id?: string;
+      teamId?: string;
+      memberId?: string;
+      userId?: string;
+      userName?: string;
+      name?: string;
+      color?: string;
+      numberPlate?: string;
+      capacity?: number;
+      carType?: "normal" | "cargo";
+    };
+
+    const teamId = body.teamId || "demo-team";
+    const carName = (body.name || "").trim();
+    if (!carName) {
+      return c.json({ success: false, error: "車種名を入力してください（例: セレナ）" }, 400);
+    }
+
+    const capacityNum = Math.max(1, Math.min(29, Number(body.capacity) || 4));
+    const carType: "normal" | "cargo" = body.carType === "cargo" ? "cargo" : "normal";
+
+    if (teamId === "demo-team") {
+      return c.json({
+        success: true,
+        isDemo: true,
+        memberId: "demo-parent-1",
+        car: {
+          id: body.id || `demo-car-${Date.now()}`,
+          name: carName,
+          color: body.color?.trim() || null,
+          numberPlate: body.numberPlate?.trim() || null,
+          capacity: capacityNum,
+          fuelEfficiency: 10,
+          carType,
+        },
+      });
+    }
+
+    const member = await resolveProfileMember(c, db, {
+      teamId,
+      memberId: body.memberId,
+      userId: body.userId,
+      userName: body.userName,
+      createIfMissing: true,
+      initialName: body.userName,
+      initialMemberType: "parent",
+    });
+
+    if (!member) {
+      return c.json({ success: false, error: "所有者メンバー情報が見つかりません" }, 404);
+    }
+
+    const carId = body.id || `car_${crypto.randomUUID().replace(/-/g, "")}`;
+    const values = {
+      id: carId,
+      teamId,
+      ownerId: member.id,
+      name: carName,
+      color: body.color?.trim() || null,
+      numberPlate: body.numberPlate?.trim() || null,
+      capacity: capacityNum,
+      fuelEfficiency: 10,
+      carType,
+    };
+
+    if (body.id) {
+      await db
+        .update(memberCars)
+        .set({
+          name: values.name,
+          color: values.color,
+          numberPlate: values.numberPlate,
+          capacity: values.capacity,
+          carType: values.carType,
+        })
+        .where(and(eq(memberCars.id, body.id), eq(memberCars.teamId, teamId)));
+    } else {
+      await db.insert(memberCars).values(values);
+    }
+
+    return c.json({
+      success: true,
+      isDemo: false,
+      memberId: member.id,
+      car: values,
+    });
+  } catch (err: unknown) {
+    console.error("Failed to save car in LIFF profile:", err);
+    return c.json(
+      { success: false, error: err instanceof Error ? err.message : "車両情報の保存に失敗しました" },
+      500
+    );
+  }
+});
+
+/**
+ * 🗑️ マイカー情報の削除 (DELETE /api/liff/profile/cars/:carId)
+ */
+app.delete("/profile/cars/:carId", async (c) => {
+  const carId = c.req.param("carId");
+  if (carId.startsWith("demo-")) {
+    return c.json({ success: true, isDemo: true });
+  }
+
+  const db = drizzle(c.env.DB);
+  try {
+    await db.delete(memberCars).where(eq(memberCars.id, carId));
+    return c.json({ success: true, isDemo: false });
+  } catch (err: unknown) {
+    console.error("Failed to delete car in LIFF profile:", err);
+    return c.json(
+      { success: false, error: err instanceof Error ? err.message : "車両情報の削除に失敗しました" },
+      500
+    );
   }
 });
 

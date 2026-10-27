@@ -24,6 +24,8 @@ import {
   BookOpen,
   ClipboardCheck,
   Users,
+  UserCircle,
+  SlidersHorizontal,
 } from "lucide-react";
 
 type MenuCategory = "schedule" | "manual" | "settings";
@@ -140,11 +142,27 @@ const MENU_ITEMS: MenuItem[] = [
 
   // ⚙️ 設定
   {
+    title: "プロフィール",
+    subtitle: "表示名・お子様紐付け・マイカー",
+    href: "/liff/profile",
+    icon: UserCircle,
+    colorClass: "bg-sky-500/15 text-sky-600 dark:text-sky-400",
+    category: "settings" as const,
+  },
+  {
     title: "アプリ設定",
-    subtitle: "個人設定・表示・配車初期値",
+    subtitle: "カラー・デザイン・表示サイズ",
     href: "/liff/settings",
     icon: Settings,
     colorClass: "bg-slate-500/15 text-slate-700 dark:text-slate-300",
+    category: "settings" as const,
+  },
+  {
+    title: "チーム設定",
+    subtitle: "チーム情報・競技規定・マスタ管理",
+    href: "/liff/settings/team",
+    icon: SlidersHorizontal,
+    colorClass: "bg-primary/15 text-primary",
     category: "settings" as const,
   },
   {
@@ -153,14 +171,6 @@ const MENU_ITEMS: MenuItem[] = [
     href: "/liff/admin",
     icon: ShieldCheck,
     colorClass: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
-    category: "settings" as const,
-  },
-  {
-    title: "チーム設定",
-    subtitle: "チーム情報・競技規定・マスタ管理",
-    href: "/liff/settings/team",
-    icon: Settings,
-    colorClass: "bg-primary/15 text-primary",
     category: "settings" as const,
   },
 ];
@@ -172,6 +182,20 @@ export function LiffBottomNav() {
 
   useEffect(() => {
     setIsOtherMenuOpen(false);
+    if (
+      pathname?.startsWith("/liff/profile") ||
+      pathname?.startsWith("/liff/settings") ||
+      pathname?.startsWith("/liff/admin")
+    ) {
+      setSelectedCategory("settings");
+    } else if (
+      pathname?.startsWith("/liff/rules") ||
+      pathname?.startsWith("/liff/documents") ||
+      pathname?.startsWith("/liff/faq") ||
+      pathname?.startsWith("/liff/links")
+    ) {
+      setSelectedCategory("manual");
+    }
   }, [pathname]);
 
   const filteredItems = useMemo(() => {
