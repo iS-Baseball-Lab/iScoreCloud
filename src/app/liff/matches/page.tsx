@@ -28,6 +28,7 @@ import {
   Check,
   Building2,
   Trophy,
+  ClipboardList,
 } from "lucide-react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/layout/EmptyState";
@@ -493,14 +494,70 @@ function MatchesContent() {
       return score;
     };
 
+    const matchTypeLabel =
+      match.matchType === "official"
+        ? "公式戦"
+        : match.matchType === "exchange"
+          ? "交流戦"
+          : "OP戦";
+    const matchTypeBadgeClass =
+      match.matchType === "official"
+        ? "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/25"
+        : match.matchType === "exchange"
+          ? "bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/25"
+          : "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/25";
+
+    const rawTournament = (match.tournamentName || match.tournament || "").trim();
+    const displayTournamentName =
+      rawTournament && !["公式戦", "OP戦", "練習試合", "交流戦"].includes(rawTournament)
+        ? rawTournament
+        : "";
+
+    const battingOrderLabel =
+      match.battingOrder === "first"
+        ? "先攻"
+        : match.battingOrder === "second"
+          ? "後攻"
+          : "未定";
+    const battingOrderSubLabel =
+      match.battingOrder === "first"
+        ? "表の攻撃"
+        : match.battingOrder === "second"
+          ? "裏の攻撃"
+          : "";
+    const battingOrderBadgeClass =
+      match.battingOrder === "first"
+        ? "bg-primary/10 text-primary border-primary/25"
+        : match.battingOrder === "second"
+          ? "bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border-indigo-500/25"
+          : "bg-muted text-muted-foreground border-border";
+
+    const benchSideLabel =
+      match.benchSide === "1B"
+        ? "1塁側"
+        : match.benchSide === "3B"
+          ? "3塁側"
+          : "未定";
+    const benchSideBadgeClass =
+      match.benchSide === "1B"
+        ? "bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/25"
+        : match.benchSide === "3B"
+          ? "bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/25"
+          : "bg-muted text-muted-foreground border-border";
+
     const venueInfo = buildVenueDisplayInfo(match);
+    const shareBasicLine = `\n🏷️ ${matchTypeLabel}${
+      displayTournamentName ? `（${displayTournamentName}）` : ""
+    } • ${battingOrderLabel}${
+      match.benchSide === "1B" || match.benchSide === "3B" ? ` • ${benchSideLabel}ベンチ` : ""
+    }`;
     const shareVenueLine = venueInfo.officialName
       ? `\n📍 ${venueInfo.officialName}${venueInfo.address ? ` (${venueInfo.address})` : ""}`
       : "";
 
     const baseShareText = isScheduled
-      ? `【試合予定】\nvs ${match.opponent}\n📅 ${match.date}${shareVenueLine}`
-      : `【試合結果】\nvs ${match.opponent}\n${match.myScore} - ${match.opponentScore} (${isWin ? "勝利 🏆" : isLose ? "敗戦" : "引分"})\n📅 ${match.date}${shareVenueLine}`;
+      ? `【試合予定】\nvs ${match.opponent}\n📅 ${match.date}${shareBasicLine}${shareVenueLine}`
+      : `【試合結果】\nvs ${match.opponent}\n${match.myScore} - ${match.opponentScore} (${isWin ? "勝利 🏆" : isLose ? "敗戦" : "引分"})\n📅 ${match.date}${shareBasicLine}${shareVenueLine}`;
 
     const shareText =
       filledStarters.length > 0
@@ -536,7 +593,98 @@ function MatchesContent() {
             }}
           />
 
-          {/* 🔒 1. 試合映像（見出しはカード外） */}
+          {/* 📋 1. 基本情報（見出しはカード外） */}
+          <section className="space-y-2">
+            <div className="flex items-center justify-between gap-2 px-1">
+              <h2 className="flex items-center gap-1.5 text-xs font-black text-foreground">
+                <ClipboardList className="w-4 h-4 text-primary shrink-0" />
+                <span>基本情報</span>
+              </h2>
+            </div>
+
+            <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-xs divide-y divide-border/70">
+              {/* 上段：試合種別 ＆ 大会名 */}
+              <div className="grid grid-cols-2 divide-x divide-border/70">
+                <div className="px-3.5 py-2.5 space-y-1.5">
+                  <p className="text-[10px] font-bold text-muted-foreground leading-none">
+                    試合種別
+                  </p>
+                  <div className="flex items-center flex-wrap gap-1.5">
+                    <span
+                      className={cn(
+                        "inline-flex items-center px-2 py-0.5 rounded-md border text-[11px] font-black leading-tight",
+                        matchTypeBadgeClass
+                      )}
+                    >
+                      {matchTypeLabel}
+                    </span>
+                    {match.innings ? (
+                      <span className="text-[11px] font-bold text-muted-foreground font-mono tabular-nums">
+                        {match.innings}回制
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="px-3.5 py-2.5 space-y-1.5 min-w-0">
+                  <p className="text-[10px] font-bold text-muted-foreground leading-none">
+                    大会名
+                  </p>
+                  {displayTournamentName ? (
+                    <p className="text-xs font-black text-foreground leading-snug break-words line-clamp-2">
+                      {displayTournamentName}
+                    </p>
+                  ) : (
+                    <p className="text-xs font-bold text-muted-foreground leading-snug">
+                      {match.matchType === "official" ? "未設定" : "-"}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* 下段：先攻・後攻 ＆ ベンチ（1塁側・3塁側） */}
+              <div className="grid grid-cols-2 divide-x divide-border/70 bg-slate-50/60 dark:bg-white/[0.025]">
+                <div className="px-3.5 py-2.5 space-y-1.5">
+                  <p className="text-[10px] font-bold text-muted-foreground leading-none">
+                    先攻・後攻
+                  </p>
+                  <div className="flex items-center flex-wrap gap-1.5">
+                    <span
+                      className={cn(
+                        "inline-flex items-center px-2 py-0.5 rounded-md border text-[11px] font-black leading-tight",
+                        battingOrderBadgeClass
+                      )}
+                    >
+                      {battingOrderLabel}
+                    </span>
+                    {battingOrderSubLabel && (
+                      <span className="text-[11px] font-bold text-muted-foreground">
+                        {battingOrderSubLabel}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="px-3.5 py-2.5 space-y-1.5">
+                  <p className="text-[10px] font-bold text-muted-foreground leading-none">
+                    ベンチ
+                  </p>
+                  <div className="flex items-center flex-wrap gap-1.5">
+                    <span
+                      className={cn(
+                        "inline-flex items-center px-2 py-0.5 rounded-md border text-[11px] font-black leading-tight",
+                        benchSideBadgeClass
+                      )}
+                    >
+                      {benchSideLabel}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* 🔒 2. 試合映像（見出しはカード外） */}
           <section className="space-y-2">
             <div className="flex items-center justify-between px-1">
               <h2 className="flex items-center gap-1.5 text-xs font-black text-foreground">

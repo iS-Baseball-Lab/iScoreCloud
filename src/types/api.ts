@@ -95,6 +95,7 @@ export interface CreateMatchBody {
   date: string;
   matchType: "official" | "practice" | "exchange";
   battingOrder: "first" | "second";
+  benchSide?: "1B" | "3B" | "unknown";
   location?: string;
   innings?: number;
   tournamentName?: string;
@@ -106,6 +107,7 @@ export interface UpdateMatchBody {
   date: string;
   matchType: "official" | "practice" | "exchange";
   battingOrder: "first" | "second";
+  benchSide?: "1B" | "3B" | "unknown";
   location?: string;
   innings?: number;
   tournamentName?: string;

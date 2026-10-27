@@ -3,9 +3,10 @@
    1. Match型を Matches 構造に同期。
    2. LINE Webhook からの groupId 取得および Push 送信用の型を完備。 */
 
-/** 試合種別、攻守、ステータス */
+/** 試合種別、攻守、ベンチ位置、ステータス */
 export type MatchType = 'official' | 'practice' | 'exchange' | 'other';
 export type BattingOrder = 'first' | 'second';
+export type BenchSide = '1B' | '3B' | 'unknown';
 export type MatchStatus = 'scheduled' | 'live' | 'finished' | 'rainout';
 
 /** 💡 チーム・LINE連携用の定義 */
@@ -35,6 +36,7 @@ export interface Match {
   status: MatchStatus;
   matchType: MatchType;
   battingOrder: BattingOrder;
+  benchSide?: BenchSide | null;
   venueId?: string | null;
   surfaceDetails?: string;
   tournamentName?: string;
