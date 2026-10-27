@@ -148,18 +148,29 @@ interface RawGeminiChunkResponse {
   atBats?: RawGeminiAtBat[];
 }
 
-const GEMINI_MODEL_CONFIGS = [
+interface GeminiModelAttemptConfig {
+  model: string;
+  timeoutMs: number;
+  thinkingMode: "level_low" | "budget" | "none";
+}
+
+const GEMINI_MODEL_CONFIGS: readonly GeminiModelAttemptConfig[] = [
+  {
+    model: "gemini-3.8-flash",
+    timeoutMs: 52_000,
+    thinkingMode: "level_low",
+  },
+  {
+    model: "gemini-3.5-flash",
+    timeoutMs: 38_000,
+    thinkingMode: "level_low",
+  },
   {
     model: "gemini-2.5-flash",
-    timeoutMs: 48_000,
-    supportsThinkingBudget: true,
+    timeoutMs: 38_000,
+    thinkingMode: "budget",
   },
-  {
-    model: "gemini-2.0-flash",
-    timeoutMs: 35_000,
-    supportsThinkingBudget: false,
-  },
-] as const;
+];
 
 const PITCH_DISPLAY_JA: Record<CanonicalPitchResult, string> = {
   ball: "ボール",
@@ -1586,26 +1597,38 @@ async function callGeminiStructuredJson<T>(
   responseSchema: Record<string, unknown>,
   thinkingBudget = 1024
 ): Promise<T> {
-  let lastError = "";
+  const attemptErrors: string[] = [];
+  const overallStart = Date.now();
+  const MAX_TOTAL_BUDGET_MS = 86_000;
 
   for (const cfg of GEMINI_MODEL_CONFIGS) {
+    const remainingMs = MAX_TOTAL_BUDGET_MS - (Date.now() - overallStart);
+    if (remainingMs < 8_000) {
+      break;
+    }
+
+    const effectiveTimeoutMs = Math.min(cfg.timeoutMs, remainingMs);
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${cfg.model}:streamGenerateContent?alt=sse&key=${apiKey}`;
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), cfg.timeoutMs);
+    const timer = setTimeout(() => controller.abort(), effectiveTimeoutMs);
 
     try {
       const generationConfig: Record<string, unknown> = {
-        temperature: 0.0,
+        temperature: 0.1,
         responseMimeType: "application/json",
         responseSchema,
       };
-      if (cfg.supportsThinkingBudget) {
+      if (cfg.thinkingMode === "level_low") {
+        generationConfig.thinkingConfig = {
+          thinkingLevel: "LOW",
+        };
+      } else if (cfg.thinkingMode === "budget") {
         generationConfig.thinkingConfig = {
           thinkingBudget,
         };
       }
 
-      const res = await fetch(endpoint, {
+      let res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: controller.signal,
@@ -1619,9 +1642,39 @@ async function callGeminiStructuredJson<T>(
         }),
       });
 
+      // 万一 thinkingConfig パラメータ仕様差異で 400 が返った場合は即座に thinkingConfig なしで同モデル再送
+      if (!res.ok && res.status === 400 && cfg.thinkingMode !== "none") {
+        const firstErrText = await res.text();
+        if (firstErrText.toLowerCase().includes("thinking")) {
+          const fallbackGenConfig: Record<string, unknown> = {
+            temperature: 0.1,
+            responseMimeType: "application/json",
+            responseSchema,
+          };
+          res = await fetch(endpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            signal: controller.signal,
+            body: JSON.stringify({
+              contents: [
+                {
+                  parts: [{ text: prompt }, ...imageParts],
+                },
+              ],
+              generationConfig: fallbackGenConfig,
+            }),
+          });
+        } else {
+          const errSummary = `[${cfg.model}] HTTP 400: ${firstErrText.slice(0, 200)}`;
+          attemptErrors.push(errSummary);
+          continue;
+        }
+      }
+
       if (!res.ok) {
         const errText = await res.text();
-        lastError = `[${cfg.model}] HTTP ${res.status}: ${errText.slice(0, 260)}`;
+        const errSummary = `[${cfg.model}] HTTP ${res.status}: ${errText.slice(0, 200)}`;
+        attemptErrors.push(errSummary);
         if (
           res.status === 400 ||
           res.status === 404 ||
@@ -1631,13 +1684,15 @@ async function callGeminiStructuredJson<T>(
         ) {
           continue;
         }
-        throw new Error(lastError);
+        throw new Error(attemptErrors.join(" / "));
       }
 
       const { text, finishReason } = await readGeminiSseResponse(res);
 
       if (!text.trim()) {
-        lastError = `[${cfg.model}] 応答が空でした (finishReason: ${finishReason})`;
+        attemptErrors.push(
+          `[${cfg.model}] 応答が空でした (finishReason: ${finishReason})`
+        );
         continue;
       }
 
@@ -1654,18 +1709,22 @@ async function callGeminiStructuredJson<T>(
       } catch (parseErr) {
         const msg =
           parseErr instanceof Error ? parseErr.message : String(parseErr);
-        lastError = `[${cfg.model}] JSON解析失敗 (${finishReason}): ${msg}`;
+        attemptErrors.push(
+          `[${cfg.model}] JSON解析失敗 (${finishReason}): ${msg}`
+        );
         continue;
       }
     } catch (err) {
       if (controller.signal.aborted) {
-        lastError = `[${cfg.model}] 応答タイムアウト (${Math.round(
-          cfg.timeoutMs / 1000
-        )}秒超過)`;
+        attemptErrors.push(
+          `[${cfg.model}] 応答タイムアウト (${Math.round(
+            effectiveTimeoutMs / 1000
+          )}秒超過)`
+        );
         continue;
       }
       const msg = err instanceof Error ? err.message : String(err);
-      lastError = `[${cfg.model}] ${msg}`;
+      attemptErrors.push(`[${cfg.model}] ${msg}`);
       continue;
     } finally {
       clearTimeout(timer);
@@ -1673,7 +1732,8 @@ async function callGeminiStructuredJson<T>(
   }
 
   throw new Error(
-    lastError || "利用可能なGeminiモデルからの応答取得に失敗しました"
+    attemptErrors.join(" / ") ||
+      "利用可能なGeminiモデルからの応答取得に失敗しました"
   );
 }
 
