@@ -1,4 +1,4 @@
-// src/services/match.service.ts
+// filepath: src/services/match.service.ts
 import { eq, desc, asc, sql } from "drizzle-orm";
 import { matches, tournaments, venues, matchLineups } from "@/db/schema/match";
 import { playLogs, atBats, baseAdvances, pitches, matchUndoHistories } from "@/db/schema/score";
@@ -127,8 +127,76 @@ export const MatchService = {
 
     if (!row) return null;
 
+    let resolvedVenueId = row.venueId;
+    let resolvedVenueName = row.venueName;
+    let resolvedVenueShortName = row.venueShortName;
+    let resolvedVenueAddress = row.venueAddress;
+    let resolvedVenueMapUrl = row.venueMapUrl;
+
+    // 💡 venueId が未紐付けでも surfaceDetails（手入力の球場・グラウンド名）から球場マスタを自動補完
+    if (!resolvedVenueId && row.surfaceDetails && row.surfaceDetails.trim()) {
+      try {
+        const rawQuery = row.surfaceDetails.trim();
+        const normalizeVenueKey = (s: string | null | undefined) =>
+          (s || "").replace(/[（(].*?[)）]/g, "").replace(/\s+/g, "").toLowerCase();
+        const stripGenericVenueWords = (s: string) =>
+          s.replace(/(野球場|市民球場|球場|グラウンド|グランド|緑地広場|広場|公園|未定|未設定)$/g, "").trim();
+
+        const normalizedQuery = normalizeVenueKey(rawQuery);
+        const coreQuery = stripGenericVenueWords(normalizedQuery);
+
+        const allVenues = await db
+          .select({
+            id: venues.id,
+            name: venues.name,
+            shortName: venues.shortName,
+            address: venues.address,
+            mapUrl: venues.mapUrl,
+          })
+          .from(venues)
+          .all();
+
+        const matchedVenue =
+          // 1. 完全一致 または 括弧除去後の完全一致
+          allVenues.find((v) => {
+            if (v.name.trim() === rawQuery) return true;
+            if (v.shortName !== null && v.shortName.trim() === rawQuery) return true;
+            if (!normalizedQuery || normalizedQuery.length < 2) return false;
+            const nName = normalizeVenueKey(v.name);
+            const nShort = normalizeVenueKey(v.shortName);
+            return nName === normalizedQuery || (nShort.length >= 2 && nShort === normalizedQuery);
+          }) ||
+          // 2. 固有地名部分（"等々力"・"多摩川緑地"・"桜本小" 等）での部分一致（「球場」「グラウンド」単体での誤一致を防止）
+          (coreQuery.length >= 2
+            ? allVenues.find((v) => {
+                const cName = stripGenericVenueWords(normalizeVenueKey(v.name));
+                const cShort = stripGenericVenueWords(normalizeVenueKey(v.shortName));
+                return (
+                  (cName.length >= 2 && (cName.includes(coreQuery) || coreQuery.includes(cName))) ||
+                  (cShort.length >= 2 && (cShort.includes(coreQuery) || coreQuery.includes(cShort)))
+                );
+              })
+            : undefined);
+
+        if (matchedVenue) {
+          resolvedVenueId = matchedVenue.id;
+          resolvedVenueName = matchedVenue.name;
+          resolvedVenueShortName = matchedVenue.shortName;
+          resolvedVenueAddress = matchedVenue.address;
+          resolvedVenueMapUrl = matchedVenue.mapUrl;
+        }
+      } catch (err) {
+        console.warn("Venue fallback lookup skipped:", err);
+      }
+    }
+
     return {
       ...row,
+      venueId: resolvedVenueId,
+      venueName: resolvedVenueName,
+      venueShortName: resolvedVenueShortName,
+      venueAddress: resolvedVenueAddress,
+      venueMapUrl: resolvedVenueMapUrl,
       tournamentName: row.tournamentName || (row.tournamentId && !row.tournamentId.includes("-") ? row.tournamentId : null),
     };
   },

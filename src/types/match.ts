@@ -35,10 +35,13 @@ export interface Match {
   status: MatchStatus;
   matchType: MatchType;
   battingOrder: BattingOrder;
+  venueId?: string | null;
   surfaceDetails?: string;
   tournamentName?: string;
   venueName?: string;
   venueShortName?: string | null;
+  venueAddress?: string | null;
+  venueMapUrl?: string | null;
   innings?: number;
   myInningScores?: (number | null)[];
   opponentInningScores?: (number | null)[];
