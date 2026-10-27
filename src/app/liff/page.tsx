@@ -97,7 +97,7 @@ export default function LiffHubPage() {
   const teamName = currentTeam?.name || "チーム";
 
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col flex-1">
       {/* 🌟 本家 iScoreCloud と完全統一されたヘッダー（選択チームは全画面で自動維持） */}
       <LiffHeader
         shareData={{
@@ -181,6 +181,8 @@ export default function LiffHubPage() {
         <section>
           <HubCalendarSection eventsList={events} isDemo={isDemo} />
         </section>
+
+        <div className="h-8 w-full shrink-0" aria-hidden="true" />
       </div>
 
       {/* チーム参加申請モーダル */}

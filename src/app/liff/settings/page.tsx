@@ -127,7 +127,7 @@ export default function LiffSettingsPage() {
   ];
 
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col flex-1">
       {/* ヘッダー */}
       <LiffHeader
         shareData={{
@@ -492,6 +492,8 @@ export default function LiffSettingsPage() {
             <span>プライバシー</span>
           </Link>
         </div>
+
+        <div className="h-8 w-full shrink-0" aria-hidden="true" />
       </div>
     </div>
   );

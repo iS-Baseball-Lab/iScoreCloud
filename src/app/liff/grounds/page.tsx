@@ -290,7 +290,7 @@ export default function LiffGroundsPage() {
   };
 
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col flex-1">
       <LiffHeader />
 
       <div className="p-4 space-y-4 max-w-lg mx-auto w-full">
@@ -548,13 +548,15 @@ export default function LiffGroundsPage() {
             })}
           </div>
         )}
+
+        <div className="h-8 w-full shrink-0" aria-hidden="true" />
       </div>
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {/* ➕ 新規登録 / ✏️ 編集モーダル */}
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {mounted && isModalOpen && createPortal(
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
           <div
             onClick={(e) => e.stopPropagation()}
             className="w-full max-w-md bg-card border border-border rounded-3xl p-5 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto animate-in zoom-in-95 duration-200"
@@ -752,7 +754,7 @@ export default function LiffGroundsPage() {
       {/* 🗑️ 削除確認モーダル */}
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {mounted && deleteTarget && createPortal(
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
           <div
             onClick={(e) => e.stopPropagation()}
             className="w-full max-w-sm bg-card border border-border rounded-3xl p-5 shadow-2xl space-y-4 animate-in zoom-in-95 duration-200"

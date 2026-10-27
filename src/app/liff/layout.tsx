@@ -16,7 +16,7 @@ export default function LiffLayout({
   return (
     <LiffProvider>
       <div className="min-h-screen bg-muted/20 text-foreground flex justify-center selection:bg-primary/20">
-        <main className="w-full max-w-lg min-h-screen bg-background border-x border-border/40 shadow-xs flex flex-col pb-24 relative overflow-x-clip">
+        <main className="w-full max-w-lg min-h-screen bg-background border-x border-border/40 shadow-xs flex flex-col pb-28 sm:pb-32 relative overflow-x-clip">
           {/* 🌟 トップページと全画面で統一されたアンビエントグラデーション背景 */}
           <div
             aria-hidden="true"

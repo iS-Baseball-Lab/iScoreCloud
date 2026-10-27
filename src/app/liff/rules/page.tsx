@@ -409,7 +409,7 @@ export default function LiffRulesPage() {
   });
 
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col flex-1">
       <LiffHeader />
 
       <div className="p-4 space-y-4">
@@ -767,6 +767,8 @@ export default function LiffRulesPage() {
             })}
           </div>
         )}
+
+        <div className="h-8 w-full shrink-0" aria-hidden="true" />
       </div>
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
@@ -775,7 +777,7 @@ export default function LiffRulesPage() {
       {mounted && previewImageModalUrl && createPortal(
         <div
           onClick={() => setPreviewImageModalUrl(null)}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-in fade-in duration-200"
+          className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-in fade-in duration-200"
         >
           <div className="relative max-w-2xl max-h-[90vh] w-full flex flex-col items-center">
             <button
@@ -799,7 +801,7 @@ export default function LiffRulesPage() {
       {/* 📄 PDF全画面閲覧モーダル */}
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {mounted && previewPdfModal && createPortal(
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/85 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-2 sm:p-4 bg-black/85 backdrop-blur-sm animate-in fade-in duration-200">
           <div
             className="absolute inset-0"
             onClick={() => setPreviewPdfModal(null)}
@@ -865,7 +867,7 @@ export default function LiffRulesPage() {
       {/* ➕ 新規登録モーダル (ポータル描画) */}
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {mounted && isCreateModalOpen && createPortal(
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
           <div
             onClick={(e) => e.stopPropagation()}
             className="w-full max-w-md bg-card border border-border rounded-3xl p-5 shadow-xl space-y-4 max-h-[90vh] overflow-y-auto"
@@ -1173,7 +1175,7 @@ export default function LiffRulesPage() {
       {/* ✏️ 編集・削除モーダル (ポータル描画) */}
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {mounted && editingRule && createPortal(
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
           <div
             onClick={(e) => e.stopPropagation()}
             className="w-full max-w-md bg-card border border-border rounded-3xl p-5 shadow-xl space-y-4 max-h-[90vh] overflow-y-auto"

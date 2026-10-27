@@ -15,7 +15,7 @@ export default function LiffPrivacyPage() {
   };
 
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col flex-1">
       <LiffHeader />
 
       <div className="p-4 space-y-4">
@@ -125,6 +125,8 @@ export default function LiffPrivacyPage() {
             <span>改訂: 2026年10月14日</span>
           </div>
         </div>
+
+        <div className="h-8 w-full shrink-0" aria-hidden="true" />
       </div>
     </div>
   );

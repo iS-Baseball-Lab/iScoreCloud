@@ -65,7 +65,7 @@ export default function LiffCarpoolPage() {
   );
 
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col flex-1">
       <LiffHeader />
 
       <div className="p-4 space-y-4">
@@ -259,6 +259,8 @@ export default function LiffCarpoolPage() {
         )}
           </>
         )}
+
+        <div className="h-8 w-full shrink-0" aria-hidden="true" />
       </div>
     </div>
   );

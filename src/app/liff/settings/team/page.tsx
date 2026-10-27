@@ -130,7 +130,7 @@ export default function LiffTeamSettingsPage() {
   };
 
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col flex-1">
       <LiffHeader
         shareData={{
           title: "チーム設定 - iScore for LINEミニアプリ",
@@ -443,6 +443,8 @@ export default function LiffTeamSettingsPage() {
             <span>チーム設定を保存する</span>
           </button>
         </div>
+
+        <div className="h-8 w-full shrink-0" aria-hidden="true" />
       </div>
     </div>
   );

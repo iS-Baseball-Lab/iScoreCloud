@@ -385,7 +385,7 @@ export default function LiffAdminDashboardPage() {
     ));
 
   return (
-    <div className="min-h-screen bg-background pb-32 text-foreground">
+    <div className="flex flex-col flex-1 bg-background text-foreground">
       {/* 🌟 ヘッダー */}
       <LiffHeader
         shareData={{
@@ -878,11 +878,13 @@ export default function LiffAdminDashboardPage() {
             )}
           </>
         )}
+
+        <div className="h-8 w-full shrink-0" aria-hidden="true" />
       </div>
 
       {/* 🌟 メンバー役割・班編集ポップアップモーダル */}
       {editingMember && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
           <div className="w-full max-w-sm rounded-3xl bg-card border border-border p-5 shadow-2xl space-y-4 animate-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between border-b border-border pb-3">
               <div>
@@ -992,7 +994,7 @@ export default function LiffAdminDashboardPage() {
           🔗 メンバー統合（マージ）ダイアログ
       ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {isMergeModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-background/80 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-3 bg-background/80 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="w-full max-w-md bg-card rounded-3xl border border-border shadow-2xl p-5 space-y-4 max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-200">
             {/* ヘッダー */}
             <div className="flex items-center justify-between pb-3 border-b border-border/50">

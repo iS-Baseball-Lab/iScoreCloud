@@ -335,7 +335,7 @@ export default function LiffLinksPage() {
   });
 
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col flex-1">
       <LiffHeader />
 
       <div className="p-4 space-y-4">
@@ -595,13 +595,15 @@ export default function LiffLinksPage() {
             })}
           </div>
         )}
+
+        <div className="h-8 w-full shrink-0" aria-hidden="true" />
       </div>
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {/* ➕ 新規登録モーダル (ポータル描画) */}
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {mounted && isCreateModalOpen && createPortal(
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
           <div
             onClick={(e) => e.stopPropagation()}
             className="w-full max-w-md bg-card border border-border rounded-3xl p-5 shadow-xl space-y-4 max-h-[90vh] overflow-y-auto"
@@ -836,7 +838,7 @@ export default function LiffLinksPage() {
       {/* ✏️ 編集・削除モーダル (ポータル描画) */}
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {mounted && editingLink && createPortal(
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
           <div
             onClick={(e) => e.stopPropagation()}
             className="w-full max-w-md bg-card border border-border rounded-3xl p-5 shadow-xl space-y-4 max-h-[90vh] overflow-y-auto"

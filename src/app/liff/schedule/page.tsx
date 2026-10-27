@@ -783,7 +783,7 @@ export default function LiffSchedulePage() {
   }, [eventsInCurrentMonth, filter, selectedDateStr, sortOrder, showPastDates, currentMonthPrefix, todayStr]);
 
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col flex-1">
       <LiffHeader />
 
       <div className="p-4 space-y-4">
@@ -1675,6 +1675,9 @@ export default function LiffSchedulePage() {
         )}
           </>
         )}
+
+        {/* 🌟 最下部マージン（ボトムナビに被らず快適にタップできる適度な余白） */}
+        <div className="h-8 w-full shrink-0 pointer-events-none select-none" aria-hidden="true" />
       </div>
 
       {/* 🌟 予定の個別詳細編集モーダル（広々レイアウト ＆ 午前午後常に設定 ＆ 横並び入力） */}

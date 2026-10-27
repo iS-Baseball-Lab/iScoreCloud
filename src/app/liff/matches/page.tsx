@@ -95,7 +95,7 @@ function MatchesContent() {
   if (matchId) {
     if (isDetailLoading) {
       return (
-        <div className="flex flex-col min-h-screen">
+        <div className="flex flex-col flex-1">
           <LiffHeader />
           <div className="flex-1 flex flex-col items-center justify-center p-8 text-muted-foreground gap-3">
             <Loader2 className="w-8 h-8 animate-spin text-primary" />
@@ -107,7 +107,7 @@ function MatchesContent() {
 
     if (detailError || !match) {
       return (
-        <div className="flex flex-col min-h-screen">
+        <div className="flex flex-col flex-1">
           <LiffHeader />
           <div className="p-4 space-y-4">
             <LiffPageHeader title="試合情報" showBack />
@@ -147,7 +147,7 @@ function MatchesContent() {
     const shareText = `【試合結果】\nvs ${match.opponent}\n${match.myScore} - ${match.opponentScore} (${isWin ? "勝利 🏆" : isLose ? "敗戦" : "引分"})\n📅 ${match.date}${match.venueName ? `\n📍 ${match.venueName}` : ""}`;
 
     return (
-      <div className="flex flex-col min-h-screen">
+      <div className="flex flex-col flex-1">
         <LiffHeader />
 
         <div className="p-4 space-y-4">
@@ -266,6 +266,8 @@ function MatchesContent() {
               </table>
             </div>
           </section>
+
+          <div className="h-8 w-full shrink-0" aria-hidden="true" />
         </div>
       </div>
     );
@@ -283,7 +285,7 @@ function MatchesContent() {
   const videoMatchesCount = matchesList.filter((m) => !!extractYouTubeVideoId(m.youtubeUrl)).length;
 
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col flex-1">
       <LiffHeader />
 
       <div className="p-4 space-y-4">
@@ -376,6 +378,8 @@ function MatchesContent() {
             ))}
           </div>
         )}
+
+        <div className="h-8 w-full shrink-0" aria-hidden="true" />
       </div>
     </div>
   );
@@ -385,7 +389,7 @@ export default function LiffMatchesPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex flex-col min-h-screen">
+        <div className="flex flex-col flex-1">
           <LiffHeader />
           <div className="flex-1 flex flex-col items-center justify-center p-8 text-muted-foreground gap-3">
             <Loader2 className="w-8 h-8 animate-spin text-primary" />
