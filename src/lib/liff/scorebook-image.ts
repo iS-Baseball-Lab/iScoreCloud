@@ -207,10 +207,10 @@ export async function extractStructureFocusCrops(
 
     const mimeType = "image/jpeg";
 
-    // 1. 左側 0%〜44%（打順・守備・背番号・氏名・途中交代欄）の高解像度クロップ
-    const lineupSrcW = Math.max(64, Math.round(w * 0.44));
+    // 1. 左側 0%〜36%（打順・守備・背番号・氏名・途中交代欄）の高解像度クロップ
+    const lineupSrcW = Math.max(64, Math.round(w * 0.36));
     const lineupSrcH = h;
-    const lineupMaxEdge = 1800;
+    const lineupMaxEdge = 2000;
     const lineupScale =
       Math.max(lineupSrcW, lineupSrcH) > lineupMaxEdge
         ? lineupMaxEdge / Math.max(lineupSrcW, lineupSrcH)
@@ -237,14 +237,14 @@ export async function extractStructureFocusCrops(
       lineupCanvas.toDataURL(mimeType, 0.92)
     );
 
-    // 2. 上部 0%〜26%（スコアボード＆イニング列ヘッダー番号）＋ 下部 68%〜100%（各列合計得点・安打・投手欄）を1枚に結合
-    const topStripH = Math.max(48, Math.round(h * 0.26));
-    const botStripY = Math.round(h * 0.68);
+    // 2. 上部 0%〜28%（スコアボード＆イニング列ヘッダー番号）＋ 下部 64%〜100%（各列合計得点・安打・投手欄）を1枚に結合
+    const topStripH = Math.max(48, Math.round(h * 0.28));
+    const botStripY = Math.round(h * 0.64);
     const botStripH = Math.max(48, h - botStripY);
     const dividerH = 8;
     const rawCompW = w;
     const rawCompH = topStripH + dividerH + botStripH;
-    const summaryMaxEdge = 1800;
+    const summaryMaxEdge = 2000;
     const sumScale =
       Math.max(rawCompW, rawCompH) > summaryMaxEdge
         ? summaryMaxEdge / Math.max(rawCompW, rawCompH)
@@ -291,14 +291,31 @@ export async function extractStructureFocusCrops(
   }
 }
 
+export interface InningChunkCropOptions {
+  /** Stage 1で検出した打順欄の右端X座標 (0〜1000) */
+  lineupRightX?: number;
+  /** 1回列の左端X座標 (0〜1000)。左パネルに1回の打席マスが絶対混入しないよう厳密クリップに使用 */
+  firstInningMinX?: number;
+  /** 打順ごとの行Y座標ガイド（検証済みの場合のみ行番号マーカーを描画） */
+  batters?: ReadonlyArray<{
+    battingOrder: number;
+    name: string;
+    rowBox?: NormalizedBox;
+  }>;
+  /** 対象イニング番号（赤枠ラベル描画用） */
+  targetInnings?: readonly number[];
+}
+
 /**
- * Stage 2（イニング分割ディープ解析）で列ズレ（1回と2回の取り違え等）を物理的に防ぐため、
- * 左端の「打順・選手名欄 (0%〜30%)」と「対象イニング列 (columnBox周辺)」を
- * Y座標（行の高さ）を1pxもずらさずに横並び結合した高精細フォーカス画像を生成する。
+ * Stage 2（イニング分割ディープ解析）で列ズレや1回マスの混入を物理的に防ぐため、
+ * 1) 左端の「打順・選手名欄のみ（1回列の直前で厳密クリップ）」と
+ * 2) 右側の「対象イニング列（赤枠ハイライト＋隣接列の減光マスク付き）」を
+ * Y座標（行の高さ）を1pxもずらさずに横並び結合した高精度ビジュアルガイド画像を生成する。
  */
 export async function extractInningChunkCompositeCrop(
   sourceDataUrl: string,
-  columnBoxes: NormalizedBox[]
+  columnBoxes: NormalizedBox[],
+  options?: InningChunkCropOptions
 ): Promise<{ base64: string; mimeType: string } | null> {
   if (columnBoxes.length === 0) return null;
   try {
@@ -309,26 +326,52 @@ export async function extractInningChunkCompositeCrop(
 
     let minColX = 1000;
     let maxColX = 0;
-    for (const [, xmin, , xmax] of columnBoxes) {
+    let minColY = 1000;
+    let maxColY = 0;
+    for (const [ymin, xmin, ymax, xmax] of columnBoxes) {
       minColX = Math.min(minColX, xmin);
       maxColX = Math.max(maxColX, xmax);
+      minColY = Math.min(minColY, ymin);
+      maxColY = Math.max(maxColY, ymax);
     }
     if (maxColX <= minColX || minColX >= 980) return null;
 
-    // 左パネル: 打順・選手名欄 (0% 〜 30%)
-    const leftPanelW = Math.max(48, Math.round(w * 0.3));
-    // 右パネル: 対象イニング列（見出し番号や境界線が確実に読めるよう左右に余白4.5%を確保）
-    const targetStartNorm = Math.max(0.18, (minColX - 45) / 1000);
-    const targetEndNorm = Math.min(1, (maxColX + 45) / 1000);
-    if (targetEndNorm - targetStartNorm < 0.05) return null;
+    // 【超重要】左パネルに1回列の打席マスが絶対混入しないよう、1回列の左端手前で厳密に打ち切る
+    const candidateBoundary =
+      typeof options?.lineupRightX === "number" &&
+      options.lineupRightX >= 80 &&
+      options.lineupRightX <= 340
+        ? options.lineupRightX
+        : typeof options?.firstInningMinX === "number" &&
+          options.firstInningMinX >= 90 &&
+          options.firstInningMinX <= 360
+        ? options.firstInningMinX - 3
+        : minColX >= 90 && minColX <= 290
+        ? minColX - 3
+        : 205;
+
+    const leftEndNorm = Math.max(
+      0.11,
+      Math.min(0.26, candidateBoundary / 1000)
+    );
+    const leftPanelW = Math.max(48, Math.round(w * leftEndNorm));
+
+    // 右パネル: 対象イニング列（見出し番号と左右縦罫線が読める最小限の余白2.6%のみ確保）
+    const padX = 26;
+    const targetStartNorm = Math.max(leftEndNorm, (minColX - padX) / 1000);
+    const targetEndNorm = Math.min(1, (maxColX + padX) / 1000);
+    if (targetEndNorm - targetStartNorm < 0.04) return null;
 
     const rightSrcX = Math.round(w * targetStartNorm);
-    const rightSrcW = Math.max(48, Math.round(w * (targetEndNorm - targetStartNorm)));
+    const rightSrcW = Math.max(
+      48,
+      Math.round(w * (targetEndNorm - targetStartNorm))
+    );
 
-    const dividerW = 8;
+    const dividerW = 24;
     const rawTotalW = leftPanelW + dividerW + rightSrcW;
     const rawTotalH = h;
-    const maxEdge = 1800;
+    const maxEdge = 2000;
     const scale =
       Math.max(rawTotalW, rawTotalH) > maxEdge
         ? maxEdge / Math.max(rawTotalW, rawTotalH)
@@ -344,26 +387,145 @@ export async function extractInningChunkCompositeCrop(
     ctx.imageSmoothingQuality = "high";
 
     const outLeftW = Math.round(leftPanelW * scale);
-    const outDivW = Math.max(4, Math.round(dividerW * scale));
-    const outRightW = Math.max(32, canvas.width - outLeftW - outDivW);
+    const outDivW = Math.max(16, Math.round(dividerW * scale));
+    const outRightX = outLeftW + outDivW;
+    const outRightW = Math.max(32, canvas.width - outRightX);
 
-    // 左側に打順・選手名をそのままの高さで描画
+    // 1. 左側に打順・選手名欄のみを同じY座標のまま描画
     ctx.drawImage(img, 0, 0, leftPanelW, h, 0, 0, outLeftW, canvas.height);
-    // 視認しやすいシアン境界線
-    ctx.fillStyle = "#0284c7";
+
+    // 2. 中央に濃紺セパレーター帯を描画（ここに行番号バッジを配置）
+    ctx.fillStyle = "#0f172a";
     ctx.fillRect(outLeftW, 0, outDivW, canvas.height);
-    // 右隣に対象イニング列のみを同じY座標のまま描画
+
+    // 3. 右隣に対象イニング列を同じY座標のまま描画
     ctx.drawImage(
       img,
       rightSrcX,
       0,
       rightSrcW,
       h,
-      outLeftW + outDivW,
+      outRightX,
       0,
       outRightW,
       canvas.height
     );
+
+    // 4. 対象イニング列の左右外側にわずかに写り込んだ隣接イニング列を減光し、対象列を赤枠で明確に囲む
+    const focusLeftInRight =
+      ((minColX / 1000 - targetStartNorm) / (targetEndNorm - targetStartNorm)) *
+      outRightW;
+    const focusRightInRight =
+      ((maxColX / 1000 - targetStartNorm) / (targetEndNorm - targetStartNorm)) *
+      outRightW;
+    const clampedFocusL = Math.max(0, Math.round(focusLeftInRight) - 2);
+    const clampedFocusR = Math.min(
+      outRightW,
+      Math.round(focusRightInRight) + 2
+    );
+
+    ctx.fillStyle = "rgba(15, 23, 42, 0.36)";
+    if (clampedFocusL > 2) {
+      ctx.fillRect(outRightX, 0, clampedFocusL, canvas.height);
+    }
+    if (clampedFocusR < outRightW - 2) {
+      ctx.fillRect(
+        outRightX + clampedFocusR,
+        0,
+        outRightW - clampedFocusR,
+        canvas.height
+      );
+    }
+
+    const frameTopY =
+      minColY < maxColY && minColY >= 20
+        ? Math.max(0, Math.round(((minColY - 25) / 1000) * canvas.height))
+        : 0;
+    const frameBotY =
+      minColY < maxColY && maxColY <= 990
+        ? Math.min(
+            canvas.height,
+            Math.round(((maxColY + 15) / 1000) * canvas.height)
+          )
+        : canvas.height;
+
+    ctx.strokeStyle = "#dc2626";
+    ctx.lineWidth = Math.max(2, Math.round(3 * scale));
+    ctx.strokeRect(
+      outRightX + clampedFocusL + 1,
+      frameTopY + 1,
+      Math.max(12, clampedFocusR - clampedFocusL - 2),
+      Math.max(24, frameBotY - frameTopY - 2)
+    );
+
+    if (options?.targetInnings && options.targetInnings.length > 0) {
+      const badgeText = `${options.targetInnings.join("・")}回 対象列`;
+      const fontPx = Math.max(11, Math.round(14 * scale));
+      ctx.font = `bold ${fontPx}px sans-serif`;
+      const textW = ctx.measureText(badgeText).width;
+      const badgeW = Math.min(outRightW - 4, Math.ceil(textW + 12));
+      const badgeH = fontPx + 8;
+      const badgeX =
+        outRightX +
+        Math.max(
+          2,
+          Math.min(
+            outRightW - badgeW - 2,
+            Math.round((clampedFocusL + clampedFocusR - badgeW) / 2)
+          )
+        );
+      const badgeY = Math.max(2, frameTopY - badgeH - 2);
+      ctx.fillStyle = "#dc2626";
+      ctx.fillRect(badgeX, badgeY, badgeW, badgeH);
+      ctx.fillStyle = "#ffffff";
+      ctx.textBaseline = "middle";
+      ctx.fillText(badgeText, badgeX + 6, badgeY + badgeH / 2);
+    }
+
+    // 5. Stage 1で各打順の行Y座標(rowBox)が単調増加で取得できている場合、中央セパレーター帯に打順番号マーカーを描画
+    const validRows = (options?.batters || []).filter(
+      (b): b is { battingOrder: number; name: string; rowBox: NormalizedBox } =>
+        Array.isArray(b.rowBox) &&
+        b.rowBox.length === 4 &&
+        b.rowBox[2] > b.rowBox[0]
+    );
+    let isStrictlyMonotonic = validRows.length >= 7;
+    for (let i = 1; i < validRows.length; i++) {
+      if (validRows[i].rowBox[0] < validRows[i - 1].rowBox[0] + 12) {
+        isStrictlyMonotonic = false;
+        break;
+      }
+    }
+
+    if (isStrictlyMonotonic) {
+      const rowFontPx = Math.max(10, Math.round(12 * scale));
+      ctx.font = `bold ${rowFontPx}px sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+
+      for (const row of validRows) {
+        const yTop = Math.round((row.rowBox[0] / 1000) * canvas.height);
+        const yBot = Math.round((row.rowBox[2] / 1000) * canvas.height);
+        const yMid = Math.round((yTop + yBot) / 2);
+
+        // 水平の薄い破線ガイドで行の対応を一目瞭然にする
+        ctx.strokeStyle = "rgba(56, 189, 248, 0.35)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(Math.max(0, outLeftW - 18), yTop);
+        ctx.lineTo(outRightX + clampedFocusR, yTop);
+        ctx.stroke();
+
+        // 中央帯に打順番号（1〜9）を白抜き描画
+        ctx.fillStyle = "#38bdf8";
+        ctx.fillText(
+          String(row.battingOrder),
+          outLeftW + outDivW / 2,
+          yMid
+        );
+      }
+      ctx.textAlign = "start";
+    }
 
     const mimeType = "image/jpeg";
     const dataUrl = canvas.toDataURL(mimeType, 0.92);

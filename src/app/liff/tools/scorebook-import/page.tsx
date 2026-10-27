@@ -790,9 +790,11 @@ export default function LiffScorebookImportPage() {
         let buf: number[] = [];
 
         for (const meta of sortedMeta) {
-          // 打者一巡(2列)や大量得点(3点以上)の回は単独1イニング、通常回は最大3イニングまとめて解析しAPIリクエスト回数(RPM/RPD)を節約する
-          const isHeavyInning = meta.columnCount >= 2 || meta.runs >= 3;
-          if (isHeavyInning) {
+          // 得点回(1点以上)・複数安打回(2本以上)・打者一巡(2列)の回は必ず単独1イニング集中解析とし、
+          // 三者凡退などの静かな無得点回のみ最大2イニングまでに抑えて1マスあたりの推論精度を最大化する
+          const isDetailedInning =
+            meta.columnCount >= 2 || meta.runs >= 1 || meta.hits >= 2;
+          if (isDetailedInning) {
             if (buf.length > 0) {
               chunks.push(buf);
               buf = [];
@@ -800,7 +802,7 @@ export default function LiffScorebookImportPage() {
             chunks.push([meta.inning]);
           } else {
             buf.push(meta.inning);
-            if (buf.length >= 3) {
+            if (buf.length >= 2) {
               chunks.push(buf);
               buf = [];
             }
@@ -819,7 +821,8 @@ export default function LiffScorebookImportPage() {
           b: structure.batters.map((x) => [
             x.battingOrder,
             x.name,
-            x.substitutions.map((s) => [s.inningEntered, s.name]),
+            x.position,
+            x.substitutions.map((s) => [s.inningEntered, s.name, s.position]),
           ]),
           p: structure.pitchers.map((x) => [x.name, x.fromInning, x.toInning]),
           i: structure.innings.map((x) => [x.inning, x.runs, x.columnCount]),
@@ -855,9 +858,20 @@ export default function LiffScorebookImportPage() {
           )
           .filter((b): b is NormalizedBox => Array.isArray(b));
 
+        const knownMinXs = structure.innings
+          .map((m) => m.columnBox?.[1])
+          .filter((v): v is number => typeof v === "number" && v > 0);
+        const firstInningMinX =
+          knownMinXs.length > 0 ? Math.min(...knownMinXs) : undefined;
+
         const focusCrop =
           targetBoxes.length > 0
-            ? await extractInningChunkCompositeCrop(sourceDataUrl, targetBoxes)
+            ? await extractInningChunkCompositeCrop(sourceDataUrl, targetBoxes, {
+                lineupRightX: structure.lineupRightX,
+                firstInningMinX,
+                batters: structure.batters,
+                targetInnings,
+              })
             : null;
 
         const sideLabel = isTop ? "先攻（表）" : "後攻（裏）";

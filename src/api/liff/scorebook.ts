@@ -4,6 +4,7 @@ import { drizzle } from "drizzle-orm/d1";
 import { eq, and, asc, desc, inArray } from "drizzle-orm";
 import * as schema from "@/db/schema";
 import { ensureMatchLineupColumns } from "@/lib/db-helper";
+import { harmonizeOcrFieldingAndLabel } from "@/lib/liff/scorebook-fielding";
 import {
   computeCountFromPitches,
   inferCanonicalResultCode,
@@ -84,6 +85,8 @@ interface RawGeminiBatter {
   name?: string;
   uniformNumber?: string;
   position?: string;
+  ymin?: number;
+  ymax?: number;
   substitutions?: RawGeminiSubstitution[];
 }
 
@@ -113,6 +116,7 @@ interface RawGeminiStructureResponse {
   totalRuns?: number;
   totalHits?: number;
   totalErrors?: number;
+  lineupRightX?: number;
 }
 
 interface RawGeminiAdvance {
@@ -214,45 +218,45 @@ function getGeminiModelConfigs(
   return [
     {
       model: "gemini-3.8-flash",
-      firstChunkTimeoutMs: 16_000,
-      firstTextTimeoutMs: 36_000,
-      thinkingMode: isStructure ? "level_medium" : "level_low",
+      firstChunkTimeoutMs: 18_000,
+      firstTextTimeoutMs: 44_000,
+      thinkingMode: "level_high",
       backoffBeforeMs: 0,
     },
     {
       model: "gemini-3.6-flash",
-      firstChunkTimeoutMs: 16_000,
-      firstTextTimeoutMs: 36_000,
-      thinkingMode: isStructure ? "level_medium" : "level_low",
+      firstChunkTimeoutMs: 18_000,
+      firstTextTimeoutMs: 44_000,
+      thinkingMode: "level_high",
       backoffBeforeMs: 250,
     },
     {
-      model: "gemini-3.5-flash-lite",
-      firstChunkTimeoutMs: 14_000,
-      firstTextTimeoutMs: 32_000,
+      model: "gemini-flash-latest",
+      firstChunkTimeoutMs: 16_000,
+      firstTextTimeoutMs: 38_000,
       thinkingMode: isStructure ? "level_high" : "level_medium",
       backoffBeforeMs: 250,
     },
     {
+      model: "gemini-3.5-flash-lite",
+      firstChunkTimeoutMs: 15_000,
+      firstTextTimeoutMs: 38_000,
+      thinkingMode: "level_high",
+      backoffBeforeMs: 250,
+    },
+    {
       model: "gemini-3.8-flash-lite",
-      firstChunkTimeoutMs: 14_000,
-      firstTextTimeoutMs: 30_000,
-      thinkingMode: isStructure ? "level_medium" : "level_low",
+      firstChunkTimeoutMs: 15_000,
+      firstTextTimeoutMs: 36_000,
+      thinkingMode: "level_high",
       backoffBeforeMs: 250,
     },
     {
       model: "gemini-3.1-flash-lite",
-      firstChunkTimeoutMs: 14_000,
-      firstTextTimeoutMs: 30_000,
-      thinkingMode: isStructure ? "level_medium" : "level_low",
+      firstChunkTimeoutMs: 15_000,
+      firstTextTimeoutMs: 34_000,
+      thinkingMode: isStructure ? "level_high" : "level_medium",
       backoffBeforeMs: 300,
-    },
-    {
-      model: "gemini-flash-lite-latest",
-      firstChunkTimeoutMs: 14_000,
-      firstTextTimeoutMs: 30_000,
-      thinkingMode: isStructure ? "level_medium" : "level_low",
-      backoffBeforeMs: 350,
     },
   ];
 }
@@ -876,9 +880,12 @@ ${battingTeamContext}${scoreboardHintText}
      - 日本のスコアブックの選手欄は「打順 | 守備位置 | 背番号 | 選手氏名」または「打順 | 選手氏名 | 背番号 | 守備位置」の列構造です。
      - **守備位置（position）** は 1〜9 または DH が1人ずつ割り振られる列です。漢字（投・捕・一・二・三・遊・左・中・右・指）や英語（P,C,1B..DH）で書かれていても、出力時は必ず **"1","2","3","4","5","6","7","8","9","D"** の1文字コードに変換してください（1=投, 2=捕, 3=一, 4=二, 5=三, 6=遊, 7=左, 8=中, 9=右, D=DH）。
      - **背番号（uniformNumber）** は 0〜99 等のユニフォーム番号です。背番号欄が空欄のときに守備位置番号（1〜9）を uniformNumber に入れるミスを絶対にしないでください！空欄なら "" を返してください。
-   - **先発と途中交代（substitutions）の分離**:
+   - **先発と途中交代（substitutions）の分離＋守備位置抽出**:
      - 各打順枠が上下2〜3段に分かれている場合、**一番上の段が先発選手（starter）**です。
-     - 2段目・3段目に実際に別の選手名が手書きされている場合のみ substitutions 配列に追加し、シート1全体の打席グリッド内の交代線（波線・二重線・斜線・『PH』『PR』表記）がある列から出場イニング（inningEntered: 1以上の整数）と種別（"PH"=代打, "PR"=代走, "DEF"=守備交代）を特定してください。空欄の段は絶対に出力しないでください。
+     - 2段目・3段目に実際に別の選手名が手書きされている場合のみ substitutions 配列に追加し、シート1全体の打席グリッド内の交代線（波線・二重線・斜線・『PH』『PR』表記）がある列から出場イニング（inningEntered: 1以上の整数）、種別（"PH"=代打, "PR"=代走, "DEF"=守備交代）、および交代後の守備位置（position: "1"〜"9" または "D"、未記載なら ""）を特定してください。空欄の段は絶対に出力しないでください。
+   - **各打順行の上下座標（ymin, ymax）と選手欄右端境界（lineupRightX）の抽出**:
+     - 画像1（シート全体画像）の 0〜1000 正規化座標で、各打順枠（1番、2番...）の行の上端 ymin と下端 ymax を出力してください。
+     - また、左側の選手名欄と「1回」の打席列を隔てる縦罫線の X座標（0〜1000、通常 160〜240 前後）を **lineupRightX** に出力してください。
 
 2. **登板投手（pitchers）の敵味方検証と継投抽出**:
    - このシートの打者たちに対して投げた**守備側チームのピッチャー**を登板順（order: 1, 2...）に抽出してください。
@@ -894,10 +901,10 @@ ${battingTeamContext}${scoreboardHintText}
      この場合は必ず1つのイニング要素にまとめて **columnCount: 2** とし、後続のイニング番号が +1 ズレないよう見出し番号と照合してください！
    - 試合が行われていない空白のイニング列（最終回より右側の空列）は出力しないでください。
    - 各回の得点（runs）は、①上部スコアボードの数字、②各列最下部の得点計、③その回のマス内の本塁生還印（●や赤塗りダイヤ）の個数の**3箇所を突き合わせて完全一致**させてください。
-   - 各イニング列の座標 (ymin, xmin, ymax, xmax) は必ず **画像1（シート全体画像）に対する 0〜1000 の正規化整数** で出力してください（columnCount:2 の場合は2列分を囲む xmin〜xmax）。
+   - 各イニング列の座標 (ymin, xmin, ymax, xmax) は必ず **画像1（シート全体画像）に対する当該イニング列の左右縦罫線の正確な 0〜1000 整数** で出力してください（隣のイニング列を含めず、columnCount:2 の場合は2列分のみを囲む xmin〜xmax）。
 
 【出力JSONフォーマット（以下の厳密なキー構造のJSONオブジェクトのみを返してください）】
-{"batters":[{"battingOrder":1,"name":"選手名","uniformNumber":"10","position":"6","substitutions":[{"inningEntered":5,"subType":"PH","name":"交代選手名","uniformNumber":"24","position":"D"}]}],"pitchers":[{"order":1,"name":"投手名","uniformNumber":"18","fromInning":1,"toInning":7}],"innings":[{"inning":1,"columnCount":1,"runs":0,"hits":1,"ymin":120,"xmin":210,"ymax":880,"xmax":300}],"totalRuns":0,"totalHits":1,"totalErrors":0}
+{"lineupRightX":205,"batters":[{"battingOrder":1,"name":"選手名","uniformNumber":"10","position":"6","ymin":140,"ymax":215,"substitutions":[{"inningEntered":5,"subType":"PH","name":"交代選手名","uniformNumber":"24","position":"7"}]}],"pitchers":[{"order":1,"name":"投手名","uniformNumber":"18","fromInning":1,"toInning":7}],"innings":[{"inning":1,"columnCount":1,"runs":0,"hits":1,"ymin":120,"xmin":205,"ymax":880,"xmax":285}],"totalRuns":0,"totalHits":1,"totalErrors":0}
 ※余分な説明文やMarkdownコードブロックは一切付けず、1行のコンパクトなJSON文字列のみを出力してください。`;
 
     const raw = await callGeminiStructuredJson<RawGeminiStructureResponse>(
@@ -906,6 +913,13 @@ ${battingTeamContext}${scoreboardHintText}
       imageParts,
       "structure"
     );
+
+    const rawLineupRightX =
+      typeof raw.lineupRightX === "number" &&
+      raw.lineupRightX >= 80 &&
+      raw.lineupRightX <= 360
+        ? Math.round(raw.lineupRightX)
+        : undefined;
 
     const maxInningFromSheet =
       (raw.innings || []).reduce((mx, cur) => Math.max(mx, cur.inning || 1), 0) ||
@@ -917,11 +931,23 @@ ${battingTeamContext}${scoreboardHintText}
     const normalizedBatters: ScorebookBatterSlot[] = rawBatters.map((b, idx) => {
       const order = b.battingOrder || idx + 1;
       const normPos = normalizePositionCode(b.position);
-      // もし背番号と守備位置が全く同じ1桁数字で、登録名鑑にその背番号が存在しない場合は守備位置重複転記の可能性をケア
       const rawUniform = (b.uniformNumber || "").trim();
       const matched = isMyTeamBatting
         ? matchRosterPlayer(b.name, rawUniform, roster)
         : null;
+
+      // 背番号欄が空欄のときに守備位置番号(1〜9)を誤転記するケースの防止
+      const cleanedUniform =
+        !matched &&
+        rawUniform === normPos &&
+        /^[1-9]$/.test(rawUniform) &&
+        rawBatters.every(
+          (other) =>
+            !other.uniformNumber ||
+            other.uniformNumber.trim() === normalizePositionCode(other.position)
+        )
+          ? ""
+          : rawUniform;
 
       const subs: ScorebookSubstitution[] = (b.substitutions || [])
         .filter((s) => Boolean((s.name || "").trim() || (s.uniformNumber || "").trim()))
@@ -951,10 +977,17 @@ ${battingTeamContext}${scoreboardHintText}
           };
         });
 
+      const rowBox =
+        typeof b.ymin === "number" &&
+        typeof b.ymax === "number" &&
+        b.ymax > b.ymin + 12
+          ? sanitizeBox(b.ymin, 0, b.ymax, rawLineupRightX ?? 210)
+          : undefined;
+
       return {
         battingOrder: order,
         name: matched ? matched.name : (b.name || "").trim(),
-        uniformNumber: matched ? matched.uniformNumber : rawUniform,
+        uniformNumber: matched ? matched.uniformNumber : cleanedUniform,
         position:
           normPos ||
           (matched?.primaryPosition
@@ -962,6 +995,7 @@ ${battingTeamContext}${scoreboardHintText}
             : ""),
         playerId: matched ? matched.id : null,
         substitutions: subs,
+        rowBox,
       };
     });
 
@@ -1092,6 +1126,17 @@ ${battingTeamContext}${scoreboardHintText}
     const calculatedRuns = normalizedInnings.reduce((acc, cur) => acc + cur.runs, 0);
     const calculatedHits = normalizedInnings.reduce((acc, cur) => acc + cur.hits, 0);
 
+    const firstValidColMinX = normalizedInnings.find(
+      (i) => Array.isArray(i.columnBox) && i.columnBox[1] > 60
+    )?.columnBox?.[1];
+    const resolvedLineupRightX =
+      rawLineupRightX ??
+      (typeof firstValidColMinX === "number" &&
+      firstValidColMinX >= 85 &&
+      firstValidColMinX <= 360
+        ? Math.max(80, firstValidColMinX - 2)
+        : undefined);
+
     const structure: ScorebookSheetStructure = {
       isTop: body.isTop,
       isMyTeamBatting,
@@ -1109,6 +1154,7 @@ ${battingTeamContext}${scoreboardHintText}
       totalRuns: calculatedRuns,
       totalHits: raw.totalHits ?? calculatedHits,
       totalErrors: Math.max(0, raw.totalErrors ?? 0),
+      lineupRightX: resolvedLineupRightX,
     };
 
     return c.json({
@@ -1183,9 +1229,9 @@ liffScorebookRouter.post("/analyze-inning-chunk", async (c) => {
       stage2ImageGuide.push(
         `・画像${imageParts.length}: 【${sortedTargets.join(
           "・"
-        )}回専用・水平整列ズーム画像】左側に「打順・選手名欄」、水色の縦線のすぐ右側に「今回抽出対象の ${sortedTargets.join(
+        )}回専用・行番号ガイド＆赤枠ハイライト拡大画像】左側に「打順・選手名欄のみ（1回マスは含みません）」、中央の濃紺帯に打順ガイド、その右側の【赤枠内】に今回抽出対象の ${sortedTargets.join(
           "・"
-        )}回 の列付近」を全く同じ行高さで横並び拡大した画像です！左の打順行から真横に視線を動かして対象イニング列のマスを特定し、隣のイニング列の打席を絶対に混ぜないでください！`
+        )}回 の列のみを全く同じ行高さで拡大しています！赤枠の外側の暗く減光された隣接列は絶対に読まず、赤枠内の列だけを左の打順行と真横に照合して精読してください！`
       );
     }
 
@@ -1262,9 +1308,10 @@ ${pitcherSpecLines.join("\n")}
 【対象イニングの確定スコア＆列情報（必ずこの得点数・列数・3アウト交代と整合させること）】
 ${targetInningMetaLines.join("\n")}
 
-【超重要 1: 列ズレ・イニング混入の完全防止】
+【超重要 1: 列ズレ・イニング終了切り線の誤読防止】
 - 1つのイニングは先頭打者から打順が1つずつ下へ進み（9番の次は1番へ戻る）、アウト丸数字 ① ➔ ② ➔ ③（3アウトチェンジ）が出た時点でそのイニングは終了です！
-- ③（3アウト目）が出た後に、右隣の次イニング列に書かれたマスを同じイニングとして読み続けるミスは絶対にしないでください。
+- **⚠️イニング終了切り線の誤読厳禁**: 3アウト目（③）になったマスの右下隅や、その直下の空欄マスに引かれている短い斜線『／』やカギ線『∟』は「この回終了」を示す区切り印です！これを単打の斜線『/』や次の打席と誤読しないでください。③が出た時点でそのイニングの打席読取を終了してください。
+- 画像2の赤枠外の暗く減光された隣接列は別のイニングなので絶対に読まないでください。
 
 【超重要 2: 1球ごとの投球・牽制・ボーク順序（p）の完全抽出（必須）】
 各打席マスの投球記号欄（BSO欄）および各塁周辺の牽制・ボーク記号を拡大画像で1球目から順番に読み取り、以下の短縮コード配列 p で出力してください:
@@ -1284,19 +1331,26 @@ ${targetInningMetaLines.join("\n")}
 ※【牽制・ボークと走者の整合ルール】: 牽制球（P1/P2/P3）およびボーク（BK）は走者がいる場面でのみ記録されます（走者1塁のみなら "P1"、2塁のみなら "P2"、3塁のみなら "P3"）。1塁・2塁・3塁の牽制記号の違いと塁上走者の位置の両方を照合して厳密に判別してください。
 ※申告敬遠（rc: "intentional_walk"）以外の打席は、BSO合計のみ書かれたマスも最終カウントと結果に整合する配列を構成し、空配列にしないでください。
 
-【超重要 3: 打撃結果コード（rc）と日本語表記（rl）の厳密判定】
-- 安打とアウトを絶対に混同しないでください！右下の1塁線〜進塁線に実線・赤線・斜線（/ = 単打, // = 二塁打, /// = 三塁打, //// = 本塁打）があり打者自身のアウト丸数字（①②③）が無い場合は安打です。
-- 中央『7』『8』『9』等の守備番号＋斜線/赤線 ➔ rc: "single"（または "double"/"triple"/"home_run"）, rl: "左前安打" / "中前安打" 等。
-- 『6-3』『4-3』等の送球ハイフン＋①②③ ➔ rc: "groundout"（併殺は "double_play"、三重殺は "triple_play"）, rl: "遊ゴロ (6-3)" 等。
-- 『8』『7F』『9飛』『6直』『2邪飛』＋①②③ ➔ rc: "flyout", rl: "中飛" / "遊直" / "捕邪飛" 等。
-- 『IF』『IFF』『(IF)』『インフィールドフライ』＋①② ➔ rc: "infield_fly", rl: "インフィールドフライ", o: 1。
-- 『K』『SO』または2ストライク後のバントファウル（スリーバント失敗）＋①②③ ➔ rc: "strikeout", rl: "空振り三振" / "見逃し三振" / "スリーバント失敗", o: 1。
-- 振り逃げアウト（『K 2-3』『振逃2-3』＋アウト丸数字 ①②③）➔ rc: "dropped_third_strike_out", rl: "振り逃げアウト (K 2-3)", o: 1。
-- 振り逃げセーフ出塁（『K』＋WP/PB/E2等で1塁進塁、打者のアウト丸数字なし）➔ rc: "dropped_third_strike", rl: "振り逃げ出塁", o: 0。
-- 打撃妨害・インターフェア出塁（『I』『INT』『CI』『打妨』で1塁出塁、o: 0）➔ rc: "interference", rl: "打撃妨害 (INT)", o: 0。
-- 守備妨害・インターフェアアウト・反則打球（『INT』『守妨』『反則打球』＋①②③）➔ rc: "interference_out", rl: "守備妨害アウト (INT)", o: 1。
-- 四球 ➔ rc: "walk"、敬遠・申告敬遠（『IBB』『敬遠』）➔ rc: "intentional_walk"、死球 ➔ rc: "hit_by_pitch"、犠打（犠打失策・犠打野選で0死の場合も rc は "sac_bunt"）➔ rc: "sac_bunt"、犠飛 ➔ rc: "sac_fly"、失策 ➔ rc: "error"、野選（『FC』『O.B.』）➔ rc: "fc"。
-- 打席途中に走者が盗塁死・牽制死・走塁死して3アウトチェンジになった未完了マス ➔ rc: "other", rl: "打席途中断（走塁死チェンジ）", o: 1。
+【超重要 3: 早稲田式ダイヤモンド解読＆守備位置・打球方向（dir）の必須抽出】
+- **🔥最重要・出塁後の走塁死と打席凡退の区別**:
+  早稲田式では「安打・四死球・失策で一度1塁へ出塁した後、後続打者の打席中に盗塁死・封殺等でアウトになった走者」のマスにも、後からダイヤモンド中央に丸数字 ①②③ が書き込まれます！
+  したがって必ず最初に**ダイヤモンド右下辺（本塁→1塁線）**を確認してください:
+  1) 右下辺に安打線（実線/赤線 + 斜線 『/』『//』『///』）や四死球（『B』『D』）・失策（『E』）があり、1塁より先の進塁途中で切れて中央に丸数字がある場合 ➔ **この打席自体は安打・四死球・失策での出塁（o: 0）**です！（その丸数字アウトは後続打者の打席の advances に記録してください）。
+  2) 本塁→1塁へ到達できずにアウトになった場合（送球ハイフン『6-3』、飛球『8』、三振『K』等＋丸数字）のみ、この打席自体が凡退アウト（o: 1〜3）です！
+- **守備位置番号（1=投, 2=捕, 3=一, 4=二, 5=三, 6=遊, 7=左, 8=中, 9=右）を必ず dir に出力すること**:
+  - 安打: 右下1塁線脇の打球方向番号を読み取り dir: "7"(左), "8"(中), "9"(右), "7-8"(左中間), "8-9"(右中間), "6"(遊内安) 等とし、rc: "single"|"double"|"triple"|"home_run"、rl: "左前安打" / "右中間二塁打" / "遊撃内野安打" 等。
+  - ゴロ/封殺: 送球ルートを読み取り dir: "6-3", "4-3", "5-3", "1-3", "2-3", "6-4", "3" 等とし、rc: "groundout"、rl: "遊ゴロ (6-3)" 等。
+  - 併殺打/三重殺: dir: "6-4-3", "4-6-3", "5-4-3", "1-6-3" 等とし、rc: "double_play"（三重殺は "triple_play"）、rl: "遊併殺打 (6-4-3)" 等。
+  - フライ/邪飛/ライナー: dir: "8"(中飛), "2F"(捕邪飛), "6L"(遊直) 等とし、rc: "flyout"、rl: "中飛" / "捕邪飛" / "遊直" 等。
+  - インフィールドフライ: 『IF』『IFF』『(IF)』➔ rc: "infield_fly", dir: "6IF" 等, rl: "遊インフィールドフライ", o: 1。
+  - 三振: 『K』『SO』または2ストライク後のバントファウル ➔ rc: "strikeout", dir: "", rl: "空振り三振" / "見逃し三振" / "スリーバント失敗", o: 1。
+  - 振り逃げアウト: 『K 2-3』『振逃2-3』＋①②③ ➔ rc: "dropped_third_strike_out", dir: "K 2-3", rl: "振り逃げアウト (K 2-3)", o: 1。
+  - 振り逃げセーフ出塁: 『K』＋WP/PB/E2で1塁到達 ➔ rc: "dropped_third_strike", dir: "K-E2", rl: "振り逃げ出塁", o: 0。
+  - 犠打/犠飛: 四角やダイヤ囲み『1-3』『5-4』➔ rc: "sac_bunt", dir: "1-3", rl: "投犠打 (1-3)"。外野飛球で三塁走者生還 ➔ rc: "sac_fly", dir: "8", rl: "中犠飛"。
+  - 失策/野選: 『E6』『6E』➔ rc: "error", dir: "E6", rl: "遊失 (E6)"。『FC』『O.B.』➔ rc: "fc", dir: "FC6", rl: "遊野選 (FC6)"。
+  - 打撃妨害出塁 ➔ rc: "interference", dir: "INT2", rl: "打撃妨害 (捕手)", o: 0。守備妨害/反則打球アウト ➔ rc: "interference_out", dir: "INT", rl: "守備妨害アウト (INT)", o: 1。
+  - 四球 ➔ rc: "walk"、申告敬遠/敬遠 ➔ rc: "intentional_walk"、死球 ➔ rc: "hit_by_pitch"。
+  - 打席途中に走者が盗塁死・牽制死・走塁死して3アウトチェンジになった未完了マス ➔ rc: "other", rl: "打席途中断（走塁死チェンジ）", o: 1。
 
 【超重要 4: アウト数（o / eo）と進塁・得点（ru / a）】
 - 1イニングの o の合計は（最終回裏のサヨナラ勝ちを除き）必ず 3 です。丸数字 ①②③ から eo (1,2,3) を設定してください。
@@ -1308,7 +1362,7 @@ ${targetInningMetaLines.join("\n")}
 - cf は "h"(高)・"m"(中)・"l"(低)。迷いがあるマスのみ cf:"l" とし cr に短い理由を記載（通常は cr 省略可）。
 
 【出力JSONフォーマット（改行・インデント無しのコンパクト短縮キーJSONのみを返してください）】
-{"ab":[{"i":1,"c":1,"bo":1,"rc":"single","rl":"左前安打","rbi":0,"o":0,"eo":0,"ru":0,"p":["B","S","F","H"],"a":[{"rn":"選手名","f":"BAT","t":"1B","m":"hit","io":false,"pn":4}],"cf":"h","box":[150,210,230,300]}]}
+{"ab":[{"i":1,"c":1,"bo":1,"rc":"single","dir":"7","rl":"左前安打","rbi":0,"o":0,"eo":0,"ru":0,"p":["B","S","F","H"],"a":[{"rn":"選手名","f":"BAT","t":"1B","m":"hit","io":false,"pn":4}],"cf":"h","box":[150,210,230,285]}]}
 ※ rc は必ず "single"|"double"|"triple"|"home_run"|"walk"|"intentional_walk"|"hit_by_pitch"|"interference"|"sac_bunt"|"sac_fly"|"groundout"|"flyout"|"infield_fly"|"strikeout"|"dropped_third_strike_out"|"dropped_third_strike"|"double_play"|"triple_play"|"interference_out"|"error"|"fc"|"other" のいずれかとしてください。`;
 
     const rawChunk = await callGeminiStructuredJson<RawGeminiChunkResponse>(
@@ -1347,7 +1401,16 @@ ${targetInningMetaLines.join("\n")}
 
       const rawResultCode = ab.rc ?? ab.resultCode;
       const rawResultLabel = ab.rl ?? ab.resultLabel;
-      const resultCode = inferCanonicalResultCode(rawResultCode, rawResultLabel);
+      const rawDir = ab.dir ?? ab.battedDirection;
+      const resultCode = inferCanonicalResultCode(
+        rawResultCode,
+        rawResultLabel || rawDir
+      );
+      const harmonizedFielding = harmonizeOcrFieldingAndLabel(
+        resultCode,
+        rawDir,
+        rawResultLabel
+      );
 
       const rawAdvances = ab.a || ab.advances || [];
       const advances: ScorebookV2Advance[] = rawAdvances.map((adv) => {
@@ -1364,6 +1427,51 @@ ${targetInningMetaLines.join("\n")}
         };
       });
 
+      // 【数学的自己補正 1】打席結果コードと走塁死(advances.isOut)から outsInPlay の矛盾を自動補正
+      const rawOutsVal = Math.max(0, Math.min(3, ab.o ?? ab.outsInPlay ?? 0));
+      const runnerOutsInPlay = advances.filter(
+        (a) => a.isOut && a.from !== "BAT"
+      ).length;
+      const batterOutInAdvances = advances.some(
+        (a) => a.isOut && a.from === "BAT"
+      );
+
+      const isSafeBatterReach =
+        resultCode === "single" ||
+        resultCode === "double" ||
+        resultCode === "triple" ||
+        resultCode === "home_run" ||
+        resultCode === "walk" ||
+        resultCode === "intentional_walk" ||
+        resultCode === "hit_by_pitch" ||
+        resultCode === "interference" ||
+        resultCode === "dropped_third_strike" ||
+        resultCode === "error";
+
+      const isDefiniteBatterOut =
+        resultCode === "groundout" ||
+        resultCode === "flyout" ||
+        resultCode === "infield_fly" ||
+        resultCode === "strikeout" ||
+        resultCode === "dropped_third_strike_out" ||
+        resultCode === "sac_fly" ||
+        resultCode === "interference_out";
+
+      let outsVal = rawOutsVal;
+      if (resultCode === "triple_play") {
+        outsVal = 3;
+      } else if (resultCode === "double_play") {
+        outsVal = Math.max(2, rawOutsVal);
+      } else if (isDefiniteBatterOut) {
+        outsVal = Math.min(3, Math.max(1 + runnerOutsInPlay, rawOutsVal || 1));
+      } else if (isSafeBatterReach) {
+        // 出塁後に後続打席で盗塁死等した丸数字①②③を当該打席のアウトと誤認するケースを排除
+        outsVal = Math.min(
+          3,
+          runnerOutsInPlay + (batterOutInAdvances ? 1 : 0)
+        );
+      }
+
       const normalizedPitches = normalizePitchArray(
         ab.p || ab.pitches || [],
         resultCode,
@@ -1371,10 +1479,25 @@ ${targetInningMetaLines.join("\n")}
         activeBases
       );
       const { balls, strikes } = computeCountFromPitches(normalizedPitches);
+
+      // 【数学的自己補正 2】Stage 1 の列座標(columnBox)と打順行座標(rowBox)で cellBox のズレをアンカー補正
       const boxArr = Array.isArray(ab.box) && ab.box.length >= 4 ? ab.box : undefined;
-      const cellBox = boxArr
+      const rawCellBox = boxArr
         ? sanitizeBox(boxArr[0], boxArr[1], boxArr[2], boxArr[3])
         : sanitizeBox(ab.ymin, ab.xmin, ab.ymax, ab.xmax);
+
+      const inningColBox = body.structure.innings.find(
+        (m) => m.inning === inning
+      )?.columnBox;
+      const batterRowBox = body.structure.batters.find(
+        (b) => b.battingOrder === battingOrder
+      )?.rowBox;
+
+      const cellBox = anchorCellBoxWithGrid(
+        rawCellBox,
+        inningColBox,
+        batterRowBox
+      );
 
       const rawConf = (ab.cf ?? ab.confidence ?? "h").toLowerCase();
       const confidence: ConfidenceLevel =
@@ -1395,7 +1518,6 @@ ${targetInningMetaLines.join("\n")}
           activeBases[adv.to] = true;
         }
       }
-      const outsVal = Math.max(0, Math.min(3, ab.o ?? ab.outsInPlay ?? 0));
       if (advances.filter((a) => a.from === "BAT").length === 0 && outsVal === 0) {
         if (
           resultCode === "single" ||
@@ -1435,10 +1557,10 @@ ${targetInningMetaLines.join("\n")}
         pitcherName: resolved.pitcherName || (ab.pt ?? ab.pitcherName ?? "").trim(),
         pitcherPlayerId: resolved.pitcherPlayerId,
         resultCode,
-        resultLabel: (rawResultLabel || resultCode).trim(),
-        battedDirection: (ab.dir ?? ab.battedDirection ?? "").trim(),
+        resultLabel: harmonizedFielding.resultLabel,
+        battedDirection: harmonizedFielding.battedDirection,
         rbi: Math.max(0, ab.rbi ?? effectiveRuns),
-        outsInPlay: Math.max(0, Math.min(3, ab.o ?? ab.outsInPlay ?? 0)),
+        outsInPlay: outsVal,
         endingOuts: Math.max(0, Math.min(3, ab.eo ?? ab.endingOuts ?? 0)),
         runsInPlay: effectiveRuns,
         balls,
@@ -1808,12 +1930,17 @@ liffScorebookRouter.post("/save", async (c) => {
           : "";
 
       const countCalc = computeCountFromPitches(ab.pitches);
+      const cleanDirTag = (ab.battedDirection || "").trim();
+      const dirSuffix =
+        cleanDirTag && !ab.resultLabel.includes(cleanDirTag)
+          ? ` (${cleanDirTag})`
+          : "";
       const rbiSuffix = ab.rbi > 0 ? `（打点${ab.rbi}）` : "";
       const description = `${ab.battingOrder}番 ${ab.batterName || "打者"}: ${
         ab.resultLabel
-      }${rbiSuffix}${pitchLines} [B:${countCalc.balls}, S:${countCalc.strikes}, O:${
-        ab.outsInPlay
-      }]`;
+      }${dirSuffix}${rbiSuffix}${pitchLines} [B:${countCalc.balls}, S:${
+        countCalc.strikes
+      }, O:${ab.outsInPlay}]`;
 
       const isHit =
         ab.resultCode === "single" ||
@@ -1934,6 +2061,51 @@ liffScorebookRouter.post("/save", async (c) => {
     const myHits = isMyTeamFirst ? topHits : bottomHits;
     const opponentHits = isMyTeamFirst ? bottomHits : topHits;
 
+    // 守備側エラー数の再集計（表の攻撃での失策出塁/失策進塁＝裏チームのエラー）
+    const countOpponentSideErrorsOnAtBats = (
+      sideAtBats: ScorebookV2AtBat[]
+    ): number => {
+      let errs = 0;
+      for (const ab of sideAtBats) {
+        if (ab.resultCode === "error") errs += 1;
+        for (const adv of ab.advances) {
+          if (
+            adv.method === "pickoff_error" ||
+            (adv.method === "error" &&
+              !(ab.resultCode === "error" && adv.from === "BAT"))
+          ) {
+            errs += 1;
+          }
+        }
+      }
+      return errs;
+    };
+
+    const topOffenseInducedErrors = includeTop
+      ? Math.max(
+          countOpponentSideErrorsOnAtBats(incomingTop),
+          body.topStructure?.totalErrors ?? 0
+        )
+      : isMyTeamFirst
+      ? match.opponentErrors ?? 0
+      : match.myErrors ?? 0;
+
+    const bottomOffenseInducedErrors = includeBottom
+      ? Math.max(
+          countOpponentSideErrorsOnAtBats(incomingBottom),
+          body.bottomStructure?.totalErrors ?? 0
+        )
+      : isMyTeamFirst
+      ? match.myErrors ?? 0
+      : match.opponentErrors ?? 0;
+
+    const myErrors = isMyTeamFirst
+      ? bottomOffenseInducedErrors
+      : topOffenseInducedErrors;
+    const opponentErrors = isMyTeamFirst
+      ? topOffenseInducedErrors
+      : bottomOffenseInducedErrors;
+
     await db
       .update(matches)
       .set({
@@ -1943,6 +2115,8 @@ liffScorebookRouter.post("/save", async (c) => {
         opponentInningScores: JSON.stringify(finalOppInnings),
         myHits,
         opponentHits,
+        myErrors,
+        opponentErrors,
         opponentLineup: updatedOpponentLineup,
         currentInning: maxInning,
         isBottom: false,
@@ -1987,7 +2161,7 @@ async function callGeminiStructuredJson<T>(
   let sawQuota429 = false;
   let sawDemand503 = false;
   const overallStart = Date.now();
-  const MAX_TOTAL_BUDGET_MS = 95_000;
+  const MAX_TOTAL_BUDGET_MS = 105_000;
   const rawConfigs = getGeminiModelConfigs(mode);
 
   const nowTs = Date.now();
@@ -2754,6 +2928,49 @@ function sanitizeBox(
   const y2 = Math.max(y1 + 10, Math.min(1000, Math.round(ymax)));
   const x2 = Math.max(x1 + 10, Math.min(1000, Math.round(xmax)));
   return [y1, x1, y2, x2];
+}
+
+function anchorCellBoxWithGrid(
+  rawCellBox: NormalizedBox | undefined,
+  inningColBox: NormalizedBox | undefined,
+  batterRowBox: NormalizedBox | undefined
+): NormalizedBox | undefined {
+  if (!rawCellBox && !inningColBox && !batterRowBox) {
+    return undefined;
+  }
+  if (!rawCellBox) {
+    if (inningColBox && batterRowBox) {
+      return sanitizeBox(
+        batterRowBox[0],
+        inningColBox[1],
+        batterRowBox[2],
+        inningColBox[3]
+      );
+    }
+    return undefined;
+  }
+
+  let [y1, x1, y2, x2] = rawCellBox;
+
+  if (inningColBox) {
+    const [, colX1, , colX2] = inningColBox;
+    const midX = (x1 + x2) / 2;
+    if (midX < colX1 - 30 || midX > colX2 + 30) {
+      x1 = colX1;
+      x2 = colX2;
+    }
+  }
+
+  if (batterRowBox) {
+    const [rowY1, , rowY2] = batterRowBox;
+    const midY = (y1 + y2) / 2;
+    if (midY < rowY1 - 35 || midY > rowY2 + 35) {
+      y1 = rowY1;
+      y2 = rowY2;
+    }
+  }
+
+  return sanitizeBox(y1, x1, y2, x2);
 }
 
 function safeParseNumberArray(jsonStr: string | null | undefined): number[] {

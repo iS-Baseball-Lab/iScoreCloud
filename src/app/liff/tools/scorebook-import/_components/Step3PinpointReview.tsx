@@ -43,6 +43,18 @@ import {
   resolveActiveMatchupFromStructure,
   validateScorebookSheet,
 } from "@/lib/liff/scorebook-validator";
+import {
+  DEFENSIVE_POSITIONS,
+  DP_RELAY_PRESETS,
+  composeFieldingResult,
+  getDefaultDpRelay,
+  parseFieldingMeta,
+  type AssistTargetOption,
+  type DefensivePosNumber,
+  type ErrorStyleOption,
+  type FlyStyleOption,
+  type HitZoneOption,
+} from "@/lib/liff/scorebook-fielding";
 import { cropScorebookRegion } from "@/lib/liff/scorebook-image";
 
 interface Step3PinpointReviewProps {
@@ -699,6 +711,14 @@ export function Step3PinpointReview({
                                     {ab.outsInPlay}死
                                   </span>
                                 )}
+                                {ab.battedDirection &&
+                                  !ab.resultLabel.includes(
+                                    ab.battedDirection
+                                  ) && (
+                                    <span className="px-1.5 py-0.5 rounded-md bg-indigo-500/12 border border-indigo-500/25 text-indigo-700 dark:text-indigo-300 text-[10px] font-black">
+                                      守備:{ab.battedDirection}
+                                    </span>
+                                  )}
                                 <span
                                   className={`px-2.5 py-0.5 rounded-lg text-xs font-black ${
                                     isHit
@@ -1243,14 +1263,94 @@ export function Step3PinpointReview({
                                   onClick={() =>
                                     updateSingleAtBat(
                                       editingAtBat.id,
-                                      (prev) => ({
-                                        ...prev,
-                                        resultCode:
-                                          preset.code as CanonicalAtBatResult,
-                                        resultLabel: preset.defaultLabel,
-                                        outsInPlay: preset.defaultOuts,
-                                        confidence: "high",
-                                      })
+                                      (prev) => {
+                                        const nextCode =
+                                          preset.code as CanonicalAtBatResult;
+                                        const nonFieldedCodes =
+                                          nextCode === "walk" ||
+                                          nextCode === "intentional_walk" ||
+                                          nextCode === "hit_by_pitch" ||
+                                          nextCode === "strikeout" ||
+                                          nextCode === "other";
+
+                                        const prevFielding = parseFieldingMeta(
+                                          prev.resultCode,
+                                          prev.battedDirection,
+                                          prev.resultLabel
+                                        );
+
+                                        let nextDir = "";
+                                        let nextLabel = preset.defaultLabel;
+
+                                        if (!nonFieldedCodes) {
+                                          const effectivePos:
+                                            | DefensivePosNumber
+                                            | "" =
+                                            prevFielding.primaryPos ||
+                                            (nextCode ===
+                                              "dropped_third_strike_out" ||
+                                            nextCode === "interference"
+                                              ? "2"
+                                              : "");
+
+                                          if (effectivePos) {
+                                            const forcedFlyStyle: FlyStyleOption =
+                                              preset.id === "lineout"
+                                                ? "liner"
+                                                : preset.id === "flyout" &&
+                                                  prevFielding.flyStyle ===
+                                                    "liner"
+                                                ? "fly"
+                                                : prevFielding.flyStyle;
+
+                                            const composed =
+                                              composeFieldingResult({
+                                                resultCode: nextCode,
+                                                primaryPos: effectivePos,
+                                                assistTargetPos:
+                                                  prevFielding.assistTargetPos,
+                                                dpRelay: prevFielding.dpRelay,
+                                                hitZone: prevFielding.hitZone,
+                                                flyStyle: forcedFlyStyle,
+                                                errorStyle:
+                                                  prevFielding.errorStyle,
+                                                fallbackLabel:
+                                                  preset.defaultLabel,
+                                              });
+                                            nextDir = composed.battedDirection;
+                                            nextLabel = composed.resultLabel;
+                                          }
+                                        }
+
+                                        // 単一プレースホルダー球のみの場合は安打球/インプレー球も自動同期
+                                        let nextPitches = prev.pitches;
+                                        const isNextHit =
+                                          nextCode === "single" ||
+                                          nextCode === "double" ||
+                                          nextCode === "triple" ||
+                                          nextCode === "home_run";
+                                        if (
+                                          prev.pitches.length === 1 &&
+                                          (prev.pitches[0] === "in_play" ||
+                                            prev.pitches[0] === "hit")
+                                        ) {
+                                          if (isNextHit) {
+                                            nextPitches = ["hit"];
+                                          } else if (!nonFieldedCodes) {
+                                            nextPitches = ["in_play"];
+                                          }
+                                        }
+
+                                        return {
+                                          ...prev,
+                                          resultCode: nextCode,
+                                          resultLabel: nextLabel,
+                                          battedDirection: nextDir,
+                                          pitches: nextPitches,
+                                          outsInPlay: preset.defaultOuts,
+                                          confidence: "high",
+                                        };
+                                      }
                                     )
                                   }
                                   className={`py-1.5 px-1 rounded-xl text-[10px] border transition-all cursor-pointer ${
@@ -1269,10 +1369,456 @@ export function Step3PinpointReview({
                     })}
                   </div>
 
-                  <div className="grid grid-cols-4 gap-2 pt-1">
-                    <div className="col-span-2 space-y-1">
+                  {/* 2-B. 守備位置・打球方向・送球ルート ワンタップ指定パネル */}
+                  {(() => {
+                    const fMeta = parseFieldingMeta(
+                      editingAtBat.resultCode,
+                      editingAtBat.battedDirection,
+                      editingAtBat.resultLabel
+                    );
+                    const rc = editingAtBat.resultCode;
+                    const isHitCode =
+                      rc === "single" ||
+                      rc === "double" ||
+                      rc === "triple" ||
+                      rc === "home_run";
+                    const isThrowOutCode =
+                      rc === "groundout" ||
+                      rc === "sac_bunt" ||
+                      rc === "dropped_third_strike_out";
+                    const isDpCode =
+                      rc === "double_play" || rc === "triple_play";
+                    const isFlyCode = rc === "flyout" || rc === "sac_fly";
+                    const isErrorCode = rc === "error";
+                    const isNonFielded =
+                      rc === "walk" ||
+                      rc === "intentional_walk" ||
+                      rc === "hit_by_pitch" ||
+                      rc === "strikeout";
+
+                    const outfieldPositions = DEFENSIVE_POSITIONS.filter(
+                      (p) => p.isOutfield
+                    );
+                    const infieldPositions = DEFENSIVE_POSITIONS.filter(
+                      (p) => !p.isOutfield
+                    );
+
+                    const applyPositionSelection = (
+                      nextPos: DefensivePosNumber,
+                      overrides?: {
+                        assistTargetPos?: AssistTargetOption | "";
+                        dpRelay?: string;
+                        hitZone?: HitZoneOption;
+                        flyStyle?: FlyStyleOption;
+                        errorStyle?: ErrorStyleOption;
+                      }
+                    ) => {
+                      updateSingleAtBat(editingAtBat.id, (prev) => {
+                        const cur = parseFieldingMeta(
+                          prev.resultCode,
+                          prev.battedDirection,
+                          prev.resultLabel
+                        );
+                        // 四死球・三振のまま守備位置をタップした場合は自動でゴロまたは単打に切り替えず、もし三振なら振逃アウト以外ではそのまま記号保持、それ以外は自動ラベル合成
+                        const effectiveCode =
+                          prev.resultCode === "strikeout"
+                            ? prev.resultCode
+                            : prev.resultCode;
+
+                        if (
+                          effectiveCode === "walk" ||
+                          effectiveCode === "intentional_walk" ||
+                          effectiveCode === "hit_by_pitch" ||
+                          effectiveCode === "strikeout"
+                        ) {
+                          return {
+                            ...prev,
+                            battedDirection: nextPos,
+                            confidence: "high",
+                          };
+                        }
+
+                        const nextZone: HitZoneOption =
+                          overrides?.hitZone ??
+                          (Number(nextPos) <= 6 && effectiveCode === "single"
+                            ? "infield"
+                            : cur.hitZone === "gap_lc" ||
+                              cur.hitZone === "gap_rc" ||
+                              cur.hitZone === "infield"
+                            ? effectiveCode === "single"
+                              ? "front"
+                              : "over"
+                            : cur.hitZone);
+
+                        const nextDpRelay =
+                          overrides?.dpRelay !== undefined
+                            ? overrides.dpRelay
+                            : nextPos !== cur.primaryPos
+                            ? getDefaultDpRelay(nextPos)
+                            : cur.dpRelay;
+
+                        const nextAssist =
+                          overrides?.assistTargetPos !== undefined
+                            ? overrides.assistTargetPos
+                            : nextPos === "3" && effectiveCode === "groundout"
+                            ? "unassisted"
+                            : cur.assistTargetPos === "unassisted" &&
+                              nextPos !== "3"
+                            ? "3"
+                            : cur.assistTargetPos;
+
+                        const composed = composeFieldingResult({
+                          resultCode: effectiveCode,
+                          primaryPos: nextPos,
+                          assistTargetPos: nextAssist,
+                          dpRelay: nextDpRelay,
+                          hitZone: nextZone,
+                          flyStyle: overrides?.flyStyle ?? cur.flyStyle,
+                          errorStyle: overrides?.errorStyle ?? cur.errorStyle,
+                          fallbackLabel: prev.resultLabel,
+                        });
+
+                        return {
+                          ...prev,
+                          battedDirection: composed.battedDirection,
+                          resultLabel: composed.resultLabel,
+                          confidence: "high",
+                        };
+                      });
+                    };
+
+                    return (
+                      <div className="p-3 rounded-2xl bg-muted/35 border border-border space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-black text-foreground">
+                              守備位置・打球方向を指定
+                            </span>
+                            {editingAtBat.battedDirection && (
+                              <span className="px-2 py-0.5 rounded-full bg-indigo-600 text-white text-[10px] font-black">
+                                {editingAtBat.battedDirection}
+                              </span>
+                            )}
+                          </div>
+                          {(fMeta.primaryPos ||
+                            editingAtBat.battedDirection) && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updateSingleAtBat(editingAtBat.id, (prev) => {
+                                  const genericPreset =
+                                    AT_BAT_RESULT_PRESETS.find(
+                                      (p) => p.code === prev.resultCode
+                                    );
+                                  return {
+                                    ...prev,
+                                    battedDirection: "",
+                                    resultLabel:
+                                      genericPreset?.defaultLabel ||
+                                      prev.resultLabel,
+                                  };
+                                })
+                              }
+                              className="px-2 py-0.5 rounded-lg bg-card border border-border text-[10px] font-black text-muted-foreground hover:text-foreground cursor-pointer"
+                            >
+                              位置クリア
+                            </button>
+                          )}
+                        </div>
+
+                        {isNonFielded ? (
+                          <p className="text-[10px] font-bold text-muted-foreground">
+                            ※四死球・三振のため守備位置の指定は不要です（ゴロ・フライ・安打・失策等を選ぶとワンタップで1投〜9右を指定できます）
+                          </p>
+                        ) : (
+                          <>
+                            {/* 外野 7左・8中・9右（グラウンド視点の上段3列） */}
+                            <div className="grid grid-cols-3 gap-1">
+                              {outfieldPositions.map((pos) => {
+                                const isSelected =
+                                  fMeta.primaryPos === pos.code &&
+                                  fMeta.hitZone !== "gap_lc" &&
+                                  fMeta.hitZone !== "gap_rc";
+                                return (
+                                  <button
+                                    key={pos.code}
+                                    type="button"
+                                    onClick={() =>
+                                      applyPositionSelection(pos.code)
+                                    }
+                                    className={`py-1.5 px-2 rounded-xl text-[11px] border transition-all cursor-pointer ${
+                                      isSelected
+                                        ? "bg-emerald-600 text-white border-emerald-600 font-black shadow-2xs"
+                                        : "bg-card border-border text-foreground font-black hover:bg-muted"
+                                    }`}
+                                  >
+                                    {pos.code} {pos.shortJa}（{pos.fullJa}）
+                                  </button>
+                                );
+                              })}
+                            </div>
+
+                            {/* 内野・バッテリー 1投〜6遊（下段6列） */}
+                            <div className="grid grid-cols-6 gap-1">
+                              {infieldPositions.map((pos) => {
+                                const isSelected =
+                                  fMeta.primaryPos === pos.code;
+                                return (
+                                  <button
+                                    key={pos.code}
+                                    type="button"
+                                    onClick={() =>
+                                      applyPositionSelection(pos.code)
+                                    }
+                                    className={`py-1.5 px-1 rounded-xl text-[11px] border transition-all cursor-pointer ${
+                                      isSelected
+                                        ? "bg-emerald-600 text-white border-emerald-600 font-black shadow-2xs"
+                                        : "bg-card border-border text-foreground font-black hover:bg-muted"
+                                    }`}
+                                  >
+                                    {pos.badgeLabel}
+                                  </button>
+                                );
+                              })}
+                            </div>
+
+                            {/* 安打時の打球性質・左中間/右中間チップ */}
+                            {isHitCode && (
+                              <div className="pt-1 space-y-1">
+                                <span className="text-[10px] font-bold text-muted-foreground block">
+                                  打球ゾーン・性質:
+                                </span>
+                                <div className="grid grid-cols-3 gap-1">
+                                  {(
+                                    [
+                                      { id: "front", label: "前（左前・中前等）" },
+                                      { id: "over", label: "越（オーバー）" },
+                                      { id: "line", label: "線（ライン際）" },
+                                      { id: "gap_lc", label: "左中間 (7-8)" },
+                                      { id: "gap_rc", label: "右中間 (8-9)" },
+                                      {
+                                        id: "infield",
+                                        label:
+                                          rc === "home_run"
+                                            ? "ランニングHR"
+                                            : "内野安打/強襲",
+                                      },
+                                    ] as const
+                                  ).map((z) => {
+                                    const activeZone = fMeta.hitZone === z.id;
+                                    return (
+                                      <button
+                                        key={z.id}
+                                        type="button"
+                                        onClick={() => {
+                                          const basePos: DefensivePosNumber =
+                                            z.id === "gap_lc"
+                                              ? "7"
+                                              : z.id === "gap_rc"
+                                              ? "9"
+                                              : fMeta.primaryPos || "8";
+                                          applyPositionSelection(basePos, {
+                                            hitZone: z.id,
+                                          });
+                                        }}
+                                        className={`py-1 px-1.5 rounded-lg text-[10px] border transition-all cursor-pointer ${
+                                          activeZone &&
+                                          (fMeta.primaryPos !== "" ||
+                                            z.id === "gap_lc" ||
+                                            z.id === "gap_rc")
+                                            ? "bg-indigo-600 text-white border-indigo-600 font-black"
+                                            : "bg-card border-border text-foreground font-bold"
+                                        }`}
+                                      >
+                                        {z.label}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* ゴロ・犠打・振逃アウト時の送球先（刺殺野手）セレクター */}
+                            {isThrowOutCode && fMeta.primaryPos && (
+                              <div className="pt-1 space-y-1">
+                                <span className="text-[10px] font-bold text-muted-foreground block">
+                                  送球先（アウトにした野手・塁）:
+                                </span>
+                                <div className="grid grid-cols-3 gap-1">
+                                  {(
+                                    [
+                                      { id: "3", label: "一塁送球 (-3)" },
+                                      { id: "4", label: "二封・二塁手 (-4)" },
+                                      { id: "6", label: "二封・遊撃手 (-6)" },
+                                      { id: "5", label: "三塁封殺 (-5)" },
+                                      { id: "2", label: "本塁封殺 (-2)" },
+                                      {
+                                        id: "unassisted",
+                                        label: "単独アウト (無補殺)",
+                                      },
+                                    ] as const
+                                  ).map((tgt) => {
+                                    const effectiveCurTarget =
+                                      fMeta.assistTargetPos ||
+                                      (fMeta.primaryPos === "3" &&
+                                      rc === "groundout"
+                                        ? "unassisted"
+                                        : "3");
+                                    const isTgtActive =
+                                      effectiveCurTarget === tgt.id;
+                                    return (
+                                      <button
+                                        key={tgt.id}
+                                        type="button"
+                                        onClick={() =>
+                                          fMeta.primaryPos &&
+                                          applyPositionSelection(
+                                            fMeta.primaryPos,
+                                            { assistTargetPos: tgt.id }
+                                          )
+                                        }
+                                        className={`py-1 px-1.5 rounded-lg text-[10px] border transition-all cursor-pointer ${
+                                          isTgtActive
+                                            ? "bg-indigo-600 text-white border-indigo-600 font-black"
+                                            : "bg-card border-border text-foreground font-bold"
+                                        }`}
+                                      >
+                                        {tgt.label}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* 併殺打・三重殺の中継ルートプリセット */}
+                            {isDpCode && (
+                              <div className="pt-1 space-y-1">
+                                <span className="text-[10px] font-bold text-muted-foreground block">
+                                  併殺送球ルート（ワンタップ選択）:
+                                </span>
+                                <div className="flex flex-wrap gap-1">
+                                  {DP_RELAY_PRESETS.map((relay) => {
+                                    const isRelayActive =
+                                      editingAtBat.battedDirection === relay ||
+                                      fMeta.dpRelay === relay;
+                                    return (
+                                      <button
+                                        key={relay}
+                                        type="button"
+                                        onClick={() => {
+                                          const firstPos =
+                                            relay[0] as DefensivePosNumber;
+                                          applyPositionSelection(firstPos, {
+                                            dpRelay: relay,
+                                          });
+                                        }}
+                                        className={`py-1 px-2 rounded-lg text-[10px] border transition-all cursor-pointer ${
+                                          isRelayActive
+                                            ? "bg-indigo-600 text-white border-indigo-600 font-black"
+                                            : "bg-card border-border text-foreground font-bold"
+                                        }`}
+                                      >
+                                        {relay}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* フライ・邪飛・ライナー種別切替 */}
+                            {isFlyCode && fMeta.primaryPos && (
+                              <div className="pt-1 space-y-1">
+                                <span className="text-[10px] font-bold text-muted-foreground block">
+                                  飛球・ライナー種別:
+                                </span>
+                                <div className="grid grid-cols-3 gap-1">
+                                  {(rc === "sac_fly"
+                                    ? ([
+                                        { id: "fly", label: "犠飛（フェア）" },
+                                        {
+                                          id: "foul_fly",
+                                          label: "邪犠飛（ファウル）",
+                                        },
+                                      ] as const)
+                                    : ([
+                                        { id: "fly", label: "フライ (飛)" },
+                                        {
+                                          id: "foul_fly",
+                                          label: "ファウルフライ (邪飛)",
+                                        },
+                                        {
+                                          id: "liner",
+                                          label: "ライナー (直)",
+                                        },
+                                      ] as const)
+                                  ).map((st) => (
+                                    <button
+                                      key={st.id}
+                                      type="button"
+                                      onClick={() =>
+                                        fMeta.primaryPos &&
+                                        applyPositionSelection(
+                                          fMeta.primaryPos,
+                                          { flyStyle: st.id }
+                                        )
+                                      }
+                                      className={`py-1 px-1.5 rounded-lg text-[10px] border transition-all cursor-pointer ${
+                                        fMeta.flyStyle === st.id
+                                          ? "bg-indigo-600 text-white border-indigo-600 font-black"
+                                          : "bg-card border-border text-foreground font-bold"
+                                      }`}
+                                    >
+                                      {st.label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* 失策の捕球失策 / 悪送球切替 */}
+                            {isErrorCode && fMeta.primaryPos && (
+                              <div className="pt-1 grid grid-cols-2 gap-1">
+                                {(
+                                  [
+                                    {
+                                      id: "fielding",
+                                      label: "捕球・ファンブル失策",
+                                    },
+                                    { id: "throwing", label: "悪送球エラー" },
+                                  ] as const
+                                ).map((es) => (
+                                  <button
+                                    key={es.id}
+                                    type="button"
+                                    onClick={() =>
+                                      fMeta.primaryPos &&
+                                      applyPositionSelection(fMeta.primaryPos, {
+                                        errorStyle: es.id,
+                                      })
+                                    }
+                                    className={`py-1 px-2 rounded-lg text-[10px] border transition-all cursor-pointer ${
+                                      fMeta.errorStyle === es.id
+                                        ? "bg-indigo-600 text-white border-indigo-600 font-black"
+                                        : "bg-card border-border text-foreground font-bold"
+                                    }`}
+                                  >
+                                    {es.label}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  <div className="grid grid-cols-12 gap-1.5 pt-1">
+                    <div className="col-span-5 space-y-1">
                       <span className="text-[10px] font-bold text-muted-foreground">
-                        詳細表記（例: 左前安打, 6-3）
+                        詳細表記（例: 左前安打）
                       </span>
                       <input
                         type="text"
@@ -1283,13 +1829,31 @@ export function Step3PinpointReview({
                             resultLabel: e.target.value,
                           }))
                         }
-                        className="w-full h-9 px-2.5 rounded-xl bg-muted/40 border border-border text-xs font-black text-foreground"
+                        className="w-full h-9 px-2 rounded-xl bg-muted/40 border border-border text-xs font-black text-foreground"
                       />
                     </div>
 
-                    <div className="space-y-1">
+                    <div className="col-span-3 space-y-1">
                       <span className="text-[10px] font-bold text-muted-foreground">
-                        アウト増
+                        守備記号
+                      </span>
+                      <input
+                        type="text"
+                        value={editingAtBat.battedDirection}
+                        onChange={(e) =>
+                          updateSingleAtBat(editingAtBat.id, (prev) => ({
+                            ...prev,
+                            battedDirection: e.target.value,
+                          }))
+                        }
+                        placeholder="6-3 / 8"
+                        className="w-full h-9 px-2 rounded-xl bg-muted/40 border border-border text-xs font-black text-foreground"
+                      />
+                    </div>
+
+                    <div className="col-span-2 space-y-1">
+                      <span className="text-[10px] font-bold text-muted-foreground">
+                        アウト
                       </span>
                       <select
                         value={editingAtBat.outsInPlay}
@@ -1299,18 +1863,18 @@ export function Step3PinpointReview({
                             outsInPlay: Number(e.target.value),
                           }))
                         }
-                        className="w-full h-9 px-2 rounded-xl bg-muted/40 border border-border text-xs font-black text-foreground"
+                        className="w-full h-9 px-1 rounded-xl bg-muted/40 border border-border text-xs font-black text-foreground"
                       >
                         <option value={0}>0死</option>
                         <option value={1}>1死</option>
-                        <option value={2}>2死(併殺)</option>
+                        <option value={2}>2死</option>
                         <option value={3}>3死</option>
                       </select>
                     </div>
 
-                    <div className="space-y-1">
+                    <div className="col-span-2 space-y-1">
                       <span className="text-[10px] font-bold text-muted-foreground">
-                        この打席得点
+                        得点
                       </span>
                       <select
                         value={editingAtBat.runsInPlay}
@@ -1321,7 +1885,7 @@ export function Step3PinpointReview({
                             rbi: Number(e.target.value),
                           }))
                         }
-                        className="w-full h-9 px-2 rounded-xl bg-muted/40 border border-border text-xs font-black text-foreground"
+                        className="w-full h-9 px-1 rounded-xl bg-muted/40 border border-border text-xs font-black text-foreground"
                       >
                         {[0, 1, 2, 3, 4].map((r) => (
                           <option key={r} value={r}>

@@ -17,6 +17,7 @@ import {
   RotateCcw,
   ZoomIn,
 } from "lucide-react";
+import { normalizePositionCode } from "@/lib/liff/scorebook-validator";
 import type {
   ImportScopeMode,
   ScorebookBatterSlot,
@@ -638,102 +639,172 @@ export function Step2StructureCheck({
                 </div>
               )}
 
-              {/* 途中交代（代打・代走・守備交代） */}
+              {/* 途中交代（代打・代走・守備交代・守備位置指定） */}
               {slot.substitutions.length > 0 && (
-                <div className="pl-6 space-y-1.5">
+                <div className="pl-5 space-y-1.5">
                   {slot.substitutions.map((sub) => (
                     <div
                       key={sub.id}
-                      className="flex items-center gap-1.5 p-1.5 rounded-xl bg-amber-500/8 border border-amber-500/25"
+                      className="p-2 rounded-xl bg-amber-500/8 border border-amber-500/25 space-y-1.5"
                     >
-                      <select
-                        value={sub.inningEntered}
-                        onChange={(e) =>
-                          updateSubstitution(slot.battingOrder, sub.id, {
-                            inningEntered: Number(e.target.value),
-                          })
-                        }
-                        className="h-8 px-1 rounded-lg bg-card border border-border text-[10px] font-black text-foreground shrink-0"
-                      >
-                        {inningOptions.map((n) => (
-                          <option key={n} value={n}>
-                            {n}回〜
-                          </option>
-                        ))}
-                      </select>
-
-                      <select
-                        value={sub.subType}
-                        onChange={(e) =>
-                          updateSubstitution(slot.battingOrder, sub.id, {
-                            subType: e.target.value as
-                              | "PH"
-                              | "PR"
-                              | "TR"
-                              | "DEF",
-                          })
-                        }
-                        className="h-8 px-1 rounded-lg bg-card border border-border text-[10px] font-black text-amber-700 dark:text-amber-300 shrink-0"
-                      >
-                        <option value="PH">代打</option>
-                        <option value="PR">代走</option>
-                        <option value="TR">臨時代走</option>
-                        <option value="DEF">守備</option>
-                      </select>
-
-                      {current.isMyTeamBatting && roster.length > 0 ? (
+                      <div className="flex items-center gap-1.5">
                         <select
-                          value={sub.playerId || ""}
-                          onChange={(e) => {
-                            const found = roster.find(
-                              (p) => p.id === e.target.value
-                            );
-                            if (found) {
-                              updateSubstitution(slot.battingOrder, sub.id, {
-                                playerId: found.id,
-                                name: found.name,
-                                uniformNumber: found.uniformNumber,
-                              });
-                            } else {
-                              updateSubstitution(slot.battingOrder, sub.id, {
-                                playerId: null,
-                              });
-                            }
-                          }}
-                          className="flex-1 min-w-0 h-8 px-1.5 rounded-lg bg-card border border-border text-[11px] font-black text-foreground"
+                          value={sub.inningEntered}
+                          onChange={(e) =>
+                            updateSubstitution(slot.battingOrder, sub.id, {
+                              inningEntered: Number(e.target.value),
+                            })
+                          }
+                          className="h-8 px-1 rounded-lg bg-card border border-border text-[10px] font-black text-foreground shrink-0"
                         >
-                          <option value="">
-                            {sub.name ? `未登録: ${sub.name}` : "-- 交代選手 --"}
-                          </option>
-                          {roster.map((p) => (
-                            <option key={p.id} value={p.id}>
-                              #{p.uniformNumber} {p.name}
+                          {inningOptions.map((n) => (
+                            <option key={n} value={n}>
+                              {n}回〜
                             </option>
                           ))}
                         </select>
-                      ) : (
-                        <input
-                          type="text"
-                          value={sub.name}
+
+                        <select
+                          value={sub.subType}
                           onChange={(e) =>
                             updateSubstitution(slot.battingOrder, sub.id, {
-                              name: e.target.value,
+                              subType: e.target.value as
+                                | "PH"
+                                | "PR"
+                                | "TR"
+                                | "DEF",
                             })
                           }
-                          placeholder="交代選手名"
-                          className="flex-1 min-w-0 h-8 px-2 rounded-lg bg-card border border-border text-[11px] font-black text-foreground"
-                        />
-                      )}
+                          className="h-8 px-1 rounded-lg bg-card border border-border text-[10px] font-black text-amber-700 dark:text-amber-300 shrink-0"
+                        >
+                          <option value="PH">代打</option>
+                          <option value="PR">代走</option>
+                          <option value="TR">臨時代走</option>
+                          <option value="DEF">守備</option>
+                        </select>
 
-                      <button
-                        type="button"
-                        onClick={() =>
-                          removeSubstitution(slot.battingOrder, sub.id)
-                        }
-                        className="p-1 text-destructive cursor-pointer"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                        {current.isMyTeamBatting && roster.length > 0 ? (
+                          <select
+                            value={sub.playerId || ""}
+                            onChange={(e) => {
+                              const found = roster.find(
+                                (p) => p.id === e.target.value
+                              );
+                              if (found) {
+                                const autoPos =
+                                  sub.position ||
+                                  (sub.subType === "DEF" && found.primaryPosition
+                                    ? normalizePositionCode(found.primaryPosition)
+                                    : "");
+                                updateSubstitution(slot.battingOrder, sub.id, {
+                                  playerId: found.id,
+                                  name: found.name,
+                                  uniformNumber: found.uniformNumber,
+                                  position: autoPos,
+                                });
+                              } else {
+                                updateSubstitution(slot.battingOrder, sub.id, {
+                                  playerId: null,
+                                });
+                              }
+                            }}
+                            className="flex-1 min-w-0 h-8 px-1.5 rounded-lg bg-card border border-border text-[11px] font-black text-foreground"
+                          >
+                            <option value="">
+                              {sub.name ? `未登録: ${sub.name}` : "-- 交代選手 --"}
+                            </option>
+                            {roster.map((p) => (
+                              <option key={p.id} value={p.id}>
+                                #{p.uniformNumber} {p.name}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <>
+                            <input
+                              type="text"
+                              value={sub.uniformNumber}
+                              onChange={(e) =>
+                                updateSubstitution(slot.battingOrder, sub.id, {
+                                  uniformNumber: e.target.value,
+                                })
+                              }
+                              placeholder="#"
+                              className="w-10 h-8 px-1 rounded-lg bg-card border border-border text-center text-[11px] font-black text-foreground shrink-0"
+                            />
+                            <input
+                              type="text"
+                              value={sub.name}
+                              onChange={(e) =>
+                                updateSubstitution(slot.battingOrder, sub.id, {
+                                  name: e.target.value,
+                                })
+                              }
+                              placeholder="交代選手名"
+                              className="flex-1 min-w-0 h-8 px-2 rounded-lg bg-card border border-border text-[11px] font-black text-foreground"
+                            />
+                          </>
+                        )}
+
+                        <select
+                          value={sub.position}
+                          onChange={(e) =>
+                            updateSubstitution(slot.battingOrder, sub.id, {
+                              position: e.target.value,
+                            })
+                          }
+                          aria-label="交代後の守備位置"
+                          className="w-16 h-8 px-1 rounded-lg bg-card border border-border text-[10px] font-black text-foreground shrink-0"
+                        >
+                          <option value="">守備 -</option>
+                          {POSITION_OPTIONS.filter((p) => p.value !== "").map(
+                            (pos) => (
+                              <option key={pos.value} value={pos.value}>
+                                {pos.label}
+                              </option>
+                            )
+                          )}
+                        </select>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            removeSubstitution(slot.battingOrder, sub.id)
+                          }
+                          className="p-1 text-destructive cursor-pointer shrink-0"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+
+                      {current.isMyTeamBatting &&
+                        roster.length > 0 &&
+                        !sub.playerId && (
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="text"
+                              value={sub.uniformNumber}
+                              onChange={(e) =>
+                                updateSubstitution(slot.battingOrder, sub.id, {
+                                  uniformNumber: e.target.value,
+                                })
+                              }
+                              placeholder="背番号"
+                              className="w-14 h-7 px-1.5 rounded-lg bg-card border border-border text-center text-[10px] font-black text-foreground"
+                            />
+                            <input
+                              type="text"
+                              value={sub.name}
+                              onChange={(e) =>
+                                updateSubstitution(slot.battingOrder, sub.id, {
+                                  name: e.target.value,
+                                })
+                              }
+                              placeholder="助っ人・未登録の交代選手名を入力"
+                              className="flex-1 min-w-0 h-7 px-2 rounded-lg bg-card border border-border text-[10px] font-black text-foreground"
+                            />
+                          </div>
+                        )}
                     </div>
                   ))}
                 </div>

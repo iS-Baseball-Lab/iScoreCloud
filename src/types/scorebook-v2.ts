@@ -101,6 +101,8 @@ export interface ScorebookBatterSlot {
   position: string;
   playerId: string | null;
   substitutions: ScorebookSubstitution[];
+  /** シート全体画像上での該当打順行の上下座標 [ymin, xmin, ymax, xmax] (0〜1000) */
+  rowBox?: NormalizedBox;
 }
 
 export interface ScorebookPitcherStint {
@@ -130,6 +132,8 @@ export interface ScorebookSheetStructure {
   totalRuns: number;
   totalHits: number;
   totalErrors: number;
+  /** 打順・選手名欄と1回列の境界X座標 (0〜1000) */
+  lineupRightX?: number;
 }
 
 export interface ScorebookV2Advance {
