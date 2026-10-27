@@ -307,28 +307,45 @@ ${legendPromptAdd}${playerRosterPrompt}${lineupPrompt}${opponentLineupPrompt}${t
 }
 注意: \`f\` と \`t\` は "1B", "2B", "3B", "HP" のいずれかを使用してください。`;
 
-    // F. Gemini API の呼び出し (HTTP Fetch)
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`;
-    const geminiRes = await fetch(geminiUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              { text: prompt },
-              ...imageParts
-            ]
-          }
-        ],
-        generationConfig: {
-          temperature: 0.0,
-          responseMimeType: "application/json"
-        }
-      })
-    });
+    // F. Gemini API の呼び出し (マルチモデル・フェイルオーバー対応)
+    const candidateModels = [
+      "gemini-3.8-flash",
+      "gemini-3.6-flash",
+      "gemini-3.5-flash-lite",
+      "gemini-3.1-flash-lite",
+    ];
+    let geminiRes: Response | null = null;
+    for (const modelName of candidateModels) {
+      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+      geminiRes = await fetch(geminiUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [{ text: prompt }, ...imageParts],
+            },
+          ],
+          generationConfig: {
+            temperature: 0.0,
+            responseMimeType: "application/json",
+          },
+        }),
+      });
+      if (
+        geminiRes.ok ||
+        (geminiRes.status !== 404 &&
+          geminiRes.status !== 429 &&
+          geminiRes.status < 500)
+      ) {
+        break;
+      }
+    }
+    if (!geminiRes) {
+      return c.json({ success: false, error: "Gemini API への接続に失敗しました" }, 500);
+    }
 
     if (!geminiRes.ok) {
       const errorText = await geminiRes.text();

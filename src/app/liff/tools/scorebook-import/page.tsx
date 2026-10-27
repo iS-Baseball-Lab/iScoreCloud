@@ -671,11 +671,18 @@ export default function LiffScorebookImportPage() {
     try {
       return await callOnce();
     } catch (firstErr) {
+      const firstMsg =
+        firstErr instanceof Error ? firstErr.message : String(firstErr);
+      // 全モデルのクォータ上限(429)到達時は即座の多重リトライで枠をさらに消費しないよう待機時間を長めに取る
+      const isQuotaError =
+        firstMsg.includes("429") || firstMsg.includes("利用枠上限");
+      if (isQuotaError) {
+        throw firstErr;
+      }
       setStructureProgressLabel(
         `${sideLabel}シートを再スキャン中（AI混雑回避）... ${progressSuffix}`
       );
       await new Promise((r) => setTimeout(r, 2400));
-      void firstErr;
       return await callOnce();
     }
   };
@@ -708,7 +715,8 @@ export default function LiffScorebookImportPage() {
 
       if (needBottom) {
         if (needTop) {
-          await new Promise((r) => setTimeout(r, 400));
+          // 2枚連続スキャン時の分間リクエスト上限(RPM)スパイクを緩和
+          await new Promise((r) => setTimeout(r, 1000));
         }
         stepCounter += 1;
         resBottom = await scanSingleSheetStructure(
@@ -782,8 +790,8 @@ export default function LiffScorebookImportPage() {
         let buf: number[] = [];
 
         for (const meta of sortedMeta) {
-          // 打者一巡(2列)や複数得点(2点以上)の回は単独1イニングで集中解析し応答を高速化
-          const isHeavyInning = meta.columnCount >= 2 || meta.runs >= 2;
+          // 打者一巡(2列)や大量得点(3点以上)の回は単独1イニング、通常回は最大3イニングまとめて解析しAPIリクエスト回数(RPM/RPD)を節約する
+          const isHeavyInning = meta.columnCount >= 2 || meta.runs >= 3;
           if (isHeavyInning) {
             if (buf.length > 0) {
               chunks.push(buf);
@@ -792,7 +800,7 @@ export default function LiffScorebookImportPage() {
             chunks.push([meta.inning]);
           } else {
             buf.push(meta.inning);
-            if (buf.length >= 2) {
+            if (buf.length >= 3) {
               chunks.push(buf);
               buf = [];
             }
