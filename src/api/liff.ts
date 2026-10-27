@@ -27,7 +27,7 @@ import {
   teamGroups,
   teamGroupMembers,
 } from "@/db/schema";
-import { ensureEventColumns, ensureRulesTable, ensureLinksTable, ensureMemberOrderColumn, ensureStatusConfigColumn, ensureMemberSubLabelsColumn, ensureMatchLineupColumns } from "@/lib/db-helper";
+import { ensureEventColumns, ensureRulesTable, ensureLinksTable, ensureMemberOrderColumn, ensureStatusConfigColumn, ensureMemberSubLabelsColumn, ensureMatchLineupColumns, ensurePlayerProfileColumns } from "@/lib/db-helper";
 import type { WorkerEnv, AuthUser } from "@/types/api";
 import { getAuth } from "@/lib/auth";
 import { canManageTeam } from "@/lib/roles";
@@ -5591,6 +5591,450 @@ app.delete("/profile/cars/:carId", async (c) => {
     console.error("Failed to delete car in LIFF profile:", err);
     return c.json(
       { success: false, error: err instanceof Error ? err.message : "車両情報の削除に失敗しました" },
+      500
+    );
+  }
+});
+
+// ==========================================
+// ⚾ 選手名鑑（ロースター & 通算成績付きディレクトリ）API
+// ==========================================
+
+app.get("/players", async (c) => {
+  await ensurePlayerProfileColumns(c.env.DB);
+  const db = drizzle(c.env.DB);
+  const teamId = c.req.query("teamId") || "demo-team";
+
+  if (teamId === "demo-team") {
+    return c.json({
+      success: true,
+      isDemo: true,
+      team: {
+        id: DEMO_TEAM.id,
+        name: DEMO_TEAM.name,
+        orgName: DEMO_TEAM.orgName,
+        teamName: DEMO_TEAM.teamName,
+        managerName: DEMO_TEAM.managerName,
+        logoImageUrl: DEMO_TEAM.logoImageUrl || null,
+        year: DEMO_TEAM.year,
+        captainId: "demo-player-1",
+      },
+      players: [
+        {
+          id: "demo-player-2",
+          name: "佐藤 健太",
+          nameKana: "サトウ ケンタ",
+          uniformNumber: "1",
+          primaryPosition: "P",
+          subPositions: ["CF"],
+          throws: "R",
+          bats: "R",
+          height: 171,
+          weight: 63,
+          profileImageUrl: null,
+          notes: "伸びのある直球と制球力が武器の大黒柱エース。",
+          isCaptain: false,
+          joinedAt: null,
+          batting: { pa: 34, ab: 31, hits: 12, hr: 1, walks: 3, avg: ".387" },
+          pitching: { battersFaced: 88, outs: 72, inningsText: "24", strikeouts: 28, hitsAllowed: 14, walks: 5 },
+        },
+        {
+          id: "demo-player-3",
+          name: "鈴木 大輔",
+          nameKana: "スズキ ダイスケ",
+          uniformNumber: "2",
+          primaryPosition: "C",
+          subPositions: ["1B"],
+          throws: "R",
+          bats: "R",
+          height: 168,
+          weight: 66,
+          profileImageUrl: null,
+          notes: "強肩と冷静なリードで投手陣を引っ張る扇の要。",
+          isCaptain: false,
+          joinedAt: null,
+          batting: { pa: 35, ab: 30, hits: 10, hr: 1, walks: 5, avg: ".333" },
+          pitching: null,
+        },
+        {
+          id: "demo-player-5",
+          name: "伊藤 蒼真",
+          nameKana: "イトウ ソウマ",
+          uniformNumber: "3",
+          primaryPosition: "1B",
+          subPositions: ["3B"],
+          throws: "L",
+          bats: "L",
+          height: 174,
+          weight: 68,
+          profileImageUrl: null,
+          notes: "広角に長打を放つ左のスラッガー。一塁守備も安定。",
+          isCaptain: false,
+          joinedAt: null,
+          batting: { pa: 33, ab: 29, hits: 9, hr: 2, walks: 4, avg: ".310" },
+          pitching: null,
+        },
+        {
+          id: "demo-player-6",
+          name: "渡辺 陽向",
+          nameKana: "ワタナベ ヒナタ",
+          uniformNumber: "4",
+          primaryPosition: "2B",
+          subPositions: ["SS"],
+          throws: "R",
+          bats: "L",
+          height: 163,
+          weight: 55,
+          profileImageUrl: null,
+          notes: "俊足巧打のチャンスメーカー。広い守備範囲が魅力。",
+          isCaptain: false,
+          joinedAt: null,
+          batting: { pa: 38, ab: 33, hits: 12, hr: 3, walks: 5, avg: ".364" },
+          pitching: null,
+        },
+        {
+          id: "demo-player-7",
+          name: "中村 颯",
+          nameKana: "ナカムラ ハヤテ",
+          uniformNumber: "5",
+          primaryPosition: "3B",
+          subPositions: [],
+          throws: "R",
+          bats: "R",
+          height: 169,
+          weight: 62,
+          profileImageUrl: null,
+          notes: "ホットコーナーを守る元気印。勝負強い打撃が光る。",
+          isCaptain: false,
+          joinedAt: null,
+          batting: { pa: 30, ab: 27, hits: 8, hr: 0, walks: 3, avg: ".296" },
+          pitching: null,
+        },
+        {
+          id: "demo-player-8",
+          name: "山本 蓮",
+          nameKana: "ヤマモト レン",
+          uniformNumber: "7",
+          primaryPosition: "LF",
+          subPositions: ["RF"],
+          throws: "R",
+          bats: "B",
+          height: 166,
+          weight: 58,
+          profileImageUrl: null,
+          notes: "スイッチヒッターのユーティリティ外野手。",
+          isCaptain: false,
+          joinedAt: null,
+          batting: { pa: 28, ab: 25, hits: 8, hr: 0, walks: 3, avg: ".320" },
+          pitching: null,
+        },
+        {
+          id: "demo-player-4",
+          name: "高橋 陸",
+          nameKana: "タカハシ リク",
+          uniformNumber: "8",
+          primaryPosition: "CF",
+          subPositions: ["P"],
+          throws: "L",
+          bats: "L",
+          height: 170,
+          weight: 60,
+          profileImageUrl: null,
+          notes: "チームNo.1の俊足センター。リリーフ登板もこなす二刀流。",
+          isCaptain: false,
+          joinedAt: null,
+          batting: { pa: 36, ab: 31, hits: 11, hr: 1, walks: 5, avg: ".355" },
+          pitching: { battersFaced: 62, outs: 54, inningsText: "18", strikeouts: 19, hitsAllowed: 11, walks: 4 },
+        },
+        {
+          id: "demo-player-9",
+          name: "松本 悠斗",
+          nameKana: "マツモト ユウト",
+          uniformNumber: "9",
+          primaryPosition: "RF",
+          subPositions: [],
+          throws: "R",
+          bats: "R",
+          height: 172,
+          weight: 64,
+          profileImageUrl: null,
+          notes: "レーザービーム送球が武器の強肩ライト。",
+          isCaptain: false,
+          joinedAt: null,
+          batting: { pa: 29, ab: 26, hits: 7, hr: 1, walks: 3, avg: ".269" },
+          pitching: null,
+        },
+        {
+          id: "demo-player-1",
+          name: "山田 翔太",
+          nameKana: "ヤマダ ショウタ",
+          uniformNumber: "10",
+          primaryPosition: "SS",
+          subPositions: ["2B"],
+          throws: "R",
+          bats: "R",
+          height: 168,
+          weight: 61,
+          profileImageUrl: null,
+          notes: "走攻守三拍子揃った頼れるキャプテン。ここ一番の集中力は抜群。",
+          isCaptain: true,
+          joinedAt: null,
+          batting: { pa: 37, ab: 32, hits: 14, hr: 2, walks: 5, avg: ".438" },
+          pitching: null,
+        },
+        {
+          id: "demo-player-10",
+          name: "小林 樹",
+          nameKana: "コバヤシ イツキ",
+          uniformNumber: "18",
+          primaryPosition: "P",
+          subPositions: [],
+          throws: "R",
+          bats: "L",
+          height: 173,
+          weight: 64,
+          profileImageUrl: null,
+          notes: "キレ味鋭いスライダーで三振を奪う本格派右腕。",
+          isCaptain: false,
+          joinedAt: null,
+          batting: { pa: 16, ab: 14, hits: 4, hr: 0, walks: 2, avg: ".286" },
+          pitching: { battersFaced: 45, outs: 36, inningsText: "12", strikeouts: 14, hitsAllowed: 9, walks: 3 },
+        },
+      ],
+    });
+  }
+
+  try {
+    const teamRow = await db
+      .select({
+        id: teams.id,
+        name: teams.name,
+        year: teams.year,
+        managerName: teams.managerName,
+        captainId: teams.captainId,
+        orgName: organizations.name,
+        logoImageUrl: organizations.logoImageUrl,
+      })
+      .from(teams)
+      .leftJoin(organizations, eq(teams.organizationId, organizations.id))
+      .where(eq(teams.id, teamId))
+      .get();
+
+    if (!teamRow) {
+      return c.json({ success: false, error: "指定されたチームが見つかりません" }, 404);
+    }
+
+    const rawPlayers = await db
+      .select({
+        id: players.id,
+        name: players.name,
+        nameKana: players.nameKana,
+        uniformNumber: players.uniformNumber,
+        nickname: players.nickname,
+        primaryPosition: players.primaryPosition,
+        subPositions: players.subPositions,
+        throws: players.throws,
+        bats: players.bats,
+        height: players.height,
+        weight: players.weight,
+        profileImageUrl: players.profileImageUrl,
+        notes: players.notes,
+        isActive: players.isActive,
+        joinedAt: players.joinedAt,
+      })
+      .from(players)
+      .where(eq(players.teamId, teamId))
+      .all();
+
+    // シーズン打撃成績の集計
+    interface BatterAggRow {
+      playerId: string;
+      pa: number;
+      ab: number;
+      hits: number;
+      hr: number;
+      walks: number;
+    }
+
+    interface PitcherAggRow {
+      playerId: string;
+      battersFaced: number;
+      outs: number;
+      strikeouts: number;
+      hitsAllowed: number;
+      walks: number;
+    }
+
+    const battingMap = new Map<string, BatterAggRow>();
+    const pitchingMap = new Map<string, PitcherAggRow>();
+
+    try {
+      const { results: bRows } = await c.env.DB.prepare(`
+        SELECT
+          ab.batter_id AS playerId,
+          COUNT(ab.result) AS pa,
+          SUM(CASE WHEN ab.result IN ('single','1B','double','2B','triple','3B','home_run','HR','groundout','flyout','double_play','strikeout','K','SO','error','E','fc','FC') THEN 1 ELSE 0 END) AS ab,
+          SUM(CASE WHEN ab.result IN ('single','1B','double','2B','triple','3B','home_run','HR') THEN 1 ELSE 0 END) AS hits,
+          SUM(CASE WHEN ab.result IN ('home_run','HR') THEN 1 ELSE 0 END) AS hr,
+          SUM(CASE WHEN ab.result IN ('walk','BB','HBP','hit_by_pitch') THEN 1 ELSE 0 END) AS walks
+        FROM at_bats ab
+        JOIN matches m ON ab.match_id = m.id
+        WHERE m.team_id = ? AND m.status = 'finished' AND ab.batter_id IS NOT NULL
+        GROUP BY ab.batter_id
+      `).bind(teamId).all();
+
+      for (const r of (bRows || []) as unknown as BatterAggRow[]) {
+        if (r.playerId) {
+          battingMap.set(r.playerId, {
+            playerId: r.playerId,
+            pa: Number(r.pa) || 0,
+            ab: Number(r.ab) || 0,
+            hits: Number(r.hits) || 0,
+            hr: Number(r.hr) || 0,
+            walks: Number(r.walks) || 0,
+          });
+        }
+      }
+
+      const { results: pRows } = await c.env.DB.prepare(`
+        SELECT
+          ab.pitcher_id AS playerId,
+          COUNT(ab.result) AS battersFaced,
+          SUM(CASE WHEN ab.result IN ('groundout','flyout','strikeout','K','SO','sac_bunt','sac_fly') THEN 1 WHEN ab.result = 'double_play' THEN 2 ELSE 0 END) AS outs,
+          SUM(CASE WHEN ab.result IN ('strikeout','K','SO') THEN 1 ELSE 0 END) AS strikeouts,
+          SUM(CASE WHEN ab.result IN ('single','1B','double','2B','triple','3B','home_run','HR') THEN 1 ELSE 0 END) AS hitsAllowed,
+          SUM(CASE WHEN ab.result IN ('walk','BB','HBP','hit_by_pitch') THEN 1 ELSE 0 END) AS walks
+        FROM at_bats ab
+        JOIN matches m ON ab.match_id = m.id
+        WHERE m.team_id = ? AND m.status = 'finished' AND ab.pitcher_id IS NOT NULL
+        GROUP BY ab.pitcher_id
+      `).bind(teamId).all();
+
+      for (const r of (pRows || []) as unknown as PitcherAggRow[]) {
+        if (r.playerId) {
+          pitchingMap.set(r.playerId, {
+            playerId: r.playerId,
+            battersFaced: Number(r.battersFaced) || 0,
+            outs: Number(r.outs) || 0,
+            strikeouts: Number(r.strikeouts) || 0,
+            hitsAllowed: Number(r.hitsAllowed) || 0,
+            walks: Number(r.walks) || 0,
+          });
+        }
+      }
+    } catch (statErr) {
+      console.warn("Optional player stats aggregation skipped:", statErr);
+    }
+
+    const formatInningsText = (outs: number): string => {
+      const full = Math.floor(outs / 3);
+      const rem = outs % 3;
+      return rem > 0 ? `${full} ${rem}/3` : `${full}`;
+    };
+
+    const sortedPlayers = rawPlayers
+      .filter((p) => p.isActive !== false)
+      .sort((a, b) => {
+        const strA = (a.uniformNumber || "").trim();
+        const strB = (b.uniformNumber || "").trim();
+        const numA = parseInt(strA.replace(/[^0-9]/g, ""), 10);
+        const numB = parseInt(strB.replace(/[^0-9]/g, ""), 10);
+        if (!Number.isNaN(numA) && !Number.isNaN(numB)) {
+          if (numA !== numB) return numA - numB;
+          return strA.localeCompare(strB);
+        }
+        if (!Number.isNaN(numA)) return -1;
+        if (!Number.isNaN(numB)) return 1;
+        return (a.nameKana || a.name || "").localeCompare(b.nameKana || b.name || "", "ja");
+      })
+      .map((p) => {
+        const bStat = battingMap.get(p.id);
+        const pStat = pitchingMap.get(p.id);
+
+        const batting =
+          bStat && bStat.pa > 0
+            ? {
+                pa: bStat.pa,
+                ab: bStat.ab,
+                hits: bStat.hits,
+                hr: bStat.hr,
+                walks: bStat.walks,
+                avg:
+                  bStat.ab > 0
+                    ? (bStat.hits / bStat.ab).toFixed(3).replace(/^0/, "")
+                    : ".000",
+              }
+            : null;
+
+        const pitching =
+          pStat && pStat.battersFaced > 0
+            ? {
+                battersFaced: pStat.battersFaced,
+                outs: pStat.outs,
+                inningsText: formatInningsText(pStat.outs),
+                strikeouts: pStat.strikeouts,
+                hitsAllowed: pStat.hitsAllowed,
+                walks: pStat.walks,
+              }
+            : null;
+
+        let parsedSubs: string[] = [];
+        if (Array.isArray(p.subPositions)) {
+          parsedSubs = p.subPositions;
+        } else if (typeof p.subPositions === "string") {
+          try {
+            const parsed = JSON.parse(p.subPositions);
+            if (Array.isArray(parsed)) parsedSubs = parsed;
+          } catch {}
+        }
+
+        let joinedTs: number | null = null;
+        if (p.joinedAt instanceof Date) {
+          joinedTs = Math.floor(p.joinedAt.getTime() / 1000);
+        } else if (typeof p.joinedAt === "number") {
+          joinedTs = p.joinedAt;
+        }
+
+        return {
+          id: p.id,
+          name: p.name,
+          nameKana: p.nameKana || null,
+          uniformNumber: p.uniformNumber,
+          nickname: p.nickname || null,
+          primaryPosition: p.primaryPosition || null,
+          subPositions: parsedSubs,
+          throws: p.throws || null,
+          bats: p.bats || null,
+          height: p.height ?? null,
+          weight: p.weight ?? null,
+          profileImageUrl: p.profileImageUrl || null,
+          notes: p.notes || null,
+          isCaptain: Boolean(teamRow.captainId && teamRow.captainId === p.id),
+          joinedAt: joinedTs,
+          batting,
+          pitching,
+        };
+      });
+
+    return c.json({
+      success: true,
+      isDemo: false,
+      team: {
+        id: teamRow.id,
+        name: `${teamRow.orgName ? `${teamRow.orgName} ` : ""}${teamRow.name}`.trim(),
+        orgName: teamRow.orgName || teamRow.name,
+        teamName: teamRow.name,
+        managerName: teamRow.managerName || null,
+        logoImageUrl: teamRow.logoImageUrl || null,
+        year: teamRow.year || 2026,
+        captainId: teamRow.captainId || null,
+      },
+      players: sortedPlayers,
+    });
+  } catch (err: unknown) {
+    console.error("Failed to fetch LIFF players directory:", err);
+    return c.json(
+      { success: false, error: err instanceof Error ? err.message : "選手名鑑の取得に失敗しました" },
       500
     );
   }

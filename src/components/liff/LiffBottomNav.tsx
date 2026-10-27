@@ -26,6 +26,7 @@ import {
   Users,
   UserCircle,
   SlidersHorizontal,
+  IdCard,
 } from "lucide-react";
 
 type MenuCategory = "schedule" | "manual" | "settings";
@@ -66,12 +67,19 @@ const MENU_ITEMS: MenuItem[] = [
   },
   {
     title: "スタメン・出欠登録",
-    subtitle: "試合ごとのスタメン・控え・欠席設定",
+    subtitle: "スタメン・ベンチ設定",
     href: "/liff/matches/lineup",
     icon: Users,
     colorClass: "bg-primary/15 text-primary",
     category: "schedule" as const,
-    fullWidth: true,
+  },
+  {
+    title: "選手名鑑",
+    subtitle: "背番号・守備・選手紹介",
+    href: "/liff/players",
+    icon: IdCard,
+    colorClass: "bg-cyan-500/15 text-cyan-600 dark:text-cyan-400",
+    category: "schedule" as const,
   },
   {
     title: "活動予定",
@@ -195,6 +203,8 @@ export function LiffBottomNav() {
       pathname?.startsWith("/liff/links")
     ) {
       setSelectedCategory("manual");
+    } else {
+      setSelectedCategory("schedule");
     }
   }, [pathname]);
 

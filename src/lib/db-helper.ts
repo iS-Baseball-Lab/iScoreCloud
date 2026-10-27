@@ -258,4 +258,31 @@ export async function ensureMatchLineupColumns(d1?: any) {
   isMatchLineupSchemaReady = true;
 }
 
+let isPlayerProfileSchemaReady = false;
+
+/**
+ * 🛠️ D1 の players テーブルに選手名鑑用の拡張カラムが存在することを保証する関数
+ */
+export async function ensurePlayerProfileColumns(d1?: any) {
+  if (!d1 || isPlayerProfileSchemaReady) return;
+
+  const alterQueries = [
+    "ALTER TABLE players ADD COLUMN nickname text",
+    "ALTER TABLE players ADD COLUMN sub_positions text",
+    "ALTER TABLE players ADD COLUMN height integer",
+    "ALTER TABLE players ADD COLUMN weight integer",
+    "ALTER TABLE players ADD COLUMN notes text",
+    "ALTER TABLE players ADD COLUMN profile_image_url text",
+  ];
+
+  for (const sqlText of alterQueries) {
+    try {
+      await d1.prepare(sqlText).run().catch(() => {});
+    } catch {}
+  }
+
+  isPlayerProfileSchemaReady = true;
+}
+
+
 
