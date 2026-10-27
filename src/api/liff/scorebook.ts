@@ -1275,10 +1275,10 @@ liffScorebookRouter.post("/save", async (c) => {
     }
 
     // 3. イニング順（1回表 ➔ 1回裏 ➔ 2回表 ➔ 2回裏 ...）に時系列整列してDB挿入クエリを生成
+    //    ※同一イニング内の並び順は Step 3 でユーザーが確認・並び替えた配列順を厳密に維持する
     const combinedIncoming = [...incomingTop, ...incomingBottom].sort((a, b) => {
       if (a.inning !== b.inning) return a.inning - b.inning;
       if (a.isTop !== b.isTop) return a.isTop ? -1 : 1;
-      if (a.columnIndex !== b.columnIndex) return a.columnIndex - b.columnIndex;
       return 0;
     });
 

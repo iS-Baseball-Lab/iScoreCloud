@@ -17,6 +17,9 @@ import {
   Maximize2,
   ArrowLeft,
   ArrowRight,
+  ArrowUp,
+  ArrowDown,
+  ArrowRightLeft,
   Check,
 } from "lucide-react";
 import {
@@ -34,6 +37,7 @@ import {
 } from "@/types/scorebook-v2";
 import {
   computeCountFromPitches,
+  resolveActiveMatchupFromStructure,
   validateScorebookSheet,
 } from "@/lib/liff/scorebook-validator";
 import { cropScorebookRegion } from "@/lib/liff/scorebook-image";
@@ -118,9 +122,28 @@ export function Step3PinpointReview({
 
   const availableInnings = useMemo(() => {
     const set = new Set<number>();
+    currentStructure?.innings.forEach((m) => set.add(m.inning));
     currentList.forEach((ab) => set.add(ab.inning));
+    if (set.size === 0) set.add(1);
     return Array.from(set).sort((a, b) => a - b);
-  }, [currentList]);
+  }, [currentList, currentStructure]);
+
+  const selectableTargetInnings = useMemo(() => {
+    const maxInn = Math.max(
+      9,
+      availableInnings[availableInnings.length - 1] || 7
+    );
+    const limit = Math.min(15, maxInn + 1);
+    return Array.from({ length: limit }, (_, idx) => idx + 1);
+  }, [availableInnings]);
+
+  const maxBattingOrder = useMemo(() => {
+    return Math.max(
+      9,
+      currentStructure?.batters.length || 9,
+      ...currentList.map((a) => a.battingOrder || 9)
+    );
+  }, [currentStructure, currentList]);
 
   const visibleList = useMemo(() => {
     return currentList.filter((ab) => {
@@ -140,6 +163,16 @@ export function Step3PinpointReview({
     ? currentList.findIndex((ab) => ab.id === editingAtBatId)
     : -1;
   const editingAtBat = editingIndex >= 0 ? currentList[editingIndex] : null;
+
+  const editingInningPeers = useMemo(() => {
+    if (!editingAtBat) return [];
+    return currentList.filter((a) => a.inning === editingAtBat.inning);
+  }, [currentList, editingAtBat]);
+
+  const editingIndexWithinInning = useMemo(() => {
+    if (!editingAtBat) return -1;
+    return editingInningPeers.findIndex((a) => a.id === editingAtBat.id);
+  }, [editingInningPeers, editingAtBat]);
 
   // 編集中マスの切り抜きズーム画像を生成
   useEffect(() => {
@@ -169,24 +202,194 @@ export function Step3PinpointReview({
     };
   }, [editingAtBat?.id, editingAtBat?.cellBox, currentSheetImage]);
 
+  /**
+   * イニング昇順に整列しつつ、同一イニング内の並び順を維持して endingOuts（累積アウト）を再計算する
+   */
+  const recomputeSheetList = (items: ScorebookV2AtBat[]): ScorebookV2AtBat[] => {
+    const byInning = new Map<number, ScorebookV2AtBat[]>();
+    for (const item of items) {
+      const inn = Math.max(1, item.inning || 1);
+      const arr = byInning.get(inn) || [];
+      arr.push({ ...item, inning: inn });
+      byInning.set(inn, arr);
+    }
+
+    const sortedInns = Array.from(byInning.keys()).sort((a, b) => a - b);
+    const result: ScorebookV2AtBat[] = [];
+
+    for (const inn of sortedInns) {
+      const group = byInning.get(inn) || [];
+      let cumOuts = 0;
+      for (const ab of group) {
+        cumOuts = Math.min(3, cumOuts + Math.max(0, ab.outsInPlay));
+        result.push({
+          ...ab,
+          endingOuts: ab.outsInPlay > 0 ? cumOuts : cumOuts,
+        });
+      }
+    }
+    return result;
+  };
+
   const updateSingleAtBat = (
     targetId: string,
     updater: (prev: ScorebookV2AtBat) => ScorebookV2AtBat
   ) => {
-    const updated = currentList.map((item) =>
-      item.id === targetId ? updater(item) : item
+    const updated = recomputeSheetList(
+      currentList.map((item) => (item.id === targetId ? updater(item) : item))
     );
     onChangeAtBats(isTop, updated);
+  };
+
+  /**
+   * 指定打席を別イニングへ移動する
+   * - 前のイニングへ戻す場合（例: 2回 ➔ 1回）: 移動先イニングの「末尾」へ自動配置
+   * - 後のイニングへ送る場合（例: 1回 ➔ 2回）: 移動先イニングの「先頭」へ自動配置
+   */
+  const handleMoveAtBatToInning = (targetId: string, rawNextInning: number) => {
+    const nextInning = Math.max(1, Math.min(15, rawNextInning));
+    const target = currentList.find((a) => a.id === targetId);
+    if (!target || target.inning === nextInning) return;
+
+    const movingEarlier = nextInning < target.inning;
+    const resolved = currentStructure
+      ? resolveActiveMatchupFromStructure(
+          currentStructure,
+          nextInning,
+          target.battingOrder
+        )
+      : null;
+
+    const movedItem: ScorebookV2AtBat = {
+      ...target,
+      inning: nextInning,
+      batterName: resolved?.batterName || target.batterName,
+      batterPlayerId: resolved ? resolved.batterPlayerId : target.batterPlayerId,
+      pitcherName: resolved?.pitcherName || target.pitcherName,
+      pitcherPlayerId: resolved
+        ? resolved.pitcherPlayerId
+        : target.pitcherPlayerId,
+    };
+
+    const others = currentList.filter((a) => a.id !== targetId);
+    const beforeTarget = others.filter((a) => a.inning < nextInning);
+    const inTarget = others.filter((a) => a.inning === nextInning);
+    const afterTarget = others.filter((a) => a.inning > nextInning);
+
+    const mergedTarget = movingEarlier
+      ? [...inTarget, movedItem]
+      : [movedItem, ...inTarget];
+
+    const updated = recomputeSheetList([
+      ...beforeTarget,
+      ...mergedTarget,
+      ...afterTarget,
+    ]);
+    onChangeAtBats(isTop, updated);
+
+    if (selectedInning !== "all" && editingAtBatId === targetId) {
+      setSelectedInning(nextInning);
+    }
+  };
+
+  /**
+   * 同一イニング内で打席の順序を1つ上(前) / 1つ下(後)へ入れ替える
+   */
+  const handleReorderWithinInning = (
+    targetId: string,
+    direction: "up" | "down"
+  ) => {
+    const target = currentList.find((a) => a.id === targetId);
+    if (!target) return;
+
+    const peers = currentList.filter((a) => a.inning === target.inning);
+    const idx = peers.findIndex((a) => a.id === targetId);
+    if (idx < 0) return;
+    const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= peers.length) return;
+
+    const nextPeers = [...peers];
+    [nextPeers[idx], nextPeers[swapIdx]] = [nextPeers[swapIdx], nextPeers[idx]];
+
+    const before = currentList.filter((a) => a.inning < target.inning);
+    const after = currentList.filter((a) => a.inning > target.inning);
+    const updated = recomputeSheetList([...before, ...nextPeers, ...after]);
+    onChangeAtBats(isTop, updated);
+  };
+
+  /**
+   * 打者一巡の列折り返し等でこの打席以降のイニングが丸ごとズレている場合に一括シフト（-1回 / +1回）する
+   */
+  const handleShiftSubsequentInnings = (
+    fromAtBatId: string,
+    delta: -1 | 1
+  ) => {
+    const startIdx = currentList.findIndex((a) => a.id === fromAtBatId);
+    if (startIdx < 0) return;
+
+    const shifted = currentList.map((item, idx) => {
+      if (idx < startIdx) return item;
+      const nextInn = Math.max(1, Math.min(15, item.inning + delta));
+      const resolved = currentStructure
+        ? resolveActiveMatchupFromStructure(
+            currentStructure,
+            nextInn,
+            item.battingOrder
+          )
+        : null;
+      return {
+        ...item,
+        inning: nextInn,
+        batterName: resolved?.batterName || item.batterName,
+        batterPlayerId: resolved ? resolved.batterPlayerId : item.batterPlayerId,
+        pitcherName: resolved?.pitcherName || item.pitcherName,
+        pitcherPlayerId: resolved
+          ? resolved.pitcherPlayerId
+          : item.pitcherPlayerId,
+      };
+    });
+
+    const updated = recomputeSheetList(shifted);
+    onChangeAtBats(isTop, updated);
+
+    if (selectedInning !== "all") {
+      const movedSelf = updated.find((a) => a.id === fromAtBatId);
+      if (movedSelf) {
+        setSelectedInning(movedSelf.inning);
+      }
+    }
+  };
+
+  /**
+   * 打順番号を変更し、骨格情報から該当打者名を自動解決する
+   */
+  const handleChangeBattingOrder = (targetId: string, nextOrder: number) => {
+    updateSingleAtBat(targetId, (prev) => {
+      const resolved = currentStructure
+        ? resolveActiveMatchupFromStructure(
+            currentStructure,
+            prev.inning,
+            nextOrder
+          )
+        : null;
+      return {
+        ...prev,
+        battingOrder: nextOrder,
+        batterName: resolved?.batterName || prev.batterName,
+        batterPlayerId: resolved ? resolved.batterPlayerId : prev.batterPlayerId,
+      };
+    });
   };
 
   const handleAddAtBatInInning = (inning: number) => {
     const inInning = currentList.filter((a) => a.inning === inning);
     const lastInInning = inInning[inInning.length - 1];
-    const nextOrder = lastInInning ? (lastInInning.battingOrder % 9) + 1 : 1;
-    const batterSlot = currentStructure?.batters.find(
-      (b) => b.battingOrder === nextOrder
-    );
-    const pitcherSlot = currentStructure?.pitchers[0];
+    const nextOrder = lastInInning
+      ? (lastInInning.battingOrder % maxBattingOrder) + 1
+      : 1;
+    const resolved = currentStructure
+      ? resolveActiveMatchupFromStructure(currentStructure, inning, nextOrder)
+      : null;
 
     const newItem: ScorebookV2AtBat = {
       id: crypto.randomUUID(),
@@ -194,10 +397,10 @@ export function Step3PinpointReview({
       isTop,
       columnIndex: lastInInning?.columnIndex || 1,
       battingOrder: nextOrder,
-      batterName: batterSlot?.name || "",
-      batterPlayerId: batterSlot?.playerId || null,
-      pitcherName: pitcherSlot?.name || "",
-      pitcherPlayerId: pitcherSlot?.playerId || null,
+      batterName: resolved?.batterName || "",
+      batterPlayerId: resolved?.batterPlayerId || null,
+      pitcherName: resolved?.pitcherName || "",
+      pitcherPlayerId: resolved?.pitcherPlayerId || null,
       resultCode: "groundout",
       resultLabel: "内ゴロ",
       battedDirection: "",
@@ -212,15 +415,15 @@ export function Step3PinpointReview({
       confidence: "high",
     };
 
-    const nextList = [...currentList, newItem].sort((a, b) =>
-      a.inning !== b.inning ? a.inning - b.inning : 0
-    );
+    const nextList = recomputeSheetList([...currentList, newItem]);
     onChangeAtBats(isTop, nextList);
     setEditingAtBatId(newItem.id);
   };
 
   const handleDeleteAtBat = (targetId: string) => {
-    const nextList = currentList.filter((a) => a.id !== targetId);
+    const nextList = recomputeSheetList(
+      currentList.filter((a) => a.id !== targetId)
+    );
     onChangeAtBats(isTop, nextList);
     setEditingAtBatId(null);
   };
@@ -414,120 +617,229 @@ export function Step3PinpointReview({
                 </div>
 
                 <div className="space-y-2">
-                  {innItems.map((ab) => {
-                    const rowIssues = issuesByAtBatId.get(ab.id) || [];
-                    const hasError = rowIssues.some(
-                      (i) => i.severity === "error"
-                    );
-                    const hasWarning =
-                      rowIssues.length > 0 || ab.confidence === "low";
-                    const isHit =
-                      ab.resultCode === "single" ||
-                      ab.resultCode === "double" ||
-                      ab.resultCode === "triple" ||
-                      ab.resultCode === "home_run";
+                  {innItems.length === 0 ? (
+                    <div className="py-3 px-3 rounded-2xl bg-muted/25 border border-dashed border-border text-center text-[11px] font-bold text-muted-foreground">
+                      このイニングの打席はありません（右上の「打席追加」または他イニングから移動できます）
+                    </div>
+                  ) : (
+                    innItems.map((ab) => {
+                      const rowIssues = issuesByAtBatId.get(ab.id) || [];
+                      const hasError = rowIssues.some(
+                        (i) => i.severity === "error"
+                      );
+                      const hasWarning =
+                        rowIssues.length > 0 || ab.confidence === "low";
+                      const isHit =
+                        ab.resultCode === "single" ||
+                        ab.resultCode === "double" ||
+                        ab.resultCode === "triple" ||
+                        ab.resultCode === "home_run";
 
-                    return (
-                      <button
-                        key={ab.id}
-                        type="button"
-                        onClick={() => setEditingAtBatId(ab.id)}
-                        className={`w-full text-left p-3 rounded-2xl border transition-all active:scale-99 space-y-2 cursor-pointer ${
-                          hasError
-                            ? "bg-destructive/5 border-destructive/45"
-                            : hasWarning
-                            ? "bg-amber-500/5 border-amber-500/45"
-                            : "bg-muted/30 hover:bg-muted/55 border-border/80"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className="w-6 h-6 rounded-lg bg-foreground text-background text-[11px] font-black flex items-center justify-center shrink-0">
-                              {ab.battingOrder}
-                            </span>
-                            <span className="text-xs font-black text-foreground truncate">
-                              {ab.batterName || "未設定"}
-                            </span>
-                            <span className="text-[10px] font-bold text-muted-foreground truncate">
-                              vs {ab.pitcherName || "投手"}
-                            </span>
-                          </div>
+                      const sameInningAll = currentList.filter(
+                        (x) => x.inning === ab.inning
+                      );
+                      const posInInning = sameInningAll.findIndex(
+                        (x) => x.id === ab.id
+                      );
 
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            {ab.runsInPlay > 0 && (
-                              <span className="px-2 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-black">
-                                +{ab.runsInPlay}点
+                      return (
+                        <div
+                          key={ab.id}
+                          className={`w-full rounded-2xl border transition-all overflow-hidden ${
+                            hasError
+                              ? "bg-destructive/5 border-destructive/45"
+                              : hasWarning
+                              ? "bg-amber-500/5 border-amber-500/45"
+                              : "bg-muted/30 border-border/80"
+                          }`}
+                        >
+                          {/* メイン領域タップで詳細・1球編集モーダルを開く */}
+                          <button
+                            type="button"
+                            onClick={() => setEditingAtBatId(ab.id)}
+                            className="w-full text-left p-3 space-y-2 hover:bg-muted/40 active:scale-99 transition-all cursor-pointer"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="w-6 h-6 rounded-lg bg-foreground text-background text-[11px] font-black flex items-center justify-center shrink-0">
+                                  {ab.battingOrder}
+                                </span>
+                                <span className="text-xs font-black text-foreground truncate">
+                                  {ab.batterName || "未設定"}
+                                </span>
+                                <span className="text-[10px] font-bold text-muted-foreground truncate">
+                                  vs {ab.pitcherName || "投手"}
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                {ab.runsInPlay > 0 && (
+                                  <span className="px-2 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-black">
+                                    +{ab.runsInPlay}点
+                                  </span>
+                                )}
+                                {ab.outsInPlay > 0 && (
+                                  <span className="px-2 py-0.5 rounded-full bg-slate-700 text-white text-[10px] font-black">
+                                    {ab.outsInPlay}死
+                                  </span>
+                                )}
+                                <span
+                                  className={`px-2.5 py-0.5 rounded-lg text-xs font-black ${
+                                    isHit
+                                      ? "bg-rose-500/15 text-rose-600 dark:text-rose-400"
+                                      : "bg-card border border-border text-foreground"
+                                  }`}
+                                >
+                                  {ab.resultLabel}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* 1球ごとの投球順序ピル表示 */}
+                            <div className="flex items-center flex-wrap gap-1">
+                              <span className="text-[10px] font-black text-muted-foreground mr-0.5">
+                                {ab.pitches.length}球:
                               </span>
+                              {ab.pitches.map((p, pIdx) => {
+                                const meta = getPitchMeta(p);
+                                return (
+                                  <span
+                                    key={`${ab.id}-p-${pIdx}`}
+                                    className={`px-1.5 py-0.5 rounded-md border text-[9px] font-black ${meta.toneClass}`}
+                                  >
+                                    {pIdx + 1}.{meta.shortLabel}
+                                  </span>
+                                );
+                              })}
+                            </div>
+
+                            {/* 盗塁・進塁があれば表示 */}
+                            {ab.advances.length > 0 && (
+                              <div className="flex items-center flex-wrap gap-1 text-[10px] font-bold text-muted-foreground">
+                                {ab.advances.map((adv) => (
+                                  <span
+                                    key={adv.id}
+                                    className={`px-1.5 py-0.5 rounded-md border ${
+                                      adv.isOut
+                                        ? "bg-destructive/10 text-destructive border-destructive/25"
+                                        : adv.to === "HP"
+                                        ? "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/25"
+                                        : "bg-card border-border"
+                                    }`}
+                                  >
+                                    {adv.runnerName
+                                      ? `${adv.runnerName}: `
+                                      : ""}
+                                    {adv.from}→{adv.to}（
+                                    {ADVANCE_METHOD_LABELS[adv.method] ||
+                                      adv.method}
+                                    ）
+                                  </span>
+                                ))}
+                              </div>
                             )}
-                            {ab.outsInPlay > 0 && (
-                              <span className="px-2 py-0.5 rounded-full bg-slate-700 text-white text-[10px] font-black">
-                                {ab.outsInPlay}死
-                              </span>
+
+                            {rowIssues.length > 0 && (
+                              <p className="text-[10px] font-black text-amber-700 dark:text-amber-300 flex items-center gap-1">
+                                <AlertTriangle className="w-3 h-3 shrink-0" />
+                                <span className="truncate">
+                                  {rowIssues[0].message}
+                                </span>
+                              </p>
                             )}
-                            <span
-                              className={`px-2.5 py-0.5 rounded-lg text-xs font-black ${
-                                isHit
-                                  ? "bg-rose-500/15 text-rose-600 dark:text-rose-400"
-                                  : "bg-card border border-border text-foreground"
-                              }`}
-                            >
-                              {ab.resultLabel}
-                            </span>
+                          </button>
+
+                          {/* クイック操作バー: 同回内の順序入替 ＆ ワンタップイニング移動 */}
+                          <div className="px-2.5 py-1.5 bg-card/75 border-t border-border/60 flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                disabled={posInInning <= 0}
+                                onClick={() =>
+                                  handleReorderWithinInning(ab.id, "up")
+                                }
+                                className="h-6 px-1.5 rounded-md bg-muted border border-border text-[10px] font-black text-foreground flex items-center gap-0.5 disabled:opacity-35 cursor-pointer disabled:cursor-not-allowed"
+                                aria-label="1つ上の打席順へ"
+                              >
+                                <ArrowUp className="w-3 h-3" />
+                                <span>上へ</span>
+                              </button>
+                              <button
+                                type="button"
+                                disabled={
+                                  posInInning < 0 ||
+                                  posInInning >= sameInningAll.length - 1
+                                }
+                                onClick={() =>
+                                  handleReorderWithinInning(ab.id, "down")
+                                }
+                                className="h-6 px-1.5 rounded-md bg-muted border border-border text-[10px] font-black text-foreground flex items-center gap-0.5 disabled:opacity-35 cursor-pointer disabled:cursor-not-allowed"
+                                aria-label="1つ下の打席順へ"
+                              >
+                                <ArrowDown className="w-3 h-3" />
+                                <span>下へ</span>
+                              </button>
+                            </div>
+
+                            <div className="flex items-center gap-1">
+                              {ab.inning > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleMoveAtBatToInning(
+                                      ab.id,
+                                      ab.inning - 1
+                                    )
+                                  }
+                                  className="h-6 px-2 rounded-md bg-indigo-500/12 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-700 dark:text-indigo-300 text-[10px] font-black flex items-center gap-0.5 active:scale-95 transition-all cursor-pointer"
+                                >
+                                  <ChevronLeft className="w-3 h-3" />
+                                  <span>{ab.inning - 1}回へ</span>
+                                </button>
+                              )}
+
+                              <select
+                                value={ab.inning}
+                                onChange={(e) =>
+                                  handleMoveAtBatToInning(
+                                    ab.id,
+                                    Number(e.target.value)
+                                  )
+                                }
+                                aria-label="イニング移動先を選択"
+                                className="h-6 px-1.5 rounded-md bg-card border border-border text-[10px] font-black text-foreground cursor-pointer"
+                              >
+                                {selectableTargetInnings.map((targetInn) => (
+                                  <option key={targetInn} value={targetInn}>
+                                    {targetInn}回{isTop ? "表" : "裏"}
+                                    {targetInn === ab.inning
+                                      ? "（現在）"
+                                      : "へ移動"}
+                                  </option>
+                                ))}
+                              </select>
+
+                              {ab.inning < 15 && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleMoveAtBatToInning(
+                                      ab.id,
+                                      ab.inning + 1
+                                    )
+                                  }
+                                  className="h-6 px-2 rounded-md bg-indigo-500/12 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-700 dark:text-indigo-300 text-[10px] font-black flex items-center gap-0.5 active:scale-95 transition-all cursor-pointer"
+                                >
+                                  <span>{ab.inning + 1}回へ</span>
+                                  <ChevronRight className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
                           </div>
                         </div>
-
-                        {/* 1球ごとの投球順序ピル表示 */}
-                        <div className="flex items-center flex-wrap gap-1">
-                          <span className="text-[10px] font-black text-muted-foreground mr-0.5">
-                            {ab.pitches.length}球:
-                          </span>
-                          {ab.pitches.map((p, pIdx) => {
-                            const meta = getPitchMeta(p);
-                            return (
-                              <span
-                                key={`${ab.id}-p-${pIdx}`}
-                                className={`px-1.5 py-0.5 rounded-md border text-[9px] font-black ${meta.toneClass}`}
-                              >
-                                {pIdx + 1}.{meta.shortLabel}
-                              </span>
-                            );
-                          })}
-                        </div>
-
-                        {/* 盗塁・進塁があれば表示 */}
-                        {ab.advances.length > 0 && (
-                          <div className="flex items-center flex-wrap gap-1 text-[10px] font-bold text-muted-foreground">
-                            {ab.advances.map((adv) => (
-                              <span
-                                key={adv.id}
-                                className={`px-1.5 py-0.5 rounded-md border ${
-                                  adv.isOut
-                                    ? "bg-destructive/10 text-destructive border-destructive/25"
-                                    : adv.to === "HP"
-                                    ? "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/25"
-                                    : "bg-card border-border"
-                                }`}
-                              >
-                                {adv.runnerName ? `${adv.runnerName}: ` : ""}
-                                {adv.from}→{adv.to}（
-                                {ADVANCE_METHOD_LABELS[adv.method] || adv.method}
-                                ）
-                              </span>
-                            ))}
-                          </div>
-                        )}
-
-                        {rowIssues.length > 0 && (
-                          <p className="text-[10px] font-black text-amber-700 dark:text-amber-300 flex items-center gap-1">
-                            <AlertTriangle className="w-3 h-3 shrink-0" />
-                            <span className="truncate">
-                              {rowIssues[0].message}
-                            </span>
-                          </p>
-                        )}
-                      </button>
-                    );
-                  })}
+                      );
+                    })
+                  )}
                 </div>
               </section>
             );
@@ -668,6 +980,162 @@ export function Step3PinpointReview({
                     </div>
                   </div>
                 )}
+
+                {/* 1.5 イニング移動・打順・並び順の調整（列ズレ一括補正付き） */}
+                <div className="p-3 rounded-2xl bg-indigo-500/8 border border-indigo-500/25 space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-black text-foreground flex items-center gap-1.5">
+                      <ArrowRightLeft className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                      <span>イニング・打順・並び順の調整</span>
+                    </span>
+                    <span className="text-[10px] font-bold text-muted-foreground">
+                      {editingAtBat.inning}回内 {editingIndexWithinInning + 1}/
+                      {editingInningPeers.length}打席目
+                    </span>
+                  </div>
+
+                  {/* イニング変更（前後ワンタップ＋選択式） */}
+                  <div className="grid grid-cols-12 gap-1.5 items-center">
+                    <button
+                      type="button"
+                      disabled={editingAtBat.inning <= 1}
+                      onClick={() =>
+                        handleMoveAtBatToInning(
+                          editingAtBat.id,
+                          editingAtBat.inning - 1
+                        )
+                      }
+                      className="col-span-4 h-9 px-2 rounded-xl bg-card border border-border text-xs font-black text-foreground flex items-center justify-center gap-1 disabled:opacity-35 active:scale-95 transition-all cursor-pointer disabled:cursor-not-allowed"
+                    >
+                      <ChevronLeft className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                      <span>
+                        {Math.max(1, editingAtBat.inning - 1)}回へ移動
+                      </span>
+                    </button>
+
+                    <select
+                      value={editingAtBat.inning}
+                      onChange={(e) =>
+                        handleMoveAtBatToInning(
+                          editingAtBat.id,
+                          Number(e.target.value)
+                        )
+                      }
+                      aria-label="この打席のイニング"
+                      className="col-span-4 h-9 px-2 rounded-xl bg-card border border-indigo-500/40 text-xs font-black text-foreground text-center cursor-pointer"
+                    >
+                      {selectableTargetInnings.map((innOpt) => (
+                        <option key={innOpt} value={innOpt}>
+                          {innOpt}回{editingAtBat.isTop ? "表" : "裏"}
+                        </option>
+                      ))}
+                    </select>
+
+                    <button
+                      type="button"
+                      disabled={editingAtBat.inning >= 15}
+                      onClick={() =>
+                        handleMoveAtBatToInning(
+                          editingAtBat.id,
+                          editingAtBat.inning + 1
+                        )
+                      }
+                      className="col-span-4 h-9 px-2 rounded-xl bg-card border border-border text-xs font-black text-foreground flex items-center justify-center gap-1 disabled:opacity-35 active:scale-95 transition-all cursor-pointer disabled:cursor-not-allowed"
+                    >
+                      <span>{editingAtBat.inning + 1}回へ移動</span>
+                      <ChevronRight className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                    </button>
+                  </div>
+
+                  {/* 打順選択 ＆ 同一イニング内の前後入替 */}
+                  <div className="grid grid-cols-12 gap-1.5 items-center">
+                    <div className="col-span-6">
+                      <select
+                        value={editingAtBat.battingOrder}
+                        onChange={(e) =>
+                          handleChangeBattingOrder(
+                            editingAtBat.id,
+                            Number(e.target.value)
+                          )
+                        }
+                        aria-label="打順を変更"
+                        className="w-full h-8 px-2 rounded-xl bg-card border border-border text-[11px] font-black text-foreground cursor-pointer"
+                      >
+                        {Array.from(
+                          { length: maxBattingOrder },
+                          (_, i) => i + 1
+                        ).map((ord) => {
+                          const slot = currentStructure?.batters.find(
+                            (b) => b.battingOrder === ord
+                          );
+                          return (
+                            <option key={ord} value={ord}>
+                              {ord}番
+                              {slot?.name ? `: ${slot.name}` : ""}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={editingIndexWithinInning <= 0}
+                      onClick={() =>
+                        handleReorderWithinInning(editingAtBat.id, "up")
+                      }
+                      className="col-span-3 h-8 px-2 rounded-xl bg-card border border-border text-[11px] font-black text-foreground flex items-center justify-center gap-1 disabled:opacity-35 cursor-pointer disabled:cursor-not-allowed"
+                    >
+                      <ArrowUp className="w-3 h-3" />
+                      <span>順を上へ</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={
+                        editingIndexWithinInning < 0 ||
+                        editingIndexWithinInning >=
+                          editingInningPeers.length - 1
+                      }
+                      onClick={() =>
+                        handleReorderWithinInning(editingAtBat.id, "down")
+                      }
+                      className="col-span-3 h-8 px-2 rounded-xl bg-card border border-border text-[11px] font-black text-foreground flex items-center justify-center gap-1 disabled:opacity-35 cursor-pointer disabled:cursor-not-allowed"
+                    >
+                      <ArrowDown className="w-3 h-3" />
+                      <span>順を下へ</span>
+                    </button>
+                  </div>
+
+                  {/* 打者一巡などの列ズレ一括シフト */}
+                  <div className="pt-1 border-t border-indigo-500/20 flex items-center justify-between gap-1.5 flex-wrap">
+                    <span className="text-[10px] font-bold text-muted-foreground">
+                      以降の打席も丸ごと列ズレしている場合:
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        disabled={editingAtBat.inning <= 1}
+                        onClick={() =>
+                          handleShiftSubsequentInnings(editingAtBat.id, -1)
+                        }
+                        className="h-7 px-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-35 text-white text-[10px] font-black active:scale-95 transition-all cursor-pointer disabled:cursor-not-allowed"
+                      >
+                        この打席以降すべて -1回
+                      </button>
+                      <button
+                        type="button"
+                        disabled={editingAtBat.inning >= 15}
+                        onClick={() =>
+                          handleShiftSubsequentInnings(editingAtBat.id, 1)
+                        }
+                        className="h-7 px-2.5 rounded-lg bg-card border border-border hover:bg-muted text-foreground text-[10px] font-black active:scale-95 transition-all cursor-pointer disabled:opacity-35 disabled:cursor-not-allowed"
+                      >
+                        以降すべて +1回
+                      </button>
+                    </div>
+                  </div>
+                </div>
 
                 {/* 2. 打撃結果ワンタップ選択 */}
                 <div className="space-y-2">
