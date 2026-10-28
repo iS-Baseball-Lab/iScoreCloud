@@ -146,16 +146,16 @@ export async function preprocessScorebookImage(
 }
 
 /**
- * API送信直前に高精細（長辺2200px・JPEG品質0.90）を維持しつつ適切なペイロードサイズに整える。
- * 細かい手書き漢字・背番号・BSO記号が潰れない解像度を確保する。
+ * API送信直前に高精細（長辺1850px・JPEG品質0.88）を維持しつつ、
+ * Gemini MEDIA_RESOLUTION_HIGH のタイル分割数を最適化して初動レスポンス速度と文字鮮明度を両立する。
  */
 export async function ensureCompactApiImage(
   processed: PreprocessedScorebookImage,
-  maxLongEdge = 2200,
-  quality = 0.9
+  maxLongEdge = 1850,
+  quality = 0.88
 ): Promise<{ base64: string; mimeType: string }> {
   const currentLong = Math.max(processed.width, processed.height);
-  if (currentLong <= maxLongEdge && processed.base64.length <= 1_450_000) {
+  if (currentLong <= maxLongEdge && processed.base64.length <= 920_000) {
     return {
       base64: processed.base64,
       mimeType: processed.mimeType,
@@ -207,10 +207,10 @@ export async function extractStructureFocusCrops(
 
     const mimeType = "image/jpeg";
 
-    // 1. 左側 0%〜36%（打順・守備・背番号・氏名・途中交代欄）の高解像度クロップ
+    // 1. 左側 0%〜36%（打順・守備・背番号・氏名・途中交代欄）の高解像度クロップ（768px×2タイル境界内の1520pxで高速・高精細）
     const lineupSrcW = Math.max(64, Math.round(w * 0.36));
     const lineupSrcH = h;
-    const lineupMaxEdge = 2000;
+    const lineupMaxEdge = 1520;
     const lineupScale =
       Math.max(lineupSrcW, lineupSrcH) > lineupMaxEdge
         ? lineupMaxEdge / Math.max(lineupSrcW, lineupSrcH)
@@ -234,7 +234,7 @@ export async function extractStructureFocusCrops(
       lineupCanvas.height
     );
     const lineupCropBase64 = stripDataUrlPrefix(
-      lineupCanvas.toDataURL(mimeType, 0.92)
+      lineupCanvas.toDataURL(mimeType, 0.88)
     );
 
     // 2. 上部 0%〜28%（スコアボード＆イニング列ヘッダー番号）＋ 下部 64%〜100%（各列合計得点・安打・投手欄）を1枚に結合
@@ -244,7 +244,7 @@ export async function extractStructureFocusCrops(
     const dividerH = 8;
     const rawCompW = w;
     const rawCompH = topStripH + dividerH + botStripH;
-    const summaryMaxEdge = 2000;
+    const summaryMaxEdge = 1520;
     const sumScale =
       Math.max(rawCompW, rawCompH) > summaryMaxEdge
         ? summaryMaxEdge / Math.max(rawCompW, rawCompH)
@@ -278,7 +278,7 @@ export async function extractStructureFocusCrops(
     );
 
     const summaryCropBase64 = stripDataUrlPrefix(
-      sumCanvas.toDataURL(mimeType, 0.92)
+      sumCanvas.toDataURL(mimeType, 0.88)
     );
 
     return {
@@ -371,7 +371,7 @@ export async function extractInningChunkCompositeCrop(
     const dividerW = 24;
     const rawTotalW = leftPanelW + dividerW + rightSrcW;
     const rawTotalH = h;
-    const maxEdge = 2000;
+    const maxEdge = 1520;
     const scale =
       Math.max(rawTotalW, rawTotalH) > maxEdge
         ? maxEdge / Math.max(rawTotalW, rawTotalH)
@@ -528,7 +528,7 @@ export async function extractInningChunkCompositeCrop(
     }
 
     const mimeType = "image/jpeg";
-    const dataUrl = canvas.toDataURL(mimeType, 0.92);
+    const dataUrl = canvas.toDataURL(mimeType, 0.88);
     return {
       base64: stripDataUrlPrefix(dataUrl),
       mimeType,

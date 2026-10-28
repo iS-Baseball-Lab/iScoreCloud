@@ -182,9 +182,9 @@ type GeminiCallMode = "structure" | "chunk";
 
 interface GeminiModelAttemptConfig {
   model: string;
-  /** 初動応答（HTTP 200＋最初のSSEチャンク到達）までの最大待機ミリ秒。混雑キュー滞留を素早く見切る */
-  firstChunkTimeoutMs: number;
-  /** 非思考の本文JSONテキストが出始めるまでの最大待機ミリ秒 */
+  /** HTTP接続〜最初のSSEチャンク（思考チャンクまたは本文チャンク）到達までの最大待機ミリ秒 */
+  firstResponseTimeoutMs: number;
+  /** 思考開始後、非思考の本文JSONテキストが出始めるまでの最大待機ミリ秒 */
   firstTextTimeoutMs: number;
   thinkingMode: "level_high" | "level_medium" | "level_low" | "budget" | "none";
   thinkingBudget?: number;
@@ -202,60 +202,51 @@ const MODEL_COOLDOWN_UNTIL = new Map<
 
 /**
  * Gemini 3 マルチプール・フェイルオーバールーティング:
- * - 廃止・無料枠ゼロの旧2.5系 / 3.5-flash を排除
- * - 独立したレート制限枠（RPM/RPD）と別サービングプールを持つ現行モデル群を順に試行:
- *   1. gemini-3.8-flash (最新フラッグシップFlash)
- *   2. gemini-3.6-flash (安定ワークホースFlash・別クォータ枠)
- *   3. gemini-3.5-flash-lite (高速・大容量クォータ枠 + 思考レベルHIGH/MEDIUM指定で高精度維持)
- *   4. gemini-3.8-flash-lite (3.8系軽量プール)
- *   5. gemini-3.1-flash-lite (3.1系独立クォータ枠)
- *   6. gemini-flash-lite-latest (最新Lite動的エイリアス枠)
+ * - 廃止・無料枠ゼロ・404のモデル（旧2.5系 / 3.5-flash / gemini-flash-latest / gemini-3.8-flash-lite）を完全排除
+ * - 実稼働確認済みの独立クォータ枠＆サービングプールを順に試行:
+ *   1. gemini-3.8-flash (最新フラッグシップFlash・MEDIUM思考で高速高精度)
+ *   2. gemini-3.6-flash (安定ワークホースFlash・独立クォータ枠)
+ *   3. gemini-3.5-flash-lite (高速・大容量クォータ枠)
+ *   4. gemini-3.1-flash-lite (3.1系独立クォータ枠)
+ *   5. gemini-flash-lite-latest (最新Lite動的エイリアス安全網)
  */
 function getGeminiModelConfigs(
-  mode: GeminiCallMode
+  _mode: GeminiCallMode
 ): readonly GeminiModelAttemptConfig[] {
-  const isStructure = mode === "structure";
   return [
     {
       model: "gemini-3.8-flash",
-      firstChunkTimeoutMs: 18_000,
-      firstTextTimeoutMs: 44_000,
-      thinkingMode: "level_high",
+      firstResponseTimeoutMs: 40_000,
+      firstTextTimeoutMs: 56_000,
+      thinkingMode: "level_medium",
       backoffBeforeMs: 0,
     },
     {
       model: "gemini-3.6-flash",
-      firstChunkTimeoutMs: 18_000,
-      firstTextTimeoutMs: 44_000,
-      thinkingMode: "level_high",
-      backoffBeforeMs: 250,
-    },
-    {
-      model: "gemini-flash-latest",
-      firstChunkTimeoutMs: 16_000,
-      firstTextTimeoutMs: 38_000,
-      thinkingMode: isStructure ? "level_high" : "level_medium",
+      firstResponseTimeoutMs: 38_000,
+      firstTextTimeoutMs: 54_000,
+      thinkingMode: "level_medium",
       backoffBeforeMs: 250,
     },
     {
       model: "gemini-3.5-flash-lite",
-      firstChunkTimeoutMs: 15_000,
-      firstTextTimeoutMs: 38_000,
-      thinkingMode: "level_high",
-      backoffBeforeMs: 250,
-    },
-    {
-      model: "gemini-3.8-flash-lite",
-      firstChunkTimeoutMs: 15_000,
-      firstTextTimeoutMs: 36_000,
-      thinkingMode: "level_high",
+      firstResponseTimeoutMs: 34_000,
+      firstTextTimeoutMs: 46_000,
+      thinkingMode: "level_medium",
       backoffBeforeMs: 250,
     },
     {
       model: "gemini-3.1-flash-lite",
-      firstChunkTimeoutMs: 15_000,
-      firstTextTimeoutMs: 34_000,
-      thinkingMode: isStructure ? "level_high" : "level_medium",
+      firstResponseTimeoutMs: 32_000,
+      firstTextTimeoutMs: 44_000,
+      thinkingMode: "level_medium",
+      backoffBeforeMs: 250,
+    },
+    {
+      model: "gemini-flash-lite-latest",
+      firstResponseTimeoutMs: 28_000,
+      firstTextTimeoutMs: 38_000,
+      thinkingMode: "level_low",
       backoffBeforeMs: 300,
     },
   ];
@@ -2158,10 +2149,12 @@ async function callGeminiStructuredJson<T>(
   mode: GeminiCallMode = "structure"
 ): Promise<T> {
   const attemptErrors: string[] = [];
-  let sawQuota429 = false;
-  let sawDemand503 = false;
+  let quota429Count = 0;
+  let demand503Count = 0;
+  let timeoutCount = 0;
   const overallStart = Date.now();
-  const MAX_TOTAL_BUDGET_MS = 105_000;
+  // Cloudflare Workers / モバイルブラウザの100秒HTTPタイムアウトより手前で確実にJSON応答を完結させる
+  const MAX_TOTAL_BUDGET_MS = 94_000;
   const rawConfigs = getGeminiModelConfigs(mode);
 
   const nowTs = Date.now();
@@ -2215,7 +2208,7 @@ async function callGeminiStructuredJson<T>(
 
     const remainingBeforeStart =
       MAX_TOTAL_BUDGET_MS - (Date.now() - overallStart);
-    if (remainingBeforeStart < 6_000) {
+    if (remainingBeforeStart < 8_000) {
       break;
     }
 
@@ -2243,7 +2236,7 @@ async function callGeminiStructuredJson<T>(
       }, boundedMs);
     };
 
-    scheduleWatchdog(cfg.firstChunkTimeoutMs, "初動待機タイムアウト");
+    scheduleWatchdog(cfg.firstResponseTimeoutMs, "応答待機タイムアウト");
 
     try {
       const generationConfig: Record<string, unknown> = {
@@ -2251,21 +2244,27 @@ async function callGeminiStructuredJson<T>(
         responseMimeType: "application/json",
         mediaResolution: "MEDIA_RESOLUTION_HIGH",
       };
+      // includeThoughts: true を付与することで、Geminiが推論中にもSSE思考チャンクを即時ストリーム配信し、
+      // 画像プリフィル＋思考フェーズ中の無通信による誤タイムアウトを構造的に排除する
       if (cfg.thinkingMode === "level_high") {
         generationConfig.thinkingConfig = {
           thinkingLevel: "HIGH",
+          includeThoughts: true,
         };
       } else if (cfg.thinkingMode === "level_medium") {
         generationConfig.thinkingConfig = {
           thinkingLevel: "MEDIUM",
+          includeThoughts: true,
         };
       } else if (cfg.thinkingMode === "level_low") {
         generationConfig.thinkingConfig = {
           thinkingLevel: "LOW",
+          includeThoughts: true,
         };
       } else if (cfg.thinkingMode === "budget") {
         generationConfig.thinkingConfig = {
           thinkingBudget: cfg.thinkingBudget ?? 1024,
+          includeThoughts: true,
         };
       }
 
@@ -2283,16 +2282,18 @@ async function callGeminiStructuredJson<T>(
         }),
       });
 
-      // 万一 mediaResolution や thinkingConfig パラメータ仕様差異で 400 が返った場合は非対応項目を除去して即座に同モデル再送
+      // 万一 includeThoughts / thinkingConfig / mediaResolution のパラメータ仕様差異で 400 が返った場合は非対応項目を除去して即座に同モデル再送
       if (!res.ok && res.status === 400) {
         const firstErrText = await res.text();
         const lowerErr = firstErrText.toLowerCase();
         const isConfigParamIssue =
           lowerErr.includes("thinking") ||
+          lowerErr.includes("includethoughts") ||
+          lowerErr.includes("include_thoughts") ||
           lowerErr.includes("mediaresolution") ||
           lowerErr.includes("media_resolution");
         if (isConfigParamIssue) {
-          scheduleWatchdog(cfg.firstChunkTimeoutMs, "初動待機タイムアウト");
+          scheduleWatchdog(cfg.firstResponseTimeoutMs, "応答待機タイムアウト");
           const fallbackGenConfig: Record<string, unknown> = {
             temperature: 0.05,
             responseMimeType: "application/json",
@@ -2336,7 +2337,7 @@ async function callGeminiStructuredJson<T>(
         }
 
         if (res.status === 429) {
-          sawQuota429 = true;
+          quota429Count += 1;
           blockedInThisRequest.add(cfg.model);
           const retryMatch = errText.match(/"retryDelay"\s*:\s*"(\d+)s"/i);
           const parsedSec = retryMatch ? Number(retryMatch[1]) : 0;
@@ -2355,7 +2356,7 @@ async function callGeminiStructuredJson<T>(
         }
 
         if (res.status >= 500) {
-          sawDemand503 = true;
+          demand503Count += 1;
           MODEL_COOLDOWN_UNTIL.set(cfg.model, {
             until: Date.now() + 20_000,
             status: res.status,
@@ -2374,27 +2375,37 @@ async function callGeminiStructuredJson<T>(
 
       MODEL_COOLDOWN_UNTIL.delete(cfg.model);
 
-      let sawCandidateChunk = false;
       let sawTextChunk = false;
 
+      // HTTP 200 接続完了時点で思考フェーズ上限タイマーへ移行
+      const initialLeftForText = Math.max(
+        10_000,
+        cfg.firstTextTimeoutMs - (Date.now() - attemptStart)
+      );
+      scheduleWatchdog(initialLeftForText, "思考フェーズタイムアウト");
+
+      const refreshThinkingWatchdog = () => {
+        if (sawTextChunk) return;
+        const elapsedAttempt = Date.now() - attemptStart;
+        const leftForText = Math.max(
+          6_000,
+          cfg.firstTextTimeoutMs - elapsedAttempt
+        );
+        const nextWait = Math.min(22_000, leftForText);
+        const reason =
+          leftForText <= 22_000
+            ? "思考フェーズ上限到達"
+            : "思考ストリーム無応答";
+        scheduleWatchdog(nextWait, reason);
+      };
+
       const { text, finishReason } = await readGeminiSseResponse(res, {
-        onCandidateChunk: () => {
-          if (!sawCandidateChunk) {
-            sawCandidateChunk = true;
-            if (!sawTextChunk) {
-              const elapsedAttempt = Date.now() - attemptStart;
-              const leftForText = Math.max(
-                7_000,
-                cfg.firstTextTimeoutMs - elapsedAttempt
-              );
-              scheduleWatchdog(leftForText, "思考フェーズ超過");
-            }
-          }
-        },
+        onCandidateChunk: refreshThinkingWatchdog,
+        onThoughtChunk: refreshThinkingWatchdog,
         onTextChunk: () => {
           sawTextChunk = true;
-          // 本文トークンが流れている間はチャンク間14秒のアイドル監視のみに切り替え、生成途中の切断を防ぐ
-          scheduleWatchdog(14_000, "ストリーム無応答");
+          // 本文トークンが流れている間はチャンク間20秒のアイドル監視のみに切り替え、生成途中の切断を防ぐ
+          scheduleWatchdog(20_000, "ストリーム無応答");
         },
       });
 
@@ -2425,6 +2436,7 @@ async function callGeminiStructuredJson<T>(
       }
     } catch (err) {
       if (controller.signal.aborted) {
+        timeoutCount += 1;
         attemptErrors.push(
           `[${cfg.model}] ${abortReason || "応答タイムアウト"}`
         );
@@ -2440,7 +2452,7 @@ async function callGeminiStructuredJson<T>(
     }
   }
 
-  if (sawQuota429 && !sawDemand503) {
+  if (quota429Count > 0 && timeoutCount === 0 && demand503Count === 0) {
     throw new Error(
       `Gemini APIの利用枠上限（429 Quota Exceeded）に達しました。30〜60秒ほど待ってから再度お試しいただくか、Google AI Studioの利用枠（Free Tier / Billing設定）をご確認ください。 ${attemptErrors.join(
         " "
@@ -2448,7 +2460,15 @@ async function callGeminiStructuredJson<T>(
     );
   }
 
-  if (sawQuota429 && sawDemand503) {
+  if (timeoutCount > 0) {
+    throw new Error(
+      `AIモデルの画像解析が時間内に完了しませんでした。数秒置いてもう一度ボタンを押してください。 ${attemptErrors.join(
+        " "
+      )}`
+    );
+  }
+
+  if (quota429Count > 0 && demand503Count > 0) {
     throw new Error(
       `AIモデルの一時混雑（503）および一部モデルの利用枠上限（429）が重なりました。30秒ほど置いてからもう一度お試しください。 ${attemptErrors.join(
         " "
@@ -2464,6 +2484,7 @@ async function callGeminiStructuredJson<T>(
 
 interface SseStreamCallbacks {
   onCandidateChunk?: () => void;
+  onThoughtChunk?: () => void;
   onTextChunk?: () => void;
 }
 
@@ -2504,7 +2525,9 @@ async function readGeminiSseResponse(
       }
       const parts = cand?.content?.parts || [];
       for (const p of parts) {
-        if (!p.thought && typeof p.text === "string" && p.text.length > 0) {
+        if (p.thought) {
+          callbacks?.onThoughtChunk?.();
+        } else if (typeof p.text === "string" && p.text.length > 0) {
           assembledText += p.text;
           callbacks?.onTextChunk?.();
         }

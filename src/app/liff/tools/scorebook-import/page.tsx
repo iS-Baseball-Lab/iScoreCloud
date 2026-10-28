@@ -554,7 +554,7 @@ export default function LiffScorebookImportPage() {
       const processed = await preprocessScorebookImage(file, {
         rotationDeg: 0,
         enhancePencil: false,
-        maxLongEdge: 1600,
+        maxLongEdge: 1500,
       });
       setLegendOverride({
         dataUrl: processed.dataUrl,
@@ -635,7 +635,7 @@ export default function LiffScorebookImportPage() {
     );
 
     const [apiImg, focusCrops] = await Promise.all([
-      ensureCompactApiImage(imgState.processed, 2200, 0.9),
+      ensureCompactApiImage(imgState.processed, 1850, 0.88),
       extractStructureFocusCrops(imgState.processed.dataUrl),
     ]);
 
@@ -968,8 +968,8 @@ export default function LiffScorebookImportPage() {
         const sourceDataUrl = imgState.processed.dataUrl;
         const apiImg = await ensureCompactApiImage(
           imgState.processed,
-          2200,
-          0.9
+          1850,
+          0.88
         );
         const structureFp = buildStructureFingerprint(structure);
         const chunks = buildSmartInningChunks(structure);
