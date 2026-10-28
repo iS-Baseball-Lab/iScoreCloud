@@ -806,7 +806,7 @@ liffScorebookRouter.post("/analyze-structure", async (c) => {
       },
     ];
     const imageDescriptions: string[] = [
-      "・画像1: スコアブック片面全体画像（全体のグリッド列構造と 0〜1000 座標の算出基準）",
+      "・画像1: 外周4辺に『0〜1000の座標目盛りルーラー』（上下辺＝水色X座標、左右辺＝緑色Y座標）が付いたスコアブック片面全体画像（※lineupRightX・各打順行のymin/ymax・各イニング列のxmin/xmaxは、推測ではなく必ずこの外周ルーラーの目盛り数値を直接読み取って出力してください！）",
     ];
 
     if (body.lineupCropBase64) {
@@ -871,31 +871,36 @@ ${battingTeamContext}${scoreboardHintText}
      - 日本のスコアブックの選手欄は「打順 | 守備位置 | 背番号 | 選手氏名」または「打順 | 選手氏名 | 背番号 | 守備位置」の列構造です。
      - **守備位置（position）** は 1〜9 または DH が1人ずつ割り振られる列です。漢字（投・捕・一・二・三・遊・左・中・右・指）や英語（P,C,1B..DH）で書かれていても、出力時は必ず **"1","2","3","4","5","6","7","8","9","D"** の1文字コードに変換してください（1=投, 2=捕, 3=一, 4=二, 5=三, 6=遊, 7=左, 8=中, 9=右, D=DH）。
      - **背番号（uniformNumber）** は 0〜99 等のユニフォーム番号です。背番号欄が空欄のときに守備位置番号（1〜9）を uniformNumber に入れるミスを絶対にしないでください！空欄なら "" を返してください。
-   - **先発と途中交代（substitutions）の分離＋守備位置抽出**:
+   - **先発と途中交代・守備位置変更（substitutions）の完全抽出**:
      - 各打順枠が上下2〜3段に分かれている場合、**一番上の段が先発選手（starter）**です。
-     - 2段目・3段目に実際に別の選手名が手書きされている場合のみ substitutions 配列に追加し、シート1全体の打席グリッド内の交代線（波線・二重線・斜線・『PH』『PR』表記）がある列から出場イニング（inningEntered: 1以上の整数）、種別（"PH"=代打, "PR"=代走, "DEF"=守備交代）、および交代後の守備位置（position: "1"〜"9" または "D"、未記載なら ""）を特定してください。空欄の段は絶対に出力しないでください。
-   - **各打順行の上下座標（ymin, ymax）と選手欄右端境界（lineupRightX）の抽出**:
-     - 画像1（シート全体画像）の 0〜1000 正規化座標で、各打順枠（1番、2番...）の行の上端 ymin と下端 ymax を出力してください。
-     - また、左側の選手名欄と「1回」の打席列を隔てる縦罫線の X座標（0〜1000、通常 160〜240 前後）を **lineupRightX** に出力してください。
+     - 2段目・3段目に別の選手名が手書きされている場合は substitutions 配列に追加し、シート1全体の打席グリッド内の交代線（波線・二重線・斜線・『PH』『PR』表記）があるイニング列から出場イニング（inningEntered: 1以上の整数）、種別（"PH"=代打, "PR"=代走, "DEF"=守備交代）、および交代後の守備位置（position: "1"〜"9" または "D"）を特定してください。
+     - **🔥重要（スタメン野手のマウンド登板・守備位置変更）**: 草野球・学童野球では新しい控え選手が出るのではなく、スタメン選手の守備位置欄が『6→1』『8/1』『投』のように途中イニングから変更（特に "1"=投手への継投変更！）されるケースが多発します。守備位置欄に複数の守備番号や矢印がある場合も、必ずその選手名で substitutions に {"inningEntered":交代回,"subType":"DEF","name":"その選手名","uniformNumber":"背番号","position":"変更後の守備番号"} を追加してください！空欄の段は出力しないでください。
+   - **🔥外周ルーラー直読による精密グリッド座標（lineupRightX, ymin, ymax）の抽出**:
+     - 画像1の外周4辺には **0〜1000 の目盛りルーラー** が付いています。直感で推測せず、**印刷された罫線が外周ルーラーにぶつかる目盛り数値**を直接読み取ってください！
+     - **lineupRightX**: 左側の「選手氏名欄」と「1回」の打席列を隔てる縦罫線の上下端ルーラーX値（日本のスコアブックでは選手氏名欄まで含めると通常 **250〜400** 前後になります。背番号欄の手前で切らず、必ず『1回』の列の左端縦線のX目盛りを読んでください！）。
+     - **batters[].ymin / ymax**: 画像1の左右端ルーラー（緑色目盛り）を見て、1番打者〜最終打者の各打順枠を区切る水平罫線の正確な Y目盛り値（上端 ymin、下端 ymax）を出力してください（隣接する打順の ymax と次の ymin は同じ水平罫線の値になります）。
 
-2. **登板投手（pitchers）の敵味方検証と継投抽出**:
-   - このシートの打者たちに対して投げた**守備側チームのピッチャー**を登板順（order: 1, 2...）に抽出してください。
+2. **登板投手（pitchers）の敵味方検証と「投手交代（継投）」の高精度抽出**:
+   - このシートの打者たちに対して投げた**守備側チームのピッチャー**を登板順（order: 1, 2, 3...）に漏れなく抽出してください。
    - **⚠️スコアブック様式による投手欄の取り違え防止（超重要）**:
-     スコアブックの製品によっては、ページ下部/右下の投手欄に「相手投手」を書く様式と、「このページの攻撃チーム自身の投手」を書く様式があります。
-     下部投手欄に書かれた投手名が、**このページの打順（batters）にいる選手（特に position:"1" の投手）と同一人物である場合、それは攻撃チーム自身の投手成績欄なので、相手投手として pitchers に入れてはいけません！** その場合は打席グリッド内の相手投手メモを探すか、書かれていなければ pitchers: [] を返してください。
-   - 複数投手の継投がある場合は、投手欄の投球回数および打席グリッド内の投手交代横線（波線・二重線）の位置から、各投手の担当回（fromInning, toInning）を正確に設定してください。
+     下部/右下の投手欄に書かれた投手名が、**このページの打順（batters）にいる選手（特に先発 position:"1" や途中 position:"1" の選手）と同一人物である場合、それは攻撃チーム自身の投手成績欄なので、相手投手として pitchers に入れてはいけません！** その場合は打席グリッド内の相手投手メモを探すか、無ければ pitchers: [] を返してください（反対側シートから自動補完されます）。
+   - **🔥投手交代のイニング換算ルール（超重要・誤読頻発ポイント）**:
+     1) 投手成績欄が複数行ある場合、1行目が先発（order:1）、2行目が2番手（order:2）、3行目が3番手（order:3）です。全行を漏れなく読み取ってください！
+     2) 投手成績欄の「投球回数（回）」に書かれた数字（例: 1人目 "4"、2人目 "2"、3人目 "1"）は**「投げたイニング数（期間）」であり、終了イニング番号ではありません！** 必ず上から累積計算し、「1人目: fromInning:1, toInning:4」「2人目: fromInning:5, toInning:6」「3人目: fromInning:7, toInning:7」のように変換してください！
+     3) 「3回 1/3」と「2回 2/3」のように端数（1/3, 2/3）がある場合や、画像1の打席グリッド内でイニング途中の打席間に**横波線（〜〜）・二重横線（══）・赤横線**の投手交代線がある場合は、交代が発生したイニングを両方の投手に含めて「1人目: fromInning:1, toInning:4」「2人目: fromInning:4, toInning:6」のように交代回を重ねて出力してください！
 
-3. **イニング構造・打者一巡（2列）・各回得点（innings）の三重照合**:
+3. **イニング構造・打者一巡（2列）・手書き数値（得点/安打）・列座標（innings）の三重照合**:
    - 各縦列の**最上部に印字・手書きされているイニング見出し番号（1, 2, 3...）**を必ず確認してください（拡大画像の上段参照）。
    - **🔥打者一巡（columnCount: 2）の厳密判定**:
-     1イニングに打者が10人以上立つと、隣の2列目へ折り返して同じイニングが記録されます（2列目の見出し番号が同じ回に書き直されている、または1列目で3アウト③になる前に9人一巡して右隣列へ続いている状態）。
-     この場合は必ず1つのイニング要素にまとめて **columnCount: 2** とし、後続のイニング番号が +1 ズレないよう見出し番号と照合してください！
-   - 試合が行われていない空白のイニング列（最終回より右側の空列）は出力しないでください。
-   - 各回の得点（runs）は、①上部スコアボードの数字、②各列最下部の得点計、③その回のマス内の本塁生還印（●や赤塗りダイヤ）の個数の**3箇所を突き合わせて完全一致**させてください。
-   - 各イニング列の座標 (ymin, xmin, ymax, xmax) は必ず **画像1（シート全体画像）に対する当該イニング列の左右縦罫線の正確な 0〜1000 整数** で出力してください（隣のイニング列を含めず、columnCount:2 の場合は2列分のみを囲む xmin〜xmax）。
+     1イニングに打者が10人以上立つと、隣の2列目へ折り返して同じイニングが記録されます（2列目の見出し番号が同じ回に書き直されている、または1列目で3アウト③になる前に9人一巡して右隣列へ続いている状態）。必ず1つのイニング要素にまとめて **columnCount: 2** とし、後続のイニング番号がズレないよう見出し番号と照合してください！
+   - 試合が行われていない空白のイニング列（最終回より右側の空列や、右端の打数・安打集計列）は絶対に出力しないでください。
+   - **手書き数字（得点 runs / 安打 hits）の厳密照合**:
+     各回の得点（runs）は、①上部スコアボードの数字、②各列最下部の得点計、③その回のマス内の本塁生還印（●や赤塗りダイヤ）の個数の**3箇所を突き合わせて完全一致**させてください（"0" と "6"、"1" と "7"、"2" と "3"、バツ印 "×"＝後攻サヨナラ/コールド等の見間違いに注意）。
+   - **各イニング列のルーラー座標 (ymin, xmin, ymax, xmax)**:
+     画像1の上下端Xルーラーと左右端Yルーラーを読み取り、**1回の xmin は必ず lineupRightX と一致**させ、隣り合うイニングの xmax と次イニングの xmin が正確に同じ縦罫線の目盛り値を指すように出力してください（ymin は1番打者の上端、ymax は最終打者の下端）。
 
 【出力JSONフォーマット（以下の厳密なキー構造のJSONオブジェクトのみを返してください）】
-{"lineupRightX":205,"batters":[{"battingOrder":1,"name":"選手名","uniformNumber":"10","position":"6","ymin":140,"ymax":215,"substitutions":[{"inningEntered":5,"subType":"PH","name":"交代選手名","uniformNumber":"24","position":"7"}]}],"pitchers":[{"order":1,"name":"投手名","uniformNumber":"18","fromInning":1,"toInning":7}],"innings":[{"inning":1,"columnCount":1,"runs":0,"hits":1,"ymin":120,"xmin":205,"ymax":880,"xmax":285}],"totalRuns":0,"totalHits":1,"totalErrors":0}
+{"lineupRightX":320,"batters":[{"battingOrder":1,"name":"選手名","uniformNumber":"10","position":"6","ymin":205,"ymax":272,"substitutions":[{"inningEntered":5,"subType":"PH","name":"交代選手名","uniformNumber":"24","position":"7"}]}],"pitchers":[{"order":1,"name":"先発投手名","uniformNumber":"18","fromInning":1,"toInning":4},{"order":2,"name":"救援投手名","uniformNumber":"11","fromInning":5,"toInning":7}],"innings":[{"inning":1,"columnCount":1,"runs":0,"hits":1,"ymin":205,"xmin":320,"ymax":808,"xmax":376}],"totalRuns":0,"totalHits":1,"totalErrors":0}
 ※余分な説明文やMarkdownコードブロックは一切付けず、1行のコンパクトなJSON文字列のみを出力してください。`;
 
     const raw = await callGeminiStructuredJson<RawGeminiStructureResponse>(
@@ -907,8 +912,8 @@ ${battingTeamContext}${scoreboardHintText}
 
     const rawLineupRightX =
       typeof raw.lineupRightX === "number" &&
-      raw.lineupRightX >= 80 &&
-      raw.lineupRightX <= 360
+      raw.lineupRightX >= 140 &&
+      raw.lineupRightX <= 460
         ? Math.round(raw.lineupRightX)
         : undefined;
 
@@ -1010,19 +1015,36 @@ ${battingTeamContext}${scoreboardHintText}
     }
     normalizedBatters.sort((a, b) => a.battingOrder - b.battingOrder);
 
-    // 攻撃チーム自身の投手（position === "1"）を相手投手として誤抽出していないかチェック
-    const ownBattingSidePitcherNames = new Set(
-      normalizedBatters
+    // 攻撃チーム自身の投手（先発 position==="1" または途中交代 position==="1"）を相手投手として誤抽出していないかチェック
+    // ※同姓の別選手が相手チームにいるケースを守るため、背番号が両方あり異なる場合は除外しない
+    const ownBattingSidePitchers = [
+      ...normalizedBatters
         .filter((b) => b.position === "1" && b.name.trim() !== "")
-        .map((b) => b.name.replace(/\s+/g, ""))
-    );
+        .map((b) => ({
+          cleanName: b.name.replace(/\s+/g, ""),
+          uniform: b.uniformNumber.trim(),
+        })),
+      ...normalizedBatters.flatMap((b) =>
+        b.substitutions
+          .filter((s) => s.position === "1" && s.name.trim() !== "")
+          .map((s) => ({
+            cleanName: s.name.replace(/\s+/g, ""),
+            uniform: s.uniformNumber.trim(),
+          }))
+      ),
+    ];
 
     const rawPitchers = (Array.isArray(raw.pitchers) ? raw.pitchers : []).filter(
       (p) => {
         const cleanPName = (p.name || "").replace(/\s+/g, "");
         if (!cleanPName) return false;
-        // このシートの打順にいる投手と完全同名なら、攻撃側自身の投手欄を読んだものなので除外
-        if (ownBattingSidePitcherNames.has(cleanPName)) {
+        const pUniform = (p.uniformNumber || "").trim();
+        const isSameAsOwnPitcher = ownBattingSidePitchers.some(
+          (own) =>
+            own.cleanName === cleanPName &&
+            (!own.uniform || !pUniform || own.uniform === pUniform)
+        );
+        if (isSameAsOwnPitcher) {
           return false;
         }
         return true;
@@ -1036,7 +1058,7 @@ ${battingTeamContext}${scoreboardHintText}
         )
       : undefined;
 
-    const normalizedPitchers: ScorebookPitcherStint[] =
+    const initialPitchers: ScorebookPitcherStint[] =
       rawPitchers.length > 0
         ? rawPitchers.map((p, idx) => {
             const matchedPitcher = !isMyTeamBatting
@@ -1078,6 +1100,11 @@ ${battingTeamContext}${scoreboardHintText}
             },
           ];
 
+    const normalizedPitchers = normalizePitcherStints(
+      initialPitchers,
+      maxInningFromSheet
+    );
+
     // 重複イニング番号が返った場合はマージして整列
     const inningMergeMap = new Map<number, ScorebookInningMeta>();
     for (const inn of raw.innings || []) {
@@ -1110,42 +1137,41 @@ ${battingTeamContext}${scoreboardHintText}
       }
     }
 
-    const normalizedInnings: ScorebookInningMeta[] = Array.from(
-      inningMergeMap.values()
-    ).sort((a, b) => a.inning - b.inning);
+    const baseInnings: ScorebookInningMeta[] =
+      inningMergeMap.size > 0
+        ? Array.from(inningMergeMap.values()).sort((a, b) => a.inning - b.inning)
+        : Array.from({ length: Math.min(7, match.innings || 7) }, (_, i) => ({
+            inning: i + 1,
+            columnCount: 1,
+            runs: scoreboardHintScores[i] ?? 0,
+            hits: 0,
+          }));
 
-    const calculatedRuns = normalizedInnings.reduce((acc, cur) => acc + cur.runs, 0);
-    const calculatedHits = normalizedInnings.reduce((acc, cur) => acc + cur.hits, 0);
+    const regularizedGrid = regularizeSheetGridGeometry(
+      normalizedBatters,
+      baseInnings,
+      rawLineupRightX
+    );
 
-    const firstValidColMinX = normalizedInnings.find(
-      (i) => Array.isArray(i.columnBox) && i.columnBox[1] > 60
-    )?.columnBox?.[1];
-    const resolvedLineupRightX =
-      rawLineupRightX ??
-      (typeof firstValidColMinX === "number" &&
-      firstValidColMinX >= 85 &&
-      firstValidColMinX <= 360
-        ? Math.max(80, firstValidColMinX - 2)
-        : undefined);
+    const calculatedRuns = regularizedGrid.innings.reduce(
+      (acc, cur) => acc + cur.runs,
+      0
+    );
+    const calculatedHits = regularizedGrid.innings.reduce(
+      (acc, cur) => acc + cur.hits,
+      0
+    );
 
     const structure: ScorebookSheetStructure = {
       isTop: body.isTop,
       isMyTeamBatting,
-      batters: normalizedBatters,
+      batters: regularizedGrid.batters,
       pitchers: normalizedPitchers,
-      innings:
-        normalizedInnings.length > 0
-          ? normalizedInnings
-          : Array.from({ length: Math.min(7, match.innings || 7) }, (_, i) => ({
-              inning: i + 1,
-              columnCount: 1,
-              runs: scoreboardHintScores[i] ?? 0,
-              hits: 0,
-            })),
+      innings: regularizedGrid.innings,
       totalRuns: calculatedRuns,
       totalHits: raw.totalHits ?? calculatedHits,
       totalErrors: Math.max(0, raw.totalErrors ?? 0),
-      lineupRightX: resolvedLineupRightX,
+      lineupRightX: regularizedGrid.lineupRightX,
     };
 
     return c.json({
@@ -1207,7 +1233,7 @@ liffScorebookRouter.post("/analyze-inning-chunk", async (c) => {
       },
     ];
     const stage2ImageGuide: string[] = [
-      "・画像1: スコアブック片面全体画像（※出力する box 座標 [ymin, xmin, ymax, xmax] は必ずこの画像1全体の 0〜1000 座標系で指定してください）",
+      "・画像1: 外周4辺に0〜1000目盛りルーラーが付いたスコアブック片面全体画像（全体の列・投手交代波線・前後イニングとの文脈確認用）",
     ];
 
     if (body.focusCropBase64) {
@@ -1218,11 +1244,9 @@ liffScorebookRouter.post("/analyze-inning-chunk", async (c) => {
         },
       });
       stage2ImageGuide.push(
-        `・画像${imageParts.length}: 【${sortedTargets.join(
+        `・画像${imageParts.length}: 【🔥最優先で精読！ ${sortedTargets.join(
           "・"
-        )}回専用・行番号ガイド＆赤枠ハイライト拡大画像】左側に「打順・選手名欄のみ（1回マスは含みません）」、中央の濃紺帯に打順ガイド、その右側の【赤枠内】に今回抽出対象の ${sortedTargets.join(
-          "・"
-        )}回 の列のみを全く同じ行高さで拡大しています！赤枠の外側の暗く減光された隣接列は絶対に読まず、赤枠内の列だけを左の打順行と真横に照合して精読してください！`
+        )}回専用・各打順1マス独立拡大マトリクス画像】上下左右の隣接マスの映り込みを完全に切り離し、1番〜9番の各打席マスを1段ずつ高精細に独立拡大しています！各マスの細かい手書き数字（守備番号 1〜9、送球ハイフン 6-3 等、丸数字アウト ①②③、BSO記号）は必ずこの画像${imageParts.length}を拡大精読してください！`
       );
     }
 
@@ -1299,10 +1323,17 @@ ${pitcherSpecLines.join("\n")}
 【対象イニングの確定スコア＆列情報（必ずこの得点数・列数・3アウト交代と整合させること）】
 ${targetInningMetaLines.join("\n")}
 
-【超重要 1: 列ズレ・イニング終了切り線の誤読防止】
+【超重要 1: 列ズレ・イニング終了切り線の誤読防止 ＆ 回途中継投の判定】
 - 1つのイニングは先頭打者から打順が1つずつ下へ進み（9番の次は1番へ戻る）、アウト丸数字 ① ➔ ② ➔ ③（3アウトチェンジ）が出た時点でそのイニングは終了です！
 - **⚠️イニング終了切り線の誤読厳禁**: 3アウト目（③）になったマスの右下隅や、その直下の空欄マスに引かれている短い斜線『／』やカギ線『∟』は「この回終了」を示す区切り印です！これを単打の斜線『/』や次の打席と誤読しないでください。③が出た時点でそのイニングの打席読取を終了してください。
-- 画像2の赤枠外の暗く減光された隣接列は別のイニングなので絶対に読まないでください。
+- **投手交代（継投）横線の確認**: 同一イニングに複数の相手投手が跨っている場合、打席と打席の境界に横波線『〜〜』や二重横線『══』が引かれています。交代線より前の打席と後の打席でそれぞれ正しい投手名を pt に出力してください。
+
+【超重要 1.5: 手書き数字の厳密判別ルール（数値誤読の徹底防止）】
+- **⚠️丸囲み数字『①』『②』『③』と守備位置番号『1』『2』『3』の絶対区別**:
+  ダイヤモンド中央付近の丸で囲まれた数字 **①・②・③ は「1アウト・2アウト・3アウト」を表すアウトカウント（eo: 1, 2, 3）**です！これを守備位置の "1"(投飛)・"2"(捕飛)・"3"(一飛) と絶対に誤読しないでください！
+- **手書き数字の字形照合と野球セオリー検算**:
+  - 内野ゴロの送球ルート（ハイフン繋ぎ）は、走者無しなら必ず一塁『-3』で終わります（"6-3", "4-3", "5-3", "1-3", "2-3"）。走者無しなのに "6-5" や "4-8" と読めた場合は "-3" の字形崩れでないか画像2で再確認してください。
+  - 外野の飛球・安打方向は "7"(左)・"8"(中)・"9"(右) です。手書きの『7』と『1』『9』、『4』と『6』、『3』と『5』『8』の筆跡を画像2の拡大マスで1画ずつ丁寧に確認してください。
 
 【超重要 2: 1球ごとの投球・牽制・ボーク順序（p）の完全抽出（必須）】
 各打席マスの投球記号欄（BSO欄）および各塁周辺の牽制・ボーク記号を拡大画像で1球目から順番に読み取り、以下の短縮コード配列 p で出力してください:
@@ -1353,7 +1384,7 @@ ${targetInningMetaLines.join("\n")}
 - cf は "h"(高)・"m"(中)・"l"(低)。迷いがあるマスのみ cf:"l" とし cr に短い理由を記載（通常は cr 省略可）。
 
 【出力JSONフォーマット（改行・インデント無しのコンパクト短縮キーJSONのみを返してください）】
-{"ab":[{"i":1,"c":1,"bo":1,"rc":"single","dir":"7","rl":"左前安打","rbi":0,"o":0,"eo":0,"ru":0,"p":["B","S","F","H"],"a":[{"rn":"選手名","f":"BAT","t":"1B","m":"hit","io":false,"pn":4}],"cf":"h","box":[150,210,230,285]}]}
+{"ab":[{"i":1,"c":1,"bo":1,"pt":"投手名","rc":"single","dir":"7","rl":"左前安打","rbi":0,"o":0,"eo":0,"ru":0,"p":["B","S","F","H"],"a":[{"rn":"選手名","f":"BAT","t":"1B","m":"hit","io":false,"pn":4}],"cf":"h","box":[205,320,272,376]}]}
 ※ rc は必ず "single"|"double"|"triple"|"home_run"|"walk"|"intentional_walk"|"hit_by_pitch"|"interference"|"sac_bunt"|"sac_fly"|"groundout"|"flyout"|"infield_fly"|"strikeout"|"dropped_third_strike_out"|"dropped_third_strike"|"double_play"|"triple_play"|"interference_out"|"error"|"fc"|"other" のいずれかとしてください。`;
 
     const rawChunk = await callGeminiStructuredJson<RawGeminiChunkResponse>(
@@ -1384,10 +1415,13 @@ ${targetInningMetaLines.join("\n")}
       }
 
       const battingOrder = Math.max(1, (ab.bo ?? ab.battingOrder) || 1);
+      const colIndex = Math.max(1, (ab.c ?? ab.columnIndex) || 1);
+      const ocrPitcherHint = (ab.pt ?? ab.pitcherName ?? "").trim();
       const resolved = resolveActiveMatchupFromStructure(
         body.structure,
         inning,
-        battingOrder
+        battingOrder,
+        ocrPitcherHint
       );
 
       const rawResultCode = ab.rc ?? ab.resultCode;
@@ -1471,22 +1505,22 @@ ${targetInningMetaLines.join("\n")}
       );
       const { balls, strikes } = computeCountFromPitches(normalizedPitches);
 
-      // 【数学的自己補正 2】Stage 1 の列座標(columnBox)と打順行座標(rowBox)で cellBox のズレをアンカー補正
+      // 【数学的自己補正 2】確定済みグリッドの列座標(columnBox × columnIndex)と打順行座標(rowBox)の直積交差から 1マスを厳密算出
       const boxArr = Array.isArray(ab.box) && ab.box.length >= 4 ? ab.box : undefined;
       const rawCellBox = boxArr
         ? sanitizeBox(boxArr[0], boxArr[1], boxArr[2], boxArr[3])
         : sanitizeBox(ab.ymin, ab.xmin, ab.ymax, ab.xmax);
 
-      const inningColBox = body.structure.innings.find(
-        (m) => m.inning === inning
-      )?.columnBox;
+      const inningMeta = body.structure.innings.find((m) => m.inning === inning);
       const batterRowBox = body.structure.batters.find(
         (b) => b.battingOrder === battingOrder
       )?.rowBox;
 
-      const cellBox = anchorCellBoxWithGrid(
+      const cellBox = computeCartesianCellBox(
         rawCellBox,
-        inningColBox,
+        inningMeta?.columnBox,
+        inningMeta?.columnCount ?? 1,
+        colIndex,
         batterRowBox
       );
 
@@ -2953,46 +2987,399 @@ function sanitizeBox(
   return [y1, x1, y2, x2];
 }
 
-function anchorCellBoxWithGrid(
+/**
+ * Stage 1 の登板投手リストを正規化する:
+ * - スコアブック下部の「投球回数（例: 4回, 2回, 1回）」をそのまま終了回（1〜4, 1〜2, 1〜1）として返してしまった場合に累積イニング範囲（1〜4, 5〜6, 7〜7）へ自動変換
+ * - 先発の toInning が未指定で最終回になっており 2番手以降の fromInning が途中回を指している場合の重複/空白補正
+ * - 回途中の投手交代（例: 1〜4回 と 4〜7回 の同一回オーバーラップ）はそのまま保持
+ */
+function normalizePitcherStints(
+  stints: ScorebookPitcherStint[],
+  maxInning: number
+): ScorebookPitcherStint[] {
+  const safeMax = Math.max(1, maxInning);
+  if (stints.length === 0) return [];
+
+  const sorted = [...stints]
+    .sort((a, b) => a.order - b.order)
+    .map((p, idx) => ({
+      ...p,
+      order: idx + 1,
+      fromInning: Math.max(1, Math.round(p.fromInning || 1)),
+      toInning: Math.max(1, Math.round(p.toInning || safeMax)),
+    }));
+
+  if (sorted.length === 1) {
+    return [
+      {
+        ...sorted[0],
+        fromInning: 1,
+        toInning: Math.max(sorted[0].toInning, safeMax),
+      },
+    ];
+  }
+
+  // パターン1: 2番手以降もすべて fromInning === 1 かつ先発が 2回以上 ➔ 「投球回数（期間）」をそのまま出力したケース
+  const looksLikeDurationMode =
+    sorted[0].fromInning === 1 &&
+    sorted[0].toInning >= 2 &&
+    sorted.slice(1).every((p) => p.fromInning === 1);
+
+  if (looksLikeDurationMode) {
+    const durations = sorted.map((p) => Math.max(1, p.toInning));
+    let cursor = 1;
+    return sorted.map((p, idx) => {
+      const dur = durations[idx];
+      const remainingDur = durations
+        .slice(idx + 1)
+        .reduce((acc, v) => acc + v, 0);
+      const from = Math.min(safeMax, cursor);
+      const isLast = idx === sorted.length - 1;
+      const to = isLast
+        ? Math.max(from, safeMax)
+        : Math.min(safeMax, from + dur - 1);
+      // 残り投球回数と合算して最終回を超える場合はイニング途中交代（1/3, 2/3）のため同一回を重ねる
+      cursor =
+        to + remainingDur > safeMax ? to : Math.min(safeMax, to + 1);
+      return {
+        ...p,
+        fromInning: from,
+        toInning: Math.max(from, to),
+      };
+    });
+  }
+
+  // パターン2: 通常のイニング番号指定の単調性＆空白ギャップ補正
+  const result = sorted.map((p) => ({ ...p }));
+  result[0].fromInning = 1;
+
+  for (let i = 0; i < result.length - 1; i++) {
+    const cur = result[i];
+    const nxt = result[i + 1];
+    nxt.fromInning = Math.max(cur.fromInning, Math.min(safeMax, nxt.fromInning));
+
+    if (cur.toInning >= safeMax && nxt.fromInning > cur.fromInning) {
+      // 前の投手の終了回が未確定(最終回デフォルト)だった場合は次投手の開始直前回に合わせる
+      cur.toInning = Math.max(cur.fromInning, nxt.fromInning - 1);
+    } else if (cur.toInning > nxt.fromInning) {
+      // 逆転している場合は交代発生回で揃える
+      cur.toInning = nxt.fromInning;
+    } else if (cur.toInning < nxt.fromInning - 1) {
+      // 担当投手が不在の空白イニングを作らないよう前の投手の終了回を繋ぐ
+      cur.toInning = nxt.fromInning - 1;
+    }
+    cur.toInning = Math.max(cur.fromInning, cur.toInning);
+  }
+
+  const last = result[result.length - 1];
+  last.toInning = Math.max(last.fromInning, last.toInning, safeMax);
+
+  return result;
+}
+
+function medianOfNumbers(values: number[], fallback: number): number {
+  if (values.length === 0) return fallback;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1
+    ? sorted[mid]
+    : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+/**
+ * 印刷されたスコアブック罫線の等間隔性（全打順行が等高・全イニング物理列が等幅・隣接境界が完全一致）を利用し、
+ * Stage 1 の生座標から「選手欄への食い込み」と「上下左右の隣接マス映り込み」を数学的にゼロへ正則化する。
+ */
+function regularizeSheetGridGeometry(
+  batters: ScorebookBatterSlot[],
+  innings: ScorebookInningMeta[],
+  rawLineupRightX?: number
+): {
+  batters: ScorebookBatterSlot[];
+  innings: ScorebookInningMeta[];
+  lineupRightX: number;
+} {
+  const validRawLR =
+    typeof rawLineupRightX === "number" &&
+    rawLineupRightX >= 165 &&
+    rawLineupRightX <= 480
+      ? rawLineupRightX
+      : undefined;
+
+  const firstInn = innings[0];
+  const firstColX1 =
+    firstInn &&
+    firstInn.inning === 1 &&
+    firstInn.columnBox &&
+    firstInn.columnBox[1] >= 165 &&
+    firstInn.columnBox[1] <= 480
+      ? firstInn.columnBox[1]
+      : undefined;
+
+  let leftX = 310;
+  if (validRawLR !== undefined && firstColX1 !== undefined) {
+    if (Math.abs(validRawLR - firstColX1) <= 22) {
+      leftX = Math.round((validRawLR + firstColX1) / 2);
+    } else if (
+      Math.min(validRawLR, firstColX1) < 245 &&
+      Math.max(validRawLR, firstColX1) >= 245
+    ) {
+      // 日本のスコアブックは打順・守備・背番号・選手名まで含めると X>=245 になるため選手欄食い込み側を棄却
+      leftX = Math.max(validRawLR, firstColX1);
+    } else {
+      leftX = Math.round((validRawLR + firstColX1) / 2);
+    }
+  } else if (validRawLR !== undefined) {
+    leftX = validRawLR;
+  } else if (firstColX1 !== undefined) {
+    leftX = firstColX1;
+  }
+
+  const B = batters.length;
+  const K = innings.length;
+
+  // --- Y方向（1番〜最終打順の水平罫線）の正則化 ---
+  const validRows = batters
+    .map((b, idx) => ({ idx, box: b.rowBox }))
+    .filter(
+      (r): r is { idx: number; box: NormalizedBox } =>
+        Boolean(
+          r.box &&
+            r.box[0] >= 40 &&
+            r.box[2] <= 965 &&
+            r.box[2] - r.box[0] >= 26 &&
+            r.box[2] - r.box[0] <= 135
+        )
+    );
+
+  const validColYs = innings
+    .map((m) => m.columnBox)
+    .filter((box): box is NormalizedBox =>
+      Boolean(
+        box &&
+          box[0] >= 40 &&
+          box[2] <= 965 &&
+          box[2] - box[0] >= Math.max(220, Math.max(1, B) * 26)
+      )
+    );
+
+  const rowHeightSamples: number[] = [
+    ...validRows.map((r) => r.box[2] - r.box[0]),
+    ...(B > 0 ? validColYs.map((box) => (box[2] - box[0]) / B) : []),
+  ];
+  let fittedRowH = medianOfNumbers(rowHeightSamples, 66);
+
+  if (validRows.length >= 2) {
+    const firstR = validRows[0];
+    const lastR = validRows[validRows.length - 1];
+    if (lastR.idx - firstR.idx >= 3) {
+      const spanH =
+        (lastR.box[2] - firstR.box[0]) / (lastR.idx - firstR.idx + 1);
+      if (spanH >= 32 && spanH <= 120) {
+        fittedRowH = spanH;
+      }
+    }
+  }
+
+  const topEstimates: number[] = [
+    ...validRows.map((r) => r.box[0] - r.idx * fittedRowH),
+    ...validRows.map((r) => r.box[2] - (r.idx + 1) * fittedRowH),
+    ...validColYs.map((box) => box[0]),
+  ];
+  const topY = Math.max(
+    45,
+    Math.min(360, Math.round(medianOfNumbers(topEstimates, 165)))
+  );
+  const bottomY =
+    B > 0
+      ? Math.max(
+          topY + B * 28,
+          Math.min(965, Math.round(topY + B * fittedRowH))
+        )
+      : Math.min(920, Math.round(topY + 9 * fittedRowH));
+
+  const yBorders: number[] = new Array(B + 1);
+  if (B > 0) {
+    const effRowH = (bottomY - topY) / B;
+    yBorders[0] = topY;
+    yBorders[B] = bottomY;
+    for (let i = 1; i < B; i++) {
+      const idealY = topY + effRowH * i;
+      const prevBot = batters[i - 1].rowBox?.[2];
+      const nextTop = batters[i].rowBox?.[0];
+      let candidateY = idealY;
+      if (
+        prevBot !== undefined &&
+        nextTop !== undefined &&
+        Math.abs(prevBot - nextTop) <= 22
+      ) {
+        candidateY = (prevBot + nextTop) / 2;
+      }
+      const clampedY = Math.max(
+        idealY - effRowH * 0.14,
+        Math.min(idealY + effRowH * 0.14, candidateY)
+      );
+      yBorders[i] = Math.max(yBorders[i - 1] + 24, Math.round(clampedY));
+    }
+  }
+
+  const regularizedBatters: ScorebookBatterSlot[] = batters.map((b, idx) => ({
+    ...b,
+    rowBox: sanitizeBox(yBorders[idx], 0, yBorders[idx + 1], leftX),
+  }));
+
+  if (K === 0) {
+    return {
+      batters: regularizedBatters,
+      innings: [],
+      lineupRightX: leftX,
+    };
+  }
+
+  // --- X方向（1回〜最終回の縦罫線）の正則化 ---
+  const weights = innings.map((m) => Math.max(1, m.columnCount || 1));
+  const totalCols = weights.reduce((acc, w) => acc + w, 0);
+
+  const unitWidthSamples: number[] = [];
+  for (const m of innings) {
+    if (
+      m.columnBox &&
+      m.columnBox[1] >= 150 &&
+      m.columnBox[3] <= 975 &&
+      m.columnBox[3] > m.columnBox[1] + 20
+    ) {
+      const uW =
+        (m.columnBox[3] - m.columnBox[1]) / Math.max(1, m.columnCount || 1);
+      if (uW >= 24 && uW <= 135) {
+        unitWidthSamples.push(uW);
+      }
+    }
+  }
+
+  const fallbackUnitW = Math.max(
+    36,
+    Math.min(82, (865 - leftX) / Math.max(7, totalCols))
+  );
+  const medianUnitW = medianOfNumbers(unitWidthSamples, fallbackUnitW);
+
+  const gridStartX =
+    firstInn.inning > 1 &&
+    firstInn.columnBox &&
+    firstInn.columnBox[1] >= leftX + 20
+      ? firstInn.columnBox[1]
+      : leftX;
+
+  const expectedEndX = Math.min(
+    965,
+    Math.round(gridStartX + totalCols * medianUnitW)
+  );
+  const lastRawBox = innings[K - 1].columnBox;
+  let gridEndX = expectedEndX;
+  if (
+    lastRawBox &&
+    lastRawBox[3] > gridStartX + totalCols * 22 &&
+    lastRawBox[3] <= 970
+  ) {
+    const rawAvgUnitW = (lastRawBox[3] - gridStartX) / totalCols;
+    if (
+      rawAvgUnitW >= medianUnitW * 0.78 &&
+      rawAvgUnitW <= medianUnitW * 1.25
+    ) {
+      gridEndX = lastRawBox[3];
+    }
+  }
+  gridEndX = Math.max(gridStartX + totalCols * 24, Math.min(970, gridEndX));
+
+  const cumW: number[] = [0];
+  for (let k = 0; k < K; k++) {
+    cumW.push(cumW[k] + weights[k]);
+  }
+
+  const effUnitW = (gridEndX - gridStartX) / totalCols;
+  const xBorders: number[] = new Array(K + 1);
+  xBorders[0] = gridStartX;
+  xBorders[K] = gridEndX;
+
+  for (let k = 1; k < K; k++) {
+    const idealX = gridStartX + effUnitW * cumW[k];
+    const prevRight = innings[k - 1].columnBox?.[3];
+    const nextLeft = innings[k].columnBox?.[1];
+    let candidateX = idealX;
+    if (
+      prevRight !== undefined &&
+      nextLeft !== undefined &&
+      Math.abs(prevRight - nextLeft) <= 26
+    ) {
+      candidateX = (prevRight + nextLeft) / 2;
+    } else if (
+      prevRight !== undefined &&
+      Math.abs(prevRight - idealX) <= effUnitW * 0.24
+    ) {
+      candidateX = prevRight;
+    } else if (
+      nextLeft !== undefined &&
+      Math.abs(nextLeft - idealX) <= effUnitW * 0.24
+    ) {
+      candidateX = nextLeft;
+    }
+
+    const clampedX = Math.max(
+      idealX - effUnitW * 0.18,
+      Math.min(idealX + effUnitW * 0.18, candidateX)
+    );
+    xBorders[k] = Math.max(
+      xBorders[k - 1] + weights[k - 1] * 20,
+      Math.round(clampedX)
+    );
+  }
+
+  const regularizedInnings: ScorebookInningMeta[] = innings.map((m, k) => ({
+    ...m,
+    columnBox: sanitizeBox(topY, xBorders[k], bottomY, xBorders[k + 1]),
+  }));
+
+  return {
+    batters: regularizedBatters,
+    innings: regularizedInnings,
+    lineupRightX: leftX,
+  };
+}
+
+/**
+ * 確定済みの「イニング列（打者一巡時は columnIndex に応じた部分列）× 打順行」の直積交差から
+ * 1マスの正確な領域 [ymin, xmin, ymax, xmax] を決定論的に算出する。
+ */
+function computeCartesianCellBox(
   rawCellBox: NormalizedBox | undefined,
   inningColBox: NormalizedBox | undefined,
+  inningColumnCount: number,
+  columnIndex: number,
   batterRowBox: NormalizedBox | undefined
 ): NormalizedBox | undefined {
-  if (!rawCellBox && !inningColBox && !batterRowBox) {
-    return undefined;
+  if (inningColBox && batterRowBox) {
+    const [, colX1, , colX2] = inningColBox;
+    const [rowY1, , rowY2] = batterRowBox;
+    const totalSubCols = Math.max(1, inningColumnCount || 1);
+    const safeSubIdx = Math.max(1, Math.min(totalSubCols, columnIndex || 1));
+    const subW = (colX2 - colX1) / totalSubCols;
+    const subX1 = Math.round(colX1 + (safeSubIdx - 1) * subW);
+    const subX2 = Math.round(colX1 + safeSubIdx * subW);
+    return sanitizeBox(rowY1, subX1, rowY2, subX2);
   }
+
   if (!rawCellBox) {
-    if (inningColBox && batterRowBox) {
-      return sanitizeBox(
-        batterRowBox[0],
-        inningColBox[1],
-        batterRowBox[2],
-        inningColBox[3]
-      );
-    }
     return undefined;
   }
 
   let [y1, x1, y2, x2] = rawCellBox;
-
   if (inningColBox) {
-    const [, colX1, , colX2] = inningColBox;
-    const midX = (x1 + x2) / 2;
-    if (midX < colX1 - 30 || midX > colX2 + 30) {
-      x1 = colX1;
-      x2 = colX2;
-    }
+    x1 = inningColBox[1];
+    x2 = inningColBox[3];
   }
-
   if (batterRowBox) {
-    const [rowY1, , rowY2] = batterRowBox;
-    const midY = (y1 + y2) / 2;
-    if (midY < rowY1 - 35 || midY > rowY2 + 35) {
-      y1 = rowY1;
-      y2 = rowY2;
-    }
+    y1 = batterRowBox[0];
+    y2 = batterRowBox[2];
   }
-
   return sanitizeBox(y1, x1, y2, x2);
 }
 

@@ -33,6 +33,7 @@ import {
   type CanonicalAtBatResult,
   type CanonicalPitchResult,
   type ImportScopeMode,
+  type NormalizedBox,
   type ScorebookSheetStructure,
   type ScorebookV2Advance,
   type ScorebookV2AtBat,
@@ -194,7 +195,7 @@ export function Step3PinpointReview({
     return editingInningPeers.findIndex((a) => a.id === editingAtBat.id);
   }, [editingInningPeers, editingAtBat]);
 
-  // 編集中マスの切り抜きズーム画像を生成
+  // 編集中マスの切り抜きズーム画像を生成（確定済み列×行の直積グリッドを最優先し、隣接マスの映り込みを防ぐ 4% 余白で精密切り抜き）
   useEffect(() => {
     let cancelled = false;
     setShowFullSheetInModal(false);
@@ -204,12 +205,33 @@ export function Step3PinpointReview({
       return;
     }
 
-    if (!editingAtBat.cellBox) {
+    let resolvedBox: NormalizedBox | undefined = editingAtBat.cellBox;
+    const inningMeta = currentStructure?.innings.find(
+      (m) => m.inning === editingAtBat.inning
+    );
+    const batterSlot = currentStructure?.batters.find(
+      (b) => b.battingOrder === editingAtBat.battingOrder
+    );
+    if (inningMeta?.columnBox && batterSlot?.rowBox) {
+      const [, colX1, , colX2] = inningMeta.columnBox;
+      const [rowY1, , rowY2] = batterSlot.rowBox;
+      const totalSubCols = Math.max(1, inningMeta.columnCount || 1);
+      const safeSubIdx = Math.max(
+        1,
+        Math.min(totalSubCols, editingAtBat.columnIndex || 1)
+      );
+      const subW = (colX2 - colX1) / totalSubCols;
+      const subX1 = Math.round(colX1 + (safeSubIdx - 1) * subW);
+      const subX2 = Math.round(colX1 + safeSubIdx * subW);
+      resolvedBox = [rowY1, subX1, rowY2, Math.max(subX1 + 10, subX2)];
+    }
+
+    if (!resolvedBox) {
       setCroppedCellUrl(currentSheetImage);
       return;
     }
 
-    cropScorebookRegion(currentSheetImage, editingAtBat.cellBox, 0.35)
+    cropScorebookRegion(currentSheetImage, resolvedBox, 0.04)
       .then((url) => {
         if (!cancelled) setCroppedCellUrl(url);
       })
@@ -220,7 +242,15 @@ export function Step3PinpointReview({
     return () => {
       cancelled = true;
     };
-  }, [editingAtBat?.id, editingAtBat?.cellBox, currentSheetImage]);
+  }, [
+    editingAtBat?.id,
+    editingAtBat?.inning,
+    editingAtBat?.columnIndex,
+    editingAtBat?.battingOrder,
+    editingAtBat?.cellBox,
+    currentStructure,
+    currentSheetImage,
+  ]);
 
   /**
    * イニング昇順に整列しつつ、同一イニング内の並び順を維持して endingOuts（累積アウト）を再計算する

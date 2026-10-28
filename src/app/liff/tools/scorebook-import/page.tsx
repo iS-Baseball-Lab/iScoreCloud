@@ -8,7 +8,7 @@ import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { useLiff } from "@/components/liff/LiffProvider";
 import { LiffToolSubNav } from "@/components/liff/LiffToolSubNav";
 import {
-  ensureCompactApiImage,
+  buildCalibratedRulerSheetImage,
   extractInningChunkCompositeCrop,
   extractStructureFocusCrops,
   preprocessScorebookImage,
@@ -89,52 +89,75 @@ const createInitialSheetImageState = (
 });
 
 /**
- * 2枚セット読込時、片面の投手欄が未記載（「相手投手」または空欄）の場合に、
- * 反対側シートの打順にある投手（position === "1"）および投手交代から登板投手を自動補完する
+ * 2枚セット読込時、片面の投手欄が未記載（「相手投手」または空欄）の場合や、
+ * 先発1名しか抽出されていないが反対側シートの打順・途中交代（守備変更 6→1 を含む position === "1"）に
+ * 救援投手が記録されている場合に、登板投手リレー（継投）を自動相互補完する
  */
 function crossFillOppositePitchers(
   target: ScorebookSheetStructure,
   opposite: ScorebookSheetStructure | null
 ): ScorebookSheetStructure {
   if (!opposite) return target;
-  const hasRealPitcher = target.pitchers.some(
+
+  const realTargetPitchers = target.pitchers.filter(
     (p) => p.name.trim() !== "" && p.name.trim() !== "相手投手"
   );
-  if (hasRealPitcher) return target;
+  // 既に2名以上の継投が読み取れている場合はそのまま優先
+  if (realTargetPitchers.length >= 2) return target;
 
   const starterSlot = opposite.batters.find(
     (b) => b.position === "1" && b.name.trim() !== ""
   );
-  if (!starterSlot) return target;
+
+  const rawReliefSubs = opposite.batters
+    .flatMap((b) => b.substitutions)
+    .filter((s) => s.position === "1" && s.name.trim() !== "")
+    .sort((a, b) => a.inningEntered - b.inningEntered);
+
+  // 同一選手・同一イニングの重複を除外し、先発と同名の初期エントリも除外
+  const starterBase = realTargetPitchers[0] || starterSlot;
+  if (!starterBase) return target;
+
+  const starterCleanName = starterBase.name.replace(/\s+/g, "");
+  const dedupedReliefs: typeof rawReliefSubs = [];
+  for (const rel of rawReliefSubs) {
+    const cleanRel = rel.name.replace(/\s+/g, "");
+    const prevName =
+      dedupedReliefs.length > 0
+        ? dedupedReliefs[dedupedReliefs.length - 1].name.replace(/\s+/g, "")
+        : starterCleanName;
+    if (cleanRel === prevName) continue;
+    dedupedReliefs.push(rel);
+  }
+
+  // 既に先発1名が入っており、反対側にも救援投手がいないなら変更不要
+  if (realTargetPitchers.length === 1 && dedupedReliefs.length === 0) {
+    return target;
+  }
 
   const maxInn =
     target.innings[target.innings.length - 1]?.inning ||
     opposite.innings[opposite.innings.length - 1]?.inning ||
     7;
 
-  const reliefSubs = opposite.batters
-    .flatMap((b) => b.substitutions)
-    .filter((s) => s.position === "1" && s.name.trim() !== "")
-    .sort((a, b) => a.inningEntered - b.inningEntered);
-
   const builtPitchers: ScorebookPitcherStint[] = [];
   const starterTo =
-    reliefSubs.length > 0
-      ? Math.max(1, reliefSubs[0].inningEntered - 1)
+    dedupedReliefs.length > 0
+      ? Math.max(1, dedupedReliefs[0].inningEntered - 1)
       : maxInn;
 
   builtPitchers.push({
-    id: crypto.randomUUID(),
+    id: realTargetPitchers[0]?.id || crypto.randomUUID(),
     order: 1,
-    name: starterSlot.name,
-    uniformNumber: starterSlot.uniformNumber,
-    playerId: starterSlot.playerId,
+    name: starterBase.name,
+    uniformNumber: starterBase.uniformNumber,
+    playerId: starterBase.playerId,
     fromInning: 1,
     toInning: starterTo,
   });
 
-  reliefSubs.forEach((rel, idx) => {
-    const nextRel = reliefSubs[idx + 1];
+  dedupedReliefs.forEach((rel, idx) => {
+    const nextRel = dedupedReliefs[idx + 1];
     builtPitchers.push({
       id: crypto.randomUUID(),
       order: idx + 2,
@@ -490,7 +513,7 @@ export default function LiffScorebookImportPage() {
           left: nextState.cropLeft,
           right: nextState.cropRight,
         },
-        maxLongEdge: 2200,
+        maxLongEdge: 3000,
       });
       setter({ ...nextState, processed, isProcessing: false });
     } catch (err) {
@@ -636,8 +659,11 @@ export default function LiffScorebookImportPage() {
     );
 
     const [apiImg, focusCrops] = await Promise.all([
-      ensureCompactApiImage(imgState.processed, 1850, 0.88),
-      extractStructureFocusCrops(imgState.processed.dataUrl),
+      buildCalibratedRulerSheetImage(imgState.processed, 1850, 0.89),
+      extractStructureFocusCrops(
+        imgState.processed.dataUrl,
+        imgState.enhancePencil
+      ),
     ]);
 
     const callOnce = async (): Promise<ScorebookSheetStructure> => {
@@ -787,14 +813,18 @@ export default function LiffScorebookImportPage() {
         const sortedMeta = [...structure.innings].sort(
           (a, b) => a.inning - b.inning
         );
+        // 草野球・学童野球の標準的な7回制以下の試合は、隣接イニングの列混入を完全にゼロにするため
+        // 全イニングを「1イニングずつ単独の1列独立マトリクス」として超高精細解析する
+        if (sortedMeta.length <= 7) {
+          return sortedMeta.map((m) => [m.inning]);
+        }
+
         const chunks: number[][] = [];
         let buf: number[] = [];
 
         for (const meta of sortedMeta) {
-          // 得点回(1点以上)・複数安打回(2本以上)・打者一巡(2列)の回は必ず単独1イニング集中解析とし、
-          // 三者凡退などの静かな無得点回のみ最大2イニングまでに抑えて1マスあたりの推論精度を最大化する
           const isDetailedInning =
-            meta.columnCount >= 2 || meta.runs >= 1 || meta.hits >= 2;
+            meta.columnCount >= 2 || meta.runs >= 1 || meta.hits >= 1;
           if (isDetailedInning) {
             if (buf.length > 0) {
               chunks.push(buf);
@@ -819,20 +849,30 @@ export default function LiffScorebookImportPage() {
         structure: ScorebookSheetStructure
       ): string =>
         JSON.stringify({
+          lx: structure.lineupRightX,
           b: structure.batters.map((x) => [
             x.battingOrder,
             x.name,
             x.position,
+            x.rowBox?.[0],
+            x.rowBox?.[2],
             x.substitutions.map((s) => [s.inningEntered, s.name, s.position]),
           ]),
           p: structure.pitchers.map((x) => [x.name, x.fromInning, x.toInning]),
-          i: structure.innings.map((x) => [x.inning, x.runs, x.columnCount]),
+          i: structure.innings.map((x) => [
+            x.inning,
+            x.runs,
+            x.columnCount,
+            x.columnBox?.[1],
+            x.columnBox?.[3],
+          ]),
         });
 
       const requestSingleChunk = async (
         isTop: boolean,
         structure: ScorebookSheetStructure,
         sourceDataUrl: string,
+        alreadyEnhanced: boolean,
         apiImg: { base64: string; mimeType: string },
         structureFp: string,
         targetInnings: number[],
@@ -872,6 +912,7 @@ export default function LiffScorebookImportPage() {
                 firstInningMinX,
                 batters: structure.batters,
                 targetInnings,
+                alreadyEnhanced,
               })
             : null;
 
@@ -920,6 +961,7 @@ export default function LiffScorebookImportPage() {
         isTop: boolean,
         structure: ScorebookSheetStructure,
         sourceDataUrl: string,
+        alreadyEnhanced: boolean,
         apiImg: { base64: string; mimeType: string },
         structureFp: string,
         singleInn: number,
@@ -945,6 +987,7 @@ export default function LiffScorebookImportPage() {
               isTop,
               structure,
               sourceDataUrl,
+              alreadyEnhanced,
               apiImg,
               structureFp,
               [singleInn],
@@ -967,10 +1010,11 @@ export default function LiffScorebookImportPage() {
         if (!imgState.processed) return [];
         const sideLabel = isTop ? "先攻（表）" : "後攻（裏）";
         const sourceDataUrl = imgState.processed.dataUrl;
-        const apiImg = await ensureCompactApiImage(
+        const alreadyEnhanced = imgState.enhancePencil;
+        const apiImg = await buildCalibratedRulerSheetImage(
           imgState.processed,
           1850,
-          0.88
+          0.89
         );
         const structureFp = buildStructureFingerprint(structure);
         const chunks = buildSmartInningChunks(structure);
@@ -997,6 +1041,7 @@ export default function LiffScorebookImportPage() {
               isTop,
               structure,
               sourceDataUrl,
+              alreadyEnhanced,
               apiImg,
               structureFp,
               targetInnings,
@@ -1021,6 +1066,7 @@ export default function LiffScorebookImportPage() {
                   isTop,
                   structure,
                   sourceDataUrl,
+                  alreadyEnhanced,
                   apiImg,
                   structureFp,
                   singleInn,
@@ -1037,6 +1083,7 @@ export default function LiffScorebookImportPage() {
                 isTop,
                 structure,
                 sourceDataUrl,
+                alreadyEnhanced,
                 apiImg,
                 structureFp,
                 targetInnings[0],

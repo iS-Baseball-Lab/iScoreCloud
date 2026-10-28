@@ -376,11 +376,14 @@ export function matchRosterPlayer(
 
 /**
  * 確定したシート骨格(打順・途中交代・継投)から、指定イニング時点の打者・投手を解決する
+ * - 同一イニング途中の投手交代（例: 先発 1〜4回、2番手 4〜7回のように交代回が重なるケース）では、
+ *   AIが打席横の交代線から読み取った投手名ヒント(ocrPitcherHint)も照合して正確な投手を割り当てる。
  */
 export function resolveActiveMatchupFromStructure(
   structure: ScorebookSheetStructure,
   inning: number,
-  battingOrder: number
+  battingOrder: number,
+  ocrPitcherHint?: string
 ): {
   batterName: string;
   batterPlayerId: string | null;
@@ -410,12 +413,32 @@ export function resolveActiveMatchupFromStructure(
   let pitcherName = "";
   let pitcherPlayerId: string | null = null;
   if (structure.pitchers.length > 0) {
-    const stint =
-      structure.pitchers.find(
-        (p) => inning >= p.fromInning && inning <= p.toInning
-      ) || structure.pitchers[structure.pitchers.length - 1];
-    pitcherName = stint.name;
-    pitcherPlayerId = stint.playerId;
+    const matchingStints = structure.pitchers.filter(
+      (p) => inning >= p.fromInning && inning <= p.toInning
+    );
+    let chosenStint =
+      matchingStints[0] || structure.pitchers[structure.pitchers.length - 1];
+
+    const cleanHint = normalizePlayerNameForMatch(ocrPitcherHint || "");
+    if (cleanHint) {
+      const pool =
+        matchingStints.length > 1 ? matchingStints : structure.pitchers;
+      const hintMatched = pool.find((p) => {
+        const cleanP = normalizePlayerNameForMatch(p.name);
+        if (!cleanP) return false;
+        return (
+          cleanP === cleanHint ||
+          cleanP.includes(cleanHint) ||
+          cleanHint.includes(cleanP)
+        );
+      });
+      if (hintMatched) {
+        chosenStint = hintMatched;
+      }
+    }
+
+    pitcherName = chosenStint.name;
+    pitcherPlayerId = chosenStint.playerId;
   }
 
   return {
