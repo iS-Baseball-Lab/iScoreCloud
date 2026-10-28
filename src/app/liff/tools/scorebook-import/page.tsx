@@ -29,6 +29,7 @@ import { Step3PinpointReview } from "./_components/Step3PinpointReview";
 import type {
   ImportScopeMode,
   NormalizedBox,
+  ScorebookGridCorners,
   ScorebookMatchSummary,
   ScorebookPitcherStint,
   ScorebookRosterPlayer,
@@ -79,6 +80,8 @@ const createInitialSheetImageState = (
 ): SheetImageState => ({
   file: null,
   rotationDeg: 0,
+  fineTiltDeg: 0,
+  perspectiveCorners: null,
   enhancePencil,
   cropTop: 0,
   cropBottom: 0,
@@ -506,6 +509,8 @@ export default function LiffScorebookImportPage() {
     try {
       const processed = await preprocessScorebookImage(nextState.file, {
         rotationDeg: nextState.rotationDeg,
+        fineTiltDeg: nextState.fineTiltDeg,
+        perspectiveCorners: nextState.perspectiveCorners,
         enhancePencil: nextState.enhancePencil,
         cropInsets: {
           top: nextState.cropTop,
@@ -539,6 +544,8 @@ export default function LiffScorebookImportPage() {
       ...base,
       file,
       rotationDeg: 0,
+      fineTiltDeg: 0,
+      perspectiveCorners: null,
       cropTop: 0,
       cropBottom: 0,
       cropLeft: 0,
@@ -550,7 +557,11 @@ export default function LiffScorebookImportPage() {
     const cur = isTop ? topImage : bottomImage;
     if (!cur.file) return;
     const nextDeg = ((cur.rotationDeg + 90) % 360) as 0 | 90 | 180 | 270;
-    runPreprocess(isTop, { ...cur, rotationDeg: nextDeg });
+    runPreprocess(isTop, {
+      ...cur,
+      rotationDeg: nextDeg,
+      perspectiveCorners: null,
+    });
   };
 
   const handleToggleEnhance = (isTop: boolean) => {
@@ -567,6 +578,21 @@ export default function LiffScorebookImportPage() {
     const cur = isTop ? topImage : bottomImage;
     if (!cur.file) return;
     runPreprocess(isTop, { ...cur, [edge]: val });
+  };
+
+  const handleUpdateFineTilt = (isTop: boolean, deg: number) => {
+    const cur = isTop ? topImage : bottomImage;
+    if (!cur.file) return;
+    runPreprocess(isTop, { ...cur, fineTiltDeg: deg });
+  };
+
+  const handleUpdatePerspectiveCorners = (
+    isTop: boolean,
+    corners: ScorebookGridCorners | null
+  ) => {
+    const cur = isTop ? topImage : bottomImage;
+    if (!cur.file) return;
+    runPreprocess(isTop, { ...cur, perspectiveCorners: corners });
   };
 
   const handleSelectLegendOverride = async (file: File | null) => {
@@ -850,6 +876,7 @@ export default function LiffScorebookImportPage() {
       ): string =>
         JSON.stringify({
           lx: structure.lineupRightX,
+          gc: structure.gridCorners,
           b: structure.batters.map((x) => [
             x.battingOrder,
             x.name,
@@ -906,8 +933,9 @@ export default function LiffScorebookImportPage() {
           knownMinXs.length > 0 ? Math.min(...knownMinXs) : undefined;
 
         const focusCrop =
-          targetBoxes.length > 0
+          targetBoxes.length > 0 || structure.innings.length > 0
             ? await extractInningChunkCompositeCrop(sourceDataUrl, targetBoxes, {
+                structure,
                 lineupRightX: structure.lineupRightX,
                 firstInningMinX,
                 batters: structure.batters,
@@ -1310,6 +1338,8 @@ export default function LiffScorebookImportPage() {
                 onRotateSheet={handleRotateSheet}
                 onToggleEnhance={handleToggleEnhance}
                 onUpdateCrop={handleUpdateCrop}
+                onUpdateFineTilt={handleUpdateFineTilt}
+                onUpdatePerspectiveCorners={handleUpdatePerspectiveCorners}
                 teamLegendUrl={teamLegendUrl}
                 legendOverrideDataUrl={legendOverride?.dataUrl || null}
                 onSelectLegendOverride={handleSelectLegendOverride}

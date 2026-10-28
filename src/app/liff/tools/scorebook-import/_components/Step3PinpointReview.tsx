@@ -56,7 +56,11 @@ import {
   type FlyStyleOption,
   type HitZoneOption,
 } from "@/lib/liff/scorebook-fielding";
-import { cropScorebookRegion } from "@/lib/liff/scorebook-image";
+import { getCellQuadInStructure } from "@/lib/liff/scorebook-grid";
+import {
+  cropScorebookQuad,
+  cropScorebookRegion,
+} from "@/lib/liff/scorebook-image";
 import { ActionStatusBanner } from "./ActionStatusBanner";
 
 interface Step3PinpointReviewProps {
@@ -195,7 +199,7 @@ export function Step3PinpointReview({
     return editingInningPeers.findIndex((a) => a.id === editingAtBat.id);
   }, [editingInningPeers, editingAtBat]);
 
-  // 編集中マスの切り抜きズーム画像を生成（確定済み列×行の直積グリッドを最優先し、隣接マスの映り込みを防ぐ 4% 余白で精密切り抜き）
+  // 編集中マスの切り抜きズーム画像を生成（4隅歪み補正ホモグラフィ＆複数列サブ列分割を最優先し、隣接マス映り込みゼロで水平展開）
   useEffect(() => {
     let cancelled = false;
     setShowFullSheetInModal(false);
@@ -205,27 +209,29 @@ export function Step3PinpointReview({
       return;
     }
 
-    let resolvedBox: NormalizedBox | undefined = editingAtBat.cellBox;
-    const inningMeta = currentStructure?.innings.find(
-      (m) => m.inning === editingAtBat.inning
-    );
-    const batterSlot = currentStructure?.batters.find(
-      (b) => b.battingOrder === editingAtBat.battingOrder
-    );
-    if (inningMeta?.columnBox && batterSlot?.rowBox) {
-      const [, colX1, , colX2] = inningMeta.columnBox;
-      const [rowY1, , rowY2] = batterSlot.rowBox;
-      const totalSubCols = Math.max(1, inningMeta.columnCount || 1);
-      const safeSubIdx = Math.max(
-        1,
-        Math.min(totalSubCols, editingAtBat.columnIndex || 1)
+    if (currentStructure) {
+      const quad = getCellQuadInStructure(
+        currentStructure,
+        editingAtBat.inning,
+        editingAtBat.columnIndex || 1,
+        editingAtBat.battingOrder,
+        0
       );
-      const subW = (colX2 - colX1) / totalSubCols;
-      const subX1 = Math.round(colX1 + (safeSubIdx - 1) * subW);
-      const subX2 = Math.round(colX1 + safeSubIdx * subW);
-      resolvedBox = [rowY1, subX1, rowY2, Math.max(subX1 + 10, subX2)];
+      if (quad) {
+        cropScorebookQuad(currentSheetImage, quad, 0.04, 480)
+          .then((url) => {
+            if (!cancelled) setCroppedCellUrl(url);
+          })
+          .catch(() => {
+            if (!cancelled) setCroppedCellUrl(currentSheetImage);
+          });
+        return () => {
+          cancelled = true;
+        };
+      }
     }
 
+    const resolvedBox: NormalizedBox | undefined = editingAtBat.cellBox;
     if (!resolvedBox) {
       setCroppedCellUrl(currentSheetImage);
       return;
@@ -730,6 +736,11 @@ export function Step3PinpointReview({
                                 <span className="text-xs font-black text-foreground truncate">
                                   {ab.batterName || "未設定"}
                                 </span>
+                                {(ab.columnIndex || 1) >= 2 && (
+                                  <span className="px-1.5 py-0.5 rounded-md bg-amber-500/15 border border-amber-500/35 text-amber-700 dark:text-amber-300 text-[9px] font-black shrink-0">
+                                    {ab.columnIndex}列目
+                                  </span>
+                                )}
                                 <span className="text-[10px] font-bold text-muted-foreground truncate">
                                   vs {ab.pitcherName || "投手"}
                                 </span>
@@ -1051,25 +1062,69 @@ export function Step3PinpointReview({
                 {/* 1. 元スコアブック画像 該当マス拡大プレビュー */}
                 {currentSheetImage && (
                   <div className="rounded-2xl bg-slate-950 border border-border overflow-hidden">
-                    <div className="px-3 py-1.5 bg-slate-900 flex items-center justify-between text-white">
-                      <span className="text-[10px] font-black flex items-center gap-1">
-                        <ZoomIn className="w-3.5 h-3.5 text-indigo-400" />
-                        {showFullSheetInModal
-                          ? "シート全体画像"
-                          : "手書き原本マス切り抜き"}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setShowFullSheetInModal((prev) => !prev)
-                        }
-                        className="px-2 py-0.5 rounded-md bg-white/15 text-[10px] font-bold flex items-center gap-1 cursor-pointer"
-                      >
-                        <Maximize2 className="w-3 h-3" />
-                        <span>
-                          {showFullSheetInModal ? "マス拡大に戻す" : "全体を見る"}
+                    <div className="px-3 py-1.5 bg-slate-900 flex items-center justify-between gap-2 text-white">
+                      <span className="text-[10px] font-black flex items-center gap-1 min-w-0 truncate">
+                        <ZoomIn className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                        <span className="truncate">
+                          {showFullSheetInModal
+                            ? "シート全体画像"
+                            : `手書き原本マス切り抜き${
+                                (editingAtBat.columnIndex || 1) >= 2
+                                  ? `（${editingAtBat.columnIndex}列目）`
+                                  : ""
+                              }`}
                         </span>
-                      </button>
+                      </span>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {(() => {
+                          const editInnMeta = currentStructure?.innings.find(
+                            (m) => m.inning === editingAtBat.inning
+                          );
+                          const totalSubCols = Math.max(
+                            editInnMeta?.columnCount ?? 1,
+                            editingAtBat.columnIndex || 1
+                          );
+                          if (totalSubCols < 2 || showFullSheetInModal) {
+                            return null;
+                          }
+                          return Array.from(
+                            { length: totalSubCols },
+                            (_, idx) => idx + 1
+                          ).map((colNo) => (
+                            <button
+                              key={colNo}
+                              type="button"
+                              onClick={() =>
+                                updateSingleAtBat(editingAtBat.id, (prev) => ({
+                                  ...prev,
+                                  columnIndex: colNo,
+                                }))
+                              }
+                              className={`px-1.5 py-0.5 rounded-md text-[9px] font-black cursor-pointer transition-colors ${
+                                (editingAtBat.columnIndex || 1) === colNo
+                                  ? "bg-amber-500 text-white"
+                                  : "bg-white/10 text-slate-300 hover:bg-white/20"
+                              }`}
+                            >
+                              {colNo}列目
+                            </button>
+                          ));
+                        })()}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setShowFullSheetInModal((prev) => !prev)
+                          }
+                          className="px-2 py-0.5 rounded-md bg-white/15 text-[10px] font-bold flex items-center gap-1 cursor-pointer"
+                        >
+                          <Maximize2 className="w-3 h-3" />
+                          <span>
+                            {showFullSheetInModal
+                              ? "マス拡大に戻す"
+                              : "全体を見る"}
+                          </span>
+                        </button>
+                      </div>
                     </div>
                     <div className="max-h-44 overflow-auto flex items-center justify-center p-2">
                       <img

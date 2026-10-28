@@ -80,6 +80,21 @@ export type AdvanceMethodCode =
 /** Gemini 2D 正規化座標 [ymin, xmin, ymax, xmax] (0〜1000) */
 export type NormalizedBox = [number, number, number, number];
 
+/** シート上の正規化2D点座標 [x, y] (0〜1000) */
+export type NormalizedPoint = [number, number];
+
+/** 斜め撮影・台形歪みにも対応する打席グリッド4隅座標 (0〜1000) */
+export interface ScorebookGridCorners {
+  /** 1回左端 × 1番打者上端 [x, y] */
+  tl: NormalizedPoint;
+  /** 最終回右端 × 1番打者上端 [x, y] */
+  tr: NormalizedPoint;
+  /** 最終回右端 × 最終打者下端 [x, y] */
+  br: NormalizedPoint;
+  /** 1回左端 × 最終打者下端 [x, y] */
+  bl: NormalizedPoint;
+}
+
 export type ImportScopeMode = "both" | "top_only" | "bottom_only";
 
 export type ConfidenceLevel = "high" | "medium" | "low";
@@ -134,6 +149,8 @@ export interface ScorebookSheetStructure {
   totalErrors: number;
   /** 打順・選手名欄と1回列の境界X座標 (0〜1000) */
   lineupRightX?: number;
+  /** 斜め・台形歪みに追従する打席グリッド（1回〜最終回 × 1番〜最終打順）の4隅座標 */
+  gridCorners?: ScorebookGridCorners;
 }
 
 export interface ScorebookV2Advance {

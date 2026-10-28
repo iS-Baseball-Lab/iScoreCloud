@@ -1,9 +1,25 @@
 // filepath: src/lib/liff/scorebook-image.ts
-import type { NormalizedBox } from "@/types/scorebook-v2";
+import type {
+  NormalizedBox,
+  ScorebookGridCorners,
+  ScorebookSheetStructure,
+} from "@/types/scorebook-v2";
+import {
+  bilinearGridPoint,
+  getCellQuadInStructure,
+  getInningSubColumnFractions,
+  resolveStructureGridCorners,
+  sanitizeGridCorners,
+  warpQuadFromRgbaBuffer,
+} from "./scorebook-grid";
 
 export interface ImagePreprocessOptions {
   rotationDeg: 0 | 90 | 180 | 270;
+  /** 微細な傾き補正角度 (-12〜+12度、0.5度刻み等) */
+  fineTiltDeg?: number;
   enhancePencil: boolean;
+  /** 斜め撮影・台形歪みを真っ直ぐ長方形へスキャナー補正するシート4隅座標 (0〜1000) */
+  perspectiveCorners?: ScorebookGridCorners | null;
   /** トリミング比率 (0〜1) */
   cropInsets?: {
     top: number;
@@ -20,6 +36,8 @@ export interface PreprocessedScorebookImage {
   mimeType: string;
   width: number;
   height: number;
+  /** 4隅台形補正UIでいつでも再調整できるよう保持する回転後・歪み補正前の軽量プレビューDataURL */
+  unwarpedPreviewDataUrl?: string;
 }
 
 export interface StructureFocusCrops {
@@ -159,10 +177,12 @@ export async function preprocessScorebookImage(
   const maxLongEdge = options.maxLongEdge ?? 3000;
   const insets = options.cropInsets ?? { top: 0, right: 0, bottom: 0, left: 0 };
 
-  // 1. 回転を適用した中間Canvasを作成
+  // 1. 90度回転＋微細傾き補正（fineTiltDeg）を適用した中間Canvasを作成
   const isRotated90 = options.rotationDeg === 90 || options.rotationDeg === 270;
   const rotW = isRotated90 ? img.naturalHeight : img.naturalWidth;
   const rotH = isRotated90 ? img.naturalWidth : img.naturalHeight;
+  const fineTilt = Math.max(-15, Math.min(15, options.fineTiltDeg ?? 0));
+  const totalAngleRad = ((options.rotationDeg + fineTilt) * Math.PI) / 180;
 
   const rotCanvas = document.createElement("canvas");
   rotCanvas.width = rotW;
@@ -172,41 +192,116 @@ export async function preprocessScorebookImage(
     throw new Error("Canvas 2D context is unavailable");
   }
 
+  // 微細回転時に四隅が黒くならないよう紙面に近い白で下塗り
+  rotCtx.fillStyle = "#f8fafc";
+  rotCtx.fillRect(0, 0, rotW, rotH);
   rotCtx.save();
   rotCtx.translate(rotW / 2, rotH / 2);
-  rotCtx.rotate((options.rotationDeg * Math.PI) / 180);
+  rotCtx.rotate(totalAngleRad);
   rotCtx.drawImage(img, -img.naturalWidth / 2, -img.naturalHeight / 2);
   rotCtx.restore();
 
-  // 2. トリミング範囲を計算
-  const sx = Math.round(rotW * Math.max(0, Math.min(0.4, insets.left)));
-  const sy = Math.round(rotH * Math.max(0, Math.min(0.4, insets.top)));
-  const sw = Math.max(
-    64,
-    Math.round(rotW * (1 - insets.left - insets.right))
-  );
-  const sh = Math.max(
-    64,
-    Math.round(rotH * (1 - insets.top - insets.bottom))
-  );
-
-  // 3. 長辺 maxLongEdge に収まるようスケール計算
-  const longEdge = Math.max(sw, sh);
-  const scale = longEdge > maxLongEdge ? maxLongEdge / longEdge : 1;
-  const outW = Math.max(64, Math.round(sw * scale));
-  const outH = Math.max(64, Math.round(sh * scale));
-
-  const outCanvas = document.createElement("canvas");
-  outCanvas.width = outW;
-  outCanvas.height = outH;
-  const outCtx = outCanvas.getContext("2d");
-  if (!outCtx) {
-    throw new Error("Output Canvas 2D context is unavailable");
+  // 4隅ドラッグUI用の軽量ベースプレビューを生成（長辺1050px）
+  const prevScale = Math.max(rotW, rotH) > 1050 ? 1050 / Math.max(rotW, rotH) : 1;
+  const prevCanvas = document.createElement("canvas");
+  prevCanvas.width = Math.max(64, Math.round(rotW * prevScale));
+  prevCanvas.height = Math.max(64, Math.round(rotH * prevScale));
+  const prevCtx = prevCanvas.getContext("2d");
+  let unwarpedPreviewDataUrl: string | undefined;
+  if (prevCtx) {
+    prevCtx.imageSmoothingEnabled = true;
+    prevCtx.imageSmoothingQuality = "high";
+    prevCtx.drawImage(rotCanvas, 0, 0, prevCanvas.width, prevCanvas.height);
+    unwarpedPreviewDataUrl = prevCanvas.toDataURL("image/jpeg", 0.82);
   }
 
-  outCtx.imageSmoothingEnabled = true;
-  outCtx.imageSmoothingQuality = "high";
-  outCtx.drawImage(rotCanvas, sx, sy, sw, sh, 0, 0, outW, outH);
+  const validPersp = sanitizeGridCorners(options.perspectiveCorners);
+  let outW: number;
+  let outH: number;
+  const outCanvas = document.createElement("canvas");
+  let outCtx: CanvasRenderingContext2D | null = null;
+
+  if (validPersp) {
+    // 2A. 4隅指定による台形・斜め歪みホモグラフィ補正（スキャナー平面化）
+    const tlPx: [number, number] = [
+      (validPersp.tl[0] / 1000) * rotW,
+      (validPersp.tl[1] / 1000) * rotH,
+    ];
+    const trPx: [number, number] = [
+      (validPersp.tr[0] / 1000) * rotW,
+      (validPersp.tr[1] / 1000) * rotH,
+    ];
+    const brPx: [number, number] = [
+      (validPersp.br[0] / 1000) * rotW,
+      (validPersp.br[1] / 1000) * rotH,
+    ];
+    const blPx: [number, number] = [
+      (validPersp.bl[0] / 1000) * rotW,
+      (validPersp.bl[1] / 1000) * rotH,
+    ];
+
+    const topEdgeW = Math.hypot(trPx[0] - tlPx[0], trPx[1] - tlPx[1]);
+    const botEdgeW = Math.hypot(brPx[0] - blPx[0], brPx[1] - blPx[1]);
+    const leftEdgeH = Math.hypot(blPx[0] - tlPx[0], blPx[1] - tlPx[1]);
+    const rightEdgeH = Math.hypot(brPx[0] - trPx[0], brPx[1] - trPx[1]);
+
+    const rawWarpW = Math.max(64, Math.max(topEdgeW, botEdgeW));
+    const rawWarpH = Math.max(64, Math.max(leftEdgeH, rightEdgeH));
+    const warpScale =
+      Math.max(rawWarpW, rawWarpH) > maxLongEdge
+        ? maxLongEdge / Math.max(rawWarpW, rawWarpH)
+        : 1;
+
+    outW = Math.max(64, Math.round(rawWarpW * warpScale));
+    outH = Math.max(64, Math.round(rawWarpH * warpScale));
+    outCanvas.width = outW;
+    outCanvas.height = outH;
+    outCtx = outCanvas.getContext("2d");
+    if (!outCtx) {
+      throw new Error("Output Canvas 2D context is unavailable");
+    }
+
+    const srcBuffer = rotCtx.getImageData(0, 0, rotW, rotH);
+    const dstImgData = outCtx.createImageData(outW, outH);
+    warpQuadFromRgbaBuffer(
+      srcBuffer.data,
+      rotW,
+      rotH,
+      { tl: tlPx, tr: trPx, br: brPx, bl: blPx },
+      dstImgData.data,
+      outW,
+      outH
+    );
+    outCtx.putImageData(dstImgData, 0, 0);
+  } else {
+    // 2B. 通常の矩形トリミング範囲を計算
+    const sx = Math.round(rotW * Math.max(0, Math.min(0.4, insets.left)));
+    const sy = Math.round(rotH * Math.max(0, Math.min(0.4, insets.top)));
+    const sw = Math.max(
+      64,
+      Math.round(rotW * (1 - insets.left - insets.right))
+    );
+    const sh = Math.max(
+      64,
+      Math.round(rotH * (1 - insets.top - insets.bottom))
+    );
+
+    const longEdge = Math.max(sw, sh);
+    const scale = longEdge > maxLongEdge ? maxLongEdge / longEdge : 1;
+    outW = Math.max(64, Math.round(sw * scale));
+    outH = Math.max(64, Math.round(sh * scale));
+
+    outCanvas.width = outW;
+    outCanvas.height = outH;
+    outCtx = outCanvas.getContext("2d");
+    if (!outCtx) {
+      throw new Error("Output Canvas 2D context is unavailable");
+    }
+
+    outCtx.imageSmoothingEnabled = true;
+    outCtx.imageSmoothingQuality = "high";
+    outCtx.drawImage(rotCanvas, sx, sy, sw, sh, 0, 0, outW, outH);
+  }
 
   // 4. 局所適応の影除去＆鉛筆・赤ペン強調
   if (options.enhancePencil) {
@@ -225,6 +320,7 @@ export async function preprocessScorebookImage(
     mimeType,
     width: outW,
     height: outH,
+    unwarpedPreviewDataUrl,
   };
 }
 
@@ -518,6 +614,8 @@ export async function extractStructureFocusCrops(
 }
 
 export interface InningChunkCropOptions {
+  /** Stage 1・Step 2で確定したシート骨格構造（歪み4隅 gridCorners・複数列 columnCount 含む） */
+  structure?: ScorebookSheetStructure;
   /** Stage 1・Step 2で確定した打順欄の右端X座標 (0〜1000) */
   lineupRightX?: number;
   /** 1回列の左端X座標 (0〜1000) */
@@ -536,8 +634,8 @@ export interface InningChunkCropOptions {
 
 /**
  * Stage 2（イニング分割ディープ解析）向けに、上下左右の隣接マスの映り込みを物理的にゼロ化し、
- * 3000pxマスター画像から対象イニングの各打順マスを1段ずつ大きく切り離して高精細拡大した
- * 「打順別セルマトリクス画像」を生成する。
+ * 1イニング2列・3列以上（打者一巡・二巡）および原本の傾き・台形歪み（gridCorners）にも対応した
+ * 「サブ列×打順 射影補正セルマトリクス画像」を生成する。
  * ※早稲田式の赤線（安打線）と混同しないよう、赤色の枠線は一切描画しない。
  */
 export async function extractInningChunkCompositeCrop(
@@ -545,12 +643,343 @@ export async function extractInningChunkCompositeCrop(
   columnBoxes: NormalizedBox[],
   options?: InningChunkCropOptions
 ): Promise<{ base64: string; mimeType: string } | null> {
-  if (columnBoxes.length === 0) return null;
+  if (columnBoxes.length === 0 && !options?.structure) return null;
   try {
     const img = await loadImageFromUrl(sourceDataUrl);
     const w = img.naturalWidth;
     const h = img.naturalHeight;
     if (w < 120 || h < 120) return null;
+
+    // ━━━ モードS（最優先・歪み射影補正＆複数列完全分離マトリクス） ━━━
+    // structure が渡されている場合、gridCorners の傾き・台形歪みをホモグラフィで真っ直ぐ補正しつつ、
+    // 1イニング2列・3列以上を「1列目[c:1]」「2列目[c:2]」「3列目[c:3]」として1列ずつ独立並列描画する
+    if (
+      options?.structure &&
+      options.structure.batters.length >= 4 &&
+      options.structure.innings.length >= 1
+    ) {
+      const struct = options.structure;
+      const corners = resolveStructureGridCorners(struct);
+      const sortedBatters = [...struct.batters].sort(
+        (a, b) => a.battingOrder - b.battingOrder
+      );
+      const bLen = sortedBatters.length;
+
+      const targetNums =
+        options.targetInnings && options.targetInnings.length > 0
+          ? options.targetInnings
+          : struct.innings.map((m) => m.inning);
+
+      const subColSpecs: Array<{
+        inning: number;
+        subCol: number;
+        totalSubCols: number;
+      }> = [];
+      for (const innNum of targetNums) {
+        const meta = struct.innings.find((m) => m.inning === innNum);
+        if (!meta) continue;
+        const cols = Math.max(1, meta.columnCount || 1);
+        for (let sc = 1; sc <= cols; sc++) {
+          subColSpecs.push({
+            inning: innNum,
+            subCol: sc,
+            totalSubCols: cols,
+          });
+        }
+      }
+
+      if (subColSpecs.length > 0) {
+        const sampleQuad = getCellQuadInStructure(
+          struct,
+          subColSpecs[0].inning,
+          subColSpecs[0].subCol,
+          sortedBatters[0].battingOrder,
+          0.035
+        );
+        if (sampleQuad) {
+          const sampleW = Math.hypot(
+            ((sampleQuad.tr[0] - sampleQuad.tl[0]) * w) / 1000,
+            ((sampleQuad.tr[1] - sampleQuad.tl[1]) * h) / 1000
+          );
+          const sampleH = Math.hypot(
+            ((sampleQuad.bl[0] - sampleQuad.tl[0]) * w) / 1000,
+            ((sampleQuad.bl[1] - sampleQuad.tl[1]) * h) / 1000
+          );
+          const singleAspect = Math.max(
+            0.78,
+            Math.min(2.15, sampleW / Math.max(16, sampleH))
+          );
+
+          const colCount = subColSpecs.length;
+          const rowOutH = colCount <= 2 ? 168 : colCount === 3 ? 152 : 136;
+          const maxCellW = colCount === 1 ? 380 : colCount === 2 ? 300 : 240;
+          const cellOutW = Math.max(
+            184,
+            Math.min(maxCellW, Math.round(rowOutH * singleAspect))
+          );
+          const labelPanelW = 206;
+          const gutterW = 10;
+          const rowGapH = 8;
+          const headerH = 82;
+
+          const totalW =
+            labelPanelW + colCount * (gutterW + cellOutW) + 12;
+          const totalH =
+            headerH + bLen * (rowOutH + rowGapH) + 8;
+
+          // ソース画像を1度だけキャンバス展開してRGBAバッファから高速ホモグラフィ切り出しを行う
+          const srcCanvas = document.createElement("canvas");
+          srcCanvas.width = w;
+          srcCanvas.height = h;
+          const srcCtx = srcCanvas.getContext("2d");
+
+          const canvas = document.createElement("canvas");
+          canvas.width = totalW;
+          canvas.height = totalH;
+          const ctx = canvas.getContext("2d");
+
+          if (srcCtx && ctx) {
+            srcCtx.drawImage(img, 0, 0, w, h);
+            const fullSrcData = srcCtx.getImageData(0, 0, w, h).data;
+
+            ctx.fillStyle = "#0f172a";
+            ctx.fillRect(0, 0, totalW, totalH);
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = "high";
+
+            const innTitle =
+              targetNums.length > 0
+                ? `${targetNums.join("・")}回`
+                : "対象イニング";
+            ctx.fillStyle = "#38bdf8";
+            ctx.font = "bold 16px sans-serif";
+            ctx.textAlign = "left";
+            ctx.textBaseline = "middle";
+            ctx.fillText(`【${innTitle} 独立セル】`, 10, 26);
+            ctx.fillStyle = "#cbd5e1";
+            ctx.font = "bold 11px sans-serif";
+            ctx.fillText(
+              colCount >= 2
+                ? `全${colCount}列を1列ずつ分離拡大`
+                : "各打順1マス歪み補正拡大",
+              10,
+              52
+            );
+
+            // サブ列ごとの色分け（早稲田式の赤線と絶対混同しない寒色・アンバー・エメラルド系）
+            const subColPalette = [
+              "#0284c7", // c:1 スカイブルー
+              "#d97706", // c:2 アンバー（2列目＝打者一巡）
+              "#059669", // c:3 エメラルド（3列目＝打者二巡）
+              "#7c3aed", // c:4 バイオレット
+            ];
+
+            // 各サブ列の上部ヘッダー（デジタル列ラベル ＋ 原本のイニング印字ヘッダー切り抜き）
+            for (let cIdx = 0; cIdx < colCount; cIdx++) {
+              const spec = subColSpecs[cIdx];
+              const colDstX =
+                labelPanelW + gutterW + cIdx * (cellOutW + gutterW);
+              const accent =
+                subColPalette[(spec.subCol - 1) % subColPalette.length];
+
+              // デジタルバッジ（AIに c:1, c:2, c:3 を100%誤認させない明示ヘッダー）
+              ctx.fillStyle = accent;
+              ctx.fillRect(colDstX, 6, cellOutW, 26);
+              ctx.fillStyle = "#ffffff";
+              ctx.font = "bold 13px sans-serif";
+              ctx.textAlign = "center";
+              ctx.textBaseline = "middle";
+              const hdrLabel =
+                spec.totalSubCols >= 2
+                  ? `${spec.inning}回 ${spec.subCol}列目 [c:${spec.subCol}]`
+                  : `${spec.inning}回 [c:1]`;
+              ctx.fillText(hdrLabel, colDstX + cellOutW / 2, 19);
+
+              // 原本のイニング番号印字部分のホモグラフィ切り抜き
+              const frac = getInningSubColumnFractions(
+                struct.innings,
+                spec.inning,
+                spec.subCol
+              );
+              if (frac) {
+                const hdrT0 = -0.62 / Math.max(1, bLen);
+                const hdrT1 = 0.02 / Math.max(1, bLen);
+                const hdrQuad = {
+                  tl: bilinearGridPoint(corners, frac.s0, hdrT0),
+                  tr: bilinearGridPoint(corners, frac.s1, hdrT0),
+                  br: bilinearGridPoint(corners, frac.s1, hdrT1),
+                  bl: bilinearGridPoint(corners, frac.s0, hdrT1),
+                };
+                const hdrOutH = headerH - 38;
+                const hdrImgData = ctx.createImageData(cellOutW, hdrOutH);
+                warpQuadFromRgbaBuffer(
+                  fullSrcData,
+                  w,
+                  h,
+                  {
+                    tl: [
+                      (Math.max(0, hdrQuad.tl[0]) * w) / 1000,
+                      (Math.max(0, hdrQuad.tl[1]) * h) / 1000,
+                    ],
+                    tr: [
+                      (Math.min(1000, hdrQuad.tr[0]) * w) / 1000,
+                      (Math.max(0, hdrQuad.tr[1]) * h) / 1000,
+                    ],
+                    br: [
+                      (Math.min(1000, hdrQuad.br[0]) * w) / 1000,
+                      (Math.min(1000, hdrQuad.br[1]) * h) / 1000,
+                    ],
+                    bl: [
+                      (Math.max(0, hdrQuad.bl[0]) * w) / 1000,
+                      (Math.min(1000, hdrQuad.bl[1]) * h) / 1000,
+                    ],
+                  },
+                  hdrImgData.data,
+                  cellOutW,
+                  hdrOutH
+                );
+                ctx.putImageData(hdrImgData, colDstX, 34);
+                ctx.strokeStyle = accent;
+                ctx.lineWidth = 1.5;
+                ctx.strokeRect(colDstX, 34, cellOutW, hdrOutH);
+              }
+            }
+
+            // 横罫線の傾き勾配（左側の選手名欄も同じ傾きで真っ直ぐ切り抜くために使用）
+            const gridSlopeY =
+              (corners.tr[1] -
+                corners.tl[1] +
+                (corners.br[1] - corners.bl[1])) /
+              Math.max(
+                120,
+                corners.tr[0] -
+                  corners.tl[0] +
+                  (corners.br[0] - corners.bl[0])
+              );
+
+            // 各打順行 × 各サブ列の1マス射影展開
+            for (let bIdx = 0; bIdx < bLen; bIdx++) {
+              const batter = sortedBatters[bIdx];
+              const dstY = headerH + bIdx * (rowOutH + rowGapH);
+
+              // 左パネル: 打順ラベル＋傾き補正済みの選手欄サムネイル
+              ctx.fillStyle = "#1e293b";
+              ctx.fillRect(6, dstY, labelPanelW - 6, rowOutH);
+              ctx.fillStyle = "#38bdf8";
+              ctx.font = "bold 14px sans-serif";
+              ctx.textAlign = "left";
+              ctx.textBaseline = "top";
+              const displayName = (batter.name || "").slice(0, 8);
+              ctx.fillText(
+                `${batter.battingOrder}番 ${displayName}`,
+                11,
+                dstY + 7
+              );
+
+              const t0 = bIdx / bLen;
+              const t1 = (bIdx + 1) / bLen;
+              const pGridTop = bilinearGridPoint(corners, 0, t0);
+              const pGridBot = bilinearGridPoint(corners, 0, t1);
+              const leftX = 8;
+              const leftTopY = Math.max(
+                0,
+                Math.min(1000, pGridTop[1] - (pGridTop[0] - leftX) * gridSlopeY)
+              );
+              const leftBotY = Math.max(
+                0,
+                Math.min(1000, pGridBot[1] - (pGridBot[0] - leftX) * gridSlopeY)
+              );
+
+              const nameThumbW = labelPanelW - 16;
+              const nameThumbH = rowOutH - 34;
+              const nameImgData = ctx.createImageData(nameThumbW, nameThumbH);
+              warpQuadFromRgbaBuffer(
+                fullSrcData,
+                w,
+                h,
+                {
+                  tl: [(leftX * w) / 1000, (leftTopY * h) / 1000],
+                  tr: [(pGridTop[0] * w) / 1000, (pGridTop[1] * h) / 1000],
+                  br: [(pGridBot[0] * w) / 1000, (pGridBot[1] * h) / 1000],
+                  bl: [(leftX * w) / 1000, (leftBotY * h) / 1000],
+                },
+                nameImgData.data,
+                nameThumbW,
+                nameThumbH
+              );
+              ctx.putImageData(nameImgData, 10, dstY + 28);
+
+              // 右側: サブ列ごとに1マスずつホモグラフィ展開して並列配置
+              for (let cIdx = 0; cIdx < colCount; cIdx++) {
+                const spec = subColSpecs[cIdx];
+                const colDstX =
+                  labelPanelW + gutterW + cIdx * (cellOutW + gutterW);
+                const accent =
+                  subColPalette[(spec.subCol - 1) % subColPalette.length];
+
+                const cellQuad = getCellQuadInStructure(
+                  struct,
+                  spec.inning,
+                  spec.subCol,
+                  batter.battingOrder,
+                  0.035
+                );
+                if (!cellQuad) continue;
+
+                const cellImgData = ctx.createImageData(cellOutW, rowOutH);
+                warpQuadFromRgbaBuffer(
+                  fullSrcData,
+                  w,
+                  h,
+                  {
+                    tl: [
+                      (Math.max(0, Math.min(1000, cellQuad.tl[0])) * w) / 1000,
+                      (Math.max(0, Math.min(1000, cellQuad.tl[1])) * h) / 1000,
+                    ],
+                    tr: [
+                      (Math.max(0, Math.min(1000, cellQuad.tr[0])) * w) / 1000,
+                      (Math.max(0, Math.min(1000, cellQuad.tr[1])) * h) / 1000,
+                    ],
+                    br: [
+                      (Math.max(0, Math.min(1000, cellQuad.br[0])) * w) / 1000,
+                      (Math.max(0, Math.min(1000, cellQuad.br[1])) * h) / 1000,
+                    ],
+                    bl: [
+                      (Math.max(0, Math.min(1000, cellQuad.bl[0])) * w) / 1000,
+                      (Math.max(0, Math.min(1000, cellQuad.bl[1])) * h) / 1000,
+                    ],
+                  },
+                  cellImgData.data,
+                  cellOutW,
+                  rowOutH
+                );
+
+                if (!options.alreadyEnhanced) {
+                  applyAdaptivePencilContrast(cellImgData, cellOutW, rowOutH);
+                }
+                ctx.putImageData(cellImgData, colDstX, dstY);
+
+                ctx.strokeStyle = accent;
+                ctx.lineWidth = 1.75;
+                ctx.strokeRect(colDstX, dstY, cellOutW, rowOutH);
+              }
+            }
+
+            // メモリ解放補助
+            srcCanvas.width = 1;
+            srcCanvas.height = 1;
+
+            const mimeType = "image/jpeg";
+            return {
+              base64: stripDataUrlPrefix(canvas.toDataURL(mimeType, 0.91)),
+              mimeType,
+            };
+          }
+        }
+      }
+    }
+
+    if (columnBoxes.length === 0) return null;
 
     let minColX = 1000;
     let maxColX = 0;
@@ -887,6 +1316,117 @@ export async function cropScorebookRegion(
   ctx.imageSmoothingQuality = "high";
   ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
   return canvas.toDataURL("image/jpeg", 0.92);
+}
+
+/**
+ * 歪み・傾き・複数列に対応した任意の四角形4隅 (ScorebookGridCorners, 0..1000) を
+ * ホモグラフィ射影変換で真っ直ぐ水平な長方形に展開して高精細DataURLを返す（Step 3ピンポイント確認用）。
+ */
+export async function cropScorebookQuad(
+  sourceDataUrl: string,
+  quad: ScorebookGridCorners,
+  paddingRatio = 0.04,
+  targetWidth = 480
+): Promise<string> {
+  const img = await loadImageFromUrl(sourceDataUrl);
+  const w = img.naturalWidth;
+  const h = img.naturalHeight;
+  if (w < 64 || h < 64) return sourceDataUrl;
+
+  const p = Math.max(0, Math.min(0.25, paddingRatio));
+  const expanded = {
+    tl: bilinearGridPoint(quad, -p, -p),
+    tr: bilinearGridPoint(quad, 1 + p, -p),
+    br: bilinearGridPoint(quad, 1 + p, 1 + p),
+    bl: bilinearGridPoint(quad, -p, 1 + p),
+  };
+
+  const ptsPx = [
+    [
+      Math.max(0, Math.min(w - 1, (expanded.tl[0] * w) / 1000)),
+      Math.max(0, Math.min(h - 1, (expanded.tl[1] * h) / 1000)),
+    ],
+    [
+      Math.max(0, Math.min(w - 1, (expanded.tr[0] * w) / 1000)),
+      Math.max(0, Math.min(h - 1, (expanded.tr[1] * h) / 1000)),
+    ],
+    [
+      Math.max(0, Math.min(w - 1, (expanded.br[0] * w) / 1000)),
+      Math.max(0, Math.min(h - 1, (expanded.br[1] * h) / 1000)),
+    ],
+    [
+      Math.max(0, Math.min(w - 1, (expanded.bl[0] * w) / 1000)),
+      Math.max(0, Math.min(h - 1, (expanded.bl[1] * h) / 1000)),
+    ],
+  ] as const;
+
+  const roiX = Math.max(
+    0,
+    Math.floor(Math.min(ptsPx[0][0], ptsPx[1][0], ptsPx[2][0], ptsPx[3][0])) - 2
+  );
+  const roiY = Math.max(
+    0,
+    Math.floor(Math.min(ptsPx[0][1], ptsPx[1][1], ptsPx[2][1], ptsPx[3][1])) - 2
+  );
+  const roiX2 = Math.min(
+    w,
+    Math.ceil(Math.max(ptsPx[0][0], ptsPx[1][0], ptsPx[2][0], ptsPx[3][0])) + 2
+  );
+  const roiY2 = Math.min(
+    h,
+    Math.ceil(Math.max(ptsPx[0][1], ptsPx[1][1], ptsPx[2][1], ptsPx[3][1])) + 2
+  );
+  const roiW = Math.max(16, roiX2 - roiX);
+  const roiH = Math.max(16, roiY2 - roiY);
+
+  const srcEdgeW =
+    (Math.hypot(ptsPx[1][0] - ptsPx[0][0], ptsPx[1][1] - ptsPx[0][1]) +
+      Math.hypot(ptsPx[2][0] - ptsPx[3][0], ptsPx[2][1] - ptsPx[3][1])) /
+    2;
+  const srcEdgeH =
+    (Math.hypot(ptsPx[3][0] - ptsPx[0][0], ptsPx[3][1] - ptsPx[0][1]) +
+      Math.hypot(ptsPx[2][0] - ptsPx[1][0], ptsPx[2][1] - ptsPx[1][1])) /
+    2;
+  const aspect = Math.max(0.55, Math.min(2.6, srcEdgeW / Math.max(12, srcEdgeH)));
+
+  const dstW = Math.max(180, Math.min(640, Math.round(targetWidth)));
+  const dstH = Math.max(120, Math.min(540, Math.round(dstW / aspect)));
+
+  const roiCanvas = document.createElement("canvas");
+  roiCanvas.width = roiW;
+  roiCanvas.height = roiH;
+  const roiCtx = roiCanvas.getContext("2d");
+
+  const dstCanvas = document.createElement("canvas");
+  dstCanvas.width = dstW;
+  dstCanvas.height = dstH;
+  const dstCtx = dstCanvas.getContext("2d");
+
+  if (!roiCtx || !dstCtx) return sourceDataUrl;
+
+  roiCtx.drawImage(img, roiX, roiY, roiW, roiH, 0, 0, roiW, roiH);
+  const roiImgData = roiCtx.getImageData(0, 0, roiW, roiH);
+  const dstImgData = dstCtx.createImageData(dstW, dstH);
+
+  warpQuadFromRgbaBuffer(
+    roiImgData.data,
+    roiW,
+    roiH,
+    {
+      tl: [ptsPx[0][0] - roiX, ptsPx[0][1] - roiY],
+      tr: [ptsPx[1][0] - roiX, ptsPx[1][1] - roiY],
+      br: [ptsPx[2][0] - roiX, ptsPx[2][1] - roiY],
+      bl: [ptsPx[3][0] - roiX, ptsPx[3][1] - roiY],
+    },
+    dstImgData.data,
+    dstW,
+    dstH
+  );
+
+  dstCtx.putImageData(dstImgData, 0, 0);
+  roiCanvas.width = 1;
+  roiCanvas.height = 1;
+  return dstCanvas.toDataURL("image/jpeg", 0.92);
 }
 
 function stripDataUrlPrefix(dataUrl: string): string {

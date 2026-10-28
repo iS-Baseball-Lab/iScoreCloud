@@ -1,7 +1,7 @@
 // filepath: src/app/liff/tools/scorebook-import/_components/Step2StructureCheck.tsx
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import {
   Users,
   Plus,
@@ -18,13 +18,21 @@ import {
   ZoomIn,
   Grid3X3,
   SlidersHorizontal,
+  Move,
 } from "lucide-react";
+import {
+  bilinearGridPoint,
+  clamp1000,
+  resolveStructureGridCorners,
+  syncStructureBoxesFromCorners,
+} from "@/lib/liff/scorebook-grid";
 import { normalizePositionCode } from "@/lib/liff/scorebook-validator";
 import { ActionStatusBanner } from "./ActionStatusBanner";
 import type {
   ImportScopeMode,
-  NormalizedBox,
+  NormalizedPoint,
   ScorebookBatterSlot,
+  ScorebookGridCorners,
   ScorebookInningMeta,
   ScorebookPitcherStint,
   ScorebookRosterPlayer,
@@ -92,6 +100,10 @@ export function Step2StructureCheck({
     "grid" | "lineup" | "full" | "hidden"
   >("grid");
   const [showGridTuner, setShowGridTuner] = useState(false);
+  const [draggingCorner, setDraggingCorner] = useState<
+    keyof ScorebookGridCorners | null
+  >(null);
+  const gridContainerRef = useRef<HTMLDivElement | null>(null);
 
   const isTop = activeSide === "top";
   const current = isTop ? topStructure : bottomStructure;
@@ -102,103 +114,110 @@ export function Step2StructureCheck({
     return null;
   }
 
-  // 現在のシートのグリッド4辺境界（0..1000）を算出
+  // 現在のシートのグリッド4隅座標（0..1000、傾き・台形歪み対応）を算出
   const batterCount = Math.max(1, current.batters.length);
-  const firstInningBox = current.innings[0]?.columnBox;
-  const lastInningBox = current.innings[current.innings.length - 1]?.columnBox;
-  const firstBatterBox = current.batters[0]?.rowBox;
-  const lastBatterBox = current.batters[current.batters.length - 1]?.rowBox;
-
-  const gridLeftX =
-    firstInningBox?.[1] ?? current.lineupRightX ?? 310;
   const totalPhysCols = Math.max(
     1,
     current.innings.reduce((acc, m) => acc + Math.max(1, m.columnCount || 1), 0)
   );
-  const gridRightX =
-    lastInningBox?.[3] ??
-    Math.min(960, Math.round(gridLeftX + totalPhysCols * 58));
-  const gridTopY =
-    firstBatterBox?.[0] ?? firstInningBox?.[0] ?? 165;
-  const gridBottomY =
-    lastBatterBox?.[2] ??
-    lastInningBox?.[2] ??
-    Math.min(930, Math.round(gridTopY + batterCount * 66));
+  const gridCorners = resolveStructureGridCorners(current);
 
-  /**
-   * 4辺境界 (leftX, rightX, topY, bottomY) から全イニング列(columnBox)と全打順行(rowBox)を等間隔再配分する
-   */
-  const rebuildStructureWithBounds = (
-    base: ScorebookSheetStructure,
-    nextLeftX: number,
-    nextRightX: number,
-    nextTopY: number,
-    nextBottomY: number
-  ): ScorebookSheetStructure => {
-    const safeLeftX = Math.max(120, Math.min(540, Math.round(nextLeftX)));
-    const colsSum = Math.max(
-      1,
-      base.innings.reduce((acc, m) => acc + Math.max(1, m.columnCount || 1), 0)
-    );
-    const safeRightX = Math.max(
-      safeLeftX + colsSum * 20,
-      Math.min(985, Math.round(nextRightX))
-    );
-    const bLen = Math.max(1, base.batters.length);
-    const safeTopY = Math.max(30, Math.min(450, Math.round(nextTopY)));
-    const safeBottomY = Math.max(
-      safeTopY + bLen * 22,
-      Math.min(985, Math.round(nextBottomY))
-    );
+  const gridLeftX = Math.round((gridCorners.tl[0] + gridCorners.bl[0]) / 2);
+  const gridRightX = Math.round((gridCorners.tr[0] + gridCorners.br[0]) / 2);
+  const gridTopY = Math.round((gridCorners.tl[1] + gridCorners.tr[1]) / 2);
+  const gridBottomY = Math.round((gridCorners.bl[1] + gridCorners.br[1]) / 2);
+  const isGridSkewed =
+    Math.abs(gridCorners.tl[1] - gridCorners.tr[1]) >= 4 ||
+    Math.abs(gridCorners.bl[1] - gridCorners.br[1]) >= 4 ||
+    Math.abs(gridCorners.tl[0] - gridCorners.bl[0]) >= 4 ||
+    Math.abs(gridCorners.tr[0] - gridCorners.br[0]) >= 4;
 
-    const rowH = (safeBottomY - safeTopY) / bLen;
-    const nextBatters: ScorebookBatterSlot[] = base.batters.map((b, idx) => {
-      const y1 = Math.round(safeTopY + idx * rowH);
-      const y2 = Math.round(safeTopY + (idx + 1) * rowH);
-      return {
-        ...b,
-        rowBox: [y1, 0, Math.max(y1 + 12, y2), safeLeftX] as NormalizedBox,
-      };
-    });
-
-    const unitW = (safeRightX - safeLeftX) / colsSum;
-    let cumCols = 0;
-    const nextInnings: ScorebookInningMeta[] = base.innings.map((m) => {
-      const w = Math.max(1, m.columnCount || 1);
-      const x1 = Math.round(safeLeftX + cumCols * unitW);
-      cumCols += w;
-      const x2 = Math.round(safeLeftX + cumCols * unitW);
-      return {
-        ...m,
-        columnBox: [
-          safeTopY,
-          x1,
-          safeBottomY,
-          Math.max(x1 + 12, x2),
-        ] as NormalizedBox,
-      };
-    });
-
-    return {
-      ...base,
-      lineupRightX: safeLeftX,
-      batters: nextBatters,
-      innings: nextInnings,
+  const handleUpdateCornerPoint = (
+    key: keyof ScorebookGridCorners,
+    clientX: number,
+    clientY: number
+  ) => {
+    const el = gridContainerRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    if (rect.width < 20 || rect.height < 20) return;
+    const nx = clamp1000(((clientX - rect.left) / rect.width) * 1000);
+    const ny = clamp1000(((clientY - rect.top) / rect.height) * 1000);
+    const nextCorners: ScorebookGridCorners = {
+      ...gridCorners,
+      [key]: [nx, ny] as NormalizedPoint,
     };
+    onChangeStructure(
+      isTop,
+      syncStructureBoxesFromCorners(current, nextCorners)
+    );
   };
 
   const handleAdjustGridBound = (
     edge: "left" | "right" | "top" | "bottom",
     nextVal: number
   ) => {
-    const updated = rebuildStructureWithBounds(
-      current,
-      edge === "left" ? nextVal : gridLeftX,
-      edge === "right" ? nextVal : gridRightX,
-      edge === "top" ? nextVal : gridTopY,
-      edge === "bottom" ? nextVal : gridBottomY
+    const nextCorners: ScorebookGridCorners = {
+      tl: [...gridCorners.tl] as NormalizedPoint,
+      tr: [...gridCorners.tr] as NormalizedPoint,
+      br: [...gridCorners.br] as NormalizedPoint,
+      bl: [...gridCorners.bl] as NormalizedPoint,
+    };
+    if (edge === "left") {
+      const dx = nextVal - gridLeftX;
+      nextCorners.tl[0] += dx;
+      nextCorners.bl[0] += dx;
+    } else if (edge === "right") {
+      const dx = nextVal - gridRightX;
+      nextCorners.tr[0] += dx;
+      nextCorners.br[0] += dx;
+    } else if (edge === "top") {
+      const dy = nextVal - gridTopY;
+      nextCorners.tl[1] += dy;
+      nextCorners.tr[1] += dy;
+    } else {
+      const dy = nextVal - gridBottomY;
+      nextCorners.bl[1] += dy;
+      nextCorners.br[1] += dy;
+    }
+    onChangeStructure(
+      isTop,
+      syncStructureBoxesFromCorners(current, nextCorners)
     );
-    onChangeStructure(isTop, updated);
+  };
+
+  const handleResetSkewToRectangle = () => {
+    onChangeStructure(
+      isTop,
+      syncStructureBoxesFromCorners(current, {
+        tl: [gridLeftX, gridTopY],
+        tr: [gridRightX, gridTopY],
+        br: [gridRightX, gridBottomY],
+        bl: [gridLeftX, gridBottomY],
+      })
+    );
+  };
+
+  const extrapolateHorizontalCols = (
+    base: ScorebookSheetStructure,
+    deltaCols: number
+  ): ScorebookSheetStructure => {
+    const topUx = (gridCorners.tr[0] - gridCorners.tl[0]) / totalPhysCols;
+    const topUy = (gridCorners.tr[1] - gridCorners.tl[1]) / totalPhysCols;
+    const botUx = (gridCorners.br[0] - gridCorners.bl[0]) / totalPhysCols;
+    const botUy = (gridCorners.br[1] - gridCorners.bl[1]) / totalPhysCols;
+    return syncStructureBoxesFromCorners(base, {
+      tl: gridCorners.tl,
+      tr: [
+        gridCorners.tr[0] + deltaCols * topUx,
+        gridCorners.tr[1] + deltaCols * topUy,
+      ],
+      br: [
+        gridCorners.br[0] + deltaCols * botUx,
+        gridCorners.br[1] + deltaCols * botUy,
+      ],
+      bl: gridCorners.bl,
+    });
   };
 
   const maxInningOption = Math.max(
@@ -218,7 +237,6 @@ export function Step2StructureCheck({
     inningNum: number,
     patch: Partial<ScorebookInningMeta>
   ) => {
-    const prevUnitW = (gridRightX - gridLeftX) / totalPhysCols;
     const prevTarget = current.innings.find((m) => m.inning === inningNum);
     const deltaCols =
       patch.columnCount !== undefined && prevTarget
@@ -236,23 +254,13 @@ export function Step2StructureCheck({
     };
 
     if (deltaCols !== 0) {
-      onChangeStructure(
-        isTop,
-        rebuildStructureWithBounds(
-          baseUpdated,
-          gridLeftX,
-          gridRightX + deltaCols * prevUnitW,
-          gridTopY,
-          gridBottomY
-        )
-      );
+      onChangeStructure(isTop, extrapolateHorizontalCols(baseUpdated, deltaCols));
     } else {
       onChangeStructure(isTop, baseUpdated);
     }
   };
 
   const handleAddInning = () => {
-    const prevUnitW = (gridRightX - gridLeftX) / totalPhysCols;
     const nextNum =
       current.innings.length > 0
         ? current.innings[current.innings.length - 1].inning + 1
@@ -263,19 +271,12 @@ export function Step2StructureCheck({
     ];
     onChangeStructure(
       isTop,
-      rebuildStructureWithBounds(
-        { ...current, innings: nextInnings },
-        gridLeftX,
-        gridRightX + prevUnitW,
-        gridTopY,
-        gridBottomY
-      )
+      extrapolateHorizontalCols({ ...current, innings: nextInnings }, 1)
     );
   };
 
   const handleRemoveLastInning = () => {
     if (current.innings.length <= 1) return;
-    const prevUnitW = (gridRightX - gridLeftX) / totalPhysCols;
     const removedCols = Math.max(
       1,
       current.innings[current.innings.length - 1].columnCount || 1
@@ -284,16 +285,13 @@ export function Step2StructureCheck({
     const totalRuns = nextInnings.reduce((s, m) => s + m.runs, 0);
     onChangeStructure(
       isTop,
-      rebuildStructureWithBounds(
+      extrapolateHorizontalCols(
         {
           ...current,
           innings: nextInnings,
           totalRuns,
         },
-        gridLeftX,
-        gridRightX - removedCols * prevUnitW,
-        gridTopY,
-        gridBottomY
+        -removedCols
       )
     );
   };
@@ -324,7 +322,10 @@ export function Step2StructureCheck({
   };
 
   const handleAddBatterSlot = () => {
-    const prevRowH = (gridBottomY - gridTopY) / batterCount;
+    const leftVx = (gridCorners.bl[0] - gridCorners.tl[0]) / batterCount;
+    const leftVy = (gridCorners.bl[1] - gridCorners.tl[1]) / batterCount;
+    const rightVx = (gridCorners.br[0] - gridCorners.tr[0]) / batterCount;
+    const rightVy = (gridCorners.br[1] - gridCorners.tr[1]) / batterCount;
     const nextOrder = current.batters.length + 1;
     const nextBatters: ScorebookBatterSlot[] = [
       ...current.batters,
@@ -339,12 +340,14 @@ export function Step2StructureCheck({
     ];
     onChangeStructure(
       isTop,
-      rebuildStructureWithBounds(
+      syncStructureBoxesFromCorners(
         { ...current, batters: nextBatters },
-        gridLeftX,
-        gridRightX,
-        gridTopY,
-        gridBottomY + prevRowH
+        {
+          tl: gridCorners.tl,
+          tr: gridCorners.tr,
+          bl: [gridCorners.bl[0] + leftVx, gridCorners.bl[1] + leftVy],
+          br: [gridCorners.br[0] + rightVx, gridCorners.br[1] + rightVy],
+        }
       )
     );
   };
@@ -580,7 +583,13 @@ export function Step2StructureCheck({
           </div>
 
           {previewMode !== "hidden" && (
-            <div className="bg-slate-950 overflow-auto max-h-72">
+            <div
+              className={`bg-slate-950 overflow-auto ${
+                previewMode === "grid" && showGridTuner
+                  ? "max-h-none"
+                  : "max-h-72"
+              }`}
+            >
               {previewMode === "lineup" ? (
                 <div className="flex items-center gap-1">
                   <ZoomIn className="sr-only" />
@@ -591,124 +600,175 @@ export function Step2StructureCheck({
                   />
                 </div>
               ) : previewMode === "grid" ? (
-                <div className="relative w-full">
+                <div ref={gridContainerRef} className="relative w-full select-none">
                   <img
                     src={activeSheetDataUrl}
                     alt="マス枠オーバーレイ確認プレビュー"
-                    className="w-full h-auto block select-none"
+                    className="w-full h-auto block select-none pointer-events-none"
                   />
-                  {/* 早稲田式の赤ペンと絶対干渉しないシアン(縦列)＋エメラルド(横行)の精密SVG枠 */}
+                  {/* 早稲田式の赤ペンと絶対干渉しないシアン(縦列)＋アンバー(複数列境界)＋エメラルド(横行)の歪み追従SVG枠 */}
                   <svg
                     viewBox="0 0 1000 1000"
                     preserveAspectRatio="none"
                     className="absolute inset-0 w-full h-full pointer-events-none"
                   >
-                    {/* 各イニング列のシアン枠 */}
-                    {current.innings.map((inn) => {
-                      const box = inn.columnBox;
-                      if (!box) return null;
-                      const [y1, x1, y2, x2] = box;
-                      const colW = Math.max(8, x2 - x1);
-                      const colH = Math.max(12, y2 - y1);
-                      const subCols = Math.max(1, inn.columnCount || 1);
-                      const labelY = Math.max(24, y1 - 6);
-                      return (
-                        <g key={`col-${inn.inning}`}>
-                          <rect
-                            x={x1}
-                            y={y1}
-                            width={colW}
-                            height={colH}
-                            fill="rgba(56, 189, 248, 0.06)"
-                            stroke="#38bdf8"
-                            strokeWidth="2.4"
-                          />
-                          {subCols >= 2 &&
-                            Array.from({ length: subCols - 1 }, (_, sIdx) => {
-                              const divX =
-                                x1 + ((sIdx + 1) * colW) / subCols;
+                    {/* 各イニング列＆サブ列（2列・3列以上）の歪み追従ポリゴン */}
+                    {(() => {
+                      const circledNums = ["①", "②", "③", "④", "⑤", "⑥"];
+                      let cumCols = 0;
+                      return current.innings.map((inn) => {
+                        const subCols = Math.max(1, inn.columnCount || 1);
+                        const s0 = cumCols / totalPhysCols;
+                        const startCum = cumCols;
+                        cumCols += subCols;
+                        const s1 = cumCols / totalPhysCols;
+
+                        const qTl = bilinearGridPoint(gridCorners, s0, 0);
+                        const qTr = bilinearGridPoint(gridCorners, s1, 0);
+                        const qBr = bilinearGridPoint(gridCorners, s1, 1);
+                        const qBl = bilinearGridPoint(gridCorners, s0, 1);
+                        const polyPts = `${qTl[0]},${qTl[1]} ${qTr[0]},${qTr[1]} ${qBr[0]},${qBr[1]} ${qBl[0]},${qBl[1]}`;
+
+                        return (
+                          <g key={`col-${inn.inning}`}>
+                            <polygon
+                              points={polyPts}
+                              fill={
+                                subCols >= 2
+                                  ? "rgba(245, 158, 11, 0.10)"
+                                  : "rgba(56, 189, 248, 0.06)"
+                              }
+                              stroke={subCols >= 2 ? "#f59e0b" : "#38bdf8"}
+                              strokeWidth="2.6"
+                            />
+                            {/* 2列・3列以上の内部サブ列破線 */}
+                            {subCols >= 2 &&
+                              Array.from({ length: subCols - 1 }, (_, sIdx) => {
+                                const subS =
+                                  (startCum + sIdx + 1) / totalPhysCols;
+                                const pTop = bilinearGridPoint(
+                                  gridCorners,
+                                  subS,
+                                  0
+                                );
+                                const pBot = bilinearGridPoint(
+                                  gridCorners,
+                                  subS,
+                                  1
+                                );
+                                return (
+                                  <line
+                                    key={`sub-${inn.inning}-${sIdx}`}
+                                    x1={pTop[0]}
+                                    y1={pTop[1]}
+                                    x2={pBot[0]}
+                                    y2={pBot[1]}
+                                    stroke="#fbbf24"
+                                    strokeWidth="2.2"
+                                    strokeDasharray="8 5"
+                                  />
+                                );
+                              })}
+
+                            {/* 列見出しバッジ（2列以上の回は 2回①, 2回②, 2回③ と各列ごとに明示！） */}
+                            {Array.from({ length: subCols }, (_, scIdx) => {
+                              const midS =
+                                (startCum + scIdx + 0.5) / totalPhysCols;
+                              const topMid = bilinearGridPoint(
+                                gridCorners,
+                                midS,
+                                0
+                              );
+                              const badgeLabel =
+                                subCols >= 2
+                                  ? `${inn.inning}回${
+                                      circledNums[scIdx] || scIdx + 1
+                                    }`
+                                  : `${inn.inning}回`;
+                              const badgeW = subCols >= 2 ? 44 : 34;
+                              const badgeY = Math.max(2, topMid[1] - 24);
                               return (
-                                <line
-                                  key={`sub-${inn.inning}-${sIdx}`}
-                                  x1={divX}
-                                  y1={y1}
-                                  x2={divX}
-                                  y2={y2}
-                                  stroke="#38bdf8"
-                                  strokeWidth="1.8"
-                                  strokeDasharray="6 4"
-                                />
+                                <g key={`hdr-${inn.inning}-${scIdx}`}>
+                                  <rect
+                                    x={topMid[0] - badgeW / 2}
+                                    y={badgeY}
+                                    width={badgeW}
+                                    height={20}
+                                    rx={5}
+                                    fill={
+                                      subCols >= 2 ? "#d97706" : "#0284c7"
+                                    }
+                                  />
+                                  <text
+                                    x={topMid[0]}
+                                    y={badgeY + 14}
+                                    textAnchor="middle"
+                                    fill="#ffffff"
+                                    fontSize="13"
+                                    fontWeight="900"
+                                  >
+                                    {badgeLabel}
+                                  </text>
+                                </g>
                               );
                             })}
-                          <rect
-                            x={x1 + colW / 2 - 17}
-                            y={Math.max(2, labelY - 22)}
-                            width={34}
-                            height={20}
-                            rx={5}
-                            fill="#0284c7"
-                          />
-                          <text
-                            x={x1 + colW / 2}
-                            y={Math.max(16, labelY - 8)}
-                            textAnchor="middle"
-                            fill="#ffffff"
-                            fontSize="14"
-                            fontWeight="900"
-                          >
-                            {inn.inning}回
-                          </text>
-                        </g>
-                      );
-                    })}
+                          </g>
+                        );
+                      });
+                    })()}
 
-                    {/* 選手欄と1回の境界線（太線ハイライト） */}
+                    {/* 選手欄と1回の境界線（傾きに完全追従する太線ハイライト） */}
                     <line
-                      x1={gridLeftX}
-                      y1={Math.max(10, gridTopY - 24)}
-                      x2={gridLeftX}
-                      y2={Math.min(990, gridBottomY + 12)}
+                      x1={gridCorners.tl[0]}
+                      y1={gridCorners.tl[1]}
+                      x2={gridCorners.bl[0]}
+                      y2={gridCorners.bl[1]}
                       stroke="#22d3ee"
-                      strokeWidth="4"
+                      strokeWidth="4.2"
                     />
 
-                    {/* 各打順行のエメラルド横罫線 */}
+                    {/* 各打順行のエメラルド横罫線（傾き・台形歪みに完全追従） */}
                     {current.batters.map((slot, bIdx) => {
-                      const rBox = slot.rowBox;
-                      if (!rBox) return null;
-                      const [ry1, , ry2] = rBox;
-                      const midY = (ry1 + ry2) / 2;
+                      const t0 = bIdx / batterCount;
+                      const t1 = (bIdx + 1) / batterCount;
+                      const tMid = (bIdx + 0.5) / batterCount;
+                      const pL0 = bilinearGridPoint(gridCorners, 0, t0);
+                      const pR0 = bilinearGridPoint(gridCorners, 1, t0);
+                      const pL1 = bilinearGridPoint(gridCorners, 0, t1);
+                      const pR1 = bilinearGridPoint(gridCorners, 1, t1);
+                      const pLMid = bilinearGridPoint(gridCorners, 0, tMid);
+
                       return (
                         <g key={`row-${slot.battingOrder}`}>
                           {bIdx === 0 && (
                             <line
-                              x1={Math.max(10, gridLeftX - 28)}
-                              y1={ry1}
-                              x2={gridRightX}
-                              y2={ry1}
+                              x1={Math.max(8, pL0[0] - 26)}
+                              y1={pL0[1]}
+                              x2={pR0[0]}
+                              y2={pR0[1]}
                               stroke="#34d399"
-                              strokeWidth="2.6"
+                              strokeWidth="2.8"
                             />
                           )}
                           <line
-                            x1={Math.max(10, gridLeftX - 28)}
-                            y1={ry2}
-                            x2={gridRightX}
-                            y2={ry2}
+                            x1={Math.max(8, pL1[0] - 26)}
+                            y1={pL1[1]}
+                            x2={pR1[0]}
+                            y2={pR1[1]}
                             stroke="#34d399"
                             strokeWidth="2.2"
                           />
                           <rect
-                            x={Math.max(4, gridLeftX - 26)}
-                            y={midY - 10}
+                            x={Math.max(4, pLMid[0] - 26)}
+                            y={pLMid[1] - 10}
                             width={22}
                             height={20}
                             rx={4}
                             fill="#059669"
                           />
                           <text
-                            x={Math.max(15, gridLeftX - 15)}
-                            y={midY + 5}
+                            x={Math.max(15, pLMid[0] - 15)}
+                            y={pLMid[1] + 5}
                             textAnchor="middle"
                             fill="#ffffff"
                             fontSize="13"
@@ -720,6 +780,56 @@ export function Step2StructureCheck({
                       );
                     })}
                   </svg>
+
+                  {/* 枠ズレ微調整モード中は画像上の4隅（左上・右上・右下・左下）を直接指でドラッグして傾き・台形歪みにピタッと合わせられる！ */}
+                  {showGridTuner &&
+                    (
+                      [
+                        { key: "tl", label: "左上" },
+                        { key: "tr", label: "右上" },
+                        { key: "br", label: "右下" },
+                        { key: "bl", label: "左下" },
+                      ] as const
+                    ).map(({ key, label }) => {
+                      const pt = gridCorners[key];
+                      const active = draggingCorner === key;
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          onPointerDown={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            e.currentTarget.setPointerCapture(e.pointerId);
+                            setDraggingCorner(key);
+                          }}
+                          onPointerMove={(e) => {
+                            if (draggingCorner !== key) return;
+                            e.preventDefault();
+                            handleUpdateCornerPoint(key, e.clientX, e.clientY);
+                          }}
+                          onPointerUp={(e) => {
+                            if (draggingCorner === key) {
+                              e.currentTarget.releasePointerCapture(e.pointerId);
+                              setDraggingCorner(null);
+                            }
+                          }}
+                          onPointerCancel={() => setDraggingCorner(null)}
+                          style={{
+                            left: `${pt[0] / 10}%`,
+                            top: `${pt[1] / 10}%`,
+                          }}
+                          className={`absolute -translate-x-1/2 -translate-y-1/2 w-9 h-9 rounded-full border-2 border-white shadow-md flex items-center justify-center text-[9px] font-black text-white touch-none cursor-grab active:cursor-grabbing transition-transform ${
+                            active
+                              ? "bg-amber-500 scale-125 z-20"
+                              : "bg-indigo-600 z-10"
+                          }`}
+                          aria-label={`グリッド${label}角をドラッグ調整`}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
                 </div>
               ) : (
                 <img
@@ -731,12 +841,12 @@ export function Step2StructureCheck({
             </div>
           )}
 
-          {/* マス枠4辺キャリブレーションバー（ズレがある時だけワンタップで微調整可能） */}
+          {/* マス枠4隅・4辺キャリブレーションバー（傾き・歪みも4隅ドラッグで3秒補正！） */}
           {previewMode === "grid" && (
             <div className="px-3.5 py-2.5 bg-card border-t border-border space-y-2.5">
               <div className="flex items-center justify-between gap-2">
                 <p className="text-[10px] font-bold text-muted-foreground leading-snug">
-                  青い枠が「1回〜最終回」、緑の枠が「1番〜{current.batters.length}番」に重なっていればOKです
+                  青・橙枠が「1回〜最終回（複数列含む）」、緑枠が「1番〜{current.batters.length}番」に重なっていればOKです
                 </p>
                 <button
                   type="button"
@@ -748,184 +858,209 @@ export function Step2StructureCheck({
                   }`}
                 >
                   <SlidersHorizontal className="w-3 h-3" />
-                  <span>{showGridTuner ? "調整を閉じる" : "枠ズレを微調整"}</span>
+                  <span>
+                    {showGridTuner ? "調整を閉じる" : "歪み・枠ズレ調整"}
+                  </span>
                 </button>
               </div>
 
               {showGridTuner && (
-                <div className="grid grid-cols-2 gap-2 pt-0.5">
-                  {/* 1回左端（選手欄との境界） */}
-                  <div className="p-2 rounded-2xl bg-muted/45 border border-border space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-black text-sky-700 dark:text-sky-300">
-                        1回左端（選手欄境）
-                      </span>
-                      <span className="text-[10px] font-black text-muted-foreground">
-                        {gridLeftX}
+                <div className="space-y-2 pt-0.5">
+                  <div className="px-2.5 py-2 rounded-xl bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <Move className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                      <span className="text-[10px] font-black text-foreground leading-snug">
+                        原本が傾いている・歪んでいる時は、上の画像の<strong>「左上・右上・右下・左下」の丸印</strong>を指でドラッグして表の4隅に合わせてください
                       </span>
                     </div>
-                    <div className="flex items-center gap-1">
+                    {isGridSkewed && (
                       <button
                         type="button"
-                        onClick={() =>
-                          handleAdjustGridBound("left", gridLeftX - 6)
-                        }
-                        className="w-7 h-7 rounded-lg bg-card border border-border text-xs font-black text-foreground active:scale-90 cursor-pointer shrink-0"
+                        onClick={handleResetSkewToRectangle}
+                        className="px-2 py-1 rounded-lg bg-card border border-border text-[9px] font-black text-muted-foreground hover:text-foreground shrink-0 cursor-pointer"
                       >
-                        -
+                        水平に戻す
                       </button>
-                      <input
-                        type="range"
-                        min={140}
-                        max={500}
-                        value={gridLeftX}
-                        onChange={(e) =>
-                          handleAdjustGridBound("left", Number(e.target.value))
-                        }
-                        aria-label="1回左端の位置調整"
-                        className="flex-1 min-w-0 accent-sky-500"
-                      />
-                      <button
-                        type="button"
-                        onClick={() =>
-                          handleAdjustGridBound("left", gridLeftX + 6)
-                        }
-                        className="w-7 h-7 rounded-lg bg-card border border-border text-xs font-black text-foreground active:scale-90 cursor-pointer shrink-0"
-                      >
-                        +
-                      </button>
-                    </div>
+                    )}
                   </div>
 
-                  {/* 最終回右端 */}
-                  <div className="p-2 rounded-2xl bg-muted/45 border border-border space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-black text-sky-700 dark:text-sky-300">
-                        最終回右端
-                      </span>
-                      <span className="text-[10px] font-black text-muted-foreground">
-                        {gridRightX}
-                      </span>
+                  <div className="grid grid-cols-2 gap-2">
+                    {/* 1回左端（選手欄との境界） */}
+                    <div className="p-2 rounded-2xl bg-muted/45 border border-border space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black text-sky-700 dark:text-sky-300">
+                          1回左端（選手欄境）
+                        </span>
+                        <span className="text-[10px] font-black text-muted-foreground">
+                          {gridLeftX}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleAdjustGridBound("left", gridLeftX - 6)
+                          }
+                          className="w-7 h-7 rounded-lg bg-card border border-border text-xs font-black text-foreground active:scale-90 cursor-pointer shrink-0"
+                        >
+                          -
+                        </button>
+                        <input
+                          type="range"
+                          min={140}
+                          max={500}
+                          value={gridLeftX}
+                          onChange={(e) =>
+                            handleAdjustGridBound("left", Number(e.target.value))
+                          }
+                          aria-label="1回左端の位置調整"
+                          className="flex-1 min-w-0 accent-sky-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleAdjustGridBound("left", gridLeftX + 6)
+                          }
+                          className="w-7 h-7 rounded-lg bg-card border border-border text-xs font-black text-foreground active:scale-90 cursor-pointer shrink-0"
+                        >
+                          +
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          handleAdjustGridBound("right", gridRightX - 6)
-                        }
-                        className="w-7 h-7 rounded-lg bg-card border border-border text-xs font-black text-foreground active:scale-90 cursor-pointer shrink-0"
-                      >
-                        -
-                      </button>
-                      <input
-                        type="range"
-                        min={380}
-                        max={980}
-                        value={gridRightX}
-                        onChange={(e) =>
-                          handleAdjustGridBound("right", Number(e.target.value))
-                        }
-                        aria-label="最終回右端の位置調整"
-                        className="flex-1 min-w-0 accent-sky-500"
-                      />
-                      <button
-                        type="button"
-                        onClick={() =>
-                          handleAdjustGridBound("right", gridRightX + 6)
-                        }
-                        className="w-7 h-7 rounded-lg bg-card border border-border text-xs font-black text-foreground active:scale-90 cursor-pointer shrink-0"
-                      >
-                        +
-                      </button>
-                    </div>
-                  </div>
 
-                  {/* 1番上端 */}
-                  <div className="p-2 rounded-2xl bg-muted/45 border border-border space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-black text-emerald-700 dark:text-emerald-300">
-                        1番打者の上端
-                      </span>
-                      <span className="text-[10px] font-black text-muted-foreground">
-                        {gridTopY}
-                      </span>
+                    {/* 最終回右端 */}
+                    <div className="p-2 rounded-2xl bg-muted/45 border border-border space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black text-sky-700 dark:text-sky-300">
+                          最終回右端
+                        </span>
+                        <span className="text-[10px] font-black text-muted-foreground">
+                          {gridRightX}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleAdjustGridBound("right", gridRightX - 6)
+                          }
+                          className="w-7 h-7 rounded-lg bg-card border border-border text-xs font-black text-foreground active:scale-90 cursor-pointer shrink-0"
+                        >
+                          -
+                        </button>
+                        <input
+                          type="range"
+                          min={380}
+                          max={980}
+                          value={gridRightX}
+                          onChange={(e) =>
+                            handleAdjustGridBound(
+                              "right",
+                              Number(e.target.value)
+                            )
+                          }
+                          aria-label="最終回右端の位置調整"
+                          className="flex-1 min-w-0 accent-sky-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleAdjustGridBound("right", gridRightX + 6)
+                          }
+                          className="w-7 h-7 rounded-lg bg-card border border-border text-xs font-black text-foreground active:scale-90 cursor-pointer shrink-0"
+                        >
+                          +
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          handleAdjustGridBound("top", gridTopY - 5)
-                        }
-                        className="w-7 h-7 rounded-lg bg-card border border-border text-xs font-black text-foreground active:scale-90 cursor-pointer shrink-0"
-                      >
-                        -
-                      </button>
-                      <input
-                        type="range"
-                        min={50}
-                        max={420}
-                        value={gridTopY}
-                        onChange={(e) =>
-                          handleAdjustGridBound("top", Number(e.target.value))
-                        }
-                        aria-label="1番打者上端の位置調整"
-                        className="flex-1 min-w-0 accent-emerald-500"
-                      />
-                      <button
-                        type="button"
-                        onClick={() =>
-                          handleAdjustGridBound("top", gridTopY + 5)
-                        }
-                        className="w-7 h-7 rounded-lg bg-card border border-border text-xs font-black text-foreground active:scale-90 cursor-pointer shrink-0"
-                      >
-                        +
-                      </button>
-                    </div>
-                  </div>
 
-                  {/* 最終打順の下端 */}
-                  <div className="p-2 rounded-2xl bg-muted/45 border border-border space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-black text-emerald-700 dark:text-emerald-300">
-                        {current.batters.length}番打者の下端
-                      </span>
-                      <span className="text-[10px] font-black text-muted-foreground">
-                        {gridBottomY}
-                      </span>
+                    {/* 1番上端 */}
+                    <div className="p-2 rounded-2xl bg-muted/45 border border-border space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black text-emerald-700 dark:text-emerald-300">
+                          1番打者の上端
+                        </span>
+                        <span className="text-[10px] font-black text-muted-foreground">
+                          {gridTopY}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleAdjustGridBound("top", gridTopY - 5)
+                          }
+                          className="w-7 h-7 rounded-lg bg-card border border-border text-xs font-black text-foreground active:scale-90 cursor-pointer shrink-0"
+                        >
+                          -
+                        </button>
+                        <input
+                          type="range"
+                          min={50}
+                          max={420}
+                          value={gridTopY}
+                          onChange={(e) =>
+                            handleAdjustGridBound("top", Number(e.target.value))
+                          }
+                          aria-label="1番打者上端の位置調整"
+                          className="flex-1 min-w-0 accent-emerald-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleAdjustGridBound("top", gridTopY + 5)
+                          }
+                          className="w-7 h-7 rounded-lg bg-card border border-border text-xs font-black text-foreground active:scale-90 cursor-pointer shrink-0"
+                        >
+                          +
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          handleAdjustGridBound("bottom", gridBottomY - 5)
-                        }
-                        className="w-7 h-7 rounded-lg bg-card border border-border text-xs font-black text-foreground active:scale-90 cursor-pointer shrink-0"
-                      >
-                        -
-                      </button>
-                      <input
-                        type="range"
-                        min={450}
-                        max={980}
-                        value={gridBottomY}
-                        onChange={(e) =>
-                          handleAdjustGridBound(
-                            "bottom",
-                            Number(e.target.value)
-                          )
-                        }
-                        aria-label="最終打順下端の位置調整"
-                        className="flex-1 min-w-0 accent-emerald-500"
-                      />
-                      <button
-                        type="button"
-                        onClick={() =>
-                          handleAdjustGridBound("bottom", gridBottomY + 5)
-                        }
-                        className="w-7 h-7 rounded-lg bg-card border border-border text-xs font-black text-foreground active:scale-90 cursor-pointer shrink-0"
-                      >
-                        +
-                      </button>
+
+                    {/* 最終打順の下端 */}
+                    <div className="p-2 rounded-2xl bg-muted/45 border border-border space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black text-emerald-700 dark:text-emerald-300">
+                          {current.batters.length}番打者の下端
+                        </span>
+                        <span className="text-[10px] font-black text-muted-foreground">
+                          {gridBottomY}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleAdjustGridBound("bottom", gridBottomY - 5)
+                          }
+                          className="w-7 h-7 rounded-lg bg-card border border-border text-xs font-black text-foreground active:scale-90 cursor-pointer shrink-0"
+                        >
+                          -
+                        </button>
+                        <input
+                          type="range"
+                          min={450}
+                          max={980}
+                          value={gridBottomY}
+                          onChange={(e) =>
+                            handleAdjustGridBound(
+                              "bottom",
+                              Number(e.target.value)
+                            )
+                          }
+                          aria-label="最終打順下端の位置調整"
+                          className="flex-1 min-w-0 accent-emerald-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleAdjustGridBound("bottom", gridBottomY + 5)
+                          }
+                          className="w-7 h-7 rounded-lg bg-card border border-border text-xs font-black text-foreground active:scale-90 cursor-pointer shrink-0"
+                        >
+                          +
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -935,18 +1070,18 @@ export function Step2StructureCheck({
         </section>
       )}
 
-      {/* A. イニング別得点 ＆ 打者一巡(2列)設定 */}
+      {/* A. イニング別得点 ＆ 複数列（1列・2列・3列以上）設定 */}
       <section className="rounded-3xl bg-card border border-border shadow-xs p-4 space-y-3">
         <div className="flex items-center justify-between gap-2">
           <div>
             <h3 className="text-sm font-black text-foreground">
-              {isTop ? "先攻（表）" : "後攻（裏）"} イニング別得点・列数
+              {isTop ? "先攻（表）" : "後攻（裏）"} イニング別得点・使用列数
             </h3>
             <p className="text-[10px] font-bold text-muted-foreground">
-              打者一巡して2列使ったイニングは「2列(一巡)」をONにしてください
+              打者一巡・二巡して2列・3列以上使った回は列数の「+」で合わせた列数にしてください
             </p>
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 shrink-0">
             <button
               type="button"
               onClick={handleRemoveLastInning}
@@ -964,64 +1099,111 @@ export function Step2StructureCheck({
           </div>
         </div>
 
-        <div className="grid grid-cols-4 sm:grid-cols-5 gap-2">
-          {current.innings.map((inn) => (
-            <div
-              key={inn.inning}
-              className={`p-2 rounded-2xl border text-center space-y-1.5 ${
-                inn.columnCount >= 2
-                  ? "bg-indigo-500/8 border-indigo-500/40"
-                  : "bg-muted/35 border-border"
-              }`}
-            >
-              <span className="text-[10px] font-black text-muted-foreground block">
-                {inn.inning}回{isTop ? "表" : "裏"}
-              </span>
-
-              <div className="flex items-center justify-center gap-1">
-                <button
-                  type="button"
-                  onClick={() =>
-                    updateInningMeta(inn.inning, {
-                      runs: Math.max(0, inn.runs - 1),
-                    })
-                  }
-                  className="w-6 h-6 rounded-lg bg-card border border-border text-xs font-black text-foreground active:scale-90 cursor-pointer"
-                >
-                  -
-                </button>
-                <span className="w-6 text-sm font-black text-foreground">
-                  {inn.runs}
-                </span>
-                <button
-                  type="button"
-                  onClick={() =>
-                    updateInningMeta(inn.inning, { runs: inn.runs + 1 })
-                  }
-                  className="w-6 h-6 rounded-lg bg-card border border-border text-xs font-black text-foreground active:scale-90 cursor-pointer"
-                >
-                  +
-                </button>
-              </div>
-
-              <button
-                type="button"
-                onClick={() =>
-                  updateInningMeta(inn.inning, {
-                    columnCount: inn.columnCount >= 2 ? 1 : 2,
-                  })
-                }
-                className={`w-full py-0.5 px-1 rounded-md text-[9px] font-black flex items-center justify-center gap-0.5 cursor-pointer ${
-                  inn.columnCount >= 2
-                    ? "bg-indigo-600 text-white"
-                    : "bg-card text-muted-foreground border border-border/60"
+        <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+          {current.innings.map((inn) => {
+            const cols = Math.max(1, inn.columnCount || 1);
+            const maybeNeedsMoreCols =
+              (inn.runs >= 7 && cols < 2) || (inn.runs >= 16 && cols < 3);
+            const colBadgeText =
+              cols === 1
+                ? "1列"
+                : cols === 2
+                ? "2列(一巡)"
+                : cols === 3
+                ? "3列(二巡)"
+                : `${cols}列`;
+            return (
+              <div
+                key={inn.inning}
+                className={`p-2 rounded-2xl border text-center space-y-1.5 ${
+                  cols >= 2
+                    ? "bg-amber-500/10 border-amber-500/50"
+                    : maybeNeedsMoreCols
+                    ? "bg-amber-500/8 border-amber-500/60"
+                    : "bg-muted/35 border-border"
                 }`}
               >
-                <Columns2 className="w-2.5 h-2.5" />
-                <span>{inn.columnCount >= 2 ? "2列(一巡)" : "1列"}</span>
-              </button>
-            </div>
-          ))}
+                <div className="flex items-center justify-center gap-1">
+                  <span className="text-[10px] font-black text-muted-foreground">
+                    {inn.inning}回{isTop ? "表" : "裏"}
+                  </span>
+                </div>
+
+                {/* 得点ステッパー */}
+                <div className="flex items-center justify-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      updateInningMeta(inn.inning, {
+                        runs: Math.max(0, inn.runs - 1),
+                      })
+                    }
+                    className="w-6 h-6 rounded-lg bg-card border border-border text-xs font-black text-foreground active:scale-90 cursor-pointer"
+                  >
+                    -
+                  </button>
+                  <span className="w-6 text-sm font-black text-foreground">
+                    {inn.runs}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      updateInningMeta(inn.inning, { runs: inn.runs + 1 })
+                    }
+                    className="w-6 h-6 rounded-lg bg-card border border-border text-xs font-black text-foreground active:scale-90 cursor-pointer"
+                  >
+                    +
+                  </button>
+                </div>
+
+                {/* 使用列数ステッパー（1列・2列・3列・4列〜6列まで自在に設定可能！） */}
+                <div className="flex items-center justify-between gap-0.5 pt-0.5">
+                  <button
+                    type="button"
+                    disabled={cols <= 1}
+                    onClick={() =>
+                      updateInningMeta(inn.inning, {
+                        columnCount: Math.max(1, cols - 1),
+                      })
+                    }
+                    className="w-5 h-5 rounded-md bg-card border border-border text-[10px] font-black text-foreground disabled:opacity-35 active:scale-90 cursor-pointer shrink-0"
+                    aria-label={`${inn.inning}回の列数を減らす`}
+                  >
+                    -
+                  </button>
+                  <span
+                    className={`flex-1 py-0.5 px-1 rounded-md text-[9px] font-black flex items-center justify-center gap-0.5 truncate ${
+                      cols >= 2
+                        ? "bg-amber-600 text-white"
+                        : "bg-card text-muted-foreground border border-border/60"
+                    }`}
+                  >
+                    <Columns2 className="w-2.5 h-2.5 shrink-0" />
+                    <span className="truncate">{colBadgeText}</span>
+                  </span>
+                  <button
+                    type="button"
+                    disabled={cols >= 6}
+                    onClick={() =>
+                      updateInningMeta(inn.inning, {
+                        columnCount: Math.min(6, cols + 1),
+                      })
+                    }
+                    className="w-5 h-5 rounded-md bg-card border border-border text-[10px] font-black text-foreground disabled:opacity-35 active:scale-90 cursor-pointer shrink-0"
+                    aria-label={`${inn.inning}回の列数を増やす`}
+                  >
+                    +
+                  </button>
+                </div>
+
+                {maybeNeedsMoreCols && (
+                  <span className="block text-[8px] font-black text-amber-700 dark:text-amber-300 leading-tight">
+                    大量得点: 列数+を確認
+                  </span>
+                )}
+              </div>
+            );
+          })}
 
           {/* 合計得点表示 */}
           <div className="p-2 rounded-2xl bg-primary/10 border border-primary/30 flex flex-col items-center justify-center">

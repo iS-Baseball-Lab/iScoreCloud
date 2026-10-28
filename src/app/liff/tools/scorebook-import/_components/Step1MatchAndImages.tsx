@@ -1,7 +1,7 @@
 // filepath: src/app/liff/tools/scorebook-import/_components/Step1MatchAndImages.tsx
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import {
   Camera,
@@ -20,18 +20,32 @@ import {
   Settings,
   X,
   AlertCircle,
+  Scan,
+  RotateCcw,
 } from "lucide-react";
 import { loadLiffScoreSettings } from "@/lib/liff/score-settings";
+import { bilinearGridPoint, clamp1000 } from "@/lib/liff/scorebook-grid";
 import { ActionStatusBanner } from "./ActionStatusBanner";
 import type {
   ImportScopeMode,
+  NormalizedPoint,
+  ScorebookGridCorners,
   ScorebookMatchSummary,
 } from "@/types/scorebook-v2";
 import type { PreprocessedScorebookImage } from "@/lib/liff/scorebook-image";
 
+const DEFAULT_PERSPECTIVE_CORNERS: ScorebookGridCorners = {
+  tl: [35, 35],
+  tr: [965, 35],
+  br: [965, 965],
+  bl: [35, 965],
+};
+
 export interface SheetImageState {
   file: File | null;
   rotationDeg: 0 | 90 | 180 | 270;
+  fineTiltDeg: number;
+  perspectiveCorners: ScorebookGridCorners | null;
   enhancePencil: boolean;
   cropTop: number;
   cropBottom: number;
@@ -66,6 +80,11 @@ interface Step1MatchAndImagesProps {
     edge: "cropTop" | "cropBottom" | "cropLeft" | "cropRight",
     val: number
   ) => void;
+  onUpdateFineTilt: (isTop: boolean, deg: number) => void;
+  onUpdatePerspectiveCorners: (
+    isTop: boolean,
+    corners: ScorebookGridCorners | null
+  ) => void;
   teamLegendUrl: string | null;
   legendOverrideDataUrl: string | null;
   onSelectLegendOverride: (file: File | null) => void;
@@ -74,6 +93,211 @@ interface Step1MatchAndImagesProps {
   structureProgressLabel?: string;
   errorMessage?: string | null;
   onDismissError?: () => void;
+}
+
+interface PerspectiveCornerEditorProps {
+  previewUrl: string;
+  appliedCorners: ScorebookGridCorners | null;
+  isProcessing: boolean;
+  onApply: (corners: ScorebookGridCorners) => void;
+  onReset: () => void;
+}
+
+function PerspectiveCornerEditor({
+  previewUrl,
+  appliedCorners,
+  isProcessing,
+  onApply,
+  onReset,
+}: PerspectiveCornerEditorProps) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [draft, setDraft] = useState<ScorebookGridCorners>(
+    () => appliedCorners || DEFAULT_PERSPECTIVE_CORNERS
+  );
+  const [draggingKey, setDraggingKey] = useState<
+    keyof ScorebookGridCorners | null
+  >(null);
+
+  useEffect(() => {
+    setDraft(appliedCorners || DEFAULT_PERSPECTIVE_CORNERS);
+  }, [appliedCorners]);
+
+  const updatePointFromClient = (
+    key: keyof ScorebookGridCorners,
+    clientX: number,
+    clientY: number
+  ) => {
+    const el = containerRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    if (rect.width < 20 || rect.height < 20) return;
+    const nx = clamp1000(((clientX - rect.left) / rect.width) * 1000);
+    const ny = clamp1000(((clientY - rect.top) / rect.height) * 1000);
+
+    setDraft((prev) => {
+      const next = { ...prev, [key]: [nx, ny] as NormalizedPoint };
+      if (key === "tl") {
+        next.tl = [
+          Math.min(nx, prev.tr[0] - 120),
+          Math.min(ny, prev.bl[1] - 140),
+        ];
+      } else if (key === "tr") {
+        next.tr = [
+          Math.max(nx, prev.tl[0] + 120),
+          Math.min(ny, prev.br[1] - 140),
+        ];
+      } else if (key === "br") {
+        next.br = [
+          Math.max(nx, prev.bl[0] + 120),
+          Math.max(ny, prev.tr[1] + 140),
+        ];
+      } else if (key === "bl") {
+        next.bl = [
+          Math.min(nx, prev.br[0] - 120),
+          Math.max(ny, prev.tl[1] + 140),
+        ];
+      }
+      return next;
+    });
+  };
+
+  const handleMeta: Array<{
+    key: keyof ScorebookGridCorners;
+    label: string;
+  }> = [
+    { key: "tl", label: "左上" },
+    { key: "tr", label: "右上" },
+    { key: "br", label: "右下" },
+    { key: "bl", label: "左下" },
+  ];
+
+  const polyPoints = `${draft.tl[0]},${draft.tl[1]} ${draft.tr[0]},${draft.tr[1]} ${draft.br[0]},${draft.br[1]} ${draft.bl[0]},${draft.bl[1]}`;
+
+  return (
+    <div className="space-y-2.5">
+      <p className="text-[10px] font-bold text-foreground leading-relaxed">
+        斜め撮影やバインダーの歪みがある場合、水色の●（4隅）を指でドラッグして<strong>スコアブック用紙の4隅（外枠角）</strong>に合わせ、「この4隅で真っ直ぐ補正」を押してください。
+      </p>
+
+      <div
+        ref={containerRef}
+        className="relative w-full rounded-xl overflow-hidden bg-slate-950 border-2 border-sky-500/60 select-none touch-none"
+      >
+        <img
+          src={previewUrl}
+          alt="4隅歪み補正プレビュー"
+          className="w-full h-auto block pointer-events-none select-none"
+        />
+
+        <svg
+          viewBox="0 0 1000 1000"
+          preserveAspectRatio="none"
+          className="absolute inset-0 w-full h-full pointer-events-none"
+        >
+          {/* 外側マスク表現＆選択ポリゴン */}
+          <polygon
+            points={polyPoints}
+            fill="rgba(14, 165, 233, 0.12)"
+            stroke="#0ea5e9"
+            strokeWidth="5"
+          />
+          {/* 3分割の歪み確認ガイド線 */}
+          {[0.25, 0.5, 0.75].map((r) => {
+            const hL = bilinearGridPoint(draft, 0, r);
+            const hR = bilinearGridPoint(draft, 1, r);
+            const vT = bilinearGridPoint(draft, r, 0);
+            const vB = bilinearGridPoint(draft, r, 1);
+            return (
+              <g key={r}>
+                <line
+                  x1={hL[0]}
+                  y1={hL[1]}
+                  x2={hR[0]}
+                  y2={hR[1]}
+                  stroke="rgba(56, 189, 248, 0.7)"
+                  strokeWidth="2.5"
+                  strokeDasharray="10 8"
+                />
+                <line
+                  x1={vT[0]}
+                  y1={vT[1]}
+                  x2={vB[0]}
+                  y2={vB[1]}
+                  stroke="rgba(56, 189, 248, 0.7)"
+                  strokeWidth="2.5"
+                  strokeDasharray="10 8"
+                />
+              </g>
+            );
+          })}
+        </svg>
+
+        {/* 指で掴みやすい大判4隅ドラッグハンドル */}
+        {handleMeta.map(({ key, label }) => {
+          const pt = draft[key];
+          const isActive = draggingKey === key;
+          return (
+            <button
+              key={key}
+              type="button"
+              onPointerDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                e.currentTarget.setPointerCapture(e.pointerId);
+                setDraggingKey(key);
+              }}
+              onPointerMove={(e) => {
+                if (draggingKey !== key) return;
+                e.preventDefault();
+                updatePointFromClient(key, e.clientX, e.clientY);
+              }}
+              onPointerUp={(e) => {
+                if (draggingKey === key) {
+                  e.currentTarget.releasePointerCapture(e.pointerId);
+                  setDraggingKey(null);
+                }
+              }}
+              onPointerCancel={() => setDraggingKey(null)}
+              style={{
+                left: `${pt[0] / 10}%`,
+                top: `${pt[1] / 10}%`,
+              }}
+              className={`absolute -translate-x-1/2 -translate-y-1/2 w-9 h-9 rounded-full border-2 border-white shadow-md flex items-center justify-center text-[9px] font-black text-white touch-none cursor-grab active:cursor-grabbing transition-transform ${
+                isActive ? "bg-amber-500 scale-125 z-20" : "bg-sky-600 z-10"
+              }`}
+              aria-label={`${label}ハンドル`}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          disabled={isProcessing}
+          onClick={() => onApply(draft)}
+          className="flex-1 py-2.5 px-3 rounded-xl bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-xs active:scale-98 transition-all cursor-pointer"
+        >
+          <Scan className="w-3.5 h-3.5" />
+          <span>この4隅で真っ直ぐ補正</span>
+        </button>
+
+        {appliedCorners && (
+          <button
+            type="button"
+            disabled={isProcessing}
+            onClick={onReset}
+            className="py-2.5 px-3 rounded-xl bg-card border border-border hover:bg-muted text-foreground text-xs font-black flex items-center gap-1 active:scale-95 transition-all cursor-pointer"
+          >
+            <RotateCcw className="w-3.5 h-3.5 text-muted-foreground" />
+            <span>解除</span>
+          </button>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export function Step1MatchAndImages({
@@ -90,6 +314,8 @@ export function Step1MatchAndImages({
   onRotateSheet,
   onToggleEnhance,
   onUpdateCrop,
+  onUpdateFineTilt,
+  onUpdatePerspectiveCorners,
   teamLegendUrl,
   legendOverrideDataUrl,
   onSelectLegendOverride,
@@ -121,6 +347,9 @@ export function Step1MatchAndImages({
 
   const [openCropSide, setOpenCropSide] = useState<"top" | "bottom" | null>(
     null
+  );
+  const [adjustTab, setAdjustTab] = useState<"perspective" | "tilt_crop">(
+    "perspective"
   );
 
   const selectedMatch = matches.find((m) => m.id === selectedMatchId) || null;
@@ -255,20 +484,47 @@ export function Step1MatchAndImages({
                   </span>
                 </div>
               ) : (
-                <img
-                  src={state.processed.dataUrl}
-                  alt={sideTitle}
-                  className="w-full h-full object-contain"
-                />
+                <>
+                  <img
+                    src={state.processed.dataUrl}
+                    alt={sideTitle}
+                    className="w-full h-full object-contain"
+                  />
+                  {/* 傾き微調整中は水平確認用の水色ガイドラインをオーバーレイ表示 */}
+                  {isCropOpen && adjustTab === "tilt_crop" && (
+                    <div className="absolute inset-0 pointer-events-none flex flex-col justify-evenly">
+                      {[1, 2, 3, 4, 5].map((lineNo) => (
+                        <div
+                          key={lineNo}
+                          className="w-full border-t border-dashed border-sky-400/75"
+                        />
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
               {state.processed && (
-                <span className="absolute bottom-2 right-2 px-2 py-0.5 rounded-md bg-black/70 text-white text-[9px] font-bold">
-                  {state.processed.width}×{state.processed.height}px
-                </span>
+                <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between pointer-events-none">
+                  <div className="flex items-center gap-1">
+                    {state.perspectiveCorners && (
+                      <span className="px-2 py-0.5 rounded-md bg-sky-600 text-white text-[9px] font-black shadow-2xs">
+                        4隅歪み補正済
+                      </span>
+                    )}
+                    {Math.abs(state.fineTiltDeg) >= 0.1 && (
+                      <span className="px-2 py-0.5 rounded-md bg-indigo-600 text-white text-[9px] font-black shadow-2xs">
+                        傾き{state.fineTiltDeg > 0 ? `+${state.fineTiltDeg}` : state.fineTiltDeg}°
+                      </span>
+                    )}
+                  </div>
+                  <span className="px-2 py-0.5 rounded-md bg-black/75 text-white text-[9px] font-bold">
+                    {state.processed.width}×{state.processed.height}px
+                  </span>
+                </div>
               )}
             </div>
 
-            {/* 回転・鉛筆くっきり補正・トリミング操作バー */}
+            {/* 回転・鉛筆くっきり補正・歪み＆余白補正バー */}
             <div className="grid grid-cols-3 gap-1.5">
               <button
                 type="button"
@@ -299,56 +555,166 @@ export function Step1MatchAndImages({
                 onClick={() =>
                   setOpenCropSide(isCropOpen ? null : cropKey)
                 }
-                className="py-2 px-2 rounded-xl bg-muted hover:bg-muted/80 border border-border text-[11px] font-black text-foreground flex items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer"
+                className={`py-2 px-2 rounded-xl border text-[11px] font-black flex items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer ${
+                  state.perspectiveCorners ||
+                  Math.abs(state.fineTiltDeg) >= 0.1 ||
+                  state.cropTop > 0 ||
+                  state.cropBottom > 0 ||
+                  state.cropLeft > 0 ||
+                  state.cropRight > 0
+                    ? "bg-sky-600 text-white border-sky-600"
+                    : "bg-muted hover:bg-muted/80 text-foreground border-border"
+                }`}
               >
-                <Crop className="w-3.5 h-3.5 text-primary" />
-                <span>余白カット</span>
+                <Crop className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">歪み・余白</span>
                 {isCropOpen ? (
-                  <ChevronUp className="w-3 h-3" />
+                  <ChevronUp className="w-3 h-3 shrink-0" />
                 ) : (
-                  <ChevronDown className="w-3 h-3" />
+                  <ChevronDown className="w-3 h-3 shrink-0" />
                 )}
               </button>
             </div>
 
-            {/* 余白トリミングスライダー */}
-            {isCropOpen && (
-              <div className="p-3 rounded-2xl bg-muted/50 border border-border space-y-2.5">
-                <p className="text-[10px] font-bold text-muted-foreground">
-                  机の背景やリング金具など不要な端をカットすると文字の認識精度が上がります（0〜30%）
-                </p>
-                <div className="grid grid-cols-2 gap-3">
-                  {(
-                    [
-                      { key: "cropTop", label: "上端カット" },
-                      { key: "cropBottom", label: "下端カット" },
-                      { key: "cropLeft", label: "左端カット" },
-                      { key: "cropRight", label: "右端カット" },
-                    ] as const
-                  ).map((edge) => (
-                    <div key={edge.key} className="space-y-1">
-                      <div className="flex justify-between text-[10px] font-black text-foreground">
-                        <span>{edge.label}</span>
-                        <span>{Math.round(state[edge.key] * 100)}%</span>
+            {/* 4隅台形・歪み補正 ＆ 傾き角度・余白カットパネル */}
+            {isCropOpen && state.processed && (
+              <div className="p-3 rounded-2xl bg-card border-2 border-sky-500/35 space-y-3 shadow-xs">
+                <div className="grid grid-cols-2 gap-1.5 p-1 rounded-xl bg-muted border border-border">
+                  <button
+                    type="button"
+                    onClick={() => setAdjustTab("perspective")}
+                    className={`py-1.5 px-2 rounded-lg text-[11px] font-black transition-all cursor-pointer ${
+                      adjustTab === "perspective"
+                        ? "bg-sky-600 text-white shadow-2xs"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    4隅台形・歪み補正
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAdjustTab("tilt_crop")}
+                    className={`py-1.5 px-2 rounded-lg text-[11px] font-black transition-all cursor-pointer ${
+                      adjustTab === "tilt_crop"
+                        ? "bg-indigo-600 text-white shadow-2xs"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    傾き角度・余白カット
+                  </button>
+                </div>
+
+                {adjustTab === "perspective" ? (
+                  <PerspectiveCornerEditor
+                    previewUrl={
+                      state.processed.unwarpedPreviewDataUrl ||
+                      state.processed.dataUrl
+                    }
+                    appliedCorners={state.perspectiveCorners}
+                    isProcessing={state.isProcessing}
+                    onApply={(corners) =>
+                      onUpdatePerspectiveCorners(isTop, corners)
+                    }
+                    onReset={() => onUpdatePerspectiveCorners(isTop, null)}
+                  />
+                ) : (
+                  <div className="space-y-3">
+                    {/* 微細な傾き角度補正 (-10° 〜 +10°) */}
+                    <div className="p-2.5 rounded-xl bg-muted/60 border border-border space-y-2">
+                      <div className="flex items-center justify-between text-[11px] font-black text-foreground">
+                        <span>傾き角度の水平補正（-10°〜+10°）</span>
+                        <span className="text-indigo-600 dark:text-indigo-400">
+                          {state.fineTiltDeg > 0
+                            ? `+${state.fineTiltDeg.toFixed(1)}°`
+                            : `${state.fineTiltDeg.toFixed(1)}°`}
+                        </span>
                       </div>
                       <input
                         type="range"
-                        min={0}
-                        max={30}
-                        step={2}
-                        value={Math.round(state[edge.key] * 100)}
+                        min={-10}
+                        max={10}
+                        step={0.5}
+                        value={state.fineTiltDeg}
                         onChange={(e) =>
-                          onUpdateCrop(
-                            isTop,
-                            edge.key,
-                            Number(e.target.value) / 100
-                          )
+                          onUpdateFineTilt(isTop, Number(e.target.value))
                         }
                         className="w-full accent-indigo-600"
                       />
+                      <div className="grid grid-cols-5 gap-1">
+                        {[
+                          { label: "-1°", delta: -1 },
+                          { label: "-0.5°", delta: -0.5 },
+                          { label: "0°に戻す", reset: true as const },
+                          { label: "+0.5°", delta: 0.5 },
+                          { label: "+1°", delta: 1 },
+                        ].map((btn) => (
+                          <button
+                            key={btn.label}
+                            type="button"
+                            onClick={() => {
+                              if ("reset" in btn && btn.reset) {
+                                onUpdateFineTilt(isTop, 0);
+                              } else if ("delta" in btn) {
+                                const next = Math.max(
+                                  -10,
+                                  Math.min(
+                                    10,
+                                    Math.round(
+                                      (state.fineTiltDeg + btn.delta) * 2
+                                    ) / 2
+                                  )
+                                );
+                                onUpdateFineTilt(isTop, next);
+                              }
+                            }}
+                            className="py-1 px-1 rounded-lg bg-card border border-border hover:bg-muted text-[10px] font-black text-foreground active:scale-95 transition-all cursor-pointer"
+                          >
+                            {btn.label}
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                  ))}
-                </div>
+
+                    {/* 上下左右余白トリミング */}
+                    <div className="space-y-2">
+                      <p className="text-[10px] font-bold text-muted-foreground">
+                        机の背景やリング金具など不要な端をカットすると文字の認識精度が上がります（0〜30%）
+                      </p>
+                      <div className="grid grid-cols-2 gap-3">
+                        {(
+                          [
+                            { key: "cropTop", label: "上端カット" },
+                            { key: "cropBottom", label: "下端カット" },
+                            { key: "cropLeft", label: "左端カット" },
+                            { key: "cropRight", label: "右端カット" },
+                          ] as const
+                        ).map((edge) => (
+                          <div key={edge.key} className="space-y-1">
+                            <div className="flex justify-between text-[10px] font-black text-foreground">
+                              <span>{edge.label}</span>
+                              <span>{Math.round(state[edge.key] * 100)}%</span>
+                            </div>
+                            <input
+                              type="range"
+                              min={0}
+                              max={30}
+                              step={2}
+                              value={Math.round(state[edge.key] * 100)}
+                              onChange={(e) =>
+                                onUpdateCrop(
+                                  isTop,
+                                  edge.key,
+                                  Number(e.target.value) / 100
+                                )
+                              }
+                              className="w-full accent-indigo-600"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
