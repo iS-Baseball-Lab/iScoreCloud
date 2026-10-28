@@ -56,6 +56,7 @@ import {
   type HitZoneOption,
 } from "@/lib/liff/scorebook-fielding";
 import { cropScorebookRegion } from "@/lib/liff/scorebook-image";
+import { ActionStatusBanner } from "./ActionStatusBanner";
 
 interface Step3PinpointReviewProps {
   importScope: ImportScopeMode;
@@ -70,6 +71,8 @@ interface Step3PinpointReviewProps {
   onBack: () => void;
   onSave: () => void;
   isSaving: boolean;
+  errorMessage?: string | null;
+  onDismissError?: () => void;
 }
 
 export function Step3PinpointReview({
@@ -85,6 +88,8 @@ export function Step3PinpointReview({
   onBack,
   onSave,
   isSaving,
+  errorMessage,
+  onDismissError,
 }: Step3PinpointReviewProps) {
   const [mounted, setMounted] = useState(false);
   const [activeSide, setActiveSide] = useState<"top" | "bottom">(
@@ -906,36 +911,46 @@ export function Step3PinpointReview({
         )}
       </div>
 
-      {/* 下部保存アクション */}
-      <div className="flex gap-2.5 pt-2">
-        <button
-          type="button"
-          disabled={isSaving}
-          onClick={onBack}
-          className="h-13 px-4 rounded-2xl bg-card border border-border text-xs font-black text-foreground flex items-center gap-1 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
-        >
-          <ChevronLeft className="w-4 h-4" />
-          <span>骨格確認へ</span>
-        </button>
+      {/* 進捗表示・エラー表示 ＆ 下部保存アクション */}
+      <div className="space-y-2.5 pt-2">
+        <ActionStatusBanner
+          isLoading={isSaving}
+          loadingTitle="試合データ・個人成績を保存中..."
+          loadingDetail="プレイログ・打撃成績・投手成績を集計してデータベースへ反映しています..."
+          errorMessage={errorMessage}
+          onDismissError={onDismissError}
+        />
 
-        <button
-          type="button"
-          disabled={isSaving}
-          onClick={onSave}
-          className="flex-1 h-13 px-4 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-black shadow-md flex items-center justify-center gap-2 active:scale-98 transition-all cursor-pointer disabled:opacity-50"
-        >
-          {isSaving ? (
-            <>
-              <Loader2 className="w-5 h-5 animate-spin" />
-              <span>試合データ・成績を保存中...</span>
-            </>
-          ) : (
-            <>
-              <Save className="w-4 h-4" />
-              <span>試合データ・個人成績に保存する</span>
-            </>
-          )}
-        </button>
+        <div className="flex gap-2.5">
+          <button
+            type="button"
+            disabled={isSaving}
+            onClick={onBack}
+            className="h-13 px-4 rounded-2xl bg-card border border-border text-xs font-black text-foreground flex items-center gap-1 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+          >
+            <ChevronLeft className="w-4 h-4" />
+            <span>骨格確認へ</span>
+          </button>
+
+          <button
+            type="button"
+            disabled={isSaving}
+            onClick={onSave}
+            className="flex-1 h-13 px-4 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-black shadow-md flex items-center justify-center gap-2 active:scale-98 transition-all cursor-pointer disabled:opacity-50"
+          >
+            {isSaving ? (
+              <>
+                <Loader2 className="w-5 h-5 animate-spin" />
+                <span>試合データ・成績を保存中...</span>
+              </>
+            ) : (
+              <>
+                <Save className="w-4 h-4" />
+                <span>試合データ・個人成績に保存する</span>
+              </>
+            )}
+          </button>
+        </div>
       </div>
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

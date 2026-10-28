@@ -19,8 +19,10 @@ import {
   BookOpen,
   Settings,
   X,
+  AlertCircle,
 } from "lucide-react";
 import { loadLiffScoreSettings } from "@/lib/liff/score-settings";
+import { ActionStatusBanner } from "./ActionStatusBanner";
 import type {
   ImportScopeMode,
   ScorebookMatchSummary,
@@ -70,6 +72,8 @@ interface Step1MatchAndImagesProps {
   onStartAnalyzeStructure: () => void;
   isAnalyzingStructure: boolean;
   structureProgressLabel?: string;
+  errorMessage?: string | null;
+  onDismissError?: () => void;
 }
 
 export function Step1MatchAndImages({
@@ -92,6 +96,8 @@ export function Step1MatchAndImages({
   onStartAnalyzeStructure,
   isAnalyzingStructure,
   structureProgressLabel,
+  errorMessage,
+  onDismissError,
 }: Step1MatchAndImagesProps) {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newOpponent, setNewOpponent] = useState("");
@@ -124,6 +130,17 @@ export function Step1MatchAndImages({
 
   const needTop = importScope === "both" || importScope === "top_only";
   const needBottom = importScope === "both" || importScope === "bottom_only";
+
+  const isPreprocessingAny =
+    (needTop && topImage.isProcessing) ||
+    (needBottom && bottomImage.isProcessing);
+
+  const preprocessingDetail =
+    topImage.isProcessing && bottomImage.isProcessing
+      ? "先攻・後攻シートの回転・余白カット・文字くっきり補正を適用しています..."
+      : topImage.isProcessing
+      ? "先攻（表）シートの高精細画像を準備しています..."
+      : "後攻（裏）シートの高精細画像を準備しています...";
 
   const canProceed =
     Boolean(selectedMatchId) &&
@@ -509,6 +526,15 @@ export function Step1MatchAndImages({
               </div>
             </div>
 
+            {errorMessage && !isAnalyzingStructure && (
+              <div className="p-2.5 rounded-xl bg-card border border-destructive/50 flex items-start gap-2">
+                <AlertCircle className="w-3.5 h-3.5 text-destructive shrink-0 mt-0.5" />
+                <p className="text-[11px] font-bold text-destructive leading-snug wrap-break-word">
+                  {errorMessage}
+                </p>
+              </div>
+            )}
+
             <button
               type="submit"
               disabled={isCreatingMatch || !newOpponent.trim()}
@@ -691,28 +717,44 @@ export function Step1MatchAndImages({
         )}
       </section>
 
-      {/* 解析開始ボタン */}
-      <button
-        type="button"
-        disabled={!canProceed}
-        onClick={onStartAnalyzeStructure}
-        className="w-full h-14 rounded-2xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-45 text-white font-black text-sm shadow-md flex items-center justify-center gap-2 active:scale-98 transition-all cursor-pointer disabled:cursor-not-allowed"
-      >
-        {isAnalyzingStructure ? (
-          <>
-            <Loader2 className="w-5 h-5 animate-spin shrink-0" />
-            <span className="truncate">
-              {structureProgressLabel ||
-                "AIが打順・途中交代・各回得点をスキャン中..."}
-            </span>
-          </>
-        ) : (
-          <>
-            <Sparkles className="w-5 h-5" />
-            <span>AI骨格スキャンを開始（STEP 2へ）</span>
-          </>
-        )}
-      </button>
+      {/* 進捗表示・エラー表示 ＆ 解析開始ボタン（Step 2と同じくボタン直上に集約） */}
+      <div className="space-y-2.5 pt-1">
+        <ActionStatusBanner
+          isLoading={isAnalyzingStructure || isPreprocessingAny}
+          loadingTitle={
+            isAnalyzingStructure
+              ? "AI骨格スキャンを実行中..."
+              : "スコアブック画像の前処理を実行中..."
+          }
+          loadingDetail={
+            isAnalyzingStructure
+              ? structureProgressLabel ||
+                "AIが打順・守備位置・途中交代・各回得点をスキャンしています..."
+              : preprocessingDetail
+          }
+          errorMessage={errorMessage}
+          onDismissError={onDismissError}
+        />
+
+        <button
+          type="button"
+          disabled={!canProceed}
+          onClick={onStartAnalyzeStructure}
+          className="w-full h-14 rounded-2xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-45 text-white font-black text-sm shadow-md flex items-center justify-center gap-2 active:scale-98 transition-all cursor-pointer disabled:cursor-not-allowed"
+        >
+          {isAnalyzingStructure ? (
+            <>
+              <Loader2 className="w-5 h-5 animate-spin shrink-0" />
+              <span>AI骨格スキャン実行中...</span>
+            </>
+          ) : (
+            <>
+              <Sparkles className="w-5 h-5 shrink-0" />
+              <span>AI骨格スキャンを開始（STEP 2へ）</span>
+            </>
+          )}
+        </button>
+      </div>
     </div>
   );
 }

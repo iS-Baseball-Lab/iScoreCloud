@@ -18,6 +18,7 @@ import {
   ZoomIn,
 } from "lucide-react";
 import { normalizePositionCode } from "@/lib/liff/scorebook-validator";
+import { ActionStatusBanner } from "./ActionStatusBanner";
 import type {
   ImportScopeMode,
   ScorebookBatterSlot,
@@ -39,10 +40,13 @@ interface Step2StructureCheckProps {
   onChangeStructure: (isTop: boolean, updated: ScorebookSheetStructure) => void;
   onRescanSide?: (isTop: boolean) => void;
   isRescanningSide?: boolean;
+  structureProgressLabel?: string;
   onBack: () => void;
   onStartDeepAnalysis: () => void;
   isAnalyzingInnings: boolean;
   analysisProgressLabel: string;
+  errorMessage?: string | null;
+  onDismissError?: () => void;
 }
 
 const POSITION_OPTIONS = [
@@ -70,10 +74,13 @@ export function Step2StructureCheck({
   onChangeStructure,
   onRescanSide,
   isRescanningSide = false,
+  structureProgressLabel,
   onBack,
   onStartDeepAnalysis,
   isAnalyzingInnings,
   analysisProgressLabel,
+  errorMessage,
+  onDismissError,
 }: Step2StructureCheckProps) {
   const [activeSide, setActiveSide] = useState<"top" | "bottom">(
     importScope === "bottom_only" ? "bottom" : "top"
@@ -949,21 +956,25 @@ export function Step2StructureCheck({
         </div>
       </section>
 
-      {/* アクションボタン */}
+      {/* 進捗表示・エラー表示 ＆ アクションボタン */}
       <div className="space-y-2.5 pt-1">
-        {isAnalyzingInnings && (
-          <div className="p-4 rounded-2xl bg-indigo-600/10 border border-indigo-500/35 flex items-center gap-3">
-            <Loader2 className="w-5 h-5 animate-spin text-indigo-600 dark:text-indigo-400 shrink-0" />
-            <div className="min-w-0">
-              <p className="text-xs font-black text-foreground">
-                イニング分割ディープ解析を実行中...
-              </p>
-              <p className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 truncate">
-                {analysisProgressLabel}
-              </p>
-            </div>
-          </div>
-        )}
+        <ActionStatusBanner
+          isLoading={isAnalyzingInnings || isRescanningSide}
+          loadingTitle={
+            isRescanningSide
+              ? "シートの骨格を再スキャン中..."
+              : "イニング分割ディープ解析を実行中..."
+          }
+          loadingDetail={
+            isRescanningSide
+              ? structureProgressLabel ||
+                "打順・投手・各回得点を再取得しています..."
+              : analysisProgressLabel ||
+                "各イニングの1球順序・打撃結果・進塁を解析しています..."
+          }
+          errorMessage={errorMessage}
+          onDismissError={onDismissError}
+        />
 
         <div className="flex gap-2.5">
           <button

@@ -501,6 +501,7 @@ export default function LiffScorebookImportPage() {
   };
 
   const handleSelectSheetFile = (isTop: boolean, file: File | null) => {
+    setErrorBanner(null);
     if (!file) {
       runPreprocess(
         isTop,
@@ -1228,9 +1229,9 @@ export default function LiffScorebookImportPage() {
           </div>
         )}
 
-        {/* エラー通知バナー */}
-        {errorBanner && (
-          <div className="p-3.5 rounded-2xl bg-destructive/10 border border-destructive/30 flex items-start gap-2.5">
+        {/* 初期コンテキスト読込中またはStep 4表示時のみのフォールバックエラーバナー（Step 1〜3は操作ボタン直上の進捗エリアに表示） */}
+        {(isLoadingContext || step === 4) && errorBanner && (
+          <div className="p-3.5 rounded-2xl bg-card border-2 border-destructive/60 flex items-start gap-2.5">
             <AlertCircle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
             <p className="text-xs font-bold text-destructive leading-relaxed">
               {errorBanner}
@@ -1268,6 +1269,8 @@ export default function LiffScorebookImportPage() {
                 onStartAnalyzeStructure={handleStartAnalyzeStructure}
                 isAnalyzingStructure={isAnalyzingStructure}
                 structureProgressLabel={structureProgressLabel}
+                errorMessage={errorBanner}
+                onDismissError={() => setErrorBanner(null)}
               />
             )}
 
@@ -1285,10 +1288,16 @@ export default function LiffScorebookImportPage() {
                 }
                 onRescanSide={handleRescanSingleSide}
                 isRescanningSide={isAnalyzingStructure}
-                onBack={() => setStep(1)}
+                structureProgressLabel={structureProgressLabel}
+                onBack={() => {
+                  setErrorBanner(null);
+                  setStep(1);
+                }}
                 onStartDeepAnalysis={handleStartDeepAnalysis}
                 isAnalyzingInnings={isAnalyzingInnings}
                 analysisProgressLabel={analysisProgressLabel}
+                errorMessage={errorBanner}
+                onDismissError={() => setErrorBanner(null)}
               />
             )}
 
@@ -1305,9 +1314,14 @@ export default function LiffScorebookImportPage() {
                 onChangeAtBats={(isTop, updated) =>
                   isTop ? setTopAtBats(updated) : setBottomAtBats(updated)
                 }
-                onBack={() => setStep(2)}
+                onBack={() => {
+                  setErrorBanner(null);
+                  setStep(2);
+                }}
                 onSave={handleSaveToDatabase}
                 isSaving={isSaving}
+                errorMessage={errorBanner}
+                onDismissError={() => setErrorBanner(null)}
               />
             )}
 
