@@ -159,6 +159,10 @@ interface RawGeminiAtBat {
   b?: string;
   pitcherName?: string;
   pt?: string;
+  /** 1マス内3ゾーン（左BSO欄・中央アウト記号・本一塁線・右下打球記号）の視覚観察メモ */
+  obs?: string;
+  /** ダイヤモンド右下辺（本塁→1塁）に手書きの実線・赤線が引かれているか（true=1塁到達出塁, false=点線のまま未出塁） */
+  b1?: boolean;
   resultCode?: string;
   rc?: string;
   resultLabel?: string;
@@ -225,41 +229,42 @@ const MODEL_COOLDOWN_UNTIL = new Map<
  *   5. gemini-flash-lite-latest (最新Lite動的エイリアス安全網)
  */
 function getGeminiModelConfigs(
-  _mode: GeminiCallMode
+  mode: GeminiCallMode
 ): readonly GeminiModelAttemptConfig[] {
+  const isDeepChunk = mode === "chunk";
   return [
     {
       model: "gemini-3.8-flash",
-      firstResponseTimeoutMs: 40_000,
-      firstTextTimeoutMs: 56_000,
-      thinkingMode: "level_medium",
+      firstResponseTimeoutMs: isDeepChunk ? 42_000 : 40_000,
+      firstTextTimeoutMs: isDeepChunk ? 70_000 : 56_000,
+      thinkingMode: isDeepChunk ? "level_high" : "level_medium",
       backoffBeforeMs: 0,
     },
     {
       model: "gemini-3.6-flash",
-      firstResponseTimeoutMs: 38_000,
-      firstTextTimeoutMs: 54_000,
-      thinkingMode: "level_medium",
+      firstResponseTimeoutMs: isDeepChunk ? 40_000 : 38_000,
+      firstTextTimeoutMs: isDeepChunk ? 66_000 : 54_000,
+      thinkingMode: isDeepChunk ? "level_high" : "level_medium",
       backoffBeforeMs: 250,
     },
     {
       model: "gemini-3.5-flash-lite",
       firstResponseTimeoutMs: 34_000,
-      firstTextTimeoutMs: 46_000,
+      firstTextTimeoutMs: isDeepChunk ? 50_000 : 46_000,
       thinkingMode: "level_medium",
       backoffBeforeMs: 250,
     },
     {
       model: "gemini-3.1-flash-lite",
       firstResponseTimeoutMs: 32_000,
-      firstTextTimeoutMs: 44_000,
+      firstTextTimeoutMs: isDeepChunk ? 48_000 : 44_000,
       thinkingMode: "level_medium",
       backoffBeforeMs: 250,
     },
     {
       model: "gemini-flash-lite-latest",
       firstResponseTimeoutMs: 28_000,
-      firstTextTimeoutMs: 38_000,
+      firstTextTimeoutMs: 40_000,
       thinkingMode: "level_low",
       backoffBeforeMs: 300,
     },
@@ -906,7 +911,7 @@ ${battingTeamContext}${scoreboardHintText}
 3. **イニング構造・複数列（2列・3列以上）・原本の傾き4隅座標（gridCorners）・手書き数値の三重照合**:
    - 各縦列の**最上部に印字・手書きされているイニング見出し番号（1, 2, 3...）**を必ず確認してください（拡大画像の上段参照）。
    - **🔥1イニング2列・3列以上（columnCount: 2, 3, 4...）の厳密判定**:
-     - 打者一巡（10〜18打席）すると右隣の2列目へ、猛攻で二巡（19〜27打席）するとさらに3列目へ同じイニングが折り返して記録されます（列最上部の見出し番号が同じ回に書き直されている、または1列目で3アウト③になる前に下端・一巡して右隣列へ続いている状態）。また「9番の下端まで行ったら1番からすぐ2列目の上端へ移る書き方」でも2列使用になります。
+     - 打者一巡（10〜18打席）すると右隣の2列目へ、猛攻で二巡（19〜27打席）するとさらに3列目へ同じイニングが折り返して記録されます（列最上部の見出し番号が同じ回に書き直されている、または1列目で3アウト『③』やローマ数字『Ⅲ』になる前に下端・一巡して右隣列へ続いている状態）。また「9番の下端まで行ったら1番からすぐ2列目の上端へ移る書き方」でも2列使用になります。
      - **野球の数学検算**: 通常の9人打順・3アウト交代回では、**7点以上（7得点＋3アウト＝最低10打席）なら必ず columnCount: 2 以上**、**16点以上なら必ず columnCount: 3 以上**になります！該当する回は右隣の2列目・3列目まで同じイニングが続いていないか必ず確認し、1つのイニング要素にまとめて正確な **columnCount（2, 3, 4...）** を出力してください（後続のイニング番号が絶対にズレないよう見出し番号と照合すること）。
    - 試合が行われていない空白のイニング列（最終回より右側の空列や、右端の打数・安打集計列）は絶対に出力しないでください。
    - **手書き数字（得点 runs / 安打 hits）の厳密照合**:
@@ -1313,11 +1318,11 @@ liffScorebookRouter.post("/analyze-inning-chunk", async (c) => {
       stage2ImageGuide.push(
         `・画像${imageParts.length}: 【🔥最優先で精読！ ${sortedTargets.join(
           "・"
-        )}回専用・サブ列×打順1マス独立拡大マトリクス画像】原本の傾き・歪みを真っ直ぐ補正し、上下左右の隣接マスの映り込みを完全に切り離して1マスずつ拡大しています！${
+        )}回専用・超高精細2段セルマトリクス画像】原本の傾き・歪みを真っ直ぐ補正し、上下左右の隣接マスの映り込みを完全に遮断して1マスずつ大判拡大しています（解像度最大化のため左段に前半打順［1〜5番］、右段に後半打順［6〜9番］を配置。各マスの左にある青い打順バッジ『1番 〇〇』〜『9番 〇〇』を確認してください）！${
           hasMultiColTarget
-            ? "2列以上を使用する回は左から順番に [c:1]（1列目）・[c:2]（2列目）・[c:3]（3列目）として別々の列に分離表示しています！"
+            ? "2列以上を使用する回は各打順ごとに [c:1]（1列目）・[c:2]（2列目）・[c:3]（3列目）として分離表示しています！"
             : ""
-        }各マスの細かい手書き数字（守備番号 1〜9、送球ハイフン 6-3 等、丸数字アウト ①②③、BSO記号）は必ずこの画像${imageParts.length}を拡大精読してください！`
+        }各マスの左端BSO投球記号（○・ー・△等）、中央のアウト記号（ローマ数字 Ⅰ・Ⅱ・Ⅲ または丸数字 ①・②・③）、本塁→1塁の実線有無、右下の打球記号（傘付きフライ ⌒4 / ︵4、ゴロ 6-3 等）は必ずこの画像${imageParts.length}を1画ずつ拡大精読してください！`
       );
     }
 
@@ -1376,18 +1381,18 @@ liffScorebookRouter.post("/analyze-inning-chunk", async (c) => {
 - 日本のスコアブックには以下の2通りの折り返し記法があります（どちらの記法でも空欄マスは飛ばし、書かれているマスだけを実際の打順時系列で出力してください）:
   1) **一巡充填式（標準）**: 先頭打者（例: 4番）から [c:1] を下へ進み、9番の次は同じ [c:1] の1番〜3番へ戻って9枠を埋め、10人目の打者（4番の2巡目）から [c:2] の4番の行へ移る（さらに19人目は [c:3] へ移る）。
   2) **9番下端折り返し式**: 先頭打者（例: 4番）から [c:1] の9番まで進んだら、次の1番打者からはすぐ右隣の [c:2] の1番の行へ移る（この場合 [c:1] の1番〜3番は空欄になり、4番の2巡目は空いていた [c:2] の4番の行に書かれる）。
-- **絶対厳守**: 必ず **先頭打者からスタートして打順が1つずつ循環（...8番➔9番➔1番➔2番...）する野球の時系列順** で出力し（上から1番〜9番の順になぞらないこと！）、その打席が書かれていた列に応じて **"c": 1, "c": 2, "c": 3** を正確に設定してください！3アウト目（③）が出るまで [c:2]・[c:3] の打席を絶対に落とさないでください！`
+- **絶対厳守**: 必ず **先頭打者からスタートして打順が1つずつ循環（...8番➔9番➔1番➔2番...）する野球の時系列順** で出力し（上から1番〜9番の順になぞらないこと！）、その打席が書かれていた列に応じて **"c": 1, "c": 2, "c": 3** を正確に設定してください！3アウト目（③ または Ⅲ）が出るまで [c:2]・[c:3] の打席を絶対に落とさないでください！`
       : "";
 
     const leadOffConstraint = body.expectedLeadOffOrder
-      ? `\n🔥【絶対制約: 先頭打者】${sortedTargets[0]}回${sideLabel}の最初の打者（先頭打者）は必ず【${body.expectedLeadOffOrder}番打者】の行からスタートします！列最上部のイニング見出し番号「${sortedTargets[0]}」を必ず確認し、隣の列の打席を混入させたり空欄マスを読み飛ばしたりしないでください。`
-      : `\n🔥【絶対制約: 先頭打者】1回${sideLabel}の最初の打者は必ず【1番打者】の行からスタートします。列最上部のイニング見出し番号「1」の列だけを読み取り、右隣の2回の列を絶対に1回に混ぜないでください！`;
+      ? `\n🔥【絶対制約: 先頭打者】${sortedTargets[0]}回${sideLabel}の最初の打者（先頭打者）は必ず【${body.expectedLeadOffOrder}番打者】のマスからスタートします！列最上部のイニング見出し番号「${sortedTargets[0]}」を必ず確認し、隣の列の打席を混入させたり空欄マスを読み飛ばしたりしないでください。`
+      : `\n🔥【絶対制約: 先頭打者】1回${sideLabel}の最初の打者は必ず【1番打者】のマスからスタートします。列最上部のイニング見出し番号「1」の列だけを読み取り、右隣の2回の列を絶対に1回に混ぜないでください！`;
 
     const legendConstraint = legendImageIndex > 0
       ? `\n🔥【最優先: 添付画像${legendImageIndex}「チームのスコア記号早見表」】安打・アウト・投球記号・バントファウル・1塁牽制/2塁牽制/3塁牽制の書き方は画像${legendImageIndex}の定義を最優先で厳密に適用してください。`
       : "";
 
-    const prompt = `あなたは日本の早稲田式・成美堂式スコアブックを1球単位まで完璧に読み解くプロ公式記録員AIです。
+    const prompt = `あなたは日本の早稲田式・成美堂式・リトルシニア/高校野球式スコアブックを1画・1球単位まで完璧に読み解くプロ公式記録員AIです。
 以下の添付画像を照合し、**【${sortedTargets.join("回, ")}回（${sideLabel}）】の打席のみ** を時系列順に全打席・全投球・全進塁漏れなく抽出してください。
 （※列最上部のイニング番号を厳密に確認し、${sortedTargets.join(", ")}回以外のイニングの打席は絶対に出力しないでください！）
 
@@ -1404,68 +1409,88 @@ ${pitcherSpecLines.join("\n")}
 【対象イニングの確定スコア＆列情報（必ずこの得点数・列数・3アウト交代と整合させること）】
 ${targetInningMetaLines.join("\n")}
 
+【🔥最重要 0: 1マスの3ゾーン物理構造と「絶対誤読防止」鉄則（各マス必ず左➔中央➔右下の順に観察し obs に記述してから判定せよ！）】
+日本のスコアブックの1マスは必ず以下の3ゾーンで構成されています。結論（rc）を先に決め打ちせず、必ず3ゾーンを順番に観察して "obs" と "b1" を最初に出力してください:
+
+1. **【左ゾーン：左端の縦長細枠（マスの左約1/4）＝ BSO投球記号欄】**
+   - **⚠️印刷された横区切り線をボール『ー』と数えるミスを絶対にするな！**:
+     BSO細枠の内部は、用紙の仕様で2〜3段の小枠に分ける**薄い水平の印刷罫線（左枠線から右枠線まで隙間なく100%真っ直ぐ貫通している薄い線）**が最初から印刷されています。空欄の小枠やこの印刷横罫線を、手書きのボール横棒『ー』と誤認して "B","B","B" と水増しするミスは絶対厳禁です！
+     **手書きのボール『ー』は、左右の枠線から離れた内側に浮いている濃い短い横筆跡（または点『・』）だけ**です！
+   - **手書き投球記号の正確な対応（上から下へ1球目➔2球目➔3球目...の順に読む）**:
+     ・『○』（白抜き丸）＝ **見逃しストライク "S"** （※絶対にファウル "F" やボール "B" にしないこと！白丸は100%見逃しストライク！）
+     ・『●』（黒塗り丸）または『／』（斜線）＝ **空振りストライク "W"**
+     ・『ー』（左右に余白のある短い手書き横線）または『・』（点）＝ **ボール "B"**
+     ・『△』『▽』『レ』『V』（白抜き三角・チェック）＝ **ファウル "F"**
+     ・『▲』『▼』（黒塗り三角・二重三角・線入り△）＝ **バントファウル "BF"**
+   - **🔥インプレー最終球の鉄則（日本式スコアブックの大原則）**:
+     ゴロ・フライ・ライナー・安打・失策・野選・犠打・犠飛など**「バットに当たってインプレーになった最終球」は、左のBSO欄には一切記号を書かず、右のダイヤモンド領域の結果だけで表します！**
+     - 実例：左BSO欄に上から『○』『ー』『△』の3つが書かれ、ダイヤ中央に『Ⅰ』、右下に『︵4』（二飛）がある場合 ➔ 1球目="S"(○)、2球目="B"(ー)、3球目="F"(△)、4球目="X"(インプレー二飛) となり、p は **["S","B","F","X"]**（計4球）です！
+
+2. **【中央ゾーン：ひし形ダイヤモンド（本塁→1塁の実線有無 b1 ＆ ローマ数字/丸数字アウトカウント）】**
+   - **🔥最初にダイヤモンド右下辺（本塁→1塁の斜め点線）を確認し "b1" (true/false) を判定せよ！**:
+     ・**印刷された点線・破線のまま（手書きの実線や赤線が引かれていない）場合 ➔ "b1": false（1塁未到達＝100%この打席でアウト）**！
+       ⚠️ **"b1": false のマスを "walk"（四球）・"single"（単打）・"hit_by_pitch"・"error"・"fc" 等の出塁結果にすることは野球規則・記録法上100%あり得ない重大誤読なので絶対禁止です！**
+     ・**手書きの太い実線または赤線で本塁→1塁がしっかり結ばれている場合 ➔ "b1": true（出塁成功）**！
+   - **🔥ダイヤモンド中央のアウトカウント記号は【ローマ数字 Ⅰ・Ⅱ・Ⅲ】と【丸数字 ①・②・③】の両方に対応する！**:
+     リトルシニア・ボーイズ・高校・大学・草野球のスコアブックでは、1死・2死・3死を中央に書く際、丸数字 **①・②・③** だけでなく **ローマ数字『Ⅰ』（1アウト）・『Ⅱ』（2アウト）・『Ⅲ』（3アウト）** が極めて多く使われます！
+     ・**『Ⅰ』**: 上下に短い水平バーが付いた縦1本線（英大文字の『I』やカタカナの『エ』の形に見える！）➔ **1アウト（eo: 1）**！
+     ・**『Ⅱ』**: 上下に水平バーが付いた縦2本線 ➔ **2アウト（eo: 2）**！
+     ・**『Ⅲ』**: 上下に水平バーが付いた縦3本線 ➔ **3アウト（eo: 3、チェンジ）**！
+     ・**"b1": false（本塁→1塁が破線）かつ中央に Ⅰ / Ⅱ / Ⅲ または ① / ② / ③ があれば、その打席は100%アウト（o: 1以上, eo: 1〜3）です！絶対に 0死（o: 0）や四球にしてはいけません！**
+     ・逆に **"b1": true**（本塁→1塁が実線で一度出塁している）のに中央に Ⅰ/Ⅱ/Ⅲ・①/②/③ がある場合は、「出塁した後に後続打者の打席中に盗塁死・封殺等でアウトになった印」なので、この打席自体は出塁（o: 0）とし、そのアウトは後続打席の a（進塁死）に記録します。
+
+3. **【右下ゾーン：本塁→1塁線の外側に書かれる打撃結果・守備番号記号】**
+   - **🔥フライ（飛球 rc: "flyout"）の傘マーク・山なり曲線『⌒4』『︵4』を完璧に読め！**:
+     早稲田式・リトルシニア式では、フライ（飛球）は守備番号（1〜9）の上または左上に**上に凸の山なり曲線・傘マーク『⌒』『︵』**を付けて書きます！
+     ・**『︵4』『⌒4』（4の上に丸い傘マーク）＝ セカンドフライ（dir: "4", rc: "flyout", rl: "二飛"）**！
+       ⚠️手書きで上の曲線『⌒』と数字『4』がくっついたり近接していても、絶対に四球の英字『B』や『8』『9』と誤読しないこと！（四球なら必ず本塁→1塁に実線が引かれ "b1": true になります）。
+     ・同様に『︵1』=投飛("1")、『︵2』=捕飛("2")、『︵3』=一飛("3")、『︵5』=三飛("5")、『︵6』=遊飛("6")、『︵7』=左飛("7")、『︵8』=中飛("8")、『︵9』=右飛("9")。
+     ・ファウルフライ（邪飛）は『︵2F』『△2』『(2)』『︵2,』等 ➔ dir: "2F", rc: "flyout", rl: "捕邪飛"（一塁なら "3F" "一邪飛"、三塁なら "5F" "三邪飛"）。
+   - **ライナー（直球 rc: "flyout"）**:
+     守備番号の上や横に**真っ直ぐな直線バー『￣』『ー』**や『L』（例: 『4̅』『￣4』『4-』『6L』 ※ハイフンの右に送球先数字が無いもの）➔ dir: "4L" / "6L", rc: "flyout", rl: "二直" / "遊直"。
+   - **ゴロ・封殺（rc: "groundout"）**:
+     送球ハイフン繋ぎ『6-3』『4-3』『5-3』『1-3』『2-3』『6-4』『4-6』、または一塁無補殺『3』『〜3』➔ dir: "6-3" 等, rc: "groundout", rl: "遊ゴロ (6-3)" 等。
+   - **四球（rc: "walk"）の厳格条件**:
+     ①本塁→1塁に手書き実線がある（"b1": true）、②右下に明確な英字『B』（または『四』）がある、③手書きボールが4球ある（または確定四球出塁）のすべてを満たす場合のみ "walk" とすること！
+
 【超重要 1: 列ズレ・イニング終了切り線の誤読防止 ＆ 回途中継投の判定】
-- 1つのイニングは先頭打者から打順が1つずつ下へ進み（9番の次は1番へ戻る）、アウト丸数字 ① ➔ ② ➔ ③（3アウトチェンジ）が出た時点でそのイニングは終了です！
-- **⚠️イニング終了切り線の誤読厳禁**: 3アウト目（③）になったマスの右下隅や、その直下の空欄マスに引かれている短い斜線『／』やカギ線『∟』は「この回終了」を示す区切り印です！これを単打の斜線『/』や次の打席と誤読しないでください。③が出た時点でそのイニングの打席読取を終了してください。
+- 1つのイニングは先頭打者から打順が1つずつ下へ進み（9番の次は1番へ戻る）、3アウト目（③ または Ⅲ）が出た時点でそのイニングは終了です！
+- **⚠️イニング終了切り線の誤読厳禁**: 3アウト目（③ または Ⅲ）になったマスの右下隅や、その直下の空欄マスに引かれている斜線『／』やカギ線『∟』は「この回終了」を示す区切り印です！これを単打や次の打席と誤読せず、3アウト時点でそのイニングの読取を終了してください。
 - **投手交代（継投）横線の確認**: 同一イニングに複数の相手投手が跨っている場合、打席と打席の境界に横波線『〜〜』や二重横線『══』が引かれています。交代線より前の打席と後の打席でそれぞれ正しい投手名を pt に出力してください。${multiColumnRuleBlock}
 
-【超重要 1.5: 手書き数字の厳密判別ルール（数値誤読の徹底防止）】
-- **⚠️丸囲み数字『①』『②』『③』と守備位置番号『1』『2』『3』の絶対区別**:
-  ダイヤモンド中央付近の丸で囲まれた数字 **①・②・③ は「1アウト・2アウト・3アウト」を表すアウトカウント（eo: 1, 2, 3）**です！これを守備位置の "1"(投飛)・"2"(捕飛)・"3"(一飛) と絶対に誤読しないでください！
-- **手書き数字の字形照合と野球セオリー検算**:
-  - 内野ゴロの送球ルート（ハイフン繋ぎ）は、走者無しなら必ず一塁『-3』で終わります（"6-3", "4-3", "5-3", "1-3", "2-3"）。走者無しなのに "6-5" や "4-8" と読めた場合は "-3" の字形崩れでないか画像2で再確認してください。
-  - 外野の飛球・安打方向は "7"(左)・"8"(中)・"9"(右) です。手書きの『7』と『1』『9』、『4』と『6』、『3』と『5』『8』の筆跡を画像2の拡大マスで1画ずつ丁寧に確認してください。
-
-【超重要 2: 1球ごとの投球・牽制・ボーク順序（p）の完全抽出（必須）】
-各打席マスの投球記号欄（BSO欄）および各塁周辺の牽制・ボーク記号を拡大画像で1球目から順番に読み取り、以下の短縮コード配列 p で出力してください:
-- "B": ボール（『ー』『・』『B欄の●』『B』 ※無走者の打席では牽制やボークは存在しないため横棒『ー』は必ず "B"）
-- "S": 見逃しストライク（『○』『見逃しS』）
-- "W": 空振りストライク（『●』『／』『空振り』）
-- "BS": バント空振り（『／』に点・半黒丸『◐』・『BS』、または早見表のバント空振り記号）
-- "F": 通常のファウル（『△』『▽』『V』『レ』『F』などの白抜き三角・チェック記号）
-- "BF": バントファウル（『▲』『▼』などの黒塗り三角・二重三角・点や線入り△・『BF』、または早見表のバントファウル記号。2ストライク後の "BF" はスリーバント失敗＝三振）
-- "P1": 1塁牽制（早見表の1塁牽制記号、またはBSO欄の1本線付きカギ線『∟』『┬』・『1』『牽1』『一牽』『k1』・1塁ベース角への牽制線）
-- "P2": 2塁牽制（早見表の2塁牽制記号、またはBSO欄の2本線付き二重カギ線『∏』『キ』・『2』『牽2』『二牽』『k2』・2塁ベース角への牽制線）
-- "P3": 3塁牽制（早見表の3塁牽制記号、またはBSO欄の3本線付き三重カギ線・『3』『牽3』『三牽』『k3』・3塁ベース角への牽制線）
-- "BK": ボーク（『BK』・早見表のボーク記号。発生時は走者全員の1個進塁も a に m:"balk" で記録すること）
+【超重要 2: 1球ごとの投球・牽制・ボーク順序（p）のコード定義】
+- "B": ボール（手書き短横棒『ー』・点『・』・B欄の● ※無走者なら横棒は必ず "B"、印刷横罫線は除外！）
+- "S": 見逃しストライク（白丸『○』）
+- "W": 空振りストライク（黒丸『●』・斜線『／』）
+- "BS": バント空振り（点付き斜線・半黒丸『◐』・早見表のバント空振り記号）
+- "F": 通常のファウル（白抜き三角『△』『▽』・チェック『レ』『V』）
+- "BF": バントファウル（黒塗り三角『▲』『▼』・二重三角・線入り△。2ストライク後の "BF" はスリーバント失敗＝三振）
+- "P1" / "P2" / "P3": 1塁牽制 / 2塁牽制 / 3塁牽制（※必ず塁上に該当走者がいる場面のみ）
+- "BK": ボーク（走者全員の1個進塁も a に m:"balk" で記録）
 - "H": 安打になった最終球（単打・二塁打・三塁打・本塁打は末尾を必ず "H" にする）
-- "X": 安打以外のインプレー打球（ゴロ・フライ・ライナー・インフィールドフライ・犠打・犠飛・失策・野選・妨害は末尾を "X" にする）
+- "X": 安打以外のインプレー最終球（ゴロ・フライ・ライナー・インフィールドフライ・犠打・犠飛・失策・野選・妨害は末尾を必ず "X" にする）
 - "D": 死球になった球
-※【牽制・ボークと走者の整合ルール】: 牽制球（P1/P2/P3）およびボーク（BK）は走者がいる場面でのみ記録されます（走者1塁のみなら "P1"、2塁のみなら "P2"、3塁のみなら "P3"）。1塁・2塁・3塁の牽制記号の違いと塁上走者の位置の両方を照合して厳密に判別してください。
-※申告敬遠（rc: "intentional_walk"）以外の打席は、BSO合計のみ書かれたマスも最終カウントと結果に整合する配列を構成し、空配列にしないでください。
 
-【超重要 3: 早稲田式ダイヤモンド解読＆守備位置・打球方向（dir）の必須抽出】
-- **🔥最重要・出塁後の走塁死と打席凡退の区別**:
-  早稲田式では「安打・四死球・失策で一度1塁へ出塁した後、後続打者の打席中に盗塁死・封殺等でアウトになった走者」のマスにも、後からダイヤモンド中央に丸数字 ①②③ が書き込まれます！
-  したがって必ず最初に**ダイヤモンド右下辺（本塁→1塁線）**を確認してください:
-  1) 右下辺に安打線（実線/赤線 + 斜線 『/』『//』『///』）や四死球（『B』『D』）・失策（『E』）があり、1塁より先の進塁途中で切れて中央に丸数字がある場合 ➔ **この打席自体は安打・四死球・失策での出塁（o: 0）**です！（その丸数字アウトは後続打者の打席の advances に記録してください）。
-  2) 本塁→1塁へ到達できずにアウトになった場合（送球ハイフン『6-3』、飛球『8』、三振『K』等＋丸数字）のみ、この打席自体が凡退アウト（o: 1〜3）です！
-- **守備位置番号（1=投, 2=捕, 3=一, 4=二, 5=三, 6=遊, 7=左, 8=中, 9=右）を必ず dir に出力すること**:
-  - 安打: 右下1塁線脇の打球方向番号を読み取り dir: "7"(左), "8"(中), "9"(右), "7-8"(左中間), "8-9"(右中間), "6"(遊内安) 等とし、rc: "single"|"double"|"triple"|"home_run"、rl: "左前安打" / "右中間二塁打" / "遊撃内野安打" 等。
-  - ゴロ/封殺: 送球ルートを読み取り dir: "6-3", "4-3", "5-3", "1-3", "2-3", "6-4", "3" 等とし、rc: "groundout"、rl: "遊ゴロ (6-3)" 等。
-  - 併殺打/三重殺: dir: "6-4-3", "4-6-3", "5-4-3", "1-6-3" 等とし、rc: "double_play"（三重殺は "triple_play"）、rl: "遊併殺打 (6-4-3)" 等。
-  - フライ/邪飛/ライナー: dir: "8"(中飛), "2F"(捕邪飛), "6L"(遊直) 等とし、rc: "flyout"、rl: "中飛" / "捕邪飛" / "遊直" 等。
-  - インフィールドフライ: 『IF』『IFF』『(IF)』➔ rc: "infield_fly", dir: "6IF" 等, rl: "遊インフィールドフライ", o: 1。
-  - 三振: 『K』『SO』または2ストライク後のバントファウル ➔ rc: "strikeout", dir: "", rl: "空振り三振" / "見逃し三振" / "スリーバント失敗", o: 1。
-  - 振り逃げアウト: 『K 2-3』『振逃2-3』＋①②③ ➔ rc: "dropped_third_strike_out", dir: "K 2-3", rl: "振り逃げアウト (K 2-3)", o: 1。
-  - 振り逃げセーフ出塁: 『K』＋WP/PB/E2で1塁到達 ➔ rc: "dropped_third_strike", dir: "K-E2", rl: "振り逃げ出塁", o: 0。
-  - 犠打/犠飛: 四角やダイヤ囲み『1-3』『5-4』➔ rc: "sac_bunt", dir: "1-3", rl: "投犠打 (1-3)"。外野飛球で三塁走者生還 ➔ rc: "sac_fly", dir: "8", rl: "中犠飛"。
-  - 失策/野選: 『E6』『6E』➔ rc: "error", dir: "E6", rl: "遊失 (E6)"。『FC』『O.B.』➔ rc: "fc", dir: "FC6", rl: "遊野選 (FC6)"。
-  - 打撃妨害出塁 ➔ rc: "interference", dir: "INT2", rl: "打撃妨害 (捕手)", o: 0。守備妨害/反則打球アウト ➔ rc: "interference_out", dir: "INT", rl: "守備妨害アウト (INT)", o: 1。
-  - 四球 ➔ rc: "walk"、申告敬遠/敬遠 ➔ rc: "intentional_walk"、死球 ➔ rc: "hit_by_pitch"。
-  - 打席途中に走者が盗塁死・牽制死・走塁死して3アウトチェンジになった未完了マス ➔ rc: "other", rl: "打席途中断（走塁死チェンジ）", o: 1。
+【超重要 3: その他の打撃結果コード（rc）と守備番号（dir）】
+- 安打（b1:true）: 右下1塁線脇の方向番号を読み取り dir: "7"(左), "8"(中), "9"(右), "7-8"(左中間), "8-9"(右中間), "6"(遊内安) 等、rc: "single"|"double"|"triple"|"home_run"（単打=1塁実線+斜線/、二塁打=2塁実線+//、三塁打=3塁実線+///、本塁打=1周実線またはHR+////）。
+- 併殺打/三重殺: dir: "6-4-3", "4-6-3", "5-4-3", "1-6-3" 等、rc: "double_play" | "triple_play"。
+- インフィールドフライ: 『IF』『IFF』➔ rc: "infield_fly", dir: "6IF" 等, o: 1。
+- 三振: 『K』『SO』または2S後のバントファウル ➔ rc: "strikeout", dir: "", rl: "空振り三振" / "見逃し三振" / "スリーバント失敗", o: 1。
+- 振り逃げアウト: 『K 2-3』＋アウト記号 ➔ rc: "dropped_third_strike_out", dir: "K 2-3", o: 1。振り逃げセーフ出塁（b1:true）➔ rc: "dropped_third_strike", dir: "K-E2", o: 0。
+- 犠打/犠飛: 四角やダイヤ囲み『1-3』『5-4』➔ rc: "sac_bunt", dir: "1-3"。外野飛球で三塁走者タッチアップ生還 ➔ rc: "sac_fly", dir: "8"。
+- 失策/野選（b1:true）: 『E6』『6E』➔ rc: "error", dir: "E6"。『FC』『O.B.』➔ rc: "fc", dir: "FC6"。
+- 打撃妨害出塁 ➔ rc: "interference", dir: "INT2", o: 0。守備妨害アウト ➔ rc: "interference_out", dir: "INT", o: 1。
+- 申告敬遠/敬遠 ➔ rc: "intentional_walk"、死球 ➔ rc: "hit_by_pitch"。
+- 打席途中に走者が盗塁死・牽制死等で3アウトチェンジになった未完了マス ➔ rc: "other", rl: "打席途中断（走塁死チェンジ）", o: 1。
 
-【超重要 4: アウト数（o / eo）と進塁・得点（ru / a）】
-- 1イニングの o の合計は（最終回裏のサヨナラ勝ちを除き）必ず 3 です。丸数字 ①②③ から eo (1,2,3) を設定してください。
-- 盗塁(m:"steal")・盗塁死(m:"caught_stealing",io:true)・牽制死(m:"pickoff_out",io:true)・牽制悪送球(m:"pickoff_error")・暴投(m:"wp")・捕逸(m:"pb")・ボーク進塁(m:"balk")・送球間進塁『T』(m:"throw_advance")・走塁妨害『OBS』(m:"obstruction")・走者の守備妨害死『INT』(m:"interference_out",io:true)・アピール/離塁死(m:"appeal_out",io:true)・タイブレーク配置走者(m:"tiebreak")・走塁死/挟殺『TO』(m:"out_on_base",io:true)・打撃進塁(m:"hit"/"sac"/"fc"/"error"/"walk")を a に記録してください。進塁が無い凡退等は a:[] としてください。
-- 本塁生還は t:"HP", io:false とし、その打席の生還人数を ru に設定（イニング内の ru 合計＝確定得点）。
+【超重要 4: アウト数（o / eo）と進塁・得点（ru / a）・座標（box）・確信度（cf）】
+- 1イニングの o の合計は（最終回裏サヨナラを除き）必ず 3 です。ローマ数字 Ⅰ・Ⅱ・Ⅲ または丸数字 ①・②・③ から eo (1,2,3) を設定してください。
+- 盗塁(m:"steal")・盗塁死(m:"caught_stealing",io:true)・牽制死(m:"pickoff_out",io:true)・牽制悪送球(m:"pickoff_error")・暴投(m:"wp")・捕逸(m:"pb")・ボーク進塁(m:"balk")・送球間進塁『T』(m:"throw_advance")・走塁妨害『OBS』(m:"obstruction")・走者守備妨害死『INT』(m:"interference_out",io:true)・アピール死(m:"appeal_out",io:true)・タイブレーク走者(m:"tiebreak")・走塁死『TO』(m:"out_on_base",io:true)・打撃進塁(m:"hit"/"sac"/"fc"/"error"/"walk")を a に記録し、進塁無しの凡退は a:[] としてください。
+- 本塁生還は t:"HP", io:false とし、生還人数を ru に設定（イニング内の ru 合計＝確定得点）。
+- box は画像1（全体画像）上での [ymin, xmin, ymax, xmax]（0〜1000整数）。cf は "h"|"m"|"l"。
 
-【超重要 5: マス座標 box と確信度 cf】
-- box は画像1（全体画像）上での [ymin, xmin, ymax, xmax]（0〜1000整数4要素配列）。
-- cf は "h"(高)・"m"(中)・"l"(低)。迷いがあるマスのみ cf:"l" とし cr に短い理由を記載（通常は cr 省略可）。
-
-【出力JSONフォーマット（改行・インデント無しのコンパクト短縮キーJSONのみを返してください）】
-{"ab":[{"i":1,"c":1,"bo":1,"pt":"投手名","rc":"single","dir":"7","rl":"左前安打","rbi":0,"o":0,"eo":0,"ru":0,"p":["B","S","F","H"],"a":[{"rn":"選手名","f":"BAT","t":"1B","m":"hit","io":false,"pn":4}],"cf":"h","box":[205,320,272,376]}]}
+【出力JSONフォーマット（⚠️必ず obs ➔ b1 ➔ p ➔ eo ➔ o ➔ dir ➔ rc ➔ rl のキー順で出力し、視覚事実から論理的に結果を導くこと！改行無しのコンパクトJSONのみ返却）】
+{"ab":[{"i":1,"c":1,"bo":1,"pt":"天野","obs":"左:○,ー,△/中:Ⅰ/本一:破線/右下:⌒4","b1":false,"p":["S","B","F","X"],"eo":1,"o":1,"dir":"4","rc":"flyout","rl":"二飛","rbi":0,"ru":0,"a":[],"cf":"h","box":[205,320,272,376]},{"i":1,"c":1,"bo":2,"pt":"天野","obs":"左:ー,○/中:無/本一:実線/右下:7","b1":true,"p":["B","S","H"],"eo":1,"o":0,"dir":"7","rc":"single","rl":"左前安打","rbi":0,"ru":0,"a":[{"rn":"選手名","f":"BAT","t":"1B","m":"hit","io":false,"pn":3}],"cf":"h","box":[272,320,339,376]}]}
 ※ rc は必ず "single"|"double"|"triple"|"home_run"|"walk"|"intentional_walk"|"hit_by_pitch"|"interference"|"sac_bunt"|"sac_fly"|"groundout"|"flyout"|"infield_fly"|"strikeout"|"dropped_third_strike_out"|"dropped_third_strike"|"double_play"|"triple_play"|"interference_out"|"error"|"fc"|"other" のいずれかとしてください。`;
 
     const rawChunk = await callGeminiStructuredJson<RawGeminiChunkResponse>(
@@ -1511,9 +1536,10 @@ ${targetInningMetaLines.join("\n")}
         ocrPitcherHint
       );
 
-      const rawResultCode = ab.rc ?? ab.resultCode;
-      const rawResultLabel = ab.rl ?? ab.resultLabel;
-      const rawDir = ab.dir ?? ab.battedDirection;
+      const reconciled = reconcileRawAtBatEvidence(ab, activeBases);
+      const rawResultCode = reconciled.rawResultCode;
+      const rawResultLabel = reconciled.rawResultLabel;
+      const rawDir = reconciled.rawDir;
       const resultCode = inferCanonicalResultCode(
         rawResultCode,
         rawResultLabel || rawDir
@@ -1524,7 +1550,7 @@ ${targetInningMetaLines.join("\n")}
         rawResultLabel
       );
 
-      const rawAdvances = ab.a || ab.advances || [];
+      const rawAdvances = reconciled.rawAdvances;
       const advances: ScorebookV2Advance[] = rawAdvances.map((adv) => {
         const pnVal = adv.pn ?? adv.pitchNumber;
         return {
@@ -1540,7 +1566,7 @@ ${targetInningMetaLines.join("\n")}
       });
 
       // 【数学的自己補正 1】打席結果コードと走塁死(advances.isOut)から outsInPlay の矛盾を自動補正
-      const rawOutsVal = Math.max(0, Math.min(3, ab.o ?? ab.outsInPlay ?? 0));
+      const rawOutsVal = Math.max(0, Math.min(3, reconciled.outsInPlay));
       const runnerOutsInPlay = advances.filter(
         (a) => a.isOut && a.from !== "BAT"
       ).length;
@@ -1577,7 +1603,7 @@ ${targetInningMetaLines.join("\n")}
       } else if (isDefiniteBatterOut) {
         outsVal = Math.min(3, Math.max(1 + runnerOutsInPlay, rawOutsVal || 1));
       } else if (isSafeBatterReach) {
-        // 出塁後に後続打席で盗塁死等した丸数字①②③を当該打席のアウトと誤認するケースを排除
+        // 出塁後に後続打席で盗塁死等した丸数字①②③・ローマ数字ⅠⅡⅢを当該打席のアウトと誤認するケースを排除
         outsVal = Math.min(
           3,
           runnerOutsInPlay + (batterOutInAdvances ? 1 : 0)
@@ -1585,7 +1611,7 @@ ${targetInningMetaLines.join("\n")}
       }
 
       const normalizedPitches = normalizePitchArray(
-        ab.p || ab.pitches || [],
+        reconciled.rawPitches,
         resultCode,
         advances,
         activeBases
@@ -1682,7 +1708,7 @@ ${targetInningMetaLines.join("\n")}
         battedDirection: harmonizedFielding.battedDirection,
         rbi: Math.max(0, ab.rbi ?? effectiveRuns),
         outsInPlay: outsVal,
-        endingOuts: Math.max(0, Math.min(3, ab.eo ?? ab.endingOuts ?? 0)),
+        endingOuts: Math.max(0, Math.min(3, reconciled.endingOuts)),
         runsInPlay: effectiveRuns,
         balls,
         strikes,
@@ -2412,28 +2438,45 @@ async function callGeminiStructuredJson<T>(
         }),
       });
 
-      // 万一 includeThoughts / thinkingConfig / mediaResolution のパラメータ仕様差異で 400 が返った場合は非対応項目を除去して即座に同モデル再送
+      // 万一 mediaResolution / thinkingLevel 等のパラメータ仕様差異で 400 が返った場合でも、
+      // 思考モード（thinkingConfig）を丸ごと消去せず、原因パラメータのみピンポイントで降格・除去して推論精度を維持する
       if (!res.ok && res.status === 400) {
         const firstErrText = await res.text();
         const lowerErr = firstErrText.toLowerCase();
-        const isConfigParamIssue =
-          lowerErr.includes("thinking") ||
-          lowerErr.includes("includethoughts") ||
-          lowerErr.includes("include_thoughts") ||
+        const hasMediaIssue =
           lowerErr.includes("mediaresolution") ||
           lowerErr.includes("media_resolution");
-        if (isConfigParamIssue) {
+        const hasThinkingLevelIssue =
+          lowerErr.includes("thinkinglevel") ||
+          lowerErr.includes("thinking_level");
+        const hasIncludeThoughtsIssue =
+          lowerErr.includes("includethoughts") ||
+          lowerErr.includes("include_thoughts");
+        const hasAnyThinkingIssue =
+          hasThinkingLevelIssue ||
+          hasIncludeThoughtsIssue ||
+          lowerErr.includes("thinking");
+
+        if (hasMediaIssue || hasAnyThinkingIssue) {
           scheduleWatchdog(cfg.firstResponseTimeoutMs, "応答待機タイムアウト");
           const fallbackGenConfig: Record<string, unknown> = {
             temperature: 0.05,
             responseMimeType: "application/json",
           };
-          if (
-            !lowerErr.includes("mediaresolution") &&
-            !lowerErr.includes("media_resolution")
-          ) {
+          if (!hasMediaIssue) {
             fallbackGenConfig.mediaResolution = "MEDIA_RESOLUTION_HIGH";
           }
+          if (!hasAnyThinkingIssue && generationConfig.thinkingConfig) {
+            // mediaResolution のみが非対応だった場合は thinkingConfig を100%そのまま保持！
+            fallbackGenConfig.thinkingConfig = generationConfig.thinkingConfig;
+          } else if (hasThinkingLevelIssue && !hasIncludeThoughtsIssue) {
+            // thinkingLevel 非対応モデル（budget方式モデル）には thinkingBudget で深い推論を維持！
+            fallbackGenConfig.thinkingConfig = {
+              thinkingBudget: mode === "chunk" ? 6144 : 3072,
+              includeThoughts: true,
+            };
+          }
+
           res = await fetch(endpoint, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -2447,6 +2490,28 @@ async function callGeminiStructuredJson<T>(
               generationConfig: fallbackGenConfig,
             }),
           });
+
+          // それでもまだ 400 の場合のみ最小構成で最終リトライ
+          if (!res.ok && res.status === 400 && fallbackGenConfig.thinkingConfig) {
+            await res.text();
+            scheduleWatchdog(cfg.firstResponseTimeoutMs, "応答待機タイムアウト");
+            res = await fetch(endpoint, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              signal: controller.signal,
+              body: JSON.stringify({
+                contents: [
+                  {
+                    parts: [{ text: prompt }, ...imageParts],
+                  },
+                ],
+                generationConfig: {
+                  temperature: 0.05,
+                  responseMimeType: "application/json",
+                },
+              }),
+            });
+          }
         } else {
           attemptErrors.push(`[${cfg.model}: リクエスト形式エラー(400)]`);
           blockedInThisRequest.add(cfg.model);
@@ -2827,6 +2892,184 @@ function inferPickoffCodeFromContext(
   return "pickoff";
 }
 
+interface ReconciledAtBatEvidence {
+  rawResultCode?: string;
+  rawResultLabel?: string;
+  rawDir?: string;
+  outsInPlay: number;
+  endingOuts: number;
+  rawPitches: string[];
+  rawAdvances: RawGeminiAdvance[];
+}
+
+function extractPitchesFromObsLeftZone(obs: string): string[] {
+  const m = obs.match(/左(?:BSO)?\s*[:：]\s*([^/]+)/i);
+  if (!m) return [];
+  const zone = m[1].trim();
+  if (!zone || zone === "無" || zone === "なし" || zone === "空") return [];
+
+  const tokens: string[] = [];
+  for (const ch of Array.from(zone)) {
+    if (ch === "○" || ch === "◯" || ch === "〇") {
+      tokens.push("S");
+    } else if (ch === "●" || ch === "／") {
+      tokens.push("W");
+    } else if (ch === "ー" || ch === "－" || ch === "-" || ch === "・") {
+      tokens.push("B");
+    } else if (ch === "△" || ch === "▽" || ch === "レ") {
+      tokens.push("F");
+    } else if (ch === "▲" || ch === "▼") {
+      tokens.push("BF");
+    }
+  }
+  return tokens;
+}
+
+/**
+ * Stage 2 の視覚観察フィールド（obs / b1）と構造化フィールド（rc / dir / eo / o / p / a）の論理整合を検証し、
+ * 「本塁→1塁が破線のまま（b1:false）かつ中央にローマ数字 Ⅰ・Ⅱ・Ⅲ や丸数字 ①・②・③ があるのに四球（walk）になる」等の矛盾を決定論的に自己補正する。
+ */
+function reconcileRawAtBatEvidence(
+  ab: RawGeminiAtBat,
+  activeBases: Record<"1B" | "2B" | "3B", boolean>
+): ReconciledAtBatEvidence {
+  const obs = (ab.obs || "").trim();
+  let rawResultCode = (ab.rc ?? ab.resultCode)?.trim();
+  let rawResultLabel = (ab.rl ?? ab.resultLabel)?.trim();
+  let rawDir = (ab.dir ?? ab.battedDirection)?.trim();
+  let outsInPlay = Math.max(0, Math.min(3, ab.o ?? ab.outsInPlay ?? 0));
+  let endingOuts = Math.max(0, Math.min(3, ab.eo ?? ab.endingOuts ?? 0));
+  let rawPitches = [...(ab.p || ab.pitches || [])];
+  let rawAdvances = [...(ab.a || ab.advances || [])];
+
+  // 1. 中央ゾーンのローマ数字（Ⅰ・Ⅱ・Ⅲ）および丸数字（①・②・③）から endingOuts を補完
+  if (endingOuts === 0 && obs) {
+    const centerMatch = obs.match(/(?:中|中央)\s*[:：]\s*([^/]+)/);
+    const centerText = centerMatch ? centerMatch[1].trim() : "";
+    if (/[Ⅲ③]|III/.test(centerText)) {
+      endingOuts = 3;
+    } else if (/[Ⅱ②]|II/.test(centerText)) {
+      endingOuts = 2;
+    } else if (/[Ⅰ①]|(?<![A-Za-z])I(?![A-Za-z])/.test(centerText)) {
+      endingOuts = 1;
+    }
+  }
+
+  // 2. 本塁→1塁線の実線有無（b1）の復元
+  let effectiveB1: boolean | undefined =
+    typeof ab.b1 === "boolean" ? ab.b1 : undefined;
+  if (effectiveB1 === undefined && obs) {
+    if (/本一\s*[:：]?\s*(?:破線|点線|無|なし|未)/.test(obs)) {
+      effectiveB1 = false;
+    } else if (/本一\s*[:：]?\s*(?:実線|赤線|有|あり|到達)/.test(obs)) {
+      effectiveB1 = true;
+    }
+  }
+
+  // 右下ゾーン観察テキストの抽出
+  const rbMatch = obs.match(/(?:右下|打球)\s*[:：]\s*([^/]+)/);
+  const rbText = rbMatch ? rbMatch[1].trim() : "";
+  if (
+    !rawDir &&
+    rbText &&
+    rbText !== "無" &&
+    rbText !== "なし" &&
+    !/^(?:B|BB|四球|D|死球)$/i.test(rbText)
+  ) {
+    const cleanedRb = rbText.replace(/\(.*?\)|（.*?）/g, "").trim();
+    if (cleanedRb) {
+      rawDir = cleanedRb;
+    }
+  }
+
+  const prelimCode = inferCanonicalResultCode(
+    rawResultCode,
+    rawResultLabel || rawDir
+  );
+
+  const isReachWithoutIntentionalWalk =
+    prelimCode === "walk" ||
+    prelimCode === "hit_by_pitch" ||
+    prelimCode === "single" ||
+    prelimCode === "double" ||
+    prelimCode === "triple" ||
+    prelimCode === "error" ||
+    prelimCode === "fc" ||
+    prelimCode === "dropped_third_strike";
+
+  const hasAnyActiveRunner =
+    activeBases["1B"] || activeBases["2B"] || activeBases["3B"];
+  const combinedHint = `${rawDir || ""} ${rawResultLabel || ""} ${rbText}`.trim();
+  const hasExplicitOutPlaySymbol =
+    /[1-9]-[1-9]/.test(combinedHint) ||
+    /[⌒︵︶∩^]\s*[1-9]/.test(combinedHint) ||
+    /^[1-9][FL]?$/i.test(rawDir || "") ||
+    /\b(?:K|SO)\b|三振|飛|フライ|ライナー|ゴロ/i.test(combinedHint);
+
+  // 3. 本塁→1塁が破線のまま（effectiveB1 === false）なのに出塁結果になっている場合、または無走者でアウト記号＋守備記号があるのに四球になっている場合の自己補正
+  const isImpossibleSafeReach =
+    (effectiveB1 === false && isReachWithoutIntentionalWalk) ||
+    (prelimCode === "walk" &&
+      endingOuts >= 1 &&
+      !hasAnyActiveRunner &&
+      hasExplicitOutPlaySymbol);
+
+  if (isImpossibleSafeReach) {
+    if (/[1-9]-[1-9]-[1-9]/.test(combinedHint)) {
+      rawResultCode = "double_play";
+      outsInPlay = Math.max(2, outsInPlay);
+    } else if (/[1-9]-[1-9]/.test(combinedHint)) {
+      rawResultCode = "groundout";
+      outsInPlay = Math.max(1, outsInPlay);
+    } else if (/\b(?:K|SO)\b|三振/i.test(combinedHint)) {
+      rawResultCode = "strikeout";
+      outsInPlay = Math.max(1, outsInPlay);
+    } else {
+      rawResultCode = "flyout";
+      outsInPlay = Math.max(1, outsInPlay);
+    }
+
+    // 誤った「四球」「安打」等のラベルをクリアし、守備記号から正しい日本語表記（例: 二飛）を再構成させる
+    if (
+      rawResultLabel &&
+      /四球|死球|単打|安打|ヒット|二塁打|三塁打|失策|野選/.test(rawResultLabel)
+    ) {
+      rawResultLabel = "";
+    }
+
+    // 誤判定に引きずられて作られた架空の「打者→1塁セーフ進塁」を除去
+    rawAdvances = rawAdvances.filter((adv) => {
+      const f = normalizeFromBase(adv.f ?? adv.from);
+      const isOut = Boolean(adv.io ?? adv.isOut);
+      return !(f === "BAT" && !isOut);
+    });
+
+    // obs の左BSO欄観察メモがあれば、逆算捏造された投球配列を実際の視覚観察記号で上書き復元
+    const obsPitches = extractPitchesFromObsLeftZone(obs);
+    if (obsPitches.length > 0) {
+      rawPitches =
+        rawResultCode === "strikeout" ? obsPitches : [...obsPitches, "X"];
+    }
+  } else if (
+    effectiveB1 === false &&
+    endingOuts >= 1 &&
+    outsInPlay === 0 &&
+    prelimCode !== "intentional_walk"
+  ) {
+    outsInPlay = 1;
+  }
+
+  return {
+    rawResultCode,
+    rawResultLabel,
+    rawDir,
+    outsInPlay,
+    endingOuts,
+    rawPitches,
+    rawAdvances,
+  };
+}
+
 function normalizePitchArray(
   rawPitches: string[],
   resultCode: CanonicalAtBatResult,
@@ -2853,6 +3096,7 @@ function normalizePitchArray(
     } else if (
       s === "bunt_swinging" ||
       s === "bs" ||
+      s === "◐" ||
       s.includes("バント空")
     ) {
       mapped.push("bunt_swinging");
@@ -2900,11 +3144,21 @@ function normalizePitchArray(
       mapped.push("pickoff_3b");
     } else if (s === "pickoff" || s === "p" || s === "k" || s.includes("牽")) {
       mapped.push(contextualPickoff);
-    } else if (s === "ball" || s === "b" || s.includes("ボール")) {
+    } else if (
+      s === "ball" ||
+      s === "b" ||
+      s === "ー" ||
+      s === "－" ||
+      s === "-" ||
+      s === "・" ||
+      s.includes("ボール")
+    ) {
       mapped.push("ball");
     } else if (
       s === "swinging_strike" ||
       s === "w" ||
+      s === "●" ||
+      s === "／" ||
       s.includes("空振") ||
       s.includes("swing")
     ) {
@@ -2912,11 +3166,21 @@ function normalizePitchArray(
     } else if (
       s === "strike" ||
       s === "s" ||
+      s === "○" ||
+      s === "◯" ||
+      s === "〇" ||
       s.includes("見逃") ||
       s.includes("ストライク")
     ) {
       mapped.push("strike");
-    } else if (s === "foul" || s === "f" || s.includes("ファウル")) {
+    } else if (
+      s === "foul" ||
+      s === "f" ||
+      s === "△" ||
+      s === "▽" ||
+      s === "レ" ||
+      s.includes("ファウル")
+    ) {
       mapped.push("foul");
     } else if (s === "hbp" || s === "d" || s.includes("死球")) {
       mapped.push("hbp");
@@ -2980,6 +3244,30 @@ function normalizePitchArray(
       return ["balk"];
     }
     return [];
+  }
+
+  // インプレー結果（安打・ゴロ・フライ等）の前に印刷横罫線の誤読等でボールが4球以上入っている場合は3球上限に正規化
+  if (isHitResult || isInPlayOutOrReach) {
+    let ballSeen = 0;
+    let pureStrikeSeen = 0;
+    const sanitizedPreInPlay: CanonicalPitchResult[] = [];
+    for (let idx = 0; idx < mapped.length; idx++) {
+      const p = mapped[idx];
+      if (p === "ball") {
+        if (ballSeen >= 3) continue;
+        ballSeen += 1;
+      } else if (
+        p === "strike" ||
+        p === "swinging_strike" ||
+        p === "bunt_swinging"
+      ) {
+        if (pureStrikeSeen >= 2) continue;
+        pureStrikeSeen += 1;
+      }
+      sanitizedPreInPlay.push(p);
+    }
+    mapped.length = 0;
+    mapped.push(...sanitizedPreInPlay);
   }
 
   const last = mapped[mapped.length - 1];

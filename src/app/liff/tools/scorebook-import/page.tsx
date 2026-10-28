@@ -909,7 +909,7 @@ export default function LiffScorebookImportPage() {
         nextLeadOffOrder?: number;
         fromCache?: boolean;
       }> => {
-        const cacheKey = `${selectedMatchId}:${
+        const cacheKey = `v3:${selectedMatchId}:${
           isTop ? "top" : "bottom"
         }:${apiImg.base64.length}:${structureFp}:${expectedLeadOff}:${targetInnings.join(
           ","

@@ -217,11 +217,16 @@ export function parseFieldingMeta(
     }
   }
 
-  // 4. E6 / FC6 / 6F / 6L / 6IF / 単独 1〜9
+  // 4. E6 / FC6 / 6F / 6L / 6IF / ⌒4 / ︵4 / △2 / (2) / 4￣ / 単独 1〜9
   if (!primaryPos) {
+    const strippedDecorDir = dir
+      .replace(/[\u0304\u0305]/g, "")
+      .replace(/^[⌒︵︶∩^~〜￣ー\-△▲(（\s]+/, "")
+      .replace(/[⌒︵︶∩^~〜￣ー\-△▲)）,，.\s]+$/, "");
     const codeDigitMatch =
-      dir.match(/^(?:E|FC|INT|K\s*)?([1-9])(?:F|L|IF|SF|E|A)?$/i) ||
-      label.match(/\((?:E|FC|K\s*)?([1-9])(?:A)?\)/i);
+      strippedDecorDir.match(
+        /^(?:E|FC|INT|K\s*)?([1-9])(?:F|L|IF|SF|E|A)?$/i
+      ) || label.match(/\((?:E|FC|K\s*)?([1-9])(?:A)?\)/i);
     if (codeDigitMatch && isValidPosDigit(codeDigitMatch[1])) {
       primaryPos = codeDigitMatch[1];
       if (
@@ -276,14 +281,20 @@ export function parseFieldingMeta(
   if (
     label.includes("邪") ||
     label.includes("ファウル") ||
-    /^[1-9]F$/i.test(dir) ||
-    /^[1-9]SF$/i.test(dir)
+    /^[⌒︵︶∩^]?[1-9]F$/i.test(dir) ||
+    /^[⌒︵︶∩^]?[1-9]SF$/i.test(dir) ||
+    /^[△▲][1-9]$/.test(dir) ||
+    /^[(（][1-9][)）]$/.test(dir) ||
+    /^[⌒︵]?[1-9][,，]$/.test(dir)
   ) {
     flyStyle = "foul_fly";
   } else if (
     label.includes("直") ||
     label.includes("ライナー") ||
-    /^[1-9]L$/i.test(dir)
+    /^[⌒︵]?[1-9]L$/i.test(dir) ||
+    /[\u0304\u0305￣]/.test(dir) ||
+    /^[1-9][ー\-]$/.test(dir) ||
+    /^[ー￣][1-9]$/.test(dir)
   ) {
     flyStyle = "liner";
   }
@@ -683,12 +694,18 @@ export function harmonizeOcrFieldingAndLabel(
   ]);
 
   const finalLabel =
-    genericSet.has(cleanLabel) || /^[0-9EFCLKS\s-]+$/i.test(cleanLabel)
+    genericSet.has(cleanLabel) ||
+    /^[0-9EFCLKS⌒︵︶∩^~〜￣ー\-△▲()（），,\s\u0304\u0305]+$/i.test(cleanLabel)
       ? composed.resultLabel
       : cleanLabel;
 
+  const hasRawDecorGlyph =
+    /[⌒︵︶∩^~〜￣ー△▲()（），,\u0304\u0305]/.test(cleanDir) ||
+    /^[1-9]-$/.test(cleanDir);
+
   return {
-    battedDirection: cleanDir || composed.battedDirection,
+    battedDirection:
+      !cleanDir || hasRawDecorGlyph ? composed.battedDirection : cleanDir,
     resultLabel: finalLabel,
   };
 }

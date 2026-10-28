@@ -197,16 +197,24 @@ export function inferCanonicalResultCode(
     label.includes("直") ||
     label.includes("ライナー") ||
     label.includes("邪飛") ||
-    /[1-9][FL]$/i.test(upper)
+    /[1-9][FL]$/i.test(upper) ||
+    /[⌒︵︶∩^]\s*[1-9]/.test(label) ||
+    /[1-9]\s*[⌒︵︶∩^￣\u0304\u0305]/.test(label) ||
+    /^[△▲(（][1-9][)）]?$/.test(label) ||
+    /^[1-9][ー\-]$/.test(label)
   ) {
     return "flyout";
   }
   if (
     label.includes("ゴロ") ||
     label.includes("封殺") ||
-    /^[1-9]-[1-9]/.test(upper)
+    /^[1-9]-[1-9]/.test(upper) ||
+    /^[~〜][1-9]$/.test(label)
   ) {
     return "groundout";
+  }
+  if (/^[1-9]$/.test(upper)) {
+    return "flyout";
   }
 
   return "other";
