@@ -21,12 +21,17 @@ import {
   ArrowDown,
   ArrowRightLeft,
   Check,
+  Clock,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import {
   ADVANCE_METHOD_LABELS,
   AT_BAT_RESULT_PRESETS,
   LEGACY_PICKOFF_PRESET,
   PITCH_RESULT_PRESETS,
+  formatElapsedSeconds,
+  formatTotalElapsedSeconds,
   isNonPitchMoundEvent,
   isPickoffPitch,
   type AdvanceMethodCode,
@@ -34,6 +39,7 @@ import {
   type CanonicalPitchResult,
   type ImportScopeMode,
   type NormalizedBox,
+  type ScorebookAnalysisTimingSummary,
   type ScorebookSheetStructure,
   type ScorebookV2Advance,
   type ScorebookV2AtBat,
@@ -76,6 +82,7 @@ interface Step3PinpointReviewProps {
   onBack: () => void;
   onSave: () => void;
   isSaving: boolean;
+  timingSummary?: ScorebookAnalysisTimingSummary | null;
   errorMessage?: string | null;
   onDismissError?: () => void;
 }
@@ -93,6 +100,7 @@ export function Step3PinpointReview({
   onBack,
   onSave,
   isSaving,
+  timingSummary = null,
   errorMessage,
   onDismissError,
 }: Step3PinpointReviewProps) {
@@ -105,6 +113,7 @@ export function Step3PinpointReview({
   const [editingAtBatId, setEditingAtBatId] = useState<string | null>(null);
   const [croppedCellUrl, setCroppedCellUrl] = useState<string | null>(null);
   const [showFullSheetInModal, setShowFullSheetInModal] = useState(false);
+  const [showTimingDetails, setShowTimingDetails] = useState(true);
 
   useEffect(() => {
     setMounted(true);
@@ -501,8 +510,181 @@ export function Step3PinpointReview({
     []
   );
 
+  const topTimingEntries = useMemo(
+    () => (timingSummary ? timingSummary.inningEntries.filter((e) => e.isTop) : []),
+    [timingSummary]
+  );
+  const bottomTimingEntries = useMemo(
+    () => (timingSummary ? timingSummary.inningEntries.filter((e) => !e.isTop) : []),
+    [timingSummary]
+  );
+  const topTimingSumMs = useMemo(
+    () => topTimingEntries.reduce((sum, e) => sum + e.durationMs, 0),
+    [topTimingEntries]
+  );
+  const bottomTimingSumMs = useMemo(
+    () => bottomTimingEntries.reduce((sum, e) => sum + e.durationMs, 0),
+    [bottomTimingEntries]
+  );
+
   return (
     <div className="space-y-4">
+      {/* AI解析タイム計測サマリー（トータル秒数＋イニング別秒数） */}
+      {timingSummary && timingSummary.inningEntries.length > 0 && (
+        <section className="rounded-3xl bg-card border-2 border-indigo-500/35 p-4 space-y-2.5 shadow-xs">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2">
+              <Clock className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+              <h2 className="text-xs font-black text-foreground">
+                AI解析タイム計測
+              </h2>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <span className="px-2.5 py-1 rounded-lg bg-indigo-600 text-white text-[11px] font-black tabular-nums">
+                合計 {formatTotalElapsedSeconds(timingSummary.deepTotalMs)}
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowTimingDetails((prev) => !prev)}
+                className="px-2 py-1 rounded-lg bg-muted hover:bg-muted/80 border border-border text-[10px] font-black text-foreground inline-flex items-center gap-0.5 cursor-pointer"
+              >
+                <span>{showTimingDetails ? "内訳を隠す" : "イニング別を表示"}</span>
+                {showTimingDetails ? (
+                  <ChevronUp className="w-3 h-3" />
+                ) : (
+                  <ChevronDown className="w-3 h-3" />
+                )}
+              </button>
+            </div>
+          </div>
+
+          {typeof timingSummary.structureTotalMs === "number" &&
+            timingSummary.structureTotalMs > 0 && (
+              <p className="text-[10px] font-bold text-muted-foreground tabular-nums">
+                全工程トータル:{" "}
+                <span className="font-black text-foreground">
+                  {formatTotalElapsedSeconds(
+                    timingSummary.structureTotalMs + timingSummary.deepTotalMs
+                  )}
+                </span>
+                （骨格スキャン {formatElapsedSeconds(timingSummary.structureTotalMs)} ＋ 全イニング解析{" "}
+                {formatElapsedSeconds(timingSummary.deepTotalMs)}）
+              </p>
+            )}
+
+          {showTimingDetails && (
+            <div className="space-y-2 pt-0.5">
+              {topTimingEntries.length > 0 && (
+                <div className="p-2.5 rounded-2xl bg-muted border border-border space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-black text-foreground">
+                      先攻（表）イニング別秒数
+                    </span>
+                    <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 tabular-nums">
+                      小計 {formatElapsedSeconds(topTimingSumMs)}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {topTimingEntries.map((entry) => {
+                      const isSelected =
+                        activeSide === "top" &&
+                        entry.innings.length === 1 &&
+                        selectedInning === entry.innings[0];
+                      return (
+                        <button
+                          key={entry.key}
+                          type="button"
+                          onClick={() => {
+                            setActiveSide("top");
+                            if (entry.innings.length === 1) {
+                              setSelectedInning(entry.innings[0]);
+                            } else {
+                              setSelectedInning("all");
+                            }
+                          }}
+                          className={`px-2 py-1 rounded-lg text-[10px] font-black tabular-nums inline-flex items-center gap-1 transition-all cursor-pointer ${
+                            isSelected
+                              ? "bg-indigo-600 text-white border border-indigo-600"
+                              : "bg-card hover:bg-card/80 border border-border text-foreground"
+                          }`}
+                        >
+                          <span>{entry.label}</span>
+                          <span
+                            className={
+                              isSelected
+                                ? "text-white"
+                                : "text-indigo-600 dark:text-indigo-400"
+                            }
+                          >
+                            {entry.fromCache
+                              ? "キャッシュ済"
+                              : formatElapsedSeconds(entry.durationMs)}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {bottomTimingEntries.length > 0 && (
+                <div className="p-2.5 rounded-2xl bg-muted border border-border space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-black text-foreground">
+                      後攻（裏）イニング別秒数
+                    </span>
+                    <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 tabular-nums">
+                      小計 {formatElapsedSeconds(bottomTimingSumMs)}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {bottomTimingEntries.map((entry) => {
+                      const isSelected =
+                        activeSide === "bottom" &&
+                        entry.innings.length === 1 &&
+                        selectedInning === entry.innings[0];
+                      return (
+                        <button
+                          key={entry.key}
+                          type="button"
+                          onClick={() => {
+                            setActiveSide("bottom");
+                            if (entry.innings.length === 1) {
+                              setSelectedInning(entry.innings[0]);
+                            } else {
+                              setSelectedInning("all");
+                            }
+                          }}
+                          className={`px-2 py-1 rounded-lg text-[10px] font-black tabular-nums inline-flex items-center gap-1 transition-all cursor-pointer ${
+                            isSelected
+                              ? "bg-indigo-600 text-white border border-indigo-600"
+                              : "bg-card hover:bg-card/80 border border-border text-foreground"
+                          }`}
+                        >
+                          <span>{entry.label}</span>
+                          <span
+                            className={
+                              isSelected
+                                ? "text-white"
+                                : "text-indigo-600 dark:text-indigo-400"
+                            }
+                          >
+                            {entry.fromCache
+                              ? "キャッシュ済"
+                              : formatElapsedSeconds(entry.durationMs)}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+      )}
+
       {/* 総合整合性サマリーバナー */}
       {totalIssuesCount === 0 ? (
         <section className="rounded-3xl bg-emerald-500/10 border border-emerald-500/35 p-4 flex items-start gap-3">

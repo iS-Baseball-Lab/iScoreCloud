@@ -19,6 +19,7 @@ import {
   Grid3X3,
   SlidersHorizontal,
   Move,
+  Clock,
 } from "lucide-react";
 import {
   bilinearGridPoint,
@@ -28,16 +29,19 @@ import {
 } from "@/lib/liff/scorebook-grid";
 import { normalizePositionCode } from "@/lib/liff/scorebook-validator";
 import { ActionStatusBanner } from "./ActionStatusBanner";
-import type {
-  ImportScopeMode,
-  NormalizedPoint,
-  ScorebookBatterSlot,
-  ScorebookGridCorners,
-  ScorebookInningMeta,
-  ScorebookPitcherStint,
-  ScorebookRosterPlayer,
-  ScorebookSheetStructure,
-  ScorebookSubstitution,
+import {
+  formatElapsedSeconds,
+  formatTotalElapsedSeconds,
+  type ImportScopeMode,
+  type NormalizedPoint,
+  type ScorebookBatterSlot,
+  type ScorebookGridCorners,
+  type ScorebookInningMeta,
+  type ScorebookPitcherStint,
+  type ScorebookRosterPlayer,
+  type ScorebookSheetStructure,
+  type ScorebookSubstitution,
+  type ScorebookTimingEntry,
 } from "@/types/scorebook-v2";
 
 interface Step2StructureCheckProps {
@@ -52,10 +56,16 @@ interface Step2StructureCheckProps {
   onRescanSide?: (isTop: boolean) => void;
   isRescanningSide?: boolean;
   structureProgressLabel?: string;
+  structureTotalMs?: number | null;
+  structureTimingEntries?: ScorebookTimingEntry[];
   onBack: () => void;
   onStartDeepAnalysis: () => void;
   isAnalyzingInnings: boolean;
   analysisProgressLabel: string;
+  analysisStartedAtMs?: number | null;
+  analysisActiveLabel?: string | null;
+  analysisActiveStartedAtMs?: number | null;
+  analysisCompletedTimings?: ScorebookTimingEntry[];
   errorMessage?: string | null;
   onDismissError?: () => void;
 }
@@ -86,10 +96,16 @@ export function Step2StructureCheck({
   onRescanSide,
   isRescanningSide = false,
   structureProgressLabel,
+  structureTotalMs = null,
+  structureTimingEntries = [],
   onBack,
   onStartDeepAnalysis,
   isAnalyzingInnings,
   analysisProgressLabel,
+  analysisStartedAtMs = null,
+  analysisActiveLabel = null,
+  analysisActiveStartedAtMs = null,
+  analysisCompletedTimings = [],
   errorMessage,
   onDismissError,
 }: Step2StructureCheckProps) {
@@ -483,6 +499,24 @@ export function Step2StructureCheck({
         <p className="text-[11px] font-bold text-muted-foreground leading-relaxed">
           ここで確定した「各回の得点」「打者一巡(2列)の有無」「打順・途中交代・投手」を正解アンカーとして、次のステップで全投球・全打席を精密解析します。
         </p>
+        {structureTotalMs !== null && structureTotalMs > 0 && (
+          <div className="pt-1 flex items-center gap-1.5 flex-wrap text-[10px] font-black text-indigo-700 dark:text-indigo-300 tabular-nums">
+            <span className="px-2 py-0.5 rounded-lg bg-indigo-500/12 border border-indigo-500/30 inline-flex items-center gap-1">
+              <Clock className="w-3 h-3 shrink-0" />
+              <span>
+                骨格スキャン完了: 合計 {formatTotalElapsedSeconds(structureTotalMs)}
+              </span>
+            </span>
+            {structureTimingEntries.map((entry) => (
+              <span
+                key={entry.key}
+                className="px-2 py-0.5 rounded-lg bg-muted border border-border text-foreground"
+              >
+                {entry.label}: {formatElapsedSeconds(entry.durationMs)}
+              </span>
+            ))}
+          </div>
+        )}
       </section>
 
       {/* 先攻 / 後攻 シート切替タブ */}
@@ -1711,6 +1745,12 @@ export function Step2StructureCheck({
                 "打順・投手・各回得点を再取得しています..."
               : analysisProgressLabel ||
                 "各イニングの1球順序・打撃結果・進塁を解析しています..."
+          }
+          startedAtMs={analysisStartedAtMs}
+          activeSubStepLabel={analysisActiveLabel}
+          activeSubStepStartedAtMs={analysisActiveStartedAtMs}
+          completedTimings={
+            isAnalyzingInnings ? analysisCompletedTimings : []
           }
           errorMessage={errorMessage}
           onDismissError={onDismissError}

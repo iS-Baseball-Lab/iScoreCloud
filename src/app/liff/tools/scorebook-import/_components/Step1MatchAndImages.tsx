@@ -32,6 +32,7 @@ import type {
   NormalizedPoint,
   ScorebookGridCorners,
   ScorebookMatchSummary,
+  ScorebookTimingEntry,
 } from "@/types/scorebook-v2";
 import type { PreprocessedScorebookImage } from "@/lib/liff/scorebook-image";
 
@@ -94,6 +95,10 @@ interface Step1MatchAndImagesProps {
   onStartAnalyzeStructure: () => void;
   isAnalyzingStructure: boolean;
   structureProgressLabel?: string;
+  structureStartedAtMs?: number | null;
+  structureActiveLabel?: string | null;
+  structureActiveStartedAtMs?: number | null;
+  structureCompletedTimings?: ScorebookTimingEntry[];
   errorMessage?: string | null;
   onDismissError?: () => void;
   onReportError?: (message: string) => void;
@@ -356,6 +361,10 @@ export function Step1MatchAndImages({
   onStartAnalyzeStructure,
   isAnalyzingStructure,
   structureProgressLabel,
+  structureStartedAtMs = null,
+  structureActiveLabel = null,
+  structureActiveStartedAtMs = null,
+  structureCompletedTimings = [],
   errorMessage,
   onDismissError,
   onReportError,
@@ -1285,6 +1294,16 @@ export function Step1MatchAndImages({
               ? structureProgressLabel ||
                 "AIが打順・守備位置・途中交代・各回得点をスキャンしています..."
               : preprocessingDetail
+          }
+          startedAtMs={isAnalyzingStructure ? structureStartedAtMs : null}
+          activeSubStepLabel={
+            isAnalyzingStructure ? structureActiveLabel : null
+          }
+          activeSubStepStartedAtMs={
+            isAnalyzingStructure ? structureActiveStartedAtMs : null
+          }
+          completedTimings={
+            isAnalyzingStructure ? structureCompletedTimings : []
           }
           errorMessage={errorMessage}
           onDismissError={onDismissError}

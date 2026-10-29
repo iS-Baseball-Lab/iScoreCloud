@@ -2,6 +2,7 @@
 import type { PreprocessedScorebookImage } from "@/lib/liff/scorebook-image";
 import type {
   ImportScopeMode,
+  ScorebookAnalysisTimingSummary,
   ScorebookSheetStructure,
   ScorebookV2AtBat,
 } from "@/types/scorebook-v2";
@@ -45,6 +46,7 @@ export interface ScorebookImportDraft {
   bottomStructure: ScorebookSheetStructure | null;
   topAtBats: ScorebookV2AtBat[];
   bottomAtBats: ScorebookV2AtBat[];
+  timingSummary?: ScorebookAnalysisTimingSummary | null;
 }
 
 function getDraftKey(teamId: string): string {

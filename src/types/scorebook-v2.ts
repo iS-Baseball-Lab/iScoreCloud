@@ -379,3 +379,41 @@ export const ADVANCE_METHOD_LABELS: Record<AdvanceMethodCode, string> = {
   other: "その他進塁",
 };
 
+/** 骨格スキャン・各イニング解析の所要時間レコード */
+export interface ScorebookTimingEntry {
+  key: string;
+  isTop: boolean;
+  innings: number[];
+  label: string;
+  durationMs: number;
+  fromCache?: boolean;
+}
+
+/** スコアブックAI解析のトータル秒数・イニング別秒数サマリー */
+export interface ScorebookAnalysisTimingSummary {
+  structureTotalMs?: number;
+  structureEntries?: ScorebookTimingEntry[];
+  deepTotalMs: number;
+  inningEntries: ScorebookTimingEntry[];
+}
+
+/** ミリ秒を「8.4秒」のような小数1桁秒表記へフォーマットする */
+export function formatElapsedSeconds(ms: number): string {
+  const safeMs = Math.max(0, ms);
+  return `${(safeMs / 1000).toFixed(1)}秒`;
+}
+
+/** トータルミリ秒を「74.2秒（1分14秒）」のように秒数メイン＋分秒併記へフォーマットする */
+export function formatTotalElapsedSeconds(ms: number): string {
+  const safeMs = Math.max(0, ms);
+  const secStr = `${(safeMs / 1000).toFixed(1)}秒`;
+  if (safeMs < 60000) {
+    return secStr;
+  }
+  const totalWholeSec = Math.round(safeMs / 1000);
+  const mins = Math.floor(totalWholeSec / 60);
+  const remSec = totalWholeSec % 60;
+  return `${secStr}（${mins}分${remSec}秒）`;
+}
+
+

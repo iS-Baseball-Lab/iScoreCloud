@@ -30,15 +30,19 @@ import {
 } from "./_components/Step1MatchAndImages";
 import { Step2StructureCheck } from "./_components/Step2StructureCheck";
 import { Step3PinpointReview } from "./_components/Step3PinpointReview";
-import type {
-  ImportScopeMode,
-  NormalizedBox,
-  ScorebookGridCorners,
-  ScorebookMatchSummary,
-  ScorebookPitcherStint,
-  ScorebookRosterPlayer,
-  ScorebookSheetStructure,
-  ScorebookV2AtBat,
+import {
+  formatElapsedSeconds,
+  formatTotalElapsedSeconds,
+  type ImportScopeMode,
+  type NormalizedBox,
+  type ScorebookAnalysisTimingSummary,
+  type ScorebookGridCorners,
+  type ScorebookMatchSummary,
+  type ScorebookPitcherStint,
+  type ScorebookRosterPlayer,
+  type ScorebookSheetStructure,
+  type ScorebookTimingEntry,
+  type ScorebookV2AtBat,
 } from "@/types/scorebook-v2";
 import {
   ScanLine,
@@ -52,6 +56,7 @@ import {
   Trash2,
   X,
   Settings,
+  Clock,
 } from "lucide-react";
 
 type WizardStep = 1 | 2 | 3 | 4;
@@ -230,8 +235,32 @@ export default function LiffScorebookImportPage() {
   const [isCreatingMatch, setIsCreatingMatch] = useState(false);
   const [isAnalyzingStructure, setIsAnalyzingStructure] = useState(false);
   const [structureProgressLabel, setStructureProgressLabel] = useState("");
+  const [structureStartedAtMs, setStructureStartedAtMs] = useState<
+    number | null
+  >(null);
+  const [structureActiveLabel, setStructureActiveLabel] = useState<
+    string | null
+  >(null);
+  const [structureActiveStartedAtMs, setStructureActiveStartedAtMs] = useState<
+    number | null
+  >(null);
+  const [structureCompletedTimings, setStructureCompletedTimings] = useState<
+    ScorebookTimingEntry[]
+  >([]);
+  const [structureTotalMs, setStructureTotalMs] = useState<number | null>(null);
+
   const [isAnalyzingInnings, setIsAnalyzingInnings] = useState(false);
   const [analysisProgressLabel, setAnalysisProgressLabel] = useState("");
+  const [deepStartedAtMs, setDeepStartedAtMs] = useState<number | null>(null);
+  const [deepActiveLabel, setDeepActiveLabel] = useState<string | null>(null);
+  const [deepActiveStartedAtMs, setDeepActiveStartedAtMs] = useState<
+    number | null
+  >(null);
+  const [deepCompletedTimings, setDeepCompletedTimings] = useState<
+    ScorebookTimingEntry[]
+  >([]);
+  const [timingSummary, setTimingSummary] =
+    useState<ScorebookAnalysisTimingSummary | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
   const [topStructure, setTopStructure] =
@@ -370,6 +399,10 @@ export default function LiffScorebookImportPage() {
       setBottomStructure(draft.bottomStructure);
       setTopAtBats(draft.topAtBats);
       setBottomAtBats(draft.bottomAtBats);
+      setTimingSummary(draft.timingSummary ?? null);
+      setStructureTotalMs(draft.timingSummary?.structureTotalMs ?? null);
+      setStructureCompletedTimings(draft.timingSummary?.structureEntries ?? []);
+      setDeepCompletedTimings(draft.timingSummary?.inningEntries ?? []);
 
       if (
         draft.step === 3 &&
@@ -494,6 +527,7 @@ export default function LiffScorebookImportPage() {
         bottomStructure,
         topAtBats,
         bottomAtBats,
+        timingSummary,
       }).then((savedTs) => {
         setLastAutoSavedAt(savedTs);
       });
@@ -520,6 +554,7 @@ export default function LiffScorebookImportPage() {
     bottomStructure,
     topAtBats,
     bottomAtBats,
+    timingSummary,
     lastAutoSavedAt,
   ]);
 
@@ -545,6 +580,16 @@ export default function LiffScorebookImportPage() {
     setBottomStructure(null);
     setTopAtBats([]);
     setBottomAtBats([]);
+    setStructureStartedAtMs(null);
+    setStructureActiveLabel(null);
+    setStructureActiveStartedAtMs(null);
+    setStructureCompletedTimings([]);
+    setStructureTotalMs(null);
+    setDeepStartedAtMs(null);
+    setDeepActiveLabel(null);
+    setDeepActiveStartedAtMs(null);
+    setDeepCompletedTimings([]);
+    setTimingSummary(null);
     setSaveSummary(null);
     setErrorBanner(null);
     setAvailableDraftMeta(null);
@@ -920,6 +965,12 @@ export default function LiffScorebookImportPage() {
     if (!selectedMatchId) return;
     setIsAnalyzingStructure(true);
     setErrorBanner(null);
+    const stage1Start = Date.now();
+    const stage1Entries: ScorebookTimingEntry[] = [];
+    setStructureStartedAtMs(stage1Start);
+    setStructureCompletedTimings([]);
+    setStructureActiveLabel(null);
+    setStructureActiveStartedAtMs(null);
 
     try {
       completedChunkCacheRef.current.clear();
@@ -934,12 +985,25 @@ export default function LiffScorebookImportPage() {
 
       if (needTop) {
         stepCounter += 1;
+        const topStart = Date.now();
+        setStructureActiveLabel("先攻シート骨格");
+        setStructureActiveStartedAtMs(topStart);
         resTop = await scanSingleSheetStructure(
           true,
           topImage,
           `(${stepCounter}/${totalSides})`
         );
         setTopStructure(resTop);
+        stage1Entries.push({
+          key: "structure-top",
+          isTop: true,
+          innings: [],
+          label: "先攻シート骨格",
+          durationMs: Date.now() - topStart,
+        });
+        setStructureCompletedTimings([...stage1Entries]);
+        setStructureActiveLabel(null);
+        setStructureActiveStartedAtMs(null);
       }
 
       if (needBottom) {
@@ -948,12 +1012,25 @@ export default function LiffScorebookImportPage() {
           await new Promise((r) => setTimeout(r, 1000));
         }
         stepCounter += 1;
+        const bottomStart = Date.now();
+        setStructureActiveLabel("後攻シート骨格");
+        setStructureActiveStartedAtMs(bottomStart);
         resBottom = await scanSingleSheetStructure(
           false,
           bottomImage,
           `(${stepCounter}/${totalSides})`
         );
         setBottomStructure(resBottom);
+        stage1Entries.push({
+          key: "structure-bottom",
+          isTop: false,
+          innings: [],
+          label: "後攻シート骨格",
+          durationMs: Date.now() - bottomStart,
+        });
+        setStructureCompletedTimings([...stage1Entries]);
+        setStructureActiveLabel(null);
+        setStructureActiveStartedAtMs(null);
       }
 
       // 両面読込時は反対側シートの「1 投」から未記載の相手投手を自動相互補完
@@ -966,6 +1043,7 @@ export default function LiffScorebookImportPage() {
 
       if (!needTop) setTopStructure(null);
       if (!needBottom) setBottomStructure(null);
+      setStructureTotalMs(Date.now() - stage1Start);
       setStep(2);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -973,6 +1051,9 @@ export default function LiffScorebookImportPage() {
     } finally {
       setIsAnalyzingStructure(false);
       setStructureProgressLabel("");
+      setStructureStartedAtMs(null);
+      setStructureActiveLabel(null);
+      setStructureActiveStartedAtMs(null);
     }
   };
 
@@ -983,6 +1064,11 @@ export default function LiffScorebookImportPage() {
 
     setIsAnalyzingStructure(true);
     setErrorBanner(null);
+    const rescanStart = Date.now();
+    const rescanLabel = isTop ? "先攻シート骨格" : "後攻シート骨格";
+    setStructureStartedAtMs(rescanStart);
+    setStructureActiveLabel(rescanLabel);
+    setStructureActiveStartedAtMs(rescanStart);
     try {
       completedChunkCacheRef.current.clear();
       let rescanned = await scanSingleSheetStructure(isTop, imgState, "(1/1)");
@@ -993,12 +1079,33 @@ export default function LiffScorebookImportPage() {
         rescanned = crossFillOppositePitchers(rescanned, topStructure);
         setBottomStructure(rescanned);
       }
+      const elapsed = Date.now() - rescanStart;
+      const updatedEntry: ScorebookTimingEntry = {
+        key: isTop ? "structure-top" : "structure-bottom",
+        isTop,
+        innings: [],
+        label: rescanLabel,
+        durationMs: elapsed,
+      };
+      setStructureCompletedTimings((prev) => {
+        const filtered = prev.filter((e) => e.key !== updatedEntry.key);
+        const next = isTop
+          ? [updatedEntry, ...filtered]
+          : [...filtered, updatedEntry];
+        setStructureTotalMs(
+          next.reduce((acc, item) => acc + item.durationMs, 0)
+        );
+        return next;
+      });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setErrorBanner(msg);
     } finally {
       setIsAnalyzingStructure(false);
       setStructureProgressLabel("");
+      setStructureStartedAtMs(null);
+      setStructureActiveLabel(null);
+      setStructureActiveStartedAtMs(null);
     }
   };
 
@@ -1007,6 +1114,12 @@ export default function LiffScorebookImportPage() {
     if (!selectedMatchId) return;
     setIsAnalyzingInnings(true);
     setErrorBanner(null);
+    const deepStart = Date.now();
+    const recordedEntries: ScorebookTimingEntry[] = [];
+    setDeepStartedAtMs(deepStart);
+    setDeepCompletedTimings([]);
+    setDeepActiveLabel(null);
+    setDeepActiveStartedAtMs(null);
 
     try {
       const buildSmartInningChunks = (
@@ -1235,6 +1348,11 @@ export default function LiffScorebookImportPage() {
               : `${targetInnings[0]}〜${
                   targetInnings[targetInnings.length - 1]
                 }回`;
+          const halfSuffix = isTop ? "表" : "裏";
+          const itemLabel = `${rangeText}${halfSuffix}`;
+          const chunkStart = Date.now();
+          setDeepActiveLabel(itemLabel);
+          setDeepActiveStartedAtMs(chunkStart);
 
           setAnalysisProgressLabel(
             `${sideLabel} ${rangeText} の1球順序・進塁を解析中... ${progressSuffix}`
@@ -1255,6 +1373,17 @@ export default function LiffScorebookImportPage() {
             if (chunkRes.nextLeadOffOrder) {
               expectedLeadOff = chunkRes.nextLeadOffOrder;
             }
+            recordedEntries.push({
+              key: `${isTop ? "top" : "bottom"}-${targetInnings.join("-")}`,
+              isTop,
+              innings: targetInnings,
+              label: itemLabel,
+              durationMs: Date.now() - chunkStart,
+              fromCache: Boolean(chunkRes.fromCache),
+            });
+            setDeepCompletedTimings([...recordedEntries]);
+            setDeepActiveLabel(null);
+            setDeepActiveStartedAtMs(null);
             if (!chunkRes.fromCache && cIdx < chunks.length - 1) {
               await new Promise((r) => setTimeout(r, 350));
             }
@@ -1263,6 +1392,10 @@ export default function LiffScorebookImportPage() {
             if (targetInnings.length > 1) {
               await new Promise((r) => setTimeout(r, 1800));
               for (const singleInn of targetInnings) {
+                const singleLabel = `${singleInn}回${halfSuffix}`;
+                const singleStart = Date.now();
+                setDeepActiveLabel(singleLabel);
+                setDeepActiveStartedAtMs(singleStart);
                 setAnalysisProgressLabel(
                   `${sideLabel} ${singleInn}回 を1回単位で精密解析中... ${progressSuffix}`
                 );
@@ -1281,6 +1414,16 @@ export default function LiffScorebookImportPage() {
                 if (singleRes.nextLeadOffOrder) {
                   expectedLeadOff = singleRes.nextLeadOffOrder;
                 }
+                recordedEntries.push({
+                  key: `${isTop ? "top" : "bottom"}-${singleInn}`,
+                  isTop,
+                  innings: [singleInn],
+                  label: singleLabel,
+                  durationMs: Date.now() - singleStart,
+                });
+                setDeepCompletedTimings([...recordedEntries]);
+                setDeepActiveLabel(null);
+                setDeepActiveStartedAtMs(null);
               }
             } else {
               const singleRes = await requestSingleInningWithRetries(
@@ -1298,6 +1441,16 @@ export default function LiffScorebookImportPage() {
               if (singleRes.nextLeadOffOrder) {
                 expectedLeadOff = singleRes.nextLeadOffOrder;
               }
+              recordedEntries.push({
+                key: `${isTop ? "top" : "bottom"}-${targetInnings[0]}`,
+                isTop,
+                innings: [targetInnings[0]],
+                label: itemLabel,
+                durationMs: Date.now() - chunkStart,
+              });
+              setDeepCompletedTimings([...recordedEntries]);
+              setDeepActiveLabel(null);
+              setDeepActiveStartedAtMs(null);
             }
             void chunkErr;
           }
@@ -1324,6 +1477,16 @@ export default function LiffScorebookImportPage() {
           ? await analyzeSheetByChunks(false, bottomStructure, bottomImage)
           : [];
 
+      const deepTotal = Date.now() - deepStart;
+      setTimingSummary({
+        structureTotalMs: structureTotalMs ?? undefined,
+        structureEntries:
+          structureCompletedTimings.length > 0
+            ? structureCompletedTimings
+            : undefined,
+        deepTotalMs: deepTotal,
+        inningEntries: recordedEntries,
+      });
       setTopAtBats(nextTopAtBats);
       setBottomAtBats(nextBottomAtBats);
       setStep(3);
@@ -1333,6 +1496,9 @@ export default function LiffScorebookImportPage() {
     } finally {
       setIsAnalyzingInnings(false);
       setAnalysisProgressLabel("");
+      setDeepStartedAtMs(null);
+      setDeepActiveLabel(null);
+      setDeepActiveStartedAtMs(null);
     }
   };
 
@@ -1572,6 +1738,10 @@ export default function LiffScorebookImportPage() {
                 onStartAnalyzeStructure={handleStartAnalyzeStructure}
                 isAnalyzingStructure={isAnalyzingStructure}
                 structureProgressLabel={structureProgressLabel}
+                structureStartedAtMs={structureStartedAtMs}
+                structureActiveLabel={structureActiveLabel}
+                structureActiveStartedAtMs={structureActiveStartedAtMs}
+                structureCompletedTimings={structureCompletedTimings}
                 errorMessage={errorBanner}
                 onDismissError={() => setErrorBanner(null)}
                 onReportError={(msg) => setErrorBanner(msg)}
@@ -1593,6 +1763,8 @@ export default function LiffScorebookImportPage() {
                 onRescanSide={handleRescanSingleSide}
                 isRescanningSide={isAnalyzingStructure}
                 structureProgressLabel={structureProgressLabel}
+                structureTotalMs={structureTotalMs}
+                structureTimingEntries={structureCompletedTimings}
                 onBack={() => {
                   setErrorBanner(null);
                   setStep(1);
@@ -1600,6 +1772,22 @@ export default function LiffScorebookImportPage() {
                 onStartDeepAnalysis={handleStartDeepAnalysis}
                 isAnalyzingInnings={isAnalyzingInnings}
                 analysisProgressLabel={analysisProgressLabel}
+                analysisStartedAtMs={
+                  isAnalyzingStructure ? structureStartedAtMs : deepStartedAtMs
+                }
+                analysisActiveLabel={
+                  isAnalyzingStructure ? structureActiveLabel : deepActiveLabel
+                }
+                analysisActiveStartedAtMs={
+                  isAnalyzingStructure
+                    ? structureActiveStartedAtMs
+                    : deepActiveStartedAtMs
+                }
+                analysisCompletedTimings={
+                  isAnalyzingStructure
+                    ? structureCompletedTimings
+                    : deepCompletedTimings
+                }
                 errorMessage={errorBanner}
                 onDismissError={() => setErrorBanner(null)}
               />
@@ -1624,6 +1812,7 @@ export default function LiffScorebookImportPage() {
                 }}
                 onSave={handleSaveToDatabase}
                 isSaving={isSaving}
+                timingSummary={timingSummary}
                 errorMessage={errorBanner}
                 onDismissError={() => setErrorBanner(null)}
               />
@@ -1670,6 +1859,21 @@ export default function LiffScorebookImportPage() {
                     </span>
                   </div>
                 </div>
+
+                {timingSummary && (
+                  <div className="px-3 py-2 rounded-2xl bg-muted border border-border flex items-center justify-center gap-1.5 text-[11px] font-black text-foreground tabular-nums">
+                    <Clock className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                    <span>
+                      AI解析タイム: 合計{" "}
+                      {formatTotalElapsedSeconds(
+                        (timingSummary.structureTotalMs ?? 0) +
+                          timingSummary.deepTotalMs
+                      )}
+                      （イニング解析{" "}
+                      {formatElapsedSeconds(timingSummary.deepTotalMs)}）
+                    </span>
+                  </div>
+                )}
 
                 <div className="space-y-2.5 pt-1">
                   <Link
