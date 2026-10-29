@@ -35,7 +35,13 @@ import {
 } from "lucide-react";
 
 type MenuCategory = "schedule" | "manual" | "settings";
-type MenuSubGroup = "match_team" | "schedule_access" | "docs" | "tools";
+type MenuSubGroup =
+  | "match_team"
+  | "schedule_access"
+  | "docs"
+  | "tools"
+  | "settings_general"
+  | "settings_admin";
 
 interface MenuItem {
   title: string;
@@ -51,18 +57,16 @@ interface MenuItem {
 const MENU_TABS = [
   { id: "schedule" as const, label: "試合・予定", icon: Calendar },
   { id: "manual" as const, label: "資料・ツール", icon: BookOpen },
-  { id: "settings" as const, label: "設定", icon: Settings },
+  { id: "settings" as const, label: "設定・管理", icon: Settings },
 ];
 
-const CATEGORY_SECTIONS: Partial<
-  Record<
-    MenuCategory,
-    Array<{
-      key: MenuSubGroup;
-      label: string;
-      icon: React.ComponentType<{ className?: string }>;
-    }>
-  >
+const CATEGORY_SECTIONS: Record<
+  MenuCategory,
+  Array<{
+    key: MenuSubGroup;
+    label: string;
+    icon: React.ComponentType<{ className?: string }>;
+  }>
 > = {
   schedule: [
     { key: "match_team", label: "試合・チーム", icon: Trophy },
@@ -71,6 +75,10 @@ const CATEGORY_SECTIONS: Partial<
   manual: [
     { key: "docs", label: "資料・マニュアル", icon: BookOpen },
     { key: "tools", label: "便利ツール", icon: Wrench },
+  ],
+  settings: [
+    { key: "settings_general", label: "設定", icon: Settings },
+    { key: "settings_admin", label: "管理", icon: ShieldCheck },
   ],
 };
 
@@ -225,7 +233,7 @@ const MENU_ITEMS: MenuItem[] = [
     subGroup: "tools",
   },
 
-  // ⚙️ 設定
+  // ⚙️ 設定・管理（設定）
   {
     title: "プロフィール",
     subtitle: "表示名・お子様紐付け・マイカー",
@@ -233,6 +241,7 @@ const MENU_ITEMS: MenuItem[] = [
     icon: UserCircle,
     colorClass: "bg-sky-500/15 text-sky-600 dark:text-sky-400",
     category: "settings" as const,
+    subGroup: "settings_general",
   },
   {
     title: "アプリ設定",
@@ -241,22 +250,36 @@ const MENU_ITEMS: MenuItem[] = [
     icon: Settings,
     colorClass: "bg-slate-500/15 text-slate-700 dark:text-slate-300",
     category: "settings" as const,
+    subGroup: "settings_general",
   },
   {
     title: "チーム設定",
-    subtitle: "チーム情報・競技規定・マスタ管理",
+    subtitle: "チーム情報・活動班・マスタ管理",
     href: "/liff/settings/team",
     icon: SlidersHorizontal,
     colorClass: "bg-primary/15 text-primary",
     category: "settings" as const,
+    subGroup: "settings_general",
   },
   {
-    title: "IT管理者コンソール",
+    title: "スコア設定",
+    subtitle: "試合規定・記号早見表・AI読取",
+    href: "/liff/settings/score",
+    icon: BookOpen,
+    colorClass: "bg-indigo-500/15 text-indigo-600 dark:text-indigo-400",
+    category: "settings" as const,
+    subGroup: "settings_general",
+  },
+
+  // 🛡️ 設定・管理（管理）
+  {
+    title: "IT管理コンソール",
     subtitle: "参加承認・メンバー管理・招待",
     href: "/liff/admin",
     icon: ShieldCheck,
     colorClass: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
     category: "settings" as const,
+    subGroup: "settings_admin",
   },
 ];
 

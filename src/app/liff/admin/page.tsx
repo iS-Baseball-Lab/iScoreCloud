@@ -389,7 +389,7 @@ export default function LiffAdminDashboardPage() {
       {/* 🌟 ヘッダー */}
       <LiffHeader
         shareData={{
-          title: `IT管理者コンソール - ${data?.team?.name || "チーム"}`,
+          title: `IT管理コンソール - ${data?.team?.name || "チーム"}`,
           text: `参加承認・メンバー管理はこちらから行えます。`,
         }}
       />
@@ -398,7 +398,7 @@ export default function LiffAdminDashboardPage() {
         {/* ページタイトル */}
         <div className="flex items-center justify-between">
           <LiffPageHeader 
-            title="IT管理者コンソール" 
+            title="IT管理コンソール" 
             subtitle="TEAM ADMIN DASHBOARD" 
             showBack 
           />

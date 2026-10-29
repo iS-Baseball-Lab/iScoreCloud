@@ -322,7 +322,7 @@ export default function LiffSettingsPage() {
                 スコア設定はこちら
               </p>
               <p className="text-[10px] text-muted-foreground font-bold truncate">
-                スコア記号早見表の事前登録・AI読取初期値・規定イニング
+                規定イニング・コールド・守備表記・スコア記号早見表の登録
               </p>
             </div>
           </div>
@@ -339,10 +339,10 @@ export default function LiffSettingsPage() {
             </span>
             <div className="min-w-0">
               <p className="text-xs font-black text-foreground truncate">
-                チーム設定・競技ルールはこちら
+                チーム設定はこちら
               </p>
               <p className="text-[10px] text-muted-foreground font-bold truncate">
-                チーム情報・活動班・規定イニング・球場マスタ
+                チーム基本情報・活動班・球場マスタ・LINE連携
               </p>
             </div>
           </div>

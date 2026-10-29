@@ -41,19 +41,9 @@ export default function LiffTeamSettingsPage() {
   const [teamName, setTeamName] = useState(currentTeam?.name || "東京ジャイアンツ");
   const [category, setCategory] = useState("gakudou");
 
-  // 試合・競技規定ステート (localStorage保存)
-  const [defaultInnings, setDefaultInnings] = useState<number>(7);
-  const [mercyRule, setMercyRule] = useState<string>("standard");
-  const [positionNotation, setPositionNotation] = useState<"kanji" | "number" | "english">("kanji");
-  const [dhDefault, setDhDefault] = useState<boolean>(false);
-
   // 活動区分・班設定
   const [targetGroups, setTargetGroups] = useState<string[]>(["全体", "Aチーム", "Bチーム", "高学年", "低学年"]);
   const [newGroupInput, setNewGroupInput] = useState("");
-  const [dutyGroups, setDutyGroups] = useState<string[]>(["1班", "2班", "3班", "4班", "なし"]);
-
-  // LINE連携状態
-  const [lineReportEnabled, setLineReportEnabled] = useState(true);
 
   // 初期ロード
   useEffect(() => {
@@ -62,18 +52,6 @@ export default function LiffTeamSettingsPage() {
     if (currentTeam?.name) setTeamName(currentTeam.name);
 
     try {
-      const savedInnings = localStorage.getItem("iscore_setting_default_innings");
-      if (savedInnings) setDefaultInnings(Number(savedInnings));
-
-      const savedMercy = localStorage.getItem("iscore_setting_mercy_rule");
-      if (savedMercy) setMercyRule(savedMercy);
-
-      const savedNotation = localStorage.getItem("iscore_setting_position_notation");
-      if (savedNotation) setPositionNotation(savedNotation as any);
-
-      const savedDh = localStorage.getItem("iscore_setting_dh_default");
-      if (savedDh !== null) setDhDefault(savedDh === "true");
-
       const savedGroups = localStorage.getItem(`iscore_team_target_groups_${currentTeam?.id || "default"}`);
       if (savedGroups) {
         const parsed = JSON.parse(savedGroups);
@@ -97,10 +75,6 @@ export default function LiffTeamSettingsPage() {
     const tid = currentTeam?.id || "default";
     saveSetting(`iscore_team_name_${tid}`, teamName);
     saveSetting(`iscore_team_category_${tid}`, category);
-    saveSetting("iscore_setting_default_innings", String(defaultInnings));
-    saveSetting("iscore_setting_mercy_rule", mercyRule);
-    saveSetting("iscore_setting_position_notation", positionNotation);
-    saveSetting("iscore_setting_dh_default", String(dhDefault));
     saveSetting(`iscore_team_target_groups_${tid}`, JSON.stringify(targetGroups));
     toast.success("チーム設定を保存しました");
   };
@@ -142,7 +116,7 @@ export default function LiffTeamSettingsPage() {
       <div className="p-4 space-y-4 max-w-lg mx-auto w-full">
         <LiffPageHeader
           title="チーム設定"
-          subtitle="チーム情報・競技規定・活動班・マスタ管理"
+          subtitle="チーム情報・活動班・マスタ管理・LINE連携"
           icon={
             <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
               <ShieldCheck className="w-4 h-4" />
@@ -182,10 +156,15 @@ export default function LiffTeamSettingsPage() {
               value={category}
               onChange={(e) => {
                 setCategory(e.target.value);
-                // カテゴリに応じて規定イニングの初期値を最適化
-                if (e.target.value === "gakudou") setDefaultInnings(6);
-                else if (e.target.value === "high_school" || e.target.value === "general_hard") setDefaultInnings(9);
-                else setDefaultInnings(7);
+                // カテゴリに応じてスコア設定の規定イニング初期値を最適化
+                const nextInnings =
+                  e.target.value === "gakudou"
+                    ? 6
+                    : e.target.value === "high_school" ||
+                      e.target.value === "general_hard"
+                    ? 9
+                    : 7;
+                saveSetting("iscore_setting_default_innings", String(nextInnings));
               }}
               className="w-full px-3 py-2 rounded-xl bg-muted/30 border border-border/80 text-xs font-bold text-foreground focus:outline-hidden focus:border-primary"
             >
@@ -196,132 +175,12 @@ export default function LiffTeamSettingsPage() {
               ))}
             </select>
             <p className="text-[10px] text-muted-foreground font-bold">
-              ※ カテゴリーを変更すると、規定イニング等の初期値が自動連動します
+              ※ 規定イニング・コールド・守備表記などの詳細な試合規定は「スコア設定」から変更できます
             </p>
           </div>
         </section>
 
-        {/* ━━━ セクション 2: ⚾ 試合・競技規定（所属連盟ルール） ━━━ */}
-        <section className="rounded-3xl bg-card border-2 border-primary/20 p-4 space-y-4 shadow-sm">
-          <div className="flex items-center justify-between pb-2 border-b border-border/60">
-            <div className="flex items-center gap-2">
-              <Sliders className="w-4 h-4 text-primary" />
-              <h2 className="text-sm font-black text-foreground">試合ルール・規定初期値</h2>
-            </div>
-            <span className="text-[10px] font-bold text-muted-foreground">試合作成時に反映</span>
-          </div>
-
-          {/* 規定イニング */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-black text-foreground">規定イニング数</label>
-            <div className="grid grid-cols-3 gap-1.5">
-              {[
-                { count: 6, label: "6回 (学童)" },
-                { count: 7, label: "7回 (中学・一般)" },
-                { count: 9, label: "9回 (高校・大学)" },
-              ].map((item) => (
-                <button
-                  key={item.count}
-                  type="button"
-                  onClick={() => {
-                    setDefaultInnings(item.count);
-                    saveSetting("iscore_setting_default_innings", String(item.count));
-                  }}
-                  className={`py-2 px-1 rounded-2xl text-xs font-bold transition-all active:scale-95 border cursor-pointer ${
-                    defaultInnings === item.count
-                      ? "bg-primary text-primary-foreground border-primary shadow-xs font-black"
-                      : "bg-muted/50 border-border/60 text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* コールド規定 */}
-          <div className="space-y-1.5 pt-1">
-            <label className="text-xs font-black text-foreground">コールドゲーム規定</label>
-            <div className="grid grid-cols-3 gap-1.5">
-              {[
-                { id: "standard", label: "3回10/4回7点" },
-                { id: "loose", label: "4回10/5回7点" },
-                { id: "none", label: "コールドなし" },
-              ].map((m) => (
-                <button
-                  key={m.id}
-                  type="button"
-                  onClick={() => {
-                    setMercyRule(m.id);
-                    saveSetting("iscore_setting_mercy_rule", m.id);
-                  }}
-                  className={`py-2 px-1 rounded-2xl text-xs font-bold transition-all active:scale-95 border cursor-pointer ${
-                    mercyRule === m.id
-                      ? "bg-primary text-primary-foreground border-primary shadow-xs font-black"
-                      : "bg-muted/50 border-border/60 text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  {m.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* 守備位置表記 */}
-          <div className="space-y-1.5 pt-1">
-            <label className="text-xs font-black text-foreground">守備位置の表記形式</label>
-            <div className="grid grid-cols-3 gap-1.5">
-              {[
-                { id: "kanji", label: "漢字 (投・捕・一)" },
-                { id: "number", label: "守備番号 (1・2・3)" },
-                { id: "english", label: "英語 (P・C・1B)" },
-              ].map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => {
-                    setPositionNotation(p.id as any);
-                    saveSetting("iscore_setting_position_notation", p.id);
-                  }}
-                  className={`py-2 px-1 rounded-2xl text-xs font-bold transition-all active:scale-95 border cursor-pointer ${
-                    positionNotation === p.id
-                      ? "bg-primary text-primary-foreground border-primary shadow-xs font-black"
-                      : "bg-muted/50 border-border/60 text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* DH制初期値 */}
-          <div className="pt-1 flex items-center justify-between">
-            <div className="space-y-0.5">
-              <div className="text-xs font-black text-foreground">DH制（指名打者）初期値</div>
-              <p className="text-[10px] text-muted-foreground font-bold">新規試合作成時にDH制をデフォルトでON</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                const next = !dhDefault;
-                setDhDefault(next);
-                saveSetting("iscore_setting_dh_default", String(next));
-              }}
-              className={`w-12 h-6 rounded-full transition-colors relative p-0.5 cursor-pointer ${
-                dhDefault ? "bg-primary" : "bg-muted border border-border"
-              }`}
-            >
-              <div
-                className={`w-5 h-5 rounded-full bg-white transition-transform ${
-                  dhDefault ? "translate-x-6 shadow-xs" : "translate-x-0"
-                }`}
-              />
-            </button>
-          </div>
-        </section>
-
-        {/* ━━━ セクション 3: 👥 活動グループ（班分け） ━━━ */}
+        {/* ━━━ セクション 2: 👥 活動グループ（班分け） ━━━ */}
         <section className="rounded-3xl bg-card border-2 border-primary/20 p-4 space-y-3.5 shadow-sm">
           <div className="flex items-center justify-between pb-2 border-b border-border/60">
             <div className="flex items-center gap-2">
@@ -384,10 +243,10 @@ export default function LiffTeamSettingsPage() {
             </span>
             <div className="min-w-0 flex-1">
               <p className="text-xs font-black text-foreground truncate">
-                スコア設定（記号早見表の登録）
+                スコア設定（試合規定・記号早見表）
               </p>
               <p className="text-[10px] text-muted-foreground font-bold truncate">
-                毎回自動でAIが参照する早見表画像・読取初期値
+                規定イニング・コールド・守備表記・AI読取の早見表登録
               </p>
             </div>
             <ChevronRight className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />

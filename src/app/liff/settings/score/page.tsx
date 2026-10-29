@@ -37,6 +37,8 @@ import {
   saveLiffScoreSettings,
   type LiffScoreSettings,
   type ScoreDefaultMatchType,
+  type ScoreMercyRule,
+  type ScorePositionNotation,
 } from "@/lib/liff/score-settings";
 import type { ImportScopeMode } from "@/types/scorebook-v2";
 import { toast } from "sonner";
@@ -379,7 +381,175 @@ export default function LiffScoreSettingsPage() {
           </div>
         )}
 
-        {/* ━━━ セクション 1: 📘 スコア記号早見表（チーム共通・毎回自動参照） ━━━ */}
+        {/* ━━━ セクション 1: ⚾ 試合・スコア規定（試合作成・スコア表記ルール） ━━━ */}
+        <section className="rounded-3xl bg-card border-2 border-primary/20 p-4 space-y-4 shadow-sm">
+          <div className="flex items-center justify-between pb-2 border-b border-border/60">
+            <div className="flex items-center gap-2">
+              <Sliders className="w-4 h-4 text-primary" />
+              <h2 className="text-sm font-black text-foreground">
+                試合・スコア規定
+              </h2>
+            </div>
+            <span className="text-[10px] font-bold text-muted-foreground">
+              試合作成・表記に反映
+            </span>
+          </div>
+
+          {/* 1. 規定イニング数 & 新規試合の初期種別 */}
+          <div className="grid grid-cols-2 gap-2.5">
+            <div className="space-y-1">
+              <label className="text-[11px] font-black text-foreground block">
+                規定イニング初期値
+              </label>
+              <select
+                value={scoreSettings.defaultInnings}
+                onChange={(e) =>
+                  updateLocalSetting(
+                    "defaultInnings",
+                    Number(e.target.value),
+                    "規定イニング初期値"
+                  )
+                }
+                className="w-full h-10 px-2.5 rounded-xl bg-muted/40 border border-border text-xs font-black text-foreground cursor-pointer"
+              >
+                <option value={5}>5回制（低学年等）</option>
+                <option value={6}>6回制（学童等）</option>
+                <option value={7}>7回制（中学・草野球）</option>
+                <option value={9}>9回制</option>
+              </select>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[11px] font-black text-foreground block">
+                新規試合の初期種別
+              </label>
+              <select
+                value={scoreSettings.defaultMatchType}
+                onChange={(e) =>
+                  updateLocalSetting(
+                    "defaultMatchType",
+                    e.target.value as ScoreDefaultMatchType,
+                    "新規試合の初期種別"
+                  )
+                }
+                className="w-full h-10 px-2.5 rounded-xl bg-muted/40 border border-border text-xs font-black text-foreground cursor-pointer"
+              >
+                <option value="practice">OP戦（練習試合）</option>
+                <option value="official">公式戦</option>
+                <option value="exchange">交流戦</option>
+              </select>
+            </div>
+          </div>
+
+          {/* 2. コールドゲーム規定 */}
+          <div className="space-y-1.5 pt-1 border-t border-border/50">
+            <label className="text-xs font-black text-foreground block">
+              コールドゲーム規定
+            </label>
+            <div className="grid grid-cols-3 gap-1.5">
+              {(
+                [
+                  { id: "standard", label: "3回10/4回7点" },
+                  { id: "loose", label: "4回10/5回7点" },
+                  { id: "none", label: "コールドなし" },
+                ] as ReadonlyArray<{ id: ScoreMercyRule; label: string }>
+              ).map((m) => {
+                const isActive = scoreSettings.mercyRule === m.id;
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() =>
+                      updateLocalSetting("mercyRule", m.id, "コールド規定")
+                    }
+                    className={`py-2 px-1 rounded-2xl text-xs font-bold transition-all active:scale-95 border cursor-pointer ${
+                      isActive
+                        ? "bg-primary text-primary-foreground border-primary shadow-xs font-black"
+                        : "bg-muted/50 border-border/60 text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {m.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 3. 守備位置の表記形式 */}
+          <div className="space-y-1.5 pt-1">
+            <label className="text-xs font-black text-foreground block">
+              守備位置の表記形式
+            </label>
+            <div className="grid grid-cols-3 gap-1.5">
+              {(
+                [
+                  { id: "kanji", label: "漢字 (投・捕・一)" },
+                  { id: "number", label: "守備番号 (1・2・3)" },
+                  { id: "english", label: "英語 (P・C・1B)" },
+                ] as ReadonlyArray<{ id: ScorePositionNotation; label: string }>
+              ).map((p) => {
+                const isActive = scoreSettings.positionNotation === p.id;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() =>
+                      updateLocalSetting(
+                        "positionNotation",
+                        p.id,
+                        "守備位置の表記形式"
+                      )
+                    }
+                    className={`py-2 px-1 rounded-2xl text-xs font-bold transition-all active:scale-95 border cursor-pointer ${
+                      isActive
+                        ? "bg-primary text-primary-foreground border-primary shadow-xs font-black"
+                        : "bg-muted/50 border-border/60 text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 4. DH制（指名打者）初期値 */}
+          <div className="pt-1 flex items-center justify-between">
+            <div className="space-y-0.5">
+              <div className="text-xs font-black text-foreground">
+                DH制（指名打者）初期値
+              </div>
+              <p className="text-[10px] text-muted-foreground font-bold">
+                新規試合作成時にDH制をデフォルトでONにします
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                updateLocalSetting(
+                  "dhDefault",
+                  !scoreSettings.dhDefault,
+                  "DH制初期値"
+                )
+              }
+              className={`w-12 h-6 rounded-full transition-colors relative p-0.5 cursor-pointer ${
+                scoreSettings.dhDefault
+                  ? "bg-primary"
+                  : "bg-muted border border-border"
+              }`}
+            >
+              <div
+                className={`w-5 h-5 rounded-full bg-white transition-transform ${
+                  scoreSettings.dhDefault
+                    ? "translate-x-6 shadow-xs"
+                    : "translate-x-0"
+                }`}
+              />
+            </button>
+          </div>
+        </section>
+
+        {/* ━━━ セクション 2: 📘 スコア記号早見表（チーム共通・毎回自動参照） ━━━ */}
         <section className="rounded-3xl bg-card border-2 border-indigo-500/30 p-4 space-y-3.5 shadow-sm">
           <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-border/60">
             <div className="flex items-center gap-2 min-w-0">
@@ -649,10 +819,10 @@ export default function LiffScoreSettingsPage() {
           )}
         </section>
 
-        {/* ━━━ セクション 2: ⚙️ AIスコアブック取り込みの初期設定 ━━━ */}
+        {/* ━━━ セクション 3: ⚙️ AIスコアブック取り込みの初期設定 ━━━ */}
         <section className="rounded-3xl bg-card border-2 border-primary/20 p-4 space-y-4 shadow-sm">
           <div className="flex items-center gap-2 pb-2 border-b border-border/60">
-            <Sliders className="w-4 h-4 text-primary" />
+            <ScanLine className="w-4 h-4 text-primary" />
             <h2 className="text-sm font-black text-foreground">
               AIスコアブック取り込みの初期設定
             </h2>
@@ -753,52 +923,6 @@ export default function LiffScoreSettingsPage() {
               })}
             </div>
           </div>
-
-          {/* 3. 新規試合枠作成時の規定イニング・試合種別 */}
-          <div className="grid grid-cols-2 gap-2.5 pt-1 border-t border-border/50">
-            <div className="space-y-1">
-              <label className="text-[11px] font-black text-foreground block">
-                規定イニング初期値
-              </label>
-              <select
-                value={scoreSettings.defaultInnings}
-                onChange={(e) =>
-                  updateLocalSetting(
-                    "defaultInnings",
-                    Number(e.target.value),
-                    "規定イニング初期値"
-                  )
-                }
-                className="w-full h-10 px-2.5 rounded-xl bg-muted/40 border border-border text-xs font-black text-foreground cursor-pointer"
-              >
-                <option value={5}>5回制（低学年等）</option>
-                <option value={6}>6回制（学童等）</option>
-                <option value={7}>7回制（中学・草野球）</option>
-                <option value={9}>9回制</option>
-              </select>
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-[11px] font-black text-foreground block">
-                新規試合の初期種別
-              </label>
-              <select
-                value={scoreSettings.defaultMatchType}
-                onChange={(e) =>
-                  updateLocalSetting(
-                    "defaultMatchType",
-                    e.target.value as ScoreDefaultMatchType,
-                    "新規試合の初期種別"
-                  )
-                }
-                className="w-full h-10 px-2.5 rounded-xl bg-muted/40 border border-border text-xs font-black text-foreground cursor-pointer"
-              >
-                <option value="practice">OP戦（練習試合）</option>
-                <option value="official">公式戦</option>
-                <option value="exchange">交流戦</option>
-              </select>
-            </div>
-          </div>
         </section>
 
         {/* ━━━ クイック移動アクション ━━━ */}
@@ -821,10 +945,10 @@ export default function LiffScoreSettingsPage() {
               </span>
               <div className="min-w-0">
                 <p className="text-xs font-black text-foreground truncate">
-                  チーム設定・コールド規定・守備表記
+                  チーム設定はこちら
                 </p>
                 <p className="text-[10px] font-bold text-muted-foreground truncate">
-                  活動班・球場マスタ・LINE速報配信設定はこちら
+                  チーム基本情報・活動班・球場マスタ・LINE速報配信設定
                 </p>
               </div>
             </div>
