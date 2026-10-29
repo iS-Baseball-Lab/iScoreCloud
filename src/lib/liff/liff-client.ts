@@ -82,6 +82,40 @@ export function isInLineClient(): boolean {
 }
 
 /**
+ * Android端末のブラウザ / WebView かどうかを判定する
+ */
+export function isAndroidClientDevice(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return /Android/i.test(navigator.userAgent);
+}
+
+/**
+ * 現在のページを端末の標準ブラウザ（Chrome / Safari）で開く
+ */
+export function openCurrentPageInExternalBrowser(): boolean {
+  if (typeof window === "undefined") return false;
+  const targetUrl = window.location.href;
+  try {
+    if (liffInstance && liffInstance.isInClient()) {
+      liffInstance.openWindow({
+        url: targetUrl,
+        external: true,
+      });
+      return true;
+    }
+  } catch (err) {
+    console.warn("liff.openWindow failed, falling back to window.open:", err);
+  }
+
+  try {
+    window.open(targetUrl, "_blank", "noopener,noreferrer");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * ログイン中ユーザーのLINEプロフィールを取得する (getProfile + getDecodedIDToken)
  */
 export async function getLiffProfile(): Promise<LiffUserProfile | null> {

@@ -1505,6 +1505,7 @@ export default function LiffScorebookImportPage() {
                 structureProgressLabel={structureProgressLabel}
                 errorMessage={errorBanner}
                 onDismissError={() => setErrorBanner(null)}
+                onReportError={(msg) => setErrorBanner(msg)}
               />
             )}
 

@@ -282,14 +282,17 @@ export async function preprocessScorebookImage(
 
   try {
     // 1. 画像デコードと90度回転＋微細傾き補正（iOS 16.77MP上限を超えないよう中間Canvas時点で縮小描画）
-    const { img, cleanup } = await loadDecodedImageFromFile(file);
+    const {
+      source: decodedSource,
+      width: rawW,
+      height: rawH,
+      cleanup,
+    } = await loadDecodedImageFromFile(file);
     let rotW = 64;
     let rotH = 64;
     let rotCtx: CanvasRenderingContext2D | null = null;
 
     try {
-      const rawW = img.naturalWidth || img.width;
-      const rawH = img.naturalHeight || img.height;
       if (rawW < 16 || rawH < 16) {
         throw new Error("画像サイズが小さすぎるか破損しています");
       }
@@ -332,10 +335,10 @@ export async function preprocessScorebookImage(
       rotCtx.save();
       rotCtx.translate(rotW / 2, rotH / 2);
       rotCtx.rotate(totalAngleRad);
-      rotCtx.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
+      rotCtx.drawImage(decodedSource, -drawW / 2, -drawH / 2, drawW, drawH);
       rotCtx.restore();
     } finally {
-      // Safari / WKWebView での遅延デコード完了後に安全に ObjectURL と元画像ビットマップを即解放
+      // デコード済みビットマップ / ObjectURL を即座に解放
       cleanup();
     }
 
@@ -1741,11 +1744,52 @@ function stripDataUrlPrefix(dataUrl: string): string {
   return commaIdx !== -1 ? dataUrl.slice(commaIdx + 1) : dataUrl;
 }
 
-async function loadDecodedImageFromFile(
-  file: File
-): Promise<{ img: HTMLImageElement; cleanup: () => void }> {
+async function loadDecodedImageFromFile(file: File): Promise<{
+  source: CanvasImageSource;
+  width: number;
+  height: number;
+  cleanup: () => void;
+}> {
   if (!file || file.size === 0) {
     throw new Error("選択された画像が空です。もう一度選択してください");
+  }
+
+  // Android Chromium WebView / モダンブラウザではオフメインスレッドの createImageBitmap を最優先で使用し、UIブロックとメモリ残留を防ぐ
+  if (typeof createImageBitmap === "function") {
+    let bitmapTimer: ReturnType<typeof setTimeout> | null = null;
+    try {
+      const bitmap = await Promise.race([
+        createImageBitmap(file),
+        new Promise<never>((_, reject) => {
+          bitmapTimer = setTimeout(
+            () => reject(new Error("ImageBitmap decode timeout")),
+            10000
+          );
+        }),
+      ]);
+      if (bitmap.width >= 16 && bitmap.height >= 16) {
+        let closed = false;
+        return {
+          source: bitmap,
+          width: bitmap.width,
+          height: bitmap.height,
+          cleanup: () => {
+            if (closed) return;
+            closed = true;
+            try {
+              bitmap.close();
+            } catch {
+              // ignore
+            }
+          },
+        };
+      }
+      bitmap.close();
+    } catch {
+      // createImageBitmap 非対応形式の場合は下の HTMLImageElement デコードへフォールバック
+    } finally {
+      if (bitmapTimer) clearTimeout(bitmapTimer);
+    }
   }
 
   const objectUrl = URL.createObjectURL(file);
@@ -1813,7 +1857,12 @@ async function loadDecodedImageFromFile(
       }
     }
 
-    return { img, cleanup };
+    return {
+      source: img,
+      width: img.naturalWidth || img.width,
+      height: img.naturalHeight || img.height,
+      cleanup,
+    };
   } catch (err) {
     cleanup();
     throw err;

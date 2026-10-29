@@ -10,6 +10,7 @@ interface ActionStatusBannerProps {
   loadingDetail?: string;
   errorMessage?: string | null;
   onDismissError?: () => void;
+  autoScrollOnLoading?: boolean;
 }
 
 export function ActionStatusBanner({
@@ -18,17 +19,20 @@ export function ActionStatusBanner({
   loadingDetail,
   errorMessage,
   onDismissError,
+  autoScrollOnLoading = true,
 }: ActionStatusBannerProps) {
   const bannerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if ((isLoading || errorMessage) && bannerRef.current) {
+    const shouldScroll =
+      Boolean(errorMessage) || (isLoading && autoScrollOnLoading);
+    if (shouldScroll && bannerRef.current) {
       bannerRef.current.scrollIntoView({
         behavior: "smooth",
         block: "nearest",
       });
     }
-  }, [isLoading, errorMessage]);
+  }, [isLoading, autoScrollOnLoading, errorMessage]);
 
   if (!isLoading && !errorMessage) {
     return null;

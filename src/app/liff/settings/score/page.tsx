@@ -23,7 +23,9 @@ import {
 } from "lucide-react";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
+import { ScorebookCameraModal } from "@/components/liff/ScorebookCameraModal";
 import { useLiff } from "@/components/liff/LiffProvider";
+import { isAndroidClientDevice } from "@/lib/liff/liff-client";
 import {
   ensureCompactApiImage,
   preprocessScorebookImage,
@@ -84,21 +86,32 @@ export default function LiffScoreSettingsPage() {
   const [scoreSettings, setScoreSettings] = useState<LiffScoreSettings>(
     DEFAULT_LIFF_SCORE_SETTINGS
   );
+  const [isAndroidClient, setIsAndroidClient] = useState(false);
+  const [isCameraModalOpen, setIsCameraModalOpen] = useState(false);
+  const legendFileInputRef = useRef<HTMLInputElement | null>(null);
   const stageSeqRef = useRef<number>(0);
   const pickerCooldownRef = useRef<number>(0);
 
-  const guardFilePickerClick = (e: React.MouseEvent<HTMLInputElement>) => {
+  const fileAcceptAttr = isAndroidClient
+    ? "image/*,application/pdf,.jpg,.jpeg,.png,.webp,.heic,.heif"
+    : "image/*";
+
+  const openLegendAlbumPicker = () => {
     const now = Date.now();
-    if (now - pickerCooldownRef.current < 450) {
-      e.preventDefault();
+    if (now - pickerCooldownRef.current < 500) {
       return;
     }
     pickerCooldownRef.current = now;
+    const inputEl = legendFileInputRef.current;
+    if (!inputEl) return;
+    inputEl.value = "";
+    inputEl.click();
   };
 
   // 1. 端末保存のスコア取込初期設定を読み込み
   useEffect(() => {
     setScoreSettings(loadLiffScoreSettings());
+    setIsAndroidClient(isAndroidClientDevice());
   }, []);
 
   // 2. チーム登録済みの「スコア記号早見表」URLを取得
@@ -202,7 +215,28 @@ export default function LiffScoreSettingsPage() {
 
   const handleSelectLegendFile = (file: File | null) => {
     if (!file) return;
+    const mime = (file.type || "").toLowerCase();
+    const isImage =
+      mime.startsWith("image/") ||
+      (mime !== "application/pdf" &&
+        /\.(jpe?g|png|webp|gif|bmp|heic|heif)$/i.test(file.name || ""));
+    if (!isImage) {
+      const msg =
+        "PDF等の書類ではなく、早見表の写真（JPG・PNG画像）を選択してください";
+      setErrorMessage(msg);
+      toast.error(msg);
+      return;
+    }
     void runStagePreprocess(file, 0, false, null);
+  };
+
+  const handleLegendInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const picked = e.currentTarget.files?.[0] ?? null;
+    e.currentTarget.value = "";
+    if (!picked) return;
+    window.setTimeout(() => {
+      handleSelectLegendFile(picked);
+    }, 80);
   };
 
   const handleRotateStaged = () => {
@@ -320,6 +354,25 @@ export default function LiffScoreSettingsPage() {
 
   return (
     <div className="flex flex-col flex-1">
+      <input
+        ref={legendFileInputRef}
+        type="file"
+        accept={fileAcceptAttr}
+        onChange={handleLegendInputChange}
+        className="sr-only"
+        tabIndex={-1}
+        aria-hidden="true"
+      />
+
+      <ScorebookCameraModal
+        isOpen={isCameraModalOpen}
+        title="スコア記号早見表を撮影"
+        hintText="記載例・記号早見表のページ全体が枠に入るよう撮影してください"
+        onClose={() => setIsCameraModalOpen(false)}
+        onCapture={(file) => handleSelectLegendFile(file)}
+        onFallbackToFilePicker={() => openLegendAlbumPicker()}
+      />
+
       <LiffHeader />
 
       <div className="p-4 space-y-4 max-w-lg mx-auto w-full">
@@ -498,50 +551,25 @@ export default function LiffScoreSettingsPage() {
               </div>
 
               <div className="grid grid-cols-2 gap-2">
-                <div className="relative overflow-hidden py-2.5 px-3 rounded-2xl bg-primary text-primary-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs hover:opacity-95 active:opacity-85 transition-opacity">
-                  <Camera className="w-4 h-4 shrink-0 pointer-events-none" />
-                  <span className="pointer-events-none select-none">
-                    カメラで撮り直す
-                  </span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    disabled={isSavingLegend}
-                    onClick={guardFilePickerClick}
-                    onChange={(e) => {
-                      const picked = e.currentTarget.files?.[0] ?? null;
-                      e.currentTarget.value = "";
-                      if (picked) {
-                        handleSelectLegendFile(picked);
-                      }
-                    }}
-                    aria-label="カメラで早見表を撮り直す"
-                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed z-10 text-base"
-                  />
-                </div>
+                <button
+                  type="button"
+                  disabled={isSavingLegend}
+                  onClick={() => setIsCameraModalOpen(true)}
+                  className="py-2.5 px-3 rounded-2xl bg-primary text-primary-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs hover:opacity-95 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+                >
+                  <Camera className="w-4 h-4 shrink-0" />
+                  <span>カメラで撮り直す</span>
+                </button>
 
-                <div className="relative overflow-hidden py-2.5 px-3 rounded-2xl bg-card border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs hover:bg-muted/60 active:opacity-85 transition-colors">
-                  <ImagePlus className="w-4 h-4 text-indigo-500 shrink-0 pointer-events-none" />
-                  <span className="pointer-events-none select-none">
-                    アルバムから変更
-                  </span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    disabled={isSavingLegend}
-                    onClick={guardFilePickerClick}
-                    onChange={(e) => {
-                      const picked = e.currentTarget.files?.[0] ?? null;
-                      e.currentTarget.value = "";
-                      if (picked) {
-                        handleSelectLegendFile(picked);
-                      }
-                    }}
-                    aria-label="アルバムから早見表を変更"
-                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed z-10 text-base"
-                  />
-                </div>
+                <button
+                  type="button"
+                  disabled={isSavingLegend}
+                  onClick={openLegendAlbumPicker}
+                  className="py-2.5 px-3 rounded-2xl bg-card border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs hover:bg-muted/60 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+                >
+                  <ImagePlus className="w-4 h-4 text-indigo-500 shrink-0" />
+                  <span>アルバムから変更</span>
+                </button>
               </div>
 
               {!confirmClearLegend ? (
@@ -596,50 +624,25 @@ export default function LiffScoreSettingsPage() {
                 </p>
               </div>
               <div className="grid grid-cols-2 gap-2.5 w-full pt-1">
-                <div className="relative overflow-hidden py-3 px-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-xs active:opacity-85 transition-colors">
-                  <Camera className="w-4 h-4 shrink-0 pointer-events-none" />
-                  <span className="pointer-events-none select-none">
-                    カメラ撮影
-                  </span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    disabled={isSavingLegend}
-                    onClick={guardFilePickerClick}
-                    onChange={(e) => {
-                      const picked = e.currentTarget.files?.[0] ?? null;
-                      e.currentTarget.value = "";
-                      if (picked) {
-                        handleSelectLegendFile(picked);
-                      }
-                    }}
-                    aria-label="スコア記号早見表をカメラ撮影"
-                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed z-10 text-base"
-                  />
-                </div>
+                <button
+                  type="button"
+                  disabled={isSavingLegend}
+                  onClick={() => setIsCameraModalOpen(true)}
+                  className="py-3 px-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-xs active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+                >
+                  <Camera className="w-4 h-4 shrink-0" />
+                  <span>カメラ撮影</span>
+                </button>
 
-                <div className="relative overflow-hidden py-3 px-3 rounded-2xl bg-card border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs hover:bg-muted/60 active:opacity-85 transition-colors">
-                  <ImagePlus className="w-4 h-4 text-indigo-500 shrink-0 pointer-events-none" />
-                  <span className="pointer-events-none select-none">
-                    アルバム選択
-                  </span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    disabled={isSavingLegend}
-                    onClick={guardFilePickerClick}
-                    onChange={(e) => {
-                      const picked = e.currentTarget.files?.[0] ?? null;
-                      e.currentTarget.value = "";
-                      if (picked) {
-                        handleSelectLegendFile(picked);
-                      }
-                    }}
-                    aria-label="スコア記号早見表をアルバム選択"
-                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed z-10 text-base"
-                  />
-                </div>
+                <button
+                  type="button"
+                  disabled={isSavingLegend}
+                  onClick={openLegendAlbumPicker}
+                  className="py-3 px-3 rounded-2xl bg-card border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs hover:bg-muted/60 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+                >
+                  <ImagePlus className="w-4 h-4 text-indigo-500 shrink-0" />
+                  <span>アルバム選択</span>
+                </button>
               </div>
             </div>
           )}
