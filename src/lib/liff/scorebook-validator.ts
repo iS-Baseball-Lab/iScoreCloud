@@ -462,12 +462,23 @@ export function resolveActiveMatchupFromStructure(
  */
 export function validateScorebookSheet(
   atBats: ScorebookV2AtBat[],
-  structure?: ScorebookSheetStructure | null
+  structure?: ScorebookSheetStructure | null,
+  isTopOverride?: boolean
 ): ScorebookValidationIssue[] {
   const issues: ScorebookValidationIssue[] = [];
-  if (atBats.length === 0) return issues;
+  if (
+    atBats.length === 0 &&
+    (!structure || !Array.isArray(structure.innings) || structure.innings.length === 0)
+  ) {
+    return issues;
+  }
 
-  const isTop = atBats[0].isTop;
+  const isTop =
+    typeof isTopOverride === "boolean"
+      ? isTopOverride
+      : atBats.length > 0
+      ? atBats[0].isTop
+      : true;
   const sideLabel = isTop ? "表" : "裏";
 
   const maxOrder = Math.max(
@@ -485,15 +496,46 @@ export function validateScorebookSheet(
     inningsMap.set(ab.inning, list);
   }
 
-  const sortedInnings = Array.from(inningsMap.keys()).sort((a, b) => a - b);
+  const allInningsSet = new Set<number>(inningsMap.keys());
+  if (structure?.innings) {
+    for (const meta of structure.innings) {
+      if (typeof meta.inning === "number" && meta.inning >= 1) {
+        allInningsSet.add(meta.inning);
+      }
+    }
+  }
+
+  const sortedInnings = Array.from(allInningsSet).sort((a, b) => a - b);
   let expectedNextBatterOrder: number | null = 1;
 
   for (let idx = 0; idx < sortedInnings.length; idx++) {
     const inning = sortedInnings[idx];
     const inningEvents = inningsMap.get(inning) || [];
-    if (inningEvents.length === 0) continue;
-
     const isLastRecordedInning = idx === sortedInnings.length - 1;
+
+    if (inningEvents.length === 0) {
+      const emptyMeta = structure?.innings.find((m) => m.inning === inning);
+      const maybeSkippedFinalBottom =
+        !isTop &&
+        isLastRecordedInning &&
+        inning >= 3 &&
+        (emptyMeta?.runs ?? 0) === 0 &&
+        (emptyMeta?.hits ?? 0) === 0 &&
+        (emptyMeta?.columnCount ?? 1) <= 1;
+
+      if (!maybeSkippedFinalBottom) {
+        issues.push({
+          id: `empty-inning-${isTop ? "t" : "b"}-${inning}`,
+          severity: "error",
+          inning,
+          isTop,
+          category: "outs",
+          message: `${inning}回${sideLabel}の打席データが0件になっています（試合が行われたイニングで0打席はあり得ません）。該当回の「AI再解析」または「打席追加」を行ってください。`,
+        });
+      }
+      expectedNextBatterOrder = null;
+      continue;
+    }
 
     // 1. 先頭打者の打順連続性チェック（列ズレ検知の要！）
     const firstAb = inningEvents[0];

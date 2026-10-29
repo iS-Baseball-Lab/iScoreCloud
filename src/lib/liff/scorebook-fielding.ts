@@ -23,6 +23,7 @@ export type HitZoneOption =
 export type FlyStyleOption = "fly" | "foul_fly" | "liner";
 
 export type AssistTargetOption =
+  | "1"
   | "3"
   | "4"
   | "6"
@@ -139,6 +140,18 @@ function isValidPosDigit(d: string | undefined): d is DefensivePosNumber {
   return Boolean(d && /^[1-9]$/.test(d));
 }
 
+function normalizeFieldingAscii(raw: string): string {
+  return raw
+    .replace(/[０-９]/g, (ch) =>
+      String.fromCharCode(ch.charCodeAt(0) - 0xfee0)
+    )
+    .replace(/[Ａ-Ｚａ-ｚ]/g, (ch) =>
+      String.fromCharCode(ch.charCodeAt(0) - 0xfee0)
+    )
+    .replace(/([1-9])\s*[－ー―‐→⇒➡]\s*([1-9])/g, "$1-$2")
+    .replace(/([1-9])\s*[－ー―‐→⇒➡]\s*([1-9])/g, "$1-$2");
+}
+
 /**
  * 既存の battedDirection と resultLabel から守備位置番号（1〜9）・送球先・打球性質を逆解析する
  */
@@ -147,8 +160,8 @@ export function parseFieldingMeta(
   battedDirection: string | undefined | null,
   resultLabel: string | undefined | null
 ): ParsedFieldingMeta {
-  const dir = (battedDirection || "").trim();
-  const label = (resultLabel || "").trim();
+  const dir = normalizeFieldingAscii((battedDirection || "").trim());
+  const label = normalizeFieldingAscii((resultLabel || "").trim());
   const combined = `${dir} ${label}`;
 
   let primaryPos: DefensivePosNumber | "" = "";
@@ -162,6 +175,12 @@ export function parseFieldingMeta(
       : "front";
   let flyStyle: FlyStyleOption = "fly";
   let errorStyle: ErrorStyleOption = "fielding";
+
+  const isHitCode =
+    resultCode === "single" ||
+    resultCode === "double" ||
+    resultCode === "triple" ||
+    resultCode === "home_run";
 
   // 1. 左中間 / 右中間 の判定
   if (
@@ -180,8 +199,10 @@ export function parseFieldingMeta(
     hitZone = "gap_rc";
   }
 
-  // 2. 3連以上の中継（6-4-3 等）
-  const threeRelayMatch = combined.match(/\b([1-9]-[1-9]-[1-9])\b/);
+  // 2. 3連以上の中継（6-4-3, DP6-4-3, (5-4-3) 等）
+  const threeRelayMatch = combined.match(
+    /(?<![0-9])([1-9]-[1-9]-[1-9])(?![0-9])/
+  );
   if (threeRelayMatch) {
     dpRelay = threeRelayMatch[1];
     const firstDigit = dpRelay[0];
@@ -190,10 +211,11 @@ export function parseFieldingMeta(
     }
   }
 
-  // 3. 2連送球（6-3, K 2-3 等）
-  const twoRelayMatch = !threeRelayMatch
-    ? combined.match(/(?:^|[\s(K])([1-9])-([1-9])(?:$|[\s)])/)
-    : null;
+  // 3. 2連送球（6-3, 3-1, 〜6-3, [1-3], ◇5-3, K 2-3 等 ※7-8/8-9の安打は除外）
+  const twoRelayMatch =
+    !threeRelayMatch && !(isHitCode && (hitZone === "gap_lc" || hitZone === "gap_rc"))
+      ? combined.match(/(?<![0-9-])([1-9])-([1-9])(?![0-9-])/)
+      : null;
   if (twoRelayMatch) {
     const p1 = twoRelayMatch[1];
     const p2 = twoRelayMatch[2];
@@ -201,6 +223,7 @@ export function parseFieldingMeta(
       primaryPos = p1;
     }
     if (
+      p2 === "1" ||
       p2 === "2" ||
       p2 === "3" ||
       p2 === "4" ||
@@ -217,16 +240,18 @@ export function parseFieldingMeta(
     }
   }
 
-  // 4. E6 / FC6 / 6F / 6L / 6IF / ⌒4 / ︵4 / △2 / (2) / 4￣ / 単独 1〜9
+  // 4. E6 / FC6 / 6F / 6L / 6IF / ⌒4 / ︵4 / △2 / (2) / [1] / ◇3 / 4￣ / 単独 1〜9
   if (!primaryPos) {
     const strippedDecorDir = dir
       .replace(/[\u0304\u0305]/g, "")
-      .replace(/^[⌒︵︶∩^~〜￣ー\-△▲(（\s]+/, "")
-      .replace(/[⌒︵︶∩^~〜￣ー\-△▲)）,，.\s]+$/, "");
+      .replace(/^[⌒︵︶∩^~〜￣ー\-△▲□◇◯○[({\uff08\s]+/, "")
+      .replace(/[⌒︵︶∩^~〜￣ー\-△▲□◇◯○\])}\uff09,，.\s]+$/, "");
     const codeDigitMatch =
       strippedDecorDir.match(
-        /^(?:E|FC|INT|K\s*)?([1-9])(?:F|L|IF|SF|E|A)?$/i
-      ) || label.match(/\((?:E|FC|K\s*)?([1-9])(?:A)?\)/i);
+        /^(?:E|FC|INT|K\s*)?([1-9])(?:F|L|IF|SF|E|A|G)?$/i
+      ) ||
+      strippedDecorDir.match(/^([1-9])\s*(?:E|失)$/i) ||
+      label.match(/\((?:E|FC|K\s*)?([1-9])(?:A|G)?\)/i);
     if (codeDigitMatch && isValidPosDigit(codeDigitMatch[1])) {
       primaryPos = codeDigitMatch[1];
       if (
@@ -700,12 +725,15 @@ export function harmonizeOcrFieldingAndLabel(
       : cleanLabel;
 
   const hasRawDecorGlyph =
-    /[⌒︵︶∩^~〜￣ー△▲()（），,\u0304\u0305]/.test(cleanDir) ||
-    /^[1-9]-$/.test(cleanDir);
+    /[⌒︵︶∩^~〜￣ー－―‐→⇒➡△▲□◇◯○[\]{}()（），,０-９\u0304\u0305]/.test(
+      cleanDir
+    ) || /^[1-9]-$/.test(cleanDir);
 
   return {
     battedDirection:
-      !cleanDir || hasRawDecorGlyph ? composed.battedDirection : cleanDir,
+      !cleanDir || hasRawDecorGlyph
+        ? composed.battedDirection
+        : normalizeFieldingAscii(cleanDir),
     resultLabel: finalLabel,
   };
 }

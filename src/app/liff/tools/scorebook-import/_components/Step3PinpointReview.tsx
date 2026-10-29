@@ -24,6 +24,7 @@ import {
   Clock,
   ChevronDown,
   ChevronUp,
+  RotateCcw,
 } from "lucide-react";
 import {
   ADVANCE_METHOD_LABELS,
@@ -82,6 +83,8 @@ interface Step3PinpointReviewProps {
   onBack: () => void;
   onSave: () => void;
   isSaving: boolean;
+  onReanalyzeInning?: (isTop: boolean, inning: number) => void;
+  reanalyzingInningKey?: string | null;
   timingSummary?: ScorebookAnalysisTimingSummary | null;
   errorMessage?: string | null;
   onDismissError?: () => void;
@@ -100,6 +103,8 @@ export function Step3PinpointReview({
   onBack,
   onSave,
   isSaving,
+  onReanalyzeInning,
+  reanalyzingInningKey = null,
   timingSummary = null,
   errorMessage,
   onDismissError,
@@ -128,7 +133,7 @@ export function Step3PinpointReview({
     () =>
       importScope === "bottom_only"
         ? []
-        : validateScorebookSheet(topAtBats, topStructure),
+        : validateScorebookSheet(topAtBats, topStructure, true),
     [importScope, topAtBats, topStructure]
   );
 
@@ -136,7 +141,7 @@ export function Step3PinpointReview({
     () =>
       importScope === "top_only"
         ? []
-        : validateScorebookSheet(bottomAtBats, bottomStructure),
+        : validateScorebookSheet(bottomAtBats, bottomStructure, false),
     [importScope, bottomAtBats, bottomStructure]
   );
 
@@ -726,7 +731,11 @@ export function Step3PinpointReview({
                 key={iss.id}
                 type="button"
                 onClick={() => {
-                  if (iss.atBatId) setEditingAtBatId(iss.atBatId);
+                  if (iss.atBatId) {
+                    setEditingAtBatId(iss.atBatId);
+                  } else {
+                    setSelectedInning(iss.inning);
+                  }
                 }}
                 className="w-full text-left p-2 rounded-xl bg-card/90 hover:bg-card border border-border/80 flex items-start justify-between gap-2 transition-all cursor-pointer"
               >
@@ -833,7 +842,12 @@ export function Step3PinpointReview({
         {(selectedInning === "all" ? availableInnings : [selectedInning]).map(
           (inn) => {
             const innItems = visibleList.filter((a) => a.inning === inn);
-            if (innItems.length === 0 && onlyFlagged) return null;
+            const hasInningLevelIssue = currentIssues.some(
+              (iss) => iss.inning === inn && !iss.atBatId
+            );
+            if (innItems.length === 0 && onlyFlagged && !hasInningLevelIssue) {
+              return null;
+            }
 
             const innRuns = currentList
               .filter((a) => a.inning === inn)
@@ -841,13 +855,21 @@ export function Step3PinpointReview({
             const innOuts = currentList
               .filter((a) => a.inning === inn)
               .reduce((s, a) => s + a.outsInPlay, 0);
+            const currentInningKey = `${isTop ? "top" : "bottom"}-${inn}`;
+            const isReanalyzingThisInning =
+              reanalyzingInningKey === currentInningKey;
+            const isAnyReanalyzing = Boolean(reanalyzingInningKey);
 
             return (
               <section
                 key={inn}
-                className="rounded-3xl bg-card border border-border shadow-xs p-3.5 space-y-2.5"
+                className={`rounded-3xl bg-card border shadow-xs p-3.5 space-y-2.5 ${
+                  hasInningLevelIssue
+                    ? "border-destructive/60"
+                    : "border-border"
+                }`}
               >
-                <div className="flex items-center justify-between px-1">
+                <div className="flex items-center justify-between gap-1.5 px-1 flex-wrap">
                   <div className="flex items-center gap-2">
                     <span className="px-2.5 py-0.5 rounded-lg bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 text-xs font-black">
                       {inn}回{isTop ? "表" : "裏"}
@@ -857,20 +879,71 @@ export function Step3PinpointReview({
                     </span>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => handleAddAtBatInInning(inn)}
-                    className="px-2 py-1 rounded-lg bg-muted hover:bg-muted/80 text-[10px] font-black text-foreground flex items-center gap-0.5 cursor-pointer"
-                  >
-                    <Plus className="w-3 h-3" />
-                    <span>打席追加</span>
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    {onReanalyzeInning && (
+                      <button
+                        type="button"
+                        disabled={isAnyReanalyzing || isSaving}
+                        onClick={() => onReanalyzeInning(isTop, inn)}
+                        className="px-2 py-1 rounded-lg bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/35 text-[10px] font-black text-indigo-700 dark:text-indigo-300 flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                      >
+                        {isReanalyzingThisInning ? (
+                          <>
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                            <span>再解析中...</span>
+                          </>
+                        ) : (
+                          <>
+                            <RotateCcw className="w-3 h-3" />
+                            <span>AI再解析</span>
+                          </>
+                        )}
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => handleAddAtBatInInning(inn)}
+                      className="px-2 py-1 rounded-lg bg-muted hover:bg-muted/80 text-[10px] font-black text-foreground flex items-center gap-0.5 cursor-pointer"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>打席追加</span>
+                    </button>
+                  </div>
                 </div>
 
                 <div className="space-y-2">
                   {innItems.length === 0 ? (
-                    <div className="py-3 px-3 rounded-2xl bg-muted/25 border border-dashed border-border text-center text-[11px] font-bold text-muted-foreground">
-                      このイニングの打席はありません（右上の「打席追加」または他イニングから移動できます）
+                    <div
+                      className={`py-3.5 px-3 rounded-2xl border border-dashed text-center space-y-2.5 ${
+                        hasInningLevelIssue
+                          ? "bg-destructive/5 border-destructive/45"
+                          : "bg-muted/25 border-border"
+                      }`}
+                    >
+                      <p className="text-[11px] font-bold text-foreground">
+                        このイニングの打席が0件です（AI再解析または手動で打席追加できます）
+                      </p>
+                      {onReanalyzeInning && (
+                        <button
+                          type="button"
+                          disabled={isAnyReanalyzing || isSaving}
+                          onClick={() => onReanalyzeInning(isTop, inn)}
+                          className="mx-auto px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer disabled:opacity-50"
+                        >
+                          {isReanalyzingThisInning ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              <span>{inn}回{isTop ? "表" : "裏"}を再解析中...</span>
+                            </>
+                          ) : (
+                            <>
+                              <RotateCcw className="w-3.5 h-3.5" />
+                              <span>この回だけAI再解析する</span>
+                            </>
+                          )}
+                        </button>
+                      )}
                     </div>
                   ) : (
                     innItems.map((ab) => {
@@ -1930,6 +2003,7 @@ export function Step3PinpointReview({
                                   {(
                                     [
                                       { id: "3", label: "一塁送球 (-3)" },
+                                      { id: "1", label: "一塁カバー投 (-1)" },
                                       { id: "4", label: "二封・二塁手 (-4)" },
                                       { id: "6", label: "二封・遊撃手 (-6)" },
                                       { id: "5", label: "三塁封殺 (-5)" },

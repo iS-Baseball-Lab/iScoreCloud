@@ -250,6 +250,9 @@ export default function LiffScorebookImportPage() {
   const [structureTotalMs, setStructureTotalMs] = useState<number | null>(null);
 
   const [isAnalyzingInnings, setIsAnalyzingInnings] = useState(false);
+  const [reanalyzingInningKey, setReanalyzingInningKey] = useState<
+    string | null
+  >(null);
   const [analysisProgressLabel, setAnalysisProgressLabel] = useState("");
   const [deepStartedAtMs, setDeepStartedAtMs] = useState<number | null>(null);
   const [deepActiveLabel, setDeepActiveLabel] = useState<string | null>(null);
@@ -1198,7 +1201,7 @@ export default function LiffScorebookImportPage() {
         nextLeadOffOrder?: number;
         fromCache?: boolean;
       }> => {
-        const cacheKey = `v3:${selectedMatchId}:${
+        const cacheKey = `v5:${selectedMatchId}:${
           isTop ? "top" : "bottom"
         }:${apiImg.base64.length}:${structureFp}:${expectedLeadOff}:${targetInnings.join(
           ","
@@ -1263,6 +1266,31 @@ export default function LiffScorebookImportPage() {
         if (!data.success || !data.atBats) {
           throw new Error(
             data.error || `${sideLabel}のイニング解析に失敗しました`
+          );
+        }
+
+        const maxInnInStruct = Math.max(
+          1,
+          ...structure.innings.map((m) => m.inning)
+        );
+        const canBeUnplayedFinalBottom =
+          !isTop &&
+          targetInnings.every((innNum) => {
+            const meta = structure.innings.find((m) => m.inning === innNum);
+            return (
+              innNum === maxInnInStruct &&
+              innNum >= 3 &&
+              (meta?.runs ?? 0) === 0 &&
+              (meta?.hits ?? 0) === 0 &&
+              (meta?.columnCount ?? 1) <= 1
+            );
+          });
+
+        if (data.atBats.length === 0 && !canBeUnplayedFinalBottom) {
+          throw new Error(
+            `${sideLabel} ${targetInnings.join(
+              "・"
+            )}回の打席抽出が0件だったため自動リトライします`
           );
         }
 
@@ -1499,6 +1527,156 @@ export default function LiffScorebookImportPage() {
       setDeepStartedAtMs(null);
       setDeepActiveLabel(null);
       setDeepActiveStartedAtMs(null);
+    }
+  };
+
+  // 5-B. Step 3 ピンポイント1イニング単独AI再解析
+  const handleReanalyzeSingleInning = async (
+    isTop: boolean,
+    inning: number
+  ) => {
+    if (!selectedMatchId || reanalyzingInningKey) return;
+    const structure = isTop ? topStructure : bottomStructure;
+    const imgState = isTop ? topImage : bottomImage;
+    if (!structure || !imgState.processed) return;
+
+    const taskKey = `${isTop ? "top" : "bottom"}-${inning}`;
+    setReanalyzingInningKey(taskKey);
+    setErrorBanner(null);
+    const startMs = Date.now();
+
+    try {
+      const currentSideList = isTop ? topAtBats : bottomAtBats;
+      const lineupCycle = Math.max(9, structure.batters.length);
+      let expectedLeadOff = 1;
+      if (inning > 1) {
+        const prevInningItems = currentSideList.filter(
+          (a) => a.inning < inning
+        );
+        if (prevInningItems.length > 0) {
+          const lastPrev = prevInningItems[prevInningItems.length - 1];
+          const endedByRunnerOutOnly =
+            lastPrev.resultCode === "other" &&
+            lastPrev.advances.some(
+              (a) =>
+                a.isOut &&
+                (a.method === "caught_stealing" ||
+                  a.method === "pickoff_out" ||
+                  a.method === "interference_out" ||
+                  a.method === "appeal_out" ||
+                  a.method === "out_on_base")
+            );
+          expectedLeadOff = endedByRunnerOutOnly
+            ? lastPrev.battingOrder
+            : (lastPrev.battingOrder % lineupCycle) + 1;
+        }
+      }
+
+      const apiImg = await buildCalibratedRulerSheetImage(
+        imgState.processed,
+        1850,
+        0.89
+      );
+      const targetBoxes: NormalizedBox[] = [inning]
+        .map(
+          (innNum) =>
+            structure.innings.find((m) => m.inning === innNum)?.columnBox
+        )
+        .filter((b): b is NormalizedBox => Array.isArray(b));
+
+      const knownMinXs = structure.innings
+        .map((m) => m.columnBox?.[1])
+        .filter((v): v is number => typeof v === "number" && v > 0);
+      const firstInningMinX =
+        knownMinXs.length > 0 ? Math.min(...knownMinXs) : undefined;
+
+      const focusCrop = await extractInningChunkCompositeCrop(
+        imgState.processed.dataUrl,
+        targetBoxes,
+        {
+          structure,
+          lineupRightX: structure.lineupRightX,
+          firstInningMinX,
+          batters: structure.batters,
+          targetInnings: [inning],
+          alreadyEnhanced: imgState.enhancePencil,
+        }
+      );
+
+      const sideLabel = isTop ? "先攻（表）" : "後攻（裏）";
+      const res = await fetch("/api/liff/scorebook/analyze-inning-chunk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          teamId: resolvedTeamId || currentTeam?.id || "",
+          matchId: selectedMatchId,
+          isTop,
+          imageBase64: apiImg.base64,
+          mimeType: apiImg.mimeType,
+          focusCropBase64: focusCrop?.base64,
+          focusCropMimeType: focusCrop?.mimeType,
+          structure,
+          targetInnings: [inning],
+          expectedLeadOffOrder: expectedLeadOff,
+          legendBase64: legendOverride?.base64,
+          legendMimeType: legendOverride?.mimeType,
+        }),
+      });
+
+      const data = await parseSafeJson<{
+        success: boolean;
+        atBats?: ScorebookV2AtBat[];
+        error?: string;
+      }>(res, `${sideLabel} ${inning}回 再解析エラー`);
+
+      if (!data.success || !data.atBats) {
+        throw new Error(
+          data.error || `${sideLabel} ${inning}回の再解析に失敗しました`
+        );
+      }
+
+      const freshInningAtBats = data.atBats;
+      const elapsed = Date.now() - startMs;
+
+      const mergeSideList = (prev: ScorebookV2AtBat[]): ScorebookV2AtBat[] => {
+        const before = prev.filter((a) => a.inning < inning);
+        const after = prev.filter((a) => a.inning > inning);
+        return [...before, ...freshInningAtBats, ...after];
+      };
+
+      if (isTop) {
+        setTopAtBats((prev) => mergeSideList(prev));
+      } else {
+        setBottomAtBats((prev) => mergeSideList(prev));
+      }
+
+      setTimingSummary((prev) => {
+        if (!prev) return prev;
+        const entryKey = `${isTop ? "top" : "bottom"}-${inning}`;
+        const updatedEntry: ScorebookTimingEntry = {
+          key: entryKey,
+          isTop,
+          innings: [inning],
+          label: `${inning}回${isTop ? "表" : "裏"}`,
+          durationMs: elapsed,
+          fromCache: false,
+        };
+        const exists = prev.inningEntries.some((e) => e.key === entryKey);
+        const nextEntries = exists
+          ? prev.inningEntries.map((e) =>
+              e.key === entryKey ? updatedEntry : e
+            )
+          : [...prev.inningEntries, updatedEntry];
+        return {
+          ...prev,
+          inningEntries: nextEntries,
+        };
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setErrorBanner(msg);
+    } finally {
+      setReanalyzingInningKey(null);
     }
   };
 
@@ -1812,6 +1990,8 @@ export default function LiffScorebookImportPage() {
                 }}
                 onSave={handleSaveToDatabase}
                 isSaving={isSaving}
+                onReanalyzeInning={handleReanalyzeSingleInning}
+                reanalyzingInningKey={reanalyzingInningKey}
                 timingSummary={timingSummary}
                 errorMessage={errorBanner}
                 onDismissError={() => setErrorBanner(null)}

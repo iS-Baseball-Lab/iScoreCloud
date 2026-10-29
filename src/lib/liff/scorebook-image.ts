@@ -668,6 +668,7 @@ export async function extractStructureFocusCrops(
   sourceDataUrl: string,
   alreadyEnhanced = false
 ): Promise<StructureFocusCrops | null> {
+  void alreadyEnhanced;
   let lineupCanvas: HTMLCanvasElement | null = null;
   let sumCanvas: HTMLCanvasElement | null = null;
   try {
@@ -704,20 +705,6 @@ export async function extractStructureFocusCrops(
       lineupCanvas.width,
       lineupCanvas.height
     );
-    if (!alreadyEnhanced) {
-      const lineupImgData = lineupCtx.getImageData(
-        0,
-        0,
-        lineupCanvas.width,
-        lineupCanvas.height
-      );
-      applyAdaptivePencilContrast(
-        lineupImgData,
-        lineupCanvas.width,
-        lineupCanvas.height
-      );
-      lineupCtx.putImageData(lineupImgData, 0, 0);
-    }
     const lineupCropBase64 = stripDataUrlPrefix(
       await canvasToDataUrlAsync(lineupCanvas, mimeType, 0.9)
     );
@@ -763,21 +750,6 @@ export async function extractStructureFocusCrops(
       sumCanvas.width,
       outBotH
     );
-
-    if (!alreadyEnhanced) {
-      const topImgData = sumCtx.getImageData(0, 0, sumCanvas.width, outTopH);
-      applyAdaptivePencilContrast(topImgData, sumCanvas.width, outTopH);
-      sumCtx.putImageData(topImgData, 0, 0);
-
-      const botImgData = sumCtx.getImageData(
-        0,
-        outTopH + outDivH,
-        sumCanvas.width,
-        outBotH
-      );
-      applyAdaptivePencilContrast(botImgData, sumCanvas.width, outBotH);
-      sumCtx.putImageData(botImgData, 0, outTopH + outDivH);
-    }
 
     const summaryCropBase64 = stripDataUrlPrefix(
       await canvasToDataUrlAsync(sumCanvas, mimeType, 0.9)
@@ -877,7 +849,7 @@ export async function extractInningChunkCompositeCrop(
           subColSpecs[0].inning,
           subColSpecs[0].subCol,
           sortedBatters[0].battingOrder,
-          0.035
+          0.045
         );
         if (sampleQuad) {
           const sampleW = Math.hypot(
@@ -889,61 +861,49 @@ export async function extractInningChunkCompositeCrop(
             ((sampleQuad.bl[1] - sampleQuad.tl[1]) * h) / 1000
           );
           const singleAspect = Math.max(
-            0.78,
+            0.8,
             Math.min(2.15, sampleW / Math.max(16, sampleH))
           );
 
           const colCount = subColSpecs.length;
-          // 1〜2列イニングは縦に細長いストリップ（428×1666等）にするとVisionエンコーダ縮小時にBSO欄が潰れるため、
-          // 左段（前半打順: 1〜5番）・右段（後半打順: 6〜9番）の2段並列ニアスクエア高精細グリッド（1マス約320×256px）に展開する
-          const useTwoBlockSplit = colCount <= 2 && bLen >= 6;
-          const blockCount = useTwoBlockSplit ? 2 : 1;
-          const rowsPerBlock = useTwoBlockSplit
-            ? Math.ceil(bLen / 2)
-            : bLen;
-
-          const rowOutH = useTwoBlockSplit
-            ? colCount === 1
-              ? 256
-              : 216
-            : colCount === 3
-            ? 192
-            : 164;
-          const minCellW = useTwoBlockSplit
-            ? colCount === 1
-              ? 296
-              : 224
-            : 204;
-          const maxCellW = useTwoBlockSplit
-            ? colCount === 1
-              ? 392
-              : 288
-            : colCount === 3
-            ? 256
-            : 220;
+          // 1番〜9番を分割せず上から下へ自然な縦1列で並べつつ、左端に「イニング見出し〜9番〜下段得点欄までの連続列全体ストリップ」を併設する。
+          // ※1マス単体への局所適応コントラスト(applyAdaptivePencilContrast)は黒丸●の中抜けや白紙BSO印刷線の強調誤読を招くため一切適用せず、忠実なホモグラフィ画素を維持する。
+          const rowOutH =
+            colCount === 1
+              ? bLen <= 9
+                ? 196
+                : 176
+              : colCount === 2
+              ? 182
+              : 162;
+          const minCellW =
+            colCount === 1 ? 268 : colCount === 2 ? 228 : 196;
+          const maxCellW =
+            colCount === 1 ? 364 : colCount === 2 ? 304 : 248;
           const cellOutW = Math.max(
             minCellW,
             Math.min(maxCellW, Math.round(rowOutH * singleAspect))
           );
-          const labelPanelW = useTwoBlockSplit
-            ? colCount === 1
-              ? 172
-              : 148
-            : 196;
+
+          const overviewSubColW =
+            colCount === 1 ? 136 : colCount === 2 ? 100 : 80;
+          const overviewSubGap = 4;
+          const overviewPanelW =
+            colCount * overviewSubColW + (colCount - 1) * overviewSubGap;
+          const sectionGapW = 14;
+          const labelPanelW = colCount <= 2 ? 168 : 160;
           const gutterW = 8;
-          const rowGapH = 10;
-          const headerH = 88;
-          const blockDividerW = 22;
+          const rowGapH = 6;
+          const headerH = 84;
           const outerPadX = 12;
 
-          const singleBlockW =
-            labelPanelW + colCount * (gutterW + cellOutW);
           const totalW =
             outerPadX * 2 +
-            blockCount * singleBlockW +
-            (blockCount - 1) * blockDividerW;
-          const totalH =
-            headerH + rowsPerBlock * (rowOutH + rowGapH) + 8;
+            overviewPanelW +
+            sectionGapW +
+            labelPanelW +
+            colCount * (gutterW + cellOutW);
+          const totalH = headerH + bLen * (rowOutH + rowGapH) + 10;
 
           // ソース画像を1度だけキャンバス展開してRGBAバッファから高速ホモグラフィ切り出しを行う
           const srcCanvas = document.createElement("canvas");
@@ -965,16 +925,6 @@ export async function extractInningChunkCompositeCrop(
             ctx.imageSmoothingEnabled = true;
             ctx.imageSmoothingQuality = "high";
 
-            if (blockCount === 2) {
-              const divX = outerPadX + singleBlockW + Math.floor(blockDividerW / 2);
-              ctx.strokeStyle = "#334155";
-              ctx.lineWidth = 2;
-              ctx.beginPath();
-              ctx.moveTo(divX, 6);
-              ctx.lineTo(divX, totalH - 6);
-              ctx.stroke();
-            }
-
             const innTitle =
               targetNums.length > 0
                 ? `${targetNums.join("・")}回`
@@ -988,114 +938,175 @@ export async function extractInningChunkCompositeCrop(
               "#7c3aed", // c:4 バイオレット
             ];
 
-            // 各ブロック（左段・右段）の上部ヘッダーを描画
-            for (let blkIdx = 0; blkIdx < blockCount; blkIdx++) {
-              const blockOriginX =
-                outerPadX + blkIdx * (singleBlockW + blockDividerW);
-              const rangeStartBo =
-                sortedBatters[blkIdx * rowsPerBlock]?.battingOrder ?? 1;
-              const rangeEndBo =
-                sortedBatters[
-                  Math.min(bLen - 1, (blkIdx + 1) * rowsPerBlock - 1)
-                ]?.battingOrder ?? bLen;
+            // ── セクション1（左端）: 連続列全体ストリップ（白紙マス判定・3アウト終了斜線・継投横波線・下段得点の確認用） ──
+            const ovOriginX = outerPadX;
+            ctx.fillStyle = "#38bdf8";
+            ctx.font = "bold 13px sans-serif";
+            ctx.textAlign = "left";
+            ctx.textBaseline = "middle";
+            ctx.fillText("連続列全体", ovOriginX + 2, 18);
+            ctx.fillStyle = "#94a3b8";
+            ctx.font = "bold 10px sans-serif";
+            ctx.fillText("空欄/切線確認", ovOriginX + 2, 34);
 
-              ctx.fillStyle = "#38bdf8";
-              ctx.font = "bold 15px sans-serif";
-              ctx.textAlign = "left";
-              ctx.textBaseline = "middle";
-              ctx.fillText(
-                blockCount === 2
-                  ? `【${innTitle}】${blkIdx === 0 ? "左段" : "右段"}`
-                  : `【${innTitle} 独立セル】`,
-                blockOriginX + 4,
-                22
+            const ovStripTopY = 44;
+            const ovStripH = totalH - ovStripTopY - 10;
+            for (let cIdx = 0; cIdx < colCount; cIdx++) {
+              const spec = subColSpecs[cIdx];
+              const accent =
+                subColPalette[(spec.subCol - 1) % subColPalette.length];
+              const ovColX =
+                ovOriginX + cIdx * (overviewSubColW + overviewSubGap);
+              const frac = getInningSubColumnFractions(
+                struct.innings,
+                spec.inning,
+                spec.subCol
               );
-              ctx.fillStyle = "#f8fafc";
-              ctx.font = "bold 13px sans-serif";
-              ctx.fillText(
-                blockCount === 2
-                  ? `▼ ${rangeStartBo}番〜${rangeEndBo}番打者`
-                  : colCount >= 2
-                  ? `全${colCount}列を分離拡大`
-                  : "各打順1マス拡大",
-                blockOriginX + 4,
-                48
-              );
-              ctx.fillStyle = "#94a3b8";
-              ctx.font = "bold 10px sans-serif";
-              ctx.fillText("左細枠=BSO / 中央=アウト", blockOriginX + 4, 70);
-
-              for (let cIdx = 0; cIdx < colCount; cIdx++) {
-                const spec = subColSpecs[cIdx];
-                const colDstX =
-                  blockOriginX +
-                  labelPanelW +
-                  gutterW +
-                  cIdx * (cellOutW + gutterW);
-                const accent =
-                  subColPalette[(spec.subCol - 1) % subColPalette.length];
-
-                // デジタルバッジ（AIに c:1, c:2, c:3 を100%誤認させない明示ヘッダー）
-                ctx.fillStyle = accent;
-                ctx.fillRect(colDstX, 6, cellOutW, 26);
-                ctx.fillStyle = "#ffffff";
-                ctx.font = "bold 13px sans-serif";
-                ctx.textAlign = "center";
-                ctx.textBaseline = "middle";
-                const hdrLabel =
-                  spec.totalSubCols >= 2
-                    ? `${spec.inning}回 ${spec.subCol}列目 [c:${spec.subCol}]`
-                    : `${spec.inning}回 [c:1] (${rangeStartBo}〜${rangeEndBo}番)`;
-                ctx.fillText(hdrLabel, colDstX + cellOutW / 2, 19);
-
-                // 原本のイニング番号印字部分のホモグラフィ切り抜き
-                const frac = getInningSubColumnFractions(
-                  struct.innings,
-                  spec.inning,
-                  spec.subCol
+              if (frac && ovStripH > 40) {
+                const ovT0 = -0.6 / Math.max(1, bLen);
+                const ovT1 = 1 + 0.85 / Math.max(1, bLen);
+                const ovQuad = {
+                  tl: bilinearGridPoint(corners, frac.s0, ovT0),
+                  tr: bilinearGridPoint(corners, frac.s1, ovT0),
+                  br: bilinearGridPoint(corners, frac.s1, ovT1),
+                  bl: bilinearGridPoint(corners, frac.s0, ovT1),
+                };
+                const ovImgData = ctx.createImageData(
+                  overviewSubColW,
+                  ovStripH
                 );
-                if (frac) {
-                  const hdrT0 = -0.62 / Math.max(1, bLen);
-                  const hdrT1 = 0.02 / Math.max(1, bLen);
-                  const hdrQuad = {
-                    tl: bilinearGridPoint(corners, frac.s0, hdrT0),
-                    tr: bilinearGridPoint(corners, frac.s1, hdrT0),
-                    br: bilinearGridPoint(corners, frac.s1, hdrT1),
-                    bl: bilinearGridPoint(corners, frac.s0, hdrT1),
-                  };
-                  const hdrOutH = headerH - 40;
-                  const hdrImgData = ctx.createImageData(cellOutW, hdrOutH);
-                  warpQuadFromRgbaBuffer(
-                    fullSrcData,
-                    w,
-                    h,
-                    {
-                      tl: [
-                        (Math.max(0, hdrQuad.tl[0]) * w) / 1000,
-                        (Math.max(0, hdrQuad.tl[1]) * h) / 1000,
-                      ],
-                      tr: [
-                        (Math.min(1000, hdrQuad.tr[0]) * w) / 1000,
-                        (Math.max(0, hdrQuad.tr[1]) * h) / 1000,
-                      ],
-                      br: [
-                        (Math.min(1000, hdrQuad.br[0]) * w) / 1000,
-                        (Math.min(1000, hdrQuad.br[1]) * h) / 1000,
-                      ],
-                      bl: [
-                        (Math.max(0, hdrQuad.bl[0]) * w) / 1000,
-                        (Math.min(1000, hdrQuad.bl[1]) * h) / 1000,
-                      ],
-                    },
-                    hdrImgData.data,
-                    cellOutW,
-                    hdrOutH
-                  );
-                  ctx.putImageData(hdrImgData, colDstX, 34);
-                  ctx.strokeStyle = accent;
-                  ctx.lineWidth = 1.5;
-                  ctx.strokeRect(colDstX, 34, cellOutW, hdrOutH);
-                }
+                warpQuadFromRgbaBuffer(
+                  fullSrcData,
+                  w,
+                  h,
+                  {
+                    tl: [
+                      (Math.max(0, Math.min(1000, ovQuad.tl[0])) * w) / 1000,
+                      (Math.max(0, Math.min(1000, ovQuad.tl[1])) * h) / 1000,
+                    ],
+                    tr: [
+                      (Math.max(0, Math.min(1000, ovQuad.tr[0])) * w) / 1000,
+                      (Math.max(0, Math.min(1000, ovQuad.tr[1])) * h) / 1000,
+                    ],
+                    br: [
+                      (Math.max(0, Math.min(1000, ovQuad.br[0])) * w) / 1000,
+                      (Math.max(0, Math.min(1000, ovQuad.br[1])) * h) / 1000,
+                    ],
+                    bl: [
+                      (Math.max(0, Math.min(1000, ovQuad.bl[0])) * w) / 1000,
+                      (Math.max(0, Math.min(1000, ovQuad.bl[1])) * h) / 1000,
+                    ],
+                  },
+                  ovImgData.data,
+                  overviewSubColW,
+                  ovStripH
+                );
+                ctx.putImageData(ovImgData, ovColX, ovStripTopY);
+                ctx.strokeStyle = accent;
+                ctx.lineWidth = 1.5;
+                ctx.strokeRect(ovColX, ovStripTopY, overviewSubColW, ovStripH);
+              }
+            }
+
+            // 区切り縦線
+            const sepX = ovOriginX + overviewPanelW + Math.floor(sectionGapW / 2);
+            ctx.strokeStyle = "#334155";
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(sepX, 8);
+            ctx.lineTo(sepX, totalH - 8);
+            ctx.stroke();
+
+            // ── セクション2（中央〜右）: 1番〜最終打順の縦一列・1マス独立大判セル ──
+            const matrixOriginX = ovOriginX + overviewPanelW + sectionGapW;
+            const firstBo = sortedBatters[0]?.battingOrder ?? 1;
+            const lastBo = sortedBatters[bLen - 1]?.battingOrder ?? bLen;
+
+            ctx.fillStyle = "#38bdf8";
+            ctx.font = "bold 15px sans-serif";
+            ctx.textAlign = "left";
+            ctx.textBaseline = "middle";
+            ctx.fillText(`【${innTitle}】`, matrixOriginX + 4, 22);
+            ctx.fillStyle = "#f8fafc";
+            ctx.font = "bold 13px sans-serif";
+            ctx.fillText(
+              `▼ ${firstBo}番〜${lastBo}番 縦順拡大`,
+              matrixOriginX + 4,
+              46
+            );
+            ctx.fillStyle = "#94a3b8";
+            ctx.font = "bold 10px sans-serif";
+            ctx.fillText("記入マスのみ抽出", matrixOriginX + 4, 68);
+
+            for (let cIdx = 0; cIdx < colCount; cIdx++) {
+              const spec = subColSpecs[cIdx];
+              const colDstX =
+                matrixOriginX +
+                labelPanelW +
+                gutterW +
+                cIdx * (cellOutW + gutterW);
+              const accent =
+                subColPalette[(spec.subCol - 1) % subColPalette.length];
+
+              ctx.fillStyle = accent;
+              ctx.fillRect(colDstX, 6, cellOutW, 26);
+              ctx.fillStyle = "#ffffff";
+              ctx.font = "bold 13px sans-serif";
+              ctx.textAlign = "center";
+              ctx.textBaseline = "middle";
+              const hdrLabel =
+                spec.totalSubCols >= 2
+                  ? `${spec.inning}回 ${spec.subCol}列目 [c:${spec.subCol}]`
+                  : `${spec.inning}回 [c:1] (${firstBo}〜${lastBo}番)`;
+              ctx.fillText(hdrLabel, colDstX + cellOutW / 2, 19);
+
+              // 原本のイニング番号印字部分のホモグラフィ切り抜き
+              const frac = getInningSubColumnFractions(
+                struct.innings,
+                spec.inning,
+                spec.subCol
+              );
+              if (frac) {
+                const hdrT0 = -0.62 / Math.max(1, bLen);
+                const hdrT1 = 0.02 / Math.max(1, bLen);
+                const hdrQuad = {
+                  tl: bilinearGridPoint(corners, frac.s0, hdrT0),
+                  tr: bilinearGridPoint(corners, frac.s1, hdrT0),
+                  br: bilinearGridPoint(corners, frac.s1, hdrT1),
+                  bl: bilinearGridPoint(corners, frac.s0, hdrT1),
+                };
+                const hdrOutH = headerH - 40;
+                const hdrImgData = ctx.createImageData(cellOutW, hdrOutH);
+                warpQuadFromRgbaBuffer(
+                  fullSrcData,
+                  w,
+                  h,
+                  {
+                    tl: [
+                      (Math.max(0, hdrQuad.tl[0]) * w) / 1000,
+                      (Math.max(0, hdrQuad.tl[1]) * h) / 1000,
+                    ],
+                    tr: [
+                      (Math.min(1000, hdrQuad.tr[0]) * w) / 1000,
+                      (Math.max(0, hdrQuad.tr[1]) * h) / 1000,
+                    ],
+                    br: [
+                      (Math.min(1000, hdrQuad.br[0]) * w) / 1000,
+                      (Math.min(1000, hdrQuad.br[1]) * h) / 1000,
+                    ],
+                    bl: [
+                      (Math.max(0, hdrQuad.bl[0]) * w) / 1000,
+                      (Math.min(1000, hdrQuad.bl[1]) * h) / 1000,
+                    ],
+                  },
+                  hdrImgData.data,
+                  cellOutW,
+                  hdrOutH
+                );
+                ctx.putImageData(hdrImgData, colDstX, 34);
+                ctx.strokeStyle = accent;
+                ctx.lineWidth = 1.5;
+                ctx.strokeRect(colDstX, 34, cellOutW, hdrOutH);
               }
             }
 
@@ -1111,33 +1122,25 @@ export async function extractInningChunkCompositeCrop(
                   (corners.br[0] - corners.bl[0])
               );
 
-            // 各打順行 × 各サブ列の1マス超高精細射影展開
+            // 各打順行 × 各サブ列の1マス忠実ホモグラフィ展開（1番〜9番まで自然な縦一列）
             for (let bIdx = 0; bIdx < bLen; bIdx++) {
               const batter = sortedBatters[bIdx];
-              const blkIdx = useTwoBlockSplit
-                ? Math.floor(bIdx / rowsPerBlock)
-                : 0;
-              const localRowIdx = useTwoBlockSplit
-                ? bIdx % rowsPerBlock
-                : bIdx;
-              const blockOriginX =
-                outerPadX + blkIdx * (singleBlockW + blockDividerW);
-              const dstY = headerH + localRowIdx * (rowOutH + rowGapH);
+              const dstY = headerH + bIdx * (rowOutH + rowGapH);
 
-              // 左パネル: 視認性抜群の打順番号バッジ＋傾き補正済みの選手欄サムネイル
+              // 打順番号バッジ＋傾き補正済みの選手欄サムネイル
               ctx.fillStyle = "#1e293b";
-              ctx.fillRect(blockOriginX, dstY, labelPanelW, rowOutH);
+              ctx.fillRect(matrixOriginX, dstY, labelPanelW, rowOutH);
               ctx.fillStyle = "#0284c7";
-              ctx.fillRect(blockOriginX, dstY, labelPanelW, 30);
+              ctx.fillRect(matrixOriginX, dstY, labelPanelW, 28);
               ctx.fillStyle = "#ffffff";
-              ctx.font = "bold 14px sans-serif";
+              ctx.font = "bold 13px sans-serif";
               ctx.textAlign = "left";
               ctx.textBaseline = "middle";
               const displayName = (batter.name || "").slice(0, 7);
               ctx.fillText(
                 `${batter.battingOrder}番 ${displayName}`,
-                blockOriginX + 7,
-                dstY + 15
+                matrixOriginX + 7,
+                dstY + 14
               );
 
               const t0 = bIdx / bLen;
@@ -1155,7 +1158,7 @@ export async function extractInningChunkCompositeCrop(
               );
 
               const nameThumbW = labelPanelW - 10;
-              const nameThumbH = rowOutH - 38;
+              const nameThumbH = rowOutH - 36;
               const nameImgData = ctx.createImageData(nameThumbW, nameThumbH);
               warpQuadFromRgbaBuffer(
                 fullSrcData,
@@ -1171,13 +1174,13 @@ export async function extractInningChunkCompositeCrop(
                 nameThumbW,
                 nameThumbH
               );
-              ctx.putImageData(nameImgData, blockOriginX + 5, dstY + 34);
+              ctx.putImageData(nameImgData, matrixOriginX + 5, dstY + 32);
 
-              // 右側: サブ列ごとに1マスずつ大判ホモグラフィ展開して配置
+              // 右側: サブ列ごとに1マスずつ忠実なホモグラフィ画素で配置
               for (let cIdx = 0; cIdx < colCount; cIdx++) {
                 const spec = subColSpecs[cIdx];
                 const colDstX =
-                  blockOriginX +
+                  matrixOriginX +
                   labelPanelW +
                   gutterW +
                   cIdx * (cellOutW + gutterW);
@@ -1189,7 +1192,7 @@ export async function extractInningChunkCompositeCrop(
                   spec.inning,
                   spec.subCol,
                   batter.battingOrder,
-                  0.035
+                  0.045
                 );
                 if (!cellQuad) continue;
 
@@ -1221,57 +1224,12 @@ export async function extractInningChunkCompositeCrop(
                   rowOutH
                 );
 
-                if (!options.alreadyEnhanced) {
-                  applyAdaptivePencilContrast(cellImgData, cellOutW, rowOutH);
-                }
                 ctx.putImageData(cellImgData, colDstX, dstY);
 
                 ctx.strokeStyle = accent;
                 ctx.lineWidth = 2;
                 ctx.strokeRect(colDstX, dstY, cellOutW, rowOutH);
               }
-            }
-
-            // 9人打順の右段最下段（空き1枠）にAI視覚アンカー用の「1マス記号構造チートシート」を描画
-            if (useTwoBlockSplit && bLen < rowsPerBlock * 2) {
-              const guideOriginX =
-                outerPadX + singleBlockW + blockDividerW;
-              const guideY =
-                headerH + (rowsPerBlock - 1) * (rowOutH + rowGapH);
-              ctx.fillStyle = "#1e293b";
-              ctx.fillRect(guideOriginX, guideY, singleBlockW, rowOutH);
-              ctx.strokeStyle = "#38bdf8";
-              ctx.lineWidth = 1.5;
-              ctx.strokeRect(guideOriginX, guideY, singleBlockW, rowOutH);
-
-              ctx.fillStyle = "#38bdf8";
-              ctx.font = "bold 14px sans-serif";
-              ctx.textAlign = "left";
-              ctx.textBaseline = "top";
-              ctx.fillText(
-                "【重要：1マス内の3ゾーン記号ルール】",
-                guideOriginX + 12,
-                guideY + 10
-              );
-
-              const guideLines = [
-                "①左端細枠(BSO欄): 上から1球順 ○=見逃S / ●,／=空振W",
-                "   短横棒(ー),点=ボールB / △=ファウルF / ▲=バントF",
-                "   ※枠端まで貫通する薄い印刷横区切り線はボールではない！",
-                "   ※ゴロ・飛・安打の最終球はBSO欄に書かずダイヤ側のみ",
-                "②中央ダイヤ: Ⅰ・Ⅱ・Ⅲ(ローマ数字) や ①②③ はアウト数！",
-                "   右下斜辺(本塁→1塁)が点線のままなら100%未出塁(四球禁止)",
-                "③右下記号: ⌒4,︵4(傘マーク+数字)=フライ(二飛) / 6-3=ゴロ",
-              ];
-              ctx.fillStyle = "#e2e8f0";
-              ctx.font = "bold 12px sans-serif";
-              guideLines.forEach((line, idx) => {
-                ctx.fillText(
-                  line,
-                  guideOriginX + 12,
-                  guideY + 36 + idx * 28
-                );
-              });
             }
 
             // メモリ解放補助
@@ -1464,7 +1422,7 @@ export async function extractInningChunkCompositeCrop(
             nameThumbH
           );
 
-          // 右側: 対象イニングの該当1マスのみを大判・高精細で描画（周囲の映り込みゼロ！）
+          // 右側: 対象イニングの該当1マスのみを大判・高精細で描画（周囲の映り込みゼロ・画素劣化防止のため局所フィルタ非適用）
           const cellDstX = labelPanelW + gutterW;
           ctx.fillStyle = "#ffffff";
           ctx.fillRect(cellDstX, dstY, cellOutW, rowOutH);
@@ -1479,17 +1437,6 @@ export async function extractInningChunkCompositeCrop(
             cellOutW,
             rowOutH
           );
-
-          if (!options?.alreadyEnhanced) {
-            const cellImgData = ctx.getImageData(
-              cellDstX,
-              dstY,
-              cellOutW,
-              rowOutH
-            );
-            applyAdaptivePencilContrast(cellImgData, cellOutW, rowOutH);
-            ctx.putImageData(cellImgData, cellDstX, dstY);
-          }
 
           // スカイブルーの細い外枠（早稲田式の赤線と絶対混同しない色）
           ctx.strokeStyle = "#0284c7";
