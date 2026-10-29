@@ -6,23 +6,17 @@ import { createPortal } from "react-dom";
 import {
   AlertCircle,
   Camera,
-  ExternalLink,
   ImagePlus,
   Loader2,
   RefreshCw,
   X,
 } from "lucide-react";
-import {
-  isInLineClient,
-  openCurrentPageInExternalBrowser,
-} from "@/lib/liff/liff-client";
+import { isAndroidClientDevice } from "@/lib/liff/liff-client";
 
 export interface ScorebookCameraModalProps {
   isOpen: boolean;
   title: string;
   hintText?: string;
-  /** ネイティブ <label htmlFor> で直接アクティベートする常駐 <input type="file"> の id */
-  fallbackInputId?: string;
   onClose: () => void;
   onCapture: (file: File) => void;
 }
@@ -33,11 +27,11 @@ export function ScorebookCameraModal({
   isOpen,
   title,
   hintText = "1ページ（片面）全体が枠いっぱいに入るよう、影を避けて真上から撮影してください",
-  fallbackInputId,
   onClose,
   onCapture,
 }: ScorebookCameraModalProps) {
   const [mounted, setMounted] = useState(false);
+  const [isAndroidClient, setIsAndroidClient] = useState(false);
   const [facingMode, setFacingMode] = useState<"environment" | "user">(
     "environment"
   );
@@ -50,6 +44,7 @@ export function ScorebookCameraModal({
 
   useEffect(() => {
     setMounted(true);
+    setIsAndroidClient(isAndroidClientDevice());
   }, []);
 
   const stopActiveStream = useCallback(() => {
@@ -131,7 +126,7 @@ export function ScorebookCameraModal({
       ) {
         setStatus("error");
         setErrorDetail(
-          "このブラウザではアプリ内カメラ機能がサポートされていません。下の「アルバムから写真を選択」または「Chromeで開く」をご利用ください。"
+          "この環境ではアプリ内カメラを起動できませんでした。下の「アルバムから写真を選択する」をご利用ください。"
         );
         return;
       }
@@ -248,11 +243,11 @@ export function ScorebookCameraModal({
           );
         } else if (msg === "CAMERA_START_TIMEOUT") {
           setErrorDetail(
-            "LINE内ブラウザでのカメラ起動がタイムアウトしました。下の「アルバムから写真を選択」または「Chromeで開く」をご利用ください。"
+            "カメラの起動がタイムアウトしました。下の「アルバムから写真を選択する」または「もう一度カメラ起動を試す」をお試しください。"
           );
         } else {
           setErrorDetail(
-            "LINE内ブラウザでカメラ映像を取得できませんでした。スマホ標準カメラで撮影済みの写真を「アルバムから選択」するか、「Chromeで開く」をお試しください。"
+            "カメラ映像を取得できませんでした。下の「アルバムから写真を選択する」または「もう一度カメラ起動を試す」をお試しください。"
           );
         }
         setStatus("error");
@@ -388,11 +383,23 @@ export function ScorebookCameraModal({
     }
   };
 
+  const handleFallbackFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const picked = e.currentTarget.files?.[0] ?? null;
+    e.currentTarget.value = "";
+    if (!picked) return;
+    startSeqRef.current += 1;
+    stopActiveStream();
+    onClose();
+    window.setTimeout(() => {
+      onCapture(picked);
+    }, 50);
+  };
+
   if (!isOpen || !mounted || typeof document === "undefined") {
     return null;
   }
 
-  const inLine = isInLineClient();
+  const fileAcceptAttr = isAndroidClient ? undefined : "image/*";
 
   return createPortal(
     <div
@@ -480,29 +487,16 @@ export function ScorebookCameraModal({
               </div>
 
               <div className="space-y-2 pt-1">
-                {fallbackInputId && (
-                  <label
-                    htmlFor={fallbackInputId}
-                    onClick={handleClose}
-                    className="w-full py-3 px-4 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black flex items-center justify-center gap-2 cursor-pointer active:scale-95 transition-all"
-                  >
-                    <ImagePlus className="w-4 h-4 shrink-0" />
-                    <span>アルバムから写真を選択する</span>
-                  </label>
-                )}
-
-                {inLine && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      openCurrentPageInExternalBrowser();
-                    }}
-                    className="w-full py-3 px-4 rounded-2xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-black flex items-center justify-center gap-2 cursor-pointer active:scale-95 transition-all"
-                  >
-                    <ExternalLink className="w-4 h-4 shrink-0" />
-                    <span>標準ブラウザ（Chrome等）で開く</span>
-                  </button>
-                )}
+                <label className="w-full py-3 px-4 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black flex items-center justify-center gap-2 cursor-pointer active:scale-95 transition-all">
+                  <ImagePlus className="w-4 h-4 shrink-0" />
+                  <span>アルバムから写真を選択する</span>
+                  <input
+                    type="file"
+                    accept={fileAcceptAttr}
+                    onChange={handleFallbackFileChange}
+                    className="hidden"
+                  />
+                </label>
 
                 <button
                   type="button"
@@ -521,14 +515,16 @@ export function ScorebookCameraModal({
       {/* 下部シャッター操作バー */}
       {status !== "error" && (
         <div className="px-4 py-4 pb-7 bg-slate-900 border-t border-slate-800 flex items-center justify-between gap-3 shrink-0">
-          {fallbackInputId && status !== "capturing" ? (
-            <label
-              htmlFor={fallbackInputId}
-              onClick={handleClose}
-              className="py-2.5 px-3 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white text-[11px] font-black flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all"
-            >
+          {status !== "capturing" ? (
+            <label className="py-2.5 px-3 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white text-[11px] font-black flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all">
               <ImagePlus className="w-4 h-4 text-indigo-400 shrink-0" />
               <span>アルバム</span>
+              <input
+                type="file"
+                accept={fileAcceptAttr}
+                onChange={handleFallbackFileChange}
+                className="hidden"
+              />
             </label>
           ) : (
             <div className="w-20" />

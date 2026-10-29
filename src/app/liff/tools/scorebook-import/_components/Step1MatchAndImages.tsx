@@ -22,16 +22,9 @@ import {
   AlertCircle,
   Scan,
   RotateCcw,
-  ExternalLink,
-  ClipboardPaste,
 } from "lucide-react";
-import { useLiff } from "@/components/liff/LiffProvider";
 import { ScorebookCameraModal } from "@/components/liff/ScorebookCameraModal";
-import { ScorebookPasteModal } from "@/components/liff/ScorebookPasteModal";
-import {
-  isAndroidClientDevice,
-  openCurrentPageInExternalBrowser,
-} from "@/lib/liff/liff-client";
+import { isAndroidClientDevice } from "@/lib/liff/liff-client";
 import { loadLiffScoreSettings } from "@/lib/liff/score-settings";
 import { bilinearGridPoint, clamp1000 } from "@/lib/liff/scorebook-grid";
 import { ActionStatusBanner } from "./ActionStatusBanner";
@@ -368,20 +361,9 @@ export function Step1MatchAndImages({
   onDismissError,
   onReportError,
 }: Step1MatchAndImagesProps) {
-  const { isInClient, currentTeam } = useLiff();
   const [isAndroidClient, setIsAndroidClient] = useState(false);
   const lastCameraTargetRef = useRef<ImagePickerTarget>("top");
-  const lastPasteTargetRef = useRef<ImagePickerTarget>("top");
-  const pendingNativePickerRef = useRef<{
-    target: ImagePickerTarget;
-    openedAt: number;
-    didBlur: boolean;
-    resolved: boolean;
-  } | null>(null);
   const [cameraTarget, setCameraTarget] = useState<ImagePickerTarget | null>(
-    null
-  );
-  const [pasteTarget, setPasteTarget] = useState<ImagePickerTarget | null>(
     null
   );
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -405,53 +387,6 @@ export function Step1MatchAndImages({
     setIsAndroidClient(isAndroidClientDevice());
   }, []);
 
-  // Android LINE内ブラウザでネイティブファイル選択が透過Activity競合で開けず、別アプリ切替で復帰した場合に自動で貼り付けモーダルを案内
-  useEffect(() => {
-    if (!isAndroidClient || !isInClient) return;
-
-    const handleBlur = () => {
-      if (pendingNativePickerRef.current) {
-        pendingNativePickerRef.current.didBlur = true;
-      }
-    };
-
-    const handleReturn = () => {
-      if (document.visibilityState && document.visibilityState !== "visible") {
-        return;
-      }
-      const pending = pendingNativePickerRef.current;
-      if (!pending || !pending.didBlur || pending.resolved) return;
-
-      window.setTimeout(() => {
-        const latest = pendingNativePickerRef.current;
-        if (!latest || latest.resolved) return;
-        const inputEl = document.getElementById(
-          latest.target === "top"
-            ? "scorebook-sheet-top-file-input"
-            : latest.target === "bottom"
-            ? "scorebook-sheet-bottom-file-input"
-            : "scorebook-legend-override-file-input"
-        ) as HTMLInputElement | null;
-        if (inputEl?.files && inputEl.files.length > 0) return;
-        pendingNativePickerRef.current = null;
-        // 30秒以内にファイル未選択でアプリ切替復帰した場合、フリーズしない貼り付け/Chrome引継モーダルを自動表示
-        if (Date.now() - latest.openedAt < 30000) {
-          lastPasteTargetRef.current = latest.target;
-          setPasteTarget(latest.target);
-        }
-      }, 1200);
-    };
-
-    window.addEventListener("blur", handleBlur);
-    window.addEventListener("focus", handleReturn);
-    document.addEventListener("visibilitychange", handleReturn);
-    return () => {
-      window.removeEventListener("blur", handleBlur);
-      window.removeEventListener("focus", handleReturn);
-      document.removeEventListener("visibilitychange", handleReturn);
-    };
-  }, [isAndroidClient, isInClient]);
-
   const [openCropSide, setOpenCropSide] = useState<"top" | "bottom" | null>(
     null
   );
@@ -459,47 +394,13 @@ export function Step1MatchAndImages({
     "perspective"
   );
 
-  // Android 15/16 + LINEミニアプリ(透過シートActivity)環境では、accept="image/*" を使うと
-  // OSの透過PhotoPickerActivityが多重起動して画面タッチがフリーズ（別アプリ切替で解除される現象）が起きるため、
-  // Androidでは "*/*" を指定して不透過フルスクリーンの標準ファイル選択（DocumentsUI）を起動する
-  const fileAcceptAttr = isAndroidClient ? "*/*" : "image/*";
-
-  const SHEET_TOP_INPUT_ID = "scorebook-sheet-top-file-input";
-  const SHEET_BOTTOM_INPUT_ID = "scorebook-sheet-bottom-file-input";
-  const LEGEND_OVERRIDE_INPUT_ID = "scorebook-legend-override-file-input";
-
-  const getInputIdForTarget = (target: ImagePickerTarget): string => {
-    if (target === "top") return SHEET_TOP_INPUT_ID;
-    if (target === "bottom") return SHEET_BOTTOM_INPUT_ID;
-    return LEGEND_OVERRIDE_INPUT_ID;
-  };
+  // AndroidのLINEミニアプリ(透過シートActivity)環境では、accept="image/*" による透過PhotoPickerの重ね起動競合を避け、
+  // フルスクリーンの標準システム画像・ファイル選択が直接開くようにする（iOS/PCでは従来通り image/* を使用）
+  const fileAcceptAttr = isAndroidClient ? undefined : "image/*";
 
   const openCameraModal = (target: ImagePickerTarget) => {
     lastCameraTargetRef.current = target;
     setCameraTarget(target);
-  };
-
-  const openPasteModal = (target: ImagePickerTarget) => {
-    pendingNativePickerRef.current = null;
-    lastPasteTargetRef.current = target;
-    setPasteTarget(target);
-  };
-
-  const handleOpenInExternalChrome = () => {
-    openCurrentPageInExternalBrowser({
-      teamId: currentTeam?.id,
-      matchId: selectedMatchId,
-    });
-  };
-
-  const markNativePickerOpened = (target: ImagePickerTarget) => {
-    if (!isAndroidClient || !isInClient) return;
-    pendingNativePickerRef.current = {
-      target,
-      openedAt: Date.now(),
-      didBlur: false,
-      resolved: false,
-    };
   };
 
   const dispatchPickedFile = (target: ImagePickerTarget, file: File) => {
@@ -522,17 +423,12 @@ export function Step1MatchAndImages({
     target: ImagePickerTarget,
     e: React.ChangeEvent<HTMLInputElement>
   ) => {
-    if (pendingNativePickerRef.current) {
-      pendingNativePickerRef.current.resolved = true;
-      pendingNativePickerRef.current = null;
-    }
-    setPasteTarget(null);
     const picked = e.currentTarget.files?.[0] ?? null;
     e.currentTarget.value = "";
     if (!picked) return;
     window.setTimeout(() => {
       dispatchPickedFile(target, picked);
-    }, 60);
+    }, 50);
   };
 
   const handleCameraCaptured = (target: ImagePickerTarget, file: File) => {
@@ -601,19 +497,9 @@ export function Step1MatchAndImages({
     const isControlsDisabled = state.isProcessing || isAnalyzingStructure;
 
     const targetKey: ImagePickerTarget = isTop ? "top" : "bottom";
-    const sheetInputId = isTop ? SHEET_TOP_INPUT_ID : SHEET_BOTTOM_INPUT_ID;
 
     return (
-      <div className="relative rounded-3xl bg-card border border-border shadow-xs p-4 space-y-3">
-        {/* カード内同位置に常駐するファイル入力（スクロールジャンプゼロ＆アンマウントゼロ） */}
-        <input
-          id={sheetInputId}
-          type="file"
-          accept={fileAcceptAttr}
-          onChange={(e) => handleNativeFileChange(targetKey, e)}
-          className="sr-only"
-        />
-
+      <div className="rounded-3xl bg-card border border-border shadow-xs p-4 space-y-3">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
             <span
@@ -678,28 +564,18 @@ export function Step1MatchAndImages({
                   <span>アルバム選択</span>
                 </span>
               ) : (
-                <label
-                  htmlFor={sheetInputId}
-                  onClick={() => markNativePickerOpened(targetKey)}
-                  className="py-3 px-3 rounded-2xl bg-card border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs hover:bg-muted/60 active:scale-95 transition-all cursor-pointer"
-                >
+                <label className="py-3 px-3 rounded-2xl bg-card border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs hover:bg-muted/60 active:scale-95 transition-all cursor-pointer">
                   <ImagePlus className="w-4 h-4 text-indigo-500 shrink-0" />
                   <span>アルバム選択</span>
+                  <input
+                    type="file"
+                    accept={fileAcceptAttr}
+                    onChange={(e) => handleNativeFileChange(targetKey, e)}
+                    className="hidden"
+                  />
                 </label>
               )}
             </div>
-
-            {isAndroidClient && isInClient && (
-              <button
-                type="button"
-                disabled={isControlsDisabled}
-                onClick={() => openPasteModal(targetKey)}
-                className="w-full py-2.5 px-3 rounded-2xl bg-indigo-500/10 hover:bg-indigo-500/18 border border-indigo-500/35 text-indigo-700 dark:text-indigo-300 font-black text-[11px] flex items-center justify-center gap-1.5 active:scale-98 transition-all cursor-pointer disabled:opacity-50"
-              >
-                <ClipboardPaste className="w-3.5 h-3.5 shrink-0" />
-                <span>コピーした写真を貼り付け（LINE内で固まらない）</span>
-              </button>
-            )}
           </div>
         ) : (
           <div className="space-y-3">
@@ -820,48 +696,36 @@ export function Step1MatchAndImages({
 
             {/* 撮り直し・別画像への差し替えクイックバー */}
             {state.processed && !state.isProcessing && (
-              <div className="space-y-1.5">
-                <div className="grid grid-cols-2 gap-1.5">
-                  <button
-                    type="button"
-                    disabled={isControlsDisabled}
-                    onClick={() => openCameraModal(targetKey)}
-                    className="py-1.5 px-2 rounded-xl bg-card hover:bg-muted border border-border text-[10px] font-black text-muted-foreground hover:text-foreground flex items-center justify-center gap-1 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <Camera className="w-3 h-3 text-primary shrink-0" />
-                    <span>カメラで撮り直す</span>
-                  </button>
+              <div className="grid grid-cols-2 gap-1.5">
+                <button
+                  type="button"
+                  disabled={isControlsDisabled}
+                  onClick={() => openCameraModal(targetKey)}
+                  className="py-1.5 px-2 rounded-xl bg-card hover:bg-muted border border-border text-[10px] font-black text-muted-foreground hover:text-foreground flex items-center justify-center gap-1 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Camera className="w-3 h-3 text-primary shrink-0" />
+                  <span>カメラで撮り直す</span>
+                </button>
 
-                  {isControlsDisabled ? (
-                    <span
-                      aria-disabled="true"
-                      className="py-1.5 px-2 rounded-xl bg-card border border-border text-[10px] font-black text-muted-foreground flex items-center justify-center gap-1 opacity-50 cursor-not-allowed"
-                    >
-                      <ImagePlus className="w-3 h-3 text-indigo-500 shrink-0" />
-                      <span>別画像に変更</span>
-                    </span>
-                  ) : (
-                    <label
-                      htmlFor={sheetInputId}
-                      onClick={() => markNativePickerOpened(targetKey)}
-                      className="py-1.5 px-2 rounded-xl bg-card hover:bg-muted border border-border text-[10px] font-black text-muted-foreground hover:text-foreground flex items-center justify-center gap-1 transition-colors cursor-pointer"
-                    >
-                      <ImagePlus className="w-3 h-3 text-indigo-500 shrink-0" />
-                      <span>別画像に変更</span>
-                    </label>
-                  )}
-                </div>
-
-                {isAndroidClient && isInClient && (
-                  <button
-                    type="button"
-                    disabled={isControlsDisabled}
-                    onClick={() => openPasteModal(targetKey)}
-                    className="w-full py-1.5 px-2 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/18 border border-indigo-500/30 text-[10px] font-black text-indigo-700 dark:text-indigo-300 flex items-center justify-center gap-1 transition-colors cursor-pointer disabled:opacity-50"
+                {isControlsDisabled ? (
+                  <span
+                    aria-disabled="true"
+                    className="py-1.5 px-2 rounded-xl bg-card border border-border text-[10px] font-black text-muted-foreground flex items-center justify-center gap-1 opacity-50 cursor-not-allowed"
                   >
-                    <ClipboardPaste className="w-3 h-3 shrink-0" />
-                    <span>コピーした写真を貼り付けて変更</span>
-                  </button>
+                    <ImagePlus className="w-3 h-3 text-indigo-500 shrink-0" />
+                    <span>別画像に変更</span>
+                  </span>
+                ) : (
+                  <label className="py-1.5 px-2 rounded-xl bg-card hover:bg-muted border border-border text-[10px] font-black text-muted-foreground hover:text-foreground flex items-center justify-center gap-1 transition-colors cursor-pointer">
+                    <ImagePlus className="w-3 h-3 text-indigo-500 shrink-0" />
+                    <span>別画像に変更</span>
+                    <input
+                      type="file"
+                      accept={fileAcceptAttr}
+                      onChange={(e) => handleNativeFileChange(targetKey, e)}
+                      className="hidden"
+                    />
+                  </label>
                 )}
               </div>
             )}
@@ -1020,37 +884,16 @@ export function Step1MatchAndImages({
       ? "後攻（裏）シートを撮影"
       : "スコア記号早見表を撮影";
 
-  const activePasteTitle =
-    pasteTarget === "top"
-      ? "先攻（表）シート写真を貼り付け"
-      : pasteTarget === "bottom"
-      ? "後攻（裏）シート写真を貼り付け"
-      : "スコア記号早見表の写真を貼り付け";
-
   return (
     <div className="space-y-4">
-      {/* アプリ内専用WebRTCカメラモーダル（<input capture> を使わないためAndroid LINEのFileChooserフリーズを完全回避） */}
+      {/* アプリ内カメラモーダル */}
       <ScorebookCameraModal
         isOpen={cameraTarget !== null}
         title={activeCameraTitle}
-        fallbackInputId={getInputIdForTarget(
-          cameraTarget ?? lastCameraTargetRef.current
-        )}
         onClose={() => setCameraTarget(null)}
         onCapture={(file) => {
           handleCameraCaptured(lastCameraTargetRef.current, file);
         }}
-      />
-
-      {/* LINE内ブラウザでonShowFileChooserを一切呼ばずにアルバム写真を読み込むクリップボード貼り付けモーダル */}
-      <ScorebookPasteModal
-        isOpen={pasteTarget !== null}
-        title={activePasteTitle}
-        onClose={() => setPasteTarget(null)}
-        onCapture={(file) => {
-          dispatchPickedFile(lastPasteTargetRef.current, file);
-        }}
-        onOpenExternalBrowser={handleOpenInExternalChrome}
       />
 
       {/* ① 対象試合の選択・新規作成 */}
@@ -1289,45 +1132,13 @@ export function Step1MatchAndImages({
       </section>
 
       {/* ③ シート画像アップロード＆前処理 */}
-      {isAndroidClient && isInClient && (
-        <div className="p-3 rounded-2xl bg-card border border-sky-500/35 flex items-center justify-between gap-2.5 shadow-2xs">
-          <p className="text-[10px] font-bold text-muted-foreground leading-relaxed">
-            Android版LINEでアルバム選択が開かない機種では、下の
-            <strong className="text-foreground font-black">
-              「コピーした写真を貼り付け」
-            </strong>
-            または右の
-            <strong className="text-foreground font-black">
-              「Chromeで開く」
-            </strong>
-            で確実に読み込めます。
-          </p>
-          <button
-            type="button"
-            onClick={handleOpenInExternalChrome}
-            className="px-2.5 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-[10px] font-black flex items-center gap-1 shrink-0 cursor-pointer active:scale-95 transition-all"
-          >
-            <ExternalLink className="w-3 h-3 shrink-0" />
-            <span>Chromeで開く</span>
-          </button>
-        </div>
-      )}
-
       <div className="space-y-3">
         {needTop && renderSheetUploader(true)}
         {needBottom && renderSheetUploader(false)}
       </div>
 
       {/* ④ 記号早見表（スコア設定との自動連携） */}
-      <section className="relative rounded-3xl bg-card border border-border shadow-xs p-4 space-y-3">
-        <input
-          id={LEGEND_OVERRIDE_INPUT_ID}
-          type="file"
-          accept={fileAcceptAttr}
-          onChange={(e) => handleNativeFileChange("legend", e)}
-          className="sr-only"
-        />
-
+      <section className="rounded-3xl bg-card border border-border shadow-xs p-4 space-y-3">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
             <BookOpen className="w-4 h-4 text-indigo-500 shrink-0" />
@@ -1394,7 +1205,7 @@ export function Step1MatchAndImages({
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-2">
+            <div className="flex justify-end">
               {isLegendProcessing || isAnalyzingStructure ? (
                 <span className="py-1 px-2 rounded-lg text-[10px] font-bold text-muted-foreground opacity-50">
                   {isLegendProcessing
@@ -1402,24 +1213,15 @@ export function Step1MatchAndImages({
                     : "この試合だけ別の早見表を一時添付する"}
                 </span>
               ) : (
-                <>
-                  <label
-                    htmlFor={LEGEND_OVERRIDE_INPUT_ID}
-                    onClick={() => markNativePickerOpened("legend")}
-                    className="py-1 px-2 rounded-lg text-[10px] font-bold text-muted-foreground hover:text-foreground underline underline-offset-2 cursor-pointer"
-                  >
-                    この試合だけ別の早見表を一時添付する
-                  </label>
-                  {isAndroidClient && isInClient && (
-                    <button
-                      type="button"
-                      onClick={() => openPasteModal("legend")}
-                      className="py-1 px-2 rounded-lg text-[10px] font-black text-indigo-600 dark:text-indigo-400 underline underline-offset-2 cursor-pointer"
-                    >
-                      貼り付け
-                    </button>
-                  )}
-                </>
+                <label className="py-1 px-2 rounded-lg text-[10px] font-bold text-muted-foreground hover:text-foreground underline underline-offset-2 cursor-pointer">
+                  この試合だけ別の早見表を一時添付する
+                  <input
+                    type="file"
+                    accept={fileAcceptAttr}
+                    onChange={(e) => handleNativeFileChange("legend", e)}
+                    className="hidden"
+                  />
+                </label>
               )}
             </div>
           </div>
@@ -1450,25 +1252,17 @@ export function Step1MatchAndImages({
                   <span>{isLegendProcessing ? "読込中..." : "今回のみ添付"}</span>
                 </span>
               ) : (
-                <label
-                  htmlFor={LEGEND_OVERRIDE_INPUT_ID}
-                  onClick={() => markNativePickerOpened("legend")}
-                  className="py-2.5 px-3 rounded-xl bg-card hover:bg-muted border border-border text-[10px] font-black text-muted-foreground hover:text-foreground shrink-0 flex items-center gap-1 transition-colors cursor-pointer"
-                >
+                <label className="py-2.5 px-3 rounded-xl bg-card hover:bg-muted border border-border text-[10px] font-black text-muted-foreground hover:text-foreground shrink-0 flex items-center gap-1 transition-colors cursor-pointer active:scale-95">
                   <span>今回のみ添付</span>
+                  <input
+                    type="file"
+                    accept={fileAcceptAttr}
+                    onChange={(e) => handleNativeFileChange("legend", e)}
+                    className="hidden"
+                  />
                 </label>
               )}
             </div>
-            {isAndroidClient && isInClient && !isLegendProcessing && !isAnalyzingStructure && (
-              <button
-                type="button"
-                onClick={() => openPasteModal("legend")}
-                className="w-full py-2 px-3 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/18 border border-indigo-500/35 text-indigo-700 dark:text-indigo-300 text-[10px] font-black flex items-center justify-center gap-1.5 cursor-pointer active:scale-98 transition-all"
-              >
-                <ClipboardPaste className="w-3 h-3 shrink-0" />
-                <span>コピーした早見表写真を貼り付け</span>
-              </button>
-            )}
           </div>
         )}
       </section>

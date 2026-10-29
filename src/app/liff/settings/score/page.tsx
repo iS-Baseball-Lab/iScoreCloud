@@ -20,17 +20,14 @@ import {
   Sliders,
   Save,
   AlertCircle,
-  ClipboardPaste,
 } from "lucide-react";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { ScorebookCameraModal } from "@/components/liff/ScorebookCameraModal";
-import { ScorebookPasteModal } from "@/components/liff/ScorebookPasteModal";
 import { useLiff } from "@/components/liff/LiffProvider";
 import {
   getClientQueryParam,
   isAndroidClientDevice,
-  openCurrentPageInExternalBrowser,
 } from "@/lib/liff/liff-client";
 import {
   ensureCompactApiImage,
@@ -74,7 +71,7 @@ interface StagedLegendState {
 }
 
 export default function LiffScoreSettingsPage() {
-  const { currentTeam, isInClient } = useLiff();
+  const { currentTeam } = useLiff();
   const [isAndroidClient, setIsAndroidClient] = useState(false);
 
   const [isLoadingTeam, setIsLoadingTeam] = useState(true);
@@ -94,10 +91,8 @@ export default function LiffScoreSettingsPage() {
     DEFAULT_LIFF_SCORE_SETTINGS
   );
   const [isCameraModalOpen, setIsCameraModalOpen] = useState(false);
-  const [isPasteModalOpen, setIsPasteModalOpen] = useState(false);
   const stageSeqRef = useRef<number>(0);
-  const SCORE_LEGEND_INPUT_ID = "score-settings-legend-file-input";
-  const fileAcceptAttr = isAndroidClient ? "*/*" : "image/*";
+  const fileAcceptAttr = isAndroidClient ? undefined : "image/*";
 
   // 1. 端末保存のスコア取込初期設定を読み込み
   useEffect(() => {
@@ -359,21 +354,8 @@ export default function LiffScoreSettingsPage() {
         isOpen={isCameraModalOpen}
         title="スコア記号早見表を撮影"
         hintText="記載例・記号早見表のページ全体が枠に入るよう撮影してください"
-        fallbackInputId={SCORE_LEGEND_INPUT_ID}
         onClose={() => setIsCameraModalOpen(false)}
         onCapture={(file) => handleSelectLegendFile(file)}
-      />
-
-      <ScorebookPasteModal
-        isOpen={isPasteModalOpen}
-        title="スコア記号早見表：写真を貼り付け"
-        onClose={() => setIsPasteModalOpen(false)}
-        onCapture={(file) => handleSelectLegendFile(file)}
-        onOpenExternalBrowser={() => {
-          openCurrentPageInExternalBrowser({
-            teamId: resolvedTeamId || currentTeam?.id,
-          });
-        }}
       />
 
       <LiffHeader />
@@ -400,14 +382,7 @@ export default function LiffScoreSettingsPage() {
         )}
 
         {/* ━━━ セクション 1: 📘 スコア記号早見表（チーム共通・毎回自動参照） ━━━ */}
-        <section className="relative rounded-3xl bg-card border-2 border-indigo-500/30 p-4 space-y-3.5 shadow-sm">
-          <input
-            id={SCORE_LEGEND_INPUT_ID}
-            type="file"
-            accept={fileAcceptAttr}
-            onChange={handleLegendInputChange}
-            className="sr-only"
-          />
+        <section className="rounded-3xl bg-card border-2 border-indigo-500/30 p-4 space-y-3.5 shadow-sm">
           <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-border/60">
             <div className="flex items-center gap-2 min-w-0">
               <BookOpen className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
@@ -577,27 +552,18 @@ export default function LiffScoreSettingsPage() {
                     <span>アルバムから変更</span>
                   </span>
                 ) : (
-                  <label
-                    htmlFor={SCORE_LEGEND_INPUT_ID}
-                    className="py-2.5 px-3 rounded-2xl bg-card border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs hover:bg-muted/60 active:scale-95 transition-all cursor-pointer"
-                  >
+                  <label className="py-2.5 px-3 rounded-2xl bg-card border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs hover:bg-muted/60 active:scale-95 transition-all cursor-pointer">
                     <ImagePlus className="w-4 h-4 text-indigo-500 shrink-0" />
                     <span>アルバムから変更</span>
+                    <input
+                      type="file"
+                      accept={fileAcceptAttr}
+                      onChange={handleLegendInputChange}
+                      className="hidden"
+                    />
                   </label>
                 )}
               </div>
-
-              {isAndroidClient && isInClient && (
-                <button
-                  type="button"
-                  disabled={isSavingLegend}
-                  onClick={() => setIsPasteModalOpen(true)}
-                  className="w-full py-2.5 px-3 rounded-2xl bg-indigo-500/10 hover:bg-indigo-500/18 border border-indigo-500/35 text-indigo-700 dark:text-indigo-300 font-black text-[11px] flex items-center justify-center gap-1.5 active:scale-98 transition-all cursor-pointer disabled:opacity-50"
-                >
-                  <ClipboardPaste className="w-3.5 h-3.5 shrink-0" />
-                  <span>コピーした写真を貼り付け（LINE内で固まらない）</span>
-                </button>
-              )}
 
               {!confirmClearLegend ? (
                 <div className="flex justify-end">
@@ -667,27 +633,18 @@ export default function LiffScoreSettingsPage() {
                     <span>アルバム選択</span>
                   </span>
                 ) : (
-                  <label
-                    htmlFor={SCORE_LEGEND_INPUT_ID}
-                    className="py-3 px-3 rounded-2xl bg-card border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs hover:bg-muted/60 active:scale-95 transition-all cursor-pointer"
-                  >
+                  <label className="py-3 px-3 rounded-2xl bg-card border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs hover:bg-muted/60 active:scale-95 transition-all cursor-pointer">
                     <ImagePlus className="w-4 h-4 text-indigo-500 shrink-0" />
                     <span>アルバム選択</span>
+                    <input
+                      type="file"
+                      accept={fileAcceptAttr}
+                      onChange={handleLegendInputChange}
+                      className="hidden"
+                    />
                   </label>
                 )}
               </div>
-
-              {isAndroidClient && isInClient && (
-                <button
-                  type="button"
-                  disabled={isSavingLegend}
-                  onClick={() => setIsPasteModalOpen(true)}
-                  className="w-full py-2.5 px-3 rounded-2xl bg-indigo-500/10 hover:bg-indigo-500/18 border border-indigo-500/35 text-indigo-700 dark:text-indigo-300 font-black text-[11px] flex items-center justify-center gap-1.5 active:scale-98 transition-all cursor-pointer disabled:opacity-50"
-                >
-                  <ClipboardPaste className="w-3.5 h-3.5 shrink-0" />
-                  <span>コピーした写真を貼り付け（LINE内で固まらない）</span>
-                </button>
-              )}
             </div>
           )}
         </section>

@@ -102,48 +102,6 @@ export function getClientQueryParam(key: string): string | null {
 }
 
 /**
- * 現在のページを端末の標準ブラウザ（Chrome / Safari）で開く（チームID・試合ID等のコンテキストを引き継ぎ可能）
- */
-export function openCurrentPageInExternalBrowser(
-  extraParams?: Record<string, string | undefined>
-): boolean {
-  if (typeof window === "undefined") return false;
-  let targetUrl = window.location.href;
-  try {
-    const parsed = new URL(window.location.href);
-    if (extraParams) {
-      for (const [k, v] of Object.entries(extraParams)) {
-        if (v && v.trim() !== "") {
-          parsed.searchParams.set(k, v);
-        }
-      }
-    }
-    targetUrl = parsed.toString();
-  } catch {
-    // keep raw href on parse failure
-  }
-
-  try {
-    if (liffInstance && liffInstance.isInClient()) {
-      liffInstance.openWindow({
-        url: targetUrl,
-        external: true,
-      });
-      return true;
-    }
-  } catch (err) {
-    console.warn("liff.openWindow failed, falling back to window.open:", err);
-  }
-
-  try {
-    window.open(targetUrl, "_blank", "noopener,noreferrer");
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
  * ログイン中ユーザーのLINEプロフィールを取得する (getProfile + getDecodedIDToken)
  */
 export async function getLiffProfile(): Promise<LiffUserProfile | null> {
