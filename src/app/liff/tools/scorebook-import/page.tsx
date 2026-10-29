@@ -12,11 +12,12 @@ import {
   extractInningChunkCompositeCrop,
   extractStructureFocusCrops,
   preprocessScorebookImage,
+  type PreprocessedScorebookImage,
 } from "@/lib/liff/scorebook-image";
 import {
   clearScorebookDraft,
   loadScorebookDraft,
-  reconstructFileFromDataUrl,
+  reconstructFileFromDataUrlAsync,
   saveScorebookDraft,
 } from "@/lib/liff/scorebook-draft";
 import { loadLiffScoreSettings } from "@/lib/liff/score-settings";
@@ -208,6 +209,20 @@ export default function LiffScorebookImportPage() {
     base64: string;
     mimeType: string;
   } | null>(null);
+  const [isLegendProcessing, setIsLegendProcessing] = useState(false);
+
+  const preprocessSeqRef = useRef<{ top: number; bottom: number }>({
+    top: 0,
+    bottom: 0,
+  });
+  const sliderDebounceRef = useRef<{
+    top: ReturnType<typeof setTimeout> | null;
+    bottom: ReturnType<typeof setTimeout> | null;
+  }>({
+    top: null,
+    bottom: null,
+  });
+  const didVisitScoreSettingsRef = useRef(false);
 
   const [isCreatingMatch, setIsCreatingMatch] = useState(false);
   const [isAnalyzingStructure, setIsAnalyzingStructure] = useState(false);
@@ -290,7 +305,7 @@ export default function LiffScorebookImportPage() {
           }
 
           if (draft.topImage.processed) {
-            const topFile = reconstructFileFromDataUrl(
+            const topFile = await reconstructFileFromDataUrlAsync(
               draft.topImage.processed.dataUrl,
               draft.topImage.fileName || "scorebook-top.jpg"
             );
@@ -303,7 +318,7 @@ export default function LiffScorebookImportPage() {
           }
 
           if (draft.bottomImage.processed) {
-            const bottomFile = reconstructFileFromDataUrl(
+            const bottomFile = await reconstructFileFromDataUrlAsync(
               draft.bottomImage.processed.dataUrl,
               draft.bottomImage.fileName || "scorebook-bottom.jpg"
             );
@@ -365,7 +380,7 @@ export default function LiffScorebookImportPage() {
     fetchContext();
   }, [fetchContext]);
 
-  // スコア設定画面から戻ってきた際、登録された早見表URLや初期設定を即時反映
+  // スコア設定画面から戻ってきた際のみ、登録された早見表URLを同期（カメラ・ファイル選択復帰時の不要な通信競合を防止）
   useEffect(() => {
     const syncScoreSettingsFromReturn = async () => {
       try {
@@ -383,7 +398,11 @@ export default function LiffScorebookImportPage() {
     };
 
     const handleVisibilityOrFocus = () => {
-      if (document.visibilityState === "visible") {
+      if (
+        document.visibilityState === "visible" &&
+        didVisitScoreSettingsRef.current
+      ) {
+        didVisitScoreSettingsRef.current = false;
         void syncScoreSettingsFromReturn();
       }
     };
@@ -395,6 +414,14 @@ export default function LiffScorebookImportPage() {
       document.removeEventListener("visibilitychange", handleVisibilityOrFocus);
     };
   }, [resolvedTeamId, currentTeam?.id]);
+
+  useEffect(() => {
+    const timers = sliderDebounceRef.current;
+    return () => {
+      if (timers.top) clearTimeout(timers.top);
+      if (timers.bottom) clearTimeout(timers.bottom);
+    };
+  }, []);
 
   // 1-B. 入力途中のデータ（画像・Step2骨格・Step3の1球修正）を端末に自動下書き保存
   useEffect(() => {
@@ -475,6 +502,16 @@ export default function LiffScorebookImportPage() {
   ]);
 
   const handleDiscardDraft = async () => {
+    preprocessSeqRef.current.top += 1;
+    preprocessSeqRef.current.bottom += 1;
+    if (sliderDebounceRef.current.top) {
+      clearTimeout(sliderDebounceRef.current.top);
+      sliderDebounceRef.current.top = null;
+    }
+    if (sliderDebounceRef.current.bottom) {
+      clearTimeout(sliderDebounceRef.current.bottom);
+      sliderDebounceRef.current.bottom = null;
+    }
     const teamKey = resolvedTeamId || currentTeam?.id || "default";
     await clearScorebookDraft(teamKey);
     const prefs = loadLiffScoreSettings();
@@ -493,10 +530,31 @@ export default function LiffScorebookImportPage() {
     setStep(1);
   };
 
-  // 2. Canvas前処理の実行ヘルパー
-  const runPreprocess = async (isTop: boolean, nextState: SheetImageState) => {
+  // 2. Canvas前処理の実行ヘルパー（シーケンス管理・18秒ウォッチドッグ・失敗時ロック防止付き）
+  const runPreprocess = async (
+    isTop: boolean,
+    nextState: SheetImageState,
+    fallbackProcessed: PreprocessedScorebookImage | null = null
+  ) => {
+    const sideKey = isTop ? "top" : "bottom";
     const setter = isTop ? setTopImage : setBottomImage;
-    if (!nextState.file) {
+
+    if (sliderDebounceRef.current[sideKey]) {
+      clearTimeout(sliderDebounceRef.current[sideKey]!);
+      sliderDebounceRef.current[sideKey] = null;
+    }
+
+    const seq = ++preprocessSeqRef.current[sideKey];
+
+    let sourceFile = nextState.file;
+    if (!sourceFile && nextState.processed?.dataUrl) {
+      sourceFile = await reconstructFileFromDataUrlAsync(
+        nextState.processed.dataUrl,
+        isTop ? "scorebook-top.jpg" : "scorebook-bottom.jpg"
+      );
+    }
+
+    if (!sourceFile) {
       setter(
         createInitialSheetImageState(
           loadLiffScoreSettings().defaultEnhancePencil
@@ -505,69 +563,135 @@ export default function LiffScorebookImportPage() {
       return;
     }
 
-    setter({ ...nextState, isProcessing: true });
+    const activeState: SheetImageState = {
+      ...nextState,
+      file: sourceFile,
+    };
+
+    setter({ ...activeState, isProcessing: true });
+
+    let watchdogId: ReturnType<typeof setTimeout> | null = null;
     try {
-      const processed = await preprocessScorebookImage(nextState.file, {
-        rotationDeg: nextState.rotationDeg,
-        fineTiltDeg: nextState.fineTiltDeg,
-        perspectiveCorners: nextState.perspectiveCorners,
-        enhancePencil: nextState.enhancePencil,
-        cropInsets: {
-          top: nextState.cropTop,
-          bottom: nextState.cropBottom,
-          left: nextState.cropLeft,
-          right: nextState.cropRight,
-        },
-        maxLongEdge: 3000,
-      });
-      setter({ ...nextState, processed, isProcessing: false });
+      const processed = await Promise.race([
+        preprocessScorebookImage(sourceFile, {
+          rotationDeg: activeState.rotationDeg,
+          fineTiltDeg: activeState.fineTiltDeg,
+          perspectiveCorners: activeState.perspectiveCorners,
+          enhancePencil: activeState.enhancePencil,
+          cropInsets: {
+            top: activeState.cropTop,
+            bottom: activeState.cropBottom,
+            left: activeState.cropLeft,
+            right: activeState.cropRight,
+          },
+          maxLongEdge: 2400,
+        }),
+        new Promise<never>((_, reject) => {
+          watchdogId = setTimeout(() => {
+            reject(
+              new Error(
+                "画像の最適化がタイムアウトしました。もう一度撮影・選択をお試しください"
+              )
+            );
+          }, 18000);
+        }),
+      ]);
+
+      if (preprocessSeqRef.current[sideKey] !== seq) return;
+      setter({ ...activeState, processed, isProcessing: false });
     } catch (err) {
+      if (preprocessSeqRef.current[sideKey] !== seq) return;
       const msg = err instanceof Error ? err.message : String(err);
       setErrorBanner(`画像の前処理に失敗しました: ${msg}`);
-      setter({ ...nextState, isProcessing: false });
+
+      if (fallbackProcessed) {
+        // 既に読込済み画像の回転・傾き調整時に失敗した場合は既存プレビューを維持
+        setter({
+          ...activeState,
+          processed: fallbackProcessed,
+          isProcessing: false,
+        });
+      } else {
+        // 初回撮影・画像選択で失敗した場合は必ず初期状態へ戻し、ボタンロック（無限スピナー）を完全防止
+        setter(createInitialSheetImageState(activeState.enhancePencil));
+      }
+    } finally {
+      if (watchdogId) clearTimeout(watchdogId);
     }
+  };
+
+  const scheduleDebouncedPreprocess = (
+    isTop: boolean,
+    nextState: SheetImageState,
+    fallbackProcessed: PreprocessedScorebookImage | null
+  ) => {
+    const sideKey = isTop ? "top" : "bottom";
+    const setter = isTop ? setTopImage : setBottomImage;
+    setter(nextState);
+
+    if (sliderDebounceRef.current[sideKey]) {
+      clearTimeout(sliderDebounceRef.current[sideKey]!);
+    }
+    sliderDebounceRef.current[sideKey] = setTimeout(() => {
+      sliderDebounceRef.current[sideKey] = null;
+      void runPreprocess(isTop, nextState, fallbackProcessed);
+    }, 180);
   };
 
   const handleSelectSheetFile = (isTop: boolean, file: File | null) => {
     setErrorBanner(null);
     if (!file) {
-      runPreprocess(
+      void runPreprocess(
         isTop,
         createInitialSheetImageState(
           loadLiffScoreSettings().defaultEnhancePencil
-        )
+        ),
+        null
       );
       return;
     }
     const base = isTop ? topImage : bottomImage;
-    runPreprocess(isTop, {
-      ...base,
-      file,
-      rotationDeg: 0,
-      fineTiltDeg: 0,
-      perspectiveCorners: null,
-      cropTop: 0,
-      cropBottom: 0,
-      cropLeft: 0,
-      cropRight: 0,
-    });
+    void runPreprocess(
+      isTop,
+      {
+        ...base,
+        file,
+        rotationDeg: 0,
+        fineTiltDeg: 0,
+        perspectiveCorners: null,
+        cropTop: 0,
+        cropBottom: 0,
+        cropLeft: 0,
+        cropRight: 0,
+        processed: null,
+      },
+      null
+    );
   };
 
   const handleRotateSheet = (isTop: boolean) => {
     const cur = isTop ? topImage : bottomImage;
-    if (!cur.file) return;
+    if (!cur.file && !cur.processed) return;
     const nextDeg = ((cur.rotationDeg + 90) % 360) as 0 | 90 | 180 | 270;
-    runPreprocess(isTop, {
-      ...cur,
-      rotationDeg: nextDeg,
-      perspectiveCorners: null,
-    });
+    void runPreprocess(
+      isTop,
+      {
+        ...cur,
+        rotationDeg: nextDeg,
+        perspectiveCorners: null,
+      },
+      cur.processed
+    );
   };
 
   const handleToggleEnhance = (isTop: boolean) => {
     const cur = isTop ? topImage : bottomImage;
-    if (!cur.file) return;
-    runPreprocess(isTop, { ...cur, enhancePencil: !cur.enhancePencil });
+    if (!cur.file && !cur.processed) return;
+    void runPreprocess(
+      isTop,
+      { ...cur, enhancePencil: !cur.enhancePencil },
+      cur.processed
+    );
   };
 
   const handleUpdateCrop = (
@@ -576,14 +700,22 @@ export default function LiffScorebookImportPage() {
     val: number
   ) => {
     const cur = isTop ? topImage : bottomImage;
-    if (!cur.file) return;
-    runPreprocess(isTop, { ...cur, [edge]: val });
+    if (!cur.file && !cur.processed) return;
+    scheduleDebouncedPreprocess(
+      isTop,
+      { ...cur, [edge]: val },
+      cur.processed
+    );
   };
 
   const handleUpdateFineTilt = (isTop: boolean, deg: number) => {
     const cur = isTop ? topImage : bottomImage;
-    if (!cur.file) return;
-    runPreprocess(isTop, { ...cur, fineTiltDeg: deg });
+    if (!cur.file && !cur.processed) return;
+    scheduleDebouncedPreprocess(
+      isTop,
+      { ...cur, fineTiltDeg: deg },
+      cur.processed
+    );
   };
 
   const handleUpdatePerspectiveCorners = (
@@ -591,8 +723,12 @@ export default function LiffScorebookImportPage() {
     corners: ScorebookGridCorners | null
   ) => {
     const cur = isTop ? topImage : bottomImage;
-    if (!cur.file) return;
-    runPreprocess(isTop, { ...cur, perspectiveCorners: corners });
+    if (!cur.file && !cur.processed) return;
+    void runPreprocess(
+      isTop,
+      { ...cur, perspectiveCorners: corners },
+      cur.processed
+    );
   };
 
   const handleSelectLegendOverride = async (file: File | null) => {
@@ -600,19 +736,36 @@ export default function LiffScorebookImportPage() {
       setLegendOverride(null);
       return;
     }
+    setErrorBanner(null);
+    setIsLegendProcessing(true);
+    let watchdogId: ReturnType<typeof setTimeout> | null = null;
     try {
-      const processed = await preprocessScorebookImage(file, {
-        rotationDeg: 0,
-        enhancePencil: false,
-        maxLongEdge: 1500,
-      });
+      const processed = await Promise.race([
+        preprocessScorebookImage(file, {
+          rotationDeg: 0,
+          enhancePencil: false,
+          maxLongEdge: 1500,
+        }),
+        new Promise<never>((_, reject) => {
+          watchdogId = setTimeout(() => {
+            reject(new Error("早見表画像の読み込みがタイムアウトしました"));
+          }, 15000);
+        }),
+      ]);
       setLegendOverride({
         dataUrl: processed.dataUrl,
         base64: processed.base64,
         mimeType: processed.mimeType,
       });
-    } catch {
-      setErrorBanner("早見表画像の読み込みに失敗しました");
+    } catch (err) {
+      const msg =
+        err instanceof Error
+          ? err.message
+          : "早見表画像の読み込みに失敗しました";
+      setErrorBanner(msg);
+    } finally {
+      if (watchdogId) clearTimeout(watchdogId);
+      setIsLegendProcessing(false);
     }
   };
 
@@ -1342,7 +1495,11 @@ export default function LiffScorebookImportPage() {
                 onUpdatePerspectiveCorners={handleUpdatePerspectiveCorners}
                 teamLegendUrl={teamLegendUrl}
                 legendOverrideDataUrl={legendOverride?.dataUrl || null}
+                isLegendProcessing={isLegendProcessing}
                 onSelectLegendOverride={handleSelectLegendOverride}
+                onNavigateScoreSettings={() => {
+                  didVisitScoreSettingsRef.current = true;
+                }}
                 onStartAnalyzeStructure={handleStartAnalyzeStructure}
                 isAnalyzingStructure={isAnalyzingStructure}
                 structureProgressLabel={structureProgressLabel}

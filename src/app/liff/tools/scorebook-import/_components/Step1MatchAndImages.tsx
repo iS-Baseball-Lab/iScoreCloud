@@ -87,7 +87,9 @@ interface Step1MatchAndImagesProps {
   ) => void;
   teamLegendUrl: string | null;
   legendOverrideDataUrl: string | null;
+  isLegendProcessing?: boolean;
   onSelectLegendOverride: (file: File | null) => void;
+  onNavigateScoreSettings?: () => void;
   onStartAnalyzeStructure: () => void;
   isAnalyzingStructure: boolean;
   structureProgressLabel?: string;
@@ -318,13 +320,16 @@ export function Step1MatchAndImages({
   onUpdatePerspectiveCorners,
   teamLegendUrl,
   legendOverrideDataUrl,
+  isLegendProcessing = false,
   onSelectLegendOverride,
+  onNavigateScoreSettings,
   onStartAnalyzeStructure,
   isAnalyzingStructure,
   structureProgressLabel,
   errorMessage,
   onDismissError,
 }: Step1MatchAndImagesProps) {
+  const pickerCooldownRef = useRef<number>(0);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newOpponent, setNewOpponent] = useState("");
   const [newDate, setNewDate] = useState(() =>
@@ -352,6 +357,15 @@ export function Step1MatchAndImages({
     "perspective"
   );
 
+  const guardFilePickerClick = (e: React.MouseEvent<HTMLInputElement>) => {
+    const now = Date.now();
+    if (now - pickerCooldownRef.current < 450) {
+      e.preventDefault();
+      return;
+    }
+    pickerCooldownRef.current = now;
+  };
+
   const selectedMatch = matches.find((m) => m.id === selectedMatchId) || null;
   const isMyTeamFirst = selectedMatch
     ? selectedMatch.battingOrder === "first"
@@ -362,14 +376,17 @@ export function Step1MatchAndImages({
 
   const isPreprocessingAny =
     (needTop && topImage.isProcessing) ||
-    (needBottom && bottomImage.isProcessing);
+    (needBottom && bottomImage.isProcessing) ||
+    isLegendProcessing;
 
   const preprocessingDetail =
     topImage.isProcessing && bottomImage.isProcessing
       ? "先攻・後攻シートの回転・余白カット・文字くっきり補正を適用しています..."
       : topImage.isProcessing
       ? "先攻（表）シートの高精細画像を準備しています..."
-      : "後攻（裏）シートの高精細画像を準備しています...";
+      : bottomImage.isProcessing
+      ? "後攻（裏）シートの高精細画像を準備しています..."
+      : "スコア記号早見表の画像を読み込んでいます...";
 
   const canProceed =
     Boolean(selectedMatchId) &&
@@ -377,6 +394,7 @@ export function Step1MatchAndImages({
     (!needBottom || Boolean(bottomImage.processed)) &&
     !topImage.isProcessing &&
     !bottomImage.isProcessing &&
+    !isLegendProcessing &&
     !isAnalyzingStructure;
 
   const handleCreateSubmit = async (e: React.FormEvent) => {
@@ -407,6 +425,7 @@ export function Step1MatchAndImages({
       : "裏の攻撃";
     const cropKey = isTop ? "top" : "bottom";
     const isCropOpen = openCropSide === cropKey;
+    const isControlsDisabled = state.isProcessing || isAnalyzingStructure;
 
     return (
       <div className="rounded-3xl bg-card border border-border shadow-xs p-4 space-y-3">
@@ -426,58 +445,87 @@ export function Step1MatchAndImages({
             </h3>
           </div>
 
-          {state.processed && (
+          {(state.isProcessing || state.processed || state.file) && (
             <button
               type="button"
+              disabled={isAnalyzingStructure}
               onClick={() => onSelectSheetFile(isTop, null)}
-              className="p-1.5 rounded-xl text-destructive hover:bg-destructive/10 transition-all cursor-pointer"
-              title="画像を削除"
+              className="px-2.5 py-1 rounded-xl bg-destructive/10 hover:bg-destructive/18 border border-destructive/25 text-destructive text-[10px] font-black flex items-center gap-1 shrink-0 transition-colors cursor-pointer disabled:opacity-50"
+              title={state.isProcessing ? "処理を中断してクリア" : "画像を削除"}
             >
-              <Trash2 className="w-4 h-4" />
+              {state.isProcessing ? (
+                <>
+                  <X className="w-3.5 h-3.5" />
+                  <span>中断</span>
+                </>
+              ) : (
+                <>
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>削除</span>
+                </>
+              )}
             </button>
           )}
         </div>
 
-        {!state.file ? (
+        {!state.processed && !state.isProcessing ? (
           <div className="rounded-2xl border-2 border-dashed border-indigo-500/35 bg-indigo-500/5 p-5 flex flex-col items-center text-center space-y-3">
             <p className="text-[11px] font-bold text-muted-foreground leading-relaxed">
               1ページ（片面）全体が枠いっぱいに入るよう、影を避けて真上から撮影してください
             </p>
             <div className="grid grid-cols-2 gap-2.5 w-full">
-              <label className="py-3 px-3 rounded-2xl bg-primary text-primary-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-xs active:scale-95 transition-all cursor-pointer">
-                <Camera className="w-4 h-4 shrink-0" />
-                <span>カメラ撮影</span>
+              <div className="relative overflow-hidden py-3 px-3 rounded-2xl bg-primary text-primary-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-xs hover:opacity-95 active:opacity-85 transition-opacity">
+                <Camera className="w-4 h-4 shrink-0 pointer-events-none" />
+                <span className="pointer-events-none select-none">
+                  カメラ撮影
+                </span>
                 <input
                   type="file"
                   accept="image/*"
                   capture="environment"
-                  onChange={(e) =>
-                    onSelectSheetFile(isTop, e.target.files?.[0] || null)
-                  }
-                  className="hidden"
+                  disabled={isControlsDisabled}
+                  onClick={guardFilePickerClick}
+                  onChange={(e) => {
+                    const picked = e.currentTarget.files?.[0] ?? null;
+                    e.currentTarget.value = "";
+                    if (picked) {
+                      onSelectSheetFile(isTop, picked);
+                    }
+                  }}
+                  aria-label={`${sideTitle}をカメラ撮影`}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed z-10 text-base"
                 />
-              </label>
+              </div>
 
-              <label className="py-3 px-3 rounded-2xl bg-card border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs hover:bg-muted/60 active:scale-95 transition-all cursor-pointer">
-                <ImagePlus className="w-4 h-4 text-indigo-500 shrink-0" />
-                <span>アルバム選択</span>
+              <div className="relative overflow-hidden py-3 px-3 rounded-2xl bg-card border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs hover:bg-muted/60 active:opacity-85 transition-colors">
+                <ImagePlus className="w-4 h-4 text-indigo-500 shrink-0 pointer-events-none" />
+                <span className="pointer-events-none select-none">
+                  アルバム選択
+                </span>
                 <input
                   type="file"
                   accept="image/*"
-                  onChange={(e) =>
-                    onSelectSheetFile(isTop, e.target.files?.[0] || null)
-                  }
-                  className="hidden"
+                  disabled={isControlsDisabled}
+                  onClick={guardFilePickerClick}
+                  onChange={(e) => {
+                    const picked = e.currentTarget.files?.[0] ?? null;
+                    e.currentTarget.value = "";
+                    if (picked) {
+                      onSelectSheetFile(isTop, picked);
+                    }
+                  }}
+                  aria-label={`${sideTitle}をアルバムから選択`}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed z-10 text-base"
                 />
-              </label>
+              </div>
             </div>
           </div>
         ) : (
           <div className="space-y-3">
             {/* プレビュー画像 */}
             <div className="relative rounded-2xl overflow-hidden bg-slate-950 border border-border aspect-4/3 flex items-center justify-center">
-              {state.isProcessing || !state.processed ? (
-                <div className="flex flex-col items-center gap-2 text-white">
+              {!state.processed ? (
+                <div className="flex flex-col items-center gap-2.5 text-white px-4 text-center">
                   <Loader2 className="w-6 h-6 animate-spin text-indigo-400" />
                   <span className="text-[11px] font-bold">
                     高精細画像を準備中...
@@ -488,7 +536,9 @@ export function Step1MatchAndImages({
                   <img
                     src={state.processed.dataUrl}
                     alt={sideTitle}
-                    className="w-full h-full object-contain"
+                    className={`w-full h-full object-contain transition-opacity ${
+                      state.isProcessing ? "opacity-65" : "opacity-100"
+                    }`}
                   />
                   {/* 傾き微調整中は水平確認用の水色ガイドラインをオーバーレイ表示 */}
                   {isCropOpen && adjustTab === "tilt_crop" && (
@@ -499,6 +549,14 @@ export function Step1MatchAndImages({
                           className="w-full border-t border-dashed border-sky-400/75"
                         />
                       ))}
+                    </div>
+                  )}
+                  {state.isProcessing && (
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                      <div className="px-3 py-1.5 rounded-full bg-slate-900/90 border border-slate-700 text-white text-[11px] font-black flex items-center gap-1.5 shadow-md">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" />
+                        <span>補正を反映中...</span>
+                      </div>
                     </div>
                   )}
                 </>
@@ -528,8 +586,9 @@ export function Step1MatchAndImages({
             <div className="grid grid-cols-3 gap-1.5">
               <button
                 type="button"
+                disabled={isControlsDisabled}
                 onClick={() => onRotateSheet(isTop)}
-                className="py-2 px-2 rounded-xl bg-muted hover:bg-muted/80 border border-border text-[11px] font-black text-foreground flex items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer"
+                className="py-2 px-2 rounded-xl bg-muted hover:bg-muted/80 disabled:opacity-50 border border-border text-[11px] font-black text-foreground flex items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer disabled:cursor-not-allowed"
               >
                 <RotateCw className="w-3.5 h-3.5 text-primary" />
                 <span>90°回転</span>
@@ -537,8 +596,9 @@ export function Step1MatchAndImages({
 
               <button
                 type="button"
+                disabled={isControlsDisabled}
                 onClick={() => onToggleEnhance(isTop)}
-                className={`py-2 px-2 rounded-xl border text-[11px] font-black flex items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer ${
+                className={`py-2 px-2 rounded-xl border text-[11px] font-black flex items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
                   state.enhancePencil
                     ? "bg-indigo-600 text-white border-indigo-600"
                     : "bg-muted text-foreground border-border"
@@ -552,10 +612,11 @@ export function Step1MatchAndImages({
 
               <button
                 type="button"
+                disabled={isControlsDisabled}
                 onClick={() =>
                   setOpenCropSide(isCropOpen ? null : cropKey)
                 }
-                className={`py-2 px-2 rounded-xl border text-[11px] font-black flex items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer ${
+                className={`py-2 px-2 rounded-xl border text-[11px] font-black flex items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
                   state.perspectiveCorners ||
                   Math.abs(state.fineTiltDeg) >= 0.1 ||
                   state.cropTop > 0 ||
@@ -575,6 +636,56 @@ export function Step1MatchAndImages({
                 )}
               </button>
             </div>
+
+            {/* 撮り直し・別画像への差し替えクイックバー */}
+            {state.processed && !state.isProcessing && (
+              <div className="grid grid-cols-2 gap-1.5">
+                <div className="relative overflow-hidden py-1.5 px-2 rounded-xl bg-card hover:bg-muted border border-border text-[10px] font-black text-muted-foreground hover:text-foreground flex items-center justify-center gap-1 transition-colors">
+                  <Camera className="w-3 h-3 text-primary shrink-0 pointer-events-none" />
+                  <span className="pointer-events-none select-none">
+                    カメラで撮り直す
+                  </span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    disabled={isControlsDisabled}
+                    onClick={guardFilePickerClick}
+                    onChange={(e) => {
+                      const picked = e.currentTarget.files?.[0] ?? null;
+                      e.currentTarget.value = "";
+                      if (picked) {
+                        onSelectSheetFile(isTop, picked);
+                      }
+                    }}
+                    aria-label={`${sideTitle}をカメラで撮り直す`}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed z-10 text-base"
+                  />
+                </div>
+
+                <div className="relative overflow-hidden py-1.5 px-2 rounded-xl bg-card hover:bg-muted border border-border text-[10px] font-black text-muted-foreground hover:text-foreground flex items-center justify-center gap-1 transition-colors">
+                  <ImagePlus className="w-3 h-3 text-indigo-500 shrink-0 pointer-events-none" />
+                  <span className="pointer-events-none select-none">
+                    別画像に変更
+                  </span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    disabled={isControlsDisabled}
+                    onClick={guardFilePickerClick}
+                    onChange={(e) => {
+                      const picked = e.currentTarget.files?.[0] ?? null;
+                      e.currentTarget.value = "";
+                      if (picked) {
+                        onSelectSheetFile(isTop, picked);
+                      }
+                    }}
+                    aria-label={`${sideTitle}を別画像に変更`}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed z-10 text-base"
+                  />
+                </div>
+              </div>
+            )}
 
             {/* 4隅台形・歪み補正 ＆ 傾き角度・余白カットパネル */}
             {isCropOpen && state.processed && (
@@ -978,6 +1089,7 @@ export function Step1MatchAndImages({
 
           <Link
             href="/liff/settings/score"
+            onClick={() => onNavigateScoreSettings?.()}
             className="px-2.5 py-1.5 rounded-xl bg-indigo-500/12 hover:bg-indigo-500/20 border border-indigo-500/30 text-[11px] font-black text-indigo-700 dark:text-indigo-300 flex items-center gap-1 shrink-0 active:scale-95 transition-all"
           >
             <Settings className="w-3.5 h-3.5" />
@@ -1034,18 +1146,28 @@ export function Step1MatchAndImages({
             </div>
 
             <div className="flex justify-end">
-              <label className="text-[10px] font-bold text-muted-foreground hover:text-foreground underline underline-offset-2 cursor-pointer">
-                この試合だけ別の早見表を一時添付する
+              <div className="relative overflow-hidden py-1 px-2 rounded-lg text-[10px] font-bold text-muted-foreground hover:text-foreground underline underline-offset-2">
+                <span className="pointer-events-none select-none">
+                  {isLegendProcessing
+                    ? "早見表を読み込み中..."
+                    : "この試合だけ別の早見表を一時添付する"}
+                </span>
                 <input
                   type="file"
                   accept="image/*"
+                  disabled={isLegendProcessing || isAnalyzingStructure}
+                  onClick={guardFilePickerClick}
                   onChange={(e) => {
-                    onSelectLegendOverride(e.target.files?.[0] || null);
+                    const picked = e.currentTarget.files?.[0] ?? null;
                     e.currentTarget.value = "";
+                    if (picked) {
+                      onSelectLegendOverride(picked);
+                    }
                   }}
-                  className="hidden"
+                  aria-label="この試合だけ別の早見表を一時添付する"
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed z-10 text-base"
                 />
-              </label>
+              </div>
             </div>
           </div>
         ) : (
@@ -1060,24 +1182,36 @@ export function Step1MatchAndImages({
             <div className="flex items-center gap-2">
               <Link
                 href="/liff/settings/score"
+                onClick={() => onNavigateScoreSettings?.()}
                 className="flex-1 py-2.5 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all"
               >
                 <Settings className="w-3.5 h-3.5 shrink-0" />
                 <span>スコア設定で早見表を登録する</span>
               </Link>
 
-              <label className="py-2.5 px-3 rounded-xl bg-card hover:bg-muted border border-border text-[10px] font-black text-muted-foreground hover:text-foreground shrink-0 cursor-pointer active:scale-95 transition-all">
-                今回のみ添付
+              <div className="relative overflow-hidden py-2.5 px-3 rounded-xl bg-card hover:bg-muted border border-border text-[10px] font-black text-muted-foreground hover:text-foreground shrink-0 flex items-center gap-1 transition-colors">
+                {isLegendProcessing && (
+                  <Loader2 className="w-3 h-3 animate-spin text-indigo-500 pointer-events-none" />
+                )}
+                <span className="pointer-events-none select-none">
+                  {isLegendProcessing ? "読込中..." : "今回のみ添付"}
+                </span>
                 <input
                   type="file"
                   accept="image/*"
+                  disabled={isLegendProcessing || isAnalyzingStructure}
+                  onClick={guardFilePickerClick}
                   onChange={(e) => {
-                    onSelectLegendOverride(e.target.files?.[0] || null);
+                    const picked = e.currentTarget.files?.[0] ?? null;
                     e.currentTarget.value = "";
+                    if (picked) {
+                      onSelectLegendOverride(picked);
+                    }
                   }}
-                  className="hidden"
+                  aria-label="今回のみ早見表を添付"
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed z-10 text-base"
                 />
-              </label>
+              </div>
             </div>
           </div>
         )}

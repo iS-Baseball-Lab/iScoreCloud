@@ -1,7 +1,7 @@
 // filepath: src/app/liff/settings/score/page.tsx
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import {
   BookOpen,
@@ -84,6 +84,17 @@ export default function LiffScoreSettingsPage() {
   const [scoreSettings, setScoreSettings] = useState<LiffScoreSettings>(
     DEFAULT_LIFF_SCORE_SETTINGS
   );
+  const stageSeqRef = useRef<number>(0);
+  const pickerCooldownRef = useRef<number>(0);
+
+  const guardFilePickerClick = (e: React.MouseEvent<HTMLInputElement>) => {
+    const now = Date.now();
+    if (now - pickerCooldownRef.current < 450) {
+      e.preventDefault();
+      return;
+    }
+    pickerCooldownRef.current = now;
+  };
 
   // 1. 端末保存のスコア取込初期設定を読み込み
   useEffect(() => {
@@ -125,28 +136,43 @@ export default function LiffScoreSettingsPage() {
     void fetchTeamLegendContext();
   }, [fetchTeamLegendContext]);
 
-  // 3. 早見表画像のCanvas前処理（回転・濃さ強調）
+  // 3. 早見表画像のCanvas前処理（回転・濃さ強調・ウォッチドッグ付き）
   const runStagePreprocess = async (
     file: File,
     rotationDeg: 0 | 90 | 180 | 270,
-    enhancePencil: boolean
+    enhancePencil: boolean,
+    fallbackProcessed: PreprocessedScorebookImage | null = null
   ) => {
+    const seq = ++stageSeqRef.current;
     setStagedLegend({
       file,
       rotationDeg,
       enhancePencil,
-      processed: null,
+      processed: fallbackProcessed,
       isProcessing: true,
     });
     setConfirmClearLegend(false);
     setErrorMessage(null);
 
+    let watchdogId: ReturnType<typeof setTimeout> | null = null;
     try {
-      const processed = await preprocessScorebookImage(file, {
-        rotationDeg,
-        enhancePencil,
-        maxLongEdge: 1800,
-      });
+      const processed = await Promise.race([
+        preprocessScorebookImage(file, {
+          rotationDeg,
+          enhancePencil,
+          maxLongEdge: 1800,
+        }),
+        new Promise<never>((_, reject) => {
+          watchdogId = setTimeout(() => {
+            reject(
+              new Error(
+                "画像の最適化がタイムアウトしました。もう一度お試しください"
+              )
+            );
+          }, 18000);
+        }),
+      ]);
+      if (stageSeqRef.current !== seq) return;
       setStagedLegend({
         file,
         rotationDeg,
@@ -155,15 +181,28 @@ export default function LiffScoreSettingsPage() {
         isProcessing: false,
       });
     } catch (err) {
+      if (stageSeqRef.current !== seq) return;
       const msg = err instanceof Error ? err.message : String(err);
       setErrorMessage(`画像の読み込みに失敗しました: ${msg}`);
-      setStagedLegend(null);
+      if (fallbackProcessed) {
+        setStagedLegend({
+          file,
+          rotationDeg,
+          enhancePencil,
+          processed: fallbackProcessed,
+          isProcessing: false,
+        });
+      } else {
+        setStagedLegend(null);
+      }
+    } finally {
+      if (watchdogId) clearTimeout(watchdogId);
     }
   };
 
   const handleSelectLegendFile = (file: File | null) => {
     if (!file) return;
-    void runStagePreprocess(file, 0, false);
+    void runStagePreprocess(file, 0, false, null);
   };
 
   const handleRotateStaged = () => {
@@ -176,7 +215,8 @@ export default function LiffScoreSettingsPage() {
     void runStagePreprocess(
       stagedLegend.file,
       nextDeg,
-      stagedLegend.enhancePencil
+      stagedLegend.enhancePencil,
+      stagedLegend.processed
     );
   };
 
@@ -185,7 +225,8 @@ export default function LiffScoreSettingsPage() {
     void runStagePreprocess(
       stagedLegend.file,
       stagedLegend.rotationDeg,
-      !stagedLegend.enhancePencil
+      !stagedLegend.enhancePencil,
+      stagedLegend.processed
     );
   };
 
@@ -457,34 +498,50 @@ export default function LiffScoreSettingsPage() {
               </div>
 
               <div className="grid grid-cols-2 gap-2">
-                <label className="py-2.5 px-3 rounded-2xl bg-primary text-primary-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all cursor-pointer">
-                  <Camera className="w-4 h-4 shrink-0" />
-                  <span>カメラで撮り直す</span>
+                <div className="relative overflow-hidden py-2.5 px-3 rounded-2xl bg-primary text-primary-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs hover:opacity-95 active:opacity-85 transition-opacity">
+                  <Camera className="w-4 h-4 shrink-0 pointer-events-none" />
+                  <span className="pointer-events-none select-none">
+                    カメラで撮り直す
+                  </span>
                   <input
                     type="file"
                     accept="image/*"
                     capture="environment"
+                    disabled={isSavingLegend}
+                    onClick={guardFilePickerClick}
                     onChange={(e) => {
-                      handleSelectLegendFile(e.target.files?.[0] || null);
+                      const picked = e.currentTarget.files?.[0] ?? null;
                       e.currentTarget.value = "";
+                      if (picked) {
+                        handleSelectLegendFile(picked);
+                      }
                     }}
-                    className="hidden"
+                    aria-label="カメラで早見表を撮り直す"
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed z-10 text-base"
                   />
-                </label>
+                </div>
 
-                <label className="py-2.5 px-3 rounded-2xl bg-card border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs hover:bg-muted/60 active:scale-95 transition-all cursor-pointer">
-                  <ImagePlus className="w-4 h-4 text-indigo-500 shrink-0" />
-                  <span>アルバムから変更</span>
+                <div className="relative overflow-hidden py-2.5 px-3 rounded-2xl bg-card border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs hover:bg-muted/60 active:opacity-85 transition-colors">
+                  <ImagePlus className="w-4 h-4 text-indigo-500 shrink-0 pointer-events-none" />
+                  <span className="pointer-events-none select-none">
+                    アルバムから変更
+                  </span>
                   <input
                     type="file"
                     accept="image/*"
+                    disabled={isSavingLegend}
+                    onClick={guardFilePickerClick}
                     onChange={(e) => {
-                      handleSelectLegendFile(e.target.files?.[0] || null);
+                      const picked = e.currentTarget.files?.[0] ?? null;
                       e.currentTarget.value = "";
+                      if (picked) {
+                        handleSelectLegendFile(picked);
+                      }
                     }}
-                    className="hidden"
+                    aria-label="アルバムから早見表を変更"
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed z-10 text-base"
                   />
-                </label>
+                </div>
               </div>
 
               {!confirmClearLegend ? (
@@ -539,34 +596,50 @@ export default function LiffScoreSettingsPage() {
                 </p>
               </div>
               <div className="grid grid-cols-2 gap-2.5 w-full pt-1">
-                <label className="py-3 px-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-xs active:scale-95 transition-all cursor-pointer">
-                  <Camera className="w-4 h-4 shrink-0" />
-                  <span>カメラ撮影</span>
+                <div className="relative overflow-hidden py-3 px-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-xs active:opacity-85 transition-colors">
+                  <Camera className="w-4 h-4 shrink-0 pointer-events-none" />
+                  <span className="pointer-events-none select-none">
+                    カメラ撮影
+                  </span>
                   <input
                     type="file"
                     accept="image/*"
                     capture="environment"
+                    disabled={isSavingLegend}
+                    onClick={guardFilePickerClick}
                     onChange={(e) => {
-                      handleSelectLegendFile(e.target.files?.[0] || null);
+                      const picked = e.currentTarget.files?.[0] ?? null;
                       e.currentTarget.value = "";
+                      if (picked) {
+                        handleSelectLegendFile(picked);
+                      }
                     }}
-                    className="hidden"
+                    aria-label="スコア記号早見表をカメラ撮影"
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed z-10 text-base"
                   />
-                </label>
+                </div>
 
-                <label className="py-3 px-3 rounded-2xl bg-card border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs hover:bg-muted/60 active:scale-95 transition-all cursor-pointer">
-                  <ImagePlus className="w-4 h-4 text-indigo-500 shrink-0" />
-                  <span>アルバム選択</span>
+                <div className="relative overflow-hidden py-3 px-3 rounded-2xl bg-card border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs hover:bg-muted/60 active:opacity-85 transition-colors">
+                  <ImagePlus className="w-4 h-4 text-indigo-500 shrink-0 pointer-events-none" />
+                  <span className="pointer-events-none select-none">
+                    アルバム選択
+                  </span>
                   <input
                     type="file"
                     accept="image/*"
+                    disabled={isSavingLegend}
+                    onClick={guardFilePickerClick}
                     onChange={(e) => {
-                      handleSelectLegendFile(e.target.files?.[0] || null);
+                      const picked = e.currentTarget.files?.[0] ?? null;
                       e.currentTarget.value = "";
+                      if (picked) {
+                        handleSelectLegendFile(picked);
+                      }
                     }}
-                    className="hidden"
+                    aria-label="スコア記号早見表をアルバム選択"
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed z-10 text-base"
                   />
-                </label>
+                </div>
               </div>
             </div>
           )}

@@ -46,8 +46,93 @@ export interface StructureFocusCrops {
   mimeType: string;
 }
 
+const PENCIL_LUT_SCALE = 1024;
+const PENCIL_REL_TO_TARGET_LUT: Uint8Array = (() => {
+  const lut = new Uint8Array(PENCIL_LUT_SCALE + 1);
+  for (let i = 0; i <= PENCIL_LUT_SCALE; i++) {
+    const rel = i / PENCIL_LUT_SCALE;
+    if (rel >= 0.93) {
+      lut[i] = Math.min(255, Math.round(248 + (rel - 0.93) * 100));
+    } else {
+      const ink = Math.max(0, (0.93 - rel) / 0.93);
+      const gain = Math.min(1, Math.pow(ink * 1.82, 0.94));
+      lut[i] = Math.max(0, Math.round(248 * (1 - gain)));
+    }
+  }
+  return lut;
+})();
+
+function yieldToMainThread(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+function releaseCanvas(canvas: HTMLCanvasElement | null | undefined): void {
+  if (!canvas) return;
+  canvas.width = 1;
+  canvas.height = 1;
+}
+
+async function canvasToDataUrlAsync(
+  canvas: HTMLCanvasElement,
+  mimeType: string,
+  quality: number
+): Promise<string> {
+  if (typeof canvas.toBlob !== "function") {
+    return canvas.toDataURL(mimeType, quality);
+  }
+  return new Promise<string>((resolve) => {
+    let settled = false;
+    const fallbackTimer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      resolve(canvas.toDataURL(mimeType, quality));
+    }, 6000);
+
+    try {
+      canvas.toBlob(
+        (blob) => {
+          if (settled) return;
+          if (!blob) {
+            settled = true;
+            clearTimeout(fallbackTimer);
+            resolve(canvas.toDataURL(mimeType, quality));
+            return;
+          }
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(fallbackTimer);
+            if (typeof reader.result === "string" && reader.result.length > 0) {
+              resolve(reader.result);
+            } else {
+              resolve(canvas.toDataURL(mimeType, quality));
+            }
+          };
+          reader.onerror = () => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(fallbackTimer);
+            resolve(canvas.toDataURL(mimeType, quality));
+          };
+          reader.readAsDataURL(blob);
+        },
+        mimeType,
+        quality
+      );
+    } catch {
+      if (!settled) {
+        settled = true;
+        clearTimeout(fallbackTimer);
+        resolve(canvas.toDataURL(mimeType, quality));
+      }
+    }
+  });
+}
+
 /**
  * 照明ムラ・スマホの影を除去しつつ、薄い鉛筆の手書き数字（6-3, 8, ①②③, 背番号）と赤ペンを鮮明化する局所適応コントラスト補正
+ * （事前計算LUT＆整数演算によりメインスレッドのブロックを最小化）
  */
 function applyAdaptivePencilContrast(
   imageData: ImageData,
@@ -102,226 +187,302 @@ function applyAdaptivePencilContrast(
     }
   }
 
+  // X方向の補間テーブルを事前計算
+  const colTx0 = new Int32Array(width);
+  const colTx1 = new Int32Array(width);
+  const colWx = new Float32Array(width);
+  for (let x = 0; x < width; x++) {
+    const gx = Math.max(
+      0,
+      Math.min(tileCols - 1.001, (x + 0.5) / tileW - 0.5)
+    );
+    const tx0 = Math.floor(gx);
+    colTx0[x] = tx0;
+    colTx1[x] = Math.min(tileCols - 1, tx0 + 1);
+    colWx[x] = gx - tx0;
+  }
+
   // 2. 双線形補間で影の境界を滑らかに除去しながら鉛筆筆跡と赤ペンを強調
   for (let y = 0; y < height; y++) {
     const gy = Math.max(0, Math.min(tileRows - 1.001, (y + 0.5) / tileH - 0.5));
     const ty0 = Math.floor(gy);
     const ty1 = Math.min(tileRows - 1, ty0 + 1);
     const wy = gy - ty0;
+    const invWy = 1 - wy;
+    const row0Base = ty0 * tileCols;
+    const row1Base = ty1 * tileCols;
 
-    for (let x = 0; x < width; x++) {
-      const i = (y * width + x) * 4;
+    let i = y * width * 4;
+    for (let x = 0; x < width; x++, i += 4) {
       const r = data[i];
       const g = data[i + 1];
       const b = data[i + 2];
 
       // 赤ペン判定（早稲田式スコアブックの安打・打点・盗塁など）
-      const redness = r - Math.max(g, b);
-      if (redness > 20 && r > 85) {
-        data[i] = Math.min(255, Math.round(r * 1.08));
-        data[i + 1] = Math.max(0, Math.round(g * 0.68));
-        data[i + 2] = Math.max(0, Math.round(b * 0.68));
+      const maxGb = g > b ? g : b;
+      if (r - maxGb > 20 && r > 85) {
+        const nr = (r * 276) >> 8;
+        data[i] = nr > 255 ? 255 : nr;
+        data[i + 1] = (g * 174) >> 8;
+        data[i + 2] = (b * 174) >> 8;
         continue;
       }
 
-      const gx = Math.max(
-        0,
-        Math.min(tileCols - 1.001, (x + 0.5) / tileW - 0.5)
-      );
-      const tx0 = Math.floor(gx);
-      const tx1 = Math.min(tileCols - 1, tx0 + 1);
-      const wx = gx - tx0;
+      const tx0 = colTx0[x];
+      const tx1 = colTx1[x];
+      const wx = colWx[x];
+      const invWx = 1 - wx;
 
-      const w00 = tileWhite[ty0 * tileCols + tx0];
-      const w10 = tileWhite[ty0 * tileCols + tx1];
-      const w01 = tileWhite[ty1 * tileCols + tx0];
-      const w11 = tileWhite[ty1 * tileCols + tx1];
       const paperLum =
-        (w00 * (1 - wx) + w10 * wx) * (1 - wy) +
-        (w01 * (1 - wx) + w11 * wx) * wy;
+        (tileWhite[row0Base + tx0] * invWx + tileWhite[row0Base + tx1] * wx) *
+          invWy +
+        (tileWhite[row1Base + tx0] * invWx + tileWhite[row1Base + tx1] * wx) *
+          wy;
 
-      const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-      const rel = paperLum > 1 ? lum / paperLum : 1;
+      const lum = (r * 77 + g * 150 + b * 29) >> 8;
+      if (lum <= 1) continue;
 
-      let targetLum: number;
-      if (rel >= 0.93) {
-        targetLum = Math.min(255, Math.round(248 + (rel - 0.93) * 100));
-      } else {
-        const ink = Math.max(0, (0.93 - rel) / 0.93);
-        const gain = Math.min(1, Math.pow(ink * 1.82, 0.94));
-        targetLum = Math.max(0, Math.round(248 * (1 - gain)));
-      }
+      let lutIdx =
+        paperLum > 1
+          ? ((lum * PENCIL_LUT_SCALE) / paperLum) | 0
+          : PENCIL_LUT_SCALE;
+      if (lutIdx < 0) lutIdx = 0;
+      else if (lutIdx > PENCIL_LUT_SCALE) lutIdx = PENCIL_LUT_SCALE;
 
-      if (lum > 1) {
-        const ratio = targetLum / lum;
-        data[i] = Math.max(0, Math.min(255, Math.round(r * ratio)));
-        data[i + 1] = Math.max(0, Math.min(255, Math.round(g * ratio)));
-        data[i + 2] = Math.max(0, Math.min(255, Math.round(b * ratio)));
-      }
+      const targetLum = PENCIL_REL_TO_TARGET_LUT[lutIdx];
+      const scale256 = ((targetLum << 8) / lum) | 0;
+      const nr = (r * scale256) >> 8;
+      const ng = (g * scale256) >> 8;
+      const nb = (b * scale256) >> 8;
+      data[i] = nr > 255 ? 255 : nr < 0 ? 0 : nr;
+      data[i + 1] = ng > 255 ? 255 : ng < 0 ? 0 : ng;
+      data[i + 2] = nb > 255 ? 255 : nb < 0 ? 0 : nb;
     }
   }
 }
 
 /**
- * スマホで撮影したスコアブック画像をCanvas上で前処理する
- * - 90度単位の回転補正
- * - 余白トリミング
- * - 長辺3000pxの高精細マスター保持（細かい手書き数字・BSO記号の切り抜き鮮明度を最大化）
- * - 照明ムラ除去＆薄い鉛筆強調（enhancePencil有効時）
+ * スマホで撮影したスコアブック画像をCanvas上で安全・高速に前処理する
+ * - iOS Safari / LINE WKWebView の 16.77MP Canvas上限クラッシュを完全回避（事前縮小描画＋即時メモリ解放）
+ * - UIスレッドをフリーズさせないフレーム分割＆非同期Blobエンコード
+ * - 90度回転・微細傾き・4隅台形歪み・余白トリミング・照明ムラ除去＆鉛筆強調
  */
 export async function preprocessScorebookImage(
   file: File,
   options: ImagePreprocessOptions
 ): Promise<PreprocessedScorebookImage> {
-  const img = await loadImageFromFile(file);
-  const maxLongEdge = options.maxLongEdge ?? 3000;
+  await yieldToMainThread();
+
+  const maxLongEdge = Math.min(2600, Math.max(600, options.maxLongEdge ?? 2400));
   const insets = options.cropInsets ?? { top: 0, right: 0, bottom: 0, left: 0 };
 
-  // 1. 90度回転＋微細傾き補正（fineTiltDeg）を適用した中間Canvasを作成
-  const isRotated90 = options.rotationDeg === 90 || options.rotationDeg === 270;
-  const rotW = isRotated90 ? img.naturalHeight : img.naturalWidth;
-  const rotH = isRotated90 ? img.naturalWidth : img.naturalHeight;
-  const fineTilt = Math.max(-15, Math.min(15, options.fineTiltDeg ?? 0));
-  const totalAngleRad = ((options.rotationDeg + fineTilt) * Math.PI) / 180;
+  let rotCanvas: HTMLCanvasElement | null = null;
+  let prevCanvas: HTMLCanvasElement | null = null;
+  let outCanvas: HTMLCanvasElement | null = null;
 
-  const rotCanvas = document.createElement("canvas");
-  rotCanvas.width = rotW;
-  rotCanvas.height = rotH;
-  const rotCtx = rotCanvas.getContext("2d");
-  if (!rotCtx) {
-    throw new Error("Canvas 2D context is unavailable");
-  }
+  try {
+    // 1. 画像デコードと90度回転＋微細傾き補正（iOS 16.77MP上限を超えないよう中間Canvas時点で縮小描画）
+    const { img, cleanup } = await loadDecodedImageFromFile(file);
+    let rotW = 64;
+    let rotH = 64;
+    let rotCtx: CanvasRenderingContext2D | null = null;
 
-  // 微細回転時に四隅が黒くならないよう紙面に近い白で下塗り
-  rotCtx.fillStyle = "#f8fafc";
-  rotCtx.fillRect(0, 0, rotW, rotH);
-  rotCtx.save();
-  rotCtx.translate(rotW / 2, rotH / 2);
-  rotCtx.rotate(totalAngleRad);
-  rotCtx.drawImage(img, -img.naturalWidth / 2, -img.naturalHeight / 2);
-  rotCtx.restore();
+    try {
+      const rawW = img.naturalWidth || img.width;
+      const rawH = img.naturalHeight || img.height;
+      if (rawW < 16 || rawH < 16) {
+        throw new Error("画像サイズが小さすぎるか破損しています");
+      }
 
-  // 4隅ドラッグUI用の軽量ベースプレビューを生成（長辺1050px）
-  const prevScale = Math.max(rotW, rotH) > 1050 ? 1050 / Math.max(rotW, rotH) : 1;
-  const prevCanvas = document.createElement("canvas");
-  prevCanvas.width = Math.max(64, Math.round(rotW * prevScale));
-  prevCanvas.height = Math.max(64, Math.round(rotH * prevScale));
-  const prevCtx = prevCanvas.getContext("2d");
-  let unwarpedPreviewDataUrl: string | undefined;
-  if (prevCtx) {
-    prevCtx.imageSmoothingEnabled = true;
-    prevCtx.imageSmoothingQuality = "high";
-    prevCtx.drawImage(rotCanvas, 0, 0, prevCanvas.width, prevCanvas.height);
-    unwarpedPreviewDataUrl = prevCanvas.toDataURL("image/jpeg", 0.82);
-  }
+      const isRotated90 =
+        options.rotationDeg === 90 || options.rotationDeg === 270;
+      const fullRotW = isRotated90 ? rawH : rawW;
+      const fullRotH = isRotated90 ? rawW : rawH;
 
-  const validPersp = sanitizeGridCorners(options.perspectiveCorners);
-  let outW: number;
-  let outH: number;
-  const outCanvas = document.createElement("canvas");
-  let outCtx: CanvasRenderingContext2D | null = null;
+      // 中間Canvasは最大2560px（約4.9MP）以下に抑え、24MP/48MPスマホ写真でもiOS WebKit上限(16.7MP)の1/3未満を厳守
+      const maxIntermEdge = Math.min(2560, Math.round(maxLongEdge * 1.06));
+      const intermScale =
+        Math.max(fullRotW, fullRotH) > maxIntermEdge
+          ? maxIntermEdge / Math.max(fullRotW, fullRotH)
+          : 1;
 
-  if (validPersp) {
-    // 2A. 4隅指定による台形・斜め歪みホモグラフィ補正（スキャナー平面化）
-    const tlPx: [number, number] = [
-      (validPersp.tl[0] / 1000) * rotW,
-      (validPersp.tl[1] / 1000) * rotH,
-    ];
-    const trPx: [number, number] = [
-      (validPersp.tr[0] / 1000) * rotW,
-      (validPersp.tr[1] / 1000) * rotH,
-    ];
-    const brPx: [number, number] = [
-      (validPersp.br[0] / 1000) * rotW,
-      (validPersp.br[1] / 1000) * rotH,
-    ];
-    const blPx: [number, number] = [
-      (validPersp.bl[0] / 1000) * rotW,
-      (validPersp.bl[1] / 1000) * rotH,
-    ];
+      rotW = Math.max(64, Math.round(fullRotW * intermScale));
+      rotH = Math.max(64, Math.round(fullRotH * intermScale));
+      const drawW = Math.max(64, Math.round(rawW * intermScale));
+      const drawH = Math.max(64, Math.round(rawH * intermScale));
 
-    const topEdgeW = Math.hypot(trPx[0] - tlPx[0], trPx[1] - tlPx[1]);
-    const botEdgeW = Math.hypot(brPx[0] - blPx[0], brPx[1] - blPx[1]);
-    const leftEdgeH = Math.hypot(blPx[0] - tlPx[0], blPx[1] - tlPx[1]);
-    const rightEdgeH = Math.hypot(brPx[0] - trPx[0], brPx[1] - trPx[1]);
+      const fineTilt = Math.max(-15, Math.min(15, options.fineTiltDeg ?? 0));
+      const totalAngleRad = ((options.rotationDeg + fineTilt) * Math.PI) / 180;
 
-    const rawWarpW = Math.max(64, Math.max(topEdgeW, botEdgeW));
-    const rawWarpH = Math.max(64, Math.max(leftEdgeH, rightEdgeH));
-    const warpScale =
-      Math.max(rawWarpW, rawWarpH) > maxLongEdge
-        ? maxLongEdge / Math.max(rawWarpW, rawWarpH)
-        : 1;
+      rotCanvas = document.createElement("canvas");
+      rotCanvas.width = rotW;
+      rotCanvas.height = rotH;
+      rotCtx = rotCanvas.getContext("2d");
+      if (!rotCtx) {
+        throw new Error(
+          "端末のメモリが不足しています。不要なタブを閉じて再度お試しください"
+        );
+      }
 
-    outW = Math.max(64, Math.round(rawWarpW * warpScale));
-    outH = Math.max(64, Math.round(rawWarpH * warpScale));
-    outCanvas.width = outW;
-    outCanvas.height = outH;
-    outCtx = outCanvas.getContext("2d");
-    if (!outCtx) {
-      throw new Error("Output Canvas 2D context is unavailable");
+      // 微細回転時に四隅が黒くならないよう紙面に近い白で下塗り
+      rotCtx.fillStyle = "#f8fafc";
+      rotCtx.fillRect(0, 0, rotW, rotH);
+      rotCtx.imageSmoothingEnabled = true;
+      rotCtx.imageSmoothingQuality = "high";
+      rotCtx.save();
+      rotCtx.translate(rotW / 2, rotH / 2);
+      rotCtx.rotate(totalAngleRad);
+      rotCtx.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
+      rotCtx.restore();
+    } finally {
+      // Safari / WKWebView での遅延デコード完了後に安全に ObjectURL と元画像ビットマップを即解放
+      cleanup();
     }
 
-    const srcBuffer = rotCtx.getImageData(0, 0, rotW, rotH);
-    const dstImgData = outCtx.createImageData(outW, outH);
-    warpQuadFromRgbaBuffer(
-      srcBuffer.data,
-      rotW,
-      rotH,
-      { tl: tlPx, tr: trPx, br: brPx, bl: blPx },
-      dstImgData.data,
-      outW,
-      outH
-    );
-    outCtx.putImageData(dstImgData, 0, 0);
-  } else {
-    // 2B. 通常の矩形トリミング範囲を計算
-    const sx = Math.round(rotW * Math.max(0, Math.min(0.4, insets.left)));
-    const sy = Math.round(rotH * Math.max(0, Math.min(0.4, insets.top)));
-    const sw = Math.max(
-      64,
-      Math.round(rotW * (1 - insets.left - insets.right))
-    );
-    const sh = Math.max(
-      64,
-      Math.round(rotH * (1 - insets.top - insets.bottom))
-    );
+    await yieldToMainThread();
 
-    const longEdge = Math.max(sw, sh);
-    const scale = longEdge > maxLongEdge ? maxLongEdge / longEdge : 1;
-    outW = Math.max(64, Math.round(sw * scale));
-    outH = Math.max(64, Math.round(sh * scale));
+    // 4隅ドラッグUI用の軽量ベースプレビューを生成（長辺960px）し、生成直後に中間プレビューCanvasを解放
+    const prevScale =
+      Math.max(rotW, rotH) > 960 ? 960 / Math.max(rotW, rotH) : 1;
+    prevCanvas = document.createElement("canvas");
+    prevCanvas.width = Math.max(64, Math.round(rotW * prevScale));
+    prevCanvas.height = Math.max(64, Math.round(rotH * prevScale));
+    const prevCtx = prevCanvas.getContext("2d");
+    let unwarpedPreviewDataUrl: string | undefined;
+    if (prevCtx) {
+      prevCtx.imageSmoothingEnabled = true;
+      prevCtx.imageSmoothingQuality = "high";
+      prevCtx.drawImage(rotCanvas, 0, 0, prevCanvas.width, prevCanvas.height);
+      unwarpedPreviewDataUrl = await canvasToDataUrlAsync(
+        prevCanvas,
+        "image/jpeg",
+        0.8
+      );
+    }
+    releaseCanvas(prevCanvas);
+    prevCanvas = null;
 
-    outCanvas.width = outW;
-    outCanvas.height = outH;
-    outCtx = outCanvas.getContext("2d");
-    if (!outCtx) {
-      throw new Error("Output Canvas 2D context is unavailable");
+    await yieldToMainThread();
+
+    const validPersp = sanitizeGridCorners(options.perspectiveCorners);
+    let outW: number;
+    let outH: number;
+    outCanvas = document.createElement("canvas");
+    let outCtx: CanvasRenderingContext2D | null = null;
+
+    if (validPersp) {
+      // 2A. 4隅指定による台形・斜め歪みホモグラフィ補正（スキャナー平面化）
+      const tlPx: [number, number] = [
+        (validPersp.tl[0] / 1000) * rotW,
+        (validPersp.tl[1] / 1000) * rotH,
+      ];
+      const trPx: [number, number] = [
+        (validPersp.tr[0] / 1000) * rotW,
+        (validPersp.tr[1] / 1000) * rotH,
+      ];
+      const brPx: [number, number] = [
+        (validPersp.br[0] / 1000) * rotW,
+        (validPersp.br[1] / 1000) * rotH,
+      ];
+      const blPx: [number, number] = [
+        (validPersp.bl[0] / 1000) * rotW,
+        (validPersp.bl[1] / 1000) * rotH,
+      ];
+
+      const topEdgeW = Math.hypot(trPx[0] - tlPx[0], trPx[1] - tlPx[1]);
+      const botEdgeW = Math.hypot(brPx[0] - blPx[0], brPx[1] - blPx[1]);
+      const leftEdgeH = Math.hypot(blPx[0] - tlPx[0], blPx[1] - tlPx[1]);
+      const rightEdgeH = Math.hypot(brPx[0] - trPx[0], brPx[1] - trPx[1]);
+
+      const rawWarpW = Math.max(64, Math.max(topEdgeW, botEdgeW));
+      const rawWarpH = Math.max(64, Math.max(leftEdgeH, rightEdgeH));
+      const warpScale =
+        Math.max(rawWarpW, rawWarpH) > maxLongEdge
+          ? maxLongEdge / Math.max(rawWarpW, rawWarpH)
+          : 1;
+
+      outW = Math.max(64, Math.round(rawWarpW * warpScale));
+      outH = Math.max(64, Math.round(rawWarpH * warpScale));
+      outCanvas.width = outW;
+      outCanvas.height = outH;
+      outCtx = outCanvas.getContext("2d");
+      if (!outCtx) {
+        throw new Error("出力用Canvasの確保に失敗しました");
+      }
+
+      const srcBuffer = rotCtx.getImageData(0, 0, rotW, rotH);
+      releaseCanvas(rotCanvas);
+      rotCanvas = null;
+
+      const dstImgData = outCtx.createImageData(outW, outH);
+      warpQuadFromRgbaBuffer(
+        srcBuffer.data,
+        rotW,
+        rotH,
+        { tl: tlPx, tr: trPx, br: brPx, bl: blPx },
+        dstImgData.data,
+        outW,
+        outH
+      );
+      outCtx.putImageData(dstImgData, 0, 0);
+    } else {
+      // 2B. 通常の矩形トリミング範囲を計算
+      const sx = Math.round(rotW * Math.max(0, Math.min(0.4, insets.left)));
+      const sy = Math.round(rotH * Math.max(0, Math.min(0.4, insets.top)));
+      const sw = Math.max(
+        64,
+        Math.round(rotW * (1 - insets.left - insets.right))
+      );
+      const sh = Math.max(
+        64,
+        Math.round(rotH * (1 - insets.top - insets.bottom))
+      );
+
+      const longEdge = Math.max(sw, sh);
+      const scale = longEdge > maxLongEdge ? maxLongEdge / longEdge : 1;
+      outW = Math.max(64, Math.round(sw * scale));
+      outH = Math.max(64, Math.round(sh * scale));
+
+      outCanvas.width = outW;
+      outCanvas.height = outH;
+      outCtx = outCanvas.getContext("2d");
+      if (!outCtx) {
+        throw new Error("出力用Canvasの確保に失敗しました");
+      }
+
+      outCtx.imageSmoothingEnabled = true;
+      outCtx.imageSmoothingQuality = "high";
+      outCtx.drawImage(rotCanvas, sx, sy, sw, sh, 0, 0, outW, outH);
+      releaseCanvas(rotCanvas);
+      rotCanvas = null;
     }
 
-    outCtx.imageSmoothingEnabled = true;
-    outCtx.imageSmoothingQuality = "high";
-    outCtx.drawImage(rotCanvas, sx, sy, sw, sh, 0, 0, outW, outH);
+    // 4. 局所適応の影除去＆鉛筆・赤ペン強調
+    if (options.enhancePencil) {
+      await yieldToMainThread();
+      const imageData = outCtx.getImageData(0, 0, outW, outH);
+      applyAdaptivePencilContrast(imageData, outW, outH);
+      outCtx.putImageData(imageData, 0, 0);
+    }
+
+    await yieldToMainThread();
+    const mimeType = "image/jpeg";
+    const dataUrl = await canvasToDataUrlAsync(outCanvas, mimeType, 0.9);
+    const base64 = stripDataUrlPrefix(dataUrl);
+
+    return {
+      dataUrl,
+      base64,
+      mimeType,
+      width: outW,
+      height: outH,
+      unwarpedPreviewDataUrl,
+    };
+  } finally {
+    releaseCanvas(rotCanvas);
+    releaseCanvas(prevCanvas);
+    releaseCanvas(outCanvas);
   }
-
-  // 4. 局所適応の影除去＆鉛筆・赤ペン強調
-  if (options.enhancePencil) {
-    const imageData = outCtx.getImageData(0, 0, outW, outH);
-    applyAdaptivePencilContrast(imageData, outW, outH);
-    outCtx.putImageData(imageData, 0, 0);
-  }
-
-  const mimeType = "image/jpeg";
-  const dataUrl = outCanvas.toDataURL(mimeType, 0.91);
-  const base64 = stripDataUrlPrefix(dataUrl);
-
-  return {
-    dataUrl,
-    base64,
-    mimeType,
-    width: outW,
-    height: outH,
-    unwarpedPreviewDataUrl,
-  };
 }
 
 /**
@@ -333,7 +494,11 @@ export async function ensureCompactApiImage(
   quality = 0.88
 ): Promise<{ base64: string; mimeType: string }> {
   const currentLong = Math.max(processed.width, processed.height);
-  if (currentLong <= maxLongEdge && processed.base64.length <= 920_000) {
+  if (
+    currentLong <= maxLongEdge &&
+    processed.base64.length > 0 &&
+    processed.base64.length <= 920_000
+  ) {
     return {
       base64: processed.base64,
       mimeType: processed.mimeType,
@@ -349,23 +514,27 @@ export async function ensureCompactApiImage(
   const outH = Math.max(64, Math.round(srcH * scale));
 
   const canvas = document.createElement("canvas");
-  canvas.width = outW;
-  canvas.height = outH;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) {
-    return {
-      base64: processed.base64,
-      mimeType: processed.mimeType,
-    };
+  try {
+    canvas.width = outW;
+    canvas.height = outH;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      return {
+        base64: processed.base64 || stripDataUrlPrefix(processed.dataUrl),
+        mimeType: processed.mimeType,
+      };
+    }
+
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(img, 0, 0, outW, outH);
+
+    const mimeType = "image/jpeg";
+    const dataUrl = await canvasToDataUrlAsync(canvas, mimeType, quality);
+    return { base64: stripDataUrlPrefix(dataUrl), mimeType };
+  } finally {
+    releaseCanvas(canvas);
   }
-
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(img, 0, 0, outW, outH);
-
-  const mimeType = "image/jpeg";
-  const dataUrl = canvas.toDataURL(mimeType, quality);
-  return { base64: stripDataUrlPrefix(dataUrl), mimeType };
 }
 
 /**
@@ -378,6 +547,7 @@ export async function buildCalibratedRulerSheetImage(
   maxInnerLongEdge = 1850,
   quality = 0.89
 ): Promise<{ base64: string; mimeType: string }> {
+  let canvas: HTMLCanvasElement | null = null;
   try {
     const img = await loadImageFromUrl(processed.dataUrl);
     const srcW = img.naturalWidth || processed.width;
@@ -388,7 +558,7 @@ export async function buildCalibratedRulerSheetImage(
     const innerW = Math.max(120, Math.round(srcW * scale));
     const innerH = Math.max(120, Math.round(srcH * scale));
 
-    const canvas = document.createElement("canvas");
+    canvas = document.createElement("canvas");
     canvas.width = innerW;
     canvas.height = innerH;
     const ctx = canvas.getContext("2d");
@@ -473,17 +643,20 @@ export async function buildCalibratedRulerSheetImage(
     }
 
     const mimeType = "image/jpeg";
+    const dataUrl = await canvasToDataUrlAsync(canvas, mimeType, quality);
     return {
-      base64: stripDataUrlPrefix(canvas.toDataURL(mimeType, quality)),
+      base64: stripDataUrlPrefix(dataUrl),
       mimeType,
     };
   } catch {
     return ensureCompactApiImage(processed, maxInnerLongEdge, quality);
+  } finally {
+    releaseCanvas(canvas);
   }
 }
 
 /**
- * Stage 1（骨格スキャン）精度向上のため、3000pxマスター画像から
+ * Stage 1（骨格スキャン）精度向上のため、マスター画像から
  * 1) 左側 0%〜42%「打順・守備位置・背番号・選手名・途中交代欄」の高精細拡大クロップ
  * 2) 上部 0%〜28%「スコアボード＆イニング見出し番号」＋下部 56%〜100%「各回計＆投手継投成績欄」の上下結合拡大クロップ
  * を自動生成する。
@@ -492,6 +665,8 @@ export async function extractStructureFocusCrops(
   sourceDataUrl: string,
   alreadyEnhanced = false
 ): Promise<StructureFocusCrops | null> {
+  let lineupCanvas: HTMLCanvasElement | null = null;
+  let sumCanvas: HTMLCanvasElement | null = null;
   try {
     const img = await loadImageFromUrl(sourceDataUrl);
     const w = img.naturalWidth;
@@ -508,7 +683,7 @@ export async function extractStructureFocusCrops(
       Math.max(lineupSrcW, lineupSrcH) > lineupMaxEdge
         ? lineupMaxEdge / Math.max(lineupSrcW, lineupSrcH)
         : 1;
-    const lineupCanvas = document.createElement("canvas");
+    lineupCanvas = document.createElement("canvas");
     lineupCanvas.width = Math.max(64, Math.round(lineupSrcW * lineupScale));
     lineupCanvas.height = Math.max(64, Math.round(lineupSrcH * lineupScale));
     const lineupCtx = lineupCanvas.getContext("2d");
@@ -541,8 +716,10 @@ export async function extractStructureFocusCrops(
       lineupCtx.putImageData(lineupImgData, 0, 0);
     }
     const lineupCropBase64 = stripDataUrlPrefix(
-      lineupCanvas.toDataURL(mimeType, 0.9)
+      await canvasToDataUrlAsync(lineupCanvas, mimeType, 0.9)
     );
+    releaseCanvas(lineupCanvas);
+    lineupCanvas = null;
 
     // 2. 上部 0%〜28%（スコアボード＆イニング列ヘッダー番号）＋ 下部 56%〜100%（各列合計得点・安打・複数行の投手継投欄）を結合
     const topStripH = Math.max(48, Math.round(h * 0.28));
@@ -557,7 +734,7 @@ export async function extractStructureFocusCrops(
         ? summaryMaxEdge / Math.max(rawCompW, rawCompH)
         : 1;
 
-    const sumCanvas = document.createElement("canvas");
+    sumCanvas = document.createElement("canvas");
     sumCanvas.width = Math.max(64, Math.round(rawCompW * sumScale));
     sumCanvas.height = Math.max(64, Math.round(rawCompH * sumScale));
     const sumCtx = sumCanvas.getContext("2d");
@@ -600,7 +777,7 @@ export async function extractStructureFocusCrops(
     }
 
     const summaryCropBase64 = stripDataUrlPrefix(
-      sumCanvas.toDataURL(mimeType, 0.9)
+      await canvasToDataUrlAsync(sumCanvas, mimeType, 0.9)
     );
 
     return {
@@ -610,6 +787,9 @@ export async function extractStructureFocusCrops(
     };
   } catch {
     return null;
+  } finally {
+    releaseCanvas(lineupCanvas);
+    releaseCanvas(sumCanvas);
   }
 }
 
@@ -1550,9 +1730,10 @@ export async function cropScorebookQuad(
   );
 
   dstCtx.putImageData(dstImgData, 0, 0);
-  roiCanvas.width = 1;
-  roiCanvas.height = 1;
-  return dstCanvas.toDataURL("image/jpeg", 0.92);
+  releaseCanvas(roiCanvas);
+  const cellUrl = dstCanvas.toDataURL("image/jpeg", 0.92);
+  releaseCanvas(dstCanvas);
+  return cellUrl;
 }
 
 function stripDataUrlPrefix(dataUrl: string): string {
@@ -1560,28 +1741,101 @@ function stripDataUrlPrefix(dataUrl: string): string {
   return commaIdx !== -1 ? dataUrl.slice(commaIdx + 1) : dataUrl;
 }
 
-function loadImageFromFile(file: File): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const objectUrl = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => {
+async function loadDecodedImageFromFile(
+  file: File
+): Promise<{ img: HTMLImageElement; cleanup: () => void }> {
+  if (!file || file.size === 0) {
+    throw new Error("選択された画像が空です。もう一度選択してください");
+  }
+
+  const objectUrl = URL.createObjectURL(file);
+  let cleaned = false;
+  const img = new Image();
+  const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
+    img.onload = null;
+    img.onerror = null;
+    try {
+      img.src = "";
+    } catch {
+      // ignore
+    }
+    try {
       URL.revokeObjectURL(objectUrl);
-      resolve(img);
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(objectUrl);
-      reject(new Error("画像ファイルの読み込みに失敗しました"));
-    };
-    img.src = objectUrl;
-  });
+    } catch {
+      // ignore
+    }
+  };
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(
+          new Error(
+            "画像の読み込みがタイムアウトしました。もう一度お試しください"
+          )
+        );
+      }, 15000);
+
+      img.onload = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+      img.onerror = () => {
+        clearTimeout(timer);
+        const lowerName = (file.name || "").toLowerCase();
+        const lowerType = (file.type || "").toLowerCase();
+        if (
+          lowerName.endsWith(".heic") ||
+          lowerName.endsWith(".heif") ||
+          lowerType.includes("heic") ||
+          lowerType.includes("heif")
+        ) {
+          reject(
+            new Error(
+              "このブラウザではHEIC画像を直接開けません。iPhoneのカメラ設定を「互換性優先」にするか、JPEG/PNG画像を選択してください"
+            )
+          );
+          return;
+        }
+        reject(new Error("画像ファイルの読み込みに失敗しました"));
+      };
+      img.src = objectUrl;
+    });
+
+    // ObjectURL が有効な状態で非同期ビットマップデコードを先行完了させ、drawImage 時のUIブロックを防ぐ
+    if (typeof img.decode === "function") {
+      try {
+        await img.decode();
+      } catch {
+        // onload 済みであれば drawImage へフォールバック可能
+      }
+    }
+
+    return { img, cleanup };
+  } catch (err) {
+    cleanup();
+    throw err;
+  }
 }
 
 function loadImageFromUrl(url: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () =>
+    const timer = setTimeout(() => {
+      img.onload = null;
+      img.onerror = null;
+      reject(new Error("プレビュー画像の展開がタイムアウトしました"));
+    }, 15000);
+    img.onload = () => {
+      clearTimeout(timer);
+      resolve(img);
+    };
+    img.onerror = () => {
+      clearTimeout(timer);
       reject(new Error("プレビュー画像の生成に失敗しました"));
+    };
     img.src = url;
   });
 }

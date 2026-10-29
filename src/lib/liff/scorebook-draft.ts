@@ -11,6 +11,7 @@ const DB_VERSION = 1;
 const STORE_NAME = "scorebook_import_drafts";
 /** 下書き有効期限: 14日間 */
 const MAX_DRAFT_AGE_MS = 14 * 24 * 60 * 60 * 1000;
+const IDB_TIMEOUT_MS = 2500;
 
 export interface SavedSheetImageDraft {
   fileName: string;
@@ -41,6 +42,32 @@ function getDraftKey(teamId: string): string {
   return `scorebook_v2_draft_${teamId || "default"}`;
 }
 
+function extractBase64FromDataUrl(dataUrl: string): string {
+  const commaIdx = dataUrl.indexOf(",");
+  return commaIdx !== -1 ? dataUrl.slice(commaIdx + 1) : dataUrl;
+}
+
+function compactProcessedForStorage(
+  processed: PreprocessedScorebookImage | null
+): PreprocessedScorebookImage | null {
+  if (!processed) return null;
+  // dataUrl 内に同一データが含まれるため、重複する巨大 base64 文字列を空にしてIndexedDBクローン負荷を半減
+  return {
+    ...processed,
+    base64: "",
+  };
+}
+
+function hydrateProcessedFromStorage(
+  processed: PreprocessedScorebookImage | null
+): PreprocessedScorebookImage | null {
+  if (!processed || !processed.dataUrl) return null;
+  return {
+    ...processed,
+    base64: processed.base64 || extractBase64FromDataUrl(processed.dataUrl),
+  };
+}
+
 function openDraftDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     if (typeof window === "undefined" || !("indexedDB" in window)) {
@@ -48,18 +75,57 @@ function openDraftDb(): Promise<IDBDatabase> {
       return;
     }
 
-    const req = window.indexedDB.open(DB_NAME, DB_VERSION);
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(new Error("IndexedDB open timed out"));
+    }, IDB_TIMEOUT_MS);
 
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, { keyPath: "key" });
+    try {
+      const req = window.indexedDB.open(DB_NAME, DB_VERSION);
+
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(STORE_NAME)) {
+          db.createObjectStore(STORE_NAME, { keyPath: "key" });
+        }
+      };
+
+      req.onblocked = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(new Error("IndexedDB is blocked"));
+      };
+
+      req.onsuccess = () => {
+        if (settled) {
+          try {
+            req.result.close();
+          } catch {
+            // ignore
+          }
+          return;
+        }
+        settled = true;
+        clearTimeout(timer);
+        resolve(req.result);
+      };
+
+      req.onerror = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(req.error || new Error("Failed to open IndexedDB"));
+      };
+    } catch (err) {
+      if (!settled) {
+        settled = true;
+        clearTimeout(timer);
+        reject(err instanceof Error ? err : new Error(String(err)));
       }
-    };
-
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () =>
-      reject(req.error || new Error("Failed to open IndexedDB"));
+    }
   });
 }
 
@@ -75,6 +141,20 @@ export async function saveScorebookDraft(
   const savedAt = Date.now();
   const record: ScorebookImportDraft = {
     ...draft,
+    topImage: {
+      ...draft.topImage,
+      processed: compactProcessedForStorage(draft.topImage.processed),
+    },
+    bottomImage: {
+      ...draft.bottomImage,
+      processed: compactProcessedForStorage(draft.bottomImage.processed),
+    },
+    legendOverride: draft.legendOverride
+      ? {
+          ...draft.legendOverride,
+          base64: "",
+        }
+      : null,
     key,
     savedAt,
   };
@@ -82,16 +162,41 @@ export async function saveScorebookDraft(
   try {
     const db = await openDraftDb();
     await new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        try {
+          db.close();
+        } catch {
+          // ignore
+        }
+        reject(new Error("Draft write timed out"));
+      }, IDB_TIMEOUT_MS * 2);
+
       const tx = db.transaction(STORE_NAME, "readwrite");
       const store = tx.objectStore(STORE_NAME);
       store.put(record);
       tx.oncomplete = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
         db.close();
         resolve();
       };
       tx.onerror = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
         db.close();
         reject(tx.error || new Error("Failed to write draft"));
+      };
+      tx.onabort = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        db.close();
+        reject(tx.error || new Error("Draft write aborted"));
       };
     });
     return savedAt;
@@ -126,14 +231,32 @@ export async function loadScorebookDraft(
     const db = await openDraftDb();
     const result = await new Promise<ScorebookImportDraft | null>(
       (resolve, reject) => {
+        let settled = false;
+        const timer = setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          try {
+            db.close();
+          } catch {
+            // ignore
+          }
+          reject(new Error("Draft read timed out"));
+        }, IDB_TIMEOUT_MS);
+
         const tx = db.transaction(STORE_NAME, "readonly");
         const store = tx.objectStore(STORE_NAME);
         const getReq = store.get(key);
         getReq.onsuccess = () => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
           db.close();
           resolve((getReq.result as ScorebookImportDraft | undefined) || null);
         };
         getReq.onerror = () => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
           db.close();
           reject(getReq.error || new Error("Failed to read draft"));
         };
@@ -145,7 +268,26 @@ export async function loadScorebookDraft(
         await clearScorebookDraft(teamId);
         return null;
       }
-      return result;
+      return {
+        ...result,
+        topImage: {
+          ...result.topImage,
+          processed: hydrateProcessedFromStorage(result.topImage.processed),
+        },
+        bottomImage: {
+          ...result.bottomImage,
+          processed: hydrateProcessedFromStorage(result.bottomImage.processed),
+        },
+        legendOverride:
+          result.legendOverride && result.legendOverride.dataUrl
+            ? {
+                ...result.legendOverride,
+                base64:
+                  result.legendOverride.base64 ||
+                  extractBase64FromDataUrl(result.legendOverride.dataUrl),
+              }
+            : null,
+      };
     }
   } catch {
     // fallback to localStorage
@@ -186,20 +328,59 @@ export async function clearScorebookDraft(teamId: string): Promise<void> {
   try {
     const db = await openDraftDb();
     await new Promise<void>((resolve) => {
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        try {
+          db.close();
+        } catch {
+          // ignore
+        }
+        resolve();
+      }, IDB_TIMEOUT_MS);
+
       const tx = db.transaction(STORE_NAME, "readwrite");
       const store = tx.objectStore(STORE_NAME);
       store.delete(key);
       tx.oncomplete = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
         db.close();
         resolve();
       };
       tx.onerror = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
         db.close();
         resolve();
       };
     });
   } catch {
     // ignore
+  }
+}
+
+/**
+ * 復元した DataURL からブラウザ操作用の File オブジェクトを非同期高速生成する
+ */
+export async function reconstructFileFromDataUrlAsync(
+  dataUrl: string,
+  fileName = "scorebook.jpg"
+): Promise<File | null> {
+  if (!dataUrl) return null;
+  try {
+    const res = await fetch(dataUrl);
+    const blob = await res.blob();
+    return new File([blob], fileName, { type: blob.type || "image/jpeg" });
+  } catch {
+    try {
+      return reconstructFileFromDataUrl(dataUrl, fileName);
+    } catch {
+      return null;
+    }
   }
 }
 
