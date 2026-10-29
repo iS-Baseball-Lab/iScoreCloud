@@ -90,11 +90,39 @@ export function isAndroidClientDevice(): boolean {
 }
 
 /**
- * 現在のページを端末の標準ブラウザ（Chrome / Safari）で開く
+ * クライアント側のURLクエリパラメータを安全に取得する（静的エクスポート互換）
  */
-export function openCurrentPageInExternalBrowser(): boolean {
+export function getClientQueryParam(key: string): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return new URLSearchParams(window.location.search).get(key);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 現在のページを端末の標準ブラウザ（Chrome / Safari）で開く（チームID・試合ID等のコンテキストを引き継ぎ可能）
+ */
+export function openCurrentPageInExternalBrowser(
+  extraParams?: Record<string, string | undefined>
+): boolean {
   if (typeof window === "undefined") return false;
-  const targetUrl = window.location.href;
+  let targetUrl = window.location.href;
+  try {
+    const parsed = new URL(window.location.href);
+    if (extraParams) {
+      for (const [k, v] of Object.entries(extraParams)) {
+        if (v && v.trim() !== "") {
+          parsed.searchParams.set(k, v);
+        }
+      }
+    }
+    targetUrl = parsed.toString();
+  } catch {
+    // keep raw href on parse failure
+  }
+
   try {
     if (liffInstance && liffInstance.isInClient()) {
       liffInstance.openWindow({

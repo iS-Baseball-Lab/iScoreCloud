@@ -7,6 +7,7 @@ import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { useLiff } from "@/components/liff/LiffProvider";
 import { LiffToolSubNav } from "@/components/liff/LiffToolSubNav";
+import { getClientQueryParam } from "@/lib/liff/liff-client";
 import {
   buildCalibratedRulerSheetImage,
   extractInningChunkCompositeCrop,
@@ -266,7 +267,7 @@ export default function LiffScorebookImportPage() {
     try {
       setIsLoadingContext(true);
       setErrorBanner(null);
-      const qTeam = currentTeam?.id || "";
+      const qTeam = currentTeam?.id || getClientQueryParam("teamId") || "";
       const res = await fetch(
         `/api/liff/scorebook/context?teamId=${encodeURIComponent(qTeam)}`
       );
@@ -285,6 +286,12 @@ export default function LiffScorebookImportPage() {
       const fetchedMatches = data.matches || [];
       setMatches(fetchedMatches);
 
+      const urlMatchId = getClientQueryParam("matchId");
+      const preferredMatchId =
+        urlMatchId && fetchedMatches.some((m) => m.id === urlMatchId)
+          ? urlMatchId
+          : fetchedMatches[0]?.id || "";
+
       if (hasRestoredTeamRef.current !== effectiveTeamId) {
         hasRestoredTeamRef.current = effectiveTeamId;
         const prefs = loadLiffScoreSettings();
@@ -293,16 +300,16 @@ export default function LiffScorebookImportPage() {
         setBottomImage(
           createInitialSheetImageState(prefs.defaultEnhancePencil)
         );
-        if (fetchedMatches.length > 0) {
-          setSelectedMatchId((prev) => prev || fetchedMatches[0].id);
+        if (preferredMatchId) {
+          setSelectedMatchId((prev) => prev || preferredMatchId);
         }
 
         // 軽量メタ情報（約150B）のみで前回下書きの有無を確認し、必要時のみボタン押下で復元する
         const draftMeta = peekScorebookDraftMeta(effectiveTeamId);
         setAvailableDraftMeta(draftMeta);
         setIsDraftReady(true);
-      } else if (fetchedMatches.length > 0) {
-        setSelectedMatchId((prev) => prev || fetchedMatches[0].id);
+      } else if (preferredMatchId) {
+        setSelectedMatchId((prev) => prev || preferredMatchId);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
