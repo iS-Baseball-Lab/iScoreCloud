@@ -24,7 +24,6 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { ScorebookCameraModal } from "@/components/liff/ScorebookCameraModal";
-import { isAndroidClientDevice } from "@/lib/liff/liff-client";
 import { loadLiffScoreSettings } from "@/lib/liff/score-settings";
 import { bilinearGridPoint, clamp1000 } from "@/lib/liff/scorebook-grid";
 import { ActionStatusBanner } from "./ActionStatusBanner";
@@ -361,7 +360,6 @@ export function Step1MatchAndImages({
   onDismissError,
   onReportError,
 }: Step1MatchAndImagesProps) {
-  const [isAndroidClient, setIsAndroidClient] = useState(false);
   const lastCameraTargetRef = useRef<ImagePickerTarget>("top");
   const [cameraTarget, setCameraTarget] = useState<ImagePickerTarget | null>(
     null
@@ -384,7 +382,6 @@ export function Step1MatchAndImages({
     const saved = loadLiffScoreSettings();
     setNewInnings(saved.defaultInnings);
     setNewMatchType(saved.defaultMatchType);
-    setIsAndroidClient(isAndroidClientDevice());
   }, []);
 
   const [openCropSide, setOpenCropSide] = useState<"top" | "bottom" | null>(
@@ -393,10 +390,6 @@ export function Step1MatchAndImages({
   const [adjustTab, setAdjustTab] = useState<"perspective" | "tilt_crop">(
     "perspective"
   );
-
-  // AndroidのLINEミニアプリ(透過シートActivity)環境では、accept="image/*" による透過PhotoPickerの重ね起動競合を避け、
-  // フルスクリーンの標準システム画像・ファイル選択が直接開くようにする（iOS/PCでは従来通り image/* を使用）
-  const fileAcceptAttr = isAndroidClient ? undefined : "image/*";
 
   const openCameraModal = (target: ImagePickerTarget) => {
     lastCameraTargetRef.current = target;
@@ -423,11 +416,15 @@ export function Step1MatchAndImages({
     target: ImagePickerTarget,
     e: React.ChangeEvent<HTMLInputElement>
   ) => {
-    const picked = e.currentTarget.files?.[0] ?? null;
-    e.currentTarget.value = "";
-    if (!picked) return;
+    const inputEl = e.currentTarget;
+    const picked = inputEl.files?.[0] ?? null;
+    if (!picked) {
+      inputEl.value = "";
+      return;
+    }
     window.setTimeout(() => {
       dispatchPickedFile(target, picked);
+      inputEl.value = "";
     }, 50);
   };
 
@@ -564,16 +561,17 @@ export function Step1MatchAndImages({
                   <span>アルバム選択</span>
                 </span>
               ) : (
-                <label className="py-3 px-3 rounded-2xl bg-card border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs hover:bg-muted/60 active:scale-95 transition-all cursor-pointer">
-                  <ImagePlus className="w-4 h-4 text-indigo-500 shrink-0" />
-                  <span>アルバム選択</span>
+                <div className="relative overflow-hidden py-3 px-3 rounded-2xl bg-card border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs hover:bg-muted/60">
+                  <ImagePlus className="w-4 h-4 text-indigo-500 shrink-0 pointer-events-none" />
+                  <span className="pointer-events-none">アルバム選択</span>
                   <input
                     type="file"
-                    accept={fileAcceptAttr}
+                    accept="image/*"
+                    aria-label={`${sideTitle}をアルバムから選択`}
                     onChange={(e) => handleNativeFileChange(targetKey, e)}
-                    className="hidden"
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                   />
-                </label>
+                </div>
               )}
             </div>
           </div>
@@ -716,16 +714,17 @@ export function Step1MatchAndImages({
                     <span>別画像に変更</span>
                   </span>
                 ) : (
-                  <label className="py-1.5 px-2 rounded-xl bg-card hover:bg-muted border border-border text-[10px] font-black text-muted-foreground hover:text-foreground flex items-center justify-center gap-1 transition-colors cursor-pointer">
-                    <ImagePlus className="w-3 h-3 text-indigo-500 shrink-0" />
-                    <span>別画像に変更</span>
+                  <div className="relative overflow-hidden py-1.5 px-2 rounded-xl bg-card hover:bg-muted border border-border text-[10px] font-black text-muted-foreground hover:text-foreground flex items-center justify-center gap-1">
+                    <ImagePlus className="w-3 h-3 text-indigo-500 shrink-0 pointer-events-none" />
+                    <span className="pointer-events-none">別画像に変更</span>
                     <input
                       type="file"
-                      accept={fileAcceptAttr}
+                      accept="image/*"
+                      aria-label={`${sideTitle}を別画像に変更`}
                       onChange={(e) => handleNativeFileChange(targetKey, e)}
-                      className="hidden"
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                     />
-                  </label>
+                  </div>
                 )}
               </div>
             )}
@@ -1213,15 +1212,18 @@ export function Step1MatchAndImages({
                     : "この試合だけ別の早見表を一時添付する"}
                 </span>
               ) : (
-                <label className="py-1 px-2 rounded-lg text-[10px] font-bold text-muted-foreground hover:text-foreground underline underline-offset-2 cursor-pointer">
-                  この試合だけ別の早見表を一時添付する
+                <div className="relative overflow-hidden py-1 px-2 rounded-lg text-[10px] font-bold text-muted-foreground hover:text-foreground underline underline-offset-2">
+                  <span className="pointer-events-none">
+                    この試合だけ別の早見表を一時添付する
+                  </span>
                   <input
                     type="file"
-                    accept={fileAcceptAttr}
+                    accept="image/*"
+                    aria-label="この試合だけ別の早見表を一時添付する"
                     onChange={(e) => handleNativeFileChange("legend", e)}
-                    className="hidden"
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                   />
-                </label>
+                </div>
               )}
             </div>
           </div>
@@ -1252,15 +1254,16 @@ export function Step1MatchAndImages({
                   <span>{isLegendProcessing ? "読込中..." : "今回のみ添付"}</span>
                 </span>
               ) : (
-                <label className="py-2.5 px-3 rounded-xl bg-card hover:bg-muted border border-border text-[10px] font-black text-muted-foreground hover:text-foreground shrink-0 flex items-center gap-1 transition-colors cursor-pointer active:scale-95">
-                  <span>今回のみ添付</span>
+                <div className="relative overflow-hidden py-2.5 px-3 rounded-xl bg-card hover:bg-muted border border-border text-[10px] font-black text-muted-foreground hover:text-foreground shrink-0 flex items-center gap-1">
+                  <span className="pointer-events-none">今回のみ添付</span>
                   <input
                     type="file"
-                    accept={fileAcceptAttr}
+                    accept="image/*"
+                    aria-label="早見表を今回のみ添付"
                     onChange={(e) => handleNativeFileChange("legend", e)}
-                    className="hidden"
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                   />
-                </label>
+                </div>
               )}
             </div>
           </div>

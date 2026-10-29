@@ -11,7 +11,6 @@ import {
   RefreshCw,
   X,
 } from "lucide-react";
-import { isAndroidClientDevice } from "@/lib/liff/liff-client";
 
 export interface ScorebookCameraModalProps {
   isOpen: boolean;
@@ -31,7 +30,6 @@ export function ScorebookCameraModal({
   onCapture,
 }: ScorebookCameraModalProps) {
   const [mounted, setMounted] = useState(false);
-  const [isAndroidClient, setIsAndroidClient] = useState(false);
   const [facingMode, setFacingMode] = useState<"environment" | "user">(
     "environment"
   );
@@ -44,7 +42,6 @@ export function ScorebookCameraModal({
 
   useEffect(() => {
     setMounted(true);
-    setIsAndroidClient(isAndroidClientDevice());
   }, []);
 
   const stopActiveStream = useCallback(() => {
@@ -384,22 +381,24 @@ export function ScorebookCameraModal({
   };
 
   const handleFallbackFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const picked = e.currentTarget.files?.[0] ?? null;
-    e.currentTarget.value = "";
-    if (!picked) return;
+    const inputEl = e.currentTarget;
+    const picked = inputEl.files?.[0] ?? null;
+    if (!picked) {
+      inputEl.value = "";
+      return;
+    }
     startSeqRef.current += 1;
     stopActiveStream();
     onClose();
     window.setTimeout(() => {
       onCapture(picked);
+      inputEl.value = "";
     }, 50);
   };
 
   if (!isOpen || !mounted || typeof document === "undefined") {
     return null;
   }
-
-  const fileAcceptAttr = isAndroidClient ? undefined : "image/*";
 
   return createPortal(
     <div
@@ -487,16 +486,19 @@ export function ScorebookCameraModal({
               </div>
 
               <div className="space-y-2 pt-1">
-                <label className="w-full py-3 px-4 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black flex items-center justify-center gap-2 cursor-pointer active:scale-95 transition-all">
-                  <ImagePlus className="w-4 h-4 shrink-0" />
-                  <span>アルバムから写真を選択する</span>
+                <div className="relative overflow-hidden w-full py-3 px-4 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black flex items-center justify-center gap-2">
+                  <ImagePlus className="w-4 h-4 shrink-0 pointer-events-none" />
+                  <span className="pointer-events-none">
+                    アルバムから写真を選択する
+                  </span>
                   <input
                     type="file"
-                    accept={fileAcceptAttr}
+                    accept="image/*"
+                    aria-label="アルバムから写真を選択する"
                     onChange={handleFallbackFileChange}
-                    className="hidden"
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                   />
-                </label>
+                </div>
 
                 <button
                   type="button"
@@ -516,16 +518,17 @@ export function ScorebookCameraModal({
       {status !== "error" && (
         <div className="px-4 py-4 pb-7 bg-slate-900 border-t border-slate-800 flex items-center justify-between gap-3 shrink-0">
           {status !== "capturing" ? (
-            <label className="py-2.5 px-3 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white text-[11px] font-black flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all">
-              <ImagePlus className="w-4 h-4 text-indigo-400 shrink-0" />
-              <span>アルバム</span>
+            <div className="relative overflow-hidden py-2.5 px-3 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white text-[11px] font-black flex items-center gap-1.5">
+              <ImagePlus className="w-4 h-4 text-indigo-400 shrink-0 pointer-events-none" />
+              <span className="pointer-events-none">アルバム</span>
               <input
                 type="file"
-                accept={fileAcceptAttr}
+                accept="image/*"
+                aria-label="アルバムから選択"
                 onChange={handleFallbackFileChange}
-                className="hidden"
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
               />
-            </label>
+            </div>
           ) : (
             <div className="w-20" />
           )}

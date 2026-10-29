@@ -25,10 +25,7 @@ import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { ScorebookCameraModal } from "@/components/liff/ScorebookCameraModal";
 import { useLiff } from "@/components/liff/LiffProvider";
-import {
-  getClientQueryParam,
-  isAndroidClientDevice,
-} from "@/lib/liff/liff-client";
+import { getClientQueryParam } from "@/lib/liff/liff-client";
 import {
   ensureCompactApiImage,
   preprocessScorebookImage,
@@ -72,7 +69,6 @@ interface StagedLegendState {
 
 export default function LiffScoreSettingsPage() {
   const { currentTeam } = useLiff();
-  const [isAndroidClient, setIsAndroidClient] = useState(false);
 
   const [isLoadingTeam, setIsLoadingTeam] = useState(true);
   const [resolvedTeamId, setResolvedTeamId] = useState<string>("");
@@ -92,12 +88,10 @@ export default function LiffScoreSettingsPage() {
   );
   const [isCameraModalOpen, setIsCameraModalOpen] = useState(false);
   const stageSeqRef = useRef<number>(0);
-  const fileAcceptAttr = isAndroidClient ? undefined : "image/*";
 
   // 1. 端末保存のスコア取込初期設定を読み込み
   useEffect(() => {
     setScoreSettings(loadLiffScoreSettings());
-    setIsAndroidClient(isAndroidClientDevice());
   }, []);
 
   // 2. チーム登録済みの「スコア記号早見表」URLを取得
@@ -227,12 +221,16 @@ export default function LiffScoreSettingsPage() {
   };
 
   const handleLegendInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const picked = e.currentTarget.files?.[0] ?? null;
-    e.currentTarget.value = "";
-    if (!picked) return;
+    const inputEl = e.currentTarget;
+    const picked = inputEl.files?.[0] ?? null;
+    if (!picked) {
+      inputEl.value = "";
+      return;
+    }
     window.setTimeout(() => {
       handleSelectLegendFile(picked);
-    }, 80);
+      inputEl.value = "";
+    }, 60);
   };
 
   const handleRotateStaged = () => {
@@ -552,16 +550,17 @@ export default function LiffScoreSettingsPage() {
                     <span>アルバムから変更</span>
                   </span>
                 ) : (
-                  <label className="py-2.5 px-3 rounded-2xl bg-card border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs hover:bg-muted/60 active:scale-95 transition-all cursor-pointer">
-                    <ImagePlus className="w-4 h-4 text-indigo-500 shrink-0" />
-                    <span>アルバムから変更</span>
+                  <div className="relative overflow-hidden py-2.5 px-3 rounded-2xl bg-card border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs hover:bg-muted/60">
+                    <ImagePlus className="w-4 h-4 text-indigo-500 shrink-0 pointer-events-none" />
+                    <span className="pointer-events-none">アルバムから変更</span>
                     <input
                       type="file"
-                      accept={fileAcceptAttr}
+                      accept="image/*"
+                      aria-label="スコア記号早見表をアルバムから変更"
                       onChange={handleLegendInputChange}
-                      className="hidden"
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                     />
-                  </label>
+                  </div>
                 )}
               </div>
 
@@ -633,16 +632,17 @@ export default function LiffScoreSettingsPage() {
                     <span>アルバム選択</span>
                   </span>
                 ) : (
-                  <label className="py-3 px-3 rounded-2xl bg-card border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs hover:bg-muted/60 active:scale-95 transition-all cursor-pointer">
-                    <ImagePlus className="w-4 h-4 text-indigo-500 shrink-0" />
-                    <span>アルバム選択</span>
+                  <div className="relative overflow-hidden py-3 px-3 rounded-2xl bg-card border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs hover:bg-muted/60">
+                    <ImagePlus className="w-4 h-4 text-indigo-500 shrink-0 pointer-events-none" />
+                    <span className="pointer-events-none">アルバム選択</span>
                     <input
                       type="file"
-                      accept={fileAcceptAttr}
+                      accept="image/*"
+                      aria-label="スコア記号早見表をアルバムから選択"
                       onChange={handleLegendInputChange}
-                      className="hidden"
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                     />
-                  </label>
+                  </div>
                 )}
               </div>
             </div>
