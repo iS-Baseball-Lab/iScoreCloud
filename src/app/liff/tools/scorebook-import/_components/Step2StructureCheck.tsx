@@ -8,6 +8,8 @@ import {
   Trash2,
   Sparkles,
   ChevronLeft,
+  ChevronRight,
+  CheckCircle2,
   Loader2,
   Columns2,
   ShieldCheck,
@@ -63,9 +65,17 @@ interface Step2StructureCheckProps {
   isAnalyzingInnings: boolean;
   analysisProgressLabel: string;
   analysisStartedAtMs?: number | null;
+  analysisTotalDurationMs?: number | null;
   analysisActiveLabel?: string | null;
+  analysisActiveLabels?: string[];
   analysisActiveStartedAtMs?: number | null;
   analysisCompletedTimings?: ScorebookTimingEntry[];
+  onRetryTimingEntry?: (entry: ScorebookTimingEntry) => void;
+  reanalyzingInningKey?: string | null;
+  preservedAtBatsCount?: number;
+  missingInningsCount?: number;
+  onResumeMissingInnings?: () => void;
+  onProceedWithCompleted?: () => void;
   errorMessage?: string | null;
   onDismissError?: () => void;
 }
@@ -103,9 +113,17 @@ export function Step2StructureCheck({
   isAnalyzingInnings,
   analysisProgressLabel,
   analysisStartedAtMs = null,
+  analysisTotalDurationMs = null,
   analysisActiveLabel = null,
+  analysisActiveLabels,
   analysisActiveStartedAtMs = null,
   analysisCompletedTimings = [],
+  onRetryTimingEntry,
+  reanalyzingInningKey = null,
+  preservedAtBatsCount = 0,
+  missingInningsCount = 0,
+  onResumeMissingInnings,
+  onProceedWithCompleted,
   errorMessage,
   onDismissError,
 }: Step2StructureCheckProps) {
@@ -124,7 +142,8 @@ export function Step2StructureCheck({
   const isTop = activeSide === "top";
   const current = isTop ? topStructure : bottomStructure;
   const activeSheetDataUrl = isTop ? topImageDataUrl : bottomImageDataUrl;
-  const isBusy = isAnalyzingInnings || isRescanningSide;
+  const isBusy =
+    isAnalyzingInnings || isRescanningSide || Boolean(reanalyzingInningKey);
 
   if (!current) {
     return null;
@@ -1737,24 +1756,75 @@ export function Step2StructureCheck({
           loadingTitle={
             isRescanningSide
               ? "シートの骨格を再スキャン中..."
-              : "イニング分割ディープ解析を実行中..."
+              : "イニング並列・高速ディープ解析を実行中..."
           }
           loadingDetail={
             isRescanningSide
               ? structureProgressLabel ||
                 "打順・投手・各回得点を再取得しています..."
               : analysisProgressLabel ||
-                "各イニングの1球順序・打撃結果・進塁を解析しています..."
+                "各イニングの1球順序・打撃結果・進塁を高速解析しています..."
           }
           startedAtMs={analysisStartedAtMs}
+          totalDurationMs={analysisTotalDurationMs}
           activeSubStepLabel={analysisActiveLabel}
+          activeSubStepLabels={analysisActiveLabels}
           activeSubStepStartedAtMs={analysisActiveStartedAtMs}
-          completedTimings={
-            isAnalyzingInnings ? analysisCompletedTimings : []
+          completedTimings={analysisCompletedTimings}
+          persistTimingsWhenIdle={
+            !isRescanningSide && analysisCompletedTimings.length > 0
           }
+          onRetryEntry={isRescanningSide ? undefined : onRetryTimingEntry}
+          retryingEntryKey={reanalyzingInningKey}
           errorMessage={errorMessage}
           onDismissError={onDismissError}
         />
+
+        {/* 途中完了イニング保持・再開パネル（エラー時やStep3から戻った際も完了分を無駄にしない） */}
+        {!isBusy && preservedAtBatsCount > 0 && (
+          <div className="p-3.5 rounded-2xl bg-card border-2 border-emerald-500/50 shadow-xs space-y-2.5">
+            <div className="flex items-start gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+              <div className="min-w-0 flex-1 space-y-0.5">
+                <p className="text-xs font-black text-foreground">
+                  完了済みイニングの解析データを保持しています（計{" "}
+                  {preservedAtBatsCount} 打席）
+                </p>
+                <p className="text-[11px] font-bold text-muted-foreground leading-relaxed">
+                  {missingInningsCount > 0
+                    ? `未完了の回が ${missingInningsCount} イニングあります。完了分は消えずに保存されているため、残り ${missingInningsCount} イニングだけ数秒で再解析するか、このまま確認画面へ進めます。`
+                    : "全イニングの解析データが保持されています。そのまま確認画面へ進めます（上のバッジから回ごとの個別再解析も可能です）。"}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-2">
+              {missingInningsCount > 0 && onResumeMissingInnings && (
+                <button
+                  type="button"
+                  onClick={onResumeMissingInnings}
+                  className="flex-1 h-12 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black shadow-xs flex items-center justify-center gap-1.5 active:scale-98 transition-all cursor-pointer"
+                >
+                  <RotateCcw className="w-4 h-4 shrink-0" />
+                  <span>
+                    未完了の回（残り{missingInningsCount}回）だけ再解析
+                  </span>
+                </button>
+              )}
+
+              {onProceedWithCompleted && (
+                <button
+                  type="button"
+                  onClick={onProceedWithCompleted}
+                  className="flex-1 h-12 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow-xs flex items-center justify-center gap-1.5 active:scale-98 transition-all cursor-pointer"
+                >
+                  <span>完了済みの結果で確認画面へ進む</span>
+                  <ChevronRight className="w-4 h-4 shrink-0" />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         <div className="flex gap-2.5">
           <button
@@ -1771,10 +1841,18 @@ export function Step2StructureCheck({
             type="button"
             disabled={isBusy}
             onClick={onStartDeepAnalysis}
-            className="flex-1 h-13 px-4 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs sm:text-sm font-black shadow-md flex items-center justify-center gap-2 active:scale-98 transition-all cursor-pointer disabled:opacity-50"
+            className={`flex-1 h-13 px-4 rounded-2xl text-xs sm:text-sm font-black shadow-md flex items-center justify-center gap-2 active:scale-98 transition-all cursor-pointer disabled:opacity-50 ${
+              preservedAtBatsCount > 0
+                ? "bg-muted hover:bg-muted/80 border border-border text-foreground shadow-none"
+                : "bg-indigo-600 hover:bg-indigo-700 text-white"
+            }`}
           >
             <Sparkles className="w-4 h-4 shrink-0" />
-            <span>全打席・1球順序をディープ解析</span>
+            <span>
+              {preservedAtBatsCount > 0
+                ? "最初から全イニングを再解析"
+                : "全打席・1球順序をディープ解析"}
+            </span>
           </button>
         </div>
       </div>

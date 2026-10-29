@@ -387,6 +387,8 @@ export interface ScorebookTimingEntry {
   label: string;
   durationMs: number;
   fromCache?: boolean;
+  status?: "success" | "error";
+  errorDetail?: string;
 }
 
 /** スコアブックAI解析のトータル秒数・イニング別秒数サマリー */

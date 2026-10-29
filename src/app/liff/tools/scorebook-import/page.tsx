@@ -255,7 +255,11 @@ export default function LiffScorebookImportPage() {
   >(null);
   const [analysisProgressLabel, setAnalysisProgressLabel] = useState("");
   const [deepStartedAtMs, setDeepStartedAtMs] = useState<number | null>(null);
+  const [deepTotalDurationMs, setDeepTotalDurationMs] = useState<number | null>(
+    null
+  );
   const [deepActiveLabel, setDeepActiveLabel] = useState<string | null>(null);
+  const [deepActiveLabels, setDeepActiveLabels] = useState<string[]>([]);
   const [deepActiveStartedAtMs, setDeepActiveStartedAtMs] = useState<
     number | null
   >(null);
@@ -278,6 +282,8 @@ export default function LiffScorebookImportPage() {
   const completedChunkCacheRef = useRef<
     Map<string, { atBats: ScorebookV2AtBat[]; nextLeadOffOrder?: number }>
   >(new Map());
+  /** 429 / 503 が発生したモデルをクライアント側でも50秒記憶し、別Workerインスタンスでも0msでスキップさせる */
+  const cooledModelsRef = useRef<Map<string, number>>(new Map());
   const [isDraftReady, setIsDraftReady] = useState(false);
   const [availableDraftMeta, setAvailableDraftMeta] =
     useState<ScorebookDraftMeta | null>(null);
@@ -405,6 +411,7 @@ export default function LiffScorebookImportPage() {
       setTimingSummary(draft.timingSummary ?? null);
       setStructureTotalMs(draft.timingSummary?.structureTotalMs ?? null);
       setStructureCompletedTimings(draft.timingSummary?.structureEntries ?? []);
+      setDeepTotalDurationMs(draft.timingSummary?.deepTotalMs ?? null);
       setDeepCompletedTimings(draft.timingSummary?.inningEntries ?? []);
 
       if (
@@ -589,10 +596,13 @@ export default function LiffScorebookImportPage() {
     setStructureCompletedTimings([]);
     setStructureTotalMs(null);
     setDeepStartedAtMs(null);
+    setDeepTotalDurationMs(null);
     setDeepActiveLabel(null);
+    setDeepActiveLabels([]);
     setDeepActiveStartedAtMs(null);
     setDeepCompletedTimings([]);
     setTimingSummary(null);
+    cooledModelsRef.current.clear();
     setSaveSummary(null);
     setErrorBanner(null);
     setAvailableDraftMeta(null);
@@ -878,6 +888,29 @@ export default function LiffScorebookImportPage() {
     }
   };
 
+  const getActiveSkippedModels = (): string[] => {
+    const now = Date.now();
+    const skipped: string[] = [];
+    for (const [model, until] of cooledModelsRef.current.entries()) {
+      if (until > now) {
+        skipped.push(model);
+      } else {
+        cooledModelsRef.current.delete(model);
+      }
+    }
+    return skipped;
+  };
+
+  const recordCooledModels = (models?: string[]) => {
+    if (!Array.isArray(models) || models.length === 0) return;
+    const until = Date.now() + 50_000;
+    for (const m of models) {
+      if (typeof m === "string" && m.trim()) {
+        cooledModelsRef.current.set(m.trim(), until);
+      }
+    }
+  };
+
   const parseSafeJson = async <T,>(
     res: Response,
     fallbackMsg: string
@@ -886,9 +919,27 @@ export default function LiffScorebookImportPage() {
     try {
       return JSON.parse(rawText) as T;
     } catch {
+      const trimmed = rawText.trim();
+      const lower = trimmed.toLowerCase();
+      const isHtmlGatewayError =
+        lower.startsWith("<!doctype") ||
+        lower.startsWith("<html") ||
+        lower.includes("<head>") ||
+        lower.includes("cloudflare");
+      if (isHtmlGatewayError) {
+        const statusReason =
+          res.status === 503 || res.status === 502
+            ? "AIサーバーまたは通信経路が一時混雑しました"
+            : res.status === 504 || res.status === 524
+            ? "通信が一時タイムアウトしました"
+            : "一時的な通信エラーが発生しました";
+        throw new Error(
+          `${fallbackMsg}（HTTP ${res.status}: ${statusReason}）`
+        );
+      }
       throw new Error(
         `${fallbackMsg} (HTTP ${res.status}${
-          rawText ? `: ${rawText.slice(0, 120)}` : ""
+          trimmed ? `: ${trimmed.slice(0, 100)}` : ""
         })`
       );
     }
@@ -977,6 +1028,11 @@ export default function LiffScorebookImportPage() {
 
     try {
       completedChunkCacheRef.current.clear();
+      setTopAtBats([]);
+      setBottomAtBats([]);
+      setDeepCompletedTimings([]);
+      setDeepTotalDurationMs(null);
+      setTimingSummary(null);
       const needTop = importScope === "both" || importScope === "top_only";
       const needBottom =
         importScope === "both" || importScope === "bottom_only";
@@ -1078,10 +1134,15 @@ export default function LiffScorebookImportPage() {
       if (isTop) {
         rescanned = crossFillOppositePitchers(rescanned, bottomStructure);
         setTopStructure(rescanned);
+        setTopAtBats([]);
       } else {
         rescanned = crossFillOppositePitchers(rescanned, topStructure);
         setBottomStructure(rescanned);
+        setBottomAtBats([]);
       }
+      setDeepCompletedTimings((prev) =>
+        prev.filter((entry) => entry.isTop !== isTop)
+      );
       const elapsed = Date.now() - rescanStart;
       const updatedEntry: ScorebookTimingEntry = {
         key: isTop ? "structure-top" : "structure-bottom",
@@ -1112,17 +1173,148 @@ export default function LiffScorebookImportPage() {
     }
   };
 
-  // 5. Stage 2: イニング分割ディープ解析（高精細2200px＋打順×対象イニング水平整列ズーム併用＋完了キャッシュ）
-  const handleStartDeepAnalysis = async () => {
+  const isSkippableFinalBottomInning = (
+    isTop: boolean,
+    innNum: number,
+    structure: ScorebookSheetStructure
+  ): boolean => {
+    if (isTop || structure.innings.length === 0) return false;
+    const maxInn = Math.max(1, ...structure.innings.map((m) => m.inning));
+    const meta = structure.innings.find((m) => m.inning === innNum);
+    return (
+      innNum === maxInn &&
+      innNum >= 3 &&
+      (meta?.runs ?? 0) === 0 &&
+      (meta?.hits ?? 0) === 0 &&
+      (meta?.columnCount ?? 1) <= 1
+    );
+  };
+
+  const computeNextLeadOffFromAtBats = (
+    atBatsList: ScorebookV2AtBat[],
+    lineupCycle: number,
+    fallbackOrder: number
+  ): number => {
+    if (atBatsList.length === 0) return fallbackOrder;
+    const lastAb = atBatsList[atBatsList.length - 1];
+    const endedByRunnerOutOnly =
+      lastAb.resultCode === "other" &&
+      lastAb.advances.some(
+        (a) =>
+          a.isOut &&
+          (a.method === "caught_stealing" ||
+            a.method === "pickoff_out" ||
+            a.method === "interference_out" ||
+            a.method === "appeal_out" ||
+            a.method === "out_on_base")
+      );
+    return endedByRunnerOutOnly
+      ? lastAb.battingOrder
+      : (lastAb.battingOrder % lineupCycle) + 1;
+  };
+
+  const sortTimingEntries = (
+    entries: ScorebookTimingEntry[]
+  ): ScorebookTimingEntry[] =>
+    [...entries].sort((a, b) => {
+      const innA = a.innings[0] ?? 0;
+      const innB = b.innings[0] ?? 0;
+      if (innA !== innB) return innA - innB;
+      if (a.isTop !== b.isTop) return a.isTop ? -1 : 1;
+      return a.key.localeCompare(b.key);
+    });
+
+  // 5. Stage 2: イニング並列・高速ディープ解析（逐次リアルタイム保持・エラー耐性・未完了回のみ再開対応）
+  const handleStartDeepAnalysis = async (opts?: { onlyMissing?: boolean }) => {
     if (!selectedMatchId) return;
+    const onlyMissing = Boolean(opts && opts.onlyMissing === true);
+
     setIsAnalyzingInnings(true);
     setErrorBanner(null);
     const deepStart = Date.now();
-    const recordedEntries: ScorebookTimingEntry[] = [];
     setDeepStartedAtMs(deepStart);
-    setDeepCompletedTimings([]);
     setDeepActiveLabel(null);
-    setDeepActiveStartedAtMs(null);
+    setDeepActiveLabels([]);
+    setDeepActiveStartedAtMs(deepStart);
+
+    const needTop = importScope === "both" || importScope === "top_only";
+    const needBottom = importScope === "both" || importScope === "bottom_only";
+
+    if (!onlyMissing) {
+      completedChunkCacheRef.current.clear();
+      if (needTop) setTopAtBats([]);
+      if (needBottom) setBottomAtBats([]);
+      setDeepCompletedTimings([]);
+      setDeepTotalDurationMs(null);
+    }
+
+    const previousTimingsMap = new Map<string, ScorebookTimingEntry>();
+    if (onlyMissing) {
+      for (const prevEntry of deepCompletedTimings) {
+        if (prevEntry.status !== "error") {
+          previousTimingsMap.set(prevEntry.key, prevEntry);
+        }
+      }
+    }
+
+    const recordedMap = new Map<string, ScorebookTimingEntry>(
+      onlyMissing ? previousTimingsMap : []
+    );
+    if (onlyMissing && recordedMap.size > 0) {
+      setDeepCompletedTimings(
+        sortTimingEntries(Array.from(recordedMap.values()))
+      );
+    }
+
+    let workingTop: ScorebookV2AtBat[] =
+      onlyMissing && needTop ? [...topAtBats] : [];
+    let workingBottom: ScorebookV2AtBat[] =
+      onlyMissing && needBottom ? [...bottomAtBats] : [];
+
+    const commitSideInningAtBats = (
+      isTop: boolean,
+      targetInnings: number[],
+      incomingAtBats: ScorebookV2AtBat[]
+    ) => {
+      const targetSet = new Set(targetInnings);
+      if (isTop) {
+        const kept = workingTop.filter((a) => !targetSet.has(a.inning));
+        workingTop = [...kept, ...incomingAtBats].sort(
+          (a, b) => a.inning - b.inning
+        );
+        setTopAtBats([...workingTop]);
+      } else {
+        const kept = workingBottom.filter((a) => !targetSet.has(a.inning));
+        workingBottom = [...kept, ...incomingAtBats].sort(
+          (a, b) => a.inning - b.inning
+        );
+        setBottomAtBats([...workingBottom]);
+      }
+    };
+
+    const upsertTimingEntry = (entry: ScorebookTimingEntry) => {
+      recordedMap.set(entry.key, entry);
+      setDeepCompletedTimings(
+        sortTimingEntries(Array.from(recordedMap.values()))
+      );
+    };
+
+    const activeSideLabels: { top: string | null; bottom: string | null } = {
+      top: null,
+      bottom: null,
+    };
+    const syncActiveLabelsUi = () => {
+      const list = [activeSideLabels.top, activeSideLabels.bottom].filter(
+        (v): v is string => Boolean(v)
+      );
+      setDeepActiveLabels(list);
+      setDeepActiveLabel(list[0] ?? null);
+      if (list.length > 0) {
+        setAnalysisProgressLabel(
+          `${list.join(" ／ ")} の1球順序・打撃結果・進塁を高速解析中...（完了した回から自動保存されます）`
+        );
+      }
+    };
 
     try {
       const buildSmartInningChunks = (
@@ -1131,8 +1323,6 @@ export default function LiffScorebookImportPage() {
         const sortedMeta = [...structure.innings].sort(
           (a, b) => a.inning - b.inning
         );
-        // 草野球・学童野球の標準的な7回制以下の試合は、隣接イニングの列混入を完全にゼロにするため
-        // 全イニングを「1イニングずつ単独の1列独立マトリクス」として超高精細解析する
         if (sortedMeta.length <= 7) {
           return sortedMeta.map((m) => [m.inning]);
         }
@@ -1190,9 +1380,7 @@ export default function LiffScorebookImportPage() {
       const requestSingleChunk = async (
         isTop: boolean,
         structure: ScorebookSheetStructure,
-        sourceDataUrl: string,
-        alreadyEnhanced: boolean,
-        apiImg: { base64: string; mimeType: string },
+        imgState: SheetImageState,
         structureFp: string,
         targetInnings: number[],
         expectedLeadOff: number
@@ -1201,9 +1389,14 @@ export default function LiffScorebookImportPage() {
         nextLeadOffOrder?: number;
         fromCache?: boolean;
       }> => {
-        const cacheKey = `v5:${selectedMatchId}:${
+        if (!imgState.processed) {
+          throw new Error("画像データが見つかりません");
+        }
+        const sourceDataUrl = imgState.processed.dataUrl;
+        const alreadyEnhanced = imgState.enhancePencil;
+        const cacheKey = `v6:${selectedMatchId}:${
           isTop ? "top" : "bottom"
-        }:${apiImg.base64.length}:${structureFp}:${expectedLeadOff}:${targetInnings.join(
+        }:${sourceDataUrl.length}:${structureFp}:${expectedLeadOff}:${targetInnings.join(
           ","
         )}`;
         const cached = completedChunkCacheRef.current.get(cacheKey);
@@ -1236,6 +1429,15 @@ export default function LiffScorebookImportPage() {
               })
             : null;
 
+        // focusCrop がある場合は全体シート画像の再生成・再送信をスキップして高速化する
+        const fallbackApiImg = !focusCrop
+          ? await buildCalibratedRulerSheetImage(
+              imgState.processed,
+              1600,
+              0.86
+            )
+          : null;
+
         const sideLabel = isTop ? "先攻（表）" : "後攻（裏）";
         const res = await fetch("/api/liff/scorebook/analyze-inning-chunk", {
           method: "POST",
@@ -1244,8 +1446,8 @@ export default function LiffScorebookImportPage() {
             teamId: resolvedTeamId || currentTeam?.id || "",
             matchId: selectedMatchId,
             isTop,
-            imageBase64: apiImg.base64,
-            mimeType: apiImg.mimeType,
+            imageBase64: fallbackApiImg?.base64,
+            mimeType: fallbackApiImg?.mimeType,
             focusCropBase64: focusCrop?.base64,
             focusCropMimeType: focusCrop?.mimeType,
             structure,
@@ -1253,6 +1455,7 @@ export default function LiffScorebookImportPage() {
             expectedLeadOffOrder: expectedLeadOff,
             legendBase64: legendOverride?.base64,
             legendMimeType: legendOverride?.mimeType,
+            skipModels: getActiveSkippedModels(),
           }),
         });
 
@@ -1260,8 +1463,11 @@ export default function LiffScorebookImportPage() {
           success: boolean;
           atBats?: ScorebookV2AtBat[];
           nextLeadOffOrder?: number;
+          cooledModels?: string[];
           error?: string;
         }>(res, `${sideLabel}イニング解析通信エラー`);
+
+        recordCooledModels(data.cooledModels);
 
         if (!data.success || !data.atBats) {
           throw new Error(
@@ -1269,28 +1475,15 @@ export default function LiffScorebookImportPage() {
           );
         }
 
-        const maxInnInStruct = Math.max(
-          1,
-          ...structure.innings.map((m) => m.inning)
+        const canBeUnplayedFinalBottom = targetInnings.every((innNum) =>
+          isSkippableFinalBottomInning(isTop, innNum, structure)
         );
-        const canBeUnplayedFinalBottom =
-          !isTop &&
-          targetInnings.every((innNum) => {
-            const meta = structure.innings.find((m) => m.inning === innNum);
-            return (
-              innNum === maxInnInStruct &&
-              innNum >= 3 &&
-              (meta?.runs ?? 0) === 0 &&
-              (meta?.hits ?? 0) === 0 &&
-              (meta?.columnCount ?? 1) <= 1
-            );
-          });
 
         if (data.atBats.length === 0 && !canBeUnplayedFinalBottom) {
           throw new Error(
             `${sideLabel} ${targetInnings.join(
               "・"
-            )}回の打席抽出が0件だったため自動リトライします`
+            )}回の打席抽出が0件だったため再試行します`
           );
         }
 
@@ -1302,222 +1495,296 @@ export default function LiffScorebookImportPage() {
         return result;
       };
 
-      const requestSingleInningWithRetries = async (
+      const requestSingleInningWithQuickRetry = async (
         isTop: boolean,
         structure: ScorebookSheetStructure,
-        sourceDataUrl: string,
-        alreadyEnhanced: boolean,
-        apiImg: { base64: string; mimeType: string },
+        imgState: SheetImageState,
         structureFp: string,
         singleInn: number,
-        expectedLeadOff: number,
-        progressSuffix: string
+        expectedLeadOff: number
       ): Promise<{
         atBats: ScorebookV2AtBat[];
         nextLeadOffOrder?: number;
+        fromCache?: boolean;
       }> => {
-        const sideLabel = isTop ? "先攻（表）" : "後攻（裏）";
-        const retryDelays = [2200, 4200];
-        let lastErr: unknown = null;
-
-        for (let attempt = 0; attempt <= retryDelays.length; attempt++) {
-          if (attempt > 0) {
-            setAnalysisProgressLabel(
-              `${sideLabel} ${singleInn}回 を混雑回避リトライ中 (${attempt}/${retryDelays.length})... ${progressSuffix}`
-            );
-            await new Promise((r) => setTimeout(r, retryDelays[attempt - 1]));
-          }
-          try {
-            return await requestSingleChunk(
-              isTop,
-              structure,
-              sourceDataUrl,
-              alreadyEnhanced,
-              apiImg,
-              structureFp,
-              [singleInn],
-              expectedLeadOff
-            );
-          } catch (err) {
-            lastErr = err;
-          }
+        try {
+          return await requestSingleChunk(
+            isTop,
+            structure,
+            imgState,
+            structureFp,
+            [singleInn],
+            expectedLeadOff
+          );
+        } catch (firstErr) {
+          const msg =
+            firstErr instanceof Error ? firstErr.message : String(firstErr);
+          const waitMs =
+            msg.includes("429") || msg.includes("混雑") ? 2800 : 1500;
+          await new Promise((r) => setTimeout(r, waitMs));
+          return await requestSingleChunk(
+            isTop,
+            structure,
+            imgState,
+            structureFp,
+            [singleInn],
+            expectedLeadOff
+          );
         }
-        throw lastErr instanceof Error
-          ? lastErr
-          : new Error(`${sideLabel} ${singleInn}回の解析に失敗しました`);
       };
 
       const analyzeSheetByChunks = async (
         isTop: boolean,
         structure: ScorebookSheetStructure,
-        imgState: SheetImageState
-      ): Promise<ScorebookV2AtBat[]> => {
-        if (!imgState.processed) return [];
-        const sideLabel = isTop ? "先攻（表）" : "後攻（裏）";
-        const sourceDataUrl = imgState.processed.dataUrl;
-        const alreadyEnhanced = imgState.enhancePencil;
-        const apiImg = await buildCalibratedRulerSheetImage(
-          imgState.processed,
-          1850,
-          0.89
-        );
+        imgState: SheetImageState,
+        startStaggerMs = 0
+      ): Promise<void> => {
+        if (!imgState.processed) return;
+        if (startStaggerMs > 0) {
+          await new Promise((r) => setTimeout(r, startStaggerMs));
+        }
+
+        const sideKey = isTop ? "top" : "bottom";
+        const halfSuffix = isTop ? "表" : "裏";
         const structureFp = buildStructureFingerprint(structure);
         const chunks = buildSmartInningChunks(structure);
+        const lineupCycle = Math.max(9, structure.batters.length);
 
-        const collected: ScorebookV2AtBat[] = [];
         let expectedLeadOff = 1;
 
         for (let cIdx = 0; cIdx < chunks.length; cIdx++) {
           const targetInnings = chunks[cIdx];
-          const progressSuffix = `(${cIdx + 1}/${chunks.length})`;
+          const entryKey = `${sideKey}-${targetInnings.join("-")}`;
           const rangeText =
             targetInnings.length === 1
               ? `${targetInnings[0]}回`
               : `${targetInnings[0]}〜${
                   targetInnings[targetInnings.length - 1]
                 }回`;
-          const halfSuffix = isTop ? "表" : "裏";
           const itemLabel = `${rangeText}${halfSuffix}`;
-          const chunkStart = Date.now();
-          setDeepActiveLabel(itemLabel);
-          setDeepActiveStartedAtMs(chunkStart);
 
-          setAnalysisProgressLabel(
-            `${sideLabel} ${rangeText} の1球順序・進塁を解析中... ${progressSuffix}`
-          );
+          // 「未完了の回だけ再解析」モード時は、既に打席が保持されているイニングを0msでスキップし先頭打順だけ引き継ぐ
+          if (onlyMissing) {
+            const currentSideAtBats = isTop ? workingTop : workingBottom;
+            const allCoveredInState = targetInnings.every((innNum) => {
+              const hasAb = currentSideAtBats.some((a) => a.inning === innNum);
+              if (hasAb) return true;
+              const prevEntry = previousTimingsMap.get(`${sideKey}-${innNum}`);
+              return (
+                Boolean(prevEntry) &&
+                isSkippableFinalBottomInning(isTop, innNum, structure)
+              );
+            });
+
+            if (allCoveredInState) {
+              const existingChunkAtBats = currentSideAtBats.filter((a) =>
+                targetInnings.includes(a.inning)
+              );
+              expectedLeadOff = computeNextLeadOffFromAtBats(
+                existingChunkAtBats,
+                lineupCycle,
+                expectedLeadOff
+              );
+              const existingEntry = previousTimingsMap.get(entryKey);
+              upsertTimingEntry({
+                key: entryKey,
+                isTop,
+                innings: targetInnings,
+                label: itemLabel,
+                durationMs: existingEntry?.durationMs ?? 0,
+                fromCache: true,
+                status: "success",
+              });
+              continue;
+            }
+          }
+
+          const chunkStart = Date.now();
+          activeSideLabels[sideKey] = itemLabel;
+          setDeepActiveStartedAtMs(chunkStart);
+          syncActiveLabelsUi();
 
           try {
-            const chunkRes = await requestSingleChunk(
-              isTop,
-              structure,
-              sourceDataUrl,
-              alreadyEnhanced,
-              apiImg,
-              structureFp,
-              targetInnings,
-              expectedLeadOff
-            );
-            collected.push(...chunkRes.atBats);
+            const chunkRes =
+              targetInnings.length === 1
+                ? await requestSingleInningWithQuickRetry(
+                    isTop,
+                    structure,
+                    imgState,
+                    structureFp,
+                    targetInnings[0],
+                    expectedLeadOff
+                  )
+                : await requestSingleChunk(
+                    isTop,
+                    structure,
+                    imgState,
+                    structureFp,
+                    targetInnings,
+                    expectedLeadOff
+                  );
+
+            commitSideInningAtBats(isTop, targetInnings, chunkRes.atBats);
             if (chunkRes.nextLeadOffOrder) {
               expectedLeadOff = chunkRes.nextLeadOffOrder;
+            } else {
+              expectedLeadOff = computeNextLeadOffFromAtBats(
+                chunkRes.atBats,
+                lineupCycle,
+                expectedLeadOff
+              );
             }
-            recordedEntries.push({
-              key: `${isTop ? "top" : "bottom"}-${targetInnings.join("-")}`,
+
+            upsertTimingEntry({
+              key: entryKey,
               isTop,
               innings: targetInnings,
               label: itemLabel,
               durationMs: Date.now() - chunkStart,
               fromCache: Boolean(chunkRes.fromCache),
+              status: "success",
             });
-            setDeepCompletedTimings([...recordedEntries]);
-            setDeepActiveLabel(null);
-            setDeepActiveStartedAtMs(null);
+
+            activeSideLabels[sideKey] = null;
+            syncActiveLabelsUi();
+
             if (!chunkRes.fromCache && cIdx < chunks.length - 1) {
-              await new Promise((r) => setTimeout(r, 350));
+              await new Promise((r) => setTimeout(r, 150));
             }
           } catch (chunkErr) {
-            // 2イニング同時チャンクが失敗した場合は小休止後に1イニングずつへ自動分割＆個別キャッシュ
+            // 複数イニングチャンクだった場合は1イニング単位に分解して個別に試行・保存する
             if (targetInnings.length > 1) {
-              await new Promise((r) => setTimeout(r, 1800));
               for (const singleInn of targetInnings) {
+                const singleKey = `${sideKey}-${singleInn}`;
                 const singleLabel = `${singleInn}回${halfSuffix}`;
                 const singleStart = Date.now();
-                setDeepActiveLabel(singleLabel);
+                activeSideLabels[sideKey] = singleLabel;
                 setDeepActiveStartedAtMs(singleStart);
-                setAnalysisProgressLabel(
-                  `${sideLabel} ${singleInn}回 を1回単位で精密解析中... ${progressSuffix}`
-                );
-                const singleRes = await requestSingleInningWithRetries(
-                  isTop,
-                  structure,
-                  sourceDataUrl,
-                  alreadyEnhanced,
-                  apiImg,
-                  structureFp,
-                  singleInn,
-                  expectedLeadOff,
-                  progressSuffix
-                );
-                collected.push(...singleRes.atBats);
-                if (singleRes.nextLeadOffOrder) {
-                  expectedLeadOff = singleRes.nextLeadOffOrder;
+                syncActiveLabelsUi();
+
+                try {
+                  const singleRes = await requestSingleInningWithQuickRetry(
+                    isTop,
+                    structure,
+                    imgState,
+                    structureFp,
+                    singleInn,
+                    expectedLeadOff
+                  );
+                  commitSideInningAtBats(isTop, [singleInn], singleRes.atBats);
+                  if (singleRes.nextLeadOffOrder) {
+                    expectedLeadOff = singleRes.nextLeadOffOrder;
+                  }
+                  upsertTimingEntry({
+                    key: singleKey,
+                    isTop,
+                    innings: [singleInn],
+                    label: singleLabel,
+                    durationMs: Date.now() - singleStart,
+                    status: "success",
+                  });
+                } catch (singleErr) {
+                  const errMsg =
+                    singleErr instanceof Error
+                      ? singleErr.message
+                      : String(singleErr);
+                  upsertTimingEntry({
+                    key: singleKey,
+                    isTop,
+                    innings: [singleInn],
+                    label: singleLabel,
+                    durationMs: Date.now() - singleStart,
+                    status: "error",
+                    errorDetail: errMsg,
+                  });
+                  const estRuns =
+                    structure.innings.find((m) => m.inning === singleInn)
+                      ?.runs ?? 0;
+                  expectedLeadOff =
+                    ((expectedLeadOff - 1 + Math.max(3, estRuns + 3)) %
+                      lineupCycle) +
+                    1;
                 }
-                recordedEntries.push({
-                  key: `${isTop ? "top" : "bottom"}-${singleInn}`,
-                  isTop,
-                  innings: [singleInn],
-                  label: singleLabel,
-                  durationMs: Date.now() - singleStart,
-                });
-                setDeepCompletedTimings([...recordedEntries]);
-                setDeepActiveLabel(null);
-                setDeepActiveStartedAtMs(null);
               }
             } else {
-              const singleRes = await requestSingleInningWithRetries(
+              // 1イニング単独エラー時も全体を止めず、当該イニングをエラー記録して残りイニングの解析を続行する！
+              const errMsg =
+                chunkErr instanceof Error ? chunkErr.message : String(chunkErr);
+              upsertTimingEntry({
+                key: entryKey,
                 isTop,
-                structure,
-                sourceDataUrl,
-                alreadyEnhanced,
-                apiImg,
-                structureFp,
-                targetInnings[0],
-                expectedLeadOff,
-                progressSuffix
-              );
-              collected.push(...singleRes.atBats);
-              if (singleRes.nextLeadOffOrder) {
-                expectedLeadOff = singleRes.nextLeadOffOrder;
-              }
-              recordedEntries.push({
-                key: `${isTop ? "top" : "bottom"}-${targetInnings[0]}`,
-                isTop,
-                innings: [targetInnings[0]],
+                innings: targetInnings,
                 label: itemLabel,
                 durationMs: Date.now() - chunkStart,
+                status: "error",
+                errorDetail: errMsg,
               });
-              setDeepCompletedTimings([...recordedEntries]);
-              setDeepActiveLabel(null);
-              setDeepActiveStartedAtMs(null);
+              const estRuns =
+                structure.innings.find((m) => m.inning === targetInnings[0])
+                  ?.runs ?? 0;
+              expectedLeadOff =
+                ((expectedLeadOff - 1 + Math.max(3, estRuns + 3)) %
+                  lineupCycle) +
+                1;
             }
-            void chunkErr;
+
+            activeSideLabels[sideKey] = null;
+            syncActiveLabelsUi();
           }
         }
-
-        return collected;
       };
 
-      const needTop = importScope === "both" || importScope === "top_only";
-      const needBottom =
-        importScope === "both" || importScope === "bottom_only";
-
-      const nextTopAtBats =
-        needTop && topStructure
-          ? await analyzeSheetByChunks(true, topStructure, topImage)
-          : [];
-
-      if (needTop && needBottom) {
-        await new Promise((r) => setTimeout(r, 400));
+      // 先攻（表）と後攻（裏）を2ストリーム並列実行することで、各サイド内の打順引き継ぎ精度を保ったまま所要時間を約半分に短縮する
+      const tasks: Promise<void>[] = [];
+      if (needTop && topStructure) {
+        tasks.push(analyzeSheetByChunks(true, topStructure, topImage, 0));
+      }
+      if (needBottom && bottomStructure) {
+        tasks.push(
+          analyzeSheetByChunks(
+            false,
+            bottomStructure,
+            bottomImage,
+            needTop && topStructure ? 350 : 0
+          )
+        );
       }
 
-      const nextBottomAtBats =
-        needBottom && bottomStructure
-          ? await analyzeSheetByChunks(false, bottomStructure, bottomImage)
-          : [];
+      await Promise.all(tasks);
 
-      const deepTotal = Date.now() - deepStart;
+      const finalEntries = sortTimingEntries(Array.from(recordedMap.values()));
+      const elapsedRunMs = Date.now() - deepStart;
+      const cumulativeDeepMs = onlyMissing
+        ? finalEntries.reduce((sum, item) => sum + item.durationMs, 0)
+        : elapsedRunMs;
+
+      setDeepCompletedTimings(finalEntries);
+      setDeepTotalDurationMs(cumulativeDeepMs);
       setTimingSummary({
         structureTotalMs: structureTotalMs ?? undefined,
         structureEntries:
           structureCompletedTimings.length > 0
             ? structureCompletedTimings
             : undefined,
-        deepTotalMs: deepTotal,
-        inningEntries: recordedEntries,
+        deepTotalMs: cumulativeDeepMs,
+        inningEntries: finalEntries,
       });
-      setTopAtBats(nextTopAtBats);
-      setBottomAtBats(nextBottomAtBats);
-      setStep(3);
+
+      const failedEntries = finalEntries.filter((e) => e.status === "error");
+      if (failedEntries.length === 0) {
+        setErrorBanner(null);
+        setStep(3);
+      } else {
+        const succeededCount = finalEntries.length - failedEntries.length;
+        const savedAtBatsTotal = workingTop.length + workingBottom.length;
+        const failedLabels = failedEntries.map((e) => e.label).join("・");
+        const firstReason = failedEntries[0]?.errorDetail
+          ? `（原因: ${failedEntries[0].errorDetail}）`
+          : "";
+        setErrorBanner(
+          `${failedLabels} の解析で一時エラーが発生しましたが、完了済みの ${succeededCount} イニング（計 ${savedAtBatsTotal} 打席）はすべて保持されています。下の「未完了の回だけ再解析」または各イニングのバッジから数秒で再取得できます。${firstReason}`
+        );
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setErrorBanner(msg);
@@ -1526,11 +1793,12 @@ export default function LiffScorebookImportPage() {
       setAnalysisProgressLabel("");
       setDeepStartedAtMs(null);
       setDeepActiveLabel(null);
+      setDeepActiveLabels([]);
       setDeepActiveStartedAtMs(null);
     }
   };
 
-  // 5-B. Step 3 ピンポイント1イニング単独AI再解析
+  // 5-B. Step 2 / Step 3 共通：ピンポイント1イニング単独AI再解析
   const handleReanalyzeSingleInning = async (
     isTop: boolean,
     inning: number
@@ -1553,30 +1821,13 @@ export default function LiffScorebookImportPage() {
         const prevInningItems = currentSideList.filter(
           (a) => a.inning < inning
         );
-        if (prevInningItems.length > 0) {
-          const lastPrev = prevInningItems[prevInningItems.length - 1];
-          const endedByRunnerOutOnly =
-            lastPrev.resultCode === "other" &&
-            lastPrev.advances.some(
-              (a) =>
-                a.isOut &&
-                (a.method === "caught_stealing" ||
-                  a.method === "pickoff_out" ||
-                  a.method === "interference_out" ||
-                  a.method === "appeal_out" ||
-                  a.method === "out_on_base")
-            );
-          expectedLeadOff = endedByRunnerOutOnly
-            ? lastPrev.battingOrder
-            : (lastPrev.battingOrder % lineupCycle) + 1;
-        }
+        expectedLeadOff = computeNextLeadOffFromAtBats(
+          prevInningItems,
+          lineupCycle,
+          1
+        );
       }
 
-      const apiImg = await buildCalibratedRulerSheetImage(
-        imgState.processed,
-        1850,
-        0.89
-      );
       const targetBoxes: NormalizedBox[] = [inning]
         .map(
           (innNum) =>
@@ -1603,6 +1854,10 @@ export default function LiffScorebookImportPage() {
         }
       );
 
+      const fallbackApiImg = !focusCrop
+        ? await buildCalibratedRulerSheetImage(imgState.processed, 1600, 0.86)
+        : null;
+
       const sideLabel = isTop ? "先攻（表）" : "後攻（裏）";
       const res = await fetch("/api/liff/scorebook/analyze-inning-chunk", {
         method: "POST",
@@ -1611,8 +1866,8 @@ export default function LiffScorebookImportPage() {
           teamId: resolvedTeamId || currentTeam?.id || "",
           matchId: selectedMatchId,
           isTop,
-          imageBase64: apiImg.base64,
-          mimeType: apiImg.mimeType,
+          imageBase64: fallbackApiImg?.base64,
+          mimeType: fallbackApiImg?.mimeType,
           focusCropBase64: focusCrop?.base64,
           focusCropMimeType: focusCrop?.mimeType,
           structure,
@@ -1620,14 +1875,18 @@ export default function LiffScorebookImportPage() {
           expectedLeadOffOrder: expectedLeadOff,
           legendBase64: legendOverride?.base64,
           legendMimeType: legendOverride?.mimeType,
+          skipModels: getActiveSkippedModels(),
         }),
       });
 
       const data = await parseSafeJson<{
         success: boolean;
         atBats?: ScorebookV2AtBat[];
+        cooledModels?: string[];
         error?: string;
       }>(res, `${sideLabel} ${inning}回 再解析エラー`);
+
+      recordCooledModels(data.cooledModels);
 
       if (!data.success || !data.atBats) {
         throw new Error(
@@ -1650,33 +1909,51 @@ export default function LiffScorebookImportPage() {
         setBottomAtBats((prev) => mergeSideList(prev));
       }
 
-      setTimingSummary((prev) => {
-        if (!prev) return prev;
-        const entryKey = `${isTop ? "top" : "bottom"}-${inning}`;
-        const updatedEntry: ScorebookTimingEntry = {
-          key: entryKey,
-          isTop,
-          innings: [inning],
-          label: `${inning}回${isTop ? "表" : "裏"}`,
-          durationMs: elapsed,
-          fromCache: false,
-        };
-        const exists = prev.inningEntries.some((e) => e.key === entryKey);
-        const nextEntries = exists
-          ? prev.inningEntries.map((e) =>
-              e.key === entryKey ? updatedEntry : e
-            )
-          : [...prev.inningEntries, updatedEntry];
-        return {
-          ...prev,
-          inningEntries: nextEntries,
-        };
+      const entryKey = `${isTop ? "top" : "bottom"}-${inning}`;
+      const updatedEntry: ScorebookTimingEntry = {
+        key: entryKey,
+        isTop,
+        innings: [inning],
+        label: `${inning}回${isTop ? "表" : "裏"}`,
+        durationMs: elapsed,
+        fromCache: false,
+        status: "success",
+      };
+
+      setDeepCompletedTimings((prev) => {
+        const exists = prev.some((e) => e.key === entryKey);
+        const next = sortTimingEntries(
+          exists
+            ? prev.map((e) => (e.key === entryKey ? updatedEntry : e))
+            : [...prev, updatedEntry]
+        );
+        const nextTotal = next.reduce((sum, item) => sum + item.durationMs, 0);
+        setDeepTotalDurationMs(nextTotal);
+        setTimingSummary((prevSum) => ({
+          structureTotalMs:
+            prevSum?.structureTotalMs ?? structureTotalMs ?? undefined,
+          structureEntries:
+            prevSum?.structureEntries ??
+            (structureCompletedTimings.length > 0
+              ? structureCompletedTimings
+              : undefined),
+          deepTotalMs: nextTotal,
+          inningEntries: next,
+        }));
+        return next;
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setErrorBanner(msg);
     } finally {
       setReanalyzingInningKey(null);
+    }
+  };
+
+  const handleRetryTimingEntry = async (entry: ScorebookTimingEntry) => {
+    if (entry.innings.length === 0) return;
+    for (const inn of entry.innings) {
+      await handleReanalyzeSingleInning(entry.isTop, inn);
     }
   };
 
@@ -1727,6 +2004,43 @@ export default function LiffScorebookImportPage() {
   };
 
   const selectedMatch = matches.find((m) => m.id === selectedMatchId) || null;
+  const needTopSide = importScope === "both" || importScope === "top_only";
+  const needBottomSide =
+    importScope === "both" || importScope === "bottom_only";
+  const preservedAtBatsCount =
+    (needTopSide ? topAtBats.length : 0) +
+    (needBottomSide ? bottomAtBats.length : 0);
+
+  const countMissingForSide = (
+    isTop: boolean,
+    structure: ScorebookSheetStructure | null,
+    sideAtBats: ScorebookV2AtBat[]
+  ): number => {
+    if (!structure) return 0;
+    let missing = 0;
+    for (const meta of structure.innings) {
+      const hasAtBat = sideAtBats.some((a) => a.inning === meta.inning);
+      if (hasAtBat) continue;
+      const succeededSkipped =
+        isSkippableFinalBottomInning(isTop, meta.inning, structure) &&
+        deepCompletedTimings.some(
+          (e) =>
+            e.isTop === isTop &&
+            e.innings.includes(meta.inning) &&
+            e.status !== "error"
+        );
+      if (!succeededSkipped) {
+        missing += 1;
+      }
+    }
+    return missing;
+  };
+
+  const missingInningsCount =
+    (needTopSide ? countMissingForSide(true, topStructure, topAtBats) : 0) +
+    (needBottomSide
+      ? countMissingForSide(false, bottomStructure, bottomAtBats)
+      : 0);
 
   return (
     <div className="flex flex-col flex-1">
@@ -1947,14 +2261,22 @@ export default function LiffScorebookImportPage() {
                   setErrorBanner(null);
                   setStep(1);
                 }}
-                onStartDeepAnalysis={handleStartDeepAnalysis}
+                onStartDeepAnalysis={() =>
+                  void handleStartDeepAnalysis({ onlyMissing: false })
+                }
                 isAnalyzingInnings={isAnalyzingInnings}
                 analysisProgressLabel={analysisProgressLabel}
                 analysisStartedAtMs={
                   isAnalyzingStructure ? structureStartedAtMs : deepStartedAtMs
                 }
+                analysisTotalDurationMs={
+                  isAnalyzingStructure ? structureTotalMs : deepTotalDurationMs
+                }
                 analysisActiveLabel={
                   isAnalyzingStructure ? structureActiveLabel : deepActiveLabel
+                }
+                analysisActiveLabels={
+                  isAnalyzingStructure ? undefined : deepActiveLabels
                 }
                 analysisActiveStartedAtMs={
                   isAnalyzingStructure
@@ -1966,6 +2288,19 @@ export default function LiffScorebookImportPage() {
                     ? structureCompletedTimings
                     : deepCompletedTimings
                 }
+                onRetryTimingEntry={(entry) =>
+                  void handleRetryTimingEntry(entry)
+                }
+                reanalyzingInningKey={reanalyzingInningKey}
+                preservedAtBatsCount={preservedAtBatsCount}
+                missingInningsCount={missingInningsCount}
+                onResumeMissingInnings={() =>
+                  void handleStartDeepAnalysis({ onlyMissing: true })
+                }
+                onProceedWithCompleted={() => {
+                  setErrorBanner(null);
+                  setStep(3);
+                }}
                 errorMessage={errorBanner}
                 onDismissError={() => setErrorBanner(null)}
               />

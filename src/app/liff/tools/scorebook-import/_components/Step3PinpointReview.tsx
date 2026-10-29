@@ -592,6 +592,7 @@ export function Step3PinpointReview({
                   </div>
                   <div className="flex flex-wrap gap-1.5">
                     {topTimingEntries.map((entry) => {
+                      const isEntryError = entry.status === "error";
                       const isSelected =
                         activeSide === "top" &&
                         entry.innings.length === 1 &&
@@ -611,6 +612,8 @@ export function Step3PinpointReview({
                           className={`px-2 py-1 rounded-lg text-[10px] font-black tabular-nums inline-flex items-center gap-1 transition-all cursor-pointer ${
                             isSelected
                               ? "bg-indigo-600 text-white border border-indigo-600"
+                              : isEntryError
+                              ? "bg-card border border-destructive/60 text-destructive"
                               : "bg-card hover:bg-card/80 border border-border text-foreground"
                           }`}
                         >
@@ -619,11 +622,15 @@ export function Step3PinpointReview({
                             className={
                               isSelected
                                 ? "text-white"
+                                : isEntryError
+                                ? "text-destructive"
                                 : "text-indigo-600 dark:text-indigo-400"
                             }
                           >
-                            {entry.fromCache
-                              ? "キャッシュ済"
+                            {isEntryError
+                              ? "未取得(要再解析)"
+                              : entry.fromCache
+                              ? "保持済"
                               : formatElapsedSeconds(entry.durationMs)}
                           </span>
                         </button>
@@ -645,6 +652,7 @@ export function Step3PinpointReview({
                   </div>
                   <div className="flex flex-wrap gap-1.5">
                     {bottomTimingEntries.map((entry) => {
+                      const isEntryError = entry.status === "error";
                       const isSelected =
                         activeSide === "bottom" &&
                         entry.innings.length === 1 &&
@@ -664,6 +672,8 @@ export function Step3PinpointReview({
                           className={`px-2 py-1 rounded-lg text-[10px] font-black tabular-nums inline-flex items-center gap-1 transition-all cursor-pointer ${
                             isSelected
                               ? "bg-indigo-600 text-white border border-indigo-600"
+                              : isEntryError
+                              ? "bg-card border border-destructive/60 text-destructive"
                               : "bg-card hover:bg-card/80 border border-border text-foreground"
                           }`}
                         >
@@ -672,11 +682,15 @@ export function Step3PinpointReview({
                             className={
                               isSelected
                                 ? "text-white"
+                                : isEntryError
+                                ? "text-destructive"
                                 : "text-indigo-600 dark:text-indigo-400"
                             }
                           >
-                            {entry.fromCache
-                              ? "キャッシュ済"
+                            {isEntryError
+                              ? "未取得(要再解析)"
+                              : entry.fromCache
+                              ? "保持済"
                               : formatElapsedSeconds(entry.durationMs)}
                           </span>
                         </button>

@@ -238,14 +238,19 @@ const MODEL_COOLDOWN_UNTIL = new Map<
 >();
 
 /**
+ * チーム共通「スコア記号早見表」のインメモリキャッシュ（5分TTL）。
+ * 1試合14イニングの連続・並列チャンク解析時に毎回D1クエリ＋R2画像取得＋Base64変換が走る無駄を排除する。
+ */
+const LEGEND_PART_CACHE = new Map<
+  string,
+  { expiresAt: number; part: GeminiInlineDataPart | null }
+>();
+
+/**
  * Gemini 3 マルチプール・フェイルオーバールーティング:
  * - 廃止・無料枠ゼロ・404のモデル（旧2.5系 / 3.5-flash / gemini-flash-latest / gemini-3.8-flash-lite）を完全排除
- * - 実稼働確認済みの独立クォータ枠＆サービングプールを順に試行:
- *   1. gemini-3.8-flash (最新フラッグシップFlash・MEDIUM思考で高速高精度)
- *   2. gemini-3.6-flash (安定ワークホースFlash・独立クォータ枠)
- *   3. gemini-3.5-flash-lite (高速・大容量クォータ枠)
- *   4. gemini-3.1-flash-lite (3.1系独立クォータ枠)
- *   5. gemini-flash-lite-latest (最新Lite動的エイリアス安全網)
+ * - Stage 2 (chunk) は歪み補正済みデュアルビュー画像単体＋obs構造化出力に最適化し、
+ *   thinkingMode: "level_low" ＆ 短縮タイムアウトで 1イニング 6〜12秒 の超高速・高精度応答を実現する
  */
 function getGeminiModelConfigs(
   mode: GeminiCallMode
@@ -254,38 +259,38 @@ function getGeminiModelConfigs(
   return [
     {
       model: "gemini-3.8-flash",
-      firstResponseTimeoutMs: isDeepChunk ? 42_000 : 40_000,
-      firstTextTimeoutMs: isDeepChunk ? 70_000 : 56_000,
-      thinkingMode: isDeepChunk ? "level_high" : "level_medium",
+      firstResponseTimeoutMs: isDeepChunk ? 18_000 : 34_000,
+      firstTextTimeoutMs: isDeepChunk ? 28_000 : 50_000,
+      thinkingMode: isDeepChunk ? "level_low" : "level_medium",
       backoffBeforeMs: 0,
     },
     {
       model: "gemini-3.6-flash",
-      firstResponseTimeoutMs: isDeepChunk ? 40_000 : 38_000,
-      firstTextTimeoutMs: isDeepChunk ? 66_000 : 54_000,
-      thinkingMode: isDeepChunk ? "level_high" : "level_medium",
-      backoffBeforeMs: 250,
+      firstResponseTimeoutMs: isDeepChunk ? 17_000 : 32_000,
+      firstTextTimeoutMs: isDeepChunk ? 26_000 : 48_000,
+      thinkingMode: isDeepChunk ? "level_low" : "level_medium",
+      backoffBeforeMs: 150,
     },
     {
       model: "gemini-3.5-flash-lite",
-      firstResponseTimeoutMs: 34_000,
-      firstTextTimeoutMs: isDeepChunk ? 50_000 : 46_000,
-      thinkingMode: "level_medium",
-      backoffBeforeMs: 250,
+      firstResponseTimeoutMs: isDeepChunk ? 15_000 : 28_000,
+      firstTextTimeoutMs: isDeepChunk ? 24_000 : 42_000,
+      thinkingMode: isDeepChunk ? "level_low" : "level_medium",
+      backoffBeforeMs: 150,
     },
     {
       model: "gemini-3.1-flash-lite",
-      firstResponseTimeoutMs: 32_000,
-      firstTextTimeoutMs: isDeepChunk ? 48_000 : 44_000,
-      thinkingMode: "level_medium",
-      backoffBeforeMs: 250,
+      firstResponseTimeoutMs: isDeepChunk ? 14_000 : 26_000,
+      firstTextTimeoutMs: isDeepChunk ? 22_000 : 40_000,
+      thinkingMode: isDeepChunk ? "level_low" : "level_medium",
+      backoffBeforeMs: 150,
     },
     {
       model: "gemini-flash-lite-latest",
-      firstResponseTimeoutMs: 28_000,
-      firstTextTimeoutMs: 40_000,
+      firstResponseTimeoutMs: isDeepChunk ? 14_000 : 24_000,
+      firstTextTimeoutMs: isDeepChunk ? 22_000 : 36_000,
       thinkingMode: "level_low",
-      backoffBeforeMs: 300,
+      backoffBeforeMs: 200,
     },
   ];
 }
@@ -502,6 +507,7 @@ liffScorebookRouter.post("/legend", async (c) => {
           scorebookLegendUrl: null,
         })
         .where(eq(teams.id, targetTeam.id));
+      LEGEND_PART_CACHE.delete(targetTeam.id);
 
       return c.json({
         success: true,
@@ -566,6 +572,7 @@ liffScorebookRouter.post("/legend", async (c) => {
         scorebookLegendUrl: nextLegendUrl,
       })
       .where(eq(teams.id, targetTeam.id));
+    LEGEND_PART_CACHE.delete(targetTeam.id);
 
     return c.json({
       success: true,
@@ -1277,8 +1284,8 @@ interface AnalyzeInningChunkPayload {
   teamId: string;
   matchId: string;
   isTop: boolean;
-  imageBase64: string;
-  mimeType: string;
+  imageBase64?: string;
+  mimeType?: string;
   focusCropBase64?: string;
   focusCropMimeType?: string;
   structure: ScorebookSheetStructure;
@@ -1286,6 +1293,7 @@ interface AnalyzeInningChunkPayload {
   expectedLeadOffOrder?: number;
   legendBase64?: string;
   legendMimeType?: string;
+  skipModels?: string[];
 }
 
 liffScorebookRouter.post("/analyze-inning-chunk", async (c) => {
@@ -1295,11 +1303,13 @@ liffScorebookRouter.post("/analyze-inning-chunk", async (c) => {
   }
 
   const db = drizzle(c.env.DB, { schema });
+  const reqStartMs = Date.now();
+  const cooledModels: string[] = [];
 
   try {
     const body = (await c.req.json()) as AnalyzeInningChunkPayload;
     if (
-      !body.imageBase64 ||
+      (!body.focusCropBase64 && !body.imageBase64) ||
       !body.structure ||
       !Array.isArray(body.targetInnings) ||
       body.targetInnings.length === 0
@@ -1310,23 +1320,17 @@ liffScorebookRouter.post("/analyze-inning-chunk", async (c) => {
     const sideLabel = body.isTop ? "表（先攻）" : "裏（後攻）";
     const sortedTargets = [...body.targetInnings].sort((a, b) => a - b);
 
-    const imageParts: GeminiContentPart[] = [
-      {
-        inlineData: {
-          mimeType: body.mimeType || "image/jpeg",
-          data: body.imageBase64,
-        },
-      },
-    ];
-    const stage2ImageGuide: string[] = [
-      "・画像1: 外周4辺に0〜1000目盛りルーラーが付いたスコアブック片面全体画像（全体の列・投手交代波線・前後イニングとの文脈確認用）",
-    ];
-
     const hasMultiColTarget = sortedTargets.some((innNum) => {
       const m = body.structure.innings.find((x) => x.inning === innNum);
       return (m?.columnCount ?? 1) >= 2;
     });
 
+    const imageParts: GeminiContentPart[] = [];
+    const stage2ImageGuide: string[] = [];
+    let focusImgLabel = "画像1";
+
+    // focusCropBase64 がある場合は、巨大な全体シート画像を送らず高精細デュアルビュー画像のみを送ることで、
+    // Visionトークン量と通信ペイロードを半減させて解析速度を劇的に高め、隣接イニングの視覚混入も防ぐ
     if (body.focusCropBase64) {
       imageParts.push({
         inlineData: {
@@ -1334,14 +1338,26 @@ liffScorebookRouter.post("/analyze-inning-chunk", async (c) => {
           data: body.focusCropBase64,
         },
       });
+      focusImgLabel = `画像${imageParts.length}`;
       stage2ImageGuide.push(
-        `・画像${imageParts.length}: 【🔥最優先で精読！ ${sortedTargets.join(
+        `・${focusImgLabel}: 【🔥最優先で精読！ ${sortedTargets.join(
           "・"
         )}回専用・歪み補正済みデュアルビュー画像】左端に「イニング見出し〜1番〜9番〜下段得点欄までの連続1列ストリップ（どの打順が記入済みでどの打順が白紙空欄か・3アウト直下の終了斜線『／』『∟』・投手交代波線を一目で確認用）」、中央〜右側に「1番〜最終打順を上から下へ自然な縦1列で並べた1マス独立大判セル（各行左に青い打順バッジ『1番 〇〇』〜『9番 〇〇』付き）」を配置しています！${
           hasMultiColTarget
             ? "2列以上を使用する回は各打順ごとに [c:1]（1列目）・[c:2]（2列目）・[c:3]（3列目）として分離表示しています！"
             : ""
         }必ず左端の連続ストリップで「実際に手書き記録がある打順範囲」を特定したうえで、右側の各拡大セルでBSO投球記号・中央アウト記号・進塁実線・右下守備番号を1画ずつ精読してください！`
+      );
+    } else if (body.imageBase64) {
+      imageParts.push({
+        inlineData: {
+          mimeType: body.mimeType || "image/jpeg",
+          data: body.imageBase64,
+        },
+      });
+      focusImgLabel = `画像${imageParts.length}`;
+      stage2ImageGuide.push(
+        `・${focusImgLabel}: 外周4辺に0〜1000目盛りルーラーが付いたスコアブック片面全体画像`
       );
     }
 
@@ -1385,18 +1401,19 @@ liffScorebookRouter.post("/analyze-inning-chunk", async (c) => {
       if (!meta) return `・${innNum}回${sideLabel}: 1列`;
       const colNote =
         meta.columnCount >= 2
-          ? `⚠️打者一巡以上のため【${meta.columnCount}列（c:1〜c:${meta.columnCount}）】使用！画像2の [c:1]〜[c:${meta.columnCount}] を時系列順に全て読み取り、各打席の列番号 c (1〜${meta.columnCount}) を正確に出力すること！`
+          ? `⚠️打者一巡以上のため【${meta.columnCount}列（c:1〜c:${meta.columnCount}）】使用！${focusImgLabel}の [c:1]〜[c:${meta.columnCount}] を時系列順に全て読み取り、各打席の列番号 c (1〜${meta.columnCount}) を正確に出力すること！`
           : "1列使用 (c:1)";
-      const boxNote = meta.columnBox
-        ? ` (画像1での列座標目安 ymin:${meta.columnBox[0]}, xmin:${meta.columnBox[1]}, ymax:${meta.columnBox[2]}, xmax:${meta.columnBox[3]})`
-        : "";
+      const boxNote =
+        !body.focusCropBase64 && meta.columnBox
+          ? ` (列座標目安 ymin:${meta.columnBox[0]}, xmin:${meta.columnBox[1]}, ymax:${meta.columnBox[2]}, xmax:${meta.columnBox[3]})`
+          : "";
       return `・${innNum}回${sideLabel}: 確定得点=${meta.runs}点, 安打目安=${meta.hits}本, ${colNote}${boxNote}`;
     });
 
     const multiColumnRuleBlock = hasMultiColTarget
       ? `
 【🔥超重要 1.2: 1イニング2列・3列以上（打者一巡・二巡）の完全読取ルール】
-- 対象イニングに【複数列（c:1, c:2, c:3...）】を使用する回が含まれています！画像2では各サブ列が左から **[c:1]（1列目）➔ [c:2]（2列目）➔ [c:3]（3列目）** として独立表示されています。
+- 対象イニングに【複数列（c:1, c:2, c:3...）】を使用する回が含まれています！${focusImgLabel}では各サブ列が左から **[c:1]（1列目）➔ [c:2]（2列目）➔ [c:3]（3列目）** として独立表示されています。
 - 日本のスコアブックには以下の2通りの折り返し記法があります（どちらの記法でも白紙の空欄マスは絶対に出力せず、手書き記録があるマスだけを実際の打順時系列で出力してください）:
   1) **一巡充填式（標準）**: 先頭打者（例: 4番）から [c:1] を下へ進み、9番の次は同じ [c:1] の1番〜3番へ戻って9枠を埋め、10人目の打者（4番の2巡目）から [c:2] の4番の行へ移る（さらに19人目は [c:3] へ移る）。
   2) **9番下端折り返し式**: 先頭打者（例: 4番）から [c:1] の9番まで進んだら、次の1番打者からはすぐ右隣の [c:2] の1番の行へ移る（この場合 [c:1] の1番〜3番は白紙空欄になり、4番の2巡目は空いていた [c:2] の4番の行に書かれる）。
@@ -1407,7 +1424,7 @@ liffScorebookRouter.post("/analyze-inning-chunk", async (c) => {
       sortedTargets[0] === 1
         ? `\n🔥【先頭打者と白紙マス除外の鉄則】1回${sideLabel}の最初の打者は必ず【1番打者】のマスからスタートします！1番から下へ順に見て、3アウト目（③ または Ⅲ）が出た打者で読取をピタリと終了し、それより下の白紙マスやイニング終了斜線（／・∟）は絶対に出力しないでください！`
         : body.expectedLeadOffOrder
-        ? `\n📌【先頭打者の目安と白紙マス除外の絶対原則】前イニング終了順からの計算では【${body.expectedLeadOffOrder}番打者】付近が${sortedTargets[0]}回${sideLabel}の先頭打者の目安ですが、**最優先すべき絶対の根拠は「マス内に実際の手書き記録があるか」**です！印刷された点線ダイヤモンドと薄いBSO枠線しか無い【白紙（空欄）マス】は絶対に打席として出力しないでください！画像2左端の「連続列全体ストリップ」と右側の拡大セルを照合し、実際に手書き記録がある連続した打席ブロック（Ⅰ→Ⅱ→Ⅲ または ①→②→③ の計3アウト分）だけを正確に抽出してください。`
+        ? `\n📌【先頭打者の目安と白紙マス除外の絶対原則】前イニング終了順からの計算では【${body.expectedLeadOffOrder}番打者】付近が${sortedTargets[0]}回${sideLabel}の先頭打者の目安ですが、**最優先すべき絶対の根拠は「マス内に実際の手書き記録があるか」**です！印刷された点線ダイヤモンドと薄いBSO枠線しか無い【白紙（空欄）マス】は絶対に打席として出力しないでください！${focusImgLabel}左端の「連続列全体ストリップ」と右側の拡大セルを照合し、実際に手書き記録がある連続した打席ブロック（Ⅰ→Ⅱ→Ⅲ または ①→②→③ の計3アウト分）だけを正確に抽出してください。`
         : `\n📌【白紙マス除外の絶対原則】印刷された点線ダイヤモンドと薄いBSO枠線しか無い【白紙（空欄）マス】は絶対に出力せず、実際に手書き記録がある連続した打席マス（計3アウト分）だけを抽出してください。`;
 
     const legendConstraint = legendImageIndex > 0
@@ -1544,7 +1561,12 @@ ${targetInningMetaLines.join("\n")}
         prompt,
         imageParts,
         "chunk",
-        validateChunkOutput
+        validateChunkOutput,
+        {
+          maxBudgetMs: 54_000,
+          skipModels: body.skipModels,
+          cooledModelsOut: cooledModels,
+        }
       );
       normalizedRawItems = normalizeChunkRawItems(
         rawChunk.ab || rawChunk.atBats || [],
@@ -1554,24 +1576,37 @@ ${targetInningMetaLines.join("\n")}
       if (!mustHaveAtBats) {
         normalizedRawItems = [];
       } else {
-        // 万一プライマリプロンプトで0打席等の検証エラーになった場合、救済プロンプトで1回再試行
-        const rescuePrompt = `${prompt}\n\n⚠️【緊急再確認】前回の読取で${sortedTargets.join(
-          "・"
-        )}回${sideLabel}の有効打席が0件になりましたが、試合が行われたイニングで打席0件は絶対にあり得ません！画像2の1番〜${lineupLen}番の各マスをもう一度確認し、手書き記録がある打席マス（最低3アウト分）を必ず "i": ${exampleInn} として全て出力してください！`;
-        try {
-          const rescueChunk =
-            await callGeminiStructuredJson<RawGeminiChunkResponse>(
-              apiKey,
-              rescuePrompt,
-              imageParts,
-              "chunk",
-              validateChunkOutput
+        const primaryMsg =
+          primaryErr instanceof Error ? primaryErr.message : String(primaryErr);
+        const elapsedSoFar = Date.now() - reqStartMs;
+        // 0打席の検証NGかつリクエスト開始から34秒以内の場合のみ短時間の救済再試行を行い、
+        // Cloudflareの100秒プロキシタイムアウト(HTML 503/524)到達を100%防止する
+        if (primaryMsg.includes("検証NG") && elapsedSoFar < 34_000) {
+          const rescuePrompt = `${prompt}\n\n⚠️【緊急再確認】前回の読取で${sortedTargets.join(
+            "・"
+          )}回${sideLabel}の有効打席が0件になりましたが、試合が行われたイニングで打席0件は絶対にあり得ません！${focusImgLabel}の1番〜${lineupLen}番の各マスをもう一度確認し、手書き記録がある打席マス（最低3アウト分）を必ず "i": ${exampleInn} として全て出力してください！`;
+          try {
+            const rescueChunk =
+              await callGeminiStructuredJson<RawGeminiChunkResponse>(
+                apiKey,
+                rescuePrompt,
+                imageParts,
+                "chunk",
+                validateChunkOutput,
+                {
+                  maxBudgetMs: Math.max(12_000, 66_000 - elapsedSoFar),
+                  skipModels: body.skipModels,
+                  cooledModelsOut: cooledModels,
+                }
+              );
+            normalizedRawItems = normalizeChunkRawItems(
+              rescueChunk.ab || rescueChunk.atBats || [],
+              sortedTargets
             );
-          normalizedRawItems = normalizeChunkRawItems(
-            rescueChunk.ab || rescueChunk.atBats || [],
-            sortedTargets
-          );
-        } catch {
+          } catch {
+            throw primaryErr;
+          }
+        } else {
           throw primaryErr;
         }
       }
@@ -1584,6 +1619,7 @@ ${targetInningMetaLines.join("\n")}
           error: `${sortedTargets.join(
             "・"
           )}回${sideLabel}の打席を検出できませんでした（0打席防止ガード）。自動リトライまたはマス位置を確認してください。`,
+          cooledModels,
         },
         422
       );
@@ -1843,10 +1879,14 @@ ${targetInningMetaLines.join("\n")}
       success: true,
       atBats: mappedAtBats,
       nextLeadOffOrder,
+      cooledModels,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    return c.json({ success: false, error: `イニング解析エラー: ${msg}` }, 500);
+    return c.json(
+      { success: false, error: `イニング解析エラー: ${msg}`, cooledModels },
+      500
+    );
   }
 });
 
@@ -2396,21 +2436,39 @@ liffScorebookRouter.post("/save", async (c) => {
 // 内部ヘルパー関数群
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+interface GeminiCallOptions {
+  maxBudgetMs?: number;
+  skipModels?: string[];
+  cooledModelsOut?: string[];
+}
+
 async function callGeminiStructuredJson<T>(
   apiKey: string,
   prompt: string,
   imageParts: GeminiContentPart[],
   mode: GeminiCallMode = "structure",
-  validateResult?: (parsed: T) => string | null
+  validateResult?: (parsed: T) => string | null,
+  options?: GeminiCallOptions
 ): Promise<T> {
   const attemptErrors: string[] = [];
   let quota429Count = 0;
   let demand503Count = 0;
   let timeoutCount = 0;
   const overallStart = Date.now();
-  // Cloudflare Workers / モバイルブラウザの100秒HTTPタイムアウトより手前で確実にJSON応答を完結させる
-  const MAX_TOTAL_BUDGET_MS = 94_000;
+  // Cloudflare Workers / モバイルブラウザの100秒プロキシタイムアウトより十分手前で確実にJSON応答を完結させる
+  const MAX_TOTAL_BUDGET_MS =
+    options?.maxBudgetMs ?? (mode === "chunk" ? 54_000 : 72_000);
   const rawConfigs = getGeminiModelConfigs(mode);
+  const clientSkippedSet = new Set(options?.skipModels || []);
+
+  const recordCooledOut = (modelName: string) => {
+    if (
+      options?.cooledModelsOut &&
+      !options.cooledModelsOut.includes(modelName)
+    ) {
+      options.cooledModelsOut.push(modelName);
+    }
+  };
 
   const nowTs = Date.now();
   const readyConfigs: GeminiModelAttemptConfig[] = [];
@@ -2419,12 +2477,21 @@ async function callGeminiStructuredJson<T>(
 
   for (const cfg of rawConfigs) {
     const cd = MODEL_COOLDOWN_UNTIL.get(cfg.model);
-    if (!cd || cd.until <= nowTs) {
-      if (cd) MODEL_COOLDOWN_UNTIL.delete(cfg.model);
-      readyConfigs.push(cfg);
-    } else if (cd.status !== 404) {
-      coolingConfigs.push({ cfg, until: cd.until });
+    if (cd && cd.until > nowTs) {
+      recordCooledOut(cfg.model);
+      if (cd.status !== 404) {
+        coolingConfigs.push({ cfg, until: cd.until });
+      }
+      continue;
     }
+    if (cd) {
+      MODEL_COOLDOWN_UNTIL.delete(cfg.model);
+    }
+    if (clientSkippedSet.has(cfg.model)) {
+      coolingConfigs.push({ cfg, until: nowTs + 30_000 });
+      continue;
+    }
+    readyConfigs.push(cfg);
   }
 
   coolingConfigs.sort((a, b) => a.until - b.until);
@@ -2436,16 +2503,16 @@ async function callGeminiStructuredJson<T>(
           ...coolingConfigs
             .filter((x) => {
               const cd = MODEL_COOLDOWN_UNTIL.get(x.cfg.model);
-              return cd?.status === 503;
+              return !cd || cd.status === 503;
             })
             .slice(0, 1)
-            .map((x) => ({ ...x.cfg, backoffBeforeMs: 1_500 })),
+            .map((x) => ({ ...x.cfg, backoffBeforeMs: 1_200 })),
         ]
       : coolingConfigs
           .slice(0, 2)
           .map((x, idx) => ({
             ...x.cfg,
-            backoffBeforeMs: idx === 0 ? 1_200 : 2_000,
+            backoffBeforeMs: idx === 0 ? 1_000 : 1_800,
           }));
 
   const blockedInThisRequest = new Set<string>();
@@ -2569,9 +2636,9 @@ async function callGeminiStructuredJson<T>(
             // mediaResolution のみが非対応だった場合は thinkingConfig を100%そのまま保持！
             fallbackGenConfig.thinkingConfig = generationConfig.thinkingConfig;
           } else if (hasThinkingLevelIssue && !hasIncludeThoughtsIssue) {
-            // thinkingLevel 非対応モデル（budget方式モデル）には thinkingBudget で深い推論を維持！
+            // thinkingLevel 非対応モデル（budget方式モデル）には適切な thinkingBudget で高速・高精度推論を維持！
             fallbackGenConfig.thinkingConfig = {
-              thinkingBudget: mode === "chunk" ? 6144 : 3072,
+              thinkingBudget: mode === "chunk" ? 1536 : 2560,
               includeThoughts: true,
             };
           }
@@ -2622,6 +2689,7 @@ async function callGeminiStructuredJson<T>(
         const errText = await res.text();
         if (res.status === 404) {
           blockedInThisRequest.add(cfg.model);
+          recordCooledOut(cfg.model);
           MODEL_COOLDOWN_UNTIL.set(cfg.model, {
             until: Date.now() + 60 * 60_000,
             status: 404,
@@ -2633,6 +2701,7 @@ async function callGeminiStructuredJson<T>(
         if (res.status === 429) {
           quota429Count += 1;
           blockedInThisRequest.add(cfg.model);
+          recordCooledOut(cfg.model);
           const retryMatch = errText.match(/"retryDelay"\s*:\s*"(\d+)s"/i);
           const parsedSec = retryMatch ? Number(retryMatch[1]) : 0;
           const isDailyOrZero =
@@ -2651,6 +2720,7 @@ async function callGeminiStructuredJson<T>(
 
         if (res.status >= 500) {
           demand503Count += 1;
+          recordCooledOut(cfg.model);
           MODEL_COOLDOWN_UNTIL.set(cfg.model, {
             until: Date.now() + 20_000,
             status: res.status,
@@ -2906,6 +2976,32 @@ async function resolveLegendImagePart(
     };
   }
 
+  if (teamId) {
+    const cached = LEGEND_PART_CACHE.get(teamId);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.part;
+    }
+    if (cached) {
+      LEGEND_PART_CACHE.delete(teamId);
+    }
+  }
+
+  const cacheAndReturn = (
+    part: GeminiInlineDataPart | null
+  ): GeminiInlineDataPart | null => {
+    if (teamId) {
+      if (LEGEND_PART_CACHE.size >= 24) {
+        const oldestKey = LEGEND_PART_CACHE.keys().next().value;
+        if (oldestKey) LEGEND_PART_CACHE.delete(oldestKey);
+      }
+      LEGEND_PART_CACHE.set(teamId, {
+        expiresAt: Date.now() + 5 * 60_000,
+        part,
+      });
+    }
+    return part;
+  };
+
   try {
     const team = await db
       .select({ scorebookLegendUrl: teams.scorebookLegendUrl })
@@ -2914,20 +3010,20 @@ async function resolveLegendImagePart(
       .get();
 
     const legendUrl = team?.scorebookLegendUrl;
-    if (!legendUrl) return null;
+    if (!legendUrl) return cacheAndReturn(null);
 
     if (legendUrl.startsWith("data:")) {
       const [header, b64] = legendUrl.split(",");
       const mimeMatch = header?.match(/data:(.*?);/);
       if (b64 && b64.length <= 3_200_000) {
-        return {
+        return cacheAndReturn({
           inlineData: {
             mimeType: mimeMatch ? mimeMatch[1] : "image/png",
             data: b64.trim(),
           },
-        };
+        });
       }
-      return null;
+      return cacheAndReturn(null);
     }
 
     const marker = "/api/images/";
@@ -2938,14 +3034,14 @@ async function resolveLegendImagePart(
       if (obj) {
         const buf = await obj.arrayBuffer();
         if (buf.byteLength <= 2_500_000) {
-          return {
+          return cacheAndReturn({
             inlineData: {
               mimeType: obj.httpMetadata?.contentType || "image/png",
               data: arrayBufferToBase64(buf),
             },
-          };
+          });
         }
-        return null;
+        return cacheAndReturn(null);
       }
     }
 
@@ -2956,19 +3052,19 @@ async function resolveLegendImagePart(
     if (res.ok) {
       const buf = await res.arrayBuffer();
       if (buf.byteLength <= 2_500_000) {
-        return {
+        return cacheAndReturn({
           inlineData: {
             mimeType: res.headers.get("content-type") || "image/png",
             data: arrayBufferToBase64(buf),
           },
-        };
+        });
       }
     }
   } catch (err) {
     console.warn("[LiffScorebookV2] Legend load skipped:", err);
   }
 
-  return null;
+  return cacheAndReturn(null);
 }
 
 function inferPickoffCodeFromContext(

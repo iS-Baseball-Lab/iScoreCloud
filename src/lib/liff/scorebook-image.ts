@@ -871,27 +871,27 @@ export async function extractInningChunkCompositeCrop(
           const rowOutH =
             colCount === 1
               ? bLen <= 9
-                ? 196
-                : 176
+                ? 172
+                : 158
               : colCount === 2
-              ? 182
-              : 162;
+              ? 162
+              : 148;
           const minCellW =
-            colCount === 1 ? 268 : colCount === 2 ? 228 : 196;
+            colCount === 1 ? 244 : colCount === 2 ? 212 : 186;
           const maxCellW =
-            colCount === 1 ? 364 : colCount === 2 ? 304 : 248;
+            colCount === 1 ? 328 : colCount === 2 ? 276 : 232;
           const cellOutW = Math.max(
             minCellW,
             Math.min(maxCellW, Math.round(rowOutH * singleAspect))
           );
 
           const overviewSubColW =
-            colCount === 1 ? 136 : colCount === 2 ? 100 : 80;
+            colCount === 1 ? 124 : colCount === 2 ? 92 : 76;
           const overviewSubGap = 4;
           const overviewPanelW =
             colCount * overviewSubColW + (colCount - 1) * overviewSubGap;
-          const sectionGapW = 14;
-          const labelPanelW = colCount <= 2 ? 168 : 160;
+          const sectionGapW = 12;
+          const labelPanelW = colCount <= 2 ? 156 : 148;
           const gutterW = 8;
           const rowGapH = 6;
           const headerH = 84;
@@ -905,20 +905,16 @@ export async function extractInningChunkCompositeCrop(
             colCount * (gutterW + cellOutW);
           const totalH = headerH + bLen * (rowOutH + rowGapH) + 10;
 
-          // ソース画像を1度だけキャンバス展開してRGBAバッファから高速ホモグラフィ切り出しを行う
-          const srcCanvas = document.createElement("canvas");
-          srcCanvas.width = w;
-          srcCanvas.height = h;
-          const srcCtx = srcCanvas.getContext("2d");
+          // 同一シートの連続イニング切り出し時はRGBAバッファを再利用してスマホCPU負荷と待機時間を大幅削減
+          const cachedRgba = getDecodedSheetRgbaBuffer(sourceDataUrl, img, w, h);
 
           const canvas = document.createElement("canvas");
           canvas.width = totalW;
           canvas.height = totalH;
           const ctx = canvas.getContext("2d");
 
-          if (srcCtx && ctx) {
-            srcCtx.drawImage(img, 0, 0, w, h);
-            const fullSrcData = srcCtx.getImageData(0, 0, w, h).data;
+          if (cachedRgba && ctx) {
+            const fullSrcData = cachedRgba.data;
 
             ctx.fillStyle = "#0f172a";
             ctx.fillRect(0, 0, totalW, totalH);
@@ -1232,13 +1228,13 @@ export async function extractInningChunkCompositeCrop(
               }
             }
 
-            // メモリ解放補助
-            srcCanvas.width = 1;
-            srcCanvas.height = 1;
-
             const mimeType = "image/jpeg";
+            const outBase64 = stripDataUrlPrefix(
+              canvas.toDataURL(mimeType, 0.86)
+            );
+            releaseCanvas(canvas);
             return {
-              base64: stripDataUrlPrefix(canvas.toDataURL(mimeType, 0.93)),
+              base64: outBase64,
               mimeType,
             };
           }
@@ -1684,6 +1680,46 @@ export async function cropScorebookQuad(
   const cellUrl = dstCanvas.toDataURL("image/jpeg", 0.92);
   releaseCanvas(dstCanvas);
   return cellUrl;
+}
+
+const RECENT_SHEET_RGBA_CACHE: Array<{
+  key: string;
+  w: number;
+  h: number;
+  data: Uint8ClampedArray;
+}> = [];
+
+function getDecodedSheetRgbaBuffer(
+  sourceDataUrl: string,
+  img: HTMLImageElement,
+  w: number,
+  h: number
+): { data: Uint8ClampedArray } | null {
+  const key = `${sourceDataUrl.length}:${sourceDataUrl.slice(-64)}:${w}x${h}`;
+  const hit = RECENT_SHEET_RGBA_CACHE.find((c) => c.key === key);
+  if (hit) {
+    return { data: hit.data };
+  }
+
+  const srcCanvas = document.createElement("canvas");
+  srcCanvas.width = w;
+  srcCanvas.height = h;
+  const srcCtx = srcCanvas.getContext("2d");
+  if (!srcCtx) {
+    releaseCanvas(srcCanvas);
+    return null;
+  }
+
+  srcCtx.drawImage(img, 0, 0, w, h);
+  const data = srcCtx.getImageData(0, 0, w, h).data;
+  releaseCanvas(srcCanvas);
+
+  // 先攻・後攻の最大2枚のみ保持してメモリ肥大化を防止
+  if (RECENT_SHEET_RGBA_CACHE.length >= 2) {
+    RECENT_SHEET_RGBA_CACHE.shift();
+  }
+  RECENT_SHEET_RGBA_CACHE.push({ key, w, h, data });
+  return { data };
 }
 
 function stripDataUrlPrefix(dataUrl: string): string {

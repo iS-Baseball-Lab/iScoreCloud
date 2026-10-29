@@ -1303,7 +1303,7 @@ export function Step1MatchAndImages({
             isAnalyzingStructure ? structureActiveStartedAtMs : null
           }
           completedTimings={
-            isAnalyzingStructure ? structureCompletedTimings : []
+            isPreprocessingAny ? [] : structureCompletedTimings
           }
           errorMessage={errorMessage}
           onDismissError={onDismissError}
