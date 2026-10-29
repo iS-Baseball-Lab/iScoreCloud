@@ -25,7 +25,6 @@ import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { ScorebookCameraModal } from "@/components/liff/ScorebookCameraModal";
 import { useLiff } from "@/components/liff/LiffProvider";
-import { isAndroidClientDevice } from "@/lib/liff/liff-client";
 import {
   ensureCompactApiImage,
   preprocessScorebookImage,
@@ -86,32 +85,13 @@ export default function LiffScoreSettingsPage() {
   const [scoreSettings, setScoreSettings] = useState<LiffScoreSettings>(
     DEFAULT_LIFF_SCORE_SETTINGS
   );
-  const [isAndroidClient, setIsAndroidClient] = useState(false);
   const [isCameraModalOpen, setIsCameraModalOpen] = useState(false);
-  const legendFileInputRef = useRef<HTMLInputElement | null>(null);
   const stageSeqRef = useRef<number>(0);
-  const pickerCooldownRef = useRef<number>(0);
-
-  const fileAcceptAttr = isAndroidClient
-    ? "image/*,application/pdf,.jpg,.jpeg,.png,.webp,.heic,.heif"
-    : "image/*";
-
-  const openLegendAlbumPicker = () => {
-    const now = Date.now();
-    if (now - pickerCooldownRef.current < 500) {
-      return;
-    }
-    pickerCooldownRef.current = now;
-    const inputEl = legendFileInputRef.current;
-    if (!inputEl) return;
-    inputEl.value = "";
-    inputEl.click();
-  };
+  const SCORE_LEGEND_INPUT_ID = "score-settings-legend-file-input";
 
   // 1. 端末保存のスコア取込初期設定を読み込み
   useEffect(() => {
     setScoreSettings(loadLiffScoreSettings());
-    setIsAndroidClient(isAndroidClientDevice());
   }, []);
 
   // 2. チーム登録済みの「スコア記号早見表」URLを取得
@@ -355,22 +335,20 @@ export default function LiffScoreSettingsPage() {
   return (
     <div className="flex flex-col flex-1">
       <input
-        ref={legendFileInputRef}
+        id={SCORE_LEGEND_INPUT_ID}
         type="file"
-        accept={fileAcceptAttr}
+        accept="image/*"
         onChange={handleLegendInputChange}
         className="sr-only"
-        tabIndex={-1}
-        aria-hidden="true"
       />
 
       <ScorebookCameraModal
         isOpen={isCameraModalOpen}
         title="スコア記号早見表を撮影"
         hintText="記載例・記号早見表のページ全体が枠に入るよう撮影してください"
+        fallbackInputId={SCORE_LEGEND_INPUT_ID}
         onClose={() => setIsCameraModalOpen(false)}
         onCapture={(file) => handleSelectLegendFile(file)}
-        onFallbackToFilePicker={() => openLegendAlbumPicker()}
       />
 
       <LiffHeader />
@@ -561,15 +539,20 @@ export default function LiffScoreSettingsPage() {
                   <span>カメラで撮り直す</span>
                 </button>
 
-                <button
-                  type="button"
-                  disabled={isSavingLegend}
-                  onClick={openLegendAlbumPicker}
-                  className="py-2.5 px-3 rounded-2xl bg-card border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs hover:bg-muted/60 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
-                >
-                  <ImagePlus className="w-4 h-4 text-indigo-500 shrink-0" />
-                  <span>アルバムから変更</span>
-                </button>
+                {isSavingLegend ? (
+                  <span className="py-2.5 px-3 rounded-2xl bg-card border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 opacity-50">
+                    <ImagePlus className="w-4 h-4 text-indigo-500 shrink-0" />
+                    <span>アルバムから変更</span>
+                  </span>
+                ) : (
+                  <label
+                    htmlFor={SCORE_LEGEND_INPUT_ID}
+                    className="py-2.5 px-3 rounded-2xl bg-card border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs hover:bg-muted/60 active:scale-95 transition-all cursor-pointer"
+                  >
+                    <ImagePlus className="w-4 h-4 text-indigo-500 shrink-0" />
+                    <span>アルバムから変更</span>
+                  </label>
+                )}
               </div>
 
               {!confirmClearLegend ? (
@@ -634,15 +617,20 @@ export default function LiffScoreSettingsPage() {
                   <span>カメラ撮影</span>
                 </button>
 
-                <button
-                  type="button"
-                  disabled={isSavingLegend}
-                  onClick={openLegendAlbumPicker}
-                  className="py-3 px-3 rounded-2xl bg-card border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs hover:bg-muted/60 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
-                >
-                  <ImagePlus className="w-4 h-4 text-indigo-500 shrink-0" />
-                  <span>アルバム選択</span>
-                </button>
+                {isSavingLegend ? (
+                  <span className="py-3 px-3 rounded-2xl bg-card border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 opacity-50">
+                    <ImagePlus className="w-4 h-4 text-indigo-500 shrink-0" />
+                    <span>アルバム選択</span>
+                  </span>
+                ) : (
+                  <label
+                    htmlFor={SCORE_LEGEND_INPUT_ID}
+                    className="py-3 px-3 rounded-2xl bg-card border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs hover:bg-muted/60 active:scale-95 transition-all cursor-pointer"
+                  >
+                    <ImagePlus className="w-4 h-4 text-indigo-500 shrink-0" />
+                    <span>アルバム選択</span>
+                  </label>
+                )}
               </div>
             </div>
           )}

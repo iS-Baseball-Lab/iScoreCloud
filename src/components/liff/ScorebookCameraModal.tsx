@@ -21,9 +21,10 @@ export interface ScorebookCameraModalProps {
   isOpen: boolean;
   title: string;
   hintText?: string;
+  /** ネイティブ <label htmlFor> で直接アクティベートする常駐 <input type="file"> の id */
+  fallbackInputId?: string;
   onClose: () => void;
   onCapture: (file: File) => void;
-  onFallbackToFilePicker?: () => void;
 }
 
 type CameraStatus = "starting" | "ready" | "capturing" | "error";
@@ -32,9 +33,9 @@ export function ScorebookCameraModal({
   isOpen,
   title,
   hintText = "1ページ（片面）全体が枠いっぱいに入るよう、影を避けて真上から撮影してください",
+  fallbackInputId,
   onClose,
   onCapture,
-  onFallbackToFilePicker,
 }: ScorebookCameraModalProps) {
   const [mounted, setMounted] = useState(false);
   const [facingMode, setFacingMode] = useState<"environment" | "user">(
@@ -73,6 +74,49 @@ export function ScorebookCameraModal({
     }
   }, []);
 
+  const waitForVideoFrames = async (
+    videoEl: HTMLVideoElement,
+    timeoutMs: number
+  ): Promise<boolean> => {
+    if (videoEl.readyState >= 2 && videoEl.videoWidth >= 64) {
+      return true;
+    }
+
+    return new Promise<boolean>((resolve) => {
+      let settled = false;
+      const finish = (ok: boolean) => {
+        if (settled) return;
+        settled = true;
+        clearInterval(pollTimer);
+        clearTimeout(timeoutTimer);
+        videoEl.removeEventListener("loadeddata", handleReady);
+        videoEl.removeEventListener("playing", handleReady);
+        videoEl.removeEventListener("resize", handleReady);
+        resolve(ok);
+      };
+
+      const handleReady = () => {
+        if (videoEl.videoWidth >= 64 && videoEl.videoHeight >= 64) {
+          finish(true);
+        }
+      };
+
+      videoEl.addEventListener("loadeddata", handleReady);
+      videoEl.addEventListener("playing", handleReady);
+      videoEl.addEventListener("resize", handleReady);
+
+      const pollTimer = setInterval(() => {
+        if (videoEl.videoWidth >= 64 && videoEl.videoHeight >= 64) {
+          finish(true);
+        }
+      }, 90);
+
+      const timeoutTimer = setTimeout(() => {
+        finish(videoEl.videoWidth >= 64 && videoEl.videoHeight >= 64);
+      }, timeoutMs);
+    });
+  };
+
   const startCamera = useCallback(
     async (targetFacing: "environment" | "user") => {
       const seq = ++startSeqRef.current;
@@ -87,7 +131,7 @@ export function ScorebookCameraModal({
       ) {
         setStatus("error");
         setErrorDetail(
-          "お使いのブラウザ環境ではアプリ内カメラ機能がサポートされていません。「写真・ファイル選択」または標準ブラウザ（Chrome等）をご利用ください。"
+          "このブラウザではアプリ内カメラ機能がサポートされていません。下の「アルバムから写真を選択」または「Chromeで開く」をご利用ください。"
         );
         return;
       }
@@ -110,12 +154,13 @@ export function ScorebookCameraModal({
         }
       };
 
+      // Android WebViewのSurfaceTextureで黒画面にならないFull HD(1920x1080)を最優先にする
       const candidateConstraints: MediaStreamConstraints[] = [
         {
           video: {
             facingMode: { ideal: targetFacing },
-            width: { ideal: 2560 },
-            height: { ideal: 1920 },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
           },
           audio: false,
         },
@@ -134,7 +179,37 @@ export function ScorebookCameraModal({
 
       for (const c of candidateConstraints) {
         try {
-          acquiredStream = await requestWithTimeout(c);
+          const candidateStream = await requestWithTimeout(c);
+          if (startSeqRef.current !== seq) {
+            for (const track of candidateStream.getTracks()) {
+              try {
+                track.stop();
+              } catch {
+                // ignore
+              }
+            }
+            return;
+          }
+
+          streamRef.current = candidateStream;
+          const videoEl = videoRef.current;
+          if (videoEl) {
+            videoEl.srcObject = candidateStream;
+            try {
+              await videoEl.play();
+            } catch {
+              // autoPlay + muted で再生開始される環境では無視可能
+            }
+            const hasFrames = await waitForVideoFrames(videoEl, 4500);
+            if (!hasFrames) {
+              // 映像フレームが届かない黒画面ストリームは解放し、より互換性の高い次候補へフォールバック
+              stopActiveStream();
+              lastErr = new Error("CAMERA_EMPTY_STREAM");
+              continue;
+            }
+          }
+
+          acquiredStream = candidateStream;
           break;
         } catch (err) {
           lastErr = err;
@@ -144,7 +219,6 @@ export function ScorebookCameraModal({
               : err instanceof Error
               ? err.message
               : "";
-          // 権限拒否またはタイムアウトの場合は別制約で再試行せず即フォールバック案内へ移行
           if (
             errName === "NotAllowedError" ||
             errName === "PermissionDeniedError" ||
@@ -157,15 +231,7 @@ export function ScorebookCameraModal({
       }
 
       if (startSeqRef.current !== seq) {
-        if (acquiredStream) {
-          for (const track of acquiredStream.getTracks()) {
-            try {
-              track.stop();
-            } catch {
-              // ignore
-            }
-          }
-        }
+        stopActiveStream();
         return;
       }
 
@@ -178,30 +244,19 @@ export function ScorebookCameraModal({
           errName === "PermissionDeniedError"
         ) {
           setErrorDetail(
-            "カメラへのアクセスが許可されていません。端末の設定でLINE（またはブラウザ）のカメラ権限を許可するか、下の「写真・ファイル選択」をご利用ください。"
+            "LINEにカメラ権限が許可されていないため起動できませんでした。スマホの「設定 ＞ アプリ ＞ LINE ＞ 権限 ＞ カメラ」を許可するか、標準カメラで撮影済みの写真を「アルバムから選択」してください。"
           );
         } else if (msg === "CAMERA_START_TIMEOUT") {
           setErrorDetail(
-            "LINE内ブラウザでのカメラ起動がタイムアウトしました。「写真・ファイル選択」から撮影済み画像を読み込むか、標準ブラウザ（Chrome等）で開いてください。"
+            "LINE内ブラウザでのカメラ起動がタイムアウトしました。下の「アルバムから写真を選択」または「Chromeで開く」をご利用ください。"
           );
         } else {
           setErrorDetail(
-            "カメラを起動できませんでした。「写真・ファイル選択」から画像を読み込むか、標準ブラウザ（Chrome等）で開いてお試しください。"
+            "LINE内ブラウザでカメラ映像を取得できませんでした。スマホ標準カメラで撮影済みの写真を「アルバムから選択」するか、「Chromeで開く」をお試しください。"
           );
         }
         setStatus("error");
         return;
-      }
-
-      streamRef.current = acquiredStream;
-      const videoEl = videoRef.current;
-      if (videoEl) {
-        videoEl.srcObject = acquiredStream;
-        try {
-          await videoEl.play();
-        } catch {
-          // autoPlay + muted で再生開始されるため無視可能
-        }
       }
 
       if (startSeqRef.current === seq) {
@@ -365,26 +420,26 @@ export function ScorebookCameraModal({
         </button>
       </div>
 
-      {/* 中央カメラプレビュー ／ フォールバック案内 */}
-      <div className="relative flex-1 bg-black flex items-center justify-center overflow-hidden">
+      {/* 中央カメラプレビュー（min-h-0 + absolute inset-0 でWebViewの0px崩壊・黒画面を完全防止） */}
+      <div className="relative flex-1 min-h-0 bg-black overflow-hidden">
         <video
           ref={videoRef}
           autoPlay
           playsInline
           muted
-          className={`w-full h-full object-contain ${
+          className={`absolute inset-0 w-full h-full object-contain ${
             status === "error" ? "hidden" : "block"
           }`}
         />
 
         {/* スコアブック4隅ガイド枠 */}
         {status === "ready" && (
-          <div className="pointer-events-none absolute inset-4 sm:inset-6 border-2 border-dashed border-sky-400/75 rounded-2xl flex flex-col justify-between p-3">
+          <div className="pointer-events-none absolute inset-4 sm:inset-6 border-2 border-dashed border-sky-400/75 rounded-2xl flex flex-col justify-between p-3 z-10">
             <div className="flex justify-between">
               <span className="w-5 h-5 border-t-4 border-l-4 border-sky-400 rounded-tl-md" />
               <span className="w-5 h-5 border-t-4 border-r-4 border-sky-400 rounded-tr-md" />
             </div>
-            <div className="mx-auto px-3 py-1 rounded-full bg-slate-950/85 border border-slate-700 text-[11px] font-black text-sky-300 text-center">
+            <div className="mx-auto px-3 py-1 rounded-full bg-slate-950 border border-slate-700 text-[11px] font-black text-sky-300 text-center">
               {hintText}
             </div>
             <div className="flex justify-between">
@@ -395,12 +450,12 @@ export function ScorebookCameraModal({
         )}
 
         {(status === "starting" || status === "capturing") && (
-          <div className="absolute inset-0 bg-slate-950/90 flex flex-col items-center justify-center gap-3 px-6 text-center">
+          <div className="absolute inset-0 z-20 bg-slate-950 flex flex-col items-center justify-center gap-3 px-6 text-center">
             <Loader2 className="w-8 h-8 animate-spin text-indigo-400" />
             <p className="text-xs font-black text-white">
               {status === "capturing"
                 ? "高精細画像を切り出しています..."
-                : "カメラを起動しています..."}
+                : "カメラ映像を準備しています..."}
             </p>
             <p className="text-[11px] font-bold text-slate-300">
               カメラの許可ダイアログが表示された場合は「許可」を押してください
@@ -409,58 +464,55 @@ export function ScorebookCameraModal({
         )}
 
         {status === "error" && (
-          <div className="max-w-sm w-full mx-4 p-5 rounded-3xl bg-slate-900 border-2 border-slate-700 space-y-4 text-center shadow-lg">
-            <div className="w-12 h-12 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center mx-auto">
-              <AlertCircle className="w-6 h-6" />
-            </div>
+          <div className="absolute inset-0 z-20 flex items-center justify-center p-4 overflow-y-auto">
+            <div className="max-w-sm w-full p-5 rounded-3xl bg-slate-900 border-2 border-slate-700 space-y-4 text-center shadow-lg">
+              <div className="w-12 h-12 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center mx-auto">
+                <AlertCircle className="w-6 h-6" />
+              </div>
 
-            <div className="space-y-1.5">
-              <h3 className="text-sm font-black text-white">
-                アプリ内カメラを起動できませんでした
-              </h3>
-              <p className="text-xs font-bold text-slate-300 leading-relaxed">
-                {errorDetail}
-              </p>
-            </div>
+              <div className="space-y-1.5">
+                <h3 className="text-sm font-black text-white">
+                  アプリ内カメラを起動できませんでした
+                </h3>
+                <p className="text-xs font-bold text-slate-300 leading-relaxed">
+                  {errorDetail}
+                </p>
+              </div>
 
-            <div className="space-y-2 pt-1">
-              {onFallbackToFilePicker && (
+              <div className="space-y-2 pt-1">
+                {fallbackInputId && (
+                  <label
+                    htmlFor={fallbackInputId}
+                    onClick={handleClose}
+                    className="w-full py-3 px-4 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black flex items-center justify-center gap-2 cursor-pointer active:scale-95 transition-all"
+                  >
+                    <ImagePlus className="w-4 h-4 shrink-0" />
+                    <span>アルバムから写真を選択する</span>
+                  </label>
+                )}
+
+                {inLine && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      openCurrentPageInExternalBrowser();
+                    }}
+                    className="w-full py-3 px-4 rounded-2xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-black flex items-center justify-center gap-2 cursor-pointer active:scale-95 transition-all"
+                  >
+                    <ExternalLink className="w-4 h-4 shrink-0" />
+                    <span>標準ブラウザ（Chrome等）で開く</span>
+                  </button>
+                )}
+
                 <button
                   type="button"
-                  onClick={() => {
-                    handleClose();
-                    window.setTimeout(() => {
-                      onFallbackToFilePicker();
-                    }, 80);
-                  }}
-                  className="w-full py-3 px-4 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black flex items-center justify-center gap-2 cursor-pointer active:scale-95 transition-all"
+                  onClick={() => void startCamera(facingMode)}
+                  className="w-full py-2.5 px-4 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer"
                 >
-                  <ImagePlus className="w-4 h-4 shrink-0" />
-                  <span>写真・ファイル選択から読み込む</span>
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>もう一度カメラ起動を試す</span>
                 </button>
-              )}
-
-              {inLine && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    openCurrentPageInExternalBrowser();
-                  }}
-                  className="w-full py-3 px-4 rounded-2xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-black flex items-center justify-center gap-2 cursor-pointer active:scale-95 transition-all"
-                >
-                  <ExternalLink className="w-4 h-4 shrink-0" />
-                  <span>標準ブラウザ（Chrome等）で開く</span>
-                </button>
-              )}
-
-              <button
-                type="button"
-                onClick={() => void startCamera(facingMode)}
-                className="w-full py-2.5 px-4 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                <span>もう一度カメラ起動を試す</span>
-              </button>
+              </div>
             </div>
           </div>
         )}
@@ -469,23 +521,17 @@ export function ScorebookCameraModal({
       {/* 下部シャッター操作バー */}
       {status !== "error" && (
         <div className="px-4 py-4 pb-7 bg-slate-900 border-t border-slate-800 flex items-center justify-between gap-3 shrink-0">
-          {onFallbackToFilePicker ? (
-            <button
-              type="button"
-              disabled={status === "capturing"}
-              onClick={() => {
-                handleClose();
-                window.setTimeout(() => {
-                  onFallbackToFilePicker();
-                }, 80);
-              }}
-              className="py-2.5 px-3 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white text-[11px] font-black flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+          {fallbackInputId && status !== "capturing" ? (
+            <label
+              htmlFor={fallbackInputId}
+              onClick={handleClose}
+              className="py-2.5 px-3 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white text-[11px] font-black flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all"
             >
               <ImagePlus className="w-4 h-4 text-indigo-400 shrink-0" />
-              <span>ファイル選択</span>
-            </button>
+              <span>アルバム</span>
+            </label>
           ) : (
-            <div className="w-24" />
+            <div className="w-20" />
           )}
 
           <button
@@ -513,4 +559,3 @@ export function ScorebookCameraModal({
     document.body
   );
 }
-

@@ -17,8 +17,10 @@ import {
 import {
   clearScorebookDraft,
   loadScorebookDraft,
+  peekScorebookDraftMeta,
   reconstructFileFromDataUrlAsync,
   saveScorebookDraft,
+  type ScorebookDraftMeta,
 } from "@/lib/liff/scorebook-draft";
 import { loadLiffScoreSettings } from "@/lib/liff/score-settings";
 import {
@@ -244,6 +246,9 @@ export default function LiffScorebookImportPage() {
     Map<string, { atBats: ScorebookV2AtBat[]; nextLeadOffOrder?: number }>
   >(new Map());
   const [isDraftReady, setIsDraftReady] = useState(false);
+  const [availableDraftMeta, setAvailableDraftMeta] =
+    useState<ScorebookDraftMeta | null>(null);
+  const [isRestoringDraft, setIsRestoringDraft] = useState(false);
   const [lastAutoSavedAt, setLastAutoSavedAt] = useState<number | null>(null);
   const [restoredDraftBannerAt, setRestoredDraftBannerAt] = useState<
     number | null
@@ -256,7 +261,7 @@ export default function LiffScorebookImportPage() {
     return `${hh}:${mm}`;
   };
 
-  // 1. チーム選手名鑑・試合一覧の読み込み ＋ 保存済み下書きの自動復元
+  // 1. チーム選手名鑑・試合一覧の読み込み（初期表示時は巨大画像の自動展開を行わずメモリ負荷ゼロで起動）
   const fetchContext = useCallback(async () => {
     try {
       setIsLoadingContext(true);
@@ -282,87 +287,19 @@ export default function LiffScorebookImportPage() {
 
       if (hasRestoredTeamRef.current !== effectiveTeamId) {
         hasRestoredTeamRef.current = effectiveTeamId;
-        const draft = await loadScorebookDraft(effectiveTeamId);
-        const hasDraftContent =
-          draft !== null &&
-          (draft.step >= 2 ||
-            Boolean(draft.topImage.processed) ||
-            Boolean(draft.bottomImage.processed) ||
-            Boolean(draft.topStructure) ||
-            Boolean(draft.bottomStructure) ||
-            draft.topAtBats.length > 0 ||
-            draft.bottomAtBats.length > 0);
-
-        if (hasDraftContent && draft) {
-          setImportScope(draft.importScope);
-          const matchExists = fetchedMatches.some(
-            (m) => m.id === draft.selectedMatchId
-          );
-          if (matchExists) {
-            setSelectedMatchId(draft.selectedMatchId);
-          } else if (fetchedMatches.length > 0) {
-            setSelectedMatchId(fetchedMatches[0].id);
-          }
-
-          if (draft.topImage.processed) {
-            const topFile = await reconstructFileFromDataUrlAsync(
-              draft.topImage.processed.dataUrl,
-              draft.topImage.fileName || "scorebook-top.jpg"
-            );
-            setTopImage({
-              ...createInitialSheetImageState(),
-              file: topFile,
-              enhancePencil: draft.topImage.enhancePencil,
-              processed: draft.topImage.processed,
-            });
-          }
-
-          if (draft.bottomImage.processed) {
-            const bottomFile = await reconstructFileFromDataUrlAsync(
-              draft.bottomImage.processed.dataUrl,
-              draft.bottomImage.fileName || "scorebook-bottom.jpg"
-            );
-            setBottomImage({
-              ...createInitialSheetImageState(),
-              file: bottomFile,
-              enhancePencil: draft.bottomImage.enhancePencil,
-              processed: draft.bottomImage.processed,
-            });
-          }
-
-          setLegendOverride(draft.legendOverride);
-          setTopStructure(draft.topStructure);
-          setBottomStructure(draft.bottomStructure);
-          setTopAtBats(draft.topAtBats);
-          setBottomAtBats(draft.bottomAtBats);
-
-          if (
-            draft.step === 3 &&
-            (draft.topAtBats.length > 0 || draft.bottomAtBats.length > 0)
-          ) {
-            setStep(3);
-          } else if (
-            draft.step >= 2 &&
-            (draft.topStructure || draft.bottomStructure)
-          ) {
-            setStep(2);
-          } else {
-            setStep(1);
-          }
-
-          setLastAutoSavedAt(draft.savedAt);
-          setRestoredDraftBannerAt(draft.savedAt);
-        } else {
-          const prefs = loadLiffScoreSettings();
-          setImportScope(prefs.defaultImportScope);
-          setTopImage(createInitialSheetImageState(prefs.defaultEnhancePencil));
-          setBottomImage(
-            createInitialSheetImageState(prefs.defaultEnhancePencil)
-          );
-          if (fetchedMatches.length > 0) {
-            setSelectedMatchId((prev) => prev || fetchedMatches[0].id);
-          }
+        const prefs = loadLiffScoreSettings();
+        setImportScope(prefs.defaultImportScope);
+        setTopImage(createInitialSheetImageState(prefs.defaultEnhancePencil));
+        setBottomImage(
+          createInitialSheetImageState(prefs.defaultEnhancePencil)
+        );
+        if (fetchedMatches.length > 0) {
+          setSelectedMatchId((prev) => prev || fetchedMatches[0].id);
         }
+
+        // 軽量メタ情報（約150B）のみで前回下書きの有無を確認し、必要時のみボタン押下で復元する
+        const draftMeta = peekScorebookDraftMeta(effectiveTeamId);
+        setAvailableDraftMeta(draftMeta);
         setIsDraftReady(true);
       } else if (fetchedMatches.length > 0) {
         setSelectedMatchId((prev) => prev || fetchedMatches[0].id);
@@ -375,6 +312,82 @@ export default function LiffScorebookImportPage() {
       setIsLoadingContext(false);
     }
   }, [currentTeam?.id]);
+
+  const handleRestoreSavedDraft = async () => {
+    if (isRestoringDraft) return;
+    setIsRestoringDraft(true);
+    setErrorBanner(null);
+    try {
+      const teamKey = resolvedTeamId || currentTeam?.id || "default";
+      const draft = await loadScorebookDraft(teamKey);
+      if (!draft) {
+        await clearScorebookDraft(teamKey);
+        setAvailableDraftMeta(null);
+        return;
+      }
+
+      setImportScope(draft.importScope);
+      const matchExists = matches.some((m) => m.id === draft.selectedMatchId);
+      if (matchExists) {
+        setSelectedMatchId(draft.selectedMatchId);
+      }
+
+      if (draft.topImage.processed) {
+        const topFile = await reconstructFileFromDataUrlAsync(
+          draft.topImage.processed.dataUrl,
+          draft.topImage.fileName || "scorebook-top.jpg"
+        );
+        setTopImage({
+          ...createInitialSheetImageState(),
+          file: topFile,
+          enhancePencil: draft.topImage.enhancePencil,
+          processed: draft.topImage.processed,
+        });
+      }
+
+      if (draft.bottomImage.processed) {
+        const bottomFile = await reconstructFileFromDataUrlAsync(
+          draft.bottomImage.processed.dataUrl,
+          draft.bottomImage.fileName || "scorebook-bottom.jpg"
+        );
+        setBottomImage({
+          ...createInitialSheetImageState(),
+          file: bottomFile,
+          enhancePencil: draft.bottomImage.enhancePencil,
+          processed: draft.bottomImage.processed,
+        });
+      }
+
+      setLegendOverride(draft.legendOverride);
+      setTopStructure(draft.topStructure);
+      setBottomStructure(draft.bottomStructure);
+      setTopAtBats(draft.topAtBats);
+      setBottomAtBats(draft.bottomAtBats);
+
+      if (
+        draft.step === 3 &&
+        (draft.topAtBats.length > 0 || draft.bottomAtBats.length > 0)
+      ) {
+        setStep(3);
+      } else if (
+        draft.step >= 2 &&
+        (draft.topStructure || draft.bottomStructure)
+      ) {
+        setStep(2);
+      } else {
+        setStep(1);
+      }
+
+      setAvailableDraftMeta(null);
+      setLastAutoSavedAt(draft.savedAt);
+      setRestoredDraftBannerAt(draft.savedAt);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setErrorBanner(`下書きの復元に失敗しました: ${msg}`);
+    } finally {
+      setIsRestoringDraft(false);
+    }
+  };
 
   useEffect(() => {
     fetchContext();
@@ -452,6 +465,8 @@ export default function LiffScorebookImportPage() {
       return;
     }
 
+    setAvailableDraftMeta(null);
+
     const timer = setTimeout(() => {
       void saveScorebookDraft(teamKey, {
         step: step === 3 ? 3 : step === 2 ? 2 : 1,
@@ -525,6 +540,7 @@ export default function LiffScorebookImportPage() {
     setBottomAtBats([]);
     setSaveSummary(null);
     setErrorBanner(null);
+    setAvailableDraftMeta(null);
     setLastAutoSavedAt(null);
     setRestoredDraftBannerAt(null);
     setStep(1);
@@ -1437,7 +1453,53 @@ export default function LiffScorebookImportPage() {
           )}
         </div>
 
-        {/* 前回の途中入力を自動復元した際の通知バナー */}
+        {/* 前回の途中データがある場合のオンデマンド復元バナー（初期表示時はメモリに読み込まず軽快に起動） */}
+        {step === 1 && availableDraftMeta && !lastAutoSavedAt && (
+          <div className="p-3.5 rounded-2xl bg-card border-2 border-indigo-500/45 shadow-xs space-y-2.5">
+            <div className="flex items-start gap-2">
+              <RotateCcw className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
+              <div className="space-y-0.5 min-w-0">
+                <p className="text-xs font-black text-foreground">
+                  前回入力途中の下書き（{formatSavedTime(availableDraftMeta.savedAt)} 保存 / STEP {availableDraftMeta.step}）があります
+                </p>
+                <p className="text-[10px] font-bold text-muted-foreground">
+                  新しく撮影を始める場合はこのまま下へ進めます。前回の続きを開く場合は「続きから復元」を押してください。
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={isRestoringDraft}
+                onClick={() => void handleRestoreSavedDraft()}
+                className="flex-1 py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 transition-all"
+              >
+                {isRestoringDraft ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>復元中...</span>
+                  </>
+                ) : (
+                  <>
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>続きから復元</span>
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                disabled={isRestoringDraft}
+                onClick={() => void handleDiscardDraft()}
+                className="py-2 px-3 rounded-xl bg-muted hover:bg-destructive/10 border border-border text-xs font-black text-muted-foreground hover:text-destructive flex items-center gap-1 cursor-pointer active:scale-95 transition-all"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>破棄</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* 前回の途中入力を復元した際の通知バナー */}
         {step !== 4 && restoredDraftBannerAt && (
           <div className="p-3 rounded-2xl bg-card border border-emerald-500/45 shadow-2xs flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">

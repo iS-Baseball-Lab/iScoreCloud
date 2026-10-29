@@ -349,10 +349,7 @@ export function Step1MatchAndImages({
 }: Step1MatchAndImagesProps) {
   const { isInClient } = useLiff();
   const [isAndroidClient, setIsAndroidClient] = useState(false);
-  const albumInputRef = useRef<HTMLInputElement | null>(null);
-  const pendingPickerTargetRef = useRef<ImagePickerTarget>("top");
   const lastCameraTargetRef = useRef<ImagePickerTarget>("top");
-  const pickerCooldownRef = useRef<number>(0);
   const [cameraTarget, setCameraTarget] = useState<ImagePickerTarget | null>(
     null
   );
@@ -384,28 +381,19 @@ export function Step1MatchAndImages({
     "perspective"
   );
 
-  // Android LINE内WebViewでは純粋な accept="image/*" や capture 指定が PhotoPicker / FileChooser のデッドロックを引き起こすため、
-  // Androidでは標準のシステムファイル選択（ACTION_GET_CONTENT）が起動する複合MIME指定へ自動切替する
-  const fileAcceptAttr = isAndroidClient
-    ? "image/*,application/pdf,.jpg,.jpeg,.png,.webp,.heic,.heif"
-    : "image/*";
+  const SHEET_TOP_INPUT_ID = "scorebook-sheet-top-file-input";
+  const SHEET_BOTTOM_INPUT_ID = "scorebook-sheet-bottom-file-input";
+  const LEGEND_OVERRIDE_INPUT_ID = "scorebook-legend-override-file-input";
+
+  const getInputIdForTarget = (target: ImagePickerTarget): string => {
+    if (target === "top") return SHEET_TOP_INPUT_ID;
+    if (target === "bottom") return SHEET_BOTTOM_INPUT_ID;
+    return LEGEND_OVERRIDE_INPUT_ID;
+  };
 
   const openCameraModal = (target: ImagePickerTarget) => {
     lastCameraTargetRef.current = target;
     setCameraTarget(target);
-  };
-
-  const openAlbumPicker = (target: ImagePickerTarget) => {
-    const now = Date.now();
-    if (now - pickerCooldownRef.current < 500) {
-      return;
-    }
-    pickerCooldownRef.current = now;
-    pendingPickerTargetRef.current = target;
-    const inputEl = albumInputRef.current;
-    if (!inputEl) return;
-    inputEl.value = "";
-    inputEl.click();
   };
 
   const dispatchPickedFile = (target: ImagePickerTarget, file: File) => {
@@ -424,15 +412,16 @@ export function Step1MatchAndImages({
     }
   };
 
-  const handleAlbumInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleNativeFileChange = (
+    target: ImagePickerTarget,
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
     const picked = e.currentTarget.files?.[0] ?? null;
     e.currentTarget.value = "";
     if (!picked) return;
-    const target = pendingPickerTargetRef.current;
-    // モバイルWebViewのネイティブファイル選択終了アニメーション＆フォーカス復帰を待ってからReact状態を更新する
     window.setTimeout(() => {
       dispatchPickedFile(target, picked);
-    }, 80);
+    }, 60);
   };
 
   const handleCameraCaptured = (target: ImagePickerTarget, file: File) => {
@@ -557,15 +546,23 @@ export function Step1MatchAndImages({
                 <span>カメラ撮影</span>
               </button>
 
-              <button
-                type="button"
-                disabled={isControlsDisabled}
-                onClick={() => openAlbumPicker(isTop ? "top" : "bottom")}
-                className="py-3 px-3 rounded-2xl bg-card border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs hover:bg-muted/60 active:scale-95 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <ImagePlus className="w-4 h-4 text-indigo-500 shrink-0" />
-                <span>アルバム選択</span>
-              </button>
+              {isControlsDisabled ? (
+                <span
+                  aria-disabled="true"
+                  className="py-3 px-3 rounded-2xl bg-card border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 opacity-50 cursor-not-allowed"
+                >
+                  <ImagePlus className="w-4 h-4 text-indigo-500 shrink-0" />
+                  <span>アルバム選択</span>
+                </span>
+              ) : (
+                <label
+                  htmlFor={isTop ? SHEET_TOP_INPUT_ID : SHEET_BOTTOM_INPUT_ID}
+                  className="py-3 px-3 rounded-2xl bg-card border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs hover:bg-muted/60 active:scale-95 transition-all cursor-pointer"
+                >
+                  <ImagePlus className="w-4 h-4 text-indigo-500 shrink-0" />
+                  <span>アルバム選択</span>
+                </label>
+              )}
             </div>
           </div>
         ) : (
@@ -698,15 +695,23 @@ export function Step1MatchAndImages({
                   <span>カメラで撮り直す</span>
                 </button>
 
-                <button
-                  type="button"
-                  disabled={isControlsDisabled}
-                  onClick={() => openAlbumPicker(isTop ? "top" : "bottom")}
-                  className="py-1.5 px-2 rounded-xl bg-card hover:bg-muted border border-border text-[10px] font-black text-muted-foreground hover:text-foreground flex items-center justify-center gap-1 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <ImagePlus className="w-3 h-3 text-indigo-500 shrink-0" />
-                  <span>別画像に変更</span>
-                </button>
+                {isControlsDisabled ? (
+                  <span
+                    aria-disabled="true"
+                    className="py-1.5 px-2 rounded-xl bg-card border border-border text-[10px] font-black text-muted-foreground flex items-center justify-center gap-1 opacity-50 cursor-not-allowed"
+                  >
+                    <ImagePlus className="w-3 h-3 text-indigo-500 shrink-0" />
+                    <span>別画像に変更</span>
+                  </span>
+                ) : (
+                  <label
+                    htmlFor={isTop ? SHEET_TOP_INPUT_ID : SHEET_BOTTOM_INPUT_ID}
+                    className="py-1.5 px-2 rounded-xl bg-card hover:bg-muted border border-border text-[10px] font-black text-muted-foreground hover:text-foreground flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                  >
+                    <ImagePlus className="w-3 h-3 text-indigo-500 shrink-0" />
+                    <span>別画像に変更</span>
+                  </label>
+                )}
               </div>
             )}
 
@@ -866,27 +871,39 @@ export function Step1MatchAndImages({
 
   return (
     <div className="space-y-4">
-      {/* 常駐型・単一ファイル入力（条件分岐でアンマウントされずWebViewのレスポンダーロックを完全回避） */}
+      {/* 常駐型・ネイティブ <label htmlFor> 直結ファイル入力（capture属性なし・JS .click() なし・条件分岐アンマウントなし） */}
       <input
-        ref={albumInputRef}
+        id={SHEET_TOP_INPUT_ID}
         type="file"
-        accept={fileAcceptAttr}
-        onChange={handleAlbumInputChange}
+        accept="image/*"
+        onChange={(e) => handleNativeFileChange("top", e)}
         className="sr-only"
-        tabIndex={-1}
-        aria-hidden="true"
+      />
+      <input
+        id={SHEET_BOTTOM_INPUT_ID}
+        type="file"
+        accept="image/*"
+        onChange={(e) => handleNativeFileChange("bottom", e)}
+        className="sr-only"
+      />
+      <input
+        id={LEGEND_OVERRIDE_INPUT_ID}
+        type="file"
+        accept="image/*"
+        onChange={(e) => handleNativeFileChange("legend", e)}
+        className="sr-only"
       />
 
       {/* アプリ内専用WebRTCカメラモーダル（<input capture> を使わないためAndroid LINEのFileChooserフリーズを完全回避） */}
       <ScorebookCameraModal
         isOpen={cameraTarget !== null}
         title={activeCameraTitle}
+        fallbackInputId={getInputIdForTarget(
+          cameraTarget ?? lastCameraTargetRef.current
+        )}
         onClose={() => setCameraTarget(null)}
         onCapture={(file) => {
           handleCameraCaptured(lastCameraTargetRef.current, file);
-        }}
-        onFallbackToFilePicker={() => {
-          openAlbumPicker(lastCameraTargetRef.current);
         }}
       />
 
@@ -1129,11 +1146,11 @@ export function Step1MatchAndImages({
       {isAndroidClient && isInClient && (
         <div className="p-3 rounded-2xl bg-card border border-sky-500/35 flex items-center justify-between gap-2.5 shadow-2xs">
           <p className="text-[10px] font-bold text-muted-foreground leading-relaxed">
-            LINE内ブラウザで写真選択が開きにくい場合は、そのまま動く
+            LINE内ブラウザで写真選択が固まる状態になった場合は、
             <strong className="text-foreground font-black">
-              「カメラ撮影」
+              スマホのタスク一覧からLINEアプリ自体を一度スワイプ終了
             </strong>
-            を使うか、標準ブラウザ（Chrome）へ切り替えできます。
+            するか、右のChromeで開くと即解消します。
           </p>
           <button
             type="button"
@@ -1222,16 +1239,20 @@ export function Step1MatchAndImages({
             </div>
 
             <div className="flex justify-end">
-              <button
-                type="button"
-                disabled={isLegendProcessing || isAnalyzingStructure}
-                onClick={() => openAlbumPicker("legend")}
-                className="py-1 px-2 rounded-lg text-[10px] font-bold text-muted-foreground hover:text-foreground underline underline-offset-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isLegendProcessing
-                  ? "早見表を読み込み中..."
-                  : "この試合だけ別の早見表を一時添付する"}
-              </button>
+              {isLegendProcessing || isAnalyzingStructure ? (
+                <span className="py-1 px-2 rounded-lg text-[10px] font-bold text-muted-foreground opacity-50">
+                  {isLegendProcessing
+                    ? "早見表を読み込み中..."
+                    : "この試合だけ別の早見表を一時添付する"}
+                </span>
+              ) : (
+                <label
+                  htmlFor={LEGEND_OVERRIDE_INPUT_ID}
+                  className="py-1 px-2 rounded-lg text-[10px] font-bold text-muted-foreground hover:text-foreground underline underline-offset-2 cursor-pointer"
+                >
+                  この試合だけ別の早見表を一時添付する
+                </label>
+              )}
             </div>
           </div>
         ) : (
@@ -1253,17 +1274,21 @@ export function Step1MatchAndImages({
                 <span>スコア設定で早見表を登録する</span>
               </Link>
 
-              <button
-                type="button"
-                disabled={isLegendProcessing || isAnalyzingStructure}
-                onClick={() => openAlbumPicker("legend")}
-                className="py-2.5 px-3 rounded-xl bg-card hover:bg-muted border border-border text-[10px] font-black text-muted-foreground hover:text-foreground shrink-0 flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isLegendProcessing && (
-                  <Loader2 className="w-3 h-3 animate-spin text-indigo-500" />
-                )}
-                <span>{isLegendProcessing ? "読込中..." : "今回のみ添付"}</span>
-              </button>
+              {isLegendProcessing || isAnalyzingStructure ? (
+                <span className="py-2.5 px-3 rounded-xl bg-card border border-border text-[10px] font-black text-muted-foreground shrink-0 flex items-center gap-1 opacity-50">
+                  {isLegendProcessing && (
+                    <Loader2 className="w-3 h-3 animate-spin text-indigo-500" />
+                  )}
+                  <span>{isLegendProcessing ? "読込中..." : "今回のみ添付"}</span>
+                </span>
+              ) : (
+                <label
+                  htmlFor={LEGEND_OVERRIDE_INPUT_ID}
+                  className="py-2.5 px-3 rounded-xl bg-card hover:bg-muted border border-border text-[10px] font-black text-muted-foreground hover:text-foreground shrink-0 flex items-center gap-1 transition-colors cursor-pointer"
+                >
+                  <span>今回のみ添付</span>
+                </label>
+              )}
             </div>
           </div>
         )}

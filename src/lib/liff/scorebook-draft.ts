@@ -19,6 +19,15 @@ export interface SavedSheetImageDraft {
   processed: PreprocessedScorebookImage | null;
 }
 
+export interface ScorebookDraftMeta {
+  savedAt: number;
+  step: 1 | 2 | 3;
+  selectedMatchId: string;
+  importScope: ImportScopeMode;
+  hasImages: boolean;
+  atBatCount: number;
+}
+
 export interface ScorebookImportDraft {
   key: string;
   savedAt: number;
@@ -42,6 +51,36 @@ function getDraftKey(teamId: string): string {
   return `scorebook_v2_draft_${teamId || "default"}`;
 }
 
+function getDraftMetaKey(teamId: string): string {
+  return `scorebook_v2_draft_meta_${teamId || "default"}`;
+}
+
+/**
+ * ページ初期表示時にIndexedDB（数MB〜数十MBの画像データ）を一切開かず、
+ * 軽量メタ情報（約150B）のみで下書きの有無を即座に判定する
+ */
+export function peekScorebookDraftMeta(
+  teamId: string
+): ScorebookDraftMeta | null {
+  if (typeof window === "undefined" || !window.localStorage) return null;
+  const metaKey = getDraftMetaKey(teamId);
+  try {
+    const raw = window.localStorage.getItem(metaKey);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as ScorebookDraftMeta;
+    if (
+      typeof parsed?.savedAt !== "number" ||
+      Date.now() - parsed.savedAt > MAX_DRAFT_AGE_MS
+    ) {
+      window.localStorage.removeItem(metaKey);
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
 function extractBase64FromDataUrl(dataUrl: string): string {
   const commaIdx = dataUrl.indexOf(",");
   return commaIdx !== -1 ? dataUrl.slice(commaIdx + 1) : dataUrl;
@@ -51,10 +90,11 @@ function compactProcessedForStorage(
   processed: PreprocessedScorebookImage | null
 ): PreprocessedScorebookImage | null {
   if (!processed) return null;
-  // dataUrl 内に同一データが含まれるため、重複する巨大 base64 文字列を空にしてIndexedDBクローン負荷を半減
+  // dataUrl 内に同一データが含まれるため、重複する巨大 base64 と中間プレビューを除外してIndexedDB負荷を最小化
   return {
     ...processed,
     base64: "",
+    unwarpedPreviewDataUrl: undefined,
   };
 }
 
@@ -138,7 +178,25 @@ export async function saveScorebookDraft(
   draft: Omit<ScorebookImportDraft, "key" | "savedAt">
 ): Promise<number> {
   const key = getDraftKey(teamId);
+  const metaKey = getDraftMetaKey(teamId);
   const savedAt = Date.now();
+  const meta: ScorebookDraftMeta = {
+    savedAt,
+    step: draft.step,
+    selectedMatchId: draft.selectedMatchId,
+    importScope: draft.importScope,
+    hasImages: Boolean(draft.topImage.processed || draft.bottomImage.processed),
+    atBatCount: draft.topAtBats.length + draft.bottomAtBats.length,
+  };
+
+  try {
+    if (typeof window !== "undefined" && window.localStorage) {
+      window.localStorage.setItem(metaKey, JSON.stringify(meta));
+    }
+  } catch {
+    // ignore storage quota errors
+  }
+
   const record: ScorebookImportDraft = {
     ...draft,
     topImage: {
@@ -316,10 +374,12 @@ export async function loadScorebookDraft(
  */
 export async function clearScorebookDraft(teamId: string): Promise<void> {
   const key = getDraftKey(teamId);
+  const metaKey = getDraftMetaKey(teamId);
 
   try {
     if (typeof window !== "undefined" && window.localStorage) {
       window.localStorage.removeItem(key);
+      window.localStorage.removeItem(metaKey);
     }
   } catch {
     // ignore
