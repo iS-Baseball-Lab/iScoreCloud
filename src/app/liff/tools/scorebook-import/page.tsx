@@ -10,11 +10,16 @@ import { LiffToolSubNav } from "@/components/liff/LiffToolSubNav";
 import { getClientQueryParam } from "@/lib/liff/liff-client";
 import {
   buildCalibratedRulerSheetImage,
+  buildMissingOrderComparisonCrop,
   extractInningChunkCompositeCrop,
   extractStructureFocusCrops,
   preprocessScorebookImage,
   type PreprocessedScorebookImage,
 } from "@/lib/liff/scorebook-image";
+import {
+  applyRecoveredMissingAtBats,
+  detectMissingOrderGaps,
+} from "@/lib/liff/scorebook-validator";
 import {
   clearScorebookDraft,
   loadScorebookDraft,
@@ -35,6 +40,7 @@ import {
   formatTotalElapsedSeconds,
   type ImportScopeMode,
   type NormalizedBox,
+  type ResolvedMissingAtBatItem,
   type ScorebookAnalysisTimingSummary,
   type ScorebookGridCorners,
   type ScorebookMatchSummary,
@@ -253,6 +259,7 @@ export default function LiffScorebookImportPage() {
   const [reanalyzingInningKey, setReanalyzingInningKey] = useState<
     string | null
   >(null);
+  const [isRepairingOrderGaps, setIsRepairingOrderGaps] = useState(false);
   const [analysisProgressLabel, setAnalysisProgressLabel] = useState("");
   const [deepStartedAtMs, setDeepStartedAtMs] = useState<number | null>(null);
   const [deepTotalDurationMs, setDeepTotalDurationMs] = useState<number | null>(
@@ -1217,12 +1224,108 @@ export default function LiffScorebookImportPage() {
     entries: ScorebookTimingEntry[]
   ): ScorebookTimingEntry[] =>
     [...entries].sort((a, b) => {
-      const innA = a.innings[0] ?? 0;
-      const innB = b.innings[0] ?? 0;
+      const innA = a.innings[0] ?? 99;
+      const innB = b.innings[0] ?? 99;
       if (innA !== innB) return innA - innB;
       if (a.isTop !== b.isTop) return a.isTop ? -1 : 1;
       return a.key.localeCompare(b.key);
     });
+
+  /**
+   * 骨格確定済みの打順（1〜9番等）の循環則から「抜けている打順（例: 1回4番終了→2回6番開始の間の5番）」を自動検出し、
+   * 候補マス（1回・5番 vs 2回・5番 等）をピンポイント拡大照合して1打席データを自動補完する。
+   */
+  const reconcileMissingOrderGapsForSide = async (
+    isTop: boolean,
+    structure: ScorebookSheetStructure,
+    imgState: SheetImageState,
+    initialSideAtBats: ScorebookV2AtBat[],
+    options?: { throwOnFailure?: boolean }
+  ): Promise<{
+    atBats: ScorebookV2AtBat[];
+    repairedCount: number;
+    durationMs: number;
+  }> => {
+    const startMs = Date.now();
+    if (!imgState.processed || initialSideAtBats.length === 0) {
+      return { atBats: initialSideAtBats, repairedCount: 0, durationMs: 0 };
+    }
+
+    let currentList = initialSideAtBats;
+    let totalRepaired = 0;
+
+    for (let pass = 0; pass < 2; pass++) {
+      const allGaps = detectMissingOrderGaps(currentList, structure);
+      if (allGaps.length === 0) break;
+
+      const batchGaps = allGaps.slice(0, 6);
+      const crop = await buildMissingOrderComparisonCrop(
+        imgState.processed.dataUrl,
+        structure,
+        batchGaps
+      );
+      if (!crop) break;
+
+      const sideLabel = isTop ? "先攻（表）" : "後攻（裏）";
+      try {
+        const res = await fetch(
+          "/api/liff/scorebook/reconcile-missing-atbats",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              teamId: resolvedTeamId || currentTeam?.id || "",
+              matchId: selectedMatchId,
+              isTop,
+              comparisonCropBase64: crop.base64,
+              comparisonCropMimeType: crop.mimeType,
+              structure,
+              gaps: batchGaps,
+              legendBase64: legendOverride?.base64,
+              legendMimeType: legendOverride?.mimeType,
+              skipModels: getActiveSkippedModels(),
+            }),
+          }
+        );
+
+        const data = await parseSafeJson<{
+          success: boolean;
+          resolved?: ResolvedMissingAtBatItem[];
+          cooledModels?: string[];
+          error?: string;
+        }>(res, `${sideLabel}打順抜け自動補正エラー`);
+
+        recordCooledModels(data.cooledModels);
+
+        if (!data.success || !data.resolved || data.resolved.length === 0) {
+          if (options?.throwOnFailure) {
+            throw new Error(
+              data.error || `${sideLabel}の打順抜け補正結果を取得できませんでした`
+            );
+          }
+          break;
+        }
+
+        currentList = applyRecoveredMissingAtBats(
+          currentList,
+          data.resolved,
+          batchGaps
+        );
+        totalRepaired += data.resolved.length;
+      } catch (err) {
+        if (options?.throwOnFailure) {
+          throw err;
+        }
+        break;
+      }
+    }
+
+    return {
+      atBats: currentList,
+      repairedCount: totalRepaired,
+      durationMs: Date.now() - startMs,
+    };
+  };
 
   // 5. Stage 2: イニング並列・高速ディープ解析（逐次リアルタイム保持・エラー耐性・未完了回のみ再開対応）
   const handleStartDeepAnalysis = async (opts?: { onlyMissing?: boolean }) => {
@@ -1732,6 +1835,47 @@ export default function LiffScorebookImportPage() {
             syncActiveLabelsUi();
           }
         }
+
+        // 全イニング走査完了直後に「打順の抜け・飛び（例: 1回4番終了→2回6番開始の5番抜け）」を数学検算し、
+        // 抜けがあれば候補マス（1回・5番 vs 2回・5番）を即座に拡大照合して自動補完する
+        const currentSideSnapshot = isTop ? workingTop : workingBottom;
+        const postScanGaps = detectMissingOrderGaps(
+          currentSideSnapshot,
+          structure
+        );
+        if (postScanGaps.length > 0) {
+          const repairStart = Date.now();
+          activeSideLabels[sideKey] = `打順抜け自動補正（${halfSuffix}）`;
+          setDeepActiveStartedAtMs(repairStart);
+          syncActiveLabelsUi();
+
+          const repaired = await reconcileMissingOrderGapsForSide(
+            isTop,
+            structure,
+            imgState,
+            currentSideSnapshot
+          );
+          if (repaired.repairedCount > 0) {
+            if (isTop) {
+              workingTop = repaired.atBats;
+              setTopAtBats([...workingTop]);
+            } else {
+              workingBottom = repaired.atBats;
+              setBottomAtBats([...workingBottom]);
+            }
+            upsertTimingEntry({
+              key: `${sideKey}-order-reconcile`,
+              isTop,
+              innings: [],
+              label: `打順補正${halfSuffix}`,
+              durationMs: repaired.durationMs,
+              status: "success",
+            });
+          }
+
+          activeSideLabels[sideKey] = null;
+          syncActiveLabelsUi();
+        }
       };
 
       // 先攻（表）と後攻（裏）を2ストリーム並列実行することで、各サイド内の打順引き継ぎ精度を保ったまま所要時間を約半分に短縮する
@@ -1827,6 +1971,13 @@ export default function LiffScorebookImportPage() {
           1
         );
       }
+      const nextInningItems = currentSideList.filter(
+        (a) => a.inning === inning + 1
+      );
+      const nextInningLeadOffOrder =
+        nextInningItems.length > 0
+          ? nextInningItems[0].battingOrder
+          : undefined;
 
       const targetBoxes: NormalizedBox[] = [inning]
         .map(
@@ -1873,6 +2024,7 @@ export default function LiffScorebookImportPage() {
           structure,
           targetInnings: [inning],
           expectedLeadOffOrder: expectedLeadOff,
+          nextInningLeadOffOrder,
           legendBase64: legendOverride?.base64,
           legendMimeType: legendOverride?.mimeType,
           skipModels: getActiveSkippedModels(),
@@ -1895,18 +2047,38 @@ export default function LiffScorebookImportPage() {
       }
 
       const freshInningAtBats = data.atBats;
+      const before = currentSideList.filter((a) => a.inning < inning);
+      const after = currentSideList.filter((a) => a.inning > inning);
+      let finalMergedList = [...before, ...freshInningAtBats, ...after];
+
+      // 単独再解析後も当該イニング前後に打順の抜け・飛び（例: 1回4番終了→2回6番開始）が残っていればそのまま自動照合・補完する
+      const remainingGaps = detectMissingOrderGaps(
+        finalMergedList,
+        structure
+      ).filter(
+        (g) =>
+          g.targetInning === inning ||
+          g.prevInning === inning ||
+          g.nextInning === inning
+      );
+      if (remainingGaps.length > 0) {
+        const repaired = await reconcileMissingOrderGapsForSide(
+          isTop,
+          structure,
+          imgState,
+          finalMergedList
+        );
+        if (repaired.repairedCount > 0) {
+          finalMergedList = repaired.atBats;
+        }
+      }
+
       const elapsed = Date.now() - startMs;
 
-      const mergeSideList = (prev: ScorebookV2AtBat[]): ScorebookV2AtBat[] => {
-        const before = prev.filter((a) => a.inning < inning);
-        const after = prev.filter((a) => a.inning > inning);
-        return [...before, ...freshInningAtBats, ...after];
-      };
-
       if (isTop) {
-        setTopAtBats((prev) => mergeSideList(prev));
+        setTopAtBats(finalMergedList);
       } else {
-        setBottomAtBats((prev) => mergeSideList(prev));
+        setBottomAtBats(finalMergedList);
       }
 
       const entryKey = `${isTop ? "top" : "bottom"}-${inning}`;
@@ -1954,6 +2126,70 @@ export default function LiffScorebookImportPage() {
     if (entry.innings.length === 0) return;
     for (const inn of entry.innings) {
       await handleReanalyzeSingleInning(entry.isTop, inn);
+    }
+  };
+
+  // 5-C. Step 3 ワンタップ「打順の抜け・飛びAI自動補正」（既に読込済みの下書きデータでも全回再解析なしで欠損打順だけ数秒でピンポイント復元）
+  const handleManualRepairOrderGaps = async () => {
+    if (!selectedMatchId || isRepairingOrderGaps || reanalyzingInningKey) {
+      return;
+    }
+    setIsRepairingOrderGaps(true);
+    setErrorBanner(null);
+
+    try {
+      const checkTop =
+        (importScope === "both" || importScope === "top_only") &&
+        Boolean(topStructure) &&
+        Boolean(topImage.processed);
+      const checkBottom =
+        (importScope === "both" || importScope === "bottom_only") &&
+        Boolean(bottomStructure) &&
+        Boolean(bottomImage.processed);
+
+      const topGaps =
+        checkTop && topStructure
+          ? detectMissingOrderGaps(topAtBats, topStructure)
+          : [];
+      const bottomGaps =
+        checkBottom && bottomStructure
+          ? detectMissingOrderGaps(bottomAtBats, bottomStructure)
+          : [];
+
+      if (topGaps.length === 0 && bottomGaps.length === 0) {
+        return;
+      }
+
+      if (topGaps.length > 0 && topStructure) {
+        const topRepaired = await reconcileMissingOrderGapsForSide(
+          true,
+          topStructure,
+          topImage,
+          topAtBats,
+          { throwOnFailure: true }
+        );
+        if (topRepaired.repairedCount > 0) {
+          setTopAtBats(topRepaired.atBats);
+        }
+      }
+
+      if (bottomGaps.length > 0 && bottomStructure) {
+        const botRepaired = await reconcileMissingOrderGapsForSide(
+          false,
+          bottomStructure,
+          bottomImage,
+          bottomAtBats,
+          { throwOnFailure: true }
+        );
+        if (botRepaired.repairedCount > 0) {
+          setBottomAtBats(botRepaired.atBats);
+        }
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setErrorBanner(msg);
+    } finally {
+      setIsRepairingOrderGaps(false);
     }
   };
 
@@ -2327,6 +2563,8 @@ export default function LiffScorebookImportPage() {
                 isSaving={isSaving}
                 onReanalyzeInning={handleReanalyzeSingleInning}
                 reanalyzingInningKey={reanalyzingInningKey}
+                onRepairOrderGaps={() => void handleManualRepairOrderGaps()}
+                isRepairingOrderGaps={isRepairingOrderGaps}
                 timingSummary={timingSummary}
                 errorMessage={errorBanner}
                 onDismissError={() => setErrorBanner(null)}

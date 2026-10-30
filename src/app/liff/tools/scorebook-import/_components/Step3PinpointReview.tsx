@@ -25,6 +25,7 @@ import {
   ChevronDown,
   ChevronUp,
   RotateCcw,
+  Sparkles,
 } from "lucide-react";
 import {
   ADVANCE_METHOD_LABELS,
@@ -48,6 +49,7 @@ import {
 } from "@/types/scorebook-v2";
 import {
   computeCountFromPitches,
+  detectMissingOrderGaps,
   resolveActiveMatchupFromStructure,
   validateScorebookSheet,
 } from "@/lib/liff/scorebook-validator";
@@ -85,6 +87,8 @@ interface Step3PinpointReviewProps {
   isSaving: boolean;
   onReanalyzeInning?: (isTop: boolean, inning: number) => void;
   reanalyzingInningKey?: string | null;
+  onRepairOrderGaps?: () => void;
+  isRepairingOrderGaps?: boolean;
   timingSummary?: ScorebookAnalysisTimingSummary | null;
   errorMessage?: string | null;
   onDismissError?: () => void;
@@ -105,6 +109,8 @@ export function Step3PinpointReview({
   isSaving,
   onReanalyzeInning,
   reanalyzingInningKey = null,
+  onRepairOrderGaps,
+  isRepairingOrderGaps = false,
   timingSummary = null,
   errorMessage,
   onDismissError,
@@ -147,6 +153,18 @@ export function Step3PinpointReview({
 
   const currentIssues = isTop ? topIssues : bottomIssues;
   const totalIssuesCount = topIssues.length + bottomIssues.length;
+
+  const missingOrderGapsCount = useMemo(() => {
+    const topCount =
+      importScope === "bottom_only"
+        ? 0
+        : detectMissingOrderGaps(topAtBats, topStructure).length;
+    const bottomCount =
+      importScope === "top_only"
+        ? 0
+        : detectMissingOrderGaps(bottomAtBats, bottomStructure).length;
+    return topCount + bottomCount;
+  }, [importScope, topAtBats, topStructure, bottomAtBats, bottomStructure]);
 
   const issuesByAtBatId = useMemo(() => {
     const map = new Map<string, ScorebookValidationIssue[]>();
@@ -738,6 +756,39 @@ export function Step3PinpointReview({
               {onlyFlagged ? "すべて表示に戻す" : "要確認のみ絞込"}
             </button>
           </div>
+
+          {onRepairOrderGaps &&
+            (missingOrderGapsCount > 0 || isRepairingOrderGaps) && (
+              <div className="p-2.5 rounded-2xl bg-card border border-indigo-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <p className="text-[11px] font-bold text-foreground leading-snug">
+                  確定打順の循環チェックで{" "}
+                  <strong className="text-indigo-600 dark:text-indigo-400">
+                    {missingOrderGapsCount}件の打順抜け
+                  </strong>{" "}
+                  を検出しました。前後の候補マスを拡大照合して自動補完できます。
+                </p>
+                <button
+                  type="button"
+                  disabled={
+                    isRepairingOrderGaps || Boolean(reanalyzingInningKey)
+                  }
+                  onClick={onRepairOrderGaps}
+                  className="h-9 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white text-[11px] font-black flex items-center justify-center gap-1.5 shrink-0 cursor-pointer active:scale-95 transition-all"
+                >
+                  {isRepairingOrderGaps ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>候補マスを拡大照合・補正中...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>打順の抜け・飛びをAI自動補正</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
 
           <div className="max-h-32 overflow-y-auto space-y-1.5">
             {currentIssues.map((iss) => (

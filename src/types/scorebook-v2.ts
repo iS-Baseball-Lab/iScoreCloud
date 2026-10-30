@@ -418,4 +418,35 @@ export function formatTotalElapsedSeconds(ms: number): string {
   return `${secStr}（${mins}分${remSec}秒）`;
 }
 
+/** 打順の抜け・飛び自動補正で比較対象とする候補マス指定 */
+export interface MissingOrderCandidateSpec {
+  inning: number;
+  columnIndex: number;
+  role: "single_inning" | "prev_inning_tail" | "next_inning_head";
+}
+
+/** 確定済み打順の循環則から検出された「抜けている打順（例: 1回4番終了→2回6番開始の間の5番）」の定義 */
+export interface MissingOrderGapSpec {
+  gapId: string;
+  battingOrder: number;
+  batterName: string;
+  kind: "lead_off_1st" | "intra_inning" | "inter_inning";
+  /** intra_inning / lead_off_1st の挿入先イニング */
+  targetInning?: number;
+  /** intra_inning で直前に存在する打席ID（その直後へ挿入） */
+  insertAfterAtBatId?: string;
+  /** inter_inning の前イニング番号（例: 1） */
+  prevInning?: number;
+  /** inter_inning の次イニング番号（例: 2） */
+  nextInning?: number;
+  candidates: MissingOrderCandidateSpec[];
+  contextHint: string;
+}
+
+export interface ResolvedMissingAtBatItem {
+  gapId: string;
+  atBat: ScorebookV2AtBat;
+}
+
+
 

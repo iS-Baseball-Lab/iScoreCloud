@@ -3,6 +3,8 @@ import {
   isPickoffPitch,
   type CanonicalAtBatResult,
   type CanonicalPitchResult,
+  type MissingOrderGapSpec,
+  type ResolvedMissingAtBatItem,
   type ScorebookRosterPlayer,
   type ScorebookSheetStructure,
   type ScorebookV2AtBat,
@@ -1005,5 +1007,426 @@ export function validateScorebookSheet(
   }
 
   return issues;
+}
+
+function isRunnerOnlyInningEnd(ab: ScorebookV2AtBat): boolean {
+  return (
+    ab.resultCode === "other" &&
+    ab.advances.some(
+      (a) =>
+        a.isOut &&
+        (a.method === "caught_stealing" ||
+          a.method === "pickoff_out" ||
+          a.method === "interference_out" ||
+          a.method === "appeal_out" ||
+          a.method === "out_on_base")
+    )
+  );
+}
+
+/**
+ * Stage 1 で確定済みの打順リスト（1番〜9番/N番）の厳密な循環則を用い、
+ * ① 1回の先頭打順抜け（例: 2番から始まっている ➔ 1番抜け）
+ * ② 同一イニング内の打順飛び（例: 1→2→4番 ➔ 3番抜け）
+ * ③ 連続するイニング間の境界打順抜け（例: 1回が1→2→3→4番で終わり、2回が6番から始まっている ➔ 5番抜け！）
+ * を自動検出し、再確認すべき候補マス座標ペア（前イニング末尾 vs 次イニング先頭 等）を生成する。
+ */
+export function detectMissingOrderGaps(
+  atBats: ScorebookV2AtBat[],
+  structure: ScorebookSheetStructure | null | undefined
+): MissingOrderGapSpec[] {
+  if (!structure || atBats.length === 0) return [];
+
+  const maxOrder = Math.max(
+    9,
+    structure.batters.length || 9,
+    ...atBats.map((a) => a.battingOrder || 9)
+  );
+  const lineupCycle = maxOrder >= 10 ? maxOrder : 9;
+  const stepOrder = (bo: number): number => (bo % lineupCycle) + 1;
+  const gapCount = (expectedBo: number, actualBo: number): number =>
+    (actualBo - expectedBo + lineupCycle) % lineupCycle;
+  const expandMissingOrders = (expectedBo: number, count: number): number[] => {
+    const res: number[] = [];
+    let cur = expectedBo;
+    for (let k = 0; k < count; k++) {
+      res.push(cur);
+      cur = stepOrder(cur);
+    }
+    return res;
+  };
+
+  const inningsMap = new Map<number, ScorebookV2AtBat[]>();
+  for (const ab of atBats) {
+    const arr = inningsMap.get(ab.inning) || [];
+    arr.push(ab);
+    inningsMap.set(ab.inning, arr);
+  }
+  const sortedInnings = Array.from(inningsMap.keys()).sort((a, b) => a - b);
+  if (sortedInnings.length === 0) return [];
+
+  const gaps: MissingOrderGapSpec[] = [];
+  let seqNum = 1;
+  const MAX_GAPS = 8;
+
+  const summarizeInning = (inn: number, list: ScorebookV2AtBat[]): string => {
+    const outs = list.reduce((s, x) => s + Math.max(0, x.outsInPlay), 0);
+    const runs = list.reduce((s, x) => s + Math.max(0, x.runsInPlay), 0);
+    const meta = structure.innings.find((m) => m.inning === inn);
+    const seqText = list
+      .map((x) => `${x.battingOrder}番(${x.resultLabel}, ${x.outsInPlay}死)`)
+      .join("→");
+    return `${inn}回: [${seqText}] 計${outs}アウト/${runs}点(確定得点:${meta?.runs ?? runs}点)`;
+  };
+
+  // 1. 1回の先頭が1番でない場合（例: 2番スタート ➔ 1番抜け）
+  if (sortedInnings[0] === 1) {
+    const inn1 = inningsMap.get(1) || [];
+    if (inn1.length > 0 && inn1[0].battingOrder !== 1) {
+      const g = gapCount(1, inn1[0].battingOrder);
+      if (g >= 1 && g <= 3) {
+        const missingOrders = expandMissingOrders(1, g);
+        for (const bo of missingOrders) {
+          if (gaps.length >= MAX_GAPS) break;
+          const resolved = resolveActiveMatchupFromStructure(structure, 1, bo);
+          gaps.push({
+            gapId: `G${seqNum++}`,
+            battingOrder: bo,
+            batterName: resolved.batterName || `${bo}番打者`,
+            kind: "lead_off_1st",
+            targetInning: 1,
+            candidates: [
+              {
+                inning: 1,
+                columnIndex: 1,
+                role: "single_inning",
+              },
+            ],
+            contextHint: `1回先頭から${inn1[0].battingOrder}番の前に欠落している${bo}番打者 (${summarizeInning(
+              1,
+              inn1
+            )})`,
+          });
+        }
+      }
+    }
+  }
+
+  // 2. 各イニング内の途中飛び ＆ 隣接イニング間の境界抜け
+  for (let idx = 0; idx < sortedInnings.length; idx++) {
+    if (gaps.length >= MAX_GAPS) break;
+    const inn = sortedInnings[idx];
+    const list = inningsMap.get(inn) || [];
+    const innMeta = structure.innings.find((m) => m.inning === inn);
+    const maxCols = Math.max(1, innMeta?.columnCount ?? 1);
+
+    // 2-A. 同一イニング内の打順飛び（例: 1→2→4番 ➔ 3番抜け）
+    for (let i = 1; i < list.length; i++) {
+      if (gaps.length >= MAX_GAPS) break;
+      const prev = list[i - 1];
+      const cur = list[i];
+      const expected = stepOrder(prev.battingOrder);
+      const g = gapCount(expected, cur.battingOrder);
+      if (g >= 1 && g <= 3) {
+        const missingOrders = expandMissingOrders(expected, g);
+        for (const bo of missingOrders) {
+          if (gaps.length >= MAX_GAPS) break;
+          const subCol = Math.max(
+            1,
+            Math.min(
+              maxCols,
+              bo < prev.battingOrder && cur.columnIndex > prev.columnIndex
+                ? cur.columnIndex
+                : prev.columnIndex || 1
+            )
+          );
+          const resolved = resolveActiveMatchupFromStructure(structure, inn, bo);
+          gaps.push({
+            gapId: `G${seqNum++}`,
+            battingOrder: bo,
+            batterName: resolved.batterName || `${bo}番打者`,
+            kind: "intra_inning",
+            targetInning: inn,
+            insertAfterAtBatId: prev.id,
+            candidates: [
+              {
+                inning: inn,
+                columnIndex: subCol,
+                role: "single_inning",
+              },
+            ],
+            contextHint: `${inn}回内の${prev.battingOrder}番と${cur.battingOrder}番の間で読み飛ばされた${bo}番打者 (${summarizeInning(
+              inn,
+              list
+            )})`,
+          });
+        }
+      }
+    }
+
+    // 2-B. 隣接する次イニング（inn + 1）との境界抜け（例: 1回が1→2→3→4番で終了し、2回が6番から開始 ➔ 5番抜け！）
+    if (idx < sortedInnings.length - 1) {
+      const nextInn = sortedInnings[idx + 1];
+      if (nextInn === inn + 1) {
+        const nextList = inningsMap.get(nextInn) || [];
+        if (list.length > 0 && nextList.length > 0) {
+          const lastPrev = list[list.length - 1];
+          const firstNext = nextList[0];
+          const runnerEnd = isRunnerOnlyInningEnd(lastPrev);
+
+          let g = 0;
+          let expected = stepOrder(lastPrev.battingOrder);
+          if (runnerEnd) {
+            if (firstNext.battingOrder === lastPrev.battingOrder) {
+              g = 0;
+            } else if (firstNext.battingOrder === stepOrder(lastPrev.battingOrder)) {
+              // 実は打席完了していたケースなので欠損マス自体は無し
+              g = 0;
+            } else {
+              expected = lastPrev.battingOrder;
+              g = gapCount(expected, firstNext.battingOrder);
+            }
+          } else {
+            expected = stepOrder(lastPrev.battingOrder);
+            g = gapCount(expected, firstNext.battingOrder);
+          }
+
+          if (g >= 1 && g <= 3) {
+            const missingOrders = expandMissingOrders(expected, g);
+            for (const bo of missingOrders) {
+              if (gaps.length >= MAX_GAPS) break;
+              const existingCountInPrev = list.filter(
+                (x) => x.battingOrder === bo
+              ).length;
+              const prevTailCol = Math.min(
+                maxCols,
+                Math.max(lastPrev.columnIndex || 1, existingCountInPrev + 1)
+              );
+              const resolved = resolveActiveMatchupFromStructure(
+                structure,
+                inn,
+                bo
+              );
+              gaps.push({
+                gapId: `G${seqNum++}`,
+                battingOrder: bo,
+                batterName: resolved.batterName || `${bo}番打者`,
+                kind: "inter_inning",
+                prevInning: inn,
+                nextInning: nextInn,
+                candidates: [
+                  {
+                    inning: inn,
+                    columnIndex: prevTailCol,
+                    role: "prev_inning_tail",
+                  },
+                  {
+                    inning: nextInn,
+                    columnIndex: 1,
+                    role: "next_inning_head",
+                  },
+                ],
+                contextHint: `${inn}回終了(${lastPrev.battingOrder}番)と${nextInn}回先頭(${firstNext.battingOrder}番)の間で抜けている${bo}番打者。${summarizeInning(
+                  inn,
+                  list
+                )} ／ ${summarizeInning(nextInn, nextList)}`,
+              });
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return gaps;
+}
+
+function rebalanceInningOutsAfterRecovery(
+  list: ScorebookV2AtBat[]
+): ScorebookV2AtBat[] {
+  if (list.length === 0) return list;
+  const cloned = list.map((x) => ({
+    ...x,
+    advances: x.advances.map((a) => ({ ...a })),
+  }));
+
+  let totalOuts = cloned.reduce((s, x) => s + Math.max(0, x.outsInPlay), 0);
+
+  // ケース1: 2アウト＋最終打者が野選/封殺(fc)で outsInPlay=0 になっていた場合 ➔ 1塁走者封殺の1アウトを補完して3アウト化
+  const last = cloned[cloned.length - 1];
+  if (totalOuts === 2 && last && last.resultCode === "fc" && last.outsInPlay === 0) {
+    last.outsInPlay = 1;
+    totalOuts = 3;
+  }
+
+  // ケース2: 補完により合計アウトが4以上になった場合（先行走者マスのⅢが先行打席と後続打席で二重計上されていたケース等を解消）
+  if (totalOuts > 3) {
+    // 2-A: 単打・四死球・失策等の安全出塁打席なのに後続打席での走塁死分が outsInPlay に乗っていた箇所から優先控除
+    for (let i = 0; i < cloned.length - 1 && totalOuts > 3; i++) {
+      const ab = cloned[i];
+      const isSafeReach =
+        ab.resultCode === "single" ||
+        ab.resultCode === "double" ||
+        ab.resultCode === "triple" ||
+        ab.resultCode === "home_run" ||
+        ab.resultCode === "walk" ||
+        ab.resultCode === "intentional_walk" ||
+        ab.resultCode === "hit_by_pitch" ||
+        ab.resultCode === "interference" ||
+        ab.resultCode === "dropped_third_strike" ||
+        ab.resultCode === "error";
+      if (isSafeReach && ab.outsInPlay > 0) {
+        const deduct = Math.min(ab.outsInPlay, totalOuts - 3);
+        ab.outsInPlay -= deduct;
+        totalOuts -= deduct;
+      }
+    }
+
+    // 2-B: それでも超過しており末尾や途中に野選(fc)または途中断(other)の重複アウトがある場合
+    for (let i = 0; i < cloned.length && totalOuts > 3; i++) {
+      const ab = cloned[i];
+      if ((ab.resultCode === "fc" || ab.resultCode === "other") && ab.outsInPlay > 0) {
+        const deduct = Math.min(ab.outsInPlay, totalOuts - 3);
+        ab.outsInPlay -= deduct;
+        totalOuts -= deduct;
+      }
+    }
+  }
+
+  // endingOuts を先頭から単調増加（1〜3）に整える
+  let runningOuts = 0;
+  for (const ab of cloned) {
+    runningOuts = Math.min(3, runningOuts + Math.max(0, ab.outsInPlay));
+    ab.endingOuts = runningOuts;
+  }
+
+  return cloned;
+}
+
+/**
+ * `/reconcile-missing-atbats` で抽出された欠損打順の打席データを、
+ * 正しいイニング（1回末尾 or 2回先頭 or イニング途中）の正しい時系列位置へ挿入し、アウト推移を整合化する。
+ */
+export function applyRecoveredMissingAtBats(
+  atBats: ScorebookV2AtBat[],
+  resolved: ResolvedMissingAtBatItem[],
+  gaps: MissingOrderGapSpec[]
+): ScorebookV2AtBat[] {
+  if (resolved.length === 0 || gaps.length === 0) return atBats;
+
+  const resolvedByGapId = new Map<string, ScorebookV2AtBat>();
+  for (const item of resolved) {
+    resolvedByGapId.set(item.gapId, item.atBat);
+  }
+
+  const inningsMap = new Map<number, ScorebookV2AtBat[]>();
+  for (const ab of atBats) {
+    const arr = inningsMap.get(ab.inning) || [];
+    arr.push(ab);
+    inningsMap.set(ab.inning, arr);
+  }
+
+  const touchedInnings = new Set<number>();
+
+  // 1. 1回先頭への先頭挿入 (lead_off_1st)
+  const leadOffItems: ScorebookV2AtBat[] = [];
+  for (const gap of gaps) {
+    if (gap.kind !== "lead_off_1st") continue;
+    const item = resolvedByGapId.get(gap.gapId);
+    if (!item) continue;
+    leadOffItems.push({ ...item, inning: 1 });
+  }
+  if (leadOffItems.length > 0) {
+    const existing1 = inningsMap.get(1) || [];
+    inningsMap.set(1, [...leadOffItems, ...existing1]);
+    touchedInnings.add(1);
+  }
+
+  // 2. 同一イニング途中の挿入 (intra_inning)
+  const intraByAfterId = new Map<string, ScorebookV2AtBat[]>();
+  for (const gap of gaps) {
+    if (gap.kind !== "intra_inning" || !gap.insertAfterAtBatId || !gap.targetInning) {
+      continue;
+    }
+    const item = resolvedByGapId.get(gap.gapId);
+    if (!item) continue;
+    const queue = intraByAfterId.get(gap.insertAfterAtBatId) || [];
+    queue.push({ ...item, inning: gap.targetInning });
+    intraByAfterId.set(gap.insertAfterAtBatId, queue);
+    touchedInnings.add(gap.targetInning);
+  }
+  if (intraByAfterId.size > 0) {
+    for (const [inn, list] of inningsMap.entries()) {
+      let modified = false;
+      const rebuilt: ScorebookV2AtBat[] = [];
+      for (const ab of list) {
+        rebuilt.push(ab);
+        const ins = intraByAfterId.get(ab.id);
+        if (ins && ins.length > 0) {
+          rebuilt.push(...ins);
+          modified = true;
+        }
+      }
+      if (modified) {
+        inningsMap.set(inn, rebuilt);
+      }
+    }
+  }
+
+  // 3. イニング境界（prevInning 末尾 vs nextInning 先頭）への挿入 (inter_inning)
+  const tailQueues = new Map<number, ScorebookV2AtBat[]>();
+  const headQueues = new Map<number, ScorebookV2AtBat[]>();
+
+  for (const gap of gaps) {
+    if (gap.kind !== "inter_inning" || !gap.prevInning || !gap.nextInning) {
+      continue;
+    }
+    const item = resolvedByGapId.get(gap.gapId);
+    if (!item) continue;
+
+    if (item.inning === gap.nextInning) {
+      const q = headQueues.get(gap.nextInning) || [];
+      q.push({ ...item, inning: gap.nextInning, columnIndex: 1 });
+      headQueues.set(gap.nextInning, q);
+      touchedInnings.add(gap.nextInning);
+    } else {
+      const prevTailCand = gap.candidates.find(
+        (c) => c.inning === gap.prevInning
+      );
+      const q = tailQueues.get(gap.prevInning) || [];
+      q.push({
+        ...item,
+        inning: gap.prevInning,
+        columnIndex: prevTailCand?.columnIndex ?? item.columnIndex ?? 1,
+      });
+      tailQueues.set(gap.prevInning, q);
+      touchedInnings.add(gap.prevInning);
+    }
+  }
+
+  for (const [inn, headItems] of headQueues.entries()) {
+    const cur = inningsMap.get(inn) || [];
+    inningsMap.set(inn, [...headItems, ...cur]);
+  }
+  for (const [inn, tailItems] of tailQueues.entries()) {
+    const cur = inningsMap.get(inn) || [];
+    inningsMap.set(inn, [...cur, ...tailItems]);
+  }
+
+  // 4. 挿入が行われたイニングのアウト数整合リバランス
+  for (const inn of touchedInnings) {
+    const list = inningsMap.get(inn);
+    if (list && list.length > 0) {
+      inningsMap.set(inn, rebalanceInningOutsAfterRecovery(list));
+    }
+  }
+
+  const allSortedInnings = Array.from(inningsMap.keys()).sort((a, b) => a - b);
+  const merged: ScorebookV2AtBat[] = [];
+  for (const inn of allSortedInnings) {
+    const list = inningsMap.get(inn) || [];
+    merged.push(...list);
+  }
+  return merged;
 }
 

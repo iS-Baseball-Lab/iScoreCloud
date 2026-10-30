@@ -29,7 +29,9 @@ import {
   type CanonicalPitchResult,
   type ConfidenceLevel,
   type ImportScopeMode,
+  type MissingOrderGapSpec,
   type NormalizedBox,
+  type ResolvedMissingAtBatItem,
   type ScorebookBatterSlot,
   type ScorebookGridCorners,
   type ScorebookInningMeta,
@@ -1291,6 +1293,7 @@ interface AnalyzeInningChunkPayload {
   structure: ScorebookSheetStructure;
   targetInnings: number[];
   expectedLeadOffOrder?: number;
+  nextInningLeadOffOrder?: number;
   legendBase64?: string;
   legendMimeType?: string;
   skipModels?: string[];
@@ -1420,12 +1423,33 @@ liffScorebookRouter.post("/analyze-inning-chunk", async (c) => {
 - **絶対厳守**: 必ず **先頭打者からスタートして打順が1つずつ循環（...8番➔9番➔1番➔2番...）する野球の時系列順** で出力し（上から1番〜9番の順になぞらないこと！）、その打席が書かれていた列に応じて **"c": 1, "c": 2, "c": 3** を正確に設定してください！3アウト目（③ または Ⅲ）が出るまで [c:2]・[c:3] の打席を絶対に落とさないでください！`
       : "";
 
+    const lineupLen = Math.max(9, body.structure.batters.length);
+
     const leadOffConstraint =
       sortedTargets[0] === 1
-        ? `\n🔥【先頭打者と白紙マス除外の鉄則】1回${sideLabel}の最初の打者は必ず【1番打者】のマスからスタートします！1番から下へ順に見て、3アウト目（③ または Ⅲ）が出た打者で読取をピタリと終了し、それより下の白紙マスやイニング終了斜線（／・∟）は絶対に出力しないでください！`
+        ? `\n🔥【先頭打者と最終打者（封殺・走塁死含む）の鉄則】1回${sideLabel}の最初の打者は必ず【1番打者】からスタートします！1番から1人ずつ打順を飛ばさず（1番→2番→3番→4番→5番...）下へ読み進め、**イニング終了斜線（／・∟）または白紙空欄の直前にある「実際に手書き記録がある最後の打者」まで漏れなく出力**してください！（※注意：4番打者が出塁した後に5番打者の遊ゴロ封殺6-4・野選FC・盗塁死等で3アウトチェンジになった場合、3アウト目の『Ⅲ』『③』は先行走者である4番の中央に書かれ、その直下の5番のマスに最終打席の投球・打球記号が書かれます！4番に『Ⅲ』があるからといって直下の5番の記入済み打席を絶対に切り捨てないでください！）`
         : body.expectedLeadOffOrder
-        ? `\n📌【先頭打者の目安と白紙マス除外の絶対原則】前イニング終了順からの計算では【${body.expectedLeadOffOrder}番打者】付近が${sortedTargets[0]}回${sideLabel}の先頭打者の目安ですが、**最優先すべき絶対の根拠は「マス内に実際の手書き記録があるか」**です！印刷された点線ダイヤモンドと薄いBSO枠線しか無い【白紙（空欄）マス】は絶対に打席として出力しないでください！${focusImgLabel}左端の「連続列全体ストリップ」と右側の拡大セルを照合し、実際に手書き記録がある連続した打席ブロック（Ⅰ→Ⅱ→Ⅲ または ①→②→③ の計3アウト分）だけを正確に抽出してください。`
-        : `\n📌【白紙マス除外の絶対原則】印刷された点線ダイヤモンドと薄いBSO枠線しか無い【白紙（空欄）マス】は絶対に出力せず、実際に手書き記録がある連続した打席マス（計3アウト分）だけを抽出してください。`;
+        ? `\n📌【先頭打者の目安と連続打順・白紙マス除外の絶対原則】前イニング終了順からの計算では【${body.expectedLeadOffOrder}番打者】付近が${sortedTargets[0]}回${sideLabel}の先頭打者の目安ですが、**最優先すべき絶対の根拠は「マス内に実際の手書き記録があるか」**です！印刷された点線ダイヤモンドと薄いBSO枠線しか無い【白紙（空欄）マス】は絶対に出力せず、先頭打者からイニング終了斜線（／・∟）直前の最終打者まで、**途中の打順を1人も飛ばさず連続した手書き打席ブロック（計3アウト分）**を正確に抽出してください。`
+        : `\n📌【連続打順と白紙マス除外の絶対原則】印刷された点線ダイヤモンドと薄いBSO枠線しか無い【白紙（空欄）マス】は絶対に出力せず、実際に手書き記録がある連続した打席マス（途中の打順飛び無し・計3アウト分）だけを抽出してください。`;
+
+    const tailOrderConstraint =
+      sortedTargets.length === 1 &&
+      typeof body.nextInningLeadOffOrder === "number" &&
+      body.nextInningLeadOffOrder >= 1
+        ? (() => {
+            const expectedTailOrder =
+              ((body.nextInningLeadOffOrder - 2 + lineupLen) % lineupLen) + 1;
+            return `\n🔥【次イニング先頭打順との境界整合制約】次イニング（${
+              sortedTargets[0] + 1
+            }回${sideLabel}）の先頭打者は【${
+              body.nextInningLeadOffOrder
+            }番】であることが確定しています！したがってこの${
+              sortedTargets[0]
+            }回${sideLabel}は原則として【${expectedTailOrder}番打者】の打席完了でチェンジ（または【${
+              body.nextInningLeadOffOrder
+            }番打者】の打席途中の走塁死でチェンジ）しています。${expectedTailOrder}番のマスに封殺（6-4/4-6/FC等）や投球・打球記録がある場合は絶対に落とさず出力してください！`;
+          })()
+        : "";
 
     const legendConstraint = legendImageIndex > 0
       ? `\n🔥【最優先: 添付画像${legendImageIndex}「チームのスコア記号早見表」】安打・アウト・投球記号・バントファウル・1塁牽制/2塁牽制/3塁牽制の書き方は画像${legendImageIndex}の定義を最優先で厳密に適用してください。`
@@ -1440,7 +1464,6 @@ liffScorebookRouter.post("/analyze-inning-chunk", async (c) => {
       "相手投手";
     const exampleLeadBo =
       exampleInn === 1 ? 1 : Math.max(1, body.expectedLeadOffOrder || 1);
-    const lineupLen = Math.max(9, body.structure.batters.length);
     const exampleNextBo = (exampleLeadBo % lineupLen) + 1;
 
     const prompt = `あなたは日本の早稲田式・成美堂式・リトルシニア/高校野球式スコアブックを1画・1球・守備番号1桁まで完璧に読み解くプロ公式記録員AIです。
@@ -1449,7 +1472,7 @@ liffScorebookRouter.post("/analyze-inning-chunk", async (c) => {
 
 【添付画像の構成】
 ${stage2ImageGuide.join("\n")}
-${legendConstraint}${leadOffConstraint}
+${legendConstraint}${leadOffConstraint}${tailOrderConstraint}
 
 【確定済みの打順・途中交代リスト（この名前を厳密に使用すること）】
 ${lineupSpecLines.join("\n")}
@@ -1460,14 +1483,15 @@ ${pitcherSpecLines.join("\n")}
 【対象イニングの確定スコア＆列情報（必ずこの得点数・列数・3アウト交代と整合させること）】
 ${targetInningMetaLines.join("\n")}
 
-【🔥最重要 0: 「0打席イニングの絶対禁止」と「白紙マス・チェンジ切り線の完全除外」（イニングチェンジ精度の要！）】
-1. **試合が行われたイニングで打席0件（ab: []）は野球規則上あり得ません！**:
-   必ず対象列の1番〜9番を見渡し、手書き筆跡が入っている打席（最低3アウト分、サヨナラ回を除く）を漏れなく抽出してください。
+【🔥最重要 0: 「0打席イニングの禁止」「打順飛びの禁止」「封殺3アウト時の最終打者保持＆切り線除外」】
+1. **試合が行われたイニングで打席0件（ab: []）およびイニング途中の打順飛び（例: 1番→2番→4番）は野球規則上あり得ません！**:
+   必ず対象列の先頭打者から1人ずつ順番に（...8番→9番→1番→2番...）手書き筆跡が入っている全ての打席を漏れなく抽出してください。
 2. **白紙（空欄）マスの抽出は絶対禁止！**:
    同じ列の中で「印刷された点線ダイヤモンドと薄いBSO枠線だけがある白紙マス」と「鉛筆や赤ペンで投球・進塁線・アウト数字・守備番号が書かれた記入済みマス」を必ず比較してください。手書き記録の無い白紙マスには架空のプレーを絶対に作らないでください！
-3. **3アウトチェンジ（Ⅰ→Ⅱ→Ⅲ または ①→②→③）と「イニング終了切り線」の厳密識別**:
-   - 1イニングは先頭打者から打順が1つずつ下へ進み（9番の次は同じ列の上端1番へ戻る場合あり）、**合計3アウト（Ⅲ または ③）に達した瞬間にイニング終了（チェンジ）**です！
-   - 3アウト目のマスの右下隅、または**3アウト目の直下の空欄マスに斜め1本で引かれた斜線『／』『＼』やカギ線『∟』は「ここまででこのイニング終了」を表す区切り印**です！この切り線だけのマスを絶対に4人目の打席や単打として出力しないでください！
+3. **⚠️最頻出の打順抜け防止：封殺・野選・盗塁死で3アウト目『Ⅲ』『③』が先行走者のマスにある場合の最終打者保持！**:
+   - 早稲田式・成美堂式では、たとえば4番打者が出塁した後に**5番打者が遊ゴロ二塁封殺（6-4・4-6・FC）を打った場合や5番打席中に4番走者が盗塁死・牽制死した場合、3アウト目の『Ⅲ』（または『③』）はアウトになった走者である「4番」の中央ダイヤモンドに書かれ、実際のイニング最終打者である「5番」のマス（4番のすぐ下）には投球記号と『6-4』『FC』等の打球記録（または打席途中記号）が書かれます**！
+   - したがって、「4番の中央に『Ⅲ』が見えたから4番で読取を打ち切る」のは重大な誤りです！**必ずその1つ下のマス（5番）も確認し、投球記号・進塁実線・守備番号などの手書きプレー記録があれば、4番は出塁（o: 0）、5番こそがこのイニングの最終打者（封殺 rc: "fc", o: 1, eo: 3 等）として必ず5番まで出力**してください！
+   - 一方で、**投球記号も守備番号も一切無く、斜め1本で引かれたイニング終了斜線『／』『＼』やカギ線『∟』だけがあるマス**は区切り印ですので、打席として出力しないでください！
 
 【🔥最重要 1: 左ゾーン（BSO投球記号欄）の1球順序（p）＆にじみ・接触分解ルール】
 1. **印刷された水平区切り線をボール『ー』と誤認するな！**:
@@ -1905,6 +1929,425 @@ ${targetInningMetaLines.join("\n")}
     const msg = err instanceof Error ? err.message : String(err);
     return c.json(
       { success: false, error: `イニング解析エラー: ${msg}`, cooledModels },
+      500
+    );
+  }
+});
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 4-B. 打順の抜け・飛びピンポイント視覚照合＆自動補完エンドポイント
+// （例: 1回表が 1→2→3→4 で終わり2回表が 6番から始まっている場合、「1回・5番マス」と「2回・5番マス」を横並び拡大照合し、
+//  実際に手書き記録がある側を特定して 5番打者の1球履歴・打席結果を正確に復元する）
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+interface ReconcileMissingAtBatsPayload {
+  teamId: string;
+  matchId: string;
+  isTop: boolean;
+  comparisonCropBase64: string;
+  comparisonCropMimeType?: string;
+  structure: ScorebookSheetStructure;
+  gaps: MissingOrderGapSpec[];
+  legendBase64?: string;
+  legendMimeType?: string;
+  skipModels?: string[];
+}
+
+interface RawReconciledMissingItem extends RawGeminiAtBat {
+  gid?: string;
+  gapId?: string;
+}
+
+interface RawReconcileMissingResponse {
+  items?: RawReconciledMissingItem[];
+  ab?: RawReconciledMissingItem[];
+}
+
+liffScorebookRouter.post("/reconcile-missing-atbats", async (c) => {
+  const apiKey = c.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    return c.json(
+      { success: false, error: "GEMINI_API_KEY が設定されていません" },
+      500
+    );
+  }
+
+  const db = drizzle(c.env.DB, { schema });
+  const cooledModels: string[] = [];
+
+  try {
+    const body = (await c.req.json()) as ReconcileMissingAtBatsPayload;
+    if (
+      !body.comparisonCropBase64 ||
+      !body.structure ||
+      !Array.isArray(body.gaps) ||
+      body.gaps.length === 0
+    ) {
+      return c.json({ success: true, resolved: [], cooledModels });
+    }
+
+    const sideLabel = body.isTop ? "表（先攻）" : "裏（後攻）";
+    const imageParts: GeminiContentPart[] = [
+      {
+        inlineData: {
+          mimeType: body.comparisonCropMimeType || "image/jpeg",
+          data: body.comparisonCropBase64,
+        },
+      },
+    ];
+
+    const legendPart = await resolveLegendImagePart(
+      c,
+      db,
+      body.teamId,
+      body.legendBase64,
+      body.legendMimeType
+    );
+    let legendNote = "";
+    if (legendPart) {
+      imageParts.push(legendPart);
+      legendNote = `\n・画像2: チーム公式のスコア記号早見表（最優先で参照）`;
+    }
+
+    const pitcherSpecLines = body.structure.pitchers.map(
+      (p) =>
+        `・${p.fromInning}回〜${p.toInning}回: #${p.uniformNumber} ${
+          p.name || "投手"
+        }`
+    );
+
+    const gapSpecLines = body.gaps.map((g) => {
+      const candDesc = g.candidates
+        .map(
+          (cand, idx) =>
+            `${idx === 0 ? "候補A" : idx === 1 ? "候補B" : `候補${idx + 1}`}=【"i":${
+              cand.inning
+            }, "c":${cand.columnIndex}】（${cand.inning}回${sideLabel}の${
+              g.battingOrder
+            }番マス）`
+        )
+        .join(" vs ");
+      return `・[${g.gapId}] 欠損している打順=${g.battingOrder}番（${g.batterName}） | 照合候補: ${candDesc} | 前後状況: ${g.contextHint}`;
+    });
+
+    const firstGap = body.gaps[0];
+    const exInning = firstGap.candidates[0]?.inning ?? 1;
+    const exCol = firstGap.candidates[0]?.columnIndex ?? 1;
+    const exPitcher =
+      body.structure.pitchers.find(
+        (p) => exInning >= p.fromInning && exInning <= p.toInning
+      )?.name ||
+      body.structure.pitchers[0]?.name ||
+      "相手投手";
+
+    const reconcilePrompt = `あなたは日本の早稲田式・成美堂式・リトルシニア式スコアブックのプロ公式記録員AIです。
+骨格確定済みの打順（1番〜${Math.max(
+      9,
+      body.structure.batters.length
+    )}番）でイニング解析結果を検算したところ、以下の打順が抜けて（飛んで）いることが数学的に判明しました。
+添付画像1には、欠損項目 [${body.gaps
+      .map((g) => g.gapId)
+      .join(", ")}] ごとに横1段ずつ、候補となるマスを **[全体マス | BSO拡大 | 中央・右下拡大]** の高精細トリプルビューで並べています。${legendNote}
+
+【検証対象の欠損打順リスト（全${body.gaps.length}件すべて必ず出力すること）】
+${gapSpecLines.join("\n")}
+
+【相手登板投手リスト】
+${pitcherSpecLines.join("\n")}
+
+【🔥最優先の照合・抽出ルール】
+1. **候補A vs 候補B がある項目（イニング境界の打順抜け、例: 1回4番終了→2回6番開始で5番抜け）の判定方法**:
+   - 野球の打順は絶対に飛ばないため、抜けている打者は **「候補A（前イニングの最終打者）」または「候補B（次イニングの先頭打者）」のどちらか一方に100%必ず手書き記録が存在**します！
+   - 候補Aと候補Bを見比べ、**実際に手書きの投球記号・進塁実線・守備番号・アウト記号が書かれている側のイニング番号 "i" と列番号 "c" を採用**してください！
+   - ⚠️**切り線・封殺の見分け方**:
+     ・片方が「印刷点線だけの白紙」または「斜め1本のイニング終了切り線『／』『∟』のみ（投球記号も守備番号も無し）」であれば、もう片方の手書き記録がある側が正解です！
+     ・前イニングの4番で走者3アウト『Ⅲ』が書かれ、候補A（前イニング5番マス）に遊ゴロ封殺『6-4』『4-6』『FC』等の手書き記録があり、その下または右下隅に切り線『／』がある場合は、**候補A（前イニング末尾）が正解（封殺チェンジ rc:"fc", o:1, eo:3 等）**です！
+2. **1マス内の記号読取ルール**:
+   - 左BSO拡大: 『○』（中が白い丸）="S"、『●』（黒塗り丸）/『／』="W"、『ー』（短い横棒）/『・』="B"、『△』（白三角）="F"、『▲』（黒三角）="BF"。インプレー打球なら末尾に "X"（安打なら "H"）を付与。
+   - 中央・右下拡大: 傘マーク接触『︵4』〜『︵9』はフライアウト（rc:"flyout", dir:"4"〜"9"、四球Bと誤読厳禁！）、送球ハイフン『6-3』『4-3』『5-3』はゴロ（rc:"groundout"）、二塁・三塁封殺『6-4』『4-6』『5-4』『FC』（本塁→1塁実線 b1:true）は野選封殺（rc:"fc", o:1）、本一実線＋外野7/8/9は単打（rc:"single", o:0）、『K』/3ストライクは三振（rc:"strikeout", o:1）、ボール4球＋右下『B』＋本一実線は四球（rc:"walk", o:0）。
+   - 万一、打席途中に先行走者が盗塁死・牽制死してチェンジとなり次イニング先頭で打ち直しになった痕跡がある場合のみ、候補B（完了した打席側）を優先採用してください。
+
+【出力JSONフォーマット（改行無しのコンパクトJSONのみ返却。items配列に全${
+      body.gaps.length
+    }件の "gid" を漏れなく出力！）】
+{"items":[{"gid":"${firstGap.gapId}","i":${exInning},"c":${exCol},"bo":${
+      firstGap.battingOrder
+    },"pt":"${exPitcher}","obs":"左:ー,○/中:無/本一:実線/右下:6-4","b1":true,"p":["B","S","X"],"eo":3,"o":1,"dir":"6-4","rc":"fc","rl":"遊ゴロ野選","rbi":0,"ru":0,"a":[],"cf":"h"}]}`;
+
+    const validateReconcileOutput = (
+      parsed: RawReconcileMissingResponse
+    ): string | null => {
+      const arr = parsed.items || parsed.ab || [];
+      if (!Array.isArray(arr) || arr.length === 0) {
+        return "欠損打席の照合結果が0件です";
+      }
+      return null;
+    };
+
+    const rawResp =
+      await callGeminiStructuredJson<RawReconcileMissingResponse>(
+        apiKey,
+        reconcilePrompt,
+        imageParts,
+        "chunk",
+        validateReconcileOutput,
+        {
+          maxBudgetMs: 48_000,
+          skipModels: body.skipModels,
+          cooledModelsOut: cooledModels,
+        }
+      );
+
+    const rawItems = rawResp.items || rawResp.ab || [];
+    const resolved: ResolvedMissingAtBatItem[] = [];
+
+    for (let idx = 0; idx < body.gaps.length; idx++) {
+      const gap = body.gaps[idx];
+      const matchedRaw =
+        rawItems.find(
+          (it) =>
+            (it.gid || it.gapId || "").trim().toUpperCase() ===
+            gap.gapId.toUpperCase()
+        ) ||
+        (body.gaps.length === 1
+          ? rawItems[0]
+          : rawItems.find(
+              (it) => toFiniteInt(it.bo ?? it.battingOrder) === gap.battingOrder
+            ));
+
+      if (!matchedRaw) continue;
+
+      const parsedInn = toFiniteInt(matchedRaw.i ?? matchedRaw.inning);
+      const validCand =
+        gap.candidates.find((cand) => cand.inning === parsedInn) ||
+        gap.candidates[0];
+      if (!validCand) continue;
+
+      const inning = validCand.inning;
+      const colIndex = Math.max(
+        1,
+        toFiniteInt(matchedRaw.c ?? matchedRaw.columnIndex, validCand.columnIndex) ||
+          validCand.columnIndex
+      );
+      const battingOrder = gap.battingOrder;
+      const ocrPitcherHint = (
+        matchedRaw.pt ??
+        matchedRaw.pitcherName ??
+        ""
+      ).trim();
+
+      const matchup = resolveActiveMatchupFromStructure(
+        body.structure,
+        inning,
+        battingOrder,
+        ocrPitcherHint
+      );
+
+      const priorOutsEstimate =
+        gap.kind === "lead_off_1st" ||
+        (gap.kind === "inter_inning" && inning === gap.nextInning)
+          ? 0
+          : gap.kind === "inter_inning" && inning === gap.prevInning
+          ? 2
+          : 1;
+      const runnerMaybeOnBase = priorOutsEstimate > 0;
+
+      const reconciled = reconcileRawAtBatEvidence(
+        matchedRaw,
+        {
+          "1B": runnerMaybeOnBase,
+          "2B": false,
+          "3B": false,
+        },
+        priorOutsEstimate
+      );
+
+      let resultCode = inferCanonicalResultCode(
+        reconciled.rawResultCode,
+        reconciled.rawResultLabel || reconciled.rawDir
+      );
+
+      // 本塁→1塁が実線(b1: true)で二塁/三塁/本塁への封殺送球（6-4, 4-6, 5-4, 5-2 等）の場合は野選・封殺(fc, 1アウト)として確定
+      const cleanDir = (reconciled.rawDir || "").trim();
+      if (
+        matchedRaw.b1 === true &&
+        resultCode === "groundout" &&
+        /^[1-6]-[2456]$/.test(cleanDir)
+      ) {
+        resultCode = "fc";
+      }
+
+      const harmonizedFielding = harmonizeOcrFieldingAndLabel(
+        resultCode,
+        reconciled.rawDir,
+        reconciled.rawResultLabel
+      );
+
+      const advances: ScorebookV2Advance[] = reconciled.rawAdvances.map(
+        (adv) => {
+          const pnVal = adv.pn ?? adv.pitchNumber;
+          return {
+            id: crypto.randomUUID(),
+            runnerName: (adv.rn ?? adv.runnerName ?? "").trim(),
+            from: normalizeFromBase(adv.f ?? adv.from),
+            to: normalizeToBase(adv.t ?? adv.to),
+            method: normalizeAdvanceMethod(adv.m ?? adv.method),
+            isOut: Boolean(adv.io ?? adv.isOut),
+            pitchNumber:
+              typeof pnVal === "number" && pnVal > 0 ? pnVal : undefined,
+          };
+        }
+      );
+
+      const rawOutsVal = Math.max(0, Math.min(3, reconciled.outsInPlay));
+      const runnerOutsInPlay = advances.filter(
+        (a) => a.isOut && a.from !== "BAT"
+      ).length;
+      const batterOutInAdvances = advances.some(
+        (a) => a.isOut && a.from === "BAT"
+      );
+
+      const isSafeBatterReach =
+        resultCode === "single" ||
+        resultCode === "double" ||
+        resultCode === "triple" ||
+        resultCode === "home_run" ||
+        resultCode === "walk" ||
+        resultCode === "intentional_walk" ||
+        resultCode === "hit_by_pitch" ||
+        resultCode === "interference" ||
+        resultCode === "dropped_third_strike" ||
+        resultCode === "error";
+
+      const isDefiniteBatterOut =
+        resultCode === "groundout" ||
+        resultCode === "flyout" ||
+        resultCode === "infield_fly" ||
+        resultCode === "strikeout" ||
+        resultCode === "dropped_third_strike_out" ||
+        resultCode === "sac_fly" ||
+        resultCode === "interference_out";
+
+      let outsVal = rawOutsVal;
+      if (resultCode === "triple_play") {
+        outsVal = 3;
+      } else if (resultCode === "double_play") {
+        outsVal = Math.max(2, rawOutsVal);
+      } else if (isDefiniteBatterOut) {
+        outsVal = Math.min(3, Math.max(1 + runnerOutsInPlay, rawOutsVal || 1));
+      } else if (isSafeBatterReach) {
+        outsVal = Math.min(
+          3,
+          runnerOutsInPlay + (batterOutInAdvances ? 1 : 0)
+        );
+      } else if (
+        resultCode === "fc" &&
+        gap.kind === "inter_inning" &&
+        inning === gap.prevInning &&
+        outsVal === 0
+      ) {
+        // イニング末尾の野選（6-4等の封殺チェンジ）は必ず先行走者1アウトを伴う
+        outsVal = 1;
+      }
+
+      const normalizedPitches = normalizePitchArray(
+        reconciled.rawPitches,
+        resultCode,
+        advances,
+        { "1B": runnerMaybeOnBase, "2B": false, "3B": false }
+      );
+      const { balls, strikes } = computeCountFromPitches(normalizedPitches);
+
+      const inningMeta = body.structure.innings.find((m) => m.inning === inning);
+      const batterRowBox = body.structure.batters.find(
+        (b) => b.battingOrder === battingOrder
+      )?.rowBox;
+      const skewedQuad = getCellQuadInStructure(
+        body.structure,
+        inning,
+        colIndex,
+        battingOrder,
+        0
+      );
+      const cellBox = skewedQuad
+        ? quadToBoundingBox(skewedQuad)
+        : computeCartesianCellBox(
+            undefined,
+            inningMeta?.columnBox,
+            inningMeta?.columnCount ?? 1,
+            colIndex,
+            batterRowBox
+          );
+
+      const rawConf = (
+        matchedRaw.cf ??
+        matchedRaw.confidence ??
+        "h"
+      ).toLowerCase();
+      const confidence: ConfidenceLevel =
+        rawConf === "l" || rawConf === "low"
+          ? "low"
+          : rawConf === "m" || rawConf === "medium"
+          ? "medium"
+          : "high";
+
+      const hpCount = advances.filter((a) => a.to === "HP" && !a.isOut).length;
+      const isHr = resultCode === "home_run";
+      const rawRunsInPlay =
+        toFiniteInt(matchedRaw.ru ?? matchedRaw.runsInPlay, 0) || 0;
+      const effectiveRuns = Math.max(rawRunsInPlay, hpCount, isHr ? 1 : 0);
+      const parsedRbi = toFiniteInt(matchedRaw.rbi);
+
+      resolved.push({
+        gapId: gap.gapId,
+        atBat: {
+          id: crypto.randomUUID(),
+          inning,
+          isTop: body.isTop,
+          columnIndex: colIndex,
+          battingOrder,
+          batterName: matchup.batterName || gap.batterName,
+          batterPlayerId: matchup.batterPlayerId,
+          pitcherName: matchup.pitcherName || ocrPitcherHint,
+          pitcherPlayerId: matchup.pitcherPlayerId,
+          resultCode,
+          resultLabel: harmonizedFielding.resultLabel,
+          battedDirection: harmonizedFielding.battedDirection,
+          rbi: Math.max(0, parsedRbi ?? effectiveRuns),
+          outsInPlay: outsVal,
+          endingOuts: Math.min(
+            3,
+            Math.max(priorOutsEstimate + outsVal, reconciled.endingOuts)
+          ),
+          runsInPlay: effectiveRuns,
+          balls,
+          strikes,
+          pitches: normalizedPitches,
+          advances,
+          confidence,
+          confidenceReason:
+            (
+              matchedRaw.cr ??
+              matchedRaw.confidenceReason ??
+              ""
+            ).trim() || undefined,
+          cellBox,
+        },
+      });
+    }
+
+    return c.json({
+      success: true,
+      resolved,
+      cooledModels,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return c.json(
+      {
+        success: false,
+        error: `打順抜け自動補正エラー: ${msg}`,
+        cooledModels,
+      },
       500
     );
   }
@@ -3258,53 +3701,164 @@ function sanitizeMappedInningAtBats(
   structure: ScorebookSheetStructure
 ): ScorebookV2AtBat[] {
   const output: ScorebookV2AtBat[] = [];
+  const lineupCycle = Math.max(9, structure.batters.length);
+
+  const isSafeReachResult = (rc: CanonicalAtBatResult): boolean =>
+    rc === "single" ||
+    rc === "double" ||
+    rc === "triple" ||
+    rc === "home_run" ||
+    rc === "walk" ||
+    rc === "intentional_walk" ||
+    rc === "hit_by_pitch" ||
+    rc === "interference" ||
+    rc === "dropped_third_strike" ||
+    rc === "error";
+
+  const hasConcretePlayEvidence = (ab: ScorebookV2AtBat): boolean => {
+    const prePlayPitches = ab.pitches.filter(
+      (p) => p !== "in_play" && p !== "hit"
+    ).length;
+    const hasFielding = /[1-9]/.test(ab.battedDirection || "");
+    const hasRunnerAdvance = ab.advances.some((a) => a.from !== "BAT");
+    if (ab.resultCode === "other" && !hasRunnerAdvance && prePlayPitches === 0) {
+      return false;
+    }
+    return (
+      prePlayPitches > 0 ||
+      hasFielding ||
+      hasRunnerAdvance ||
+      ab.runsInPlay > 0 ||
+      ab.resultCode === "walk" ||
+      ab.resultCode === "intentional_walk" ||
+      ab.resultCode === "hit_by_pitch" ||
+      ab.resultCode === "strikeout" ||
+      ab.resultCode === "fc"
+    );
+  };
 
   for (const inn of sortedTargets) {
-    const innList = items.filter((a) => a.inning === inn);
+    const innList = items
+      .filter((a) => a.inning === inn)
+      .map((a) => ({ ...a }));
     if (innList.length === 0) continue;
 
     const meta = structure.innings.find((m) => m.inning === inn);
     const confirmedRuns = meta?.runs ?? 0;
 
+    // 2アウト後に最終打者が野選・封殺(fc, 6-4等)で outsInPlay=0 になっていた場合は先行走者封殺の1アウトを補完
+    const preLastOuts = innList
+      .slice(0, -1)
+      .reduce((s, x) => s + Math.max(0, x.outsInPlay), 0);
+    const tailAb = innList[innList.length - 1];
+    if (
+      preLastOuts === 2 &&
+      tailAb &&
+      tailAb.resultCode === "fc" &&
+      tailAb.outsInPlay === 0
+    ) {
+      tailAb.outsInPlay = 1;
+      tailAb.endingOuts = 3;
+    }
+
     let cumOuts = 0;
-    let cumRuns = 0;
     let threeOutIndex = -1;
 
     for (let idx = 0; idx < innList.length; idx++) {
       cumOuts += Math.max(0, innList[idx].outsInPlay);
-      cumRuns += Math.max(0, innList[idx].runsInPlay);
       if (threeOutIndex === -1 && cumOuts >= 3) {
         threeOutIndex = idx;
       }
     }
 
     if (threeOutIndex !== -1 && threeOutIndex < innList.length - 1) {
+      const head = innList.slice(0, threeOutIndex + 1);
       const thirdOutAb = innList[threeOutIndex];
-      const runsAtThreeOuts = innList
-        .slice(0, threeOutIndex + 1)
-        .reduce((sum, x) => sum + Math.max(0, x.runsInPlay), 0);
-      const outsAtThreeOuts = innList
-        .slice(0, threeOutIndex + 1)
-        .reduce((sum, x) => sum + Math.max(0, x.outsInPlay), 0);
+      const runsAtThreeOuts = head.reduce(
+        (sum, x) => sum + Math.max(0, x.runsInPlay),
+        0
+      );
+      const outsAtThreeOuts = head.reduce(
+        (sum, x) => sum + Math.max(0, x.outsInPlay),
+        0
+      );
       const trailing = innList.slice(threeOutIndex + 1);
+
+      // 先行打者に1人も走者出塁が無い（完全な三者凡退など）場合は、4人目以降に封殺や盗塁死が起きる余地が物理的に0なので切り線ノイズ確定
+      const anyBaseRunnerExistedInHead = head.some(
+        (x) =>
+          isSafeReachResult(x.resultCode) ||
+          x.resultCode === "fc" ||
+          x.outsInPlay === 0 ||
+          x.advances.some((a) => !a.isOut && a.to !== "HP")
+      );
+
+      let prevBo = thirdOutAb.battingOrder;
+      let trailingIsStrictlySequential = true;
+      for (const t of trailing) {
+        const expectedBo = (prevBo % lineupCycle) + 1;
+        if (t.battingOrder !== expectedBo) {
+          trailingIsStrictlySequential = false;
+          break;
+        }
+        prevBo = t.battingOrder;
+      }
+
+      const trailingArePhantom = trailing.every(
+        (t) =>
+          !hasConcretePlayEvidence(t) ||
+          (t.resultCode === "other" &&
+            t.runsInPlay === 0 &&
+            !t.advances.some((a) => a.isOut && a.from !== "BAT"))
+      );
+
+      // 走者が居た状況で直後の次打順（例: 4番にⅢが書かれ5番が6-4封殺やFC等）に明確な実プレー根拠がある場合は絶対に切り捨てず、重複アウトの方を控除して5番を守る！
+      const shouldPreserveRunnerOutContinuation =
+        anyBaseRunnerExistedInHead &&
+        trailing.length === 1 &&
+        trailingIsStrictlySequential &&
+        hasConcretePlayEvidence(trailing[0]);
 
       const thirdOutHasExplicitThreeMark =
         thirdOutAb.endingOuts === 3 && thirdOutAb.outsInPlay >= 1;
       const scoreAlreadyMatchesAtThreeOuts =
         outsAtThreeOuts === 3 && runsAtThreeOuts === confirmedRuns;
-      const trailingArePhantomOrZeroOut = trailing.every(
-        (t) =>
-          (t.outsInPlay === 0 && t.runsInPlay === 0) ||
-          (t.resultCode === "other" && t.runsInPlay === 0)
-      );
 
       if (
-        (thirdOutHasExplicitThreeMark &&
-          (trailingArePhantomOrZeroOut || scoreAlreadyMatchesAtThreeOuts)) ||
-        (scoreAlreadyMatchesAtThreeOuts && trailingArePhantomOrZeroOut)
+        !shouldPreserveRunnerOutContinuation &&
+        (!anyBaseRunnerExistedInHead ||
+          !trailingIsStrictlySequential ||
+          trailingArePhantom ||
+          (thirdOutHasExplicitThreeMark &&
+            trailingArePhantom &&
+            scoreAlreadyMatchesAtThreeOuts))
       ) {
-        output.push(...innList.slice(0, threeOutIndex + 1));
+        output.push(...head);
         continue;
+      }
+
+      // 5番を保持した場合、先行走者マスとの二重アウト計上（合計4アウト等）を3アウトへリバランス
+      let totalInnOuts = innList.reduce(
+        (s, x) => s + Math.max(0, x.outsInPlay),
+        0
+      );
+      if (totalInnOuts > 3) {
+        for (let i = head.length - 1; i >= 0 && totalInnOuts > 3; i--) {
+          const cand = innList[i];
+          if (
+            (isSafeReachResult(cand.resultCode) || cand.resultCode === "fc") &&
+            cand.outsInPlay > 0
+          ) {
+            const deduct = Math.min(cand.outsInPlay, totalInnOuts - 3);
+            cand.outsInPlay -= deduct;
+            totalInnOuts -= deduct;
+          }
+        }
+        let running = 0;
+        for (const item of innList) {
+          running = Math.min(3, running + Math.max(0, item.outsInPlay));
+          item.endingOuts = running;
+        }
       }
     }
 

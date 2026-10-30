@@ -1,5 +1,6 @@
 // filepath: src/lib/liff/scorebook-image.ts
 import type {
+  MissingOrderGapSpec,
   NormalizedBox,
   ScorebookGridCorners,
   ScorebookSheetStructure,
@@ -2090,4 +2091,225 @@ function loadImageFromUrl(url: string): Promise<HTMLImageElement> {
     };
     img.src = url;
   });
+}
+
+/**
+ * 確定済み打順の循環チェックで検出された「抜けている打順（例: 1回4番終了→2回6番開始の間の5番）」について、
+ * 候補となるマス（候補A: 前イニング末尾の5番マス vs 候補B: 次イニング先頭の5番マス 等）を
+ * [全体マス | BSO拡大 | 中央・右下拡大] の高精細トリプルビューで横並び比較描画する。
+ */
+export async function buildMissingOrderComparisonCrop(
+  sourceDataUrl: string,
+  structure: ScorebookSheetStructure,
+  gaps: readonly MissingOrderGapSpec[]
+): Promise<{ base64: string; mimeType: string } | null> {
+  if (!sourceDataUrl || gaps.length === 0 || structure.batters.length === 0) {
+    return null;
+  }
+
+  try {
+    const img = await loadImageFromUrl(sourceDataUrl);
+    const w = img.naturalWidth;
+    const h = img.naturalHeight;
+    if (w < 120 || h < 120) return null;
+
+    const cachedRgba = getDecodedSheetRgbaBuffer(sourceDataUrl, img, w, h);
+    if (!cachedRgba) return null;
+    const fullSrcData = cachedRgba.data;
+
+    const maxCandidates = Math.max(
+      1,
+      ...gaps.map((g) => Math.max(1, g.candidates.length))
+    );
+
+    const rowCellH = 192;
+    const cellW = 248;
+    const zoomGap = 4;
+    const bsoW = 86;
+    const playW = 178;
+    const candGroupW = cellW + zoomGap + bsoW + zoomGap + playW;
+    const candHeaderH = 28;
+    const rowBlockH = candHeaderH + rowCellH;
+    const rowGapH = 14;
+    const leftLabelW = 172;
+    const candGapW = 14;
+    const padX = 12;
+    const topBannerH = 38;
+
+    const totalW =
+      padX * 2 +
+      leftLabelW +
+      candGapW +
+      maxCandidates * candGroupW +
+      (maxCandidates - 1) * candGapW;
+    const totalH =
+      topBannerH + gaps.length * rowBlockH + (gaps.length - 1) * rowGapH + 12;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = totalW;
+    canvas.height = totalH;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      releaseCanvas(canvas);
+      return null;
+    }
+
+    ctx.fillStyle = "#0f172a";
+    ctx.fillRect(0, 0, totalW, totalH);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+
+    ctx.fillStyle = "#38bdf8";
+    ctx.font = "bold 14px sans-serif";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillText(
+      "【打順抜けピンポイント検証】手書き記録がある候補マスを特定して1打席抽出",
+      padX,
+      19
+    );
+
+    const candPalette = ["#0284c7", "#059669", "#d97706"];
+    const candNames = ["候補A", "候補B", "候補C"];
+
+    for (let gIdx = 0; gIdx < gaps.length; gIdx++) {
+      const gap = gaps[gIdx];
+      const blockTopY = topBannerH + gIdx * (rowBlockH + rowGapH);
+      const cellTopY = blockTopY + candHeaderH;
+
+      // 左ラベルボックス
+      ctx.fillStyle = "#1e293b";
+      ctx.fillRect(padX, blockTopY, leftLabelW, rowBlockH);
+      ctx.fillStyle = "#4f46e5";
+      ctx.fillRect(padX, blockTopY, leftLabelW, candHeaderH);
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 13px sans-serif";
+      ctx.textAlign = "left";
+      ctx.fillText(`[${gap.gapId}] ${gap.battingOrder}番 欠損`, padX + 8, blockTopY + 14);
+
+      ctx.fillStyle = "#f8fafc";
+      ctx.font = "bold 13px sans-serif";
+      ctx.fillText((gap.batterName || "").slice(0, 9), padX + 8, cellTopY + 26);
+
+      ctx.fillStyle = "#94a3b8";
+      ctx.font = "bold 11px sans-serif";
+      const kindText =
+        gap.kind === "inter_inning"
+          ? `${gap.prevInning}回末尾 vs ${gap.nextInning}回先頭`
+          : gap.kind === "lead_off_1st"
+          ? "1回先頭マス確認"
+          : `${gap.targetInning}回 途中抜け確認`;
+      ctx.fillText(kindText, padX + 8, cellTopY + 52);
+      ctx.fillText("記入済みの側を採用", padX + 8, cellTopY + 74);
+
+      for (let cIdx = 0; cIdx < gap.candidates.length; cIdx++) {
+        const cand = gap.candidates[cIdx];
+        const candX =
+          padX + leftLabelW + candGapW + cIdx * (candGroupW + candGapW);
+        const accent = candPalette[cIdx % candPalette.length];
+        const candTitle = `${candNames[cIdx] || `候補${cIdx + 1}`}: ${
+          cand.inning
+        }回 [c:${cand.columnIndex}] ${gap.battingOrder}番マス`;
+
+        ctx.fillStyle = accent;
+        ctx.fillRect(candX, blockTopY, cellW, candHeaderH);
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "bold 12px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText(candTitle, candX + cellW / 2, blockTopY + 14);
+
+        const bsoX = candX + cellW + zoomGap;
+        const playX = bsoX + bsoW + zoomGap;
+
+        ctx.fillStyle = "#0f766e";
+        ctx.fillRect(bsoX, blockTopY, bsoW, candHeaderH);
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "bold 10px sans-serif";
+        ctx.fillText("BSO拡大", bsoX + bsoW / 2, blockTopY + 14);
+
+        ctx.fillStyle = "#4338ca";
+        ctx.fillRect(playX, blockTopY, playW, candHeaderH);
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "bold 10px sans-serif";
+        ctx.fillText("中央・右下拡大", playX + playW / 2, blockTopY + 14);
+
+        const fullQuad = getCellQuadInStructure(
+          structure,
+          cand.inning,
+          cand.columnIndex,
+          gap.battingOrder,
+          0.045
+        );
+        if (!fullQuad) continue;
+
+        const fullImgData = ctx.createImageData(cellW, rowCellH);
+        warpQuadFromRgbaBuffer(
+          fullSrcData,
+          w,
+          h,
+          normalizedQuadToPixelQuad(fullQuad, w, h),
+          fullImgData.data,
+          cellW,
+          rowCellH
+        );
+        ctx.putImageData(fullImgData, candX, cellTopY);
+        ctx.strokeStyle = accent;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(candX, cellTopY, cellW, rowCellH);
+
+        const tightQuad =
+          getCellQuadInStructure(
+            structure,
+            cand.inning,
+            cand.columnIndex,
+            gap.battingOrder,
+            0.015
+          ) || fullQuad;
+
+        const bsoQuad = sliceQuadSubRegion(tightQuad, 0.0, 0.31, 0.01, 0.99);
+        const bsoImgData = ctx.createImageData(bsoW, rowCellH);
+        warpQuadFromRgbaBuffer(
+          fullSrcData,
+          w,
+          h,
+          normalizedQuadToPixelQuad(bsoQuad, w, h),
+          bsoImgData.data,
+          bsoW,
+          rowCellH
+        );
+        applyStrokeValleySharpen(bsoImgData, bsoW, rowCellH);
+        ctx.putImageData(bsoImgData, bsoX, cellTopY);
+        ctx.strokeStyle = "#0d9488";
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(bsoX, cellTopY, bsoW, rowCellH);
+
+        const playQuad = sliceQuadSubRegion(tightQuad, 0.28, 1.0, 0.14, 1.0);
+        const playImgData = ctx.createImageData(playW, rowCellH);
+        warpQuadFromRgbaBuffer(
+          fullSrcData,
+          w,
+          h,
+          normalizedQuadToPixelQuad(playQuad, w, h),
+          playImgData.data,
+          playW,
+          rowCellH
+        );
+        applyStrokeValleySharpen(playImgData, playW, rowCellH);
+        ctx.putImageData(playImgData, playX, cellTopY);
+        ctx.strokeStyle = "#6366f1";
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(playX, cellTopY, playW, rowCellH);
+      }
+    }
+
+    const mimeType = "image/jpeg";
+    const outBase64 = stripDataUrlPrefix(canvas.toDataURL(mimeType, 0.92));
+    releaseCanvas(canvas);
+    return {
+      base64: outBase64,
+      mimeType,
+    };
+  } catch {
+    return null;
+  }
 }
