@@ -6,6 +6,10 @@ import * as schema from "@/db/schema";
 import { ensureMatchLineupColumns } from "@/lib/db-helper";
 import { harmonizeOcrFieldingAndLabel } from "@/lib/liff/scorebook-fielding";
 import {
+  formatBaseJa,
+  materializeSheetRunnerAdvances,
+} from "@/lib/liff/scorebook-runners";
+import {
   getCellQuadInStructure,
   quadToBoundingBox,
   resolveStructureGridCorners,
@@ -3035,8 +3039,18 @@ liffScorebookRouter.post("/save", async (c) => {
     const includeBottom =
       body.importScope === "both" || body.importScope === "bottom_only";
 
-    const incomingTop = includeTop ? body.topAtBats || [] : [];
-    const incomingBottom = includeBottom ? body.bottomAtBats || [] : [];
+    const incomingTop = includeTop
+      ? materializeSheetRunnerAdvances(
+          body.topAtBats || [],
+          body.topStructure
+        )
+      : [];
+    const incomingBottom = includeBottom
+      ? materializeSheetRunnerAdvances(
+          body.bottomAtBats || [],
+          body.bottomStructure
+        )
+      : [];
 
     // バリデーションメッセージ生成
     const topIssues = includeTop
@@ -3316,9 +3330,21 @@ liffScorebookRouter.post("/save", async (c) => {
           ? ` (${cleanDirTag})`
           : "";
       const rbiSuffix = ab.rbi > 0 ? `（打点${ab.rbi}）` : "";
+      const runnerMovesText = ab.advances
+        .filter((a) => a.from !== "BAT" && (a.isOut || a.from !== a.to))
+        .map((a) => {
+          const rLabel = a.runnerName ? a.runnerName : "走者";
+          const fJa = formatBaseJa(a.from);
+          const tJa = formatBaseJa(a.to);
+          return `${rLabel}:${fJa}→${tJa}${
+            a.isOut ? "アウト" : a.to === "HP" ? "生還" : ""
+          }`;
+        });
+      const runnerSuffix =
+        runnerMovesText.length > 0 ? ` ［${runnerMovesText.join("、")}］` : "";
       const description = `${ab.battingOrder}番 ${ab.batterName || "打者"}: ${
         ab.resultLabel
-      }${dirSuffix}${rbiSuffix}${pitchLines} [B:${countCalc.balls}, S:${
+      }${dirSuffix}${rbiSuffix}${runnerSuffix}${pitchLines} [B:${countCalc.balls}, S:${
         countCalc.strikes
       }, O:${ab.outsInPlay}]`;
 

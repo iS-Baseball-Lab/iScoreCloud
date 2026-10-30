@@ -1,5 +1,6 @@
 // filepath: src/lib/liff/scorebook-validator.ts
 import { harmonizeOcrFieldingAndLabel } from "@/lib/liff/scorebook-fielding";
+import { simulateSheetRunners } from "@/lib/liff/scorebook-runners";
 import {
   isPickoffPitch,
   type CanonicalAtBatResult,
@@ -579,14 +580,12 @@ export function validateScorebookSheet(
 
     let inningOuts = 0;
     let inningRuns = 0;
-    const bases: Record<"1B" | "2B" | "3B", string | null> = {
-      "1B": null,
-      "2B": null,
-      "3B": null,
-    };
+    const inningSnapshots = simulateSheetRunners(inningEvents, structure);
 
     for (let i = 0; i < inningEvents.length; i++) {
       const ab = inningEvents[i];
+      const snap = inningSnapshots.get(ab.id);
+      const snapBasesBefore = snap?.basesBefore;
       let hasRowOrderJump = false;
 
       // 打順の1打席ごとの連続チェック
@@ -777,17 +776,17 @@ export function validateScorebookSheet(
           });
         }
         const had1B =
-          Boolean(bases["1B"]) ||
+          Boolean(snapBasesBefore?.["1B"]) ||
           ab.advances.some(
             (a) => a.from === "1B" || (a.from !== "BAT" && a.to === "1B")
           );
         const had2B =
-          Boolean(bases["2B"]) ||
+          Boolean(snapBasesBefore?.["2B"]) ||
           ab.advances.some(
             (a) => a.from === "2B" || (a.from !== "BAT" && a.to === "2B")
           );
         const had3B =
-          Boolean(bases["3B"]) ||
+          Boolean(snapBasesBefore?.["3B"]) ||
           ab.advances.some(
             (a) => a.from === "3B" || (a.from !== "BAT" && a.to === "3B")
           );
@@ -857,10 +856,10 @@ export function validateScorebookSheet(
       // インフィールドフライの宣告条件チェック（無死または一死、かつ一・二塁または満塁）
       if (ab.resultCode === "infield_fly") {
         const hasTiebreakOrRunner1B =
-          Boolean(bases["1B"]) ||
+          Boolean(snapBasesBefore?.["1B"]) ||
           ab.advances.some((a) => a.from === "1B" || a.method === "tiebreak");
         const hasTiebreakOrRunner2B =
-          Boolean(bases["2B"]) ||
+          Boolean(snapBasesBefore?.["2B"]) ||
           ab.advances.some((a) => a.from === "2B" || a.method === "tiebreak");
         if (inningOuts >= 2 || !hasTiebreakOrRunner1B || !hasTiebreakOrRunner2B) {
           issues.push({
@@ -876,10 +875,20 @@ export function validateScorebookSheet(
         }
       }
 
-      // 4. 得点と本塁生還数の一致チェック
-      const hpAdvances = ab.advances.filter((a) => a.to === "HP" && !a.isOut).length;
+      // 4. 得点と本塁生還可能走者数の一致チェック
+      const explicitHpAdvances = ab.advances.filter(
+        (a) => a.to === "HP" && !a.isOut
+      ).length;
+      const simulatedHpMoves = snap
+        ? snap.precedingRunnerMoves.filter((m) => m.to === "HP" && !m.isOut)
+            .length +
+          (snap.batterSummary.finalBase === "HP" &&
+          !snap.batterSummary.isOutOnBases
+            ? 1
+            : 0)
+        : explicitHpAdvances + (ab.resultCode === "home_run" ? 1 : 0);
       const isHomeRun = ab.resultCode === "home_run";
-      if (ab.runsInPlay > 0 && hpAdvances === 0 && !isHomeRun) {
+      if (ab.runsInPlay > 0 && simulatedHpMoves < ab.runsInPlay && !isHomeRun) {
         issues.push({
           id: `hp-mismatch-${ab.id}`,
           severity: "warning",
@@ -888,7 +897,7 @@ export function validateScorebookSheet(
           isTop,
           battingOrder: ab.battingOrder,
           category: "runs",
-          message: `この打席で${ab.runsInPlay}点記録されていますが、本塁生還(HP)の進塁記録が見当たりません。`,
+          message: `この打席で${ab.runsInPlay}点記録されていますが、生還可能な塁上走者が見当たりません（走者状況・本塁生還を確認してください）。`,
         });
       }
 
@@ -919,42 +928,6 @@ export function validateScorebookSheet(
           category: "outs",
           message: `すでに3アウトチェンジした後に後続打席が読み取られています。次イニングの打席が混入していないか確認してください。`,
         });
-      }
-
-      // 簡易ベースランナー更新
-      for (const adv of ab.advances) {
-        if (adv.from !== "BAT" && bases[adv.from] === ab.batterName) {
-          // ignore
-        }
-        if (adv.from === "1B" || adv.from === "2B" || adv.from === "3B") {
-          bases[adv.from] = null;
-        }
-      }
-      for (const adv of ab.advances) {
-        if (!adv.isOut && (adv.to === "1B" || adv.to === "2B" || adv.to === "3B")) {
-          bases[adv.to] = adv.runnerName || ab.batterName;
-        }
-      }
-      if (
-        ab.advances.filter((a) => a.from === "BAT").length === 0 &&
-        ab.outsInPlay === 0
-      ) {
-        if (
-          ab.resultCode === "single" ||
-          ab.resultCode === "walk" ||
-          ab.resultCode === "intentional_walk" ||
-          ab.resultCode === "hit_by_pitch" ||
-          ab.resultCode === "interference" ||
-          ab.resultCode === "error" ||
-          ab.resultCode === "fc" ||
-          ab.resultCode === "dropped_third_strike"
-        ) {
-          bases["1B"] = ab.batterName;
-        } else if (ab.resultCode === "double") {
-          bases["2B"] = ab.batterName;
-        } else if (ab.resultCode === "triple") {
-          bases["3B"] = ab.batterName;
-        }
       }
     }
 

@@ -28,7 +28,6 @@ import {
   Sparkles,
 } from "lucide-react";
 import {
-  ADVANCE_METHOD_LABELS,
   AT_BAT_RESULT_PRESETS,
   LEGACY_PICKOFF_PRESET,
   PITCH_RESULT_PRESETS,
@@ -36,14 +35,12 @@ import {
   formatTotalElapsedSeconds,
   isNonPitchMoundEvent,
   isPickoffPitch,
-  type AdvanceMethodCode,
   type CanonicalAtBatResult,
   type CanonicalPitchResult,
   type ImportScopeMode,
   type NormalizedBox,
   type ScorebookAnalysisTimingSummary,
   type ScorebookSheetStructure,
-  type ScorebookV2Advance,
   type ScorebookV2AtBat,
   type ScorebookValidationIssue,
 } from "@/types/scorebook-v2";
@@ -54,6 +51,11 @@ import {
   resolveActiveMatchupFromStructure,
   validateScorebookSheet,
 } from "@/lib/liff/scorebook-validator";
+import {
+  buildSmartAdvancesForResultChange,
+  isForceOutGroundout,
+  simulateSheetRunners,
+} from "@/lib/liff/scorebook-runners";
 import {
   DEFENSIVE_POSITIONS,
   DP_RELAY_PRESETS,
@@ -72,6 +74,10 @@ import {
   cropScorebookRegion,
 } from "@/lib/liff/scorebook-image";
 import { ActionStatusBanner } from "./ActionStatusBanner";
+import {
+  AtBatCardRunnerStrip,
+  AtBatModalRunnerEditor,
+} from "./RunnerSituationPanel";
 
 interface Step3PinpointReviewProps {
   importScope: ImportScopeMode;
@@ -241,10 +247,18 @@ export function Step3PinpointReview({
     });
   }, [currentList, selectedInning, onlyFlagged, issuesByAtBatId]);
 
+  const runnerSnapshotsByAtBatId = useMemo(
+    () => simulateSheetRunners(currentList, currentStructure),
+    [currentList, currentStructure]
+  );
+
   const editingIndex = editingAtBatId
     ? currentList.findIndex((ab) => ab.id === editingAtBatId)
     : -1;
   const editingAtBat = editingIndex >= 0 ? currentList[editingIndex] : null;
+  const editingRunnerSnapshot = editingAtBat
+    ? runnerSnapshotsByAtBatId.get(editingAtBat.id)
+    : undefined;
 
   const editingInningPeers = useMemo(() => {
     if (!editingAtBat) return [];
@@ -1180,31 +1194,11 @@ export function Step3PinpointReview({
                               })()}
                             </div>
 
-                            {/* 盗塁・進塁があれば表示 */}
-                            {ab.advances.length > 0 && (
-                              <div className="flex items-center flex-wrap gap-1 text-[10px] font-bold text-muted-foreground">
-                                {ab.advances.map((adv) => (
-                                  <span
-                                    key={adv.id}
-                                    className={`px-1.5 py-0.5 rounded-md border ${
-                                      adv.isOut
-                                        ? "bg-destructive/10 text-destructive border-destructive/25"
-                                        : adv.to === "HP"
-                                        ? "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/25"
-                                        : "bg-card border-border"
-                                    }`}
-                                  >
-                                    {adv.runnerName
-                                      ? `${adv.runnerName}: `
-                                      : ""}
-                                    {adv.from}→{adv.to}（
-                                    {ADVANCE_METHOD_LABELS[adv.method] ||
-                                      adv.method}
-                                    ）
-                                  </span>
-                                ))}
-                              </div>
-                            )}
+                            {/* 走者・アウト状況（打席前➔打席後）＆ 先行走者進塁バー */}
+                            <AtBatCardRunnerStrip
+                              atBat={ab}
+                              snapshot={runnerSnapshotsByAtBatId.get(ab.id)}
+                            />
 
                             {rowIssues.length > 0 && (
                               <p className="text-[10px] font-black text-amber-700 dark:text-amber-300 flex items-center gap-1">
@@ -1803,13 +1797,35 @@ export function Step3PinpointReview({
                                           }
                                         }
 
+                                        const smartRunnerSync =
+                                          buildSmartAdvancesForResultChange({
+                                            prevAb: prev,
+                                            nextResultCode: nextCode,
+                                            nextBattedDirection: nextDir,
+                                            nextResultLabel: nextLabel,
+                                            defaultPresetOuts:
+                                              preset.defaultOuts,
+                                            outsBefore:
+                                              editingRunnerSnapshot?.outsBefore ??
+                                              0,
+                                            basesBefore:
+                                              editingRunnerSnapshot?.basesBefore ?? {
+                                                "1B": null,
+                                                "2B": null,
+                                                "3B": null,
+                                              },
+                                          });
+
                                         return {
                                           ...prev,
                                           resultCode: nextCode,
                                           resultLabel: nextLabel,
                                           battedDirection: nextDir,
                                           pitches: nextPitches,
-                                          outsInPlay: preset.defaultOuts,
+                                          advances: smartRunnerSync.advances,
+                                          outsInPlay: smartRunnerSync.outsInPlay,
+                                          runsInPlay: smartRunnerSync.runsInPlay,
+                                          rbi: smartRunnerSync.rbi,
                                           confidence: "high",
                                         };
                                       }
@@ -1939,6 +1955,46 @@ export function Step3PinpointReview({
                           errorStyle: overrides?.errorStyle ?? cur.errorStyle,
                           fallbackLabel: prev.resultLabel,
                         });
+
+                        const wasForceGroundout = isForceOutGroundout(
+                          prev.resultCode,
+                          prev.battedDirection,
+                          prev.resultLabel
+                        );
+                        const willBeForceGroundout = isForceOutGroundout(
+                          effectiveCode,
+                          composed.battedDirection,
+                          composed.resultLabel
+                        );
+
+                        if (wasForceGroundout !== willBeForceGroundout) {
+                          const syncedForce =
+                            buildSmartAdvancesForResultChange({
+                              prevAb: prev,
+                              nextResultCode: effectiveCode,
+                              nextBattedDirection: composed.battedDirection,
+                              nextResultLabel: composed.resultLabel,
+                              defaultPresetOuts: 1,
+                              outsBefore:
+                                editingRunnerSnapshot?.outsBefore ?? 0,
+                              basesBefore:
+                                editingRunnerSnapshot?.basesBefore ?? {
+                                  "1B": null,
+                                  "2B": null,
+                                  "3B": null,
+                                },
+                            });
+                          return {
+                            ...prev,
+                            battedDirection: composed.battedDirection,
+                            resultLabel: composed.resultLabel,
+                            advances: syncedForce.advances,
+                            outsInPlay: syncedForce.outsInPlay,
+                            runsInPlay: syncedForce.runsInPlay,
+                            rbi: syncedForce.rbi,
+                            confidence: "high",
+                          };
+                        }
 
                         return {
                           ...prev,
@@ -2360,6 +2416,16 @@ export function Step3PinpointReview({
                   </div>
                 </div>
 
+                {/* 2.5 塁上の走者状況（打席前➔打席後）＆ 前の走者の進塁・生還ワンタップエディタ */}
+                <AtBatModalRunnerEditor
+                  atBat={editingAtBat}
+                  snapshot={editingRunnerSnapshot}
+                  batters={currentStructure?.batters || []}
+                  onUpdateAtBat={(updater) =>
+                    updateSingleAtBat(editingAtBat.id, updater)
+                  }
+                />
+
                 {/* 3. 1球ごとの投球・牽制・ボーク順序エディタ（必須機能！） */}
                 <div className="p-3 rounded-2xl bg-muted/35 border border-border space-y-2.5">
                   {(() => {
@@ -2586,195 +2652,6 @@ export function Step3PinpointReview({
                       ))}
                     </div>
                   </div>
-                </div>
-
-                {/* 4. 走者進塁・盗塁・ボーク・暴投・妨害・本塁生還エディタ */}
-                <div className="p-3 rounded-2xl bg-muted/35 border border-border space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-black text-foreground">
-                      走者進塁・盗塁・ボーク・暴投・生還 ({editingAtBat.advances.length}件)
-                    </span>
-                  </div>
-
-                  {/* 主要走塁イベントのワンタップ追加チップ */}
-                  <div className="grid grid-cols-4 gap-1">
-                    {(
-                      [
-                        { label: "+盗塁(S)", from: "1B", to: "2B", method: "steal", isOut: false },
-                        { label: "+盗塁死(CS)", from: "1B", to: "2B", method: "caught_stealing", isOut: true },
-                        { label: "+牽制死(PO)", from: "1B", to: "1B", method: "pickoff_out", isOut: true },
-                        { label: "+牽制悪送球", from: "1B", to: "2B", method: "pickoff_error", isOut: false },
-                        { label: "+ボーク進塁", from: "1B", to: "2B", method: "balk", isOut: false },
-                        { label: "+暴投(WP)", from: "1B", to: "2B", method: "wp", isOut: false },
-                        { label: "+捕逸(PB)", from: "1B", to: "2B", method: "pb", isOut: false },
-                        { label: "+送球間(T)", from: "1B", to: "2B", method: "throw_advance", isOut: false },
-                        { label: "+走塁妨害", from: "1B", to: "2B", method: "obstruction", isOut: false },
-                        { label: "+守備妨害死", from: "1B", to: "2B", method: "interference_out", isOut: true },
-                        { label: "+アピール死", from: "1B", to: "1B", method: "appeal_out", isOut: true },
-                        { label: "+本塁生還", from: "3B", to: "HP", method: "hit", isOut: false },
-                      ] as const
-                    ).map((q) => (
-                      <button
-                        key={q.label}
-                        type="button"
-                        onClick={() => {
-                          const newAdv: ScorebookV2Advance = {
-                            id: crypto.randomUUID(),
-                            runnerName: "",
-                            from: q.from,
-                            to: q.to,
-                            method: q.method,
-                            isOut: q.isOut,
-                          };
-                          updateSingleAtBat(editingAtBat.id, (prev) => ({
-                            ...prev,
-                            outsInPlay: q.isOut
-                              ? Math.min(3, prev.outsInPlay + 1)
-                              : prev.outsInPlay,
-                            runsInPlay:
-                              q.to === "HP" && !q.isOut
-                                ? prev.runsInPlay + 1
-                                : prev.runsInPlay,
-                            advances: [...prev.advances, newAdv],
-                          }));
-                        }}
-                        className={`py-1.5 px-1 rounded-lg border text-[9px] font-black active:scale-95 cursor-pointer ${
-                          q.isOut
-                            ? "bg-destructive/10 text-destructive border-destructive/25"
-                            : q.to === "HP"
-                            ? "bg-rose-500/12 text-rose-700 dark:text-rose-300 border-rose-500/30"
-                            : "bg-card text-foreground border-border"
-                        }`}
-                      >
-                        {q.label}
-                      </button>
-                    ))}
-                  </div>
-
-                  {editingAtBat.advances.map((adv) => (
-                    <div
-                      key={adv.id}
-                      className="grid grid-cols-12 gap-1 items-center p-1.5 rounded-xl bg-card border border-border"
-                    >
-                      <input
-                        type="text"
-                        value={adv.runnerName}
-                        onChange={(e) =>
-                          updateSingleAtBat(editingAtBat.id, (prev) => ({
-                            ...prev,
-                            advances: prev.advances.map((a) =>
-                              a.id === adv.id
-                                ? { ...a, runnerName: e.target.value }
-                                : a
-                            ),
-                          }))
-                        }
-                        placeholder="走者名"
-                        className="col-span-3 h-8 px-1.5 rounded-lg bg-muted/40 border border-border text-[10px] font-black"
-                      />
-
-                      <select
-                        value={adv.from}
-                        onChange={(e) =>
-                          updateSingleAtBat(editingAtBat.id, (prev) => ({
-                            ...prev,
-                            advances: prev.advances.map((a) =>
-                              a.id === adv.id
-                                ? {
-                                    ...a,
-                                    from: e.target.value as
-                                      | "BAT"
-                                      | "1B"
-                                      | "2B"
-                                      | "3B",
-                                  }
-                                : a
-                            ),
-                          }))
-                        }
-                        className="col-span-2 h-8 px-1 rounded-lg bg-muted/40 border border-border text-[10px] font-black"
-                      >
-                        <option value="BAT">打者</option>
-                        <option value="1B">1塁</option>
-                        <option value="2B">2塁</option>
-                        <option value="3B">3塁</option>
-                      </select>
-
-                      <select
-                        value={adv.to}
-                        onChange={(e) =>
-                          updateSingleAtBat(editingAtBat.id, (prev) => ({
-                            ...prev,
-                            advances: prev.advances.map((a) =>
-                              a.id === adv.id
-                                ? {
-                                    ...a,
-                                    to: e.target.value as
-                                      | "1B"
-                                      | "2B"
-                                      | "3B"
-                                      | "HP",
-                                  }
-                                : a
-                            ),
-                          }))
-                        }
-                        className="col-span-2 h-8 px-1 rounded-lg bg-muted/40 border border-border text-[10px] font-black"
-                      >
-                        <option value="1B">→1塁</option>
-                        <option value="2B">→2塁</option>
-                        <option value="3B">→3塁</option>
-                        <option value="HP">→本塁</option>
-                      </select>
-
-                      <select
-                        value={adv.method}
-                        onChange={(e) => {
-                          const m = e.target.value as AdvanceMethodCode;
-                          const autoOut =
-                            m === "caught_stealing" ||
-                            m === "pickoff_out" ||
-                            m === "interference_out" ||
-                            m === "appeal_out" ||
-                            m === "out_on_base";
-                          updateSingleAtBat(editingAtBat.id, (prev) => ({
-                            ...prev,
-                            advances: prev.advances.map((a) =>
-                              a.id === adv.id
-                                ? { ...a, method: m, isOut: autoOut }
-                                : a
-                            ),
-                          }));
-                        }}
-                        className="col-span-4 h-8 px-1 rounded-lg bg-muted/40 border border-border text-[10px] font-black"
-                      >
-                        {(
-                          Object.keys(
-                            ADVANCE_METHOD_LABELS
-                          ) as AdvanceMethodCode[]
-                        ).map((k) => (
-                          <option key={k} value={k}>
-                            {ADVANCE_METHOD_LABELS[k]}
-                          </option>
-                        ))}
-                      </select>
-
-                      <button
-                        type="button"
-                        onClick={() =>
-                          updateSingleAtBat(editingAtBat.id, (prev) => ({
-                            ...prev,
-                            advances: prev.advances.filter(
-                              (a) => a.id !== adv.id
-                            ),
-                          }))
-                        }
-                        className="col-span-1 flex justify-center text-destructive cursor-pointer"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  ))}
                 </div>
 
                 {/* 打席削除 */}
