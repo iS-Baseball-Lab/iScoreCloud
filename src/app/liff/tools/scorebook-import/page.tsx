@@ -10,6 +10,7 @@ import { LiffToolSubNav } from "@/components/liff/LiffToolSubNav";
 import { getClientQueryParam } from "@/lib/liff/liff-client";
 import {
   buildCalibratedRulerSheetImage,
+  buildInningOutsReconcileCrop,
   buildMissingOrderComparisonCrop,
   extractInningChunkCompositeCrop,
   extractStructureFocusCrops,
@@ -18,7 +19,9 @@ import {
 } from "@/lib/liff/scorebook-image";
 import {
   applyRecoveredMissingAtBats,
+  detectExcessOutInnings,
   detectMissingOrderGaps,
+  reconcileSheetExcessOutsDeterministically,
 } from "@/lib/liff/scorebook-validator";
 import {
   clearScorebookDraft,
@@ -413,8 +416,18 @@ export default function LiffScorebookImportPage() {
       setLegendOverride(draft.legendOverride);
       setTopStructure(draft.topStructure);
       setBottomStructure(draft.bottomStructure);
-      setTopAtBats(draft.topAtBats);
-      setBottomAtBats(draft.bottomAtBats);
+      setTopAtBats(
+        reconcileSheetExcessOutsDeterministically(
+          draft.topAtBats,
+          draft.topStructure
+        ).atBats
+      );
+      setBottomAtBats(
+        reconcileSheetExcessOutsDeterministically(
+          draft.bottomAtBats,
+          draft.bottomStructure
+        ).atBats
+      );
       setTimingSummary(draft.timingSummary ?? null);
       setStructureTotalMs(draft.timingSummary?.structureTotalMs ?? null);
       setStructureCompletedTimings(draft.timingSummary?.structureEntries ?? []);
@@ -1327,6 +1340,117 @@ export default function LiffScorebookImportPage() {
     };
   };
 
+  /**
+   * 決定論的補正後もなお「1イニングが3アウトを超過している（例: 4打席すべてが凡退アウトと誤読され計4アウト）」イニングについて、
+   * 当該イニングの全マスをトリプルビュー拡大画像で再検算し、必ず合計3アウトへ収束させる。
+   */
+  const reconcileExcessOutInningsForSide = async (
+    isTop: boolean,
+    structure: ScorebookSheetStructure,
+    imgState: SheetImageState,
+    initialSideAtBats: ScorebookV2AtBat[],
+    options?: { targetInningOnly?: number; throwOnFailure?: boolean }
+  ): Promise<{
+    atBats: ScorebookV2AtBat[];
+    repairedCount: number;
+    durationMs: number;
+  }> => {
+    const startMs = Date.now();
+    const det = reconcileSheetExcessOutsDeterministically(
+      initialSideAtBats,
+      structure
+    );
+    let currentList = det.atBats;
+    let totalRepaired = det.changed ? 1 : 0;
+
+    if (!imgState.processed || currentList.length === 0) {
+      return {
+        atBats: currentList,
+        repairedCount: totalRepaired,
+        durationMs: Date.now() - startMs,
+      };
+    }
+
+    const specs = detectExcessOutInnings(currentList, structure).filter((s) =>
+      typeof options?.targetInningOnly === "number"
+        ? s.inning === options.targetInningOnly
+        : true
+    );
+    if (specs.length === 0) {
+      return {
+        atBats: currentList,
+        repairedCount: totalRepaired,
+        durationMs: Date.now() - startMs,
+      };
+    }
+
+    const sideLabel = isTop ? "先攻（表）" : "後攻（裏）";
+    for (const spec of specs) {
+      const crop = await buildInningOutsReconcileCrop(
+        imgState.processed.dataUrl,
+        structure,
+        spec
+      );
+      if (!crop) continue;
+
+      try {
+        const res = await fetch("/api/liff/scorebook/reconcile-inning-outs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            teamId: resolvedTeamId || currentTeam?.id || "",
+            matchId: selectedMatchId,
+            isTop,
+            cropBase64: crop.base64,
+            cropMimeType: crop.mimeType,
+            structure,
+            spec,
+            legendBase64: legendOverride?.base64,
+            legendMimeType: legendOverride?.mimeType,
+            skipModels: getActiveSkippedModels(),
+          }),
+        });
+
+        const data = await parseSafeJson<{
+          success: boolean;
+          atBats?: ScorebookV2AtBat[];
+          cooledModels?: string[];
+          error?: string;
+        }>(res, `${sideLabel} ${spec.inning}回 3アウト補正エラー`);
+
+        recordCooledModels(data.cooledModels);
+
+        if (!data.success || !data.atBats || data.atBats.length === 0) {
+          if (options?.throwOnFailure) {
+            throw new Error(
+              data.error ||
+                `${sideLabel} ${spec.inning}回の3アウト超過補正に失敗しました`
+            );
+          }
+          continue;
+        }
+
+        const before = currentList.filter((a) => a.inning < spec.inning);
+        const after = currentList.filter((a) => a.inning > spec.inning);
+        currentList = reconcileSheetExcessOutsDeterministically(
+          [...before, ...data.atBats, ...after],
+          structure
+        ).atBats;
+        totalRepaired += 1;
+      } catch (err) {
+        if (options?.throwOnFailure) {
+          throw err;
+        }
+      }
+    }
+
+    return {
+      atBats: currentList,
+      repairedCount: totalRepaired,
+      durationMs: Date.now() - startMs,
+    };
+  };
+
   // 5. Stage 2: イニング並列・高速ディープ解析（逐次リアルタイム保持・エラー耐性・未完了回のみ再開対応）
   const handleStartDeepAnalysis = async (opts?: { onlyMissing?: boolean }) => {
     if (!selectedMatchId) return;
@@ -1836,39 +1960,80 @@ export default function LiffScorebookImportPage() {
           }
         }
 
-        // 全イニング走査完了直後に「打順の抜け・飛び（例: 1回4番終了→2回6番開始の5番抜け）」を数学検算し、
-        // 抜けがあれば候補マス（1回・5番 vs 2回・5番）を即座に拡大照合して自動補完する
-        const currentSideSnapshot = isTop ? workingTop : workingBottom;
+        // 全イニング走査完了直後に「打順の抜け・飛び」および「1イニング3アウト超過（4アウト以上）」を数学検算し、
+        // 矛盾があれば候補マスを即座に拡大照合して打順連続性と1イニング3アウト整合を自動補完する
+        let currentSideSnapshot = isTop ? workingTop : workingBottom;
+        const detFirst = reconcileSheetExcessOutsDeterministically(
+          currentSideSnapshot,
+          structure
+        );
+        if (detFirst.changed) {
+          currentSideSnapshot = detFirst.atBats;
+          if (isTop) {
+            workingTop = currentSideSnapshot;
+            setTopAtBats([...workingTop]);
+          } else {
+            workingBottom = currentSideSnapshot;
+            setBottomAtBats([...workingBottom]);
+          }
+        }
+
         const postScanGaps = detectMissingOrderGaps(
           currentSideSnapshot,
           structure
         );
-        if (postScanGaps.length > 0) {
+        const postScanExcess = detectExcessOutInnings(
+          currentSideSnapshot,
+          structure
+        );
+
+        if (postScanGaps.length > 0 || postScanExcess.length > 0) {
           const repairStart = Date.now();
-          activeSideLabels[sideKey] = `打順抜け自動補正（${halfSuffix}）`;
+          activeSideLabels[sideKey] = `打順・アウト整合補正（${halfSuffix}）`;
           setDeepActiveStartedAtMs(repairStart);
           syncActiveLabelsUi();
 
-          const repaired = await reconcileMissingOrderGapsForSide(
+          let updatedSide = currentSideSnapshot;
+          let didVisualRepair = false;
+
+          if (postScanGaps.length > 0) {
+            const gapRepaired = await reconcileMissingOrderGapsForSide(
+              isTop,
+              structure,
+              imgState,
+              updatedSide
+            );
+            if (gapRepaired.repairedCount > 0) {
+              updatedSide = gapRepaired.atBats;
+              didVisualRepair = true;
+            }
+          }
+
+          const outRepaired = await reconcileExcessOutInningsForSide(
             isTop,
             structure,
             imgState,
-            currentSideSnapshot
+            updatedSide
           );
-          if (repaired.repairedCount > 0) {
+          if (outRepaired.repairedCount > 0) {
+            updatedSide = outRepaired.atBats;
+            didVisualRepair = true;
+          }
+
+          if (didVisualRepair) {
             if (isTop) {
-              workingTop = repaired.atBats;
+              workingTop = updatedSide;
               setTopAtBats([...workingTop]);
             } else {
-              workingBottom = repaired.atBats;
+              workingBottom = updatedSide;
               setBottomAtBats([...workingBottom]);
             }
             upsertTimingEntry({
               key: `${sideKey}-order-reconcile`,
               isTop,
               innings: [],
-              label: `打順補正${halfSuffix}`,
-              durationMs: repaired.durationMs,
+              label: `整合補正${halfSuffix}`,
+              durationMs: Date.now() - repairStart,
               status: "success",
             });
           }
@@ -2049,9 +2214,12 @@ export default function LiffScorebookImportPage() {
       const freshInningAtBats = data.atBats;
       const before = currentSideList.filter((a) => a.inning < inning);
       const after = currentSideList.filter((a) => a.inning > inning);
-      let finalMergedList = [...before, ...freshInningAtBats, ...after];
+      let finalMergedList = reconcileSheetExcessOutsDeterministically(
+        [...before, ...freshInningAtBats, ...after],
+        structure
+      ).atBats;
 
-      // 単独再解析後も当該イニング前後に打順の抜け・飛び（例: 1回4番終了→2回6番開始）が残っていればそのまま自動照合・補完する
+      // 単独再解析後も当該イニング前後に打順の抜け・飛びや3アウト超過が残っていればそのまま自動照合・補完する
       const remainingGaps = detectMissingOrderGaps(
         finalMergedList,
         structure
@@ -2071,6 +2239,17 @@ export default function LiffScorebookImportPage() {
         if (repaired.repairedCount > 0) {
           finalMergedList = repaired.atBats;
         }
+      }
+
+      const outRepaired = await reconcileExcessOutInningsForSide(
+        isTop,
+        structure,
+        imgState,
+        finalMergedList,
+        { targetInningOnly: inning }
+      );
+      if (outRepaired.repairedCount > 0) {
+        finalMergedList = outRepaired.atBats;
       }
 
       const elapsed = Date.now() - startMs;
@@ -2129,7 +2308,7 @@ export default function LiffScorebookImportPage() {
     }
   };
 
-  // 5-C. Step 3 ワンタップ「打順の抜け・飛びAI自動補正」（既に読込済みの下書きデータでも全回再解析なしで欠損打順だけ数秒でピンポイント復元）
+  // 5-C. Step 3 ワンタップ「打順抜け・3アウト超過 AI自動補正」（既に読込済みの下書きデータでも全回再解析なしで数秒でピンポイント復元）
   const handleManualRepairOrderGaps = async () => {
     if (!selectedMatchId || isRepairingOrderGaps || reanalyzingInningKey) {
       return;
@@ -2140,49 +2319,98 @@ export default function LiffScorebookImportPage() {
     try {
       const checkTop =
         (importScope === "both" || importScope === "top_only") &&
-        Boolean(topStructure) &&
-        Boolean(topImage.processed);
+        Boolean(topStructure);
       const checkBottom =
         (importScope === "both" || importScope === "bottom_only") &&
-        Boolean(bottomStructure) &&
-        Boolean(bottomImage.processed);
+        Boolean(bottomStructure);
 
-      const topGaps =
-        checkTop && topStructure
-          ? detectMissingOrderGaps(topAtBats, topStructure)
-          : [];
-      const bottomGaps =
-        checkBottom && bottomStructure
-          ? detectMissingOrderGaps(bottomAtBats, bottomStructure)
-          : [];
-
-      if (topGaps.length === 0 && bottomGaps.length === 0) {
-        return;
-      }
-
-      if (topGaps.length > 0 && topStructure) {
-        const topRepaired = await reconcileMissingOrderGapsForSide(
-          true,
-          topStructure,
-          topImage,
+      if (checkTop && topStructure) {
+        const detTop = reconcileSheetExcessOutsDeterministically(
           topAtBats,
-          { throwOnFailure: true }
+          topStructure
         );
-        if (topRepaired.repairedCount > 0) {
-          setTopAtBats(topRepaired.atBats);
+        let nextTop = detTop.atBats;
+        let topModified = detTop.changed;
+
+        if (topImage.processed) {
+          const topGaps = detectMissingOrderGaps(nextTop, topStructure);
+          if (topGaps.length > 0) {
+            const topGapRes = await reconcileMissingOrderGapsForSide(
+              true,
+              topStructure,
+              topImage,
+              nextTop,
+              { throwOnFailure: true }
+            );
+            if (topGapRes.repairedCount > 0) {
+              nextTop = topGapRes.atBats;
+              topModified = true;
+            }
+          }
+
+          const topExcess = detectExcessOutInnings(nextTop, topStructure);
+          if (topExcess.length > 0) {
+            const topOutRes = await reconcileExcessOutInningsForSide(
+              true,
+              topStructure,
+              topImage,
+              nextTop,
+              { throwOnFailure: true }
+            );
+            if (topOutRes.repairedCount > 0) {
+              nextTop = topOutRes.atBats;
+              topModified = true;
+            }
+          }
+        }
+
+        if (topModified) {
+          setTopAtBats(nextTop);
         }
       }
 
-      if (bottomGaps.length > 0 && bottomStructure) {
-        const botRepaired = await reconcileMissingOrderGapsForSide(
-          false,
-          bottomStructure,
-          bottomImage,
+      if (checkBottom && bottomStructure) {
+        const detBot = reconcileSheetExcessOutsDeterministically(
           bottomAtBats,
-          { throwOnFailure: true }
+          bottomStructure
         );
-        if (botRepaired.repairedCount > 0) {
-          setBottomAtBats(botRepaired.atBats);
+        let nextBot = detBot.atBats;
+        let botModified = detBot.changed;
+
+        if (bottomImage.processed) {
+          const botGaps = detectMissingOrderGaps(nextBot, bottomStructure);
+          if (botGaps.length > 0) {
+            const botGapRes = await reconcileMissingOrderGapsForSide(
+              false,
+              bottomStructure,
+              bottomImage,
+              nextBot,
+              { throwOnFailure: true }
+            );
+            if (botGapRes.repairedCount > 0) {
+              nextBot = botGapRes.atBats;
+              botModified = true;
+            }
+          }
+
+          const botExcess = detectExcessOutInnings(nextBot, bottomStructure);
+          if (botExcess.length > 0) {
+            const botOutRes = await reconcileExcessOutInningsForSide(
+              false,
+              bottomStructure,
+              bottomImage,
+              nextBot,
+              { throwOnFailure: true }
+            );
+            if (botOutRes.repairedCount > 0) {
+              nextBot = botOutRes.atBats;
+              botModified = true;
+            }
+          }
+        }
+
+        if (botModified) {
+          setBottomAtBats(nextBot);
         }
       }
     } catch (err) {

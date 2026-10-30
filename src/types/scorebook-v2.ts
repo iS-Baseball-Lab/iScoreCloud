@@ -448,5 +448,30 @@ export interface ResolvedMissingAtBatItem {
   atBat: ScorebookV2AtBat;
 }
 
+/** 1イニングが3アウトを超過している（4アウト・5アウト等）イニングの再検算用打席項目 */
+export interface ExcessOutBatterItemSpec {
+  slotKey: string;
+  atBatId: string;
+  columnIndex: number;
+  battingOrder: number;
+  batterName: string;
+  currentResultCode: CanonicalAtBatResult;
+  currentResultLabel: string;
+  currentDirection: string;
+  currentOutsInPlay: number;
+  currentEndingOuts: number;
+}
+
+/** 1イニング合計アウトが3アウトを超過しているイニングのピンポイント視覚再検算仕様 */
+export interface ExcessOutInningSpec {
+  inning: number;
+  confirmedRuns: number;
+  currentTotalOuts: number;
+  expectedLeadOffOrder: number;
+  nextInningLeadOffOrder?: number;
+  batters: ExcessOutBatterItemSpec[];
+}
+
+
 
 

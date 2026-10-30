@@ -17,6 +17,7 @@ import {
   inferCanonicalResultCode,
   matchRosterPlayer,
   normalizePositionCode,
+  reconcileSheetExcessOutsDeterministically,
   resolveActiveMatchupFromStructure,
   validateScorebookSheet,
 } from "@/lib/liff/scorebook-validator";
@@ -28,6 +29,7 @@ import {
   type CanonicalAtBatResult,
   type CanonicalPitchResult,
   type ConfidenceLevel,
+  type ExcessOutInningSpec,
   type ImportScopeMode,
   type MissingOrderGapSpec,
   type NormalizedBox,
@@ -1513,9 +1515,12 @@ ${targetInningMetaLines.join("\n")}
    - **三振（rc: "strikeout"）**: BSO欄に3ストライク目まで全て書かれます（"X" は付けない）。最後のストライク記号が『○』なら末尾 "S"（見逃し三振）、『●』や『／』なら末尾 "W"（空振り三振）、2S後の『▲』なら末尾 "BF"（スリーバント失敗）。
    - **四球（rc: "walk"）**: BSO欄のボール "B" が合計4球になります（"X" は付けない）。死球は末尾 "D"。
 
-【🔥最重要 2: 中央ダイヤモンド（出塁実線 b1 ＆ アウトカウント ①②③ / ⅠⅡⅢ のにじみ判別）】
-- **中央の『Ⅰ・Ⅱ・Ⅲ』（上下横棒付きのローマ数字 1・2・3）および『①・②・③』（丸数字）はアウトカウント（eo: 1, 2, 3）**です！ペンのにじみや点線ダイヤモンドとの接触で『Ⅰ』がカタカナの『エ』、『Ⅱ』が『日』、『Ⅲ』が『目』『田』のように見えても、必ずアウトカウント（eo: 1, 2, 3）として読み取り、守備位置番号（1=投, 2=捕, 3=一）と絶対に混同しないでください！
-- ダイヤモンド右下辺（本塁→1塁）に手書きの実線・赤線があれば **"b1": true（出塁）**、印刷点線のままなら **"b1": false（未出塁＝打者アウト）** と[中央・右下拡大]パネルで確実に判定してください（※"b1": true で一度出塁した走者が後続打席で盗塁死・封殺等になった場合も中央に Ⅰ/Ⅱ/Ⅲ・①/②/③ が書かれますが、その打席自体は o: 0 の出塁です）。
+【🔥最重要 2: 中央ダイヤモンド（出塁実線 b1 ＆ アウトカウント ①②③ / ⅠⅡⅢ のにじみ判別 ＆ 3アウト上限の絶対厳守）】
+- **中央の『Ⅰ・Ⅱ・Ⅲ』（上下横棒付きのローマ数字 1・2・3）および『①・②・③』（丸数字）はイニング累積アウトカウント（eo: 1, 2, 3）**です！ペンのにじみや点線ダイヤモンドとの接触で『Ⅰ』がカタカナの『エ』、『Ⅱ』が『日』、『Ⅲ』が『目』『田』のように見えても、必ずアウトカウント（eo: 1, 2, 3）として読み取り、守備位置番号（1=投, 2=捕, 3=一）と絶対に混同しないでください！
+- **⚠️超重要：「o（その打席で増えたアウト数）」と「eo（その時点の累積アウト数）」を絶対に混同するな！**:
+  ・2アウト目（Ⅱ・②）や3アウト目（Ⅲ・③）の三振・ゴロ・フライ・犠打・封殺は、**その打席で増えたアウト数 "o" は必ず 1** です（"eo": 2 や "eo": 3 であっても、"o": 2 や "o": 3 と書くのは絶対厳禁！"o": 2 になるのは併殺打のみです）！
+  ・**1イニング内の全打席の "o" の合計は（最終裏サヨナラ回を除き）必ずピタリ【3】になります（4アウト以上になることは野球規則上100%あり得ません）！**
+- ダイヤモンド右下辺（本塁→1塁）に手書きの実線・赤線があれば **"b1": true（出塁）**、印刷点線のままなら **"b1": false（未出塁＝打者アウト）** と[中央・右下拡大]パネルで確実に判定してください（※"b1": true で一度出塁した走者が後続打席で盗塁死・封殺等になった場合も中央に Ⅰ/Ⅱ/Ⅲ・①/②/③ が書かれますが、**その出塁打席自体の "o" は必ず 0** であり、アウトは実際に盗塁死・封殺が起きた後続打者の打席側でのみ 1 回だけ計上してください！両方への二重計上は絶対厳禁です）。
 
 【🔥最重要 3: インプレー結果（rc）・守備位置番号（1〜9: dir）と「手書きくっつき字形」の徹底分解ルール】
 守備番号の定義: **1=投, 2=捕, 3=一, 4=二, 5=三, 6=遊, 7=左, 8=中, 9=右**
@@ -1705,18 +1710,20 @@ ${targetInningMetaLines.join("\n")}
       const rawResultCode = reconciled.rawResultCode;
       const rawResultLabel = reconciled.rawResultLabel;
       const rawDir = reconciled.rawDir;
-      const resultCode = inferCanonicalResultCode(
+      let resultCode = inferCanonicalResultCode(
         rawResultCode,
         rawResultLabel || rawDir
       );
-      const harmonizedFielding = harmonizeOcrFieldingAndLabel(
-        resultCode,
-        rawDir,
-        rawResultLabel
-      );
+      if (
+        ab.b1 === true &&
+        resultCode === "groundout" &&
+        /^[1-6]-[2456]$/.test((rawDir || "").trim())
+      ) {
+        resultCode = "fc";
+      }
 
       const rawAdvances = reconciled.rawAdvances;
-      const advances: ScorebookV2Advance[] = rawAdvances.map((adv) => {
+      let advances: ScorebookV2Advance[] = rawAdvances.map((adv) => {
         const pnVal = adv.pn ?? adv.pitchNumber;
         return {
           id: crypto.randomUUID(),
@@ -1730,14 +1737,11 @@ ${targetInningMetaLines.join("\n")}
         };
       });
 
-      // 【数学的自己補正 1】打席結果コードと走塁死(advances.isOut)から outsInPlay の矛盾を自動補正
-      const rawOutsVal = Math.max(0, Math.min(3, reconciled.outsInPlay));
-      const runnerOutsInPlay = advances.filter(
-        (a) => a.isOut && a.from !== "BAT"
-      ).length;
-      const batterOutInAdvances = advances.some(
-        (a) => a.isOut && a.from === "BAT"
-      );
+      // 【数学的自己補正 1】累積アウト数字(Ⅱ=2/Ⅲ=3)の混入防止・無走者/2死からの併殺不可・後続打席走塁死の二重計上排除
+      const activeRunnersCount =
+        (activeBases["1B"] ? 1 : 0) +
+        (activeBases["2B"] ? 1 : 0) +
+        (activeBases["3B"] ? 1 : 0);
 
       const isSafeBatterReach =
         resultCode === "single" ||
@@ -1751,28 +1755,96 @@ ${targetInningMetaLines.join("\n")}
         resultCode === "dropped_third_strike" ||
         resultCode === "error";
 
+      if (isSafeBatterReach && advances.length > 0) {
+        advances = advances.filter((adv) => {
+          if (!adv.isOut || adv.from === "BAT") return true;
+          const occupiedBefore = activeBases[adv.from];
+          if (
+            !occupiedBefore &&
+            (adv.method === "caught_stealing" ||
+              adv.method === "pickoff_out" ||
+              adv.method === "fc" ||
+              adv.method === "appeal_out")
+          ) {
+            return false;
+          }
+          if (
+            (resultCode === "walk" ||
+              resultCode === "intentional_walk" ||
+              resultCode === "hit_by_pitch" ||
+              resultCode === "interference") &&
+            !occupiedBefore
+          ) {
+            return false;
+          }
+          return true;
+        });
+      }
+
+      if (
+        resultCode === "double_play" &&
+        (activeRunnersCount === 0 || runningInningOuts >= 2)
+      ) {
+        resultCode = /[FL]$|飛|直|ライナー/i.test(
+          `${rawDir || ""} ${rawResultLabel || ""}`
+        )
+          ? "flyout"
+          : "groundout";
+      }
+
+      const harmonizedFielding = harmonizeOcrFieldingAndLabel(
+        resultCode,
+        rawDir,
+        rawResultLabel
+      );
+
+      const rawOutsVal = Math.max(0, Math.min(3, reconciled.outsInPlay));
+      const occupiedBaseRunnerOuts = Math.min(
+        activeRunnersCount,
+        advances.filter(
+          (a) => a.isOut && a.from !== "BAT" && activeBases[a.from]
+        ).length
+      );
+      const batterOverrunOut = advances.some(
+        (a) =>
+          a.isOut &&
+          (a.from === "BAT" || !activeBases[a.from as "1B" | "2B" | "3B"]) &&
+          (a.method === "hit" || a.method === "out_on_base")
+      )
+        ? 1
+        : 0;
+
       const isDefiniteBatterOut =
         resultCode === "groundout" ||
         resultCode === "flyout" ||
         resultCode === "infield_fly" ||
         resultCode === "strikeout" ||
         resultCode === "dropped_third_strike_out" ||
+        resultCode === "sac_bunt" ||
         resultCode === "sac_fly" ||
         resultCode === "interference_out";
 
       let outsVal = rawOutsVal;
       if (resultCode === "triple_play") {
-        outsVal = 3;
-      } else if (resultCode === "double_play") {
-        outsVal = Math.max(2, rawOutsVal);
-      } else if (isDefiniteBatterOut) {
-        outsVal = Math.min(3, Math.max(1 + runnerOutsInPlay, rawOutsVal || 1));
-      } else if (isSafeBatterReach) {
-        // 出塁後に後続打席で盗塁死等した丸数字①②③・ローマ数字ⅠⅡⅢを当該打席のアウトと誤認するケースを排除
-        outsVal = Math.min(
-          3,
-          runnerOutsInPlay + (batterOutInAdvances ? 1 : 0)
+        outsVal = Math.max(
+          1,
+          Math.min(3 - runningInningOuts, 1 + activeRunnersCount)
         );
+      } else if (resultCode === "double_play") {
+        outsVal = 2;
+      } else if (isDefiniteBatterOut) {
+        outsVal = Math.min(3, 1 + occupiedBaseRunnerOuts);
+      } else if (isSafeBatterReach) {
+        outsVal = Math.min(2, occupiedBaseRunnerOuts + batterOverrunOut);
+      } else if (resultCode === "fc") {
+        outsVal = rawOutsVal >= 1 || occupiedBaseRunnerOuts >= 1 ? 1 : 0;
+      } else if (resultCode === "other") {
+        outsVal =
+          occupiedBaseRunnerOuts > 0
+            ? Math.min(2, occupiedBaseRunnerOuts)
+            : rawOutsVal > 0
+            ? 1
+            : 0;
       }
 
       const normalizedPitches = normalizePitchArray(
@@ -1891,12 +1963,16 @@ ${targetInningMetaLines.join("\n")}
       };
     });
 
-    // 3アウト到達後のイニング終了切り線マス・余剰空欄ノイズを除去し、正確なイニング交代境界と次回先頭打順を保証する
-    const mappedAtBats = sanitizeMappedInningAtBats(
+    // 3アウト到達後のイニング終了切り線マス・余剰空欄ノイズ・3アウト超過矛盾を除去し、正確なイニング交代境界と次回先頭打順を保証する
+    const trimmedAtBats = sanitizeMappedInningAtBats(
       rawMappedAtBats,
       sortedTargets,
       body.structure
     );
+    const mappedAtBats = reconcileSheetExcessOutsDeterministically(
+      trimmedAtBats,
+      body.structure
+    ).atBats;
 
     // 次のチャンクの先頭打順を計算
     const lineupCycle = Math.max(9, body.structure.batters.length);
@@ -2224,29 +2300,28 @@ ${pitcherSpecLines.join("\n")}
         resultCode === "infield_fly" ||
         resultCode === "strikeout" ||
         resultCode === "dropped_third_strike_out" ||
+        resultCode === "sac_bunt" ||
         resultCode === "sac_fly" ||
         resultCode === "interference_out";
 
       let outsVal = rawOutsVal;
       if (resultCode === "triple_play") {
-        outsVal = 3;
+        outsVal = Math.max(1, 3 - priorOutsEstimate);
       } else if (resultCode === "double_play") {
-        outsVal = Math.max(2, rawOutsVal);
+        outsVal = priorOutsEstimate >= 2 ? 1 : 2;
       } else if (isDefiniteBatterOut) {
-        outsVal = Math.min(3, Math.max(1 + runnerOutsInPlay, rawOutsVal || 1));
+        outsVal = Math.min(3, 1 + Math.min(1, runnerOutsInPlay));
       } else if (isSafeBatterReach) {
-        outsVal = Math.min(
-          3,
-          runnerOutsInPlay + (batterOutInAdvances ? 1 : 0)
-        );
-      } else if (
-        resultCode === "fc" &&
-        gap.kind === "inter_inning" &&
-        inning === gap.prevInning &&
-        outsVal === 0
-      ) {
-        // イニング末尾の野選（6-4等の封殺チェンジ）は必ず先行走者1アウトを伴う
-        outsVal = 1;
+        outsVal = batterOutInAdvances ? 1 : 0;
+      } else if (resultCode === "fc") {
+        outsVal =
+          rawOutsVal >= 1 ||
+          runnerOutsInPlay >= 1 ||
+          (gap.kind === "inter_inning" && inning === gap.prevInning)
+            ? 1
+            : 0;
+      } else if (resultCode === "other") {
+        outsVal = runnerOutsInPlay > 0 || rawOutsVal > 0 ? 1 : 0;
       }
 
       const normalizedPitches = normalizePitchArray(
@@ -2342,10 +2417,567 @@ ${pitcherSpecLines.join("\n")}
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    return c.json(
+      return c.json(
       {
         success: false,
         error: `打順抜け自動補正エラー: ${msg}`,
+        cooledModels,
+      },
+      500
+    );
+  }
+});
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 4-C. 1イニング「3アウト超過（4アウト・5アウト等）」ピンポイント視覚再検算エンドポイント
+// （4打席すべてが凡退アウトと誤読され計4アウトになっているイニング等について、
+//  当該イニングの全候補マスを横並びトリプルビューで比較精読し、「どのマスが実は出塁（o:0）または末尾切り線除外（drop:true）か」を特定して必ず合計3アウトに収束させる）
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+interface ReconcileInningOutsPayload {
+  teamId: string;
+  matchId: string;
+  isTop: boolean;
+  cropBase64: string;
+  cropMimeType?: string;
+  structure: ScorebookSheetStructure;
+  spec: ExcessOutInningSpec;
+  legendBase64?: string;
+  legendMimeType?: string;
+  skipModels?: string[];
+}
+
+interface RawReconciledInningOutItem extends RawGeminiAtBat {
+  sk?: string;
+  slotKey?: string;
+  drop?: boolean;
+}
+
+interface RawReconcileInningOutsResponse {
+  items?: RawReconciledInningOutItem[];
+  ab?: RawReconciledInningOutItem[];
+}
+
+liffScorebookRouter.post("/reconcile-inning-outs", async (c) => {
+  const apiKey = c.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    return c.json(
+      { success: false, error: "GEMINI_API_KEY が設定されていません" },
+      500
+    );
+  }
+
+  const db = drizzle(c.env.DB, { schema });
+  const cooledModels: string[] = [];
+
+  try {
+    const body = (await c.req.json()) as ReconcileInningOutsPayload;
+    if (
+      !body.cropBase64 ||
+      !body.structure ||
+      !body.spec ||
+      !Array.isArray(body.spec.batters) ||
+      body.spec.batters.length === 0
+    ) {
+      return c.json({ success: true, atBats: [], cooledModels });
+    }
+
+    const { spec } = body;
+    const sideLabel = body.isTop ? "表（先攻）" : "裏（後攻）";
+    const lineupLen = Math.max(9, body.structure.batters.length);
+
+    const imageParts: GeminiContentPart[] = [
+      {
+        inlineData: {
+          mimeType: body.cropMimeType || "image/jpeg",
+          data: body.cropBase64,
+        },
+      },
+    ];
+
+    const legendPart = await resolveLegendImagePart(
+      c,
+      db,
+      body.teamId,
+      body.legendBase64,
+      body.legendMimeType
+    );
+    let legendNote = "";
+    if (legendPart) {
+      imageParts.push(legendPart);
+      legendNote = `\n・画像2: チーム公式のスコア記号早見表（最優先で参照）`;
+    }
+
+    const pitcherSpecLines = body.structure.pitchers.map(
+      (p) =>
+        `・${p.fromInning}回〜${p.toInning}回: #${p.uniformNumber} ${
+          p.name || "投手"
+        }`
+    );
+
+    const batterRowsDesc = spec.batters.map(
+      (b) =>
+        `・[${b.slotKey}] ${b.battingOrder}番 ${b.batterName}（列 c:${b.columnIndex}） | 現在の仮読取: ${b.currentResultLabel}（dir:"${b.currentDirection}", o:${b.currentOutsInPlay}）`
+    );
+
+    const boundaryNote =
+      typeof spec.nextInningLeadOffOrder === "number"
+        ? `次イニング（${spec.inning + 1}回${sideLabel}）の先頭打者は【${
+            spec.nextInningLeadOffOrder
+          }番】であることが確定しています（＝この${spec.inning}回は原則【${
+            ((spec.nextInningLeadOffOrder - 2 + lineupLen) % lineupLen) + 1
+          }番】で完了しています）。`
+        : `この${spec.inning}回${sideLabel}の先頭打者は【${spec.expectedLeadOffOrder}番】目安です。`;
+
+    const exPitcher =
+      body.structure.pitchers.find(
+        (p) => spec.inning >= p.fromInning && spec.inning <= p.toInning
+      )?.name ||
+      body.structure.pitchers[0]?.name ||
+      "相手投手";
+    const firstB = spec.batters[0];
+
+    const prompt = `あなたは日本の早稲田式・成美堂式・リトルシニア式スコアブックのプロ公式記録員AIです。
+現在、【${spec.inning}回${sideLabel}】の読取結果で合計アウト数が【${spec.currentTotalOuts}アウト（3アウト超過）】という野球規則上あり得ない矛盾が発生しています。
+添付画像1には、この${spec.inning}回${sideLabel}の候補マス [${spec.batters
+      .map((b) => b.slotKey)
+      .join(", ")}] を上から順に **[全体マス | BSO拡大 | 中央・右下拡大]** の高精細トリプルビューで並べています。${legendNote}
+
+【対象イニングの確定前提条件】
+・イニング: ${spec.inning}回${sideLabel}（確定得点 = ${spec.confirmedRuns}点）
+・打順境界条件: ${boundaryNote}
+・相手登板投手: ${pitcherSpecLines.join(" / ")}
+
+【再検算対象のマス一覧（現在 合計${spec.currentTotalOuts}アウト ➔ 必ず合計 3 アウトへ修正せよ！）】
+${batterRowsDesc.join("\n")}
+
+【🔥3アウト超過が起きた原因の特定と厳密修正ルール】
+1. **残す打席（drop: false）の全 "o" 合計は必ずピタリ【3】にすること！（4以上は絶対不可）**
+2. **パターンA（全マスが実在する打席で、うち1〜2マスが実は「出塁 o: 0」だったケース）**:
+   - たとえば4人の打者（例: 1番〜4番）がこのイニングに打席に立って次イニングが5番から始まっている場合、4人全員の打席が実在（drop: false）し、**4人のうち1人は必ず出塁（"o": 0）**しています！
+   - 各マスの **[中央・右下拡大]** をよく見比べ、以下の「出塁しているマス（"b1": true, "o": 0）」を見つけ出してください:
+     ・本塁→1塁が太い実線/赤線で、右下に斜線『/』や守備番号『7』『8』『9』『6』等がある **単打（rc:"single", o:0）**・二塁打・三塁打
+     ・本塁→1塁が実線で、左BSOにボール4球・右下に『B』『D』がある **四球（rc:"walk", o:0）・死球（rc:"hit_by_pitch", o:0）**
+     ・右下に『E6』『6E』等がある **失策出塁（rc:"error", o:0）**、または『K』でも本塁→1塁が実線の **振り逃げ出塁（rc:"dropped_third_strike", o:0）**
+     ・**先行走者の封殺・盗塁死の二重計上**: 出塁した打者の中央に後続打席での封殺・盗塁死『Ⅰ/Ⅱ/Ⅲ』が書かれている場合、**その出塁打者自身は "o": 0** であり、後続の封殺打者（6-4/4-6/FC等）側のみを **"o": 1** としてください！
+3. **パターンB（3アウト目『Ⅲ』『③』完了直後のマスが「イニング終了切り線 ／・∟」または「白紙空欄」または「次イニング重複」だったケース）**:
+   - 先行する打席で既に『Ⅰ → Ⅱ → Ⅲ（または ① → ② → ③）』の3アウトが完了しており、末尾のマスには投球記号も守備番号も無く斜線『／』『∟』だけがある（または白紙）場合は、その末尾マスの **"drop": true** にして除外してください！
+4. **"o" と "eo" の厳密区別**:
+   - "o" はその1打席で増えたアウト数（出塁=0, 単一アウト=1, 併殺打のみ=2）です。2死目・3死目の単一アウトで "o": 2 や "o": 3 と書くのは絶対厳禁です！
+
+【出力JSONフォーマット（改行無しのコンパクトJSONのみ返却。items配列に [${spec.batters
+      .map((b) => b.slotKey)
+      .join(", ")}] を順番通り出力し、除外行は "drop":true、残す行の "o" 合計は必ず 3 にすること！）】
+{"items":[{"sk":"${firstB.slotKey}","drop":false,"c":${firstB.columnIndex},"bo":${firstB.battingOrder},"pt":"${exPitcher}","obs":"左:○,ー/中:Ⅰ/本一:破線/右下:6-3","b1":false,"p":["S","B","X"],"eo":1,"o":1,"dir":"6-3","rc":"groundout","rl":"遊ゴロ","rbi":0,"ru":0,"a":[],"cf":"h"}]}`;
+
+    const validateInningOutsResp = (
+      parsed: RawReconcileInningOutsResponse
+    ): string | null => {
+      const arr = parsed.items || parsed.ab || [];
+      if (!Array.isArray(arr) || arr.length === 0) {
+        return "3アウト再検算結果が0件です";
+      }
+      const kept = arr.filter((x) => x.drop !== true);
+      if (kept.length === 0) {
+        return "全打席がdropされたため無効です";
+      }
+      return null;
+    };
+
+    const rawResp =
+      await callGeminiStructuredJson<RawReconcileInningOutsResponse>(
+        apiKey,
+        prompt,
+        imageParts,
+        "chunk",
+        validateInningOutsResp,
+        {
+          maxBudgetMs: 48_000,
+          skipModels: body.skipModels,
+          cooledModelsOut: cooledModels,
+        }
+      );
+
+    const rawItems = rawResp.items || rawResp.ab || [];
+    let runningOuts = 0;
+    const activeBases: Record<"1B" | "2B" | "3B", boolean> = {
+      "1B": false,
+      "2B": false,
+      "3B": false,
+    };
+
+    const rebuiltRaw: Array<{
+      atBat: ScorebookV2AtBat;
+      explicitB1?: boolean;
+    }> = [];
+
+    for (let idx = 0; idx < spec.batters.length; idx++) {
+      const slot = spec.batters[idx];
+      const matched =
+        rawItems.find(
+          (it) =>
+            (it.sk || it.slotKey || "").trim().toUpperCase() ===
+            slot.slotKey.toUpperCase()
+        ) || rawItems[idx];
+
+      if (!matched || matched.drop === true) {
+        continue;
+      }
+
+      const rlText = (matched.rl ?? matched.resultLabel ?? "").trim();
+      if (/^(?:白紙|空欄|空白|未記入|切り線|斜線のみ)$/i.test(rlText)) {
+        continue;
+      }
+
+      const colIndex = Math.max(
+        1,
+        toFiniteInt(matched.c ?? matched.columnIndex, slot.columnIndex) ||
+          slot.columnIndex
+      );
+      const battingOrder = slot.battingOrder;
+      const ocrPitcherHint = (matched.pt ?? matched.pitcherName ?? "").trim();
+      const matchup = resolveActiveMatchupFromStructure(
+        body.structure,
+        spec.inning,
+        battingOrder,
+        ocrPitcherHint
+      );
+
+      const reconciled = reconcileRawAtBatEvidence(
+        matched,
+        activeBases,
+        runningOuts
+      );
+
+      let resultCode = inferCanonicalResultCode(
+        reconciled.rawResultCode,
+        reconciled.rawResultLabel || reconciled.rawDir
+      );
+      if (
+        matched.b1 === true &&
+        resultCode === "groundout" &&
+        /^[1-6]-[2456]$/.test((reconciled.rawDir || "").trim())
+      ) {
+        resultCode = "fc";
+      }
+
+      const activeRunnersCount =
+        (activeBases["1B"] ? 1 : 0) +
+        (activeBases["2B"] ? 1 : 0) +
+        (activeBases["3B"] ? 1 : 0);
+
+      if (
+        resultCode === "double_play" &&
+        (activeRunnersCount === 0 || runningOuts >= 2)
+      ) {
+        resultCode = /[FL]$|飛|直|ライナー/i.test(
+          `${reconciled.rawDir || ""} ${reconciled.rawResultLabel || ""}`
+        )
+          ? "flyout"
+          : "groundout";
+      }
+
+      const harmonizedFielding = harmonizeOcrFieldingAndLabel(
+        resultCode,
+        reconciled.rawDir,
+        reconciled.rawResultLabel
+      );
+
+      let advances: ScorebookV2Advance[] = reconciled.rawAdvances.map((adv) => {
+        const pnVal = adv.pn ?? adv.pitchNumber;
+        return {
+          id: crypto.randomUUID(),
+          runnerName: (adv.rn ?? adv.runnerName ?? "").trim(),
+          from: normalizeFromBase(adv.f ?? adv.from),
+          to: normalizeToBase(adv.t ?? adv.to),
+          method: normalizeAdvanceMethod(adv.m ?? adv.method),
+          isOut: Boolean(adv.io ?? adv.isOut),
+          pitchNumber:
+            typeof pnVal === "number" && pnVal > 0 ? pnVal : undefined,
+        };
+      });
+
+      const isSafeBatterReach =
+        resultCode === "single" ||
+        resultCode === "double" ||
+        resultCode === "triple" ||
+        resultCode === "home_run" ||
+        resultCode === "walk" ||
+        resultCode === "intentional_walk" ||
+        resultCode === "hit_by_pitch" ||
+        resultCode === "interference" ||
+        resultCode === "dropped_third_strike" ||
+        resultCode === "error";
+
+      if (isSafeBatterReach && advances.length > 0) {
+        advances = advances.filter(
+          (adv) => !adv.isOut || adv.from === "BAT" || activeBases[adv.from]
+        );
+      }
+
+      const occupiedBaseRunnerOuts = Math.min(
+        activeRunnersCount,
+        advances.filter(
+          (a) => a.isOut && a.from !== "BAT" && activeBases[a.from]
+        ).length
+      );
+      const rawOutsVal = Math.max(0, Math.min(3, reconciled.outsInPlay));
+
+      const isDefiniteBatterOut =
+        resultCode === "groundout" ||
+        resultCode === "flyout" ||
+        resultCode === "infield_fly" ||
+        resultCode === "strikeout" ||
+        resultCode === "dropped_third_strike_out" ||
+        resultCode === "sac_bunt" ||
+        resultCode === "sac_fly" ||
+        resultCode === "interference_out";
+
+      let outsVal = rawOutsVal;
+      if (resultCode === "triple_play") {
+        outsVal = Math.max(
+          1,
+          Math.min(3 - runningOuts, 1 + activeRunnersCount)
+        );
+      } else if (resultCode === "double_play") {
+        outsVal = 2;
+      } else if (isDefiniteBatterOut) {
+        outsVal = Math.min(3, 1 + occupiedBaseRunnerOuts);
+      } else if (isSafeBatterReach) {
+        outsVal = Math.min(2, occupiedBaseRunnerOuts);
+      } else if (resultCode === "fc") {
+        outsVal = rawOutsVal >= 1 || occupiedBaseRunnerOuts >= 1 ? 1 : 0;
+      } else if (resultCode === "other") {
+        outsVal =
+          occupiedBaseRunnerOuts > 0
+            ? Math.min(2, occupiedBaseRunnerOuts)
+            : rawOutsVal > 0
+            ? 1
+            : 0;
+      }
+
+      const normalizedPitches = normalizePitchArray(
+        reconciled.rawPitches,
+        resultCode,
+        advances,
+        activeBases
+      );
+      const { balls, strikes } = computeCountFromPitches(normalizedPitches);
+
+      const inningMeta = body.structure.innings.find(
+        (m) => m.inning === spec.inning
+      );
+      const batterRowBox = body.structure.batters.find(
+        (b) => b.battingOrder === battingOrder
+      )?.rowBox;
+      const skewedQuad = getCellQuadInStructure(
+        body.structure,
+        spec.inning,
+        colIndex,
+        battingOrder,
+        0
+      );
+      const cellBox = skewedQuad
+        ? quadToBoundingBox(skewedQuad)
+        : computeCartesianCellBox(
+            undefined,
+            inningMeta?.columnBox,
+            inningMeta?.columnCount ?? 1,
+            colIndex,
+            batterRowBox
+          );
+
+      for (const adv of advances) {
+        if (adv.from === "1B" || adv.from === "2B" || adv.from === "3B") {
+          activeBases[adv.from] = false;
+        }
+      }
+      for (const adv of advances) {
+        if (
+          !adv.isOut &&
+          (adv.to === "1B" || adv.to === "2B" || adv.to === "3B")
+        ) {
+          activeBases[adv.to] = true;
+        }
+      }
+      if (
+        advances.filter((a) => a.from === "BAT").length === 0 &&
+        outsVal === 0
+      ) {
+        if (
+          resultCode === "single" ||
+          resultCode === "walk" ||
+          resultCode === "intentional_walk" ||
+          resultCode === "hit_by_pitch" ||
+          resultCode === "interference" ||
+          resultCode === "error" ||
+          resultCode === "fc" ||
+          resultCode === "dropped_third_strike"
+        ) {
+          activeBases["1B"] = true;
+        } else if (resultCode === "double") {
+          activeBases["2B"] = true;
+        } else if (resultCode === "triple") {
+          activeBases["3B"] = true;
+        }
+      }
+
+      const hpCount = advances.filter((a) => a.to === "HP" && !a.isOut).length;
+      const isHr = resultCode === "home_run";
+      const rawRunsInPlay =
+        toFiniteInt(matched.ru ?? matched.runsInPlay, 0) || 0;
+      const effectiveRuns = Math.max(rawRunsInPlay, hpCount, isHr ? 1 : 0);
+      const parsedRbi = toFiniteInt(matched.rbi);
+
+      runningOuts = Math.min(3, runningOuts + outsVal);
+      const rawConf = (matched.cf ?? matched.confidence ?? "h").toLowerCase();
+      const confidence: ConfidenceLevel =
+        rawConf === "l" || rawConf === "low"
+          ? "low"
+          : rawConf === "m" || rawConf === "medium"
+          ? "medium"
+          : "high";
+
+      rebuiltRaw.push({
+        explicitB1: matched.b1,
+        atBat: {
+          id: slot.atBatId || crypto.randomUUID(),
+          inning: spec.inning,
+          isTop: body.isTop,
+          columnIndex: colIndex,
+          battingOrder,
+          batterName: matchup.batterName || slot.batterName,
+          batterPlayerId: matchup.batterPlayerId,
+          pitcherName: matchup.pitcherName || ocrPitcherHint,
+          pitcherPlayerId: matchup.pitcherPlayerId,
+          resultCode,
+          resultLabel: harmonizedFielding.resultLabel,
+          battedDirection: harmonizedFielding.battedDirection,
+          rbi: Math.max(0, parsedRbi ?? effectiveRuns),
+          outsInPlay: outsVal,
+          endingOuts: runningOuts,
+          runsInPlay: effectiveRuns,
+          balls,
+          strikes,
+          pitches: normalizedPitches,
+          advances,
+          confidence,
+          confidenceReason:
+            (matched.cr ?? matched.confidenceReason ?? "").trim() || undefined,
+          cellBox,
+        },
+      });
+    }
+
+    let finalInningList = reconcileSheetExcessOutsDeterministically(
+      rebuiltRaw.map((x) => x.atBat),
+      body.structure
+    ).atBats;
+
+    // 万一モデルが依然として4アウト以上を返した場合の最終安全弁（b1:true だった行や末尾切り線候補から3アウトへ厳密収束）
+    let sumAfter = finalInningList.reduce(
+      (s, x) => s + Math.max(0, x.outsInPlay),
+      0
+    );
+    if (sumAfter > 3) {
+      // 次イニング先頭打順が既に3アウト目の直後を指しているなら余剰末尾を切り落とす
+      if (
+        typeof spec.nextInningLeadOffOrder === "number" &&
+        finalInningList.length >= 4
+      ) {
+        let c = 0;
+        for (let i = 0; i < finalInningList.length; i++) {
+          c += Math.max(0, finalInningList[i].outsInPlay);
+          if (
+            c === 3 &&
+            (finalInningList[i].battingOrder % lineupLen) + 1 ===
+              spec.nextInningLeadOffOrder
+          ) {
+            finalInningList = finalInningList.slice(0, i + 1);
+            sumAfter = 3;
+            break;
+          }
+        }
+      }
+
+      // それでも4アウト以上（全打席実在）なら b1===true だった打席や fc/other/low確信度打席を出塁(o:0)へ補正し必ず3アウトにする
+      const b1TrueIds = new Set(
+        rebuiltRaw.filter((r) => r.explicitB1 === true).map((r) => r.atBat.id)
+      );
+      for (
+        let i = 0;
+        i < finalInningList.length && sumAfter > 3;
+        i++
+      ) {
+        const ab = finalInningList[i];
+        if (b1TrueIds.has(ab.id) && ab.outsInPlay === 1) {
+          if (ab.resultCode === "groundout" || ab.resultCode === "flyout") {
+            const harm = harmonizeOcrFieldingAndLabel(
+              "single",
+              ab.battedDirection,
+              ""
+            );
+            ab.resultCode = "single";
+            ab.resultLabel = harm.resultLabel;
+            ab.confidence = "low";
+            ab.confidenceReason = "3アウト上限整合により出塁候補として自動補正";
+          }
+          ab.outsInPlay = 0;
+          sumAfter -= 1;
+        }
+      }
+
+      // 最終手段として確信度 low/medium の非三振打席を野選/内野安打(o:0)として3アウト上限を死守
+      for (
+        let i = finalInningList.length - 1;
+        i >= 0 && sumAfter > 3;
+        i--
+      ) {
+        const ab = finalInningList[i];
+        if (ab.outsInPlay >= 1 && ab.resultCode !== "strikeout") {
+          if (ab.outsInPlay >= 2) {
+            const harm = harmonizeOcrFieldingAndLabel(
+              "groundout",
+              ab.battedDirection,
+              ""
+            );
+            ab.resultCode = "groundout";
+            ab.resultLabel = harm.resultLabel;
+            ab.outsInPlay = 1;
+            sumAfter -= 1;
+          } else if (i < finalInningList.length - 1) {
+            const harm = harmonizeOcrFieldingAndLabel(
+              "single",
+              ab.battedDirection,
+              ""
+            );
+            ab.resultCode = "single";
+            ab.resultLabel = harm.resultLabel;
+            ab.outsInPlay = 0;
+            ab.confidence = "low";
+            ab.confidenceReason = "1イニング3アウト上限に基づき要確認出塁として補正";
+            sumAfter -= 1;
+          }
+        }
+      }
+
+      let mono = 0;
+      for (const ab of finalInningList) {
+        mono = Math.min(3, mono + Math.max(0, ab.outsInPlay));
+        ab.endingOuts = mono;
+      }
+    }
+
+    return c.json({
+      success: true,
+      atBats: finalInningList,
+      cooledModels,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return c.json(
+      {
+        success: false,
+        error: `3アウト超過自動補正エラー: ${msg}`,
         cooledModels,
       },
       500
