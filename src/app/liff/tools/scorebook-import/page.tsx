@@ -21,6 +21,7 @@ import {
   applyRecoveredMissingAtBats,
   detectExcessOutInnings,
   detectMissingOrderGaps,
+  isRunnerOnlyInningEnd,
   reconcileSheetExcessOutsDeterministically,
   resolveActiveMatchupFromStructure,
 } from "@/lib/liff/scorebook-validator";
@@ -1335,17 +1336,7 @@ export default function LiffScorebookImportPage() {
   ): number => {
     if (atBatsList.length === 0) return fallbackOrder;
     const lastAb = atBatsList[atBatsList.length - 1];
-    const endedByRunnerOutOnly =
-      lastAb.resultCode === "other" &&
-      lastAb.advances.some(
-        (a) =>
-          a.isOut &&
-          (a.method === "caught_stealing" ||
-            a.method === "pickoff_out" ||
-            a.method === "interference_out" ||
-            a.method === "appeal_out" ||
-            a.method === "out_on_base")
-      );
+    const endedByRunnerOutOnly = isRunnerOnlyInningEnd(lastAb);
     return endedByRunnerOutOnly
       ? lastAb.battingOrder
       : (lastAb.battingOrder % lineupCycle) + 1;
@@ -1442,6 +1433,11 @@ export default function LiffScorebookImportPage() {
           data.resolved,
           batchGaps
         );
+        // 前イニング末尾の打順抜けが補完された場合、直後の9人一巡イニング等の先頭打者も最新連続順へ即時再回転する
+        currentList = reconcileSheetExcessOutsDeterministically(
+          currentList,
+          structure
+        ).atBats;
         totalRepaired += data.resolved.length;
       } catch (err) {
         if (options?.throwOnFailure) {

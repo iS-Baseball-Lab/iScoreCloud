@@ -70,7 +70,10 @@ import {
   type FlyStyleOption,
   type HitZoneOption,
 } from "@/lib/liff/scorebook-fielding";
-import { getCellQuadInStructure } from "@/lib/liff/scorebook-grid";
+import {
+  getCellQuadInStructure,
+  quadToBoundingBox,
+} from "@/lib/liff/scorebook-grid";
 import {
   cropScorebookQuad,
   cropScorebookRegion,
@@ -445,6 +448,57 @@ export function Step3PinpointReview({
     const before = currentList.filter((a) => a.inning < target.inning);
     const after = currentList.filter((a) => a.inning > target.inning);
     const updated = recomputeSheetList([...before, ...nextPeers, ...after]);
+    onChangeAtBats(isTop, updated);
+  };
+
+  /**
+   * 1イニング9人一巡などで先頭打者の位置がズレている場合に、選択中の打者をこのイニングの先頭打者になるよう循環回転する
+   */
+  const handleRotateInningLeadOffToAtBat = (targetId: string) => {
+    const target = currentList.find((a) => a.id === targetId);
+    if (!target) return;
+
+    const peers = currentList.filter((a) => a.inning === target.inning);
+    const idx = peers.findIndex((a) => a.id === targetId);
+    if (idx <= 0) return;
+
+    const lineupCycle = Math.max(9, currentStructure?.batters.length ?? 9);
+    const startBo = target.battingOrder;
+    const innMeta = currentStructure?.innings.find(
+      (m) => m.inning === target.inning
+    );
+    const maxSubCols = Math.max(1, innMeta?.columnCount ?? 1);
+
+    const rotatedPeers = [...peers.slice(idx), ...peers.slice(0, idx)].map(
+      (ab, posIdx) => {
+        const isFirstLapBeforeNineWrap =
+          posIdx < lineupCycle && ab.battingOrder >= startBo;
+        const safeCol = isFirstLapBeforeNineWrap
+          ? 1
+          : Math.max(1, Math.min(maxSubCols, ab.columnIndex || 1));
+        if (safeCol === ab.columnIndex) {
+          return ab;
+        }
+        const nextQuad = currentStructure
+          ? getCellQuadInStructure(
+              currentStructure,
+              target.inning,
+              safeCol,
+              ab.battingOrder,
+              0
+            )
+          : null;
+        return {
+          ...ab,
+          columnIndex: safeCol,
+          cellBox: nextQuad ? quadToBoundingBox(nextQuad) : ab.cellBox,
+        };
+      }
+    );
+
+    const before = currentList.filter((a) => a.inning < target.inning);
+    const after = currentList.filter((a) => a.inning > target.inning);
+    const updated = recomputeSheetList([...before, ...rotatedPeers, ...after]);
     onChangeAtBats(isTop, updated);
   };
 
@@ -1934,6 +1988,31 @@ export function Step3PinpointReview({
                               <span>順を下へ</span>
                             </button>
                           </div>
+
+                          {/* 1イニング9人一巡などで先頭打者がズレていた場合のワンタップ打順回転 */}
+                          {editingInningPeers.length >= 2 &&
+                            editingIndexWithinInning > 0 && (
+                              <div className="pt-1 border-t border-indigo-500/20 flex items-center justify-between gap-2 flex-wrap">
+                                <span className="text-[10px] font-bold text-muted-foreground">
+                                  打者一巡などでこの回の先頭位置がズレている場合:
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleRotateInningLeadOffToAtBat(
+                                      editingAtBat.id
+                                    )
+                                  }
+                                  className="h-7 px-2.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-black flex items-center gap-1 active:scale-95 transition-all cursor-pointer"
+                                >
+                                  <RotateCcw className="w-3 h-3" />
+                                  <span>
+                                    この打者（{editingAtBat.battingOrder}番）を
+                                    {editingAtBat.inning}回の先頭にする（打順回転）
+                                  </span>
+                                </button>
+                              </div>
+                            )}
 
                           {/* 打者一巡などの列ズレ一括シフト */}
                           <div className="pt-1 border-t border-indigo-500/20 flex items-center justify-between gap-1.5 flex-wrap">

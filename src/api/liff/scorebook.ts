@@ -19,6 +19,7 @@ import {
 import {
   computeCountFromPitches,
   inferCanonicalResultCode,
+  isRunnerOnlyInningEnd,
   matchRosterPlayer,
   normalizePositionCode,
   reconcileSheetExcessOutsDeterministically,
@@ -1445,8 +1446,8 @@ liffScorebookRouter.post("/analyze-inning-chunk", async (c) => {
       sortedTargets[0] === 1
         ? `\n🔥【先頭打者と最終打者（封殺・走塁死含む）の鉄則】1回${sideLabel}の最初の打者は必ず【1番打者】からスタートします！1番から1人ずつ打順を飛ばさず（1番→2番→3番→4番→5番...）下へ読み進め、**イニング終了斜線（／・∟）または白紙空欄の直前にある「実際に手書き記録がある最後の打者」まで漏れなく出力**してください！（※注意：4番打者が出塁した後に5番打者の遊ゴロ封殺6-4・野選FC・盗塁死等で3アウトチェンジになった場合、3アウト目の『Ⅲ』『③』は先行走者である4番の中央に書かれ、その直下の5番のマスに最終打席の投球・打球記号が書かれます！4番に『Ⅲ』があるからといって直下の5番の記入済み打席を絶対に切り捨てないでください！）`
         : body.expectedLeadOffOrder
-        ? `\n📌【先頭打者の目安と連続打順・白紙マス除外の絶対原則】前イニング終了順からの計算では【${body.expectedLeadOffOrder}番打者】付近が${sortedTargets[0]}回${sideLabel}の先頭打者の目安ですが、**最優先すべき絶対の根拠は「マス内に実際の手書き記録があるか」**です！印刷された点線ダイヤモンドと薄いBSO枠線しか無い【白紙（空欄）マス】は絶対に出力せず、先頭打者からイニング終了斜線（／・∟）直前の最終打者まで、**途中の打順を1人も飛ばさず連続した手書き打席ブロック（計3アウト分）**を正確に抽出してください。`
-        : `\n📌【連続打順と白紙マス除外の絶対原則】印刷された点線ダイヤモンドと薄いBSO枠線しか無い【白紙（空欄）マス】は絶対に出力せず、実際に手書き記録がある連続した打席マス（途中の打順飛び無し・計3アウト分）だけを抽出してください。`;
+        ? `\n📌【先頭打者の目安・打者一巡（9人全員記入）列の回転順・白紙マス除外の絶対原則】前イニング終了打順からの連続則（前のイニングの次の番号、または盗塁死・牽制死等の走塁死終了時は同一番号）では【${body.expectedLeadOffOrder}番打者】が${sortedTargets[0]}回${sideLabel}の先頭打者です！\n- **⚠️特に1イニング9人全員のマスが埋まっている場合（打者一巡）**: シート上端の「1番」から機械的に 1→2→...→9 と並べるのは絶対厳禁です！必ず先頭打者（目安: ${body.expectedLeadOffOrder}番）から下へ読み進め、9番の下端に達したら上端の1番（2列目折り返しまたは同一列上段）へ繋がり、3アウト目（『Ⅲ』『③』）の最終打者で終わる時系列順に出力してください。\n- 印刷された点線ダイヤモンドと薄いBSO枠線しか無い【白紙（空欄）マス】は絶対に出力せず、途中の打順を1人も飛ばさず連続した手書き打席ブロック（計3アウト分）を正確に抽出してください。`
+        : `\n📌【連続打順・打者一巡列の回転順・白紙マス除外の絶対原則】印刷された点線ダイヤモンドと薄いBSO枠線しか無い【白紙（空欄）マス】は絶対に出力せず、実際に手書き記録がある連続した打席マス（途中の打順飛び無し・計3アウト分）だけを抽出してください。もし1イニング9人全員が埋まっている列では、シート上端の1番からではなく「Ⅰ→Ⅱ→Ⅲのアウト順が成立し、3アウト目の打者で終わる真の先頭打者」から9番→1番へ循環する時系列順で出力してください。`;
 
     const tailOrderConstraint =
       sortedTargets.length === 1 &&
@@ -1681,7 +1682,8 @@ ${targetInningMetaLines.join("\n")}
       normalizedRawItems,
       sortedTargets,
       body.structure,
-      body.expectedLeadOffOrder
+      body.expectedLeadOffOrder,
+      body.nextInningLeadOffOrder
     );
 
     let currentTrackingInning = -1;
@@ -1993,17 +1995,7 @@ ${targetInningMetaLines.join("\n")}
     let nextLeadOffOrder = body.expectedLeadOffOrder || 1;
     if (mappedAtBats.length > 0) {
       const lastAb = mappedAtBats[mappedAtBats.length - 1];
-      const endedByRunnerOutOnly =
-        lastAb.resultCode === "other" &&
-        lastAb.advances.some(
-          (a) =>
-            a.isOut &&
-            (a.method === "caught_stealing" ||
-              a.method === "pickoff_out" ||
-              a.method === "interference_out" ||
-              a.method === "appeal_out" ||
-              a.method === "out_on_base")
-        );
+      const endedByRunnerOutOnly = isRunnerOnlyInningEnd(lastAb);
       nextLeadOffOrder = endedByRunnerOutOnly
         ? lastAb.battingOrder
         : (lastAb.battingOrder % lineupCycle) + 1;
@@ -5327,8 +5319,19 @@ function sanitizeMappedInningAtBats(
       const scoreAlreadyMatchesAtThreeOuts =
         outsAtThreeOuts === 3 && runsAtThreeOuts === confirmedRuns;
 
+      // 打者一巡（9人以上全員に実プレーがある列）や、確定得点に対して未計上の実安打・得点が後続にある場合は切り線ノイズではないため絶対に切り捨てない
+      const hasRealBatAroundOrScoringInTrailing =
+        !trailingArePhantom &&
+        trailingIsStrictlySequential &&
+        (innList.length >= lineupCycle ||
+          (confirmedRuns > runsAtThreeOuts &&
+            trailing.some(
+              (t) => t.runsInPlay > 0 || isSafeReachResult(t.resultCode)
+            )));
+
       if (
         !shouldPreserveRunnerOutContinuation &&
+        !hasRealBatAroundOrScoringInTrailing &&
         (!anyBaseRunnerExistedInHead ||
           !trailingIsStrictlySequential ||
           trailingArePhantom ||
@@ -6379,13 +6382,77 @@ function regularizeSheetGridGeometry(
  * 野球の打順循環則と2通りの折り返し記法（一巡充填式／9番下端折り返し式）から
  * 時系列順と正確なサブ列番号 (c: 1, 2, 3...) を数学的に復元する。
  */
+function estimateRawAtBatOutsForOrdering(raw: RawGeminiAtBat): number {
+  const rc = inferCanonicalResultCode(
+    raw.rc ?? raw.resultCode,
+    raw.rl ?? raw.resultLabel
+  );
+  if (rc === "triple_play") return 3;
+  if (rc === "double_play") return 2;
+  if (
+    rc === "groundout" ||
+    rc === "flyout" ||
+    rc === "infield_fly" ||
+    rc === "strikeout" ||
+    rc === "dropped_third_strike_out" ||
+    rc === "sac_bunt" ||
+    rc === "sac_fly" ||
+    rc === "interference_out"
+  ) {
+    return 1;
+  }
+  if (
+    rc === "single" ||
+    rc === "double" ||
+    rc === "triple" ||
+    rc === "home_run" ||
+    rc === "walk" ||
+    rc === "intentional_walk" ||
+    rc === "hit_by_pitch" ||
+    rc === "interference" ||
+    rc === "dropped_third_strike" ||
+    rc === "error"
+  ) {
+    return 0;
+  }
+  return Math.max(0, Math.min(2, toFiniteInt(raw.o ?? raw.outsInPlay, 0) || 0));
+}
+
+function extractRawOutOrdinalMark(raw: RawGeminiAtBat): 1 | 2 | 3 | null {
+  const obs = (raw.obs || "").trim();
+  if (/Ⅲ|③/.test(obs)) return 3;
+  if (/Ⅱ|②/.test(obs)) return 2;
+  if (/Ⅰ|①/.test(obs)) return 1;
+  const eo = toFiniteInt(raw.eo ?? raw.endingOuts);
+  if (eo === 1 || eo === 2 || eo === 3) return eo;
+  return null;
+}
+
+function isRawRunnerOnlyEnd(raw: RawGeminiAtBat): boolean {
+  const rc = inferCanonicalResultCode(
+    raw.rc ?? raw.resultCode,
+    raw.rl ?? raw.resultLabel
+  );
+  if (rc !== "other") return false;
+  const rl = (raw.rl ?? raw.resultLabel ?? "").trim();
+  const rawAdvs = raw.a || raw.advances || [];
+  return (
+    rawAdvs.some((adv) => Boolean(adv.io ?? adv.isOut)) ||
+    /途中断|走塁死|盗塁死|牽制死|アピール/.test(rl)
+  );
+}
+
 function orderAndAssignColumnsForChunk(
   rawItems: RawGeminiAtBat[],
   sortedTargets: number[],
   structure: ScorebookSheetStructure,
-  initialExpectedLeadOff?: number
+  initialExpectedLeadOff?: number,
+  nextChunkLeadOffOrder?: number
 ): RawGeminiAtBat[] {
   const B = Math.max(9, structure.batters.length);
+  const stepOrder = (bo: number): number => (bo % B) + 1;
+  const prevOrder = (bo: number): number => ((bo - 2 + B) % B) + 1;
+
   let runningLeadOff: number | undefined =
     initialExpectedLeadOff && initialExpectedLeadOff >= 1 && initialExpectedLeadOff <= B
       ? initialExpectedLeadOff
@@ -6454,11 +6521,14 @@ function orderAndAssignColumnsForChunk(
       innItems.length > B ||
       maxCount >= 2;
 
+    let effectiveLeadOff = 1;
+
     if (!wrappedAround) {
       // 9番➔1番を跨がない通常イニングは打順の昇順がそのまま時系列順
       tagged.sort((a, b) =>
         a.bo !== b.bo ? a.bo - b.bo : a.origIdx - b.origIdx
       );
+      effectiveLeadOff = tagged[0]?.bo ?? 1;
     } else {
       // 循環カウント段差（前の打順より登場回数が1回増える境界＝その回の真の先頭打者）を検出
       const stepUpCandidates: number[] = [];
@@ -6469,23 +6539,17 @@ function orderAndAssignColumnsForChunk(
         }
       }
 
-      let effectiveLeadOff = 1;
-      if (runningLeadOff !== undefined) {
-        if (
-          minCount === maxCount ||
-          stepUpCandidates.includes(runningLeadOff)
-        ) {
-          effectiveLeadOff = runningLeadOff;
-        } else if (stepUpCandidates.length === 1) {
-          effectiveLeadOff = stepUpCandidates[0];
-        } else {
-          effectiveLeadOff = runningLeadOff;
-        }
-      } else if (stepUpCandidates.length === 1) {
-        effectiveLeadOff = stepUpCandidates[0];
-      } else {
-        // ちょうど9人または18人で counts が全員同数の場合:
-        // 「9番下端折り返し式」なら 1番が c>=2 で先頭打者が c=1 になる境界が存在する
+      if (inn === 1) {
+        // 1回の先頭打者は野球規則上100%「1番」
+        effectiveLeadOff = 1;
+      } else if (minCount === maxCount && minCount >= 1) {
+        // === 1イニング9人（または18人）全員が同数ずつ埋まっている場合 ===
+        // 空欄マスの段差（stepUpCandidates）が存在しないため、
+        // ①前イニングからの連続打順（次打順 or 走塁死終了時の同一打順）
+        // ②次イニング先頭打順との連続性
+        // ③3アウト完了位置 ＆ 中央ローマ数字（Ⅰ→Ⅱ→Ⅲ）の単調性
+        // ④9番下端折り返し式のサブ列段差（c: 2 -> 1）
+        // を統合採点して真の先頭打者を数学的に特定する
         let colStepCandidate: number | undefined;
         for (let bo = 2; bo <= B; bo++) {
           const prevFirst = byBo.get(bo - 1)?.[0];
@@ -6495,15 +6559,181 @@ function orderAndAssignColumnsForChunk(
             break;
           }
         }
-        effectiveLeadOff =
-          colStepCandidate ??
-          Math.max(
-            1,
-            Math.min(
-              B,
-              toFiniteInt(innItems[0].bo ?? innItems[0].battingOrder, 1) || 1
-            )
-          );
+
+        const firstRawBo = Math.max(
+          1,
+          Math.min(
+            B,
+            toFiniteInt(innItems[0].bo ?? innItems[0].battingOrder, 1) || 1
+          )
+        );
+        const validNextChunkLeadOff =
+          sortedTargets[sortedTargets.length - 1] === inn &&
+          typeof nextChunkLeadOffOrder === "number" &&
+          nextChunkLeadOffOrder >= 1 &&
+          nextChunkLeadOffOrder <= B
+            ? nextChunkLeadOffOrder
+            : undefined;
+
+        let bestBo = runningLeadOff ?? colStepCandidate ?? firstRawBo;
+        let bestScore = -Infinity;
+
+        for (let candS = 1; candS <= B; candS++) {
+          let score = 0;
+
+          const seq: Array<{ raw: RawGeminiAtBat; bo: number }> = [];
+          for (let lap = 0; lap <= maxLap; lap++) {
+            for (let offset = 0; offset < B; offset++) {
+              const bo = ((candS - 1 + offset) % B) + 1;
+              const entry = byBo.get(bo)?.[lap];
+              if (entry) {
+                seq.push({ raw: entry.raw, bo });
+              }
+            }
+          }
+
+          // ① 前イニングからの連続打順（次の番号 or 走塁死終了時の同一番号、および前イニング1人読取漏れ許容）
+          if (runningLeadOff !== undefined) {
+            if (candS === runningLeadOff) score += 95;
+            else if (candS === prevOrder(runningLeadOff)) score += 38;
+            else if (candS === stepOrder(runningLeadOff)) score += 28;
+            else score -= 35;
+          }
+
+          // ② 次イニング先頭打順との連続性（9人攻撃なら次回先頭も原則 candS、走塁死終了なら prevOrder(candS)）
+          if (validNextChunkLeadOff !== undefined && seq.length > 0) {
+            const tailRaw = seq[seq.length - 1].raw;
+            const tailBo = seq[seq.length - 1].bo; // === prevOrder(candS)
+            if (isRawRunnerOnlyEnd(tailRaw)) {
+              if (tailBo === validNextChunkLeadOff) score += 95;
+              else if (candS === validNextChunkLeadOff) score += 40;
+            } else {
+              if (candS === validNextChunkLeadOff) score += 95;
+              else if (tailBo === validNextChunkLeadOff) score += 42;
+            }
+          }
+
+          // ③ 9番下端折り返し式のサブ列段差（c: 2 -> 1）
+          if (colStepCandidate !== undefined && candS === colStepCandidate) {
+            score += 80;
+          }
+
+          // ④ 3アウト完了位置 ＆ 中央アウト記号（Ⅰ→Ⅱ→Ⅲ）の順序整合
+          let cumOuts = 0;
+          let battersAfterThreeOuts = 0;
+          const outOrdinals: number[] = [];
+          for (let i = 0; i < seq.length; i++) {
+            if (cumOuts >= 3) {
+              battersAfterThreeOuts += 1;
+            }
+            const estO = estimateRawAtBatOutsForOrdering(seq[i].raw);
+            cumOuts += estO;
+            if (estO >= 1) {
+              const mark = extractRawOutOrdinalMark(seq[i].raw);
+              if (mark !== null) {
+                outOrdinals.push(mark);
+              }
+            }
+          }
+
+          if (cumOuts >= 3 && seq.length > 0) {
+            const tailRaw = seq[seq.length - 1].raw;
+            const tailRc = inferCanonicalResultCode(
+              tailRaw.rc ?? tailRaw.resultCode,
+              tailRaw.rl ?? tailRaw.resultLabel
+            );
+            const tailMark = extractRawOutOrdinalMark(tailRaw);
+            const tailEstO = estimateRawAtBatOutsForOrdering(tailRaw);
+
+            if (battersAfterThreeOuts === 0) {
+              score += 100;
+              if (tailEstO >= 1 && tailMark === 3) {
+                score += 50;
+              }
+            } else if (
+              battersAfterThreeOuts === 1 &&
+              (tailRc === "fc" || tailRc === "other" || tailEstO === 0)
+            ) {
+              score += 50;
+              const prevTail = seq.length >= 2 ? seq[seq.length - 2].raw : null;
+              if (prevTail && extractRawOutOrdinalMark(prevTail) === 3) {
+                score += 35;
+              }
+            } else {
+              score -= 45 * battersAfterThreeOuts;
+            }
+          }
+
+          if (outOrdinals.length >= 2) {
+            let nonDecreasing = true;
+            let hasThreeBeforeOneOrTwo = false;
+            let seenThree = false;
+            for (let i = 0; i < outOrdinals.length; i++) {
+              if (i > 0 && outOrdinals[i] < outOrdinals[i - 1]) {
+                nonDecreasing = false;
+              }
+              if (outOrdinals[i] === 3) {
+                seenThree = true;
+              } else if (seenThree && outOrdinals[i] < 3) {
+                hasThreeBeforeOneOrTwo = true;
+              }
+            }
+            if (nonDecreasing) {
+              score += 55;
+            } else if (hasThreeBeforeOneOrTwo) {
+              score -= 80;
+            } else {
+              score -= 35;
+            }
+          }
+
+          // ⑤ イニング先頭打者（無死走者なし）として物理的に不自然な結果の減点
+          if (seq.length > 0) {
+            const leadRc = inferCanonicalResultCode(
+              seq[0].raw.rc ?? seq[0].raw.resultCode,
+              seq[0].raw.rl ?? seq[0].raw.resultLabel
+            );
+            if (
+              leadRc === "sac_fly" ||
+              leadRc === "sac_bunt" ||
+              leadRc === "double_play" ||
+              leadRc === "triple_play" ||
+              leadRc === "infield_fly" ||
+              leadRc === "fc"
+            ) {
+              score -= 25;
+            }
+          }
+
+          if (candS === firstRawBo) {
+            score += 1;
+          }
+
+          if (score > bestScore) {
+            bestScore = score;
+            bestBo = candS;
+          }
+        }
+
+        effectiveLeadOff = bestBo;
+      } else if (runningLeadOff !== undefined) {
+        if (stepUpCandidates.includes(runningLeadOff)) {
+          effectiveLeadOff = runningLeadOff;
+        } else if (stepUpCandidates.length === 1) {
+          effectiveLeadOff = stepUpCandidates[0];
+        } else {
+          effectiveLeadOff = runningLeadOff;
+        }
+      } else if (stepUpCandidates.length === 1) {
+        effectiveLeadOff = stepUpCandidates[0];
+      } else {
+        effectiveLeadOff = Math.max(
+          1,
+          Math.min(
+            B,
+            toFiniteInt(innItems[0].bo ?? innItems[0].battingOrder, 1) || 1
+          )
+        );
       }
 
       tagged.sort((a, b) => {
@@ -6514,11 +6744,16 @@ function orderAndAssignColumnsForChunk(
     }
 
     // サブ列番号 c (1, 2, 3...) の単調性＆周回下限 (c >= lap + 1) を保証
+    // ※1巡目の9番折り返し前 (lap === 0 && bo >= effectiveLeadOff) は必ず1列目(c=1)になるため誤読c=2による早期シフトを防止
     const maxAllowedCols = Math.max(metaCols, maxLap + 1);
     let prevCol = 1;
     for (const item of tagged) {
       const minRequiredCol = item.lap + 1;
-      const clampedRawCol = Math.max(1, Math.min(maxAllowedCols, item.rawCol));
+      const isFirstLapBeforeNineWrap =
+        item.lap === 0 && item.bo >= effectiveLeadOff;
+      const clampedRawCol = isFirstLapBeforeNineWrap
+        ? 1
+        : Math.max(1, Math.min(maxAllowedCols, item.rawCol));
       const assignedCol = Math.min(
         maxAllowedCols,
         Math.max(prevCol, minRequiredCol, clampedRawCol)
@@ -6538,11 +6773,7 @@ function orderAndAssignColumnsForChunk(
     // 同一チャンク内の次イニング向けに先頭打順を更新
     const lastEntry = tagged[tagged.length - 1];
     if (lastEntry) {
-      const lastRc = (lastEntry.raw.rc ?? lastEntry.raw.resultCode ?? "").trim();
-      const rawAdvs = lastEntry.raw.a || lastEntry.raw.advances || [];
-      const endedByRunnerOutOnly =
-        lastRc === "other" &&
-        rawAdvs.some((adv) => Boolean(adv.io ?? adv.isOut));
+      const endedByRunnerOutOnly = isRawRunnerOnlyEnd(lastEntry.raw);
       runningLeadOff = endedByRunnerOutOnly
         ? lastEntry.bo
         : (lastEntry.bo % B) + 1;

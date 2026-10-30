@@ -1,5 +1,9 @@
 // filepath: src/lib/liff/scorebook-validator.ts
 import { harmonizeOcrFieldingAndLabel } from "@/lib/liff/scorebook-fielding";
+import {
+  getCellQuadInStructure,
+  quadToBoundingBox,
+} from "@/lib/liff/scorebook-grid";
 import { simulateSheetRunners } from "@/lib/liff/scorebook-runners";
 import {
   isPickoffPitch,
@@ -965,18 +969,7 @@ export function validateScorebookSheet(
     // 次イニングの先頭打者を算出
     // ※最終打席で打者自身が完了せず走者盗塁死/牽制死/走塁死のみで3アウトになった場合は同じ打者が次回先頭になる
     const lastAb = inningEvents[inningEvents.length - 1];
-    const endedByRunnerOutOnly =
-      lastAb.resultCode === "other" &&
-      lastAb.advances.some(
-        (a) =>
-          a.isOut &&
-          (a.method === "caught_stealing" ||
-            a.method === "pickoff_out" ||
-            a.method === "interference_out" ||
-            a.method === "appeal_out" ||
-            a.method === "out_on_base")
-      );
-    expectedNextBatterOrder = endedByRunnerOutOnly
+    expectedNextBatterOrder = isRunnerOnlyInningEnd(lastAb)
       ? lastAb.battingOrder
       : (lastAb.battingOrder % lineupCycle) + 1;
   }
@@ -984,9 +977,9 @@ export function validateScorebookSheet(
   return issues;
 }
 
-function isRunnerOnlyInningEnd(ab: ScorebookV2AtBat): boolean {
-  return (
-    ab.resultCode === "other" &&
+export function isRunnerOnlyInningEnd(ab: ScorebookV2AtBat): boolean {
+  if (ab.resultCode !== "other") return false;
+  if (
     ab.advances.some(
       (a) =>
         a.isOut &&
@@ -996,7 +989,11 @@ function isRunnerOnlyInningEnd(ab: ScorebookV2AtBat): boolean {
           a.method === "appeal_out" ||
           a.method === "out_on_base")
     )
-  );
+  ) {
+    return true;
+  }
+  const label = (ab.resultLabel || "").trim();
+  return /途中断|走塁死|盗塁死|牽制死|アピール/.test(label);
 }
 
 /**
@@ -1433,9 +1430,356 @@ function isSingleBatterOutCode(rc: CanonicalAtBatResult): boolean {
   );
 }
 
+function estimateSingleItemOutsForRotation(ab: ScorebookV2AtBat): number {
+  if (ab.resultCode === "triple_play") return 3;
+  if (ab.resultCode === "double_play") return 2;
+  if (isSingleBatterOutCode(ab.resultCode)) return 1;
+  if (isSafeBatterReachCode(ab.resultCode)) return 0;
+  return Math.max(0, Math.min(2, ab.outsInPlay || 0));
+}
+
+function isFullEqualLineupCycle(
+  list: ScorebookV2AtBat[],
+  lineupCycle: number
+): boolean {
+  if (list.length < lineupCycle || list.length % lineupCycle !== 0) {
+    return false;
+  }
+  const expectedPerSlot = list.length / lineupCycle;
+  const counts = new Array<number>(lineupCycle + 1).fill(0);
+  for (const ab of list) {
+    if (ab.battingOrder < 1 || ab.battingOrder > lineupCycle) return false;
+    counts[ab.battingOrder] += 1;
+  }
+  for (let bo = 1; bo <= lineupCycle; bo++) {
+    if (counts[bo] !== expectedPerSlot) return false;
+  }
+  return true;
+}
+
 /**
- * 1イニングが3アウトを超過する（4アウト・5アウト等）および3アウト後の余剰打席混入について、
+ * 1イニング9人全員（または18人など打順一巡・二巡ちょうど）が埋まっている場合や、
+ * 10人以上の打者一巡イニングで上から「1番→9番」の行順で並んでしまっている場合に、
+ *  ① 前のイニング終了打順からの連続則（通常＝次の打順番号 ／ 打席途中の盗塁死・牽制死等での終了時＝同一の打順番号）
+ *  ② 次イニング先頭打順との連続則（9人攻撃なら次回先頭も原則同じ打順番号）
+ *  ③ イニング内の3アウト完了位置（3アウト目が最終打者に位置し、3アウト後に余剰打席が出ないこと）
+ *  ④ 9番下端折り返し式のサブ列境界（c:1 ➔ c:2）および先頭打者の野球物理制約
+ * を総合評価し、イニング内の打席配列を正しい先頭打者からの時系列順へ数学的に循環回転（補正）する。
+ */
+function reconcileCyclicInningLeadOffs(
+  inningsMap: Map<number, ScorebookV2AtBat[]>,
+  sortedInnings: number[],
+  lineupCycle: number,
+  structure?: ScorebookSheetStructure | null
+): boolean {
+  if (sortedInnings.length === 0) return false;
+
+  const stepOrder = (bo: number): number => (bo % lineupCycle) + 1;
+  const prevOrder = (bo: number): number =>
+    ((bo - 2 + lineupCycle) % lineupCycle) + 1;
+
+  let anyRotated = false;
+
+  // 連続する2イニング（例: 2回・3回ともに9人攻撃）でも確実に伝播するよう最大2パス走査する
+  for (let sweep = 0; sweep < 2; sweep++) {
+    let sweepChanged = false;
+
+    for (let idx = 0; idx < sortedInnings.length; idx++) {
+      const inn = sortedInnings[idx];
+      const list = inningsMap.get(inn) || [];
+      if (list.length < lineupCycle) continue;
+
+      const counts = new Array<number>(lineupCycle + 1).fill(0);
+      let validOrders = true;
+      for (const ab of list) {
+        if (ab.battingOrder < 1 || ab.battingOrder > lineupCycle) {
+          validOrders = false;
+          break;
+        }
+        counts[ab.battingOrder] += 1;
+      }
+      if (!validOrders) continue;
+
+      const minCount = Math.min(...counts.slice(1));
+      const maxCount = Math.max(...counts.slice(1));
+      if (minCount === 0) continue;
+
+      const byBo = new Map<
+        number,
+        Array<{ ab: ScorebookV2AtBat; origIdx: number }>
+      >();
+      list.forEach((ab, origIdx) => {
+        const arr = byBo.get(ab.battingOrder) || [];
+        arr.push({ ab, origIdx });
+        byBo.set(ab.battingOrder, arr);
+      });
+      if (maxCount > 1) {
+        for (const arr of byBo.values()) {
+          arr.sort((a, b) => {
+            const colDiff = (a.ab.columnIndex || 1) - (b.ab.columnIndex || 1);
+            return colDiff !== 0 ? colDiff : a.origIdx - b.origIdx;
+          });
+        }
+      }
+
+      const buildCandidateOrder = (startBo: number): ScorebookV2AtBat[] => {
+        const seq: ScorebookV2AtBat[] = [];
+        for (let lap = 0; lap < maxCount; lap++) {
+          for (let offset = 0; offset < lineupCycle; offset++) {
+            const bo = ((startBo - 1 + offset) % lineupCycle) + 1;
+            const entries = byBo.get(bo) || [];
+            if (lap < entries.length) {
+              seq.push(entries[lap].ab);
+            }
+          }
+        }
+        return seq;
+      };
+
+      let targetStartBo: number | null = null;
+
+      if (minCount === maxCount) {
+        // === ケースA: 1イニング9人（または18人）全員が同数ずつ埋まっている場合 ===
+        if (inn === 1) {
+          targetStartBo = 1;
+        } else {
+          const prevInn = idx > 0 ? sortedInnings[idx - 1] : null;
+          const prevList =
+            prevInn !== null && prevInn === inn - 1
+              ? inningsMap.get(prevInn) || []
+              : [];
+
+          const nextInn =
+            idx < sortedInnings.length - 1 ? sortedInnings[idx + 1] : null;
+          const nextList =
+            nextInn !== null && nextInn === inn + 1
+              ? inningsMap.get(nextInn) || []
+              : [];
+          const nextIsAlsoAmbiguousFullCycle = isFullEqualLineupCycle(
+            nextList,
+            lineupCycle
+          );
+
+          const currentFirstBo = list[0].battingOrder;
+          let bestBo = currentFirstBo;
+          let bestScore = -Infinity;
+
+          for (let candS = 1; candS <= lineupCycle; candS++) {
+            let score = 0;
+            const seq = buildCandidateOrder(candS);
+
+            // ① 前のイニング終了打順との連続性（次の番号 or 走塁死終了時の同一番号）
+            if (prevList.length > 0) {
+              const lastPrev = prevList[prevList.length - 1];
+              const lastBo = lastPrev.battingOrder;
+              const candNext = stepOrder(lastBo);
+              const candSame = lastBo;
+              const prevRunnerEnd = isRunnerOnlyInningEnd(lastPrev);
+              const prevOuts = prevList.reduce(
+                (s, x) => s + estimateSingleItemOutsForRotation(x),
+                0
+              );
+
+              if (prevOuts === 3) {
+                if (prevRunnerEnd) {
+                  if (candS === candSame) score += 140;
+                  else if (candS === candNext) score += 55;
+                  else score -= 80;
+                } else {
+                  if (candS === candNext) score += 140;
+                  else if (candS === candSame) score += 60;
+                  else score -= 80;
+                }
+              } else if (prevOuts < 3) {
+                // 前イニングの末尾打席に読取漏れ（例: 2アウト止まり）がある可能性も考慮
+                if (candS === candNext) score += 35;
+                if (candS === candSame) score += 18;
+                const maxMiss = Math.min(2, 3 - prevOuts);
+                for (let skip = 1; skip <= maxMiss; skip++) {
+                  const skippedBo =
+                    ((candNext - 1 + skip) % lineupCycle) + 1;
+                  if (candS === skippedBo) score += 26;
+                }
+              } else {
+                // 前イニングに余剰打席が含まれている場合は累積3アウト到達打順も参照
+                let cPrev = 0;
+                let threePrevBo: number | null = null;
+                for (const pAb of prevList) {
+                  cPrev += estimateSingleItemOutsForRotation(pAb);
+                  if (cPrev === 3) {
+                    threePrevBo = pAb.battingOrder;
+                    break;
+                  }
+                }
+                if (threePrevBo !== null) {
+                  if (candS === stepOrder(threePrevBo)) score += 75;
+                  else if (candS === threePrevBo) score += 35;
+                }
+                if (candS === candNext) score += 35;
+                else if (candS === candSame) score += 20;
+              }
+            }
+
+            // ② 次のイニング先頭打順との連続性
+            if (nextList.length > 0) {
+              const nextWeight = nextIsAlsoAmbiguousFullCycle ? 25 : 120;
+              const firstNextBo = nextList[0].battingOrder;
+              const tailItem = seq[seq.length - 1];
+              const tailBo = tailItem.battingOrder; // === prevOrder(candS)
+              if (isRunnerOnlyInningEnd(tailItem)) {
+                if (tailBo === firstNextBo) score += nextWeight;
+                else if (candS === firstNextBo) {
+                  score += Math.round(nextWeight * 0.45);
+                }
+              } else {
+                if (candS === firstNextBo) score += nextWeight;
+                else if (tailBo === firstNextBo) {
+                  score += Math.round(nextWeight * 0.45);
+                }
+              }
+            }
+
+            // ③ イニング内の3アウト完了位置（3アウト目が最終打者で完了し、3アウト後に余剰打席が無いこと）
+            let cumOuts = 0;
+            let battersAfterThreeOuts = 0;
+            for (let i = 0; i < seq.length; i++) {
+              if (cumOuts >= 3) {
+                battersAfterThreeOuts += 1;
+              }
+              cumOuts += estimateSingleItemOutsForRotation(seq[i]);
+            }
+            if (cumOuts >= 3) {
+              const tailItem = seq[seq.length - 1];
+              if (battersAfterThreeOuts === 0) {
+                score += 95;
+              } else if (
+                battersAfterThreeOuts === 1 &&
+                (tailItem.resultCode === "fc" ||
+                  tailItem.resultCode === "other" ||
+                  tailItem.outsInPlay === 0)
+              ) {
+                score += 45;
+              } else {
+                score -= 40 * battersAfterThreeOuts;
+              }
+            }
+
+            // ④ 9番下端折り返し式のサブ列段差（candS..9番が c:1、1番..candS-1が c:2）
+            if (minCount === 1 && candS > 1) {
+              let cleanTwoColWrap = true;
+              for (let bo = 1; bo <= lineupCycle; bo++) {
+                const item = byBo.get(bo)?.[0]?.ab;
+                if (!item) {
+                  cleanTwoColWrap = false;
+                  break;
+                }
+                const expectedCol = bo >= candS ? 1 : 2;
+                if ((item.columnIndex || 1) !== expectedCol) {
+                  cleanTwoColWrap = false;
+                  break;
+                }
+              }
+              if (cleanTwoColWrap) {
+                score += 75;
+              }
+            }
+
+            // ⑤ イニング先頭打者（無死走者なし）として物理的に不自然な結果の減点
+            const leadItem = seq[0];
+            if (
+              leadItem &&
+              (leadItem.resultCode === "sac_fly" ||
+                leadItem.resultCode === "sac_bunt" ||
+                leadItem.resultCode === "double_play" ||
+                leadItem.resultCode === "triple_play" ||
+                leadItem.resultCode === "infield_fly" ||
+                leadItem.resultCode === "fc")
+            ) {
+              score -= 30;
+            }
+
+            // 完全に同点の場合のみ現在の並びを維持
+            if (candS === currentFirstBo) {
+              score += 1;
+            }
+
+            if (score > bestScore) {
+              bestScore = score;
+              bestBo = candS;
+            }
+          }
+
+          targetStartBo = bestBo;
+        }
+      } else if (maxCount === minCount + 1) {
+        // === ケースB: 10〜17人（一巡＋数人）で上から行順に並び打順飛びが発生している場合の整列 ===
+        const hasOrderJump = list.some(
+          (ab, i) =>
+            i > 0 && ab.battingOrder !== stepOrder(list[i - 1].battingOrder)
+        );
+        if (hasOrderJump) {
+          const stepUps: number[] = [];
+          for (let bo = 1; bo <= lineupCycle; bo++) {
+            if (counts[prevOrder(bo)] < counts[bo]) {
+              stepUps.push(bo);
+            }
+          }
+          if (stepUps.length === 1) {
+            targetStartBo = stepUps[0];
+          }
+        }
+      }
+
+      if (targetStartBo === null) continue;
+
+      const rotated = buildCandidateOrder(targetStartBo);
+      const isDifferentOrder = rotated.some((ab, i) => ab.id !== list[i]?.id);
+      if (!isDifferentOrder) continue;
+
+      // 1巡目の9番折り返し前（targetStartBo..lineupCycle）は必ず1列目(columnIndex=1)になるため座標も安全同期
+      const innMeta = structure?.innings.find((m) => m.inning === inn);
+      const maxSubCols = Math.max(1, innMeta?.columnCount ?? 1);
+      const normalizedRotated = rotated.map((ab, posIdx) => {
+        const isFirstLapBeforeNineWrap =
+          posIdx < lineupCycle && ab.battingOrder >= targetStartBo!;
+        const safeCol = isFirstLapBeforeNineWrap
+          ? 1
+          : Math.max(1, Math.min(maxSubCols, ab.columnIndex || 1));
+        if (safeCol === ab.columnIndex) {
+          return ab;
+        }
+        const nextQuad = structure
+          ? getCellQuadInStructure(
+              structure,
+              inn,
+              safeCol,
+              ab.battingOrder,
+              0
+            )
+          : null;
+        return {
+          ...ab,
+          columnIndex: safeCol,
+          cellBox: nextQuad ? quadToBoundingBox(nextQuad) : ab.cellBox,
+        };
+      });
+
+      inningsMap.set(inn, normalizedRotated);
+      sweepChanged = true;
+      anyRotated = true;
+    }
+
+    if (!sweepChanged) break;
+  }
+
+  return anyRotated;
+}
+
+/**
+ * 1イニングが3アウトを超過する（4アウト・5アウト等）および3アウト後の余剰打席混入、
+ * ならびに1イニング9人（打者一巡）が埋まっている場合の先頭打者位置ズレについて、
  * 野球規則とイニング間の打順連続性から数学的に100%確定できる矛盾を0msで自動補正する:
+ * 0) 1イニング9人（または18人）が埋まっているイニングの先頭打者位置ズレを前後の回＆3アウト位置から循環回転補正
  * 1) 隣接イニングとの境界重複除去（例: 1回末尾4番と2回先頭4番が重複して1回が4アウトになっている場合や、次イニング先頭打順から3アウト終了位置が一意に確定する場合）
  * 2) 累積アウト数字（Ⅱ=2, Ⅲ=3）が単一アウト打席の outsInPlay に混入したケースの1アウト正規化
  * 3) 無走者時・2アウト時の物理的に不可能な併殺打(double_play=2死)の通常凡退(1死)化
@@ -1471,6 +1815,19 @@ export function reconcileSheetExcessOutsDeterministically(
 
   const sortedInnings = Array.from(inningsMap.keys()).sort((a, b) => a - b);
   let changed = false;
+
+  // Pass 0: 1イニング9人（打者一巡・二巡）が埋まっているイニングの先頭打者ズレを先に循環回転補正
+  // （※これをPass 1/Pass 2の前に実行することで、正しい走者順での併殺判定＆誤トリミング防止を保証！）
+  if (
+    reconcileCyclicInningLeadOffs(
+      inningsMap,
+      sortedInnings,
+      lineupCycle,
+      structure
+    )
+  ) {
+    changed = true;
+  }
 
   // Pass 1: 各イニング内の1打席ごとの野球物理上限＆後続打席走塁死の二重計上クリーンアップ
   for (const inn of sortedInnings) {
@@ -1764,6 +2121,27 @@ export function reconcileSheetExcessOutsDeterministically(
     }
 
     inningsMap.set(inn, list);
+  }
+
+  // Pass 3: Pass 2 で前イニング末尾の切り線・重複打席が除去された結果に合わせて、9人一巡イニングの先頭位置を最終再確認
+  if (
+    reconcileCyclicInningLeadOffs(
+      inningsMap,
+      sortedInnings,
+      lineupCycle,
+      structure
+    )
+  ) {
+    changed = true;
+    for (const inn of sortedInnings) {
+      const list = inningsMap.get(inn) || [];
+      let monoOuts = 0;
+      for (const ab of list) {
+        monoOuts = Math.min(3, monoOuts + Math.max(0, ab.outsInPlay));
+        ab.endingOuts = monoOuts;
+      }
+      inningsMap.set(inn, list);
+    }
   }
 
   if (!changed) {
