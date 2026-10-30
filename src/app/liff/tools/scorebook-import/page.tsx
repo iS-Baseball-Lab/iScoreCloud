@@ -22,6 +22,7 @@ import {
   detectExcessOutInnings,
   detectMissingOrderGaps,
   reconcileSheetExcessOutsDeterministically,
+  resolveActiveMatchupFromStructure,
 } from "@/lib/liff/scorebook-validator";
 import {
   clearScorebookDraft,
@@ -66,6 +67,7 @@ import {
   X,
   Settings,
   Clock,
+  Edit3,
 } from "lucide-react";
 
 type WizardStep = 1 | 2 | 3 | 4;
@@ -91,6 +93,21 @@ interface SaveSummaryData {
   opponentScore: number;
   myHits: number;
   opponentHits: number;
+  topImageUrl?: string | null;
+  bottomImageUrl?: string | null;
+}
+
+interface SavedScorebookApiResponse {
+  success: boolean;
+  matchId?: string;
+  importScope?: ImportScopeMode;
+  topStructure?: ScorebookSheetStructure | null;
+  bottomStructure?: ScorebookSheetStructure | null;
+  topAtBats?: ScorebookV2AtBat[];
+  bottomAtBats?: ScorebookV2AtBat[];
+  topImageUrl?: string | null;
+  bottomImageUrl?: string | null;
+  error?: string;
 }
 
 const createInitialSheetImageState = (
@@ -287,6 +304,14 @@ export default function LiffScorebookImportPage() {
   const [topAtBats, setTopAtBats] = useState<ScorebookV2AtBat[]>([]);
   const [bottomAtBats, setBottomAtBats] = useState<ScorebookV2AtBat[]>([]);
   const [saveSummary, setSaveSummary] = useState<SaveSummaryData | null>(null);
+  const [savedTopImageUrl, setSavedTopImageUrl] = useState<string | null>(null);
+  const [savedBottomImageUrl, setSavedBottomImageUrl] = useState<string | null>(
+    null
+  );
+  const [isLoadingSavedScorebook, setIsLoadingSavedScorebook] = useState(false);
+  const [isEditingSavedMatch, setIsEditingSavedMatch] = useState(false);
+  const [hasDirtyReEdit, setHasDirtyReEdit] = useState(false);
+  const didAutoLoadEditQueryRef = useRef(false);
 
   const hasRestoredTeamRef = useRef<string | null>(null);
   const completedChunkCacheRef = useRef<
@@ -459,9 +484,93 @@ export default function LiffScorebookImportPage() {
     }
   };
 
+  // 1-A. 保存済みスコアブックデータ（スナップショット＋R2画像 または リレーショナルDB復元）の読み込み
+  const handleLoadSavedScorebook = useCallback(
+    async (
+      overrideMatchId?: string,
+      options?: { fallbackToStep1IfEmpty?: boolean }
+    ) => {
+      const targetId = (overrideMatchId || selectedMatchId || "").trim();
+      if (!targetId) return;
+
+      setIsLoadingSavedScorebook(true);
+      setErrorBanner(null);
+      try {
+        const res = await fetch(
+          `/api/liff/scorebook/saved?matchId=${encodeURIComponent(targetId)}`
+        );
+        const data = (await res.json()) as SavedScorebookApiResponse;
+        if (!data.success) {
+          if (res.status === 404 && options?.fallbackToStep1IfEmpty) {
+            setSelectedMatchId(targetId);
+            setStep(1);
+            return;
+          }
+          throw new Error(
+            data.error || "保存済みデータの読み込みに失敗しました"
+          );
+        }
+
+        const prefs = loadLiffScoreSettings();
+        setSelectedMatchId(targetId);
+        setImportScope(data.importScope || "both");
+        setTopImage(createInitialSheetImageState(prefs.defaultEnhancePencil));
+        setBottomImage(
+          createInitialSheetImageState(prefs.defaultEnhancePencil)
+        );
+        const loadedTopStruct = data.topStructure ?? null;
+        const loadedBottomStruct = data.bottomStructure ?? null;
+        setTopStructure(loadedTopStruct);
+        setBottomStructure(loadedBottomStruct);
+        setTopAtBats(
+          reconcileSheetExcessOutsDeterministically(
+            data.topAtBats || [],
+            loadedTopStruct
+          ).atBats
+        );
+        setBottomAtBats(
+          reconcileSheetExcessOutsDeterministically(
+            data.bottomAtBats || [],
+            loadedBottomStruct
+          ).atBats
+        );
+        setSavedTopImageUrl(data.topImageUrl || null);
+        setSavedBottomImageUrl(data.bottomImageUrl || null);
+        setTimingSummary(null);
+        setStructureCompletedTimings([]);
+        setDeepCompletedTimings([]);
+        setAvailableDraftMeta(null);
+        setRestoredDraftBannerAt(null);
+        setSaveSummary(null);
+        setIsEditingSavedMatch(true);
+        setHasDirtyReEdit(false);
+        setStep(3);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        setErrorBanner(msg);
+      } finally {
+        setIsLoadingSavedScorebook(false);
+      }
+    },
+    [selectedMatchId]
+  );
+
   useEffect(() => {
     fetchContext();
   }, [fetchContext]);
+
+  // 試合詳細画面などから `?matchId=...&mode=edit` で遷移してきた場合は自動的に保存済みデータをStep 3へ展開
+  useEffect(() => {
+    if (isLoadingContext || didAutoLoadEditQueryRef.current) return;
+    const modeParam = getClientQueryParam("mode");
+    const urlMatchId = getClientQueryParam("matchId");
+    if (modeParam === "edit" && urlMatchId) {
+      didAutoLoadEditQueryRef.current = true;
+      void handleLoadSavedScorebook(urlMatchId, {
+        fallbackToStep1IfEmpty: true,
+      });
+    }
+  }, [isLoadingContext, handleLoadSavedScorebook]);
 
   // スコア設定画面から戻ってきた際のみ、登録された早見表URLを同期（カメラ・ファイル選択復帰時の不要な通信競合を防止）
   useEffect(() => {
@@ -512,7 +621,8 @@ export default function LiffScorebookImportPage() {
       !isDraftReady ||
       step === 4 ||
       topImage.isProcessing ||
-      bottomImage.isProcessing
+      bottomImage.isProcessing ||
+      (isEditingSavedMatch && !hasDirtyReEdit)
     ) {
       return;
     }
@@ -574,7 +684,7 @@ export default function LiffScorebookImportPage() {
     topImage.processed,
     topImage.enhancePencil,
     topImage.file,
-     topImage.isProcessing,
+    topImage.isProcessing,
     bottomImage.processed,
     bottomImage.enhancePencil,
     bottomImage.file,
@@ -586,6 +696,8 @@ export default function LiffScorebookImportPage() {
     bottomAtBats,
     timingSummary,
     lastAutoSavedAt,
+    isEditingSavedMatch,
+    hasDirtyReEdit,
   ]);
 
   const handleDiscardDraft = async () => {
@@ -610,6 +722,10 @@ export default function LiffScorebookImportPage() {
     setBottomStructure(null);
     setTopAtBats([]);
     setBottomAtBats([]);
+    setSavedTopImageUrl(null);
+    setSavedBottomImageUrl(null);
+    setIsEditingSavedMatch(false);
+    setHasDirtyReEdit(false);
     setStructureStartedAtMs(null);
     setStructureActiveLabel(null);
     setStructureActiveStartedAtMs(null);
@@ -1122,6 +1238,8 @@ export default function LiffScorebookImportPage() {
 
       if (!needTop) setTopStructure(null);
       if (!needBottom) setBottomStructure(null);
+      setIsEditingSavedMatch(false);
+      setHasDirtyReEdit(false);
       setStructureTotalMs(Date.now() - stage1Start);
       setStep(2);
     } catch (err) {
@@ -2421,7 +2539,45 @@ export default function LiffScorebookImportPage() {
     }
   };
 
-  // 6. 最終D1保存処理
+  // 5-C. Step 2で選手名・打順・途中交代・登板投手を変更した際、既存の打席リストへも即座に反映同期する
+  const handleUpdateStructureWithSync = (
+    isTop: boolean,
+    updated: ScorebookSheetStructure
+  ) => {
+    if (isEditingSavedMatch) {
+      setHasDirtyReEdit(true);
+    }
+    const syncAtBatsWithStructure = (list: ScorebookV2AtBat[]) =>
+      list.map((ab) => {
+        const matchup = resolveActiveMatchupFromStructure(
+          updated,
+          ab.inning,
+          ab.battingOrder,
+          ab.pitcherName
+        );
+        return {
+          ...ab,
+          batterName: matchup.batterName || ab.batterName,
+          batterPlayerId: matchup.batterPlayerId,
+          pitcherName: matchup.pitcherName || ab.pitcherName,
+          pitcherPlayerId: matchup.pitcherPlayerId,
+        };
+      });
+
+    if (isTop) {
+      setTopStructure(updated);
+      setTopAtBats((prev) =>
+        prev.length > 0 ? syncAtBatsWithStructure(prev) : prev
+      );
+    } else {
+      setBottomStructure(updated);
+      setBottomAtBats((prev) =>
+        prev.length > 0 ? syncAtBatsWithStructure(prev) : prev
+      );
+    }
+  };
+
+  // 6. 最終D1保存処理（R2シート画像＋無劣化スナップショットも同時永続化）
   const handleSaveToDatabase = async () => {
     if (!selectedMatchId) return;
     setIsSaving(true);
@@ -2439,6 +2595,12 @@ export default function LiffScorebookImportPage() {
           bottomStructure,
           topAtBats,
           bottomAtBats,
+          topImageBase64: topImage.processed?.base64,
+          topImageMimeType: topImage.processed?.mimeType,
+          topImageUrl: savedTopImageUrl,
+          bottomImageBase64: bottomImage.processed?.base64,
+          bottomImageMimeType: bottomImage.processed?.mimeType,
+          bottomImageUrl: savedBottomImageUrl,
         }),
       });
 
@@ -2452,12 +2614,35 @@ export default function LiffScorebookImportPage() {
         throw new Error(data.error || "保存に失敗しました");
       }
 
+      const summary = data.summary;
+      if (summary.topImageUrl !== undefined) {
+        setSavedTopImageUrl(summary.topImageUrl);
+      }
+      if (summary.bottomImageUrl !== undefined) {
+        setSavedBottomImageUrl(summary.bottomImageUrl);
+      }
+
+      setMatches((prev) =>
+        prev.map((m) =>
+          m.id === selectedMatchId
+            ? {
+                ...m,
+                myScore: summary.myScore,
+                opponentScore: summary.opponentScore,
+                status: "finished",
+                hasExistingAtBats: true,
+              }
+            : m
+        )
+      );
+
       const teamKey = resolvedTeamId || currentTeam?.id || "default";
       await clearScorebookDraft(teamKey);
       setLastAutoSavedAt(null);
       setRestoredDraftBannerAt(null);
+      setHasDirtyReEdit(false);
 
-      setSaveSummary(data.summary);
+      setSaveSummary(summary);
       setStep(4);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -2471,6 +2656,15 @@ export default function LiffScorebookImportPage() {
   const needTopSide = importScope === "both" || importScope === "top_only";
   const needBottomSide =
     importScope === "both" || importScope === "bottom_only";
+  const hasLocalProcessedForScope =
+    (!needTopSide || Boolean(topImage.processed)) &&
+    (!needBottomSide || Boolean(bottomImage.processed));
+  const hasAnyLocalProcessedImage =
+    Boolean(topImage.processed) || Boolean(bottomImage.processed);
+  const effectiveTopImageUrl =
+    topImage.processed?.dataUrl || savedTopImageUrl || null;
+  const effectiveBottomImageUrl =
+    bottomImage.processed?.dataUrl || savedBottomImageUrl || null;
   const preservedAtBatsCount =
     (needTopSide ? topAtBats.length : 0) +
     (needBottomSide ? bottomAtBats.length : 0);
@@ -2658,11 +2852,13 @@ export default function LiffScorebookImportPage() {
           </div>
         )}
 
-        {isLoadingContext ? (
+        {isLoadingContext || (isLoadingSavedScorebook && step === 1) ? (
           <div className="py-16 flex flex-col items-center justify-center gap-3">
             <Loader2 className="w-7 h-7 animate-spin text-indigo-600" />
             <p className="text-xs font-bold text-muted-foreground">
-              チーム選手名鑑・試合情報を読み込み中...
+              {isLoadingSavedScorebook
+                ? "保存済みの打席・成績データを呼び出し中..."
+                : "チーム選手名鑑・試合情報を読み込み中..."}
             </p>
           </div>
         ) : (
@@ -2671,9 +2867,17 @@ export default function LiffScorebookImportPage() {
               <Step1MatchAndImages
                 matches={matches}
                 selectedMatchId={selectedMatchId}
-                onSelectMatchId={setSelectedMatchId}
+                onSelectMatchId={(id) => {
+                  setSelectedMatchId(id);
+                  setSavedTopImageUrl(null);
+                  setSavedBottomImageUrl(null);
+                  setIsEditingSavedMatch(false);
+                  setHasDirtyReEdit(false);
+                }}
                 onCreateMatch={handleCreateMatch}
                 isCreatingMatch={isCreatingMatch}
+                onLoadSavedScorebook={() => void handleLoadSavedScorebook()}
+                isLoadingSavedScorebook={isLoadingSavedScorebook}
                 importScope={importScope}
                 onChangeImportScope={setImportScope}
                 topImage={topImage}
@@ -2709,14 +2913,14 @@ export default function LiffScorebookImportPage() {
                 importScope={importScope}
                 roster={roster}
                 opponentName={selectedMatch?.opponent || "対戦相手"}
-                topImageDataUrl={topImage.processed?.dataUrl || null}
-                bottomImageDataUrl={bottomImage.processed?.dataUrl || null}
+                topImageDataUrl={effectiveTopImageUrl}
+                bottomImageDataUrl={effectiveBottomImageUrl}
                 topStructure={topStructure}
                 bottomStructure={bottomStructure}
-                onChangeStructure={(isTop, updated) =>
-                  isTop ? setTopStructure(updated) : setBottomStructure(updated)
+                onChangeStructure={handleUpdateStructureWithSync}
+                onRescanSide={
+                  hasLocalProcessedForScope ? handleRescanSingleSide : undefined
                 }
-                onRescanSide={handleRescanSingleSide}
                 isRescanningSide={isAnalyzingStructure}
                 structureProgressLabel={structureProgressLabel}
                 structureTotalMs={structureTotalMs}
@@ -2725,8 +2929,10 @@ export default function LiffScorebookImportPage() {
                   setErrorBanner(null);
                   setStep(1);
                 }}
-                onStartDeepAnalysis={() =>
-                  void handleStartDeepAnalysis({ onlyMissing: false })
+                onStartDeepAnalysis={
+                  hasLocalProcessedForScope
+                    ? () => void handleStartDeepAnalysis({ onlyMissing: false })
+                    : undefined
                 }
                 isAnalyzingInnings={isAnalyzingInnings}
                 analysisProgressLabel={analysisProgressLabel}
@@ -2771,32 +2977,63 @@ export default function LiffScorebookImportPage() {
             )}
 
             {step === 3 && (
-              <Step3PinpointReview
-                importScope={importScope}
-                opponentName={selectedMatch?.opponent || "対戦相手"}
-                topImageDataUrl={topImage.processed?.dataUrl || null}
-                bottomImageDataUrl={bottomImage.processed?.dataUrl || null}
-                topStructure={topStructure}
-                bottomStructure={bottomStructure}
-                topAtBats={topAtBats}
-                bottomAtBats={bottomAtBats}
-                onChangeAtBats={(isTop, updated) =>
-                  isTop ? setTopAtBats(updated) : setBottomAtBats(updated)
-                }
-                onBack={() => {
-                  setErrorBanner(null);
-                  setStep(2);
-                }}
-                onSave={handleSaveToDatabase}
-                isSaving={isSaving}
-                onReanalyzeInning={handleReanalyzeSingleInning}
-                reanalyzingInningKey={reanalyzingInningKey}
-                onRepairOrderGaps={() => void handleManualRepairOrderGaps()}
-                isRepairingOrderGaps={isRepairingOrderGaps}
-                timingSummary={timingSummary}
-                errorMessage={errorBanner}
-                onDismissError={() => setErrorBanner(null)}
-              />
+              <div className="space-y-3">
+                {isEditingSavedMatch && (
+                  <div className="p-3 rounded-2xl bg-card border-2 border-indigo-500/45 shadow-2xs flex items-start gap-2.5">
+                    <Edit3 className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
+                    <div className="space-y-0.5 min-w-0">
+                      <p className="text-xs font-black text-foreground">
+                        保存済みデータの再編集モード
+                      </p>
+                      <p className="text-[10px] font-bold text-muted-foreground leading-relaxed">
+                        打席結果・1球順序・走者進塁（または「骨格確認へ戻る」で打順・選手交代・登板投手）を修正して保存すると、スコアボードと個人成績が最新内容で再集計されます。
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                <Step3PinpointReview
+                  importScope={importScope}
+                  opponentName={selectedMatch?.opponent || "対戦相手"}
+                  topImageDataUrl={effectiveTopImageUrl}
+                  bottomImageDataUrl={effectiveBottomImageUrl}
+                  topStructure={topStructure}
+                  bottomStructure={bottomStructure}
+                  topAtBats={topAtBats}
+                  bottomAtBats={bottomAtBats}
+                  onChangeAtBats={(isTop, updated) => {
+                    if (isEditingSavedMatch) {
+                      setHasDirtyReEdit(true);
+                    }
+                    if (isTop) {
+                      setTopAtBats(updated);
+                    } else {
+                      setBottomAtBats(updated);
+                    }
+                  }}
+                  onBack={() => {
+                    setErrorBanner(null);
+                    setStep(2);
+                  }}
+                  onSave={handleSaveToDatabase}
+                  isSaving={isSaving}
+                  onReanalyzeInning={
+                    hasAnyLocalProcessedImage
+                      ? handleReanalyzeSingleInning
+                      : undefined
+                  }
+                  reanalyzingInningKey={reanalyzingInningKey}
+                  onRepairOrderGaps={
+                    hasAnyLocalProcessedImage
+                      ? () => void handleManualRepairOrderGaps()
+                      : undefined
+                  }
+                  isRepairingOrderGaps={isRepairingOrderGaps}
+                  timingSummary={timingSummary}
+                  errorMessage={errorBanner}
+                  onDismissError={() => setErrorBanner(null)}
+                />
+              </div>
             )}
 
             {step === 4 && saveSummary && (
@@ -2807,7 +3044,9 @@ export default function LiffScorebookImportPage() {
 
                 <div className="space-y-1">
                   <h2 className="text-base font-black text-foreground">
-                    スコアブックの取り込みが完了しました！
+                    {isEditingSavedMatch
+                      ? "打席・個人成績の修正を保存しました！"
+                      : "スコアブックの取り込みが完了しました！"}
                   </h2>
                   <p className="text-xs font-bold text-muted-foreground">
                     試合結果・プレイログ・個人打撃/投手成績へ反映されました
@@ -2858,7 +3097,7 @@ export default function LiffScorebookImportPage() {
 
                 <div className="space-y-2.5 pt-1">
                   <Link
-                    href={`/liff/matches?matchId=${encodeURIComponent(
+                    href={`/liff/matches?id=${encodeURIComponent(
                       saveSummary.matchId
                     )}`}
                     className="w-full h-12 rounded-2xl bg-primary text-primary-foreground font-black text-xs flex items-center justify-center gap-2 shadow-xs"
@@ -2866,6 +3105,20 @@ export default function LiffScorebookImportPage() {
                     <Video className="w-4 h-4" />
                     <span>取り込んだ試合の詳細を見る</span>
                   </Link>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setErrorBanner(null);
+                      setIsEditingSavedMatch(true);
+                      setHasDirtyReEdit(false);
+                      setStep(3);
+                    }}
+                    className="w-full h-11 rounded-2xl bg-indigo-500/12 hover:bg-indigo-500/20 border border-indigo-500/35 text-indigo-700 dark:text-indigo-300 font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 transition-all"
+                  >
+                    <Edit3 className="w-4 h-4" />
+                    <span>戻って打席・成績を微調整する</span>
+                  </button>
 
                   <Link
                     href="/liff/stats"

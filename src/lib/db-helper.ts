@@ -255,6 +255,21 @@ export async function ensureMatchLineupColumns(d1?: any) {
     `).run().catch(() => {});
   } catch {}
 
+  try {
+    await d1.prepare(`
+      CREATE TABLE IF NOT EXISTS match_scorebook_snapshots (
+        match_id text PRIMARY KEY NOT NULL,
+        top_structure_json text,
+        bottom_structure_json text,
+        top_at_bats_json text,
+        bottom_at_bats_json text,
+        top_image_url text,
+        bottom_image_url text,
+        updated_at integer NOT NULL DEFAULT (strftime('%s', 'now'))
+      )
+    `).run().catch(() => {});
+  } catch {}
+
   isMatchLineupSchemaReady = true;
 }
 

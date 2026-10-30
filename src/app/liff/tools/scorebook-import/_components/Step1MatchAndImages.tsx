@@ -102,6 +102,8 @@ interface Step1MatchAndImagesProps {
   errorMessage?: string | null;
   onDismissError?: () => void;
   onReportError?: (message: string) => void;
+  onLoadSavedScorebook?: () => void;
+  isLoadingSavedScorebook?: boolean;
 }
 
 type ImagePickerTarget = "top" | "bottom" | "legend";
@@ -368,6 +370,8 @@ export function Step1MatchAndImages({
   errorMessage,
   onDismissError,
   onReportError,
+  onLoadSavedScorebook,
+  isLoadingSavedScorebook = false,
 }: Step1MatchAndImagesProps) {
   const lastCameraTargetRef = useRef<ImagePickerTarget>("top");
   const [cameraTarget, setCameraTarget] = useState<ImagePickerTarget | null>(
@@ -969,6 +973,42 @@ export function Step1MatchAndImages({
                 <span className="text-muted-foreground">
                   {selectedMatch.tournamentName || "OP戦"}
                 </span>
+              </div>
+            )}
+
+            {selectedMatch?.hasExistingAtBats && onLoadSavedScorebook && (
+              <div className="p-3.5 rounded-2xl bg-card border-2 border-indigo-500/45 shadow-xs space-y-2.5">
+                <div className="flex items-start gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+                  <div className="space-y-0.5 min-w-0">
+                    <p className="text-xs font-black text-foreground">
+                      保存済みのスコア・打席データがあります（現在スコア:{" "}
+                      {selectedMatch.myScore} - {selectedMatch.opponentScore}）
+                    </p>
+                    <p className="text-[10px] font-bold text-muted-foreground leading-relaxed">
+                      AI再解析なしで、保存済みの全打席・1球順序・走者進塁をそのまま呼び出してピンポイント修正＆再保存できます（新しく撮影した画像から上書き取り込みする場合は下の画像選択へ進んでください）。
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  disabled={isLoadingSavedScorebook || isAnalyzingStructure}
+                  onClick={onLoadSavedScorebook}
+                  className="w-full h-11 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-xs active:scale-98 transition-all cursor-pointer"
+                >
+                  {isLoadingSavedScorebook ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                      <span>保存済みデータを読み込み中...</span>
+                    </>
+                  ) : (
+                    <>
+                      <BookOpen className="w-4 h-4 shrink-0" />
+                      <span>保存済みの打席・成績データを呼び出して修正する</span>
+                    </>
+                  )}
+                </button>
               </div>
             )}
           </div>

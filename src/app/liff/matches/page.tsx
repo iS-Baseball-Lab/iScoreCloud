@@ -30,6 +30,7 @@ import {
   Trophy,
   ChevronLeft,
   ChevronRight,
+  ScanLine,
 } from "lucide-react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/layout/EmptyState";
@@ -202,7 +203,7 @@ function buildVenueDisplayInfo(match: Match): ResolvedVenueDisplay {
 
 function MatchesContent() {
   const searchParams = useSearchParams();
-  const matchId = searchParams.get("id");
+  const matchId = searchParams.get("id") || searchParams.get("matchId");
   const { currentTeam, isLoadingTeam, isDemo } = useLiff();
 
   // 単一試合詳細用ステート
@@ -935,6 +936,40 @@ function MatchesContent() {
                   </tbody>
                 </table>
               </div>
+
+              {!isDemo && !isDemoMatchId(match.id) && !isRainout && (
+                <div className="px-3 py-2.5 border-t border-border bg-muted/30 flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-bold text-muted-foreground truncate">
+                    {isFutureOrScheduled
+                      ? "試合後に紙スコアブックをAIで一括取り込みできます"
+                      : "取り込み済みの打席結果・1球順序・個人成績を修正できます"}
+                  </span>
+                  <Link
+                    href={
+                      isFutureOrScheduled
+                        ? `/liff/tools/scorebook-import?matchId=${encodeURIComponent(
+                            match.id
+                          )}`
+                        : `/liff/tools/scorebook-import?matchId=${encodeURIComponent(
+                            match.id
+                          )}&mode=edit`
+                    }
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black shadow-2xs active:scale-95 transition-all shrink-0"
+                  >
+                    {isFutureOrScheduled ? (
+                      <>
+                        <ScanLine className="w-3.5 h-3.5" />
+                        <span>スコア取り込み</span>
+                      </>
+                    ) : (
+                      <>
+                        <Edit3 className="w-3.5 h-3.5" />
+                        <span>打席・成績を修正</span>
+                      </>
+                    )}
+                  </Link>
+                </div>
+              )}
             </div>
           </section>
 

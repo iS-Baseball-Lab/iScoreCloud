@@ -61,7 +61,7 @@ interface Step2StructureCheckProps {
   structureTotalMs?: number | null;
   structureTimingEntries?: ScorebookTimingEntry[];
   onBack: () => void;
-  onStartDeepAnalysis: () => void;
+  onStartDeepAnalysis?: () => void;
   isAnalyzingInnings: boolean;
   analysisProgressLabel: string;
   analysisStartedAtMs?: number | null;
@@ -1837,23 +1837,37 @@ export function Step2StructureCheck({
             <span>画像選択へ</span>
           </button>
 
-          <button
-            type="button"
-            disabled={isBusy}
-            onClick={onStartDeepAnalysis}
-            className={`flex-1 h-13 px-4 rounded-2xl text-xs sm:text-sm font-black shadow-md flex items-center justify-center gap-2 active:scale-98 transition-all cursor-pointer disabled:opacity-50 ${
-              preservedAtBatsCount > 0
-                ? "bg-muted hover:bg-muted/80 border border-border text-foreground shadow-none"
-                : "bg-indigo-600 hover:bg-indigo-700 text-white"
-            }`}
-          >
-            <Sparkles className="w-4 h-4 shrink-0" />
-            <span>
-              {preservedAtBatsCount > 0
-                ? "最初から全イニングを再解析"
-                : "全打席・1球順序をディープ解析"}
-            </span>
-          </button>
+          {onStartDeepAnalysis ? (
+            <button
+              type="button"
+              disabled={isBusy}
+              onClick={onStartDeepAnalysis}
+              className={`flex-1 h-13 px-4 rounded-2xl text-xs sm:text-sm font-black shadow-md flex items-center justify-center gap-2 active:scale-98 transition-all cursor-pointer disabled:opacity-50 ${
+                preservedAtBatsCount > 0
+                  ? "bg-muted hover:bg-muted/80 border border-border text-foreground shadow-none"
+                  : "bg-indigo-600 hover:bg-indigo-700 text-white"
+              }`}
+            >
+              <Sparkles className="w-4 h-4 shrink-0" />
+              <span>
+                {preservedAtBatsCount > 0
+                  ? "最初から全イニングを再解析"
+                  : "全打席・1球順序をディープ解析"}
+              </span>
+            </button>
+          ) : (
+            onProceedWithCompleted && (
+              <button
+                type="button"
+                disabled={isBusy}
+                onClick={onProceedWithCompleted}
+                className="flex-1 h-13 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-black shadow-md flex items-center justify-center gap-2 active:scale-98 transition-all cursor-pointer disabled:opacity-50"
+              >
+                <span>打席・1球検算の編集へ進む</span>
+                <ChevronRight className="w-4 h-4 shrink-0" />
+              </button>
+            )
+          )}
         </div>
       </div>
     </div>

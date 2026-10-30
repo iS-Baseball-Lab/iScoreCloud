@@ -53,8 +53,18 @@ import {
 
 const liffScorebookRouter = new Hono<{ Bindings: WorkerEnv }>();
 
-const { matches, tournaments, matchLineups, teams, players, atBats, pitches, baseAdvances, playLogs } =
-  schema;
+const {
+  matches,
+  tournaments,
+  matchLineups,
+  teams,
+  players,
+  atBats,
+  pitches,
+  baseAdvances,
+  playLogs,
+  matchScorebookSnapshots,
+} = schema;
 
 interface GeminiInlineDataPart {
   inlineData: {
@@ -3000,6 +3010,12 @@ interface SaveScorebookV2Payload {
   bottomStructure?: ScorebookSheetStructure | null;
   topAtBats?: ScorebookV2AtBat[];
   bottomAtBats?: ScorebookV2AtBat[];
+  topImageBase64?: string;
+  topImageMimeType?: string;
+  topImageUrl?: string | null;
+  bottomImageBase64?: string;
+  bottomImageMimeType?: string;
+  bottomImageUrl?: string | null;
 }
 
 liffScorebookRouter.post("/save", async (c) => {
@@ -3531,6 +3547,126 @@ liffScorebookRouter.post("/save", async (c) => {
       })
       .where(eq(matches.id, match.id));
 
+    // 5. 保存後もAI再解析なしで Step 2 / Step 3 にそのまま呼び出して修正・再保存できるよう、
+    //    スナップショットJSONおよび前処理済みシート画像（R2）を非破壊マージで永続化する
+    const existingSnap = await db
+      .select()
+      .from(matchScorebookSnapshots)
+      .where(eq(matchScorebookSnapshots.matchId, match.id))
+      .get();
+
+    const uploadOrPreserveSheetImage = async (
+      side: "top" | "bottom",
+      rawBase64: string | undefined,
+      rawMime: string | undefined,
+      explicitUrl: string | null | undefined,
+      prevUrl: string | null | undefined
+    ): Promise<string | null> => {
+      const trimmedB64 = (rawBase64 || "").trim();
+      if (trimmedB64 && c.env.BUCKET) {
+        try {
+          const cleanB64 = trimmedB64.includes(",")
+            ? (trimmedB64.split(",")[1] || "").trim()
+            : trimmedB64;
+          const bytes = base64ToUint8Array(cleanB64);
+          if (bytes.byteLength > 0 && bytes.byteLength <= 6_000_000) {
+            const lowerMime = (rawMime || "image/jpeg").toLowerCase();
+            const safeMime =
+              lowerMime === "image/png"
+                ? "image/png"
+                : lowerMime === "image/webp"
+                ? "image/webp"
+                : "image/jpeg";
+            const ext =
+              safeMime === "image/png"
+                ? "png"
+                : safeMime === "image/webp"
+                ? "webp"
+                : "jpg";
+            const r2Key = `scorebooks/${side}-${match.id}-${Date.now()}.${ext}`;
+            const arrayBuf = bytes.buffer.slice(
+              bytes.byteOffset,
+              bytes.byteOffset + bytes.byteLength
+            ) as ArrayBuffer;
+            await c.env.BUCKET.put(r2Key, arrayBuf, {
+              httpMetadata: { contentType: safeMime },
+            });
+
+            const oldPrefix = `/api/images/scorebooks/${side}-${match.id}-`;
+            if (prevUrl && prevUrl.startsWith(oldPrefix)) {
+              const oldKey = prevUrl.slice("/api/images/".length);
+              await c.env.BUCKET.delete(oldKey).catch(() => {});
+            }
+            return `/api/images/${r2Key}`;
+          }
+        } catch {
+          // R2保存エラー時もDBの成績保存自体は絶対に失敗させない
+        }
+      }
+      if (explicitUrl && explicitUrl.startsWith("/api/images/")) {
+        return explicitUrl;
+      }
+      return prevUrl || null;
+    };
+
+    const nextTopImageUrl = includeTop
+      ? await uploadOrPreserveSheetImage(
+          "top",
+          body.topImageBase64,
+          body.topImageMimeType,
+          body.topImageUrl,
+          existingSnap?.topImageUrl
+        )
+      : existingSnap?.topImageUrl ?? null;
+
+    const nextBottomImageUrl = includeBottom
+      ? await uploadOrPreserveSheetImage(
+          "bottom",
+          body.bottomImageBase64,
+          body.bottomImageMimeType,
+          body.bottomImageUrl,
+          existingSnap?.bottomImageUrl
+        )
+      : existingSnap?.bottomImageUrl ?? null;
+
+    const nextTopStructureJson = includeTop
+      ? JSON.stringify(body.topStructure ?? null)
+      : existingSnap?.topStructureJson ?? null;
+    const nextBottomStructureJson = includeBottom
+      ? JSON.stringify(body.bottomStructure ?? null)
+      : existingSnap?.bottomStructureJson ?? null;
+    const nextTopAtBatsJson = includeTop
+      ? JSON.stringify(incomingTop)
+      : existingSnap?.topAtBatsJson ?? null;
+    const nextBottomAtBatsJson = includeBottom
+      ? JSON.stringify(incomingBottom)
+      : existingSnap?.bottomAtBatsJson ?? null;
+
+    await db
+      .insert(matchScorebookSnapshots)
+      .values({
+        matchId: match.id,
+        topStructureJson: nextTopStructureJson,
+        bottomStructureJson: nextBottomStructureJson,
+        topAtBatsJson: nextTopAtBatsJson,
+        bottomAtBatsJson: nextBottomAtBatsJson,
+        topImageUrl: nextTopImageUrl,
+        bottomImageUrl: nextBottomImageUrl,
+        updatedAt: Date.now(),
+      })
+      .onConflictDoUpdate({
+        target: matchScorebookSnapshots.matchId,
+        set: {
+          topStructureJson: nextTopStructureJson,
+          bottomStructureJson: nextBottomStructureJson,
+          topAtBatsJson: nextTopAtBatsJson,
+          bottomAtBatsJson: nextBottomAtBatsJson,
+          topImageUrl: nextTopImageUrl,
+          bottomImageUrl: nextBottomImageUrl,
+          updatedAt: Date.now(),
+        },
+      });
+
     return c.json({
       success: true,
       summary: {
@@ -3545,11 +3681,720 @@ liffScorebookRouter.post("/save", async (c) => {
         opponentScore: finalOppScore,
         myHits,
         opponentHits,
+        topImageUrl: nextTopImageUrl,
+        bottomImageUrl: nextBottomImageUrl,
       },
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return c.json({ success: false, error: `保存エラー: ${msg}` }, 500);
+  }
+});
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 5-B. 保存済みスコアブック呼び出し（あとから再編集モード用 GET /api/liff/scorebook/saved）
+//   - match_scorebook_snapshots が存在する場合は4隅座標・切り抜き画像URLも含めて完全無劣化で即座に返却
+//   - スナップショット導入前に保存された過去試合についても、at_bats / pitches / base_advances / play_logs / match_lineups から忠実に復元
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+interface StoredLineupJsonEntry {
+  order?: number;
+  battingOrder?: number;
+  playerId?: string | null;
+  name?: string;
+  uniformNumber?: string;
+  position?: string;
+}
+
+function safeParseJsonValue<T>(raw: string | null | undefined): T | null {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+function mapDisplayPitchLineToCanonical(rawLine: string): CanonicalPitchResult | null {
+  const trimmed = rawLine.trim();
+  if (!trimmed) return null;
+  const colonIdx = trimmed.indexOf(":");
+  const label = (colonIdx >= 0 ? trimmed.slice(colonIdx + 1) : trimmed).trim();
+  if (!label) return null;
+
+  for (const [code, ja] of Object.entries(PITCH_DISPLAY_JA) as Array<
+    [CanonicalPitchResult, string]
+  >) {
+    if (label === ja) {
+      return code;
+    }
+  }
+  if (label.includes("1塁牽")) return "pickoff_1b";
+  if (label.includes("2塁牽")) return "pickoff_2b";
+  if (label.includes("3塁牽")) return "pickoff_3b";
+  if (label.includes("牽制")) return "pickoff";
+  if (label.includes("ボーク")) return "balk";
+  if (label.includes("死球")) return "hbp";
+  if (label.includes("ヒット")) return "hit";
+  if (label.includes("インプレー")) return "in_play";
+  if (label.includes("バントファウル")) return "bunt_foul";
+  if (label.includes("バント空振り")) return "bunt_swinging";
+  if (label.includes("空振り")) return "swinging_strike";
+  if (label.includes("見逃し") || label.includes("ストライク")) return "strike";
+  if (label.includes("ファウル")) return "foul";
+  if (label.includes("ボール")) return "ball";
+  return null;
+}
+
+liffScorebookRouter.get("/saved", async (c) => {
+  await ensureMatchLineupColumns(c.env.DB);
+  const db = drizzle(c.env.DB, { schema });
+  const matchId = (c.req.query("matchId") || "").trim();
+
+  if (!matchId) {
+    return c.json({ success: false, error: "試合IDが指定されていません" }, 400);
+  }
+
+  try {
+    const match = await db
+      .select()
+      .from(matches)
+      .where(eq(matches.id, matchId))
+      .get();
+
+    if (!match) {
+      return c.json({ success: false, error: "対象の試合が見つかりません" }, 404);
+    }
+
+    const allAbRows = await db
+      .select()
+      .from(atBats)
+      .where(eq(atBats.matchId, match.id))
+      .orderBy(asc(atBats.inning), asc(atBats.createdAt))
+      .all();
+
+    if (allAbRows.length === 0) {
+      return c.json(
+        {
+          success: false,
+          error: "この試合にはまだ保存済みの打席データがありません",
+        },
+        404
+      );
+    }
+
+    const roster = await db
+      .select({
+        id: players.id,
+        name: players.name,
+        nameKana: players.nameKana,
+        uniformNumber: players.uniformNumber,
+        primaryPosition: players.primaryPosition,
+      })
+      .from(players)
+      .where(eq(players.teamId, match.teamId))
+      .all();
+
+    const rosterById = new Map(roster.map((p) => [p.id, p]));
+    const isMyTeamFirst = match.battingOrder === "first";
+
+    const snap = await db
+      .select()
+      .from(matchScorebookSnapshots)
+      .where(eq(matchScorebookSnapshots.matchId, match.id))
+      .get();
+
+    const topDbAbs = allAbRows.filter((r) => r.isTop);
+    const bottomDbAbs = allAbRows.filter((r) => !r.isTop);
+
+    let topStructure =
+      topDbAbs.length > 0
+        ? safeParseJsonValue<ScorebookSheetStructure>(snap?.topStructureJson)
+        : null;
+    let bottomStructure =
+      bottomDbAbs.length > 0
+        ? safeParseJsonValue<ScorebookSheetStructure>(snap?.bottomStructureJson)
+        : null;
+    let topAtBats =
+      topDbAbs.length > 0
+        ? safeParseJsonValue<ScorebookV2AtBat[]>(snap?.topAtBatsJson) || []
+        : [];
+    let bottomAtBats =
+      bottomDbAbs.length > 0
+        ? safeParseJsonValue<ScorebookV2AtBat[]>(snap?.bottomAtBatsJson) || []
+        : [];
+
+    const needReconstructTop =
+      topDbAbs.length > 0 && (!topStructure || topAtBats.length === 0);
+    const needReconstructBottom =
+      bottomDbAbs.length > 0 && (!bottomStructure || bottomAtBats.length === 0);
+
+    // スナップショット未保存の過去データがある場合はリレーショナルテーブル群から完全復元する
+    if (needReconstructTop || needReconstructBottom) {
+      const abIds = allAbRows.map((r) => r.id);
+      const pitchRows: Array<typeof pitches.$inferSelect> = [];
+      const advRows: Array<typeof baseAdvances.$inferSelect> = [];
+      const logRows: Array<typeof playLogs.$inferSelect> = [];
+
+      for (let i = 0; i < abIds.length; i += 60) {
+        const slice = abIds.slice(i, i + 60);
+        const [pPart, aPart, lPart] = await Promise.all([
+          db
+            .select()
+            .from(pitches)
+            .where(inArray(pitches.atBatId, slice))
+            .orderBy(asc(pitches.pitchNumber))
+            .all(),
+          db
+            .select()
+            .from(baseAdvances)
+            .where(inArray(baseAdvances.atBatId, slice))
+            .all(),
+          db
+            .select()
+            .from(playLogs)
+            .where(inArray(playLogs.atBatId, slice))
+            .all(),
+        ]);
+        pitchRows.push(...pPart);
+        advRows.push(...aPart);
+        logRows.push(...lPart);
+      }
+
+      const lineupRows = await db
+        .select()
+        .from(matchLineups)
+        .where(eq(matchLineups.matchId, match.id))
+        .all();
+
+      const pitchesByAb = new Map<string, Array<typeof pitches.$inferSelect>>();
+      for (const pr of pitchRows) {
+        const list = pitchesByAb.get(pr.atBatId) || [];
+        list.push(pr);
+        pitchesByAb.set(pr.atBatId, list);
+      }
+      const advsByAb = new Map<string, Array<typeof baseAdvances.$inferSelect>>();
+      for (const ar of advRows) {
+        const list = advsByAb.get(ar.atBatId) || [];
+        list.push(ar);
+        advsByAb.set(ar.atBatId, list);
+      }
+      const logByAb = new Map<string, typeof playLogs.$inferSelect>();
+      for (const lr of logRows) {
+        if (lr.atBatId && !logByAb.has(lr.atBatId)) {
+          logByAb.set(lr.atBatId, lr);
+        }
+      }
+
+      const reconstructSide = (
+        isTop: boolean,
+        sideDbRows: Array<typeof atBats.$inferSelect>
+      ): {
+        structure: ScorebookSheetStructure;
+        atBats: ScorebookV2AtBat[];
+      } => {
+        const isMyTeamBatting =
+          (isTop && isMyTeamFirst) || (!isTop && !isMyTeamFirst);
+
+        const rawLineupJson = safeParseJsonValue<StoredLineupJsonEntry[]>(
+          isMyTeamBatting ? match.myLineup : match.opponentLineup
+        );
+
+        const battersByOrder = new Map<number, ScorebookBatterSlot>();
+        if (Array.isArray(rawLineupJson)) {
+          for (const entry of rawLineupJson) {
+            const ord = Number(entry.order ?? entry.battingOrder ?? 0);
+            if (ord < 1 || ord > 15) continue;
+            const linkedPlayer = entry.playerId
+              ? rosterById.get(entry.playerId)
+              : undefined;
+            battersByOrder.set(ord, {
+              battingOrder: ord,
+              name: linkedPlayer?.name || (entry.name || "").trim(),
+              uniformNumber:
+                linkedPlayer?.uniformNumber ||
+                (entry.uniformNumber || "").trim(),
+              position: normalizePositionCode(
+                entry.position || linkedPlayer?.primaryPosition || ""
+              ),
+              playerId: linkedPlayer?.id || entry.playerId || null,
+              substitutions: [],
+            });
+          }
+        }
+
+        if (isMyTeamBatting && lineupRows.length > 0) {
+          for (const lr of lineupRows) {
+            const ord = lr.battingOrder;
+            if (ord < 1 || ord > 15) continue;
+            const rp = rosterById.get(lr.playerId);
+            if (lr.isStarting) {
+              if (!battersByOrder.has(ord)) {
+                battersByOrder.set(ord, {
+                  battingOrder: ord,
+                  name: rp?.name || "",
+                  uniformNumber: rp?.uniformNumber || "",
+                  position: normalizePositionCode(
+                    lr.position || rp?.primaryPosition || ""
+                  ),
+                  playerId: lr.playerId,
+                  substitutions: [],
+                });
+              }
+            } else {
+              const slot =
+                battersByOrder.get(ord) ||
+                ({
+                  battingOrder: ord,
+                  name: "",
+                  uniformNumber: "",
+                  position: "",
+                  playerId: null,
+                  substitutions: [],
+                } satisfies ScorebookBatterSlot);
+              const subType: ScorebookSubstitution["subType"] =
+                lr.position === "P"
+                  ? "PH"
+                  : lr.position === "R"
+                  ? "PR"
+                  : "DEF";
+              slot.substitutions.push({
+                id: lr.id || crypto.randomUUID(),
+                inningEntered: Math.max(1, lr.inningEntered || 1),
+                subType,
+                name: rp?.name || "",
+                uniformNumber: rp?.uniformNumber || "",
+                position:
+                  subType === "DEF" ? normalizePositionCode(lr.position) : "",
+                playerId: lr.playerId,
+              });
+              battersByOrder.set(ord, slot);
+            }
+          }
+        }
+
+        // 打席ごとの復元
+        const rebuiltAtBats: ScorebookV2AtBat[] = [];
+        const orderLapByInning = new Map<string, number>();
+        let runningInning = -1;
+        let runningOuts = 0;
+        let fallbackNextOrder = 1;
+
+        for (const dbAb of sideDbRows) {
+          if (dbAb.inning !== runningInning) {
+            runningInning = dbAb.inning;
+            runningOuts = 0;
+          }
+
+          const linkedLog = logByAb.get(dbAb.id);
+          const dbPitchList = pitchesByAb.get(dbAb.id) || [];
+          const dbAdvList = advsByAb.get(dbAb.id) || [];
+          const pitchNumberById = new Map<string, number>(
+            dbPitchList.map((pr) => [pr.id, pr.pitchNumber])
+          );
+
+          let parsedOrder = 0;
+          let parsedBatterName = "";
+          let parsedLabel = "";
+          let parsedDir = "";
+          let parsedRbi: number | undefined;
+          let parsedOuts: number | undefined;
+          const runnerNameByFromBase = new Map<string, string>();
+          let parsedPitches: CanonicalPitchResult[] = [];
+
+          if (linkedLog?.description) {
+            let workingDesc = linkedLog.description;
+            const bsoMatch = workingDesc.match(
+              /\s*\[B:(\d+),\s*S:(\d+),\s*O:(\d+)\]\s*$/
+            );
+            if (bsoMatch) {
+              parsedOuts = Number(bsoMatch[3]);
+              workingDesc = workingDesc.slice(0, bsoMatch.index).trim();
+            }
+
+            const pitchSplit = workingDesc.split("\n===PITCHES===\n");
+            const headline = (pitchSplit[0] || "").trim();
+            const pitchText = pitchSplit[1] || "";
+
+            if (pitchText) {
+              for (const line of pitchText.split("\n")) {
+                const mappedCode = mapDisplayPitchLineToCanonical(line);
+                if (mappedCode) {
+                  parsedPitches.push(mappedCode);
+                }
+              }
+            }
+
+            const headMatch = headline.match(
+              /^(\d+)番\s*([^:：]+)[:：]\s*(.*)$/
+            );
+            let playBody = headline;
+            if (headMatch) {
+              parsedOrder = Number(headMatch[1]) || 0;
+              parsedBatterName = headMatch[2].trim();
+              playBody = headMatch[3].trim();
+            }
+
+            // ［走者名:1塁→2塁、...］の解析・除去
+            const runnerBracketMatch = playBody.match(/\s*［([^］]+)］\s*$/);
+            if (runnerBracketMatch) {
+              const segs = runnerBracketMatch[1].split("、");
+              for (const seg of segs) {
+                const rm = seg.match(/^([^:]+):(1塁|2塁|3塁)→/);
+                if (rm) {
+                  const baseCode =
+                    rm[2] === "1塁"
+                      ? "1B"
+                      : rm[2] === "2塁"
+                      ? "2B"
+                      : "3B";
+                  runnerNameByFromBase.set(baseCode, rm[1].trim());
+                }
+              }
+              playBody = playBody.slice(0, runnerBracketMatch.index).trim();
+            }
+
+            // （打点X）の解析・除去
+            const rbiMatch = playBody.match(/（打点(\d+)）\s*$/);
+            if (rbiMatch) {
+              parsedRbi = Number(rbiMatch[1]);
+              playBody = playBody.slice(0, rbiMatch.index).trim();
+            }
+
+            // (6-3) の守備記号解析・除去
+            const dirMatch = playBody.match(/\s+\(([0-9A-Za-z-]+)\)\s*$/);
+            if (dirMatch) {
+              parsedDir = dirMatch[1].trim();
+              playBody = playBody.slice(0, dirMatch.index).trim();
+            }
+
+            parsedLabel = playBody.trim();
+          }
+
+          const linkedBatter = dbAb.batterId
+            ? rosterById.get(dbAb.batterId)
+            : undefined;
+          const linkedPitcher = dbAb.pitcherId
+            ? rosterById.get(dbAb.pitcherId)
+            : undefined;
+
+          if (!parsedOrder && linkedBatter) {
+            for (const [ord, slot] of battersByOrder.entries()) {
+              if (
+                slot.playerId === linkedBatter.id ||
+                slot.substitutions.some((s) => s.playerId === linkedBatter.id)
+              ) {
+                parsedOrder = ord;
+                break;
+              }
+            }
+          }
+          const battingOrder =
+            parsedOrder >= 1 && parsedOrder <= 15
+              ? parsedOrder
+              : fallbackNextOrder;
+          fallbackNextOrder = (battingOrder % 9) + 1;
+
+          const batterName =
+            linkedBatter?.name ||
+            parsedBatterName ||
+            battersByOrder.get(battingOrder)?.name ||
+            "";
+
+          if (!battersByOrder.has(battingOrder)) {
+            battersByOrder.set(battingOrder, {
+              battingOrder,
+              name: batterName,
+              uniformNumber: linkedBatter?.uniformNumber || "",
+              position: normalizePositionCode(
+                linkedBatter?.primaryPosition || ""
+              ),
+              playerId: linkedBatter?.id || dbAb.batterId || null,
+              substitutions: [],
+            });
+          }
+
+          const resultCode = inferCanonicalResultCode(
+            dbAb.result || "",
+            parsedLabel || parsedDir || dbAb.result || ""
+          );
+          const harmonized = harmonizeOcrFieldingAndLabel(
+            resultCode,
+            parsedDir,
+            parsedLabel
+          );
+
+          if (parsedPitches.length === 0 && dbPitchList.length > 0) {
+            const isHitCode =
+              resultCode === "single" ||
+              resultCode === "double" ||
+              resultCode === "triple" ||
+              resultCode === "home_run";
+            const isNonInPlayCode =
+              resultCode === "walk" ||
+              resultCode === "intentional_walk" ||
+              resultCode === "hit_by_pitch" ||
+              resultCode === "strikeout" ||
+              resultCode === "dropped_third_strike" ||
+              resultCode === "dropped_third_strike_out";
+
+            parsedPitches = dbPitchList.map((pr, idx) => {
+              const isLast = idx === dbPitchList.length - 1;
+              const raw = pr.result as CanonicalPitchResult;
+              if (isLast && resultCode === "hit_by_pitch" && raw === "ball") {
+                return "hbp";
+              }
+              if (isLast && isHitCode && (raw === "hit" || raw === "strike")) {
+                return "hit";
+              }
+              if (isLast && !isNonInPlayCode && !isHitCode && raw === "strike") {
+                return "in_play";
+              }
+              return raw;
+            });
+          }
+
+          const mappedAdvances: ScorebookV2Advance[] = dbAdvList.map((adv) => {
+            const from: ScorebookV2Advance["from"] =
+              adv.fromBase === 1
+                ? "1B"
+                : adv.fromBase === 2
+                ? "2B"
+                : adv.fromBase === 3
+                ? "3B"
+                : "BAT";
+            const to: ScorebookV2Advance["to"] =
+              adv.toBase === 1
+                ? "1B"
+                : adv.toBase === 2
+                ? "2B"
+                : adv.toBase === 3
+                ? "3B"
+                : "HP";
+            const rPlayer = adv.runnerId
+              ? rosterById.get(adv.runnerId)
+              : undefined;
+            const resolvedRunnerName =
+              rPlayer?.name ||
+              runnerNameByFromBase.get(from) ||
+              (from === "BAT" ? batterName : "");
+
+            return {
+              id: adv.id || crypto.randomUUID(),
+              runnerName: resolvedRunnerName,
+              from,
+              to,
+              method: normalizeAdvanceMethod(adv.reason),
+              isOut: Boolean(adv.isOut),
+              pitchNumber: adv.pitchId
+                ? pitchNumberById.get(adv.pitchId)
+                : undefined,
+            };
+          });
+
+          const scoredAdvCount = mappedAdvances.filter(
+            (a) => a.to === "HP" && !a.isOut
+          ).length;
+          const runsInPlay = Math.max(
+            scoredAdvCount,
+            resultCode === "home_run" && scoredAdvCount === 0 ? 1 : 0
+          );
+          const defaultOuts =
+            resultCode === "triple_play"
+              ? 3
+              : resultCode === "double_play"
+              ? 2
+              : resultCode === "groundout" ||
+                resultCode === "flyout" ||
+                resultCode === "infield_fly" ||
+                resultCode === "strikeout" ||
+                resultCode === "dropped_third_strike_out" ||
+                resultCode === "sac_bunt" ||
+                resultCode === "sac_fly" ||
+                resultCode === "interference_out"
+              ? 1
+              : 0;
+          const outsInPlay =
+            parsedOuts !== undefined ? parsedOuts : defaultOuts;
+          runningOuts = Math.min(3, runningOuts + Math.max(0, outsInPlay));
+
+          const lapKey = `${dbAb.inning}-${battingOrder}`;
+          const nextColIdx = (orderLapByInning.get(lapKey) || 0) + 1;
+          orderLapByInning.set(lapKey, nextColIdx);
+
+          const cnt = computeCountFromPitches(parsedPitches);
+
+          rebuiltAtBats.push({
+            id: dbAb.id,
+            inning: dbAb.inning,
+            isTop,
+            columnIndex: nextColIdx,
+            battingOrder,
+            batterName,
+            batterPlayerId: linkedBatter?.id || dbAb.batterId || null,
+            pitcherName: linkedPitcher?.name || (isMyTeamBatting ? "相手投手" : ""),
+            pitcherPlayerId: linkedPitcher?.id || dbAb.pitcherId || null,
+            resultCode,
+            resultLabel: harmonized.resultLabel,
+            battedDirection: harmonized.battedDirection,
+            rbi: parsedRbi !== undefined ? parsedRbi : runsInPlay,
+            outsInPlay,
+            endingOuts: runningOuts,
+            runsInPlay,
+            balls: cnt.balls,
+            strikes: cnt.strikes,
+            pitches: parsedPitches,
+            advances: mappedAdvances,
+            confidence: "high",
+          });
+        }
+
+        // 打順1〜9番の空きスロット補完
+        const maxOrd = Math.max(9, ...Array.from(battersByOrder.keys()));
+        const battersList: ScorebookBatterSlot[] = [];
+        for (let ord = 1; ord <= maxOrd; ord++) {
+          battersList.push(
+            battersByOrder.get(ord) || {
+              battingOrder: ord,
+              name: "",
+              uniformNumber: "",
+              position: "",
+              playerId: null,
+              substitutions: [],
+            }
+          );
+        }
+
+        // 登板投手リレー復元
+        const pitchersList: ScorebookPitcherStint[] = [];
+        for (const ab of rebuiltAtBats) {
+          const pKey = ab.pitcherPlayerId || ab.pitcherName || "相手投手";
+          const lastStint = pitchersList[pitchersList.length - 1];
+          const lastKey = lastStint
+            ? lastStint.playerId || lastStint.name || "相手投手"
+            : "";
+          if (!lastStint || lastKey !== pKey) {
+            const rp = ab.pitcherPlayerId
+              ? rosterById.get(ab.pitcherPlayerId)
+              : undefined;
+            pitchersList.push({
+              id: crypto.randomUUID(),
+              order: pitchersList.length + 1,
+              name: rp?.name || ab.pitcherName || "相手投手",
+              uniformNumber: rp?.uniformNumber || "",
+              playerId: ab.pitcherPlayerId,
+              fromInning: ab.inning,
+              toInning: ab.inning,
+            });
+          } else {
+            lastStint.toInning = Math.max(lastStint.toInning, ab.inning);
+          }
+        }
+        if (pitchersList.length === 0) {
+          pitchersList.push({
+            id: crypto.randomUUID(),
+            order: 1,
+            name: isMyTeamBatting ? "相手投手" : "",
+            uniformNumber: "",
+            playerId: null,
+            fromInning: 1,
+            toInning: match.innings || 7,
+          });
+        }
+
+        // イニングメタ復元
+        const scoreArr = safeParseNumberArray(
+          isMyTeamBatting ? match.myInningScores : match.opponentInningScores
+        );
+        const maxInn = Math.max(
+          match.innings || 7,
+          scoreArr.length,
+          ...rebuiltAtBats.map((a) => a.inning)
+        );
+        const inningsMeta: ScorebookInningMeta[] = [];
+        for (let inn = 1; inn <= maxInn; inn++) {
+          const innAbs = rebuiltAtBats.filter((a) => a.inning === inn);
+          if (inn > scoreArr.length && innAbs.length === 0) continue;
+          const runs =
+            innAbs.length > 0
+              ? innAbs.reduce((s, a) => s + a.runsInPlay, 0)
+              : scoreArr[inn - 1] ?? 0;
+          const hits = innAbs.filter(
+            (a) =>
+              a.resultCode === "single" ||
+              a.resultCode === "double" ||
+              a.resultCode === "triple" ||
+              a.resultCode === "home_run"
+          ).length;
+          const colCount = Math.max(
+            1,
+            ...innAbs.map((a) => a.columnIndex || 1)
+          );
+          inningsMeta.push({
+            inning: inn,
+            runs,
+            hits,
+            columnCount: colCount,
+          });
+        }
+
+        const totalRuns = inningsMeta.reduce((s, m) => s + m.runs, 0);
+        const totalHits = inningsMeta.reduce((s, m) => s + m.hits, 0);
+        const totalErrors = isMyTeamBatting
+          ? match.opponentErrors ?? 0
+          : match.myErrors ?? 0;
+
+        return {
+          structure: {
+            isTop,
+            isMyTeamBatting,
+            batters: battersList,
+            pitchers: pitchersList,
+            innings: inningsMeta,
+            totalRuns,
+            totalHits,
+            totalErrors,
+          },
+          atBats: rebuiltAtBats,
+        };
+      };
+
+      if (needReconstructTop) {
+        const recTop = reconstructSide(true, topDbAbs);
+        topStructure = recTop.structure;
+        topAtBats = recTop.atBats;
+      }
+      if (needReconstructBottom) {
+        const recBot = reconstructSide(false, bottomDbAbs);
+        bottomStructure = recBot.structure;
+        bottomAtBats = recBot.atBats;
+      }
+    }
+
+    const resolvedScope: ImportScopeMode =
+      topAtBats.length > 0 && bottomAtBats.length > 0
+        ? "both"
+        : topAtBats.length > 0
+        ? "top_only"
+        : "bottom_only";
+
+    return c.json({
+      success: true,
+      matchId: match.id,
+      importScope: resolvedScope,
+      topStructure,
+      bottomStructure,
+      topAtBats,
+      bottomAtBats,
+      topImageUrl: topAtBats.length > 0 ? snap?.topImageUrl ?? null : null,
+      bottomImageUrl:
+        bottomAtBats.length > 0 ? snap?.bottomImageUrl ?? null : null,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return c.json(
+      { success: false, error: `保存済みデータの読み込みに失敗しました: ${msg}` },
+      500
+    );
   }
 });
 

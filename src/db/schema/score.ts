@@ -1,4 +1,4 @@
-// src/db/schema/score.ts
+// filepath: src/db/schema/score.ts
 import { sqliteTable, text, integer, real, index } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 import { matches } from "./match";
@@ -88,5 +88,20 @@ export const playLogs = sqliteTable("play_logs", {
 export const matchUndoHistories = sqliteTable("match_undo_histories", {
     matchId: text("match_id").primaryKey().references(() => matches.id, { onDelete: "cascade" }),
     historyJson: text("history_json").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+});
+
+// ==========================================
+// 📸 スコアブックv2 完全復元・後から再編集スナップショット
+// 保存後もAI再解析なしで全打席・1球順序・進塁・4隅座標・シート画像をそのままStep 3へ呼び出して再編集可能にする
+// ==========================================
+export const matchScorebookSnapshots = sqliteTable("match_scorebook_snapshots", {
+    matchId: text("match_id").primaryKey().references(() => matches.id, { onDelete: "cascade" }),
+    topStructureJson: text("top_structure_json"),
+    bottomStructureJson: text("bottom_structure_json"),
+    topAtBatsJson: text("top_at_bats_json"),
+    bottomAtBatsJson: text("bottom_at_bats_json"),
+    topImageUrl: text("top_image_url"),
+    bottomImageUrl: text("bottom_image_url"),
     updatedAt: integer("updated_at").notNull(),
 });
