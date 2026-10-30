@@ -653,12 +653,12 @@ export function AtBatModalRunnerEditor({
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <span className="text-xs font-black text-foreground flex items-center gap-1.5">
           <span className="px-1.5 py-0.5 rounded-md bg-amber-500 text-white text-[10px] font-black">
-            走者・進塁
+            STEP 3
           </span>
-          <span>塁上の走者状況 ＆ 前の走者の進塁・生還</span>
+          <span>走者・進塁（塁上の走者状況 ＆ 前の走者の進塁・生還）</span>
         </span>
         <span className="text-[10px] font-bold text-muted-foreground">
-          ボタン1タップで進塁・得点・アウトが連動します
+          ボタン1タップで進塁・得点・アウト連動
         </span>
       </div>
 

@@ -41,6 +41,7 @@ import {
   type NormalizedBox,
   type ScorebookAnalysisTimingSummary,
   type ScorebookSheetStructure,
+  type ScorebookV2Advance,
   type ScorebookV2AtBat,
   type ScorebookValidationIssue,
 } from "@/types/scorebook-v2";
@@ -53,6 +54,7 @@ import {
 } from "@/lib/liff/scorebook-validator";
 import {
   buildSmartAdvancesForResultChange,
+  computeSyncedStatsFromAdvances,
   isForceOutGroundout,
   simulateSheetRunners,
 } from "@/lib/liff/scorebook-runners";
@@ -131,6 +133,7 @@ export function Step3PinpointReview({
   const [editingAtBatId, setEditingAtBatId] = useState<string | null>(null);
   const [croppedCellUrl, setCroppedCellUrl] = useState<string | null>(null);
   const [showFullSheetInModal, setShowFullSheetInModal] = useState(false);
+  const [showOrderAdjustPanel, setShowOrderAdjustPanel] = useState(false);
   const [showTimingDetails, setShowTimingDetails] = useState(true);
 
   useEffect(() => {
@@ -274,6 +277,7 @@ export function Step3PinpointReview({
   useEffect(() => {
     let cancelled = false;
     setShowFullSheetInModal(false);
+    setShowOrderAdjustPanel(false);
 
     if (!editingAtBat || !currentSheetImage) {
       setCroppedCellUrl(null);
@@ -561,6 +565,269 @@ export function Step3PinpointReview({
       PITCH_RESULT_PRESETS.find((p) => p.code === code) ||
       PITCH_RESULT_PRESETS[0]
     );
+  };
+
+  /**
+   * STEP 1（投球・牽制・ボーク順序）の更新を STEP 2（打撃結果）・STEP 3（走者・進塁）へ時系列連動させる
+   */
+  const applyPitchSequenceChange = (
+    prev: ScorebookV2AtBat,
+    nextPitches: CanonicalPitchResult[],
+    addedCode?: CanonicalPitchResult
+  ): ScorebookV2AtBat => {
+    const cnt = computeCountFromPitches(nextPitches);
+    const outsBefore = editingRunnerSnapshot?.outsBefore ?? 0;
+    const basesBefore = editingRunnerSnapshot?.basesBefore ?? {
+      "1B": null,
+      "2B": null,
+      "3B": null,
+    };
+
+    let nextResultCode = prev.resultCode;
+    let nextResultLabel = prev.resultLabel;
+    let nextDirection = prev.battedDirection;
+    let nextAdvances = [...prev.advances];
+    let nextOutsInPlay = prev.outsInPlay;
+    let nextRunsInPlay = prev.runsInPlay;
+    let nextRbi = prev.rbi;
+
+    // ボーク追加時、塁上に走者がいれば全員1つずつ安全進塁を自動付与（重複未登録時のみ）
+    if (
+      addedCode === "balk" &&
+      !nextAdvances.some((a) => a.method === "balk") &&
+      (basesBefore["3B"] || basesBefore["2B"] || basesBefore["1B"])
+    ) {
+      const realPitchCountBeforeBalk = nextPitches
+        .slice(0, -1)
+        .filter((p) => !isNonPitchMoundEvent(p)).length;
+      const pitchNumber =
+        realPitchCountBeforeBalk > 0 ? realPitchCountBeforeBalk : undefined;
+      const balkEntries: ScorebookV2Advance[] = [];
+      if (basesBefore["3B"]) {
+        balkEntries.push({
+          id: `${prev.id}-bk-3b-${Date.now()}`,
+          runnerName: basesBefore["3B"].name,
+          from: "3B",
+          to: "HP",
+          method: "balk",
+          isOut: false,
+          pitchNumber,
+        });
+      }
+      if (basesBefore["2B"]) {
+        balkEntries.push({
+          id: `${prev.id}-bk-2b-${Date.now()}`,
+          runnerName: basesBefore["2B"].name,
+          from: "2B",
+          to: "3B",
+          method: "balk",
+          isOut: false,
+          pitchNumber,
+        });
+      }
+      if (basesBefore["1B"]) {
+        balkEntries.push({
+          id: `${prev.id}-bk-1b-${Date.now()}`,
+          runnerName: basesBefore["1B"].name,
+          from: "1B",
+          to: "2B",
+          method: "balk",
+          isOut: false,
+          pitchNumber,
+        });
+      }
+      nextAdvances = [...nextAdvances, ...balkEntries];
+      const syncedBk = computeSyncedStatsFromAdvances(
+        prev,
+        nextAdvances,
+        outsBefore,
+        basesBefore
+      );
+      nextOutsInPlay = syncedBk.outsInPlay;
+      nextRunsInPlay = syncedBk.runsInPlay;
+      nextRbi = syncedBk.rbi;
+    }
+
+    const batterPitches = nextPitches.filter((p) => !isNonPitchMoundEvent(p));
+    const lastBatterPitch =
+      batterPitches.length > 0
+        ? batterPitches[batterPitches.length - 1]
+        : undefined;
+    const hasInPlayOrHit = batterPitches.some(
+      (p) => p === "in_play" || p === "hit"
+    );
+
+    // 2ストライク後のバントファウル（スリーバント失敗）判定
+    let runningStrikes = 0;
+    let endedWithThreeBuntFoul = false;
+    for (const p of batterPitches) {
+      if (p === "bunt_foul" && runningStrikes >= 2) {
+        endedWithThreeBuntFoul = true;
+      }
+      if (
+        p === "strike" ||
+        p === "swinging_strike" ||
+        p === "bunt_swinging" ||
+        p === "bunt_foul"
+      ) {
+        runningStrikes = Math.min(3, runningStrikes + 1);
+      } else if (p === "foul" && runningStrikes < 2) {
+        runningStrikes += 1;
+      }
+    }
+
+    const syncToResult = (
+      targetCode: CanonicalAtBatResult,
+      targetLabel: string,
+      targetDir: string,
+      defaultOuts: number
+    ) => {
+      nextResultCode = targetCode;
+      nextResultLabel = targetLabel;
+      nextDirection = targetDir;
+      const smartSync = buildSmartAdvancesForResultChange({
+        prevAb: {
+          ...prev,
+          advances: nextAdvances,
+          outsInPlay: nextOutsInPlay,
+          runsInPlay: nextRunsInPlay,
+          rbi: nextRbi,
+        },
+        nextResultCode: targetCode,
+        nextBattedDirection: targetDir,
+        nextResultLabel: targetLabel,
+        defaultPresetOuts: defaultOuts,
+        outsBefore,
+        basesBefore,
+      });
+      nextAdvances = smartSync.advances;
+      nextOutsInPlay = smartSync.outsInPlay;
+      nextRunsInPlay = smartSync.runsInPlay;
+      nextRbi = smartSync.rbi;
+    };
+
+    if (lastBatterPitch === "hbp") {
+      if (prev.resultCode !== "hit_by_pitch") {
+        syncToResult("hit_by_pitch", "死球", "", 0);
+      }
+    } else if (lastBatterPitch === "hit") {
+      const isAlreadyHit =
+        prev.resultCode === "single" ||
+        prev.resultCode === "double" ||
+        prev.resultCode === "triple" ||
+        prev.resultCode === "home_run";
+      if (!isAlreadyHit) {
+        const prevFielding = parseFieldingMeta(
+          prev.resultCode,
+          prev.battedDirection,
+          prev.resultLabel
+        );
+        if (prevFielding.primaryPos) {
+          const composed = composeFieldingResult({
+            resultCode: "single",
+            primaryPos: prevFielding.primaryPos,
+            assistTargetPos: prevFielding.assistTargetPos,
+            dpRelay: prevFielding.dpRelay,
+            hitZone: prevFielding.hitZone,
+            flyStyle: prevFielding.flyStyle,
+            errorStyle: prevFielding.errorStyle,
+            fallbackLabel: "安打",
+          });
+          syncToResult(
+            "single",
+            composed.resultLabel,
+            composed.battedDirection,
+            0
+          );
+        } else {
+          syncToResult("single", "安打", "", 0);
+        }
+      }
+    } else if (lastBatterPitch === "in_play") {
+      const isAlreadyInPlayNonHit =
+        prev.resultCode === "groundout" ||
+        prev.resultCode === "flyout" ||
+        prev.resultCode === "infield_fly" ||
+        prev.resultCode === "sac_bunt" ||
+        prev.resultCode === "sac_fly" ||
+        prev.resultCode === "double_play" ||
+        prev.resultCode === "triple_play" ||
+        prev.resultCode === "interference_out" ||
+        prev.resultCode === "error" ||
+        prev.resultCode === "fc" ||
+        prev.resultCode === "interference";
+      if (!isAlreadyInPlayNonHit) {
+        const prevFielding = parseFieldingMeta(
+          prev.resultCode,
+          prev.battedDirection,
+          prev.resultLabel
+        );
+        if (prevFielding.primaryPos) {
+          const composed = composeFieldingResult({
+            resultCode: "groundout",
+            primaryPos: prevFielding.primaryPos,
+            assistTargetPos: prevFielding.assistTargetPos || "3",
+            dpRelay: prevFielding.dpRelay,
+            hitZone: prevFielding.hitZone,
+            flyStyle: prevFielding.flyStyle,
+            errorStyle: prevFielding.errorStyle,
+            fallbackLabel: "ゴロ",
+          });
+          syncToResult(
+            "groundout",
+            composed.resultLabel,
+            composed.battedDirection,
+            1
+          );
+        } else {
+          syncToResult("groundout", "ゴロ", "", 1);
+        }
+      }
+    } else if (
+      !hasInPlayOrHit &&
+      cnt.balls >= 4 &&
+      lastBatterPitch === "ball"
+    ) {
+      if (
+        prev.resultCode !== "walk" &&
+        prev.resultCode !== "intentional_walk"
+      ) {
+        syncToResult("walk", "四球", "", 0);
+      }
+    } else if (
+      !hasInPlayOrHit &&
+      (cnt.strikes >= 3 || endedWithThreeBuntFoul)
+    ) {
+      if (
+        prev.resultCode !== "dropped_third_strike" &&
+        prev.resultCode !== "dropped_third_strike_out"
+      ) {
+        const soLabel =
+          endedWithThreeBuntFoul || lastBatterPitch === "bunt_foul"
+            ? "スリーバント失敗"
+            : lastBatterPitch === "strike"
+            ? "見逃し三振"
+            : "空振り三振";
+        if (prev.resultCode !== "strikeout" || prev.resultLabel !== soLabel) {
+          syncToResult("strikeout", soLabel, "", 1);
+        }
+      }
+    }
+
+    return {
+      ...prev,
+      pitches: nextPitches,
+      balls: cnt.balls,
+      strikes: cnt.strikes,
+      resultCode: nextResultCode,
+      resultLabel: nextResultLabel,
+      battedDirection: nextDirection,
+      advances: nextAdvances,
+      outsInPlay: nextOutsInPlay,
+      runsInPlay: nextRunsInPlay,
+      rbi: nextRbi,
+      confidence: "high",
+    };
   };
 
   const batterPitchPresets = useMemo(
@@ -1496,167 +1763,478 @@ export function Step3PinpointReview({
                   </div>
                 )}
 
-                {/* 1.5 イニング移動・打順・並び順の調整（列ズレ一括補正付き） */}
-                <div className="p-3 rounded-2xl bg-indigo-500/8 border border-indigo-500/25 space-y-2.5">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-black text-foreground flex items-center gap-1.5">
-                      <ArrowRightLeft className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-                      <span>イニング・打順・並び順の調整</span>
-                    </span>
-                    <span className="text-[10px] font-bold text-muted-foreground">
-                      {editingAtBat.inning}回内 {editingIndexWithinInning + 1}/
-                      {editingInningPeers.length}打席目
-                    </span>
-                  </div>
+                {/* 1.5 イニング移動・打順・並び順の調整（初期折りたたみアコーディオン） */}
+                {(() => {
+                  const hasOrderIssueOnCurrent = (
+                    issuesByAtBatId.get(editingAtBat.id) || []
+                  ).some((iss) => iss.category === "order");
 
-                  {/* イニング変更（前後ワンタップ＋選択式） */}
-                  <div className="grid grid-cols-12 gap-1.5 items-center">
-                    <button
-                      type="button"
-                      disabled={editingAtBat.inning <= 1}
-                      onClick={() =>
-                        handleMoveAtBatToInning(
-                          editingAtBat.id,
-                          editingAtBat.inning - 1
-                        )
-                      }
-                      className="col-span-4 h-9 px-2 rounded-xl bg-card border border-border text-xs font-black text-foreground flex items-center justify-center gap-1 disabled:opacity-35 active:scale-95 transition-all cursor-pointer disabled:cursor-not-allowed"
+                  return (
+                    <div
+                      className={`rounded-2xl border transition-colors ${
+                        showOrderAdjustPanel
+                          ? "p-3 bg-indigo-500/8 border-indigo-500/30 space-y-2.5"
+                          : "bg-card border-border"
+                      }`}
                     >
-                      <ChevronLeft className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
-                      <span>
-                        {Math.max(1, editingAtBat.inning - 1)}回へ移動
-                      </span>
-                    </button>
-
-                    <select
-                      value={editingAtBat.inning}
-                      onChange={(e) =>
-                        handleMoveAtBatToInning(
-                          editingAtBat.id,
-                          Number(e.target.value)
-                        )
-                      }
-                      aria-label="この打席のイニング"
-                      className="col-span-4 h-9 px-2 rounded-xl bg-card border border-indigo-500/40 text-xs font-black text-foreground text-center cursor-pointer"
-                    >
-                      {selectableTargetInnings.map((innOpt) => (
-                        <option key={innOpt} value={innOpt}>
-                          {innOpt}回{editingAtBat.isTop ? "表" : "裏"}
-                        </option>
-                      ))}
-                    </select>
-
-                    <button
-                      type="button"
-                      disabled={editingAtBat.inning >= 15}
-                      onClick={() =>
-                        handleMoveAtBatToInning(
-                          editingAtBat.id,
-                          editingAtBat.inning + 1
-                        )
-                      }
-                      className="col-span-4 h-9 px-2 rounded-xl bg-card border border-border text-xs font-black text-foreground flex items-center justify-center gap-1 disabled:opacity-35 active:scale-95 transition-all cursor-pointer disabled:cursor-not-allowed"
-                    >
-                      <span>{editingAtBat.inning + 1}回へ移動</span>
-                      <ChevronRight className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
-                    </button>
-                  </div>
-
-                  {/* 打順選択 ＆ 同一イニング内の前後入替 */}
-                  <div className="grid grid-cols-12 gap-1.5 items-center">
-                    <div className="col-span-6">
-                      <select
-                        value={editingAtBat.battingOrder}
-                        onChange={(e) =>
-                          handleChangeBattingOrder(
-                            editingAtBat.id,
-                            Number(e.target.value)
-                          )
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setShowOrderAdjustPanel((prev) => !prev)
                         }
-                        aria-label="打順を変更"
-                        className="w-full h-8 px-2 rounded-xl bg-card border border-border text-[11px] font-black text-foreground cursor-pointer"
+                        aria-expanded={showOrderAdjustPanel}
+                        className={`w-full flex items-center justify-between gap-2 text-left cursor-pointer ${
+                          showOrderAdjustPanel
+                            ? ""
+                            : "px-3 py-2.5 rounded-2xl hover:bg-muted/50"
+                        }`}
                       >
-                        {Array.from(
-                          { length: maxBattingOrder },
-                          (_, i) => i + 1
-                        ).map((ord) => {
-                          const slot = currentStructure?.batters.find(
-                            (b) => b.battingOrder === ord
-                          );
+                        <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+                          <ArrowRightLeft className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                          <span className="text-xs font-black text-foreground">
+                            イニング・打順・並び順の調整
+                          </span>
+                          <span className="px-1.5 py-0.5 rounded-md bg-muted text-[10px] font-black text-muted-foreground">
+                            {editingAtBat.inning}回
+                            {editingAtBat.isTop ? "表" : "裏"}・
+                            {editingAtBat.battingOrder}番（回内
+                            {editingIndexWithinInning + 1}/
+                            {editingInningPeers.length}）
+                          </span>
+                          {hasOrderIssueOnCurrent && (
+                            <span className="px-1.5 py-0.5 rounded-full bg-amber-500 text-white text-[9px] font-black">
+                              打順要確認
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 flex items-center gap-0.5 shrink-0">
+                          <span>{showOrderAdjustPanel ? "閉じる" : "展開"}</span>
+                          {showOrderAdjustPanel ? (
+                            <ChevronUp className="w-3.5 h-3.5" />
+                          ) : (
+                            <ChevronDown className="w-3.5 h-3.5" />
+                          )}
+                        </span>
+                      </button>
+
+                      {showOrderAdjustPanel && (
+                        <div className="space-y-2.5 pt-1 border-t border-indigo-500/20">
+                          {/* イニング変更（前後ワンタップ＋選択式） */}
+                          <div className="grid grid-cols-12 gap-1.5 items-center">
+                            <button
+                              type="button"
+                              disabled={editingAtBat.inning <= 1}
+                              onClick={() =>
+                                handleMoveAtBatToInning(
+                                  editingAtBat.id,
+                                  editingAtBat.inning - 1
+                                )
+                              }
+                              className="col-span-4 h-9 px-2 rounded-xl bg-card border border-border text-xs font-black text-foreground flex items-center justify-center gap-1 disabled:opacity-35 active:scale-95 transition-all cursor-pointer disabled:cursor-not-allowed"
+                            >
+                              <ChevronLeft className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                              <span>
+                                {Math.max(1, editingAtBat.inning - 1)}回へ移動
+                              </span>
+                            </button>
+
+                            <select
+                              value={editingAtBat.inning}
+                              onChange={(e) =>
+                                handleMoveAtBatToInning(
+                                  editingAtBat.id,
+                                  Number(e.target.value)
+                                )
+                              }
+                              aria-label="この打席のイニング"
+                              className="col-span-4 h-9 px-2 rounded-xl bg-card border border-indigo-500/40 text-xs font-black text-foreground text-center cursor-pointer"
+                            >
+                              {selectableTargetInnings.map((innOpt) => (
+                                <option key={innOpt} value={innOpt}>
+                                  {innOpt}回{editingAtBat.isTop ? "表" : "裏"}
+                                </option>
+                              ))}
+                            </select>
+
+                            <button
+                              type="button"
+                              disabled={editingAtBat.inning >= 15}
+                              onClick={() =>
+                                handleMoveAtBatToInning(
+                                  editingAtBat.id,
+                                  editingAtBat.inning + 1
+                                )
+                              }
+                              className="col-span-4 h-9 px-2 rounded-xl bg-card border border-border text-xs font-black text-foreground flex items-center justify-center gap-1 disabled:opacity-35 active:scale-95 transition-all cursor-pointer disabled:cursor-not-allowed"
+                            >
+                              <span>{editingAtBat.inning + 1}回へ移動</span>
+                              <ChevronRight className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                            </button>
+                          </div>
+
+                          {/* 打順選択 ＆ 同一イニング内の前後入替 */}
+                          <div className="grid grid-cols-12 gap-1.5 items-center">
+                            <div className="col-span-6">
+                              <select
+                                value={editingAtBat.battingOrder}
+                                onChange={(e) =>
+                                  handleChangeBattingOrder(
+                                    editingAtBat.id,
+                                    Number(e.target.value)
+                                  )
+                                }
+                                aria-label="打順を変更"
+                                className="w-full h-8 px-2 rounded-xl bg-card border border-border text-[11px] font-black text-foreground cursor-pointer"
+                              >
+                                {Array.from(
+                                  { length: maxBattingOrder },
+                                  (_, i) => i + 1
+                                ).map((ord) => {
+                                  const slot = currentStructure?.batters.find(
+                                    (b) => b.battingOrder === ord
+                                  );
+                                  return (
+                                    <option key={ord} value={ord}>
+                                      {ord}番
+                                      {slot?.name ? `: ${slot.name}` : ""}
+                                    </option>
+                                  );
+                                })}
+                              </select>
+                            </div>
+
+                            <button
+                              type="button"
+                              disabled={editingIndexWithinInning <= 0}
+                              onClick={() =>
+                                handleReorderWithinInning(editingAtBat.id, "up")
+                              }
+                              className="col-span-3 h-8 px-2 rounded-xl bg-card border border-border text-[11px] font-black text-foreground flex items-center justify-center gap-1 disabled:opacity-35 cursor-pointer disabled:cursor-not-allowed"
+                            >
+                              <ArrowUp className="w-3 h-3" />
+                              <span>順を上へ</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              disabled={
+                                editingIndexWithinInning < 0 ||
+                                editingIndexWithinInning >=
+                                  editingInningPeers.length - 1
+                              }
+                              onClick={() =>
+                                handleReorderWithinInning(
+                                  editingAtBat.id,
+                                  "down"
+                                )
+                              }
+                              className="col-span-3 h-8 px-2 rounded-xl bg-card border border-border text-[11px] font-black text-foreground flex items-center justify-center gap-1 disabled:opacity-35 cursor-pointer disabled:cursor-not-allowed"
+                            >
+                              <ArrowDown className="w-3 h-3" />
+                              <span>順を下へ</span>
+                            </button>
+                          </div>
+
+                          {/* 打者一巡などの列ズレ一括シフト */}
+                          <div className="pt-1 border-t border-indigo-500/20 flex items-center justify-between gap-1.5 flex-wrap">
+                            <span className="text-[10px] font-bold text-muted-foreground">
+                              以降の打席も丸ごと列ズレしている場合:
+                            </span>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                disabled={editingAtBat.inning <= 1}
+                                onClick={() =>
+                                  handleShiftSubsequentInnings(
+                                    editingAtBat.id,
+                                    -1
+                                  )
+                                }
+                                className="h-7 px-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-35 text-white text-[10px] font-black active:scale-95 transition-all cursor-pointer disabled:cursor-not-allowed"
+                              >
+                                この打席以降すべて -1回
+                              </button>
+                              <button
+                                type="button"
+                                disabled={editingAtBat.inning >= 15}
+                                onClick={() =>
+                                  handleShiftSubsequentInnings(
+                                    editingAtBat.id,
+                                    1
+                                  )
+                                }
+                                className="h-7 px-2.5 rounded-lg bg-card border border-border hover:bg-muted text-foreground text-[10px] font-black active:scale-95 transition-all cursor-pointer disabled:opacity-35 disabled:cursor-not-allowed"
+                              >
+                                以降すべて +1回
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* STEP 1: 1球ごとの投球・牽制・ボーク順序エディタ（実際の試合・スコアラー記入順の先頭！） */}
+                <div className="p-3 rounded-2xl bg-sky-500/8 border-2 border-sky-500/35 space-y-2.5">
+                  {(() => {
+                    const modalPickoffCnt = editingAtBat.pitches.filter((p) =>
+                      isPickoffPitch(p)
+                    ).length;
+                    const modalBalkCnt = editingAtBat.pitches.filter(
+                      (p) => p === "balk"
+                    ).length;
+                    const modalRealCnt =
+                      editingAtBat.pitches.length -
+                      modalPickoffCnt -
+                      modalBalkCnt;
+                    return (
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <span className="text-xs font-black text-foreground flex items-center gap-1.5">
+                          <span className="px-1.5 py-0.5 rounded-md bg-sky-600 text-white text-[10px] font-black">
+                            STEP 1
+                          </span>
+                          <span>
+                            1球ごとの投球・牽制・ボーク順序（{modalRealCnt}球
+                            {modalPickoffCnt > 0
+                              ? ` / 牽制${modalPickoffCnt}`
+                              : ""}
+                            {modalBalkCnt > 0 ? ` / BK${modalBalkCnt}` : ""}）
+                          </span>
+                        </span>
+                        <span className="px-2 py-0.5 rounded-md bg-card border border-border text-[11px] font-black text-sky-700 dark:text-sky-300">
+                          B:{editingAtBat.balls} - S:{editingAtBat.strikes}
+                        </span>
+                      </div>
+                    );
+                  })()}
+
+                  {/* 登録済み球順リスト */}
+                  <div className="space-y-1.5">
+                    {editingAtBat.pitches.length === 0 ? (
+                      <div className="px-3 py-2 rounded-xl bg-card border border-dashed border-border text-[11px] font-bold text-muted-foreground text-center">
+                        まだ投球が登録されていません。下のボタンから1球ずつ追加してください。
+                      </div>
+                    ) : (
+                      (() => {
+                        let editRealSeq = 0;
+                        return editingAtBat.pitches.map((pCode, pIdx) => {
+                          const meta = getPitchMeta(pCode);
+                          const isMound = isNonPitchMoundEvent(pCode);
+                          if (!isMound) editRealSeq += 1;
+                          const moundBadge =
+                            pCode === "pickoff_1b"
+                              ? "牽1"
+                              : pCode === "pickoff_2b"
+                              ? "牽2"
+                              : pCode === "pickoff_3b"
+                              ? "牽3"
+                              : pCode === "balk"
+                              ? "BK"
+                              : "牽";
                           return (
-                            <option key={ord} value={ord}>
-                              {ord}番
-                              {slot?.name ? `: ${slot.name}` : ""}
-                            </option>
+                            <div
+                              key={`${editingAtBat.id}-edit-p-${pIdx}`}
+                              className="flex items-center justify-between gap-1.5 p-1.5 rounded-xl bg-card border border-border"
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span
+                                  className={`min-w-5 h-5 px-1 rounded-full text-[10px] font-black flex items-center justify-center shrink-0 ${
+                                    isMound
+                                      ? "bg-slate-500/20 text-slate-700 dark:text-slate-200"
+                                      : "bg-muted text-foreground"
+                                  }`}
+                                >
+                                  {isMound ? moundBadge : editRealSeq}
+                                </span>
+                                <select
+                                  value={pCode}
+                                  onChange={(e) => {
+                                    const nextCode = e.target
+                                      .value as CanonicalPitchResult;
+                                    updateSingleAtBat(editingAtBat.id, (prev) => {
+                                      const nextPitches = [...prev.pitches];
+                                      nextPitches[pIdx] = nextCode;
+                                      return applyPitchSequenceChange(
+                                        prev,
+                                        nextPitches,
+                                        nextCode === "balk" ? "balk" : undefined
+                                      );
+                                    });
+                                  }}
+                                  className={`h-7 px-2 rounded-lg border text-[11px] font-black ${meta.toneClass}`}
+                                >
+                                  {pCode === "pickoff" && (
+                                    <option value="pickoff">
+                                      {LEGACY_PICKOFF_PRESET.badgeLabel}
+                                    </option>
+                                  )}
+                                  {PITCH_RESULT_PRESETS.map((opt) => (
+                                    <option key={opt.code} value={opt.code}>
+                                      {opt.badgeLabel}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  type="button"
+                                  disabled={pIdx === 0}
+                                  onClick={() =>
+                                    updateSingleAtBat(editingAtBat.id, (prev) => {
+                                      const next = [...prev.pitches];
+                                      [next[pIdx - 1], next[pIdx]] = [
+                                        next[pIdx],
+                                        next[pIdx - 1],
+                                      ];
+                                      return applyPitchSequenceChange(prev, next);
+                                    })
+                                  }
+                                  className="p-1 rounded-md bg-muted disabled:opacity-30 cursor-pointer"
+                                >
+                                  <ArrowLeft className="w-3 h-3" />
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={
+                                    pIdx === editingAtBat.pitches.length - 1
+                                  }
+                                  onClick={() =>
+                                    updateSingleAtBat(editingAtBat.id, (prev) => {
+                                      const next = [...prev.pitches];
+                                      [next[pIdx], next[pIdx + 1]] = [
+                                        next[pIdx + 1],
+                                        next[pIdx],
+                                      ];
+                                      return applyPitchSequenceChange(prev, next);
+                                    })
+                                  }
+                                  className="p-1 rounded-md bg-muted disabled:opacity-30 cursor-pointer"
+                                >
+                                  <ArrowRight className="w-3 h-3" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    updateSingleAtBat(editingAtBat.id, (prev) => {
+                                      const next = prev.pitches.filter(
+                                        (_, i) => i !== pIdx
+                                      );
+                                      return applyPitchSequenceChange(prev, next);
+                                    })
+                                  }
+                                  className="p-1 text-destructive cursor-pointer"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
                           );
-                        })}
-                      </select>
-                    </div>
-
-                    <button
-                      type="button"
-                      disabled={editingIndexWithinInning <= 0}
-                      onClick={() =>
-                        handleReorderWithinInning(editingAtBat.id, "up")
-                      }
-                      className="col-span-3 h-8 px-2 rounded-xl bg-card border border-border text-[11px] font-black text-foreground flex items-center justify-center gap-1 disabled:opacity-35 cursor-pointer disabled:cursor-not-allowed"
-                    >
-                      <ArrowUp className="w-3 h-3" />
-                      <span>順を上へ</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      disabled={
-                        editingIndexWithinInning < 0 ||
-                        editingIndexWithinInning >=
-                          editingInningPeers.length - 1
-                      }
-                      onClick={() =>
-                        handleReorderWithinInning(editingAtBat.id, "down")
-                      }
-                      className="col-span-3 h-8 px-2 rounded-xl bg-card border border-border text-[11px] font-black text-foreground flex items-center justify-center gap-1 disabled:opacity-35 cursor-pointer disabled:cursor-not-allowed"
-                    >
-                      <ArrowDown className="w-3 h-3" />
-                      <span>順を下へ</span>
-                    </button>
+                        });
+                      })()
+                    )}
                   </div>
 
-                  {/* 打者一巡などの列ズレ一括シフト */}
-                  <div className="pt-1 border-t border-indigo-500/20 flex items-center justify-between gap-1.5 flex-wrap">
-                    <span className="text-[10px] font-bold text-muted-foreground">
-                      以降の打席も丸ごと列ズレしている場合:
+                  {/* 末尾に1球・牽制・ボークをワンタップ追加 */}
+                  <div className="pt-1 space-y-1.5">
+                    <span className="text-[10px] font-bold text-muted-foreground block">
+                      ＋ 末尾に投球を追加（4球ボールで四球、3ストライクで三振、インプレー/安打球でSTEP 2へ自動連動）
                     </span>
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        disabled={editingAtBat.inning <= 1}
-                        onClick={() =>
-                          handleShiftSubsequentInnings(editingAtBat.id, -1)
-                        }
-                        className="h-7 px-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-35 text-white text-[10px] font-black active:scale-95 transition-all cursor-pointer disabled:cursor-not-allowed"
-                      >
-                        この打席以降すべて -1回
-                      </button>
-                      <button
-                        type="button"
-                        disabled={editingAtBat.inning >= 15}
-                        onClick={() =>
-                          handleShiftSubsequentInnings(editingAtBat.id, 1)
-                        }
-                        className="h-7 px-2.5 rounded-lg bg-card border border-border hover:bg-muted text-foreground text-[10px] font-black active:scale-95 transition-all cursor-pointer disabled:opacity-35 disabled:cursor-not-allowed"
-                      >
-                        以降すべて +1回
-                      </button>
+                    <div className="grid grid-cols-3 gap-1">
+                      {batterPitchPresets.map((opt) => (
+                        <button
+                          key={opt.code}
+                          type="button"
+                          onClick={() =>
+                            updateSingleAtBat(editingAtBat.id, (prev) => {
+                              const next = [...prev.pitches, opt.code];
+                              return applyPitchSequenceChange(
+                                prev,
+                                next,
+                                opt.code
+                              );
+                            })
+                          }
+                          className={`py-1.5 px-1 rounded-lg border text-[10px] font-black active:scale-95 cursor-pointer ${opt.toneClass}`}
+                        >
+                          +{opt.shortLabel}
+                        </button>
+                      ))}
+                    </div>
+                    <span className="text-[10px] font-bold text-muted-foreground block pt-0.5">
+                      ＋ 牽制球・ボークを追加（投球数・BSカウント外）
+                    </span>
+                    <div className="grid grid-cols-4 gap-1">
+                      {moundActionPresets.map((opt) => (
+                        <button
+                          key={opt.code}
+                          type="button"
+                          onClick={() =>
+                            updateSingleAtBat(editingAtBat.id, (prev) => {
+                              const next = [...prev.pitches, opt.code];
+                              return applyPitchSequenceChange(
+                                prev,
+                                next,
+                                opt.code
+                              );
+                            })
+                          }
+                          className={`py-1.5 px-1 rounded-lg border text-[10px] font-black active:scale-95 cursor-pointer ${opt.toneClass}`}
+                        >
+                          +{opt.shortLabel}
+                        </button>
+                      ))}
                     </div>
                   </div>
+
+                  {/* STEP 1 -> STEP 2 接続ナビゲーションバー */}
+                  {(() => {
+                    const batterOnly = editingAtBat.pitches.filter(
+                      (p) => !isNonPitchMoundEvent(p)
+                    );
+                    const lastBP =
+                      batterOnly.length > 0
+                        ? batterOnly[batterOnly.length - 1]
+                        : undefined;
+                    const isNoInPlayResult =
+                      editingAtBat.resultCode === "walk" ||
+                      editingAtBat.resultCode === "intentional_walk" ||
+                      editingAtBat.resultCode === "hit_by_pitch" ||
+                      editingAtBat.resultCode === "strikeout";
+
+                    return (
+                      <div className="px-2.5 py-1.5 rounded-xl bg-card border border-border flex items-center justify-between gap-2 text-[10px] font-black">
+                        {lastBP === "hit" ? (
+                          <span className="text-emerald-700 dark:text-emerald-400">
+                            最終球: 安打球 ➔ 下の STEP 2 で安打種別・打球方向を選択
+                          </span>
+                        ) : lastBP === "in_play" ? (
+                          <span className="text-indigo-700 dark:text-indigo-300">
+                            最終球: インプレー ➔ 下の STEP 2 で打球結果・守備位置を選択
+                          </span>
+                        ) : isNoInPlayResult ? (
+                          <span className="text-sky-700 dark:text-sky-300">
+                            投球確定: {editingAtBat.resultLabel}（インプレーなし） ➔ STEP 3 で走者状況を確認
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">
+                            打球が発生した場合は「+インプレー」または「+安打球」を追加して STEP 2 へ
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
 
-                {/* 2. 打撃結果ワンタップ選択 */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-black text-foreground">
-                      打撃結果（成績集計カテゴリ＋表示名）
+                {/* STEP 2: 打撃結果・守備位置ワンタップ選択 */}
+                <div className="p-3 rounded-2xl bg-indigo-500/6 border-2 border-indigo-500/30 space-y-2.5">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <label className="text-xs font-black text-foreground flex items-center gap-1.5">
+                      <span className="px-1.5 py-0.5 rounded-md bg-indigo-600 text-white text-[10px] font-black">
+                        STEP 2
+                      </span>
+                      <span>打撃結果・守備位置（インプレー内容／確定結果）</span>
                     </label>
                     {editingAtBat.confidence === "low" && (
                       <button
@@ -1778,24 +2356,108 @@ export function Step3PinpointReview({
                                           }
                                         }
 
-                                        // 単一プレースホルダー球のみの場合は安打球/インプレー球も自動同期
-                                        let nextPitches = prev.pitches;
+                                        // STEP 2 の選択に合わせて STEP 1 の最終打者球（インプレー / 安打球 / 死球）も双方向同期
+                                        let nextPitches = [...prev.pitches];
+                                        let lastBatterPitchIdx = -1;
+                                        for (
+                                          let i = nextPitches.length - 1;
+                                          i >= 0;
+                                          i--
+                                        ) {
+                                          if (
+                                            !isNonPitchMoundEvent(
+                                              nextPitches[i]
+                                            )
+                                          ) {
+                                            lastBatterPitchIdx = i;
+                                            break;
+                                          }
+                                        }
+
                                         const isNextHit =
                                           nextCode === "single" ||
                                           nextCode === "double" ||
                                           nextCode === "triple" ||
                                           nextCode === "home_run";
-                                        if (
-                                          prev.pitches.length === 1 &&
-                                          (prev.pitches[0] === "in_play" ||
-                                            prev.pitches[0] === "hit")
-                                        ) {
-                                          if (isNextHit) {
+
+                                        if (isNextHit) {
+                                          if (
+                                            lastBatterPitchIdx >= 0 &&
+                                            (nextPitches[lastBatterPitchIdx] ===
+                                              "in_play" ||
+                                              nextPitches[
+                                                lastBatterPitchIdx
+                                              ] === "hbp")
+                                          ) {
+                                            nextPitches[lastBatterPitchIdx] =
+                                              "hit";
+                                          } else if (nextPitches.length === 0) {
                                             nextPitches = ["hit"];
-                                          } else if (!nonFieldedCodes) {
+                                          }
+                                        } else if (
+                                          nextCode === "hit_by_pitch"
+                                        ) {
+                                          if (
+                                            lastBatterPitchIdx >= 0 &&
+                                            (nextPitches[lastBatterPitchIdx] ===
+                                              "in_play" ||
+                                              nextPitches[
+                                                lastBatterPitchIdx
+                                              ] === "hit")
+                                          ) {
+                                            nextPitches[lastBatterPitchIdx] =
+                                              "hbp";
+                                          } else if (nextPitches.length === 0) {
+                                            nextPitches = ["hbp"];
+                                          }
+                                        } else if (
+                                          !nonFieldedCodes &&
+                                          nextCode !== "dropped_third_strike" &&
+                                          nextCode !==
+                                            "dropped_third_strike_out"
+                                        ) {
+                                          if (
+                                            lastBatterPitchIdx >= 0 &&
+                                            (nextPitches[lastBatterPitchIdx] ===
+                                              "hit" ||
+                                              nextPitches[
+                                                lastBatterPitchIdx
+                                              ] === "hbp")
+                                          ) {
+                                            nextPitches[lastBatterPitchIdx] =
+                                              "in_play";
+                                          } else if (nextPitches.length === 0) {
                                             nextPitches = ["in_play"];
                                           }
+                                        } else if (
+                                          nextCode === "walk" ||
+                                          nextCode === "intentional_walk" ||
+                                          nextCode === "strikeout" ||
+                                          nextCode === "dropped_third_strike" ||
+                                          nextCode ===
+                                            "dropped_third_strike_out"
+                                        ) {
+                                          if (
+                                            lastBatterPitchIdx >= 0 &&
+                                            (nextPitches[lastBatterPitchIdx] ===
+                                              "in_play" ||
+                                              nextPitches[
+                                                lastBatterPitchIdx
+                                              ] === "hit" ||
+                                              nextPitches[
+                                                lastBatterPitchIdx
+                                              ] === "hbp") &&
+                                            nextPitches.length > 1
+                                          ) {
+                                            nextPitches = nextPitches.filter(
+                                              (_, idx) =>
+                                                idx !== lastBatterPitchIdx
+                                            );
+                                          }
                                         }
+
+                                        const syncedCnt =
+                                          computeCountFromPitches(nextPitches);
 
                                         const smartRunnerSync =
                                           buildSmartAdvancesForResultChange({
@@ -1822,6 +2484,8 @@ export function Step3PinpointReview({
                                           resultLabel: nextLabel,
                                           battedDirection: nextDir,
                                           pitches: nextPitches,
+                                          balls: syncedCnt.balls,
+                                          strikes: syncedCnt.strikes,
                                           advances: smartRunnerSync.advances,
                                           outsInPlay: smartRunnerSync.outsInPlay,
                                           runsInPlay: smartRunnerSync.runsInPlay,
@@ -1831,10 +2495,10 @@ export function Step3PinpointReview({
                                       }
                                     )
                                   }
-                                  className={`py-1.5 px-1 rounded-xl text-[10px] border transition-all cursor-pointer ${
+                                  className={`py-1.5 px-1 rounded-xl text-[10px] border border-border transition-all cursor-pointer ${
                                     active
                                       ? "bg-indigo-600 text-white border-indigo-600 font-black shadow-2xs"
-                                      : "bg-muted/40 border-border text-foreground font-bold"
+                                      : "bg-card text-foreground font-bold hover:bg-muted/60"
                                   }`}
                                 >
                                   {preset.shortLabel}
@@ -2348,7 +3012,7 @@ export function Step3PinpointReview({
                             resultLabel: e.target.value,
                           }))
                         }
-                        className="w-full h-9 px-2 rounded-xl bg-muted/40 border border-border text-xs font-black text-foreground"
+                        className="w-full h-9 px-2 rounded-xl bg-card border border-border text-xs font-black text-foreground"
                       />
                     </div>
 
@@ -2366,7 +3030,7 @@ export function Step3PinpointReview({
                           }))
                         }
                         placeholder="6-3 / 8"
-                        className="w-full h-9 px-2 rounded-xl bg-muted/40 border border-border text-xs font-black text-foreground"
+                        className="w-full h-9 px-2 rounded-xl bg-card border border-border text-xs font-black text-foreground"
                       />
                     </div>
 
@@ -2382,7 +3046,7 @@ export function Step3PinpointReview({
                             outsInPlay: Number(e.target.value),
                           }))
                         }
-                        className="w-full h-9 px-1 rounded-xl bg-muted/40 border border-border text-xs font-black text-foreground"
+                        className="w-full h-9 px-1 rounded-xl bg-card border border-border text-xs font-black text-foreground"
                       >
                         <option value={0}>0死</option>
                         <option value={1}>1死</option>
@@ -2404,7 +3068,7 @@ export function Step3PinpointReview({
                             rbi: Number(e.target.value),
                           }))
                         }
-                        className="w-full h-9 px-1 rounded-xl bg-muted/40 border border-border text-xs font-black text-foreground"
+                        className="w-full h-9 px-1 rounded-xl bg-card border border-border text-xs font-black text-foreground"
                       >
                         {[0, 1, 2, 3, 4].map((r) => (
                           <option key={r} value={r}>
@@ -2416,7 +3080,7 @@ export function Step3PinpointReview({
                   </div>
                 </div>
 
-                {/* 2.5 塁上の走者状況（打席前➔打席後）＆ 前の走者の進塁・生還ワンタップエディタ */}
+                {/* STEP 3: 塁上の走者状況（打席前➔打席後）＆ 前の走者の進塁・生還ワンタップエディタ */}
                 <AtBatModalRunnerEditor
                   atBat={editingAtBat}
                   snapshot={editingRunnerSnapshot}
@@ -2425,234 +3089,6 @@ export function Step3PinpointReview({
                     updateSingleAtBat(editingAtBat.id, updater)
                   }
                 />
-
-                {/* 3. 1球ごとの投球・牽制・ボーク順序エディタ（必須機能！） */}
-                <div className="p-3 rounded-2xl bg-muted/35 border border-border space-y-2.5">
-                  {(() => {
-                    const modalPickoffCnt = editingAtBat.pitches.filter((p) =>
-                      isPickoffPitch(p)
-                    ).length;
-                    const modalBalkCnt = editingAtBat.pitches.filter(
-                      (p) => p === "balk"
-                    ).length;
-                    const modalRealCnt =
-                      editingAtBat.pitches.length -
-                      modalPickoffCnt -
-                      modalBalkCnt;
-                    return (
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-black text-foreground">
-                          1球ごとの投球・牽制・ボーク順序（投球 {modalRealCnt}球
-                          {modalPickoffCnt > 0
-                            ? ` / 牽制${modalPickoffCnt}`
-                            : ""}
-                          {modalBalkCnt > 0 ? ` / BK${modalBalkCnt}` : ""}）
-                        </span>
-                        <span className="text-[11px] font-black text-indigo-600 dark:text-indigo-400">
-                          B:{editingAtBat.balls} - S:{editingAtBat.strikes}
-                        </span>
-                      </div>
-                    );
-                  })()}
-
-                  {/* 登録済み球順リスト */}
-                  <div className="space-y-1.5">
-                    {(() => {
-                      let editRealSeq = 0;
-                      return editingAtBat.pitches.map((pCode, pIdx) => {
-                        const meta = getPitchMeta(pCode);
-                        const isMound = isNonPitchMoundEvent(pCode);
-                        if (!isMound) editRealSeq += 1;
-                        const moundBadge =
-                          pCode === "pickoff_1b"
-                            ? "牽1"
-                            : pCode === "pickoff_2b"
-                            ? "牽2"
-                            : pCode === "pickoff_3b"
-                            ? "牽3"
-                            : pCode === "balk"
-                            ? "BK"
-                            : "牽";
-                        return (
-                          <div
-                            key={`${editingAtBat.id}-edit-p-${pIdx}`}
-                            className="flex items-center justify-between gap-1.5 p-1.5 rounded-xl bg-card border border-border"
-                          >
-                            <div className="flex items-center gap-2 min-w-0">
-                              <span
-                                className={`min-w-5 h-5 px-1 rounded-full text-[10px] font-black flex items-center justify-center shrink-0 ${
-                                  isMound
-                                    ? "bg-slate-500/20 text-slate-700 dark:text-slate-200"
-                                    : "bg-muted text-foreground"
-                                }`}
-                              >
-                                {isMound ? moundBadge : editRealSeq}
-                              </span>
-                              <select
-                                value={pCode}
-                                onChange={(e) => {
-                                  const nextCode = e.target
-                                    .value as CanonicalPitchResult;
-                                  updateSingleAtBat(editingAtBat.id, (prev) => {
-                                    const nextPitches = [...prev.pitches];
-                                    nextPitches[pIdx] = nextCode;
-                                    const cnt =
-                                      computeCountFromPitches(nextPitches);
-                                    return {
-                                      ...prev,
-                                      pitches: nextPitches,
-                                      balls: cnt.balls,
-                                      strikes: cnt.strikes,
-                                    };
-                                  });
-                                }}
-                                className={`h-7 px-2 rounded-lg border text-[11px] font-black ${meta.toneClass}`}
-                              >
-                                {pCode === "pickoff" && (
-                                  <option value="pickoff">
-                                    {LEGACY_PICKOFF_PRESET.badgeLabel}
-                                  </option>
-                                )}
-                                {PITCH_RESULT_PRESETS.map((opt) => (
-                                  <option key={opt.code} value={opt.code}>
-                                    {opt.badgeLabel}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-
-                            <div className="flex items-center gap-1 shrink-0">
-                              <button
-                                type="button"
-                                disabled={pIdx === 0}
-                                onClick={() =>
-                                  updateSingleAtBat(editingAtBat.id, (prev) => {
-                                    const next = [...prev.pitches];
-                                    [next[pIdx - 1], next[pIdx]] = [
-                                      next[pIdx],
-                                      next[pIdx - 1],
-                                    ];
-                                    const cnt = computeCountFromPitches(next);
-                                    return {
-                                      ...prev,
-                                      pitches: next,
-                                      balls: cnt.balls,
-                                      strikes: cnt.strikes,
-                                    };
-                                  })
-                                }
-                                className="p-1 rounded-md bg-muted disabled:opacity-30 cursor-pointer"
-                              >
-                                <ArrowLeft className="w-3 h-3" />
-                              </button>
-                              <button
-                                type="button"
-                                disabled={
-                                  pIdx === editingAtBat.pitches.length - 1
-                                }
-                                onClick={() =>
-                                  updateSingleAtBat(editingAtBat.id, (prev) => {
-                                    const next = [...prev.pitches];
-                                    [next[pIdx], next[pIdx + 1]] = [
-                                      next[pIdx + 1],
-                                      next[pIdx],
-                                    ];
-                                    const cnt = computeCountFromPitches(next);
-                                    return {
-                                      ...prev,
-                                      pitches: next,
-                                      balls: cnt.balls,
-                                      strikes: cnt.strikes,
-                                    };
-                                  })
-                                }
-                                className="p-1 rounded-md bg-muted disabled:opacity-30 cursor-pointer"
-                              >
-                                <ArrowRight className="w-3 h-3" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  updateSingleAtBat(editingAtBat.id, (prev) => {
-                                    const next = prev.pitches.filter(
-                                      (_, i) => i !== pIdx
-                                    );
-                                    const cnt = computeCountFromPitches(next);
-                                    return {
-                                      ...prev,
-                                      pitches: next,
-                                      balls: cnt.balls,
-                                      strikes: cnt.strikes,
-                                    };
-                                  })
-                                }
-                                className="p-1 text-destructive cursor-pointer"
-                              >
-                                <X className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      });
-                    })()}
-                  </div>
-
-                  {/* 末尾に1球・牽制・ボークをワンタップ追加 */}
-                  <div className="pt-1 space-y-1.5">
-                    <span className="text-[10px] font-bold text-muted-foreground block">
-                      ＋ 末尾に投球を追加
-                    </span>
-                    <div className="grid grid-cols-3 gap-1">
-                      {batterPitchPresets.map((opt) => (
-                        <button
-                          key={opt.code}
-                          type="button"
-                          onClick={() =>
-                            updateSingleAtBat(editingAtBat.id, (prev) => {
-                              const next = [...prev.pitches, opt.code];
-                              const cnt = computeCountFromPitches(next);
-                              return {
-                                ...prev,
-                                pitches: next,
-                                balls: cnt.balls,
-                                strikes: cnt.strikes,
-                              };
-                            })
-                          }
-                          className={`py-1.5 px-1 rounded-lg border text-[10px] font-black active:scale-95 cursor-pointer ${opt.toneClass}`}
-                        >
-                          +{opt.shortLabel}
-                        </button>
-                      ))}
-                    </div>
-                    <span className="text-[10px] font-bold text-muted-foreground block pt-0.5">
-                      ＋ 牽制球・ボークを追加（投球数・BSカウント外）
-                    </span>
-                    <div className="grid grid-cols-4 gap-1">
-                      {moundActionPresets.map((opt) => (
-                        <button
-                          key={opt.code}
-                          type="button"
-                          onClick={() =>
-                            updateSingleAtBat(editingAtBat.id, (prev) => {
-                              const next = [...prev.pitches, opt.code];
-                              const cnt = computeCountFromPitches(next);
-                              return {
-                                ...prev,
-                                pitches: next,
-                                balls: cnt.balls,
-                                strikes: cnt.strikes,
-                              };
-                            })
-                          }
-                          className={`py-1.5 px-1 rounded-lg border text-[10px] font-black active:scale-95 cursor-pointer ${opt.toneClass}`}
-                        >
-                          +{opt.shortLabel}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
 
                 {/* 打席削除 */}
                 <div className="flex justify-between items-center pt-1">
