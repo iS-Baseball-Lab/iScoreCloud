@@ -555,6 +555,24 @@ export function validateScorebookSheet(
       });
     }
 
+    const preTotalOuts = inningEvents.reduce(
+      (sum, x) => sum + Math.max(0, x.outsInPlay),
+      0
+    );
+    const preTotalRuns = inningEvents.reduce(
+      (sum, x) => sum + Math.max(0, x.runsInPlay),
+      0
+    );
+    const preMeta = structure?.innings.find((m) => m.inning === inning);
+    const inningOutsCorroborated =
+      preTotalOuts === 3 ||
+      (isLastRecordedInning && !isTop && preTotalOuts <= 3 && preTotalRuns > 0);
+    const inningRunsCorroborated =
+      !preMeta || preMeta.runs === preTotalRuns;
+    const inningLeadOffCorroborated =
+      expectedNextBatterOrder === null ||
+      firstAb.battingOrder === expectedNextBatterOrder;
+
     let inningOuts = 0;
     let inningRuns = 0;
     const bases: Record<"1B" | "2B" | "3B", string | null> = {
@@ -565,12 +583,14 @@ export function validateScorebookSheet(
 
     for (let i = 0; i < inningEvents.length; i++) {
       const ab = inningEvents[i];
+      let hasRowOrderJump = false;
 
       // 打順の1打席ごとの連続チェック
       if (i > 0) {
         const prevAb = inningEvents[i - 1];
         const expectedInInning = (prevAb.battingOrder % lineupCycle) + 1;
         if (ab.battingOrder !== expectedInInning) {
+          hasRowOrderJump = true;
           issues.push({
             id: `seq-${ab.id}`,
             severity: "warning",
@@ -584,8 +604,61 @@ export function validateScorebookSheet(
         }
       }
 
-      // 2. AI確信度チェック
-      if (ab.confidence === "low") {
+      const needsFieldingPos =
+        ab.resultCode === "groundout" ||
+        ab.resultCode === "flyout" ||
+        ab.resultCode === "single" ||
+        ab.resultCode === "double" ||
+        ab.resultCode === "triple" ||
+        ab.resultCode === "sac_bunt" ||
+        ab.resultCode === "sac_fly" ||
+        ab.resultCode === "error" ||
+        ab.resultCode === "double_play";
+      const hasFieldingDigit = /[1-9]/.test(ab.battedDirection || "");
+
+      if (needsFieldingPos && !hasFieldingDigit) {
+        issues.push({
+          id: `dir-missing-${ab.id}`,
+          severity: "warning",
+          atBatId: ab.id,
+          inning,
+          isTop,
+          battingOrder: ab.battingOrder,
+          category: "confidence",
+          message: `インプレー打球（${ab.resultLabel}）の守備位置番号（1〜9）が未設定です。右下の数字を確認して選択してください。`,
+        });
+      } else if (
+        ab.resultCode === "groundout" &&
+        /^[789]-3$/.test((ab.battedDirection || "").trim())
+      ) {
+        issues.push({
+          id: `dir-rare-ofg-${ab.id}`,
+          severity: "warning",
+          atBatId: ab.id,
+          inning,
+          isTop,
+          battingOrder: ab.battingOrder,
+          category: "confidence",
+          message: `外野ゴロ一塁送球（${ab.battedDirection}）になっています。手書きの『4-3（二ゴロ）』や『6-3（遊ゴロ）』のにじみ誤読でないか確認してください。`,
+        });
+      }
+
+      // 2. AI確信度チェック（イニングの3アウト・確定得点・打順連続・守備位置番号がすべて整合している単なるペンにじみマスでは過剰警告を抑止）
+      const hasExplicitConfReason = Boolean(
+        ab.confidenceReason && ab.confidenceReason.trim().length > 0
+      );
+      const isStructurallyCorroborated =
+        inningOutsCorroborated &&
+        inningRunsCorroborated &&
+        inningLeadOffCorroborated &&
+        !hasRowOrderJump &&
+        ab.resultCode !== "other" &&
+        (!needsFieldingPos || hasFieldingDigit);
+
+      if (
+        ab.confidence === "low" &&
+        (hasExplicitConfReason || !isStructurallyCorroborated)
+      ) {
         issues.push({
           id: `conf-${ab.id}`,
           severity: "warning",

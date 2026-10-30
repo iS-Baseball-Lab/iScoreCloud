@@ -51,11 +51,13 @@ const PENCIL_REL_TO_TARGET_LUT: Uint8Array = (() => {
   const lut = new Uint8Array(PENCIL_LUT_SCALE + 1);
   for (let i = 0; i <= PENCIL_LUT_SCALE; i++) {
     const rel = i / PENCIL_LUT_SCALE;
-    if (rel >= 0.93) {
-      lut[i] = Math.min(255, Math.round(248 + (rel - 0.93) * 100));
+    if (rel >= 0.91) {
+      lut[i] = Math.min(255, Math.round(248 + (rel - 0.91) * 78));
     } else {
-      const ink = Math.max(0, (0.93 - rel) / 0.93);
-      const gain = Math.min(1, Math.pow(ink * 1.82, 0.94));
+      // サインペンや濃い鉛筆のインクにじみ（rel=0.72〜0.90の淡いハロー）を黒く太らせないようS字トー特性を持たせ、
+      // 小さい『○』『△』『6』『8』『4』の中心の白い抜けと接触ストローク間の谷間を鮮明に保つ
+      const ink = Math.max(0, (0.91 - rel) / 0.91);
+      const gain = Math.min(1, Math.pow(ink * 1.48, 1.28));
       lut[i] = Math.max(0, Math.round(248 * (1 - gain)));
     }
   }
@@ -787,10 +789,158 @@ export interface InningChunkCropOptions {
   alreadyEnhanced?: boolean;
 }
 
+function sliceQuadSubRegion(
+  quad: ScorebookGridCorners,
+  u0: number,
+  u1: number,
+  v0: number,
+  v1: number
+): ScorebookGridCorners {
+  return {
+    tl: bilinearGridPoint(quad, u0, v0),
+    tr: bilinearGridPoint(quad, u1, v0),
+    br: bilinearGridPoint(quad, u1, v1),
+    bl: bilinearGridPoint(quad, u0, v1),
+  };
+}
+
+function normalizedQuadToPixelQuad(
+  quad: ScorebookGridCorners,
+  imgW: number,
+  imgH: number
+): ScorebookGridCorners {
+  const clampNorm = (v: number): number => Math.max(0, Math.min(1000, v));
+  return {
+    tl: [(clampNorm(quad.tl[0]) * imgW) / 1000, (clampNorm(quad.tl[1]) * imgH) / 1000],
+    tr: [(clampNorm(quad.tr[0]) * imgW) / 1000, (clampNorm(quad.tr[1]) * imgH) / 1000],
+    br: [(clampNorm(quad.br[0]) * imgW) / 1000, (clampNorm(quad.br[1]) * imgH) / 1000],
+    bl: [(clampNorm(quad.bl[0]) * imgW) / 1000, (clampNorm(quad.bl[1]) * imgH) / 1000],
+  };
+}
+
+/**
+ * 拡大サブパネル専用の手書き「にじみ・くっつき」分解シャープフィルタ（5×5局所アンシャープ）。
+ * - 紙面のざらつきノイズを増幅しないデッドゾーン付き
+ * - にじんだ白丸『○』・白三角『△』・数字『6』『8』『4』の中心のわずかな明るい抜けや、
+ *   『︵＋4』『○＋ー＋△』『6-3』の接触部の輝度谷間（detail > 0）を優先的に開いて分離しやすくする
+ * - 一方で中まで均一に塗られた黒丸『●』や『▲』の中心（5×5平均と輝度差が無い領域）は黒のまま維持するため中抜け誤読を起こさない
+ */
+function applyStrokeValleySharpen(
+  imageData: ImageData,
+  width: number,
+  height: number
+): void {
+  const n = width * height;
+  if (n < 64) return;
+  const data = imageData.data;
+  const lum = new Uint8Array(n);
+  const hist = new Uint32Array(32);
+
+  for (let p = 0, i = 0; p < n; p++, i += 4) {
+    const l = (data[i] * 77 + data[i + 1] * 150 + data[i + 2] * 29) >> 8;
+    lum[p] = l;
+    hist[l >> 3] += 1;
+  }
+
+  const targetRank = Math.floor(n * 0.8);
+  let acc = 0;
+  let whiteBin = 28;
+  for (let b = 0; b < 32; b++) {
+    acc += hist[b];
+    if (acc >= targetRank) {
+      whiteBin = b;
+      break;
+    }
+  }
+  const paperLum = Math.max(168, Math.min(252, whiteBin * 8 + 4));
+
+  // 5×5 セパラブルボックスブラー（水平パス）
+  const hSum = new Uint16Array(n);
+  for (let y = 0; y < height; y++) {
+    const rowOff = y * width;
+    for (let x = 0; x < width; x++) {
+      const x0 = x > 1 ? x - 2 : 0;
+      const x1 = x > 0 ? x - 1 : 0;
+      const x3 = x + 1 < width ? x + 1 : width - 1;
+      const x4 = x + 2 < width ? x + 2 : width - 1;
+      hSum[rowOff + x] =
+        lum[rowOff + x0] +
+        lum[rowOff + x1] +
+        lum[rowOff + x] +
+        lum[rowOff + x3] +
+        lum[rowOff + x4];
+    }
+  }
+
+  // 垂直パス ＋ 非対称バレー強調合成
+  for (let y = 0; y < height; y++) {
+    const y0 = (y > 1 ? y - 2 : 0) * width;
+    const y1 = (y > 0 ? y - 1 : 0) * width;
+    const y2 = y * width;
+    const y3 = (y + 1 < height ? y + 1 : height - 1) * width;
+    const y4 = (y + 2 < height ? y + 2 : height - 1) * width;
+
+    let i = y2 * 4;
+    for (let x = 0; x < width; x++, i += 4) {
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+
+      // 赤ペン筆跡（安打・打点等）は彩度を維持したままくっきり化
+      const maxGb = g > b ? g : b;
+      if (r - maxGb > 18 && r > 80) {
+        const nr = (r * 268) >> 8;
+        data[i] = nr > 255 ? 255 : nr;
+        data[i + 1] = (g * 204) >> 8;
+        data[i + 2] = (b * 204) >> 8;
+        continue;
+      }
+
+      const curLum = lum[y2 + x];
+      if (curLum <= 1) continue;
+
+      const sum25 =
+        hSum[y0 + x] +
+        hSum[y1 + x] +
+        hSum[y2 + x] +
+        hSum[y3 + x] +
+        hSum[y4 + x];
+      const meanLum = (sum25 + 12) / 25;
+
+      const baseLum =
+        curLum >= paperLum
+          ? Math.min(255, 246 + ((curLum - paperLum) >> 1))
+          : (curLum * 246) / paperLum;
+      const normMean =
+        meanLum >= paperLum ? 246 : (meanLum * 246) / paperLum;
+
+      const detail = baseLum - normMean;
+      let targetLum = baseLum;
+      if (detail > 3) {
+        // 文字内部の白穴や接触ストローク間の明るい谷間を開いてにじみ潰れを防ぐ
+        targetLum = baseLum + (detail - 3) * 1.38;
+      } else if (detail < -3) {
+        // 筆跡の芯・輪郭を引き締める
+        targetLum = baseLum + (detail + 3) * 0.92;
+      }
+
+      const clampedTarget =
+        targetLum > 255 ? 255 : targetLum < 0 ? 0 : Math.round(targetLum);
+      const scale256 = ((clampedTarget << 8) / curLum) | 0;
+      const nr = (r * scale256) >> 8;
+      const ng = (g * scale256) >> 8;
+      const nb = (b * scale256) >> 8;
+      data[i] = nr > 255 ? 255 : nr < 0 ? 0 : nr;
+      data[i + 1] = ng > 255 ? 255 : ng < 0 ? 0 : ng;
+      data[i + 2] = nb > 255 ? 255 : nb < 0 ? 0 : nb;
+    }
+  }
+}
+
 /**
  * Stage 2（イニング分割ディープ解析）向けに、上下左右の隣接マスの映り込みを物理的にゼロ化し、
  * 1イニング2列・3列以上（打者一巡・二巡）および原本の傾き・台形歪み（gridCorners）にも対応した
- * 「サブ列×打順 射影補正セルマトリクス画像」を生成する。
+ * 「サブ列×打順 射影補正セルマトリクス＋にじみ分解ズーム画像」を生成する。
  * ※早稲田式の赤線（安打線）と混同しないよう、赤色の枠線は一切描画しない。
  */
 export async function extractInningChunkCompositeCrop(
@@ -867,23 +1017,52 @@ export async function extractInningChunkCompositeCrop(
 
           const colCount = subColSpecs.length;
           // 1番〜9番を分割せず上から下へ自然な縦1列で並べつつ、左端に「イニング見出し〜9番〜下段得点欄までの連続列全体ストリップ」を併設する。
-          // ※1マス単体への局所適応コントラスト(applyAdaptivePencilContrast)は黒丸●の中抜けや白紙BSO印刷線の強調誤読を招くため一切適用せず、忠実なホモグラフィ画素を維持する。
+          // さらに colCount <= 2（全イニングの99%以上）では、各打順行の全体マスのすぐ右横に
+          // 手書きの「くっつき・にじみ」を分離鮮明化した『BSO拡大』と『中央・右下拡大』の2パネルを等倍アスペクト比で併設する。
+          const showDebleedMagnifiers = colCount <= 2;
           const rowOutH =
             colCount === 1
               ? bLen <= 9
-                ? 172
-                : 158
+                ? 204
+                : 184
               : colCount === 2
-              ? 162
-              : 148;
+              ? 180
+              : 162;
           const minCellW =
-            colCount === 1 ? 244 : colCount === 2 ? 212 : 186;
+            colCount === 1 ? 264 : colCount === 2 ? 216 : 196;
           const maxCellW =
-            colCount === 1 ? 328 : colCount === 2 ? 276 : 232;
+            colCount === 1 ? 344 : colCount === 2 ? 272 : 244;
           const cellOutW = Math.max(
             minCellW,
             Math.min(maxCellW, Math.round(rowOutH * singleAspect))
           );
+
+          const zoomGapW = showDebleedMagnifiers
+            ? colCount === 1
+              ? 5
+              : 4
+            : 0;
+          const bsoZoomW = showDebleedMagnifiers
+            ? Math.max(
+                colCount === 1 ? 84 : 68,
+                Math.min(
+                  colCount === 1 ? 108 : 88,
+                  Math.round(rowOutH * 0.31 * singleAspect)
+                )
+              )
+            : 0;
+          const playZoomW = showDebleedMagnifiers
+            ? Math.max(
+                colCount === 1 ? 172 : 142,
+                Math.min(
+                  colCount === 1 ? 228 : 186,
+                  Math.round(rowOutH * (0.72 / 0.86) * singleAspect)
+                )
+              )
+            : 0;
+          const colGroupW = showDebleedMagnifiers
+            ? cellOutW + zoomGapW + bsoZoomW + zoomGapW + playZoomW
+            : cellOutW;
 
           const overviewSubColW =
             colCount === 1 ? 124 : colCount === 2 ? 92 : 76;
@@ -891,8 +1070,8 @@ export async function extractInningChunkCompositeCrop(
           const overviewPanelW =
             colCount * overviewSubColW + (colCount - 1) * overviewSubGap;
           const sectionGapW = 12;
-          const labelPanelW = colCount <= 2 ? 156 : 148;
-          const gutterW = 8;
+          const labelPanelW = colCount <= 2 ? 152 : 146;
+          const gutterW = colCount === 1 ? 8 : 10;
           const rowGapH = 6;
           const headerH = 84;
           const outerPadX = 12;
@@ -902,7 +1081,7 @@ export async function extractInningChunkCompositeCrop(
             overviewPanelW +
             sectionGapW +
             labelPanelW +
-            colCount * (gutterW + cellOutW);
+            colCount * (gutterW + colGroupW);
           const totalH = headerH + bLen * (rowOutH + rowGapH) + 10;
 
           // 同一シートの連続イニング切り出し時はRGBAバッファを再利用してスマホCPU負荷と待機時間を大幅削減
@@ -975,24 +1154,7 @@ export async function extractInningChunkCompositeCrop(
                   fullSrcData,
                   w,
                   h,
-                  {
-                    tl: [
-                      (Math.max(0, Math.min(1000, ovQuad.tl[0])) * w) / 1000,
-                      (Math.max(0, Math.min(1000, ovQuad.tl[1])) * h) / 1000,
-                    ],
-                    tr: [
-                      (Math.max(0, Math.min(1000, ovQuad.tr[0])) * w) / 1000,
-                      (Math.max(0, Math.min(1000, ovQuad.tr[1])) * h) / 1000,
-                    ],
-                    br: [
-                      (Math.max(0, Math.min(1000, ovQuad.br[0])) * w) / 1000,
-                      (Math.max(0, Math.min(1000, ovQuad.br[1])) * h) / 1000,
-                    ],
-                    bl: [
-                      (Math.max(0, Math.min(1000, ovQuad.bl[0])) * w) / 1000,
-                      (Math.max(0, Math.min(1000, ovQuad.bl[1])) * h) / 1000,
-                    ],
-                  },
+                  normalizedQuadToPixelQuad(ovQuad, w, h),
                   ovImgData.data,
                   overviewSubColW,
                   ovStripH
@@ -1013,7 +1175,7 @@ export async function extractInningChunkCompositeCrop(
             ctx.lineTo(sepX, totalH - 8);
             ctx.stroke();
 
-            // ── セクション2（中央〜右）: 1番〜最終打順の縦一列・1マス独立大判セル ──
+            // ── セクション2（中央〜右）: 1番〜最終打順の縦一列・1マス独立大判セル＋にじみ分解ズーム ──
             const matrixOriginX = ovOriginX + overviewPanelW + sectionGapW;
             const firstBo = sortedBatters[0]?.battingOrder ?? 1;
             const lastBo = sortedBatters[bLen - 1]?.battingOrder ?? bLen;
@@ -1040,7 +1202,7 @@ export async function extractInningChunkCompositeCrop(
                 matrixOriginX +
                 labelPanelW +
                 gutterW +
-                cIdx * (cellOutW + gutterW);
+                cIdx * (colGroupW + gutterW);
               const accent =
                 subColPalette[(spec.subCol - 1) % subColPalette.length];
 
@@ -1053,7 +1215,7 @@ export async function extractInningChunkCompositeCrop(
               const hdrLabel =
                 spec.totalSubCols >= 2
                   ? `${spec.inning}回 ${spec.subCol}列目 [c:${spec.subCol}]`
-                  : `${spec.inning}回 [c:1] (${firstBo}〜${lastBo}番)`;
+                  : `${spec.inning}回 [c:1] 全体マス`;
               ctx.fillText(hdrLabel, colDstX + cellOutW / 2, 19);
 
               // 原本のイニング番号印字部分のホモグラフィ切り抜き
@@ -1062,6 +1224,7 @@ export async function extractInningChunkCompositeCrop(
                 spec.inning,
                 spec.subCol
               );
+              const hdrOutH = headerH - 40;
               if (frac) {
                 const hdrT0 = -0.62 / Math.max(1, bLen);
                 const hdrT1 = 0.02 / Math.max(1, bLen);
@@ -1071,30 +1234,12 @@ export async function extractInningChunkCompositeCrop(
                   br: bilinearGridPoint(corners, frac.s1, hdrT1),
                   bl: bilinearGridPoint(corners, frac.s0, hdrT1),
                 };
-                const hdrOutH = headerH - 40;
                 const hdrImgData = ctx.createImageData(cellOutW, hdrOutH);
                 warpQuadFromRgbaBuffer(
                   fullSrcData,
                   w,
                   h,
-                  {
-                    tl: [
-                      (Math.max(0, hdrQuad.tl[0]) * w) / 1000,
-                      (Math.max(0, hdrQuad.tl[1]) * h) / 1000,
-                    ],
-                    tr: [
-                      (Math.min(1000, hdrQuad.tr[0]) * w) / 1000,
-                      (Math.max(0, hdrQuad.tr[1]) * h) / 1000,
-                    ],
-                    br: [
-                      (Math.min(1000, hdrQuad.br[0]) * w) / 1000,
-                      (Math.min(1000, hdrQuad.br[1]) * h) / 1000,
-                    ],
-                    bl: [
-                      (Math.max(0, hdrQuad.bl[0]) * w) / 1000,
-                      (Math.min(1000, hdrQuad.bl[1]) * h) / 1000,
-                    ],
-                  },
+                  normalizedQuadToPixelQuad(hdrQuad, w, h),
                   hdrImgData.data,
                   cellOutW,
                   hdrOutH
@@ -1103,6 +1248,41 @@ export async function extractInningChunkCompositeCrop(
                 ctx.strokeStyle = accent;
                 ctx.lineWidth = 1.5;
                 ctx.strokeRect(colDstX, 34, cellOutW, hdrOutH);
+              }
+
+              if (showDebleedMagnifiers) {
+                const bsoHdrX = colDstX + cellOutW + zoomGapW;
+                const playHdrX = bsoHdrX + bsoZoomW + zoomGapW;
+
+                ctx.fillStyle = "#0f766e";
+                ctx.fillRect(bsoHdrX, 6, bsoZoomW, 26);
+                ctx.fillStyle = "#ffffff";
+                ctx.font = "bold 11px sans-serif";
+                ctx.fillText("BSO拡大", bsoHdrX + bsoZoomW / 2, 19);
+                ctx.fillStyle = "#134e4a";
+                ctx.fillRect(bsoHdrX, 34, bsoZoomW, hdrOutH);
+                ctx.fillStyle = "#99f6e4";
+                ctx.font = "bold 10px sans-serif";
+                ctx.fillText("○●ー△判別", bsoHdrX + bsoZoomW / 2, 34 + hdrOutH / 2);
+
+                ctx.fillStyle = "#4338ca";
+                ctx.fillRect(playHdrX, 6, playZoomW, 26);
+                ctx.fillStyle = "#ffffff";
+                ctx.font = "bold 11px sans-serif";
+                ctx.fillText(
+                  "中央・右下拡大（同一打席）",
+                  playHdrX + playZoomW / 2,
+                  19
+                );
+                ctx.fillStyle = "#1e1b4b";
+                ctx.fillRect(playHdrX, 34, playZoomW, hdrOutH);
+                ctx.fillStyle = "#c7d2fe";
+                ctx.font = "bold 10px sans-serif";
+                ctx.fillText(
+                  "ⅠⅡⅢ・本一線・︵4 / 6-3 分解",
+                  playHdrX + playZoomW / 2,
+                  34 + hdrOutH / 2
+                );
               }
             }
 
@@ -1118,7 +1298,7 @@ export async function extractInningChunkCompositeCrop(
                   (corners.br[0] - corners.bl[0])
               );
 
-            // 各打順行 × 各サブ列の1マス忠実ホモグラフィ展開（1番〜9番まで自然な縦一列）
+            // 各打順行 × 各サブ列の1マス忠実ホモグラフィ展開 ＋ にじみ分解拡大パネル
             for (let bIdx = 0; bIdx < bLen; bIdx++) {
               const batter = sortedBatters[bIdx];
               const dstY = headerH + bIdx * (rowOutH + rowGapH);
@@ -1172,14 +1352,14 @@ export async function extractInningChunkCompositeCrop(
               );
               ctx.putImageData(nameImgData, matrixOriginX + 5, dstY + 32);
 
-              // 右側: サブ列ごとに1マスずつ忠実なホモグラフィ画素で配置
+              // 右側: サブ列ごとに [全体マス] ＋ [BSO拡大] ＋ [中央・右下拡大] を同一行に配置
               for (let cIdx = 0; cIdx < colCount; cIdx++) {
                 const spec = subColSpecs[cIdx];
                 const colDstX =
                   matrixOriginX +
                   labelPanelW +
                   gutterW +
-                  cIdx * (cellOutW + gutterW);
+                  cIdx * (colGroupW + gutterW);
                 const accent =
                   subColPalette[(spec.subCol - 1) % subColPalette.length];
 
@@ -1197,40 +1377,80 @@ export async function extractInningChunkCompositeCrop(
                   fullSrcData,
                   w,
                   h,
-                  {
-                    tl: [
-                      (Math.max(0, Math.min(1000, cellQuad.tl[0])) * w) / 1000,
-                      (Math.max(0, Math.min(1000, cellQuad.tl[1])) * h) / 1000,
-                    ],
-                    tr: [
-                      (Math.max(0, Math.min(1000, cellQuad.tr[0])) * w) / 1000,
-                      (Math.max(0, Math.min(1000, cellQuad.tr[1])) * h) / 1000,
-                    ],
-                    br: [
-                      (Math.max(0, Math.min(1000, cellQuad.br[0])) * w) / 1000,
-                      (Math.max(0, Math.min(1000, cellQuad.br[1])) * h) / 1000,
-                    ],
-                    bl: [
-                      (Math.max(0, Math.min(1000, cellQuad.bl[0])) * w) / 1000,
-                      (Math.max(0, Math.min(1000, cellQuad.bl[1])) * h) / 1000,
-                    ],
-                  },
+                  normalizedQuadToPixelQuad(cellQuad, w, h),
                   cellImgData.data,
                   cellOutW,
                   rowOutH
                 );
-
                 ctx.putImageData(cellImgData, colDstX, dstY);
-
                 ctx.strokeStyle = accent;
                 ctx.lineWidth = 2;
                 ctx.strokeRect(colDstX, dstY, cellOutW, rowOutH);
+
+                if (showDebleedMagnifiers) {
+                  const tightCellQuad =
+                    getCellQuadInStructure(
+                      struct,
+                      spec.inning,
+                      spec.subCol,
+                      batter.battingOrder,
+                      0.015
+                    ) || cellQuad;
+
+                  const bsoDstX = colDstX + cellOutW + zoomGapW;
+                  const bsoSubQuad = sliceQuadSubRegion(
+                    tightCellQuad,
+                    0.0,
+                    0.31,
+                    0.01,
+                    0.99
+                  );
+                  const bsoImgData = ctx.createImageData(bsoZoomW, rowOutH);
+                  warpQuadFromRgbaBuffer(
+                    fullSrcData,
+                    w,
+                    h,
+                    normalizedQuadToPixelQuad(bsoSubQuad, w, h),
+                    bsoImgData.data,
+                    bsoZoomW,
+                    rowOutH
+                  );
+                  applyStrokeValleySharpen(bsoImgData, bsoZoomW, rowOutH);
+                  ctx.putImageData(bsoImgData, bsoDstX, dstY);
+                  ctx.strokeStyle = "#0d9488";
+                  ctx.lineWidth = 1.5;
+                  ctx.strokeRect(bsoDstX, dstY, bsoZoomW, rowOutH);
+
+                  const playDstX = bsoDstX + bsoZoomW + zoomGapW;
+                  const playSubQuad = sliceQuadSubRegion(
+                    tightCellQuad,
+                    0.28,
+                    1.0,
+                    0.14,
+                    1.0
+                  );
+                  const playImgData = ctx.createImageData(playZoomW, rowOutH);
+                  warpQuadFromRgbaBuffer(
+                    fullSrcData,
+                    w,
+                    h,
+                    normalizedQuadToPixelQuad(playSubQuad, w, h),
+                    playImgData.data,
+                    playZoomW,
+                    rowOutH
+                  );
+                  applyStrokeValleySharpen(playImgData, playZoomW, rowOutH);
+                  ctx.putImageData(playImgData, playDstX, dstY);
+                  ctx.strokeStyle = "#6366f1";
+                  ctx.lineWidth = 1.5;
+                  ctx.strokeRect(playDstX, dstY, playZoomW, rowOutH);
+                }
               }
             }
 
             const mimeType = "image/jpeg";
             const outBase64 = stripDataUrlPrefix(
-              canvas.toDataURL(mimeType, 0.86)
+              canvas.toDataURL(mimeType, 0.92)
             );
             releaseCanvas(canvas);
             return {

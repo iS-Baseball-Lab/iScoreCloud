@@ -148,8 +148,8 @@ function normalizeFieldingAscii(raw: string): string {
     .replace(/[Ａ-Ｚａ-ｚ]/g, (ch) =>
       String.fromCharCode(ch.charCodeAt(0) - 0xfee0)
     )
-    .replace(/([1-9])\s*[－ー―‐→⇒➡]\s*([1-9])/g, "$1-$2")
-    .replace(/([1-9])\s*[－ー―‐→⇒➡]\s*([1-9])/g, "$1-$2");
+    .replace(/([1-9])\s*[－ー―‐=＝→⇒➡]\s*([1-9])/g, "$1-$2")
+    .replace(/([1-9])\s*[－ー―‐=＝→⇒➡]\s*([1-9])/g, "$1-$2");
 }
 
 /**
@@ -240,12 +240,12 @@ export function parseFieldingMeta(
     }
   }
 
-  // 4. E6 / FC6 / 6F / 6L / 6IF / ⌒4 / ︵4 / △2 / (2) / [1] / ◇3 / 4￣ / 単独 1〜9
+  // 4. E6 / FC6 / 6F / 6L / 6IF / ⌒4 / ︵4 / 傘4 / △2 / (2) / [1] / ◇3 / 4￣ / 単独 1〜9
   if (!primaryPos) {
     const strippedDecorDir = dir
       .replace(/[\u0304\u0305]/g, "")
-      .replace(/^[⌒︵︶∩^~〜￣ー\-△▲□◇◯○[({\uff08\s]+/, "")
-      .replace(/[⌒︵︶∩^~〜￣ー\-△▲□◇◯○\])}\uff09,，.\s]+$/, "");
+      .replace(/^[⌒︵︶∩^傘~〜￣ー\-△▲□◇◯○[({\uff08\s]+/, "")
+      .replace(/[⌒︵︶∩^傘~〜￣ー\-△▲□◇◯○\])}\uff09,，.\s]+$/, "");
     const codeDigitMatch =
       strippedDecorDir.match(
         /^(?:E|FC|INT|K\s*)?([1-9])(?:F|L|IF|SF|E|A|G)?$/i
