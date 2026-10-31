@@ -433,7 +433,8 @@ export function resolveActiveMatchupFromStructure(
   structure: ScorebookSheetStructure,
   inning: number,
   battingOrder: number,
-  ocrPitcherHint?: string
+  ocrPitcherHint?: string,
+  columnIndex?: number
 ): {
   batterName: string;
   batterPlayerId: string | null;
@@ -445,13 +446,25 @@ export function resolveActiveMatchupFromStructure(
   let batterPlayerId = slot?.playerId || null;
 
   if (slot && slot.substitutions.length > 0) {
+    const colIdx = Math.max(1, columnIndex ?? 1);
     const applicableSubs = slot.substitutions
-      .filter(
-        (s) =>
-          s.subType !== "TR" &&
-          s.inningEntered <= inning &&
-          s.name.trim() !== ""
-      )
+      .filter((s) => {
+        if (s.subType === "TR" || s.name.trim() === "") return false;
+        if (s.inningEntered < inning) return true;
+        if (s.inningEntered > inning) return false;
+        if (
+          typeof s.enteredColumnIndex === "number" &&
+          s.enteredColumnIndex >= 1 &&
+          colIdx < s.enteredColumnIndex
+        ) {
+          return false;
+        }
+        // 代走(PR)はその回の出塁後に入るため、同一イニング内は打者一巡の2打席目以降のみ打席に立つ
+        if (s.subType === "PR") {
+          return colIdx >= 2;
+        }
+        return true;
+      })
       .sort((a, b) => a.inningEntered - b.inningEntered);
     if (applicableSubs.length > 0) {
       const latest = applicableSubs[applicableSubs.length - 1];
@@ -469,8 +482,11 @@ export function resolveActiveMatchupFromStructure(
     let chosenStint =
       matchingStints[0] || structure.pitchers[structure.pitchers.length - 1];
 
+    // 同一イニング途中の継投で複数投手が重なる場合（matchingStints.length > 1）や
+    // 該当イニングが全スパン外の場合（matchingStints.length === 0）のみ投手名ヒントで照合する。
+    // ※matchingStints.length === 1 のときに旧投手名ヒントで交代前の投手へ先祖返りする不具合を防ぐ。
     const cleanHint = normalizePlayerNameForMatch(ocrPitcherHint || "");
-    if (cleanHint) {
+    if (cleanHint && matchingStints.length !== 1) {
       const pool =
         matchingStints.length > 1 ? matchingStints : structure.pitchers;
       const hintMatched = pool.find((p) => {
@@ -497,6 +513,166 @@ export function resolveActiveMatchupFromStructure(
     pitcherName,
     pitcherPlayerId,
   };
+}
+
+/**
+ * シート骨格（スタメン・代打PH・代走PR・守備交代DEF・継投投手）の変更を既存の打席リストおよび塁上走者名へ精密同期する
+ * - enteredAtBatId が記録されている交代は、回途中・打者一巡・タイブレークを問わずその打席インデックス以降に厳密適用
+ * - 代走(PR)は同一イニングの出塁打席（1打席目）を上書きせず、後続の走塁および次回以降の打席へ適用
+ * - 回途中の投手交代（同一回に複数スティントが重なるケース）も各打席の割当を維持したまま後続回へ反映
+ */
+export function syncSheetAtBatsWithStructure(
+  atBats: ScorebookV2AtBat[],
+  structure: ScorebookSheetStructure
+): ScorebookV2AtBat[] {
+  if (atBats.length === 0) return atBats;
+
+  const atBatIndexById = new Map<string, number>();
+  atBats.forEach((ab, idx) => {
+    atBatIndexById.set(ab.id, idx);
+  });
+
+  const firstPass = atBats.map((ab, idx) => {
+    const slot = structure.batters.find(
+      (b) => b.battingOrder === ab.battingOrder
+    );
+
+    let resolvedBatterName = slot?.name || "";
+    let resolvedBatterPlayerId = slot?.playerId || null;
+
+    if (slot && slot.substitutions.length > 0) {
+      const activeSubs = slot.substitutions
+        .map((sub, subOrderIdx) => ({ sub, subOrderIdx }))
+        .filter(({ sub }) => {
+          if (sub.subType === "TR" || sub.name.trim() === "") return false;
+          if (sub.enteredAtBatId && atBatIndexById.has(sub.enteredAtBatId)) {
+            const enteredIdx =
+              atBatIndexById.get(sub.enteredAtBatId) ?? Number.MAX_SAFE_INTEGER;
+            return idx >= enteredIdx;
+          }
+          if (sub.inningEntered < ab.inning) return true;
+          if (sub.inningEntered > ab.inning) return false;
+
+          const colIdx = Math.max(1, ab.columnIndex || 1);
+          if (
+            typeof sub.enteredColumnIndex === "number" &&
+            sub.enteredColumnIndex >= 1 &&
+            colIdx < sub.enteredColumnIndex
+          ) {
+            return false;
+          }
+          if (sub.subType === "PR") {
+            if (colIdx >= 2) return true;
+            const hasPriorSameOrderInInning = atBats
+              .slice(0, idx)
+              .some(
+                (prev) =>
+                  prev.inning === ab.inning &&
+                  prev.battingOrder === ab.battingOrder
+              );
+            return hasPriorSameOrderInInning;
+          }
+          return true;
+        })
+        .sort((a, b) => {
+          if (a.sub.inningEntered !== b.sub.inningEntered) {
+            return a.sub.inningEntered - b.sub.inningEntered;
+          }
+          const idxA =
+            a.sub.enteredAtBatId && atBatIndexById.has(a.sub.enteredAtBatId)
+              ? (atBatIndexById.get(a.sub.enteredAtBatId) ?? -1)
+              : -1;
+          const idxB =
+            b.sub.enteredAtBatId && atBatIndexById.has(b.sub.enteredAtBatId)
+              ? (atBatIndexById.get(b.sub.enteredAtBatId) ?? -1)
+              : -1;
+          if (idxA !== idxB) return idxA - idxB;
+          return a.subOrderIdx - b.subOrderIdx;
+        });
+
+      if (activeSubs.length > 0) {
+        const latest = activeSubs[activeSubs.length - 1].sub;
+        resolvedBatterName = latest.name;
+        resolvedBatterPlayerId = latest.playerId;
+      }
+    }
+
+    const matchup = resolveActiveMatchupFromStructure(
+      structure,
+      ab.inning,
+      ab.battingOrder,
+      ab.pitcherName,
+      ab.columnIndex
+    );
+
+    const nextBatterName = ab.manualBatterOverride
+      ? ab.batterName
+      : resolvedBatterName || ab.batterName;
+    const nextBatterPlayerId = ab.manualBatterOverride
+      ? ab.batterPlayerId
+      : resolvedBatterName
+      ? resolvedBatterPlayerId
+      : ab.batterPlayerId;
+
+    const nextPitcherName = ab.manualPitcherOverride
+      ? ab.pitcherName
+      : matchup.pitcherName || ab.pitcherName;
+    const nextPitcherPlayerId = ab.manualPitcherOverride
+      ? ab.pitcherPlayerId
+      : matchup.pitcherName
+      ? matchup.pitcherPlayerId
+      : ab.pitcherPlayerId;
+
+    const nextAdvances = ab.advances.map((adv) => {
+      if (adv.from === "BAT" && nextBatterName.trim() !== "") {
+        return { ...adv, runnerName: nextBatterName };
+      }
+      return adv;
+    });
+
+    return {
+      ...ab,
+      batterName: nextBatterName,
+      batterPlayerId: nextBatterPlayerId,
+      pitcherName: nextPitcherName,
+      pitcherPlayerId: nextPitcherPlayerId,
+      advances: nextAdvances,
+    };
+  });
+
+  // 2パス目: シミュレーション結果を用いて後続打席の明示進塁(runnerName)も新しい打者名・代走名へ同期
+  const snapshots = simulateSheetRunners(firstPass, structure);
+  return firstPass.map((ab) => {
+    const snap = snapshots.get(ab.id);
+    if (!snap || ab.advances.length === 0) return ab;
+
+    let advChanged = false;
+    const syncedAdvances = ab.advances.map((adv) => {
+      if (adv.from === "BAT" || adv.method === "tiebreak") return adv;
+      const byExplicitId = snap.precedingRunners.find(
+        (pr) =>
+          pr.inPlayExplicitMove?.id === adv.id ||
+          pr.prePlayMoves.some((pm) => pm.id === adv.id)
+      );
+      if (byExplicitId && byExplicitId.runner.name.trim() !== "") {
+        if (adv.runnerName !== byExplicitId.runner.name) {
+          advChanged = true;
+          return { ...adv, runnerName: byExplicitId.runner.name };
+        }
+        return adv;
+      }
+      const byStartBase = snap.basesBefore[adv.from];
+      if (byStartBase && byStartBase.name.trim() !== "") {
+        if (adv.runnerName !== byStartBase.name) {
+          advChanged = true;
+          return { ...adv, runnerName: byStartBase.name };
+        }
+      }
+      return adv;
+    });
+
+    return advChanged ? { ...ab, advances: syncedAdvances } : ab;
+  });
 }
 
 /**

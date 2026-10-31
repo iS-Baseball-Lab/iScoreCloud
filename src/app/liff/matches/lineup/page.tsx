@@ -2,6 +2,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo, useRef, Suspense } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
@@ -1118,6 +1119,30 @@ function LiffLineupContent() {
           </div>
         ) : selectedMatchId ? (
           <>
+            {currentMatch &&
+              currentMatch.status === "finished" &&
+              !isDemoMatchId(currentMatch.id) && (
+                <div className="p-3 rounded-2xl bg-card border border-indigo-500/40 shadow-2xs flex items-center justify-between gap-2 flex-wrap">
+                  <div className="min-w-0">
+                    <p className="text-xs font-black text-foreground">
+                      試合途中の「選手交代・代打・代走・継投」を追加・修正したい場合
+                    </p>
+                    <p className="text-[10px] font-bold text-muted-foreground">
+                      スコア確認画面から回途中の代打・代走・守備交代・継投を後からいつでも編集できます
+                    </p>
+                  </div>
+                  <Link
+                    href={`/liff/tools/scorebook-import?matchId=${encodeURIComponent(
+                      currentMatch.id
+                    )}&mode=edit`}
+                    className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black inline-flex items-center gap-1.5 shrink-0"
+                  >
+                    <Users className="w-3.5 h-3.5" />
+                    <span>選手交代・打席を編集</span>
+                  </Link>
+                </div>
+              )}
+
             {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                 🔀 自チーム / 相手チーム タブ切り替え（Web版流用）
             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}

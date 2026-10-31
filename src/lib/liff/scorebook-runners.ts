@@ -606,6 +606,19 @@ export function simulateSheetRunners(
 
   for (const inning of sortedInnings) {
     const inningAtBats = byInning.get(inning) || [];
+    const inningAbIndexById = new Map<string, number>();
+    const explicitPinchRunnerOrdersInInning = new Set<number>();
+    inningAtBats.forEach((item, idx) => {
+      inningAbIndexById.set(item.id, idx);
+      if (Array.isArray(item.pinchRunners)) {
+        for (const pr of item.pinchRunners) {
+          if (pr.battingOrder > 0) {
+            explicitPinchRunnerOrdersInInning.add(pr.battingOrder);
+          }
+        }
+      }
+    });
+
     let outs = 0;
     let currentBases = createEmptyBaseMap();
     const retiredOrScoredOrders = new Set<number>();
@@ -656,7 +669,44 @@ export function simulateSheetRunners(
         }
       }
 
-      // 既に塁上にいる走者に代走(PR)が当回入っていれば名前を最新化
+      // 1) この打席開始時点で明示指定された代走(PR)・臨時代走(TR)（ab.pinchRunners）を塁上走者へ反映
+      if (Array.isArray(ab.pinchRunners) && ab.pinchRunners.length > 0) {
+        for (const prEntry of ab.pinchRunners) {
+          const cleanPrName = prEntry.name.trim();
+          if (!cleanPrName) continue;
+          let targetBase: OccupiedBaseKey | null = null;
+          if (basesBefore[prEntry.base]) {
+            targetBase = prEntry.base;
+          } else if (prEntry.battingOrder > 0) {
+            for (const bKey of ["3B", "2B", "1B"] as const) {
+              if (basesBefore[bKey]?.battingOrder === prEntry.battingOrder) {
+                targetBase = bKey;
+                break;
+              }
+            }
+          }
+          if (targetBase && basesBefore[targetBase]) {
+            const prevRunner = basesBefore[targetBase];
+            basesBefore[targetBase] = {
+              battingOrder:
+                prEntry.battingOrder > 0
+                  ? prEntry.battingOrder
+                  : prevRunner.battingOrder,
+              name: cleanPrName,
+              playerId: prEntry.playerId,
+            };
+            for (const prevName of Array.from(retiredOrScoredNames)) {
+              if (namesLikelyMatch(prevName, cleanPrName)) {
+                retiredOrScoredNames.delete(prevName);
+              }
+            }
+          }
+        }
+      }
+
+      // 2) シート骨格(structure)に登録された当回の代走(PR)・臨時代走(TR)を塁上走者へ反映
+      //    - enteredAtBatId が当イニング内に存在する場合は、その起点打席以降にのみ適用（前打者の進塁を遡及上書きしない）
+      //    - ab.pinchRunners が存在する打順は 1) で既に正確に制御済みのため重複遡及させない
       if (structure) {
         for (const bKey of ["3B", "2B", "1B"] as const) {
           const r = basesBefore[bKey];
@@ -666,12 +716,25 @@ export function simulateSheetRunners(
           );
           if (!slot || slot.substitutions.length === 0) continue;
           const prs = slot.substitutions
-            .filter(
-              (s) =>
-                s.subType === "PR" &&
-                s.inningEntered === inning &&
-                s.name.trim() !== ""
-            )
+            .filter((s) => {
+              if (
+                (s.subType !== "PR" && s.subType !== "TR") ||
+                s.inningEntered !== inning ||
+                s.name.trim() === ""
+              ) {
+                return false;
+              }
+              if (s.enteredAtBatId && inningAbIndexById.has(s.enteredAtBatId)) {
+                const enteredIdx =
+                  inningAbIndexById.get(s.enteredAtBatId) ??
+                  Number.MAX_SAFE_INTEGER;
+                return abIdx >= enteredIdx;
+              }
+              if (explicitPinchRunnerOrdersInInning.has(r.battingOrder)) {
+                return false;
+              }
+              return s.subType === "PR";
+            })
             .sort((a, b) => a.inningEntered - b.inningEntered);
           if (prs.length > 0) {
             const latestPr = prs[prs.length - 1];
@@ -680,6 +743,11 @@ export function simulateSheetRunners(
               name: latestPr.name,
               playerId: latestPr.playerId,
             };
+            for (const prevName of Array.from(retiredOrScoredNames)) {
+              if (namesLikelyMatch(prevName, latestPr.name)) {
+                retiredOrScoredNames.delete(prevName);
+              }
+            }
           }
         }
       }
@@ -1828,7 +1896,9 @@ export function materializeSheetRunnerAdvances(
       if (isNoOpHoldAdvance(a)) continue;
       if (a.from === "BAT") {
         cleanedExplicit.push(
-          a.runnerName.trim() !== "" ? a : { ...a, runnerName: ab.batterName }
+          ab.batterName.trim() !== ""
+            ? { ...a, runnerName: ab.batterName }
+            : a
         );
         continue;
       }
@@ -1853,9 +1923,21 @@ export function materializeSheetRunnerAdvances(
         });
         continue;
       }
+      const matchedPrePlayPr = snap.precedingRunners.find((pr) =>
+        pr.prePlayMoves.some((pm) => pm.id === a.id)
+      );
+      if (matchedPrePlayPr && a.method !== "tiebreak") {
+        cleanedExplicit.push({
+          ...a,
+          runnerName: matchedPrePlayPr.runner.name || a.runnerName,
+        });
+        continue;
+      }
       const matchedRunner = snap.basesBefore[a.from];
       cleanedExplicit.push(
-        a.runnerName.trim() !== ""
+        a.method !== "tiebreak" && matchedRunner?.name
+          ? { ...a, runnerName: matchedRunner.name }
+          : a.runnerName.trim() !== ""
           ? a
           : matchedRunner?.name
           ? { ...a, runnerName: matchedRunner.name }
@@ -3783,23 +3865,38 @@ export function pruneStaleSheetRunnerAdvances(
           retiredOrScoredOrders.clear();
           retiredOrScoredNames.clear();
         }
-        const validBases: BaseRunnerMap =
-          prevSnap && !prevSnap.isInningOver
-            ? cloneBaseMap(prevSnap.basesForNextBatter)
-            : createEmptyBaseMap();
+        const abSnapBefore = inningSnaps.get(ab.id);
+        const validBases: BaseRunnerMap = abSnapBefore
+          ? cloneBaseMap(abSnapBefore.basesBefore)
+          : prevSnap && !prevSnap.isInningOver
+          ? cloneBaseMap(prevSnap.basesForNextBatter)
+          : createEmptyBaseMap();
 
-        for (const adv of ab.advances) {
-          if (
-            adv.method === "tiebreak" &&
-            !adv.isOut &&
-            (adv.to === "1B" || adv.to === "2B" || adv.to === "3B") &&
-            !validBases[adv.to]
-          ) {
-            validBases[adv.to] = resolveRunnerFromStructureByName(
-              adv.runnerName,
-              inn,
-              structure
-            );
+        if (!abSnapBefore) {
+          for (const adv of ab.advances) {
+            if (
+              adv.method === "tiebreak" &&
+              !adv.isOut &&
+              (adv.to === "1B" || adv.to === "2B" || adv.to === "3B") &&
+              !validBases[adv.to]
+            ) {
+              validBases[adv.to] = resolveRunnerFromStructureByName(
+                adv.runnerName,
+                inn,
+                structure
+              );
+            }
+          }
+        }
+        if (Array.isArray(ab.pinchRunners)) {
+          for (const prEntry of ab.pinchRunners) {
+            const cleanPrName = prEntry.name.trim();
+            if (!cleanPrName) continue;
+            for (const prevName of Array.from(retiredOrScoredNames)) {
+              if (namesLikelyMatch(prevName, cleanPrName)) {
+                retiredOrScoredNames.delete(prevName);
+              }
+            }
           }
         }
 
@@ -3929,9 +4026,22 @@ export function pruneStaleSheetRunnerAdvances(
             }
           }
 
-          // 3. 該当塁に実際に走者が到達可能であれば維持
+          // 3. 該当塁に実際に走者が到達可能であれば維持（代走等で走者名が切り替わっていれば最新走者名へ同期）
           if (reachableFromBases.has(fromBase)) {
-            nextAdvances.push(adv);
+            const occupant = validBases[fromBase];
+            if (
+              occupant &&
+              occupant.name.trim() !== "" &&
+              adv.runnerName !== occupant.name
+            ) {
+              nextAdvances.push({
+                ...adv,
+                runnerName: occupant.name,
+              });
+              abModified = true;
+            } else {
+              nextAdvances.push(adv);
+            }
             if (
               !adv.isOut &&
               (adv.to === "1B" || adv.to === "2B" || adv.to === "3B")

@@ -493,9 +493,23 @@ export function Step2StructureCheck({
 
   const removePitcher = (id: string) => {
     if (current.pitchers.length <= 1) return;
+    const removedIdx = current.pitchers.findIndex((p) => p.id === id);
+    const removed = removedIdx >= 0 ? current.pitchers[removedIdx] : null;
+    const remaining = current.pitchers.filter((p) => p.id !== id);
+    if (
+      removed &&
+      remaining.length > 0 &&
+      removedIdx === current.pitchers.length - 1
+    ) {
+      const lastIdx = remaining.length - 1;
+      remaining[lastIdx] = {
+        ...remaining[lastIdx],
+        toInning: Math.max(remaining[lastIdx].toInning, removed.toInning),
+      };
+    }
     onChangeStructure(isTop, {
       ...current,
-      pitchers: current.pitchers.filter((p) => p.id !== id),
+      pitchers: remaining.map((p, idx) => ({ ...p, order: idx + 1 })),
     });
   };
 
@@ -1804,9 +1818,31 @@ export function Step2StructureCheck({
                     value={pt.fromInning}
                     onChange={(e) => {
                       const nextFrom = Number(e.target.value);
-                      updatePitcher(pt.id, {
-                        fromInning: nextFrom,
-                        toInning: Math.max(pt.toInning, nextFrom),
+                      const nextPitchers = current.pitchers.map(
+                        (item, pIdx) => {
+                          if (item.id === pt.id) {
+                            return {
+                              ...item,
+                              fromInning: nextFrom,
+                              toInning: Math.max(item.toInning, nextFrom),
+                            };
+                          }
+                          if (
+                            pIdx === idx - 1 &&
+                            item.toInning >= nextFrom &&
+                            item.fromInning < nextFrom
+                          ) {
+                            return {
+                              ...item,
+                              toInning: nextFrom - 1,
+                            };
+                          }
+                          return item;
+                        }
+                      );
+                      onChangeStructure(isTop, {
+                        ...current,
+                        pitchers: nextPitchers,
                       });
                     }}
                     className="h-9 min-w-[4.5rem] px-2.5 rounded-xl bg-card border border-border text-xs font-black text-foreground cursor-pointer"
@@ -1914,7 +1950,11 @@ export function Step2StructureCheck({
                   onClick={onProceedWithCompleted}
                   className="flex-1 h-12 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow-xs flex items-center justify-center gap-1.5 active:scale-98 transition-all cursor-pointer"
                 >
-                  <span>完了済みの結果で確認画面へ進む</span>
+                  <span>
+                    {missingInningsCount > 0
+                      ? "完了済みの結果で確認画面へ進む"
+                      : "変更を反映して打席確認（STEP 3）へ進む"}
+                  </span>
                   <ChevronRight className="w-4 h-4 shrink-0" />
                 </button>
               )}

@@ -1,5 +1,5 @@
 // filepath: src/services/match.service.ts
-import { eq, desc, asc, sql } from "drizzle-orm";
+import { eq, desc, asc, sql, and } from "drizzle-orm";
 import { matches, tournaments, venues, matchLineups } from "@/db/schema/match";
 import { playLogs, atBats, baseAdvances, pitches, matchUndoHistories } from "@/db/schema/score";
 import { players } from "@/db/schema/team";
@@ -334,10 +334,55 @@ export const MatchService = {
       }
     };
     
+    let mySubstitutions: Array<{
+      id: string;
+      playerId: string;
+      name: string;
+      uniformNumber: string;
+      battingOrder: number;
+      position: string;
+      inningEntered: number;
+    }> = [];
+    try {
+      const subRows = await db
+        .select({
+          id: matchLineups.id,
+          playerId: matchLineups.playerId,
+          battingOrder: matchLineups.battingOrder,
+          position: matchLineups.position,
+          inningEntered: matchLineups.inningEntered,
+          name: players.name,
+          uniformNumber: players.uniformNumber,
+        })
+        .from(matchLineups)
+        .innerJoin(players, eq(matchLineups.playerId, players.id))
+        .where(
+          and(
+            eq(matchLineups.matchId, matchId),
+            eq(matchLineups.isStarting, false)
+          )
+        )
+        .orderBy(asc(matchLineups.inningEntered), asc(matchLineups.battingOrder))
+        .all();
+
+      mySubstitutions = subRows.map((r) => ({
+        id: r.id,
+        playerId: r.playerId,
+        name: r.name || "",
+        uniformNumber: r.uniformNumber || "",
+        battingOrder: r.battingOrder,
+        position: r.position || "",
+        inningEntered: r.inningEntered || 1,
+      }));
+    } catch {
+      mySubstitutions = [];
+    }
+
     return {
       myLineup: safeParse(match?.myLineup, []),
       opponentLineup: safeParse(match?.opponentLineup, []),
-      myAttendance: safeParse(match?.myAttendance, {})
+      myAttendance: safeParse(match?.myAttendance, {}),
+      mySubstitutions,
     };
   },
 

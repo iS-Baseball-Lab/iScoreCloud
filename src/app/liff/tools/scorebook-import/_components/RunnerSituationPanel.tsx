@@ -8,11 +8,13 @@ import {
   ChevronUp,
   Plus,
   Trash2,
+  UserCheck,
 } from "lucide-react";
 import {
   ADVANCE_METHOD_LABELS,
   type AdvanceMethodCode,
   type ScorebookBatterSlot,
+  type ScorebookRosterPlayer,
   type ScorebookV2Advance,
   type ScorebookV2AtBat,
 } from "@/types/scorebook-v2";
@@ -309,12 +311,26 @@ export interface PrecedingRunnerCellCrop {
   cropUrl: string;
 }
 
+export interface PinchRunnerApplyParams {
+  startBase: OccupiedBaseKey;
+  battingOrder: number;
+  currentRunnerName: string;
+  subType: "PR" | "TR";
+  name: string;
+  uniformNumber: string;
+  playerId: string | null;
+}
+
 interface AtBatModalRunnerEditorProps {
   atBat: ScorebookV2AtBat;
   snapshot?: AtBatRunnerSnapshot;
   batters: ScorebookBatterSlot[];
+  isMyTeamBatting?: boolean;
+  roster?: ScorebookRosterPlayer[];
   runnerCellCrops?: Partial<Record<OccupiedBaseKey, PrecedingRunnerCellCrop>>;
   onJumpToRunnerAtBat?: (atBatId: string) => void;
+  onApplyPinchRunner?: (params: PinchRunnerApplyParams) => void;
+  onRemovePinchRunner?: (startBase: OccupiedBaseKey, battingOrder: number) => void;
   onUpdateAtBat: (updater: (prev: ScorebookV2AtBat) => ScorebookV2AtBat) => void;
 }
 
@@ -380,13 +396,35 @@ export function AtBatModalRunnerEditor({
   atBat,
   snapshot,
   batters,
+  isMyTeamBatting = false,
+  roster = [],
   runnerCellCrops,
   onJumpToRunnerAtBat,
+  onApplyPinchRunner,
+  onRemovePinchRunner,
   onUpdateAtBat,
 }: AtBatModalRunnerEditorProps) {
   const [showOtherEventPresets, setShowOtherEventPresets] = useState(false);
   const [openPrePlayForBase, setOpenPrePlayForBase] =
     useState<OccupiedBaseKey | null>(null);
+  const [openPinchRunnerBase, setOpenPinchRunnerBase] =
+    useState<OccupiedBaseKey | null>(null);
+  const [prSubType, setPrSubType] = useState<"PR" | "TR">("PR");
+  const [prSelectedRosterId, setPrSelectedRosterId] = useState<string>("");
+  const [prCustomName, setPrCustomName] = useState<string>("");
+  const [prCustomUniform, setPrCustomUniform] = useState<string>("");
+
+  const usedLineupPlayerIds = new Set<string>();
+  for (const b of batters) {
+    if (b.playerId) usedLineupPlayerIds.add(b.playerId);
+    for (const s of b.substitutions) {
+      if (s.playerId && s.subType !== "TR") {
+        usedLineupPlayerIds.add(s.playerId);
+      }
+    }
+  }
+  const benchRosterPlayers = roster.filter((p) => !usedLineupPlayerIds.has(p.id));
+  const activeRosterPlayers = roster.filter((p) => usedLineupPlayerIds.has(p.id));
 
   const outsBefore = snapshot?.outsBefore ?? 0;
   const outsAfter =
@@ -909,29 +947,254 @@ export function AtBatModalRunnerEditor({
                     </span>
                   </div>
 
-                  {/* 現在ステータスバッジ */}
-                  <span
-                    className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
-                      pr.isOut
-                        ? "bg-destructive text-white"
+                  {/* 現在ステータスバッジ ＋ 代走ボタン */}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {onApplyPinchRunner && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (openPinchRunnerBase === pr.startBase) {
+                            setOpenPinchRunnerBase(null);
+                            return;
+                          }
+                          const existingEntry = atBat.pinchRunners?.find(
+                            (e) =>
+                              e.base === pr.startBase ||
+                              (pr.runner.battingOrder > 0 &&
+                                e.battingOrder === pr.runner.battingOrder)
+                          );
+                          setPrSubType(existingEntry?.subType ?? "PR");
+                          setPrSelectedRosterId(existingEntry?.playerId ?? "");
+                          setPrCustomName(existingEntry?.name ?? "");
+                          setPrCustomUniform(existingEntry?.uniformNumber ?? "");
+                          setOpenPinchRunnerBase(pr.startBase);
+                        }}
+                        className={`px-2 py-0.5 rounded-lg border text-[10px] font-black inline-flex items-center gap-1 cursor-pointer transition-colors ${
+                          openPinchRunnerBase === pr.startBase ||
+                          atBat.pinchRunners?.some(
+                            (e) =>
+                              e.base === pr.startBase ||
+                              (pr.runner.battingOrder > 0 &&
+                                e.battingOrder === pr.runner.battingOrder)
+                          )
+                            ? "bg-indigo-600 text-white border-indigo-600"
+                            : "bg-indigo-500/12 border-indigo-500/35 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-500/20"
+                        }`}
+                      >
+                        <UserCheck className="w-3 h-3" />
+                        <span>代走・走者変更</span>
+                      </button>
+                    )}
+
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                        pr.isOut
+                          ? "bg-destructive text-white"
+                          : pr.finalBase === "HP"
+                          ? "bg-rose-600 text-white"
+                          : !isHolding
+                          ? "bg-emerald-600 text-white"
+                          : "bg-muted text-foreground border border-border"
+                      }`}
+                    >
+                      {pr.isOut
+                        ? `✖ ${formatBaseJa(pr.finalBase)}アウト`
                         : pr.finalBase === "HP"
-                        ? "bg-rose-600 text-white"
+                        ? "🏠 本塁生還 (+1点)"
                         : !isHolding
-                        ? "bg-emerald-600 text-white"
-                        : "bg-muted text-foreground border border-border"
-                    }`}
-                  >
-                    {pr.isOut
-                      ? `✖ ${formatBaseJa(pr.finalBase)}アウト`
-                      : pr.finalBase === "HP"
-                      ? "🏠 本塁生還 (+1点)"
-                      : !isHolding
-                      ? `➔ ${formatBaseJa(pr.finalBase)}へ進塁${
-                          pr.isImplicit ? "（自動）" : ""
-                        }`
-                      : `${formatBaseJa(pr.startBase)}のまま`}
-                  </span>
+                        ? `➔ ${formatBaseJa(pr.finalBase)}へ進塁${
+                            pr.isImplicit ? "（自動）" : ""
+                          }`
+                        : `${formatBaseJa(pr.startBase)}のまま`}
+                    </span>
+                  </div>
                 </div>
+
+                {/* この走者に代走・臨時代走が起用されている場合の表示バッジ */}
+                {(() => {
+                  const activeEntry = atBat.pinchRunners?.find(
+                    (e) =>
+                      e.base === pr.startBase ||
+                      (pr.runner.battingOrder > 0 &&
+                        e.battingOrder === pr.runner.battingOrder)
+                  );
+                  if (!activeEntry) return null;
+                  return (
+                    <div className="px-2.5 py-1.5 rounded-xl bg-indigo-500/12 border border-indigo-500/35 flex items-center justify-between gap-2 text-[10px] font-black text-indigo-800 dark:text-indigo-200">
+                      <span>
+                        🏃 {activeEntry.subType === "TR" ? "臨時代走 (TR)" : "代走 (PR)"}:{" "}
+                        {activeEntry.uniformNumber
+                          ? `#${activeEntry.uniformNumber} `
+                          : ""}
+                        {activeEntry.name}
+                        {activeEntry.replacedName
+                          ? `（← ${activeEntry.replacedName}）`
+                          : ""}
+                      </span>
+                      {onRemovePinchRunner && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onRemovePinchRunner(
+                              pr.startBase,
+                              pr.runner.battingOrder
+                            );
+                            setOpenPinchRunnerBase(null);
+                          }}
+                          className="px-2 py-0.5 rounded-md bg-card border border-border text-destructive text-[10px] font-black cursor-pointer"
+                        >
+                          解除
+                        </button>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* インライン代走・臨時代走設定パネル */}
+                {onApplyPinchRunner && openPinchRunnerBase === pr.startBase && (
+                  <div className="p-2.5 rounded-xl bg-muted border border-indigo-500/40 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[10px] font-black text-foreground">
+                        {formatBaseJa(pr.startBase)}走者（
+                        {pr.runner.battingOrder > 0
+                          ? `${pr.runner.battingOrder}番 `
+                          : ""}
+                        {pr.runner.name || "走者"}）へ代走を送る
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setOpenPinchRunnerBase(null)}
+                        className="text-[10px] font-bold text-muted-foreground cursor-pointer"
+                      >
+                        閉じる
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setPrSubType("PR")}
+                        className={`py-1.5 px-2 rounded-lg border text-[10px] font-black cursor-pointer ${
+                          prSubType === "PR"
+                            ? "bg-indigo-600 text-white border-indigo-600"
+                            : "bg-card border-border text-foreground"
+                        }`}
+                      >
+                        代走 (PR)・打順も引継
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPrSubType("TR")}
+                        className={`py-1.5 px-2 rounded-lg border text-[10px] font-black cursor-pointer ${
+                          prSubType === "TR"
+                            ? "bg-indigo-600 text-white border-indigo-600"
+                            : "bg-card border-border text-foreground"
+                        }`}
+                      >
+                        臨時代走 (TR)・この回のみ
+                      </button>
+                    </div>
+
+                    {isMyTeamBatting && roster.length > 0 && (
+                      <select
+                        value={prSelectedRosterId}
+                        onChange={(e) => {
+                          const pid = e.target.value;
+                          setPrSelectedRosterId(pid);
+                          const matched = roster.find((r) => r.id === pid);
+                          if (matched) {
+                            setPrCustomName(matched.name);
+                            setPrCustomUniform(matched.uniformNumber || "");
+                          }
+                        }}
+                        className="w-full h-9 px-2.5 rounded-lg bg-card border border-border text-xs font-bold text-foreground"
+                      >
+                        <option value="">
+                          登録メンバーから選択（または下に直接入力）
+                        </option>
+                        {benchRosterPlayers.length > 0 && (
+                          <optgroup label="控え・未出場メンバー（推奨）">
+                            {benchRosterPlayers.map((rp) => (
+                              <option key={rp.id} value={rp.id}>
+                                #{rp.uniformNumber} {rp.name}
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                        {activeRosterPlayers.length > 0 && (
+                          <optgroup label="出場中メンバー（臨時代走等）">
+                            {activeRosterPlayers.map((rp) => (
+                              <option key={rp.id} value={rp.id}>
+                                #{rp.uniformNumber} {rp.name}
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                      </select>
+                    )}
+
+                    <div className="grid grid-cols-12 gap-1.5">
+                      <input
+                        type="text"
+                        value={prCustomUniform}
+                        onChange={(e) => setPrCustomUniform(e.target.value)}
+                        placeholder="背番"
+                        className="col-span-3 h-9 px-2 rounded-lg bg-card border border-border text-xs font-black text-center text-foreground"
+                      />
+                      <input
+                        type="text"
+                        value={prCustomName}
+                        onChange={(e) => {
+                          const nextVal = e.target.value;
+                          setPrCustomName(nextVal);
+                          if (prSelectedRosterId) {
+                            const matched = roster.find(
+                              (r) => r.id === prSelectedRosterId
+                            );
+                            if (matched && matched.name !== nextVal) {
+                              setPrSelectedRosterId("");
+                            }
+                          }
+                        }}
+                        placeholder="代走の選手名を入力"
+                        className="col-span-9 h-9 px-2.5 rounded-lg bg-card border border-border text-xs font-bold text-foreground"
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-end gap-1.5">
+                      <button
+                        type="button"
+                        disabled={!prCustomName.trim()}
+                        onClick={() => {
+                          const cleanName = prCustomName.trim();
+                          if (!cleanName) return;
+                          const existingEntry = atBat.pinchRunners?.find(
+                            (e) =>
+                              e.base === pr.startBase ||
+                              (pr.runner.battingOrder > 0 &&
+                                e.battingOrder === pr.runner.battingOrder)
+                          );
+                          onApplyPinchRunner({
+                            startBase: pr.startBase,
+                            battingOrder: pr.runner.battingOrder,
+                            currentRunnerName:
+                              existingEntry?.replacedName ||
+                              pr.runner.name ||
+                              "",
+                            subType: prSubType,
+                            name: cleanName,
+                            uniformNumber: prCustomUniform.trim(),
+                            playerId: prSelectedRosterId || null,
+                          });
+                          setOpenPinchRunnerBase(null);
+                        }}
+                        className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-[11px] font-black disabled:opacity-40 cursor-pointer"
+                      >
+                        この打席から{prSubType === "TR" ? "臨時代走" : "代走"}を反映
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {/* 先行走者の手書き原本マス切り抜き（進塁線・本塁●・アウトⅠⅡⅢをその場で確認） */}
                 {(() => {

@@ -26,6 +26,7 @@ import {
   ChevronUp,
   RotateCcw,
   Sparkles,
+  Users,
 } from "lucide-react";
 import {
   AT_BAT_RESULT_PRESETS,
@@ -40,6 +41,7 @@ import {
   type ImportScopeMode,
   type NormalizedBox,
   type ScorebookAnalysisTimingSummary,
+  type ScorebookRosterPlayer,
   type ScorebookSheetStructure,
   type ScorebookV2Advance,
   type ScorebookV2AtBat,
@@ -96,10 +98,17 @@ import {
   AtBatModalRunnerEditor,
   type PrecedingRunnerCellCrop,
 } from "./RunnerSituationPanel";
+import {
+  AtBatPlayerSubstitutionPanel,
+  Step3QuickSubstitutionModal,
+  applyAtBatPinchRunnerChange,
+  removeAtBatPinchRunnerChange,
+} from "./Step3SubstitutionModals";
 
 interface Step3PinpointReviewProps {
   importScope: ImportScopeMode;
   opponentName: string;
+  roster?: ScorebookRosterPlayer[];
   topImageDataUrl: string | null;
   bottomImageDataUrl: string | null;
   topStructure: ScorebookSheetStructure | null;
@@ -107,6 +116,11 @@ interface Step3PinpointReviewProps {
   topAtBats: ScorebookV2AtBat[];
   bottomAtBats: ScorebookV2AtBat[];
   onChangeAtBats: (isTop: boolean, updated: ScorebookV2AtBat[]) => void;
+  onApplyStructureAndAtBats?: (
+    isTop: boolean,
+    nextStructure: ScorebookSheetStructure,
+    nextAtBats: ScorebookV2AtBat[]
+  ) => void;
   onBack: () => void;
   onSave: () => void;
   isSaving: boolean;
@@ -122,6 +136,7 @@ interface Step3PinpointReviewProps {
 export function Step3PinpointReview({
   importScope,
   opponentName,
+  roster = [],
   topImageDataUrl,
   bottomImageDataUrl,
   topStructure,
@@ -129,6 +144,7 @@ export function Step3PinpointReview({
   topAtBats,
   bottomAtBats,
   onChangeAtBats,
+  onApplyStructureAndAtBats,
   onBack,
   onSave,
   isSaving,
@@ -156,6 +172,12 @@ export function Step3PinpointReview({
   );
   const [showFullSheetInModal, setShowFullSheetInModal] = useState(false);
   const [showOrderAdjustPanel, setShowOrderAdjustPanel] = useState(false);
+  const [showPlayerSubPanel, setShowPlayerSubPanel] = useState(false);
+  const [playerSubInitialTab, setPlayerSubInitialTab] = useState<
+    "batter" | "pitcher"
+  >("batter");
+  const [showQuickSubstitutionModal, setShowQuickSubstitutionModal] =
+    useState(false);
   const [showTimingDetails, setShowTimingDetails] = useState(true);
 
   useEffect(() => {
@@ -587,6 +609,17 @@ export function Step3PinpointReview({
       currentList.map((item) => (item.id === targetId ? updater(item) : item))
     );
     onChangeAtBats(isTop, updated);
+  };
+
+  const handleApplyStructureAndAtBats = (
+    nextStructure: ScorebookSheetStructure,
+    nextAtBats: ScorebookV2AtBat[]
+  ) => {
+    if (onApplyStructureAndAtBats) {
+      onApplyStructureAndAtBats(isTop, nextStructure, nextAtBats);
+    } else {
+      onChangeAtBats(isTop, nextAtBats);
+    }
   };
 
   /**
@@ -1478,6 +1511,38 @@ export function Step3PinpointReview({
         </div>
       )}
 
+      {/* 後から選手交代・継投クイック編集バー */}
+      {currentStructure && (
+        <div className="p-3 rounded-2xl bg-card border border-border shadow-2xs flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-2 min-w-0">
+            <Users className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+            <div className="min-w-0">
+              <span className="text-xs font-black text-foreground block">
+                選手交代・継投（後から追加・修正OK）
+              </span>
+              <span className="text-[10px] font-bold text-muted-foreground block">
+                途中交代{" "}
+                {currentStructure.batters.reduce(
+                  (sum, b) => sum + b.substitutions.length,
+                  0
+                )}
+                件 ・ 登板投手 {Math.max(1, currentStructure.pitchers.length)}人
+                （各打席モーダルから回途中の代打・代走・継投も可能）
+              </span>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setShowQuickSubstitutionModal(true)}
+            className="h-9 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black inline-flex items-center gap-1.5 shrink-0 cursor-pointer active:scale-95 transition-all"
+          >
+            <Users className="w-3.5 h-3.5" />
+            <span>選手交代・継投を編集</span>
+          </button>
+        </div>
+      )}
+
       {/* イニング絞り込みピルバー */}
       <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 -mx-4 px-4 scrollbar-none">
         <button
@@ -1953,10 +2018,32 @@ export function Step3PinpointReview({
                       {editingAtBat.inning}回{editingAtBat.isTop ? "表" : "裏"} ・{" "}
                       {editingAtBat.battingOrder}番 {editingAtBat.batterName}
                     </p>
-                    <p className="text-[10px] font-bold text-muted-foreground">
-                      打席 {editingIndex + 1} / {currentList.length}（投手:{" "}
-                      {editingAtBat.pitcherName || "未設定"}）
-                    </p>
+                    <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                      <span className="text-[10px] font-bold text-muted-foreground">
+                        打席 {editingIndex + 1} / {currentList.length}（投手:{" "}
+                        {editingAtBat.pitcherName || "未設定"}）
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPlayerSubInitialTab("batter");
+                          setShowPlayerSubPanel(true);
+                        }}
+                        className="px-1.5 py-0.2 rounded-md bg-indigo-500/15 border border-indigo-500/35 text-indigo-700 dark:text-indigo-300 text-[9px] font-black cursor-pointer"
+                      >
+                        打者交代
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPlayerSubInitialTab("pitcher");
+                          setShowPlayerSubPanel(true);
+                        }}
+                        className="px-1.5 py-0.2 rounded-md bg-indigo-500/15 border border-indigo-500/35 text-indigo-700 dark:text-indigo-300 text-[9px] font-black cursor-pointer"
+                      >
+                        投手交代
+                      </button>
+                    </div>
                   </div>
 
                   <button
@@ -2469,6 +2556,23 @@ export function Step3PinpointReview({
                     </div>
                   );
                 })()}
+
+                {/* 1.6 選手交代・打者/投手変更（代打・守備交代・スタメン修正・回途中継投） */}
+                <AtBatPlayerSubstitutionPanel
+                  atBat={editingAtBat}
+                  structure={currentStructure}
+                  atBats={currentList}
+                  roster={roster}
+                  isOpen={showPlayerSubPanel}
+                  initialTab={playerSubInitialTab}
+                  onToggleOpen={(open, tab) => {
+                    if (tab) setPlayerSubInitialTab(tab);
+                    setShowPlayerSubPanel(open);
+                  }}
+                  onApply={(nextStruct, nextAtBats) =>
+                    handleApplyStructureAndAtBats(nextStruct, nextAtBats)
+                  }
+                />
 
                 {/* STEP 1: 1球ごとの投球・牽制・ボーク順序エディタ（実際の試合・スコアラー記入順の先頭！） */}
                 <div className="p-3 rounded-2xl bg-sky-500/8 border-2 border-sky-500/35 space-y-2.5">
@@ -4066,10 +4170,33 @@ export function Step3PinpointReview({
                   atBat={editingAtBat}
                   snapshot={editingRunnerSnapshot}
                   batters={currentStructure?.batters || []}
+                  isMyTeamBatting={Boolean(currentStructure?.isMyTeamBatting)}
+                  roster={roster}
                   runnerCellCrops={runnerCellCropMap}
                   onJumpToRunnerAtBat={(runnerAbId) =>
                     setEditingAtBatId(runnerAbId)
                   }
+                  onApplyPinchRunner={(runnerParams) => {
+                    if (!currentStructure) return;
+                    const res = applyAtBatPinchRunnerChange({
+                      atBats: currentList,
+                      structure: currentStructure,
+                      targetAtBatId: editingAtBat.id,
+                      runnerParams,
+                    });
+                    handleApplyStructureAndAtBats(res.structure, res.atBats);
+                  }}
+                  onRemovePinchRunner={(startBase, battingOrder) => {
+                    if (!currentStructure) return;
+                    const res = removeAtBatPinchRunnerChange({
+                      atBats: currentList,
+                      structure: currentStructure,
+                      targetAtBatId: editingAtBat.id,
+                      startBase,
+                      battingOrder,
+                    });
+                    handleApplyStructureAndAtBats(res.structure, res.atBats);
+                  }}
                   onUpdateAtBat={(updater) =>
                     updateSingleAtBat(editingAtBat.id, updater)
                   }
@@ -4099,6 +4226,18 @@ export function Step3PinpointReview({
           </div>,
           document.body
         )}
+
+      <Step3QuickSubstitutionModal
+        isOpen={showQuickSubstitutionModal}
+        onClose={() => setShowQuickSubstitutionModal(false)}
+        opponentName={opponentName}
+        structure={currentStructure}
+        atBats={currentList}
+        roster={roster}
+        onApply={(nextStruct, nextAtBats) =>
+          handleApplyStructureAndAtBats(nextStruct, nextAtBats)
+        }
+      />
     </div>
   );
 }

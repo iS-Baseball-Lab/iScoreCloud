@@ -71,11 +71,22 @@ interface MatchDetailApiResponse {
   error?: string;
 }
 
+interface MatchSubstitutionRow {
+  id: string;
+  playerId: string;
+  name: string;
+  uniformNumber: string;
+  battingOrder: number;
+  position: string;
+  inningEntered: number;
+}
+
 interface MatchLineupsApiResponse {
   success?: boolean;
   lineups?: {
     myLineup?: MyLineupSlot[];
     myAttendance?: PlayerMatchAttendanceMap;
+    mySubstitutions?: MatchSubstitutionRow[];
   };
   error?: string;
 }
@@ -215,6 +226,7 @@ function MatchesContent() {
     total: number;
   } | null>(null);
   const [myLineup, setMyLineup] = useState<MyLineupSlot[]>([]);
+  const [mySubstitutions, setMySubstitutions] = useState<MatchSubstitutionRow[]>([]);
   const [myAttendance, setMyAttendance] = useState<PlayerMatchAttendanceMap>({});
   const [teamPlayers, setTeamPlayers] = useState<LineupPlayer[]>([]);
   const [isDetailLoading, setIsDetailLoading] = useState<boolean>(() => Boolean(matchId));
@@ -278,6 +290,7 @@ function MatchesContent() {
           setTeamPlayers(DEMO_LINEUP_PLAYERS);
           const demoLineups = loadDemoMatchLineups(targetMatchId);
           setMyLineup(demoLineups.myLineup || []);
+          setMySubstitutions([]);
           setMyAttendance(demoLineups.myAttendance || {});
           return;
         }
@@ -320,9 +333,11 @@ function MatchesContent() {
           if (!isCancelled) {
             if (lineupsJson.success && lineupsJson.lineups) {
               setMyLineup(lineupsJson.lineups.myLineup || []);
+              setMySubstitutions(lineupsJson.lineups.mySubstitutions || []);
               setMyAttendance(lineupsJson.lineups.myAttendance || {});
             } else {
               setMyLineup([]);
+              setMySubstitutions([]);
               setMyAttendance({});
             }
           }
@@ -463,9 +478,19 @@ function MatchesContent() {
     [filledStarters]
   );
 
+  const substitutedPlayerIds = useMemo(
+    () => mySubstitutions.map((sub) => sub.playerId).filter(Boolean),
+    [mySubstitutions]
+  );
+
   const remainingPlayers = useMemo(
-    () => teamPlayers.filter((p) => !starterPlayerIds.includes(p.id)),
-    [teamPlayers, starterPlayerIds]
+    () =>
+      teamPlayers.filter(
+        (p) =>
+          !starterPlayerIds.includes(p.id) &&
+          !substitutedPlayerIds.includes(p.id)
+      ),
+    [teamPlayers, starterPlayerIds, substitutedPlayerIds]
   );
 
   const benchPlayers = useMemo(
@@ -942,7 +967,7 @@ function MatchesContent() {
                   <span className="text-[10px] font-bold text-muted-foreground truncate">
                     {isFutureOrScheduled
                       ? "試合後に紙スコアブックをAIで一括取り込みできます"
-                      : "取り込み済みの打席結果・1球順序・個人成績を修正できます"}
+                      : "打席結果・1球順序・選手交代・個人成績を後からでも修正できます"}
                   </span>
                   <Link
                     href={
@@ -964,7 +989,7 @@ function MatchesContent() {
                     ) : (
                       <>
                         <Edit3 className="w-3.5 h-3.5" />
-                        <span>打席・成績を修正</span>
+                        <span>打席・選手交代を修正</span>
                       </>
                     )}
                   </Link>
@@ -981,13 +1006,26 @@ function MatchesContent() {
                 <span className="truncate">出場メンバー</span>
               </h2>
 
-              <Link
-                href={`/liff/matches/lineup?id=${match.id}`}
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-[11px] font-black transition-all active:scale-95 shrink-0 shadow-2xs"
-              >
-                <Edit3 className="w-3 h-3" />
-                <span>{filledStarters.length > 0 ? "編集する" : "登録する"}</span>
-              </Link>
+              <div className="flex items-center gap-1.5 shrink-0">
+                {!isFutureOrScheduled && !isDemo && !isDemoMatchId(match.id) && (
+                  <Link
+                    href={`/liff/tools/scorebook-import?matchId=${encodeURIComponent(
+                      match.id
+                    )}&mode=edit`}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black transition-all active:scale-95 shadow-2xs"
+                  >
+                    <Users className="w-3 h-3" />
+                    <span>選手交代・継投</span>
+                  </Link>
+                )}
+                <Link
+                  href={`/liff/matches/lineup?id=${match.id}`}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-[11px] font-black transition-all active:scale-95 shadow-2xs"
+                >
+                  <Edit3 className="w-3 h-3" />
+                  <span>{filledStarters.length > 0 ? "スタメン編集" : "登録する"}</span>
+                </Link>
+              </div>
             </div>
 
             <div className="bg-card border border-border rounded-2xl p-3.5 shadow-xs space-y-3.5">
@@ -1089,6 +1127,74 @@ function MatchesContent() {
                   </div>
                 )}
               </div>
+
+              {/* ①-B 途中出場・交代選手 */}
+              {mySubstitutions.length > 0 && (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between px-0.5">
+                    <span className="text-[11px] font-black text-foreground flex items-center gap-1.5">
+                      <Users className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                      <span>途中出場・選手交代</span>
+                    </span>
+                    <span className="text-[10px] font-black font-mono tabular-nums px-2 py-0.5 rounded-md bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border border-indigo-500/20">
+                      {mySubstitutions.length}名
+                    </span>
+                  </div>
+
+                  <div className="rounded-xl border border-border overflow-hidden bg-card divide-y divide-border/60">
+                    {mySubstitutions.map((sub) => {
+                      const roleBadge =
+                        sub.position === "P"
+                          ? { label: "代打", color: "bg-indigo-600" }
+                          : sub.position === "R"
+                          ? { label: "代走", color: "bg-amber-600" }
+                          : sub.position === "TR"
+                          ? { label: "臨時代走", color: "bg-teal-600" }
+                          : getPositionBadgeInfo(sub.position) || {
+                              label: "途中",
+                              color: "bg-slate-600",
+                            };
+                      return (
+                        <div
+                          key={sub.id}
+                          className="grid grid-cols-[4rem_3.5rem_1fr_2.75rem] items-center px-2 py-1.5 odd:bg-card even:bg-slate-100/90 dark:odd:bg-card dark:even:bg-white/[0.045]"
+                        >
+                          <span className="text-[10px] font-black text-muted-foreground font-mono tabular-nums text-center">
+                            {sub.inningEntered}回・{sub.battingOrder}番
+                          </span>
+                          <div className="flex items-center justify-center">
+                            <span
+                              className={cn(
+                                "inline-flex items-center justify-center w-12 py-0.5 rounded-md text-white font-black text-[10px] leading-tight shadow-2xs",
+                                roleBadge.color
+                              )}
+                            >
+                              {roleBadge.label}
+                            </span>
+                          </div>
+                          <span className="pl-2 font-black text-xs sm:text-[13px] text-foreground truncate tracking-tight">
+                            {sub.name}
+                          </span>
+                          <span className="pr-1 text-right font-mono tabular-nums text-xs font-black">
+                            {sub.uniformNumber ? (
+                              <>
+                                <span className="text-[10px] text-muted-foreground/60 mr-0.5">
+                                  #
+                                </span>
+                                <span className="text-foreground/85">
+                                  {sub.uniformNumber}
+                                </span>
+                              </>
+                            ) : (
+                              <span className="text-muted-foreground/40">-</span>
+                            )}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* ② 控え ＆ ③ 欠席（どちらも見出しを内枠の外に統一） */}
               {teamPlayers.length > 0 && (

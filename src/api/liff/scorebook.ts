@@ -3214,6 +3214,8 @@ liffScorebookRouter.post("/save", async (c) => {
                   ? "P"
                   : sub.subType === "PR"
                   ? "R"
+                  : sub.subType === "TR"
+                  ? "TR"
                   : resolvedSub.primaryPosition || ""),
               isStarting: false,
               inningEntered: Math.max(
@@ -3256,6 +3258,35 @@ liffScorebookRouter.post("/save", async (c) => {
       if (a.isTop !== b.isTop) return a.isTop ? -1 : 1;
       return 0;
     });
+
+    const knownMyPlayerIdByCleanName = new Map<string, string>();
+    const registerKnownMyPlayer = (
+      rawName: string | undefined,
+      candidateId: string | null | undefined
+    ) => {
+      if (!rawName || !candidateId || !validPlayerIds.has(candidateId)) return;
+      const key = rawName.replace(/\s+/g, "").trim();
+      if (key) {
+        knownMyPlayerIdByCleanName.set(key, candidateId);
+      }
+    };
+    if (myStructure) {
+      for (const slot of myStructure.batters) {
+        registerKnownMyPlayer(slot.name, slot.playerId);
+        for (const sub of slot.substitutions || []) {
+          registerKnownMyPlayer(sub.name, sub.playerId);
+        }
+      }
+    }
+    for (const abItem of [...incomingTop, ...incomingBottom]) {
+      const mySide =
+        (abItem.isTop && isMyTeamFirst) || (!abItem.isTop && !isMyTeamFirst);
+      if (!mySide) continue;
+      registerKnownMyPlayer(abItem.batterName, abItem.batterPlayerId);
+      for (const pr of abItem.pinchRunners || []) {
+        registerKnownMyPlayer(pr.name, pr.playerId);
+      }
+    }
 
     const insertQueries: Array<unknown> = [];
     const baseTimestamp = Date.now();
@@ -3351,8 +3382,14 @@ liffScorebookRouter.post("/save", async (c) => {
 
       // C. base_advances 挿入
       for (const adv of safeAdvances) {
+        const cleanAdvRunner = (adv.runnerName || "").replace(/\s+/g, "").trim();
+        const directRunnerId = cleanAdvRunner
+          ? knownMyPlayerIdByCleanName.get(cleanAdvRunner) || null
+          : null;
         const runnerId = isMyTeamBatting
-          ? matchRosterPlayer(adv.runnerName, undefined, roster)?.id || null
+          ? directRunnerId ||
+            matchRosterPlayer(adv.runnerName, undefined, roster)?.id ||
+            null
           : null;
 
         const fromBaseNum =
@@ -4045,6 +4082,8 @@ liffScorebookRouter.get("/saved", async (c) => {
                   ? "PH"
                   : lr.position === "R"
                   ? "PR"
+                  : lr.position === "TR"
+                  ? "TR"
                   : "DEF";
               slot.substitutions.push({
                 id: lr.id || crypto.randomUUID(),

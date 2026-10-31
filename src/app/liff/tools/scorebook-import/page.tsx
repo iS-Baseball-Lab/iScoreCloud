@@ -25,6 +25,7 @@ import {
   isRunnerOnlyInningEnd,
   reconcileSheetExcessOutsDeterministically,
   resolveActiveMatchupFromStructure,
+  syncSheetAtBatsWithStructure,
 } from "@/lib/liff/scorebook-validator";
 import {
   clearScorebookDraft,
@@ -2608,33 +2609,35 @@ export default function LiffScorebookImportPage() {
     if (isEditingSavedMatch) {
       setHasDirtyReEdit(true);
     }
-    const syncAtBatsWithStructure = (list: ScorebookV2AtBat[]) =>
-      list.map((ab) => {
-        const matchup = resolveActiveMatchupFromStructure(
-          updated,
-          ab.inning,
-          ab.battingOrder,
-          ab.pitcherName
-        );
-        return {
-          ...ab,
-          batterName: matchup.batterName || ab.batterName,
-          batterPlayerId: matchup.batterPlayerId,
-          pitcherName: matchup.pitcherName || ab.pitcherName,
-          pitcherPlayerId: matchup.pitcherPlayerId,
-        };
-      });
 
     if (isTop) {
       setTopStructure(updated);
       setTopAtBats((prev) =>
-        prev.length > 0 ? syncAtBatsWithStructure(prev) : prev
+        prev.length > 0 ? syncSheetAtBatsWithStructure(prev, updated) : prev
       );
     } else {
       setBottomStructure(updated);
       setBottomAtBats((prev) =>
-        prev.length > 0 ? syncAtBatsWithStructure(prev) : prev
+        prev.length > 0 ? syncSheetAtBatsWithStructure(prev, updated) : prev
       );
+    }
+  };
+
+  // 5-D. Step 3から選手交代・継投・代走を行った際、シート骨格と打席リストをアトミックに同時更新する
+  const handleApplyStructureAndAtBats = (
+    isTop: boolean,
+    nextStructure: ScorebookSheetStructure,
+    nextAtBats: ScorebookV2AtBat[]
+  ) => {
+    if (isEditingSavedMatch) {
+      setHasDirtyReEdit(true);
+    }
+    if (isTop) {
+      setTopStructure(nextStructure);
+      setTopAtBats(nextAtBats);
+    } else {
+      setBottomStructure(nextStructure);
+      setBottomAtBats(nextAtBats);
     }
   };
 
@@ -3104,6 +3107,7 @@ export default function LiffScorebookImportPage() {
                 <Step3PinpointReview
                   importScope={importScope}
                   opponentName={selectedMatch?.opponent || "対戦相手"}
+                  roster={roster}
                   topImageDataUrl={effectiveTopImageUrl}
                   bottomImageDataUrl={effectiveBottomImageUrl}
                   topStructure={topStructure}
@@ -3120,6 +3124,7 @@ export default function LiffScorebookImportPage() {
                       setBottomAtBats(updated);
                     }
                   }}
+                  onApplyStructureAndAtBats={handleApplyStructureAndAtBats}
                   onBack={() => {
                     setErrorBanner(null);
                     setStep(2);

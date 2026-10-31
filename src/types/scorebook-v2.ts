@@ -102,10 +102,25 @@ export type ConfidenceLevel = "high" | "medium" | "low";
 export interface ScorebookSubstitution {
   id: string;
   inningEntered: number;
+  /** 打者一巡時などのサブ列番号（1始まり・任意） */
+  enteredColumnIndex?: number;
+  /** STEP 3 の特定打席から交代を指定した場合の起点打席ID（任意） */
+  enteredAtBatId?: string;
   subType: "PH" | "PR" | "TR" | "DEF";
   name: string;
   uniformNumber: string;
   position: string;
+  playerId: string | null;
+}
+
+/** STEP 3 の特定打席開始時点で塁上走者に代走(PR)・臨時代走(TR)を送った記録 */
+export interface ScorebookPinchRunnerEntry {
+  base: "1B" | "2B" | "3B";
+  subType: "PR" | "TR";
+  battingOrder: number;
+  replacedName: string;
+  name: string;
+  uniformNumber: string;
   playerId: string | null;
 }
 
@@ -184,6 +199,11 @@ export interface ScorebookV2AtBat {
   strikes: number;
   pitches: CanonicalPitchResult[];
   advances: ScorebookV2Advance[];
+  /** この打席開始時点で塁上の先行走者に代走・臨時代走が起用された場合の記録（任意） */
+  pinchRunners?: ScorebookPinchRunnerEntry[];
+  /** STEP 3 で「この1打席のみ打者変更」「この1打席のみ投手変更」を明示指定した場合の保護フラグ（任意） */
+  manualBatterOverride?: boolean;
+  manualPitcherOverride?: boolean;
   confidence: ConfidenceLevel;
   confidenceReason?: string;
   cellBox?: NormalizedBox;

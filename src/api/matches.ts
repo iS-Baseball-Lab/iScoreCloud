@@ -522,8 +522,21 @@ app.get("/:id/stats", async (c) => {
     .where(eq(atBats.matchId, matchId))
     .all();
 
-    const dbAdvances = await db.select()
+    const dbAdvances = await db.select({
+      id: baseAdvances.id,
+      matchId: baseAdvances.matchId,
+      atBatId: baseAdvances.atBatId,
+      pitchId: baseAdvances.pitchId,
+      runnerId: baseAdvances.runnerId,
+      fromBase: baseAdvances.fromBase,
+      toBase: baseAdvances.toBase,
+      reason: baseAdvances.reason,
+      isOut: baseAdvances.isOut,
+      runnerName: sql<string>`runner.name`,
+      runnerNumber: sql<string>`runner.uniform_number`,
+    })
       .from(baseAdvances)
+      .leftJoin(sql`players as runner`, sql`runner.id = ${baseAdvances.runnerId}`)
       .where(eq(baseAdvances.matchId, matchId))
       .all();
 
@@ -717,9 +730,21 @@ app.get("/:id/stats", async (c) => {
       p.rbi += rbiCount;
     }
 
-    // 得点・盗塁・盗塁刺の集計 (base_advancesより)
+    // 得点・盗塁・盗塁刺の集計 (base_advancesより・打席0回の代走/臨時代走も含めて漏らさず集計)
+    const abById = new Map(dbAtBats.map((a) => [a.id, a]));
     for (const adv of dbAdvances) {
-      if (adv.runnerId && batterMap.has(adv.runnerId)) {
+      if (!adv.runnerId) continue;
+      if (!batterMap.has(adv.runnerId)) {
+        const parentAb = adv.atBatId ? abById.get(adv.atBatId) : undefined;
+        const isMyAttackAdv = parentAb ? parentAb.isTop === isMyTeamTop : true;
+        if (isMyAttackAdv && adv.runnerName) {
+          batterMap.set(
+            adv.runnerId,
+            getBatterInit(adv.runnerId, adv.runnerName, adv.runnerNumber || "-")
+          );
+        }
+      }
+      if (batterMap.has(adv.runnerId)) {
         const runner = batterMap.get(adv.runnerId);
         
         // 得点
