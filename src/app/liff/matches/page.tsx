@@ -731,13 +731,6 @@ function MatchesContent() {
       rawTournament && !["公式戦", "OP戦", "練習試合", "交流戦"].includes(rawTournament)
         ? rawTournament
         : "";
-    const displayTournamentName =
-      customTournamentName ||
-      (match.matchType === "official"
-        ? "大会名未登録"
-        : match.matchType === "exchange"
-          ? "交流戦"
-          : "OP戦");
 
     const battingOrderLabel =
       match.battingOrder === "first"
@@ -799,9 +792,9 @@ function MatchesContent() {
         <LiffHeader />
 
         <div className="p-4 space-y-5">
-          {/* ページ内ヘッダー（サブタイトルを廃止し、vs 相手チーム名のみ＋前後切替ピル） */}
+          {/* ページ内ヘッダー（「試合情報」固定タイトル＋前後切替ピル） */}
           <LiffPageHeader
-            title={`vs ${match.opponent}`}
+            title="試合情報"
             icon={
               <span className="w-8 h-8 rounded-xl bg-red-500/10 text-red-600 dark:text-red-400 flex items-center justify-center font-black">
                 <Video className="w-4 h-4" />
@@ -869,14 +862,14 @@ function MatchesContent() {
             }}
           />
 
-          {/* 📋 1. 基本情報カード（見出しなし・1行目バッジ群＋2行目サマリー） */}
+          {/* 📋 1. 基本情報カード（見出しなし・1行目バッジ群＋日時 / 2行目大会名(任意) / 最終行 vs 相手名 ＠球場名） */}
           <section aria-label="基本情報">
-            <div className="rounded-2xl border border-border bg-card shadow-xs px-3.5 py-3 space-y-2">
-              {/* 1行目：すべてバッジ（試合種別・イニング制・先攻後攻・一塁側/三塁側） */}
-              <div className="flex items-center flex-wrap gap-1.5">
+            <div className="rounded-2xl border border-border bg-card shadow-xs px-3.5 py-3 space-y-1.5">
+              {/* 1行目：試合種別・イニング制・先攻後攻・一塁側/三塁側 ＋ 日付・開始時刻 */}
+              <div className="flex items-center flex-wrap gap-x-1.5 gap-y-1">
                 <span
                   className={cn(
-                    "inline-flex items-center px-2 py-0.5 rounded-md border text-[11px] font-black leading-tight",
+                    "inline-flex items-center px-1.5 py-0.5 rounded-md border text-[11px] font-black leading-tight",
                     matchTypeBadgeClass
                   )}
                 >
@@ -885,7 +878,7 @@ function MatchesContent() {
 
                 <span
                   className={cn(
-                    "inline-flex items-center px-2 py-0.5 rounded-md border text-[11px] font-black leading-tight tabular-nums",
+                    "inline-flex items-center px-1.5 py-0.5 rounded-md border text-[11px] font-black leading-tight tabular-nums",
                     neutralBadgeClass
                   )}
                 >
@@ -894,7 +887,7 @@ function MatchesContent() {
 
                 <span
                   className={cn(
-                    "inline-flex items-center px-2 py-0.5 rounded-md border text-[11px] font-black leading-tight",
+                    "inline-flex items-center px-1.5 py-0.5 rounded-md border text-[11px] font-black leading-tight",
                     battingOrderBadgeClass
                   )}
                 >
@@ -903,28 +896,32 @@ function MatchesContent() {
 
                 <span
                   className={cn(
-                    "inline-flex items-center px-2 py-0.5 rounded-md border text-[11px] font-black leading-tight",
+                    "inline-flex items-center px-1.5 py-0.5 rounded-md border text-[11px] font-black leading-tight",
                     benchSideBadgeClass
                   )}
                 >
                   {benchSideLabel}
                 </span>
-              </div>
 
-              {/* 2行目：大会名 ＋ 日付・時刻～ ＋ ＠球場名 */}
-              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs sm:text-[13px] font-bold text-foreground leading-snug">
-                {displayTournamentName && (
-                  <span className="font-black text-foreground break-words">
-                    {displayTournamentName}
-                  </span>
-                )}
                 {formattedDateTime && (
-                  <span className="tabular-nums text-foreground/85 shrink-0">
+                  <span className="text-[11px] sm:text-xs font-bold tabular-nums text-foreground/85 leading-tight shrink-0">
                     {formattedDateTime}
                   </span>
                 )}
+              </div>
+
+              {/* 2行目（大会名がある場合のみ表示） */}
+              {customTournamentName && (
+                <p className="text-xs sm:text-[13px] font-bold text-foreground/85 leading-snug break-words">
+                  {customTournamentName}
+                </p>
+              )}
+
+              {/* 最終行：vs 相手チーム名 ＋ ＠球場名（少し大きめのフォント） */}
+              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[15px] sm:text-base font-black text-foreground leading-snug tracking-tight pt-0.5">
+                <span className="break-words">vs {match.opponent}</span>
                 {basicVenueLabel && (
-                  <span className="text-foreground/85 max-w-full truncate">
+                  <span className="font-extrabold text-foreground/90 break-words">
                     ＠{basicVenueLabel}
                   </span>
                 )}
