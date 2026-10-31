@@ -462,7 +462,7 @@ export function Step2StructureCheck({
         // 前の投手が最終回までになっていた場合は自動で前半・後半に分割し、重複ミスを防止
         const splitInn = Math.max(
           prevLast.fromInning + 1,
-          Math.ceil((prevLast.fromInning + maxInn) / 2)
+          Math.floor((prevLast.fromInning + maxInn) / 2) + 1
         );
         prevList[prevList.length - 1] = {
           ...prevLast,

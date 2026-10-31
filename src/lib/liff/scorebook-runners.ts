@@ -685,8 +685,8 @@ export function simulateSheetRunners(
               }
             }
           }
-          if (targetBase && basesBefore[targetBase]) {
-            const prevRunner = basesBefore[targetBase];
+          const prevRunner = targetBase ? basesBefore[targetBase] : null;
+          if (targetBase && prevRunner) {
             basesBefore[targetBase] = {
               battingOrder:
                 prEntry.battingOrder > 0

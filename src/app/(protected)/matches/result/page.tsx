@@ -263,17 +263,17 @@ function extractGameDetails(atBats: AtBat[], isMyTeamTop: boolean) {
     const name = ab.batterName || "不明";
     const inningText = `${ab.inning}回`;
 
-    if (res.includes("2B") || res.includes("二塁打") || res.includes("２塁打")) {
+    if (res === "double" || res.includes("2B") || res.includes("二塁打") || res.includes("２塁打")) {
       details.double.push(`${name} (${inningText})`);
-    } else if (res.includes("3B") || res.includes("三塁打") || res.includes("３塁打")) {
+    } else if (res === "triple" || res.includes("3B") || res.includes("三塁打") || res.includes("３塁打")) {
       details.triple.push(`${name} (${inningText})`);
-    } else if (res.includes("HR") || res.includes("本塁打")) {
+    } else if (res === "home_run" || res.includes("HR") || res.includes("本塁打")) {
       details.homeRun.push(`${name} (${inningText})`);
     }
 
-    if (res.includes("SH") || res.includes("犠打") || (res.includes("犠") && !res.includes("飛"))) {
+    if (res === "sac_bunt" || res.includes("SH") || res.includes("犠打") || (res.includes("犠") && !res.includes("飛"))) {
       details.sacrificeBunt.push(`${name} (${inningText})`);
-    } else if (res.includes("SF") || res.includes("犠飛")) {
+    } else if (res === "sac_fly" || res.includes("SF") || res.includes("犠飛")) {
       details.sacrificeFly.push(`${name} (${inningText})`);
     }
 
@@ -281,7 +281,7 @@ function extractGameDetails(atBats: AtBat[], isMyTeamTop: boolean) {
       details.stolenBase.push(`${name} (${inningText})`);
     }
 
-    if (res.includes("併殺") || res.includes("DP")) {
+    if (res === "double_play" || res === "triple_play" || res.includes("併殺") || res.includes("三重殺") || res.includes("DP") || res.includes("TP")) {
       details.doublePlay.push(`${name} (${inningText})`);
     }
   });
@@ -299,6 +299,7 @@ function MatchResultContent() {
   const [playLogs, setPlayLogs] = useState<PlayLog[]>([]);
   const [stats, setStats] = useState<PlayerStats[]>([]);
   const [pitcherStats, setPitcherStats] = useState<PitcherStats[]>([]);
+  const [apiGameDetails, setApiGameDetails] = useState<ReturnType<typeof extractGameDetails> | null>(null);
   const [teamName, setTeamName] = useState<string>("自チーム");
   
   // スタメン・ラインナップのロード用
@@ -355,6 +356,7 @@ function MatchResultContent() {
           if (statsData.success) {
             setStats(statsData.stats || []);
             setPitcherStats(statsData.pitcherStats || []);
+            if (statsData.gameDetails) setApiGameDetails(statsData.gameDetails);
           }
         }
 
@@ -590,7 +592,7 @@ function MatchResultContent() {
   const teamEraStr = pitcherTotal.outs > 0 ? teamEraVal.toFixed(2) : "0.00";
 
   // 打撃・走塁詳細データの抽出
-  const gameDetails = extractGameDetails(atBats, isMyTeamTop);
+  const gameDetails = apiGameDetails || extractGameDetails(atBats, isMyTeamTop);
   const hasGameDetails = Object.values(gameDetails).some(arr => arr.length > 0);
 
   const youtubeVideoId = getYoutubeVideoId(match.youtubeUrl);

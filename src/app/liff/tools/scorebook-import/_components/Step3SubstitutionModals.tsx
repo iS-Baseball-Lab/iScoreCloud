@@ -671,7 +671,7 @@ export function smartAppendPitcherStint(
     if (prevLast.toInning >= maxInning && prevLast.fromInning < maxInning) {
       const splitInn = Math.max(
         prevLast.fromInning + 1,
-        Math.ceil((prevLast.fromInning + maxInning) / 2)
+        Math.floor((prevLast.fromInning + maxInning) / 2) + 1
       );
       prevList[prevList.length - 1] = {
         ...prevLast,

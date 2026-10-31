@@ -55,8 +55,18 @@ import {
   type AdjacentMatchSummary,
   type LineupPlayer,
   type MyLineupSlot,
+  type OpponentLineupSlot,
   type PlayerMatchAttendanceMap,
 } from "@/lib/liff/demo-lineup";
+import {
+  MatchStatsSection,
+  type LiffBatterStatItem,
+  type LiffBoxscoreAtBatItem,
+  type LiffMatchGameDetails,
+  type LiffPitcherStatItem,
+  type LiffRawPlayLogItem,
+} from "@/components/liff/MatchStatsSection";
+import { getDemoMatchStatsBundle } from "@/lib/liff/demo-match-stats";
 
 // ━━━ APIレスポンス型定義 (any排除) ━━━
 interface MatchDetailApiResponse {
@@ -85,9 +95,24 @@ interface MatchLineupsApiResponse {
   success?: boolean;
   lineups?: {
     myLineup?: MyLineupSlot[];
+    opponentLineup?: OpponentLineupSlot[];
     myAttendance?: PlayerMatchAttendanceMap;
     mySubstitutions?: MatchSubstitutionRow[];
   };
+  error?: string;
+}
+
+interface MatchStatsApiResponse {
+  success?: boolean;
+  stats?: LiffBatterStatItem[];
+  pitcherStats?: LiffPitcherStatItem[];
+  gameDetails?: LiffMatchGameDetails;
+  error?: string;
+}
+
+interface MatchLogsApiResponse {
+  success?: boolean;
+  logs?: LiffRawPlayLogItem[];
   error?: string;
 }
 
@@ -226,9 +251,17 @@ function MatchesContent() {
     total: number;
   } | null>(null);
   const [myLineup, setMyLineup] = useState<MyLineupSlot[]>([]);
+  const [opponentLineup, setOpponentLineup] = useState<OpponentLineupSlot[]>([]);
+  const [lineupTeamTab, setLineupTeamTab] = useState<"my" | "opponent">("my");
   const [mySubstitutions, setMySubstitutions] = useState<MatchSubstitutionRow[]>([]);
   const [myAttendance, setMyAttendance] = useState<PlayerMatchAttendanceMap>({});
   const [teamPlayers, setTeamPlayers] = useState<LineupPlayer[]>([]);
+  const [matchStats, setMatchStats] = useState<LiffBatterStatItem[]>([]);
+  const [pitcherStats, setPitcherStats] = useState<LiffPitcherStatItem[]>([]);
+  const [gameDetails, setGameDetails] = useState<LiffMatchGameDetails | null>(null);
+  const [playLogs, setPlayLogs] = useState<LiffRawPlayLogItem[]>([]);
+  const [boxscoreAtBats, setBoxscoreAtBats] = useState<LiffBoxscoreAtBatItem[]>([]);
+  const [isStatsLoading, setIsStatsLoading] = useState<boolean>(false);
   const [isDetailLoading, setIsDetailLoading] = useState<boolean>(() => Boolean(matchId));
   const [loadedMatchId, setLoadedMatchId] = useState<string | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
@@ -249,14 +282,22 @@ function MatchesContent() {
     }, 2000);
   }, []);
 
-  // 1. 試合詳細 ＆ 出場メンバー（スタメン・控え・欠席）のロード (matchId がある場合)
+  // 1. 試合詳細 ＆ 出場メンバー・成績データのロード (matchId がある場合)
   useEffect(() => {
     setIsAddressCopied(false);
+    setLineupTeamTab("my");
     if (!matchId) {
       setDetailError(null);
       setPrevMatch(null);
       setNextMatch(null);
       setMatchPosition(null);
+      setMatchStats([]);
+      setPitcherStats([]);
+      setGameDetails(null);
+      setPlayLogs([]);
+      setBoxscoreAtBats([]);
+      setOpponentLineup([]);
+      setIsStatsLoading(false);
       return;
     }
 
@@ -266,6 +307,7 @@ function MatchesContent() {
     async function loadMatch() {
       try {
         setIsDetailLoading(true);
+        setIsStatsLoading(true);
         setDetailError(null);
 
         // 🅰️ デモ試合IDの場合のみデモデータを参照（実試合UUIDがデモ扱いされる誤判定を完全防止）
@@ -290,15 +332,39 @@ function MatchesContent() {
           setTeamPlayers(DEMO_LINEUP_PLAYERS);
           const demoLineups = loadDemoMatchLineups(targetMatchId);
           setMyLineup(demoLineups.myLineup || []);
+          setOpponentLineup(demoLineups.opponentLineup || []);
           setMySubstitutions([]);
           setMyAttendance(demoLineups.myAttendance || {});
+          const demoBundle = getDemoMatchStatsBundle(targetMatchId, demoMatch.status);
+          setMatchStats(demoBundle.stats);
+          setPitcherStats(demoBundle.pitcherStats);
+          setGameDetails(demoBundle.gameDetails);
+          setPlayLogs(demoBundle.playLogs);
+          setBoxscoreAtBats([]);
           return;
         }
 
-        // 🅱️ 実チームDB処理（試合詳細 + スタメン・出欠を並列取得）
-        const [matchRes, lineupsRes] = await Promise.all([
+        // 試合切替時に前の試合の成績が残らないよう初期化
+        setMatchStats([]);
+        setPitcherStats([]);
+        setGameDetails(null);
+        setPlayLogs([]);
+        setBoxscoreAtBats([]);
+        setOpponentLineup([]);
+
+        // 🅱️ 実チームDB処理（試合詳細 + スタメン・出欠 + 個人成績・打席経過を並列取得）
+        const [matchRes, lineupsRes, statsRes, logsRes, boxscoreRes] = await Promise.all([
           fetch(`/api/matches/${encodeURIComponent(targetMatchId)}`, { cache: "no-store" }),
           fetch(`/api/matches/${encodeURIComponent(targetMatchId)}/lineups`, { cache: "no-store" }),
+          fetch(`/api/matches/${encodeURIComponent(targetMatchId)}/stats`, {
+            cache: "no-store",
+          }).catch(() => null),
+          fetch(`/api/matches/${encodeURIComponent(targetMatchId)}/logs`, {
+            cache: "no-store",
+          }).catch(() => null),
+          fetch(`/api/matches/${encodeURIComponent(targetMatchId)}/boxscore`, {
+            cache: "no-store",
+          }).catch(() => null),
         ]);
 
         if (!matchRes.ok) {
@@ -333,13 +399,40 @@ function MatchesContent() {
           if (!isCancelled) {
             if (lineupsJson.success && lineupsJson.lineups) {
               setMyLineup(lineupsJson.lineups.myLineup || []);
+              setOpponentLineup(lineupsJson.lineups.opponentLineup || []);
               setMySubstitutions(lineupsJson.lineups.mySubstitutions || []);
               setMyAttendance(lineupsJson.lineups.myAttendance || {});
             } else {
               setMyLineup([]);
+              setOpponentLineup([]);
               setMySubstitutions([]);
               setMyAttendance({});
             }
+          }
+        }
+
+        if (statsRes && statsRes.ok) {
+          const statsJson = (await statsRes.json()) as MatchStatsApiResponse;
+          if (!isCancelled && statsJson.success) {
+            setMatchStats(Array.isArray(statsJson.stats) ? statsJson.stats : []);
+            setPitcherStats(
+              Array.isArray(statsJson.pitcherStats) ? statsJson.pitcherStats : []
+            );
+            setGameDetails(statsJson.gameDetails ?? null);
+          }
+        }
+
+        if (logsRes && logsRes.ok) {
+          const logsJson = (await logsRes.json()) as MatchLogsApiResponse;
+          if (!isCancelled && logsJson.success) {
+            setPlayLogs(Array.isArray(logsJson.logs) ? logsJson.logs : []);
+          }
+        }
+
+        if (boxscoreRes && boxscoreRes.ok) {
+          const boxJson = (await boxscoreRes.json()) as unknown;
+          if (!isCancelled && Array.isArray(boxJson)) {
+            setBoxscoreAtBats(boxJson as LiffBoxscoreAtBatItem[]);
           }
         }
 
@@ -371,6 +464,7 @@ function MatchesContent() {
         if (!isCancelled) {
           setLoadedMatchId(targetMatchId);
           setIsDetailLoading(false);
+          setIsStatsLoading(false);
         }
       }
     }
@@ -471,6 +565,17 @@ function MatchesContent() {
   const filledStarters = useMemo(
     () => myLineup.filter((slot) => Boolean(slot.playerId || (slot.name && slot.name.trim() !== ""))),
     [myLineup]
+  );
+
+  const filledOpponentStarters = useMemo(
+    () =>
+      opponentLineup.filter((slot) =>
+        Boolean(
+          (slot.name && slot.name.trim() !== "") ||
+            (slot.uniformNumber && slot.uniformNumber.trim() !== "")
+        )
+      ),
+    [opponentLineup]
   );
 
   const starterPlayerIds = useMemo(
@@ -998,7 +1103,24 @@ function MatchesContent() {
             </div>
           </section>
 
-          {/* 👥 3. 出場メンバー（見出しはカード外・内部3ブロックもすべて見出しを枠外に統一） */}
+          {/* 📊 2.5 取り込み成績データ（注目選手・打撃20項目・詳細・投手成績・タイムライン） */}
+          <MatchStatsSection
+            matchId={match.id}
+            isMyTeamTop={match.battingOrder !== "second"}
+            myTeamName={myTeamLabel}
+            opponentName={match.opponent}
+            isFutureOrScheduled={isFutureOrScheduled}
+            isRainout={isRainout}
+            isDemoMatch={isDemo || isDemoMatchId(match.id)}
+            stats={matchStats}
+            pitcherStats={pitcherStats}
+            gameDetails={gameDetails}
+            playLogs={playLogs}
+            boxscoreAtBats={boxscoreAtBats}
+            isLoadingStats={isStatsLoading}
+          />
+
+          {/* 👥 3. 出場メンバー（見出しはカード外・内部ブロックもすべて見出しを枠外に統一） */}
           <section className="space-y-2">
             <div className="flex items-center justify-between gap-2 px-1">
               <h2 className="flex items-center gap-1.5 text-xs font-black text-foreground min-w-0">
@@ -1029,6 +1151,111 @@ function MatchesContent() {
             </div>
 
             <div className="bg-card border border-border rounded-2xl p-3.5 shadow-xs space-y-3.5">
+              {/* 自チーム / 相手チーム 切り替え（相手スタメンが存在する場合のみ表示） */}
+              {filledOpponentStarters.length > 0 && (
+                <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-slate-100 dark:bg-zinc-900 border border-border">
+                  <button
+                    type="button"
+                    onClick={() => setLineupTeamTab("my")}
+                    className={cn(
+                      "py-1.5 px-2 rounded-lg text-[11px] font-black transition-all truncate cursor-pointer",
+                      lineupTeamTab === "my"
+                        ? "bg-card text-primary shadow-xs"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    {myTeamLabel}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLineupTeamTab("opponent")}
+                    className={cn(
+                      "py-1.5 px-2 rounded-lg text-[11px] font-black transition-all truncate cursor-pointer",
+                      lineupTeamTab === "opponent"
+                        ? "bg-card text-foreground shadow-xs"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    {match.opponent}
+                  </button>
+                </div>
+              )}
+
+              {lineupTeamTab === "opponent" && filledOpponentStarters.length > 0 ? (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between px-0.5">
+                    <span className="text-[11px] font-black text-foreground flex items-center gap-1.5">
+                      <Shield className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                      <span className="truncate">{match.opponent} スタメン</span>
+                    </span>
+                    <span className="text-[10px] font-black font-mono tabular-nums px-2 py-0.5 rounded-md bg-slate-100 dark:bg-zinc-800 text-foreground border border-border">
+                      {filledOpponentStarters.length}名
+                    </span>
+                  </div>
+
+                  <div className="rounded-xl border border-border overflow-hidden bg-card">
+                    <div className="grid grid-cols-[2.25rem_3.25rem_1fr_2.75rem] items-center bg-slate-100 dark:bg-zinc-800 border-b border-border px-2 py-1 text-[9px] font-black text-muted-foreground font-mono tracking-wider">
+                      <span className="text-center">ORD</span>
+                      <span className="text-center">POS</span>
+                      <span className="pl-2">PLAYER</span>
+                      <span className="pr-1 text-right">NO.</span>
+                    </div>
+
+                    <div className="divide-y divide-border/60">
+                      {filledOpponentStarters.map((slot) => {
+                        const posInfo = getPositionBadgeInfo(slot.position);
+                        return (
+                          <div
+                            key={`opp-${slot.order}-${slot.name}-${slot.uniformNumber}`}
+                            className="grid grid-cols-[2.25rem_3.25rem_1fr_2.75rem] items-center px-2 py-1.5 odd:bg-card even:bg-slate-100/90 dark:odd:bg-card dark:even:bg-zinc-900"
+                          >
+                            <div className="flex items-center justify-center">
+                              <span className="w-6 h-6 rounded-md bg-slate-100 dark:bg-zinc-800 text-foreground font-mono tabular-nums text-[11px] font-black inline-flex items-center justify-center">
+                                {slot.order}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center justify-center">
+                              {posInfo ? (
+                                <span
+                                  className={cn(
+                                    "inline-flex items-center justify-center w-11 py-0.5 rounded-md text-white font-black text-[10px] leading-tight shadow-2xs",
+                                    posInfo.color
+                                  )}
+                                >
+                                  {posInfo.label}
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center justify-center w-11 py-0.5 rounded-md bg-muted text-muted-foreground font-black text-[10px] leading-tight border border-border">
+                                  {slot.position || "-"}
+                                </span>
+                              )}
+                            </div>
+
+                            <span className="pl-2 font-black text-xs sm:text-[13px] text-foreground truncate tracking-tight">
+                              {slot.name || `相手打者 ${slot.order}`}
+                            </span>
+
+                            <span className="pr-1 text-right font-mono tabular-nums text-xs font-black">
+                              {slot.uniformNumber ? (
+                                <>
+                                  <span className="text-[10px] text-muted-foreground/60 mr-0.5">
+                                    #
+                                  </span>
+                                  <span className="text-foreground/85">{slot.uniformNumber}</span>
+                                </>
+                              ) : (
+                                <span className="text-muted-foreground/40">-</span>
+                              )}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <>
               {/* ① スターティングメンバー（見出しは内枠の外） */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between px-0.5">
@@ -1278,6 +1505,8 @@ function MatchesContent() {
                       )}
                     </div>
                   </div>
+                </>
+              )}
                 </>
               )}
             </div>

@@ -3,10 +3,22 @@ import { ensureMatchLineupColumns } from "@/lib/db-helper";
 import { Hono } from "hono";
 import { drizzle } from "drizzle-orm/d1";
 import { MatchService } from "@/services/match.service";
-import { eq, sql, desc, and } from "drizzle-orm";
-import { matchUndoHistories, atBats, playLogs, baseAdvances, pitches } from "@/db/schema/score";
-import { matches } from "@/db/schema/match";
+import { eq, sql, desc, asc, and } from "drizzle-orm";
+import {
+  matchUndoHistories,
+  atBats,
+  playLogs,
+  baseAdvances,
+  pitches,
+  matchScorebookSnapshots,
+} from "@/db/schema/score";
+import { matches, matchLineups } from "@/db/schema/match";
 import { players } from "@/db/schema/team";
+import { simulateSheetRunners } from "@/lib/liff/scorebook-runners";
+import type {
+  ScorebookSheetStructure,
+  ScorebookV2AtBat,
+} from "@/types/scorebook-v2";
 import scorebookRouter from "./matches/scorebook";
 
 const app = new Hono<{ Bindings: { DB: D1Database } }>();
@@ -88,13 +100,14 @@ app.get("/:id/undo-history", async (c) => {
   const matchId = c.req.param("id");
 
   try {
-    const result = await db.select({
-      historyJson: matchUndoHistories.historyJson
-    })
-    .from(matchUndoHistories)
-    .where(eq(matchUndoHistories.matchId, matchId))
-    .get();
-    
+    const result = await db
+      .select({
+        historyJson: matchUndoHistories.historyJson,
+      })
+      .from(matchUndoHistories)
+      .where(eq(matchUndoHistories.matchId, matchId))
+      .get();
+
     const historyJson = result?.historyJson || "[]";
     return c.json({ success: true, history: JSON.parse(historyJson) });
   } catch (error) {
@@ -126,14 +139,18 @@ app.get("/:id/logs", async (c) => {
     const db = drizzle(c.env.DB);
     const matchId = c.req.param("id");
     const logs = await MatchService.getPlayLogs(db, matchId);
-    
+
     // バリデーションも取得
-    const matchData = await db.select({ scorebookValidations: matches.scorebookValidations }).from(matches).where(eq(matches.id, matchId)).get();
-    let validationMessages = [];
+    const matchData = await db
+      .select({ scorebookValidations: matches.scorebookValidations })
+      .from(matches)
+      .where(eq(matches.id, matchId))
+      .get();
+    let validationMessages: unknown[] = [];
     if (matchData?.scorebookValidations) {
       try {
         validationMessages = JSON.parse(matchData.scorebookValidations);
-      } catch (e) {}
+      } catch {}
     }
 
     return c.json({ success: true, logs, validationMessages });
@@ -145,7 +162,7 @@ app.get("/:id/logs", async (c) => {
 app.post("/:id/validations/resolve", async (c) => {
   try {
     const db = drizzle(c.env.DB);
-    await db.update(matches).set({ scorebookValidations: '[]' }).where(eq(matches.id, c.req.param("id")));
+    await db.update(matches).set({ scorebookValidations: "[]" }).where(eq(matches.id, c.req.param("id")));
     return c.json({ success: true });
   } catch (error) {
     return c.json({ success: false, error: "Failed to resolve validations" }, 500);
@@ -157,14 +174,14 @@ app.delete("/:id/reset-logs", async (c) => {
   try {
     const db = drizzle(c.env.DB);
     const matchId = c.req.param("id");
-    
+
     // playLogs と atBats を matchId で削除
     // ※ atBats を削除すると、cascade で pitches, base_advances も削除される
     await db.delete(playLogs).where(eq(playLogs.matchId, matchId));
     await db.delete(atBats).where(eq(atBats.matchId, matchId));
-    
+
     // スコアバリデーションの履歴もクリア
-    await db.update(matches).set({ scorebookValidations: '[]' }).where(eq(matches.id, matchId));
+    await db.update(matches).set({ scorebookValidations: "[]" }).where(eq(matches.id, matchId));
 
     return c.json({ success: true });
   } catch (error) {
@@ -177,7 +194,13 @@ app.put("/:id/lineups", async (c) => {
   try {
     const body = await c.req.json();
     await ensureMatchLineupColumns(c.env.DB);
-    await MatchService.saveMatchLineups(drizzle(c.env.DB), c.req.param("id"), body.myLineup || [], body.opponentLineup || [], body.myAttendance || {});
+    await MatchService.saveMatchLineups(
+      drizzle(c.env.DB),
+      c.req.param("id"),
+      body.myLineup || [],
+      body.opponentLineup || [],
+      body.myAttendance || {}
+    );
     return c.json({ success: true });
   } catch (error) {
     console.error("Error in PUT /api/matches/:id/lineups:", error);
@@ -223,7 +246,8 @@ app.post("/:id/reset", async (c) => {
       db.delete(playLogs).where(eq(playLogs.matchId, matchId)) as any,
       db.delete(atBats).where(eq(atBats.matchId, matchId)) as any,
       db.delete(matchUndoHistories).where(eq(matchUndoHistories.matchId, matchId)) as any,
-      db.update(matches)
+      db
+        .update(matches)
         .set({
           myScore: 0,
           opponentScore: 0,
@@ -239,9 +263,9 @@ app.post("/:id/reset", async (c) => {
           opponentHits: 0,
           myErrors: 0,
           opponentErrors: 0,
-          status: "live"
+          status: "live",
         })
-        .where(eq(matches.id, matchId)) as any
+        .where(eq(matches.id, matchId)) as any,
     ]);
 
     return c.json({ success: true });
@@ -269,14 +293,12 @@ app.get("/logs/:logId", async (c) => {
 
     // フォールバック: atBatIdが未保存の既存データの場合、作成日時が完全に一致する打席データを探す
     if (!atBat) {
-      atBat = await db.select().from(atBats)
-        .where(
-          and(
-            eq(atBats.matchId, log.matchId),
-            eq(atBats.createdAt, log.createdAt)
-          )
-        ).get();
-        
+      atBat = await db
+        .select()
+        .from(atBats)
+        .where(and(eq(atBats.matchId, log.matchId), eq(atBats.createdAt, log.createdAt)))
+        .get();
+
       // 見つかった場合、次回以降のために atBatId を保存して修復しておく
       if (atBat) {
         await db.update(playLogs).set({ atBatId: atBat.id }).where(eq(playLogs.id, log.id));
@@ -285,7 +307,11 @@ app.get("/logs/:logId", async (c) => {
     }
 
     // Roster 取得のためにチームIDを引く
-    const match = await db.select({ teamId: matches.teamId }).from(matches).where(eq(matches.id, log.matchId)).get();
+    const match = await db
+      .select({ teamId: matches.teamId })
+      .from(matches)
+      .where(eq(matches.id, log.matchId))
+      .get();
     let roster: any[] = [];
     if (match) {
       roster = await db.select().from(players).where(eq(players.teamId, match.teamId)).all();
@@ -300,7 +326,10 @@ app.get("/logs/:logId", async (c) => {
       inningText: log.inningText,
       resultType: log.resultType,
       description: log.description,
-      createdAt: log.createdAt instanceof Date ? log.createdAt.getTime() : new Date(log.createdAt).getTime(),
+      createdAt:
+        log.createdAt instanceof Date
+          ? log.createdAt.getTime()
+          : new Date(log.createdAt).getTime(),
     };
     return c.json({ success: true, log: formattedLog, roster });
   } catch (error) {
@@ -314,7 +343,8 @@ app.put("/logs/:logId", async (c) => {
 
   try {
     const body = await c.req.json();
-    await db.update(playLogs)
+    await db
+      .update(playLogs)
       .set({
         description: body.description,
         resultType: body.resultType || "play",
@@ -343,7 +373,8 @@ app.patch("/logs/:logId/resolve", async (c) => {
   const logId = c.req.param("logId");
 
   try {
-    await db.update(playLogs)
+    await db
+      .update(playLogs)
       .set({ validationMessage: null })
       .where(eq(playLogs.id, logId));
     return c.json({ success: true });
@@ -381,18 +412,19 @@ app.post("/:id/reaggregate", async (c) => {
 
   try {
     const logs = await db.select().from(playLogs).where(eq(playLogs.matchId, matchId)).all();
-    
+
     // atBatsとplayersをJOINしてbatterNameを取得
-    const bats = await db.select({
-      id: atBats.id,
-      inning: atBats.inning,
-      isTop: atBats.isTop,
-      batterName: players.name,
-    })
-    .from(atBats)
-    .leftJoin(players, eq(players.id, atBats.batterId))
-    .where(eq(atBats.matchId, matchId))
-    .all();
+    const bats = await db
+      .select({
+        id: atBats.id,
+        inning: atBats.inning,
+        isTop: atBats.isTop,
+        batterName: players.name,
+      })
+      .from(atBats)
+      .leftJoin(players, eq(players.id, atBats.batterId))
+      .where(eq(atBats.matchId, matchId))
+      .all();
 
     const batchQueries: any[] = [];
     const usedBatIds = new Set<string>();
@@ -410,7 +442,7 @@ app.post("/:id/reaggregate", async (c) => {
 
         // 該当する atBat を探す（イニング、表裏が一致し、さらに名前から空白を除去して一致確認）
         // 名前の揺れ（半角・全角スペース）を吸収するため replace(/\s+/g, '') を使用
-        const targetBat = bats.find(b => {
+        const targetBat = bats.find((b) => {
           const isSameInning = b.inning == inning;
           const isSameTop = b.isTop == isTop;
           if (!isSameInning || !isSameTop) return false;
@@ -418,10 +450,10 @@ app.post("/:id/reaggregate", async (c) => {
 
           // b.batterName が無い（未登録の相手選手など）場合はそのまま許可（時系列フォールバック）
           if (!b.batterName) return true;
-          
+
           // 空白を全て除去して比較
-          const dbName = b.batterName.replace(/[\s　]+/g, '');
-          const logName = batterName.replace(/[\s　]+/g, '');
+          const dbName = b.batterName.replace(/[\s　]+/g, "");
+          const logName = batterName.replace(/[\s　]+/g, "");
           return dbName === logName;
         });
 
@@ -433,14 +465,13 @@ app.post("/:id/reaggregate", async (c) => {
           resultText,
           foundTargetBatId: targetBat?.id || null,
           b_isTop_type: targetBat ? typeof targetBat.isTop : null,
-          b_inning_type: targetBat ? typeof targetBat.inning : null
+          b_inning_type: targetBat ? typeof targetBat.inning : null,
         });
 
         if (targetBat) {
           usedBatIds.add(targetBat.id);
-          batchQueries.push(db.update(atBats)
-            .set({ result: resultText })
-            .where(eq(atBats.id, targetBat.id))
+          batchQueries.push(
+            db.update(atBats).set({ result: resultText }).where(eq(atBats.id, targetBat.id))
           );
         }
       } else {
@@ -452,7 +483,12 @@ app.post("/:id/reaggregate", async (c) => {
       await db.batch(batchQueries as [any, ...any[]]);
     }
 
-    return c.json({ success: true, updatedCount: batchQueries.length, debug: debugParsed, sampleBats: bats.slice(0, 3) });
+    return c.json({
+      success: true,
+      updatedCount: batchQueries.length,
+      debug: debugParsed,
+      sampleBats: bats.slice(0, 3),
+    });
   } catch (error) {
     console.error("Reaggregate API error:", error);
     return c.json({ success: false, error: "再集計処理に失敗しました" }, 500);
@@ -463,31 +499,207 @@ app.post("/:id/reaggregate", async (c) => {
 // 📊 個人成績自動集計 ＆ 打席履歴（Boxscore）API
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+interface BatterStatsAccumulator {
+  id: string;
+  name: string;
+  number: string;
+  battingOrder?: number;
+  position?: string;
+  isSub?: boolean;
+  plateAppearances: number;
+  atBats: number;
+  singles: number;
+  doubles: number;
+  triples: number;
+  homeRuns: number;
+  hits: number;
+  walks: number;
+  hitByPitch: number;
+  runs: number;
+  rbi: number;
+  stolenBases: number;
+  caughtStealing: number;
+  strikeouts: number;
+  sacBunts: number;
+  sacFlies: number;
+  leftOnBase: number;
+  errors: number;
+  doublePlays: number;
+  assists: number;
+  putouts: number;
+  sortOrder: number;
+  sortSubOrder: number;
+}
+
+interface PitcherStatsAccumulator {
+  id: string;
+  name: string;
+  number: string;
+  outs: number;
+  pitches: number;
+  battersFaced: number;
+  hits: number;
+  homeRuns: number;
+  sacBunts: number;
+  sacFlies: number;
+  strikeouts: number;
+  walks: number;
+  hitByPitch: number;
+  wildPitches: number;
+  balks: number;
+  runs: number;
+  earnedRuns: number;
+  sortOrder: number;
+}
+
+interface MatchGameDetailsPayload {
+  double: string[];
+  triple: string[];
+  homeRun: string[];
+  sacrificeBunt: string[];
+  sacrificeFly: string[];
+  stolenBase: string[];
+  doublePlay: string[];
+}
+
+function safeParseJson<T>(raw: string | null | undefined): T | null {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeLookupName(raw: string | null | undefined): string {
+  return (raw || "").replace(/[\s　]+/g, "").trim();
+}
+
+function extractBatterNameFromPlayLog(descText: string | null | undefined): string {
+  if (!descText) return "";
+  const firstLine = descText.split("\n")[0] || "";
+  const m = firstLine.match(/^(?:\d+番\s*)?([^:：]+)[：:]/);
+  if (!m) return "";
+  const name = m[1].trim();
+  return name === "打者" || name === "不明" ? "" : name;
+}
+
+function normalizeFieldingPosCode(raw: string | null | undefined): string {
+  const s = (raw || "").trim().toUpperCase();
+  const map: Record<string, string> = {
+    "1": "1",
+    投: "1",
+    P: "1",
+    "2": "2",
+    捕: "2",
+    C: "2",
+    "3": "3",
+    一: "3",
+    "1B": "3",
+    "4": "4",
+    二: "4",
+    "2B": "4",
+    "5": "5",
+    三: "5",
+    "3B": "5",
+    "6": "6",
+    遊: "6",
+    SS: "6",
+    "7": "7",
+    左: "7",
+    LF: "7",
+    "8": "8",
+    中: "8",
+    CF: "8",
+    "9": "9",
+    右: "9",
+    RF: "9",
+  };
+  return map[s] || "";
+}
+
 app.get("/:id/boxscore", async (c) => {
   const db = drizzle(c.env.DB);
   const matchId = c.req.param("id");
 
   try {
-    // playersテーブルと結合してバッターとピッチャーの名前を取得
-    const rows = await db.select({
-      id: atBats.id,
-      inning: atBats.inning,
-      isTop: atBats.isTop,
-      result: atBats.result,
-      batterId: atBats.batterId,
-      batterName: sql<string>`batter.name`,
-      batterNumber: sql<string>`batter.uniform_number`,
-      pitcherId: atBats.pitcherId,
-      pitcherName: sql<string>`pitcher.name`,
-    })
-    .from(atBats)
-    .leftJoin(sql`players as batter`, sql`batter.id = ${atBats.batterId}`)
-    .leftJoin(sql`players as pitcher`, sql`pitcher.id = ${atBats.pitcherId}`)
-    .where(eq(atBats.matchId, matchId))
-    .orderBy(atBats.inning, atBats.createdAt)
-    .all();
+    const rows = await db
+      .select({
+        id: atBats.id,
+        inning: atBats.inning,
+        isTop: atBats.isTop,
+        result: atBats.result,
+        batterId: atBats.batterId,
+        batterName: sql<string>`batter.name`,
+        batterNumber: sql<string>`batter.uniform_number`,
+        pitcherId: atBats.pitcherId,
+        pitcherName: sql<string>`pitcher.name`,
+      })
+      .from(atBats)
+      .leftJoin(sql`players as batter`, sql`batter.id = ${atBats.batterId}`)
+      .leftJoin(sql`players as pitcher`, sql`pitcher.id = ${atBats.pitcherId}`)
+      .where(eq(atBats.matchId, matchId))
+      .orderBy(atBats.inning, atBats.createdAt)
+      .all();
 
-    return c.json(rows);
+    let topSnapAtBats: ScorebookV2AtBat[] = [];
+    let bottomSnapAtBats: ScorebookV2AtBat[] = [];
+    const logDescByAtBatId = new Map<string, string>();
+    try {
+      const snapRow = await db
+        .select()
+        .from(matchScorebookSnapshots)
+        .where(eq(matchScorebookSnapshots.matchId, matchId))
+        .get();
+      if (snapRow) {
+        topSnapAtBats = safeParseJson<ScorebookV2AtBat[]>(snapRow.topAtBatsJson) || [];
+        bottomSnapAtBats = safeParseJson<ScorebookV2AtBat[]>(snapRow.bottomAtBatsJson) || [];
+      }
+      const logs = await db
+        .select({ atBatId: playLogs.atBatId, description: playLogs.description })
+        .from(playLogs)
+        .where(eq(playLogs.matchId, matchId))
+        .all();
+      for (const l of logs) {
+        if (l.atBatId && l.description) logDescByAtBatId.set(l.atBatId, l.description);
+      }
+    } catch {
+      // optional snapshot table may not exist
+    }
+
+    const seqCountByInningSide = new Map<string, number>();
+    const snapByInningSide = new Map<string, ScorebookV2AtBat[]>();
+    for (const sAb of topSnapAtBats) {
+      const k = `${sAb.inning}:1`;
+      const list = snapByInningSide.get(k) || [];
+      list.push(sAb);
+      snapByInningSide.set(k, list);
+    }
+    for (const sAb of bottomSnapAtBats) {
+      const k = `${sAb.inning}:0`;
+      const list = snapByInningSide.get(k) || [];
+      list.push(sAb);
+      snapByInningSide.set(k, list);
+    }
+
+    const enrichedRows = rows.map((r) => {
+      const sideKey = `${r.inning}:${r.isTop ? 1 : 0}`;
+      const idx = seqCountByInningSide.get(sideKey) || 0;
+      seqCountByInningSide.set(sideKey, idx + 1);
+      const snapAb = snapByInningSide.get(sideKey)?.[idx];
+      const fallbackBatter =
+        snapAb?.batterName?.trim() ||
+        extractBatterNameFromPlayLog(logDescByAtBatId.get(r.id)) ||
+        "";
+      const fallbackPitcher = snapAb?.pitcherName?.trim() || "";
+      return {
+        ...r,
+        batterName: r.batterName || fallbackBatter,
+        pitcherName: r.pitcherName || fallbackPitcher,
+      };
+    });
+
+    return c.json(enrichedRows);
   } catch (error) {
     console.error("Boxscore API error:", error);
     return c.json([], 500);
@@ -504,51 +716,55 @@ app.get("/:id/stats", async (c) => {
 
     const isMyTeamTop = match.battingOrder === "first";
 
-    const dbAtBats = await db.select({
-      id: atBats.id,
-      inning: atBats.inning,
-      isTop: atBats.isTop,
-      result: atBats.result,
-      batterId: atBats.batterId,
-      batterName: sql<string>`batter.name`,
-      batterNumber: sql<string>`batter.uniform_number`,
-      pitcherId: atBats.pitcherId,
-      pitcherName: sql<string>`pitcher.name`,
-      pitcherNumber: sql<string>`pitcher.uniform_number`,
-    })
-    .from(atBats)
-    .leftJoin(sql`players as batter`, sql`batter.id = ${atBats.batterId}`)
-    .leftJoin(sql`players as pitcher`, sql`pitcher.id = ${atBats.pitcherId}`)
-    .where(eq(atBats.matchId, matchId))
-    .all();
+    const dbAtBats = await db
+      .select({
+        id: atBats.id,
+        inning: atBats.inning,
+        isTop: atBats.isTop,
+        result: atBats.result,
+        batterId: atBats.batterId,
+        batterName: sql<string>`batter.name`,
+        batterNumber: sql<string>`batter.uniform_number`,
+        pitcherId: atBats.pitcherId,
+        pitcherName: sql<string>`pitcher.name`,
+        pitcherNumber: sql<string>`pitcher.uniform_number`,
+      })
+      .from(atBats)
+      .leftJoin(sql`players as batter`, sql`batter.id = ${atBats.batterId}`)
+      .leftJoin(sql`players as pitcher`, sql`pitcher.id = ${atBats.pitcherId}`)
+      .where(eq(atBats.matchId, matchId))
+      .orderBy(asc(atBats.inning), asc(atBats.createdAt))
+      .all();
 
-    const dbAdvances = await db.select({
-      id: baseAdvances.id,
-      matchId: baseAdvances.matchId,
-      atBatId: baseAdvances.atBatId,
-      pitchId: baseAdvances.pitchId,
-      runnerId: baseAdvances.runnerId,
-      fromBase: baseAdvances.fromBase,
-      toBase: baseAdvances.toBase,
-      reason: baseAdvances.reason,
-      isOut: baseAdvances.isOut,
-      runnerName: sql<string>`runner.name`,
-      runnerNumber: sql<string>`runner.uniform_number`,
-    })
+    const dbAdvances = await db
+      .select({
+        id: baseAdvances.id,
+        matchId: baseAdvances.matchId,
+        atBatId: baseAdvances.atBatId,
+        pitchId: baseAdvances.pitchId,
+        runnerId: baseAdvances.runnerId,
+        fromBase: baseAdvances.fromBase,
+        toBase: baseAdvances.toBase,
+        reason: baseAdvances.reason,
+        isOut: baseAdvances.isOut,
+        runnerName: sql<string>`runner.name`,
+        runnerNumber: sql<string>`runner.uniform_number`,
+      })
       .from(baseAdvances)
       .leftJoin(sql`players as runner`, sql`runner.id = ${baseAdvances.runnerId}`)
       .where(eq(baseAdvances.matchId, matchId))
       .all();
 
-    const dbPitches = await db.select({
-      id: pitches.id,
-      atBatId: pitches.atBatId,
-      result: pitches.result,
-    })
-    .from(pitches)
-    .innerJoin(atBats, eq(pitches.atBatId, atBats.id))
-    .where(eq(atBats.matchId, matchId))
-    .all();
+    const dbPitches = await db
+      .select({
+        id: pitches.id,
+        atBatId: pitches.atBatId,
+        result: pitches.result,
+      })
+      .from(pitches)
+      .innerJoin(atBats, eq(pitches.atBatId, atBats.id))
+      .where(eq(atBats.matchId, matchId))
+      .all();
 
     const dbPlayLogs = await db
       .select({
@@ -559,12 +775,196 @@ app.get("/:id/stats", async (c) => {
       .where(eq(playLogs.matchId, matchId))
       .all();
 
+    let myStructure: ScorebookSheetStructure | null = null;
+    let oppStructure: ScorebookSheetStructure | null = null;
+    let mySnapAtBats: ScorebookV2AtBat[] = [];
+    let oppSnapAtBats: ScorebookV2AtBat[] = [];
+    let dbLineups: Array<{
+      playerId: string;
+      battingOrder: number;
+      position: string;
+      isStarting: boolean;
+      inningEntered: number | null;
+      name: string | null;
+      uniformNumber: string | null;
+    }> = [];
+
+    try {
+      const snapRow = await db
+        .select()
+        .from(matchScorebookSnapshots)
+        .where(eq(matchScorebookSnapshots.matchId, matchId))
+        .get();
+      if (snapRow) {
+        const topStruct = safeParseJson<ScorebookSheetStructure>(snapRow.topStructureJson);
+        const botStruct = safeParseJson<ScorebookSheetStructure>(snapRow.bottomStructureJson);
+        const topAbs = safeParseJson<ScorebookV2AtBat[]>(snapRow.topAtBatsJson) || [];
+        const botAbs = safeParseJson<ScorebookV2AtBat[]>(snapRow.bottomAtBatsJson) || [];
+        myStructure = isMyTeamTop ? topStruct : botStruct;
+        oppStructure = isMyTeamTop ? botStruct : topStruct;
+        mySnapAtBats = isMyTeamTop ? topAbs : botAbs;
+        oppSnapAtBats = isMyTeamTop ? botAbs : topAbs;
+      }
+    } catch {
+      // optional snapshot table may not exist in older local test DBs
+    }
+
+    try {
+      dbLineups = await db
+        .select({
+          playerId: matchLineups.playerId,
+          battingOrder: matchLineups.battingOrder,
+          position: matchLineups.position,
+          isStarting: matchLineups.isStarting,
+          inningEntered: matchLineups.inningEntered,
+          name: players.name,
+          uniformNumber: players.uniformNumber,
+        })
+        .from(matchLineups)
+        .leftJoin(players, eq(matchLineups.playerId, players.id))
+        .where(eq(matchLineups.matchId, matchId))
+        .orderBy(asc(matchLineups.battingOrder), asc(matchLineups.inningEntered))
+        .all();
+    } catch {
+      // ignore if lineups query fails
+    }
+
     const explicitRbiByAtBatId = new Map<string, number>();
+    const playLogDescByAtBatId = new Map<string, string>();
     for (const pl of dbPlayLogs) {
       if (!pl.atBatId || !pl.description) continue;
+      playLogDescByAtBatId.set(pl.atBatId, pl.description);
       const rbiMatch = pl.description.match(/打点(\d+)/);
       if (rbiMatch) {
         explicitRbiByAtBatId.set(pl.atBatId, Number(rbiMatch[1]));
+      }
+    }
+
+    // DB打席とスナップショット打席を (inning, isTop) 内の時系列順で対応付け
+    const snapMapByDbAtBatId = new Map<string, ScorebookV2AtBat>();
+    const mySnapQueueByInn = new Map<number, ScorebookV2AtBat[]>();
+    for (const sAb of mySnapAtBats) {
+      const q = mySnapQueueByInn.get(sAb.inning) || [];
+      q.push(sAb);
+      mySnapQueueByInn.set(sAb.inning, q);
+    }
+    const oppSnapQueueByInn = new Map<number, ScorebookV2AtBat[]>();
+    for (const sAb of oppSnapAtBats) {
+      const q = oppSnapQueueByInn.get(sAb.inning) || [];
+      q.push(sAb);
+      oppSnapQueueByInn.set(sAb.inning, q);
+    }
+    const myInnOffsets = new Map<number, number>();
+    const oppInnOffsets = new Map<number, number>();
+    for (const ab of dbAtBats) {
+      if (ab.isTop === isMyTeamTop) {
+        const idx = myInnOffsets.get(ab.inning) || 0;
+        myInnOffsets.set(ab.inning, idx + 1);
+        const sAb = mySnapQueueByInn.get(ab.inning)?.[idx];
+        if (sAb) snapMapByDbAtBatId.set(ab.id, sAb);
+      } else {
+        const idx = oppInnOffsets.get(ab.inning) || 0;
+        oppInnOffsets.set(ab.inning, idx + 1);
+        const sAb = oppSnapQueueByInn.get(ab.inning)?.[idx];
+        if (sAb) snapMapByDbAtBatId.set(ab.id, sAb);
+      }
+    }
+
+    // 選手名簿・スコアブック骨格・ラインナップから (playerId / cleanName) -> 表示情報・打順メタデータを索引化
+    interface PlayerMetaInfo {
+      key: string;
+      name: string;
+      number: string;
+      battingOrder?: number;
+      position?: string;
+      isSub?: boolean;
+      sortOrder: number;
+      sortSubOrder: number;
+    }
+
+    const metaByKey = new Map<string, PlayerMetaInfo>();
+    const keyByCleanName = new Map<string, string>();
+
+    const registerMeta = (info: PlayerMetaInfo) => {
+      const prev = metaByKey.get(info.key);
+      if (!prev) {
+        metaByKey.set(info.key, info);
+      } else {
+        metaByKey.set(info.key, {
+          ...prev,
+          name: prev.name && prev.name !== "不明" ? prev.name : info.name,
+          number: prev.number && prev.number !== "-" ? prev.number : info.number,
+          battingOrder: prev.battingOrder ?? info.battingOrder,
+          position: prev.position || info.position,
+          isSub: prev.isSub ?? info.isSub,
+          sortOrder: Math.min(prev.sortOrder, info.sortOrder),
+          sortSubOrder: Math.min(prev.sortSubOrder, info.sortSubOrder),
+        });
+      }
+      const cn = normalizeLookupName(info.name);
+      if (cn && !keyByCleanName.has(cn)) {
+        keyByCleanName.set(cn, info.key);
+      }
+    };
+
+    for (const lu of dbLineups) {
+      if (!lu.playerId) continue;
+      registerMeta({
+        key: lu.playerId,
+        name: lu.name || "不明",
+        number: lu.uniformNumber || "-",
+        battingOrder: lu.battingOrder > 0 ? lu.battingOrder : undefined,
+        position: lu.position || undefined,
+        isSub: !lu.isStarting,
+        sortOrder: lu.battingOrder > 0 ? lu.battingOrder : 99,
+        sortSubOrder: lu.isStarting ? 0 : lu.inningEntered || 1,
+      });
+    }
+
+    if (myStructure) {
+      for (const slot of myStructure.batters) {
+        const cleanSlotName = normalizeLookupName(slot.name);
+        const slotKey =
+          slot.playerId ||
+          (cleanSlotName ? keyByCleanName.get(cleanSlotName) || `name:${cleanSlotName}` : "");
+        if (slotKey && slot.name.trim()) {
+          registerMeta({
+            key: slotKey,
+            name: slot.name.trim(),
+            number: slot.uniformNumber?.trim() || "-",
+            battingOrder: slot.battingOrder,
+            position: slot.position || undefined,
+            isSub: false,
+            sortOrder: slot.battingOrder > 0 ? slot.battingOrder : 99,
+            sortSubOrder: 0,
+          });
+        }
+        slot.substitutions.forEach((sub, subIdx) => {
+          const cleanSubName = normalizeLookupName(sub.name);
+          const subKey =
+            sub.playerId ||
+            (cleanSubName ? keyByCleanName.get(cleanSubName) || `name:${cleanSubName}` : "");
+          if (subKey && sub.name.trim()) {
+            const subPos =
+              sub.subType === "PH"
+                ? "P"
+                : sub.subType === "PR"
+                ? "R"
+                : sub.subType === "TR"
+                ? "TR"
+                : sub.position || "";
+            registerMeta({
+              key: subKey,
+              name: sub.name.trim(),
+              number: sub.uniformNumber?.trim() || "-",
+              battingOrder: slot.battingOrder,
+              position: subPos || undefined,
+              isSub: true,
+              sortOrder: slot.battingOrder > 0 ? slot.battingOrder : 99,
+              sortSubOrder: (sub.inningEntered || 1) * 10 + subIdx + 1,
+            });
+          }
+        });
       }
     }
 
@@ -588,103 +988,181 @@ app.get("/:id/stats", async (c) => {
       );
     };
 
-    const runsList = dbAdvances.filter(a => a.toBase === 4 && !a.isOut);
+    const runsList = dbAdvances.filter((a) => a.toBase === 4 && !a.isOut);
 
-    // --- 打者・走者・守備成績集計 (20項目) ---
-    const batterMap = new Map<string, any>();
+    // --- 打者・走者・守備成績集計 (20項目 + 安打 + 打率) ---
+    const batterMap = new Map<string, BatterStatsAccumulator>();
+    let fallbackAppearanceCounter = 100;
 
-    const getBatterInit = (id: string, name: string, num: string) => ({
-      id,
-      name: name || "不明",
-      number: num || "-",
-      plateAppearances: 0, // 1. 打席数
-      atBats: 0,           // 2. 打数
-      singles: 0,          // 3. 単打
-      doubles: 0,          // 4. 二塁打
-      triples: 0,          // 5. 三塁打
-      homeRuns: 0,         // 6. 本塁打
-      hits: 0,             // 安打数 (単打+二塁打+三塁打+本塁打)
-      walks: 0,            // 7. 四球
-      hitByPitch: 0,       // 8. 死球
-      runs: 0,             // 9. 得点
-      rbi: 0,              // 10. 打点
-      stolenBases: 0,      // 11. 盗塁
-      caughtStealing: 0,   // 12. 盗塁刺
-      strikeouts: 0,       // 13. 三振
-      sacBunts: 0,         // 14. 犠打
-      sacFlies: 0,         // 15. 犠飛
-      leftOnBase: 0,       // 16. 残塁
-      errors: 0,           // 17. 失策
-      doublePlays: 0,      // 18. 併殺
-      assists: 0,          // 19. 捕殺
-      putouts: 0,          // 20. 刺殺
-    });
+    const ensureBatterEntry = (
+      key: string,
+      fallbackName: string,
+      fallbackNum: string,
+      fallbackOrder?: number
+    ): BatterStatsAccumulator => {
+      const existing = batterMap.get(key);
+      if (existing) return existing;
+      const meta = metaByKey.get(key);
+      fallbackAppearanceCounter += 1;
+      const created: BatterStatsAccumulator = {
+        id: key,
+        name: meta?.name || fallbackName || "不明",
+        number:
+          meta?.number && meta.number !== "-"
+            ? meta.number
+            : fallbackNum || "-",
+        battingOrder: meta?.battingOrder ?? fallbackOrder,
+        position: meta?.position,
+        isSub: meta?.isSub,
+        plateAppearances: 0,
+        atBats: 0,
+        singles: 0,
+        doubles: 0,
+        triples: 0,
+        homeRuns: 0,
+        hits: 0,
+        walks: 0,
+        hitByPitch: 0,
+        runs: 0,
+        rbi: 0,
+        stolenBases: 0,
+        caughtStealing: 0,
+        strikeouts: 0,
+        sacBunts: 0,
+        sacFlies: 0,
+        leftOnBase: 0,
+        errors: 0,
+        doublePlays: 0,
+        assists: 0,
+        putouts: 0,
+        sortOrder:
+          meta?.sortOrder ??
+          (fallbackOrder && fallbackOrder > 0 ? fallbackOrder : fallbackAppearanceCounter),
+        sortSubOrder: meta?.sortSubOrder ?? 0,
+      };
+      batterMap.set(key, created);
+      const cn = normalizeLookupName(created.name);
+      if (cn && !keyByCleanName.has(cn)) {
+        keyByCleanName.set(cn, key);
+      }
+      return created;
+    };
+
+    const gameDetails: MatchGameDetailsPayload = {
+      double: [],
+      triple: [],
+      homeRun: [],
+      sacrificeBunt: [],
+      sacrificeFly: [],
+      stolenBase: [],
+      doublePlay: [],
+    };
 
     for (const ab of dbAtBats) {
       const isMyAttack = ab.isTop === isMyTeamTop;
-      if (!isMyAttack || !ab.batterId) continue;
+      if (!isMyAttack) continue;
 
-      const batterId = ab.batterId;
-      if (!batterMap.has(batterId)) {
-        batterMap.set(batterId, getBatterInit(batterId, ab.batterName, ab.batterNumber));
-      }
+      const snapAb = snapMapByDbAtBatId.get(ab.id);
+      const fallbackBatterName =
+        ab.batterName ||
+        snapAb?.batterName?.trim() ||
+        extractBatterNameFromPlayLog(playLogDescByAtBatId.get(ab.id)) ||
+        "";
+      const cleanFallbackBatter = normalizeLookupName(fallbackBatterName);
+      const batterKey =
+        ab.batterId ||
+        snapAb?.batterPlayerId ||
+        (cleanFallbackBatter
+          ? keyByCleanName.get(cleanFallbackBatter) || `name:${cleanFallbackBatter}`
+          : "");
+      if (!batterKey) continue;
 
-      const p = batterMap.get(batterId);
+      const p = ensureBatterEntry(
+        batterKey,
+        fallbackBatterName || "不明",
+        ab.batterNumber || "-",
+        snapAb?.battingOrder
+      );
+
       const res = ab.result || "";
       if (res === "other" || res.includes("途中断")) {
         continue;
       }
 
       p.plateAppearances++;
-      const isWalk = res === "walk" || res === "intentional_walk" || res.includes("BB") || res.includes("四球") || res.includes("敬遠");
-      const isHbp = res === "hit_by_pitch" || res.includes("HP") || res.includes("DB") || res.includes("死球");
-      const isSacBunt = res === "sac_bunt" || res.includes("SH") || res.includes("犠打") || (res.includes("犠") && !res.includes("飛"));
-      const isSacFly = res === "sac_fly" || res.includes("SF") || res.includes("犠飛");
-      const isInterferenceReach = res === "interference" || res.includes("打撃妨害");
+      const isWalk =
+        res === "walk" ||
+        res === "intentional_walk" ||
+        res.includes("BB") ||
+        res.includes("四球") ||
+        res.includes("敬遠");
+      const isHbp =
+        res === "hit_by_pitch" ||
+        res.includes("HP") ||
+        res.includes("DB") ||
+        res.includes("死球");
+      const isSacBunt =
+        res === "sac_bunt" ||
+        res.includes("SH") ||
+        res.includes("犠打") ||
+        (res.includes("犠") && !res.includes("飛"));
+      const isSacFly =
+        res === "sac_fly" || res.includes("SF") || res.includes("犠飛");
+      const isInterferenceReach =
+        res === "interference" || res.includes("打撃妨害");
 
       if (isWalk) p.walks++;
       if (isHbp) p.hitByPitch++;
-      if (isSacBunt) p.sacBunts++;
-      if (isSacFly) p.sacFlies++;
+      if (isSacBunt) {
+        p.sacBunts++;
+        gameDetails.sacrificeBunt.push(`${p.name} (${ab.inning}回)`);
+      }
+      if (isSacFly) {
+        p.sacFlies++;
+        gameDetails.sacrificeFly.push(`${p.name} (${ab.inning}回)`);
+      }
 
-      // 打数 (AB) = 四球・死球・犠打・犠飛 以外の打席
+      // 打数 (AB) = 四球・死球・犠打・犠飛・打撃妨害 以外の打席
       if (!isWalk && !isHbp && !isSacBunt && !isSacFly && !isInterferenceReach) {
         p.atBats++;
       }
 
       // 安打・長打判別
-      const is2B = res === "double" || res.includes("2B") || res.includes("二塁打") || res.includes("２塁打");
-      const is3B = res === "triple" || res.includes("3B") || res.includes("三塁打") || res.includes("３塁打");
-      const isHR = res === "home_run" || res.includes("HR") || res.includes("本塁打");
-      const is1B = res === "single" || res.includes("1B") || res.includes("単打") || (res.includes("安") && !is2B && !is3B && !isHR);
+      const is2B =
+        res === "double" ||
+        res.includes("2B") ||
+        res.includes("二塁打") ||
+        res.includes("２塁打");
+      const is3B =
+        res === "triple" ||
+        res.includes("3B") ||
+        res.includes("三塁打") ||
+        res.includes("３塁打");
+      const isHR =
+        res === "home_run" || res.includes("HR") || res.includes("本塁打");
+      const is1B =
+        res === "single" ||
+        res.includes("1B") ||
+        res.includes("単打") ||
+        (res.includes("安") && !is2B && !is3B && !isHR);
 
       if (isHR) {
         p.homeRuns++;
         p.hits++;
+        gameDetails.homeRun.push(`${p.name} (${ab.inning}回)`);
       } else if (is3B) {
         p.triples++;
         p.hits++;
+        gameDetails.triple.push(`${p.name} (${ab.inning}回)`);
       } else if (is2B) {
         p.doubles++;
         p.hits++;
+        gameDetails.double.push(`${p.name} (${ab.inning}回)`);
       } else if (is1B) {
         p.singles++;
         p.hits++;
       }
 
-      if (res === "strikeout" || res === "dropped_third_strike" || res === "dropped_third_strike_out" || res.includes("K") || res.includes("三振") || res.includes("振逃")) {
-        p.strikeouts++;
-      }
-
-      if (res === "double_play" || res === "triple_play" || res.includes("DP") || res.includes("併殺") || res.includes("三重殺") || res.includes("ゲッツー")) {
-        p.doublePlays++;
-      }
-
-      if (res === "error" || res.includes("E") || res.includes("失策") || res.includes("エラー")) {
-        p.errors++;
-      }
-
-      // 打点集計 (該当打席で本塁生還した走者数)
       const isStrikeoutPlay =
         res === "strikeout" ||
         res === "dropped_third_strike" ||
@@ -692,6 +1170,10 @@ app.get("/:id/stats", async (c) => {
         res.includes("K") ||
         res.includes("三振") ||
         res.includes("振逃");
+      if (isStrikeoutPlay) {
+        p.strikeouts++;
+      }
+
       const isDoublePlay =
         res === "double_play" ||
         res === "triple_play" ||
@@ -699,6 +1181,11 @@ app.get("/:id/stats", async (c) => {
         res.includes("併殺") ||
         res.includes("三重殺") ||
         res.includes("ゲッツー");
+      if (isDoublePlay) {
+        p.doublePlays++;
+        gameDetails.doublePlay.push(`${p.name} (${ab.inning}回)`);
+      }
+
       const isErrorReach =
         res === "error" ||
         res.includes("E") ||
@@ -706,9 +1193,12 @@ app.get("/:id/stats", async (c) => {
         res.includes("エラー");
 
       const atBatSafeRuns = runsList.filter((a) => a.atBatId === ab.id);
-      const hasBatterSelfRunRow = atBatSafeRuns.some(
-        (a) => a.runnerId === batterId
+      const snapSelfScored = Boolean(
+        snapAb?.advances?.some((a) => a.from === "BAT" && a.to === "HP" && !a.isOut)
       );
+      const hasBatterSelfRunRow =
+        atBatSafeRuns.some((a) => a.runnerId === batterKey || a.fromBase === 0) ||
+        (atBatSafeRuns.length > 0 && snapSelfScored);
       if (isHR && !hasBatterSelfRunRow) {
         p.runs++;
       }
@@ -717,82 +1207,196 @@ app.get("/:id/stats", async (c) => {
       const rbiCount =
         typeof explicitRbi === "number"
           ? explicitRbi
+          : typeof snapAb?.rbi === "number"
+          ? snapAb.rbi
           : isDoublePlay || isErrorReach || isStrikeoutPlay
           ? 0
           : isWalk || isHbp || isInterferenceReach
           ? Math.min(
               1,
-              atBatSafeRuns.filter((a) => !isNonRbiAdvanceReason(a.reason))
-                .length
+              atBatSafeRuns.filter((a) => !isNonRbiAdvanceReason(a.reason)).length
             )
-          : atBatSafeRuns.filter((a) => !isNonRbiAdvanceReason(a.reason))
-              .length + (isHR && !hasBatterSelfRunRow ? 1 : 0);
+          : atBatSafeRuns.filter((a) => !isNonRbiAdvanceReason(a.reason)).length +
+            (isHR && !hasBatterSelfRunRow ? 1 : 0);
       p.rbi += rbiCount;
     }
 
-    // 得点・盗塁・盗塁刺の集計 (base_advancesより・打席0回の代走/臨時代走も含めて漏らさず集計)
+    // 得点・盗塁・盗塁刺の集計（base_advances + スナップショット補完により0打席代走・未紐付け走者も完全カバー）
     const abById = new Map(dbAtBats.map((a) => [a.id, a]));
+    const dbAdvancesByAtBatId = new Map<string, typeof dbAdvances>();
     for (const adv of dbAdvances) {
-      if (!adv.runnerId) continue;
-      if (!batterMap.has(adv.runnerId)) {
-        const parentAb = adv.atBatId ? abById.get(adv.atBatId) : undefined;
-        const isMyAttackAdv = parentAb ? parentAb.isTop === isMyTeamTop : true;
-        if (isMyAttackAdv && adv.runnerName) {
-          batterMap.set(
-            adv.runnerId,
-            getBatterInit(adv.runnerId, adv.runnerName, adv.runnerNumber || "-")
-          );
-        }
-      }
-      if (batterMap.has(adv.runnerId)) {
-        const runner = batterMap.get(adv.runnerId);
-        
-        // 得点
+      const arr = dbAdvancesByAtBatId.get(adv.atBatId) || [];
+      arr.push(adv);
+      dbAdvancesByAtBatId.set(adv.atBatId, arr);
+    }
+
+    for (const ab of dbAtBats) {
+      if (ab.isTop !== isMyTeamTop) continue;
+      const snapAb = snapMapByDbAtBatId.get(ab.id);
+      const abAdvances = dbAdvancesByAtBatId.get(ab.id) || [];
+
+      abAdvances.forEach((adv, advIdx) => {
+        const snapAdv = snapAb?.advances?.[advIdx];
+        const fallbackRunnerName =
+          adv.runnerName || snapAdv?.runnerName?.trim() || "";
+        const cleanRunner = normalizeLookupName(fallbackRunnerName);
+        const runnerKey =
+          adv.runnerId ||
+          (cleanRunner
+            ? keyByCleanName.get(cleanRunner) || `name:${cleanRunner}`
+            : "");
+        if (!runnerKey) return;
+
+        const runner = ensureBatterEntry(
+          runnerKey,
+          fallbackRunnerName || "不明",
+          adv.runnerNumber || "-"
+        );
+
         if (adv.toBase === 4 && !adv.isOut) {
           runner.runs++;
         }
 
-        // 盗塁
-        const reasonStr = String(adv.reason || '');
-        if (reasonStr === 'steal' || reasonStr.includes('stolen') || reasonStr.includes('SB') || reasonStr.includes('盗塁')) {
+        const reasonStr = String(adv.reason || "");
+        if (
+          reasonStr === "steal" ||
+          reasonStr.includes("stolen") ||
+          reasonStr.includes("SB") ||
+          reasonStr.includes("盗塁")
+        ) {
           if (adv.isOut) {
             runner.caughtStealing++;
           } else {
             runner.stolenBases++;
+            gameDetails.stolenBase.push(`${runner.name} (${ab.inning}回)`);
           }
-        } else if (reasonStr === 'caught_stealing' || reasonStr.includes('CS') || reasonStr.includes('盗塁刺') || reasonStr.includes('盗塁死')) {
+        } else if (
+          reasonStr === "caught_stealing" ||
+          reasonStr.includes("CS") ||
+          reasonStr.includes("盗塁刺") ||
+          reasonStr.includes("盗塁死")
+        ) {
           runner.caughtStealing++;
+        }
+      });
+    }
+
+    // --- 残塁 (leftOnBase) の正確な集計 ---
+    if (mySnapAtBats.length > 0) {
+      const simSnaps = simulateSheetRunners(mySnapAtBats, myStructure ?? undefined);
+      const lastAbByInning = new Map<number, ScorebookV2AtBat>();
+      for (const sAb of mySnapAtBats) {
+        lastAbByInning.set(sAb.inning, sAb);
+      }
+      for (const [, lastAb] of lastAbByInning) {
+        const snap = simSnaps.get(lastAb.id);
+        if (!snap) continue;
+        for (const baseKey of ["1B", "2B", "3B"] as const) {
+          const stranded = snap.basesAfterPlay[baseKey];
+          if (!stranded) continue;
+          const cleanName = normalizeLookupName(stranded.name);
+          const rKey =
+            stranded.playerId ||
+            (cleanName ? keyByCleanName.get(cleanName) || `name:${cleanName}` : "");
+          if (rKey && batterMap.has(rKey)) {
+            batterMap.get(rKey)!.leftOnBase += 1;
+          }
+        }
+      }
+    } else {
+      // ライブ入力等のフォールバック：イニング終了時点で1〜3塁に残っている走者を集計
+      const myInnings = Array.from(
+        new Set(dbAtBats.filter((a) => a.isTop === isMyTeamTop).map((a) => a.inning))
+      );
+      for (const inn of myInnings) {
+        const runnerOnBaseByKey = new Map<string, number>();
+        const innAbs = dbAtBats.filter((a) => a.isTop === isMyTeamTop && a.inning === inn);
+        for (const ab of innAbs) {
+          const abAdvs = dbAdvancesByAtBatId.get(ab.id) || [];
+          let batterHasFromZeroAdv = false;
+          for (const adv of abAdvs) {
+            if (adv.fromBase === 0) batterHasFromZeroAdv = true;
+            if (!adv.runnerId) continue;
+            if (adv.isOut || adv.toBase >= 4) {
+              runnerOnBaseByKey.delete(adv.runnerId);
+            } else if (adv.toBase >= 1 && adv.toBase <= 3) {
+              runnerOnBaseByKey.set(adv.runnerId, adv.toBase);
+            }
+          }
+          if (!batterHasFromZeroAdv && ab.batterId) {
+            const res = ab.result || "";
+            if (res === "triple" || res.includes("3B") || res.includes("三塁打")) {
+              runnerOnBaseByKey.set(ab.batterId, 3);
+            } else if (res === "double" || res.includes("2B") || res.includes("二塁打")) {
+              runnerOnBaseByKey.set(ab.batterId, 2);
+            } else if (
+              res === "single" ||
+              res.includes("1B") ||
+              res.includes("単打") ||
+              res === "walk" ||
+              res === "intentional_walk" ||
+              res === "hit_by_pitch" ||
+              res === "error" ||
+              res === "fc" ||
+              res === "dropped_third_strike" ||
+              res.includes("四球") ||
+              res.includes("死球")
+            ) {
+              runnerOnBaseByKey.set(ab.batterId, 1);
+            }
+          }
+        }
+        for (const [rKey] of runnerOnBaseByKey) {
+          if (batterMap.has(rKey)) {
+            batterMap.get(rKey)!.leftOnBase += 1;
+          }
         }
       }
     }
 
-    const batterStatsList = Array.from(batterMap.values()).map(p => {
-      const avgVal = p.atBats > 0 ? (p.hits / p.atBats) : 0;
-      let avgStr = avgVal.toFixed(3);
-      if (avgStr.startsWith("0.")) {
-        avgStr = avgStr.substring(1);
-      } else if (avgStr === "1.000") {
-        avgStr = "1.00";
-      }
-      return {
-        ...p,
-        avg: p.atBats > 0 ? avgStr : ".000"
-      };
-    });
-
-    // --- 投手成績集計 ---
-    const pitcherMap = new Map<string, any>();
+    // --- 投手成績集計（未登録投手のスナップショット補完対応） ---
+    const pitcherMap = new Map<string, PitcherStatsAccumulator>();
+    const pitcherKeyByAtBatId = new Map<string, string>();
+    let pitcherOrderSeq = 0;
 
     for (const ab of dbAtBats) {
       const isMyDefense = ab.isTop !== isMyTeamTop;
-      if (!isMyDefense || !ab.pitcherId) continue;
+      if (!isMyDefense) continue;
 
-      const pitcherId = ab.pitcherId;
-      if (!pitcherMap.has(pitcherId)) {
-        pitcherMap.set(pitcherId, {
-          id: pitcherId,
-          name: ab.pitcherName || "不明",
-          number: ab.pitcherNumber || "-",
+      const snapAb = snapMapByDbAtBatId.get(ab.id);
+      const fallbackPitcherName =
+        ab.pitcherName || snapAb?.pitcherName?.trim() || "";
+      const cleanPitcher = normalizeLookupName(fallbackPitcherName);
+      const matchedStint = oppStructure?.pitchers.find(
+        (st) =>
+          (ab.pitcherId && st.playerId === ab.pitcherId) ||
+          (cleanPitcher && normalizeLookupName(st.name) === cleanPitcher)
+      );
+      const pitcherKey =
+        ab.pitcherId ||
+        snapAb?.pitcherPlayerId ||
+        matchedStint?.playerId ||
+        (cleanPitcher &&
+        cleanPitcher !== "相手投手" &&
+        cleanPitcher !== "投手" &&
+        cleanPitcher !== "不明"
+          ? keyByCleanName.get(cleanPitcher) || `name:${cleanPitcher}`
+          : "");
+      if (!pitcherKey) continue;
+
+      pitcherKeyByAtBatId.set(ab.id, pitcherKey);
+
+      if (!pitcherMap.has(pitcherKey)) {
+        pitcherOrderSeq += 1;
+        const meta = metaByKey.get(pitcherKey);
+        pitcherMap.set(pitcherKey, {
+          id: pitcherKey,
+          name: meta?.name || fallbackPitcherName || "不明",
+          number:
+            ab.pitcherNumber ||
+            matchedStint?.uniformNumber?.trim() ||
+            meta?.number ||
+            "-",
           outs: 0,
           pitches: 0,
           battersFaced: 0,
@@ -807,68 +1411,118 @@ app.get("/:id/stats", async (c) => {
           balks: 0,
           runs: 0,
           earnedRuns: 0,
+          sortOrder: matchedStint?.order ?? pitcherOrderSeq,
         });
       }
 
-      const p = pitcherMap.get(pitcherId);
+      const p = pitcherMap.get(pitcherKey)!;
       const res = ab.result || "";
 
-      // 投球数 (その打席の投球データをカウント)
-      const pitchCountForAtBat = dbPitches.filter(pt => pt.atBatId === ab.id && !pt.result.startsWith("pickoff") && pt.result !== "balk").length;
+      // 投球数 (牽制球・ボークを除いた実投球数をカウント)
+      const pitchCountForAtBat = dbPitches.filter(
+        (pt) =>
+          pt.atBatId === ab.id &&
+          !pt.result.startsWith("pickoff") &&
+          pt.result !== "balk"
+      ).length;
       p.pitches += pitchCountForAtBat;
 
-      // 対戦打者
       if (res !== "other" && !res.includes("途中断")) p.battersFaced++;
 
-      // 被安打 (単打, 二塁打, 三塁打, 本塁打)
-      const is2B = res === "double" || res.includes("2B") || res.includes("二塁打") || res.includes("２塁打");
-      const is3B = res === "triple" || res.includes("3B") || res.includes("三塁打") || res.includes("３塁打");
-      const isHR = res === "home_run" || res.includes("HR") || res.includes("本塁打");
-      const is1B = res === "single" || res.includes("1B") || res.includes("単打") || (res.includes("安") && !is2B && !is3B && !isHR);
+      const is2B =
+        res === "double" ||
+        res.includes("2B") ||
+        res.includes("二塁打") ||
+        res.includes("２塁打");
+      const is3B =
+        res === "triple" ||
+        res.includes("3B") ||
+        res.includes("三塁打") ||
+        res.includes("３塁打");
+      const isHR =
+        res === "home_run" || res.includes("HR") || res.includes("本塁打");
+      const is1B =
+        res === "single" ||
+        res.includes("1B") ||
+        res.includes("単打") ||
+        (res.includes("安") && !is2B && !is3B && !isHR);
       if (is1B || is2B || is3B || isHR) {
         p.hits++;
       }
-
-      // 被本塁打
       if (isHR) {
         p.homeRuns++;
       }
 
-      // 被犠打
-      const isSacBunt = res === "sac_bunt" || res.includes("SH") || res.includes("犠打") || (res.includes("犠") && !res.includes("飛"));
+      const isSacBunt =
+        res === "sac_bunt" ||
+        res.includes("SH") ||
+        res.includes("犠打") ||
+        (res.includes("犠") && !res.includes("飛"));
       if (isSacBunt) {
         p.sacBunts++;
       }
 
-      // 被犠飛
-      const isSacFly = res === "sac_fly" || res.includes("SF") || res.includes("犠飛");
-      const isInterferenceReach = res === "interference" || res.includes("打撃妨害");
+      const isSacFly =
+        res === "sac_fly" || res.includes("SF") || res.includes("犠飛");
       if (isSacFly) {
         p.sacFlies++;
       }
 
-      // 奪三振
-      if (res === "strikeout" || res === "dropped_third_strike" || res === "dropped_third_strike_out" || res.includes("K") || res.includes("三振") || res.includes("振逃")) {
+      if (
+        res === "strikeout" ||
+        res === "dropped_third_strike" ||
+        res === "dropped_third_strike_out" ||
+        res.includes("K") ||
+        res.includes("三振") ||
+        res.includes("振逃")
+      ) {
         p.strikeouts++;
       }
 
-      // 与四球
-      if (res === "walk" || res === "intentional_walk" || res.includes("BB") || res.includes("四球") || res.includes("敬遠")) {
+      if (
+        res === "walk" ||
+        res === "intentional_walk" ||
+        res.includes("BB") ||
+        res.includes("四球") ||
+        res.includes("敬遠")
+      ) {
         p.walks++;
       }
 
-      // 与死球
-      if (res === "hit_by_pitch" || res.includes("HP") || res.includes("DB") || res.includes("死球")) {
+      if (
+        res === "hit_by_pitch" ||
+        res.includes("HP") ||
+        res.includes("DB") ||
+        res.includes("死球")
+      ) {
         p.hitByPitch++;
       }
 
-      const isOut = res.includes("アウト") || res.includes("K") || res.includes("三振") || 
-                    res.includes("ゴロ") || res.includes("フライ") || res.includes("ライナー") || 
-                    res.includes("併殺") || res.includes("犠") || 
-                    /^[1-9]-[1-9]$/.test(res) || 
-                    /^[1-9]F$/.test(res) || 
-                    /^[1-9]L$/.test(res) || 
-                    res === "groundout" || res === "flyout" || res === "infield_fly" || res === "strikeout" || res === "dropped_third_strike_out" || res === "sac_bunt" || res === "sac_fly" || res === "interference_out" || res === "double_play" || res === "triple_play" || res.includes("DP") || res.includes("TP");
+      const isOut =
+        res.includes("アウト") ||
+        res.includes("K") ||
+        res.includes("三振") ||
+        res.includes("ゴロ") ||
+        res.includes("フライ") ||
+        res.includes("ライナー") ||
+        res.includes("併殺") ||
+        res.includes("犠") ||
+        /^[1-9]-[1-9]$/.test(res) ||
+        /^[1-9]F$/.test(res) ||
+        /^[1-9]L$/.test(res) ||
+        res === "groundout" ||
+        res === "flyout" ||
+        res === "lineout" ||
+        res === "infield_fly" ||
+        res === "strikeout" ||
+        res === "dropped_third_strike_out" ||
+        res === "sac_bunt" ||
+        res === "sac_fly" ||
+        res === "interference_out" ||
+        res === "double_play" ||
+        res === "triple_play" ||
+        res.includes("DP") ||
+        res.includes("TP");
 
       if (isOut) {
         if (res === "triple_play" || res.includes("三重殺") || res.includes("TP")) {
@@ -881,56 +1535,351 @@ app.get("/:id/stats", async (c) => {
       }
     }
 
-    // 暴投・ボークの集計
+    // 暴投・ボーク・走塁死アウトの集計（1球で複数走者が進塁した場合の二重計上も防止）
+    const wpEventKeysByPitcher = new Map<string, Set<string>>();
+    const balkEventKeysByPitcher = new Map<string, Set<string>>();
+
+    for (const pt of dbPitches) {
+      const pKey = pitcherKeyByAtBatId.get(pt.atBatId);
+      if (!pKey || !pitcherMap.has(pKey)) continue;
+      if (pt.result === "wild_pitch" || pt.result === "wp") {
+        const set = wpEventKeysByPitcher.get(pKey) || new Set<string>();
+        set.add(`pitch:${pt.id}`);
+        wpEventKeysByPitcher.set(pKey, set);
+      } else if (pt.result === "balk") {
+        const set = balkEventKeysByPitcher.get(pKey) || new Set<string>();
+        set.add(`pitch:${pt.id}`);
+        balkEventKeysByPitcher.set(pKey, set);
+      }
+    }
+
     for (const adv of dbAdvances) {
-      const ab = dbAtBats.find(a => a.id === adv.atBatId);
-      if (ab && ab.pitcherId && pitcherMap.has(ab.pitcherId)) {
-        const p = pitcherMap.get(ab.pitcherId);
-        const reasonStr = String(adv.reason || '');
-        if (reasonStr.includes('wp') || reasonStr.includes('wp_advance') || reasonStr.includes('暴投')) {
-          p.wildPitches++;
+      const pKey = pitcherKeyByAtBatId.get(adv.atBatId);
+      if (pKey && pitcherMap.has(pKey)) {
+        const p = pitcherMap.get(pKey)!;
+        const reasonStr = String(adv.reason || "");
+        if (
+          reasonStr.includes("wp") ||
+          reasonStr.includes("wp_advance") ||
+          reasonStr.includes("暴投")
+        ) {
+          const set = wpEventKeysByPitcher.get(pKey) || new Set<string>();
+          const eventKey = adv.pitchId ? `pitch:${adv.pitchId}` : `ab:${adv.atBatId}`;
+          const alreadyHasPitchWpInAtBat = Array.from(set).some((k) =>
+            k.startsWith("pitch:") &&
+            dbPitches.some((pt) => `pitch:${pt.id}` === k && pt.atBatId === adv.atBatId)
+          );
+          if (!alreadyHasPitchWpInAtBat) {
+            set.add(eventKey);
+            wpEventKeysByPitcher.set(pKey, set);
+          }
         }
-        if (adv.isOut && adv.fromBase > 0 && (reasonStr === 'caught_stealing' || reasonStr === 'pickoff_out' || reasonStr === 'interference_out' || reasonStr === 'appeal_out' || reasonStr === 'out_on_base' || reasonStr.includes('盗塁') || reasonStr.includes('牽制'))) {
+        if (
+          adv.isOut &&
+          adv.fromBase > 0 &&
+          (reasonStr === "caught_stealing" ||
+            reasonStr === "pickoff_out" ||
+            reasonStr === "interference_out" ||
+            reasonStr === "appeal_out" ||
+            reasonStr === "out_on_base" ||
+            reasonStr.includes("盗塁") ||
+            reasonStr.includes("牽制"))
+        ) {
           p.outs++;
         }
-        if (reasonStr.includes('balk') || reasonStr.includes('balk_advance') || reasonStr.includes('ボーク')) {
-          p.balks++;
+        if (
+          reasonStr.includes("balk") ||
+          reasonStr.includes("balk_advance") ||
+          reasonStr.includes("ボーク")
+        ) {
+          const set = balkEventKeysByPitcher.get(pKey) || new Set<string>();
+          const eventKey = adv.pitchId ? `pitch:${adv.pitchId}` : `ab:${adv.atBatId}`;
+          const alreadyHasPitchBalkInAtBat = Array.from(set).some((k) =>
+            k.startsWith("pitch:") &&
+            dbPitches.some((pt) => `pitch:${pt.id}` === k && pt.atBatId === adv.atBatId)
+          );
+          if (!alreadyHasPitchBalkInAtBat) {
+            set.add(eventKey);
+            balkEventKeysByPitcher.set(pKey, set);
+          }
         }
       }
     }
 
-    // 失点・自責点の集計
+    for (const [pKey, set] of wpEventKeysByPitcher) {
+      if (pitcherMap.has(pKey)) pitcherMap.get(pKey)!.wildPitches = set.size;
+    }
+    for (const [pKey, set] of balkEventKeysByPitcher) {
+      if (pitcherMap.has(pKey)) pitcherMap.get(pKey)!.balks = set.size;
+    }
+
+    // 失点・自責点の集計（失策・捕逸による生還は非自責点として分離）
     for (const run of runsList) {
-      const ab = dbAtBats.find(a => a.id === run.atBatId);
-      if (ab && ab.pitcherId && pitcherMap.has(ab.pitcherId)) {
-        const p = pitcherMap.get(ab.pitcherId);
+      const ab = abById.get(run.atBatId);
+      const pKey = pitcherKeyByAtBatId.get(run.atBatId);
+      if (ab && pKey && pitcherMap.has(pKey)) {
+        const p = pitcherMap.get(pKey)!;
         p.runs++;
-        p.earnedRuns++;
+        const rReason = String(run.reason || "").toLowerCase();
+        const abRes = String(ab.result || "").toLowerCase();
+        const isUnearned =
+          rReason === "error" ||
+          rReason === "pb" ||
+          rReason === "pickoff_error" ||
+          rReason.includes("失策") ||
+          rReason.includes("エラー") ||
+          rReason.includes("捕逸") ||
+          abRes === "error" ||
+          abRes.includes("失策") ||
+          abRes.includes("エラー");
+        if (!isUnearned) {
+          p.earnedRuns++;
+        }
       }
     }
 
-    const pitcherStatsList = Array.from(pitcherMap.values()).map(p => {
-      const inningsInt = Math.floor(p.outs / 3);
-      const inningsFrac = p.outs % 3;
-      const ipStr = inningsFrac > 0 ? `${inningsInt}.${inningsFrac}` : `${inningsInt}.0`;
-
-      const eraVal = p.outs > 0 ? (p.earnedRuns * 7 * 3) / p.outs : 0;
-
-      return {
-        ...p,
-        ip: ipStr,
-        era: p.outs > 0 ? eraVal.toFixed(2) : "0.00"
+    // --- 守備成績（刺殺 putouts・捕殺 assists・失策 errors）の自動集計 ---
+    if (oppSnapAtBats.length > 0) {
+      const resolveFielderKeyAtInning = (
+        posCode: string,
+        inning: number,
+        abPitcherKey: string | undefined
+      ): string | null => {
+        if (posCode === "1" && abPitcherKey) {
+          return batterMap.has(abPitcherKey) ? abPitcherKey : null;
+        }
+        if (myStructure) {
+          for (const slot of myStructure.batters) {
+            let activeKey: string | null = null;
+            let activePos = normalizeFieldingPosCode(slot.position);
+            const cleanSlotName = normalizeLookupName(slot.name);
+            if (slot.playerId || cleanSlotName) {
+              activeKey =
+                slot.playerId ||
+                keyByCleanName.get(cleanSlotName) ||
+                `name:${cleanSlotName}`;
+            }
+            for (const sub of slot.substitutions) {
+              if (sub.subType === "TR") continue;
+              if ((sub.inningEntered || 1) <= inning) {
+                const cleanSub = normalizeLookupName(sub.name);
+                if (sub.playerId || cleanSub) {
+                  activeKey =
+                    sub.playerId ||
+                    keyByCleanName.get(cleanSub) ||
+                    `name:${cleanSub}`;
+                }
+                const normSubPos = normalizeFieldingPosCode(sub.position);
+                if (normSubPos) activePos = normSubPos;
+              }
+            }
+            if (activePos === posCode && activeKey && batterMap.has(activeKey)) {
+              return activeKey;
+            }
+          }
+        }
+        for (const lu of dbLineups) {
+          if (
+            normalizeFieldingPosCode(lu.position) === posCode &&
+            (lu.inningEntered || 1) <= inning &&
+            batterMap.has(lu.playerId)
+          ) {
+            return lu.playerId;
+          }
+        }
+        return null;
       };
-    });
+
+      const oppDbAtBats = dbAtBats.filter((a) => a.isTop !== isMyTeamTop);
+      oppSnapAtBats.forEach((sAb, idx) => {
+        const matchedDbAb =
+          oppDbAtBats.find(
+            (d) => snapMapByDbAtBatId.get(d.id)?.id === sAb.id
+          ) || oppDbAtBats[idx];
+        const abPitcherKey = matchedDbAb
+          ? pitcherKeyByAtBatId.get(matchedDbAb.id)
+          : undefined;
+
+        const rawDir = (sAb.battedDirection || "").trim().toUpperCase();
+        const rc = sAb.resultCode;
+
+        // 1) 失策 (例: "6E", "4E-3", または resultCode === "error" かつ単独守備番号)
+        const errorMatches = Array.from(rawDir.matchAll(/([1-9])E/g));
+        if (errorMatches.length > 0) {
+          for (const m of errorMatches) {
+            const fKey = resolveFielderKeyAtInning(m[1], sAb.inning, abPitcherKey);
+            if (fKey && batterMap.has(fKey)) {
+              batterMap.get(fKey)!.errors += 1;
+            }
+          }
+        } else if (rc === "error") {
+          const singlePos = rawDir.match(/^([1-9])/);
+          if (singlePos) {
+            const fKey = resolveFielderKeyAtInning(
+              singlePos[1],
+              sAb.inning,
+              abPitcherKey
+            );
+            if (fKey && batterMap.has(fKey)) {
+              batterMap.get(fKey)!.errors += 1;
+            }
+          }
+        }
+
+        // 2) 刺殺・捕殺
+        const outsRecorded = Math.max(0, sAb.outsInPlay || 0);
+        if (outsRecorded <= 0) return;
+
+        if (rc === "strikeout" || rc === "dropped_third_strike_out") {
+          const chainMatch = rawDir.match(/([1-9])-([1-9])/);
+          if (chainMatch) {
+            const aKey = resolveFielderKeyAtInning(
+              chainMatch[1],
+              sAb.inning,
+              abPitcherKey
+            );
+            const poKey = resolveFielderKeyAtInning(
+              chainMatch[2],
+              sAb.inning,
+              abPitcherKey
+            );
+            if (aKey && batterMap.has(aKey)) batterMap.get(aKey)!.assists += 1;
+            if (poKey && batterMap.has(poKey)) batterMap.get(poKey)!.putouts += 1;
+          } else {
+            const catcherKey = resolveFielderKeyAtInning(
+              "2",
+              sAb.inning,
+              abPitcherKey
+            );
+            if (catcherKey && batterMap.has(catcherKey)) {
+              batterMap.get(catcherKey)!.putouts += 1;
+            }
+          }
+          return;
+        }
+
+        // 送球チェーンからエラー絡みトークンを除外して解析 (例: "6-4-3", "6-3", "8")
+        if (rawDir.includes("E")) return;
+        const segments = rawDir
+          .split("-")
+          .map((seg) => seg.replace(/[^1-9]/g, ""))
+          .filter((seg) => seg.length === 1);
+
+        if (segments.length >= 2) {
+          const finalPos = segments[segments.length - 1];
+          const finalKey = resolveFielderKeyAtInning(
+            finalPos,
+            sAb.inning,
+            abPitcherKey
+          );
+          if (finalKey && batterMap.has(finalKey)) {
+            batterMap.get(finalKey)!.putouts += 1;
+          }
+          if (outsRecorded >= 2) {
+            const dpPivotPos =
+              segments.length >= 3 ? segments[segments.length - 2] : segments[0];
+            const pivotKey = resolveFielderKeyAtInning(
+              dpPivotPos,
+              sAb.inning,
+              abPitcherKey
+            );
+            if (pivotKey && batterMap.has(pivotKey)) {
+              batterMap.get(pivotKey)!.putouts += 1;
+            }
+          }
+          const creditedAssistPositions = new Set<string>();
+          for (let i = 0; i < segments.length - 1; i++) {
+            const aPos = segments[i];
+            if (segments.length === 2 && aPos === finalPos) continue;
+            if (creditedAssistPositions.has(aPos)) continue;
+            creditedAssistPositions.add(aPos);
+            const aKey = resolveFielderKeyAtInning(
+              aPos,
+              sAb.inning,
+              abPitcherKey
+            );
+            if (aKey && batterMap.has(aKey)) {
+              batterMap.get(aKey)!.assists += 1;
+            }
+          }
+        } else if (
+          segments.length === 1 &&
+          (rc === "flyout" ||
+            (rc as string) === "lineout" ||
+            rc === "infield_fly" ||
+            rc === "sac_fly" ||
+            rc === "groundout" ||
+            rc === "sac_bunt" ||
+            rc === "double_play" ||
+            rc === "triple_play" ||
+            rc === "interference_out")
+        ) {
+          const poKey = resolveFielderKeyAtInning(
+            segments[0],
+            sAb.inning,
+            abPitcherKey
+          );
+          if (poKey && batterMap.has(poKey)) {
+            batterMap.get(poKey)!.putouts += 1;
+          }
+        }
+      });
+    }
+
+    const batterStatsList = Array.from(batterMap.values())
+      .sort((a, b) =>
+        a.sortOrder !== b.sortOrder
+          ? a.sortOrder - b.sortOrder
+          : a.sortSubOrder - b.sortSubOrder
+      )
+      .map(({ sortOrder: _so, sortSubOrder: _sso, ...p }) => {
+        const avgVal = p.atBats > 0 ? p.hits / p.atBats : 0;
+        let avgStr = avgVal.toFixed(3);
+        if (avgStr.startsWith("0.")) {
+          avgStr = avgStr.substring(1);
+        } else if (avgStr === "1.000") {
+          avgStr = "1.00";
+        }
+        return {
+          ...p,
+          avg: p.atBats > 0 ? avgStr : ".000",
+        };
+      });
+
+    const pitcherStatsList = Array.from(pitcherMap.values())
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map(({ sortOrder: _so, ...p }) => {
+        const inningsInt = Math.floor(p.outs / 3);
+        const inningsFrac = p.outs % 3;
+        const ipStr =
+          inningsFrac > 0 ? `${inningsInt}.${inningsFrac}` : `${inningsInt}.0`;
+
+        const eraVal = p.outs > 0 ? (p.earnedRuns * 7 * 3) / p.outs : 0;
+
+        return {
+          ...p,
+          ip: ipStr,
+          era: p.outs > 0 ? eraVal.toFixed(2) : "0.00",
+        };
+      });
 
     return c.json({
       success: true,
       stats: batterStatsList,
-      pitcherStats: pitcherStatsList
+      pitcherStats: pitcherStatsList,
+      gameDetails,
     });
   } catch (error) {
     console.error("Stats API error:", error);
-    return c.json({ success: false, error: "Failed to generate stats", stats: [], pitcherStats: [] }, 500);
+    return c.json(
+      {
+        success: false,
+        error: "Failed to generate stats",
+        stats: [],
+        pitcherStats: [],
+      },
+      500
+    );
   }
 });
 
