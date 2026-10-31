@@ -229,6 +229,7 @@ export async function ensureMatchLineupColumns(d1?: any) {
     "ALTER TABLE matches ADD COLUMN my_errors integer DEFAULT 0",
     "ALTER TABLE matches ADD COLUMN opponent_errors integer DEFAULT 0",
     "ALTER TABLE matches ADD COLUMN bench_side text DEFAULT 'unknown'",
+    "ALTER TABLE matches ADD COLUMN scorebook_validations text DEFAULT '[]'",
   ];
 
   for (const sqlText of alterQueries) {

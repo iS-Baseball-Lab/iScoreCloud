@@ -310,6 +310,15 @@ export default function LiffScorebookImportPage() {
   const [savedBottomImageUrl, setSavedBottomImageUrl] = useState<string | null>(
     null
   );
+  const lastUploadedImagesRef = useRef<{
+    matchId: string | null;
+    topDataUrl: string | null;
+    bottomDataUrl: string | null;
+  }>({
+    matchId: null,
+    topDataUrl: null,
+    bottomDataUrl: null,
+  });
   const [isLoadingSavedScorebook, setIsLoadingSavedScorebook] = useState(false);
   const [isEditingSavedMatch, setIsEditingSavedMatch] = useState(false);
   const [hasDirtyReEdit, setHasDirtyReEdit] = useState(false);
@@ -2636,31 +2645,68 @@ export default function LiffScorebookImportPage() {
     setErrorBanner(null);
 
     try {
-      const res = await fetch("/api/liff/scorebook/save", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          teamId: resolvedTeamId || currentTeam?.id || "",
-          matchId: selectedMatchId,
-          importScope,
-          topStructure,
-          bottomStructure,
-          topAtBats,
-          bottomAtBats,
-          topImageBase64: topImage.processed?.base64,
-          topImageMimeType: topImage.processed?.mimeType,
-          topImageUrl: savedTopImageUrl,
-          bottomImageBase64: bottomImage.processed?.base64,
-          bottomImageMimeType: bottomImage.processed?.mimeType,
-          bottomImageUrl: savedBottomImageUrl,
-        }),
-      });
+      const sameUploadedMatch =
+        lastUploadedImagesRef.current.matchId === selectedMatchId;
+      const shouldSendTopImage =
+        Boolean(topImage.processed?.base64) &&
+        !(
+          sameUploadedMatch &&
+          savedTopImageUrl &&
+          lastUploadedImagesRef.current.topDataUrl ===
+            topImage.processed?.dataUrl
+        );
+      const shouldSendBottomImage =
+        Boolean(bottomImage.processed?.base64) &&
+        !(
+          sameUploadedMatch &&
+          savedBottomImageUrl &&
+          lastUploadedImagesRef.current.bottomDataUrl ===
+            bottomImage.processed?.dataUrl
+        );
 
-      const data = (await res.json()) as {
+      const postSaveRequest = async (includeBase64Images: boolean) =>
+        fetch("/api/liff/scorebook/save", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            teamId: resolvedTeamId || currentTeam?.id || "",
+            matchId: selectedMatchId,
+            importScope,
+            topStructure,
+            bottomStructure,
+            topAtBats,
+            bottomAtBats,
+            topImageBase64:
+              includeBase64Images && shouldSendTopImage
+                ? topImage.processed?.base64
+                : undefined,
+            topImageMimeType:
+              includeBase64Images && shouldSendTopImage
+                ? topImage.processed?.mimeType
+                : undefined,
+            topImageUrl: savedTopImageUrl,
+            bottomImageBase64:
+              includeBase64Images && shouldSendBottomImage
+                ? bottomImage.processed?.base64
+                : undefined,
+            bottomImageMimeType:
+              includeBase64Images && shouldSendBottomImage
+                ? bottomImage.processed?.mimeType
+                : undefined,
+            bottomImageUrl: savedBottomImageUrl,
+          }),
+        });
+
+      let res = await postSaveRequest(true);
+      if (res.status === 413 && (shouldSendTopImage || shouldSendBottomImage)) {
+        res = await postSaveRequest(false);
+      }
+
+      const data = await parseSafeJson<{
         success: boolean;
         summary?: SaveSummaryData;
         error?: string;
-      };
+      }>(res, "試合データの保存エラー");
 
       if (!data.success || !data.summary) {
         throw new Error(data.error || "保存に失敗しました");
@@ -2673,6 +2719,17 @@ export default function LiffScorebookImportPage() {
       if (summary.bottomImageUrl !== undefined) {
         setSavedBottomImageUrl(summary.bottomImageUrl);
       }
+      lastUploadedImagesRef.current = {
+        matchId: selectedMatchId,
+        topDataUrl: summary.topImageUrl
+          ? topImage.processed?.dataUrl ??
+            lastUploadedImagesRef.current.topDataUrl
+          : null,
+        bottomDataUrl: summary.bottomImageUrl
+          ? bottomImage.processed?.dataUrl ??
+            lastUploadedImagesRef.current.bottomDataUrl
+          : null,
+      };
 
       setMatches((prev) =>
         prev.map((m) =>

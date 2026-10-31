@@ -3121,7 +3121,10 @@ liffScorebookRouter.post("/save", async (c) => {
     const allIssues: ScorebookValidationIssue[] = [...topIssues, ...bottomIssues];
 
     // 1. 削除対象の既存データを整理（片面取込の場合は逆側のデータを絶対に消さない！）
+    //    ※外部キー制約（base_advances.pitch_id -> pitches.id, play_logs.at_bat_id -> at_bats.id）を遵守し、必ず子テーブルから先に削除する
     if (body.importScope === "both") {
+      await db.delete(baseAdvances).where(eq(baseAdvances.matchId, match.id));
+      await db.delete(playLogs).where(eq(playLogs.matchId, match.id));
       const existingAbs = await db
         .select({ id: atBats.id })
         .from(atBats)
@@ -3131,8 +3134,6 @@ liffScorebookRouter.post("/save", async (c) => {
       if (abIds.length > 0) {
         await deleteByAtBatIdsChunked(db, abIds);
       }
-      await db.delete(baseAdvances).where(eq(baseAdvances.matchId, match.id));
-      await db.delete(playLogs).where(eq(playLogs.matchId, match.id));
       await db.delete(atBats).where(eq(atBats.matchId, match.id));
     } else {
       const targetIsTop = body.importScope === "top_only";
@@ -3148,6 +3149,7 @@ liffScorebookRouter.post("/save", async (c) => {
     }
 
     // 2. 自チームスタメン・途中出場(match_lineups & myLineup)および相手打順(opponentLineup)の反映
+    const validPlayerIds = new Set(roster.map((p) => p.id));
     const myStructure = isMyTeamFirst ? body.topStructure : body.bottomStructure;
     const oppStructure = isMyTeamFirst ? body.bottomStructure : body.topStructure;
 
@@ -3164,6 +3166,10 @@ liffScorebookRouter.post("/save", async (c) => {
       }> = [];
 
       for (const slot of myStructure.batters) {
+        const safeSlotOrder = Math.max(
+          1,
+          Math.round(Number(slot.battingOrder) || 1)
+        );
         const resolvedPlayer =
           (slot.playerId
             ? roster.find((p) => p.id === slot.playerId) || null
@@ -3174,7 +3180,7 @@ liffScorebookRouter.post("/save", async (c) => {
             id: crypto.randomUUID(),
             matchId: match.id,
             playerId: resolvedPlayer.id,
-            battingOrder: slot.battingOrder,
+            battingOrder: safeSlotOrder,
             position: slot.position || resolvedPlayer.primaryPosition || "",
             isStarting: true,
             inningEntered: 1,
@@ -3182,16 +3188,16 @@ liffScorebookRouter.post("/save", async (c) => {
         }
 
         myLineupJson.push({
-          order: slot.battingOrder,
+          order: safeSlotOrder,
           playerId: resolvedPlayer ? resolvedPlayer.id : null,
-          name: resolvedPlayer ? resolvedPlayer.name : slot.name,
+          name: resolvedPlayer ? resolvedPlayer.name : slot.name || "",
           uniformNumber: resolvedPlayer
             ? resolvedPlayer.uniformNumber
-            : slot.uniformNumber,
+            : slot.uniformNumber || "",
           position: slot.position || "",
         });
 
-        for (const sub of slot.substitutions) {
+        for (const sub of slot.substitutions || []) {
           const resolvedSub =
             (sub.playerId
               ? roster.find((p) => p.id === sub.playerId) || null
@@ -3201,7 +3207,7 @@ liffScorebookRouter.post("/save", async (c) => {
               id: crypto.randomUUID(),
               matchId: match.id,
               playerId: resolvedSub.id,
-              battingOrder: slot.battingOrder,
+              battingOrder: safeSlotOrder,
               position:
                 sub.position ||
                 (sub.subType === "PH"
@@ -3210,7 +3216,10 @@ liffScorebookRouter.post("/save", async (c) => {
                   ? "R"
                   : resolvedSub.primaryPosition || ""),
               isStarting: false,
-              inningEntered: Math.max(1, sub.inningEntered || 1),
+              inningEntered: Math.max(
+                1,
+                Math.round(Number(sub.inningEntered) || 1)
+              ),
             });
           }
         }
@@ -3232,7 +3241,7 @@ liffScorebookRouter.post("/save", async (c) => {
     let updatedOpponentLineup = match.opponentLineup || "[]";
     if (oppStructure && oppStructure.batters.length > 0) {
       const oppJson = oppStructure.batters.map((b) => ({
-        order: b.battingOrder,
+        order: Math.max(1, Math.round(Number(b.battingOrder) || 1)),
         position: b.position || "",
         name: b.name || "",
         uniformNumber: b.uniformNumber || "",
@@ -3255,17 +3264,31 @@ liffScorebookRouter.post("/save", async (c) => {
     for (const ab of combinedIncoming) {
       seq += 1;
       const atBatId = crypto.randomUUID();
+      const safeInning = Math.max(1, Math.round(Number(ab.inning) || 1));
+      const safeIsTop = Boolean(ab.isTop);
+      const safePitches = Array.isArray(ab.pitches) ? ab.pitches : [];
+      const safeAdvances = Array.isArray(ab.advances) ? ab.advances : [];
+      const safeResultLabel = ab.resultLabel || ab.resultCode || "";
+      const eventTimestamp = new Date(baseTimestamp + seq * 1000);
       const isMyTeamBatting =
-        (ab.isTop && isMyTeamFirst) || (!ab.isTop && !isMyTeamFirst);
+        (safeIsTop && isMyTeamFirst) || (!safeIsTop && !isMyTeamFirst);
 
+      const verifiedBatterId =
+        ab.batterPlayerId && validPlayerIds.has(ab.batterPlayerId)
+          ? ab.batterPlayerId
+          : null;
       const batterPlayerId = isMyTeamBatting
-        ? ab.batterPlayerId ||
+        ? verifiedBatterId ||
           matchRosterPlayer(ab.batterName, undefined, roster)?.id ||
           null
         : null;
 
+      const verifiedPitcherId =
+        ab.pitcherPlayerId && validPlayerIds.has(ab.pitcherPlayerId)
+          ? ab.pitcherPlayerId
+          : null;
       const pitcherPlayerId = !isMyTeamBatting
-        ? ab.pitcherPlayerId ||
+        ? verifiedPitcherId ||
           matchRosterPlayer(ab.pitcherName, undefined, roster)?.id ||
           null
         : null;
@@ -3275,11 +3298,12 @@ liffScorebookRouter.post("/save", async (c) => {
         db.insert(atBats).values({
           id: atBatId,
           matchId: match.id,
-          inning: ab.inning,
-          isTop: ab.isTop,
+          inning: safeInning,
+          isTop: safeIsTop,
           batterId: batterPlayerId,
           pitcherId: pitcherPlayerId,
-          result: ab.resultCode,
+          result: ab.resultCode || "other",
+          createdAt: eventTimestamp,
         })
       );
 
@@ -3288,7 +3312,7 @@ liffScorebookRouter.post("/save", async (c) => {
       let ballsBefore = 0;
       let strikesBefore = 0;
 
-      ab.pitches.forEach((pCode, idx) => {
+      safePitches.forEach((pCode, idx) => {
         const pitchNum = idx + 1;
         const pitchId = crypto.randomUUID();
         pitchIdByNum[pitchNum] = pitchId;
@@ -3298,7 +3322,7 @@ liffScorebookRouter.post("/save", async (c) => {
             ? "strike"
             : pCode === "hbp"
             ? "ball"
-            : pCode;
+            : pCode || "strike";
 
         insertQueries.push(
           db.insert(pitches).values({
@@ -3326,7 +3350,7 @@ liffScorebookRouter.post("/save", async (c) => {
       });
 
       // C. base_advances 挿入
-      for (const adv of ab.advances) {
+      for (const adv of safeAdvances) {
         const runnerId = isMyTeamBatting
           ? matchRosterPlayer(adv.runnerName, undefined, roster)?.id || null
           : null;
@@ -3357,18 +3381,18 @@ liffScorebookRouter.post("/save", async (c) => {
             runnerId,
             fromBase: fromBaseNum,
             toBase: toBaseNum,
-            reason: adv.method,
-            isOut: adv.isOut,
+            reason: adv.method || "other",
+            isOut: Boolean(adv.isOut),
           })
         );
       }
 
       // D. play_logs 挿入（タイムライン表示用に日本語表記と1球履歴テキストを格納）
-      const inningText = `${ab.inning}回${ab.isTop ? "表" : "裏"}`;
+      const inningText = `${safeInning}回${safeIsTop ? "表" : "裏"}`;
       let realPitchSeq = 0;
       const pitchLines =
-        ab.pitches.length > 0
-          ? `\n===PITCHES===\n${ab.pitches
+        safePitches.length > 0
+          ? `\n===PITCHES===\n${safePitches
               .map((p) => {
                 if (isPickoffPitch(p)) {
                   return `牽制: ${PITCH_DISPLAY_JA[p] || p}`;
@@ -3382,10 +3406,10 @@ liffScorebookRouter.post("/save", async (c) => {
               .join("\n")}`
           : "";
 
-      const countCalc = computeCountFromPitches(ab.pitches);
+      const countCalc = computeCountFromPitches(safePitches);
       const cleanDirTag = (ab.battedDirection || "").trim();
       const dirSuffix =
-        cleanDirTag && !ab.resultLabel.includes(cleanDirTag)
+        cleanDirTag && !safeResultLabel.includes(cleanDirTag)
           ? ` (${cleanDirTag})`
           : "";
       const rbiSuffix =
@@ -3394,7 +3418,7 @@ liffScorebookRouter.post("/save", async (c) => {
           : ab.runsInPlay > 0
           ? `（得点${ab.runsInPlay}・打点0）`
           : "";
-      const runnerMovesText = ab.advances
+      const runnerMovesText = safeAdvances
         .filter((a) => a.from !== "BAT" && (a.isOut || a.from !== a.to))
         .map((a) => {
           const rLabel = a.runnerName ? a.runnerName : "走者";
@@ -3406,9 +3430,7 @@ liffScorebookRouter.post("/save", async (c) => {
         });
       const runnerSuffix =
         runnerMovesText.length > 0 ? ` ［${runnerMovesText.join("、")}］` : "";
-      const description = `${ab.battingOrder}番 ${ab.batterName || "打者"}: ${
-        ab.resultLabel
-      }${dirSuffix}${rbiSuffix}${runnerSuffix}${pitchLines} [B:${countCalc.balls}, S:${
+      const description = `${ab.battingOrder}番 ${ab.batterName || "打者"}: ${safeResultLabel}${dirSuffix}${rbiSuffix}${runnerSuffix}${pitchLines} [B:${countCalc.balls}, S:${
         countCalc.strikes
       }, O:${ab.outsInPlay}]`;
 
@@ -3427,8 +3449,8 @@ liffScorebookRouter.post("/save", async (c) => {
       const legacyValidationPayload = matchedIssue
         ? JSON.stringify({
             type: matchedIssue.severity === "error" ? "ERROR" : "WARNING",
-            inning: ab.inning,
-            isTop: ab.isTop,
+            inning: safeInning,
+            isTop: safeIsTop,
             battingOrder: ab.battingOrder,
             message: matchedIssue.message,
           })
@@ -3443,7 +3465,7 @@ liffScorebookRouter.post("/save", async (c) => {
           resultType,
           description,
           validationMessage: legacyValidationPayload,
-          createdAt: new Date(baseTimestamp + seq * 1000),
+          createdAt: eventTimestamp,
         })
       );
     }
@@ -3690,21 +3712,11 @@ liffScorebookRouter.post("/save", async (c) => {
       ? JSON.stringify(incomingBottom)
       : existingSnap?.bottomAtBatsJson ?? null;
 
-    await db
-      .insert(matchScorebookSnapshots)
-      .values({
-        matchId: match.id,
-        topStructureJson: nextTopStructureJson,
-        bottomStructureJson: nextBottomStructureJson,
-        topAtBatsJson: nextTopAtBatsJson,
-        bottomAtBatsJson: nextBottomAtBatsJson,
-        topImageUrl: nextTopImageUrl,
-        bottomImageUrl: nextBottomImageUrl,
-        updatedAt: Date.now(),
-      })
-      .onConflictDoUpdate({
-        target: matchScorebookSnapshots.matchId,
-        set: {
+    try {
+      await db
+        .insert(matchScorebookSnapshots)
+        .values({
+          matchId: match.id,
           topStructureJson: nextTopStructureJson,
           bottomStructureJson: nextBottomStructureJson,
           topAtBatsJson: nextTopAtBatsJson,
@@ -3712,8 +3724,22 @@ liffScorebookRouter.post("/save", async (c) => {
           topImageUrl: nextTopImageUrl,
           bottomImageUrl: nextBottomImageUrl,
           updatedAt: Date.now(),
-        },
-      });
+        })
+        .onConflictDoUpdate({
+          target: matchScorebookSnapshots.matchId,
+          set: {
+            topStructureJson: nextTopStructureJson,
+            bottomStructureJson: nextBottomStructureJson,
+            topAtBatsJson: nextTopAtBatsJson,
+            bottomAtBatsJson: nextBottomAtBatsJson,
+            topImageUrl: nextTopImageUrl,
+            bottomImageUrl: nextBottomImageUrl,
+            updatedAt: Date.now(),
+          },
+        });
+    } catch (snapErr) {
+      console.warn("[LiffScorebookV2] Snapshot upsert skipped:", snapErr);
+    }
 
     return c.json({
       success: true,
@@ -3722,7 +3748,10 @@ liffScorebookRouter.post("/save", async (c) => {
         savedAtBatsCount: combinedIncoming.length,
         savedPitchesCount: combinedIncoming.reduce(
           (sum, ab) =>
-            sum + ab.pitches.filter((p) => !isNonPitchMoundEvent(p)).length,
+            sum +
+            (Array.isArray(ab.pitches) ? ab.pitches : []).filter(
+              (p) => !isNonPitchMoundEvent(p)
+            ).length,
           0
         ),
         myScore: finalMyScore,
@@ -7081,10 +7110,19 @@ async function deleteByAtBatIdsChunked(
   const idChunkSize = 40;
   for (let i = 0; i < atBatIds.length; i += idChunkSize) {
     const slice = atBatIds.slice(i, i + idChunkSize);
-    await db.delete(pitches).where(inArray(pitches.atBatId, slice));
-    await db.delete(baseAdvances).where(inArray(baseAdvances.atBatId, slice));
-    await db.delete(playLogs).where(inArray(playLogs.atBatId, slice));
-    await db.delete(atBats).where(inArray(atBats.id, slice));
+    if (slice.length === 0) continue;
+    const pitchSubquery = db
+      .select({ id: pitches.id })
+      .from(pitches)
+      .where(inArray(pitches.atBatId, slice));
+    // 外部キー制約（base_advances.pitch_id -> pitches.id, play_logs.at_bat_id -> at_bats.id）を遵守し、必ず子テーブルから順に削除する
+    await db.batch([
+      db.delete(baseAdvances).where(inArray(baseAdvances.pitchId, pitchSubquery)),
+      db.delete(baseAdvances).where(inArray(baseAdvances.atBatId, slice)),
+      db.delete(playLogs).where(inArray(playLogs.atBatId, slice)),
+      db.delete(pitches).where(inArray(pitches.atBatId, slice)),
+      db.delete(atBats).where(inArray(atBats.id, slice)),
+    ]);
   }
 }
 

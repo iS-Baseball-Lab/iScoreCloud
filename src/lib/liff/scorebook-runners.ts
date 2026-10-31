@@ -3770,15 +3770,13 @@ export function pruneStaleSheetRunnerAdvances(
       return false;
     };
 
+    let inningSnaps = simulateSheetRunners(innList, structure);
+
     for (let j = 0; j < innList.length; j++) {
       const ab = innList[j];
 
       if (j > 0) {
-        const prefixSnaps = simulateSheetRunners(
-          innList.slice(0, j),
-          structure
-        );
-        const prevSnap = prefixSnaps.get(innList[j - 1].id);
+        const prevSnap = inningSnaps.get(innList[j - 1].id);
         const outsBefore =
           prevSnap && !prevSnap.isInningOver ? prevSnap.outsAfter : 0;
         if (prevSnap?.isInningOver) {
@@ -4028,16 +4026,13 @@ export function pruneStaleSheetRunnerAdvances(
             runsInPlay: nextRunsInPlay,
             rbi: nextRbi,
           };
+          inningSnaps = simulateSheetRunners(innList, structure);
           changed = true;
         }
       }
 
       // j番目終了時点の生還・アウト退場走者を更新
-      const snapsUpToJ = simulateSheetRunners(
-        innList.slice(0, j + 1),
-        structure
-      );
-      const curSnap = snapsUpToJ.get(innList[j].id);
+      const curSnap = inningSnaps.get(innList[j].id);
       if (curSnap) {
         for (const pr of curSnap.precedingRunners) {
           if (pr.isOut || pr.finalBase === "HP") {
