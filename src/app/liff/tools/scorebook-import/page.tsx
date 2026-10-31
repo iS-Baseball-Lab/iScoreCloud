@@ -19,6 +19,7 @@ import {
 } from "@/lib/liff/scorebook-image";
 import {
   applyRecoveredMissingAtBats,
+  computeCountFromPitches,
   detectExcessOutInnings,
   detectMissingOrderGaps,
   isRunnerOnlyInningEnd,
@@ -1544,10 +1545,65 @@ export default function LiffScorebookImportPage() {
           continue;
         }
 
+        const prevInningList = currentList.filter(
+          (a) => a.inning === spec.inning
+        );
+        const mergedInningAtBats = data.atBats.map((nextAb) => {
+          const isInPlayResult =
+            nextAb.resultCode !== "walk" &&
+            nextAb.resultCode !== "intentional_walk" &&
+            nextAb.resultCode !== "hit_by_pitch" &&
+            nextAb.resultCode !== "strikeout" &&
+            nextAb.resultCode !== "dropped_third_strike" &&
+            nextAb.resultCode !== "dropped_third_strike_out";
+          const nextPrePitches = nextAb.pitches.filter(
+            (p) => p !== "in_play" && p !== "hit" && p !== "hbp"
+          );
+          if (!isInPlayResult || nextPrePitches.length > 0) {
+            return nextAb;
+          }
+
+          const prevMatch =
+            prevInningList.find((p) => p.id === nextAb.id) ||
+            prevInningList.find(
+              (p) =>
+                (p.columnIndex || 1) === (nextAb.columnIndex || 1) &&
+                p.battingOrder === nextAb.battingOrder
+            );
+          if (!prevMatch) return nextAb;
+
+          const prevPrePitches = prevMatch.pitches.filter(
+            (p) => p !== "in_play" && p !== "hit" && p !== "hbp"
+          );
+          if (prevPrePitches.length === 0) return nextAb;
+
+          const prevCnt = computeCountFromPitches(prevPrePitches);
+          if (prevCnt.balls > 3 || prevCnt.strikes > 2) {
+            return nextAb;
+          }
+
+          const isHit =
+            nextAb.resultCode === "single" ||
+            nextAb.resultCode === "double" ||
+            nextAb.resultCode === "triple" ||
+            nextAb.resultCode === "home_run";
+          const restoredPitches = [
+            ...prevPrePitches,
+            isHit ? ("hit" as const) : ("in_play" as const),
+          ];
+          const syncedCnt = computeCountFromPitches(restoredPitches);
+          return {
+            ...nextAb,
+            pitches: restoredPitches,
+            balls: syncedCnt.balls,
+            strikes: syncedCnt.strikes,
+          };
+        });
+
         const before = currentList.filter((a) => a.inning < spec.inning);
         const after = currentList.filter((a) => a.inning > spec.inning);
         currentList = reconcileSheetExcessOutsDeterministically(
-          [...before, ...data.atBats, ...after],
+          [...before, ...mergedInningAtBats, ...after],
           structure
         ).atBats;
         totalRepaired += 1;

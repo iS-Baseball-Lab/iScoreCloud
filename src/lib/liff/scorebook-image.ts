@@ -940,6 +940,134 @@ function applyStrokeValleySharpen(
 }
 
 /**
+ * [BSO拡大] パネル専用の鉛筆・細線投球記号コントラスト増強フィルタ:
+ * - 薄い鉛筆の点『・』、短いボール横棒『ー』『-』、小さな『○』『△』『／』、球数番号『1,2,3』が
+ *   紙面背景に埋もれて欠落（["X"]のみ化）するのを防ぐため、7×7局所背景より暗い筆跡成分を強力に濃色化する
+ * - 同時に濃いサインペンの『○』『△』中心の白穴（低輝度域の明るい谷間）だけは開いて中潰れも防止する
+ */
+function applyBsoPitchEnhance(
+  imageData: ImageData,
+  width: number,
+  height: number
+): void {
+  const n = width * height;
+  if (n < 64) return;
+  const data = imageData.data;
+  const lum = new Uint8Array(n);
+  const hist = new Uint32Array(32);
+
+  for (let p = 0, i = 0; p < n; p++, i += 4) {
+    const l = (data[i] * 77 + data[i + 1] * 150 + data[i + 2] * 29) >> 8;
+    lum[p] = l;
+    hist[l >> 3] += 1;
+  }
+
+  const targetRank = Math.floor(n * 0.8);
+  let acc = 0;
+  let whiteBin = 28;
+  for (let b = 0; b < 32; b++) {
+    acc += hist[b];
+    if (acc >= targetRank) {
+      whiteBin = b;
+      break;
+    }
+  }
+  const paperLum = Math.max(168, Math.min(252, whiteBin * 8 + 4));
+
+  // 7×7 セパラブルボックスブラー（拡大されたBSO筆跡の太さに合わせた局所背景推定）
+  const hSum = new Uint16Array(n);
+  for (let y = 0; y < height; y++) {
+    const rowOff = y * width;
+    for (let x = 0; x < width; x++) {
+      const xm3 = x > 2 ? x - 3 : 0;
+      const xm2 = x > 1 ? x - 2 : 0;
+      const xm1 = x > 0 ? x - 1 : 0;
+      const xp1 = x + 1 < width ? x + 1 : width - 1;
+      const xp2 = x + 2 < width ? x + 2 : width - 1;
+      const xp3 = x + 3 < width ? x + 3 : width - 1;
+      hSum[rowOff + x] =
+        lum[rowOff + xm3] +
+        lum[rowOff + xm2] +
+        lum[rowOff + xm1] +
+        lum[rowOff + x] +
+        lum[rowOff + xp1] +
+        lum[rowOff + xp2] +
+        lum[rowOff + xp3];
+    }
+  }
+
+  for (let y = 0; y < height; y++) {
+    const ym3 = (y > 2 ? y - 3 : 0) * width;
+    const ym2 = (y > 1 ? y - 2 : 0) * width;
+    const ym1 = (y > 0 ? y - 1 : 0) * width;
+    const y0 = y * width;
+    const yp1 = (y + 1 < height ? y + 1 : height - 1) * width;
+    const yp2 = (y + 2 < height ? y + 2 : height - 1) * width;
+    const yp3 = (y + 3 < height ? y + 3 : height - 1) * width;
+
+    let i = y0 * 4;
+    for (let x = 0; x < width; x++, i += 4) {
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+
+      const maxGb = g > b ? g : b;
+      if (r - maxGb > 18 && r > 80) {
+        const nr = (r * 270) >> 8;
+        data[i] = nr > 255 ? 255 : nr;
+        data[i + 1] = (g * 196) >> 8;
+        data[i + 2] = (b * 196) >> 8;
+        continue;
+      }
+
+      const curLum = lum[y0 + x];
+      if (curLum <= 1) continue;
+
+      const sum49 =
+        hSum[ym3 + x] +
+        hSum[ym2 + x] +
+        hSum[ym1 + x] +
+        hSum[y0 + x] +
+        hSum[yp1 + x] +
+        hSum[yp2 + x] +
+        hSum[yp3 + x];
+      const meanLum = (sum49 + 24) / 49;
+
+      const baseLum =
+        curLum >= paperLum
+          ? Math.min(255, 248 + ((curLum - paperLum) >> 1))
+          : (curLum * 248) / paperLum;
+      const normMean =
+        meanLum >= paperLum ? 248 : (meanLum * 248) / paperLum;
+
+      const detail = baseLum - normMean;
+      let targetLum = baseLum;
+
+      if (detail < -1.8) {
+        // 薄い鉛筆の点『・』や細線『ー』『○』『△』『1,2,3』をくっきり濃色化
+        targetLum = baseLum + (detail + 1.8) * 1.68;
+        if (baseLum < 236) {
+          targetLum -= (236 - baseLum) * 0.26;
+        }
+      } else if (baseLum < 168 && detail > 3.5) {
+        // 濃いサインペン『○』『△』内部の白穴だけは開いて『●』『▲』との誤認を防ぐ
+        targetLum = baseLum + (detail - 3.5) * 1.28;
+      }
+
+      const clampedTarget =
+        targetLum > 255 ? 255 : targetLum < 0 ? 0 : Math.round(targetLum);
+      const scale256 = ((clampedTarget << 8) / curLum) | 0;
+      const nr = (r * scale256) >> 8;
+      const ng = (g * scale256) >> 8;
+      const nb = (b * scale256) >> 8;
+      data[i] = nr > 255 ? 255 : nr < 0 ? 0 : nr;
+      data[i + 1] = ng > 255 ? 255 : ng < 0 ? 0 : ng;
+      data[i + 2] = nb > 255 ? 255 : nb < 0 ? 0 : nb;
+    }
+  }
+}
+
+/**
  * Stage 2（イニング分割ディープ解析）向けに、上下左右の隣接マスの映り込みを物理的にゼロ化し、
  * 1イニング2列・3列以上（打者一巡・二巡）および原本の傾き・台形歪み（gridCorners）にも対応した
  * 「サブ列×打順 射影補正セルマトリクス＋にじみ分解ズーム画像」を生成する。
@@ -1025,15 +1153,15 @@ export async function extractInningChunkCompositeCrop(
           const rowOutH =
             colCount === 1
               ? bLen <= 9
-                ? 204
-                : 184
+                ? 220
+                : 198
               : colCount === 2
-              ? 180
-              : 162;
+              ? 192
+              : 166;
           const minCellW =
-            colCount === 1 ? 264 : colCount === 2 ? 216 : 196;
+            colCount === 1 ? 268 : colCount === 2 ? 220 : 196;
           const maxCellW =
-            colCount === 1 ? 344 : colCount === 2 ? 272 : 244;
+            colCount === 1 ? 348 : colCount === 2 ? 276 : 244;
           const cellOutW = Math.max(
             minCellW,
             Math.min(maxCellW, Math.round(rowOutH * singleAspect))
@@ -1044,20 +1172,21 @@ export async function extractInningChunkCompositeCrop(
               ? 5
               : 4
             : 0;
+          // [BSO拡大] は全体マス内のBSO幅（約90px）の約1.8〜2.0倍に本物拡大して薄い鉛筆の投球記号欠落を防ぐ
           const bsoZoomW = showDebleedMagnifiers
             ? Math.max(
-                colCount === 1 ? 84 : 68,
+                colCount === 1 ? 152 : 118,
                 Math.min(
-                  colCount === 1 ? 108 : 88,
-                  Math.round(rowOutH * 0.31 * singleAspect)
+                  colCount === 1 ? 178 : 138,
+                  Math.round(rowOutH * 0.39 * singleAspect * 1.45)
                 )
               )
             : 0;
           const playZoomW = showDebleedMagnifiers
             ? Math.max(
-                colCount === 1 ? 172 : 142,
+                colCount === 1 ? 184 : 148,
                 Math.min(
-                  colCount === 1 ? 228 : 186,
+                  colCount === 1 ? 236 : 190,
                   Math.round(rowOutH * (0.72 / 0.86) * singleAspect)
                 )
               )
@@ -1260,12 +1389,16 @@ export async function extractInningChunkCompositeCrop(
                 ctx.fillRect(bsoHdrX, 6, bsoZoomW, 26);
                 ctx.fillStyle = "#ffffff";
                 ctx.font = "bold 11px sans-serif";
-                ctx.fillText("BSO拡大", bsoHdrX + bsoZoomW / 2, 19);
+                ctx.fillText("BSO投球拡大", bsoHdrX + bsoZoomW / 2, 19);
                 ctx.fillStyle = "#134e4a";
                 ctx.fillRect(bsoHdrX, 34, bsoZoomW, hdrOutH);
                 ctx.fillStyle = "#99f6e4";
                 ctx.font = "bold 10px sans-serif";
-                ctx.fillText("○●ー△判別", bsoHdrX + bsoZoomW / 2, 34 + hdrOutH / 2);
+                ctx.fillText(
+                  "○●ー・△123 全球抽出",
+                  bsoHdrX + bsoZoomW / 2,
+                  34 + hdrOutH / 2
+                );
 
                 ctx.fillStyle = "#4338ca";
                 ctx.fillRect(playHdrX, 6, playZoomW, 26);
@@ -1402,10 +1535,10 @@ export async function extractInningChunkCompositeCrop(
                   const bsoDstX = colDstX + cellOutW + zoomGapW;
                   const bsoSubQuad = sliceQuadSubRegion(
                     tightCellQuad,
-                    0.0,
-                    0.31,
-                    0.01,
-                    0.99
+                    -0.03,
+                    0.36,
+                    -0.01,
+                    1.01
                   );
                   const bsoImgData = ctx.createImageData(bsoZoomW, rowOutH);
                   warpQuadFromRgbaBuffer(
@@ -1417,7 +1550,7 @@ export async function extractInningChunkCompositeCrop(
                     bsoZoomW,
                     rowOutH
                   );
-                  applyStrokeValleySharpen(bsoImgData, bsoZoomW, rowOutH);
+                  applyBsoPitchEnhance(bsoImgData, bsoZoomW, rowOutH);
                   ctx.putImageData(bsoImgData, bsoDstX, dstY);
                   ctx.strokeStyle = "#0d9488";
                   ctx.lineWidth = 1.5;
@@ -2123,11 +2256,11 @@ export async function buildMissingOrderComparisonCrop(
       ...gaps.map((g) => Math.max(1, g.candidates.length))
     );
 
-    const rowCellH = 192;
+    const rowCellH = 204;
     const cellW = 248;
     const zoomGap = 4;
-    const bsoW = 86;
-    const playW = 178;
+    const bsoW = 144;
+    const playW = 182;
     const candGroupW = cellW + zoomGap + bsoW + zoomGap + playW;
     const candHeaderH = 28;
     const rowBlockH = candHeaderH + rowCellH;
@@ -2267,7 +2400,7 @@ export async function buildMissingOrderComparisonCrop(
             0.015
           ) || fullQuad;
 
-        const bsoQuad = sliceQuadSubRegion(tightQuad, 0.0, 0.31, 0.01, 0.99);
+        const bsoQuad = sliceQuadSubRegion(tightQuad, -0.03, 0.36, -0.01, 1.01);
         const bsoImgData = ctx.createImageData(bsoW, rowCellH);
         warpQuadFromRgbaBuffer(
           fullSrcData,
@@ -2278,7 +2411,7 @@ export async function buildMissingOrderComparisonCrop(
           bsoW,
           rowCellH
         );
-        applyStrokeValleySharpen(bsoImgData, bsoW, rowCellH);
+        applyBsoPitchEnhance(bsoImgData, bsoW, rowCellH);
         ctx.putImageData(bsoImgData, bsoX, cellTopY);
         ctx.strokeStyle = "#0d9488";
         ctx.lineWidth = 1.5;
@@ -2344,11 +2477,11 @@ export async function buildInningOutsReconcileCrop(
     if (!cachedRgba) return null;
     const fullSrcData = cachedRgba.data;
 
-    const rowCellH = 186;
+    const rowCellH = 202;
     const cellW = 248;
     const zoomGap = 4;
-    const bsoW = 86;
-    const playW = 180;
+    const bsoW = 144;
+    const playW = 184;
     const leftLabelW = 206;
     const candGapW = 12;
     const padX = 12;
@@ -2492,7 +2625,7 @@ export async function buildInningOutsReconcileCrop(
           0.015
         ) || fullQuad;
 
-      const bsoQuad = sliceQuadSubRegion(tightQuad, 0.0, 0.31, 0.01, 0.99);
+      const bsoQuad = sliceQuadSubRegion(tightQuad, -0.03, 0.36, -0.01, 1.01);
       const bsoImgData = ctx.createImageData(bsoW, rowCellH);
       warpQuadFromRgbaBuffer(
         fullSrcData,
@@ -2503,7 +2636,7 @@ export async function buildInningOutsReconcileCrop(
         bsoW,
         rowCellH
       );
-      applyStrokeValleySharpen(bsoImgData, bsoW, rowCellH);
+      applyBsoPitchEnhance(bsoImgData, bsoW, rowCellH);
       ctx.putImageData(bsoImgData, bsoX, cellTopY);
       ctx.strokeStyle = "#0d9488";
       ctx.lineWidth = 1.5;

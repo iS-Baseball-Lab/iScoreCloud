@@ -55,8 +55,10 @@ import {
 import {
   buildSmartAdvancesForResultChange,
   computeSyncedStatsFromAdvances,
+  formatBaseJa,
   isForceOutGroundout,
   simulateSheetRunners,
+  type OccupiedBaseKey,
 } from "@/lib/liff/scorebook-runners";
 import {
   DEFENSIVE_POSITIONS,
@@ -82,6 +84,7 @@ import { ActionStatusBanner } from "./ActionStatusBanner";
 import {
   AtBatCardRunnerStrip,
   AtBatModalRunnerEditor,
+  type PrecedingRunnerCellCrop,
 } from "./RunnerSituationPanel";
 
 interface Step3PinpointReviewProps {
@@ -135,6 +138,12 @@ export function Step3PinpointReview({
   const [selectedInning, setSelectedInning] = useState<number | "all">("all");
   const [editingAtBatId, setEditingAtBatId] = useState<string | null>(null);
   const [croppedCellUrl, setCroppedCellUrl] = useState<string | null>(null);
+  const [precedingRunnerCrops, setPrecedingRunnerCrops] = useState<
+    PrecedingRunnerCellCrop[]
+  >([]);
+  const [focusedModalCellKey, setFocusedModalCellKey] = useState<string | null>(
+    null
+  );
   const [showFullSheetInModal, setShowFullSheetInModal] = useState(false);
   const [showOrderAdjustPanel, setShowOrderAdjustPanel] = useState(false);
   const [showTimingDetails, setShowTimingDetails] = useState(true);
@@ -276,11 +285,82 @@ export function Step3PinpointReview({
     return editingInningPeers.findIndex((a) => a.id === editingAtBat.id);
   }, [editingInningPeers, editingAtBat]);
 
+  // 塁上にいる先行走者（3塁➔2塁➔1塁）の元打席マス仕様を解決
+  const precedingRunnerCellSpecs = useMemo(() => {
+    if (!editingAtBat || !editingRunnerSnapshot) return [];
+    const prs = editingRunnerSnapshot.precedingRunners;
+    if (prs.length === 0) return [];
+
+    const priorPeers =
+      editingIndexWithinInning > 0
+        ? editingInningPeers.slice(0, editingIndexWithinInning)
+        : [];
+
+    return prs.map((pr) => {
+      let matchedPeer: ScorebookV2AtBat | undefined;
+      for (let i = priorPeers.length - 1; i >= 0; i--) {
+        const peer = priorPeers[i];
+        if (
+          pr.runner.battingOrder > 0 &&
+          peer.battingOrder === pr.runner.battingOrder
+        ) {
+          matchedPeer = peer;
+          break;
+        }
+        if (
+          pr.runner.battingOrder <= 0 &&
+          pr.runner.name &&
+          peer.batterName === pr.runner.name
+        ) {
+          matchedPeer = peer;
+          break;
+        }
+      }
+      return {
+        startBase: pr.startBase,
+        battingOrder: matchedPeer?.battingOrder || pr.runner.battingOrder,
+        runnerName: pr.runner.name || matchedPeer?.batterName || "走者",
+        atBatId: matchedPeer?.id ?? null,
+        inning: matchedPeer?.inning ?? editingAtBat.inning,
+        columnIndex:
+          matchedPeer?.columnIndex || editingAtBat.columnIndex || 1,
+        cellBox: matchedPeer?.cellBox,
+      };
+    });
+  }, [
+    editingAtBat,
+    editingRunnerSnapshot,
+    editingInningPeers,
+    editingIndexWithinInning,
+  ]);
+
+  const precedingRunnerSpecsKey = useMemo(
+    () =>
+      precedingRunnerCellSpecs
+        .map(
+          (s) =>
+            `${s.startBase}:${s.atBatId || "tb"}:${s.inning}:${s.columnIndex}:${
+              s.battingOrder
+            }:${s.runnerName}`
+        )
+        .join("|"),
+    [precedingRunnerCellSpecs]
+  );
+
+  const runnerCellCropMap = useMemo(() => {
+    const map: Partial<Record<OccupiedBaseKey, PrecedingRunnerCellCrop>> = {};
+    for (const rc of precedingRunnerCrops) {
+      map[rc.startBase] = rc;
+    }
+    return map;
+  }, [precedingRunnerCrops]);
+
   // 編集中マスの切り抜きズーム画像を生成（4隅歪み補正ホモグラフィ＆複数列サブ列分割を最優先し、隣接マス映り込みゼロで水平展開）
   useEffect(() => {
     let cancelled = false;
     setShowFullSheetInModal(false);
     setShowOrderAdjustPanel(false);
+    setFocusedModalCellKey(null);
 
     if (!editingAtBat || !currentSheetImage) {
       setCroppedCellUrl(null);
@@ -332,6 +412,87 @@ export function Step3PinpointReview({
     editingAtBat?.columnIndex,
     editingAtBat?.battingOrder,
     editingAtBat?.cellBox,
+    currentStructure,
+    currentSheetImage,
+  ]);
+
+  // 塁上に走者がいる場合、各先行走者の手書き原本マスも同時に切り抜いて表示する
+  useEffect(() => {
+    let cancelled = false;
+    if (
+      !editingAtBat ||
+      !currentSheetImage ||
+      precedingRunnerCellSpecs.length === 0
+    ) {
+      setPrecedingRunnerCrops([]);
+      return;
+    }
+
+    const cropSingleSpec = async (
+      spec: (typeof precedingRunnerCellSpecs)[number]
+    ): Promise<PrecedingRunnerCellCrop | null> => {
+      try {
+        if (currentStructure && spec.battingOrder >= 1) {
+          const quad = getCellQuadInStructure(
+            currentStructure,
+            spec.inning,
+            spec.columnIndex,
+            spec.battingOrder,
+            0
+          );
+          if (quad) {
+            const url = await cropScorebookQuad(
+              currentSheetImage,
+              quad,
+              0.04,
+              480
+            );
+            return {
+              startBase: spec.startBase,
+              battingOrder: spec.battingOrder,
+              runnerName: spec.runnerName,
+              atBatId: spec.atBatId,
+              columnIndex: spec.columnIndex,
+              cropUrl: url,
+            };
+          }
+        }
+        if (spec.cellBox) {
+          const url = await cropScorebookRegion(
+            currentSheetImage,
+            spec.cellBox,
+            0.04
+          );
+          return {
+            startBase: spec.startBase,
+            battingOrder: spec.battingOrder,
+            runnerName: spec.runnerName,
+            atBatId: spec.atBatId,
+            columnIndex: spec.columnIndex,
+            cropUrl: url,
+          };
+        }
+        return null;
+      } catch {
+        return null;
+      }
+    };
+
+    Promise.all(precedingRunnerCellSpecs.map((sp) => cropSingleSpec(sp))).then(
+      (results) => {
+        if (cancelled) return;
+        setPrecedingRunnerCrops(
+          results.filter((r): r is PrecedingRunnerCellCrop => r !== null)
+        );
+      }
+    );
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    editingAtBat?.id,
+    precedingRunnerSpecsKey,
     currentStructure,
     currentSheetImage,
   ]);
@@ -1736,7 +1897,7 @@ export function Step3PinpointReview({
 
               {/* スクロール編集ボディ */}
               <div className="p-4 space-y-4 overflow-y-auto flex-1">
-                {/* 1. 元スコアブック画像 該当マス拡大プレビュー */}
+                {/* 1. 元スコアブック画像 該当マス拡大プレビュー（走者がいる場合は前の走者のマスも同時並列表示） */}
                 {currentSheetImage && (
                   <div className="rounded-2xl bg-slate-950 border border-border overflow-hidden">
                     <div className="px-3 py-1.5 bg-slate-900 flex items-center justify-between gap-2 text-white">
@@ -1745,6 +1906,8 @@ export function Step3PinpointReview({
                         <span className="truncate">
                           {showFullSheetInModal
                             ? "シート全体画像"
+                            : precedingRunnerCrops.length > 0
+                            ? `原本マス比較（先行走者${precedingRunnerCrops.length}人 ＋ 今回の打者）`
                             : `手書き原本マス切り抜き${
                                 (editingAtBat.columnIndex || 1) >= 2
                                   ? `（${editingAtBat.columnIndex}列目）`
@@ -1753,6 +1916,17 @@ export function Step3PinpointReview({
                         </span>
                       </span>
                       <div className="flex items-center gap-1 shrink-0">
+                        {!showFullSheetInModal &&
+                          precedingRunnerCrops.length > 0 &&
+                          focusedModalCellKey !== null && (
+                            <button
+                              type="button"
+                              onClick={() => setFocusedModalCellKey(null)}
+                              className="px-2 py-0.5 rounded-md bg-amber-500 text-white text-[10px] font-black cursor-pointer"
+                            >
+                              並べて表示
+                            </button>
+                          )}
                         {(() => {
                           const editInnMeta = currentStructure?.innings.find(
                             (m) => m.inning === editingAtBat.inning
@@ -1803,17 +1977,161 @@ export function Step3PinpointReview({
                         </button>
                       </div>
                     </div>
-                    <div className="max-h-44 overflow-auto flex items-center justify-center p-2">
-                      <img
-                        src={
-                          showFullSheetInModal
-                            ? currentSheetImage
-                            : croppedCellUrl || currentSheetImage
-                        }
-                        alt="Scorebook cell preview"
-                        className="max-h-40 object-contain rounded-lg"
-                      />
-                    </div>
+
+                    {showFullSheetInModal ? (
+                      <div className="max-h-56 overflow-auto flex items-center justify-center p-2">
+                        <img
+                          src={currentSheetImage}
+                          alt="Scorebook full sheet preview"
+                          className="max-h-52 object-contain rounded-lg"
+                        />
+                      </div>
+                    ) : precedingRunnerCrops.length === 0 ? (
+                      <div className="max-h-44 overflow-auto flex items-center justify-center p-2">
+                        <img
+                          src={croppedCellUrl || currentSheetImage}
+                          alt="Scorebook cell preview"
+                          className="max-h-40 object-contain rounded-lg"
+                        />
+                      </div>
+                    ) : focusedModalCellKey !== null ? (
+                      (() => {
+                        const focusedRunner =
+                          focusedModalCellKey === "BAT"
+                            ? null
+                            : precedingRunnerCrops.find(
+                                (rc) => rc.startBase === focusedModalCellKey
+                              ) || null;
+                        const activeUrl = focusedRunner
+                          ? focusedRunner.cropUrl
+                          : croppedCellUrl || currentSheetImage;
+                        const activeBadge = focusedRunner
+                          ? `【${formatBaseJa(focusedRunner.startBase)}走者】${
+                              focusedRunner.battingOrder > 0
+                                ? `${focusedRunner.battingOrder}番 `
+                                : ""
+                            }${focusedRunner.runnerName || "走者"}`
+                          : `【今回の打者】${editingAtBat.battingOrder}番 ${
+                              editingAtBat.batterName || "打者"
+                            }`;
+                        return (
+                          <div className="p-2 space-y-1.5">
+                            <div className="flex items-center justify-between gap-2 px-2 py-1 rounded-lg bg-slate-900">
+                              <span
+                                className={`text-[10px] font-black ${
+                                  focusedRunner
+                                    ? "text-amber-300"
+                                    : "text-indigo-300"
+                                }`}
+                              >
+                                {activeBadge}（タップで並べて表示へ戻る）
+                              </span>
+                              {focusedRunner?.atBatId && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setEditingAtBatId(focusedRunner.atBatId)
+                                  }
+                                  className="px-2 py-0.5 rounded-md bg-white/15 hover:bg-white/25 text-white text-[9px] font-black cursor-pointer"
+                                >
+                                  この走者の打席へ
+                                </button>
+                              )}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setFocusedModalCellKey(null)}
+                              className="w-full flex items-center justify-center cursor-pointer"
+                            >
+                              <img
+                                src={activeUrl}
+                                alt={activeBadge}
+                                className="max-h-48 w-full object-contain rounded-lg"
+                              />
+                            </button>
+                          </div>
+                        );
+                      })()
+                    ) : (
+                      <div className="p-2 space-y-1.5 max-h-64 overflow-y-auto">
+                        <div className="grid grid-cols-2 gap-1.5">
+                          {precedingRunnerCrops.map((rc) => (
+                            <div
+                              key={`top-rc-${rc.startBase}`}
+                              className="rounded-xl bg-slate-900 border border-amber-500/40 overflow-hidden flex flex-col"
+                            >
+                              <div className="px-2 py-1 bg-amber-600 text-white flex items-center justify-between gap-1">
+                                <span className="text-[10px] font-black truncate">
+                                  {formatBaseJa(rc.startBase)}走者:{" "}
+                                  {rc.battingOrder > 0
+                                    ? `${rc.battingOrder}番 `
+                                    : ""}
+                                  {rc.runnerName || "走者"}
+                                </span>
+                                {rc.atBatId && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setEditingAtBatId(rc.atBatId)
+                                    }
+                                    className="px-1.5 py-0.5 rounded bg-black/25 hover:bg-black/40 text-[9px] font-black shrink-0 cursor-pointer"
+                                  >
+                                    打席へ
+                                  </button>
+                                )}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setFocusedModalCellKey(rc.startBase)
+                                }
+                                title="タップしてこの走者のマスを拡大"
+                                className="p-1 flex-1 flex items-center justify-center bg-slate-950 cursor-pointer"
+                              >
+                                <img
+                                  src={rc.cropUrl}
+                                  alt={`${formatBaseJa(rc.startBase)}走者マス`}
+                                  className="h-28 w-full object-contain rounded"
+                                />
+                              </button>
+                            </div>
+                          ))}
+
+                          <div
+                            className={`rounded-xl bg-slate-900 border-2 border-indigo-500 overflow-hidden flex flex-col ${
+                              precedingRunnerCrops.length === 2
+                                ? "col-span-2"
+                                : "col-span-1"
+                            }`}
+                          >
+                            <div className="px-2 py-1 bg-indigo-600 text-white flex items-center justify-between gap-1">
+                              <span className="text-[10px] font-black truncate">
+                                今回の打者: {editingAtBat.battingOrder}番{" "}
+                                {editingAtBat.batterName || "打者"}
+                              </span>
+                              <span className="text-[9px] font-bold text-indigo-100 shrink-0">
+                                タップで拡大
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setFocusedModalCellKey("BAT")}
+                              title="タップして今回の打者マスを拡大"
+                              className="p-1 flex-1 flex items-center justify-center bg-slate-950 cursor-pointer"
+                            >
+                              <img
+                                src={croppedCellUrl || currentSheetImage}
+                                alt="今回の打者マス"
+                                className="h-28 w-full object-contain rounded"
+                              />
+                            </button>
+                          </div>
+                        </div>
+                        <p className="text-[10px] font-bold text-slate-300 text-center">
+                          ※走者の進塁・得点●・封殺ⅠⅡⅢは「走者マス」、投球・打球は「今回の打者マス」で確認できます（マスタップで拡大）
+                        </p>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -2678,9 +2996,29 @@ export function Step3PinpointReview({
                             ? getDefaultDpRelay(nextPos)
                             : cur.dpRelay;
 
-                        const nextAssist =
+                        const nextErrorStyle: ErrorStyleOption =
+                          overrides?.errorStyle ?? cur.errorStyle;
+
+                        const nextAssist: AssistTargetOption | "" =
                           overrides?.assistTargetPos !== undefined
                             ? overrides.assistTargetPos
+                            : effectiveCode === "error"
+                            ? nextErrorStyle === "throwing"
+                              ? cur.assistTargetPos &&
+                                cur.assistTargetPos !== "unassisted" &&
+                                cur.assistTargetPos !== nextPos
+                                ? cur.assistTargetPos
+                                : overrides?.errorStyle === "throwing" &&
+                                  cur.errorStyle !== "throwing"
+                                ? nextPos === "3"
+                                  ? "unassisted"
+                                  : "3"
+                                : cur.assistTargetPos === "unassisted"
+                                ? "unassisted"
+                                : nextPos === "3"
+                                ? "unassisted"
+                                : "3"
+                              : cur.assistTargetPos
                             : nextPos === "3" && effectiveCode === "groundout"
                             ? "unassisted"
                             : cur.assistTargetPos === "unassisted" &&
@@ -2695,7 +3033,7 @@ export function Step3PinpointReview({
                           dpRelay: nextDpRelay,
                           hitZone: nextZone,
                           flyStyle: overrides?.flyStyle ?? cur.flyStyle,
-                          errorStyle: overrides?.errorStyle ?? cur.errorStyle,
+                          errorStyle: nextErrorStyle,
                           fallbackLabel: prev.resultLabel,
                         });
 
@@ -3039,36 +3377,125 @@ export function Step3PinpointReview({
                               </div>
                             )}
 
-                            {/* 失策の捕球失策 / 悪送球切替 */}
+                            {/* 失策の捕球失策 / 悪送球切替 ＋ 悪送球の送球先指定（4E-3 / 4E 等） */}
                             {isErrorCode && fMeta.primaryPos && (
-                              <div className="pt-1 grid grid-cols-2 gap-1">
-                                {(
-                                  [
-                                    {
-                                      id: "fielding",
-                                      label: "捕球・ファンブル失策",
-                                    },
-                                    { id: "throwing", label: "悪送球エラー" },
-                                  ] as const
-                                ).map((es) => (
-                                  <button
-                                    key={es.id}
-                                    type="button"
-                                    onClick={() =>
-                                      fMeta.primaryPos &&
-                                      applyPositionSelection(fMeta.primaryPos, {
-                                        errorStyle: es.id,
-                                      })
-                                    }
-                                    className={`py-1 px-2 rounded-lg text-[10px] border transition-all cursor-pointer ${
-                                      fMeta.errorStyle === es.id
-                                        ? "bg-indigo-600 text-white border-indigo-600 font-black"
-                                        : "bg-card border-border text-foreground font-bold"
-                                    }`}
-                                  >
-                                    {es.label}
-                                  </button>
-                                ))}
+                              <div className="pt-1 space-y-1.5">
+                                <div className="grid grid-cols-2 gap-1">
+                                  {(
+                                    [
+                                      {
+                                        id: "fielding",
+                                        label: `捕球・ファンブル失策 (E${fMeta.primaryPos})`,
+                                      },
+                                      {
+                                        id: "throwing",
+                                        label: `悪送球 (${fMeta.primaryPos}E-3 / ${fMeta.primaryPos}E)`,
+                                      },
+                                    ] as const
+                                  ).map((es) => (
+                                    <button
+                                      key={es.id}
+                                      type="button"
+                                      onClick={() =>
+                                        fMeta.primaryPos &&
+                                        applyPositionSelection(
+                                          fMeta.primaryPos,
+                                          {
+                                            errorStyle: es.id,
+                                          }
+                                        )
+                                      }
+                                      className={`py-1.5 px-2 rounded-lg text-[10px] border transition-all cursor-pointer ${
+                                        fMeta.errorStyle === es.id
+                                          ? "bg-indigo-600 text-white border-indigo-600 font-black"
+                                          : "bg-card border-border text-foreground font-bold"
+                                      }`}
+                                    >
+                                      {es.label}
+                                    </button>
+                                  ))}
+                                </div>
+
+                                {fMeta.errorStyle === "throwing" && (
+                                  <div className="p-2 rounded-xl bg-card border border-indigo-500/35 space-y-1">
+                                    <span className="text-[10px] font-black text-foreground block">
+                                      悪送球の送球先を指定（例:{" "}
+                                      {fMeta.primaryPos === "3"
+                                        ? "3E-1 / 3E-6"
+                                        : `${fMeta.primaryPos}E-3`}
+                                      ）:
+                                    </span>
+                                    <div className="grid grid-cols-3 gap-1">
+                                      {(
+                                        [
+                                          {
+                                            id: "3",
+                                            label: `一塁送球 (${fMeta.primaryPos}E-3)`,
+                                          },
+                                          {
+                                            id: "1",
+                                            label: `一塁カバー投 (${fMeta.primaryPos}E-1)`,
+                                          },
+                                          {
+                                            id: "4",
+                                            label: `二塁送球 (${fMeta.primaryPos}E-4)`,
+                                          },
+                                          {
+                                            id: "6",
+                                            label: `二塁遊撃 (${fMeta.primaryPos}E-6)`,
+                                          },
+                                          {
+                                            id: "5",
+                                            label: `三塁送球 (${fMeta.primaryPos}E-5)`,
+                                          },
+                                          {
+                                            id: "2",
+                                            label: `本塁送球 (${fMeta.primaryPos}E-2)`,
+                                          },
+                                          {
+                                            id: "unassisted",
+                                            label: `送球先なし (${fMeta.primaryPos}Eのみ)`,
+                                          },
+                                        ] as const
+                                      )
+                                        .filter(
+                                          (tgt) => tgt.id !== fMeta.primaryPos
+                                        )
+                                        .map((tgt) => {
+                                          const effectiveThrowTarget =
+                                            fMeta.assistTargetPos ||
+                                            (fMeta.primaryPos === "3"
+                                              ? "unassisted"
+                                              : "3");
+                                          const isTgtActive =
+                                            effectiveThrowTarget === tgt.id;
+                                          return (
+                                            <button
+                                              key={tgt.id}
+                                              type="button"
+                                              onClick={() =>
+                                                fMeta.primaryPos &&
+                                                applyPositionSelection(
+                                                  fMeta.primaryPos,
+                                                  {
+                                                    errorStyle: "throwing",
+                                                    assistTargetPos: tgt.id,
+                                                  }
+                                                )
+                                              }
+                                              className={`py-1.5 px-1 rounded-lg text-[10px] border transition-all cursor-pointer ${
+                                                isTgtActive
+                                                  ? "bg-indigo-600 text-white border-indigo-600 font-black"
+                                                  : "bg-muted/50 border-border text-foreground font-bold hover:bg-muted"
+                                              }`}
+                                            >
+                                              {tgt.label}
+                                            </button>
+                                          );
+                                        })}
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                             )}
                           </>
@@ -3164,6 +3591,10 @@ export function Step3PinpointReview({
                   atBat={editingAtBat}
                   snapshot={editingRunnerSnapshot}
                   batters={currentStructure?.batters || []}
+                  runnerCellCrops={runnerCellCropMap}
+                  onJumpToRunnerAtBat={(runnerAbId) =>
+                    setEditingAtBatId(runnerAbId)
+                  }
                   onUpdateAtBat={(updater) =>
                     updateSingleAtBat(editingAtBat.id, updater)
                   }

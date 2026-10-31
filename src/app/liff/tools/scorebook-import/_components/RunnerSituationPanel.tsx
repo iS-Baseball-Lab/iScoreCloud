@@ -286,10 +286,21 @@ export function AtBatCardRunnerStrip({
   );
 }
 
+export interface PrecedingRunnerCellCrop {
+  startBase: OccupiedBaseKey;
+  battingOrder: number;
+  runnerName: string;
+  atBatId: string | null;
+  columnIndex: number;
+  cropUrl: string;
+}
+
 interface AtBatModalRunnerEditorProps {
   atBat: ScorebookV2AtBat;
   snapshot?: AtBatRunnerSnapshot;
   batters: ScorebookBatterSlot[];
+  runnerCellCrops?: Partial<Record<OccupiedBaseKey, PrecedingRunnerCellCrop>>;
+  onJumpToRunnerAtBat?: (atBatId: string) => void;
   onUpdateAtBat: (updater: (prev: ScorebookV2AtBat) => ScorebookV2AtBat) => void;
 }
 
@@ -355,6 +366,8 @@ export function AtBatModalRunnerEditor({
   atBat,
   snapshot,
   batters,
+  runnerCellCrops,
+  onJumpToRunnerAtBat,
   onUpdateAtBat,
 }: AtBatModalRunnerEditorProps) {
   const [showOtherEventPresets, setShowOtherEventPresets] = useState(false);
@@ -833,6 +846,45 @@ export function AtBatModalRunnerEditor({
                       : `${formatBaseJa(pr.startBase)}のまま`}
                   </span>
                 </div>
+
+                {/* 先行走者の手書き原本マス切り抜き（進塁線・本塁●・アウトⅠⅡⅢをその場で確認） */}
+                {(() => {
+                  const rCrop = runnerCellCrops?.[pr.startBase];
+                  if (!rCrop?.cropUrl) return null;
+                  return (
+                    <div className="rounded-xl bg-slate-950 border border-slate-800 overflow-hidden">
+                      <div className="px-2.5 py-1 bg-slate-900 flex items-center justify-between gap-2">
+                        <span className="text-[10px] font-black text-amber-300 truncate">
+                          原本マス（
+                          {rCrop.battingOrder > 0
+                            ? `${rCrop.battingOrder}番 `
+                            : ""}
+                          {rCrop.runnerName || "走者"}
+                          {rCrop.columnIndex >= 2
+                            ? `・${rCrop.columnIndex}列目`
+                            : ""}
+                          ）※進塁線・●・ⅠⅡⅢを確認
+                        </span>
+                        {rCrop.atBatId && onJumpToRunnerAtBat && (
+                          <button
+                            type="button"
+                            onClick={() => onJumpToRunnerAtBat(rCrop.atBatId!)}
+                            className="px-2 py-0.5 rounded-md bg-white/15 hover:bg-white/25 text-white text-[9px] font-black shrink-0 cursor-pointer"
+                          >
+                            この走者の打席へ
+                          </button>
+                        )}
+                      </div>
+                      <div className="p-1.5 flex items-center justify-center">
+                        <img
+                          src={rCrop.cropUrl}
+                          alt={`${formatBaseJa(pr.startBase)}走者の原本マス`}
+                          className="max-h-28 w-full object-contain rounded-md"
+                        />
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* 投球間イベント（盗塁・暴投等）が入っている場合の表示 */}
                 {pr.prePlayMoves.length > 0 && (

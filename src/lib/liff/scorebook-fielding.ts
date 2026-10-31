@@ -148,8 +148,8 @@ function normalizeFieldingAscii(raw: string): string {
     .replace(/[Ａ-Ｚａ-ｚ]/g, (ch) =>
       String.fromCharCode(ch.charCodeAt(0) - 0xfee0)
     )
-    .replace(/([1-9])\s*[－ー―‐=＝→⇒➡]\s*([1-9])/g, "$1-$2")
-    .replace(/([1-9])\s*[－ー―‐=＝→⇒➡]\s*([1-9])/g, "$1-$2");
+    .replace(/(E?[1-9]E?)\s*[－ー―‐=＝→⇒➡]\s*(E?[1-9]E?)/gi, "$1-$2")
+    .replace(/(E?[1-9]E?)\s*[－ー―‐=＝→⇒➡]\s*(E?[1-9]E?)/gi, "$1-$2");
 }
 
 /**
@@ -211,10 +211,69 @@ export function parseFieldingMeta(
     }
   }
 
+  // 2.5. 悪送球＋送球先（4E-3, 6E-4, E4-3 等）および送球先落球（6-3E, 6-E3 等）
+  const throwingErrorRelayMatch = !threeRelayMatch
+    ? combined.match(
+        /(?<![0-9A-Za-z-])(?:E([1-9])|([1-9])E)-([1-9])(?![0-9A-Za-z-])/i
+      )
+    : null;
+  const catchingErrorRelayMatch =
+    !threeRelayMatch && !throwingErrorRelayMatch
+      ? combined.match(
+          /(?<![0-9A-Za-z-])([1-9])-(?:E([1-9])|([1-9])E)(?![0-9A-Za-z-])/i
+        )
+      : null;
+
+  if (throwingErrorRelayMatch) {
+    const p1 = throwingErrorRelayMatch[1] || throwingErrorRelayMatch[2];
+    const p2 = throwingErrorRelayMatch[3];
+    if (isValidPosDigit(p1)) {
+      primaryPos = p1;
+    }
+    if (
+      p2 === "1" ||
+      p2 === "2" ||
+      p2 === "3" ||
+      p2 === "4" ||
+      p2 === "5" ||
+      p2 === "6"
+    ) {
+      assistTargetPos = p2;
+    }
+    errorStyle = "throwing";
+  } else if (catchingErrorRelayMatch) {
+    const thrower = catchingErrorRelayMatch[1];
+    const receiver = catchingErrorRelayMatch[2] || catchingErrorRelayMatch[3];
+    if (label.includes("悪送球")) {
+      if (isValidPosDigit(thrower)) {
+        primaryPos = thrower;
+      }
+      if (
+        receiver === "1" ||
+        receiver === "2" ||
+        receiver === "3" ||
+        receiver === "4" ||
+        receiver === "5" ||
+        receiver === "6"
+      ) {
+        assistTargetPos = receiver;
+      }
+      errorStyle = "throwing";
+    } else {
+      if (isValidPosDigit(receiver)) {
+        primaryPos = receiver;
+      }
+      errorStyle = "fielding";
+    }
+  }
+
   // 3. 2連送球（6-3, 3-1, 〜6-3, [1-3], ◇5-3, K 2-3 等 ※7-8/8-9の安打は除外）
   const twoRelayMatch =
-    !threeRelayMatch && !(isHitCode && (hitZone === "gap_lc" || hitZone === "gap_rc"))
-      ? combined.match(/(?<![0-9-])([1-9])-([1-9])(?![0-9-])/)
+    !threeRelayMatch &&
+    !throwingErrorRelayMatch &&
+    !catchingErrorRelayMatch &&
+    !(isHitCode && (hitZone === "gap_lc" || hitZone === "gap_rc"))
+      ? combined.match(/(?<![0-9A-Za-z-])([1-9])-([1-9])(?![0-9A-Za-z-])/)
       : null;
   if (twoRelayMatch) {
     const p1 = twoRelayMatch[1];
@@ -240,13 +299,17 @@ export function parseFieldingMeta(
     }
   }
 
-  // 4. E6 / FC6 / 6F / 6L / 6IF / ⌒4 / ︵4 / 傘4 / △2 / (2) / [1] / ◇3 / 4￣ / 単独 1〜9
+  // 4. E6 / 4E / FC6 / 6F / 6L / 6IF / ⌒4 / ︵4 / 傘4 / △2 / (2) / [1] / ◇3 / 4￣ / 単独 1〜9
   if (!primaryPos) {
     const strippedDecorDir = dir
       .replace(/[\u0304\u0305]/g, "")
       .replace(/^[⌒︵︶∩^傘~〜￣ー\-△▲□◇◯○[({\uff08\s]+/, "")
       .replace(/[⌒︵︶∩^傘~〜￣ー\-△▲□◇◯○\])}\uff09,，.\s]+$/, "");
+    const suffixErrorMatch =
+      strippedDecorDir.match(/^([1-9])\s*E$/i) ||
+      label.match(/\(([1-9])E\)/i);
     const codeDigitMatch =
+      suffixErrorMatch ||
       strippedDecorDir.match(
         /^(?:E|FC|INT|K\s*)?([1-9])(?:F|L|IF|SF|E|A|G)?$/i
       ) ||
@@ -259,6 +322,13 @@ export function parseFieldingMeta(
         resultCode === "sac_bunt" ||
         resultCode === "dropped_third_strike_out"
       ) {
+        assistTargetPos = "unassisted";
+      } else if (
+        resultCode === "error" &&
+        suffixErrorMatch &&
+        !/[投捕一二三遊左中右]失/.test(label)
+      ) {
+        errorStyle = "throwing";
         assistTargetPos = "unassisted";
       }
     }
@@ -326,6 +396,9 @@ export function parseFieldingMeta(
 
   if (label.includes("悪送球")) {
     errorStyle = "throwing";
+    if (!assistTargetPos && !throwingErrorRelayMatch) {
+      assistTargetPos = "unassisted";
+    }
   }
 
   if (!assistTargetPos && primaryPos) {
@@ -601,13 +674,27 @@ export function composeFieldingResult(params: ComposeFieldingParams): {
 
     case "error": {
       const style = params.errorStyle || "fielding";
-      const dir = `E${code}`;
       if (style === "throwing") {
+        const target = params.assistTargetPos;
+        if (
+          target &&
+          target !== "unassisted" &&
+          target !== code &&
+          isValidPosDigit(target)
+        ) {
+          const dir = `${code}E-${target}`;
+          return {
+            battedDirection: dir,
+            resultLabel: `${shortJa}悪送球 (${dir})`,
+          };
+        }
+        const dir = `${code}E`;
         return {
           battedDirection: dir,
           resultLabel: `${shortJa}悪送球 (${dir})`,
         };
       }
+      const dir = `E${code}`;
       return {
         battedDirection: dir,
         resultLabel: `${shortJa}失 (${dir})`,
@@ -729,11 +816,15 @@ export function harmonizeOcrFieldingAndLabel(
       cleanDir
     ) || /^[1-9]-$/.test(cleanDir);
 
+  const normCleanDir = normalizeFieldingAscii(cleanDir);
+  const isPrefixThrowErr =
+    resultCode === "error" && /^E[1-9]-[1-9]$/i.test(normCleanDir);
+
   return {
     battedDirection:
-      !cleanDir || hasRawDecorGlyph
+      !cleanDir || hasRawDecorGlyph || isPrefixThrowErr
         ? composed.battedDirection
-        : normalizeFieldingAscii(cleanDir),
+        : normCleanDir,
     resultLabel: finalLabel,
   };
 }

@@ -1510,25 +1510,29 @@ ${targetInningMetaLines.join("\n")}
    - したがって、「4番の中央に『Ⅲ』が見えたから4番で読取を打ち切る」のは重大な誤りです！**必ずその1つ下のマス（5番）も確認し、投球記号・進塁実線・守備番号などの手書きプレー記録があれば、4番は出塁（o: 0）、5番こそがこのイニングの最終打者（封殺 rc: "fc", o: 1, eo: 3 等）として必ず5番まで出力**してください！
    - 一方で、**投球記号も守備番号も一切無く、斜め1本で引かれたイニング終了斜線『／』『＼』やカギ線『∟』だけがあるマス**は区切り印ですので、打席として出力しないでください！
 
-【🔥最重要 1: 左ゾーン（BSO投球記号欄）の1球順序（p）＆にじみ・接触分解ルール】
-1. **印刷された水平区切り線をボール『ー』と誤認するな！**:
-   左端のBSO細枠には、最初から2〜3段に分ける**薄い水平の印刷線（左右の縦枠線まで隙間なく真っ直ぐ貫通する線）**が全マス共通で印刷されています（白紙マスと見比べれば一目瞭然です）。これをボール『ー』と数えるのは絶対厳禁です！
-2. **手書き投球記号の2大記法と「インクにじみ・くっつき」分解則（[BSO拡大]パネルを必ず確認！）**:
-   - **記法A（縦積み記号式・主流）**: 小枠の区切りに関係なく、上から下へ1球ごとに手書き記号を並べる方式（1つの小枠内に2〜3球密接して入ることも多い）:
-     ・『○』（中が白い丸）＝ **見逃しストライク "S"** （※サインペンや濃い鉛筆のにじみで線が太くなっても、[BSO拡大]で**中心にわずかでも白い抜け（穴）や明るい芯が見えれば100%『○』＝"S"**です！中まで均一に真っ黒に塗り潰された『●』＝"W" と厳密に区別すること）
-     ・『●』（中まで完全に黒く塗り潰した丸）または BSO枠内の斜線『／』＝ **空振りストライク "W"**
-     ・『ー』（左右の枠線に触れない短い浮いた横棒）または『・』（小さい点）＝ **ボール "B"**
-     ・『△』『▽』『レ』『V』（角がある白抜き三角・チェック）＝ **ファウル "F"** （※ペンのにじみで『△』の線が太くなっても、中に少しでも隙間があれば "F" です！黒塗り『▲』＝"BF" と誤認しないこと。特に2ストライク後にバントファウルならその時点で三振終了するため、インプレー結果や後続球がある場合の△は100%通常のファウル "F" です）
-     ・『▲』『▼』（中まで完全に黒塗りの三角）＝ **バントファウル "BF"**
-   - **⚠️上下記号同士・印刷横仕切り線との接触（くっつき）分解**:
-     縦に詰めて書かれた『○』『ー』『△』が上下で接触したり、印刷された水平仕切り線の上に『△』が乗って『ム』『A』『4』『合』のように1文字に見えても、[BSO拡大]で接触点を切り離し、上から順に ["S", "B", "F"] と1球ずつ正確に分解してください！
-   - **記法B（BS段別・球数番号式）**: B段とS段に分けて『1, 2, 3, 4...』と球数番号を書く方式の場合は、番号順（1➔2➔3...）に "B" / "S" / "F" を時系列復元すること。
-3. **最終球とカウントの絶対整合チェック（obs と p を必ず一致させよ！）**:
-   - obs に書いた左BSO欄の手書き記号列（例: 左:○,ー,△）と p の投球配列（例: ["S","B","F","X"]）は必ず1対1で一致させてください（obs に記号があるのに p を ["X"] だけに省略するのは厳禁！）。
-   - **ゴロ・フライ・ライナー・犠打・犠飛・失策・野選・併殺**: バットに当たった最終球はBSO欄に書かれません！BSO欄の手書き球を読んだ末尾に **必ず "X" を1つ追加**してください（初球打ちならBSO欄は空なので **["X"]** の1球のみ！架空のBやSを足さないこと）。
-   - **安打（単打・二塁打・三塁打・本塁打）**: BSO欄の手書き球を読んだ末尾に **必ず "H" を1つ追加**してください（初球安打なら **["H"]**）。
-   - **三振（rc: "strikeout"）**: BSO欄に3ストライク目まで全て書かれます（"X" は付けない）。最後のストライク記号が『○』なら末尾 "S"（見逃し三振）、『●』や『／』なら末尾 "W"（空振り三振）、2S後の『▲』なら末尾 "BF"（スリーバント失敗）。
-   - **四球（rc: "walk"）**: BSO欄のボール "B" が合計4球になります（"X" は付けない）。死球は末尾 "D"。
+【🔥最重要 1: 左ゾーン（BSO投球記号欄）の1球順序（p）完全抽出 — 「["X"]/["H"]のみの投球欠落」絶対防止！】
+1. **⚠️最頻出ミス警告：手書きの投球記号があるのに ["X"] や ["H"] の1球だけに省略する「投球読み飛ばし」は絶対厳禁！**:
+   - 各打順行のすぐ右横に、左BSO欄を約2倍に拡大＆鉛筆濃色化した **『[BSO投球拡大]』パネル** を配置しています。
+   - **必ず「同じ列の白紙（未記入）マスの[BSO投球拡大]」と見比べてください**。白紙マスには無かった手書きの鉛筆点『・』・短い横棒『ー』『-』・丸『○』『●』・斜線『／』・三角『△』・数字『1,2,3...』が1つでもあれば、それは100%投球記録です！1球も漏らさず obs の 左: と p 配列の両方に抽出してください。
+   - 初球打ち（["X"] または ["H"] の1球のみ）にしてよいのは、[BSO投球拡大] が白紙マスと同じく手書き筆跡ゼロのときだけです（1イニングの大半が初球打ちになることは滅多にありません）。
+2. **印刷仕切り線と手書きボールの正確な見分け方**:
+   - 白紙マスにも全行共通で存在する「左右の縦枠線まで隙間なく真っ直ぐ貫通する極細の水平印刷線」だけは枠線なので数えません。それ以外の **左右の枠線に触れない短い横棒『ー』『-』、枠線から浮いた横線、小さい点『・』** はすべて手書きの **ボール "B"** です！
+3. **日本のスコアブック3大BSO記法と「にじみ・くっつき」分解則**:
+   - **記法A（縦積み記号式・早稲田式）**: 上から下へ1球ごとに手書き記号を並べる方式（1つの小枠内に2〜3球密接して入ることも多い）:
+     ・『○』（中が白い丸）＝ **見逃しストライク "S"** （※にじみで線が太くなっても中心にわずかでも白い抜け・明るい芯が見えれば100%『○』＝"S"！真っ黒塗り潰し『●』＝"W" と区別）
+     ・『●』（中まで完全に黒塗りの丸）または BSO枠内の斜線『／』『×』＝ **空振りストライク "W"**
+     ・『ー』『-』（短い横棒）または『・』（鉛筆の点）＝ **ボール "B"**
+     ・『△』『▽』『レ』『V』（角がある白抜き三角・チェック）＝ **ファウル "F"** （※中に少しでも隙間があれば "F"！2S後のインプレーや後続球がある△は100% "F"）
+     ・『▲』『▼』（中まで黒塗りの三角）＝ **バントファウル "BF"**
+     ・縦に詰めて書かれた『○』『ー』『△』が上下接触したり印刷横線と『△』が重なって『ム』『A』『4』に見えても、[BSO投球拡大]で接触点を切り離し上から1球ずつ分解すること！
+   - **記法B（BS段別・球数番号式・成美堂式/市販スコアブック）**: B（ボール）段とS（ストライク）段に **『1, 2, 3, 4...』と球数番号を書く方式**（例: B段に「1, 3」、S段に「2」、ファウルに「4」や「④」）の場合は、**番号順（1➔2➔3➔4...）に ["B", "S", "B", "F", ...] と全球を時系列復元**し、obs にも 左:B1,S2,B3,F4 と明記すること！
+   - **記法C（B枠・S枠への印付け式・学童/草野球簡易式）**: B小枠・S小枠に番号ではなく『●』『○』『／』『ー』『・』『レ』等の印が書かれている場合も、記入されたB数・S数・F数の分だけ必ず "B", "S", "W", "F" を漏れなく出力すること。
+4. **最終球とカウントの整合ルール（obs と p を完全一致させよ！）**:
+   - obs に書いた左BSO観察記号（例: 左:ー,○,△ や 左:B1,S2,F3）と p の投球配列（例: ["B","S","F","X"]）は必ず1球単位で一致させてください。
+   - **ゴロ・フライ・ライナー・犠打・犠飛・失策・野選・併殺**: バットに当たった最終球はBSO欄に書かれません。BSO欄の手書き球を読んだ末尾に **必ず "X" を1つ追加**（BSO欄が完全白紙の初球打ちのときのみ ["X"]）。
+   - **安打（単打・二塁打・三塁打・本塁打）**: BSO欄の手書き球を読んだ末尾に **必ず "H" を1つ追加**（BSO欄が完全白紙の初球安打のときのみ ["H"]）。
+   - **三振（rc: "strikeout"）**: BSO欄に3ストライク目まで全て書かれます（"X" は付けない）。最終記号が『○』なら末尾 "S"、『●』や『／』なら末尾 "W"、2S後の『▲』なら末尾 "BF"。
+   - **四球（rc: "walk"）**: ボール "B" が合計4球（"X" は付けない）。死球は手書き球の末尾に "D"。
 
 【🔥最重要 2: 中央ダイヤモンド（出塁実線 b1 ＆ アウトカウント ①②③ / ⅠⅡⅢ のにじみ判別 ＆ 3アウト上限の絶対厳守）】
 - **中央の『Ⅰ・Ⅱ・Ⅲ』（上下横棒付きのローマ数字 1・2・3）および『①・②・③』（丸数字）はイニング累積アウトカウント（eo: 1, 2, 3）**です！ペンのにじみや点線ダイヤモンドとの接触で『Ⅰ』がカタカナの『エ』、『Ⅱ』が『日』、『Ⅲ』が『目』『田』のように見えても、必ずアウトカウント（eo: 1, 2, 3）として読み取り、守備位置番号（1=投, 2=捕, 3=一）と絶対に混同しないでください！
@@ -1560,7 +1564,7 @@ ${targetInningMetaLines.join("\n")}
      ② 早稲田式の打球方向線（本塁からダイヤモンド外へ伸びる線＋先端の点『・』や山『⌒』）で書かれている場合: ダイヤモンドの向きに合わせて **左上（三遊間〜レフト側）="7"**、**真上（二塁ベース上〜センター側）="8"**、**右上（一二塁間〜ライト側）="9"**、**左斜め上中間="7-8"**、**右斜め上中間="8-9"** と正確に判定してください（左上7と右上9を絶対に逆にしないこと）！
 5. **犠打・失策・野選・四死球・その他**:
    - 四角『□』やダイヤ『◇』で囲まれた送球番号（例: **[1-3], ◇1-3, ◇5-4**）➔ **rc: "sac_bunt"**, dir: "1-3" 等。三塁走者生還の外野飛球 ➔ **rc: "sac_fly"**。
-   - 失策 **『E6』『6E』『E5』** ➔ **rc: "error"**, dir: "E6" 等（b1: true, o: 0）。野選 **『FC』『O.B.』** ➔ **rc: "fc"**, dir: "FC6" 等。
+   - 捕球失策 **『E6』『E4』『E5』** ➔ **rc: "error"**, dir: "E6" 等（b1: true, o: 0）。内野ゴロ等の悪送球 **『4E-3』『6E-3』『5E-3』『6E-4』** や送球先なし悪送球 **『4E』『6E』** ➔ **rc: "error"**, dir: "4E-3" / "4E" 等（b1: true, o: 0、絶対にゴロアウト groundout と混同しないこと！）。送球先落球 **『6-3E』『6-E3』** ➔ **rc: "error"**, dir: "6-3E"。野選 **『FC』『O.B.』** ➔ **rc: "fc"**, dir: "FC6" 等。
    - 四球は**本塁→1塁が実線（b1: true）かつBSOにボール4球かつ右下英字『B』**のときのみ ➔ **rc: "walk"**。死球『D』『HBP』➔ **rc: "hit_by_pitch"**。敬遠 ➔ **rc: "intentional_walk"**。
    - 振り逃げアウト『K 2-3』➔ **rc: "dropped_third_strike_out"**, o: 1。振り逃げ出塁『K-E2』➔ **rc: "dropped_third_strike"**, o: 0。
    - 打席途中に走者が盗塁死・牽制死等で3アウトチェンジになった未完了マスのみ ➔ **rc: "other"**, rl: "打席途中断（走塁死チェンジ）", o: 1（白紙マスには絶対に使わないこと！）。
@@ -2143,9 +2147,9 @@ ${pitcherSpecLines.join("\n")}
    - ⚠️**切り線・封殺の見分け方**:
      ・片方が「印刷点線だけの白紙」または「斜め1本のイニング終了切り線『／』『∟』のみ（投球記号も守備番号も無し）」であれば、もう片方の手書き記録がある側が正解です！
      ・前イニングの4番で走者3アウト『Ⅲ』が書かれ、候補A（前イニング5番マス）に遊ゴロ封殺『6-4』『4-6』『FC』等の手書き記録があり、その下または右下隅に切り線『／』がある場合は、**候補A（前イニング末尾）が正解（封殺チェンジ rc:"fc", o:1, eo:3 等）**です！
-2. **1マス内の記号読取ルール**:
-   - 左BSO拡大: 『○』（中が白い丸）="S"、『●』（黒塗り丸）/『／』="W"、『ー』（短い横棒）/『・』="B"、『△』（白三角）="F"、『▲』（黒三角）="BF"。インプレー打球なら末尾に "X"（安打なら "H"）を付与。
-   - 中央・右下拡大: 傘マーク接触『︵4』〜『︵9』はフライアウト（rc:"flyout", dir:"4"〜"9"、四球Bと誤読厳禁！）、送球ハイフン『6-3』『4-3』『5-3』はゴロ（rc:"groundout"）、二塁・三塁封殺『6-4』『4-6』『5-4』『FC』（本塁→1塁実線 b1:true）は野選封殺（rc:"fc", o:1）、本一実線＋外野7/8/9は単打（rc:"single", o:0）、『K』/3ストライクは三振（rc:"strikeout", o:1）、ボール4球＋右下『B』＋本一実線は四球（rc:"walk", o:0）。
+2. **1マス内の記号読取ルール（投球記号の読み飛ばし厳禁！）**:
+   - 左BSO拡大: 『○』（中が白い丸）="S"、『●』（黒塗り丸）/『／』="W"、『ー』『-』（短い横棒）/『・』（点）="B"、『△』（白三角）="F"、『▲』（黒三角）="BF"、B段・S段の球数番号『1,2,3...』も番号順に "B"/"S"/"F" として漏れなく全抽出（手書き球があるのに ["X"]/["H"] のみに省略するのは厳禁！）。インプレー打球なら末尾に "X"（安打なら "H"）を付与。
+   - 中央・右下拡大: 傘マーク接触『︵4』〜『︵9』はフライアウト（rc:"flyout", dir:"4"〜"9"、四球Bと誤読厳禁！）、送球ハイフン『6-3』『4-3』『5-3』はゴロ（rc:"groundout"）、悪送球『4E-3』『6E-3』『4E』や捕球失策『E4』『E6』は失策（rc:"error", dir:"4E-3"/"E4", o:0）、二塁・三塁封殺『6-4』『4-6』『5-4』『FC』（本塁→1塁実線 b1:true）は野選封殺（rc:"fc", o:1）、本一実線＋外野7/8/9は単打（rc:"single", o:0）、『K』/3ストライクは三振（rc:"strikeout", o:1）、ボール4球＋右下『B』＋本一実線は四球（rc:"walk", o:0）。
    - 万一、打席途中に先行走者が盗塁死・牽制死してチェンジとなり次イニング先頭で打ち直しになった痕跡がある場合のみ、候補B（完了した打席側）を優先採用してください。
 
 【出力JSONフォーマット（改行無しのコンパクトJSONのみ返却。items配列に全${
@@ -2563,12 +2567,13 @@ ${batterRowsDesc.join("\n")}
    - 各マスの **[中央・右下拡大]** をよく見比べ、以下の「出塁しているマス（"b1": true, "o": 0）」を見つけ出してください:
      ・本塁→1塁が太い実線/赤線で、右下に斜線『/』や守備番号『7』『8』『9』『6』等がある **単打（rc:"single", o:0）**・二塁打・三塁打
      ・本塁→1塁が実線で、左BSOにボール4球・右下に『B』『D』がある **四球（rc:"walk", o:0）・死球（rc:"hit_by_pitch", o:0）**
-     ・右下に『E6』『6E』等がある **失策出塁（rc:"error", o:0）**、または『K』でも本塁→1塁が実線の **振り逃げ出塁（rc:"dropped_third_strike", o:0）**
+     ・右下に『E6』『E4』『4E-3』『6E-3』『4E』等がある **失策・悪送球出塁（rc:"error", dir:"4E-3"等, o:0）**、または『K』でも本塁→1塁が実線の **振り逃げ出塁（rc:"dropped_third_strike", o:0）**
      ・**先行走者の封殺・盗塁死の二重計上**: 出塁した打者の中央に後続打席での封殺・盗塁死『Ⅰ/Ⅱ/Ⅲ』が書かれている場合、**その出塁打者自身は "o": 0** であり、後続の封殺打者（6-4/4-6/FC等）側のみを **"o": 1** としてください！
 3. **パターンB（3アウト目『Ⅲ』『③』完了直後のマスが「イニング終了切り線 ／・∟」または「白紙空欄」または「次イニング重複」だったケース）**:
    - 先行する打席で既に『Ⅰ → Ⅱ → Ⅲ（または ① → ② → ③）』の3アウトが完了しており、末尾のマスには投球記号も守備番号も無く斜線『／』『∟』だけがある（または白紙）場合は、その末尾マスの **"drop": true** にして除外してください！
-4. **"o" と "eo" の厳密区別**:
+4. **"o" と "eo" の厳密区別 ＆ 左BSO拡大の全球保持**:
    - "o" はその1打席で増えたアウト数（出塁=0, 単一アウト=1, 併殺打のみ=2）です。2死目・3死目の単一アウトで "o": 2 や "o": 3 と書くのは絶対厳禁です！
+   - 各マスの **[BSO拡大]** にある手書き投球記号（○/●/ー/・/△ や球数番号 1,2,3...）も省略せず obs と p に全件出力してください。
 
 【出力JSONフォーマット（改行無しのコンパクトJSONのみ返却。items配列に [${spec.batters
       .map((b) => b.slotKey)
@@ -5376,24 +5381,139 @@ function sanitizeMappedInningAtBats(
 
 function extractPitchesFromObsLeftZone(obs: string): string[] {
   const m = obs.match(
-    /左(?:BSO)?\s*[:：]\s*(.*?)(?=\s*\/\s*(?:中|中央|本一|右下|打球)|$)/i
+    /左(?:BSO|欄|枠)?\s*[:：]\s*(.*?)(?=\s*\/\s*(?:中|中央|本一|右下|打球)|$)/i
   );
   if (!m) return [];
-  const zone = m[1].trim();
-  if (!zone || /^(?:無|なし|空|白紙|未記入)$/i.test(zone)) return [];
+  const zone = m[1]
+    .replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
+    .replace(/[Ａ-Ｚａ-ｚ]/g, (c) =>
+      String.fromCharCode(c.charCodeAt(0) - 0xfee0)
+    )
+    .trim();
+  if (
+    !zone ||
+    /^(?:無|なし|空|空欄|白紙|未記入|初球|none|empty|-)$/i.test(zone)
+  ) {
+    return [];
+  }
 
+  // 1. 成美堂式・球数番号記法（例: "B1,S2,B3,F4" や "B:1,3 S:2 F:4" や "1B,2S,3F"）の時系列復元
+  const numberedEntries: Array<{ seq: number; code: string }> = [];
+  const groupRegex =
+    /\b(BF|B|S|W|F)\s*[:：]?\s*([1-9](?:\s*[,、・]\s*[1-9])*)/gi;
+  let gm: RegExpExecArray | null = null;
+  while ((gm = groupRegex.exec(zone)) !== null) {
+    const rawKind = gm[1].toUpperCase();
+    const nums = gm[2]
+      .split(/[,、・\s]+/)
+      .map((s) => Number(s))
+      .filter((n) => Number.isInteger(n) && n >= 1 && n <= 15);
+    for (const seq of nums) {
+      numberedEntries.push({ seq, code: rawKind });
+    }
+  }
+  if (numberedEntries.length === 0) {
+    const revRegex = /\b([1-9])\s*[:：.]?\s*(BF|B|S|W|F)\b/gi;
+    let rm: RegExpExecArray | null = null;
+    while ((rm = revRegex.exec(zone)) !== null) {
+      numberedEntries.push({
+        seq: Number(rm[1]),
+        code: rm[2].toUpperCase(),
+      });
+    }
+  }
+  if (numberedEntries.length >= 2) {
+    return numberedEntries
+      .sort((a, b) => a.seq - b.seq)
+      .map((e) => e.code);
+  }
+
+  // 2. カンマ・矢印・空白区切りトークン ＆ 縦積み記号1文字ずつのハイブリッド抽出
+  const parts = zone.split(/[,、→⇒➡\s]+/).filter(Boolean);
   const tokens: string[] = [];
-  for (const ch of Array.from(zone)) {
-    if (ch === "○" || ch === "◯" || ch === "〇") {
-      tokens.push("S");
-    } else if (ch === "●" || ch === "／") {
-      tokens.push("W");
-    } else if (ch === "ー" || ch === "－" || ch === "―" || ch === "・") {
+
+  for (const part of parts) {
+    const up = part.toUpperCase();
+    if (up === "B" || part === "ボール") {
       tokens.push("B");
-    } else if (ch === "△" || ch === "▽" || ch === "レ" || ch === "V") {
+      continue;
+    }
+    if (up === "S" || part === "見逃し" || part === "ストライク") {
+      tokens.push("S");
+      continue;
+    }
+    if (up === "W" || up === "SW" || part === "空振り") {
+      tokens.push("W");
+      continue;
+    }
+    if (up === "F" || part === "ファウル" || part === "ファール") {
       tokens.push("F");
-    } else if (ch === "▲" || ch === "▼") {
+      continue;
+    }
+    if (up === "BF" || part === "バントファウル") {
       tokens.push("BF");
+      continue;
+    }
+    if (up === "P1" || part === "1牽" || part === "一牽") {
+      tokens.push("P1");
+      continue;
+    }
+    if (up === "P2" || part === "2牽" || part === "二牽") {
+      tokens.push("P2");
+      continue;
+    }
+    if (up === "P3" || part === "3牽" || part === "三牽") {
+      tokens.push("P3");
+      continue;
+    }
+    if (up === "BK" || part === "ボーク") {
+      tokens.push("BK");
+      continue;
+    }
+    if (up === "B1" || up === "1B") {
+      tokens.push("B");
+      continue;
+    }
+    if (up === "S1" || up === "1S") {
+      tokens.push("S");
+      continue;
+    }
+    if (up === "F1" || up === "1F") {
+      tokens.push("F");
+      continue;
+    }
+
+    for (const ch of Array.from(part)) {
+      if (ch === "○" || ch === "◯" || ch === "〇") {
+        tokens.push("S");
+      } else if (ch === "●" || ch === "／" || ch === "＼" || ch === "×") {
+        tokens.push("W");
+      } else if (
+        ch === "ー" ||
+        ch === "－" ||
+        ch === "―" ||
+        ch === "‐" ||
+        ch === "-" ||
+        ch === "・" ||
+        ch === "･" ||
+        ch === "•" ||
+        ch === "∙"
+      ) {
+        tokens.push("B");
+      } else if (
+        ch === "△" ||
+        ch === "▽" ||
+        ch === "◁" ||
+        ch === "▷" ||
+        ch === "レ" ||
+        ch === "✓" ||
+        ch === "✔" ||
+        ch === "V"
+      ) {
+        tokens.push("F");
+      } else if (ch === "▲" || ch === "▼") {
+        tokens.push("BF");
+      }
     }
   }
   return tokens;
@@ -5513,11 +5633,16 @@ function reconcileRawAtBatEvidence(
   });
 
   const combinedHint = `${rawDir || ""} ${rawResultLabel || ""} ${rbText}`.trim();
+  const hasExplicitErrorNotation =
+    /\bE[1-9]|[1-9]E(?:\b|\s*[-－ー―‐=＝→⇒])|[-－ー―‐=＝→⇒]\s*(?:E[1-9]|[1-9]E)\b|失策|悪送球|エラー|[投捕一二三遊左中右]失/i.test(
+      combinedHint
+    );
   const hasExplicitOutPlaySymbol =
-    /[1-9]\s*[-－ー=＝→]\s*[1-9]/.test(combinedHint) ||
-    /[⌒︵︶∩^傘]\s*[1-9]/.test(combinedHint) ||
-    /^[1-9][FL]$/i.test(rawDir || "") ||
-    /\b(?:K|SO)\b|三振|飛|フライ|ライナー|ゴロ/i.test(combinedHint);
+    !hasExplicitErrorNotation &&
+    (/[1-9]\s*[-－ー=＝→]\s*[1-9]/.test(combinedHint) ||
+      /[⌒︵︶∩^傘]\s*[1-9]/.test(combinedHint) ||
+      /^[1-9][FL]$/i.test(rawDir || "") ||
+      /\b(?:K|SO)\b|三振|飛|フライ|ライナー|ゴロ/i.test(combinedHint));
 
   const batterClearlyOutByDiamond =
     effectiveB1 === false &&
@@ -5578,16 +5703,37 @@ function reconcileRawAtBatEvidence(
   } else {
     const normDir = (rawDir || "")
       .replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
-      .replace(/([1-9])\s*[－ー―‐=＝→⇒]\s*([1-9])/g, "$1-$2")
+      .replace(/[Ａ-Ｚａ-ｚ]/g, (c) =>
+        String.fromCharCode(c.charCodeAt(0) - 0xfee0)
+      )
+      .replace(/(E?[1-9]E?)\s*[－ー―‐=＝→⇒]\s*(E?[1-9]E?)/gi, "$1-$2")
       .trim();
 
     const rawRuns = toFiniteInt(ab.ru ?? ab.runsInPlay, 0) || 0;
 
-    // 3-B. 本塁→1塁が破線(b1: false)かつ打者アウトが増えているのに単打("single")と誤出力されたケースの補正
+    // 3-A2. 『4E-3』『6E-3』『4E』『6-3E』等の失策・悪送球記号があるのにゴロ等と誤出力されたケースの補正
     if (
+      prelimCode !== "error" &&
+      prelimCode !== "dropped_third_strike" &&
+      (/^(?:E[1-9](?:-[1-9])?|[1-9]E(?:-[1-9])?|[1-9]-(?:E[1-9]|[1-9]E))$/i.test(
+        normDir
+      ) ||
+        hasExplicitErrorNotation) &&
+      effectiveB1 !== false
+    ) {
+      rawResultCode = "error";
+      if (!hasRunnerOutAdvance) {
+        outsInPlay = 0;
+      }
+      if (rawResultLabel && /ゴロ|飛|フライ|ライナー/.test(rawResultLabel)) {
+        rawResultLabel = "";
+      }
+    } else if (
+      // 3-B. 本塁→1塁が破線(b1: false)かつ打者アウトが増えているのに単打("single")と誤出力されたケースの補正
       prelimCode === "single" &&
       batterClearlyOutByDiamond &&
       rawRuns === 0 &&
+      !hasExplicitErrorNotation &&
       !/内野安打|強襲|失|エラー|野選|FC/i.test(combinedHint)
     ) {
       if (/^[1-6]-[1-6]$/.test(normDir)) {
@@ -5644,12 +5790,19 @@ function reconcileRawAtBatEvidence(
 
     // 3-E. obs の左BSO観察記号と rawPitches の整合チェック:
     // ① rawPitches が空のとき
-    // ② obs に手書き球（例: 左:○,ー,△）があるのに rawPitches が ["X"] / ["H"] だけに省略されたとき
+    // ② obs に手書き球（例: 左:○,ー,△）があるのに rawPitches が ["X"] / ["H"] だけに省略された、または一部球数が欠落したとき
     // ③ インプレー結果なのに rawPitches が4ボール以上や3ストライク等の不正カウントで obsPitches が正常カウントのとき
     if (obsPitches.length > 0) {
       const preTokens = rawPitches.filter((tok) => {
         const u = (tok || "").trim().toUpperCase();
-        return u !== "X" && u !== "H" && u !== "D" && u !== "IN_PLAY" && u !== "HIT" && u !== "HBP";
+        return (
+          u !== "X" &&
+          u !== "H" &&
+          u !== "D" &&
+          u !== "IN_PLAY" &&
+          u !== "HIT" &&
+          u !== "HBP"
+        );
       });
       const rawPreCount = countPrePlayBallsAndStrikes(preTokens);
       const effectiveCode = inferCanonicalResultCode(
@@ -5664,15 +5817,37 @@ function reconcileRawAtBatEvidence(
         effectiveCode !== "dropped_third_strike_out" &&
         effectiveCode !== "dropped_third_strike";
 
+      const obsLegalForInPlay =
+        isInPlayEffective && obsCount.balls <= 3 && obsCount.pureStrikes <= 2;
+      const obsLegalForStrikeout =
+        (effectiveCode === "strikeout" ||
+          effectiveCode === "dropped_third_strike" ||
+          effectiveCode === "dropped_third_strike_out") &&
+        obsCount.balls <= 3 &&
+        obsCount.totalStrikes === 3;
+      const obsLegalForWalk =
+        effectiveCode === "walk" &&
+        obsCount.balls === 4 &&
+        obsCount.pureStrikes <= 2;
+
       if (
         rawPitches.length === 0 ||
         preTokens.length === 0 ||
-        (isInPlayEffective &&
-          (rawPreCount.balls >= 4 || rawPreCount.pureStrikes >= 3) &&
-          obsCount.balls <= 3 &&
-          obsCount.pureStrikes <= 2)
+        (obsPitches.length > preTokens.length &&
+          (obsLegalForInPlay || obsLegalForStrikeout || obsLegalForWalk || effectiveCode === "hit_by_pitch")) ||
+        (obsLegalForInPlay &&
+          (rawPreCount.balls >= 4 || rawPreCount.pureStrikes >= 3))
       ) {
-        rawPitches = obsPitches;
+        const preservedMoundEvents = preTokens.filter((tok) =>
+          /^(?:P1|P2|P3|BK|PICKOFF)/i.test((tok || "").trim())
+        );
+        const obsHasMound = obsPitches.some((tok) =>
+          /^(?:P1|P2|P3|BK)$/i.test(tok)
+        );
+        rawPitches =
+          preservedMoundEvents.length > 0 && !obsHasMound
+            ? [...obsPitches, ...preservedMoundEvents]
+            : obsPitches;
       }
     }
   }

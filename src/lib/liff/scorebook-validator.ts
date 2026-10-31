@@ -152,7 +152,11 @@ export function inferCanonicalResultCode(
   ) {
     return "dropped_third_strike_out";
   }
-  if (label.includes("振逃") || label.includes("振り逃げ")) {
+  if (
+    label.includes("振逃") ||
+    label.includes("振り逃げ") ||
+    /^K\s*[-－ー]?\s*(?:E2|2E(?:-3)?)$/i.test(upper)
+  ) {
     return "dropped_third_strike";
   }
   if (
@@ -189,7 +193,23 @@ export function inferCanonicalResultCode(
   ) {
     return "infield_fly";
   }
-  if (upper.startsWith("E") || label.includes("失策") || label.includes("エラー")) {
+  const normErrToken = upper
+    .replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
+    .replace(/[Ａ-Ｚａ-ｚ]/g, (c) =>
+      String.fromCharCode(c.charCodeAt(0) - 0xfee0)
+    )
+    .replace(/\s+/g, "")
+    .replace(/[－ー―‐=＝→⇒➡]/g, "-");
+  if (
+    normErrToken.startsWith("E") ||
+    /^[1-9]E(?:-[1-9])?$/.test(normErrToken) ||
+    (/^[1-9]-E?[1-9]E?$/.test(normErrToken) && normErrToken.includes("E")) ||
+    /\((?:E[1-9](?:-[1-9])?|[1-9]E(?:-[1-9])?)\)/.test(normErrToken) ||
+    label.includes("失策") ||
+    label.includes("悪送球") ||
+    label.includes("エラー") ||
+    /[投捕一二三遊左中右]失/.test(label)
+  ) {
     return "error";
   }
   if (
