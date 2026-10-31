@@ -112,13 +112,19 @@ export function inferCanonicalResultCode(
   ) {
     return "single";
   }
-  if (upper.includes("HBP") || label.includes("死球") || label.includes("デッド")) {
+  if (
+    upper.includes("HBP") ||
+    upper === "D" ||
+    upper === "DB" ||
+    label.includes("死球") ||
+    label.includes("デッド")
+  ) {
     return "hit_by_pitch";
   }
   if (upper === "IBB" || label.includes("申告敬遠") || label.includes("敬遠")) {
     return "intentional_walk";
   }
-  if (upper === "BB" || label.includes("四球")) {
+  if (upper === "BB" || upper === "B" || label.includes("四球")) {
     return "walk";
   }
   // インターフェア（打撃妨害 vs 守備妨害・反則打球）
@@ -169,7 +175,7 @@ export function inferCanonicalResultCode(
   ) {
     return "strikeout";
   }
-  if (label.includes("犠飛")) {
+  if (upper === "SF" || label.includes("犠飛")) {
     return "sac_fly";
   }
   if (upper === "SAC" || upper === "SH" || label.includes("犠打") || label.includes("バント")) {
@@ -226,6 +232,8 @@ export function inferCanonicalResultCode(
     label.includes("直") ||
     label.includes("ライナー") ||
     label.includes("邪飛") ||
+    upper === "L" ||
+    upper === "F" ||
     /[1-9][FL]$/i.test(upper) ||
     /[⌒︵︶∩^]\s*[1-9]/.test(label) ||
     /[1-9]\s*[⌒︵︶∩^￣\u0304\u0305]/.test(label) ||

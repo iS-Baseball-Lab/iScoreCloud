@@ -176,6 +176,24 @@ export function parseFieldingMeta(
   let flyStyle: FlyStyleOption = "fly";
   let errorStyle: ErrorStyleOption = "fielding";
 
+  // 四死球・三振・打席途中断は野手の守備位置（1〜9）を持たないため、「空振り三振」の『三』や「打席途中断」の『中』の誤抽出を防ぐ
+  if (
+    resultCode === "walk" ||
+    resultCode === "intentional_walk" ||
+    resultCode === "hit_by_pitch" ||
+    resultCode === "strikeout" ||
+    resultCode === "other"
+  ) {
+    return {
+      primaryPos: "",
+      assistTargetPos: "",
+      dpRelay: "",
+      hitZone,
+      flyStyle,
+      errorStyle,
+    };
+  }
+
   const isHitCode =
     resultCode === "single" ||
     resultCode === "double" ||
@@ -299,7 +317,7 @@ export function parseFieldingMeta(
     }
   }
 
-  // 4. E6 / 4E / FC6 / 6F / 6L / 6IF / ⌒4 / ︵4 / 傘4 / △2 / (2) / [1] / ◇3 / 4￣ / 単独 1〜9
+  // 4. E6 / 4E / FC6 / K-E2 / 6F / 6L / 6IF / ⌒4 / ︵4 / 傘4 / △2 / (2) / [1] / ◇3 / 4￣ / 単独 1〜9
   if (!primaryPos) {
     const strippedDecorDir = dir
       .replace(/[\u0304\u0305]/g, "")
@@ -311,10 +329,10 @@ export function parseFieldingMeta(
     const codeDigitMatch =
       suffixErrorMatch ||
       strippedDecorDir.match(
-        /^(?:E|FC|INT|K\s*)?([1-9])(?:F|L|IF|SF|E|A|G)?$/i
+        /^(?:E|FC|INT|K\s*(?:-\s*E|E|-)?\s*)?([1-9])(?:F|L|IF|SF|E|A|G)?$/i
       ) ||
       strippedDecorDir.match(/^([1-9])\s*(?:E|失)$/i) ||
-      label.match(/\((?:E|FC|K\s*)?([1-9])(?:A|G)?\)/i);
+      label.match(/\((?:E|FC|K\s*(?:-\s*E|E|-)?\s*)?([1-9])(?:A|G)?\)/i);
     if (codeDigitMatch && isValidPosDigit(codeDigitMatch[1])) {
       primaryPos = codeDigitMatch[1];
       if (
@@ -336,9 +354,11 @@ export function parseFieldingMeta(
 
   // 5. 日本語表記（「左前安打」「遊ゴロ」「捕邪飛」「三失」など）からの抽出
   if (!primaryPos) {
-    // 「二塁打」「三塁打」の「二」「三」を二塁手・三塁手と誤認しないよう除外した文字列で検索
-    const strippedForPos = label
-      .replace(/二塁打|三塁打|一塁線|三塁線|二封|三封|本塁打|一死|二死|三死|スリーバント/g, "");
+    // 「二塁打」「三塁打」「三重殺」「三振」「途中」等の漢字を二塁手・三塁手・中堅手と誤認しないよう除外した文字列で検索
+    const strippedForPos = label.replace(
+      /二塁打|三塁打|三重殺|三振|途中|一塁線|三塁線|二封|三封|本塁打|一死|二死|三死|一巡|二巡|二重|スリーバント/g,
+      ""
+    );
     if (label.includes("一塁線")) {
       primaryPos = "3";
     } else if (label.includes("三塁線")) {
@@ -376,6 +396,7 @@ export function parseFieldingMeta(
   if (
     label.includes("邪") ||
     label.includes("ファウル") ||
+    /^F$/i.test(dir) ||
     /^[⌒︵︶∩^]?[1-9]F$/i.test(dir) ||
     /^[⌒︵︶∩^]?[1-9]SF$/i.test(dir) ||
     /^[△▲][1-9]$/.test(dir) ||
@@ -386,6 +407,7 @@ export function parseFieldingMeta(
   } else if (
     label.includes("直") ||
     label.includes("ライナー") ||
+    /^L$/i.test(dir) ||
     /^[⌒︵]?[1-9]L$/i.test(dir) ||
     /[\u0304\u0305￣]/.test(dir) ||
     /^[1-9][ー\-]$/.test(dir) ||
@@ -431,6 +453,87 @@ export interface ComposeFieldingParams {
 }
 
 /**
+ * 守備位置番号（1〜9）が未指定のとき、または四死球・三振等の固定記号プレーに対する標準スコアブック守備記号を返す。
+ * （※単打・二塁打・三塁打・ゴロ・通常フライのように 1〜9 の指定が必要な打球は数字を含めず、未設定警告と完全互換を保つ）
+ */
+export function defaultGenericDirection(
+  code: CanonicalAtBatResult,
+  options?: { flyStyle?: FlyStyleOption; clearPos?: boolean }
+): string {
+  switch (code) {
+    case "walk":
+      return "B";
+    case "intentional_walk":
+      return "IBB";
+    case "hit_by_pitch":
+      return "D";
+    case "strikeout":
+      return "K";
+    case "dropped_third_strike_out":
+      return "K 2-3";
+    case "dropped_third_strike":
+      return "K-E2";
+    case "interference":
+      return options?.clearPos ? "INT" : "INT2";
+    case "interference_out":
+      return "INT";
+    case "home_run":
+      return "HR";
+    case "sac_bunt":
+      return "SAC";
+    case "sac_fly":
+      return "SF";
+    case "infield_fly":
+      return "IF";
+    case "double_play":
+      return "DP";
+    case "triple_play":
+      return "TP";
+    case "error":
+      return "E";
+    case "fc":
+      return "FC";
+    case "flyout":
+      return options?.flyStyle === "liner"
+        ? "L"
+        : options?.flyStyle === "foul_fly"
+        ? "F"
+        : "";
+    case "single":
+    case "double":
+    case "triple":
+    case "groundout":
+    case "other":
+    default:
+      return "";
+  }
+}
+
+/**
+ * インプレー打球として野手番号（1〜9）を記憶・引き継ぎ対象にする結果コードか判定する
+ * （※四死球・三振および捕手自動デフォルトを持つ振逃・妨害は除外）
+ */
+export function isBattedFieldableResultCode(
+  code: CanonicalAtBatResult
+): boolean {
+  return (
+    code === "single" ||
+    code === "double" ||
+    code === "triple" ||
+    code === "home_run" ||
+    code === "groundout" ||
+    code === "flyout" ||
+    code === "infield_fly" ||
+    code === "sac_bunt" ||
+    code === "sac_fly" ||
+    code === "double_play" ||
+    code === "triple_play" ||
+    code === "error" ||
+    code === "fc"
+  );
+}
+
+/**
  * 打撃結果コード＋守備位置指定から、正規化された battedDirection と見やすい日本語 resultLabel を自動生成する
  */
 export function composeFieldingResult(params: ComposeFieldingParams): {
@@ -438,12 +541,33 @@ export function composeFieldingResult(params: ComposeFieldingParams): {
   resultLabel: string;
 } {
   const { resultCode, primaryPos } = params;
+
+  if (
+    resultCode === "walk" ||
+    resultCode === "intentional_walk" ||
+    resultCode === "hit_by_pitch" ||
+    resultCode === "strikeout" ||
+    resultCode === "other"
+  ) {
+    return {
+      battedDirection: defaultGenericDirection(resultCode),
+      resultLabel: params.fallbackLabel || defaultGenericLabel(resultCode),
+    };
+  }
+
   const posDef = getDefensivePositionDef(primaryPos);
 
   if (!posDef) {
+    const fallbackLabel =
+      params.fallbackLabel ||
+      (resultCode === "flyout" && params.flyStyle === "liner"
+        ? "直（ライナー）"
+        : defaultGenericLabel(resultCode));
     return {
-      battedDirection: "",
-      resultLabel: params.fallbackLabel || defaultGenericLabel(resultCode),
+      battedDirection: defaultGenericDirection(resultCode, {
+        flyStyle: params.flyStyle,
+      }),
+      resultLabel: fallbackLabel,
     };
   }
 
@@ -730,18 +854,194 @@ export function composeFieldingResult(params: ComposeFieldingParams): {
       };
     }
 
-    case "walk":
-    case "intentional_walk":
-    case "hit_by_pitch":
-    case "strikeout":
-    case "other":
     default: {
       return {
-        battedDirection: "",
+        battedDirection: defaultGenericDirection(resultCode),
         resultLabel: params.fallbackLabel || defaultGenericLabel(resultCode),
       };
     }
   }
+}
+
+export interface ResolveFieldingTransitionParams {
+  prevResultCode: CanonicalAtBatResult;
+  prevBattedDirection: string;
+  prevResultLabel: string;
+  nextResultCode: CanonicalAtBatResult;
+  presetId?: string;
+  presetDefaultLabel?: string;
+  rememberedFielding?: ParsedFieldingMeta | null;
+}
+
+/**
+ * 打撃結果プリセット切替時・投球連動時に、守備記号（B / IBB / D / K / K 2-3 / K-E2 / INT2 / HR / E / FC 等）が
+ * 空白化せず、かつ直前に選んでいた妥当な野手番号（1〜9）を安全に復元・変換する。
+ */
+export function resolveFieldingOnResultChange(
+  params: ResolveFieldingTransitionParams
+): {
+  battedDirection: string;
+  resultLabel: string;
+} {
+  const {
+    prevResultCode,
+    prevBattedDirection,
+    prevResultLabel,
+    nextResultCode,
+    presetId,
+    presetDefaultLabel,
+    rememberedFielding,
+  } = params;
+
+  // 1. 四死球・三振・途中断は常に標準記号（B / IBB / D / K / ""）を確定設定
+  if (
+    nextResultCode === "walk" ||
+    nextResultCode === "intentional_walk" ||
+    nextResultCode === "hit_by_pitch" ||
+    nextResultCode === "strikeout" ||
+    nextResultCode === "other"
+  ) {
+    return {
+      battedDirection: defaultGenericDirection(nextResultCode),
+      resultLabel: presetDefaultLabel || defaultGenericLabel(nextResultCode),
+    };
+  }
+
+  // 2. 捕手起点の特殊プレー（振逃アウト / 振逃セーフ / 打撃妨害）はデフォルト捕手(2)を自動適用
+  if (
+    nextResultCode === "dropped_third_strike_out" ||
+    nextResultCode === "dropped_third_strike" ||
+    nextResultCode === "interference"
+  ) {
+    const wasSameCatcherGroup =
+      prevResultCode === "dropped_third_strike_out" ||
+      prevResultCode === "dropped_third_strike" ||
+      prevResultCode === "interference";
+    const prevParsed = wasSameCatcherGroup
+      ? parseFieldingMeta(prevResultCode, prevBattedDirection, prevResultLabel)
+      : null;
+    const catcherPos: DefensivePosNumber = prevParsed?.primaryPos || "2";
+    const catcherAssist: AssistTargetOption | "" =
+      nextResultCode === "dropped_third_strike_out"
+        ? prevResultCode === "dropped_third_strike_out" &&
+          prevParsed?.assistTargetPos
+          ? prevParsed.assistTargetPos
+          : catcherPos === "3"
+          ? "unassisted"
+          : "3"
+        : "";
+    return composeFieldingResult({
+      resultCode: nextResultCode,
+      primaryPos: catcherPos,
+      assistTargetPos: catcherAssist,
+      fallbackLabel: presetDefaultLabel,
+    });
+  }
+
+  // 3. 守備妨害アウトは既に守備妨害で野手指定済みなら維持し、他からの切替時は汎用 "INT" を設定
+  if (nextResultCode === "interference_out") {
+    if (prevResultCode === "interference_out") {
+      const prevParsed = parseFieldingMeta(
+        prevResultCode,
+        prevBattedDirection,
+        prevResultLabel
+      );
+      if (prevParsed.primaryPos) {
+        return composeFieldingResult({
+          resultCode: "interference_out",
+          primaryPos: prevParsed.primaryPos,
+          fallbackLabel: presetDefaultLabel,
+        });
+      }
+    }
+    return {
+      battedDirection: defaultGenericDirection("interference_out"),
+      resultLabel:
+        presetDefaultLabel || defaultGenericLabel("interference_out"),
+    };
+  }
+
+  // 4. インプレー打球系: 直前の打球野手、または四死球経由でも記憶していた野手番号を野球規則整合の範囲で引き継ぐ
+  const directFielding = isBattedFieldableResultCode(prevResultCode)
+    ? parseFieldingMeta(prevResultCode, prevBattedDirection, prevResultLabel)
+    : null;
+  const sourceMeta: ParsedFieldingMeta | null =
+    directFielding && directFielding.primaryPos
+      ? directFielding
+      : rememberedFielding && rememberedFielding.primaryPos
+      ? rememberedFielding
+      : null;
+
+  const isPosCompatible = (
+    pos: DefensivePosNumber | "",
+    code: CanonicalAtBatResult
+  ): pos is DefensivePosNumber => {
+    if (!pos) return false;
+    const isOf = pos === "7" || pos === "8" || pos === "9";
+    switch (code) {
+      case "home_run":
+      case "sac_fly":
+        return isOf;
+      case "double":
+      case "triple":
+        return isOf || pos === "3" || pos === "5";
+      case "groundout":
+      case "sac_bunt":
+      case "infield_fly":
+      case "fc":
+      case "double_play":
+      case "triple_play":
+        return !isOf;
+      case "single":
+      case "flyout":
+      case "error":
+      default:
+        return true;
+    }
+  };
+
+  const forcedFlyStyle: FlyStyleOption =
+    presetId === "lineout"
+      ? "liner"
+      : presetId === "flyout" && sourceMeta?.flyStyle === "liner"
+      ? "fly"
+      : sourceMeta?.flyStyle || "fly";
+
+  if (sourceMeta && isPosCompatible(sourceMeta.primaryPos, nextResultCode)) {
+    const pos = sourceMeta.primaryPos;
+    const wasThrowOutPlay =
+      prevResultCode === "groundout" || prevResultCode === "sac_bunt";
+    const nextAssist: AssistTargetOption | "" =
+      nextResultCode === "error"
+        ? sourceMeta.errorStyle === "throwing"
+          ? sourceMeta.assistTargetPos || (pos === "3" ? "unassisted" : "3")
+          : ""
+        : wasThrowOutPlay
+        ? sourceMeta.assistTargetPos
+        : "";
+    const nextDpRelay =
+      prevResultCode === "double_play" || prevResultCode === "triple_play"
+        ? sourceMeta.dpRelay
+        : "";
+
+    return composeFieldingResult({
+      resultCode: nextResultCode,
+      primaryPos: pos,
+      assistTargetPos: nextAssist,
+      dpRelay: nextDpRelay,
+      hitZone: sourceMeta.hitZone,
+      flyStyle: forcedFlyStyle,
+      errorStyle: sourceMeta.errorStyle,
+      fallbackLabel: presetDefaultLabel,
+    });
+  }
+
+  return composeFieldingResult({
+    resultCode: nextResultCode,
+    primaryPos: "",
+    flyStyle: forcedFlyStyle,
+    fallbackLabel: presetDefaultLabel,
+  });
 }
 
 /**
@@ -754,11 +1054,33 @@ export function harmonizeOcrFieldingAndLabel(
 ): { battedDirection: string; resultLabel: string } {
   const cleanDir = (rawDir || "").trim();
   const cleanLabel = (rawLabel || "").trim();
+  const normInputDir = normalizeFieldingAscii(cleanDir);
+
+  if (
+    resultCode === "walk" ||
+    resultCode === "intentional_walk" ||
+    resultCode === "hit_by_pitch" ||
+    resultCode === "strikeout" ||
+    resultCode === "other"
+  ) {
+    const defaultDir = defaultGenericDirection(resultCode);
+    const useDefault =
+      !normInputDir ||
+      resultCode === "other" ||
+      /^[1-9]$/.test(normInputDir);
+    return {
+      battedDirection: useDefault ? defaultDir : normInputDir,
+      resultLabel: cleanLabel || defaultGenericLabel(resultCode),
+    };
+  }
 
   const parsed = parseFieldingMeta(resultCode, cleanDir, cleanLabel);
   if (!parsed.primaryPos) {
+    const fallbackDir = defaultGenericDirection(resultCode, {
+      flyStyle: parsed.flyStyle,
+    });
     return {
-      battedDirection: cleanDir,
+      battedDirection: normInputDir || fallbackDir,
       resultLabel: cleanLabel || defaultGenericLabel(resultCode),
     };
   }

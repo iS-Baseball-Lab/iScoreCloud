@@ -4,7 +4,10 @@ import { drizzle } from "drizzle-orm/d1";
 import { eq, and, asc, desc, inArray } from "drizzle-orm";
 import * as schema from "@/db/schema";
 import { ensureMatchLineupColumns } from "@/lib/db-helper";
-import { harmonizeOcrFieldingAndLabel } from "@/lib/liff/scorebook-fielding";
+import {
+  defaultGenericDirection,
+  harmonizeOcrFieldingAndLabel,
+} from "@/lib/liff/scorebook-fielding";
 import {
   formatBaseJa,
   materializeSheetRunnerAdvances,
@@ -3813,11 +3816,23 @@ liffScorebookRouter.get("/saved", async (c) => {
         : null;
     let topAtBats =
       topDbAbs.length > 0
-        ? safeParseJsonValue<ScorebookV2AtBat[]>(snap?.topAtBatsJson) || []
+        ? (safeParseJsonValue<ScorebookV2AtBat[]>(snap?.topAtBatsJson) || []).map(
+            (ab) => ({
+              ...ab,
+              battedDirection:
+                ab.battedDirection || defaultGenericDirection(ab.resultCode),
+            })
+          )
         : [];
     let bottomAtBats =
       bottomDbAbs.length > 0
-        ? safeParseJsonValue<ScorebookV2AtBat[]>(snap?.bottomAtBatsJson) || []
+        ? (
+            safeParseJsonValue<ScorebookV2AtBat[]>(snap?.bottomAtBatsJson) || []
+          ).map((ab) => ({
+            ...ab,
+            battedDirection:
+              ab.battedDirection || defaultGenericDirection(ab.resultCode),
+          }))
         : [];
 
     const needReconstructTop =
@@ -4057,8 +4072,10 @@ liffScorebookRouter.get("/saved", async (c) => {
               playBody = playBody.slice(0, rbiMatch.index).trim();
             }
 
-            // (6-3) の守備記号解析・除去
-            const dirMatch = playBody.match(/\s+\(([0-9A-Za-z-]+)\)\s*$/);
+            // (6-3) / (K 2-3) の守備記号解析・除去
+            const dirMatch = playBody.match(
+              /\s+\(([0-9A-Za-z-]+|K\s+[1-9](?:-[1-9])?)\)\s*$/
+            );
             if (dirMatch) {
               parsedDir = dirMatch[1].trim();
               playBody = playBody.slice(0, dirMatch.index).trim();

@@ -1,7 +1,7 @@
 // filepath: src/app/liff/tools/scorebook-import/_components/Step3PinpointReview.tsx
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import {
   AlertTriangle,
@@ -64,13 +64,17 @@ import {
   DEFENSIVE_POSITIONS,
   DP_RELAY_PRESETS,
   composeFieldingResult,
+  defaultGenericDirection,
   getDefaultDpRelay,
+  isBattedFieldableResultCode,
   parseFieldingMeta,
+  resolveFieldingOnResultChange,
   type AssistTargetOption,
   type DefensivePosNumber,
   type ErrorStyleOption,
   type FlyStyleOption,
   type HitZoneOption,
+  type ParsedFieldingMeta,
 } from "@/lib/liff/scorebook-fielding";
 import {
   getCellQuadInStructure,
@@ -354,6 +358,24 @@ export function Step3PinpointReview({
     }
     return map;
   }, [precedingRunnerCrops]);
+
+  // 打席ごとに直近で指定されていたインプレー野手情報（1〜9）を保持し、四死球・三振へ一旦切り替えて戻した際にも守備位置が空白化しないようにする
+  const lastFielderByAtBatIdRef = useRef<Record<string, ParsedFieldingMeta>>(
+    {}
+  );
+
+  useEffect(() => {
+    if (!editingAtBat) return;
+    if (!isBattedFieldableResultCode(editingAtBat.resultCode)) return;
+    const parsed = parseFieldingMeta(
+      editingAtBat.resultCode,
+      editingAtBat.battedDirection,
+      editingAtBat.resultLabel
+    );
+    if (parsed.primaryPos) {
+      lastFielderByAtBatIdRef.current[editingAtBat.id] = parsed;
+    }
+  }, [editingAtBat]);
 
   // 編集中マスの切り抜きズーム画像を生成（4隅歪み補正ホモグラフィ＆複数列サブ列分割を最優先し、隣接マス映り込みゼロで水平展開）
   useEffect(() => {
@@ -921,9 +943,28 @@ export function Step3PinpointReview({
       nextRbi = smartSync.rbi;
     };
 
+    if (isBattedFieldableResultCode(prev.resultCode)) {
+      const curFielding = parseFieldingMeta(
+        prev.resultCode,
+        prev.battedDirection,
+        prev.resultLabel
+      );
+      if (curFielding.primaryPos) {
+        lastFielderByAtBatIdRef.current[prev.id] = curFielding;
+      }
+    }
+
     if (lastBatterPitch === "hbp") {
-      if (prev.resultCode !== "hit_by_pitch") {
-        syncToResult("hit_by_pitch", "死球", "", 0);
+      if (
+        prev.resultCode !== "hit_by_pitch" ||
+        !prev.battedDirection
+      ) {
+        syncToResult(
+          "hit_by_pitch",
+          "死球",
+          defaultGenericDirection("hit_by_pitch"),
+          0
+        );
       }
     } else if (lastBatterPitch === "hit") {
       const isAlreadyHit =
@@ -932,31 +973,20 @@ export function Step3PinpointReview({
         prev.resultCode === "triple" ||
         prev.resultCode === "home_run";
       if (!isAlreadyHit) {
-        const prevFielding = parseFieldingMeta(
-          prev.resultCode,
-          prev.battedDirection,
-          prev.resultLabel
+        const resolved = resolveFieldingOnResultChange({
+          prevResultCode: prev.resultCode,
+          prevBattedDirection: prev.battedDirection,
+          prevResultLabel: prev.resultLabel,
+          nextResultCode: "single",
+          presetDefaultLabel: "安打",
+          rememberedFielding: lastFielderByAtBatIdRef.current[prev.id],
+        });
+        syncToResult(
+          "single",
+          resolved.resultLabel,
+          resolved.battedDirection,
+          0
         );
-        if (prevFielding.primaryPos) {
-          const composed = composeFieldingResult({
-            resultCode: "single",
-            primaryPos: prevFielding.primaryPos,
-            assistTargetPos: prevFielding.assistTargetPos,
-            dpRelay: prevFielding.dpRelay,
-            hitZone: prevFielding.hitZone,
-            flyStyle: prevFielding.flyStyle,
-            errorStyle: prevFielding.errorStyle,
-            fallbackLabel: "安打",
-          });
-          syncToResult(
-            "single",
-            composed.resultLabel,
-            composed.battedDirection,
-            0
-          );
-        } else {
-          syncToResult("single", "安打", "", 0);
-        }
       }
     } else if (lastBatterPitch === "in_play") {
       const isAlreadyInPlayNonHit =
@@ -972,31 +1002,20 @@ export function Step3PinpointReview({
         prev.resultCode === "fc" ||
         prev.resultCode === "interference";
       if (!isAlreadyInPlayNonHit) {
-        const prevFielding = parseFieldingMeta(
-          prev.resultCode,
-          prev.battedDirection,
-          prev.resultLabel
+        const resolved = resolveFieldingOnResultChange({
+          prevResultCode: prev.resultCode,
+          prevBattedDirection: prev.battedDirection,
+          prevResultLabel: prev.resultLabel,
+          nextResultCode: "groundout",
+          presetDefaultLabel: "内ゴロ",
+          rememberedFielding: lastFielderByAtBatIdRef.current[prev.id],
+        });
+        syncToResult(
+          "groundout",
+          resolved.resultLabel,
+          resolved.battedDirection,
+          1
         );
-        if (prevFielding.primaryPos) {
-          const composed = composeFieldingResult({
-            resultCode: "groundout",
-            primaryPos: prevFielding.primaryPos,
-            assistTargetPos: prevFielding.assistTargetPos || "3",
-            dpRelay: prevFielding.dpRelay,
-            hitZone: prevFielding.hitZone,
-            flyStyle: prevFielding.flyStyle,
-            errorStyle: prevFielding.errorStyle,
-            fallbackLabel: "ゴロ",
-          });
-          syncToResult(
-            "groundout",
-            composed.resultLabel,
-            composed.battedDirection,
-            1
-          );
-        } else {
-          syncToResult("groundout", "ゴロ", "", 1);
-        }
       }
     } else if (
       !hasInPlayOrHit &&
@@ -1004,10 +1023,18 @@ export function Step3PinpointReview({
       lastBatterPitch === "ball"
     ) {
       if (
-        prev.resultCode !== "walk" &&
-        prev.resultCode !== "intentional_walk"
+        (prev.resultCode !== "walk" &&
+          prev.resultCode !== "intentional_walk") ||
+        !prev.battedDirection
       ) {
-        syncToResult("walk", "四球", "", 0);
+        const nextWalkCode =
+          prev.resultCode === "intentional_walk" ? "intentional_walk" : "walk";
+        syncToResult(
+          nextWalkCode,
+          nextWalkCode === "intentional_walk" ? "申告敬遠" : "四球",
+          defaultGenericDirection(nextWalkCode),
+          0
+        );
       }
     } else if (
       !hasInPlayOrHit &&
@@ -1023,8 +1050,17 @@ export function Step3PinpointReview({
             : lastBatterPitch === "strike"
             ? "見逃し三振"
             : "空振り三振";
-        if (prev.resultCode !== "strikeout" || prev.resultLabel !== soLabel) {
-          syncToResult("strikeout", soLabel, "", 1);
+        if (
+          prev.resultCode !== "strikeout" ||
+          prev.resultLabel !== soLabel ||
+          !prev.battedDirection
+        ) {
+          syncToResult(
+            "strikeout",
+            soLabel,
+            defaultGenericDirection("strikeout"),
+            1
+          );
         }
       }
     }
@@ -2682,6 +2718,11 @@ export function Step3PinpointReview({
                                     editingAtBat.resultLabel !== "見逃し三振" &&
                                     editingAtBat.resultLabel !==
                                       "スリーバント失敗") ||
+                                  (preset.id === "lineout" &&
+                                    (editingAtBat.resultLabel.includes("直") ||
+                                      editingAtBat.resultLabel.includes(
+                                        "ライナー"
+                                      ))) ||
                                   (preset.id === "flyout" &&
                                     !editingAtBat.resultLabel.includes("直") &&
                                     !editingAtBat.resultLabel.includes(
@@ -2704,56 +2745,44 @@ export function Step3PinpointReview({
                                           nextCode === "strikeout" ||
                                           nextCode === "other";
 
-                                        const prevFielding = parseFieldingMeta(
-                                          prev.resultCode,
-                                          prev.battedDirection,
-                                          prev.resultLabel
-                                        );
-
-                                        let nextDir = "";
-                                        let nextLabel = preset.defaultLabel;
-
-                                        if (!nonFieldedCodes) {
-                                          const effectivePos:
-                                            | DefensivePosNumber
-                                            | "" =
-                                            prevFielding.primaryPos ||
-                                            (nextCode ===
-                                              "dropped_third_strike_out" ||
-                                            nextCode === "interference"
-                                              ? "2"
-                                              : "");
-
-                                          if (effectivePos) {
-                                            const forcedFlyStyle: FlyStyleOption =
-                                              preset.id === "lineout"
-                                                ? "liner"
-                                                : preset.id === "flyout" &&
-                                                  prevFielding.flyStyle ===
-                                                    "liner"
-                                                ? "fly"
-                                                : prevFielding.flyStyle;
-
-                                            const composed =
-                                              composeFieldingResult({
-                                                resultCode: nextCode,
-                                                primaryPos: effectivePos,
-                                                assistTargetPos:
-                                                  prevFielding.assistTargetPos,
-                                                dpRelay: prevFielding.dpRelay,
-                                                hitZone: prevFielding.hitZone,
-                                                flyStyle: forcedFlyStyle,
-                                                errorStyle:
-                                                  prevFielding.errorStyle,
-                                                fallbackLabel:
-                                                  preset.defaultLabel,
-                                              });
-                                            nextDir = composed.battedDirection;
-                                            nextLabel = composed.resultLabel;
+                                        if (
+                                          isBattedFieldableResultCode(
+                                            prev.resultCode
+                                          )
+                                        ) {
+                                          const curFielding = parseFieldingMeta(
+                                            prev.resultCode,
+                                            prev.battedDirection,
+                                            prev.resultLabel
+                                          );
+                                          if (curFielding.primaryPos) {
+                                            lastFielderByAtBatIdRef.current[
+                                              prev.id
+                                            ] = curFielding;
                                           }
                                         }
 
-                                        // STEP 2 の選択に合わせて STEP 1 の最終打者球（インプレー / 安打球 / 死球）も双方向同期
+                                        const resolvedFielding =
+                                          resolveFieldingOnResultChange({
+                                            prevResultCode: prev.resultCode,
+                                            prevBattedDirection:
+                                              prev.battedDirection,
+                                            prevResultLabel: prev.resultLabel,
+                                            nextResultCode: nextCode,
+                                            presetId: preset.id,
+                                            presetDefaultLabel:
+                                              preset.defaultLabel,
+                                            rememberedFielding:
+                                              lastFielderByAtBatIdRef.current[
+                                                prev.id
+                                              ],
+                                          });
+                                        const nextDir =
+                                          resolvedFielding.battedDirection;
+                                        const nextLabel =
+                                          resolvedFielding.resultLabel;
+
+                                        // STEP 2 の選択に合わせて STEP 1 の最終打者球（インプレー / 安打球 / 死球 / 四球 / 三振）も双方向同期
                                         let nextPitches = [...prev.pitches];
                                         let lastBatterPitchIdx = -1;
                                         for (
@@ -2843,13 +2872,75 @@ export function Step3PinpointReview({
                                               ] === "hit" ||
                                               nextPitches[
                                                 lastBatterPitchIdx
-                                              ] === "hbp") &&
-                                            nextPitches.length > 1
+                                              ] === "hbp")
                                           ) {
                                             nextPitches = nextPitches.filter(
                                               (_, idx) =>
                                                 idx !== lastBatterPitchIdx
                                             );
+                                          }
+
+                                          const realRemaining =
+                                            nextPitches.filter(
+                                              (p) => !isNonPitchMoundEvent(p)
+                                            );
+                                          if (
+                                            nextCode === "walk" &&
+                                            realRemaining.length === 0
+                                          ) {
+                                            nextPitches = [
+                                              ...nextPitches,
+                                              "ball",
+                                              "ball",
+                                              "ball",
+                                              "ball",
+                                            ];
+                                          } else if (
+                                            nextCode === "strikeout" ||
+                                            nextCode ===
+                                              "dropped_third_strike" ||
+                                            nextCode ===
+                                              "dropped_third_strike_out"
+                                          ) {
+                                            const desiredFinalStrike: CanonicalPitchResult =
+                                              preset.id === "so_look"
+                                                ? "strike"
+                                                : preset.id === "so_3bunt"
+                                                ? "bunt_foul"
+                                                : "swinging_strike";
+                                            if (realRemaining.length === 0) {
+                                              nextPitches = [
+                                                ...nextPitches,
+                                                "strike",
+                                                "strike",
+                                                desiredFinalStrike,
+                                              ];
+                                            } else if (
+                                              nextCode === "strikeout"
+                                            ) {
+                                              const preCnt =
+                                                computeCountFromPitches(
+                                                  nextPitches
+                                                );
+                                              if (preCnt.strikes >= 3) {
+                                                for (
+                                                  let k =
+                                                    nextPitches.length - 1;
+                                                  k >= 0;
+                                                  k--
+                                                ) {
+                                                  if (
+                                                    !isNonPitchMoundEvent(
+                                                      nextPitches[k]
+                                                    )
+                                                  ) {
+                                                    nextPitches[k] =
+                                                      desiredFinalStrike;
+                                                    break;
+                                                  }
+                                                }
+                                              }
+                                            }
                                           }
                                         }
 
@@ -3037,6 +3128,15 @@ export function Step3PinpointReview({
                           fallbackLabel: prev.resultLabel,
                         });
 
+                        if (isBattedFieldableResultCode(effectiveCode)) {
+                          lastFielderByAtBatIdRef.current[prev.id] =
+                            parseFieldingMeta(
+                              effectiveCode,
+                              composed.battedDirection,
+                              composed.resultLabel
+                            );
+                        }
+
                         const wasForceGroundout = isForceOutGroundout(
                           prev.resultCode,
                           prev.battedDirection,
@@ -3089,40 +3189,64 @@ export function Step3PinpointReview({
                     return (
                       <div className="p-3 rounded-2xl bg-muted/35 border border-border space-y-2">
                         <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="text-xs font-black text-foreground">
                               守備位置・打球方向を指定
                             </span>
-                            {editingAtBat.battedDirection && (
+                            {editingAtBat.battedDirection ? (
                               <span className="px-2 py-0.5 rounded-full bg-indigo-600 text-white text-[10px] font-black">
                                 {editingAtBat.battedDirection}
                               </span>
-                            )}
+                            ) : !isNonFielded && rc !== "other" ? (
+                              <span className="px-2 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-black">
+                                1〜9を選択してください
+                              </span>
+                            ) : null}
                           </div>
-                          {(fMeta.primaryPos ||
-                            editingAtBat.battedDirection) && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                updateSingleAtBat(editingAtBat.id, (prev) => {
-                                  const genericPreset =
-                                    AT_BAT_RESULT_PRESETS.find(
-                                      (p) => p.code === prev.resultCode
+                          {!isNonFielded &&
+                            rc !== "other" &&
+                            Boolean(fMeta.primaryPos) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  delete lastFielderByAtBatIdRef.current[
+                                    editingAtBat.id
+                                  ];
+                                  updateSingleAtBat(editingAtBat.id, (prev) => {
+                                    const prevMeta = parseFieldingMeta(
+                                      prev.resultCode,
+                                      prev.battedDirection,
+                                      prev.resultLabel
                                     );
-                                  return {
-                                    ...prev,
-                                    battedDirection: "",
-                                    resultLabel:
-                                      genericPreset?.defaultLabel ||
-                                      prev.resultLabel,
-                                  };
-                                })
-                              }
-                              className="px-2 py-0.5 rounded-lg bg-card border border-border text-[10px] font-black text-muted-foreground hover:text-foreground cursor-pointer"
-                            >
-                              位置クリア
-                            </button>
-                          )}
+                                    const genericPreset =
+                                      AT_BAT_RESULT_PRESETS.find(
+                                        (p) => p.code === prev.resultCode
+                                      );
+                                    const clearedDir = defaultGenericDirection(
+                                      prev.resultCode,
+                                      {
+                                        flyStyle: prevMeta.flyStyle,
+                                        clearPos: true,
+                                      }
+                                    );
+                                    const clearedLabel =
+                                      prev.resultCode === "flyout" &&
+                                      prevMeta.flyStyle === "liner"
+                                        ? "直（ライナー）"
+                                        : genericPreset?.defaultLabel ||
+                                          prev.resultLabel;
+                                    return {
+                                      ...prev,
+                                      battedDirection: clearedDir,
+                                      resultLabel: clearedLabel,
+                                    };
+                                  });
+                                }}
+                                className="px-2 py-0.5 rounded-lg bg-card border border-border text-[10px] font-black text-muted-foreground hover:text-foreground cursor-pointer"
+                              >
+                                位置クリア
+                              </button>
+                            )}
                         </div>
 
                         {isNonFielded ? (
