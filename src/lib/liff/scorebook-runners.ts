@@ -185,6 +185,142 @@ export function formatBaseJa(base: "BAT" | "1B" | "2B" | "3B" | "HP"): string {
 }
 
 /**
+ * 本塁に近い走者を先頭に並べるための優先度スコア（HP > 3B > 2B > 1B > BAT）
+ */
+export function getBaseClosestToHomeRank(
+  base: "BAT" | OccupiedBaseKey | "HP" | null | undefined
+): number {
+  switch (base) {
+    case "HP":
+      return 5;
+    case "3B":
+      return 4;
+    case "2B":
+      return 3;
+    case "1B":
+      return 2;
+    case "BAT":
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+/**
+ * 塁上の先行走者リストを「ホームに最も近い走者順（3塁走者 ➔ 2塁走者 ➔ 1塁走者）」に安定ソートする
+ */
+export function sortPrecedingRunnersClosestToHomeFirst<
+  T extends {
+    startBase: OccupiedBaseKey;
+    baseAtInPlay?: OccupiedBaseKey | "HP" | null;
+  }
+>(runners: readonly T[]): T[] {
+  return [...runners].sort((a, b) => {
+    const aActive = a.baseAtInPlay ?? a.startBase;
+    const bActive = b.baseAtInPlay ?? b.startBase;
+    const activeDiff =
+      getBaseClosestToHomeRank(bActive) - getBaseClosestToHomeRank(aActive);
+    if (activeDiff !== 0) return activeDiff;
+    return (
+      getBaseClosestToHomeRank(b.startBase) -
+      getBaseClosestToHomeRank(a.startBase)
+    );
+  });
+}
+
+/**
+ * 進塁・走塁記録（advances）を「ホームに近い走者順（3塁走者 ➔ 2塁走者 ➔ 1塁走者 ➔ 打者走者）」に整列する。
+ * 同一走者が投球間進塁（例: 1B→2B 盗塁）の後にインプレー進塁（2B→HP 安打）している場合は、
+ * その走者グループ内で時系列順（投球間 ➔ インプレー）を維持する。
+ */
+export function sortAdvancesClosestToHomeFirst(
+  advances: readonly ScorebookV2Advance[]
+): ScorebookV2Advance[] {
+  if (advances.length <= 1) return [...advances];
+
+  const isSameRunnerSecondStep = (
+    prevAdv: ScorebookV2Advance,
+    curAdv: ScorebookV2Advance
+  ): boolean => {
+    if (prevAdv.id === curAdv.id) return false;
+    if (prevAdv.from === "BAT" || curAdv.from === "BAT") return false;
+    if (
+      prevAdv.isOut ||
+      prevAdv.method === "tiebreak" ||
+      (!prevAdv.isOut && prevAdv.from === prevAdv.to)
+    ) {
+      return false;
+    }
+    if (prevAdv.to !== curAdv.from) return false;
+
+    const pName = prevAdv.runnerName.replace(/\s+/g, "").trim();
+    const cName = curAdv.runnerName.replace(/\s+/g, "").trim();
+    if (pName && cName) {
+      return pName === cName || pName.includes(cName) || cName.includes(pName);
+    }
+    return (
+      isPrePlayAdvanceMethod(prevAdv.method) &&
+      !isPrePlayAdvanceMethod(curAdv.method)
+    );
+  };
+
+  const resolveOriginRank = (
+    adv: ScorebookV2Advance,
+    visited: Set<string>
+  ): number => {
+    if (adv.from === "BAT") return 1;
+    visited.add(adv.id);
+    for (const cand of advances) {
+      if (visited.has(cand.id)) continue;
+      if (isSameRunnerSecondStep(cand, adv)) {
+        return resolveOriginRank(cand, visited);
+      }
+    }
+    return getBaseClosestToHomeRank(adv.from);
+  };
+
+  const indexed = advances.map((adv, idx) => {
+    const originRank = resolveOriginRank(adv, new Set<string>());
+    const phase =
+      adv.method === "tiebreak"
+        ? 0
+        : isPrePlayAdvanceMethod(adv.method)
+        ? 1
+        : 2;
+    return {
+      adv,
+      idx,
+      originRank,
+      phase,
+      fromRank: getBaseClosestToHomeRank(adv.from),
+      toRank: getBaseClosestToHomeRank(adv.to),
+    };
+  });
+
+  indexed.sort((a, b) => {
+    // 1. ホームに近い走者（3B=4 > 2B=3 > 1B=2 > BAT=1）を最優先で上位へ
+    if (b.originRank !== a.originRank) {
+      return b.originRank - a.originRank;
+    }
+    // 2. 同一走者の複数進塁はタイブレーク ➔ 投球間 ➔ インプレーの時系列順
+    if (a.phase !== b.phase) {
+      return a.phase - b.phase;
+    }
+    // 3. 同一走者・同フェーズで 1B→2B ➔ 2B→3B のような連続移動は開始塁昇順
+    if (a.fromRank !== b.fromRank) {
+      return a.fromRank - b.fromRank;
+    }
+    // 4. 到達塁がよりホームに近いものを優先
+    if (b.toRank !== a.toRank) {
+      return b.toRank - a.toRank;
+    }
+    return a.idx - b.idx;
+  });
+
+  return indexed.map((item) => item.adv);
+}
+
+/**
  * ゴロ表記であっても二封・三封・本封（先行走者フォースアウトで打者1塁残り）かどうかを判定する
  */
 export function isForceOutGroundout(
@@ -406,10 +542,15 @@ function computeBlockedHoldBasesForRunner(
 ): OccupiedBaseKey[] {
   if (!inPlayBase || inPlayBase === "HP") return [];
 
-  if (ab.resultCode === "home_run" || ab.resultCode === "triple") {
+  if (
+    ab.resultCode === "home_run" ||
+    ab.resultCode === "triple" ||
+    batterBase === "HP" ||
+    batterBase === "3B"
+  ) {
     return ["1B", "2B", "3B"];
   }
-  if (ab.resultCode === "double") {
+  if (ab.resultCode === "double" || batterBase === "2B") {
     return ["1B", "2B"];
   }
 
@@ -960,39 +1101,46 @@ export function simulateSheetRunners(
             }
           }
 
-          // 打者が 1B に出塁するプレー（単打・失策・野選・封殺ゴロ等）でのベース重複解消（1B->2B->3B->HP 押し出し）
-          if (batterFinalBase === "1B" && !batterOutOnBases) {
-            const r1 = trackedRunners.find(
-              (r) =>
-                !r.isOut &&
-                r.inPlayExplicitMove === null &&
-                r.currentBase === "1B"
-            );
-            if (r1) {
-              const r2 = trackedRunners.find(
-                (r) => !r.isOut && r.currentBase === "2B"
-              );
-              if (r2 && r2.inPlayExplicitMove === null) {
-                const r3 = trackedRunners.find(
-                  (r) => !r.isOut && r.currentBase === "3B"
-                );
-                if (r3 && r3.inPlayExplicitMove === null) {
-                  r3.finalBase = "HP";
-                  r3.currentBase = "HP";
-                  r3.effectiveMethod = defaultMethod;
-                  r3.isImplicit = true;
-                }
-                r2.finalBase = "3B";
-                r2.currentBase = "3B";
-                r2.effectiveMethod = defaultMethod;
-                r2.isImplicit = true;
-              } else if (r2 && r2.inPlayExplicitMove !== null) {
-                // 2Bに明示固定走者がいる場合は3Bが開いていれば1B->2B不可のため調整不要だが通常は2Bも進塁
+          // 打者および後続走者によるベース重複・追い越し防止カスケード（打者 ➔ 1塁走者 ➔ 2塁走者 ➔ 3塁走者 の順に押し出し、常にホームに近い走者が前になるよう保証）
+          const baseToLevel = (
+            b: OccupiedBaseKey | "HP" | null
+          ): number =>
+            b === "1B"
+              ? 1
+              : b === "2B"
+              ? 2
+              : b === "3B"
+              ? 3
+              : b === "HP"
+              ? 4
+              : 0;
+          const levelToBase = (lv: number): OccupiedBaseKey | "HP" =>
+            lv <= 1 ? "1B" : lv === 2 ? "2B" : lv === 3 ? "3B" : "HP";
+
+          let occupiedFloor =
+            !batterOutOnBases && batterFinalBase
+              ? baseToLevel(batterFinalBase)
+              : 0;
+
+          for (let idx = trackedRunners.length - 1; idx >= 0; idx--) {
+            const tr = trackedRunners[idx];
+            if (tr.isOut) continue;
+            const curLv = baseToLevel(tr.finalBase);
+            if (curLv < 4 && curLv <= occupiedFloor) {
+              const pushedLv = Math.min(4, occupiedFloor + 1);
+              const pushedBase = levelToBase(pushedLv);
+              tr.finalBase = pushedBase;
+              tr.currentBase = pushedBase;
+              if (
+                !tr.inPlayExplicitMove ||
+                isNoOpHoldAdvance(tr.inPlayExplicitMove)
+              ) {
+                tr.effectiveMethod = defaultMethod;
+                tr.isImplicit = true;
               }
-              r1.finalBase = "2B";
-              r1.currentBase = "2B";
-              r1.effectiveMethod = defaultMethod;
-              r1.isImplicit = true;
+              occupiedFloor = Math.max(occupiedFloor, pushedLv);
+            } else {
+              occupiedFloor = Math.max(occupiedFloor, curLv);
             }
           }
         }
@@ -1028,40 +1176,67 @@ export function simulateSheetRunners(
         ? createEmptyBaseMap()
         : cloneBaseMap(basesAfterPlay);
 
-      // UI・検算用サマリー生成
-      const precedingRunners: PrecedingRunnerSummary[] = trackedRunners.map(
-        (tr) => {
-          const baseAtInPlay: OccupiedBaseKey | "HP" | null = tr.isOutPrePlay
-            ? null
-            : tr.prePlayMoves.length > 0
-            ? (tr.prePlayMoves[tr.prePlayMoves.length - 1].to as
-                | OccupiedBaseKey
-                | "HP")
-            : tr.startBase;
+      const effectiveBatterSafeBase =
+        !batterOutOnBases && batterFinalBase
+          ? batterFinalBase
+          : batterInitialBase;
 
-          return {
-            startBase: tr.startBase,
-            runner: tr.runner,
-            prePlayMoves: tr.prePlayMoves,
-            baseAtInPlay,
-            isOutPrePlay: tr.isOutPrePlay,
-            inPlayExplicitMove: tr.inPlayExplicitMove,
-            finalBase: tr.finalBase,
-            isOut: tr.isOut,
-            effectiveMethod: tr.effectiveMethod,
-            isImplicit: tr.isImplicit,
-            blockedHoldBases: computeBlockedHoldBasesForRunner(
+      // UI・検算用サマリー生成（常にホームに近い走者順: 3塁走者 ➔ 2塁走者 ➔ 1塁走者 に整列）
+      const precedingRunners: PrecedingRunnerSummary[] =
+        sortPrecedingRunnersClosestToHomeFirst(
+          trackedRunners.map((tr) => {
+            const baseAtInPlay: OccupiedBaseKey | "HP" | null = tr.isOutPrePlay
+              ? null
+              : tr.prePlayMoves.length > 0
+              ? (tr.prePlayMoves[tr.prePlayMoves.length - 1].to as
+                  | OccupiedBaseKey
+                  | "HP")
+              : tr.startBase;
+
+            return {
+              startBase: tr.startBase,
+              runner: tr.runner,
+              prePlayMoves: tr.prePlayMoves,
               baseAtInPlay,
-              batterInitialBase,
-              ab,
-              basesAtInPlay
-            ),
-          };
-        }
-      );
+              isOutPrePlay: tr.isOutPrePlay,
+              inPlayExplicitMove: tr.inPlayExplicitMove,
+              finalBase: tr.finalBase,
+              isOut: tr.isOut,
+              effectiveMethod: tr.effectiveMethod,
+              isImplicit: tr.isImplicit,
+              blockedHoldBases: computeBlockedHoldBasesForRunner(
+                baseAtInPlay,
+                effectiveBatterSafeBase,
+                ab,
+                basesAtInPlay
+              ),
+            };
+          })
+        );
+
+      const orderedTrackedRunners = [...trackedRunners].sort((a, b) => {
+        const aInPlay = a.isOutPrePlay
+          ? a.startBase
+          : a.prePlayMoves.length > 0
+          ? a.prePlayMoves[a.prePlayMoves.length - 1].to
+          : a.startBase;
+        const bInPlay = b.isOutPrePlay
+          ? b.startBase
+          : b.prePlayMoves.length > 0
+          ? b.prePlayMoves[b.prePlayMoves.length - 1].to
+          : b.startBase;
+        const diff =
+          getBaseClosestToHomeRank(bInPlay) -
+          getBaseClosestToHomeRank(aInPlay);
+        if (diff !== 0) return diff;
+        return (
+          getBaseClosestToHomeRank(b.startBase) -
+          getBaseClosestToHomeRank(a.startBase)
+        );
+      });
 
       const precedingRunnerMoves: EffectiveRunnerMove[] = [];
-      for (const tr of trackedRunners) {
+      for (const tr of orderedTrackedRunners) {
         for (const pm of tr.prePlayMoves) {
           precedingRunnerMoves.push({
             explicitAdvanceId: pm.id,
@@ -1389,7 +1564,7 @@ export function materializeSheetRunnerAdvances(
 
     return {
       ...ab,
-      advances: combined,
+      advances: sortAdvancesClosestToHomeFirst(combined),
     };
   });
 }
@@ -1625,6 +1800,83 @@ export function applyPrecedingRunnerSelection(params: {
       isOut,
     };
     nextAdvances = [...preserved, updatedAdv];
+  }
+
+  // 複数走者間で「追い越し」や「同一ベース重複」が生じないよう前後走者の明示到達塁を連動補正
+  if (!isOut) {
+    const curFromRank = getBaseClosestToHomeRank(inPlayStartBase);
+    const curToRank = getBaseClosestToHomeRank(targetBase);
+    const rankToBase = (rk: number): OccupiedBaseKey | "HP" =>
+      rk >= 5 ? "HP" : rk === 4 ? "3B" : rk === 3 ? "2B" : "1B";
+    const defaultSafeMethod = getDefaultInPlayMethodForResult(
+      ab.resultCode,
+      false
+    );
+
+    // 1) よりホームに近い前方の走者（fromRank > curFromRank）が後続走者の到達塁以下に留まっていたら前へ押し出す
+    let aheadFloorRank = curToRank;
+    const sortedForCascade = sortAdvancesClosestToHomeFirst(nextAdvances);
+    for (let k = sortedForCascade.length - 1; k >= 0; k--) {
+      const item = sortedForCascade[k];
+      if (
+        item.from === "BAT" ||
+        item.isOut ||
+        item.method === "tiebreak" ||
+        isPrePlayAdvanceMethod(item.method)
+      ) {
+        continue;
+      }
+      const fRank = getBaseClosestToHomeRank(item.from);
+      if (fRank <= curFromRank) continue;
+      const tRank = getBaseClosestToHomeRank(item.to);
+      if (tRank < 5 && tRank <= aheadFloorRank) {
+        const nextRk = Math.min(5, aheadFloorRank + 1);
+        const nextTo = rankToBase(nextRk);
+        sortedForCascade[k] = {
+          ...item,
+          to: nextTo,
+          method: isNoOpHoldAdvance(item) ? defaultSafeMethod : item.method,
+        };
+        aheadFloorRank = Math.max(aheadFloorRank, nextRk);
+      } else {
+        aheadFloorRank = Math.max(aheadFloorRank, tRank);
+      }
+    }
+
+    // 2) より後ろの走者（fromRank < curFromRank）が前方走者の停止塁（HP以外）以上へ進んでいたら手前へクランプ
+    if (curToRank < 5) {
+      let behindCeilingRank = curToRank;
+      for (let k = 0; k < sortedForCascade.length; k++) {
+        const item = sortedForCascade[k];
+        if (
+          item.from === "BAT" ||
+          item.isOut ||
+          item.method === "tiebreak" ||
+          isPrePlayAdvanceMethod(item.method)
+        ) {
+          continue;
+        }
+        const fRank = getBaseClosestToHomeRank(item.from);
+        if (fRank >= curFromRank) continue;
+        const tRank = getBaseClosestToHomeRank(item.to);
+        if (tRank >= behindCeilingRank) {
+          const clampedRk = Math.max(fRank, behindCeilingRank - 1);
+          const clampedTo = rankToBase(clampedRk);
+          sortedForCascade[k] = {
+            ...item,
+            to: clampedTo,
+            method: clampedTo === item.from ? "other" : item.method,
+          };
+          behindCeilingRank = clampedRk;
+        } else {
+          behindCeilingRank = Math.min(behindCeilingRank, tRank);
+        }
+      }
+    }
+
+    nextAdvances = sortedForCascade;
+  } else {
+    nextAdvances = sortAdvancesClosestToHomeFirst(nextAdvances);
   }
 
   const synced = computeSyncedStatsFromAdvances(
@@ -1925,19 +2177,127 @@ export function buildSmartAdvancesForResultChange(params: {
           isOut: true,
         });
       }
-    } else if (r1 && nextResultCode === "fc") {
-      // 野選出塁（FC）: 既定では1塁走者の二塁封殺または2塁セーフをワンタップで選べるよう、前アウト数が1以上なら封殺、0なら2塁セーフ
-      const makeForceOut = prevAb.outsInPlay >= 1 && outsBefore < 3;
-      generated.push({
-        id: crypto.randomUUID(),
-        runnerName: r1.name,
-        from: "1B",
-        to: "2B",
-        method: "fc",
-        isOut: makeForceOut,
-      });
+    } else if (nextResultCode === "fc") {
+      // 野選出塁（FC6-2, FC5-2, FC4-6, FC1-5, FC6 等）: 送球先（本塁 -2 / 三塁 -5 / 二塁 -4,-6）に応じてホームに近い走者順に進塁を生成
+      const fcThrowMatch =
+        nextBattedDirection.match(/FC[1-9]-([1-9])/i) ||
+        nextBattedDirection.match(/^[1-9]-([1-9])$/);
+      const fcTarget = fcThrowMatch ? fcThrowMatch[1] : "";
+      const makeForceOut =
+        prevAb.resultCode === "fc" && defaultPresetOuts >= 1 && outsBefore < 3;
+
+      if (fcTarget === "2" && r3) {
+        generated.push({
+          id: crypto.randomUUID(),
+          runnerName: r3.name,
+          from: "3B",
+          to: "HP",
+          method: "fc",
+          isOut: makeForceOut,
+        });
+        if (r2 && r1) {
+          generated.push({
+            id: crypto.randomUUID(),
+            runnerName: r2.name,
+            from: "2B",
+            to: "3B",
+            method: "fc",
+            isOut: false,
+          });
+        }
+        if (r1) {
+          generated.push({
+            id: crypto.randomUUID(),
+            runnerName: r1.name,
+            from: "1B",
+            to: "2B",
+            method: "fc",
+            isOut: false,
+          });
+        }
+      } else if (fcTarget === "5" && r2) {
+        if (r3) {
+          generated.push({
+            id: crypto.randomUUID(),
+            runnerName: r3.name,
+            from: "3B",
+            to: "HP",
+            method: "fc",
+            isOut: false,
+          });
+        }
+        generated.push({
+          id: crypto.randomUUID(),
+          runnerName: r2.name,
+          from: "2B",
+          to: "3B",
+          method: "fc",
+          isOut: makeForceOut,
+        });
+        if (r1) {
+          generated.push({
+            id: crypto.randomUUID(),
+            runnerName: r1.name,
+            from: "1B",
+            to: "2B",
+            method: "fc",
+            isOut: false,
+          });
+        }
+      } else {
+        if (r1 && r2 && r3) {
+          generated.push({
+            id: crypto.randomUUID(),
+            runnerName: r3.name,
+            from: "3B",
+            to: "HP",
+            method: "fc",
+            isOut: false,
+          });
+        }
+        if (r1 && r2) {
+          generated.push({
+            id: crypto.randomUUID(),
+            runnerName: r2.name,
+            from: "2B",
+            to: "3B",
+            method: "fc",
+            isOut: false,
+          });
+        }
+        if (r1) {
+          generated.push({
+            id: crypto.randomUUID(),
+            runnerName: r1.name,
+            from: "1B",
+            to: "2B",
+            method: "fc",
+            isOut: makeForceOut,
+          });
+        } else if (r3 && fcTarget === "") {
+          generated.push({
+            id: crypto.randomUUID(),
+            runnerName: r3.name,
+            from: "3B",
+            to: "HP",
+            method: "fc",
+            isOut: makeForceOut,
+          });
+        } else if (r2 && fcTarget === "") {
+          generated.push({
+            id: crypto.randomUUID(),
+            runnerName: r2.name,
+            from: "2B",
+            to: "3B",
+            method: "fc",
+            isOut: makeForceOut,
+          });
+        }
+      }
     }
   }
+
+  const sortedGenerated = sortAdvancesClosestToHomeFirst(generated);
 
   const candidateAb: ScorebookV2AtBat = {
     ...prevAb,
@@ -1945,20 +2305,20 @@ export function buildSmartAdvancesForResultChange(params: {
     battedDirection: nextBattedDirection,
     resultLabel: nextResultLabel,
     outsInPlay: defaultPresetOuts,
-    advances: generated,
+    advances: sortedGenerated,
   };
 
   const synced = computeSyncedStatsFromAdvances(
     candidateAb,
-    generated,
+    sortedGenerated,
     outsBefore,
     basesBefore
   );
 
   return {
-    advances: generated,
+    advances: sortedGenerated,
     outsInPlay:
-      generated.length === 0 && defaultPresetOuts > 0
+      sortedGenerated.length === 0 && defaultPresetOuts > 0
         ? Math.min(Math.max(0, 3 - outsBefore), defaultPresetOuts)
         : synced.outsInPlay,
     runsInPlay: synced.runsInPlay,
@@ -2347,6 +2707,25 @@ export function reconcileSheetRunsAndRbi(
             }
           }
 
+          // 単打・失策・野選・二塁打で、後続打席での進塁線（1B->2B / 1B->3B / 2B->3B）をこの打席の BAT->2B/3B（method: "hit" 等）と誤読した場合は基本出塁塁へ戻す
+          if (
+            !adv.isOut &&
+            !isAwardedFirstBaseResult(ab.resultCode) &&
+            initSafeBase !== "HP" &&
+            getBaseClosestToHomeRank(adv.to) >
+              getBaseClosestToHomeRank(initSafeBase) &&
+            adv.method !== "throw_advance" &&
+            adv.method !== "error"
+          ) {
+            prelimAdvances.push({
+              ...adv,
+              to: initSafeBase,
+              method: getDefaultInPlayMethodForResult(ab.resultCode, false),
+            });
+            advModified = true;
+            continue;
+          }
+
           prelimAdvances.push(adv);
           continue;
         }
@@ -2437,48 +2816,50 @@ export function reconcileSheetRunsAndRbi(
               ab.resultLabel
             )));
 
-      const cleanedAdvances = prelimAdvances.filter((adv) => {
-        if (adv.method === "tiebreak" || isNoOpHoldAdvance(adv)) return true;
+      const cleanedAdvances = sortAdvancesClosestToHomeFirst(
+        prelimAdvances.filter((adv) => {
+          if (adv.method === "tiebreak" || isNoOpHoldAdvance(adv)) return true;
 
-        if (
-          invalidatesInPlayRunsOnThirdOut &&
-          !adv.isOut &&
-          adv.to === "HP" &&
-          !isPrePlayAdvanceMethod(adv.method)
-        ) {
-          advModified = true;
-          return false;
-        }
-
-        if (isAwardedFirstBaseResult(ab.resultCode) && adv.from !== "BAT") {
           if (
+            invalidatesInPlayRunsOnThirdOut &&
             !adv.isOut &&
             adv.to === "HP" &&
-            !isPrePlayAdvanceMethod(adv.method) &&
-            adv.method !== "error" &&
-            adv.method !== "obstruction" &&
-            !isBasesLoadedAtPlay
-          ) {
-            if (initSafeBase !== null) {
-              deferredScoreOrders.add(ab.battingOrder);
-            }
-            advModified = true;
-            return false;
-          }
-          if (
-            !adv.isOut &&
-            adv.method === "walk" &&
-            adv.from === "2B" &&
-            adv.to === "3B" &&
-            !(basesAtPlay["1B"] && basesAtPlay["2B"])
+            !isPrePlayAdvanceMethod(adv.method)
           ) {
             advModified = true;
             return false;
           }
-        }
 
-        return true;
-      });
+          if (isAwardedFirstBaseResult(ab.resultCode) && adv.from !== "BAT") {
+            if (
+              !adv.isOut &&
+              adv.to === "HP" &&
+              !isPrePlayAdvanceMethod(adv.method) &&
+              adv.method !== "error" &&
+              adv.method !== "obstruction" &&
+              !isBasesLoadedAtPlay
+            ) {
+              if (initSafeBase !== null) {
+                deferredScoreOrders.add(ab.battingOrder);
+              }
+              advModified = true;
+              return false;
+            }
+            if (
+              !adv.isOut &&
+              adv.method === "walk" &&
+              adv.from === "2B" &&
+              adv.to === "3B" &&
+              !(basesAtPlay["1B"] && basesAtPlay["2B"])
+            ) {
+              advModified = true;
+              return false;
+            }
+          }
+
+          return true;
+        })
+      );
 
       // A-3. この打席で物理的に成立し得る最小得点・最大得点を算出
       const realClean = cleanedAdvances.filter(
@@ -2699,17 +3080,18 @@ export function reconcileSheetRunsAndRbi(
               namesLikelyMatch(a.runnerName, bestPick.runnerName))
           )
       );
-      const nextAdvances: ScorebookV2Advance[] = [
-        ...filteredExisting,
-        {
-          id: crypto.randomUUID(),
-          runnerName: bestPick.runnerName,
-          from: bestPick.startFrom,
-          to: "HP",
-          method: bestPick.method,
-          isOut: false,
-        },
-      ];
+      const nextAdvances: ScorebookV2Advance[] =
+        sortAdvancesClosestToHomeFirst([
+          ...filteredExisting,
+          {
+            id: crypto.randomUUID(),
+            runnerName: bestPick.runnerName,
+            from: bestPick.startFrom,
+            to: "HP",
+            method: bestPick.method,
+            isOut: false,
+          },
+        ]);
       const synced = computeSyncedStatsFromAdvances(
         targetAb,
         nextAdvances,

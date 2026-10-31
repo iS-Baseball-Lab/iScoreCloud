@@ -61,6 +61,7 @@ import {
   isForceOutGroundout,
   resolveDeferredPersonalRunsMap,
   simulateSheetRunners,
+  sortPrecedingRunnersClosestToHomeFirst,
   type OccupiedBaseKey,
 } from "@/lib/liff/scorebook-runners";
 import {
@@ -301,10 +302,12 @@ export function Step3PinpointReview({
     return editingInningPeers.findIndex((a) => a.id === editingAtBat.id);
   }, [editingInningPeers, editingAtBat]);
 
-  // 塁上にいる先行走者（3塁➔2塁➔1塁）の元打席マス仕様を解決
+  // 塁上にいる先行走者（ホームに近い順: 3塁➔2塁➔1塁）の元打席マス仕様を解決
   const precedingRunnerCellSpecs = useMemo(() => {
     if (!editingAtBat || !editingRunnerSnapshot) return [];
-    const prs = editingRunnerSnapshot.precedingRunners;
+    const prs = sortPrecedingRunnersClosestToHomeFirst(
+      editingRunnerSnapshot.precedingRunners
+    );
     if (prs.length === 0) return [];
 
     const priorPeers =
@@ -334,6 +337,7 @@ export function Step3PinpointReview({
       }
       return {
         startBase: pr.startBase,
+        currentBase: pr.baseAtInPlay ?? pr.startBase,
         battingOrder: matchedPeer?.battingOrder || pr.runner.battingOrder,
         runnerName: pr.runner.name || matchedPeer?.batterName || "走者",
         atBatId: matchedPeer?.id ?? null,
@@ -355,9 +359,9 @@ export function Step3PinpointReview({
       precedingRunnerCellSpecs
         .map(
           (s) =>
-            `${s.startBase}:${s.atBatId || "tb"}:${s.inning}:${s.columnIndex}:${
-              s.battingOrder
-            }:${s.runnerName}`
+            `${s.startBase}:${s.currentBase}:${s.atBatId || "tb"}:${s.inning}:${
+              s.columnIndex
+            }:${s.battingOrder}:${s.runnerName}`
         )
         .join("|"),
     [precedingRunnerCellSpecs]
@@ -483,6 +487,7 @@ export function Step3PinpointReview({
             );
             return {
               startBase: spec.startBase,
+              currentBase: spec.currentBase,
               battingOrder: spec.battingOrder,
               runnerName: spec.runnerName,
               atBatId: spec.atBatId,
@@ -499,6 +504,7 @@ export function Step3PinpointReview({
           );
           return {
             startBase: spec.startBase,
+            currentBase: spec.currentBase,
             battingOrder: spec.battingOrder,
             runnerName: spec.runnerName,
             atBatId: spec.atBatId,
@@ -2123,47 +2129,58 @@ export function Step3PinpointReview({
                     ) : (
                       <div className="p-2 space-y-1.5 max-h-64 overflow-y-auto">
                         <div className="grid grid-cols-2 gap-1.5">
-                          {precedingRunnerCrops.map((rc) => (
-                            <div
-                              key={`top-rc-${rc.startBase}`}
-                              className="rounded-xl bg-slate-900 border border-amber-500/40 overflow-hidden flex flex-col"
-                            >
-                              <div className="px-2 py-1 bg-amber-600 text-white flex items-center justify-between gap-1">
-                                <span className="text-[10px] font-black truncate">
-                                  {formatBaseJa(rc.startBase)}走者:{" "}
-                                  {rc.battingOrder > 0
-                                    ? `${rc.battingOrder}番 `
-                                    : ""}
-                                  {rc.runnerName || "走者"}
-                                </span>
-                                {rc.atBatId && (
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      setEditingAtBatId(rc.atBatId)
-                                    }
-                                    className="px-1.5 py-0.5 rounded bg-black/25 hover:bg-black/40 text-[9px] font-black shrink-0 cursor-pointer"
-                                  >
-                                    打席へ
-                                  </button>
-                                )}
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setFocusedModalCellKey(rc.startBase)
-                                }
-                                title="タップしてこの走者のマスを拡大"
-                                className="p-1 flex-1 flex items-center justify-center bg-slate-950 cursor-pointer"
+                          {precedingRunnerCrops.map((rc, rcIdx) => {
+                            const circled =
+                              rcIdx === 0 ? "① " : rcIdx === 1 ? "② " : "③ ";
+                            const dispBase =
+                              rc.currentBase && rc.currentBase !== "HP"
+                                ? rc.currentBase
+                                : rc.startBase;
+                            return (
+                              <div
+                                key={`top-rc-${rc.startBase}`}
+                                className="rounded-xl bg-slate-900 border border-amber-500/40 overflow-hidden flex flex-col"
                               >
-                                <img
-                                  src={rc.cropUrl}
-                                  alt={`${formatBaseJa(rc.startBase)}走者マス`}
-                                  className="h-28 w-full object-contain rounded"
-                                />
-                              </button>
-                            </div>
-                          ))}
+                                <div className="px-2 py-1 bg-amber-600 text-white flex items-center justify-between gap-1">
+                                  <span className="text-[10px] font-black truncate">
+                                    {precedingRunnerCrops.length >= 2
+                                      ? circled
+                                      : ""}
+                                    {formatBaseJa(dispBase)}走者:{" "}
+                                    {rc.battingOrder > 0
+                                      ? `${rc.battingOrder}番 `
+                                      : ""}
+                                    {rc.runnerName || "走者"}
+                                  </span>
+                                  {rc.atBatId && (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setEditingAtBatId(rc.atBatId)
+                                      }
+                                      className="px-1.5 py-0.5 rounded bg-black/25 hover:bg-black/40 text-[9px] font-black shrink-0 cursor-pointer"
+                                    >
+                                      打席へ
+                                    </button>
+                                  )}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setFocusedModalCellKey(rc.startBase)
+                                  }
+                                  title="タップしてこの走者のマスを拡大"
+                                  className="p-1 flex-1 flex items-center justify-center bg-slate-950 cursor-pointer"
+                                >
+                                  <img
+                                    src={rc.cropUrl}
+                                    alt={`${formatBaseJa(dispBase)}走者マス`}
+                                    className="h-28 w-full object-contain rounded"
+                                  />
+                                </button>
+                              </div>
+                            );
+                          })}
 
                           <div
                             className={`rounded-xl bg-slate-900 border-2 border-indigo-500 overflow-hidden flex flex-col ${
@@ -3052,6 +3069,7 @@ export function Step3PinpointReview({
                       rc === "double_play" || rc === "triple_play";
                     const isFlyCode = rc === "flyout" || rc === "sac_fly";
                     const isErrorCode = rc === "error";
+                    const isFcCode = rc === "fc";
                     const isNonFielded =
                       rc === "walk" ||
                       rc === "intentional_walk" ||
@@ -3122,9 +3140,31 @@ export function Step3PinpointReview({
                         const nextErrorStyle: ErrorStyleOption =
                           overrides?.errorStyle ?? cur.errorStyle;
 
+                        const curBasesBefore =
+                          editingRunnerSnapshot?.basesBefore ?? {
+                            "1B": null,
+                            "2B": null,
+                            "3B": null,
+                          };
+                        const smartDefaultFcTarget: AssistTargetOption =
+                          curBasesBefore["3B"] && nextPos !== "2"
+                            ? "2"
+                            : curBasesBefore["2B"] && nextPos !== "5"
+                            ? "5"
+                            : curBasesBefore["1B"]
+                            ? nextPos === "4"
+                              ? "6"
+                              : "4"
+                            : "unassisted";
+
                         const nextAssist: AssistTargetOption | "" =
                           overrides?.assistTargetPos !== undefined
                             ? overrides.assistTargetPos
+                            : effectiveCode === "fc"
+                            ? cur.assistTargetPos &&
+                              cur.assistTargetPos !== nextPos
+                              ? cur.assistTargetPos
+                              : smartDefaultFcTarget
                             : effectiveCode === "error"
                             ? nextErrorStyle === "throwing"
                               ? cur.assistTargetPos &&
@@ -3179,23 +3219,25 @@ export function Step3PinpointReview({
                           composed.battedDirection,
                           composed.resultLabel
                         );
+                        const didFcThrowTargetChange =
+                          effectiveCode === "fc" &&
+                          cur.assistTargetPos !== nextAssist;
 
-                        if (wasForceGroundout !== willBeForceGroundout) {
+                        if (
+                          wasForceGroundout !== willBeForceGroundout ||
+                          didFcThrowTargetChange
+                        ) {
                           const syncedForce =
                             buildSmartAdvancesForResultChange({
                               prevAb: prev,
                               nextResultCode: effectiveCode,
                               nextBattedDirection: composed.battedDirection,
                               nextResultLabel: composed.resultLabel,
-                              defaultPresetOuts: 1,
+                              defaultPresetOuts:
+                                effectiveCode === "fc" ? prev.outsInPlay : 1,
                               outsBefore:
                                 editingRunnerSnapshot?.outsBefore ?? 0,
-                              basesBefore:
-                                editingRunnerSnapshot?.basesBefore ?? {
-                                  "1B": null,
-                                  "2B": null,
-                                  "3B": null,
-                                },
+                              basesBefore: curBasesBefore,
                             });
                           return {
                             ...prev,
@@ -3652,6 +3694,85 @@ export function Step3PinpointReview({
                                     </div>
                                   </div>
                                 )}
+                              </div>
+                            )}
+
+                            {/* 野選（FC）時の送球先セレクター（FC6-2 / FC5-2 / FC4-6 / FC6 等） */}
+                            {isFcCode && fMeta.primaryPos && (
+                              <div className="pt-1">
+                                <div className="p-2 rounded-xl bg-card border border-indigo-500/35 space-y-1">
+                                  <span className="text-[10px] font-black text-foreground block">
+                                    野選の送球先を指定（例: FC{fMeta.primaryPos}
+                                    -2 / FC{fMeta.primaryPos}-
+                                    {fMeta.primaryPos === "4" ? "6" : "4"} / FC
+                                    {fMeta.primaryPos}）:
+                                  </span>
+                                  <div className="grid grid-cols-3 gap-1">
+                                    {(
+                                      [
+                                        {
+                                          id: "2",
+                                          label: `本塁送球 (FC${fMeta.primaryPos}-2)`,
+                                        },
+                                        {
+                                          id: "5",
+                                          label: `三塁送球 (FC${fMeta.primaryPos}-5)`,
+                                        },
+                                        {
+                                          id: "4",
+                                          label: `二塁送球 (FC${fMeta.primaryPos}-4)`,
+                                        },
+                                        {
+                                          id: "6",
+                                          label: `二塁遊撃 (FC${fMeta.primaryPos}-6)`,
+                                        },
+                                        {
+                                          id: "3",
+                                          label: `一塁送球 (FC${fMeta.primaryPos}-3)`,
+                                        },
+                                        {
+                                          id: "1",
+                                          label: `一塁カバー投 (FC${fMeta.primaryPos}-1)`,
+                                        },
+                                        {
+                                          id: "unassisted",
+                                          label: `送球先なし (FC${fMeta.primaryPos}のみ)`,
+                                        },
+                                      ] as const
+                                    )
+                                      .filter(
+                                        (tgt) => tgt.id !== fMeta.primaryPos
+                                      )
+                                      .map((tgt) => {
+                                        const effectiveFcTarget =
+                                          fMeta.assistTargetPos || "unassisted";
+                                        const isTgtActive =
+                                          effectiveFcTarget === tgt.id;
+                                        return (
+                                          <button
+                                            key={tgt.id}
+                                            type="button"
+                                            onClick={() =>
+                                              fMeta.primaryPos &&
+                                              applyPositionSelection(
+                                                fMeta.primaryPos,
+                                                {
+                                                  assistTargetPos: tgt.id,
+                                                }
+                                              )
+                                            }
+                                            className={`py-1.5 px-1 rounded-lg text-[10px] border transition-all cursor-pointer ${
+                                              isTgtActive
+                                                ? "bg-indigo-600 text-white border-indigo-600 font-black"
+                                                : "bg-muted/50 border-border text-foreground font-bold hover:bg-muted"
+                                            }`}
+                                          >
+                                            {tgt.label}
+                                          </button>
+                                        );
+                                      })}
+                                  </div>
+                                </div>
                               </div>
                             )}
                           </>

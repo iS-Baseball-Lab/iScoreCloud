@@ -148,8 +148,15 @@ function normalizeFieldingAscii(raw: string): string {
     .replace(/[Ａ-Ｚａ-ｚ]/g, (ch) =>
       String.fromCharCode(ch.charCodeAt(0) - 0xfee0)
     )
-    .replace(/(E?[1-9]E?)\s*[－ー―‐=＝→⇒➡]\s*(E?[1-9]E?)/gi, "$1-$2")
-    .replace(/(E?[1-9]E?)\s*[－ー―‐=＝→⇒➡]\s*(E?[1-9]E?)/gi, "$1-$2");
+    .replace(/\bFC\s+([1-9])/gi, "FC$1")
+    .replace(
+      /((?:FC|E)?[1-9](?:FC|E)?)\s*[－ー―‐=＝→⇒➡-]\s*(E?[1-9]E?)/gi,
+      "$1-$2"
+    )
+    .replace(
+      /((?:FC|E)?[1-9](?:FC|E)?)\s*[－ー―‐=＝→⇒➡-]\s*(E?[1-9]E?)/gi,
+      "$1-$2"
+    );
 }
 
 /**
@@ -285,11 +292,39 @@ export function parseFieldingMeta(
     }
   }
 
+  // 2.6. 野選＋送球先（FC6-2, FC5-2, FC4-6, 6FC-2 等）
+  const fcRelayMatch =
+    !threeRelayMatch &&
+    !throwingErrorRelayMatch &&
+    !catchingErrorRelayMatch
+      ? combined.match(
+          /(?<![0-9A-Za-z-])(?:FC([1-9])|([1-9])FC)-([1-9])(?![0-9A-Za-z-])/i
+        )
+      : null;
+  if (fcRelayMatch) {
+    const p1 = fcRelayMatch[1] || fcRelayMatch[2];
+    const p2 = fcRelayMatch[3];
+    if (isValidPosDigit(p1)) {
+      primaryPos = p1;
+    }
+    if (
+      p2 === "1" ||
+      p2 === "2" ||
+      p2 === "3" ||
+      p2 === "4" ||
+      p2 === "5" ||
+      p2 === "6"
+    ) {
+      assistTargetPos = p2;
+    }
+  }
+
   // 3. 2連送球（6-3, 3-1, 〜6-3, [1-3], ◇5-3, K 2-3 等 ※7-8/8-9の安打は除外）
   const twoRelayMatch =
     !threeRelayMatch &&
     !throwingErrorRelayMatch &&
     !catchingErrorRelayMatch &&
+    !fcRelayMatch &&
     !(isHitCode && (hitZone === "gap_lc" || hitZone === "gap_rc"))
       ? combined.match(/(?<![0-9A-Za-z-])([1-9])-([1-9])(?![0-9A-Za-z-])/)
       : null;
@@ -329,16 +364,17 @@ export function parseFieldingMeta(
     const codeDigitMatch =
       suffixErrorMatch ||
       strippedDecorDir.match(
-        /^(?:E|FC|INT|K\s*(?:-\s*E|E|-)?\s*)?([1-9])(?:F|L|IF|SF|E|A|G)?$/i
+        /^(?:E|FC|INT|K\s*(?:-\s*E|E|-)?\s*)?([1-9])(?:F|L|IF|SF|E|FC|A|G)?$/i
       ) ||
-      strippedDecorDir.match(/^([1-9])\s*(?:E|失)$/i) ||
-      label.match(/\((?:E|FC|K\s*(?:-\s*E|E|-)?\s*)?([1-9])(?:A|G)?\)/i);
+      strippedDecorDir.match(/^([1-9])\s*(?:E|FC|失)$/i) ||
+      label.match(/\((?:E|FC|K\s*(?:-\s*E|E|-)?\s*)?([1-9])(?:FC|A|G)?\)/i);
     if (codeDigitMatch && isValidPosDigit(codeDigitMatch[1])) {
       primaryPos = codeDigitMatch[1];
       if (
         resultCode === "groundout" ||
         resultCode === "sac_bunt" ||
-        resultCode === "dropped_third_strike_out"
+        resultCode === "dropped_third_strike_out" ||
+        resultCode === "fc"
       ) {
         assistTargetPos = "unassisted";
       } else if (
@@ -826,6 +862,19 @@ export function composeFieldingResult(params: ComposeFieldingParams): {
     }
 
     case "fc": {
+      const target = params.assistTargetPos;
+      if (
+        target &&
+        target !== "unassisted" &&
+        target !== code &&
+        isValidPosDigit(target)
+      ) {
+        const dir = `FC${code}-${target}`;
+        return {
+          battedDirection: dir,
+          resultLabel: `${shortJa}野選 (${dir})`,
+        };
+      }
       const dir = `FC${code}`;
       return {
         battedDirection: dir,
@@ -988,13 +1037,13 @@ export function resolveFieldingOnResultChange(
       case "groundout":
       case "sac_bunt":
       case "infield_fly":
-      case "fc":
       case "double_play":
       case "triple_play":
         return !isOf;
       case "single":
       case "flyout":
       case "error":
+      case "fc":
       default:
         return true;
     }
@@ -1009,14 +1058,27 @@ export function resolveFieldingOnResultChange(
 
   if (sourceMeta && isPosCompatible(sourceMeta.primaryPos, nextResultCode)) {
     const pos = sourceMeta.primaryPos;
-    const wasThrowOutPlay =
-      prevResultCode === "groundout" || prevResultCode === "sac_bunt";
+    const wasThrowTargetPlay =
+      prevResultCode === "groundout" ||
+      prevResultCode === "sac_bunt" ||
+      prevResultCode === "fc";
     const nextAssist: AssistTargetOption | "" =
       nextResultCode === "error"
         ? sourceMeta.errorStyle === "throwing"
           ? sourceMeta.assistTargetPos || (pos === "3" ? "unassisted" : "3")
           : ""
-        : wasThrowOutPlay
+        : nextResultCode === "fc"
+        ? prevResultCode === "fc" && sourceMeta.assistTargetPos !== pos
+          ? sourceMeta.assistTargetPos
+          : wasThrowTargetPlay &&
+            (sourceMeta.assistTargetPos === "2" ||
+              sourceMeta.assistTargetPos === "4" ||
+              sourceMeta.assistTargetPos === "5" ||
+              sourceMeta.assistTargetPos === "6") &&
+            sourceMeta.assistTargetPos !== pos
+          ? sourceMeta.assistTargetPos
+          : ""
+        : wasThrowTargetPlay
         ? sourceMeta.assistTargetPos
         : "";
     const nextDpRelay =
@@ -1141,10 +1203,12 @@ export function harmonizeOcrFieldingAndLabel(
   const normCleanDir = normalizeFieldingAscii(cleanDir);
   const isPrefixThrowErr =
     resultCode === "error" && /^E[1-9]-[1-9]$/i.test(normCleanDir);
+  const isNonCanonicalFcDir =
+    resultCode === "fc" && !/^FC[1-9](?:-[1-9])?$/.test(normCleanDir);
 
   return {
     battedDirection:
-      !cleanDir || hasRawDecorGlyph || isPrefixThrowErr
+      !cleanDir || hasRawDecorGlyph || isPrefixThrowErr || isNonCanonicalFcDir
         ? composed.battedDirection
         : normCleanDir,
     resultLabel: finalLabel,

@@ -24,6 +24,8 @@ import {
   formatOutsAndBasesLabel,
   formatRunnerBadgeName,
   isPrePlayAdvanceMethod,
+  sortAdvancesClosestToHomeFirst,
+  sortPrecedingRunnersClosestToHomeFirst,
   type AtBatRunnerSnapshot,
   type BaseRunnerMap,
   type DeferredPersonalRunInfo,
@@ -299,6 +301,7 @@ export function AtBatCardRunnerStrip({
 
 export interface PrecedingRunnerCellCrop {
   startBase: OccupiedBaseKey;
+  currentBase?: OccupiedBaseKey | "HP" | null;
   battingOrder: number;
   runnerName: string;
   atBatId: string | null;
@@ -347,17 +350,17 @@ const QUICK_EVENT_PRESETS: ReadonlyArray<{
   method: AdvanceMethodCode;
   isOut: boolean;
 }> = [
-  { label: "+二盗(1→2塁)", from: "1B", to: "2B", method: "steal", isOut: false },
-  { label: "+三盗(2→3塁)", from: "2B", to: "3B", method: "steal", isOut: false },
   { label: "+本盗(3→本塁)", from: "3B", to: "HP", method: "steal", isOut: false },
+  { label: "+三盗(2→3塁)", from: "2B", to: "3B", method: "steal", isOut: false },
+  { label: "+二盗(1→2塁)", from: "1B", to: "2B", method: "steal", isOut: false },
   { label: "+盗塁死(CS)", from: "1B", to: "2B", method: "caught_stealing", isOut: true },
   { label: "+牽制死(PO)", from: "1B", to: "1B", method: "pickoff_out", isOut: true },
   { label: "+牽制悪送球", from: "1B", to: "2B", method: "pickoff_error", isOut: false },
   { label: "+暴投(WP)", from: "1B", to: "2B", method: "wp", isOut: false },
   { label: "+捕逸(PB)", from: "1B", to: "2B", method: "pb", isOut: false },
   { label: "+ボーク(BK)", from: "1B", to: "2B", method: "balk", isOut: false },
-  { label: "+タイブレーク1塁", from: "1B", to: "1B", method: "tiebreak", isOut: false },
   { label: "+タイブレーク2塁", from: "2B", to: "2B", method: "tiebreak", isOut: false },
+  { label: "+タイブレーク1塁", from: "1B", to: "1B", method: "tiebreak", isOut: false },
   { label: "+アピール死", from: "1B", to: "1B", method: "appeal_out", isOut: true },
 ];
 
@@ -399,25 +402,45 @@ export function AtBatModalRunnerEditor({
     "3B": null,
   };
   const isInningOver = snapshot?.isInningOver ?? outsAfter >= 3;
-  const precedingRunners = snapshot?.precedingRunners ?? [];
+  const precedingRunners = sortPrecedingRunnersClosestToHomeFirst(
+    snapshot?.precedingRunners ?? []
+  );
   const batterSummary = snapshot?.batterSummary;
 
-  const visibleExplicitAdvances = atBat.advances.filter(
-    (a) =>
-      !isHoldMarker(a) &&
-      !(
-        a.from === "BAT" &&
-        !a.isOut &&
-        batterSummary?.initialBase &&
-        a.to === batterSummary.initialBase
-      )
+  const visibleExplicitAdvances = sortAdvancesClosestToHomeFirst(
+    atBat.advances.filter(
+      (a) =>
+        !isHoldMarker(a) &&
+        !(
+          a.from === "BAT" &&
+          !a.isOut &&
+          batterSummary?.initialBase &&
+          a.to === batterSummary.initialBase
+        )
+    )
   );
 
-  // デフォルトの手動追加用走者名（直前打順の打者）を解決
-  const resolveDefaultManualRunner = (): {
+  // デフォルトの手動追加用走者（常にホームに近い占有走者: 3塁 ➔ 2塁 ➔ 1塁 を優先し、未登録塁があればそこを優先）
+  const resolveDefaultManualRunner = (
+    currentAdvances: readonly ScorebookV2Advance[] = atBat.advances
+  ): {
     name: string;
     from: "1B" | "2B" | "3B";
   } => {
+    for (const bKey of ["3B", "2B", "1B"] as const) {
+      const r = basesBefore[bKey];
+      if (!r) continue;
+      const alreadyHasInPlay = currentAdvances.some(
+        (a) =>
+          !isHoldMarker(a) &&
+          a.method !== "tiebreak" &&
+          !isPrePlayAdvanceMethod(a.method) &&
+          a.from === bKey
+      );
+      if (!alreadyHasInPlay) {
+        return { name: r.name, from: bKey };
+      }
+    }
     if (basesBefore["3B"]) {
       return { name: basesBefore["3B"].name, from: "3B" };
     }
@@ -494,7 +517,10 @@ export function AtBatModalRunnerEditor({
             (!a.runnerName || a.runnerName === summary.runner.name)
           )
       );
-      const nextAdvances = [...cleaned, newAdv];
+      const nextAdvances = sortAdvancesClosestToHomeFirst([
+        ...cleaned,
+        newAdv,
+      ]);
       const synced = computeSyncedStatsFromAdvances(
         prev,
         nextAdvances,
@@ -544,6 +570,7 @@ export function AtBatModalRunnerEditor({
           },
         ];
       }
+      nextAdvances = sortAdvancesClosestToHomeFirst(nextAdvances);
       const synced = computeSyncedStatsFromAdvances(
         prev,
         nextAdvances,
@@ -562,11 +589,10 @@ export function AtBatModalRunnerEditor({
   };
 
   const handleManualAddInPlayAdvance = () => {
-    const def = resolveDefaultManualRunner();
-    const defaultTo: "2B" | "3B" | "HP" =
-      def.from === "3B" ? "HP" : def.from === "2B" ? "3B" : "2B";
-
     onUpdateAtBat((prev) => {
+      const def = resolveDefaultManualRunner(prev.advances);
+      const defaultTo: "2B" | "3B" | "HP" =
+        def.from === "3B" ? "HP" : def.from === "2B" ? "3B" : "2B";
       const newAdv: ScorebookV2Advance = {
         id: crypto.randomUUID(),
         runnerName: def.name,
@@ -575,7 +601,10 @@ export function AtBatModalRunnerEditor({
         method: "hit",
         isOut: false,
       };
-      const nextAdvances = [...prev.advances, newAdv];
+      const nextAdvances = sortAdvancesClosestToHomeFirst([
+        ...prev.advances,
+        newAdv,
+      ]);
       const synced = computeSyncedStatsFromAdvances(
         prev,
         nextAdvances,
@@ -596,19 +625,46 @@ export function AtBatModalRunnerEditor({
   const handleAddQuickPresetAdvance = (
     preset: (typeof QUICK_EVENT_PRESETS)[number]
   ) => {
-    const runnerOnTargetFrom =
-      basesBefore[preset.from]?.name || resolveDefaultManualRunner().name;
-
     onUpdateAtBat((prev) => {
+      let resolvedFrom: "1B" | "2B" | "3B" = preset.from;
+      let resolvedTo: "1B" | "2B" | "3B" | "HP" = preset.to;
+      if (preset.method !== "steal" && preset.method !== "tiebreak") {
+        const leadOccupied = (["3B", "2B", "1B"] as const).find((bKey) =>
+          Boolean(basesBefore[bKey])
+        );
+        if (leadOccupied) {
+          resolvedFrom = leadOccupied;
+          if (
+            preset.method === "pickoff_out" ||
+            preset.method === "appeal_out"
+          ) {
+            resolvedTo = leadOccupied;
+          } else {
+            resolvedTo =
+              leadOccupied === "3B"
+                ? "HP"
+                : leadOccupied === "2B"
+                ? "3B"
+                : "2B";
+          }
+        }
+      }
+      const runnerOnTargetFrom =
+        basesBefore[resolvedFrom]?.name ||
+        resolveDefaultManualRunner(prev.advances).name;
+
       const newAdv: ScorebookV2Advance = {
         id: crypto.randomUUID(),
         runnerName: runnerOnTargetFrom,
-        from: preset.from,
-        to: preset.to,
+        from: resolvedFrom,
+        to: resolvedTo,
         method: preset.method,
         isOut: preset.isOut,
       };
-      const nextAdvances = [...prev.advances, newAdv];
+      const nextAdvances = sortAdvancesClosestToHomeFirst([
+        ...prev.advances,
+        newAdv,
+      ]);
       const synced = computeSyncedStatsFromAdvances(
         prev,
         nextAdvances,
@@ -631,8 +687,8 @@ export function AtBatModalRunnerEditor({
     patcher: (cur: ScorebookV2Advance) => ScorebookV2Advance
   ) => {
     onUpdateAtBat((prev) => {
-      const nextAdvances = prev.advances.map((a) =>
-        a.id === advId ? patcher(a) : a
+      const nextAdvances = sortAdvancesClosestToHomeFirst(
+        prev.advances.map((a) => (a.id === advId ? patcher(a) : a))
       );
       const synced = computeSyncedStatsFromAdvances(
         prev,
@@ -792,12 +848,27 @@ export function AtBatModalRunnerEditor({
       {/* 2. 塁上にいる各先行走者（3塁走者 ➔ 2塁走者 ➔ 1塁走者）のワンタップ進塁カード */}
       {precedingRunners.length > 0 ? (
         <div className="space-y-2">
-          <span className="text-[11px] font-black text-foreground block">
-            塁上の走者ごとの結果（タップで進塁先・生還・アウトを指定）:
-          </span>
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <span className="text-[11px] font-black text-foreground">
+              塁上の走者ごとの結果（タップで進塁先・生還・アウトを指定）:
+            </span>
+            {precedingRunners.length >= 2 && (
+              <span className="px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/35 text-amber-800 dark:text-amber-200 text-[10px] font-black">
+                ホームに近い走者順（
+                {precedingRunners
+                  .map((r) => formatBaseJa(r.baseAtInPlay ?? r.startBase))
+                  .join(" ➔ ")}
+                ）
+              </span>
+            )}
+          </div>
 
-          {precedingRunners.map((pr) => {
+          {precedingRunners.map((pr, runnerIdx) => {
             const inPlayBase: OccupiedBaseKey | "HP" | null = pr.baseAtInPlay;
+            const orderCircled =
+              runnerIdx === 0 ? "①" : runnerIdx === 1 ? "②" : "③";
+            const displayCurrentBase =
+              inPlayBase && inPlayBase !== "HP" ? inPlayBase : pr.startBase;
             const candidateTargets: ReadonlyArray<OccupiedBaseKey | "HP"> =
               inPlayBase === "3B"
                 ? ["3B", "HP"]
@@ -824,7 +895,11 @@ export function AtBatModalRunnerEditor({
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <div className="flex items-center gap-1.5">
                     <span className="px-2 py-0.5 rounded-md bg-amber-500 text-white text-[10px] font-black">
-                      {formatBaseJa(pr.startBase)}走者
+                      {precedingRunners.length >= 2 ? `${orderCircled} ` : ""}
+                      {formatBaseJa(displayCurrentBase)}走者
+                      {displayCurrentBase !== pr.startBase
+                        ? `（開始${formatBaseJa(pr.startBase)}）`
+                        : ""}
                     </span>
                     <span className="text-xs font-black text-foreground">
                       {pr.runner.battingOrder > 0
@@ -1489,9 +1564,9 @@ export function AtBatModalRunnerEditor({
                       aria-label="進塁元の塁"
                       className="col-span-3 h-8 px-1 rounded-lg bg-muted/50 border border-border text-[11px] font-black text-foreground"
                     >
-                      <option value="1B">1塁から</option>
-                      <option value="2B">2塁から</option>
                       <option value="3B">3塁から</option>
+                      <option value="2B">2塁から</option>
+                      <option value="1B">1塁から</option>
                       <option value="BAT">打者走者</option>
                     </select>
 
@@ -1506,10 +1581,10 @@ export function AtBatModalRunnerEditor({
                       aria-label="進塁先の塁"
                       className="col-span-3 h-8 px-1 rounded-lg bg-muted/50 border border-border text-[11px] font-black text-foreground"
                     >
-                      <option value="1B">→1塁</option>
-                      <option value="2B">→2塁</option>
-                      <option value="3B">→3塁</option>
                       <option value="HP">→本塁</option>
+                      <option value="3B">→3塁</option>
+                      <option value="2B">→2塁</option>
+                      <option value="1B">→1塁</option>
                     </select>
 
                     <select
