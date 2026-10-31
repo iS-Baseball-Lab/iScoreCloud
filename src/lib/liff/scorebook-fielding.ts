@@ -374,7 +374,12 @@ export function parseFieldingMeta(
         resultCode === "groundout" ||
         resultCode === "sac_bunt" ||
         resultCode === "dropped_third_strike_out" ||
-        resultCode === "fc"
+        resultCode === "fc" ||
+        (resultCode === "single" &&
+          (Number(codeDigitMatch[1]) <= 6 ||
+            label.includes("内野安打") ||
+            label.includes("内安") ||
+            label.includes("強襲")))
       ) {
         assistTargetPos = "unassisted";
       } else if (
@@ -415,7 +420,8 @@ export function parseFieldingMeta(
       label.includes("内野安打") ||
       label.includes("内安") ||
       label.includes("強襲") ||
-      label.includes("ランニング")
+      label.includes("ランニング") ||
+      (resultCode === "single" && Boolean(twoRelayMatch))
     ) {
       hitZone = "infield";
     } else if (label.includes("線")) {
@@ -618,7 +624,23 @@ export function composeFieldingResult(params: ComposeFieldingParams): {
       if (zone === "gap_rc") {
         return { battedDirection: "8-9", resultLabel: "右中間安打" };
       }
-      if (!isOutfield && zone !== "line" && zone !== "over") {
+      const isInfieldHit =
+        (!isOutfield && zone !== "line" && zone !== "over") ||
+        zone === "infield";
+      if (isInfieldHit) {
+        const target = params.assistTargetPos;
+        if (
+          target &&
+          target !== "unassisted" &&
+          target !== code &&
+          isValidPosDigit(target)
+        ) {
+          const dir = `${code}-${target}`;
+          return {
+            battedDirection: dir,
+            resultLabel: `${fullJa}内野安打 (${dir})`,
+          };
+        }
         const label =
           code === "1"
             ? "投強襲内野安打 (1)"
@@ -636,12 +658,6 @@ export function composeFieldingResult(params: ComposeFieldingParams): {
         return {
           battedDirection: code,
           resultLabel: `${shortJa}越安打`,
-        };
-      }
-      if (zone === "infield") {
-        return {
-          battedDirection: code,
-          resultLabel: `${shortJa}前安打`,
         };
       }
       return {
@@ -1061,7 +1077,10 @@ export function resolveFieldingOnResultChange(
     const wasThrowTargetPlay =
       prevResultCode === "groundout" ||
       prevResultCode === "sac_bunt" ||
-      prevResultCode === "fc";
+      prevResultCode === "fc" ||
+      (prevResultCode === "single" &&
+        (Number(pos) <= 6 || sourceMeta.hitZone === "infield")) ||
+      (prevResultCode === "error" && sourceMeta.errorStyle === "throwing");
     const nextAssist: AssistTargetOption | "" =
       nextResultCode === "error"
         ? sourceMeta.errorStyle === "throwing"
@@ -1077,6 +1096,17 @@ export function resolveFieldingOnResultChange(
               sourceMeta.assistTargetPos === "6") &&
             sourceMeta.assistTargetPos !== pos
           ? sourceMeta.assistTargetPos
+          : ""
+        : nextResultCode === "single"
+        ? (Number(pos) <= 6 &&
+            sourceMeta.hitZone !== "line" &&
+            sourceMeta.hitZone !== "over") ||
+          sourceMeta.hitZone === "infield"
+          ? wasThrowTargetPlay &&
+            sourceMeta.assistTargetPos &&
+            sourceMeta.assistTargetPos !== pos
+            ? sourceMeta.assistTargetPos
+            : "unassisted"
           : ""
         : wasThrowTargetPlay
         ? sourceMeta.assistTargetPos
@@ -1164,6 +1194,8 @@ export function harmonizeOcrFieldingAndLabel(
     "安打",
     "単打",
     "ヒット",
+    "内野安打",
+    "内安",
     "二塁打",
     "三塁打",
     "本塁打",

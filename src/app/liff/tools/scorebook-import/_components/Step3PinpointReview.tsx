@@ -59,9 +59,11 @@ import {
   createEmptyBaseMap,
   formatBaseJa,
   isForceOutGroundout,
+  pruneStaleSheetRunnerAdvances,
   resolveDeferredPersonalRunsMap,
   simulateSheetRunners,
   sortPrecedingRunnersClosestToHomeFirst,
+  syncAtBatAdvancesForManualRuns,
   type OccupiedBaseKey,
 } from "@/lib/liff/scorebook-runners";
 import {
@@ -538,7 +540,7 @@ export function Step3PinpointReview({
   ]);
 
   /**
-   * イニング昇順に整列しつつ、同一イニング内の並び順を維持して endingOuts（累積アウト）を再計算する
+   * イニング昇順に整列しつつ、すでに生還・アウト退場した走者の古い進塁行を後続打席から除去し、endingOuts（累積アウト）を再計算する
    */
   const recomputeSheetList = (items: ScorebookV2AtBat[]): ScorebookV2AtBat[] => {
     const byInning = new Map<number, ScorebookV2AtBat[]>();
@@ -550,18 +552,29 @@ export function Step3PinpointReview({
     }
 
     const sortedInns = Array.from(byInning.keys()).sort((a, b) => a - b);
-    const result: ScorebookV2AtBat[] = [];
-
+    const ordered: ScorebookV2AtBat[] = [];
     for (const inn of sortedInns) {
-      const group = byInning.get(inn) || [];
-      let cumOuts = 0;
-      for (const ab of group) {
-        cumOuts = Math.min(3, cumOuts + Math.max(0, ab.outsInPlay));
-        result.push({
-          ...ab,
-          endingOuts: ab.outsInPlay > 0 ? cumOuts : cumOuts,
-        });
+      ordered.push(...(byInning.get(inn) || []));
+    }
+
+    const pruned = pruneStaleSheetRunnerAdvances(
+      ordered,
+      currentStructure
+    ).atBats;
+
+    const result: ScorebookV2AtBat[] = [];
+    let activeInn = -1;
+    let cumOuts = 0;
+    for (const ab of pruned) {
+      if (ab.inning !== activeInn) {
+        activeInn = ab.inning;
+        cumOuts = 0;
       }
+      cumOuts = Math.min(3, cumOuts + Math.max(0, ab.outsInPlay));
+      result.push({
+        ...ab,
+        endingOuts: cumOuts,
+      });
     }
     return result;
   };
@@ -3157,9 +3170,23 @@ export function Step3PinpointReview({
                               : "4"
                             : "unassisted";
 
+                        const isSingleInfieldHit =
+                          effectiveCode === "single" &&
+                          ((Number(nextPos) <= 6 &&
+                            nextZone !== "line" &&
+                            nextZone !== "over") ||
+                            nextZone === "infield");
+
                         const nextAssist: AssistTargetOption | "" =
                           overrides?.assistTargetPos !== undefined
                             ? overrides.assistTargetPos
+                            : effectiveCode === "single"
+                            ? isSingleInfieldHit
+                              ? cur.assistTargetPos &&
+                                cur.assistTargetPos !== nextPos
+                                ? cur.assistTargetPos
+                                : "unassisted"
+                              : ""
                             : effectiveCode === "fc"
                             ? cur.assistTargetPos &&
                               cur.assistTargetPos !== nextPos
@@ -3413,6 +3440,12 @@ export function Step3PinpointReview({
                                               ? "7"
                                               : z.id === "gap_rc"
                                               ? "9"
+                                              : z.id === "infield" &&
+                                                rc === "single"
+                                              ? fMeta.primaryPos &&
+                                                Number(fMeta.primaryPos) <= 6
+                                                ? fMeta.primaryPos
+                                                : "6"
                                               : fMeta.primaryPos || "8";
                                           applyPositionSelection(basePos, {
                                             hitZone: z.id,
@@ -3434,6 +3467,94 @@ export function Step3PinpointReview({
                                 </div>
                               </div>
                             )}
+
+                            {/* 内野安打時の送球先セレクター（6-3 / 5-3 / 4-3 / 3-1 / 6のみ 等） */}
+                            {rc === "single" &&
+                              fMeta.primaryPos &&
+                              ((Number(fMeta.primaryPos) <= 6 &&
+                                fMeta.hitZone !== "line" &&
+                                fMeta.hitZone !== "over") ||
+                                fMeta.hitZone === "infield") && (
+                                <div className="pt-1">
+                                  <div className="p-2 rounded-xl bg-card border border-indigo-500/35 space-y-1">
+                                    <span className="text-[10px] font-black text-foreground block">
+                                      内野安打の送球先を指定（例:{" "}
+                                      {fMeta.primaryPos === "3"
+                                        ? "3-1 / 3のみ"
+                                        : `${fMeta.primaryPos}-3 / ${fMeta.primaryPos}のみ`}
+                                      ）:
+                                    </span>
+                                    <div className="grid grid-cols-3 gap-1">
+                                      {(
+                                        [
+                                          {
+                                            id: "3",
+                                            label: `一塁送球 (${fMeta.primaryPos}-3)`,
+                                          },
+                                          {
+                                            id: "1",
+                                            label: `一塁カバー投 (${fMeta.primaryPos}-1)`,
+                                          },
+                                          {
+                                            id: "4",
+                                            label: `二塁送球 (${fMeta.primaryPos}-4)`,
+                                          },
+                                          {
+                                            id: "6",
+                                            label: `二塁遊撃 (${fMeta.primaryPos}-6)`,
+                                          },
+                                          {
+                                            id: "5",
+                                            label: `三塁送球 (${fMeta.primaryPos}-5)`,
+                                          },
+                                          {
+                                            id: "2",
+                                            label: `本塁送球 (${fMeta.primaryPos}-2)`,
+                                          },
+                                          {
+                                            id: "unassisted",
+                                            label: `送球なし (${fMeta.primaryPos}のみ)`,
+                                          },
+                                        ] as const
+                                      )
+                                        .filter(
+                                          (tgt) => tgt.id !== fMeta.primaryPos
+                                        )
+                                        .map((tgt) => {
+                                          const effectiveInfieldHitTarget =
+                                            fMeta.assistTargetPos ||
+                                            "unassisted";
+                                          const isTgtActive =
+                                            effectiveInfieldHitTarget ===
+                                            tgt.id;
+                                          return (
+                                            <button
+                                              key={tgt.id}
+                                              type="button"
+                                              onClick={() =>
+                                                fMeta.primaryPos &&
+                                                applyPositionSelection(
+                                                  fMeta.primaryPos,
+                                                  {
+                                                    hitZone: "infield",
+                                                    assistTargetPos: tgt.id,
+                                                  }
+                                                )
+                                              }
+                                              className={`py-1.5 px-1 rounded-lg text-[10px] border transition-all cursor-pointer ${
+                                                isTgtActive
+                                                  ? "bg-indigo-600 text-white border-indigo-600 font-black"
+                                                  : "bg-muted/50 border-border text-foreground font-bold hover:bg-muted"
+                                              }`}
+                                            >
+                                              {tgt.label}
+                                            </button>
+                                          );
+                                        })}
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
 
                             {/* ゴロ・犠打・振逃アウト時の送球先（刺殺野手）セレクター */}
                             {isThrowOutCode && fMeta.primaryPos && (
@@ -3848,18 +3969,20 @@ export function Step3PinpointReview({
                         aria-label="この打席で入った得点"
                         onChange={(e) => {
                           const nextRuns = Number(e.target.value);
-                          const basesBefore =
-                            editingRunnerSnapshot?.basesBefore ||
-                            createEmptyBaseMap();
-                          updateSingleAtBat(editingAtBat.id, (prev) => ({
-                            ...prev,
-                            runsInPlay: nextRuns,
-                            rbi: computeDefaultRbiForAtBat(
-                              prev,
-                              nextRuns,
-                              basesBefore
-                            ),
-                          }));
+                          updateSingleAtBat(editingAtBat.id, (prev) => {
+                            const syncedManual =
+                              syncAtBatAdvancesForManualRuns(
+                                prev,
+                                nextRuns,
+                                editingRunnerSnapshot
+                              );
+                            return {
+                              ...prev,
+                              advances: syncedManual.advances,
+                              runsInPlay: syncedManual.runsInPlay,
+                              rbi: syncedManual.rbi,
+                            };
+                          });
                         }}
                         className="w-full h-9 px-1 rounded-xl bg-card border border-border text-xs font-black text-foreground"
                       >
@@ -3880,11 +4003,28 @@ export function Step3PinpointReview({
                         aria-label="打者の打点"
                         onChange={(e) => {
                           const nextRbi = Number(e.target.value);
-                          updateSingleAtBat(editingAtBat.id, (prev) => ({
-                            ...prev,
-                            rbi: nextRbi,
-                            runsInPlay: Math.max(prev.runsInPlay, nextRbi),
-                          }));
+                          updateSingleAtBat(editingAtBat.id, (prev) => {
+                            const targetRuns = Math.max(
+                              prev.runsInPlay,
+                              nextRbi
+                            );
+                            const syncedManual =
+                              targetRuns !== prev.runsInPlay
+                                ? syncAtBatAdvancesForManualRuns(
+                                    prev,
+                                    targetRuns,
+                                    editingRunnerSnapshot
+                                  )
+                                : null;
+                            return {
+                              ...prev,
+                              advances: syncedManual
+                                ? syncedManual.advances
+                                : prev.advances,
+                              rbi: nextRbi,
+                              runsInPlay: targetRuns,
+                            };
+                          });
                         }}
                         className="w-full h-9 px-1 rounded-xl bg-card border border-border text-xs font-black text-foreground"
                       >
