@@ -32,6 +32,11 @@ import {
 import { normalizePositionCode } from "@/lib/liff/scorebook-validator";
 import { ActionStatusBanner } from "./ActionStatusBanner";
 import {
+  FourCornerFineTuner,
+  clampSingleCornerInQuad,
+  type CornerKey,
+} from "./FourCornerFineTuner";
+import {
   formatElapsedSeconds,
   formatTotalElapsedSeconds,
   type ImportScopeMode,
@@ -134,9 +139,11 @@ export function Step2StructureCheck({
     "grid" | "lineup" | "full" | "hidden"
   >("grid");
   const [showGridTuner, setShowGridTuner] = useState(false);
-  const [draggingCorner, setDraggingCorner] = useState<
-    keyof ScorebookGridCorners | null
-  >(null);
+  const [gridTuneTab, setGridTuneTab] = useState<"corners" | "edges">(
+    "corners"
+  );
+  const [selectedCorner, setSelectedCorner] = useState<CornerKey>("tl");
+  const [draggingCorner, setDraggingCorner] = useState<CornerKey | null>(null);
   const gridContainerRef = useRef<HTMLDivElement | null>(null);
 
   const isTop = activeSide === "top";
@@ -167,8 +174,22 @@ export function Step2StructureCheck({
     Math.abs(gridCorners.tl[0] - gridCorners.bl[0]) >= 4 ||
     Math.abs(gridCorners.tr[0] - gridCorners.br[0]) >= 4;
 
+  const handleUpdateCornerCoordinate = (
+    key: CornerKey,
+    nextPoint: NormalizedPoint
+  ) => {
+    const nextCorners: ScorebookGridCorners = {
+      ...gridCorners,
+      [key]: nextPoint,
+    };
+    onChangeStructure(
+      isTop,
+      syncStructureBoxesFromCorners(current, nextCorners)
+    );
+  };
+
   const handleUpdateCornerPoint = (
-    key: keyof ScorebookGridCorners,
+    key: CornerKey,
     clientX: number,
     clientY: number
   ) => {
@@ -178,13 +199,9 @@ export function Step2StructureCheck({
     if (rect.width < 20 || rect.height < 20) return;
     const nx = clamp1000(((clientX - rect.left) / rect.width) * 1000);
     const ny = clamp1000(((clientY - rect.top) / rect.height) * 1000);
-    const nextCorners: ScorebookGridCorners = {
-      ...gridCorners,
-      [key]: [nx, ny] as NormalizedPoint,
-    };
-    onChangeStructure(
-      isTop,
-      syncStructureBoxesFromCorners(current, nextCorners)
+    handleUpdateCornerCoordinate(
+      key,
+      clampSingleCornerInQuad(gridCorners, key, nx, ny, 90, 125)
     );
   };
 
@@ -832,20 +849,47 @@ export function Step2StructureCheck({
                         </g>
                       );
                     })}
+                    {showGridTuner &&
+                      (["tl", "tr", "br", "bl"] as const).map((key) => {
+                        const pt = gridCorners[key];
+                        const isSelected = selectedCorner === key;
+                        const color = isSelected ? "#f59e0b" : "#38bdf8";
+                        return (
+                          <g key={`grid-cross-${key}`}>
+                            <line
+                              x1={pt[0] - 16}
+                              y1={pt[1]}
+                              x2={pt[0] + 16}
+                              y2={pt[1]}
+                              stroke={color}
+                              strokeWidth={isSelected ? "4" : "2.8"}
+                            />
+                            <line
+                              x1={pt[0]}
+                              y1={pt[1] - 16}
+                              x2={pt[0]}
+                              y2={pt[1] + 16}
+                              stroke={color}
+                              strokeWidth={isSelected ? "4" : "2.8"}
+                            />
+                          </g>
+                        );
+                      })}
                   </svg>
 
-                  {/* 枠ズレ微調整モード中は画像上の4隅（左上・右上・右下・左下）を直接指でドラッグして傾き・台形歪みにピタッと合わせられる！ */}
+                  {/* 枠ズレ微調整モード中は画像上の4隅（角が透けて見える中抜きリング）で選択＆ドラッグ調整 */}
                   {showGridTuner &&
                     (
                       [
-                        { key: "tl", label: "左上" },
-                        { key: "tr", label: "右上" },
-                        { key: "br", label: "右下" },
-                        { key: "bl", label: "左下" },
+                        { key: "tl", label: "左上", isTopRow: true },
+                        { key: "tr", label: "右上", isTopRow: true },
+                        { key: "br", label: "右下", isTopRow: false },
+                        { key: "bl", label: "左下", isTopRow: false },
                       ] as const
-                    ).map(({ key, label }) => {
+                    ).map(({ key, label, isTopRow }) => {
                       const pt = gridCorners[key];
                       const active = draggingCorner === key;
+                      const isSelected = selectedCorner === key;
                       return (
                         <button
                           key={key}
@@ -854,6 +898,7 @@ export function Step2StructureCheck({
                             e.preventDefault();
                             e.stopPropagation();
                             e.currentTarget.setPointerCapture(e.pointerId);
+                            setSelectedCorner(key);
                             setDraggingCorner(key);
                           }}
                           onPointerMove={(e) => {
@@ -872,14 +917,22 @@ export function Step2StructureCheck({
                             left: `${pt[0] / 10}%`,
                             top: `${pt[1] / 10}%`,
                           }}
-                          className={`absolute -translate-x-1/2 -translate-y-1/2 w-9 h-9 rounded-full border-2 border-white shadow-md flex items-center justify-center text-[9px] font-black text-white touch-none cursor-grab active:cursor-grabbing transition-transform ${
+                          className={`absolute -translate-x-1/2 -translate-y-1/2 w-9 h-9 rounded-full border-2 shadow-md touch-none cursor-grab active:cursor-grabbing transition-transform ${
                             active
-                              ? "bg-amber-500 scale-125 z-20"
-                              : "bg-indigo-600 z-10"
+                              ? "border-amber-400 bg-amber-500/25 scale-125 z-20"
+                              : isSelected
+                              ? "border-amber-400 bg-amber-500/15 ring-2 ring-white/80 z-20"
+                              : "border-indigo-400 bg-indigo-500/15 z-10"
                           }`}
-                          aria-label={`グリッド${label}角をドラッグ調整`}
+                          aria-label={`グリッド${label}角を選択・ドラッグ調整`}
                         >
-                          {label}
+                          <span
+                            className={`absolute left-1/2 -translate-x-1/2 px-1.5 py-0.5 rounded text-[8px] font-black text-white whitespace-nowrap pointer-events-none shadow-2xs ${
+                              isTopRow ? "-bottom-4" : "-top-4"
+                            } ${isSelected ? "bg-amber-500" : "bg-indigo-600"}`}
+                          >
+                            {label}
+                          </span>
                         </button>
                       );
                     })}
@@ -918,26 +971,67 @@ export function Step2StructureCheck({
               </div>
 
               {showGridTuner && (
-                <div className="space-y-2 pt-0.5">
-                  <div className="px-2.5 py-2 rounded-xl bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <Move className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
-                      <span className="text-[10px] font-black text-foreground leading-snug">
-                        原本が傾いている・歪んでいる時は、上の画像の<strong>「左上・右上・右下・左下」の丸印</strong>を指でドラッグして表の4隅に合わせてください
-                      </span>
+                <div className="space-y-2.5 pt-0.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-muted border border-border flex-1">
+                      <button
+                        type="button"
+                        onClick={() => setGridTuneTab("corners")}
+                        className={`py-1.5 px-2 rounded-lg text-[10px] font-black transition-all cursor-pointer ${
+                          gridTuneTab === "corners"
+                            ? "bg-indigo-600 text-white shadow-2xs"
+                            : "text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        4隅を1点ずつ微調整（目盛り）
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setGridTuneTab("edges")}
+                        className={`py-1.5 px-2 rounded-lg text-[10px] font-black transition-all cursor-pointer ${
+                          gridTuneTab === "edges"
+                            ? "bg-indigo-600 text-white shadow-2xs"
+                            : "text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        4辺をまとめて平行移動
+                      </button>
                     </div>
+
                     {isGridSkewed && (
                       <button
                         type="button"
                         onClick={handleResetSkewToRectangle}
-                        className="px-2 py-1 rounded-lg bg-card border border-border text-[9px] font-black text-muted-foreground hover:text-foreground shrink-0 cursor-pointer"
+                        className="px-2.5 py-2 rounded-xl bg-card border border-border text-[10px] font-black text-muted-foreground hover:text-foreground shrink-0 cursor-pointer"
                       >
                         水平に戻す
                       </button>
                     )}
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2">
+                  {gridTuneTab === "corners" ? (
+                    <FourCornerFineTuner
+                      previewUrl={activeSheetDataUrl}
+                      corners={gridCorners}
+                      selectedCorner={selectedCorner}
+                      onSelectCorner={setSelectedCorner}
+                      onChangeCorner={handleUpdateCornerCoordinate}
+                      minGapX={90}
+                      minGapY={125}
+                      disabled={isBusy}
+                      accentColor="indigo"
+                      targetDescription={`1回〜最終回・1番〜${current.batters.length}番の表の四隅`}
+                    />
+                  ) : (
+                    <>
+                      <div className="px-2.5 py-2 rounded-xl bg-indigo-500/10 border border-indigo-500/30 flex items-center gap-1.5">
+                        <Move className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                        <span className="text-[10px] font-black text-foreground leading-snug">
+                          上下左右の辺全体を平行にスライドします（傾き・歪みを1点ずつ直す場合は「4隅を1点ずつ微調整」タブをご利用ください）
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
                     {/* 1回左端（選手欄との境界） */}
                     <div className="p-2 rounded-2xl bg-muted/45 border border-border space-y-1">
                       <div className="flex items-center justify-between">
@@ -1113,9 +1207,11 @@ export function Step2StructureCheck({
                         >
                           +
                         </button>
+                        </div>
                       </div>
-                    </div>
-                  </div>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
             </div>

@@ -27,6 +27,11 @@ import { ScorebookCameraModal } from "@/components/liff/ScorebookCameraModal";
 import { loadLiffScoreSettings } from "@/lib/liff/score-settings";
 import { bilinearGridPoint, clamp1000 } from "@/lib/liff/scorebook-grid";
 import { ActionStatusBanner } from "./ActionStatusBanner";
+import {
+  FourCornerFineTuner,
+  clampSingleCornerInQuad,
+  type CornerKey,
+} from "./FourCornerFineTuner";
 import type {
   ImportScopeMode,
   NormalizedPoint,
@@ -153,16 +158,15 @@ function PerspectiveCornerEditor({
   const [draft, setDraft] = useState<ScorebookGridCorners>(
     () => appliedCorners || DEFAULT_PERSPECTIVE_CORNERS
   );
-  const [draggingKey, setDraggingKey] = useState<
-    keyof ScorebookGridCorners | null
-  >(null);
+  const [selectedCorner, setSelectedCorner] = useState<CornerKey>("tl");
+  const [draggingKey, setDraggingKey] = useState<CornerKey | null>(null);
 
   useEffect(() => {
     setDraft(appliedCorners || DEFAULT_PERSPECTIVE_CORNERS);
   }, [appliedCorners]);
 
   const updatePointFromClient = (
-    key: keyof ScorebookGridCorners,
+    key: CornerKey,
     clientX: number,
     clientY: number
   ) => {
@@ -173,54 +177,45 @@ function PerspectiveCornerEditor({
     const nx = clamp1000(((clientX - rect.left) / rect.width) * 1000);
     const ny = clamp1000(((clientY - rect.top) / rect.height) * 1000);
 
-    setDraft((prev) => {
-      const next = { ...prev, [key]: [nx, ny] as NormalizedPoint };
-      if (key === "tl") {
-        next.tl = [
-          Math.min(nx, prev.tr[0] - 120),
-          Math.min(ny, prev.bl[1] - 140),
-        ];
-      } else if (key === "tr") {
-        next.tr = [
-          Math.max(nx, prev.tl[0] + 120),
-          Math.min(ny, prev.br[1] - 140),
-        ];
-      } else if (key === "br") {
-        next.br = [
-          Math.max(nx, prev.bl[0] + 120),
-          Math.max(ny, prev.tr[1] + 140),
-        ];
-      } else if (key === "bl") {
-        next.bl = [
-          Math.min(nx, prev.br[0] - 120),
-          Math.max(ny, prev.tl[1] + 140),
-        ];
-      }
-      return next;
-    });
+    setDraft((prev) => ({
+      ...prev,
+      [key]: clampSingleCornerInQuad(prev, key, nx, ny, 120, 140),
+    }));
   };
 
   const handleMeta: Array<{
-    key: keyof ScorebookGridCorners;
+    key: CornerKey;
     label: string;
+    isTopRow: boolean;
   }> = [
-    { key: "tl", label: "左上" },
-    { key: "tr", label: "右上" },
-    { key: "br", label: "右下" },
-    { key: "bl", label: "左下" },
+    { key: "tl", label: "左上", isTopRow: true },
+    { key: "tr", label: "右上", isTopRow: true },
+    { key: "br", label: "右下", isTopRow: false },
+    { key: "bl", label: "左下", isTopRow: false },
   ];
 
   const polyPoints = `${draft.tl[0]},${draft.tl[1]} ${draft.tr[0]},${draft.tr[1]} ${draft.br[0]},${draft.br[1]} ${draft.bl[0]},${draft.bl[1]}`;
 
+  const hasUnappliedChanges =
+    !appliedCorners ||
+    draft.tl[0] !== appliedCorners.tl[0] ||
+    draft.tl[1] !== appliedCorners.tl[1] ||
+    draft.tr[0] !== appliedCorners.tr[0] ||
+    draft.tr[1] !== appliedCorners.tr[1] ||
+    draft.br[0] !== appliedCorners.br[0] ||
+    draft.br[1] !== appliedCorners.br[1] ||
+    draft.bl[0] !== appliedCorners.bl[0] ||
+    draft.bl[1] !== appliedCorners.bl[1];
+
   return (
     <div className="space-y-2.5">
       <p className="text-[10px] font-bold text-foreground leading-relaxed">
-        斜め撮影やバインダーの歪みがある場合、水色の●（4隅）を指でドラッグして<strong>スコアブック用紙の4隅（外枠角）</strong>に合わせ、「この4隅で真っ直ぐ補正」を押してください。
+        画像上の4隅で大まかに合わせたあと、下の<strong>目盛りスライダー（上下・左右）</strong>で4点それぞれをミリ単位で微調整し、「この4隅で真っ直ぐ補正」を押してください。
       </p>
 
       <div
         ref={containerRef}
-        className="relative w-full rounded-xl overflow-hidden bg-slate-950 border-2 border-sky-500/60 select-none touch-none"
+        className="relative w-full rounded-xl overflow-hidden bg-slate-950 border-2 border-sky-500/60 select-none"
       >
         <img
           src={previewUrl}
@@ -238,7 +233,7 @@ function PerspectiveCornerEditor({
             points={polyPoints}
             fill="rgba(14, 165, 233, 0.12)"
             stroke="#0ea5e9"
-            strokeWidth="5"
+            strokeWidth="4.5"
           />
           {/* 3分割の歪み確認ガイド線 */}
           {[0.25, 0.5, 0.75].map((r) => {
@@ -269,12 +264,39 @@ function PerspectiveCornerEditor({
               </g>
             );
           })}
+          {/* 各4隅の中心十字ターゲット（丸印で角が隠れない透過クロスヘア） */}
+          {handleMeta.map(({ key }) => {
+            const pt = draft[key];
+            const isSelected = selectedCorner === key;
+            const color = isSelected ? "#f59e0b" : "#38bdf8";
+            return (
+              <g key={`cross-${key}`}>
+                <line
+                  x1={pt[0] - 18}
+                  y1={pt[1]}
+                  x2={pt[0] + 18}
+                  y2={pt[1]}
+                  stroke={color}
+                  strokeWidth={isSelected ? "4" : "3"}
+                />
+                <line
+                  x1={pt[0]}
+                  y1={pt[1] - 18}
+                  x2={pt[0]}
+                  y2={pt[1] + 18}
+                  stroke={color}
+                  strokeWidth={isSelected ? "4" : "3"}
+                />
+              </g>
+            );
+          })}
         </svg>
 
-        {/* 指で掴みやすい大判4隅ドラッグハンドル */}
-        {handleMeta.map(({ key, label }) => {
+        {/* 角が透けて見える中抜きリング型4隅ドラッグ＆選択ハンドル */}
+        {handleMeta.map(({ key, label, isTopRow }) => {
           const pt = draft[key];
-          const isActive = draggingKey === key;
+          const isDragging = draggingKey === key;
+          const isSelected = selectedCorner === key;
           return (
             <button
               key={key}
@@ -283,6 +305,7 @@ function PerspectiveCornerEditor({
                 e.preventDefault();
                 e.stopPropagation();
                 e.currentTarget.setPointerCapture(e.pointerId);
+                setSelectedCorner(key);
                 setDraggingKey(key);
               }}
               onPointerMove={(e) => {
@@ -301,26 +324,60 @@ function PerspectiveCornerEditor({
                 left: `${pt[0] / 10}%`,
                 top: `${pt[1] / 10}%`,
               }}
-              className={`absolute -translate-x-1/2 -translate-y-1/2 w-9 h-9 rounded-full border-2 border-white shadow-md flex items-center justify-center text-[9px] font-black text-white touch-none cursor-grab active:cursor-grabbing transition-transform ${
-                isActive ? "bg-amber-500 scale-125 z-20" : "bg-sky-600 z-10"
+              className={`absolute -translate-x-1/2 -translate-y-1/2 w-9 h-9 rounded-full border-2 shadow-md touch-none cursor-grab active:cursor-grabbing transition-transform ${
+                isDragging
+                  ? "border-amber-400 bg-amber-500/25 scale-125 z-20"
+                  : isSelected
+                  ? "border-amber-400 bg-amber-500/15 ring-2 ring-white/80 z-20"
+                  : "border-sky-400 bg-sky-500/15 z-10"
               }`}
-              aria-label={`${label}ハンドル`}
+              aria-label={`${label}を選択・ドラッグ調整`}
             >
-              {label}
+              <span
+                className={`absolute left-1/2 -translate-x-1/2 px-1.5 py-0.5 rounded text-[8px] font-black text-white whitespace-nowrap pointer-events-none shadow-2xs ${
+                  isTopRow ? "-bottom-4" : "-top-4"
+                } ${isSelected ? "bg-amber-500" : "bg-sky-600"}`}
+              >
+                {label}
+              </span>
             </button>
           );
         })}
       </div>
+
+      {/* 目盛りによる4点個別（上下・左右）微調整パネル＋4倍/8倍拡大ルーペ */}
+      <FourCornerFineTuner
+        previewUrl={previewUrl}
+        corners={draft}
+        selectedCorner={selectedCorner}
+        onSelectCorner={setSelectedCorner}
+        onChangeCorner={(key, nextPt) =>
+          setDraft((prev) => ({ ...prev, [key]: nextPt }))
+        }
+        minGapX={120}
+        minGapY={140}
+        disabled={isProcessing}
+        accentColor="sky"
+        targetDescription="スコアブック用紙の外枠の角"
+      />
 
       <div className="flex items-center gap-2">
         <button
           type="button"
           disabled={isProcessing}
           onClick={() => onApply(draft)}
-          className="flex-1 py-2.5 px-3 rounded-xl bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-xs active:scale-98 transition-all cursor-pointer"
+          className={`flex-1 py-2.5 px-3 rounded-xl disabled:opacity-50 text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-xs active:scale-98 transition-all cursor-pointer ${
+            appliedCorners && hasUnappliedChanges
+              ? "bg-amber-600 hover:bg-amber-700"
+              : "bg-sky-600 hover:bg-sky-700"
+          }`}
         >
           <Scan className="w-3.5 h-3.5" />
-          <span>この4隅で真っ直ぐ補正</span>
+          <span>
+            {appliedCorners && hasUnappliedChanges
+              ? "微調整した4隅で再補正する"
+              : "この4隅で真っ直ぐ補正"}
+          </span>
         </button>
 
         {appliedCorners && (
