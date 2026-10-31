@@ -1140,8 +1140,152 @@ export function simulateSheetRunners(
   return resultMap;
 }
 
+const ZERO_RBI_RESULT_CODES: ReadonlySet<CanonicalAtBatResult> = new Set([
+  "double_play",
+  "triple_play",
+  "error",
+  "strikeout",
+  "dropped_third_strike",
+  "dropped_third_strike_out",
+  "interference_out",
+  "other",
+]);
+
+function isAwardedFirstBaseResult(rc: CanonicalAtBatResult): boolean {
+  return (
+    rc === "walk" ||
+    rc === "intentional_walk" ||
+    rc === "hit_by_pitch" ||
+    rc === "interference"
+  );
+}
+
 /**
- * D1保存時や初期整合用に、暗黙の押し出し・生還・封殺進塁を実体の ScorebookV2Advance 配列へ具体化し、
+ * 打席開始時の塁マップに対してタイブレーク走者および投球間イベント（盗塁・暴投・捕逸・ボーク・牽制等）を適用し、
+ * インプレー（または四死球確定）時点の正確な走者配置を返す
+ */
+export function computeBasesAtInPlayFromAdvances(
+  basesBefore: BaseRunnerMap,
+  advances: ScorebookV2Advance[]
+): BaseRunnerMap {
+  const working = cloneBaseMap(basesBefore);
+  for (const adv of advances) {
+    if (
+      adv.method === "tiebreak" &&
+      !adv.isOut &&
+      (adv.to === "1B" || adv.to === "2B" || adv.to === "3B") &&
+      !working[adv.to]
+    ) {
+      working[adv.to] = {
+        battingOrder: 0,
+        name: adv.runnerName || "走者",
+        playerId: null,
+      };
+    }
+  }
+
+  const prePlayPool = advances.filter(
+    (a) =>
+      !isNoOpHoldAdvance(a) &&
+      a.from !== "BAT" &&
+      isPrePlayAdvanceMethod(a.method)
+  );
+  if (prePlayPool.length === 0) {
+    return working;
+  }
+
+  const slots: Array<{
+    currentBase: OccupiedBaseKey | "HP" | null;
+    runner: RunnerOnBase;
+  }> = [];
+  for (const bKey of ["3B", "2B", "1B"] as const) {
+    if (working[bKey]) {
+      slots.push({ currentBase: bKey, runner: { ...working[bKey] } });
+    }
+  }
+
+  const usedIds = new Set<string>();
+  let wave = 0;
+  while (wave < 6) {
+    wave += 1;
+    let moved = false;
+    for (const sl of slots) {
+      if (!sl.currentBase || sl.currentBase === "HP") continue;
+      const curBase = sl.currentBase;
+      const match =
+        prePlayPool.find(
+          (a) =>
+            !usedIds.has(a.id) &&
+            a.from === curBase &&
+            a.runnerName &&
+            namesLikelyMatch(a.runnerName, sl.runner.name)
+        ) || prePlayPool.find((a) => !usedIds.has(a.id) && a.from === curBase);
+      if (match) {
+        usedIds.add(match.id);
+        moved = true;
+        sl.currentBase = match.isOut ? null : match.to;
+      }
+    }
+    if (!moved) break;
+  }
+
+  const afterPre = createEmptyBaseMap();
+  for (const sl of slots) {
+    if (
+      sl.currentBase === "1B" ||
+      sl.currentBase === "2B" ||
+      sl.currentBase === "3B"
+    ) {
+      afterPre[sl.currentBase] = sl.runner;
+    }
+  }
+  return afterPre;
+}
+
+/**
+ * 指定された打席結果・進塁内容・打席得点に対する野球規則準拠の標準打点（RBI）を算出する
+ */
+export function computeDefaultRbiForAtBat(
+  ab: Pick<ScorebookV2AtBat, "resultCode" | "advances">,
+  nextRunsInPlay: number,
+  basesBefore: BaseRunnerMap
+): number {
+  const safeRuns = Math.max(0, nextRunsInPlay);
+  if (safeRuns === 0) return 0;
+  if (ZERO_RBI_RESULT_CODES.has(ab.resultCode)) {
+    return 0;
+  }
+
+  const realAdvances = ab.advances.filter((a) => !isNoOpHoldAdvance(a));
+  const basesAtPlay = computeBasesAtInPlayFromAdvances(
+    basesBefore,
+    realAdvances
+  );
+  const isBasesLoadedAtPlay = Boolean(
+    basesAtPlay["1B"] && basesAtPlay["2B"] && basesAtPlay["3B"]
+  );
+
+  if (isAwardedFirstBaseResult(ab.resultCode)) {
+    return isBasesLoadedAtPlay ? 1 : 0;
+  }
+
+  const nonRbiExplicitHp = realAdvances.filter(
+    (a) =>
+      !a.isOut &&
+      a.to === "HP" &&
+      a.method !== "other" &&
+      !RBI_ELIGIBLE_METHODS.has(a.method)
+  ).length;
+
+  if (ab.resultCode === "home_run") {
+    return Math.max(1, safeRuns - nonRbiExplicitHp);
+  }
+
+  return Math.max(0, safeRuns - nonRbiExplicitHp);
+}
+
+/**
+ * D1保存時や初期整合用に、暗黙の押し出し・生還・封殺進塁および本塁打の打者自身生還を実体の ScorebookV2Advance 配列へ具体化し、
  * UI専用の「そのまま残留マーカー（from === to && !isOut）」を除去したクリーンな打席リストを返す
  */
 export function materializeSheetRunnerAdvances(
@@ -1168,7 +1312,23 @@ export function materializeSheetRunnerAdvances(
           : a;
       });
 
-    // 2. 暗黙推論された先行走者の実移動を追加
+    // 2. 本塁打で打者自身の BAT -> HP 生還が明示登録されていなければ必ず具体化（個人成績の得点・打点集計に必須）
+    const batterHrAdd: ScorebookV2Advance[] = [];
+    if (
+      ab.resultCode === "home_run" &&
+      !cleanedExplicit.some((a) => a.from === "BAT" && a.to === "HP" && !a.isOut)
+    ) {
+      batterHrAdd.push({
+        id: crypto.randomUUID(),
+        runnerName: ab.batterName,
+        from: "BAT",
+        to: "HP",
+        method: "hit",
+        isOut: false,
+      });
+    }
+
+    // 3. 暗黙推論された先行走者の実移動を追加
     const implicitToAdd: ScorebookV2Advance[] = snap.precedingRunnerMoves
       .filter((m) => m.isImplicit && (m.isOut || m.from !== m.to))
       .map((m) => ({
@@ -1180,9 +1340,56 @@ export function materializeSheetRunnerAdvances(
         isOut: m.isOut,
       }));
 
+    const combined = [...cleanedExplicit, ...batterHrAdd, ...implicitToAdd];
+
+    // 4. 手動で打席得点 runsInPlay が増やされているのに HP 生還行が不足している場合、塁上の先行走者（3B→2B→1B）を生還へ昇格
+    const currentSafeHp = combined.filter(
+      (a) => !a.isOut && a.to === "HP"
+    ).length;
+    let deficit = Math.max(0, ab.runsInPlay - currentSafeHp);
+    if (deficit > 0 && snap.precedingRunners.length > 0) {
+      const fallbackMethod: AdvanceMethodCode = isAwardedFirstBaseResult(
+        ab.resultCode
+      )
+        ? "wp"
+        : getDefaultInPlayMethodForResult(ab.resultCode, false);
+      for (const pr of snap.precedingRunners) {
+        if (deficit <= 0) break;
+        if (pr.isOut || pr.finalBase === "HP") continue;
+        const startFrom: OccupiedBaseKey =
+          pr.baseAtInPlay && pr.baseAtInPlay !== "HP"
+            ? pr.baseAtInPlay
+            : pr.startBase;
+        const existingIdx = combined.findIndex(
+          (a) =>
+            !a.isOut &&
+            a.from === startFrom &&
+            a.to !== "HP" &&
+            (!a.runnerName || namesLikelyMatch(a.runnerName, pr.runner.name))
+        );
+        if (existingIdx >= 0) {
+          combined[existingIdx] = {
+            ...combined[existingIdx],
+            to: "HP",
+            method: fallbackMethod,
+          };
+        } else {
+          combined.push({
+            id: crypto.randomUUID(),
+            runnerName: pr.runner.name,
+            from: startFrom,
+            to: "HP",
+            method: fallbackMethod,
+            isOut: false,
+          });
+        }
+        deficit -= 1;
+      }
+    }
+
     return {
       ...ab,
-      advances: [...cleanedExplicit, ...implicitToAdd],
+      advances: combined,
     };
   });
 }
@@ -1233,14 +1440,12 @@ export function computeSyncedStatsFromAdvances(
     outsInPlay = Math.min(3 - outsBefore, outsInPlay);
   }
 
-  // 一次シミュレーションで暗黙生還（本塁打・満塁四球等）も含めた正確な本塁生還数を計算
-  const tempAb: ScorebookV2AtBat = {
-    ...ab,
-    outsInPlay,
-    runsInPlay: 0,
-    advances: nextAdvances,
-  };
+  const basesAtPlay = computeBasesAtInPlayFromAdvances(
+    basesBefore,
+    realAdvances
+  );
   const occupiedCount = countOccupiedBases(basesBefore);
+  const outsAfterPlay = Math.min(3, outsBefore + outsInPlay);
   let runsInPlay = 0;
   let rbi = 0;
 
@@ -1248,41 +1453,65 @@ export function computeSyncedStatsFromAdvances(
     const outRunners = realAdvances.filter(
       (a) => a.isOut && a.from !== "BAT"
     ).length;
+    const nonRbiExplicitHp = realAdvances.filter(
+      (a) =>
+        !a.isOut &&
+        a.to === "HP" &&
+        a.method !== "other" &&
+        !RBI_ELIGIBLE_METHODS.has(a.method)
+    ).length;
     runsInPlay = Math.max(1, 1 + Math.max(0, occupiedCount - outRunners));
-    rbi = runsInPlay;
+    rbi = Math.max(1, runsInPlay - nonRbiExplicitHp);
   } else {
     const explicitSafeHp = realAdvances.filter(
       (a) => !a.isOut && a.to === "HP"
     );
-    // 満塁での四死球押し出しで 3B の明示登録が無い場合もカウント
-    const isAwardedFirst =
-      tempAb.resultCode === "walk" ||
-      tempAb.resultCode === "intentional_walk" ||
-      tempAb.resultCode === "hit_by_pitch" ||
-      tempAb.resultCode === "interference";
-    const hasExplicit3BMove = nextAdvances.some((a) => a.from === "3B");
-    const implicitBasesLoadedWalkScore =
-      isAwardedFirst &&
-      Boolean(basesBefore["1B"]) &&
-      Boolean(basesBefore["2B"]) &&
-      Boolean(basesBefore["3B"]) &&
-      !hasExplicit3BMove
-        ? 1
-        : 0;
+    const isAwardedFirst = isAwardedFirstBaseResult(ab.resultCode);
+    const isBasesLoadedAtPlay = Boolean(
+      basesAtPlay["1B"] && basesAtPlay["2B"] && basesAtPlay["3B"]
+    );
+    const hasExplicitInPlay3BMove = realAdvances.some(
+      (a) => a.from === "3B" && !isPrePlayAdvanceMethod(a.method)
+    );
 
-    runsInPlay = explicitSafeHp.length + implicitBasesLoadedWalkScore;
+    let implicitRbiHp = 0;
+    if (isAwardedFirst) {
+      if (isBasesLoadedAtPlay && !hasExplicitInPlay3BMove) {
+        implicitRbiHp = 1;
+      }
+    } else if (outsAfterPlay < 3 && ab.resultCode === "triple") {
+      for (const bKey of ["3B", "2B", "1B"] as const) {
+        if (
+          basesAtPlay[bKey] &&
+          !realAdvances.some(
+            (a) => a.from === bKey && !isPrePlayAdvanceMethod(a.method)
+          )
+        ) {
+          implicitRbiHp += 1;
+        }
+      }
+    } else if (outsAfterPlay < 3 && ab.resultCode === "double") {
+      if (
+        basesAtPlay["3B"] &&
+        !realAdvances.some(
+          (a) => a.from === "3B" && !isPrePlayAdvanceMethod(a.method)
+        )
+      ) {
+        implicitRbiHp = 1;
+      }
+    }
 
-    if (
-      ab.resultCode === "double_play" ||
-      ab.resultCode === "triple_play" ||
-      ab.resultCode === "error"
-    ) {
+    runsInPlay = explicitSafeHp.length + implicitRbiHp;
+
+    if (ZERO_RBI_RESULT_CODES.has(ab.resultCode)) {
       rbi = 0;
+    } else if (isAwardedFirst) {
+      rbi = isBasesLoadedAtPlay && runsInPlay >= 1 ? 1 : 0;
     } else {
-      const rbiFromExplicit = explicitSafeHp.filter((a) =>
-        RBI_ELIGIBLE_METHODS.has(a.method)
+      const rbiFromExplicit = explicitSafeHp.filter(
+        (a) => RBI_ELIGIBLE_METHODS.has(a.method) || a.method === "other"
       ).length;
-      rbi = rbiFromExplicit + implicitBasesLoadedWalkScore;
+      rbi = Math.max(0, Math.min(runsInPlay, rbiFromExplicit + implicitRbiHp));
     }
   }
 
@@ -1735,4 +1964,847 @@ export function buildSmartAdvancesForResultChange(params: {
     runsInPlay: synced.runsInPlay,
     rbi: synced.rbi,
   };
+}
+
+export interface DeferredPersonalRunInfo {
+  scorerAtBatId: string;
+  scorerBattingOrder: number;
+  scorerName: string;
+  scorerResultLabel: string;
+  scoredFromBase: OccupiedBaseKey;
+  scoredMethod: AdvanceMethodCode;
+}
+
+/**
+ * 早稲田式・成美堂式スコアブックで出塁打者マスの中央に「●（個人得点）」が書かれるケースに対応し、
+ * 「この打席で出塁した走者が、同イニング後続の誰の打席で本塁生還したか」を逆引きマップとして返す
+ */
+export function resolveDeferredPersonalRunsMap(
+  atBats: ScorebookV2AtBat[],
+  snapshots: Map<string, AtBatRunnerSnapshot>
+): Map<string, DeferredPersonalRunInfo> {
+  const result = new Map<string, DeferredPersonalRunInfo>();
+  if (atBats.length === 0) return result;
+
+  const byInning = new Map<number, ScorebookV2AtBat[]>();
+  for (const ab of atBats) {
+    const arr = byInning.get(ab.inning) || [];
+    arr.push(ab);
+    byInning.set(ab.inning, arr);
+  }
+
+  for (const [, innList] of byInning) {
+    for (let j = 1; j < innList.length; j++) {
+      const scorerAb = innList[j];
+      const scorerSnap = snapshots.get(scorerAb.id);
+      if (!scorerSnap) continue;
+
+      for (const pr of scorerSnap.precedingRunners) {
+        if (pr.isOut || pr.finalBase !== "HP") continue;
+
+        // j より前の同一イニング打席のうち、該当走者が出塁した直近の打席を特定
+        for (let i = j - 1; i >= 0; i--) {
+          const priorAb = innList[i];
+          const priorSnap = snapshots.get(priorAb.id);
+          if (!priorSnap) continue;
+          const bSum = priorSnap.batterSummary;
+          const reachedBaseSafely =
+            !bSum.isOutOnBases &&
+            (bSum.finalBase === "1B" ||
+              bSum.finalBase === "2B" ||
+              bSum.finalBase === "3B");
+          if (!reachedBaseSafely) continue;
+
+          const orderMatches =
+            pr.runner.battingOrder > 0 &&
+            priorAb.battingOrder === pr.runner.battingOrder;
+          const nameMatches =
+            pr.runner.battingOrder <= 0 &&
+            Boolean(pr.runner.name) &&
+            namesLikelyMatch(pr.runner.name, priorAb.batterName);
+
+          if (orderMatches || nameMatches) {
+            if (!result.has(priorAb.id)) {
+              result.set(priorAb.id, {
+                scorerAtBatId: scorerAb.id,
+                scorerBattingOrder: scorerAb.battingOrder,
+                scorerName: scorerAb.batterName || "打者",
+                scorerResultLabel: scorerAb.resultLabel,
+                scoredFromBase: pr.startBase,
+                scoredMethod: pr.effectiveMethod,
+              });
+            }
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  return result;
+}
+
+function scoreDownstreamRunCandidate(
+  ab: ScorebookV2AtBat,
+  snap: AtBatRunnerSnapshot,
+  pr: PrecedingRunnerSummary,
+  isDeferredMarkedOrder: boolean
+): { score: number; method: AdvanceMethodCode; startFrom: OccupiedBaseKey } | null {
+  if (pr.isOut || pr.finalBase === "HP") return null;
+  const inPlayBase: OccupiedBaseKey =
+    pr.baseAtInPlay && pr.baseAtInPlay !== "HP"
+      ? pr.baseAtInPlay
+      : pr.startBase;
+
+  const baseBonus =
+    inPlayBase === "3B" ? 32 : inPlayBase === "2B" ? 22 : 12;
+  const deferredBonus = isDeferredMarkedOrder ? 45 : 0;
+  const rc = ab.resultCode;
+
+  // 3アウト到達打席では投球間（暴投等）以外のインプレー得点は不可
+  if (snap.outsAfter >= 3) {
+    if (snap.outsBefore < 3 && inPlayBase === "3B") {
+      return {
+        score: 14 + deferredBonus,
+        method: "wp",
+        startFrom: pr.startBase,
+      };
+    }
+    return null;
+  }
+
+  if (isAwardedFirstBaseResult(rc)) {
+    const basesAtPlay = computeBasesAtInPlayFromAdvances(
+      snap.basesBefore,
+      ab.advances
+    );
+    const isLoaded = Boolean(
+      basesAtPlay["1B"] && basesAtPlay["2B"] && basesAtPlay["3B"]
+    );
+    if (isLoaded && inPlayBase === "3B") {
+      return {
+        score: 88 + baseBonus + deferredBonus,
+        method: "walk",
+        startFrom: inPlayBase,
+      };
+    }
+    if (inPlayBase === "3B") {
+      return {
+        score: 20 + deferredBonus,
+        method: "wp",
+        startFrom: pr.startBase,
+      };
+    }
+    return null;
+  }
+
+  switch (rc) {
+    case "home_run":
+    case "triple":
+      return {
+        score: 105 + baseBonus + deferredBonus,
+        method: "hit",
+        startFrom: inPlayBase,
+      };
+    case "double":
+      return {
+        score: 95 + baseBonus + deferredBonus,
+        method: "hit",
+        startFrom: inPlayBase,
+      };
+    case "sac_fly":
+      if (inPlayBase !== "3B") return null;
+      return {
+        score: 96 + baseBonus + deferredBonus,
+        method: "sac",
+        startFrom: inPlayBase,
+      };
+    case "single":
+      return {
+        score:
+          (inPlayBase === "1B" ? 60 : 86) + baseBonus + deferredBonus,
+        method: "hit",
+        startFrom: inPlayBase,
+      };
+    case "error":
+      return {
+        score: 74 + baseBonus + deferredBonus,
+        method: "error",
+        startFrom: inPlayBase,
+      };
+    case "fc":
+      return {
+        score:
+          (inPlayBase === "3B" ? 72 : 52) + baseBonus + deferredBonus,
+        method: "fc",
+        startFrom: inPlayBase,
+      };
+    case "sac_bunt":
+      if (inPlayBase !== "3B") return null;
+      return {
+        score: 70 + baseBonus + deferredBonus,
+        method: "sac",
+        startFrom: inPlayBase,
+      };
+    case "groundout":
+      if (inPlayBase === "1B") return null;
+      return {
+        score:
+          (inPlayBase === "3B" ? 66 : 42) + baseBonus + deferredBonus,
+        method: "fc",
+        startFrom: inPlayBase,
+      };
+    case "double_play":
+      if (snap.outsBefore > 0 || inPlayBase !== "3B") return null;
+      return {
+        score: 54 + baseBonus + deferredBonus,
+        method: "fc",
+        startFrom: inPlayBase,
+      };
+    case "flyout":
+      if (inPlayBase !== "3B") return null;
+      return {
+        score: 48 + baseBonus + deferredBonus,
+        method: "sac",
+        startFrom: inPlayBase,
+      };
+    case "dropped_third_strike":
+      if (inPlayBase !== "3B") return null;
+      return {
+        score: 36 + baseBonus + deferredBonus,
+        method: "wp",
+        startFrom: pr.startBase,
+      };
+    case "strikeout":
+    case "dropped_third_strike_out":
+    case "infield_fly":
+      if (inPlayBase !== "3B") return null;
+      return {
+        score: 22 + deferredBonus,
+        method: "wp",
+        startFrom: pr.startBase,
+      };
+    default:
+      return null;
+  }
+}
+
+/**
+ * AI解析直後のイニング打席リストに対し、以下の野球規則・早稲田式記法補正を決定論的（0ms）に適用する:
+ * 1. 先頭打者の四球や無走者単打など、物理的にその打席では入り得ない「●（後続打席での個人得点マーク）」由来の
+ *    過剰な runsInPlay / rbi / 幻覚 HP 進塁をクランプ・除去し、出塁走者を正しく塁上に残す
+ * 2. 失策・併殺打・三振・非満塁四死球・暴投/捕逸での生還に対する打点（rbi）を公認野球規則どおり 0（満塁四死球のみ 1）に厳密補正
+ * 3. クランプされた「●（個人得点）」やスコアボード確定得点（structure.innings[].runs）との差分を、
+ *    実際にその走者を還した同イニング後続の適時打・犠飛・内野ゴロ・失策等の打席へ自動再配分する
+ */
+export function reconcileSheetRunsAndRbi(
+  atBats: ScorebookV2AtBat[],
+  structure?: ScorebookSheetStructure | null
+): { atBats: ScorebookV2AtBat[]; changed: boolean } {
+  if (atBats.length === 0) {
+    return { atBats, changed: false };
+  }
+
+  const byInning = new Map<number, ScorebookV2AtBat[]>();
+  for (const ab of atBats) {
+    const arr = byInning.get(ab.inning) || [];
+    arr.push({
+      ...ab,
+      advances: ab.advances.map((adv) => ({ ...adv })),
+    });
+    byInning.set(ab.inning, arr);
+  }
+
+  const sortedInnings = Array.from(byInning.keys()).sort((a, b) => a - b);
+  let changed = false;
+
+  for (const inn of sortedInnings) {
+    const innList = byInning.get(inn) || [];
+    if (innList.length === 0) continue;
+
+    const deferredScoreOrders = new Set<number>();
+    const minGuaranteedRunsByIdx: number[] = new Array(innList.length).fill(0);
+
+    // =========================================================================
+    // Pass A: 打席順に沿った物理的生還上限クランプ ＆ 早稲田式「●」混入の分離 ＆ 打点厳密化
+    // =========================================================================
+    for (let i = 0; i < innList.length; i++) {
+      const ab = innList[i];
+
+      // i番目開始時点の正確な塁状況・アウト数を直前までの確定済打席から取得
+      let outsBefore = 0;
+      let effectiveBasesBefore = createEmptyBaseMap();
+      if (i > 0) {
+        const prefixSnaps = simulateSheetRunners(innList.slice(0, i), structure);
+        const prevSnap = prefixSnaps.get(innList[i - 1].id);
+        if (prevSnap) {
+          outsBefore = prevSnap.outsAfter;
+          effectiveBasesBefore = prevSnap.isInningOver
+            ? createEmptyBaseMap()
+            : cloneBaseMap(prevSnap.basesForNextBatter);
+        }
+      }
+      for (const adv of ab.advances) {
+        if (
+          adv.method === "tiebreak" &&
+          !adv.isOut &&
+          (adv.to === "1B" || adv.to === "2B" || adv.to === "3B") &&
+          !effectiveBasesBefore[adv.to]
+        ) {
+          effectiveBasesBefore[adv.to] = resolveRunnerFromStructureByName(
+            adv.runnerName,
+            inn,
+            structure
+          );
+        }
+      }
+
+      const occupiedBeforeCount = countOccupiedBases(effectiveBasesBefore);
+      const initSafeBase = getBatterInitialSafeBase(ab, ab.outsInPlay >= 1);
+      const reachablePreceding = new Set<OccupiedBaseKey>();
+      for (const bKey of ["3B", "2B", "1B"] as const) {
+        if (effectiveBasesBefore[bKey]) {
+          reachablePreceding.add(bKey);
+        }
+      }
+
+      // A-1. 物理的にあり得ない advances（後続打席での進塁線・●生還の混入）をクレンジング
+      const prelimAdvances: ScorebookV2Advance[] = [];
+      let advModified = false;
+
+      for (const adv of ab.advances) {
+        if (adv.method === "tiebreak" || isNoOpHoldAdvance(adv)) {
+          prelimAdvances.push(adv);
+          continue;
+        }
+
+        if (adv.from === "BAT") {
+          if (ab.resultCode === "home_run") {
+            if (adv.to !== "HP" || adv.isOut) {
+              prelimAdvances.push({
+                ...adv,
+                to: "HP",
+                method: "hit",
+                isOut: false,
+              });
+              advModified = true;
+            } else {
+              prelimAdvances.push(adv);
+            }
+            continue;
+          }
+
+          if (initSafeBase === null) {
+            // 凡退打者の安全な出塁・本塁生還は物理的に不可
+            if (!adv.isOut) {
+              advModified = true;
+              continue;
+            }
+            prelimAdvances.push(adv);
+            continue;
+          }
+
+          // 出塁打者（四死球・単打・二塁打・三塁打・失策・野選・振り逃げ等）
+          if (!adv.isOut && adv.to === "HP") {
+            const isExplicitMultiBaseError =
+              (ab.resultCode === "single" ||
+                ab.resultCode === "double" ||
+                ab.resultCode === "triple" ||
+                ab.resultCode === "error") &&
+              adv.method === "error";
+            if (!isExplicitMultiBaseError) {
+              // スコアブック中央の「●（後続打席での個人得点）」をこの打席の BAT->HP と誤読したケース
+              deferredScoreOrders.add(ab.battingOrder);
+              prelimAdvances.push({
+                ...adv,
+                to: initSafeBase,
+                method: getDefaultInPlayMethodForResult(ab.resultCode, false),
+              });
+              advModified = true;
+              continue;
+            }
+          }
+
+          if (
+            !adv.isOut &&
+            isAwardedFirstBaseResult(ab.resultCode) &&
+            adv.to !== "1B"
+          ) {
+            const canAdvanceOnBallFour =
+              ab.resultCode === "walk" &&
+              (adv.method === "wp" ||
+                adv.method === "pb" ||
+                adv.method === "error" ||
+                adv.method === "throw_advance");
+            if (!canAdvanceOnBallFour) {
+              prelimAdvances.push({
+                ...adv,
+                to: "1B",
+                method: "walk",
+              });
+              advModified = true;
+              continue;
+            }
+          }
+
+          prelimAdvances.push(adv);
+          continue;
+        }
+
+        // adv.from === "1B" | "2B" | "3B"
+        if (reachablePreceding.has(adv.from)) {
+          prelimAdvances.push(adv);
+          if (
+            !adv.isOut &&
+            (adv.to === "1B" || adv.to === "2B" || adv.to === "3B")
+          ) {
+            reachablePreceding.add(adv.to);
+          }
+          continue;
+        }
+
+        // 該当塁に先行走者が存在しない場合
+        const isSamePlayBatterStretch =
+          !isAwardedFirstBaseResult(ab.resultCode) &&
+          initSafeBase === adv.from &&
+          (adv.method === "throw_advance" ||
+            adv.method === "error" ||
+            adv.isOut) &&
+          (adv.to !== "HP" || adv.isOut || adv.method === "error");
+
+        if (isSamePlayBatterStretch) {
+          prelimAdvances.push(adv);
+          continue;
+        }
+
+        if (occupiedBeforeCount === 0) {
+          // 無走者打席での 1B/2B/3B からの移動は 100% 後続打席の進塁線・●マーク
+          if (!adv.isOut && adv.to === "HP" && initSafeBase !== null) {
+            deferredScoreOrders.add(ab.battingOrder);
+          }
+          advModified = true;
+          continue;
+        }
+
+        // 他塁に先行走者がいるのに開始塁だけ誤読された本塁生還なら、最上位の占有塁へスナップ補正
+        if (
+          !adv.isOut &&
+          adv.to === "HP" &&
+          !isAwardedFirstBaseResult(ab.resultCode)
+        ) {
+          const fallbackBase = (["3B", "2B", "1B"] as const).find(
+            (bKey) =>
+              reachablePreceding.has(bKey) &&
+              !prelimAdvances.some((p) => p.from === bKey)
+          );
+          if (fallbackBase) {
+            prelimAdvances.push({
+              ...adv,
+              from: fallbackBase,
+              runnerName:
+                effectiveBasesBefore[fallbackBase]?.name || adv.runnerName,
+            });
+            advModified = true;
+            continue;
+          }
+        }
+
+        advModified = true;
+      }
+
+      // A-2. 非満塁時の四死球における不可能な押し出し生還と、3アウト成立打席での無効インプレー生還を除去
+      const basesAtPlay = computeBasesAtInPlayFromAdvances(
+        effectiveBasesBefore,
+        prelimAdvances
+      );
+      const isBasesLoadedAtPlay = Boolean(
+        basesAtPlay["1B"] && basesAtPlay["2B"] && basesAtPlay["3B"]
+      );
+      const outsAfter = Math.min(3, outsBefore + Math.max(0, ab.outsInPlay));
+      const invalidatesInPlayRunsOnThirdOut =
+        outsAfter >= 3 &&
+        (ab.resultCode === "double_play" ||
+          ab.resultCode === "triple_play" ||
+          isForceOutGroundout(
+            ab.resultCode,
+            ab.battedDirection,
+            ab.resultLabel
+          ) ||
+          (outsBefore >= 2 &&
+            isIntrinsicBatterOutResult(
+              ab.resultCode,
+              ab.battedDirection,
+              ab.resultLabel
+            )));
+
+      const cleanedAdvances = prelimAdvances.filter((adv) => {
+        if (adv.method === "tiebreak" || isNoOpHoldAdvance(adv)) return true;
+
+        if (
+          invalidatesInPlayRunsOnThirdOut &&
+          !adv.isOut &&
+          adv.to === "HP" &&
+          !isPrePlayAdvanceMethod(adv.method)
+        ) {
+          advModified = true;
+          return false;
+        }
+
+        if (isAwardedFirstBaseResult(ab.resultCode) && adv.from !== "BAT") {
+          if (
+            !adv.isOut &&
+            adv.to === "HP" &&
+            !isPrePlayAdvanceMethod(adv.method) &&
+            adv.method !== "error" &&
+            adv.method !== "obstruction" &&
+            !isBasesLoadedAtPlay
+          ) {
+            if (initSafeBase !== null) {
+              deferredScoreOrders.add(ab.battingOrder);
+            }
+            advModified = true;
+            return false;
+          }
+          if (
+            !adv.isOut &&
+            adv.method === "walk" &&
+            adv.from === "2B" &&
+            adv.to === "3B" &&
+            !(basesAtPlay["1B"] && basesAtPlay["2B"])
+          ) {
+            advModified = true;
+            return false;
+          }
+        }
+
+        return true;
+      });
+
+      // A-3. この打席で物理的に成立し得る最小得点・最大得点を算出
+      const realClean = cleanedAdvances.filter(
+        (a) => !isNoOpHoldAdvance(a) && a.method !== "tiebreak"
+      );
+      const validPrePlayHp = realClean.filter(
+        (a) =>
+          a.from !== "BAT" &&
+          !a.isOut &&
+          a.to === "HP" &&
+          isPrePlayAdvanceMethod(a.method)
+      ).length;
+      const inPlayOccupied = countOccupiedBases(basesAtPlay);
+      const inPlayRunnerOuts = realClean.filter(
+        (a) =>
+          a.from !== "BAT" && a.isOut && !isPrePlayAdvanceMethod(a.method)
+      ).length;
+      const maxInPlayRunnerHp = Math.max(0, inPlayOccupied - inPlayRunnerOuts);
+      const explicitBatErrorHp = realClean.filter(
+        (a) =>
+          a.from === "BAT" &&
+          !a.isOut &&
+          a.to === "HP" &&
+          a.method === "error"
+      ).length;
+      const explicitSafeHp = realClean.filter(
+        (a) => !a.isOut && a.to === "HP"
+      ).length;
+
+      let minRuns = 0;
+      let maxRuns = 0;
+
+      if (outsBefore >= 3) {
+        minRuns = 0;
+        maxRuns = 0;
+      } else if (ab.resultCode === "home_run") {
+        const hrRuns = Math.max(1, 1 + maxInPlayRunnerHp + validPrePlayHp);
+        minRuns = hrRuns;
+        maxRuns = hrRuns;
+      } else if (invalidatesInPlayRunsOnThirdOut) {
+        minRuns = validPrePlayHp;
+        maxRuns = validPrePlayHp;
+      } else if (isAwardedFirstBaseResult(ab.resultCode)) {
+        const forcedHp = isBasesLoadedAtPlay ? 1 : 0;
+        const explicitNonForceHp = realClean.filter(
+          (a) =>
+            a.from !== "BAT" &&
+            !a.isOut &&
+            a.to === "HP" &&
+            !isPrePlayAdvanceMethod(a.method) &&
+            (a.method === "error" || a.method === "obstruction")
+        ).length;
+        minRuns = validPrePlayHp + forcedHp;
+        maxRuns = Math.min(
+          occupiedBeforeCount,
+          validPrePlayHp + forcedHp + explicitNonForceHp
+        );
+      } else if (
+        ab.resultCode === "strikeout" ||
+        ab.resultCode === "dropped_third_strike_out" ||
+        ab.resultCode === "infield_fly" ||
+        ab.resultCode === "interference_out" ||
+        ab.resultCode === "other"
+      ) {
+        minRuns = explicitSafeHp;
+        maxRuns = Math.min(occupiedBeforeCount, explicitSafeHp);
+      } else if (ab.resultCode === "triple") {
+        minRuns = validPrePlayHp + maxInPlayRunnerHp;
+        maxRuns = minRuns + explicitBatErrorHp;
+      } else if (ab.resultCode === "double") {
+        const safe3B =
+          basesAtPlay["3B"] &&
+          !realClean.some(
+            (a) =>
+              a.from === "3B" && a.isOut && !isPrePlayAdvanceMethod(a.method)
+          )
+            ? 1
+            : 0;
+        minRuns = Math.max(explicitSafeHp, validPrePlayHp + safe3B);
+        maxRuns = validPrePlayHp + maxInPlayRunnerHp + explicitBatErrorHp;
+      } else {
+        minRuns = explicitSafeHp;
+        maxRuns = validPrePlayHp + maxInPlayRunnerHp + explicitBatErrorHp;
+      }
+
+      minGuaranteedRunsByIdx[i] = minRuns;
+
+      if (ab.runsInPlay > maxRuns && initSafeBase !== null) {
+        deferredScoreOrders.add(ab.battingOrder);
+      }
+
+      const clampedRuns = Math.max(minRuns, Math.min(maxRuns, ab.runsInPlay));
+      const defaultRbi = computeDefaultRbiForAtBat(
+        { resultCode: ab.resultCode, advances: cleanedAdvances },
+        clampedRuns,
+        effectiveBasesBefore
+      );
+
+      let nextRbi = defaultRbi;
+      if (
+        clampedRuns > 0 &&
+        !ZERO_RBI_RESULT_CODES.has(ab.resultCode) &&
+        !isAwardedFirstBaseResult(ab.resultCode) &&
+        ab.resultCode !== "home_run" &&
+        clampedRuns === ab.runsInPlay &&
+        ab.rbi >= 0 &&
+        ab.rbi <= defaultRbi
+      ) {
+        const mentionsErrorOrBatteryMiss =
+          /[Ee失]|暴投|捕逸|ボーク/.test(
+            `${ab.battedDirection || ""} ${ab.resultLabel || ""}`
+          );
+        nextRbi =
+          ab.rbi === 0 && !mentionsErrorOrBatteryMiss ? defaultRbi : ab.rbi;
+      }
+
+      if (
+        advModified ||
+        clampedRuns !== ab.runsInPlay ||
+        nextRbi !== ab.rbi
+      ) {
+        innList[i] = {
+          ...ab,
+          advances: cleanedAdvances,
+          runsInPlay: clampedRuns,
+          rbi: nextRbi,
+        };
+        changed = true;
+      }
+    }
+
+    // =========================================================================
+    // Pass B: クランプされた「●（個人得点）」や確定イニング得点との不足分を後続の適時打・失策等へ再配分
+    // =========================================================================
+    const meta = structure?.innings.find((m) => m.inning === inn);
+    const confirmedRuns =
+      typeof meta?.runs === "number" ? Math.max(0, meta.runs) : null;
+    let currentInningRuns = innList.reduce(
+      (sum, x) => sum + Math.max(0, x.runsInPlay),
+      0
+    );
+    const targetRuns =
+      confirmedRuns !== null
+        ? confirmedRuns
+        : currentInningRuns + deferredScoreOrders.size;
+
+    let assignGuard = 0;
+    while (currentInningRuns < targetRuns && assignGuard < 8) {
+      assignGuard += 1;
+      const snaps = simulateSheetRunners(innList, structure);
+      let bestPick: {
+        idx: number;
+        runnerName: string;
+        runnerOrder: number;
+        startFrom: OccupiedBaseKey;
+        method: AdvanceMethodCode;
+        score: number;
+      } | null = null;
+
+      for (let j = 1; j < innList.length; j++) {
+        const candAb = innList[j];
+        const snap = snaps.get(candAb.id);
+        if (!snap || snap.precedingRunners.length === 0) continue;
+
+        for (const pr of snap.precedingRunners) {
+          // この走者がさらに後続の打席で明示的にアウト（盗塁死・封殺等）になっていないか確認
+          let explicitlyOutLater = false;
+          for (let k = j + 1; k < innList.length; k++) {
+            const laterSnap = snaps.get(innList[k].id);
+            if (!laterSnap) continue;
+            const laterPr = laterSnap.precedingRunners.find(
+              (lp) =>
+                (pr.runner.battingOrder > 0 &&
+                  lp.runner.battingOrder === pr.runner.battingOrder) ||
+                (pr.runner.battingOrder <= 0 &&
+                  namesLikelyMatch(lp.runner.name, pr.runner.name))
+            );
+            if (laterPr && laterPr.isOut && !laterPr.isImplicit) {
+              explicitlyOutLater = true;
+              break;
+            }
+          }
+          if (explicitlyOutLater) continue;
+
+          const evalRes = scoreDownstreamRunCandidate(
+            candAb,
+            snap,
+            pr,
+            deferredScoreOrders.has(pr.runner.battingOrder)
+          );
+          if (!evalRes) continue;
+
+          if (!bestPick || evalRes.score > bestPick.score) {
+            bestPick = {
+              idx: j,
+              runnerName: pr.runner.name,
+              runnerOrder: pr.runner.battingOrder,
+              startFrom: evalRes.startFrom,
+              method: evalRes.method,
+              score: evalRes.score,
+            };
+          }
+        }
+      }
+
+      if (!bestPick) break;
+
+      const targetAb = innList[bestPick.idx];
+      const targetSnap = snaps.get(targetAb.id);
+      if (!targetSnap) break;
+
+      const filteredExisting = targetAb.advances.filter(
+        (a) =>
+          !(
+            !a.isOut &&
+            a.from === bestPick.startFrom &&
+            (!a.runnerName ||
+              namesLikelyMatch(a.runnerName, bestPick.runnerName))
+          )
+      );
+      const nextAdvances: ScorebookV2Advance[] = [
+        ...filteredExisting,
+        {
+          id: crypto.randomUUID(),
+          runnerName: bestPick.runnerName,
+          from: bestPick.startFrom,
+          to: "HP",
+          method: bestPick.method,
+          isOut: false,
+        },
+      ];
+      const synced = computeSyncedStatsFromAdvances(
+        targetAb,
+        nextAdvances,
+        targetSnap.outsBefore,
+        targetSnap.basesBefore
+      );
+      const nextRunsInPlay = Math.max(targetAb.runsInPlay + 1, synced.runsInPlay);
+      const nextRbi = computeDefaultRbiForAtBat(
+        { resultCode: targetAb.resultCode, advances: nextAdvances },
+        nextRunsInPlay,
+        targetSnap.basesBefore
+      );
+
+      innList[bestPick.idx] = {
+        ...targetAb,
+        advances: nextAdvances,
+        runsInPlay: nextRunsInPlay,
+        rbi: nextRbi,
+      };
+      deferredScoreOrders.delete(bestPick.runnerOrder);
+      currentInningRuns = innList.reduce(
+        (sum, x) => sum + Math.max(0, x.runsInPlay),
+        0
+      );
+      changed = true;
+    }
+
+    // =========================================================================
+    // Pass C: スコアボード確定得点を上回る二重計上（塁上走者ありで出塁した打者自身の「●」も加算されたケース）の解消
+    // =========================================================================
+    if (confirmedRuns !== null && currentInningRuns > confirmedRuns) {
+      for (let i = 0; i < innList.length - 1; i++) {
+        if (currentInningRuns <= confirmedRuns) break;
+        const ab = innList[i];
+        const minReq = minGuaranteedRunsByIdx[i] ?? 0;
+        if (ab.runsInPlay <= minReq) continue;
+
+        const isOnBaseBatter =
+          ab.resultCode === "single" ||
+          ab.resultCode === "double" ||
+          ab.resultCode === "error" ||
+          ab.resultCode === "fc" ||
+          ab.resultCode === "dropped_third_strike";
+        const hasDownstreamScorer = innList
+          .slice(i + 1)
+          .some(
+            (later) =>
+              later.runsInPlay > 0 ||
+              later.resultCode === "home_run" ||
+              later.resultCode === "triple" ||
+              later.resultCode === "double"
+          );
+        if (!isOnBaseBatter || !hasDownstreamScorer) continue;
+
+        const excessHere = Math.min(
+          ab.runsInPlay - minReq,
+          currentInningRuns - confirmedRuns
+        );
+        if (excessHere <= 0) continue;
+
+        const prefixSnaps =
+          i > 0 ? simulateSheetRunners(innList.slice(0, i), structure) : null;
+        const prevSnap =
+          i > 0 && prefixSnaps ? prefixSnaps.get(innList[i - 1].id) : undefined;
+        const basesBefore =
+          prevSnap && !prevSnap.isInningOver
+            ? cloneBaseMap(prevSnap.basesForNextBatter)
+            : createEmptyBaseMap();
+
+        const nextRuns = ab.runsInPlay - excessHere;
+        const nextRbi = computeDefaultRbiForAtBat(
+          { resultCode: ab.resultCode, advances: ab.advances },
+          nextRuns,
+          basesBefore
+        );
+        innList[i] = {
+          ...ab,
+          runsInPlay: nextRuns,
+          rbi: nextRbi,
+        };
+        currentInningRuns -= excessHere;
+        changed = true;
+      }
+    }
+
+    byInning.set(inn, innList);
+  }
+
+  if (!changed) {
+    return { atBats, changed: false };
+  }
+
+  const rebuilt: ScorebookV2AtBat[] = [];
+  for (const inn of sortedInnings) {
+    rebuilt.push(...(byInning.get(inn) || []));
+  }
+  return { atBats: rebuilt, changed: true };
 }

@@ -26,6 +26,7 @@ import {
   isPrePlayAdvanceMethod,
   type AtBatRunnerSnapshot,
   type BaseRunnerMap,
+  type DeferredPersonalRunInfo,
   type OccupiedBaseKey,
   type PrecedingRunnerSummary,
 } from "@/lib/liff/scorebook-runners";
@@ -109,6 +110,7 @@ export function MiniBaseDiamond({
 interface AtBatCardRunnerStripProps {
   atBat: ScorebookV2AtBat;
   snapshot?: AtBatRunnerSnapshot;
+  deferredPersonalRun?: DeferredPersonalRunInfo;
 }
 
 /**
@@ -117,6 +119,7 @@ interface AtBatCardRunnerStripProps {
 export function AtBatCardRunnerStrip({
   atBat,
   snapshot,
+  deferredPersonalRun,
 }: AtBatCardRunnerStripProps) {
   if (!snapshot) return null;
 
@@ -127,6 +130,7 @@ export function AtBatCardRunnerStrip({
 
   const hasPrecedingRunners = snapshot.precedingRunners.length > 0;
   const hasBatterExtra = Boolean(snapshot.batterSummary.extraExplicitMove);
+  const hasDeferredPersonalRun = Boolean(deferredPersonalRun);
 
   return (
     <div className="rounded-xl bg-card border border-border px-2.5 py-1.5 space-y-1.5">
@@ -183,8 +187,8 @@ export function AtBatCardRunnerStrip({
         </div>
       </div>
 
-      {/* 下段: 前の走者がいた場合、それぞれの進塁・生還・アウト・残留を明示 */}
-      {(hasPrecedingRunners || hasBatterExtra) && (
+      {/* 下段: 前の走者がいた場合、それぞれの進塁・生還・アウト・残留、および出塁打者の後続生還（●）を明示 */}
+      {(hasPrecedingRunners || hasBatterExtra || hasDeferredPersonalRun) && (
         <div className="pt-1 border-t border-border/70 flex items-center flex-wrap gap-1">
           {snapshot.precedingRunners.map((pr) => {
             const rLabel = formatRunnerBadgeName(pr.runner);
@@ -278,6 +282,13 @@ export function AtBatCardRunnerStrip({
                 ]
               }
               ）
+            </span>
+          )}
+
+          {deferredPersonalRun && (
+            <span className="px-1.5 py-0.5 rounded-md bg-sky-500/15 border border-sky-500/35 text-sky-800 dark:text-sky-200 text-[10px] font-black">
+              ● 後続（{deferredPersonalRun.scorerBattingOrder}番{" "}
+              {deferredPersonalRun.scorerName}）で生還 ➔ 本人の個人得点+1
             </span>
           )}
         </div>

@@ -537,6 +537,44 @@ app.get("/:id/stats", async (c) => {
     .where(eq(atBats.matchId, matchId))
     .all();
 
+    const dbPlayLogs = await db
+      .select({
+        atBatId: playLogs.atBatId,
+        description: playLogs.description,
+      })
+      .from(playLogs)
+      .where(eq(playLogs.matchId, matchId))
+      .all();
+
+    const explicitRbiByAtBatId = new Map<string, number>();
+    for (const pl of dbPlayLogs) {
+      if (!pl.atBatId || !pl.description) continue;
+      const rbiMatch = pl.description.match(/打点(\d+)/);
+      if (rbiMatch) {
+        explicitRbiByAtBatId.set(pl.atBatId, Number(rbiMatch[1]));
+      }
+    }
+
+    const isNonRbiAdvanceReason = (rawReason: string | null | undefined): boolean => {
+      const r = String(rawReason || "").trim().toLowerCase();
+      if (!r) return false;
+      return (
+        r === "wp" ||
+        r === "pb" ||
+        r === "balk" ||
+        r === "steal" ||
+        r === "pickoff_error" ||
+        r === "error" ||
+        r === "obstruction" ||
+        r.includes("暴投") ||
+        r.includes("捕逸") ||
+        r.includes("ボーク") ||
+        r.includes("盗塁") ||
+        r.includes("失策") ||
+        r.includes("エラー")
+      );
+    };
+
     const runsList = dbAdvances.filter(a => a.toBase === 4 && !a.isOut);
 
     // --- 打者・走者・守備成績集計 (20項目) ---
@@ -634,7 +672,48 @@ app.get("/:id/stats", async (c) => {
       }
 
       // 打点集計 (該当打席で本塁生還した走者数)
-      const rbiCount = runsList.filter(a => a.atBatId === ab.id).length;
+      const isStrikeoutPlay =
+        res === "strikeout" ||
+        res === "dropped_third_strike" ||
+        res === "dropped_third_strike_out" ||
+        res.includes("K") ||
+        res.includes("三振") ||
+        res.includes("振逃");
+      const isDoublePlay =
+        res === "double_play" ||
+        res === "triple_play" ||
+        res.includes("DP") ||
+        res.includes("併殺") ||
+        res.includes("三重殺") ||
+        res.includes("ゲッツー");
+      const isErrorReach =
+        res === "error" ||
+        res.includes("E") ||
+        res.includes("失策") ||
+        res.includes("エラー");
+
+      const atBatSafeRuns = runsList.filter((a) => a.atBatId === ab.id);
+      const hasBatterSelfRunRow = atBatSafeRuns.some(
+        (a) => a.runnerId === batterId
+      );
+      if (isHR && !hasBatterSelfRunRow) {
+        p.runs++;
+      }
+
+      const explicitRbi = explicitRbiByAtBatId.get(ab.id);
+      const rbiCount =
+        typeof explicitRbi === "number"
+          ? explicitRbi
+          : isDoublePlay || isErrorReach || isStrikeoutPlay
+          ? 0
+          : isWalk || isHbp || isInterferenceReach
+          ? Math.min(
+              1,
+              atBatSafeRuns.filter((a) => !isNonRbiAdvanceReason(a.reason))
+                .length
+            )
+          : atBatSafeRuns.filter((a) => !isNonRbiAdvanceReason(a.reason))
+              .length + (isHR && !hasBatterSelfRunRow ? 1 : 0);
       p.rbi += rbiCount;
     }
 

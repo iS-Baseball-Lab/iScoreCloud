@@ -1572,10 +1572,13 @@ ${targetInningMetaLines.join("\n")}
    - 振り逃げアウト『K 2-3』➔ **rc: "dropped_third_strike_out"**, o: 1。振り逃げ出塁『K-E2』➔ **rc: "dropped_third_strike"**, o: 0。
    - 打席途中に走者が盗塁死・牽制死等で3アウトチェンジになった未完了マスのみ ➔ **rc: "other"**, rl: "打席途中断（走塁死チェンジ）", o: 1（白紙マスには絶対に使わないこと！）。
 
-【超重要 4: 投手交代波線・進塁（a）・早稲田式の得点（ru）計上位置・確信度（cf）】
+【超重要 4: 投手交代波線・進塁（a）・早稲田式の「●（個人得点）」と得点（ru）・打点（rbi）の厳密分離・確信度（cf）】
 - 回途中の継投がある場合は横波線『〜〜』や二重線『══』の前後で正しい投手名を pt に設定してください。${multiColumnRuleBlock}
 - 進塁 a には盗塁(m:"steal")・盗塁死(m:"caught_stealing",io:true)・牽制死(m:"pickoff_out",io:true)・牽制悪送球(m:"pickoff_error")・暴投(m:"wp")・捕逸(m:"pb")・ボーク(m:"balk")・送球間(m:"throw_advance")・走塁死(m:"out_on_base",io:true)・打撃進塁(m:"hit"/"sac"/"fc"/"error"/"walk")を記録し、凡退無進塁は a:[]。
-- **得点（ru）の計上ルール**: 早稲田式・成美堂式では、後続打者の打撃で本塁生還した走者のマス中央に黒丸『●』や赤丸が書かれますが、出力JSONの **"ru" と t:"HP", io:false の進塁は「その得点が実際に入った打者の打席」に計上**し、イニング内の全打席の ru 合計が確定得点と完全一致するようにしてください！
+- **「●（個人得点）」と打席得点（ru）・打点（rbi）の厳密区別（最重要！）**:
+  1. 早稲田式・成美堂式では、出塁した走者（例: 1番の四球や単打）が**後続打者の打撃で本塁生還した際、その出塁走者のマス中央に黒丸『●』（や◎・赤丸）とダイヤモンド1周線が書かれます**。これをその出塁打席自身の得点・打点にしてはいけません！無走者時の四球・単打・失策や、満塁でない四死球では **必ず ru: 0, rbi: 0** とし、進塁 a にも t:"HP" を入れず出塁塁（t:"1B" 等）までに留めてください。
+  2. **"ru"（その打席で本塁生還した人数）と t:"HP", io:false の進塁は「その得点が実際に入った後続打者の打席」にのみ計上**し、イニング内の全打席の ru 合計が確定得点と完全一致するようにしてください。
+  3. **打点（rbi）の公認野球規則**: 満塁以外の四死球・打撃妨害は **必ず rbi: 0**（満塁押し出しのみ rbi: 1）。失策（rc:"error"）・併殺打（rc:"double_play"）・三振/振り逃げ・暴投(m:"wp")/捕逸(m:"pb")/ボーク(m:"balk")/盗塁での生還は、得点（ru >= 1）が入っても **必ず rbi: 0** としてください！
 - **確信度 cf の基準**: 手書き特有の多少のにじみ・接触があっても、拡大パネルやイニング内のアウト推移（1死→2死→3死）・カウント整合からプレー内容が論理的に判読できる場合は **"cf":"h" または "cf":"m"** とし、インク潰れ等で本当に判読不能なマスのみ **"cf":"l"** としてください。
 - 投球コード p は "B"|"S"|"W"|"BS"|"F"|"BF"|"P1"|"P2"|"P3"|"BK"|"H"|"X"|"D" のみ使用。
 
@@ -2378,12 +2381,51 @@ ${pitcherSpecLines.join("\n")}
           ? "medium"
           : "high";
 
-      const hpCount = advances.filter((a) => a.to === "HP" && !a.isOut).length;
       const isHr = resultCode === "home_run";
+      const sanitizedGapAdvances = advances.map((adv) => {
+        if (
+          !isHr &&
+          adv.from === "BAT" &&
+          !adv.isOut &&
+          adv.to === "HP" &&
+          adv.method !== "error"
+        ) {
+          const fallbackTo =
+            resultCode === "triple"
+              ? "3B"
+              : resultCode === "double"
+              ? "2B"
+              : "1B";
+          return { ...adv, to: fallbackTo as "1B" | "2B" | "3B" };
+        }
+        return adv;
+      });
+      const hpCount = sanitizedGapAdvances.filter(
+        (a) => a.to === "HP" && !a.isOut
+      ).length;
       const rawRunsInPlay =
         toFiniteInt(matchedRaw.ru ?? matchedRaw.runsInPlay, 0) || 0;
       const effectiveRuns = Math.max(rawRunsInPlay, hpCount, isHr ? 1 : 0);
       const parsedRbi = toFiniteInt(matchedRaw.rbi);
+      const isZeroRbiGapResult =
+        resultCode === "error" ||
+        resultCode === "double_play" ||
+        resultCode === "triple_play" ||
+        resultCode === "strikeout" ||
+        resultCode === "dropped_third_strike" ||
+        resultCode === "dropped_third_strike_out" ||
+        resultCode === "interference_out" ||
+        resultCode === "other";
+      const isAwardedFirstGap =
+        resultCode === "walk" ||
+        resultCode === "intentional_walk" ||
+        resultCode === "hit_by_pitch" ||
+        resultCode === "interference";
+      const safeGapRbi = isZeroRbiGapResult
+        ? 0
+        : isAwardedFirstGap
+        ? Math.min(1, Math.max(0, parsedRbi ?? 0))
+        : Math.min(effectiveRuns, Math.max(0, parsedRbi ?? effectiveRuns));
 
       resolved.push({
         gapId: gap.gapId,
@@ -2400,7 +2442,7 @@ ${pitcherSpecLines.join("\n")}
           resultCode,
           resultLabel: harmonizedFielding.resultLabel,
           battedDirection: harmonizedFielding.battedDirection,
-          rbi: Math.max(0, parsedRbi ?? effectiveRuns),
+          rbi: safeGapRbi,
           outsInPlay: outsVal,
           endingOuts: Math.min(
             3,
@@ -2410,7 +2452,7 @@ ${pitcherSpecLines.join("\n")}
           balls,
           strikes,
           pitches: normalizedPitches,
-          advances,
+          advances: sanitizedGapAdvances,
           confidence,
           confidenceReason:
             (
@@ -2574,8 +2616,9 @@ ${batterRowsDesc.join("\n")}
      ・**先行走者の封殺・盗塁死の二重計上**: 出塁した打者の中央に後続打席での封殺・盗塁死『Ⅰ/Ⅱ/Ⅲ』が書かれている場合、**その出塁打者自身は "o": 0** であり、後続の封殺打者（6-4/4-6/FC等）側のみを **"o": 1** としてください！
 3. **パターンB（3アウト目『Ⅲ』『③』完了直後のマスが「イニング終了切り線 ／・∟」または「白紙空欄」または「次イニング重複」だったケース）**:
    - 先行する打席で既に『Ⅰ → Ⅱ → Ⅲ（または ① → ② → ③）』の3アウトが完了しており、末尾のマスには投球記号も守備番号も無く斜線『／』『∟』だけがある（または白紙）場合は、その末尾マスの **"drop": true** にして除外してください！
-4. **"o" と "eo" の厳密区別 ＆ 左BSO拡大の全球保持**:
+4. **"o" と "eo" の厳密区別・早稲田式「●（個人得点）」の分離・左BSO拡大の全球保持**:
    - "o" はその1打席で増えたアウト数（出塁=0, 単一アウト=1, 併殺打のみ=2）です。2死目・3死目の単一アウトで "o": 2 や "o": 3 と書くのは絶対厳禁です！
+   - 出塁した打者（先頭四球や無走者安打など）の中央に後続打席での生還『●』があっても、その出塁打席は **ru: 0, rbi: 0** とし、実際に生還させた後続打者の打席にのみ ru を計上してください（満塁以外の四死球や失策・併殺・暴投生還は必ず rbi: 0）。
    - 各マスの **[BSO拡大]** にある手書き投球記号（○/●/ー/・/△ や球数番号 1,2,3...）も省略せず obs と p に全件出力してください。
 
 【出力JSONフォーマット（改行無しのコンパクトJSONのみ返却。items配列に [${spec.batters
@@ -3345,7 +3388,12 @@ liffScorebookRouter.post("/save", async (c) => {
         cleanDirTag && !ab.resultLabel.includes(cleanDirTag)
           ? ` (${cleanDirTag})`
           : "";
-      const rbiSuffix = ab.rbi > 0 ? `（打点${ab.rbi}）` : "";
+      const rbiSuffix =
+        ab.rbi > 0
+          ? `（打点${ab.rbi}）`
+          : ab.runsInPlay > 0
+          ? `（得点${ab.runsInPlay}・打点0）`
+          : "";
       const runnerMovesText = ab.advances
         .filter((a) => a.from !== "BAT" && (a.isOut || a.from !== a.to))
         .map((a) => {

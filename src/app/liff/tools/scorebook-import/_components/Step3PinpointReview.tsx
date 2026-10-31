@@ -54,9 +54,12 @@ import {
 } from "@/lib/liff/scorebook-validator";
 import {
   buildSmartAdvancesForResultChange,
+  computeDefaultRbiForAtBat,
   computeSyncedStatsFromAdvances,
+  createEmptyBaseMap,
   formatBaseJa,
   isForceOutGroundout,
+  resolveDeferredPersonalRunsMap,
   simulateSheetRunners,
   type OccupiedBaseKey,
 } from "@/lib/liff/scorebook-runners";
@@ -271,12 +274,21 @@ export function Step3PinpointReview({
     [currentList, currentStructure]
   );
 
+  const deferredPersonalRunsByAtBatId = useMemo(
+    () =>
+      resolveDeferredPersonalRunsMap(currentList, runnerSnapshotsByAtBatId),
+    [currentList, runnerSnapshotsByAtBatId]
+  );
+
   const editingIndex = editingAtBatId
     ? currentList.findIndex((ab) => ab.id === editingAtBatId)
     : -1;
   const editingAtBat = editingIndex >= 0 ? currentList[editingIndex] : null;
   const editingRunnerSnapshot = editingAtBat
     ? runnerSnapshotsByAtBatId.get(editingAtBat.id)
+    : undefined;
+  const editingDeferredRunInfo = editingAtBat
+    ? deferredPersonalRunsByAtBatId.get(editingAtBat.id)
     : undefined;
 
   const editingInningPeers = useMemo(() => {
@@ -1641,10 +1653,27 @@ export function Step3PinpointReview({
                               </div>
 
                               <div className="flex items-center gap-1.5 shrink-0">
-                                {ab.runsInPlay > 0 && (
-                                  <span className="px-2 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-black">
-                                    +{ab.runsInPlay}点
-                                  </span>
+                                {ab.runsInPlay > 0 ? (
+                                  <>
+                                    <span className="px-2 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-black">
+                                      +{ab.runsInPlay}得点
+                                    </span>
+                                    <span
+                                      className={`px-1.5 py-0.5 rounded-full text-[10px] font-black ${
+                                        ab.rbi > 0
+                                          ? "bg-amber-500 text-white"
+                                          : "bg-muted border border-border text-muted-foreground"
+                                      }`}
+                                    >
+                                      打点{ab.rbi}
+                                    </span>
+                                  </>
+                                ) : (
+                                  deferredPersonalRunsByAtBatId.has(ab.id) && (
+                                    <span className="px-1.5 py-0.5 rounded-full bg-sky-500/15 border border-sky-500/35 text-sky-700 dark:text-sky-300 text-[10px] font-black">
+                                      ●個人得点1
+                                    </span>
+                                  )
                                 )}
                                 {ab.outsInPlay > 0 && (
                                   <span className="px-2 py-0.5 rounded-full bg-slate-700 text-white text-[10px] font-black">
@@ -1716,6 +1745,9 @@ export function Step3PinpointReview({
                             <AtBatCardRunnerStrip
                               atBat={ab}
                               snapshot={runnerSnapshotsByAtBatId.get(ab.id)}
+                              deferredPersonalRun={deferredPersonalRunsByAtBatId.get(
+                                ab.id
+                              )}
                             />
 
                             {rowIssues.length > 0 && (
@@ -3629,9 +3661,9 @@ export function Step3PinpointReview({
                   })()}
 
                   <div className="grid grid-cols-12 gap-1.5 pt-1">
-                    <div className="col-span-5 space-y-1">
+                    <div className="col-span-4 space-y-1">
                       <span className="text-[10px] font-bold text-muted-foreground">
-                        詳細表記（例: 左前安打）
+                        詳細表記
                       </span>
                       <input
                         type="text"
@@ -3646,7 +3678,7 @@ export function Step3PinpointReview({
                       />
                     </div>
 
-                    <div className="col-span-3 space-y-1">
+                    <div className="col-span-2 space-y-1">
                       <span className="text-[10px] font-bold text-muted-foreground">
                         守備記号
                       </span>
@@ -3660,7 +3692,7 @@ export function Step3PinpointReview({
                           }))
                         }
                         placeholder="6-3 / 8"
-                        className="w-full h-9 px-2 rounded-xl bg-card border border-border text-xs font-black text-foreground"
+                        className="w-full h-9 px-1.5 rounded-xl bg-card border border-border text-xs font-black text-foreground"
                       />
                     </div>
 
@@ -3670,6 +3702,7 @@ export function Step3PinpointReview({
                       </span>
                       <select
                         value={editingAtBat.outsInPlay}
+                        aria-label="打席アウト数"
                         onChange={(e) =>
                           updateSingleAtBat(editingAtBat.id, (prev) => ({
                             ...prev,
@@ -3687,17 +3720,26 @@ export function Step3PinpointReview({
 
                     <div className="col-span-2 space-y-1">
                       <span className="text-[10px] font-bold text-muted-foreground">
-                        得点
+                        打席得点
                       </span>
                       <select
                         value={editingAtBat.runsInPlay}
-                        onChange={(e) =>
+                        aria-label="この打席で入った得点"
+                        onChange={(e) => {
+                          const nextRuns = Number(e.target.value);
+                          const basesBefore =
+                            editingRunnerSnapshot?.basesBefore ||
+                            createEmptyBaseMap();
                           updateSingleAtBat(editingAtBat.id, (prev) => ({
                             ...prev,
-                            runsInPlay: Number(e.target.value),
-                            rbi: Number(e.target.value),
-                          }))
-                        }
+                            runsInPlay: nextRuns,
+                            rbi: computeDefaultRbiForAtBat(
+                              prev,
+                              nextRuns,
+                              basesBefore
+                            ),
+                          }));
+                        }}
                         className="w-full h-9 px-1 rounded-xl bg-card border border-border text-xs font-black text-foreground"
                       >
                         {[0, 1, 2, 3, 4].map((r) => (
@@ -3707,7 +3749,55 @@ export function Step3PinpointReview({
                         ))}
                       </select>
                     </div>
+
+                    <div className="col-span-2 space-y-1">
+                      <span className="text-[10px] font-bold text-muted-foreground">
+                        打点
+                      </span>
+                      <select
+                        value={editingAtBat.rbi}
+                        aria-label="打者の打点"
+                        onChange={(e) => {
+                          const nextRbi = Number(e.target.value);
+                          updateSingleAtBat(editingAtBat.id, (prev) => ({
+                            ...prev,
+                            rbi: nextRbi,
+                            runsInPlay: Math.max(prev.runsInPlay, nextRbi),
+                          }));
+                        }}
+                        className="w-full h-9 px-1 rounded-xl bg-card border border-border text-xs font-black text-foreground"
+                      >
+                        {[0, 1, 2, 3, 4].map((r) => (
+                          <option key={r} value={r}>
+                            打点{r}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
+
+                  {editingDeferredRunInfo && (
+                    <div className="mt-1.5 rounded-xl bg-sky-500/12 border border-sky-500/35 px-2.5 py-2 flex items-center justify-between gap-2">
+                      <p className="text-[11px] font-black text-sky-900 dark:text-sky-200 leading-snug">
+                        ● 原本マス中央の得点丸印は、後続の
+                        {editingDeferredRunInfo.scorerBattingOrder}番{" "}
+                        {editingDeferredRunInfo.scorerName}（
+                        {editingDeferredRunInfo.scorerResultLabel}
+                        ）の打席での生還として本人の個人成績「得点+1」に自動反映されます。
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setEditingAtBatId(
+                            editingDeferredRunInfo.scorerAtBatId
+                          )
+                        }
+                        className="px-2 py-1 rounded-lg bg-sky-600 text-white text-[10px] font-black shrink-0 cursor-pointer"
+                      >
+                        生還打席へ
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {/* STEP 3: 塁上の走者状況（打席前➔打席後）＆ 前の走者の進塁・生還ワンタップエディタ */}

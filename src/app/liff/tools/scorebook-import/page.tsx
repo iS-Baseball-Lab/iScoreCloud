@@ -1791,7 +1791,7 @@ export default function LiffScorebookImportPage() {
         }
         const sourceDataUrl = imgState.processed.dataUrl;
         const alreadyEnhanced = imgState.enhancePencil;
-        const cacheKey = `v6:${selectedMatchId}:${
+        const cacheKey = `v7:${selectedMatchId}:${
           isTop ? "top" : "bottom"
         }:${sourceDataUrl.length}:${structureFp}:${expectedLeadOff}:${targetInnings.join(
           ","

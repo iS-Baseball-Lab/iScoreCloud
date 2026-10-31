@@ -4,7 +4,12 @@ import {
   getCellQuadInStructure,
   quadToBoundingBox,
 } from "@/lib/liff/scorebook-grid";
-import { simulateSheetRunners } from "@/lib/liff/scorebook-runners";
+import {
+  computeBasesAtInPlayFromAdvances,
+  createEmptyBaseMap,
+  reconcileSheetRunsAndRbi,
+  simulateSheetRunners,
+} from "@/lib/liff/scorebook-runners";
 import {
   isPickoffPitch,
   type CanonicalAtBatResult,
@@ -929,7 +934,64 @@ export function validateScorebookSheet(
           isTop,
           battingOrder: ab.battingOrder,
           category: "runs",
-          message: `この打席で${ab.runsInPlay}点記録されていますが、生還可能な塁上走者が見当たりません（走者状況・本塁生還を確認してください）。`,
+          message: `この打席で${ab.runsInPlay}点記録されていますが、生還可能な塁上走者が見当たりません（後続打席での個人得点「●」でないか確認してください）。`,
+        });
+      }
+
+      if (ab.rbi > ab.runsInPlay) {
+        issues.push({
+          id: `rbi-exceeds-runs-${ab.id}`,
+          severity: "warning",
+          atBatId: ab.id,
+          inning,
+          isTop,
+          battingOrder: ab.battingOrder,
+          category: "runs",
+          message: `この打席の打点（${ab.rbi}）が打席得点（${ab.runsInPlay}）を上回っています。打点を確認してください。`,
+        });
+      } else if (
+        ab.rbi > 0 &&
+        (ab.resultCode === "walk" ||
+          ab.resultCode === "intentional_walk" ||
+          ab.resultCode === "hit_by_pitch" ||
+          ab.resultCode === "interference")
+      ) {
+        const basesAtPlay = computeBasesAtInPlayFromAdvances(
+          snapBasesBefore || createEmptyBaseMap(),
+          ab.advances
+        );
+        const isBasesLoaded = Boolean(
+          basesAtPlay["1B"] && basesAtPlay["2B"] && basesAtPlay["3B"]
+        );
+        if (!isBasesLoaded || ab.rbi > 1) {
+          issues.push({
+            id: `rbi-invalid-walk-${ab.id}`,
+            severity: "warning",
+            atBatId: ab.id,
+            inning,
+            isTop,
+            battingOrder: ab.battingOrder,
+            category: "runs",
+            message: `満塁以外の四死球・打撃妨害では打点はつきません（満塁押し出しのみ打点1）。後続打席での個人得点（●）と混同していないか確認してください。`,
+          });
+        }
+      } else if (
+        ab.rbi > 0 &&
+        (ab.resultCode === "double_play" ||
+          ab.resultCode === "triple_play" ||
+          ab.resultCode === "strikeout" ||
+          ab.resultCode === "dropped_third_strike" ||
+          ab.resultCode === "dropped_third_strike_out")
+      ) {
+        issues.push({
+          id: `rbi-invalid-play-${ab.id}`,
+          severity: "warning",
+          atBatId: ab.id,
+          inning,
+          isTop,
+          battingOrder: ab.battingOrder,
+          category: "runs",
+          message: `併殺打・三振・振り逃げでの生還には野球規則上、打点は記録されません（打点0を確認してください）。`,
         });
       }
 
@@ -2172,16 +2234,17 @@ export function reconcileSheetExcessOutsDeterministically(
     }
   }
 
-  if (!changed) {
-    return { atBats, changed: false };
+  const baseResult: ScorebookV2AtBat[] = changed
+    ? sortedInnings.flatMap((inn) => inningsMap.get(inn) || [])
+    : atBats;
+
+  // Pass 4: 早稲田式「●（後続打席での個人得点）」の誤計上クランプ・打点（RBI）厳密化・後続適時打への再配分
+  const runsReconciled = reconcileSheetRunsAndRbi(baseResult, structure);
+  if (runsReconciled.changed) {
+    return { atBats: runsReconciled.atBats, changed: true };
   }
 
-  const rebuilt: ScorebookV2AtBat[] = [];
-  for (const inn of sortedInnings) {
-    const list = inningsMap.get(inn) || [];
-    rebuilt.push(...list);
-  }
-  return { atBats: rebuilt, changed: true };
+  return { atBats: baseResult, changed };
 }
 
 /**
