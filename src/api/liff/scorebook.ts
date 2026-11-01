@@ -3211,9 +3211,9 @@ liffScorebookRouter.post("/save", async (c) => {
               position:
                 sub.position ||
                 (sub.subType === "PH"
-                  ? "P"
+                  ? "PH"
                   : sub.subType === "PR"
-                  ? "R"
+                  ? "PR"
                   : sub.subType === "TR"
                   ? "TR"
                   : resolvedSub.primaryPosition || ""),

@@ -33,6 +33,7 @@ import {
   teamGroupMembers,
 } from "@/db/schema";
 import type { ScorebookSheetStructure, ScorebookV2AtBat } from "@/types/scorebook-v2";
+import { aggregateTeamPlayerPositions } from "@/lib/liff/player-positions-and-growth";
 import { ensureEventColumns, ensureRulesTable, ensureLinksTable, ensureMemberOrderColumn, ensureStatusConfigColumn, ensureMemberSubLabelsColumn, ensureMatchLineupColumns, ensurePlayerProfileColumns } from "@/lib/db-helper";
 import type { WorkerEnv, AuthUser } from "@/types/api";
 import { getAuth } from "@/lib/auth";
@@ -7488,7 +7489,15 @@ app.get("/players", async (c) => {
           nameKana: "サトウ ケンタ",
           uniformNumber: "1",
           primaryPosition: "P",
-          subPositions: ["CF"],
+          subPositions: ["CF", "1B"],
+          registeredPrimaryPosition: "P",
+          positionCounts: [
+            { position: "P", games: 8, sharePercent: 67 },
+            { position: "CF", games: 4, sharePercent: 33 },
+            { position: "1B", games: 1, sharePercent: 8 },
+          ],
+          totalPositionGames: 12,
+          positionSource: "match_data",
           throws: "R",
           bats: "R",
           height: 171,
@@ -7507,6 +7516,13 @@ app.get("/players", async (c) => {
           uniformNumber: "2",
           primaryPosition: "C",
           subPositions: ["1B"],
+          registeredPrimaryPosition: "C",
+          positionCounts: [
+            { position: "C", games: 11, sharePercent: 92 },
+            { position: "1B", games: 2, sharePercent: 17 },
+          ],
+          totalPositionGames: 12,
+          positionSource: "match_data",
           throws: "R",
           bats: "R",
           height: 168,
@@ -7525,6 +7541,13 @@ app.get("/players", async (c) => {
           uniformNumber: "3",
           primaryPosition: "1B",
           subPositions: ["3B"],
+          registeredPrimaryPosition: "1B",
+          positionCounts: [
+            { position: "1B", games: 10, sharePercent: 83 },
+            { position: "3B", games: 2, sharePercent: 17 },
+          ],
+          totalPositionGames: 12,
+          positionSource: "match_data",
           throws: "L",
           bats: "L",
           height: 174,
@@ -7543,6 +7566,13 @@ app.get("/players", async (c) => {
           uniformNumber: "4",
           primaryPosition: "2B",
           subPositions: ["SS"],
+          registeredPrimaryPosition: "2B",
+          positionCounts: [
+            { position: "2B", games: 9, sharePercent: 75 },
+            { position: "SS", games: 3, sharePercent: 25 },
+          ],
+          totalPositionGames: 12,
+          positionSource: "match_data",
           throws: "R",
           bats: "L",
           height: 163,
@@ -7560,7 +7590,14 @@ app.get("/players", async (c) => {
           nameKana: "ナカムラ ハヤテ",
           uniformNumber: "5",
           primaryPosition: "3B",
-          subPositions: [],
+          subPositions: ["2B"],
+          registeredPrimaryPosition: "3B",
+          positionCounts: [
+            { position: "3B", games: 10, sharePercent: 91 },
+            { position: "2B", games: 1, sharePercent: 9 },
+          ],
+          totalPositionGames: 11,
+          positionSource: "match_data",
           throws: "R",
           bats: "R",
           height: 169,
@@ -7578,7 +7615,15 @@ app.get("/players", async (c) => {
           nameKana: "ヤマモト レン",
           uniformNumber: "7",
           primaryPosition: "LF",
-          subPositions: ["RF"],
+          subPositions: ["RF", "CF"],
+          registeredPrimaryPosition: "LF",
+          positionCounts: [
+            { position: "LF", games: 8, sharePercent: 80 },
+            { position: "RF", games: 2, sharePercent: 20 },
+            { position: "CF", games: 1, sharePercent: 10 },
+          ],
+          totalPositionGames: 10,
+          positionSource: "match_data",
           throws: "R",
           bats: "B",
           height: 166,
@@ -7597,6 +7642,13 @@ app.get("/players", async (c) => {
           uniformNumber: "8",
           primaryPosition: "CF",
           subPositions: ["P"],
+          registeredPrimaryPosition: "CF",
+          positionCounts: [
+            { position: "CF", games: 9, sharePercent: 75 },
+            { position: "P", games: 6, sharePercent: 50 },
+          ],
+          totalPositionGames: 12,
+          positionSource: "match_data",
           throws: "L",
           bats: "L",
           height: 170,
@@ -7614,7 +7666,14 @@ app.get("/players", async (c) => {
           nameKana: "マツモト ユウト",
           uniformNumber: "9",
           primaryPosition: "RF",
-          subPositions: [],
+          subPositions: ["LF"],
+          registeredPrimaryPosition: "RF",
+          positionCounts: [
+            { position: "RF", games: 9, sharePercent: 90 },
+            { position: "LF", games: 1, sharePercent: 10 },
+          ],
+          totalPositionGames: 10,
+          positionSource: "match_data",
           throws: "R",
           bats: "R",
           height: 172,
@@ -7632,7 +7691,15 @@ app.get("/players", async (c) => {
           nameKana: "ヤマダ ショウタ",
           uniformNumber: "10",
           primaryPosition: "SS",
-          subPositions: ["2B"],
+          subPositions: ["2B", "P"],
+          registeredPrimaryPosition: "SS",
+          positionCounts: [
+            { position: "SS", games: 10, sharePercent: 83 },
+            { position: "2B", games: 3, sharePercent: 25 },
+            { position: "P", games: 1, sharePercent: 8 },
+          ],
+          totalPositionGames: 12,
+          positionSource: "match_data",
           throws: "R",
           bats: "R",
           height: 168,
@@ -7650,7 +7717,14 @@ app.get("/players", async (c) => {
           nameKana: "コバヤシ イツキ",
           uniformNumber: "18",
           primaryPosition: "P",
-          subPositions: [],
+          subPositions: ["RF"],
+          registeredPrimaryPosition: "P",
+          positionCounts: [
+            { position: "P", games: 5, sharePercent: 83 },
+            { position: "RF", games: 2, sharePercent: 33 },
+          ],
+          totalPositionGames: 6,
+          positionSource: "match_data",
           throws: "R",
           bats: "L",
           height: 173,
@@ -7788,6 +7862,18 @@ app.get("/players", async (c) => {
       console.warn("Optional player stats aggregation skipped:", statErr);
     }
 
+    const { byPlayerId: aggregatedPosMap } = await aggregateTeamPlayerPositions(
+      c.env.DB,
+      teamId,
+      rawPlayers.map((rp) => ({
+        id: rp.id,
+        name: rp.name,
+        uniformNumber: rp.uniformNumber,
+        primaryPosition: rp.primaryPosition,
+        subPositions: rp.subPositions,
+      }))
+    );
+
     const formatInningsText = (outs: number): string => {
       const full = Math.floor(outs / 3);
       const rem = outs % 3;
@@ -7850,6 +7936,8 @@ app.get("/players", async (c) => {
           } catch {}
         }
 
+        const posAgg = aggregatedPosMap.get(p.id);
+
         let joinedTs: number | null = null;
         if (p.joinedAt instanceof Date) {
           joinedTs = Math.floor(p.joinedAt.getTime() / 1000);
@@ -7863,8 +7951,14 @@ app.get("/players", async (c) => {
           nameKana: p.nameKana || null,
           uniformNumber: p.uniformNumber,
           nickname: p.nickname || null,
-          primaryPosition: p.primaryPosition || null,
-          subPositions: parsedSubs,
+          primaryPosition: posAgg ? posAgg.primaryPosition : (p.primaryPosition || null),
+          subPositions: posAgg ? posAgg.subPositions : parsedSubs,
+          registeredPrimaryPosition: posAgg
+            ? posAgg.registeredPrimaryPosition
+            : (p.primaryPosition || null),
+          positionCounts: posAgg ? posAgg.positionCounts : [],
+          totalPositionGames: posAgg ? posAgg.totalPositionGames : 0,
+          positionSource: posAgg ? posAgg.positionSource : "profile",
           throws: p.throws || null,
           bats: p.bats || null,
           height: p.height ?? null,

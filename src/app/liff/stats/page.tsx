@@ -1000,11 +1000,9 @@ export default function LiffStatsPage() {
                           {avgLeaders.map((item, idx) => {
                             const rank = idx + 1;
                             const uni = cleanUniform(item.uniformNumber);
-                            return (
-                              <div
-                                key={`avg-${item.id}`}
-                                className="flex items-center justify-between p-2.5 rounded-xl bg-muted/40 border border-border/60 text-xs"
-                              >
+                            const canLinkGrowth = !item.id.startsWith("name:");
+                            const inner = (
+                              <>
                                 <div className="flex items-center gap-2.5 min-w-0">
                                   <span
                                     className={cn(
@@ -1032,9 +1030,31 @@ export default function LiffStatsPage() {
                                     </span>
                                   </div>
                                 </div>
-                                <span className="text-base font-black tabular-nums text-foreground shrink-0">
-                                  {item.avg}
-                                </span>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <span className="text-base font-black tabular-nums text-foreground">
+                                    {item.avg}
+                                  </span>
+                                  {canLinkGrowth && (
+                                    <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
+                                  )}
+                                </div>
+                              </>
+                            );
+
+                            return canLinkGrowth ? (
+                              <Link
+                                key={`avg-${item.id}`}
+                                href={`/liff/players/growth?id=${encodeURIComponent(item.id)}`}
+                                className="flex items-center justify-between p-2.5 rounded-xl bg-muted/40 hover:bg-muted border border-border/60 text-xs transition-colors active:scale-[0.99]"
+                              >
+                                {inner}
+                              </Link>
+                            ) : (
+                              <div
+                                key={`avg-${item.id}`}
+                                className="flex items-center justify-between p-2.5 rounded-xl bg-muted/40 border border-border/60 text-xs"
+                              >
+                                {inner}
                               </div>
                             );
                           })}
@@ -1151,17 +1171,36 @@ export default function LiffStatsPage() {
                           <tbody className="divide-y divide-border/70 tabular-nums">
                             {sortedBatters.map((b) => {
                               const uni = cleanUniform(b.uniformNumber);
+                              const canLinkGrowth = !b.id.startsWith("name:");
                               return (
                                 <tr
                                   key={b.id}
                                   className="hover:bg-muted/30 transition-colors"
                                 >
                                   <td className="sticky left-0 z-10 bg-card py-2.5 px-3 border-r border-border font-black text-foreground">
-                                    <span>{b.name}</span>
-                                    {uni !== "-" && (
-                                      <span className="ml-1 text-[10px] font-bold text-muted-foreground">
-                                        #{uni}
-                                      </span>
+                                    {canLinkGrowth ? (
+                                      <Link
+                                        href={`/liff/players/growth?id=${encodeURIComponent(b.id)}`}
+                                        className="inline-flex items-center gap-1 hover:text-primary transition-colors"
+                                      >
+                                        <span className="underline decoration-border underline-offset-2">
+                                          {b.name}
+                                        </span>
+                                        {uni !== "-" && (
+                                          <span className="text-[10px] font-bold text-muted-foreground">
+                                            #{uni}
+                                          </span>
+                                        )}
+                                      </Link>
+                                    ) : (
+                                      <>
+                                        <span>{b.name}</span>
+                                        {uni !== "-" && (
+                                          <span className="ml-1 text-[10px] font-bold text-muted-foreground">
+                                            #{uni}
+                                          </span>
+                                        )}
+                                      </>
                                     )}
                                   </td>
                                   <td className="py-2.5 px-2 text-right font-black text-primary">
@@ -1257,11 +1296,9 @@ export default function LiffStatsPage() {
                           {eraLeaders.map((item, idx) => {
                             const rank = idx + 1;
                             const uni = cleanUniform(item.uniformNumber);
-                            return (
-                              <div
-                                key={`era-${item.id}`}
-                                className="flex items-center justify-between p-2.5 rounded-xl bg-muted/40 border border-border/60 text-xs"
-                              >
+                            const canLinkGrowth = !item.id.startsWith("name:");
+                            const inner = (
+                              <>
                                 <div className="flex items-center gap-2.5 min-w-0">
                                   <span
                                     className={cn(
@@ -1289,9 +1326,31 @@ export default function LiffStatsPage() {
                                     </span>
                                   </div>
                                 </div>
-                                <span className="text-base font-black tabular-nums text-foreground shrink-0">
-                                  {item.era}
-                                </span>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <span className="text-base font-black tabular-nums text-foreground">
+                                    {item.era}
+                                  </span>
+                                  {canLinkGrowth && (
+                                    <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
+                                  )}
+                                </div>
+                              </>
+                            );
+
+                            return canLinkGrowth ? (
+                              <Link
+                                key={`era-${item.id}`}
+                                href={`/liff/players/growth?id=${encodeURIComponent(item.id)}`}
+                                className="flex items-center justify-between p-2.5 rounded-xl bg-muted/40 hover:bg-muted border border-border/60 text-xs transition-colors active:scale-[0.99]"
+                              >
+                                {inner}
+                              </Link>
+                            ) : (
+                              <div
+                                key={`era-${item.id}`}
+                                className="flex items-center justify-between p-2.5 rounded-xl bg-muted/40 border border-border/60 text-xs"
+                              >
+                                {inner}
                               </div>
                             );
                           })}
@@ -1357,17 +1416,36 @@ export default function LiffStatsPage() {
                           <tbody className="divide-y divide-border/70 tabular-nums">
                             {activeSection.pitchingStats.map((p) => {
                               const uni = cleanUniform(p.uniformNumber);
+                              const canLinkGrowth = !p.id.startsWith("name:");
                               return (
                                 <tr
                                   key={p.id}
                                   className="hover:bg-muted/30 transition-colors"
                                 >
                                   <td className="sticky left-0 z-10 bg-card py-2.5 px-3 border-r border-border font-black text-foreground">
-                                    <span>{p.name}</span>
-                                    {uni !== "-" && (
-                                      <span className="ml-1 text-[10px] font-bold text-muted-foreground">
-                                        #{uni}
-                                      </span>
+                                    {canLinkGrowth ? (
+                                      <Link
+                                        href={`/liff/players/growth?id=${encodeURIComponent(p.id)}`}
+                                        className="inline-flex items-center gap-1 hover:text-primary transition-colors"
+                                      >
+                                        <span className="underline decoration-border underline-offset-2">
+                                          {p.name}
+                                        </span>
+                                        {uni !== "-" && (
+                                          <span className="text-[10px] font-bold text-muted-foreground">
+                                            #{uni}
+                                          </span>
+                                        )}
+                                      </Link>
+                                    ) : (
+                                      <>
+                                        <span>{p.name}</span>
+                                        {uni !== "-" && (
+                                          <span className="ml-1 text-[10px] font-bold text-muted-foreground">
+                                            #{uni}
+                                          </span>
+                                        )}
+                                      </>
                                     )}
                                   </td>
                                   <td className="py-2.5 px-2 text-right font-black text-primary">

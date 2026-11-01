@@ -18,6 +18,7 @@ import {
   Users,
   Flame,
   Activity,
+  TrendingUp,
   Loader2,
 } from "lucide-react";
 import { LiffHeader } from "@/components/liff/LiffHeader";
@@ -47,6 +48,12 @@ interface PlayerPitchingStat {
   walks: number;
 }
 
+interface DirectoryPositionCount {
+  position: string;
+  games: number;
+  sharePercent: number;
+}
+
 interface DirectoryPlayer {
   id: string;
   name: string;
@@ -55,6 +62,10 @@ interface DirectoryPlayer {
   nickname?: string | null;
   primaryPosition: string | null;
   subPositions: string[];
+  registeredPrimaryPosition?: string | null;
+  positionCounts?: DirectoryPositionCount[];
+  totalPositionGames?: number;
+  positionSource?: "match_data" | "profile";
   throws: string | null;
   bats: string | null;
   height: number | null;
@@ -334,14 +345,23 @@ export default function LiffPlayersDirectoryPage() {
       }
       if (!q) return true;
       const num = cleanUniformNumber(p.uniformNumber).toLowerCase();
+      const subText = p.subPositions
+        .map((sp) => resolvePositionMeta(sp).shortLabel.toLowerCase())
+        .join(" ");
       return (
         p.name.toLowerCase().includes(q) ||
         (p.nameKana || "").toLowerCase().includes(q) ||
         num.includes(q) ||
-        meta.shortLabel.toLowerCase().includes(q)
+        meta.shortLabel.toLowerCase().includes(q) ||
+        subText.includes(q)
       );
     });
   }, [players, selectedCategory, searchQuery]);
+
+  const hasMatchAggregatedPositions = useMemo(
+    () => players.some((p) => p.positionSource === "match_data"),
+    [players]
+  );
 
   // 詳細モーダル対象の選手 & 前後インデックス
   const selectedIndex = useMemo(() => {
@@ -379,6 +399,21 @@ export default function LiffPlayersDirectoryPage() {
             </span>
           }
           showBack
+          rightElement={
+            players.length > 0 ? (
+              <Link
+                href={`/liff/players/growth?id=${encodeURIComponent(
+                  (teamInfo?.captainId && players.some((p) => p.id === teamInfo.captainId)
+                    ? teamInfo.captainId
+                    : players[0].id)
+                )}`}
+                className="px-2.5 py-1.5 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-[11px] font-black flex items-center gap-1 active:scale-95 transition-all shadow-2xs"
+              >
+                <TrendingUp className="w-3.5 h-3.5" />
+                <span>個人成長</span>
+              </Link>
+            ) : undefined
+          }
           shareData={{
             title: `【選手名鑑】${teamHeadline} (${players.length}名)`,
             text: `${seasonYear}年度 オフィシャル選手名鑑・背番号一覧をチェック！`,
@@ -413,6 +448,11 @@ export default function LiffPlayersDirectoryPage() {
                 <span className="px-2 py-0.5 rounded-full bg-cyan-400/20 text-cyan-300 border border-cyan-400/30 text-[10px] font-black tracking-widest uppercase">
                   {seasonYear} ROSTER
                 </span>
+                {hasMatchAggregatedPositions && (
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-400/20 text-emerald-300 border border-emerald-400/35 text-[10px] font-black">
+                    実戦守備集計
+                  </span>
+                )}
                 {(isDemoMode || providerDemo) && (
                   <span className="px-2 py-0.5 rounded-full bg-amber-400/20 text-amber-300 border border-amber-400/30 text-[10px] font-black">
                     DEMO
@@ -602,6 +642,10 @@ export default function LiffPlayersDirectoryPage() {
               const numStr = cleanUniformNumber(player.uniformNumber);
               const tbLabel = formatThrowsBats(player.throws, player.bats);
               const initial = player.name.replace(/\s+/g, "").slice(0, 1) || "選";
+              const mainGames = player.positionCounts?.[0]?.games ?? 0;
+              const subLabelsShort = player.subPositions
+                .map((sp) => resolvePositionMeta(sp).shortLabel)
+                .filter(Boolean);
 
               return (
                 <button
@@ -620,7 +664,7 @@ export default function LiffPlayersDirectoryPage() {
                       {numStr}
                     </span>
 
-                    {/* 上段バッジ列: 背番号 + 主将マーク / 守備位置 */}
+                    {/* 上段バッジ列: 背番号 + 主将マーク / メイン守備位置 */}
                     <div className="relative z-10 flex items-center justify-between gap-1">
                       <div className="flex items-center gap-1">
                         <span className="px-2 py-0.5 rounded-lg bg-white text-slate-950 text-xs font-black italic tracking-tight tabular-nums shadow-xs">
@@ -634,8 +678,9 @@ export default function LiffPlayersDirectoryPage() {
                         )}
                       </div>
 
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-black shadow-2xs ${style.pillSolid}`}>
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-black shadow-2xs tabular-nums ${style.pillSolid}`}>
                         {posMeta.shortLabel}
+                        {mainGames > 0 ? ` (${mainGames})` : ""}
                       </span>
                     </div>
 
@@ -662,13 +707,37 @@ export default function LiffPlayersDirectoryPage() {
 
                   {/* 下部ソリッド情報エリア（屋外高コントラスト） */}
                   <div className="p-3 bg-card flex-1 flex flex-col justify-between space-y-2">
-                    <div className="min-w-0">
-                      <p className="text-[9.5px] font-bold text-muted-foreground tracking-wider truncate min-h-[14px]">
-                        {player.nameKana || "PLAYER"}
-                      </p>
-                      <h3 className="text-sm sm:text-[15px] font-black text-foreground tracking-tight truncate leading-snug">
-                        {player.name}
-                      </h3>
+                    <div className="min-w-0 space-y-1">
+                      <div>
+                        <p className="text-[9.5px] font-bold text-muted-foreground tracking-wider truncate min-h-[14px]">
+                          {player.nameKana || "PLAYER"}
+                        </p>
+                        <h3 className="text-sm sm:text-[15px] font-black text-foreground tracking-tight truncate leading-snug">
+                          {player.name}
+                        </h3>
+                      </div>
+
+                      {/* サブ守備位置チップ（実戦集計で複数守った場合に常時表示） */}
+                      {subLabelsShort.length > 0 && (
+                        <div className="flex items-center gap-1 flex-wrap pt-0.5">
+                          <span className="text-[9px] font-black text-muted-foreground shrink-0">
+                            サブ:
+                          </span>
+                          {subLabelsShort.slice(0, 2).map((lbl, idx) => (
+                            <span
+                              key={`${player.id}-sub-${idx}`}
+                              className="px-1.5 py-0.2 rounded-md bg-muted border border-border/80 text-[9.5px] font-black text-foreground leading-tight"
+                            >
+                              {lbl}
+                            </span>
+                          ))}
+                          {subLabelsShort.length > 2 && (
+                            <span className="text-[9px] font-black text-muted-foreground tabular-nums">
+                              +{subLabelsShort.length - 2}
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     <div className="space-y-1.5 pt-1 border-t border-border/60">
@@ -678,9 +747,9 @@ export default function LiffPlayersDirectoryPage() {
                           <span className="tabular-nums">
                             {player.height}cm{player.weight ? `/${player.weight}kg` : ""}
                           </span>
-                        ) : player.subPositions.length > 0 ? (
-                          <span className="truncate">
-                            +{ resolvePositionMeta(player.subPositions[0]).shortLabel }
+                        ) : mainGames > 0 ? (
+                          <span className="tabular-nums text-[9.5px]">
+                            出場{player.totalPositionGames || mainGames}試
                           </span>
                         ) : null}
                       </div>
@@ -707,7 +776,7 @@ export default function LiffPlayersDirectoryPage() {
                         </div>
                       ) : (
                         <div className="px-2 py-1 rounded-xl bg-muted/60 flex items-center justify-between text-[10px] text-muted-foreground font-bold">
-                          <span>詳細プロフィール</span>
+                          <span>詳細・成長記録</span>
                           <ChevronRight className="w-3 h-3" />
                         </div>
                       )}
@@ -726,6 +795,10 @@ export default function LiffPlayersDirectoryPage() {
               const numStr = cleanUniformNumber(player.uniformNumber);
               const tbLabel = formatThrowsBats(player.throws, player.bats);
               const initial = player.name.replace(/\s+/g, "").slice(0, 1) || "選";
+              const mainGames = player.positionCounts?.[0]?.games ?? 0;
+              const subLabelsShort = player.subPositions
+                .map((sp) => resolvePositionMeta(sp).shortLabel)
+                .filter(Boolean);
 
               return (
                 <button
@@ -776,10 +849,16 @@ export default function LiffPlayersDirectoryPage() {
                         </div>
                         <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                           <span
-                            className={`px-2 py-0.2 rounded-full border text-[10px] font-black ${style.pillSoft}`}
+                            className={`px-2 py-0.2 rounded-full border text-[10px] font-black tabular-nums ${style.pillSoft}`}
                           >
                             {posMeta.shortLabel}
+                            {mainGames > 0 ? `(${mainGames})` : ""}
                           </span>
+                          {subLabelsShort.length > 0 && (
+                            <span className="px-1.5 py-0.2 rounded-md bg-muted border border-border text-[10px] font-bold text-foreground truncate max-w-[140px]">
+                              サブ:{subLabelsShort.join("・")}
+                            </span>
+                          )}
                           {tbLabel && (
                             <span className="text-[11px] font-bold text-muted-foreground">
                               {tbLabel}
@@ -835,6 +914,7 @@ export default function LiffPlayersDirectoryPage() {
         const numStr = cleanUniformNumber(selectedPlayer.uniformNumber);
         const tbLabel = formatThrowsBats(selectedPlayer.throws, selectedPlayer.bats) || "未設定";
         const initial = selectedPlayer.name.replace(/\s+/g, "").slice(0, 1) || "選";
+        const posCounts = selectedPlayer.positionCounts || [];
         const subLabels = selectedPlayer.subPositions
           .map((sp) => resolvePositionMeta(sp).shortLabel)
           .filter(Boolean);
@@ -939,7 +1019,29 @@ export default function LiffPlayersDirectoryPage() {
               </div>
 
               {/* スクロール可能な詳細ボディ */}
-              <div className="p-4 pb-[max(env(safe-area-inset-bottom),20px)] space-y-4 overflow-y-auto">
+              <div className="p-4 pb-[max(env(safe-area-inset-bottom),20px)] space-y-3.5 overflow-y-auto">
+                {/* 📈 個人の成長・成績推移ページへのメインCTAボタン */}
+                <Link
+                  href={`/liff/players/growth?id=${encodeURIComponent(selectedPlayer.id)}`}
+                  onClick={() => setSelectedPlayerId(null)}
+                  className="w-full py-3 px-4 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm active:scale-[0.99] transition-all flex items-center justify-between gap-2"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span className="w-7 h-7 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+                      <TrendingUp className="w-4 h-4" />
+                    </span>
+                    <div className="text-left min-w-0">
+                      <span className="text-xs sm:text-sm font-black block leading-tight">
+                        個人の成長・成績推移を見る
+                      </span>
+                      <span className="text-[10px] font-bold opacity-90 block leading-tight mt-0.5">
+                        試合ごとの打撃・投手グラフ / 守備経験マップ
+                      </span>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 shrink-0" />
+                </Link>
+
                 {/* 基本スペック 4グリッド */}
                 <div className="grid grid-cols-4 gap-2 text-center">
                   <div className="p-2.5 rounded-2xl bg-muted/60 border border-border/70">
@@ -949,7 +1051,7 @@ export default function LiffPlayersDirectoryPage() {
                     </span>
                   </div>
                   <div className="p-2.5 rounded-2xl bg-muted/60 border border-border/70">
-                    <span className="text-[9.5px] font-bold text-muted-foreground block">守備</span>
+                    <span className="text-[9.5px] font-bold text-muted-foreground block">メイン守備</span>
                     <span className="text-xs font-black text-foreground mt-0.5 block truncate">
                       {posMeta.shortLabel}
                     </span>
@@ -970,8 +1072,66 @@ export default function LiffPlayersDirectoryPage() {
                   </div>
                 </div>
 
-                {/* サブポジション表記 */}
-                {subLabels.length > 0 && (
+                {/* 🧤 実戦守備位置（メイン＆サブ集計内訳） */}
+                {posCounts.length > 0 ? (
+                  <div className="rounded-2xl bg-background border border-border p-3.5 space-y-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-black text-foreground">
+                        実戦守備位置（メイン / サブ）
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 text-[10px] font-black tabular-nums">
+                        試合データ集計 ({selectedPlayer.totalPositionGames || posCounts[0].games}試合)
+                      </span>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      {posCounts.map((pc, idx) => {
+                        const isMain = idx === 0;
+                        const pcMeta = resolvePositionMeta(pc.position);
+                        const pcStyle = CATEGORY_STYLES[pcMeta.category];
+                        return (
+                          <div
+                            key={pc.position}
+                            className="flex items-center justify-between gap-2 px-2.5 py-2 rounded-xl bg-card border border-border text-xs"
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span
+                                className={`px-1.5 py-0.5 rounded-md text-[9.5px] font-black shrink-0 ${
+                                  isMain
+                                    ? pcStyle.pillSolid
+                                    : "bg-muted text-muted-foreground border border-border"
+                                }`}
+                              >
+                                {isMain ? "メイン" : "サブ"}
+                              </span>
+                              <span className="font-black text-foreground truncate">
+                                {pcMeta.shortLabel}
+                              </span>
+                              <span className="text-[10px] font-bold text-muted-foreground uppercase">
+                                ({pcMeta.code})
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0">
+                              <div className="w-16 h-1.5 rounded-full bg-muted overflow-hidden hidden min-[360px]:block">
+                                <div
+                                  className={`h-full rounded-full ${pcStyle.barSolid}`}
+                                  style={{ width: `${Math.max(12, Math.min(100, pc.sharePercent))}%` }}
+                                />
+                              </div>
+                              <span className="font-black text-foreground tabular-nums text-xs">
+                                {pc.games}
+                                <span className="text-[10px] font-bold text-muted-foreground ml-0.5">
+                                  試合
+                                </span>
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : subLabels.length > 0 ? (
                   <div className="flex items-center gap-2 px-3 py-2 rounded-2xl bg-muted/40 border border-border/60 text-xs">
                     <span className="font-bold text-muted-foreground shrink-0">サブ守備位置:</span>
                     <div className="flex items-center gap-1.5 flex-wrap">
@@ -985,7 +1145,7 @@ export default function LiffPlayersDirectoryPage() {
                       ))}
                     </div>
                   </div>
-                )}
+                ) : null}
 
                 {/* 選手紹介メモ */}
                 {selectedPlayer.notes && (
