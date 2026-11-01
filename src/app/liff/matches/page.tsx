@@ -30,8 +30,13 @@ import {
   Trophy,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   ScanLine,
   Trash2,
+  Settings,
+  CheckCircle2,
+  BookOpen,
 } from "lucide-react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/layout/EmptyState";
@@ -286,11 +291,15 @@ function MatchesContent() {
   const [isAddressCopied, setIsAddressCopied] = useState(false);
   const [showDeleteStatsModal, setShowDeleteStatsModal] = useState(false);
   const [isDeletingPersonalStats, setIsDeletingPersonalStats] = useState(false);
+  const [isManageMenuOpen, setIsManageMenuOpen] = useState(false);
 
   // 試合一覧用ステート
   const [matchesList, setMatchesList] = useState<MatchCardData[]>([]);
   const [isListLoading, setIsListLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | "scheduled" | "video" | "official">("all");
+  const [scorebookFilter, setScorebookFilter] = useState<
+    "all" | "imported" | "unimported"
+  >("all");
 
   const handleCopyVenueAddress = useCallback((addressText: string) => {
     if (!addressText) return;
@@ -375,6 +384,7 @@ function MatchesContent() {
     setIsAddressCopied(false);
     setLineupTeamTab("my");
     setShowDeleteStatsModal(false);
+    setIsManageMenuOpen(false);
     if (!matchId) {
       setDetailError(null);
       setPrevMatch(null);
@@ -998,6 +1008,19 @@ function MatchesContent() {
                   {benchSideLabel}
                 </span>
 
+                {!isFutureOrScheduled && !isRainout && !isStatsLoading && (
+                  hasPersonalStatsData ? (
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[11px] font-black leading-tight bg-indigo-100 text-indigo-800 border-indigo-300 dark:bg-indigo-950/80 dark:text-indigo-300 dark:border-indigo-800">
+                      <CheckCircle2 className="w-3 h-3 shrink-0" />
+                      <span>スコア取込済</span>
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-md border text-[11px] font-black leading-tight bg-slate-100 text-slate-600 border-slate-300 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700">
+                      スコア未取込
+                    </span>
+                  )
+                )}
+
                 {formattedDateTime && (
                   <span className="text-[11px] sm:text-xs font-bold tabular-nums text-foreground/85 leading-tight shrink-0">
                     {formattedDateTime}
@@ -1158,52 +1181,6 @@ function MatchesContent() {
                   </tbody>
                 </table>
               </div>
-
-              {!isDemo && !isDemoMatchId(match.id) && !isRainout && (
-                <div className="px-3 py-2.5 border-t border-border bg-muted/30 flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-[10px] font-bold text-muted-foreground min-w-0 flex-1 truncate">
-                    {isFutureOrScheduled
-                      ? "試合後に紙スコアブックをAIで一括取り込みできます"
-                      : "打席結果・1球順序・選手交代・個人成績を後からでも修正できます"}
-                  </span>
-                  <div className="flex items-center gap-1.5 shrink-0 ml-auto">
-                    {!isFutureOrScheduled && hasPersonalStatsData && (
-                      <button
-                        type="button"
-                        onClick={() => setShowDeleteStatsModal(true)}
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-card border border-rose-300 dark:border-rose-800 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/50 text-[11px] font-black shadow-2xs active:scale-95 transition-all cursor-pointer"
-                      >
-                        <Trash2 className="w-3.5 h-3.5 shrink-0" />
-                        <span>個人データ削除</span>
-                      </button>
-                    )}
-                    <Link
-                      href={
-                        isFutureOrScheduled
-                          ? `/liff/tools/scorebook-import?matchId=${encodeURIComponent(
-                              match.id
-                            )}`
-                          : `/liff/tools/scorebook-import?matchId=${encodeURIComponent(
-                              match.id
-                            )}&mode=edit`
-                      }
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black shadow-2xs active:scale-95 transition-all shrink-0"
-                    >
-                      {isFutureOrScheduled ? (
-                        <>
-                          <ScanLine className="w-3.5 h-3.5" />
-                          <span>スコア取り込み</span>
-                        </>
-                      ) : (
-                        <>
-                          <Edit3 className="w-3.5 h-3.5" />
-                          <span>打席・選手交代を修正</span>
-                        </>
-                      )}
-                    </Link>
-                  </div>
-                </div>
-              )}
             </div>
           </section>
 
@@ -1222,11 +1199,6 @@ function MatchesContent() {
             playLogs={playLogs}
             boxscoreAtBats={boxscoreAtBats}
             isLoadingStats={isStatsLoading}
-            onRequestDeletePersonalStats={
-              !isDemo && !isDemoMatchId(match.id) && !isRainout
-                ? () => setShowDeleteStatsModal(true)
-                : undefined
-            }
           />
 
           {/* 👥 3. 出場メンバー（見出しはカード外・内部ブロックもすべて見出しを枠外に統一） */}
@@ -1236,27 +1208,6 @@ function MatchesContent() {
                 <Users className="w-4 h-4 text-primary shrink-0" />
                 <span className="truncate">出場メンバー</span>
               </h2>
-
-              <div className="flex items-center gap-1.5 shrink-0">
-                {!isFutureOrScheduled && !isDemo && !isDemoMatchId(match.id) && (
-                  <Link
-                    href={`/liff/tools/scorebook-import?matchId=${encodeURIComponent(
-                      match.id
-                    )}&mode=edit`}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black transition-all active:scale-95 shadow-2xs"
-                  >
-                    <Users className="w-3 h-3" />
-                    <span>選手交代・継投</span>
-                  </Link>
-                )}
-                <Link
-                  href={`/liff/matches/lineup?id=${match.id}`}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-[11px] font-black transition-all active:scale-95 shadow-2xs"
-                >
-                  <Edit3 className="w-3 h-3" />
-                  <span>{filledStarters.length > 0 ? "スタメン編集" : "登録する"}</span>
-                </Link>
-              </div>
             </div>
 
             <div className="bg-card border border-border rounded-2xl p-3.5 shadow-xs space-y-3.5">
@@ -1826,6 +1777,179 @@ function MatchesContent() {
             </nav>
           )}
 
+          {/* ⚙️ 6. ページ最下部：折りたたみ式の「試合データの修正・削除」まとめエリア */}
+          {!isDemo && !isDemoMatchId(match.id) && (
+            <section
+              aria-label="試合データの修正・削除"
+              className="pt-1"
+            >
+              <div className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+                <button
+                  type="button"
+                  aria-expanded={isManageMenuOpen}
+                  onClick={() => setIsManageMenuOpen((prev) => !prev)}
+                  className="w-full px-3.5 py-3 flex items-center justify-between gap-2.5 text-left hover:bg-muted/40 active:bg-muted/60 transition-colors cursor-pointer"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-muted border border-border flex items-center justify-center text-muted-foreground shrink-0">
+                      <Settings className="w-4 h-4" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-xs font-black text-foreground leading-snug">
+                        試合データの修正・削除
+                      </p>
+                      <p className="text-[10px] font-bold text-muted-foreground truncate mt-0.5">
+                        スタメン・打席結果・選手交代の修正、個人データの削除
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    {!isFutureOrScheduled && !isRainout && !isStatsLoading && (
+                      hasPersonalStatsData ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-black bg-indigo-100 text-indigo-800 border-indigo-300 dark:bg-indigo-950/80 dark:text-indigo-300 dark:border-indigo-800">
+                          <CheckCircle2 className="w-3 h-3 shrink-0" />
+                          <span>取込済</span>
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full border text-[10px] font-black bg-slate-100 text-slate-600 border-slate-300 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700">
+                          未取込
+                        </span>
+                      )
+                    )}
+                    <span className="w-6 h-6 rounded-lg bg-muted flex items-center justify-center text-muted-foreground">
+                      {isManageMenuOpen ? (
+                        <ChevronUp className="w-4 h-4" />
+                      ) : (
+                        <ChevronDown className="w-4 h-4" />
+                      )}
+                    </span>
+                  </div>
+                </button>
+
+                {isManageMenuOpen && (
+                  <div className="border-t border-border bg-muted/25 p-3.5 space-y-3 animate-in fade-in slide-in-from-top-1 duration-150">
+                    {/* 登録・修正アクション一覧 */}
+                    <div className="space-y-2">
+                      <p className="text-[10px] font-black text-muted-foreground px-0.5">
+                        データの登録・修正
+                      </p>
+
+                      {!isRainout && hasPersonalStatsData && (
+                        <Link
+                          href={`/liff/tools/scorebook-import?matchId=${encodeURIComponent(
+                            match.id
+                          )}&mode=edit`}
+                          className="flex items-center justify-between gap-2.5 p-3 rounded-xl bg-card hover:bg-indigo-50/70 dark:hover:bg-indigo-950/30 border border-indigo-300 dark:border-indigo-800 shadow-2xs active:scale-[0.99] transition-all"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <span className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0">
+                              <Edit3 className="w-4 h-4" />
+                            </span>
+                            <div className="min-w-0">
+                              <p className="text-xs font-black text-foreground leading-snug">
+                                打席結果・選手交代・個人成績を修正
+                              </p>
+                              <p className="text-[10px] font-bold text-muted-foreground leading-snug mt-0.5">
+                                保存済みの1球履歴・走者進塁・途中交代・継投を再編集
+                              </p>
+                            </div>
+                          </div>
+                          <ChevronRight className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                        </Link>
+                      )}
+
+                      <Link
+                        href={`/liff/matches/lineup?id=${encodeURIComponent(match.id)}`}
+                        className="flex items-center justify-between gap-2.5 p-3 rounded-xl bg-card hover:bg-muted/60 border border-border shadow-2xs active:scale-[0.99] transition-all"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span className="w-8 h-8 rounded-xl bg-primary/15 text-primary border border-primary/25 flex items-center justify-center shrink-0">
+                            <Users className="w-4 h-4" />
+                          </span>
+                          <div className="min-w-0">
+                            <p className="text-xs font-black text-foreground leading-snug">
+                              {filledStarters.length > 0
+                                ? "スタメン・出欠メンバーを編集"
+                                : "スタメン・出欠メンバーを登録"}
+                            </p>
+                            <p className="text-[10px] font-bold text-muted-foreground leading-snug mt-0.5">
+                              スターティングメンバー・控え・欠席者を変更
+                            </p>
+                          </div>
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                      </Link>
+
+                      {!isRainout && (
+                        <Link
+                          href={`/liff/tools/scorebook-import?matchId=${encodeURIComponent(
+                            match.id
+                          )}`}
+                          className="flex items-center justify-between gap-2.5 p-3 rounded-xl bg-card hover:bg-muted/60 border border-border shadow-2xs active:scale-[0.99] transition-all"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <span className="w-8 h-8 rounded-xl bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 flex items-center justify-center shrink-0">
+                              <ScanLine className="w-4 h-4" />
+                            </span>
+                            <div className="min-w-0">
+                              <p className="text-xs font-black text-foreground leading-snug">
+                                {hasPersonalStatsData
+                                  ? "紙スコアブック画像から再取り込み"
+                                  : "紙スコアブックをAIで取り込む"}
+                              </p>
+                              <p className="text-[10px] font-bold text-muted-foreground leading-snug mt-0.5">
+                                {hasPersonalStatsData
+                                  ? "新しく撮影したスコアシート画像で上書き取り込み"
+                                  : "スコアブック写真から打席・個人成績を一括登録"}
+                              </p>
+                            </div>
+                          </div>
+                          <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                        </Link>
+                      )}
+                    </div>
+
+                    {/* 削除アクション */}
+                    <div className="pt-2.5 border-t border-border/70 space-y-2">
+                      <p className="text-[10px] font-black text-rose-700 dark:text-rose-400 px-0.5">
+                        データの削除
+                      </p>
+
+                      {hasPersonalStatsData ? (
+                        <button
+                          type="button"
+                          onClick={() => setShowDeleteStatsModal(true)}
+                          className="w-full flex items-center justify-between gap-2.5 p-3 rounded-xl bg-card hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-rose-300 dark:border-rose-800 shadow-2xs active:scale-[0.99] transition-all text-left cursor-pointer"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <span className="w-8 h-8 rounded-xl bg-rose-100 dark:bg-rose-950/80 border border-rose-300 dark:border-rose-800 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+                              <Trash2 className="w-4 h-4" />
+                            </span>
+                            <div className="min-w-0">
+                              <p className="text-xs font-black text-rose-700 dark:text-rose-300 leading-snug">
+                                この試合の個人データを削除
+                              </p>
+                              <p className="text-[10px] font-bold text-muted-foreground leading-snug mt-0.5">
+                                試合日程・スコア・動画は残し、打席・個人成績のみ削除
+                              </p>
+                            </div>
+                          </div>
+                          <ChevronRight className="w-4 h-4 text-rose-500 shrink-0" />
+                        </button>
+                      ) : (
+                        <div className="rounded-xl border border-dashed border-border bg-card/70 px-3 py-2.5 flex items-center gap-2 text-[11px] font-bold text-muted-foreground">
+                          <Trash2 className="w-3.5 h-3.5 shrink-0 opacity-60" />
+                          <span>現在この試合に削除対象の個人データはありません</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
+
           <DeletePersonalStatsModal
             isOpen={showDeleteStatsModal}
             matchId={match.id}
@@ -1848,10 +1972,36 @@ function MatchesContent() {
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   // 🅱️ 試合一覧画面 (matchId がない場合)
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  const isFinishedForScorebookCheck = (m: MatchCardData): boolean => {
+    if (m.status === "rainout" || m.status === "scheduled") return false;
+    const parsed = parseSafeMatchDate(m.date);
+    if (parsed && parsed.getTime() > Date.now() && m.status !== "finished") {
+      return false;
+    }
+    return true;
+  };
+
+  const importedMatchesCount = matchesList.filter((m) => Boolean(m.hasScorebook)).length;
+  const unimportedMatchesCount = matchesList.filter(
+    (m) => isFinishedForScorebookCheck(m) && !m.hasScorebook
+  ).length;
+
   const filteredMatches = matchesList.filter((m) => {
-    if (filter === "scheduled") return m.status === "scheduled" || m.status === "live";
-    if (filter === "video") return !!extractYouTubeVideoId(m.youtubeUrl);
-    if (filter === "official") return m.matchType === "official" || m.matchType === "tournament";
+    if (filter === "scheduled" && !(m.status === "scheduled" || m.status === "live")) {
+      return false;
+    }
+    if (filter === "video" && !extractYouTubeVideoId(m.youtubeUrl)) {
+      return false;
+    }
+    if (filter === "official" && !(m.matchType === "official" || m.matchType === "tournament")) {
+      return false;
+    }
+    if (scorebookFilter === "imported") {
+      return Boolean(m.hasScorebook);
+    }
+    if (scorebookFilter === "unimported") {
+      return isFinishedForScorebookCheck(m) && !m.hasScorebook;
+    }
     return true;
   });
 
@@ -1951,6 +2101,54 @@ function MatchesContent() {
           >
             🏆 公式戦
           </button>
+        </div>
+
+        {/* スコアブック取込状況での絞り込みバー */}
+        <div className="flex items-center justify-between gap-2 px-1 flex-wrap">
+          <span className="inline-flex items-center gap-1 text-[11px] font-black text-muted-foreground">
+            <BookOpen className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+            <span>スコアブック取込状況</span>
+          </span>
+
+          <div className="inline-flex items-center gap-1 p-0.5 rounded-xl bg-muted/70 border border-border">
+            <button
+              type="button"
+              onClick={() => setScorebookFilter("all")}
+              className={cn(
+                "px-2.5 py-1 rounded-lg text-[10px] font-black transition-all cursor-pointer tabular-nums",
+                scorebookFilter === "all"
+                  ? "bg-card text-foreground shadow-2xs border border-border/60"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              すべて
+            </button>
+            <button
+              type="button"
+              onClick={() => setScorebookFilter("imported")}
+              className={cn(
+                "px-2.5 py-1 rounded-lg text-[10px] font-black transition-all cursor-pointer tabular-nums inline-flex items-center gap-1",
+                scorebookFilter === "imported"
+                  ? "bg-indigo-600 text-white shadow-2xs"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <CheckCircle2 className="w-3 h-3 shrink-0" />
+              <span>取込済 ({importedMatchesCount})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setScorebookFilter("unimported")}
+              className={cn(
+                "px-2.5 py-1 rounded-lg text-[10px] font-black transition-all cursor-pointer tabular-nums",
+                scorebookFilter === "unimported"
+                  ? "bg-slate-700 dark:bg-slate-200 text-white dark:text-slate-900 shadow-2xs"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              未取込 ({unimportedMatchesCount})
+            </button>
+          </div>
         </div>
 
         {/* 試合カード一覧 */}

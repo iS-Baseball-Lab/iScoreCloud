@@ -120,6 +120,7 @@ export interface DemoMatchCardItem {
   myInningScores?: number[];
   opponentInningScores?: number[];
   hasLineup?: boolean;
+  hasScorebook?: boolean;
 }
 
 export const DEMO_LINEUP_PLAYERS: LineupPlayer[] = [
@@ -251,6 +252,7 @@ export const DEMO_MATCH_CARDS: DemoMatchCardItem[] = [
     myInningScores: [],
     opponentInningScores: [],
     hasLineup: false,
+    hasScorebook: false,
   },
   {
     id: "demo-match-1",
@@ -269,6 +271,7 @@ export const DEMO_MATCH_CARDS: DemoMatchCardItem[] = [
     myInningScores: [2, 0, 1, 3, 0, 1, 0],
     opponentInningScores: [0, 1, 0, 0, 2, 1, 0],
     hasLineup: true,
+    hasScorebook: true,
   },
   {
     id: "demo-match-2",
@@ -287,6 +290,7 @@ export const DEMO_MATCH_CARDS: DemoMatchCardItem[] = [
     myInningScores: [0, 1, 0, 2, 0, 1, 0],
     opponentInningScores: [1, 0, 2, 0, 1, 1, 0],
     hasLineup: true,
+    hasScorebook: true,
   },
 ];
 

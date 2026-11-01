@@ -188,6 +188,7 @@ export interface MatchRow {
   venueName?: string | null;
   venueAddress?: string | null;
   venueMapUrl?: string | null;
+  hasScorebook?: boolean;
 }
 
 /**

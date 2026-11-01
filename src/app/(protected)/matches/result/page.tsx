@@ -6,7 +6,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { SectionHeader } from "@/components/layout/SectionHeader";
 import { EmptyState } from "@/components/layout/EmptyState";
-import { Edit2, ShieldAlert, Sparkles, MapPin, Share2, History, Target, EyeOff, FileSpreadsheet, Lock, Activity, Trophy, ChevronLeft, ChevronRight, Calendar, Zap, TrendingUp, Video, Edit3, X, Play, Plus, BookOpen, AlertCircle, Award, Flame, Users, Loader2, Trash2 } from "lucide-react";
+import { Edit2, ShieldAlert, Sparkles, MapPin, Share2, History, Target, EyeOff, FileSpreadsheet, Lock, Activity, Trophy, ChevronLeft, ChevronRight, Calendar, Zap, TrendingUp, Video, Edit3, X, Play, Plus, BookOpen, AlertCircle, Award, Flame, Users, Loader2, Trash2, CheckCircle2 } from "lucide-react";
 import { MatchTimeline } from "@/components/matches/MatchTimeline";
 import { parseD1PlayLog, PlayLog } from "@/components/matches/PlayLogCard";
 import {
@@ -797,10 +797,21 @@ function MatchResultContent() {
               <h1 className="text-3xl sm:text-5xl font-black italic tracking-tighter uppercase leading-none text-foreground">
                 vs {match.opponent}
               </h1>
-              <div className="flex justify-center items-center gap-3 sm:gap-4 text-muted-foreground font-bold text-[10px] sm:text-xs uppercase tracking-wider">
+              <div className="flex justify-center items-center flex-wrap gap-3 sm:gap-4 text-muted-foreground font-bold text-[10px] sm:text-xs uppercase tracking-wider">
                 <div className="flex items-center gap-1"><Calendar className="h-3.5 w-3.5 text-muted-foreground/50" /> {match.date}</div>
                 <span className="h-3 w-px bg-border" />
                 <div className="flex items-center gap-1"><Activity className="h-3.5 w-3.5 text-muted-foreground/50" /> {match.matchType}</div>
+                <span className="h-3 w-px bg-border" />
+                {hasPersonalStatsData ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[10px] sm:text-xs font-black bg-indigo-100 text-indigo-800 border-indigo-300 dark:bg-indigo-950/80 dark:text-indigo-300 dark:border-indigo-800 normal-case">
+                    <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                    スコア取込済
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded border text-[10px] sm:text-xs font-black bg-slate-100 text-slate-600 border-slate-300 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700 normal-case">
+                    スコア未取込
+                  </span>
+                )}
               </div>
             </div>
 

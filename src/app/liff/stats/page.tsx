@@ -20,6 +20,8 @@ import {
   TrendingUp,
   BarChart3,
   Plus,
+  CheckCircle2,
+  BookOpen,
 } from "lucide-react";
 
 type StatsFilterKey = "all" | "official" | "exchange" | "practice";
@@ -68,6 +70,7 @@ interface StatsMatchItem {
   opponentErrors: number;
   isColdGame: boolean;
   isTiebreaker: boolean;
+  hasScorebook?: boolean;
 }
 
 interface SeasonBatterStat {
@@ -211,6 +214,9 @@ export default function LiffStatsPage() {
   const { currentTeam, isLoadingTeam } = useLiff();
   const [filter, setFilter] = useState<StatsFilterKey>("all");
   const [tab, setTab] = useState<StatsMainTab>("matches");
+  const [matchImportFilter, setMatchImportFilter] = useState<
+    "all" | "imported" | "unimported"
+  >("all");
   const [batterSort, setBatterSort] = useState<BatterSortKey>("hits");
   const [seasonYear, setSeasonYear] = useState<number>(() => new Date().getFullYear());
   const [sectionsByFilter, setSectionsByFilter] = useState<
@@ -278,6 +284,23 @@ export default function LiffStatsPage() {
     if (filter === "all") return matchesList;
     return matchesList.filter((m) => m.matchType === filter);
   }, [matchesList, filter]);
+
+  const importedInFilterCount = useMemo(
+    () => filteredMatches.filter((m) => Boolean(m.hasScorebook)).length,
+    [filteredMatches]
+  );
+  const unimportedInFilterCount =
+    filteredMatches.length - importedInFilterCount;
+
+  const displayedMatches = useMemo(() => {
+    if (matchImportFilter === "imported") {
+      return filteredMatches.filter((m) => Boolean(m.hasScorebook));
+    }
+    if (matchImportFilter === "unimported") {
+      return filteredMatches.filter((m) => !m.hasScorebook);
+    }
+    return filteredMatches;
+  }, [filteredMatches, matchImportFilter]);
 
   const sortedBatters = useMemo(() => {
     const copy = [...activeSection.battingStats];
@@ -737,18 +760,71 @@ export default function LiffStatsPage() {
                   </div>
                 ) : (
                   <>
-                    <div className="flex items-center justify-between px-1">
+                    <div className="flex items-center justify-between px-1 gap-2 flex-wrap">
                       <h3 className="text-xs font-black text-foreground flex items-center gap-1.5">
-                        <BarChart3 className="w-3.5 h-3.5 text-primary" />
+                        <BarChart3 className="w-3.5 h-3.5 text-primary shrink-0" />
                         <span>試合ごとの得点・失点履歴 ({filteredMatches.length}試合)</span>
                       </h3>
-                      <span className="text-[10px] font-bold text-muted-foreground">
-                        タップで試合詳細へ
+                      <span className="inline-flex items-center gap-1 text-[10px] font-black text-indigo-700 dark:text-indigo-300 tabular-nums">
+                        <BookOpen className="w-3 h-3 shrink-0" />
+                        <span>
+                          スコア取込済 {importedInFilterCount} / {filteredMatches.length}試合
+                        </span>
                       </span>
                     </div>
 
+                    {/* スコア取込状況フィルター */}
+                    <div className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-muted/70 border border-border">
+                      {(
+                        [
+                          {
+                            key: "all" as const,
+                            label: `すべて (${filteredMatches.length})`,
+                          },
+                          {
+                            key: "imported" as const,
+                            label: `✓ 取込済 (${importedInFilterCount})`,
+                          },
+                          {
+                            key: "unimported" as const,
+                            label: `未取込 (${unimportedInFilterCount})`,
+                          },
+                        ] as const
+                      ).map((item) => {
+                        const active = matchImportFilter === item.key;
+                        return (
+                          <button
+                            key={item.key}
+                            type="button"
+                            onClick={() => setMatchImportFilter(item.key)}
+                            className={cn(
+                              "py-1 px-1.5 rounded-lg text-[10px] font-black transition-all truncate cursor-pointer tabular-nums",
+                              active
+                                ? "bg-card text-foreground shadow-2xs border border-border/60"
+                                : "text-muted-foreground hover:text-foreground"
+                            )}
+                          >
+                            {item.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {displayedMatches.length === 0 ? (
+                      <div className="py-6">
+                        <EmptyState
+                          icon={BookOpen}
+                          title={
+                            matchImportFilter === "imported"
+                              ? "スコア取込済みの試合がありません"
+                              : "未取込の試合はありません"
+                          }
+                          description="フィルターを切り替えると他の試合履歴を確認できます"
+                        />
+                      </div>
+                    ) : (
                     <div className="space-y-2">
-                      {filteredMatches.map((m) => {
+                      {displayedMatches.map((m) => {
                         const typeMeta = MATCH_TYPE_META[m.matchType];
                         const resultBadge =
                           m.result === "win"
@@ -805,6 +881,16 @@ export default function LiffStatsPage() {
                                   >
                                     {typeMeta.label}
                                   </span>
+                                  {m.hasScorebook ? (
+                                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 text-[9.5px] font-black">
+                                      <CheckCircle2 className="w-2.5 h-2.5 shrink-0" />
+                                      取込済
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center px-1.5 py-0.2 rounded border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[9.5px] font-bold">
+                                      未取込
+                                    </span>
+                                  )}
                                   {m.isColdGame && (
                                     <span className="px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300 text-[9.5px] font-black">
                                       コールド
@@ -869,6 +955,7 @@ export default function LiffStatsPage() {
                         );
                       })}
                     </div>
+                    )}
                   </>
                 )}
               </section>

@@ -15,7 +15,8 @@ import {
   ExternalLink,
   Users,
   Video,
-  FileText
+  FileText,
+  CheckCircle2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { parseSafeMatchDate, hasMatchTime } from "@/lib/liff/demo-lineup";
@@ -42,6 +43,7 @@ export interface MatchCardData {
   myErrors?: number;
   opponentErrors?: number;
   hasLineup?: boolean;
+  hasScorebook?: boolean;
 }
 
 interface MatchScoreCardProps {
@@ -297,11 +299,11 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
         <div className="flex items-center justify-between gap-3">
           {/* 左側：大会・種別・対戦相手・日時球場 */}
           <div className="flex-1 min-w-0">
-            {/* 大会バッジ ＆ 大会名 */}
-            <div className="flex items-center gap-1.5 mb-1">
+            {/* 大会バッジ ＆ 大会名 ＆ スコアブック取込状況 */}
+            <div className="flex items-center flex-wrap gap-1.5 mb-1">
               <span
                 className={cn(
-                  "text-center text-[10px] font-black px-1.5 py-0.5 rounded shadow-2xs",
+                  "text-center text-[10px] font-black px-1.5 py-0.5 rounded shadow-2xs shrink-0",
                   match.matchType === "official"
                     ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/25"
                     : match.matchType === "exchange"
@@ -311,7 +313,21 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
               >
                 {match.matchType === "official" ? "公式戦" : match.matchType === "exchange" ? "交流戦" : "OP戦"}
               </span>
-              <span className="text-[11px] sm:text-xs font-bold text-muted-foreground truncate">
+
+              {!isFuture && match.status !== "scheduled" && !isRainout && (
+                match.hasScorebook ? (
+                  <span className="inline-flex items-center gap-0.5 text-[10px] font-black px-1.5 py-0.5 rounded border bg-indigo-100 text-indigo-800 border-indigo-300 dark:bg-indigo-950/80 dark:text-indigo-300 dark:border-indigo-800 shrink-0">
+                    <CheckCircle2 className="w-3 h-3 shrink-0" />
+                    <span>スコア取込済</span>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center text-[10px] font-black px-1.5 py-0.5 rounded border bg-slate-100 text-slate-600 border-slate-300 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700 shrink-0">
+                    未取込
+                  </span>
+                )
+              )}
+
+              <span className="text-[11px] sm:text-xs font-bold text-muted-foreground truncate min-w-0">
                 {match.tournamentName && match.tournamentName !== "公式戦" && match.tournamentName !== "OP戦"
                   ? match.tournamentName
                   : match.matchType === "official"

@@ -60,6 +60,7 @@ export interface Match {
   lockedByUserName?: string | null;
   isWalkOff?: boolean; // 💡 サヨナラ勝ちの「x」表示用
   youtubeUrl?: string | null;
+  hasScorebook?: boolean; // 💡 スコアブック（打席・個人成績データ）取込済み判定
 }
 
 /** 💡 LINE Messaging API 用レスポンス型 */

@@ -1,5 +1,5 @@
 // filepath: src/services/match.service.ts
-import { eq, desc, asc, sql, and } from "drizzle-orm";
+import { eq, desc, asc, sql, and, inArray } from "drizzle-orm";
 import { matches, tournaments, venues, matchLineups } from "@/db/schema/match";
 import { playLogs, atBats, baseAdvances, pitches, matchUndoHistories } from "@/db/schema/score";
 import { players } from "@/db/schema/team";
@@ -61,9 +61,24 @@ export const MatchService = {
       .orderBy(desc(matches.date))
       .all();
 
+    const scorebookMatchIds = new Set<string>();
+    const matchIds = rows.map((r) => r.id);
+    for (let i = 0; i < matchIds.length; i += 80) {
+      const chunk = matchIds.slice(i, i + 80);
+      const abRows = await db
+        .select({ matchId: atBats.matchId })
+        .from(atBats)
+        .where(inArray(atBats.matchId, chunk))
+        .all();
+      for (const ab of abRows) {
+        if (ab.matchId) scorebookMatchIds.add(ab.matchId);
+      }
+    }
+
     // DBのJSON文字列を配列に変換してフロントエンドに返す
     return rows.map((r) => ({
       ...r,
+      hasScorebook: scorebookMatchIds.has(r.id),
       tournamentName: r.tournamentName || (r.tournamentId && !r.tournamentId.includes("-") ? r.tournamentId : null),
       // status / matchType / battingOrder はスキーマ上 string だがアプリ内では限定値のみ使用
       status: r.status as "scheduled" | "live" | "finished" | "rainout",

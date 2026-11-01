@@ -261,6 +261,7 @@ const DEMO_MATCHES = [
     myInningScores: [2, 0, 1, 3, 0, 1, 0],
     opponentInningScores: [0, 1, 0, 0, 2, 1, 0],
     hasLineup: true,
+    hasScorebook: true,
   },
   {
     id: "demo-match-2",
@@ -279,6 +280,7 @@ const DEMO_MATCHES = [
     myInningScores: [0, 1, 0, 2, 0, 1, 0],
     opponentInningScores: [1, 0, 2, 0, 1, 1, 0],
     hasLineup: true,
+    hasScorebook: true,
   },
   {
     id: "demo-match-3",
@@ -297,6 +299,7 @@ const DEMO_MATCHES = [
     myInningScores: [],
     opponentInningScores: [],
     hasLineup: false,
+    hasScorebook: false,
   },
 ];
 
@@ -935,6 +938,19 @@ app.get("/hub", async (c) => {
       .limit(10)
       .all();
 
+    const hubScorebookIds = new Set<string>();
+    const hubMatchIds = matchesList.map((m) => m.id);
+    if (hubMatchIds.length > 0) {
+      const abRows = await db
+        .select({ matchId: atBats.matchId })
+        .from(atBats)
+        .where(inArray(atBats.matchId, hubMatchIds))
+        .all();
+      for (const ab of abRows) {
+        if (ab.matchId) hubScorebookIds.add(ab.matchId);
+      }
+    }
+
     const formattedMatches = matchesList.map(m => {
       let hasLineup = false;
       try {
@@ -945,6 +961,7 @@ app.get("/hub", async (c) => {
       return {
         ...rest,
         hasLineup,
+        hasScorebook: hubScorebookIds.has(m.id),
         tournamentName: m.tournamentName || (m.tournamentId && !m.tournamentId.includes("-") ? m.tournamentId : null),
         myInningScores: typeof m.myInningScores === "string" ? JSON.parse(m.myInningScores || "[]") : (m.myInningScores || []),
         opponentInningScores: typeof m.opponentInningScores === "string" ? JSON.parse(m.opponentInningScores || "[]") : (m.opponentInningScores || []),
@@ -1062,6 +1079,20 @@ app.get("/matches", async (c) => {
       .orderBy(desc(matches.date), desc(matches.createdAt))
       .all();
 
+    const listScorebookIds = new Set<string>();
+    const listMatchIds = rawMatches.map((m) => m.id);
+    for (let i = 0; i < listMatchIds.length; i += 80) {
+      const chunk = listMatchIds.slice(i, i + 80);
+      const abRows = await db
+        .select({ matchId: atBats.matchId })
+        .from(atBats)
+        .where(inArray(atBats.matchId, chunk))
+        .all();
+      for (const ab of abRows) {
+        if (ab.matchId) listScorebookIds.add(ab.matchId);
+      }
+    }
+
     const formattedMatches = rawMatches.map((m) => {
       let myInnings: number[] = [];
       let opponentInnings: number[] = [];
@@ -1093,6 +1124,7 @@ app.get("/matches", async (c) => {
       return {
         ...rest,
         hasLineup,
+        hasScorebook: listScorebookIds.has(m.id),
         tournamentName: m.tournamentName || (m.tournamentId && !m.tournamentId.includes("-") ? m.tournamentId : null),
         myInningScores: myInnings,
         opponentInningScores: opponentInnings,
@@ -3170,6 +3202,7 @@ interface LiffStatsMatchItemPayload {
   opponentErrors: number;
   isColdGame: boolean;
   isTiebreaker: boolean;
+  hasScorebook: boolean;
 }
 
 interface LiffSeasonBatterStatPayload {
@@ -3281,6 +3314,7 @@ function buildDemoStatsResponse() {
       opponentErrors: 2,
       isColdGame: false,
       isTiebreaker: false,
+      hasScorebook: true,
     },
     {
       id: "demo-match-2",
@@ -3299,6 +3333,7 @@ function buildDemoStatsResponse() {
       opponentErrors: 3,
       isColdGame: false,
       isTiebreaker: false,
+      hasScorebook: true,
     },
     {
       id: "demo-match-3",
@@ -3317,6 +3352,7 @@ function buildDemoStatsResponse() {
       opponentErrors: 1,
       isColdGame: false,
       isTiebreaker: true,
+      hasScorebook: true,
     },
     {
       id: "demo-match-4",
@@ -3335,6 +3371,7 @@ function buildDemoStatsResponse() {
       opponentErrors: 1,
       isColdGame: true,
       isTiebreaker: false,
+      hasScorebook: true,
     },
     {
       id: "demo-match-5",
@@ -3353,6 +3390,7 @@ function buildDemoStatsResponse() {
       opponentErrors: 1,
       isColdGame: false,
       isTiebreaker: false,
+      hasScorebook: true,
     },
   ];
 
@@ -3945,6 +3983,7 @@ app.get("/stats", async (c) => {
         opponentErrors: Math.max(m.opponentErrors || 0, calcOppErrors),
         isColdGame: Boolean(m.isColdGame),
         isTiebreaker: Boolean(m.isTiebreaker),
+        hasScorebook: mAbs.length > 0,
       };
     });
 

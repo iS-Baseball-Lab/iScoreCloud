@@ -439,6 +439,9 @@ export function Step1MatchAndImages({
     null
   );
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [matchImportFilter, setMatchImportFilter] = useState<
+    "all" | "unimported" | "imported"
+  >("all");
   const [newOpponent, setNewOpponent] = useState("");
   const [newDate, setNewDate] = useState(() =>
     new Date().toISOString().slice(0, 10)
@@ -507,6 +510,15 @@ export function Step1MatchAndImages({
   };
 
   const selectedMatch = matches.find((m) => m.id === selectedMatchId) || null;
+  const importedMatchesCount = matches.filter((m) =>
+    Boolean(m.hasExistingAtBats)
+  ).length;
+  const unimportedMatchesCount = matches.length - importedMatchesCount;
+  const visibleMatches = matches.filter((m) => {
+    if (matchImportFilter === "imported") return Boolean(m.hasExistingAtBats);
+    if (matchImportFilter === "unimported") return !m.hasExistingAtBats;
+    return true;
+  });
   const isMyTeamFirst = selectedMatch
     ? selectedMatch.battingOrder === "first"
     : true;
@@ -992,7 +1004,7 @@ export function Step1MatchAndImages({
         </div>
 
         {!showCreateForm ? (
-          <div className="space-y-2">
+          <div className="space-y-2.5">
             {matches.length === 0 ? (
               <div className="p-4 rounded-2xl bg-muted/50 border border-border text-center space-y-2">
                 <p className="text-xs font-bold text-muted-foreground">
@@ -1000,37 +1012,113 @@ export function Step1MatchAndImages({
                 </p>
               </div>
             ) : (
-              <div className="relative">
-                <select
-                  value={selectedMatchId}
-                  onChange={(e) => onSelectMatchId(e.target.value)}
-                  className="w-full h-11 pl-3.5 pr-9 rounded-2xl bg-muted/50 border border-border text-xs font-black text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40 appearance-none cursor-pointer"
-                >
-                  {matches.map((m) => {
-                    const orderTag =
-                      m.battingOrder === "first" ? "自チーム先攻" : "自チーム後攻";
-                    const importedTag = m.hasExistingAtBats ? " [記録あり]" : "";
+              <>
+                {/* スコアブック取込状況フィルター */}
+                <div className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-muted/70 border border-border">
+                  {(
+                    [
+                      {
+                        key: "all" as const,
+                        label: `すべて (${matches.length})`,
+                      },
+                      {
+                        key: "unimported" as const,
+                        label: `⬜ 未取込 (${unimportedMatchesCount})`,
+                      },
+                      {
+                        key: "imported" as const,
+                        label: `✅ 取込済 (${importedMatchesCount})`,
+                      },
+                    ] as const
+                  ).map((item) => {
+                    const active = matchImportFilter === item.key;
                     return (
-                      <option key={m.id} value={m.id}>
-                        {m.date} vs {m.opponent}（{orderTag}）{importedTag}
-                      </option>
+                      <button
+                        key={item.key}
+                        type="button"
+                        onClick={() => {
+                          setMatchImportFilter(item.key);
+                          const nextList = matches.filter((m) => {
+                            if (item.key === "imported")
+                              return Boolean(m.hasExistingAtBats);
+                            if (item.key === "unimported")
+                              return !m.hasExistingAtBats;
+                            return true;
+                          });
+                          if (
+                            nextList.length > 0 &&
+                            !nextList.some((m) => m.id === selectedMatchId)
+                          ) {
+                            onSelectMatchId(nextList[0].id);
+                          }
+                        }}
+                        className={`py-1.5 px-1.5 rounded-lg text-[10px] font-black transition-all truncate cursor-pointer tabular-nums ${
+                          active
+                            ? "bg-card text-foreground shadow-2xs border border-border/60"
+                            : "text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        {item.label}
+                      </button>
                     );
                   })}
-                </select>
-                <Calendar className="w-4 h-4 text-muted-foreground absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-              </div>
+                </div>
+
+                {visibleMatches.length === 0 ? (
+                  <div className="p-3 rounded-2xl bg-muted/40 border border-dashed border-border text-center">
+                    <p className="text-[11px] font-bold text-muted-foreground">
+                      {matchImportFilter === "imported"
+                        ? "スコアブック取込済みの試合はまだありません"
+                        : "未取込の試合はありません（すべての試合が取込済みです）"}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <select
+                      value={selectedMatchId}
+                      onChange={(e) => onSelectMatchId(e.target.value)}
+                      className="w-full h-11 pl-3.5 pr-9 rounded-2xl bg-muted/50 border border-border text-xs font-black text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40 appearance-none cursor-pointer"
+                    >
+                      {visibleMatches.map((m) => {
+                        const orderTag =
+                          m.battingOrder === "first" ? "先攻" : "後攻";
+                        const statusPrefix = m.hasExistingAtBats
+                          ? "✅【取込済】"
+                          : "⬜【未取込】";
+                        return (
+                          <option key={m.id} value={m.id}>
+                            {statusPrefix} {m.date} vs {m.opponent}（{orderTag}）
+                          </option>
+                        );
+                      })}
+                    </select>
+                    <Calendar className="w-4 h-4 text-muted-foreground absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  </div>
+                )}
+              </>
             )}
 
             {selectedMatch && (
-              <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-muted/35 border border-border/60 text-[11px] font-bold">
-                <span className="text-muted-foreground">
-                  先攻/後攻設定:{" "}
-                  <strong className="text-foreground font-black">
-                    {selectedMatch.battingOrder === "first"
-                      ? "自チームが【先攻（表）】"
-                      : "自チームが【後攻（裏）】"}
-                  </strong>
-                </span>
+              <div className="flex items-center justify-between gap-2 flex-wrap px-3 py-2 rounded-xl bg-muted/35 border border-border/60 text-[11px] font-bold">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {selectedMatch.hasExistingAtBats ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-black bg-indigo-100 text-indigo-800 border-indigo-300 dark:bg-indigo-950/80 dark:text-indigo-300 dark:border-indigo-800">
+                      <CheckCircle2 className="w-3 h-3 shrink-0" />
+                      <span>スコア取込済</span>
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-md border text-[10px] font-black bg-slate-100 text-slate-600 border-slate-300 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700">
+                      スコア未取込
+                    </span>
+                  )}
+                  <span className="text-muted-foreground">
+                    <strong className="text-foreground font-black">
+                      {selectedMatch.battingOrder === "first"
+                        ? "自チーム【先攻（表）】"
+                        : "自チーム【後攻（裏）】"}
+                    </strong>
+                  </span>
+                </div>
                 <span className="text-muted-foreground">
                   {selectedMatch.tournamentName || "OP戦"}
                 </span>
