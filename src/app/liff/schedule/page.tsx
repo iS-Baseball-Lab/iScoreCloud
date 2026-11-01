@@ -308,18 +308,32 @@ export default function LiffSchedulePage() {
   const fetchFamilyData = async () => {
     try {
       const tid = currentTeam?.id || (typeof window !== "undefined" ? (localStorage.getItem("iscore_selectedTeamId") || "demo-team") : "demo-team");
-      const uid = profile?.userId || (typeof window !== "undefined" ? (localStorage.getItem("iscore_user_id") || localStorage.getItem("iscore_userId") || "") : "");
+      const rawUid = profile?.userId || (typeof window !== "undefined" ? (localStorage.getItem("iscore_user_id") || localStorage.getItem("iscore_userId") || "") : "");
+      const uid = rawUid === "cached-user" ? "" : rawUid;
       const uName = profile?.displayName || (typeof window !== "undefined" ? (localStorage.getItem("iscore_user_name") || "") : "");
 
       if (tid !== "demo-team" && !currentTeam?.isDemo) {
         setChildren([]);
       }
 
-      const res = await fetch(`/api/liff/my-family?teamId=${tid}&userId=${uid}&userName=${encodeURIComponent(uName)}`);
+      const res = await fetch(`/api/liff/my-family?teamId=${tid}&userId=${encodeURIComponent(uid)}&userName=${encodeURIComponent(uName)}`);
       if (res.ok) {
-        const json = await res.json() as any;
+        const json = (await res.json()) as {
+          success: boolean;
+          memberId?: string | null;
+          children?: Array<{ id: string; name: string; uniformNumber?: string; parentName?: string }>;
+          attendances?: Record<string, Record<string, AttendanceMarkType | string>>;
+          childGroupMap?: Record<string, Record<string, string>>;
+          parentAttendances?: Record<string, AttendanceMarkType | string>;
+          parentGroupMap?: Record<string, string>;
+        };
         if (json.success) {
-          if (json.memberId) setMemberId(json.memberId);
+          if (json.memberId) {
+            setMemberId(json.memberId);
+            if (typeof window !== "undefined" && tid !== "demo-team" && !currentTeam?.isDemo) {
+              localStorage.setItem(`iscore_member_id_${tid}`, json.memberId);
+            }
+          }
 
           if (Array.isArray(json.children) && json.children.length > 0) {
             const uniqueChildren: typeof json.children = [];
@@ -344,11 +358,12 @@ export default function LiffSchedulePage() {
           }
 
           // 自分の出欠・選択グループを復元
-          if (json.parentAttendances && Object.keys(json.parentAttendances).length > 0) {
-            setAttendanceMap(prev => ({ ...json.parentAttendances, ...prev }));
+          const parentAtts = json.parentAttendances;
+          if (parentAtts && Object.keys(parentAtts).length > 0) {
+            setAttendanceMap(prev => ({ ...parentAtts, ...prev }));
             setEvents(prev => prev.map(ev => ({
               ...ev,
-              myStatus: json.parentAttendances[ev.id] || ev.myStatus
+              myStatus: parentAtts[ev.id] || ev.myStatus
             })));
           }
           if (json.parentGroupMap) {
@@ -493,10 +508,18 @@ export default function LiffSchedulePage() {
   const loadSchedule = useCallback(async () => {
     try {
       setIsLoading(true);
-      const teamId = currentTeam?.id || "demo-team";
-      const userId = profile?.userId || (typeof window !== "undefined" ? (localStorage.getItem("iscore_user_id") || localStorage.getItem("iscore_userId") || "") : "");
+      const teamId = currentTeam?.id || (typeof window !== "undefined" ? localStorage.getItem("iscore_selectedTeamId") || "demo-team" : "demo-team");
+      const rawUserId = profile?.userId || (typeof window !== "undefined" ? (localStorage.getItem("iscore_user_id") || localStorage.getItem("iscore_userId") || "") : "");
+      const userId = rawUserId === "cached-user" ? "" : rawUserId;
       const uName = profile?.displayName || (typeof window !== "undefined" ? (localStorage.getItem("iscore_user_name") || "") : "");
-      const res = await fetch(`/api/liff/schedule?teamId=${teamId}&userId=${userId}&userName=${encodeURIComponent(uName)}`);
+      const cachedMid = typeof window !== "undefined" ? (localStorage.getItem(`iscore_member_id_${teamId}`) || "") : "";
+      const schedParams = new URLSearchParams({
+        teamId,
+        userId,
+        userName: uName,
+      });
+      if (cachedMid) schedParams.set("memberId", cachedMid);
+      const res = await fetch(`/api/liff/schedule?${schedParams.toString()}`);
       if (res.ok) {
         const data = await res.json() as { success: boolean; events?: ScheduleEvent[] };
         if (data.events) {

@@ -8,6 +8,7 @@ import { drizzle } from 'drizzle-orm/d1';
 import { eq, and, inArray } from 'drizzle-orm';
 import { events, attendances } from '@/db/schema/attendance';
 import { players, teamMembers } from '@/db/schema/team';
+import { parentChildRelations } from '@/db/schema';
 import { user } from '@/db/schema/auth';
 import { ensureEventColumns } from '@/lib/db-helper';
 import type { WorkerEnv } from '@/types/api';
@@ -81,13 +82,21 @@ app.get('/', async (c) => {
       .where(inArray(attendances.eventId, eventIds));
     }
 
+    const relations = await db.select({
+      parentId: parentChildRelations.parentId,
+      childId: parentChildRelations.childId,
+    })
+      .from(parentChildRelations)
+      .where(eq(parentChildRelations.teamId, teamId));
+
     return c.json({
       success: true,
       data: {
         events: teamEvents,
         players: teamPlayers,
         members: formattedMembers,
-        attendances: attendanceRecords
+        attendances: attendanceRecords,
+        parentChildRelations: relations,
       }
     });
 

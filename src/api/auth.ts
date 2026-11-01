@@ -1,8 +1,10 @@
+// filepath: src/api/auth.ts
 import { Hono } from 'hono'
 import { getAuth } from "@/lib/auth"
 import { drizzle } from 'drizzle-orm/d1'
-import { eq } from 'drizzle-orm'
+import { eq, or } from 'drizzle-orm'
 import { teams, teamMembers, organizations } from '@/db/schema/team'
+import { account } from '@/db/schema/auth'
 import type { WorkerEnv, Membership, AuthUser } from '@/types/api'
 
 const app = new Hono<{ Bindings: WorkerEnv }>()
@@ -21,8 +23,8 @@ const getRoleLabel = (role: string) => {
 };
 
 app.get('/me', async (c) => {
-  const auth = getAuth(c.env.DB, c.env) // 🌟 ここでインスタンスを取得！
-  const session = await auth.api.getSession({ headers: c.req.raw.headers as any })
+  const auth = getAuth(c.env.DB, c.env)
+  const session = await auth.api.getSession({ headers: c.req.raw.headers as unknown as Headers })
 
   if (!session || !session.user) {
     return c.json({ success: false, error: 'Unauthorized' }, 401)
@@ -31,8 +33,20 @@ app.get('/me', async (c) => {
   const user = session.user as AuthUser;
   const db = drizzle(c.env.DB);
   const memberships: Membership[] = [];
+  const linkedUserIdsSet = new Set<string>([user.id]);
 
   try {
+    const linkedAccounts = await db
+      .select({ accountId: account.accountId, userId: account.userId })
+      .from(account)
+      .where(or(eq(account.userId, user.id), eq(account.accountId, user.id)))
+      .all();
+    for (const acc of linkedAccounts) {
+      if (acc.accountId) linkedUserIdsSet.add(acc.accountId);
+      if (acc.userId) linkedUserIdsSet.add(acc.userId);
+    }
+
+    const candidateUserIds = Array.from(linkedUserIdsSet);
     const userTeams = await db
       .select({
         teamId: teams.id,
@@ -46,9 +60,12 @@ app.get('/me', async (c) => {
       .from(teamMembers)
       .innerJoin(teams, eq(teamMembers.teamId, teams.id))
       .leftJoin(organizations, eq(teams.organizationId, organizations.id))
-      .where(eq(teamMembers.userId, user.id));
+      .where(or(...candidateUserIds.map((uid) => eq(teamMembers.userId, uid))));
 
-    userTeams.forEach((t, index) => {
+    const seenTeamIds = new Set<string>();
+    userTeams.forEach((t) => {
+      if (seenTeamIds.has(t.teamId)) return;
+      seenTeamIds.add(t.teamId);
       memberships.push({
         teamId: t.teamId,
         teamName: t.teamName,
@@ -57,7 +74,7 @@ app.get('/me', async (c) => {
         role: t.role,
         roleLabel: getRoleLabel(t.role),
         status: t.status,
-        isMainTeam: index === 0,
+        isMainTeam: memberships.length === 0,
         logoImageUrl: t.logoImageUrl,
       });
     });
@@ -69,6 +86,7 @@ app.get('/me', async (c) => {
     success: true,
     data: {
       id: user.id,
+      linkedUserIds: Array.from(linkedUserIdsSet),
       name: user.name,
       email: user.email,
       avatarUrl: user.image || `/api/images/avatars/${user.id}.png`,

@@ -259,6 +259,13 @@ export function LiffProvider({
     loadTeams();
   }, [loadTeams]);
 
+  // LIFF SDK や認証セッションから本物の userId が確定したタイミングで所属チームを再同期
+  useEffect(() => {
+    if (profile?.userId && profile.userId !== "cached-user") {
+      loadTeams();
+    }
+  }, [profile?.userId, loadTeams]);
+
   const { data: authSession } = authClient.useSession();
 
   // 本家Web版（Better-Auth）のセッションが存在する場合、プロファイルに自動反映

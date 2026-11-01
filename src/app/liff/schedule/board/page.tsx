@@ -198,6 +198,40 @@ type MemberSortOrderMap = {
   staff?: string[];
 };
 
+interface MatrixMyInfoPayload {
+  memberId?: string | null;
+  memberIds?: string[];
+  playerIds?: string[];
+  isITAdmin?: boolean;
+  isManager?: boolean;
+  groupType?: string;
+  name?: string;
+}
+
+interface AttendanceMatrixApiResponse {
+  success: boolean;
+  isDemo?: boolean;
+  error?: string;
+  events?: EventItem[];
+  groups?: {
+    players?: MemberPerson[];
+    parents?: MemberPerson[];
+    mothers?: MemberPerson[];
+    fathers?: MemberPerson[];
+    staff?: MemberPerson[];
+  };
+  matrix?: Record<string, Record<string, { status: AttendanceMarkType; comment: string }>>;
+  myInfo?: MatrixMyInfoPayload;
+  attendanceStatusConfig?: Partial<GroupStatusConfigMap> | null;
+  memberSortOrder?: MemberSortOrderMap;
+  memberSubLabels?: Record<string, string>;
+}
+
+interface MatrixSaveApiResponse {
+  success?: boolean;
+  error?: string;
+}
+
 function getTodayJST(): string {
   const d = new Date();
   const jstFormatter = new Intl.DateTimeFormat("ja-JP", {
@@ -318,12 +352,14 @@ export default function AttendanceMatrixBoardPage() {
   const [matrix, setMatrix] = useState<Record<string, Record<string, { status: AttendanceMarkType; comment: string }>>>({});
   const [myInfo, setMyInfo] = useState<{
     memberId: string | null;
+    memberIds: string[];
     playerIds: string[];
     isITAdmin: boolean;
     isManager: boolean;
     name: string;
   }>({
     memberId: null,
+    memberIds: [],
     playerIds: [],
     isITAdmin: false,
     isManager: false,
@@ -404,17 +440,35 @@ export default function AttendanceMatrixBoardPage() {
   const loadMatrixData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const teamId = currentTeam?.id || "demo-team";
+      const teamId =
+        currentTeam?.id ||
+        (typeof window !== "undefined" ? localStorage.getItem("iscore_selectedTeamId") : "") ||
+        "demo-team";
+      const rawUid =
+        profile?.userId ||
+        (typeof window !== "undefined"
+          ? localStorage.getItem("iscore_user_id") || localStorage.getItem("iscore_userId") || ""
+          : "");
+      const effectiveUid = rawUid === "cached-user" ? "" : rawUid;
+      const effectiveName =
+        profile?.displayName ||
+        (typeof window !== "undefined" ? localStorage.getItem("iscore_user_name") || "" : "");
+      const cachedMemberId =
+        typeof window !== "undefined" ? localStorage.getItem(`iscore_member_id_${teamId}`) || "" : "";
+
       const params = new URLSearchParams({
         teamId,
-        userId: profile?.userId || "",
-        userName: profile?.displayName || "",
+        userId: effectiveUid,
+        userName: effectiveName,
       });
+      if (cachedMemberId) {
+        params.set("memberId", cachedMemberId);
+      }
 
       const res = await fetch(`/api/liff/attendance-matrix?${params.toString()}`);
       if (!res.ok) throw new Error("Failed to load matrix");
 
-      const data = (await res.json()) as any;
+      const data = (await res.json()) as AttendanceMatrixApiResponse;
       if (data.success) {
         setEvents(data.events || []);
         const g = data.groups || {};
@@ -430,19 +484,36 @@ export default function AttendanceMatrixBoardPage() {
         });
         setMatrix(data.matrix || {});
         if (data.myInfo) {
+          const resolvedMemberId = data.myInfo.memberId || null;
+          const resolvedMemberIds = Array.isArray(data.myInfo.memberIds)
+            ? data.myInfo.memberIds
+            : resolvedMemberId
+            ? [resolvedMemberId]
+            : [];
           setMyInfo({
-            memberId: data.myInfo.memberId || null,
+            memberId: resolvedMemberId,
+            memberIds: resolvedMemberIds,
             playerIds: data.myInfo.playerIds || [],
             isITAdmin: !!data.myInfo.isITAdmin,
             isManager: !!data.myInfo.isManager,
             name: data.myInfo.name || "",
           });
+          if (typeof window !== "undefined" && !data.isDemo && resolvedMemberId) {
+            localStorage.setItem(`iscore_member_id_${teamId}`, resolvedMemberId);
+          }
           // 🛡️ 初期状態は誤操作防止のため「通常入力（OFF）」
           setIsManagerOverrideMode(false);
         }
 
         // 🌟 1. 自分が所属するグループの初期選択 (父・母・スタッフ・選手)
         const myId = data.myInfo?.memberId;
+        const myIdsSet = new Set<string>(
+          Array.isArray(data.myInfo?.memberIds)
+            ? data.myInfo.memberIds
+            : myId
+            ? [myId]
+            : []
+        );
         const myGroupType = data.myInfo?.groupType;
 
         if (myGroupType === "father") {
@@ -451,16 +522,16 @@ export default function AttendanceMatrixBoardPage() {
           setSelectedGroupTab("mother");
         } else if (myGroupType === "staff") {
           setSelectedGroupTab("staff");
-        } else if (myId) {
-          if (fathers.some((f: MemberPerson) => f.id === myId)) {
+        } else if (myIdsSet.size > 0) {
+          if (fathers.some((f: MemberPerson) => myIdsSet.has(f.id))) {
             setSelectedGroupTab("father");
-          } else if (mothers.some((m: MemberPerson) => m.id === myId)) {
+          } else if (mothers.some((m: MemberPerson) => myIdsSet.has(m.id))) {
             setSelectedGroupTab("mother");
-          } else if ((g.staff || []).some((s: MemberPerson) => s.id === myId)) {
+          } else if ((g.staff || []).some((s: MemberPerson) => myIdsSet.has(s.id))) {
             setSelectedGroupTab("staff");
-          } else if (parents.some((p: MemberPerson) => p.id === myId)) {
+          } else if (parents.some((p: MemberPerson) => myIdsSet.has(p.id))) {
             setSelectedGroupTab("father");
-          } else if ((g.players || []).some((p: MemberPerson) => p.id === myId)) {
+          } else if ((g.players || []).some((p: MemberPerson) => myIdsSet.has(p.id))) {
             setSelectedGroupTab("player");
           }
         }
@@ -936,12 +1007,13 @@ export default function AttendanceMatrixBoardPage() {
   }, [selectedGroupTab, groupStatusConfig]);
 
   // 編集権限チェック
-  const canEditPerson = useCallback((personId: string, groupType: string) => {
+  const canEditPerson = useCallback((personId: string, _groupType: string) => {
     if (isDemo) return true; // デモ時は自由に操作可能
     // 🌟 IT管理者が「代理入力ON」を有効にしている場合のみ、全メンバーを代理入力可能！
     if (myInfo.isITAdmin && isManagerOverrideMode) return true;
     // 通常（OFF時、および一般保護者・選手）は、自分自身または自分の子ども選手のみ編集可能
     if (myInfo.memberId && myInfo.memberId === personId) return true;
+    if (myInfo.memberIds && myInfo.memberIds.includes(personId)) return true;
     if (myInfo.playerIds && myInfo.playerIds.includes(personId)) return true;
     return false;
   }, [isDemo, myInfo, isManagerOverrideMode]);
@@ -999,6 +1071,12 @@ export default function AttendanceMatrixBoardPage() {
     }));
 
     try {
+      const rawUid =
+        profile?.userId ||
+        (typeof window !== "undefined"
+          ? localStorage.getItem("iscore_user_id") || localStorage.getItem("iscore_userId") || ""
+          : "");
+      const effectiveUid = rawUid === "cached-user" ? "" : rawUid;
       const res = await fetch("/api/liff/attendance-matrix", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1008,19 +1086,19 @@ export default function AttendanceMatrixBoardPage() {
           personType: person.groupType === "player" ? "player" : "member",
           status: newStatus,
           comment: newComment,
-          userId: profile?.userId || "",
+          userId: effectiveUid,
         }),
       });
 
       if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as any;
+        const data = (await res.json().catch(() => ({}))) as MatrixSaveApiResponse;
         throw new Error(data.error || "更新に失敗しました");
       }
       toast.success(`${person.name} さんの出欠を更新しました`);
       setEditingCell(null);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Save error:", err);
-      toast.error(err?.message || "出欠の保存に失敗しました");
+      toast.error(err instanceof Error ? err.message : "出欠の保存に失敗しました");
       // ロールバック
       if (prevCell) {
         setMatrix(prev => ({
@@ -1592,7 +1670,10 @@ export default function AttendanceMatrixBoardPage() {
 
                     {/* メンバー列 (超コンパクト・幅35px) */}
                     {currentMembers.map((person) => {
-                      const isMe = person.id === myInfo.memberId || myInfo.playerIds.includes(person.id);
+                      const isMe =
+                        person.id === myInfo.memberId ||
+                        myInfo.memberIds.includes(person.id) ||
+                        myInfo.playerIds.includes(person.id);
                       const subLabel = memberSubLabels[person.id];
                       return (
                         <th
@@ -1754,7 +1835,10 @@ export default function AttendanceMatrixBoardPage() {
                           const att = matrix[ev.id]?.[person.id] || { status: "pending", comment: "" };
                           const statusConfig = ATTENDANCE_STATUSES[att.status as AttendanceMarkType] || ATTENDANCE_STATUSES.pending;
                           const isEditable = canEditPerson(person.id, person.groupType);
-                          const isMe = person.id === myInfo.memberId || myInfo.playerIds.includes(person.id);
+                          const isMe =
+                            person.id === myInfo.memberId ||
+                            myInfo.memberIds.includes(person.id) ||
+                            myInfo.playerIds.includes(person.id);
 
                           return (
                             <td

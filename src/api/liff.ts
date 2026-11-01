@@ -40,6 +40,175 @@ const toBoolean = (val: any, defaultVal = false): boolean => {
   return defaultVal;
 };
 
+const IGNORED_MOCK_USER_IDS = new Set(["cached-user", "mock-user-12345"]);
+
+/**
+ * 🔑 LINE userId / Web Better-Auth userId を `account` テーブル経由で双方向展開するヘルパー
+ * - Google等でWeb登録済みのユーザーに LINE `U...` が紐づいている場合 (accountId -> userId)
+ * - LINE `U...` でメンバー登録済みのユーザーが Web LINEログインした場合 (userId -> accountId)
+ * の双方を漏れなく解決する。
+ */
+async function expandCandidateUserIds(
+  db: ReturnType<typeof drizzle>,
+  rawIds: Array<string | null | undefined>
+): Promise<string[]> {
+  const idSet = new Set<string>();
+  for (const raw of rawIds) {
+    const trimmed = raw?.trim();
+    if (trimmed && !IGNORED_MOCK_USER_IDS.has(trimmed)) {
+      idSet.add(trimmed);
+    }
+  }
+  if (idSet.size === 0) return [];
+
+  try {
+    const initialIds = Array.from(idSet);
+    const byAccountId = await db
+      .select({ userId: account.userId, accountId: account.accountId })
+      .from(account)
+      .where(or(...initialIds.map((id) => eq(account.accountId, id))))
+      .all();
+    for (const row of byAccountId) {
+      if (row.userId && !IGNORED_MOCK_USER_IDS.has(row.userId)) {
+        idSet.add(row.userId);
+      }
+    }
+
+    const afterStep1 = Array.from(idSet);
+    const byUserId = await db
+      .select({ userId: account.userId, accountId: account.accountId })
+      .from(account)
+      .where(or(...afterStep1.map((id) => eq(account.userId, id))))
+      .all();
+    for (const row of byUserId) {
+      if (row.accountId && !IGNORED_MOCK_USER_IDS.has(row.accountId)) {
+        idSet.add(row.accountId);
+      }
+    }
+  } catch (err) {
+    console.warn("expandCandidateUserIds warning:", err);
+  }
+
+  return Array.from(idSet);
+}
+
+function normalizeMemberName(raw: string): string {
+  return raw.replace(/[\s　()（）【】［］\[\]]+/g, "").trim();
+}
+
+function hasFatherRoleTag(name: string): boolean {
+  return /(?:父|パパ|お父さん|夫)/.test(name);
+}
+
+function hasMotherRoleTag(name: string): boolean {
+  return /(?:母|ママ|お母さん|妻)/.test(name);
+}
+
+/**
+ * 🏷️ 大人メンバー（保護者・指導者等）の安全な名前照合ヘルパー
+ * 1) 空白・括弧を除去した正規化名の完全一致を最優先（複数ある場合は非 tm_ の正規IDを優先）
+ * 2) 部分一致は父/母の逆転を防ぎ、候補が1名に一意特定できる場合のみ採用（同姓の父母誤爆を防止）
+ */
+function findMatchingAdultMemberByName<
+  T extends { id: string; name: string | null; memberType?: string | null; status?: string | null }
+>(members: T[], searchNames: Array<string | null | undefined>): T | null {
+  const adultActive = members.filter(
+    (m) => m.memberType !== "player" && (m.status === "active" || !m.status) && Boolean(m.name?.trim())
+  );
+  if (adultActive.length === 0) return null;
+
+  const cleanQueries = searchNames
+    .map((s) => (s ? s.trim() : ""))
+    .filter((s) => s.length > 0);
+
+  for (const q of cleanQueries) {
+    const normQ = normalizeMemberName(q);
+    if (!normQ) continue;
+    const exactMatches = adultActive.filter((m) => normalizeMemberName(m.name || "") === normQ);
+    if (exactMatches.length === 1) return exactMatches[0];
+    if (exactMatches.length > 1) {
+      return exactMatches.find((m) => !m.id.startsWith("tm_")) || exactMatches[0];
+    }
+  }
+
+  for (const q of cleanQueries) {
+    const normQ = normalizeMemberName(q);
+    if (!normQ || normQ.length < 2) continue;
+    const qIsFather = hasFatherRoleTag(q);
+    const qIsMother = hasMotherRoleTag(q);
+
+    const partialMatches = adultActive.filter((m) => {
+      const rawM = m.name || "";
+      const normM = normalizeMemberName(rawM);
+      if (!normM) return false;
+      if (qIsFather && hasMotherRoleTag(rawM)) return false;
+      if (qIsMother && hasFatherRoleTag(rawM)) return false;
+      return normM.includes(normQ) || normQ.includes(normM);
+    });
+
+    if (partialMatches.length === 1) {
+      return partialMatches[0];
+    }
+  }
+
+  return null;
+}
+
+/**
+ * 🔗 既存の Better-Auth `user.id` に対して LINE `U...` アカウントを `account` テーブルへ安全に紐付ける
+ */
+async function ensureLineAccountLink(
+  db: ReturnType<typeof drizzle>,
+  primaryUserId: string,
+  lineAccountId: string
+): Promise<void> {
+  const cleanPrimary = primaryUserId.trim();
+  const cleanLine = lineAccountId.trim();
+  if (
+    !cleanPrimary ||
+    !cleanLine ||
+    cleanPrimary === cleanLine ||
+    IGNORED_MOCK_USER_IDS.has(cleanPrimary) ||
+    IGNORED_MOCK_USER_IDS.has(cleanLine) ||
+    !cleanLine.startsWith("U")
+  ) {
+    return;
+  }
+
+  try {
+    const primaryExists = await db
+      .select({ id: user.id })
+      .from(user)
+      .where(eq(user.id, cleanPrimary))
+      .get();
+    if (!primaryExists) return;
+
+    const existingAcc = await db
+      .select({ id: account.id, userId: account.userId })
+      .from(account)
+      .where(and(eq(account.providerId, "line"), eq(account.accountId, cleanLine)))
+      .get();
+
+    if (!existingAcc) {
+      await db.insert(account).values({
+        id: `acc_line_${crypto.randomUUID().replace(/-/g, "").slice(0, 20)}`,
+        accountId: cleanLine,
+        providerId: "line",
+        userId: cleanPrimary,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+    } else if (existingAcc.userId !== cleanPrimary && existingAcc.userId.startsWith("U")) {
+      await db
+        .update(account)
+        .set({ userId: cleanPrimary, updatedAt: new Date() })
+        .where(eq(account.id, existingAcc.id));
+    }
+  } catch (err) {
+    console.warn("ensureLineAccountLink warning:", err);
+  }
+}
+
 /**
  * デモチーム（体験用サンプルデータ）
  */
@@ -143,16 +312,26 @@ app.get("/my-status", async (c) => {
   const db = drizzle(c.env.DB);
   const userId = c.req.query("userId");
 
-  if (!userId) {
-    return c.json({
-      success: true,
-      activeTeams: [],
-      pendingTeams: [],
-      isDemo: true,
-    });
-  }
-
   try {
+    let sessionUserId: string | undefined;
+    try {
+      const auth = getAuth(c.env.DB, c.env);
+      const session = await auth.api
+        .getSession({ headers: c.req.raw.headers as unknown as Headers })
+        .catch(() => null);
+      sessionUserId = session?.user?.id;
+    } catch {}
+
+    const candidateIds = await expandCandidateUserIds(db, [userId, sessionUserId]);
+    if (candidateIds.length === 0) {
+      return c.json({
+        success: true,
+        activeTeams: [],
+        pendingTeams: [],
+        isDemo: true,
+      });
+    }
+
     const memberships = await db
       .select({
         memberId: teamMembers.id,
@@ -167,7 +346,7 @@ app.get("/my-status", async (c) => {
       .from(teamMembers)
       .leftJoin(teams, eq(teamMembers.teamId, teams.id))
       .leftJoin(organizations, eq(teams.organizationId, organizations.id))
-      .where(eq(teamMembers.userId, userId))
+      .where(or(...candidateIds.map((uid) => eq(teamMembers.userId, uid))))
       .all();
 
     const activeTeams = memberships
@@ -306,13 +485,19 @@ app.post("/join", async (c) => {
       }
     }
 
-    // 4. 重複申請チェック (userId または phone または 名前)
+    // 4. 重複申請チェック (userId/account連携 または phone または 名前)
+    const joinCandidateIds = await expandCandidateUserIds(db, [validUserId, userId]);
     let existing = null;
-    if (validUserId) {
+    if (joinCandidateIds.length > 0) {
       existing = await db
         .select()
         .from(teamMembers)
-        .where(and(eq(teamMembers.teamId, targetTeamId), eq(teamMembers.userId, validUserId)))
+        .where(
+          and(
+            eq(teamMembers.teamId, targetTeamId),
+            or(...joinCandidateIds.map((uid) => eq(teamMembers.userId, uid)))
+          )
+        )
         .get();
     }
     if (!existing && phone && phone.trim()) {
@@ -323,11 +508,30 @@ app.post("/join", async (c) => {
         .get();
     }
     if (!existing && userName && userName.trim()) {
-      existing = await db
+      const cleanJoinName = userName.trim();
+      const allTargetMembers = await db
         .select()
         .from(teamMembers)
-        .where(and(eq(teamMembers.teamId, targetTeamId), eq(teamMembers.name, userName.trim()), eq(teamMembers.status, "pending")))
-        .get();
+        .where(eq(teamMembers.teamId, targetTeamId))
+        .all();
+      const exactActive = allTargetMembers.find(
+        (m) =>
+          m.status === "active" &&
+          m.memberType !== "player" &&
+          Boolean(m.name) &&
+          normalizeMemberName(m.name || "") === normalizeMemberName(cleanJoinName)
+      );
+      if (exactActive) {
+        existing = exactActive;
+        if (validUserId && !exactActive.userId) {
+          await db.update(teamMembers).set({ userId: validUserId }).where(eq(teamMembers.id, exactActive.id));
+        } else if (exactActive.userId && userId && typeof userId === "string") {
+          await ensureLineAccountLink(db, exactActive.userId, userId);
+        }
+      } else {
+        existing =
+          allTargetMembers.find((m) => m.status === "pending" && m.name === cleanJoinName) || null;
+      }
     }
 
     if (existing) {
@@ -399,25 +603,8 @@ app.get("/hub", async (c) => {
     const authUserId = sessionUser?.id;
     const isSysAdmin = (sessionUser as AuthUser)?.role === "SYSTEM_ADMIN";
 
-    // 候補となるすべてのユーザーID（LINE userId + Web Better-Auth ID）
-    const candidateUserIds = new Set<string>();
-    if (userId) candidateUserIds.add(userId);
-    if (authUserId) candidateUserIds.add(authUserId);
-
-    if (userId) {
-      try {
-        const linked = await db
-          .select({ userId: account.userId })
-          .from(account)
-          .where(and(eq(account.providerId, "line"), eq(account.accountId, userId)))
-          .all();
-        for (const item of linked) {
-          if (item.userId) candidateUserIds.add(item.userId);
-        }
-      } catch {}
-    }
-
-    const candidateIdsArray = Array.from(candidateUserIds);
+    // 候補となるすべてのユーザーID（LINE userId + Web Better-Auth ID を account テーブルで双方向展開）
+    const candidateIdsArray = await expandCandidateUserIds(db, [userId, authUserId]);
 
     // ユーザーが所属（承認済み）しているチームID一覧を取得
     const userTeamIds = new Set<string>();
@@ -564,42 +751,44 @@ app.get("/hub", async (c) => {
       .orderBy(asc(events.startAt))
       .all();
 
-    // ログインユーザーの出欠リストを取得 (userIdおよびuserNameから照合)
+    // ログインユーザーの出欠リストを取得 (candidateIdsArray および userName から照合)
     let userAttendances: Record<string, string> = {};
     let currentMemberId: string | null = null;
 
-    if (userId) {
-      const member = await db
+    if (candidateIdsArray.length > 0) {
+      const matchedMembers = await db
         .select({ id: teamMembers.id })
         .from(teamMembers)
-        .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, userId)))
-        .get();
-      if (member) currentMemberId = member.id;
+        .where(
+          and(
+            eq(teamMembers.teamId, teamId),
+            or(...candidateIdsArray.map((uid) => eq(teamMembers.userId, uid)))
+          )
+        )
+        .all();
+      const canonical = matchedMembers.find((m) => !m.id.startsWith("tm_")) || matchedMembers[0];
+      if (canonical) currentMemberId = canonical.id;
     }
 
     if (!currentMemberId && userName) {
-      const memberByName = await db
-        .select({ id: teamMembers.id })
+      const teamMemberList = await db
+        .select({
+          id: teamMembers.id,
+          name: teamMembers.name,
+          memberType: teamMembers.memberType,
+          status: teamMembers.status,
+        })
         .from(teamMembers)
-        .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.name, userName)))
-        .get();
-      if (memberByName) {
-        currentMemberId = memberByName.id;
-      } else {
-        const teamMemberList = await db
-          .select({ id: teamMembers.id, name: teamMembers.name })
-          .from(teamMembers)
-          .where(eq(teamMembers.teamId, teamId))
-          .all();
-        const matched = teamMemberList.find(m => 
-          m.name && (m.name.includes(userName) || userName.includes(m.name))
-        );
-        if (matched) currentMemberId = matched.id;
-      }
+        .where(eq(teamMembers.teamId, teamId))
+        .all();
+      const matched = findMatchingAdultMemberByName(teamMemberList, [userName]);
+      if (matched) currentMemberId = matched.id;
     }
 
     const attConditions = [];
-    if (userId) attConditions.push(eq(attendances.userId, userId));
+    for (const uid of candidateIdsArray) {
+      attConditions.push(eq(attendances.userId, uid));
+    }
     if (currentMemberId) attConditions.push(eq(attendances.memberId, currentMemberId));
 
     if (attConditions.length > 0) {
@@ -1010,36 +1199,62 @@ app.get("/schedule", async (c) => {
       .orderBy(asc(events.startAt))
       .all();
 
-    // ログインユーザーの memberId を特定
-    let schedMemberId: string | null = null;
-    if (userId) {
-      const member = await db
+    // ログインユーザーの memberId を特定（account双方向連携 & 名前照合）
+    let authUserId: string | undefined;
+    let authUserName: string | undefined;
+    try {
+      const auth = getAuth(c.env.DB, c.env);
+      const session = await auth.api
+        .getSession({ headers: c.req.raw.headers as unknown as Headers })
+        .catch(() => null);
+      authUserId = session?.user?.id;
+      authUserName = session?.user?.name || undefined;
+    } catch {}
+
+    const schedCandidateIds = await expandCandidateUserIds(db, [userId, authUserId]);
+    const schedMemberIdsSet = new Set<string>();
+    const requestedMemberId = c.req.query("memberId");
+
+    if (schedCandidateIds.length > 0) {
+      const matchedMembers = await db
         .select({ id: teamMembers.id })
         .from(teamMembers)
-        .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, userId)))
-        .get();
-      if (member) schedMemberId = member.id;
+        .where(
+          and(
+            eq(teamMembers.teamId, teamId),
+            or(...schedCandidateIds.map((uid) => eq(teamMembers.userId, uid)))
+          )
+        )
+        .all();
+      for (const m of matchedMembers) {
+        schedMemberIdsSet.add(m.id);
+      }
     }
 
-    if (!schedMemberId && userName) {
-      const memberByName = await db
-        .select({ id: teamMembers.id })
+    if (schedMemberIdsSet.size === 0 && requestedMemberId && !requestedMemberId.startsWith("demo-")) {
+      const reqMember = await db
+        .select({ id: teamMembers.id, userId: teamMembers.userId })
         .from(teamMembers)
-        .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.name, userName)))
+        .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.id, requestedMemberId)))
         .get();
-      if (memberByName) {
-        schedMemberId = memberByName.id;
-      } else {
-        const teamMemberList = await db
-          .select({ id: teamMembers.id, name: teamMembers.name })
-          .from(teamMembers)
-          .where(eq(teamMembers.teamId, teamId))
-          .all();
-        const matched = teamMemberList.find(m => 
-          m.name && (m.name.includes(userName) || userName.includes(m.name))
-        );
-        if (matched) schedMemberId = matched.id;
+      if (reqMember && (!reqMember.userId || schedCandidateIds.includes(reqMember.userId))) {
+        schedMemberIdsSet.add(reqMember.id);
       }
+    }
+
+    if (schedMemberIdsSet.size === 0 && (userName || authUserName)) {
+      const teamMemberList = await db
+        .select({
+          id: teamMembers.id,
+          name: teamMembers.name,
+          memberType: teamMembers.memberType,
+          status: teamMembers.status,
+        })
+        .from(teamMembers)
+        .where(eq(teamMembers.teamId, teamId))
+        .all();
+      const matched = findMatchingAdultMemberByName(teamMemberList, [userName, authUserName]);
+      if (matched) schedMemberIdsSet.add(matched.id);
     }
 
     // 登録球場一覧を取得（略称優先マッピング用）
@@ -1059,6 +1274,7 @@ app.get("/schedule", async (c) => {
             status: attendances.status,
             userId: attendances.userId,
             memberId: attendances.memberId,
+            selectedGroupId: attendances.selectedGroupId,
           })
           .from(attendances)
           .where(eq(attendances.eventId, ev.id))
@@ -1074,13 +1290,15 @@ app.get("/schedule", async (c) => {
 
         let myStatus: string = "pending";
         let mySelectedGroupId: string | null = null;
-        if (userId || schedMemberId) {
-          const myAtt = attList.find((a) => 
-            (userId && a.userId === userId) || (schedMemberId && a.memberId === schedMemberId)
+        if (schedCandidateIds.length > 0 || schedMemberIdsSet.size > 0) {
+          const myAtt = attList.find(
+            (a) =>
+              (a.memberId && schedMemberIdsSet.has(a.memberId)) ||
+              (a.userId && schedCandidateIds.includes(a.userId))
           );
           if (myAtt?.status) {
             myStatus = myAtt.status;
-            mySelectedGroupId = (myAtt as any).selectedGroupId || null;
+            mySelectedGroupId = myAtt.selectedGroupId || null;
           }
         }
 
@@ -1413,80 +1631,96 @@ app.get("/attendance-matrix", async (c) => {
       });
     }
 
-    // 1. ログインユーザー特定（Session cookie / LINE LIFF / チーム創設者のハイブリッド判定）
+    // 1. ログインユーザー特定（Session cookie / LINE LIFF / account連携 / チーム創設者のハイブリッド判定）
     const auth = getAuth(c.env.DB, c.env);
-    const session = await auth.api.getSession({ headers: c.req.raw.headers as any }).catch(() => null);
+    const session = await auth.api.getSession({ headers: c.req.raw.headers as unknown as Headers }).catch(() => null);
     const authUserId = session?.user?.id;
     const authUserName = session?.user?.name;
     const isSysAdmin = (session?.user as AuthUser)?.role === "SYSTEM_ADMIN";
+    const requestedMemberId = c.req.query("memberId");
 
-    // チーム創設者（オーナー）チェック
+    // チーム設定および創設者（オーナー）チェック
     const teamRecord = await db.select({ 
       createdBy: teams.createdBy, 
       memberSortOrder: teams.memberSortOrder,
       attendanceStatusConfig: teams.attendanceStatusConfig,
       memberSubLabels: teams.memberSubLabels,
     }).from(teams).where(eq(teams.id, teamId)).get();
-    const isTeamCreator = Boolean(authUserId && teamRecord?.createdBy === authUserId);
 
-    // 候補となるすべてのユーザーID（LINE userId + Web Better-Auth ID）
-    const candidateUserIds = new Set<string>();
-    if (userId) candidateUserIds.add(userId);
-    if (authUserId) candidateUserIds.add(authUserId);
+    let parsedSortOrder: Record<string, string[]> = {};
+    try {
+      if (teamRecord?.memberSortOrder) {
+        parsedSortOrder = JSON.parse(teamRecord.memberSortOrder) as Record<string, string[]>;
+      }
+    } catch {}
+    const orderedIdsSet = new Set<string>(Object.values(parsedSortOrder).flat());
 
-    if (userId) {
-      try {
-        const linked = await db
-          .select({ userId: account.userId })
-          .from(account)
-          .where(and(eq(account.providerId, "line"), eq(account.accountId, userId)))
-          .all();
-        for (const item of linked) {
-          if (item.userId) candidateUserIds.add(item.userId);
-        }
-      } catch {}
-    }
+    // 候補となるすべてのユーザーID（LINE userId + Web Better-Auth ID を双方向展開）
+    const searchUserIds = await expandCandidateUserIds(db, [userId, authUserId]);
+    const isTeamCreator = Boolean(
+      teamRecord?.createdBy && searchUserIds.includes(teamRecord.createdBy)
+    );
 
-    let currentMember: any = null;
-    const searchUserIds = Array.from(candidateUserIds);
-    for (const uid of searchUserIds) {
-      currentMember = await db
-        .select()
-        .from(teamMembers)
-        .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, uid)))
-        .get();
-      if (currentMember) break;
-    }
+    const allTeamMembersRaw = await db
+      .select()
+      .from(teamMembers)
+      .where(eq(teamMembers.teamId, teamId))
+      .all();
 
-    if (!currentMember) {
-      const searchNames = [userName, authUserName].filter(Boolean) as string[];
-      if (searchNames.length > 0) {
-        const allMembers = await db.select().from(teamMembers).where(eq(teamMembers.teamId, teamId)).all();
-        for (const sn of searchNames) {
-          const cleanSn = sn.replace(/\s+/g, "");
-          currentMember = allMembers.find(m => {
-            if (!m.name) return false;
-            const cleanMn = m.name.replace(/\s+/g, "");
-            return cleanMn.includes(cleanSn) || cleanSn.includes(cleanMn);
-          });
-          if (currentMember) break;
+    const activeAllMembers = allTeamMembersRaw.filter(
+      (m) => m.status === "active" || !m.status
+    );
+
+    const matchedMembers: Array<typeof teamMembers.$inferSelect> = [];
+    if (searchUserIds.length > 0) {
+      for (const m of activeAllMembers) {
+        if (m.userId && searchUserIds.includes(m.userId)) {
+          matchedMembers.push(m);
         }
       }
     }
 
+    if (
+      matchedMembers.length === 0 &&
+      requestedMemberId &&
+      !requestedMemberId.startsWith("demo-")
+    ) {
+      const reqMember = activeAllMembers.find((m) => m.id === requestedMemberId);
+      if (reqMember && (!reqMember.userId || searchUserIds.includes(reqMember.userId))) {
+        matchedMembers.push(reqMember);
+      }
+    }
+
+    if (matchedMembers.length === 0) {
+      const matchedByName = findMatchingAdultMemberByName(activeAllMembers, [userName, authUserName]);
+      if (matchedByName) {
+        matchedMembers.push(matchedByName);
+      }
+    }
+
+    // 複数レコードがヒットした場合は、並び順に登録されている正規列 または 非 tm_ UUID を最優先で代表IDとする
+    const currentMember =
+      matchedMembers.find((m) => orderedIdsSet.has(m.id)) ||
+      matchedMembers.find((m) => !m.id.startsWith("tm_")) ||
+      matchedMembers[0] ||
+      null;
+
     const myMemberId = currentMember?.id || null;
-    const roleLower = currentMember?.role?.toLowerCase() || "";
+    const myMemberIds = Array.from(new Set(matchedMembers.map((m) => m.id)));
     const isITAdmin = Boolean(
       isSysAdmin ||
       isTeamCreator ||
-      roleLower === "admin" ||
-      roleLower === "system_admin"
+      matchedMembers.some((m) => {
+        const r = (m.role || "").toLowerCase();
+        return r === "admin" || r === "system_admin";
+      })
     );
     const isManager = Boolean(
       isITAdmin ||
-      roleLower === "manager" ||
-      roleLower === "coach" ||
-      roleLower === "scorer"
+      matchedMembers.some((m) => {
+        const r = (m.role || "").toLowerCase();
+        return r === "manager" || r === "coach" || r === "scorer";
+      })
     );
 
     // 2. 親子関係の取得
@@ -1499,9 +1733,17 @@ app.get("/attendance-matrix", async (c) => {
       .where(eq(parentChildRelations.teamId, teamId))
       .all();
 
-    const myPlayerIds = myMemberId ? relations.filter(r => r.parentId === myMemberId).map(r => r.childId) : [];
+    const myPlayerIds =
+      myMemberIds.length > 0
+        ? Array.from(
+            new Set(
+              relations
+                .filter((r) => myMemberIds.includes(r.parentId) && Boolean(r.childId))
+                .map((r) => r.childId)
+            )
+          )
+        : [];
 
-    // 3. 選手一覧取得
     // 3. 選手一覧取得（在籍選手のみ）
     const allPlayersRaw = await db
       .select()
@@ -1525,18 +1767,8 @@ app.get("/attendance-matrix", async (c) => {
         return numA - numB;
       });
 
-    // 4. 大人のメンバー一覧取得 & 分類 (選手除外 & 承認済みのみ)
-    const allTeamMembersRaw = await db
-      .select()
-      .from(teamMembers)
-      .where(eq(teamMembers.teamId, teamId))
-      .all();
-
-    // 🌟 選手を除外 & 承認済みアクティブのみ
-    const allTeamMembers = allTeamMembersRaw.filter(m => 
-      m.memberType !== "player" && 
-      (m.status === "active" || !m.status)
-    );
+    // 4. 大人のメンバー一覧分類 (選手除外 & 承認済みアクティブのみ)
+    const allTeamMembers = activeAllMembers.filter(m => m.memberType !== "player");
 
     // 親ID -> 子供名リストのマッピング
     const parentChildrenMap = new Map<string, string[]>();
@@ -1749,6 +1981,7 @@ app.get("/attendance-matrix", async (c) => {
       memberSubLabels,
       myInfo: {
         memberId: myMemberId,
+        memberIds: myMemberIds,
         isITAdmin,
         groupType: myMemberId ? (
           fathersList.some(f => f.id === myMemberId) ? "father" :
@@ -1798,12 +2031,22 @@ app.post("/attendance-matrix", async (c) => {
       });
     }
 
-    // 💡 外部キー整合性チェック (userId は BetterAuth の user.id を参照するため、LINEのユーザーIDが直接入ると制約違反787になるのを防止)
+    // 💡 外部キー整合性チェック (account連携済みの場合は正規 Better-Auth user.id を優先採用)
     let validUserId: string | null = null;
     if (userId) {
       try {
-        const u = await db.select({ id: user.id }).from(user).where(eq(user.id, userId)).get();
-        if (u) validUserId = u.id;
+        const expandedIds = await expandCandidateUserIds(db, [userId]);
+        const sortedIds = [
+          ...expandedIds.filter((id) => !id.startsWith("U")),
+          ...expandedIds.filter((id) => id.startsWith("U")),
+        ];
+        for (const uid of sortedIds) {
+          const u = await db.select({ id: user.id }).from(user).where(eq(user.id, uid)).get();
+          if (u) {
+            validUserId = u.id;
+            break;
+          }
+        }
       } catch (err) {
         console.warn("Could not check userId in user table:", err);
       }
@@ -2062,57 +2305,65 @@ app.get("/my-family", async (c) => {
       .where(eq(parentChildRelations.teamId, teamId))
       .all();
 
-    // 2. チームメンバーから保護者レコードを特定
-    let member: any = null;
-    if (targetParentId) {
-      member = await db
+    // 2. チームメンバーから保護者レコードを特定（account双方向連携 & 安全な名前照合）
+    let authUserId: string | undefined;
+    let authUserName: string | undefined;
+    try {
+      const auth = getAuth(c.env.DB, c.env);
+      const session = await auth.api
+        .getSession({ headers: c.req.raw.headers as unknown as Headers })
+        .catch(() => null);
+      authUserId = session?.user?.id;
+      authUserName = session?.user?.name || undefined;
+    } catch {}
+
+    const familyCandidateIds = await expandCandidateUserIds(db, [userId, authUserId]);
+    let member: typeof teamMembers.$inferSelect | null = null;
+    const matchedFamilyMemberIds = new Set<string>();
+
+    if (targetParentId && !targetParentId.startsWith("demo-")) {
+      const targetRow = await db
         .select()
         .from(teamMembers)
         .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.id, targetParentId)))
         .get();
-    }
-    if (!member && userId) {
-      member = await db
-        .select()
-        .from(teamMembers)
-        .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, userId)))
-        .get();
-    }
-    if (!member && userName) {
-      // 完全一致検索
-      member = await db
-        .select()
-        .from(teamMembers)
-        .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.name, userName)))
-        .get();
-
-      // 部分一致検索 (LINE名が「山田」でメンバー名が「山田 (父)」等の場合)
-      if (!member) {
-        const teamMemberList = await db
-          .select()
-          .from(teamMembers)
-          .where(eq(teamMembers.teamId, teamId))
-          .all();
-        
-        member = teamMemberList.find(m => 
-          m.name && (
-            m.name.includes(userName) || 
-            userName.includes(m.name) ||
-            (m.name.replace(/\s+/g, "") === userName.replace(/\s+/g, ""))
-          )
-        );
+      if (targetRow) {
+        member = targetRow;
+        matchedFamilyMemberIds.add(targetRow.id);
       }
     }
 
-    if (!member && allRelations.length > 0) {
-      // チームに登録された親子関係から保護者を自動特定
-      const firstParentId = allRelations[0].parentId;
-      if (firstParentId) {
-        member = await db
-          .select()
-          .from(teamMembers)
-          .where(eq(teamMembers.id, firstParentId))
-          .get();
+    if (!member && familyCandidateIds.length > 0) {
+      const rows = await db
+        .select()
+        .from(teamMembers)
+        .where(
+          and(
+            eq(teamMembers.teamId, teamId),
+            or(...familyCandidateIds.map((uid) => eq(teamMembers.userId, uid)))
+          )
+        )
+        .all();
+      const activeRows = rows.filter((r) => r.status === "active" || !r.status);
+      for (const r of activeRows) {
+        matchedFamilyMemberIds.add(r.id);
+      }
+      member =
+        activeRows.find((r) => !r.id.startsWith("tm_")) ||
+        activeRows[0] ||
+        null;
+    }
+
+    if (!member && (userName || authUserName)) {
+      const teamMemberList = await db
+        .select()
+        .from(teamMembers)
+        .where(eq(teamMembers.teamId, teamId))
+        .all();
+      const matched = findMatchingAdultMemberByName(teamMemberList, [userName, authUserName]);
+      if (matched) {
+        member = matched;
+        matchedFamilyMemberIds.add(matched.id);
       }
     }
 
@@ -2120,7 +2371,9 @@ app.get("/my-family", async (c) => {
     let childrenList: Array<{ id: string; name: string; uniformNumber?: string; parentId?: string; parentName?: string }> = [];
 
     if (member) {
-      const myRelations = allRelations.filter(r => r.parentId === member.id && !!r.childId);
+      const myRelations = allRelations.filter(
+        (r) => (r.parentId === member!.id || matchedFamilyMemberIds.has(r.parentId)) && !!r.childId
+      );
       const seen = new Set<string>();
       for (const rel of myRelations) {
         if (!seen.has(rel.childId)) {
@@ -2130,7 +2383,7 @@ app.get("/my-family", async (c) => {
             name: rel.childName || "選手",
             uniformNumber: rel.uniformNumber ? (rel.uniformNumber.startsWith("#") ? rel.uniformNumber : `#${rel.uniformNumber}`) : undefined,
             parentId: member.id,
-            parentName: member.name,
+            parentName: member.name || undefined,
           });
         }
       }
@@ -2173,26 +2426,32 @@ app.get("/my-family", async (c) => {
     // 6. 保護者本人の既存出欠一覧を取得
     const parentAttMap: Record<string, "present" | "absent" | "pending" | "late"> = {};
     const parentGroupMap: Record<string, string> = {};
-    if (member?.id || userId) {
+    if (matchedFamilyMemberIds.size > 0 || familyCandidateIds.length > 0) {
       const parentConditions = [];
-      if (member?.id) parentConditions.push(eq(attendances.memberId, member.id));
-      if (userId) parentConditions.push(eq(attendances.userId, userId));
+      for (const mid of matchedFamilyMemberIds) {
+        parentConditions.push(eq(attendances.memberId, mid));
+      }
+      for (const uid of familyCandidateIds) {
+        parentConditions.push(eq(attendances.userId, uid));
+      }
 
-      const parentAttList = await db
-        .select({
-          eventId: attendances.eventId,
-          status: attendances.status,
-          selectedGroupId: attendances.selectedGroupId,
-        })
-        .from(attendances)
-        .where(or(...parentConditions))
-        .all();
+      if (parentConditions.length > 0) {
+        const parentAttList = await db
+          .select({
+            eventId: attendances.eventId,
+            status: attendances.status,
+            selectedGroupId: attendances.selectedGroupId,
+          })
+          .from(attendances)
+          .where(or(...parentConditions))
+          .all();
 
-      for (const att of parentAttList) {
-        if (att.eventId && att.status) {
-          parentAttMap[att.eventId] = (att.status as any) || "pending";
-          if (att.selectedGroupId) {
-            parentGroupMap[att.eventId] = att.selectedGroupId;
+        for (const att of parentAttList) {
+          if (att.eventId && att.status) {
+            parentAttMap[att.eventId] = (att.status as any) || "pending";
+            if (att.selectedGroupId) {
+              parentGroupMap[att.eventId] = att.selectedGroupId;
+            }
           }
         }
       }
@@ -2273,29 +2532,71 @@ app.post("/attendance", async (c) => {
       return c.json({ success: true, message: "お子様の出欠回答を保存しました" });
     }
 
-    // 💡 外部キー整合性チェック (BetterAuth user.id)
+    let authUserId: string | undefined;
+    try {
+      const auth = getAuth(c.env.DB, c.env);
+      const session = await auth.api
+        .getSession({ headers: c.req.raw.headers as unknown as Headers })
+        .catch(() => null);
+      authUserId = session?.user?.id;
+    } catch {}
+
+    const expandedIds = await expandCandidateUserIds(db, [userId, authUserId]);
+    const evRow = await db
+      .select({ teamId: events.teamId })
+      .from(events)
+      .where(eq(events.id, eventId))
+      .get();
+
+    // 💡 外部キー整合性チェック (account連携済みの場合は正規 Better-Auth user.id を優先採用)
     let validUserId: string | null = null;
-    if (userId) {
-      try {
-        const u = await db.select({ id: user.id }).from(user).where(eq(user.id, userId)).get();
-        if (u) validUserId = u.id;
-      } catch (err) {
-        console.warn("Could not check userId in user table:", err);
+    if (expandedIds.length > 0) {
+      const sortedIds = [
+        ...expandedIds.filter((id) => !id.startsWith("U")),
+        ...expandedIds.filter((id) => id.startsWith("U")),
+      ];
+      for (const uid of sortedIds) {
+        try {
+          const u = await db.select({ id: user.id }).from(user).where(eq(user.id, uid)).get();
+          if (u) {
+            validUserId = u.id;
+            break;
+          }
+        } catch {}
       }
     }
 
-    // 👨 保護者・メンバー本人の出欠の場合
-    let effectiveMemberId = memberId;
-    if (!effectiveMemberId && userId) {
-      const tm = await db
+    // 👨 保護者・メンバー本人の出欠の場合（イベントの所属チーム内で正確に特定）
+    let effectiveMemberId: string | null = memberId || null;
+    if (effectiveMemberId && evRow?.teamId) {
+      const verifiedMember = await db
         .select({ id: teamMembers.id, userId: teamMembers.userId })
         .from(teamMembers)
-        .where(eq(teamMembers.userId, userId))
+        .where(and(eq(teamMembers.teamId, evRow.teamId), eq(teamMembers.id, effectiveMemberId)))
         .get();
-      if (tm) {
-        effectiveMemberId = tm.id;
-        if (!validUserId && tm.userId) {
-          const u = await db.select({ id: user.id }).from(user).where(eq(user.id, tm.userId)).get();
+      if (!verifiedMember) {
+        effectiveMemberId = null;
+      } else if (!validUserId && verifiedMember.userId) {
+        const u = await db.select({ id: user.id }).from(user).where(eq(user.id, verifiedMember.userId)).get();
+        if (u) validUserId = u.id;
+      }
+    }
+
+    if (!effectiveMemberId && expandedIds.length > 0) {
+      const tmConditions = [or(...expandedIds.map((uid) => eq(teamMembers.userId, uid)))];
+      if (evRow?.teamId) {
+        tmConditions.push(eq(teamMembers.teamId, evRow.teamId));
+      }
+      const tmRows = await db
+        .select({ id: teamMembers.id, userId: teamMembers.userId })
+        .from(teamMembers)
+        .where(and(...tmConditions))
+        .all();
+      const canonicalTm = tmRows.find((r) => !r.id.startsWith("tm_")) || tmRows[0];
+      if (canonicalTm) {
+        effectiveMemberId = canonicalTm.id;
+        if (!validUserId && canonicalTm.userId) {
+          const u = await db.select({ id: user.id }).from(user).where(eq(user.id, canonicalTm.userId)).get();
           if (u) validUserId = u.id;
         }
       }
@@ -4775,8 +5076,25 @@ app.post("/admin/members/merge", async (c) => {
     if (!target) return c.json({ success: false, error: "統合先のメンバーが見つかりません" }, 404);
     if (!source) return c.json({ success: false, error: "統合元のメンバーが見つかりません" }, 404);
 
-    // 💡 統合後のユーザーID: targetのuserIdを優先し、なければsourceのuserIdを採用
-    const resolvedUserId = target.userId || source.userId;
+    // 💡 統合後のユーザーID決定 & LINEアカウント(U...)の account テーブル自動連携
+    let resolvedUserId: string | null = target.userId || source.userId || null;
+    let secondaryLineId: string | null = null;
+
+    if (target.userId && source.userId && target.userId !== source.userId) {
+      if (!target.userId.startsWith("U") && source.userId.startsWith("U")) {
+        resolvedUserId = target.userId;
+        secondaryLineId = source.userId;
+      } else if (target.userId.startsWith("U") && !source.userId.startsWith("U")) {
+        resolvedUserId = source.userId;
+        secondaryLineId = target.userId;
+      } else {
+        resolvedUserId = target.userId;
+      }
+    }
+
+    if (resolvedUserId && secondaryLineId) {
+      await ensureLineAccountLink(db, resolvedUserId, secondaryLineId);
+    }
 
     // 1. 🔗 親子関係の統合 (parentChildRelations)
     const sourceRelations = await db.select().from(parentChildRelations)
@@ -4873,7 +5191,63 @@ app.post("/admin/members/merge", async (c) => {
       status: 'active',
     }).where(eq(teamMembers.id, targetMemberId));
 
-    // 9. 🗑️ 統合元メンバー（重複した参加レコード）の削除
+    // 9. 🏷️ チームの並び順・班サブラベル設定からの旧IDクリーンアップ＆引き継ぎ
+    try {
+      const teamCfg = await db
+        .select({
+          memberSortOrder: teams.memberSortOrder,
+          memberSubLabels: teams.memberSubLabels,
+        })
+        .from(teams)
+        .where(eq(teams.id, teamId))
+        .get();
+
+      if (teamCfg) {
+        const teamUpdates: { memberSortOrder?: string; memberSubLabels?: string } = {};
+
+        if (teamCfg.memberSubLabels) {
+          try {
+            const subMap = JSON.parse(teamCfg.memberSubLabels) as Record<string, string>;
+            if (sourceMemberId in subMap) {
+              if (!subMap[targetMemberId] && subMap[sourceMemberId]) {
+                subMap[targetMemberId] = subMap[sourceMemberId];
+              }
+              delete subMap[sourceMemberId];
+              teamUpdates.memberSubLabels = JSON.stringify(subMap);
+            }
+          } catch {}
+        }
+
+        if (teamCfg.memberSortOrder) {
+          try {
+            const orderMap = JSON.parse(teamCfg.memberSortOrder) as Record<string, string[]>;
+            let orderChanged = false;
+            for (const grpKey of Object.keys(orderMap)) {
+              const arr = orderMap[grpKey];
+              if (Array.isArray(arr) && arr.includes(sourceMemberId)) {
+                orderChanged = true;
+                if (arr.includes(targetMemberId)) {
+                  orderMap[grpKey] = arr.filter((id) => id !== sourceMemberId);
+                } else {
+                  orderMap[grpKey] = arr.map((id) => (id === sourceMemberId ? targetMemberId : id));
+                }
+              }
+            }
+            if (orderChanged) {
+              teamUpdates.memberSortOrder = JSON.stringify(orderMap);
+            }
+          } catch {}
+        }
+
+        if (Object.keys(teamUpdates).length > 0) {
+          await db.update(teams).set(teamUpdates).where(eq(teams.id, teamId));
+        }
+      }
+    } catch (cfgErr) {
+      console.warn("Team config cleanup on merge warning:", cfgErr);
+    }
+
+    // 10. 🗑️ 統合元メンバー（重複した参加レコード）の削除
     await db.delete(teamMembers).where(eq(teamMembers.id, sourceMemberId));
 
     return c.json({
@@ -4912,50 +5286,41 @@ async function resolveProfileMember(
     sessionUser = session?.user || null;
   } catch {}
 
-  const candidateIdsSet = new Set<string>();
   const cleanUid = userId?.trim();
-  if (cleanUid && cleanUid !== "cached-user" && cleanUid !== "mock-user-12345") {
-    candidateIdsSet.add(cleanUid);
-  }
-  if (sessionUser?.id) {
-    candidateIdsSet.add(sessionUser.id);
-  }
+  const candidateIds = await expandCandidateUserIds(db, [cleanUid, sessionUser?.id]);
 
-  if (cleanUid && cleanUid !== "cached-user" && cleanUid !== "mock-user-12345") {
+  // `user` テーブル整合性付きの有効な userId 確保（連携済みの正規 Better-Auth ID を優先）
+  let validUserId: string | null = null;
+  const prioritizedUserIds = [
+    ...candidateIds.filter((id) => !id.startsWith("U")),
+    ...candidateIds.filter((id) => id.startsWith("U")),
+  ];
+  for (const uid of prioritizedUserIds) {
     try {
-      const linked = await db
-        .select({ userId: account.userId })
-        .from(account)
-        .where(and(eq(account.providerId, "line"), eq(account.accountId, cleanUid)))
-        .all();
-      for (const item of linked) {
-        if (item.userId) candidateIdsSet.add(item.userId);
+      const userExists = await db.select({ id: user.id }).from(user).where(eq(user.id, uid)).get();
+      if (userExists) {
+        validUserId = userExists.id;
+        break;
       }
     } catch {}
   }
 
-  const candidateIds = Array.from(candidateIdsSet);
+  const preferredUid =
+    sessionUser?.id ||
+    (cleanUid && !IGNORED_MOCK_USER_IDS.has(cleanUid) ? cleanUid : null);
 
-  // `user` テーブル整合性付きの有効な userId 確保
-  let validUserId: string | null = null;
-  const preferredUid = sessionUser?.id || (cleanUid && cleanUid !== "cached-user" && cleanUid !== "mock-user-12345" ? cleanUid : null);
-  if (preferredUid) {
+  if (!validUserId && preferredUid && createIfMissing) {
     try {
-      const userExists = await db.select({ id: user.id }).from(user).where(eq(user.id, preferredUid)).get();
-      if (userExists) {
-        validUserId = userExists.id;
-      } else if (createIfMissing) {
-        await db.insert(user).values({
-          id: preferredUid,
-          name: (initialName || userName || sessionUser?.name || "LINEユーザー").trim(),
-          email: `${preferredUid}@line.user`,
-          emailVerified: false,
-          role: "GUEST",
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        });
-        validUserId = preferredUid;
-      }
+      await db.insert(user).values({
+        id: preferredUid,
+        name: (initialName || userName || sessionUser?.name || "LINEユーザー").trim(),
+        email: `${preferredUid}@line.user`,
+        emailVerified: false,
+        role: "GUEST",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+      validUserId = preferredUid;
     } catch {
       validUserId = null;
     }
@@ -4963,18 +5328,9 @@ async function resolveProfileMember(
 
   let foundMember: typeof teamMembers.$inferSelect | undefined;
 
-  // 1. memberId 明示指定
-  if (memberId && memberId.trim() && !memberId.startsWith("demo-")) {
-    foundMember = await db
-      .select()
-      .from(teamMembers)
-      .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.id, memberId.trim())))
-      .get();
-  }
-
-  // 2. userId 照合
-  if (!foundMember && candidateIds.length > 0) {
-    foundMember = await db
+  // 1. userId / account双方向連携による照合（正規の非 tm_ ID を最優先）
+  if (candidateIds.length > 0) {
+    const matchedByUid = await db
       .select()
       .from(teamMembers)
       .where(
@@ -4983,41 +5339,74 @@ async function resolveProfileMember(
           or(...candidateIds.map((uid) => eq(teamMembers.userId, uid)))
         )
       )
-      .get();
+      .all();
+    const activeMatched = matchedByUid.filter((m) => m.status === "active" || !m.status);
+    foundMember =
+      activeMatched.find((m) => !m.id.startsWith("tm_")) ||
+      activeMatched[0] ||
+      matchedByUid[0];
   }
 
-  // 3. 名前照合
-  const targetName = (userName || sessionUser?.name || "").trim();
-  if (!foundMember && targetName) {
-    const normalizedTarget = targetName.replace(/\s+/g, "");
+  // 2. memberId 明示指定（userId未連携メンバーのキャッシュ照合。他人のuserIdが紐付いているレコードは除外）
+  if (!foundMember && memberId && memberId.trim() && !memberId.startsWith("demo-")) {
+    const byId = await db
+      .select()
+      .from(teamMembers)
+      .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.id, memberId.trim())))
+      .get();
+    if (byId && (!byId.userId || candidateIds.includes(byId.userId))) {
+      foundMember = byId;
+    }
+  }
+
+  // 3. 名前照合（保存時は入力された表示名 initialName を最優先で照合し、重複 tm_ 作成を防止！）
+  const searchNames = [initialName, userName, sessionUser?.name];
+  if (!foundMember && searchNames.some((s) => Boolean(s?.trim()))) {
     const allTeamMembers = await db
       .select()
       .from(teamMembers)
       .where(eq(teamMembers.teamId, teamId))
       .all();
 
-    foundMember = allTeamMembers.find((m) => {
-      if (!m.name) return false;
-      const normalizedMember = m.name.replace(/\s+/g, "");
-      return (
-        normalizedMember === normalizedTarget ||
-        normalizedMember.includes(normalizedTarget) ||
-        normalizedTarget.includes(normalizedMember)
+    if (initialMemberType === "player") {
+      const normTargets = searchNames
+        .map((s) => (s ? normalizeMemberName(s) : ""))
+        .filter(Boolean);
+      foundMember = allTeamMembers.find(
+        (m) =>
+          m.memberType === "player" &&
+          Boolean(m.name) &&
+          normTargets.includes(normalizeMemberName(m.name || ""))
       );
-    });
+    } else {
+      foundMember = findMatchingAdultMemberByName(allTeamMembers, searchNames) || undefined;
+    }
 
-    if (foundMember && validUserId && !foundMember.userId) {
-      try {
-        await db
-          .update(teamMembers)
-          .set({ userId: validUserId })
-          .where(eq(teamMembers.id, foundMember.id));
-        foundMember = { ...foundMember, userId: validUserId };
-      } catch {}
+    if (foundMember) {
+      if (!foundMember.userId && validUserId) {
+        try {
+          await db
+            .update(teamMembers)
+            .set({ userId: validUserId })
+            .where(eq(teamMembers.id, foundMember.id));
+          foundMember = { ...foundMember, userId: validUserId };
+        } catch {}
+      } else if (foundMember.userId) {
+        if (cleanUid && cleanUid.startsWith("U") && foundMember.userId !== cleanUid) {
+          await ensureLineAccountLink(db, foundMember.userId, cleanUid);
+        } else if (
+          sessionUser?.id &&
+          !sessionUser.id.startsWith("U") &&
+          foundMember.userId.startsWith("U")
+        ) {
+          await ensureLineAccountLink(db, sessionUser.id, foundMember.userId);
+        }
+      }
     }
   }
 
   // 4. 未登録かつ createIfMissing の場合は安全に自動作成
+  const fallbackName = (initialName || userName || sessionUser?.name || "メンバー").trim();
   if (!foundMember && createIfMissing) {
     const teamExists = await db
       .select({ id: teams.id })
@@ -5032,7 +5421,7 @@ async function resolveProfileMember(
         id: newMemberId,
         teamId,
         userId: validUserId,
-        name: (initialName || targetName || "メンバー").trim(),
+        name: fallbackName,
         nameKana: null as string | null,
         memberType: mType,
         phone: null as string | null,

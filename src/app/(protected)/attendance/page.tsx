@@ -105,6 +105,8 @@ export default function AttendancePage() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [groupRelations, setGroupRelations] = useState<GroupMemberRelation[]>([]);
   const [myUserId, setMyUserId] = useState<string | null>(null);
+  const [myLinkedUserIds, setMyLinkedUserIds] = useState<string[]>([]);
+  const [parentChildList, setParentChildList] = useState<Array<{ parentId: string; childId: string }>>([]);
   const [myRole, setMyRole] = useState<string>("");
   const [isSystemAdmin, setIsSystemAdmin] = useState<boolean>(false);
   const [isFounder, setIsFounder] = useState<boolean>(false);
@@ -273,9 +275,15 @@ export default function AttendancePage() {
         const meJson = await meRes.json() as any;
         if (meJson.success && meJson.data) {
           setMyUserId(meJson.data.id);
+          const linked: string[] = Array.isArray(meJson.data.linkedUserIds)
+            ? meJson.data.linkedUserIds
+            : meJson.data.id
+            ? [meJson.data.id]
+            : [];
+          setMyLinkedUserIds(linked);
           const isSys = meJson.data.systemRole === "SYSTEM_ADMIN" || meJson.data.role === "SYSTEM_ADMIN";
           if (isSys) setIsSystemAdmin(true);
-          const membership = meJson.data.memberships?.find((m: any) => m.teamId === tid);
+          const membership = meJson.data.memberships?.find((m: { teamId: string; role?: string }) => m.teamId === tid);
           if (membership) {
             setMyRole(membership.role || "");
           }
@@ -305,6 +313,7 @@ export default function AttendancePage() {
           setPlayersData(attendJson.data.players || []);
           setMemberData(attendJson.data.members || []);
           setAttendanceRecords(attendJson.data.attendances || []);
+          setParentChildList(attendJson.data.parentChildRelations || []);
         }
       }
 
@@ -365,6 +374,21 @@ export default function AttendancePage() {
 
   // 表示するメンバー一覧の作成（縦軸）
   const displayRows = useMemo(() => {
+    const linkedSet = new Set<string>(myLinkedUserIds);
+    if (myUserId) linkedSet.add(myUserId);
+
+    const myMemberIdsSet = new Set<string>(
+      membersData
+        .filter((m) => Boolean(m.userId && linkedSet.has(m.userId)))
+        .map((m) => m.id)
+    );
+
+    const myChildPlayerIdsSet = new Set<string>(
+      parentChildList
+        .filter((rel) => myMemberIdsSet.has(rel.parentId))
+        .map((rel) => rel.childId)
+    );
+
     const rows: {
       type: "player" | "member";
       id: string;
@@ -381,14 +405,14 @@ export default function AttendancePage() {
     if (includePlayers) {
       playersData.forEach(p => {
         if (filteredMemberIdsByGroup && !filteredMemberIdsByGroup.playerIds.has(p.id)) return;
-        const isMe = myUserId && p.userId === myUserId;
+        const isMeOrChild = Boolean((p.userId && linkedSet.has(p.userId)) || myChildPlayerIdsSet.has(p.id));
         rows.push({
           type: "player",
           id: p.id,
           name: p.name,
           uniformNumber: p.uniformNumber,
           avatarUrl: p.profileImageUrl,
-          canEdit: canManage || !!isMe
+          canEdit: canManage || isMeOrChild
         });
       });
     }
@@ -400,20 +424,20 @@ export default function AttendancePage() {
       membersData.forEach(m => {
         if (m.memberType === "player") return; // 🌟 選手は除外する
         if (filteredMemberIdsByGroup && !filteredMemberIdsByGroup.memberIds.has(m.id)) return;
-        const isMe = myUserId && m.userId === myUserId;
+        const isMe = Boolean(m.userId && linkedSet.has(m.userId));
         rows.push({
           type: "member",
           id: m.id,
           name: m.name,
           memberType: m.memberType,
           avatarUrl: m.avatarUrl,
-          canEdit: canManage || !!isMe
+          canEdit: canManage || isMe
         });
       });
     }
 
     return rows;
-  }, [selectedFilter, playersData, membersData, filteredMemberIdsByGroup, myUserId, canManage]);
+  }, [selectedFilter, playersData, membersData, filteredMemberIdsByGroup, myUserId, myLinkedUserIds, parentChildList, canManage]);
 
 
 
