@@ -6,6 +6,7 @@ import {
   isNonPitchMoundEvent,
   isPickoffPitch,
   type CanonicalPitchResult,
+  type ScorebookBatterSlot,
 } from "@/types/scorebook-v2";
 import {
   formatAdvanceMethodByRules,
@@ -40,10 +41,36 @@ const COLOR_RED = "#dc2626";
 const COLOR_RED_SOFT = "#fef2f2";
 const COLOR_BLUE = "#1d4ed8";
 const COLOR_BLUE_SOFT = "#eff6ff";
+const COLOR_SAGE_HEAD = "#dfe9e2";
+const COLOR_SAGE_BADGE = "#35634d";
+const COLOR_SAGE_SUB_ORD = "#4b6358";
 
 const CELL_W = 88;
 const CELL_H = 74;
 const BSO_W = 19;
+
+// 3段フル様式（先発・守備位置｜打順(1/11/21)｜左○｜選手名｜背番号）の列幅定数
+const CLASSIC_STARTER_POS_W = 19;
+const CLASSIC_SUB_POS_COL_W = 15;
+const CLASSIC_POS_TOTAL_W = CLASSIC_STARTER_POS_W + CLASSIC_SUB_POS_COL_W * 3; // 64
+const CLASSIC_ORD_W = 22;
+const CLASSIC_LEFTY_W = 17;
+const CLASSIC_NAME_W = 132;
+const CLASSIC_NUM_W = 23;
+const CLASSIC_LINEUP_TOTAL_W =
+  CLASSIC_POS_TOTAL_W +
+  CLASSIC_ORD_W +
+  CLASSIC_LEFTY_W +
+  CLASSIC_NAME_W +
+  CLASSIC_NUM_W; // 258
+
+// シンプル式（順｜守備｜背番｜選手名）の列幅定数
+const COMPACT_ORD_W = 26;
+const COMPACT_POS_W = 36;
+const COMPACT_NUM_W = 30;
+const COMPACT_NAME_W = 138;
+const COMPACT_LINEUP_TOTAL_W =
+  COMPACT_ORD_W + COMPACT_POS_W + COMPACT_NUM_W + COMPACT_NAME_W; // 230
 
 interface SegmentEndpointDef {
   from: { x: number; y: number };
@@ -1097,6 +1124,914 @@ export function renderSingleScorebookCellSvg(
   );
 }
 
+function getLineupTotalWidth(rules: ScorebookSymbolRules): number {
+  return rules.lineupStyle === "compact_order_first"
+    ? COMPACT_LINEUP_TOTAL_W
+    : CLASSIC_LINEUP_TOTAL_W;
+}
+
+function normalizeBatsFlag(
+  raw: string | null | undefined
+): "R" | "L" | "B" | null {
+  if (!raw) return null;
+  const u = raw.trim().toUpperCase();
+  if (u === "L" || u === "左" || u === "左打") return "L";
+  if (u === "B" || u === "S" || u === "両" || u === "両打") return "B";
+  if (u === "R" || u === "右" || u === "右打") return "R";
+  return null;
+}
+
+interface ClassicLineupSubRow {
+  name: string;
+  uniformNumber: string;
+  bats: "R" | "L" | "B" | null;
+  entryTimingLabel: string;
+}
+
+interface ClassicBatterSlotModel {
+  rows: [ClassicLineupSubRow, ClassicLineupSubRow, ClassicLineupSubRow];
+  posGrid: [
+    [string, string, string, string],
+    [string, string, string, string],
+    [string, string, string, string],
+  ];
+}
+
+function isRolePlaceholderToken(tok: string): boolean {
+  return (
+    tok === "PH" ||
+    tok === "PR" ||
+    tok === "TR" ||
+    tok === "打" ||
+    tok === "走" ||
+    tok === "臨"
+  );
+}
+
+function buildClassicBatterSlotModel(
+  slot: ScorebookBatterSlot,
+  isTop: boolean,
+  rules: ScorebookSymbolRules
+): ClassicBatterSlotModel {
+  const rows: [ClassicLineupSubRow, ClassicLineupSubRow, ClassicLineupSubRow] = [
+    {
+      name: slot.name.trim(),
+      uniformNumber: slot.uniformNumber.trim(),
+      bats: normalizeBatsFlag(slot.bats),
+      entryTimingLabel: "",
+    },
+    { name: "", uniformNumber: "", bats: null, entryTimingLabel: "" },
+    { name: "", uniformNumber: "", bats: null, entryTimingLabel: "" },
+  ];
+
+  const posGrid: ClassicBatterSlotModel["posGrid"] = [
+    [
+      slot.position.trim()
+        ? formatPositionByRules(slot.position, rules)
+        : "",
+      "",
+      "",
+      "",
+    ],
+    ["", "", "", ""],
+    ["", "", "", ""],
+  ];
+
+  let activeRowIdx: 0 | 1 | 2 = 0;
+  let activePlayerId = slot.playerId || null;
+  let activeCleanName = slot.name.replace(/\s+/g, "");
+  let activeEnteredInning = 1;
+  let nextChangeCol = 1;
+
+  for (const sub of slot.substitutions) {
+    const cleanSubName = sub.name.replace(/\s+/g, "");
+    const cleanSubPos = sub.position.trim();
+    const cleanSubNum = sub.uniformNumber.trim();
+    if (!cleanSubName && !cleanSubPos && !cleanSubNum) {
+      continue;
+    }
+
+    const posToken = cleanSubPos
+      ? formatPositionByRules(cleanSubPos, rules)
+      : rules.positionLabel === "kanji"
+      ? sub.subType === "PR"
+        ? "走"
+        : sub.subType === "TR"
+        ? "臨"
+        : "打"
+      : sub.subType;
+
+    const isSamePlayer =
+      (Boolean(sub.playerId) &&
+        Boolean(activePlayerId) &&
+        sub.playerId === activePlayerId) ||
+      ((!sub.playerId || !activePlayerId) &&
+        cleanSubName !== "" &&
+        activeCleanName !== "" &&
+        cleanSubName === activeCleanName) ||
+      (cleanSubName === "" && sub.subType === "DEF");
+
+    if (isSamePlayer) {
+      let lastCol = -1;
+      let lastTok = "";
+      for (let c = 3; c >= 0; c--) {
+        if (posGrid[activeRowIdx][c] !== "") {
+          lastCol = c;
+          lastTok = posGrid[activeRowIdx][c];
+          break;
+        }
+      }
+
+      if (posToken && posToken !== lastTok) {
+        if (
+          activeRowIdx > 0 &&
+          lastCol >= 1 &&
+          isRolePlaceholderToken(lastTok) &&
+          sub.subType === "DEF" &&
+          cleanSubPos !== "" &&
+          sub.inningEntered === activeEnteredInning
+        ) {
+          // 同一回表裏の「代打→そのまま守備就位」は同じセルに守備位置を統合
+          posGrid[activeRowIdx][lastCol] = posToken;
+        } else {
+          const targetCol = Math.min(3, Math.max(1, nextChangeCol));
+          posGrid[activeRowIdx][targetCol] = posToken;
+          nextChangeCol = Math.min(3, targetCol + 1);
+        }
+      }
+      if (sub.bats && !rows[activeRowIdx].bats) {
+        rows[activeRowIdx].bats = normalizeBatsFlag(sub.bats);
+      }
+      if (cleanSubNum && !rows[activeRowIdx].uniformNumber) {
+        rows[activeRowIdx].uniformNumber = cleanSubNum;
+      }
+      continue;
+    }
+
+    const entryHalf =
+      sub.subType === "DEF"
+        ? isTop
+          ? "裏"
+          : "表"
+        : isTop
+        ? "表"
+        : "裏";
+    const timingLabel =
+      sub.inningEntered > 0 ? `${sub.inningEntered}${entryHalf}` : "";
+
+    if (activeRowIdx < 2) {
+      activeRowIdx = (activeRowIdx + 1) as 1 | 2;
+      rows[activeRowIdx] = {
+        name: sub.name.trim(),
+        uniformNumber: cleanSubNum,
+        bats: normalizeBatsFlag(sub.bats),
+        entryTimingLabel: timingLabel,
+      };
+    } else {
+      rows[2] = {
+        name: rows[2].name
+          ? `${rows[2].name}/${sub.name.trim()}`
+          : sub.name.trim(),
+        uniformNumber: cleanSubNum || rows[2].uniformNumber,
+        bats: normalizeBatsFlag(sub.bats) ?? rows[2].bats,
+        entryTimingLabel: timingLabel || rows[2].entryTimingLabel,
+      };
+    }
+
+    activePlayerId = sub.playerId || null;
+    activeCleanName = cleanSubName;
+    activeEnteredInning = sub.inningEntered || 1;
+
+    if (posToken) {
+      const targetCol = Math.min(3, Math.max(activeRowIdx, nextChangeCol));
+      posGrid[activeRowIdx][targetCol] = posToken;
+      nextChangeCol = Math.min(3, targetCol + 1);
+    }
+  }
+
+  return { rows, posGrid };
+}
+
+function renderLineupHeaderSvg(
+  lineupX: number,
+  tableTopY: number,
+  colHeadH: number,
+  rules: ScorebookSymbolRules
+): React.ReactNode {
+  if (rules.lineupStyle === "compact_order_first") {
+    return (
+      <g>
+        {(
+          [
+            { x: lineupX, w: COMPACT_ORD_W, label: "順" },
+            { x: lineupX + COMPACT_ORD_W, w: COMPACT_POS_W, label: "守備" },
+            {
+              x: lineupX + COMPACT_ORD_W + COMPACT_POS_W,
+              w: COMPACT_NUM_W,
+              label: "背番",
+            },
+            {
+              x: lineupX + COMPACT_ORD_W + COMPACT_POS_W + COMPACT_NUM_W,
+              w: COMPACT_NAME_W,
+              label: "選手名（途中交代）",
+            },
+          ] as const
+        ).map((h, idx) => (
+          <g key={h.label}>
+            {idx > 0 && (
+              <line
+                x1={h.x}
+                y1={tableTopY}
+                x2={h.x}
+                y2={tableTopY + colHeadH}
+                stroke={COLOR_GRID}
+                strokeWidth={0.9}
+              />
+            )}
+            <text
+              x={h.x + h.w / 2}
+              y={tableTopY + 19}
+              fontSize={9.5}
+              fontWeight={900}
+              textAnchor="middle"
+              fill={COLOR_INK}
+            >
+              {h.label}
+            </text>
+          </g>
+        ))}
+      </g>
+    );
+  }
+
+  const starterPosX = lineupX;
+  const subPosX = starterPosX + CLASSIC_STARTER_POS_W;
+  const ordX = lineupX + CLASSIC_POS_TOTAL_W;
+  const leftyX = ordX + CLASSIC_ORD_W;
+  const nameX = leftyX + CLASSIC_LEFTY_W;
+  const numX = nameX + CLASSIC_NAME_W;
+
+  return (
+    <g>
+      {/* 先発 */}
+      <text
+        x={starterPosX + CLASSIC_STARTER_POS_W / 2}
+        y={tableTopY + 19.2}
+        fontSize={7.4}
+        fontWeight={900}
+        textAnchor="middle"
+        fill={COLOR_INK}
+      >
+        先発
+      </text>
+      <line
+        x1={subPosX}
+        y1={tableTopY}
+        x2={subPosX}
+        y2={tableTopY + colHeadH}
+        stroke={COLOR_GRID}
+        strokeWidth={0.85}
+      />
+
+      {/* 守備位置 */}
+      <text
+        x={subPosX + (CLASSIC_SUB_POS_COL_W * 3) / 2}
+        y={tableTopY + 19.2}
+        fontSize={8.8}
+        fontWeight={900}
+        textAnchor="middle"
+        fill={COLOR_INK}
+      >
+        守備位置
+      </text>
+      <line
+        x1={ordX}
+        y1={tableTopY}
+        x2={ordX}
+        y2={tableTopY + colHeadH}
+        stroke={COLOR_GRID}
+        strokeWidth={0.95}
+      />
+
+      {/* 打順（縦2段） */}
+      <text
+        x={ordX + CLASSIC_ORD_W / 2}
+        y={tableTopY + 12.2}
+        fontSize={8.2}
+        fontWeight={900}
+        textAnchor="middle"
+        fill={COLOR_INK}
+      >
+        打
+      </text>
+      <text
+        x={ordX + CLASSIC_ORD_W / 2}
+        y={tableTopY + 24.4}
+        fontSize={8.2}
+        fontWeight={900}
+        textAnchor="middle"
+        fill={COLOR_INK}
+      >
+        順
+      </text>
+      <line
+        x1={leftyX}
+        y1={tableTopY}
+        x2={leftyX}
+        y2={tableTopY + colHeadH}
+        stroke={COLOR_GRID}
+        strokeWidth={0.85}
+      />
+
+      {/* 左○（左打者丸印欄） */}
+      <text
+        x={leftyX + CLASSIC_LEFTY_W / 2}
+        y={tableTopY + 12.2}
+        fontSize={8}
+        fontWeight={900}
+        textAnchor="middle"
+        fill={COLOR_INK}
+      >
+        左
+      </text>
+      <circle
+        cx={leftyX + CLASSIC_LEFTY_W / 2}
+        cy={tableTopY + 22}
+        r={3.7}
+        fill="none"
+        stroke={COLOR_INK}
+        strokeWidth={1.15}
+      />
+      <line
+        x1={nameX}
+        y1={tableTopY}
+        x2={nameX}
+        y2={tableTopY + colHeadH}
+        stroke={COLOR_GRID}
+        strokeWidth={0.85}
+      />
+
+      {/* 選 手 名 */}
+      <text
+        x={nameX + CLASSIC_NAME_W / 2}
+        y={tableTopY + 19.2}
+        fontSize={9.8}
+        fontWeight={900}
+        textAnchor="middle"
+        fill={COLOR_INK}
+      >
+        選　手　名
+      </text>
+      <line
+        x1={numX}
+        y1={tableTopY}
+        x2={numX}
+        y2={tableTopY + colHeadH}
+        stroke={COLOR_GRID}
+        strokeWidth={0.85}
+      />
+
+      {/* 背番号（縦3文字） */}
+      <text
+        x={numX + CLASSIC_NUM_W / 2}
+        y={tableTopY + 9.6}
+        fontSize={7.1}
+        fontWeight={900}
+        textAnchor="middle"
+        fill={COLOR_INK}
+      >
+        背
+      </text>
+      <text
+        x={numX + CLASSIC_NUM_W / 2}
+        y={tableTopY + 18.6}
+        fontSize={7.1}
+        fontWeight={900}
+        textAnchor="middle"
+        fill={COLOR_INK}
+      >
+        番
+      </text>
+      <text
+        x={numX + CLASSIC_NUM_W / 2}
+        y={tableTopY + 27.4}
+        fontSize={7.1}
+        fontWeight={900}
+        textAnchor="middle"
+        fill={COLOR_INK}
+      >
+        号
+      </text>
+    </g>
+  );
+}
+
+function renderBatterLineupRowSvg(params: {
+  slot: ScorebookBatterSlot;
+  battingOrder: number;
+  hasActivePlateAppearances: boolean;
+  isTop: boolean;
+  rules: ScorebookSymbolRules;
+  lineupX: number;
+  ry: number;
+}): React.ReactNode {
+  const {
+    slot,
+    battingOrder,
+    hasActivePlateAppearances,
+    isTop,
+    rules,
+    lineupX,
+    ry,
+  } = params;
+
+  if (rules.lineupStyle === "compact_order_first") {
+    const subs = slot.substitutions.filter((s) => s.name.trim() !== "");
+    const hasSubs = subs.length > 0;
+    const starterPos = formatPositionByRules(slot.position, rules);
+
+    return (
+      <g>
+        <rect
+          x={lineupX}
+          y={ry}
+          width={COMPACT_LINEUP_TOTAL_W}
+          height={CELL_H}
+          fill={COLOR_PAPER}
+          stroke={COLOR_GRID}
+          strokeWidth={0.9}
+        />
+        <line
+          x1={lineupX + COMPACT_ORD_W}
+          y1={ry}
+          x2={lineupX + COMPACT_ORD_W}
+          y2={ry + CELL_H}
+          stroke={COLOR_GRID}
+          strokeWidth={0.8}
+        />
+        <line
+          x1={lineupX + COMPACT_ORD_W + COMPACT_POS_W}
+          y1={ry}
+          x2={lineupX + COMPACT_ORD_W + COMPACT_POS_W}
+          y2={ry + CELL_H}
+          stroke={COLOR_GRID}
+          strokeWidth={0.8}
+        />
+        <line
+          x1={lineupX + COMPACT_ORD_W + COMPACT_POS_W + COMPACT_NUM_W}
+          y1={ry}
+          x2={lineupX + COMPACT_ORD_W + COMPACT_POS_W + COMPACT_NUM_W}
+          y2={ry + CELL_H}
+          stroke={COLOR_GRID}
+          strokeWidth={0.8}
+        />
+
+        <text
+          x={lineupX + COMPACT_ORD_W / 2}
+          y={ry + CELL_H / 2 + 4.5}
+          fontSize={12.5}
+          fontWeight={900}
+          textAnchor="middle"
+          fill={COLOR_INK}
+          fontFamily={FONT_MONO}
+        >
+          {battingOrder}
+        </text>
+
+        {!hasSubs ? (
+          <>
+            <text
+              x={lineupX + COMPACT_ORD_W + COMPACT_POS_W / 2}
+              y={ry + CELL_H / 2 + 4}
+              fontSize={11}
+              fontWeight={800}
+              textAnchor="middle"
+              fill={COLOR_INK}
+            >
+              {starterPos}
+            </text>
+            <text
+              x={lineupX + COMPACT_ORD_W + COMPACT_POS_W + COMPACT_NUM_W / 2}
+              y={ry + CELL_H / 2 + 4}
+              fontSize={10.5}
+              fontWeight={800}
+              textAnchor="middle"
+              fill={COLOR_MUTED}
+              fontFamily={FONT_MONO}
+            >
+              {slot.uniformNumber || "-"}
+            </text>
+            <text
+              x={lineupX + COMPACT_ORD_W + COMPACT_POS_W + COMPACT_NUM_W + 8}
+              y={ry + CELL_H / 2 + 4.5}
+              fontSize={12}
+              fontWeight={900}
+              fill={COLOR_INK}
+            >
+              {(slot.name || (hasActivePlateAppearances ? `打者 ${battingOrder}` : "")).slice(
+                0,
+                10
+              )}
+            </text>
+          </>
+        ) : (
+          <>
+            <line
+              x1={lineupX + COMPACT_ORD_W}
+              y1={ry + 30}
+              x2={lineupX + COMPACT_LINEUP_TOTAL_W}
+              y2={ry + 30}
+              stroke={COLOR_GRID_LIGHT}
+              strokeWidth={0.85}
+              strokeDasharray="2,2"
+            />
+            <text
+              x={lineupX + COMPACT_ORD_W + COMPACT_POS_W / 2}
+              y={ry + 19}
+              fontSize={10}
+              fontWeight={800}
+              textAnchor="middle"
+              fill={COLOR_INK}
+            >
+              {starterPos}
+            </text>
+            <text
+              x={lineupX + COMPACT_ORD_W + COMPACT_POS_W + COMPACT_NUM_W / 2}
+              y={ry + 19}
+              fontSize={9.5}
+              fontWeight={800}
+              textAnchor="middle"
+              fill={COLOR_MUTED}
+              fontFamily={FONT_MONO}
+            >
+              {slot.uniformNumber || "-"}
+            </text>
+            <text
+              x={lineupX + COMPACT_ORD_W + COMPACT_POS_W + COMPACT_NUM_W + 7}
+              y={ry + 19.5}
+              fontSize={10.8}
+              fontWeight={900}
+              fill={COLOR_INK}
+            >
+              {(slot.name || (hasActivePlateAppearances ? `打者 ${battingOrder}` : "")).slice(
+                0,
+                10
+              )}
+            </text>
+
+            {subs.slice(0, 2).map((sub, sIdx) => {
+              const sy = subs.length === 1 ? ry + 54 : ry + 45 + sIdx * 18;
+              const subPosText = sub.position
+                ? formatPositionByRules(sub.position, rules)
+                : formatSubstitutionRoleShort(sub);
+              return (
+                <g key={sub.id || sIdx}>
+                  <text
+                    x={lineupX + COMPACT_ORD_W + COMPACT_POS_W / 2}
+                    y={sy}
+                    fontSize={8.8}
+                    fontWeight={800}
+                    textAnchor="middle"
+                    fill={COLOR_BLUE}
+                  >
+                    {subPosText}
+                  </text>
+                  <text
+                    x={
+                      lineupX +
+                      COMPACT_ORD_W +
+                      COMPACT_POS_W +
+                      COMPACT_NUM_W / 2
+                    }
+                    y={sy}
+                    fontSize={8.8}
+                    fontWeight={800}
+                    textAnchor="middle"
+                    fill={COLOR_BLUE}
+                    fontFamily={FONT_MONO}
+                  >
+                    {sub.uniformNumber || "-"}
+                  </text>
+                  <text
+                    x={
+                      lineupX +
+                      COMPACT_ORD_W +
+                      COMPACT_POS_W +
+                      COMPACT_NUM_W +
+                      6
+                    }
+                    y={sy}
+                    fontSize={9.2}
+                    fontWeight={800}
+                    fill={COLOR_BLUE}
+                  >
+                    {`(${sub.inningEntered}${formatSubstitutionRoleShort(
+                      sub
+                    )}) ${sub.name.slice(0, 6)}`}
+                  </text>
+                </g>
+              );
+            })}
+          </>
+        )}
+      </g>
+    );
+  }
+
+  // === 3段フル様式（先発・守備位置[4小列]｜打順[1/11/21]｜左○｜選 手 名[出場回]｜背番号） ===
+  const classic = buildClassicBatterSlotModel(slot, isTop, rules);
+  const subH = CELL_H / 3;
+  const isMono = rules.hitLine === "mono_bold";
+
+  const subPosX = lineupX + CLASSIC_STARTER_POS_W;
+  const ordX = lineupX + CLASSIC_POS_TOTAL_W;
+  const leftyX = ordX + CLASSIC_ORD_W;
+  const nameX = leftyX + CLASSIC_LEFTY_W;
+  const numX = nameX + CLASSIC_NAME_W;
+
+  const starterDisplayName =
+    classic.rows[0].name ||
+    (hasActivePlateAppearances ? `打者 ${battingOrder}` : "");
+
+  return (
+    <g>
+      {/* 外枠背景 */}
+      <rect
+        x={lineupX}
+        y={ry}
+        width={CLASSIC_LINEUP_TOTAL_W}
+        height={CELL_H}
+        fill={COLOR_PAPER}
+        stroke={COLOR_GRID}
+        strokeWidth={0.9}
+      />
+
+      {/* 打順1段目の反転バッジセル */}
+      <rect
+        x={ordX}
+        y={ry}
+        width={CLASSIC_ORD_W}
+        height={subH}
+        fill={isMono ? COLOR_FRAME : COLOR_SAGE_BADGE}
+      />
+
+      {/* 3段水平罫線 */}
+      <line
+        x1={lineupX}
+        y1={ry + subH}
+        x2={lineupX + CLASSIC_LINEUP_TOTAL_W}
+        y2={ry + subH}
+        stroke={COLOR_GRID_LIGHT}
+        strokeWidth={0.75}
+      />
+      <line
+        x1={lineupX}
+        y1={ry + subH * 2}
+        x2={lineupX + CLASSIC_LINEUP_TOTAL_W}
+        y2={ry + subH * 2}
+        stroke={COLOR_GRID_LIGHT}
+        strokeWidth={0.75}
+      />
+
+      {/* 縦仕切り線（先発 / 守備変更3小列 / 打順 / 左○ / 選手名 / 背番号） */}
+      <line
+        x1={subPosX}
+        y1={ry}
+        x2={subPosX}
+        y2={ry + CELL_H}
+        stroke={COLOR_GRID}
+        strokeWidth={0.85}
+      />
+      <line
+        x1={subPosX + CLASSIC_SUB_POS_COL_W}
+        y1={ry}
+        x2={subPosX + CLASSIC_SUB_POS_COL_W}
+        y2={ry + CELL_H}
+        stroke={COLOR_GRID_LIGHT}
+        strokeWidth={0.7}
+      />
+      <line
+        x1={subPosX + CLASSIC_SUB_POS_COL_W * 2}
+        y1={ry}
+        x2={subPosX + CLASSIC_SUB_POS_COL_W * 2}
+        y2={ry + CELL_H}
+        stroke={COLOR_GRID_LIGHT}
+        strokeWidth={0.7}
+      />
+      <line
+        x1={ordX}
+        y1={ry}
+        x2={ordX}
+        y2={ry + CELL_H}
+        stroke={COLOR_GRID}
+        strokeWidth={0.9}
+      />
+      <line
+        x1={leftyX}
+        y1={ry}
+        x2={leftyX}
+        y2={ry + CELL_H}
+        stroke={COLOR_GRID}
+        strokeWidth={0.85}
+      />
+      <line
+        x1={nameX}
+        y1={ry}
+        x2={nameX}
+        y2={ry + CELL_H}
+        stroke={COLOR_GRID}
+        strokeWidth={0.85}
+      />
+      <line
+        x1={numX}
+        y1={ry}
+        x2={numX}
+        y2={ry + CELL_H}
+        stroke={COLOR_GRID}
+        strokeWidth={0.85}
+      />
+
+      {/* 1. 先発・守備位置（3段 × 4小列） */}
+      {classic.posGrid.map((rowArr, rIdx) =>
+        rowArr.map((tok, cIdx) => {
+          if (!tok) return null;
+          const cx =
+            cIdx === 0
+              ? lineupX + CLASSIC_STARTER_POS_W / 2
+              : subPosX + (cIdx - 0.5) * CLASSIC_SUB_POS_COL_W;
+          const cy = ry + (rIdx + 0.5) * subH;
+          const fSize =
+            cIdx === 0
+              ? tok.length >= 2
+                ? 8.2
+                : 10.6
+              : tok.length >= 2
+              ? 7.2
+              : 9.8;
+          return (
+            <text
+              key={`pos-${rIdx}-${cIdx}`}
+              x={cx}
+              y={cy + 3.6}
+              fontSize={fSize}
+              fontWeight={800}
+              textAnchor="middle"
+              fill={COLOR_INK}
+              fontFamily={FONT_SANS}
+            >
+              {tok}
+            </text>
+          );
+        })
+      )}
+
+      {/* 2. 打順（1段目: 反転白抜き 1〜10、2段目: 11〜20、3段目: 21〜30） */}
+      <text
+        x={ordX + CLASSIC_ORD_W / 2}
+        y={ry + 0.5 * subH + 3.9}
+        fontSize={battingOrder >= 10 ? 9.6 : 11.2}
+        fontWeight={900}
+        textAnchor="middle"
+        fill="#ffffff"
+        fontFamily={FONT_SANS}
+      >
+        {battingOrder}
+      </text>
+      {battingOrder <= 10 && (
+        <>
+          <text
+            x={ordX + CLASSIC_ORD_W / 2}
+            y={ry + 1.5 * subH + 3.2}
+            fontSize={8.5}
+            fontWeight={700}
+            textAnchor="middle"
+            fill={isMono ? COLOR_MUTED : COLOR_SAGE_SUB_ORD}
+            fontFamily={FONT_MONO}
+          >
+            {battingOrder + 10}
+          </text>
+          <text
+            x={ordX + CLASSIC_ORD_W / 2}
+            y={ry + 2.5 * subH + 3.2}
+            fontSize={8.5}
+            fontWeight={700}
+            textAnchor="middle"
+            fill={isMono ? COLOR_MUTED : COLOR_SAGE_SUB_ORD}
+            fontFamily={FONT_MONO}
+          >
+            {battingOrder + 20}
+          </text>
+        </>
+      )}
+
+      {/* 3. 左○（左打者＝○、両打ち＝◎） */}
+      {classic.rows.map((pRow, rIdx) => {
+        if (!pRow.bats || pRow.bats === "R") return null;
+        const cx = leftyX + CLASSIC_LEFTY_W / 2;
+        const cy = ry + (rIdx + 0.5) * subH;
+        if (pRow.bats === "B") {
+          return (
+            <g key={`bats-${rIdx}`}>
+              <circle
+                cx={cx}
+                cy={cy}
+                r={5.4}
+                fill="none"
+                stroke={COLOR_INK}
+                strokeWidth={1.1}
+              />
+              <circle
+                cx={cx}
+                cy={cy}
+                r={2.5}
+                fill="none"
+                stroke={COLOR_INK}
+                strokeWidth={1.0}
+              />
+            </g>
+          );
+        }
+        return (
+          <circle
+            key={`bats-${rIdx}`}
+            cx={cx}
+            cy={cy}
+            r={5.1}
+            fill="none"
+            stroke={COLOR_INK}
+            strokeWidth={1.25}
+          />
+        );
+      })}
+
+      {/* 4. 選 手 名（1段目: 先発、2〜3段目: 途中出場選手＋右端に出場イニング表裏） */}
+      {starterDisplayName && (
+        <text
+          x={nameX + 6}
+          y={ry + 0.5 * subH + 3.8}
+          fontSize={11}
+          fontWeight={900}
+          fill={COLOR_INK}
+        >
+          {starterDisplayName.slice(0, 10)}
+        </text>
+      )}
+      {([1, 2] as const).map((rIdx) => {
+        const subRow = classic.rows[rIdx];
+        if (!subRow.name && !subRow.entryTimingLabel) return null;
+        const cy = ry + (rIdx + 0.5) * subH;
+        return (
+          <g key={`sub-name-${rIdx}`}>
+            {subRow.name && (
+              <text
+                x={nameX + 6}
+                y={cy + 3.6}
+                fontSize={10.2}
+                fontWeight={800}
+                fill={COLOR_INK}
+              >
+                {subRow.name.slice(0, subRow.entryTimingLabel ? 8 : 10)}
+              </text>
+            )}
+            {subRow.entryTimingLabel && (
+              <text
+                x={nameX + CLASSIC_NAME_W - 5}
+                y={cy + 3.3}
+                fontSize={8.6}
+                fontWeight={800}
+                textAnchor="end"
+                fill={COLOR_MUTED}
+              >
+                {subRow.entryTimingLabel}
+              </text>
+            )}
+          </g>
+        );
+      })}
+
+      {/* 5. 背番号（空欄時はハイフンを出さず白紙のまま清潔に表示） */}
+      {classic.rows.map((pRow, rIdx) => {
+        if (!pRow.uniformNumber) return null;
+        const cy = ry + (rIdx + 0.5) * subH;
+        return (
+          <text
+            key={`uni-${rIdx}`}
+            x={numX + CLASSIC_NUM_W / 2}
+            y={cy + 3.5}
+            fontSize={9.4}
+            fontWeight={800}
+            textAnchor="middle"
+            fill={COLOR_INK}
+            fontFamily={FONT_MONO}
+          >
+            {pRow.uniformNumber}
+          </text>
+        );
+      })}
+    </g>
+  );
+}
+
 export interface DigitalScorebookSheetProps {
   model: CompiledScorebookSheetModel;
   matchMeta: ScorebookMatchHeaderMeta;
@@ -1117,12 +2052,8 @@ export function DigitalScorebookSheet({
   const HEADER_GAP = 10;
   const COL_HEAD_H = 30;
 
-  // 左側ラインナップ列幅
-  const ORD_W = 26;
-  const POS_W = 36;
-  const NUM_W = 30;
-  const NAME_W = 138;
-  const LINEUP_TOTAL_W = ORD_W + POS_W + NUM_W + NAME_W; // 230
+  // 左側ラインナップ列幅（3段フル様式: 258px / シンプル式: 230px）
+  const LINEUP_TOTAL_W = getLineupTotalWidth(rules);
 
   // 右端集計欄（8列: 打席・打数・安打・打点・得点・四死・三振・盗塁）
   const STAT_COLS = [
@@ -1498,52 +2429,24 @@ export function DigitalScorebookSheet({
           y={tableTopY}
           width={LINEUP_TOTAL_W + GRID_TOTAL_W + STATS_TOTAL_W}
           height={COL_HEAD_H}
-          fill={COLOR_PAPER_SUB}
+          fill={
+            rules.lineupStyle === "classic_three_row" &&
+            rules.hitLine !== "mono_bold"
+              ? COLOR_SAGE_HEAD
+              : COLOR_PAPER_SUB
+          }
           stroke={COLOR_FRAME}
           strokeWidth={1.5}
         />
 
-        {/* 左側見出し：打順 / 守備 / 背番 / 選手名 */}
-        {(
-          [
-            { x: lineupX, w: ORD_W, label: "順" },
-            { x: lineupX + ORD_W, w: POS_W, label: "守備" },
-            { x: lineupX + ORD_W + POS_W, w: NUM_W, label: "背番" },
-            {
-              x: lineupX + ORD_W + POS_W + NUM_W,
-              w: NAME_W,
-              label: "選手名（途中交代）",
-            },
-          ] as const
-        ).map((h, idx) => (
-          <g key={h.label}>
-            {idx > 0 && (
-              <line
-                x1={h.x}
-                y1={tableTopY}
-                x2={h.x}
-                y2={summaryTopY + SUMMARY_TOTAL_H}
-                stroke={COLOR_GRID}
-                strokeWidth={0.9}
-              />
-            )}
-            <text
-              x={h.x + h.w / 2}
-              y={tableTopY + 19}
-              fontSize={9.5}
-              fontWeight={900}
-              textAnchor="middle"
-              fill={COLOR_INK}
-            >
-              {h.label}
-            </text>
-          </g>
-        ))}
+        {/* 左側見出し（様式切替対応：先発・守備位置・打順・左○・選手名・背番号 / 順・守備・背番・選手名） */}
+        {renderLineupHeaderSvg(lineupX, tableTopY, COL_HEAD_H, rules)}
 
         {/* イニング列見出し */}
-        {inningGroups.map((grp) => {
+        {inningGroups.map((grp, gIdx) => {
           const gx = gridStartX + grp.startColIdx * CELL_W;
           const gw = grp.colSpan * CELL_W;
+          const isClassicHead = rules.lineupStyle === "classic_three_row";
           return (
             <g key={`head-inn-${grp.inning}`}>
               <line
@@ -1552,17 +2455,20 @@ export function DigitalScorebookSheet({
                 x2={gx}
                 y2={summaryTopY + SUMMARY_TOTAL_H}
                 stroke={COLOR_FRAME}
-                strokeWidth={1.25}
+                strokeWidth={gIdx === 0 ? 1.6 : 1.25}
               />
               <text
                 x={gx + gw / 2}
-                y={tableTopY + (grp.colSpan > 1 ? 14 : 19.5)}
-                fontSize={11}
+                y={
+                  tableTopY +
+                  (grp.colSpan > 1 ? 14 : isClassicHead ? 20.5 : 19.5)
+                }
+                fontSize={isClassicHead && grp.colSpan === 1 ? 13.5 : 11}
                 fontWeight={900}
                 textAnchor="middle"
                 fill={COLOR_INK}
               >
-                {`${grp.inning}回`}
+                {isClassicHead ? String(grp.inning) : `${grp.inning}回`}
               </text>
               {grp.colSpan > 1 &&
                 Array.from({ length: grp.colSpan }).map((_, subIdx) => (
@@ -1613,183 +2519,19 @@ export function DigitalScorebookSheet({
       {/* ━━━ 3. 打順行（1番〜9番+）＆ 打席グリッド ＆ 右端個人集計 ━━━ */}
       {model.batterRows.map((bRow, rowIdx) => {
         const ry = gridBodyTopY + rowIdx * CELL_H;
-        const subs = bRow.slot.substitutions.filter(
-          (s) => s.name.trim() !== ""
-        );
-        const hasSubs = subs.length > 0;
-        const starterPos = formatPositionByRules(bRow.slot.position, rules);
 
         return (
           <g key={`batter-row-${bRow.battingOrder}`}>
-            {/* 左ラインナップ枠背景 */}
-            <rect
-              x={lineupX}
-              y={ry}
-              width={LINEUP_TOTAL_W}
-              height={CELL_H}
-              fill={COLOR_PAPER}
-              stroke={COLOR_GRID}
-              strokeWidth={0.9}
-            />
-            <line
-              x1={lineupX + ORD_W}
-              y1={ry}
-              x2={lineupX + ORD_W}
-              y2={ry + CELL_H}
-              stroke={COLOR_GRID}
-              strokeWidth={0.8}
-            />
-            <line
-              x1={lineupX + ORD_W + POS_W}
-              y1={ry}
-              x2={lineupX + ORD_W + POS_W}
-              y2={ry + CELL_H}
-              stroke={COLOR_GRID}
-              strokeWidth={0.8}
-            />
-            <line
-              x1={lineupX + ORD_W + POS_W + NUM_W}
-              y1={ry}
-              x2={lineupX + ORD_W + POS_W + NUM_W}
-              y2={ry + CELL_H}
-              stroke={COLOR_GRID}
-              strokeWidth={0.8}
-            />
-
-            {/* 打順番号 */}
-            <text
-              x={lineupX + ORD_W / 2}
-              y={ry + CELL_H / 2 + 4.5}
-              fontSize={12.5}
-              fontWeight={900}
-              textAnchor="middle"
-              fill={COLOR_INK}
-              fontFamily={FONT_MONO}
-            >
-              {bRow.battingOrder}
-            </text>
-
-            {!hasSubs ? (
-              <>
-                <text
-                  x={lineupX + ORD_W + POS_W / 2}
-                  y={ry + CELL_H / 2 + 4}
-                  fontSize={11}
-                  fontWeight={800}
-                  textAnchor="middle"
-                  fill={COLOR_INK}
-                >
-                  {starterPos}
-                </text>
-                <text
-                  x={lineupX + ORD_W + POS_W + NUM_W / 2}
-                  y={ry + CELL_H / 2 + 4}
-                  fontSize={10.5}
-                  fontWeight={800}
-                  textAnchor="middle"
-                  fill={COLOR_MUTED}
-                  fontFamily={FONT_MONO}
-                >
-                  {bRow.slot.uniformNumber || "-"}
-                </text>
-                <text
-                  x={lineupX + ORD_W + POS_W + NUM_W + 8}
-                  y={ry + CELL_H / 2 + 4.5}
-                  fontSize={12}
-                  fontWeight={900}
-                  fill={COLOR_INK}
-                >
-                  {(bRow.slot.name || `打者 ${bRow.battingOrder}`).slice(0, 10)}
-                </text>
-              </>
-            ) : (
-              // 途中交代あり：上段スタメン＋下段交代選手（点線区切り）
-              <>
-                <line
-                  x1={lineupX + ORD_W}
-                  y1={ry + 30}
-                  x2={lineupX + LINEUP_TOTAL_W}
-                  y2={ry + 30}
-                  stroke={COLOR_GRID_LIGHT}
-                  strokeWidth={0.85}
-                  strokeDasharray="2,2"
-                />
-                <text
-                  x={lineupX + ORD_W + POS_W / 2}
-                  y={ry + 19}
-                  fontSize={10}
-                  fontWeight={800}
-                  textAnchor="middle"
-                  fill={COLOR_INK}
-                >
-                  {starterPos}
-                </text>
-                <text
-                  x={lineupX + ORD_W + POS_W + NUM_W / 2}
-                  y={ry + 19}
-                  fontSize={9.5}
-                  fontWeight={800}
-                  textAnchor="middle"
-                  fill={COLOR_MUTED}
-                  fontFamily={FONT_MONO}
-                >
-                  {bRow.slot.uniformNumber || "-"}
-                </text>
-                <text
-                  x={lineupX + ORD_W + POS_W + NUM_W + 7}
-                  y={ry + 19.5}
-                  fontSize={10.8}
-                  fontWeight={900}
-                  fill={COLOR_INK}
-                >
-                  {(bRow.slot.name || `打者 ${bRow.battingOrder}`).slice(0, 10)}
-                </text>
-
-                {subs.slice(0, 2).map((sub, sIdx) => {
-                  const sy =
-                    subs.length === 1 ? ry + 54 : ry + 45 + sIdx * 18;
-                  const subPosText = sub.position
-                    ? formatPositionByRules(sub.position, rules)
-                    : formatSubstitutionRoleShort(sub);
-                  return (
-                    <g key={sub.id || sIdx}>
-                      <text
-                        x={lineupX + ORD_W + POS_W / 2}
-                        y={sy}
-                        fontSize={8.8}
-                        fontWeight={800}
-                        textAnchor="middle"
-                        fill={COLOR_BLUE}
-                      >
-                        {subPosText}
-                      </text>
-                      <text
-                        x={lineupX + ORD_W + POS_W + NUM_W / 2}
-                        y={sy}
-                        fontSize={8.8}
-                        fontWeight={800}
-                        textAnchor="middle"
-                        fill={COLOR_BLUE}
-                        fontFamily={FONT_MONO}
-                      >
-                        {sub.uniformNumber || "-"}
-                      </text>
-                      <text
-                        x={lineupX + ORD_W + POS_W + NUM_W + 6}
-                        y={sy}
-                        fontSize={9.2}
-                        fontWeight={800}
-                        fill={COLOR_BLUE}
-                      >
-                        {`(${sub.inningEntered}${formatSubstitutionRoleShort(
-                          sub
-                        )}) ${sub.name.slice(0, 6)}`}
-                      </text>
-                    </g>
-                  );
-                })}
-              </>
-            )}
+            {/* 左ラインナップセル（3段フル様式 or シンプル式） */}
+            {renderBatterLineupRowSvg({
+              slot: bRow.slot,
+              battingOrder: bRow.battingOrder,
+              hasActivePlateAppearances: bRow.plateAppearances > 0,
+              isTop: model.isTop,
+              rules,
+              lineupX,
+              ry,
+            })}
 
             {/* 各イニング列の打席ダイヤモンドマス */}
             {model.columns.map((col, colIdx) => {
@@ -2405,10 +3147,40 @@ export function ScorebookSymbolSamplePreview({
     },
   ];
 
+  const sampleLineupSlot: ScorebookBatterSlot = {
+    battingOrder: 1,
+    name: "丸山",
+    uniformNumber: "8",
+    position: "8",
+    playerId: "sample-p1",
+    bats: "L",
+    substitutions: [
+      {
+        id: "sample-sub1",
+        inningEntered: 4,
+        subType: "DEF",
+        name: "中島",
+        uniformNumber: "15",
+        position: "3",
+        playerId: "sample-p2",
+        bats: "R",
+      },
+    ],
+  };
+
   const gap = 8;
-  const headerH = 18;
-  const totalW = sampleCells.length * CELL_W + (sampleCells.length - 1) * gap + 12;
-  const totalH = headerH + CELL_H + 10;
+  const lineupW = getLineupTotalWidth(rules);
+  const colHeadH = 30;
+  const topPreviewW = lineupW + CELL_W;
+  const cellsRowW =
+    sampleCells.length * CELL_W + (sampleCells.length - 1) * gap;
+  const totalW = Math.max(topPreviewW, cellsRowW) + 12;
+  const topOriginX = (totalW - topPreviewW) / 2;
+  const topOriginY = 6;
+  const cellsLabelY = topOriginY + colHeadH + CELL_H + 17;
+  const cellsOriginY = cellsLabelY + 5;
+  const totalH = cellsOriginY + CELL_H + 8;
+  const isClassicHead = rules.lineupStyle === "classic_three_row";
 
   return (
     <svg
@@ -2418,13 +3190,84 @@ export function ScorebookSymbolSamplePreview({
       style={{ fontFamily: FONT_SANS }}
     >
       <rect x={0} y={0} width={totalW} height={totalH} fill={COLOR_PAPER} />
+
+      {/* 上段：メンバー欄＋1回マスのリアルプレビュー */}
+      <g>
+        <rect
+          x={topOriginX}
+          y={topOriginY}
+          width={topPreviewW}
+          height={colHeadH}
+          fill={
+            isClassicHead && rules.hitLine !== "mono_bold"
+              ? COLOR_SAGE_HEAD
+              : COLOR_PAPER_SUB
+          }
+          stroke={COLOR_FRAME}
+          strokeWidth={1.3}
+        />
+        {renderLineupHeaderSvg(topOriginX, topOriginY, colHeadH, rules)}
+        <line
+          x1={topOriginX + lineupW}
+          y1={topOriginY}
+          x2={topOriginX + lineupW}
+          y2={topOriginY + colHeadH + CELL_H}
+          stroke={COLOR_FRAME}
+          strokeWidth={1.5}
+        />
+        <text
+          x={topOriginX + lineupW + CELL_W / 2}
+          y={topOriginY + (isClassicHead ? 20.5 : 19.5)}
+          fontSize={isClassicHead ? 13.5 : 11}
+          fontWeight={900}
+          textAnchor="middle"
+          fill={COLOR_INK}
+        >
+          {isClassicHead ? "1" : "1回"}
+        </text>
+
+        {renderBatterLineupRowSvg({
+          slot: sampleLineupSlot,
+          battingOrder: 1,
+          hasActivePlateAppearances: true,
+          isTop: true,
+          rules,
+          lineupX: topOriginX,
+          ry: topOriginY + colHeadH,
+        })}
+        {renderSingleScorebookCellSvg(
+          sampleCells[0].cell,
+          rules,
+          topOriginX + lineupW,
+          topOriginY + colHeadH
+        )}
+        <line
+          x1={topOriginX + lineupW}
+          y1={topOriginY + colHeadH}
+          x2={topOriginX + lineupW}
+          y2={topOriginY + colHeadH + CELL_H}
+          stroke={COLOR_FRAME}
+          strokeWidth={1.5}
+        />
+        <rect
+          x={topOriginX}
+          y={topOriginY}
+          width={topPreviewW}
+          height={colHeadH + CELL_H}
+          fill="none"
+          stroke={COLOR_FRAME}
+          strokeWidth={1.4}
+        />
+      </g>
+
+      {/* 下段：4パターンの打席・走塁記号サンプル */}
       {sampleCells.map((item, idx) => {
-        const ox = 6 + idx * (CELL_W + gap);
+        const ox = (totalW - cellsRowW) / 2 + idx * (CELL_W + gap);
         return (
           <g key={item.title}>
             <text
               x={ox + CELL_W / 2}
-              y={13}
+              y={cellsLabelY}
               fontSize={7.8}
               fontWeight={900}
               textAnchor="middle"
@@ -2432,7 +3275,7 @@ export function ScorebookSymbolSamplePreview({
             >
               {item.title}
             </text>
-            {renderSingleScorebookCellSvg(item.cell, rules, ox, headerH + 2)}
+            {renderSingleScorebookCellSvg(item.cell, rules, ox, cellsOriginY)}
           </g>
         );
       })}

@@ -1021,18 +1021,38 @@ export function buildDemoScorebookSavedBundle(params: {
   });
 
   const myBatters: ScorebookBatterSlot[] = [
-    { battingOrder: 1, name: "田中 健太", uniformNumber: "6", position: "6", playerId: "demo-p-6", substitutions: [] },
-    { battingOrder: 2, name: "渡辺 陽向", uniformNumber: "4", position: "4", playerId: "demo-p-4", substitutions: [] },
-    { battingOrder: 3, name: "山下 颯太", uniformNumber: "8", position: "8", playerId: "demo-p-8", substitutions: [] },
-    { battingOrder: 4, name: "山田 翔太", uniformNumber: "10", position: "2", playerId: "demo-p-10", substitutions: [] },
-    { battingOrder: 5, name: "鈴木 蓮", uniformNumber: "1", position: "1", playerId: "demo-p-1", substitutions: [] },
-    { battingOrder: 6, name: "高橋 陸", uniformNumber: "3", position: "3", playerId: "demo-p-3", substitutions: [] },
+    { battingOrder: 1, name: "田中 健太", uniformNumber: "6", position: "6", playerId: "demo-p-6", bats: "L", substitutions: [] },
+    {
+      battingOrder: 2,
+      name: "渡辺 陽向",
+      uniformNumber: "4",
+      position: "4",
+      playerId: "demo-p-4",
+      bats: "R",
+      substitutions: [
+        {
+          id: "demo-shift-2",
+          inningEntered: 5,
+          subType: "DEF",
+          name: "渡辺 陽向",
+          uniformNumber: "4",
+          position: "9",
+          playerId: "demo-p-4",
+          bats: "R",
+        },
+      ],
+    },
+    { battingOrder: 3, name: "山下 颯太", uniformNumber: "8", position: "8", playerId: "demo-p-8", bats: "L", substitutions: [] },
+    { battingOrder: 4, name: "山田 翔太", uniformNumber: "10", position: "2", playerId: "demo-p-10", bats: "R", substitutions: [] },
+    { battingOrder: 5, name: "鈴木 蓮", uniformNumber: "1", position: "1", playerId: "demo-p-1", bats: "R", substitutions: [] },
+    { battingOrder: 6, name: "高橋 陸", uniformNumber: "3", position: "3", playerId: "demo-p-3", bats: "L", substitutions: [] },
     {
       battingOrder: 7,
       name: "山本 大翔",
       uniformNumber: "5",
       position: "5",
       playerId: "demo-p-5",
+      bats: "R",
       substitutions: [
         {
           id: "demo-sub-1",
@@ -1042,11 +1062,31 @@ export function buildDemoScorebookSavedBundle(params: {
           uniformNumber: "12",
           position: "5",
           playerId: "demo-p-12",
+          bats: "L",
         },
       ],
     },
-    { battingOrder: 8, name: "中村 颯", uniformNumber: "7", position: "7", playerId: "demo-p-7", substitutions: [] },
-    { battingOrder: 9, name: "小林 樹", uniformNumber: "9", position: "9", playerId: "demo-p-9", substitutions: [] },
+    { battingOrder: 8, name: "中村 颯", uniformNumber: "7", position: "7", playerId: "demo-p-7", bats: "R", substitutions: [] },
+    {
+      battingOrder: 9,
+      name: "小林 樹",
+      uniformNumber: "9",
+      position: "9",
+      playerId: "demo-p-9",
+      bats: "R",
+      substitutions: [
+        {
+          id: "demo-sub-9",
+          inningEntered: 5,
+          subType: "DEF",
+          name: "小西 湊",
+          uniformNumber: "14",
+          position: "4",
+          playerId: "demo-p-14",
+          bats: "R",
+        },
+      ],
+    },
   ];
 
   const myIsTop = isMyTeamFirst;

@@ -202,6 +202,16 @@ export function TeamSymbolRulesSettingsSection({
       options: SYMBOL_RULE_FIELD_CONFIGS.cellStyle.options,
     },
     {
+      key: "lineupStyle",
+      title: SYMBOL_RULE_FIELD_CONFIGS.lineupStyle.title,
+      options: SYMBOL_RULE_FIELD_CONFIGS.lineupStyle.options,
+    },
+    {
+      key: "positionLabel",
+      title: SYMBOL_RULE_FIELD_CONFIGS.positionLabel.title,
+      options: SYMBOL_RULE_FIELD_CONFIGS.positionLabel.options,
+    },
+    {
       key: "outMark",
       title: SYMBOL_RULE_FIELD_CONFIGS.outMark.title,
       options: SYMBOL_RULE_FIELD_CONFIGS.outMark.options,
@@ -245,11 +255,6 @@ export function TeamSymbolRulesSettingsSection({
       key: "advanceError",
       title: SYMBOL_RULE_FIELD_CONFIGS.advanceError.title,
       options: SYMBOL_RULE_FIELD_CONFIGS.advanceError.options,
-    },
-    {
-      key: "positionLabel",
-      title: SYMBOL_RULE_FIELD_CONFIGS.positionLabel.title,
-      options: SYMBOL_RULE_FIELD_CONFIGS.positionLabel.options,
     },
   ];
 

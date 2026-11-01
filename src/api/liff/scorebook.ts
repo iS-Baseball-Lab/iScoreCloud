@@ -114,6 +114,7 @@ interface RawGeminiSubstitution {
   name?: string;
   uniformNumber?: string;
   position?: string;
+  bats?: string;
 }
 
 interface RawGeminiBatter {
@@ -121,6 +122,7 @@ interface RawGeminiBatter {
   name?: string;
   uniformNumber?: string;
   position?: string;
+  bats?: string;
   ymin?: number;
   ymax?: number;
   substitutions?: RawGeminiSubstitution[];
@@ -217,6 +219,23 @@ interface RawGeminiAtBat {
   xmin?: number;
   ymax?: number;
   xmax?: number;
+}
+
+function normalizeBatterHandedness(
+  raw: string | null | undefined
+): "R" | "L" | "B" | null {
+  if (!raw) return null;
+  const u = raw.trim().toUpperCase();
+  if (u === "L" || u === "左" || u === "左打" || u === "○" || u === "〇") {
+    return "L";
+  }
+  if (u === "B" || u === "S" || u === "両" || u === "両打" || u === "◎") {
+    return "B";
+  }
+  if (u === "R" || u === "右" || u === "右打") {
+    return "R";
+  }
+  return null;
 }
 
 function toFiniteInt(
@@ -351,15 +370,15 @@ liffScorebookRouter.get("/context", async (c) => {
   try {
     let targetTeam = requestedTeamId
       ? await db
-          .select({
-            id: teams.id,
-            name: teams.name,
-            scorebookLegendUrl: teams.scorebookLegendUrl,
-            scorebookSymbolRules: teams.scorebookSymbolRules,
-          })
-          .from(teams)
-          .where(eq(teams.id, requestedTeamId))
-          .get()
+        .select({
+          id: teams.id,
+          name: teams.name,
+          scorebookLegendUrl: teams.scorebookLegendUrl,
+          scorebookSymbolRules: teams.scorebookSymbolRules,
+        })
+        .from(teams)
+        .where(eq(teams.id, requestedTeamId))
+        .get()
       : undefined;
 
     if (!targetTeam) {
@@ -391,6 +410,7 @@ liffScorebookRouter.get("/context", async (c) => {
         nameKana: players.nameKana,
         uniformNumber: players.uniformNumber,
         primaryPosition: players.primaryPosition,
+        bats: players.bats,
       })
       .from(players)
       .where(eq(players.teamId, targetTeam.id))
@@ -499,13 +519,13 @@ liffScorebookRouter.post("/legend", async (c) => {
     const body = (await c.req.json()) as UpdateTeamLegendPayload;
     let targetTeam = body.teamId
       ? await db
-          .select({
-            id: teams.id,
-            scorebookLegendUrl: teams.scorebookLegendUrl,
-          })
-          .from(teams)
-          .where(eq(teams.id, body.teamId))
-          .get()
+        .select({
+          id: teams.id,
+          scorebookLegendUrl: teams.scorebookLegendUrl,
+        })
+        .from(teams)
+        .where(eq(teams.id, body.teamId))
+        .get()
       : undefined;
 
     if (!targetTeam) {
@@ -578,14 +598,14 @@ liffScorebookRouter.post("/legend", async (c) => {
       rawMime === "image/png"
         ? "image/png"
         : rawMime === "image/webp"
-        ? "image/webp"
-        : "image/jpeg";
+          ? "image/webp"
+          : "image/jpeg";
     const ext =
       safeMimeType === "image/png"
         ? "png"
         : safeMimeType === "image/webp"
-        ? "webp"
-        : "jpg";
+          ? "webp"
+          : "jpg";
 
     let nextLegendUrl: string;
     if (c.env.BUCKET) {
@@ -639,10 +659,10 @@ liffScorebookRouter.post("/symbol-rules", async (c) => {
     const body = (await c.req.json()) as UpdateTeamSymbolRulesPayload;
     let targetTeam = body.teamId
       ? await db
-          .select({ id: teams.id })
-          .from(teams)
-          .where(eq(teams.id, body.teamId))
-          .get()
+        .select({ id: teams.id })
+        .from(teams)
+        .where(eq(teams.id, body.teamId))
+        .get()
       : undefined;
 
     if (!targetTeam) {
@@ -696,12 +716,15 @@ interface ExtractTeamSymbolRulesPayload {
 }
 
 interface GeminiExtractedSymbolRulesResponse {
+  cellStyle?: string;
+  lineupStyle?: string;
   outMark?: string;
   strikeout?: string;
   walkHbp?: string;
   hitLine?: string;
   runMark?: string;
   pitchMark?: string;
+  pickoffMark?: string;
   flyLiner?: string;
   advanceError?: string;
   positionLabel?: string;
@@ -725,13 +748,13 @@ liffScorebookRouter.post("/extract-symbol-rules", async (c) => {
     const body = (await c.req.json()) as ExtractTeamSymbolRulesPayload;
     let targetTeam = body.teamId
       ? await db
-          .select({
-            id: teams.id,
-            scorebookLegendUrl: teams.scorebookLegendUrl,
-          })
-          .from(teams)
-          .where(eq(teams.id, body.teamId))
-          .get()
+        .select({
+          id: teams.id,
+          scorebookLegendUrl: teams.scorebookLegendUrl,
+        })
+        .from(teams)
+        .where(eq(teams.id, body.teamId))
+        .get()
       : undefined;
 
     if (!targetTeam) {
@@ -779,6 +802,7 @@ liffScorebookRouter.post("/extract-symbol-rules", async (c) => {
 出力JSONスキーマ:
 {
   "cellStyle": "quadrant" | "quadrant_bso_grid" | "simple_diamond", // マス枠線: 中央小ダイヤから上下左右へ十字点線が伸びBSO欄が空欄なら "quadrant"、十字4分割で左BSO欄に横仕切り線があれば "quadrant_bso_grid"、十字点線なしの大きなダイヤのみなら "simple_diamond"（不明なら "quadrant"）
+  "lineupStyle": "classic_three_row" | "compact_order_first", // 選手欄様式: 先発・守備位置｜打順(1/11/21)｜左○｜選手名｜背番号 の3段フル様式なら "classic_three_row"、順｜守備｜背番｜選手名 のシンプル式なら "compact_order_first"（不明なら "classic_three_row"）
   "outMark": "roman" | "circled", // アウト記号: Ⅰ・Ⅱ・Ⅲ なら "roman"、①・②・③ なら "circled"
   "strikeout": "k_called_reverse" | "k_called_circle" | "k_only" | "so", // 三振: 見逃しが左右反転Kなら "k_called_reverse"、丸囲みⓀなら "k_called_circle"、区別なしKなら "k_only"、SO表記なら "so"
   "walkHbp": "b_db" | "bb_hbp" | "kanji", // 四死球: B/DBなら "b_db"、BB/HBPなら "bb_hbp"、四/死なら "kanji"
@@ -1022,6 +1046,7 @@ liffScorebookRouter.post("/analyze-structure", async (c) => {
         nameKana: players.nameKana,
         uniformNumber: players.uniformNumber,
         primaryPosition: players.primaryPosition,
+        bats: players.bats,
       })
       .from(players)
       .where(eq(players.teamId, match.teamId))
@@ -1050,11 +1075,11 @@ liffScorebookRouter.post("/analyze-structure", async (c) => {
     const rosterHint =
       roster.length > 0
         ? roster
-            .map(
-              (p) =>
-                `#${p.uniformNumber} ${p.name}${p.nameKana ? `(${p.nameKana})` : ""}`
-            )
-            .join(", ")
+          .map(
+            (p) =>
+              `#${p.uniformNumber} ${p.name}${p.nameKana ? `(${p.nameKana})` : ""}`
+          )
+          .join(", ")
         : "未登録";
 
     const fallbackJsonLineup = safeParseLineupArray(
@@ -1064,20 +1089,20 @@ liffScorebookRouter.post("/analyze-structure", async (c) => {
     const myStarterHint =
       savedLineups.length > 0
         ? savedLineups
-            .filter((l) => l.isStarting)
-            .map(
-              (l) =>
-                `${l.battingOrder}番: #${l.uniformNumber} ${l.playerName}(守備:${l.position})`
-            )
-            .join(", ")
+          .filter((l) => l.isStarting)
+          .map(
+            (l) =>
+              `${l.battingOrder}番: #${l.uniformNumber} ${l.playerName}(守備:${l.position})`
+          )
+          .join(", ")
         : fallbackJsonLineup.length > 0
-        ? fallbackJsonLineup
+          ? fallbackJsonLineup
             .map(
               (l, idx) =>
                 `${l.order ?? l.battingOrder ?? idx + 1}番: #${l.uniformNumber || ""} ${l.name || ""}(守備:${l.position || ""})`
             )
             .join(", ")
-        : "";
+          : "";
 
     const scoreboardHintScores = isMyTeamBatting
       ? safeParseNumberArray(match.myInningScores)
@@ -1089,8 +1114,8 @@ liffScorebookRouter.post("/analyze-structure", async (c) => {
 
     const scoreboardHintText = hasMeaningfulScoreHint
       ? `\n📌【試合テーブルに登録済みの各回得点データ（画像と照合してください）】: ${scoreboardHintScores
-          .map((r, i) => `${i + 1}回=${r}点`)
-          .join(", ")}（計${scoreboardHintScores.reduce((s, r) => s + r, 0)}点）`
+        .map((r, i) => `${i + 1}回=${r}点`)
+        .join(", ")}（計${scoreboardHintScores.reduce((s, r) => s + r, 0)}点）`
       : "";
 
     const imageParts: GeminiContentPart[] = [
@@ -1145,12 +1170,10 @@ liffScorebookRouter.post("/analyze-structure", async (c) => {
 
     const sideText = body.isTop ? "先攻（表の攻撃）" : "後攻（裏の攻撃）";
     const battingTeamContext = isMyTeamBatting
-      ? `このシートの攻撃チームは【自チーム】です。拡大画像の手書き氏名と背番号を一字一句丁寧に読み取った上で、一致または類似する選手を以下の自チーム登録選手リストから名寄せしてください（登録リストに無い助っ人選手の場合は手書き文字をそのまま出力し、絶対に別人の名前を無理やり当てはめないでください）。\n自チーム登録選手リスト: [${rosterHint}]${
-          myStarterHint ? `\n事前登録スタメン情報: [${myStarterHint}]` : ""
-        }\nまた、相手投手の欄（このシートの打者に対して投げた相手チームのピッチャー）は手書き文字・背番号をそのまま読み取ってください。`
-      : `このシートの攻撃チームは【対戦相手（${match.opponent}）】です。打者名は拡大画像の手書き文字・背番号を忠実に読み取ってください（絶対に自チーム登録選手の名前を打者欄に当てはめないでください！）。${
-          myStarterHint ? `\n事前登録相手打順情報: [${myStarterHint}]` : ""
-        }\n一方、このシートの打者に対して投げた登板投手（pitchers）は【自チームの投手】ですので、自チーム登録選手リスト [${rosterHint}] に名寄せしてください。`;
+      ? `このシートの攻撃チームは【自チーム】です。拡大画像の手書き氏名と背番号を一字一句丁寧に読み取った上で、一致または類似する選手を以下の自チーム登録選手リストから名寄せしてください（登録リストに無い助っ人選手の場合は手書き文字をそのまま出力し、絶対に別人の名前を無理やり当てはめないでください）。\n自チーム登録選手リスト: [${rosterHint}]${myStarterHint ? `\n事前登録スタメン情報: [${myStarterHint}]` : ""
+      }\nまた、相手投手の欄（このシートの打者に対して投げた相手チームのピッチャー）は手書き文字・背番号をそのまま読み取ってください。`
+      : `このシートの攻撃チームは【対戦相手（${match.opponent}）】です。打者名は拡大画像の手書き文字・背番号を忠実に読み取ってください（絶対に自チーム登録選手の名前を打者欄に当てはめないでください！）。${myStarterHint ? `\n事前登録相手打順情報: [${myStarterHint}]` : ""
+      }\n一方、このシートの打者に対して投げた登板投手（pitchers）は【自チームの投手】ですので、自チーム登録選手リスト [${rosterHint}] に名寄せしてください。`;
 
     const prompt = `あなたは日本の野球スコアブック（早稲田式・成美堂式・草野球/少年野球手書きスコア）の構造解析エキスパートです。
 添付された画像群（${sideText}シート）を隅々まで観察し、「シート全体の骨格情報（打順・途中交代・登板投手・イニングごとの列構造と得点）」を極めて高い精度で抽出してください。
@@ -1215,8 +1238,8 @@ ${battingTeamContext}${scoreboardHintText}
 
     const rawLineupRightX =
       typeof raw.lineupRightX === "number" &&
-      raw.lineupRightX >= 140 &&
-      raw.lineupRightX <= 460
+        raw.lineupRightX >= 140 &&
+        raw.lineupRightX <= 460
         ? Math.round(raw.lineupRightX)
         : undefined;
 
@@ -1238,13 +1261,13 @@ ${battingTeamContext}${scoreboardHintText}
       // 背番号欄が空欄のときに守備位置番号(1〜9)を誤転記するケースの防止
       const cleanedUniform =
         !matched &&
-        rawUniform === normPos &&
-        /^[1-9]$/.test(rawUniform) &&
-        rawBatters.every(
-          (other) =>
-            !other.uniformNumber ||
-            other.uniformNumber.trim() === normalizePositionCode(other.position)
-        )
+          rawUniform === normPos &&
+          /^[1-9]$/.test(rawUniform) &&
+          rawBatters.every(
+            (other) =>
+              !other.uniformNumber ||
+              other.uniformNumber.trim() === normalizePositionCode(other.position)
+          )
           ? ""
           : rawUniform;
 
@@ -1258,10 +1281,10 @@ ${battingTeamContext}${scoreboardHintText}
             s.subType === "PR"
               ? "PR"
               : s.subType === "TR"
-              ? "TR"
-              : s.subType === "DEF"
-              ? "DEF"
-              : "PH";
+                ? "TR"
+                : s.subType === "DEF"
+                  ? "DEF"
+                  : "PH";
 
           return {
             id: crypto.randomUUID(),
@@ -1273,13 +1296,16 @@ ${battingTeamContext}${scoreboardHintText}
               : (s.uniformNumber || "").trim(),
             position: normalizePositionCode(s.position),
             playerId: subMatched ? subMatched.id : null,
+            bats:
+              normalizeBatterHandedness(subMatched?.bats) ??
+              normalizeBatterHandedness(s.bats),
           };
         });
 
       const rowBox =
         typeof b.ymin === "number" &&
-        typeof b.ymax === "number" &&
-        b.ymax > b.ymin + 12
+          typeof b.ymax === "number" &&
+          b.ymax > b.ymin + 12
           ? sanitizeBox(b.ymin, 0, b.ymax, rawLineupRightX ?? 210)
           : undefined;
 
@@ -1293,6 +1319,9 @@ ${battingTeamContext}${scoreboardHintText}
             ? normalizePositionCode(matched.primaryPosition)
             : ""),
         playerId: matched ? matched.id : null,
+        bats:
+          normalizeBatterHandedness(matched?.bats) ??
+          normalizeBatterHandedness(b.bats),
         substitutions: subs,
         rowBox,
       };
@@ -1357,51 +1386,51 @@ ${battingTeamContext}${scoreboardHintText}
     // 相手攻撃シート（＝自チームが守備・登板）で投手欄が空の場合、事前登録スタメンに自チーム先発投手がいれば自動セット
     const savedMyStartingPitcher = !isMyTeamBatting
       ? savedLineups.find(
-          (l) => l.isStarting && normalizePositionCode(l.position) === "1"
-        )
+        (l) => l.isStarting && normalizePositionCode(l.position) === "1"
+      )
       : undefined;
 
     const initialPitchers: ScorebookPitcherStint[] =
       rawPitchers.length > 0
         ? rawPitchers.map((p, idx) => {
-            const matchedPitcher = !isMyTeamBatting
-              ? matchRosterPlayer(p.name, p.uniformNumber, roster)
-              : null;
-            return {
-              id: crypto.randomUUID(),
-              order: p.order || idx + 1,
-              name: matchedPitcher
-                ? matchedPitcher.name
-                : (p.name || (isMyTeamBatting ? "相手投手" : "")).trim(),
-              uniformNumber: matchedPitcher
-                ? matchedPitcher.uniformNumber
-                : (p.uniformNumber || "").trim(),
-              playerId: matchedPitcher ? matchedPitcher.id : null,
-              fromInning: Math.max(1, p.fromInning || 1),
-              toInning: Math.max(1, p.toInning || maxInningFromSheet),
-            };
-          })
+          const matchedPitcher = !isMyTeamBatting
+            ? matchRosterPlayer(p.name, p.uniformNumber, roster)
+            : null;
+          return {
+            id: crypto.randomUUID(),
+            order: p.order || idx + 1,
+            name: matchedPitcher
+              ? matchedPitcher.name
+              : (p.name || (isMyTeamBatting ? "相手投手" : "")).trim(),
+            uniformNumber: matchedPitcher
+              ? matchedPitcher.uniformNumber
+              : (p.uniformNumber || "").trim(),
+            playerId: matchedPitcher ? matchedPitcher.id : null,
+            fromInning: Math.max(1, p.fromInning || 1),
+            toInning: Math.max(1, p.toInning || maxInningFromSheet),
+          };
+        })
         : [
-            {
-              id: crypto.randomUUID(),
-              order: 1,
-              name: isMyTeamBatting
-                ? "相手投手"
-                : savedMyStartingPitcher
+          {
+            id: crypto.randomUUID(),
+            order: 1,
+            name: isMyTeamBatting
+              ? "相手投手"
+              : savedMyStartingPitcher
                 ? savedMyStartingPitcher.playerName
                 : "",
-              uniformNumber:
-                !isMyTeamBatting && savedMyStartingPitcher
-                  ? savedMyStartingPitcher.uniformNumber
-                  : "",
-              playerId:
-                !isMyTeamBatting && savedMyStartingPitcher
-                  ? savedMyStartingPitcher.playerId
-                  : null,
-              fromInning: 1,
-              toInning: maxInningFromSheet,
-            },
-          ];
+            uniformNumber:
+              !isMyTeamBatting && savedMyStartingPitcher
+                ? savedMyStartingPitcher.uniformNumber
+                : "",
+            playerId:
+              !isMyTeamBatting && savedMyStartingPitcher
+                ? savedMyStartingPitcher.playerId
+                : null,
+            fromInning: 1,
+            toInning: maxInningFromSheet,
+          },
+        ];
 
     const normalizedPitchers = normalizePitcherStints(
       initialPitchers,
@@ -1444,11 +1473,11 @@ ${battingTeamContext}${scoreboardHintText}
       inningMergeMap.size > 0
         ? Array.from(inningMergeMap.values()).sort((a, b) => a.inning - b.inning)
         : Array.from({ length: Math.min(7, match.innings || 7) }, (_, i) => ({
-            inning: i + 1,
-            columnCount: 1,
-            runs: scoreboardHintScores[i] ?? 0,
-            hits: 0,
-          }));
+          inning: i + 1,
+          columnCount: 1,
+          runs: scoreboardHintScores[i] ?? 0,
+          hits: 0,
+        }));
 
     const regularizedGrid = regularizeSheetGridGeometry(
       normalizedBatters,
@@ -1594,10 +1623,9 @@ liffScorebookRouter.post("/analyze-inning-chunk", async (c) => {
       stage2ImageGuide.push(
         `・${focusImgLabel}: 【🔥最優先で精読！ ${sortedTargets.join(
           "・"
-        )}回専用・歪み補正＆にじみ分解トリプルビュー画像】左端に「イニング見出し〜1番〜9番〜下段得点欄までの連続1列ストリップ（どの打順が記入済みでどの打順が白紙空欄か・3アウト直下の終了斜線『／』『∟』・投手交代波線を一目で確認用）」、中央〜右側に「1番〜最終打順を上から下へ並べた各打席行」を配置しています！さらに各打順行のマスは、左から **[全体マス] ➔ [BSO拡大（にじみ分解済）] ➔ [中央・右下拡大（にじみ分解済）]** の3パネルが横並びになっています（※同じ横1行にあるこの3パネルは「同じ1打席の部分拡大」であり、絶対に複数打席として重複出力しないこと！）。${
-          hasMultiColTarget
-            ? "2列以上を使用する回はサブ列グループごとに [c:1]（1列目）・[c:2]（2列目）・[c:3]（3列目）として分離表示しています！"
-            : ""
+        )}回専用・歪み補正＆にじみ分解トリプルビュー画像】左端に「イニング見出し〜1番〜9番〜下段得点欄までの連続1列ストリップ（どの打順が記入済みでどの打順が白紙空欄か・3アウト直下の終了斜線『／』『∟』・投手交代波線を一目で確認用）」、中央〜右側に「1番〜最終打順を上から下へ並べた各打席行」を配置しています！さらに各打順行のマスは、左から **[全体マス] ➔ [BSO拡大（にじみ分解済）] ➔ [中央・右下拡大（にじみ分解済）]** の3パネルが横並びになっています（※同じ横1行にあるこの3パネルは「同じ1打席の部分拡大」であり、絶対に複数打席として重複出力しないこと！）。${hasMultiColTarget
+          ? "2列以上を使用する回はサブ列グループごとに [c:1]（1列目）・[c:2]（2列目）・[c:3]（3列目）として分離表示しています！"
+          : ""
         }必ず左端の連続ストリップで「実際に手書き記録がある打順範囲」を特定したうえで、右側の [BSO拡大] と [中央・右下拡大] を使ってくっついた文字やにじんだ筆跡を1画ずつ分解精読してください！`
       );
     } else if (body.imageBase64) {
@@ -1634,11 +1662,11 @@ liffScorebookRouter.post("/analyze-inning-chunk", async (c) => {
       const subStr =
         b.substitutions.length > 0
           ? ` ➔ 交代: ${b.substitutions
-              .map(
-                (s) =>
-                  `[${s.inningEntered}回〜 ${s.subType} #${s.uniformNumber} ${s.name}]`
-              )
-              .join(", ")}`
+            .map(
+              (s) =>
+                `[${s.inningEntered}回〜 ${s.subType} #${s.uniformNumber} ${s.name}]`
+            )
+            .join(", ")}`
           : "";
       return `・${b.battingOrder}番: #${b.uniformNumber} ${b.name}${subStr}`;
     });
@@ -1678,26 +1706,22 @@ liffScorebookRouter.post("/analyze-inning-chunk", async (c) => {
       sortedTargets[0] === 1
         ? `\n🔥【先頭打者と最終打者（封殺・走塁死含む）の鉄則】1回${sideLabel}の最初の打者は必ず【1番打者】からスタートします！1番から1人ずつ打順を飛ばさず（1番→2番→3番→4番→5番...）下へ読み進め、**イニング終了斜線（／・∟）または白紙空欄の直前にある「実際に手書き記録がある最後の打者」まで漏れなく出力**してください！（※注意：4番打者が出塁した後に5番打者の遊ゴロ封殺6-4・野選FC・盗塁死等で3アウトチェンジになった場合、3アウト目の『Ⅲ』『③』は先行走者である4番の中央に書かれ、その直下の5番のマスに最終打席の投球・打球記号が書かれます！4番に『Ⅲ』があるからといって直下の5番の記入済み打席を絶対に切り捨てないでください！）`
         : body.expectedLeadOffOrder
-        ? `\n📌【先頭打者の目安・打者一巡（9人全員記入）列の回転順・白紙マス除外の絶対原則】前イニング終了打順からの連続則（前のイニングの次の番号、または盗塁死・牽制死等の走塁死終了時は同一番号）では【${body.expectedLeadOffOrder}番打者】が${sortedTargets[0]}回${sideLabel}の先頭打者です！\n- **⚠️特に1イニング9人全員のマスが埋まっている場合（打者一巡）**: シート上端の「1番」から機械的に 1→2→...→9 と並べるのは絶対厳禁です！必ず先頭打者（目安: ${body.expectedLeadOffOrder}番）から下へ読み進め、9番の下端に達したら上端の1番（2列目折り返しまたは同一列上段）へ繋がり、3アウト目（『Ⅲ』『③』）の最終打者で終わる時系列順に出力してください。\n- 印刷された点線ダイヤモンドと薄いBSO枠線しか無い【白紙（空欄）マス】は絶対に出力せず、途中の打順を1人も飛ばさず連続した手書き打席ブロック（計3アウト分）を正確に抽出してください。`
-        : `\n📌【連続打順・打者一巡列の回転順・白紙マス除外の絶対原則】印刷された点線ダイヤモンドと薄いBSO枠線しか無い【白紙（空欄）マス】は絶対に出力せず、実際に手書き記録がある連続した打席マス（途中の打順飛び無し・計3アウト分）だけを抽出してください。もし1イニング9人全員が埋まっている列では、シート上端の1番からではなく「Ⅰ→Ⅱ→Ⅲのアウト順が成立し、3アウト目の打者で終わる真の先頭打者」から9番→1番へ循環する時系列順で出力してください。`;
+          ? `\n📌【先頭打者の目安・打者一巡（9人全員記入）列の回転順・白紙マス除外の絶対原則】前イニング終了打順からの連続則（前のイニングの次の番号、または盗塁死・牽制死等の走塁死終了時は同一番号）では【${body.expectedLeadOffOrder}番打者】が${sortedTargets[0]}回${sideLabel}の先頭打者です！\n- **⚠️特に1イニング9人全員のマスが埋まっている場合（打者一巡）**: シート上端の「1番」から機械的に 1→2→...→9 と並べるのは絶対厳禁です！必ず先頭打者（目安: ${body.expectedLeadOffOrder}番）から下へ読み進め、9番の下端に達したら上端の1番（2列目折り返しまたは同一列上段）へ繋がり、3アウト目（『Ⅲ』『③』）の最終打者で終わる時系列順に出力してください。\n- 印刷された点線ダイヤモンドと薄いBSO枠線しか無い【白紙（空欄）マス】は絶対に出力せず、途中の打順を1人も飛ばさず連続した手書き打席ブロック（計3アウト分）を正確に抽出してください。`
+          : `\n📌【連続打順・打者一巡列の回転順・白紙マス除外の絶対原則】印刷された点線ダイヤモンドと薄いBSO枠線しか無い【白紙（空欄）マス】は絶対に出力せず、実際に手書き記録がある連続した打席マス（途中の打順飛び無し・計3アウト分）だけを抽出してください。もし1イニング9人全員が埋まっている列では、シート上端の1番からではなく「Ⅰ→Ⅱ→Ⅲのアウト順が成立し、3アウト目の打者で終わる真の先頭打者」から9番→1番へ循環する時系列順で出力してください。`;
 
     const tailOrderConstraint =
       sortedTargets.length === 1 &&
-      typeof body.nextInningLeadOffOrder === "number" &&
-      body.nextInningLeadOffOrder >= 1
+        typeof body.nextInningLeadOffOrder === "number" &&
+        body.nextInningLeadOffOrder >= 1
         ? (() => {
-            const expectedTailOrder =
-              ((body.nextInningLeadOffOrder - 2 + lineupLen) % lineupLen) + 1;
-            return `\n🔥【次イニング先頭打順との境界整合制約】次イニング（${
-              sortedTargets[0] + 1
-            }回${sideLabel}）の先頭打者は【${
-              body.nextInningLeadOffOrder
-            }番】であることが確定しています！したがってこの${
-              sortedTargets[0]
-            }回${sideLabel}は原則として【${expectedTailOrder}番打者】の打席完了でチェンジ（または【${
-              body.nextInningLeadOffOrder
+          const expectedTailOrder =
+            ((body.nextInningLeadOffOrder - 2 + lineupLen) % lineupLen) + 1;
+          return `\n🔥【次イニング先頭打順との境界整合制約】次イニング（${sortedTargets[0] + 1
+            }回${sideLabel}）の先頭打者は【${body.nextInningLeadOffOrder
+            }番】であることが確定しています！したがってこの${sortedTargets[0]
+            }回${sideLabel}は原則として【${expectedTailOrder}番打者】の打席完了でチェンジ（または【${body.nextInningLeadOffOrder
             }番打者】の打席途中の走塁死でチェンジ）しています。${expectedTailOrder}番のマスに封殺（6-4/4-6/FC等）や投球・打球記録がある場合は絶対に落とさず出力してください！`;
-          })()
+        })()
         : "";
 
     const legendConstraint = legendImageIndex > 0
@@ -2099,8 +2123,8 @@ ${targetInningMetaLines.join("\n")}
           occupiedBaseRunnerOuts > 0
             ? Math.min(2, occupiedBaseRunnerOuts)
             : rawOutsVal > 0
-            ? 1
-            : 0;
+              ? 1
+              : 0;
       }
 
       const normalizedPitches = normalizePitchArray(
@@ -2132,20 +2156,20 @@ ${targetInningMetaLines.join("\n")}
       const cellBox = skewedQuad
         ? quadToBoundingBox(skewedQuad)
         : computeCartesianCellBox(
-            rawCellBox,
-            inningMeta?.columnBox,
-            inningMeta?.columnCount ?? 1,
-            colIndex,
-            batterRowBox
-          );
+          rawCellBox,
+          inningMeta?.columnBox,
+          inningMeta?.columnCount ?? 1,
+          colIndex,
+          batterRowBox
+        );
 
       const rawConf = (ab.cf ?? ab.confidence ?? "h").toLowerCase();
       const confidence: ConfidenceLevel =
         rawConf === "l" || rawConf === "low"
           ? "low"
           : rawConf === "m" || rawConf === "medium"
-          ? "medium"
-          : "high";
+            ? "medium"
+            : "high";
 
       // 次打席向けに簡易ランナー位置を更新
       for (const adv of advances) {
@@ -2332,8 +2356,7 @@ liffScorebookRouter.post("/reconcile-missing-atbats", async (c) => {
 
     const pitcherSpecLines = body.structure.pitchers.map(
       (p) =>
-        `・${p.fromInning}回〜${p.toInning}回: #${p.uniformNumber} ${
-          p.name || "投手"
+        `・${p.fromInning}回〜${p.toInning}回: #${p.uniformNumber} ${p.name || "投手"
         }`
     );
 
@@ -2341,10 +2364,8 @@ liffScorebookRouter.post("/reconcile-missing-atbats", async (c) => {
       const candDesc = g.candidates
         .map(
           (cand, idx) =>
-            `${idx === 0 ? "候補A" : idx === 1 ? "候補B" : `候補${idx + 1}`}=【"i":${
-              cand.inning
-            }, "c":${cand.columnIndex}】（${cand.inning}回${sideLabel}の${
-              g.battingOrder
+            `${idx === 0 ? "候補A" : idx === 1 ? "候補B" : `候補${idx + 1}`}=【"i":${cand.inning
+            }, "c":${cand.columnIndex}】（${cand.inning}回${sideLabel}の${g.battingOrder
             }番マス）`
         )
         .join(" vs ");
@@ -2367,8 +2388,8 @@ liffScorebookRouter.post("/reconcile-missing-atbats", async (c) => {
       body.structure.batters.length
     )}番）でイニング解析結果を検算したところ、以下の打順が抜けて（飛んで）いることが数学的に判明しました。
 添付画像1には、欠損項目 [${body.gaps
-      .map((g) => g.gapId)
-      .join(", ")}] ごとに横1段ずつ、候補となるマスを **[全体マス | BSO拡大 | 中央・右下拡大]** の高精細トリプルビューで並べています。${legendNote}
+        .map((g) => g.gapId)
+        .join(", ")}] ごとに横1段ずつ、候補となるマスを **[全体マス | BSO拡大 | 中央・右下拡大]** の高精細トリプルビューで並べています。${legendNote}
 
 【検証対象の欠損打順リスト（全${body.gaps.length}件すべて必ず出力すること）】
 ${gapSpecLines.join("\n")}
@@ -2388,12 +2409,10 @@ ${pitcherSpecLines.join("\n")}
    - 中央・右下拡大: 傘マーク接触『︵4』〜『︵9』はフライアウト（rc:"flyout", dir:"4"〜"9"、四球Bと誤読厳禁！）、送球ハイフン『6-3』『4-3』『5-3』はゴロ（rc:"groundout"）、悪送球『4E-3』『6E-3』『4E』や捕球失策『E4』『E6』は失策（rc:"error", dir:"4E-3"/"E4", o:0）、二塁・三塁封殺『6-4』『4-6』『5-4』『FC』（本塁→1塁実線 b1:true）は野選封殺（rc:"fc", o:1）、本一実線＋外野7/8/9は単打（rc:"single", o:0）、『K』/3ストライクは三振（rc:"strikeout", o:1）、ボール4球＋右下『B』＋本一実線は四球（rc:"walk", o:0）。
    - 万一、打席途中に先行走者が盗塁死・牽制死してチェンジとなり次イニング先頭で打ち直しになった痕跡がある場合のみ、候補B（完了した打席側）を優先採用してください。
 
-【出力JSONフォーマット（改行無しのコンパクトJSONのみ返却。items配列に全${
-      body.gaps.length
-    }件の "gid" を漏れなく出力！）】
-{"items":[{"gid":"${firstGap.gapId}","i":${exInning},"c":${exCol},"bo":${
-      firstGap.battingOrder
-    },"pt":"${exPitcher}","obs":"左:ー,○/中:無/本一:実線/右下:6-4","b1":true,"p":["B","S","X"],"eo":3,"o":1,"dir":"6-4","rc":"fc","rl":"遊ゴロ野選","rbi":0,"ru":0,"a":[],"cf":"h"}]}`;
+【出力JSONフォーマット（改行無しのコンパクトJSONのみ返却。items配列に全${body.gaps.length
+      }件の "gid" を漏れなく出力！）】
+{"items":[{"gid":"${firstGap.gapId}","i":${exInning},"c":${exCol},"bo":${firstGap.battingOrder
+      },"pt":"${exPitcher}","obs":"左:ー,○/中:無/本一:実線/右下:6-4","b1":true,"p":["B","S","X"],"eo":3,"o":1,"dir":"6-4","rc":"fc","rl":"遊ゴロ野選","rbi":0,"ru":0,"a":[],"cf":"h"}]}`;
 
     const validateReconcileOutput = (
       parsed: RawReconcileMissingResponse
@@ -2433,8 +2452,8 @@ ${pitcherSpecLines.join("\n")}
         (body.gaps.length === 1
           ? rawItems[0]
           : rawItems.find(
-              (it) => toFiniteInt(it.bo ?? it.battingOrder) === gap.battingOrder
-            ));
+            (it) => toFiniteInt(it.bo ?? it.battingOrder) === gap.battingOrder
+          ));
 
       if (!matchedRaw) continue;
 
@@ -2448,7 +2467,7 @@ ${pitcherSpecLines.join("\n")}
       const colIndex = Math.max(
         1,
         toFiniteInt(matchedRaw.c ?? matchedRaw.columnIndex, validCand.columnIndex) ||
-          validCand.columnIndex
+        validCand.columnIndex
       );
       const battingOrder = gap.battingOrder;
       const ocrPitcherHint = (
@@ -2466,11 +2485,11 @@ ${pitcherSpecLines.join("\n")}
 
       const priorOutsEstimate =
         gap.kind === "lead_off_1st" ||
-        (gap.kind === "inter_inning" && inning === gap.nextInning)
+          (gap.kind === "inter_inning" && inning === gap.nextInning)
           ? 0
           : gap.kind === "inter_inning" && inning === gap.prevInning
-          ? 2
-          : 1;
+            ? 2
+            : 1;
       const runnerMaybeOnBase = priorOutsEstimate > 0;
 
       const reconciled = reconcileRawAtBatEvidence(
@@ -2562,8 +2581,8 @@ ${pitcherSpecLines.join("\n")}
       } else if (resultCode === "fc") {
         outsVal =
           rawOutsVal >= 1 ||
-          runnerOutsInPlay >= 1 ||
-          (gap.kind === "inter_inning" && inning === gap.prevInning)
+            runnerOutsInPlay >= 1 ||
+            (gap.kind === "inter_inning" && inning === gap.prevInning)
             ? 1
             : 0;
       } else if (resultCode === "other") {
@@ -2592,12 +2611,12 @@ ${pitcherSpecLines.join("\n")}
       const cellBox = skewedQuad
         ? quadToBoundingBox(skewedQuad)
         : computeCartesianCellBox(
-            undefined,
-            inningMeta?.columnBox,
-            inningMeta?.columnCount ?? 1,
-            colIndex,
-            batterRowBox
-          );
+          undefined,
+          inningMeta?.columnBox,
+          inningMeta?.columnCount ?? 1,
+          colIndex,
+          batterRowBox
+        );
 
       const rawConf = (
         matchedRaw.cf ??
@@ -2608,8 +2627,8 @@ ${pitcherSpecLines.join("\n")}
         rawConf === "l" || rawConf === "low"
           ? "low"
           : rawConf === "m" || rawConf === "medium"
-          ? "medium"
-          : "high";
+            ? "medium"
+            : "high";
 
       const isHr = resultCode === "home_run";
       const sanitizedGapAdvances = advances.map((adv) => {
@@ -2624,8 +2643,8 @@ ${pitcherSpecLines.join("\n")}
             resultCode === "triple"
               ? "3B"
               : resultCode === "double"
-              ? "2B"
-              : "1B";
+                ? "2B"
+                : "1B";
           return { ...adv, to: fallbackTo as "1B" | "2B" | "3B" };
         }
         return adv;
@@ -2654,8 +2673,8 @@ ${pitcherSpecLines.join("\n")}
       const safeGapRbi = isZeroRbiGapResult
         ? 0
         : isAwardedFirstGap
-        ? Math.min(1, Math.max(0, parsedRbi ?? 0))
-        : Math.min(effectiveRuns, Math.max(0, parsedRbi ?? effectiveRuns));
+          ? Math.min(1, Math.max(0, parsedRbi ?? 0))
+          : Math.min(effectiveRuns, Math.max(0, parsedRbi ?? effectiveRuns));
 
       resolved.push({
         gapId: gap.gapId,
@@ -2702,7 +2721,7 @@ ${pitcherSpecLines.join("\n")}
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-      return c.json(
+    return c.json(
       {
         success: false,
         error: `打順抜け自動補正エラー: ${msg}`,
@@ -2794,8 +2813,7 @@ liffScorebookRouter.post("/reconcile-inning-outs", async (c) => {
 
     const pitcherSpecLines = body.structure.pitchers.map(
       (p) =>
-        `・${p.fromInning}回〜${p.toInning}回: #${p.uniformNumber} ${
-          p.name || "投手"
+        `・${p.fromInning}回〜${p.toInning}回: #${p.uniformNumber} ${p.name || "投手"
         }`
     );
 
@@ -2806,11 +2824,9 @@ liffScorebookRouter.post("/reconcile-inning-outs", async (c) => {
 
     const boundaryNote =
       typeof spec.nextInningLeadOffOrder === "number"
-        ? `次イニング（${spec.inning + 1}回${sideLabel}）の先頭打者は【${
-            spec.nextInningLeadOffOrder
-          }番】であることが確定しています（＝この${spec.inning}回は原則【${
-            ((spec.nextInningLeadOffOrder - 2 + lineupLen) % lineupLen) + 1
-          }番】で完了しています）。`
+        ? `次イニング（${spec.inning + 1}回${sideLabel}）の先頭打者は【${spec.nextInningLeadOffOrder
+        }番】であることが確定しています（＝この${spec.inning}回は原則【${((spec.nextInningLeadOffOrder - 2 + lineupLen) % lineupLen) + 1
+        }番】で完了しています）。`
         : `この${spec.inning}回${sideLabel}の先頭打者は【${spec.expectedLeadOffOrder}番】目安です。`;
 
     const exPitcher =
@@ -2824,8 +2840,8 @@ liffScorebookRouter.post("/reconcile-inning-outs", async (c) => {
     const prompt = `あなたは日本の早稲田式・成美堂式・リトルシニア式スコアブックのプロ公式記録員AIです。
 現在、【${spec.inning}回${sideLabel}】の読取結果で合計アウト数が【${spec.currentTotalOuts}アウト（3アウト超過）】という野球規則上あり得ない矛盾が発生しています。
 添付画像1には、この${spec.inning}回${sideLabel}の候補マス [${spec.batters
-      .map((b) => b.slotKey)
-      .join(", ")}] を上から順に **[全体マス | BSO拡大 | 中央・右下拡大]** の高精細トリプルビューで並べています。${legendNote}
+        .map((b) => b.slotKey)
+        .join(", ")}] を上から順に **[全体マス | BSO拡大 | 中央・右下拡大]** の高精細トリプルビューで並べています。${legendNote}
 
 【対象イニングの確定前提条件】
 ・イニング: ${spec.inning}回${sideLabel}（確定得点 = ${spec.confirmedRuns}点）
@@ -2852,8 +2868,8 @@ ${batterRowsDesc.join("\n")}
    - 各マスの **[BSO拡大]** にある手書き投球記号（○/●/ー/・/△ や球数番号 1,2,3...）も省略せず obs と p に全件出力してください。
 
 【出力JSONフォーマット（改行無しのコンパクトJSONのみ返却。items配列に [${spec.batters
-      .map((b) => b.slotKey)
-      .join(", ")}] を順番通り出力し、除外行は "drop":true、残す行の "o" 合計は必ず 3 にすること！）】
+        .map((b) => b.slotKey)
+        .join(", ")}] を順番通り出力し、除外行は "drop":true、残す行の "o" 合計は必ず 3 にすること！）】
 {"items":[{"sk":"${firstB.slotKey}","drop":false,"c":${firstB.columnIndex},"bo":${firstB.battingOrder},"pt":"${exPitcher}","obs":"左:○,ー/中:Ⅰ/本一:破線/右下:6-3","b1":false,"p":["S","B","X"],"eo":1,"o":1,"dir":"6-3","rc":"groundout","rl":"遊ゴロ","rbi":0,"ru":0,"a":[],"cf":"h"}]}`;
 
     const validateInningOutsResp = (
@@ -2918,7 +2934,7 @@ ${batterRowsDesc.join("\n")}
       const colIndex = Math.max(
         1,
         toFiniteInt(matched.c ?? matched.columnIndex, slot.columnIndex) ||
-          slot.columnIndex
+        slot.columnIndex
       );
       const battingOrder = slot.battingOrder;
       const ocrPitcherHint = (matched.pt ?? matched.pitcherName ?? "").trim();
@@ -3038,8 +3054,8 @@ ${batterRowsDesc.join("\n")}
           occupiedBaseRunnerOuts > 0
             ? Math.min(2, occupiedBaseRunnerOuts)
             : rawOutsVal > 0
-            ? 1
-            : 0;
+              ? 1
+              : 0;
       }
 
       const normalizedPitches = normalizePitchArray(
@@ -3066,12 +3082,12 @@ ${batterRowsDesc.join("\n")}
       const cellBox = skewedQuad
         ? quadToBoundingBox(skewedQuad)
         : computeCartesianCellBox(
-            undefined,
-            inningMeta?.columnBox,
-            inningMeta?.columnCount ?? 1,
-            colIndex,
-            batterRowBox
-          );
+          undefined,
+          inningMeta?.columnBox,
+          inningMeta?.columnCount ?? 1,
+          colIndex,
+          batterRowBox
+        );
 
       for (const adv of advances) {
         if (adv.from === "1B" || adv.from === "2B" || adv.from === "3B") {
@@ -3121,8 +3137,8 @@ ${batterRowsDesc.join("\n")}
         rawConf === "l" || rawConf === "low"
           ? "low"
           : rawConf === "m" || rawConf === "medium"
-          ? "medium"
-          : "high";
+            ? "medium"
+            : "high";
 
       rebuiltRaw.push({
         explicitB1: matched.b1,
@@ -3177,7 +3193,7 @@ ${batterRowsDesc.join("\n")}
           if (
             c === 3 &&
             (finalInningList[i].battingOrder % lineupLen) + 1 ===
-              spec.nextInningLeadOffOrder
+            spec.nextInningLeadOffOrder
           ) {
             finalInningList = finalInningList.slice(0, i + 1);
             sumAfter = 3;
@@ -3318,6 +3334,7 @@ liffScorebookRouter.post("/save", async (c) => {
         nameKana: players.nameKana,
         uniformNumber: players.uniformNumber,
         primaryPosition: players.primaryPosition,
+        bats: players.bats,
       })
       .from(players)
       .where(eq(players.teamId, match.teamId))
@@ -3330,15 +3347,15 @@ liffScorebookRouter.post("/save", async (c) => {
 
     const incomingTop = includeTop
       ? materializeSheetRunnerAdvances(
-          body.topAtBats || [],
-          body.topStructure
-        )
+        body.topAtBats || [],
+        body.topStructure
+      )
       : [];
     const incomingBottom = includeBottom
       ? materializeSheetRunnerAdvances(
-          body.bottomAtBats || [],
-          body.bottomStructure
-        )
+        body.bottomAtBats || [],
+        body.bottomStructure
+      )
       : [];
 
     // バリデーションメッセージ生成
@@ -3443,10 +3460,10 @@ liffScorebookRouter.post("/save", async (c) => {
                 (sub.subType === "PH"
                   ? "PH"
                   : sub.subType === "PR"
-                  ? "PR"
-                  : sub.subType === "TR"
-                  ? "TR"
-                  : resolvedSub.primaryPosition || ""),
+                    ? "PR"
+                    : sub.subType === "TR"
+                      ? "TR"
+                      : resolvedSub.primaryPosition || ""),
               isStarting: false,
               inningEntered: Math.max(
                 1,
@@ -3540,8 +3557,8 @@ liffScorebookRouter.post("/save", async (c) => {
           : null;
       const batterPlayerId = isMyTeamBatting
         ? verifiedBatterId ||
-          matchRosterPlayer(ab.batterName, undefined, roster)?.id ||
-          null
+        matchRosterPlayer(ab.batterName, undefined, roster)?.id ||
+        null
         : null;
 
       const verifiedPitcherId =
@@ -3550,8 +3567,8 @@ liffScorebookRouter.post("/save", async (c) => {
           : null;
       const pitcherPlayerId = !isMyTeamBatting
         ? verifiedPitcherId ||
-          matchRosterPlayer(ab.pitcherName, undefined, roster)?.id ||
-          null
+        matchRosterPlayer(ab.pitcherName, undefined, roster)?.id ||
+        null
         : null;
 
       // A. at_bats 挿入（DB統計SQLに100%対応する正規 resultCode を保存！）
@@ -3582,8 +3599,8 @@ liffScorebookRouter.post("/save", async (c) => {
           pCode === "in_play"
             ? "strike"
             : pCode === "hbp"
-            ? "ball"
-            : pCode || "strike";
+              ? "ball"
+              : pCode || "strike";
 
         insertQueries.push(
           db.insert(pitches).values({
@@ -3618,26 +3635,26 @@ liffScorebookRouter.post("/save", async (c) => {
           : null;
         const runnerId = isMyTeamBatting
           ? directRunnerId ||
-            matchRosterPlayer(adv.runnerName, undefined, roster)?.id ||
-            null
+          matchRosterPlayer(adv.runnerName, undefined, roster)?.id ||
+          null
           : null;
 
         const fromBaseNum =
           adv.from === "1B"
             ? 1
             : adv.from === "2B"
-            ? 2
-            : adv.from === "3B"
-            ? 3
-            : 0;
+              ? 2
+              : adv.from === "3B"
+                ? 3
+                : 0;
         const toBaseNum =
           adv.to === "1B"
             ? 1
             : adv.to === "2B"
-            ? 2
-            : adv.to === "3B"
-            ? 3
-            : 4;
+              ? 2
+              : adv.to === "3B"
+                ? 3
+                : 4;
 
         insertQueries.push(
           db.insert(baseAdvances).values({
@@ -3660,17 +3677,17 @@ liffScorebookRouter.post("/save", async (c) => {
       const pitchLines =
         safePitches.length > 0
           ? `\n===PITCHES===\n${safePitches
-              .map((p) => {
-                if (isPickoffPitch(p)) {
-                  return `牽制: ${PITCH_DISPLAY_JA[p] || p}`;
-                }
-                if (p === "balk") {
-                  return `ボーク: ${PITCH_DISPLAY_JA[p] || p}`;
-                }
-                realPitchSeq += 1;
-                return `${realPitchSeq}球目: ${PITCH_DISPLAY_JA[p] || p}`;
-              })
-              .join("\n")}`
+            .map((p) => {
+              if (isPickoffPitch(p)) {
+                return `牽制: ${PITCH_DISPLAY_JA[p] || p}`;
+              }
+              if (p === "balk") {
+                return `ボーク: ${PITCH_DISPLAY_JA[p] || p}`;
+              }
+              realPitchSeq += 1;
+              return `${realPitchSeq}球目: ${PITCH_DISPLAY_JA[p] || p}`;
+            })
+            .join("\n")}`
           : "";
 
       const countCalc = computeCountFromPitches(safePitches);
@@ -3683,23 +3700,21 @@ liffScorebookRouter.post("/save", async (c) => {
         ab.rbi > 0
           ? `（打点${ab.rbi}）`
           : ab.runsInPlay > 0
-          ? `（得点${ab.runsInPlay}・打点0）`
-          : "";
+            ? `（得点${ab.runsInPlay}・打点0）`
+            : "";
       const runnerMovesText = safeAdvances
         .filter((a) => a.from !== "BAT" && (a.isOut || a.from !== a.to))
         .map((a) => {
           const rLabel = a.runnerName ? a.runnerName : "走者";
           const fJa = formatBaseJa(a.from);
           const tJa = formatBaseJa(a.to);
-          return `${rLabel}:${fJa}→${tJa}${
-            a.isOut ? "アウト" : a.to === "HP" ? "生還" : ""
-          }`;
+          return `${rLabel}:${fJa}→${tJa}${a.isOut ? "アウト" : a.to === "HP" ? "生還" : ""
+            }`;
         });
       const runnerSuffix =
         runnerMovesText.length > 0 ? ` ［${runnerMovesText.join("、")}］` : "";
-      const description = `${ab.battingOrder}番 ${ab.batterName || "打者"}: ${safeResultLabel}${dirSuffix}${rbiSuffix}${runnerSuffix}${pitchLines} [B:${countCalc.balls}, S:${
-        countCalc.strikes
-      }, O:${ab.outsInPlay}]`;
+      const description = `${ab.battingOrder}番 ${ab.batterName || "打者"}: ${safeResultLabel}${dirSuffix}${rbiSuffix}${runnerSuffix}${pitchLines} [B:${countCalc.balls}, S:${countCalc.strikes
+        }, O:${ab.outsInPlay}]`;
 
       const isHit =
         ab.resultCode === "single" ||
@@ -3709,18 +3724,18 @@ liffScorebookRouter.post("/save", async (c) => {
       const resultType = isHit
         ? "hit"
         : ab.runsInPlay > 0
-        ? "score"
-        : "out";
+          ? "score"
+          : "out";
 
       const matchedIssue = allIssues.find((iss) => iss.atBatId === ab.id);
       const legacyValidationPayload = matchedIssue
         ? JSON.stringify({
-            type: matchedIssue.severity === "error" ? "ERROR" : "WARNING",
-            inning: safeInning,
-            isTop: safeIsTop,
-            battingOrder: ab.battingOrder,
-            message: matchedIssue.message,
-          })
+          type: matchedIssue.severity === "error" ? "ERROR" : "WARNING",
+          inning: safeInning,
+          isTop: safeIsTop,
+          battingOrder: ab.battingOrder,
+          message: matchedIssue.message,
+        })
         : null;
 
       insertQueries.push(
@@ -3842,21 +3857,21 @@ liffScorebookRouter.post("/save", async (c) => {
 
     const topOffenseInducedErrors = includeTop
       ? Math.max(
-          countOpponentSideErrorsOnAtBats(incomingTop),
-          body.topStructure?.totalErrors ?? 0
-        )
+        countOpponentSideErrorsOnAtBats(incomingTop),
+        body.topStructure?.totalErrors ?? 0
+      )
       : isMyTeamFirst
-      ? match.opponentErrors ?? 0
-      : match.myErrors ?? 0;
+        ? match.opponentErrors ?? 0
+        : match.myErrors ?? 0;
 
     const bottomOffenseInducedErrors = includeBottom
       ? Math.max(
-          countOpponentSideErrorsOnAtBats(incomingBottom),
-          body.bottomStructure?.totalErrors ?? 0
-        )
+        countOpponentSideErrorsOnAtBats(incomingBottom),
+        body.bottomStructure?.totalErrors ?? 0
+      )
       : isMyTeamFirst
-      ? match.myErrors ?? 0
-      : match.opponentErrors ?? 0;
+        ? match.myErrors ?? 0
+        : match.opponentErrors ?? 0;
 
     const myErrors = isMyTeamFirst
       ? bottomOffenseInducedErrors
@@ -3912,14 +3927,14 @@ liffScorebookRouter.post("/save", async (c) => {
               lowerMime === "image/png"
                 ? "image/png"
                 : lowerMime === "image/webp"
-                ? "image/webp"
-                : "image/jpeg";
+                  ? "image/webp"
+                  : "image/jpeg";
             const ext =
               safeMime === "image/png"
                 ? "png"
                 : safeMime === "image/webp"
-                ? "webp"
-                : "jpg";
+                  ? "webp"
+                  : "jpg";
             const r2Key = `scorebooks/${side}-${match.id}-${Date.now()}.${ext}`;
             const arrayBuf = bytes.buffer.slice(
               bytes.byteOffset,
@@ -3932,7 +3947,7 @@ liffScorebookRouter.post("/save", async (c) => {
             const oldPrefix = `/api/images/scorebooks/${side}-${match.id}-`;
             if (prevUrl && prevUrl.startsWith(oldPrefix)) {
               const oldKey = prevUrl.slice("/api/images/".length);
-              await c.env.BUCKET.delete(oldKey).catch(() => {});
+              await c.env.BUCKET.delete(oldKey).catch(() => { });
             }
             return `/api/images/${r2Key}`;
           }
@@ -3948,22 +3963,22 @@ liffScorebookRouter.post("/save", async (c) => {
 
     const nextTopImageUrl = includeTop
       ? await uploadOrPreserveSheetImage(
-          "top",
-          body.topImageBase64,
-          body.topImageMimeType,
-          body.topImageUrl,
-          existingSnap?.topImageUrl
-        )
+        "top",
+        body.topImageBase64,
+        body.topImageMimeType,
+        body.topImageUrl,
+        existingSnap?.topImageUrl
+      )
       : existingSnap?.topImageUrl ?? null;
 
     const nextBottomImageUrl = includeBottom
       ? await uploadOrPreserveSheetImage(
-          "bottom",
-          body.bottomImageBase64,
-          body.bottomImageMimeType,
-          body.bottomImageUrl,
-          existingSnap?.bottomImageUrl
-        )
+        "bottom",
+        body.bottomImageBase64,
+        body.bottomImageMimeType,
+        body.bottomImageUrl,
+        existingSnap?.bottomImageUrl
+      )
       : existingSnap?.bottomImageUrl ?? null;
 
     const nextTopStructureJson = includeTop
@@ -4133,6 +4148,7 @@ liffScorebookRouter.get("/saved", async (c) => {
         nameKana: players.nameKana,
         uniformNumber: players.uniformNumber,
         primaryPosition: players.primaryPosition,
+        bats: players.bats,
       })
       .from(players)
       .where(eq(players.teamId, match.teamId))
@@ -4161,22 +4177,22 @@ liffScorebookRouter.get("/saved", async (c) => {
     let topAtBats =
       topDbAbs.length > 0
         ? (safeParseJsonValue<ScorebookV2AtBat[]>(snap?.topAtBatsJson) || []).map(
-            (ab) => ({
-              ...ab,
-              battedDirection:
-                ab.battedDirection || defaultGenericDirection(ab.resultCode),
-            })
-          )
+          (ab) => ({
+            ...ab,
+            battedDirection:
+              ab.battedDirection || defaultGenericDirection(ab.resultCode),
+          })
+        )
         : [];
     let bottomAtBats =
       bottomDbAbs.length > 0
         ? (
-            safeParseJsonValue<ScorebookV2AtBat[]>(snap?.bottomAtBatsJson) || []
-          ).map((ab) => ({
-            ...ab,
-            battedDirection:
-              ab.battedDirection || defaultGenericDirection(ab.resultCode),
-          }))
+          safeParseJsonValue<ScorebookV2AtBat[]>(snap?.bottomAtBatsJson) || []
+        ).map((ab) => ({
+          ...ab,
+          battedDirection:
+            ab.battedDirection || defaultGenericDirection(ab.resultCode),
+        }))
         : [];
 
     const needReconstructTop =
@@ -4311,10 +4327,10 @@ liffScorebookRouter.get("/saved", async (c) => {
                 lr.position === "P"
                   ? "PH"
                   : lr.position === "R"
-                  ? "PR"
-                  : lr.position === "TR"
-                  ? "TR"
-                  : "DEF";
+                    ? "PR"
+                    : lr.position === "TR"
+                      ? "TR"
+                      : "DEF";
               slot.substitutions.push({
                 id: lr.id || crypto.randomUUID(),
                 inningEntered: Math.max(1, lr.inningEntered || 1),
@@ -4403,8 +4419,8 @@ liffScorebookRouter.get("/saved", async (c) => {
                     rm[2] === "1塁"
                       ? "1B"
                       : rm[2] === "2塁"
-                      ? "2B"
-                      : "3B";
+                        ? "2B"
+                        : "3B";
                   runnerNameByFromBase.set(baseCode, rm[1].trim());
                 }
               }
@@ -4518,18 +4534,18 @@ liffScorebookRouter.get("/saved", async (c) => {
               adv.fromBase === 1
                 ? "1B"
                 : adv.fromBase === 2
-                ? "2B"
-                : adv.fromBase === 3
-                ? "3B"
-                : "BAT";
+                  ? "2B"
+                  : adv.fromBase === 3
+                    ? "3B"
+                    : "BAT";
             const to: ScorebookV2Advance["to"] =
               adv.toBase === 1
                 ? "1B"
                 : adv.toBase === 2
-                ? "2B"
-                : adv.toBase === 3
-                ? "3B"
-                : "HP";
+                  ? "2B"
+                  : adv.toBase === 3
+                    ? "3B"
+                    : "HP";
             const rPlayer = adv.runnerId
               ? rosterById.get(adv.runnerId)
               : undefined;
@@ -4562,17 +4578,17 @@ liffScorebookRouter.get("/saved", async (c) => {
             resultCode === "triple_play"
               ? 3
               : resultCode === "double_play"
-              ? 2
-              : resultCode === "groundout" ||
-                resultCode === "flyout" ||
-                resultCode === "infield_fly" ||
-                resultCode === "strikeout" ||
-                resultCode === "dropped_third_strike_out" ||
-                resultCode === "sac_bunt" ||
-                resultCode === "sac_fly" ||
-                resultCode === "interference_out"
-              ? 1
-              : 0;
+                ? 2
+                : resultCode === "groundout" ||
+                  resultCode === "flyout" ||
+                  resultCode === "infield_fly" ||
+                  resultCode === "strikeout" ||
+                  resultCode === "dropped_third_strike_out" ||
+                  resultCode === "sac_bunt" ||
+                  resultCode === "sac_fly" ||
+                  resultCode === "interference_out"
+                  ? 1
+                  : 0;
           const outsInPlay =
             parsedOuts !== undefined ? parsedOuts : defaultOuts;
           runningOuts = Math.min(3, runningOuts + Math.max(0, outsInPlay));
@@ -4734,8 +4750,45 @@ liffScorebookRouter.get("/saved", async (c) => {
       topAtBats.length > 0 && bottomAtBats.length > 0
         ? "both"
         : topAtBats.length > 0
-        ? "top_only"
-        : "bottom_only";
+          ? "top_only"
+          : "bottom_only";
+
+    // 自チーム攻撃側のメンバー欄に選手名鑑の左右打ち（左○）情報を補完
+    const enrichStructureHandedness = (
+      st: ScorebookSheetStructure | null
+    ): ScorebookSheetStructure | null => {
+      if (!st || !st.isMyTeamBatting) return st;
+      return {
+        ...st,
+        batters: st.batters.map((slot) => {
+          const rp = slot.playerId
+            ? rosterById.get(slot.playerId)
+            : matchRosterPlayer(slot.name, slot.uniformNumber, roster);
+          return {
+            ...slot,
+            uniformNumber: slot.uniformNumber || rp?.uniformNumber || "",
+            bats:
+              normalizeBatterHandedness(slot.bats) ??
+              normalizeBatterHandedness(rp?.bats),
+            substitutions: slot.substitutions.map((sub) => {
+              const subRp = sub.playerId
+                ? rosterById.get(sub.playerId)
+                : matchRosterPlayer(sub.name, sub.uniformNumber, roster);
+              return {
+                ...sub,
+                uniformNumber: sub.uniformNumber || subRp?.uniformNumber || "",
+                bats:
+                  normalizeBatterHandedness(sub.bats) ??
+                  normalizeBatterHandedness(subRp?.bats),
+              };
+            }),
+          };
+        }),
+      };
+    };
+
+    topStructure = enrichStructureHandedness(topStructure);
+    bottomStructure = enrichStructureHandedness(bottomStructure);
 
     const matchTeam = await db
       .select({
@@ -4858,7 +4911,7 @@ liffScorebookRouter.delete("/saved", async (c) => {
         ]) {
           if (url && url.startsWith("/api/images/scorebooks/")) {
             const r2Key = url.slice(prefix.length);
-            await c.env.BUCKET.delete(r2Key).catch(() => {});
+            await c.env.BUCKET.delete(r2Key).catch(() => { });
           }
         }
       }
@@ -5006,21 +5059,21 @@ async function callGeminiStructuredJson<T>(
   const orderedConfigs: GeminiModelAttemptConfig[] =
     readyConfigs.length > 0
       ? [
-          ...readyConfigs,
-          ...coolingConfigs
-            .filter((x) => {
-              const cd = MODEL_COOLDOWN_UNTIL.get(x.cfg.model);
-              return !cd || cd.status === 503;
-            })
-            .slice(0, 1)
-            .map((x) => ({ ...x.cfg, backoffBeforeMs: 1_200 })),
-        ]
+        ...readyConfigs,
+        ...coolingConfigs
+          .filter((x) => {
+            const cd = MODEL_COOLDOWN_UNTIL.get(x.cfg.model);
+            return !cd || cd.status === 503;
+          })
+          .slice(0, 1)
+          .map((x) => ({ ...x.cfg, backoffBeforeMs: 1_200 })),
+      ]
       : coolingConfigs
-          .slice(0, 2)
-          .map((x, idx) => ({
-            ...x.cfg,
-            backoffBeforeMs: idx === 0 ? 1_000 : 1_800,
-          }));
+        .slice(0, 2)
+        .map((x, idx) => ({
+          ...x.cfg,
+          backoffBeforeMs: idx === 0 ? 1_000 : 1_800,
+        }));
 
   const blockedInThisRequest = new Set<string>();
 
@@ -5357,7 +5410,7 @@ async function callGeminiStructuredJson<T>(
 
   throw new Error(
     attemptErrors.join(" / ") ||
-      "AIサーバーが一時的に大変混雑しています。数秒置いてもう一度ボタンを押してください。"
+    "AIサーバーが一時的に大変混雑しています。数秒置いてもう一度ボタンを押してください。"
   );
 }
 
@@ -5690,9 +5743,9 @@ function normalizeChunkRawItems(
     const selected =
       hasExactTarget && hasNeighborLeak
         ? nonBlankItems.filter((ab) => {
-            const parsed = toFiniteInt(ab.i ?? ab.inning);
-            return parsed === undefined || parsed === onlyInn;
-          })
+          const parsed = toFiniteInt(ab.i ?? ab.inning);
+          return parsed === undefined || parsed === onlyInn;
+        })
         : nonBlankItems;
 
     return selected.map((ab) => ({
@@ -6851,18 +6904,18 @@ function regularizeSheetGridGeometry(
 } {
   const validRawLR =
     typeof rawLineupRightX === "number" &&
-    rawLineupRightX >= 165 &&
-    rawLineupRightX <= 480
+      rawLineupRightX >= 165 &&
+      rawLineupRightX <= 480
       ? rawLineupRightX
       : undefined;
 
   const firstInn = innings[0];
   const firstColX1 =
     firstInn &&
-    firstInn.inning === 1 &&
-    firstInn.columnBox &&
-    firstInn.columnBox[1] >= 165 &&
-    firstInn.columnBox[1] <= 480
+      firstInn.inning === 1 &&
+      firstInn.columnBox &&
+      firstInn.columnBox[1] >= 165 &&
+      firstInn.columnBox[1] <= 480
       ? firstInn.columnBox[1]
       : undefined;
 
@@ -6895,10 +6948,10 @@ function regularizeSheetGridGeometry(
       (r): r is { idx: number; box: NormalizedBox } =>
         Boolean(
           r.box &&
-            r.box[0] >= 40 &&
-            r.box[2] <= 965 &&
-            r.box[2] - r.box[0] >= 26 &&
-            r.box[2] - r.box[0] <= 135
+          r.box[0] >= 40 &&
+          r.box[2] <= 965 &&
+          r.box[2] - r.box[0] >= 26 &&
+          r.box[2] - r.box[0] <= 135
         )
     );
 
@@ -6907,9 +6960,9 @@ function regularizeSheetGridGeometry(
     .filter((box): box is NormalizedBox =>
       Boolean(
         box &&
-          box[0] >= 40 &&
-          box[2] <= 965 &&
-          box[2] - box[0] >= Math.max(220, Math.max(1, B) * 26)
+        box[0] >= 40 &&
+        box[2] <= 965 &&
+        box[2] - box[0] >= Math.max(220, Math.max(1, B) * 26)
       )
     );
 
@@ -6943,9 +6996,9 @@ function regularizeSheetGridGeometry(
   const bottomY =
     B > 0
       ? Math.max(
-          topY + B * 28,
-          Math.min(965, Math.round(topY + B * fittedRowH))
-        )
+        topY + B * 28,
+        Math.min(965, Math.round(topY + B * fittedRowH))
+      )
       : Math.min(920, Math.round(topY + 9 * fittedRowH));
 
   const yBorders: number[] = new Array(B + 1);
@@ -7014,8 +7067,8 @@ function regularizeSheetGridGeometry(
 
   const gridStartX =
     firstInn.inning > 1 &&
-    firstInn.columnBox &&
-    firstInn.columnBox[1] >= leftX + 20
+      firstInn.columnBox &&
+      firstInn.columnBox[1] >= leftX + 20
       ? firstInn.columnBox[1]
       : leftX;
 
@@ -7176,8 +7229,8 @@ function orderAndAssignColumnsForChunk(
     initialExpectedLeadOff && initialExpectedLeadOff >= 1 && initialExpectedLeadOff <= B
       ? initialExpectedLeadOff
       : sortedTargets[0] === 1
-      ? 1
-      : undefined;
+        ? 1
+        : undefined;
 
   const output: RawGeminiAtBat[] = [];
 
@@ -7288,9 +7341,9 @@ function orderAndAssignColumnsForChunk(
         );
         const validNextChunkLeadOff =
           sortedTargets[sortedTargets.length - 1] === inn &&
-          typeof nextChunkLeadOffOrder === "number" &&
-          nextChunkLeadOffOrder >= 1 &&
-          nextChunkLeadOffOrder <= B
+            typeof nextChunkLeadOffOrder === "number" &&
+            nextChunkLeadOffOrder >= 1 &&
+            nextChunkLeadOffOrder <= B
             ? nextChunkLeadOffOrder
             : undefined;
 

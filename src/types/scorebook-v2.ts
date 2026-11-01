@@ -111,6 +111,8 @@ export interface ScorebookSubstitution {
   uniformNumber: string;
   position: string;
   playerId: string | null;
+  /** 打者の左右打ち（'R'=右打, 'L'=左打, 'B'=両打） */
+  bats?: "R" | "L" | "B" | null;
 }
 
 /** STEP 3 の特定打席開始時点で塁上走者に代走(PR)・臨時代走(TR)を送った記録 */
@@ -130,6 +132,8 @@ export interface ScorebookBatterSlot {
   uniformNumber: string;
   position: string;
   playerId: string | null;
+  /** 打者の左右打ち（'R'=右打, 'L'=左打, 'B'=両打） */
+  bats?: "R" | "L" | "B" | null;
   substitutions: ScorebookSubstitution[];
   /** シート全体画像上での該当打順行の上下座標 [ymin, xmin, ymax, xmax] (0〜1000) */
   rowBox?: NormalizedBox;
@@ -227,6 +231,7 @@ export interface ScorebookRosterPlayer {
   nameKana: string | null;
   uniformNumber: string;
   primaryPosition: string | null;
+  bats?: string | null;
 }
 
 export interface ScorebookMatchSummary {
