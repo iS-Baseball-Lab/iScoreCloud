@@ -24,6 +24,11 @@ export type PitchMarkStyle =
   | "cross_dot_swing"
   | "slash_swing"
   | "numbered_bs";
+export type PickoffMarkStyle =
+  | "chevron_arrow"
+  | "full_arrow"
+  | "kanji_num"
+  | "hidden";
 export type FlyLinerMarkStyle = "umbrella" | "paren" | "alphabet";
 export type AdvanceErrorMarkStyle = "english" | "kanji";
 export type PositionLabelStyle = "kanji" | "number" | "english";
@@ -36,6 +41,7 @@ export interface ScorebookSymbolRules {
   hitLine: HitLineStyle;
   runMark: RunMarkStyle;
   pitchMark: PitchMarkStyle;
+  pickoffMark: PickoffMarkStyle;
   flyLiner: FlyLinerMarkStyle;
   advanceError: AdvanceErrorMarkStyle;
   positionLabel: PositionLabelStyle;
@@ -53,6 +59,7 @@ export const STANDARD_SCOREBOOK_SYMBOL_RULES: ScorebookSymbolRules = {
   hitLine: "red_slash",
   runMark: "red_dot",
   pitchMark: "waseda_symbols",
+  pickoffMark: "chevron_arrow",
   flyLiner: "umbrella",
   advanceError: "english",
   positionLabel: "kanji",
@@ -71,6 +78,7 @@ export const DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES: ScorebookSymbolRules = {
   hitLine: "red_slash",
   runMark: "red_dot",
   pitchMark: "waseda_symbols",
+  pickoffMark: "chevron_arrow",
   flyLiner: "umbrella",
   advanceError: "english",
   positionLabel: "kanji",
@@ -89,12 +97,12 @@ export const SCOREBOOK_SYMBOL_PRESETS: readonly ScorebookSymbolPreset[] = [
     id: "waseda_standard",
     label: "早稲田・成美堂 標準",
     description: "十字4分割・ⅠⅡⅢ・反転K・B/DB・傘フライ",
-    rules: { ...STANDARD_SCOREBOOK_SYMBOL_RULES },
+    rules: { ...STANDARD_SCOREBOOK_SYMBOL_RULES, pickoffMark: "full_arrow" },
   },
   {
     id: "youth_senior",
     label: "少年・シニア 丸数字式",
-    description: "十字4分割・①②③・×空振り・見逃しⓀ",
+    description: "十字4分割・①②③・×空振り・＞∧＜牽制",
     rules: {
       cellStyle: "quadrant",
       outMark: "circled",
@@ -103,6 +111,7 @@ export const SCOREBOOK_SYMBOL_PRESETS: readonly ScorebookSymbolPreset[] = [
       hitLine: "red_slash",
       runMark: "red_dot",
       pitchMark: "cross_swing",
+      pickoffMark: "chevron_arrow",
       flyLiner: "paren",
       advanceError: "kanji",
       positionLabel: "kanji",
@@ -121,6 +130,7 @@ export const SCOREBOOK_SYMBOL_PRESETS: readonly ScorebookSymbolPreset[] = [
       hitLine: "parallel_bars",
       runMark: "double_circle",
       pitchMark: "numbered_bs",
+      pickoffMark: "kanji_num",
       flyLiner: "alphabet",
       advanceError: "english",
       positionLabel: "english",
@@ -139,6 +149,7 @@ export const SCOREBOOK_SYMBOL_PRESETS: readonly ScorebookSymbolPreset[] = [
       hitLine: "mono_bold",
       runMark: "kanji_toku",
       pitchMark: "slash_swing",
+      pickoffMark: "chevron_arrow",
       flyLiner: "umbrella",
       advanceError: "kanji",
       positionLabel: "kanji",
@@ -211,6 +222,31 @@ export const SYMBOL_RULE_FIELD_CONFIGS = {
       { value: "slash_swing", label: "斜線空振り式", sample: "○見逃 ／空振 ・B △F" },
       { value: "numbered_bs", label: "球数番号式", sample: "B/S枠に 1,2,3..." },
     ] satisfies ReadonlyArray<SymbolRuleFieldOption<PitchMarkStyle>>,
+  },
+  pickoffMark: {
+    title: "牽制球（1塁 / 2塁 / 3塁）表記",
+    options: [
+      {
+        value: "chevron_arrow",
+        label: "矢先のみ（塗無）",
+        sample: "1塁＞  2塁∧  3塁＜",
+      },
+      {
+        value: "full_arrow",
+        label: "軸付き矢印",
+        sample: "1塁→  2塁↑  3塁←",
+      },
+      {
+        value: "kanji_num",
+        label: "塁番号＋牽",
+        sample: "1牽・2牽・3牽",
+      },
+      {
+        value: "hidden",
+        label: "BSO欄に記載しない",
+        sample: "投球記号のみ表示",
+      },
+    ] satisfies ReadonlyArray<SymbolRuleFieldOption<PickoffMarkStyle>>,
   },
   flyLiner: {
     title: "フライ・ライナー表記",
@@ -296,6 +332,11 @@ export function sanitizeScorebookSymbolRules(
         "numbered_bs",
       ],
       fallback.pitchMark
+    ),
+    pickoffMark: isOneOf(
+      obj.pickoffMark,
+      ["chevron_arrow", "full_arrow", "kanji_num", "hidden"],
+      fallback.pickoffMark
     ),
     flyLiner: isOneOf(
       obj.flyLiner,
@@ -406,6 +447,10 @@ export function summarizeSymbolRulesBadges(
   } else if (rules.pitchMark === "slash_swing") {
     badges.push("／空振り");
   }
+
+  if (rules.pickoffMark === "chevron_arrow") badges.push("＞∧＜牽制");
+  else if (rules.pickoffMark === "full_arrow") badges.push("→↑←牽制");
+  else if (rules.pickoffMark === "kanji_num") badges.push("1牽・2牽");
 
   if (rules.hitLine === "mono_bold") badges.push("白黒太線");
   else if (rules.hitLine === "parallel_bars") badges.push("塁打バー");

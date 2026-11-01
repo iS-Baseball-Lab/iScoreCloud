@@ -785,6 +785,7 @@ liffScorebookRouter.post("/extract-symbol-rules", async (c) => {
   "hitLine": "red_slash" | "parallel_bars" | "mono_bold", // 安打線: 赤線＋斜線ハッシュなら "red_slash"、塁打数分の平行バーなら "parallel_bars"、白黒太線のみなら "mono_bold"
   "runMark": "red_dot" | "double_circle" | "kanji_toku", // 得点マーク: 中央塗り丸●なら "red_dot"、二重丸◎なら "double_circle"、丸得なら "kanji_toku"
   "pitchMark": "waseda_symbols" | "cross_swing" | "cross_dot_swing" | "slash_swing" | "numbered_bs", // 投球BSO: ○見逃/●空振/ーB/△F なら "waseda_symbols"、○見逃/×空振/ーB(横棒ボール) なら "cross_swing"、○見逃/×空振/・B(点・黒点ボール) なら "cross_dot_swing"、○見逃/／空振 なら "slash_swing"、B/S欄に投球番号1,2,3を書く方式なら "numbered_bs"
+  "pickoffMark": "chevron_arrow" | "full_arrow" | "kanji_num" | "hidden", // 牽制球記号: 軸線・中塗り無しの矢先記号（1塁＞・2塁∧・3塁＜）なら "chevron_arrow"、軸線付き矢印（1塁→・2塁↑・3塁←）なら "full_arrow"、1牽・2牽・3牽や丸数字なら "kanji_num"（不明なら "chevron_arrow"）
   "flyLiner": "umbrella" | "paren" | "alphabet", // フライ・ライナー: 傘曲線︵8・直線￣8なら "umbrella"、(8)・[8]なら "paren"、8F・8Lなら "alphabet"
   "advanceError": "english" | "kanji", // 盗塁・暴投・失策: S/WP/PB/6Eなら "english"、盗/暴/捕/6失なら "kanji"
   "positionLabel": "kanji" | "number" | "english", // 守備位置表記: 投・捕・遊なら "kanji"、1〜9なら "number"、P/C/SSなら "english"
@@ -1755,6 +1756,7 @@ ${targetInningMetaLines.join("\n")}
      ・『ー』『-』（短い横棒）または『・』（鉛筆の点）＝ **ボール "B"**
      ・『△』『▽』『レ』『V』（角がある白抜き三角・チェック）＝ **ファウル "F"** （※中に少しでも隙間があれば "F"！2S後のインプレーや後続球がある△は100% "F"）
      ・『▲』『▼』（中まで黒塗りの三角）＝ **バントファウル "BF"**
+     ・『＞』『→』（右向きの矢先/矢印・塗りなし）＝ **1塁牽制 "P1"**、『∧』『↑』（底辺のない山型の上矢先/上矢印 ※底辺が閉じた△ファウルと厳密区別！）＝ **2塁牽制 "P2"**、『＜』『←』（左向きの矢先/矢印）＝ **3塁牽制 "P3"**
      ・縦に詰めて書かれた『○』『×』『ー』『△』が上下接触したり印刷横線と『△』が重なって『ム』『A』『4』に見えても、[BSO投球拡大]で接触点を切り離し上から1球ずつ分解すること！
    - **記法B（BS段別・球数番号式・成美堂式/市販スコアブック）**: B（ボール）段とS（ストライク）段に **『1, 2, 3, 4...』と球数番号を書く方式**（例: B段に「1, 3」、S段に「2」、ファウルに「4」や「④」）の場合は、**番号順（1➔2➔3➔4...）に ["B", "S", "B", "F", ...] と全球を時系列復元**し、obs にも 左:B1,S2,B3,F4 と明記すること！
    - **記法C（B枠・S枠への印付け式・学童/草野球簡易式）**: B小枠・S小枠に番号ではなく『●』『○』『×』『／』『ー』『・』『レ』等の印が書かれている場合も、記入されたB数・S数・F数の分だけ必ず "B", "S", "W", "F" を漏れなく出力すること。

@@ -4,6 +4,7 @@
 import React from "react";
 import {
   isNonPitchMoundEvent,
+  isPickoffPitch,
   type CanonicalPitchResult,
 } from "@/types/scorebook-v2";
 import {
@@ -12,7 +13,6 @@ import {
   formatOutOrdinalText,
   formatPositionByRules,
   type FormattedPlayNotation,
-  type ScorebookNotationMode,
   type ScorebookSymbolRules,
 } from "@/lib/liff/scorebook-symbol-rules";
 import {
@@ -194,7 +194,11 @@ function renderPitchColumn(
 
   // 早稲田記号式・×空振り式・斜線空振り式
   const visible = pitches.filter(
-    (p) => p !== "in_play" && p !== "hit" && p !== "hbp"
+    (p) =>
+      p !== "in_play" &&
+      p !== "hit" &&
+      p !== "hbp" &&
+      !(rules.pickoffMark === "hidden" && isPickoffPitch(p))
   );
   if (visible.length === 0) return null;
 
@@ -318,19 +322,124 @@ function renderPitchColumn(
             </text>
           );
         }
-        // pickoff
+
+        // 牽制球（1塁: pickoff_1b / pickoff, 2塁: pickoff_2b, 3塁: pickoff_3b）
+        if (rules.pickoffMark === "chevron_arrow") {
+          // 軸線なし・底辺なし・中塗りなしの矢先（シェブロン）記号: 1塁=＞, 2塁=∧, 3塁=＜
+          if (p === "pickoff_2b") {
+            return (
+              <polyline
+                key={idx}
+                points={`${cx - 2.7},${cy + 2.1} ${cx},${cy - 2.3} ${cx + 2.7},${cy + 2.1}`}
+                fill="none"
+                stroke={COLOR_INK}
+                strokeWidth={1.35}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            );
+          }
+          if (p === "pickoff_3b") {
+            return (
+              <polyline
+                key={idx}
+                points={`${cx + 2.3},${cy - 2.5} ${cx - 2.3},${cy} ${cx + 2.3},${cy + 2.5}`}
+                fill="none"
+                stroke={COLOR_INK}
+                strokeWidth={1.35}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            );
+          }
+          // 1塁牽制（右矢先 ＞）
+          return (
+            <polyline
+              key={idx}
+              points={`${cx - 2.3},${cy - 2.5} ${cx + 2.3},${cy} ${cx - 2.3},${cy + 2.5}`}
+              fill="none"
+              stroke={COLOR_INK}
+              strokeWidth={1.35}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          );
+        }
+
+        if (rules.pickoffMark === "full_arrow") {
+          // 軸線付き矢印（中塗りなし）: 1塁=→, 2塁=↑, 3塁=←
+          if (p === "pickoff_2b") {
+            return (
+              <g
+                key={idx}
+                fill="none"
+                stroke={COLOR_INK}
+                strokeWidth={1.2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <line x1={cx} y1={cy + 2.7} x2={cx} y2={cy - 2.5} />
+                <polyline
+                  points={`${cx - 2.2},${cy - 0.3} ${cx},${cy - 2.7} ${cx + 2.2},${cy - 0.3}`}
+                />
+              </g>
+            );
+          }
+          if (p === "pickoff_3b") {
+            return (
+              <g
+                key={idx}
+                fill="none"
+                stroke={COLOR_INK}
+                strokeWidth={1.2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <line x1={cx + 3.2} y1={cy} x2={cx - 2.8} y2={cy} />
+                <polyline
+                  points={`${cx - 0.4},${cy - 2.1} ${cx - 3.0},${cy} ${cx - 0.4},${cy + 2.1}`}
+                />
+              </g>
+            );
+          }
+          return (
+            <g
+              key={idx}
+              fill="none"
+              stroke={COLOR_INK}
+              strokeWidth={1.2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <line x1={cx - 3.2} y1={cy} x2={cx + 2.8} y2={cy} />
+              <polyline
+                points={`${cx + 0.4},${cy - 2.1} ${cx + 3.0},${cy} ${cx + 0.4},${cy + 2.1}`}
+              />
+            </g>
+          );
+        }
+
+        // kanji_num: 1牽・2牽・3牽
+        const pickoffLabel =
+          p === "pickoff_1b"
+            ? "1牽"
+            : p === "pickoff_2b"
+            ? "2牽"
+            : p === "pickoff_3b"
+            ? "3牽"
+            : "牽";
         return (
           <text
             key={idx}
             x={cx}
             y={cy + 2}
-            fontSize={5.5}
+            fontSize={5.4}
             fontWeight={800}
             textAnchor="middle"
             fill={COLOR_BLUE}
             fontFamily={FONT_SANS}
           >
-            牽
+            {pickoffLabel}
           </text>
         );
       })}
@@ -992,7 +1101,6 @@ export interface DigitalScorebookSheetProps {
   model: CompiledScorebookSheetModel;
   matchMeta: ScorebookMatchHeaderMeta;
   rules: ScorebookSymbolRules;
-  notationMode: ScorebookNotationMode;
   svgRef?: React.Ref<SVGSVGElement>;
   className?: string;
 }
@@ -1001,7 +1109,6 @@ export function DigitalScorebookSheet({
   model,
   matchMeta,
   rules,
-  notationMode,
   svgRef,
   className,
 }: DigitalScorebookSheetProps) {
@@ -1089,11 +1196,6 @@ export function DigitalScorebookSheet({
   const sbY = PAD + 6;
   const sbRowH = 20;
 
-  const modeBadgeLabel =
-    notationMode === "team"
-      ? "表記: チーム記号ルール"
-      : "表記: 標準（早稲田・成美堂式）";
-
   return (
     <svg
       ref={svgRef}
@@ -1176,10 +1278,8 @@ export function DigitalScorebookSheet({
           fontWeight={800}
           fill={COLOR_BLUE}
         >
-          {`相手（守備）: ${model.fieldingTeamName}   ｜   ${modeBadgeLabel}${
-            notationMode === "team" && rules.customNote
-              ? `（${rules.customNote}）`
-              : ""
+          {`相手（守備）: ${model.fieldingTeamName}${
+            rules.customNote ? `   ｜   ${rules.customNote}` : ""
           }`}
         </text>
 
@@ -2085,7 +2185,7 @@ export function DigitalScorebookSheet({
           textAnchor="end"
           fill="#94a3b8"
         >
-          {`Generated by iScoreCloud  •  ${modeBadgeLabel}`}
+          Generated by iScoreCloud
         </text>
       </g>
     </svg>
@@ -2200,7 +2300,7 @@ export function ScorebookSymbolSamplePreview({
           runsInPlay: 0,
           balls: 1,
           strikes: 3,
-          pitches: ["swinging_strike", "ball", "foul", "strike"],
+          pitches: ["swinging_strike", "pickoff_2b", "ball", "foul", "strike"],
           advances: [],
           confidence: "high",
         },
@@ -2239,7 +2339,7 @@ export function ScorebookSymbolSamplePreview({
           runsInPlay: 0,
           balls: 1,
           strikes: 0,
-          pitches: ["ball", "in_play"],
+          pitches: ["pickoff_3b", "ball", "in_play"],
           advances: [],
           confidence: "high",
         },
@@ -2278,7 +2378,7 @@ export function ScorebookSymbolSamplePreview({
           runsInPlay: 0,
           balls: 4,
           strikes: 1,
-          pitches: ["ball", "strike", "ball", "ball", "ball"],
+          pitches: ["ball", "pickoff_1b", "strike", "ball", "ball", "ball"],
           advances: [],
           confidence: "high",
         },

@@ -3,7 +3,6 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Check,
   CheckCircle2,
   FileSpreadsheet,
   Loader2,
@@ -17,11 +16,8 @@ import {
   SCOREBOOK_SYMBOL_PRESETS,
   SYMBOL_RULE_FIELD_CONFIGS,
   loadCachedTeamSymbolRules,
-  loadPreferredNotationMode,
   sanitizeScorebookSymbolRules,
   saveCachedTeamSymbolRules,
-  savePreferredNotationMode,
-  type ScorebookNotationMode,
   type ScorebookSymbolRules,
 } from "@/lib/liff/scorebook-symbol-rules";
 import { ScorebookSymbolSamplePreview } from "@/components/liff/DigitalScorebookSheet";
@@ -59,8 +55,6 @@ export function TeamSymbolRulesSettingsSection({
   const [rules, setRules] = useState<ScorebookSymbolRules>(
     DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES
   );
-  const [preferredMode, setPreferredMode] =
-    useState<ScorebookNotationMode>("standard");
   const [isSaving, setIsSaving] = useState(false);
   const [isExtractingAi, setIsExtractingAi] = useState(false);
   const [lastAiSummary, setLastAiSummary] = useState<string | null>(null);
@@ -69,7 +63,6 @@ export function TeamSymbolRulesSettingsSection({
   const hydratedRef = useRef(false);
 
   useEffect(() => {
-    setPreferredMode(loadPreferredNotationMode());
     const cached = loadCachedTeamSymbolRules();
     if (cached && !hydratedRef.current) {
       setRules(cached);
@@ -156,16 +149,6 @@ export function TeamSymbolRulesSettingsSection({
     );
   };
 
-  const handlePreferredModeChange = (mode: ScorebookNotationMode) => {
-    setPreferredMode(mode);
-    savePreferredNotationMode(mode);
-    toast.success(
-      mode === "team"
-        ? "初期表示を「チーム記号ルール」に設定しました"
-        : "初期表示を「標準（早稲田式）」に設定しました"
-    );
-  };
-
   const handleExtractFromLegendWithAi = async () => {
     if (!savedLegendUrl) {
       toast.error("先に上の「スコア記号早見表」画像を登録してください");
@@ -193,8 +176,6 @@ export function TeamSymbolRulesSettingsSection({
       setRules(json.scorebookSymbolRules);
       setHasSavedCloud(true);
       saveCachedTeamSymbolRules(json.scorebookSymbolRules);
-      setPreferredMode("team");
-      savePreferredNotationMode("team");
       if (json.summary) {
         setLastAiSummary(json.summary);
       }
@@ -256,6 +237,11 @@ export function TeamSymbolRulesSettingsSection({
       options: SYMBOL_RULE_FIELD_CONFIGS.pitchMark.options,
     },
     {
+      key: "pickoffMark",
+      title: SYMBOL_RULE_FIELD_CONFIGS.pickoffMark.title,
+      options: SYMBOL_RULE_FIELD_CONFIGS.pickoffMark.options,
+    },
+    {
       key: "advanceError",
       title: SYMBOL_RULE_FIELD_CONFIGS.advanceError.title,
       options: SYMBOL_RULE_FIELD_CONFIGS.advanceError.options,
@@ -299,11 +285,11 @@ export function TeamSymbolRulesSettingsSection({
       </div>
 
       <p className="text-[11px] font-bold text-muted-foreground leading-relaxed">
-        試合情報ページのデジタルスコアブックで、
+        ここで設定した
         <strong className="text-foreground font-black">
-          「標準（早稲田式）」と「チーム記号ルール」をワンタップで表示切替
+          マス目や記号ルールが試合情報ページのスコアブック（清書シート）にそのまま反映
         </strong>
-        できます。ここで設定した記号は
+        されます。設定内容は
         {teamName ? ` ${teamName} ` : "チーム"}全員に共有されます。
       </p>
 
@@ -351,60 +337,7 @@ export function TeamSymbolRulesSettingsSection({
         </div>
       )}
 
-      {/* 1. 試合情報ページを開いたときの初期表示モード */}
-      <div className="space-y-1.5 pt-1 border-t border-border/60">
-        <label className="text-xs font-black text-foreground block">
-          試合情報ページを開いたときの初期表示
-        </label>
-        <div className="grid grid-cols-2 gap-1.5">
-          {(
-            [
-              {
-                id: "standard" as const,
-                title: "標準（早稲田式）",
-                sub: "一般的な早稲田・成美堂式を初期表示",
-              },
-              {
-                id: "team" as const,
-                title: "チーム記号ルール",
-                sub: "下の自チーム設定を初期表示",
-              },
-            ] as const
-          ).map((opt) => {
-            const active = preferredMode === opt.id;
-            return (
-              <button
-                key={opt.id}
-                type="button"
-                onClick={() => handlePreferredModeChange(opt.id)}
-                className={cn(
-                  "p-2.5 rounded-2xl border text-left transition-all active:scale-95 cursor-pointer",
-                  active
-                    ? "bg-primary text-primary-foreground border-primary shadow-xs"
-                    : "bg-muted/50 border-border/60 text-foreground hover:bg-muted"
-                )}
-              >
-                <div className="flex items-center justify-between gap-1">
-                  <span className="text-xs font-black">{opt.title}</span>
-                  {active && <Check className="w-3.5 h-3.5 shrink-0" />}
-                </div>
-                <p
-                  className={cn(
-                    "text-[10px] font-bold mt-0.5 leading-snug",
-                    active
-                      ? "text-primary-foreground/85"
-                      : "text-muted-foreground"
-                  )}
-                >
-                  {opt.sub}
-                </p>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* 2. かんたん一括プリセット */}
+      {/* 1. かんたん一括プリセット */}
       <div className="space-y-1.5 pt-1 border-t border-border/60">
         <label className="text-xs font-black text-foreground block">
           定番テンプレートから一括セット

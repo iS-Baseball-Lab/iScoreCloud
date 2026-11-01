@@ -37,6 +37,7 @@ import {
   Settings,
   CheckCircle2,
   BookOpen,
+  FileSpreadsheet,
 } from "lucide-react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/layout/EmptyState";
@@ -1830,10 +1831,10 @@ function MatchesContent() {
                     </span>
                     <div className="min-w-0">
                       <p className="text-xs font-black text-foreground leading-snug">
-                        試合データの修正・削除
+                        試合データの修正・設定・削除
                       </p>
                       <p className="text-[10px] font-bold text-muted-foreground truncate mt-0.5">
-                        スタメン・打席結果・選手交代の修正、個人データの削除
+                        打席結果・スタメンの修正、スコアブック記号設定、データ削除
                       </p>
                     </div>
                   </div>
@@ -1942,6 +1943,26 @@ function MatchesContent() {
                           <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
                         </Link>
                       )}
+
+                      <Link
+                        href="/liff/settings/score#symbol-rules"
+                        className="flex items-center justify-between gap-2.5 p-3 rounded-xl bg-card hover:bg-muted/60 border border-border shadow-2xs active:scale-[0.99] transition-all"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span className="w-8 h-8 rounded-xl bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/25 flex items-center justify-center shrink-0">
+                            <FileSpreadsheet className="w-4 h-4" />
+                          </span>
+                          <div className="min-w-0">
+                            <p className="text-xs font-black text-foreground leading-snug">
+                              スコアブック記号・マス目の設定
+                            </p>
+                            <p className="text-[10px] font-bold text-muted-foreground leading-snug mt-0.5">
+                              清書シートのマス目・アウト・空振り(×)・牽制記号などを変更
+                            </p>
+                          </div>
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                      </Link>
                     </div>
 
                     {/* 削除アクション */}
