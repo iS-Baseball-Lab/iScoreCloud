@@ -32,6 +32,7 @@ import {
 } from "lucide-react";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
+import { QuickMenuSettingsSection } from "@/components/liff/QuickMenuSettingsSection";
 import { useDensity, type Density } from "@/components/providers/density-provider";
 import {
   LIFF_COLOR_THEMES,
@@ -113,14 +114,14 @@ export default function LiffSettingsPage() {
       <LiffHeader
         shareData={{
           title: "アプリ設定 - iScore for LINEミニアプリ",
-          text: "カラーテーマ・デザインスタイル・表示サイズのカスタマイズ設定",
+          text: "クイックメニュー・カラーテーマ・デザインスタイル・表示サイズのカスタマイズ設定",
         }}
       />
 
       <div className="p-4 space-y-4 max-w-lg mx-auto w-full">
         <LiffPageHeader
           title="アプリ設定"
-          subtitle="カラー・デザイン・表示サイズ・システム管理"
+          subtitle="クイックメニュー・カラー・デザイン・表示サイズ"
           icon={
             <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
               <Settings className="w-4 h-4" />
@@ -129,7 +130,7 @@ export default function LiffSettingsPage() {
           showBack
           shareData={{
             title: "アプリ設定 - iScore for LINEミニアプリ",
-            text: "カラーテーマ・デザインスタイル・表示サイズのカスタマイズ設定",
+            text: "クイックメニュー・カラーテーマ・デザインスタイル・表示サイズのカスタマイズ設定",
           }}
         />
 
@@ -154,7 +155,10 @@ export default function LiffSettingsPage() {
           <ChevronRight className="w-5 h-5 text-primary group-hover:translate-x-1 transition-transform shrink-0" />
         </Link>
 
-        {/* ━━━ セクション 1: 🎨 表示・デザイン設定 ━━━ */}
+        {/* ━━━ セクション 1: 🚀 クイックメニュー設定 ━━━ */}
+        <QuickMenuSettingsSection />
+
+        {/* ━━━ セクション 2: 🎨 表示・デザイン設定 ━━━ */}
         <section className="rounded-3xl bg-card border-2 border-primary/20 p-4 space-y-5 shadow-sm">
           <div className="flex items-center gap-2 pb-2 border-b border-border/60">
             <Palette className="w-4 h-4 text-primary" />

@@ -349,7 +349,7 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
                       <div className="flex flex-col min-w-0">
                         <span className="text-xs font-black text-foreground">アプリ設定</span>
                         <span className="text-[10px] font-bold text-muted-foreground truncate">
-                          カラー・デザイン・表示サイズ
+                          クイックメニュー・カラー・表示設定
                         </span>
                       </div>
                     </div>

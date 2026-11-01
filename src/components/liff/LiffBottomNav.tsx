@@ -245,7 +245,7 @@ const MENU_ITEMS: MenuItem[] = [
   },
   {
     title: "アプリ設定",
-    subtitle: "カラー・デザイン・表示サイズ",
+    subtitle: "クイックメニュー・カラー・表示設定",
     href: "/liff/settings",
     icon: Settings,
     colorClass: "bg-slate-500/15 text-slate-700 dark:text-slate-300",
