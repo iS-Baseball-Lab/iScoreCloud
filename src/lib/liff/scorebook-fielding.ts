@@ -104,6 +104,7 @@ export interface ParsedFieldingMeta {
   hitZone: HitZoneOption;
   flyStyle: FlyStyleOption;
   errorStyle: ErrorStyleOption;
+  isBunt: boolean;
 }
 
 const JA_CHAR_TO_POS: ReadonlyArray<readonly [string, DefensivePosNumber]> = [
@@ -182,6 +183,14 @@ export function parseFieldingMeta(
       : "front";
   let flyStyle: FlyStyleOption = "fly";
   let errorStyle: ErrorStyleOption = "fielding";
+  const isBunt =
+    resultCode === "sac_bunt" ||
+    (!/3バント|スリーバント/.test(label) && /バント/.test(label)) ||
+    /^BH(?:[1-9](?:-[1-9])?)?$/i.test(dir) ||
+    /^[1-9]BH$/i.test(dir) ||
+    /^B(?=[1-9](?:-[1-9]|F|L)?$)/i.test(dir) ||
+    /^□/.test(dir) ||
+    (resultCode !== "flyout" && /^\[[1-9](?:-[1-9])+\]$/.test(dir));
 
   // 四死球・三振・打席途中断は野手の守備位置（1〜9）を持たないため、「空振り三振」の『三』や「打席途中断」の『中』の誤抽出を防ぐ
   if (
@@ -198,6 +207,7 @@ export function parseFieldingMeta(
       hitZone,
       flyStyle,
       errorStyle,
+      isBunt: false,
     };
   }
 
@@ -319,14 +329,16 @@ export function parseFieldingMeta(
     }
   }
 
-  // 3. 2連送球（6-3, 3-1, 〜6-3, [1-3], ◇5-3, K 2-3 等 ※7-8/8-9の安打は除外）
+  // 3. 2連送球（6-3, 3-1, 〜6-3, [1-3], ◇5-3, B1-3, BH5-3, K 2-3 等 ※7-8/8-9の安打は除外）
   const twoRelayMatch =
     !threeRelayMatch &&
     !throwingErrorRelayMatch &&
     !catchingErrorRelayMatch &&
     !fcRelayMatch &&
     !(isHitCode && (hitZone === "gap_lc" || hitZone === "gap_rc"))
-      ? combined.match(/(?<![0-9A-Za-z-])([1-9])-([1-9])(?![0-9A-Za-z-])/)
+      ? combined.match(
+          /(?:(?<![0-9A-Za-z-])|(?<=\bBH|\bB))([1-9])-([1-9])(?![0-9A-Za-z-])/i
+        )
       : null;
   if (twoRelayMatch) {
     const p1 = twoRelayMatch[1];
@@ -364,10 +376,12 @@ export function parseFieldingMeta(
     const codeDigitMatch =
       suffixErrorMatch ||
       strippedDecorDir.match(
-        /^(?:E|FC|INT|K\s*(?:-\s*E|E|-)?\s*)?([1-9])(?:F|L|IF|SF|E|FC|A|G)?$/i
+        /^(?:BH|B|E|FC|INT|K\s*(?:-\s*E|E|-)?\s*)?([1-9])(?:BH|B|F|L|IF|SF|E|FC|A|G)?$/i
       ) ||
-      strippedDecorDir.match(/^([1-9])\s*(?:E|FC|失)$/i) ||
-      label.match(/\((?:E|FC|K\s*(?:-\s*E|E|-)?\s*)?([1-9])(?:FC|A|G)?\)/i);
+      strippedDecorDir.match(/^([1-9])\s*(?:BH|E|FC|失)$/i) ||
+      label.match(
+        /\((?:BH|B|E|FC|K\s*(?:-\s*E|E|-)?\s*)?([1-9])(?:BH|FC|A|G)?\)/i
+      );
     if (codeDigitMatch && isValidPosDigit(codeDigitMatch[1])) {
       primaryPos = codeDigitMatch[1];
       if (
@@ -439,7 +453,7 @@ export function parseFieldingMeta(
     label.includes("邪") ||
     label.includes("ファウル") ||
     /^F$/i.test(dir) ||
-    /^[⌒︵︶∩^]?[1-9]F$/i.test(dir) ||
+    /^(?:B|[⌒︵︶∩^])?[1-9]F$/i.test(dir) ||
     /^[⌒︵︶∩^]?[1-9]SF$/i.test(dir) ||
     /^[△▲][1-9]$/.test(dir) ||
     /^[(（][1-9][)）]$/.test(dir) ||
@@ -450,7 +464,7 @@ export function parseFieldingMeta(
     label.includes("直") ||
     label.includes("ライナー") ||
     /^L$/i.test(dir) ||
-    /^[⌒︵]?[1-9]L$/i.test(dir) ||
+    /^(?:B|[⌒︵])?[1-9]L$/i.test(dir) ||
     /[\u0304\u0305￣]/.test(dir) ||
     /^[1-9][ー\-]$/.test(dir) ||
     /^[ー￣][1-9]$/.test(dir)
@@ -480,6 +494,7 @@ export function parseFieldingMeta(
     hitZone,
     flyStyle,
     errorStyle,
+    isBunt,
   };
 }
 
@@ -491,6 +506,7 @@ export interface ComposeFieldingParams {
   hitZone?: HitZoneOption;
   flyStyle?: FlyStyleOption;
   errorStyle?: ErrorStyleOption;
+  isBunt?: boolean;
   fallbackLabel?: string;
 }
 
@@ -602,13 +618,24 @@ export function composeFieldingResult(params: ComposeFieldingParams): {
   if (!posDef) {
     const fallbackLabel =
       params.fallbackLabel ||
-      (resultCode === "flyout" && params.flyStyle === "liner"
+      (params.isBunt && resultCode === "single"
+        ? "バント安打"
+        : params.isBunt && resultCode === "groundout"
+        ? "バントゴロ"
+        : params.isBunt && resultCode === "flyout"
+        ? params.flyStyle === "foul_fly"
+          ? "バント邪飛"
+          : "バント飛"
+        : resultCode === "flyout" && params.flyStyle === "liner"
         ? "直（ライナー）"
         : defaultGenericLabel(resultCode));
     return {
-      battedDirection: defaultGenericDirection(resultCode, {
-        flyStyle: params.flyStyle,
-      }),
+      battedDirection:
+        params.isBunt && resultCode === "single"
+          ? "BH"
+          : defaultGenericDirection(resultCode, {
+              flyStyle: params.flyStyle,
+            }),
       resultLabel: fallbackLabel,
     };
   }
@@ -617,6 +644,26 @@ export function composeFieldingResult(params: ComposeFieldingParams): {
 
   switch (resultCode) {
     case "single": {
+      if (params.isBunt) {
+        const target = params.assistTargetPos;
+        if (
+          target &&
+          target !== "unassisted" &&
+          target !== code &&
+          isValidPosDigit(target)
+        ) {
+          const dir = `BH${code}-${target}`;
+          return {
+            battedDirection: dir,
+            resultLabel: `${shortJa}バント安打 (${dir})`,
+          };
+        }
+        const dir = `BH${code}`;
+        return {
+          battedDirection: dir,
+          resultLabel: `${shortJa}バント安打 (${dir})`,
+        };
+      }
       const zone = params.hitZone || (isOutfield ? "front" : "infield");
       if (zone === "gap_lc") {
         return { battedDirection: "7-8", resultLabel: "左中間安打" };
@@ -727,36 +774,37 @@ export function composeFieldingResult(params: ComposeFieldingParams): {
     }
 
     case "groundout": {
+      const gSuffix = params.isBunt ? "バントゴロ" : "ゴロ";
       const target =
         params.assistTargetPos || (code === "3" ? "unassisted" : "3");
       if (target === "unassisted" || target === code) {
         return {
           battedDirection: code,
-          resultLabel: `${shortJa}ゴロ (${code})`,
+          resultLabel: `${shortJa}${gSuffix} (${code})`,
         };
       }
       const dir = `${code}-${target}`;
       if (target === "4" || target === "6") {
         return {
           battedDirection: dir,
-          resultLabel: `${shortJa}ゴロ二封 (${dir})`,
+          resultLabel: `${shortJa}${gSuffix}二封 (${dir})`,
         };
       }
       if (target === "5") {
         return {
           battedDirection: dir,
-          resultLabel: `${shortJa}ゴロ三封 (${dir})`,
+          resultLabel: `${shortJa}${gSuffix}三封 (${dir})`,
         };
       }
       if (target === "2") {
         return {
           battedDirection: dir,
-          resultLabel: `${shortJa}ゴロ本封 (${dir})`,
+          resultLabel: `${shortJa}${gSuffix}本封 (${dir})`,
         };
       }
       return {
         battedDirection: dir,
-        resultLabel: `${shortJa}ゴロ (${dir})`,
+        resultLabel: `${shortJa}${gSuffix} (${dir})`,
       };
     }
 
@@ -793,17 +841,19 @@ export function composeFieldingResult(params: ComposeFieldingParams): {
 
     case "double_play": {
       const relay = (params.dpRelay || "").trim() || getDefaultDpRelay(code);
+      const dpLabel = params.isBunt ? "バント併殺打" : "併殺打";
       return {
         battedDirection: relay,
-        resultLabel: `${shortJa}併殺打 (${relay})`,
+        resultLabel: `${shortJa}${dpLabel} (${relay})`,
       };
     }
 
     case "triple_play": {
       const relay = (params.dpRelay || "").trim() || `${code}-4-3`;
+      const tpLabel = params.isBunt ? "バント三重殺" : "三重殺";
       return {
         battedDirection: relay,
-        resultLabel: `${shortJa}三重殺 (${relay})`,
+        resultLabel: `${shortJa}${tpLabel} (${relay})`,
       };
     }
 
@@ -812,18 +862,18 @@ export function composeFieldingResult(params: ComposeFieldingParams): {
       if (style === "foul_fly") {
         return {
           battedDirection: `${code}F`,
-          resultLabel: `${shortJa}邪飛`,
+          resultLabel: params.isBunt ? `${shortJa}バント邪飛` : `${shortJa}邪飛`,
         };
       }
       if (style === "liner") {
         return {
           battedDirection: `${code}L`,
-          resultLabel: `${shortJa}直`,
+          resultLabel: params.isBunt ? `${shortJa}バント直` : `${shortJa}直`,
         };
       }
       return {
         battedDirection: code,
-        resultLabel: `${shortJa}飛`,
+        resultLabel: params.isBunt ? `${shortJa}バント飛` : `${shortJa}飛`,
       };
     }
 
@@ -1037,12 +1087,28 @@ export function resolveFieldingOnResultChange(
       ? rememberedFielding
       : null;
 
+  const forcedIsBunt: boolean =
+    presetId === "bunt_single" ||
+    presetId === "bunt_groundout" ||
+    presetId === "bunt_flyout" ||
+    nextResultCode === "sac_bunt"
+      ? true
+      : presetId === "single" ||
+        presetId === "groundout" ||
+        presetId === "flyout" ||
+        presetId === "lineout"
+      ? false
+      : Boolean(sourceMeta?.isBunt);
+
   const isPosCompatible = (
     pos: DefensivePosNumber | "",
     code: CanonicalAtBatResult
   ): pos is DefensivePosNumber => {
     if (!pos) return false;
     const isOf = pos === "7" || pos === "8" || pos === "9";
+    if (forcedIsBunt && (code === "single" || code === "flyout")) {
+      return !isOf;
+    }
     switch (code) {
       case "home_run":
       case "sac_fly":
@@ -1068,7 +1134,8 @@ export function resolveFieldingOnResultChange(
   const forcedFlyStyle: FlyStyleOption =
     presetId === "lineout"
       ? "liner"
-      : presetId === "flyout" && sourceMeta?.flyStyle === "liner"
+      : (presetId === "flyout" || presetId === "bunt_flyout") &&
+        sourceMeta?.flyStyle === "liner"
       ? "fly"
       : sourceMeta?.flyStyle || "fly";
 
@@ -1098,10 +1165,17 @@ export function resolveFieldingOnResultChange(
           ? sourceMeta.assistTargetPos
           : ""
         : nextResultCode === "single"
-        ? (Number(pos) <= 6 &&
-            sourceMeta.hitZone !== "line" &&
-            sourceMeta.hitZone !== "over") ||
-          sourceMeta.hitZone === "infield"
+        ? forcedIsBunt
+          ? prevResultCode === "single" &&
+            sourceMeta.isBunt &&
+            sourceMeta.assistTargetPos &&
+            sourceMeta.assistTargetPos !== pos
+            ? sourceMeta.assistTargetPos
+            : "unassisted"
+          : (Number(pos) <= 6 &&
+              sourceMeta.hitZone !== "line" &&
+              sourceMeta.hitZone !== "over") ||
+            sourceMeta.hitZone === "infield"
           ? wasThrowTargetPlay &&
             sourceMeta.assistTargetPos &&
             sourceMeta.assistTargetPos !== pos
@@ -1121,9 +1195,10 @@ export function resolveFieldingOnResultChange(
       primaryPos: pos,
       assistTargetPos: nextAssist,
       dpRelay: nextDpRelay,
-      hitZone: sourceMeta.hitZone,
+      hitZone: forcedIsBunt && nextResultCode === "single" ? "infield" : sourceMeta.hitZone,
       flyStyle: forcedFlyStyle,
       errorStyle: sourceMeta.errorStyle,
+      isBunt: forcedIsBunt,
       fallbackLabel: presetDefaultLabel,
     });
   }
@@ -1132,6 +1207,7 @@ export function resolveFieldingOnResultChange(
     resultCode: nextResultCode,
     primaryPos: "",
     flyStyle: forcedFlyStyle,
+    isBunt: forcedIsBunt,
     fallbackLabel: presetDefaultLabel,
   });
 }
@@ -1185,6 +1261,7 @@ export function harmonizeOcrFieldingAndLabel(
     hitZone: parsed.hitZone,
     flyStyle: parsed.flyStyle,
     errorStyle: parsed.errorStyle,
+    isBunt: parsed.isBunt,
     fallbackLabel: cleanLabel,
   });
 
@@ -1196,14 +1273,21 @@ export function harmonizeOcrFieldingAndLabel(
     "ヒット",
     "内野安打",
     "内安",
+    "バント安打",
+    "バント内野安打",
     "二塁打",
     "三塁打",
     "本塁打",
     "ホームラン",
     "ゴロ",
     "内ゴロ",
+    "バントゴロ",
     "飛球",
     "フライ",
+    "バント飛",
+    "バント飛球",
+    "バントフライ",
+    "バント邪飛",
     "ライナー",
     "直",
     "直（ライナー）",
@@ -1221,9 +1305,17 @@ export function harmonizeOcrFieldingAndLabel(
     resultCode,
   ]);
 
+  const needsBuntLabelUpgrade =
+    parsed.isBunt &&
+    resultCode !== "sac_bunt" &&
+    !cleanLabel.includes("バント");
+
   const finalLabel =
     genericSet.has(cleanLabel) ||
-    /^[0-9EFCLKS⌒︵︶∩^~〜￣ー\-△▲()（），,\s\u0304\u0305]+$/i.test(cleanLabel)
+    needsBuntLabelUpgrade ||
+    /^[0-9EFCLKSBH⌒︵︶∩^~〜￣ー\-△▲□◇()（），,\s\u0304\u0305]+$/i.test(
+      cleanLabel
+    )
       ? composed.resultLabel
       : cleanLabel;
 
@@ -1237,10 +1329,18 @@ export function harmonizeOcrFieldingAndLabel(
     resultCode === "error" && /^E[1-9]-[1-9]$/i.test(normCleanDir);
   const isNonCanonicalFcDir =
     resultCode === "fc" && !/^FC[1-9](?:-[1-9])?$/.test(normCleanDir);
+  const isNonCanonicalBuntHitDir =
+    resultCode === "single" &&
+    parsed.isBunt &&
+    !/^BH[1-9](?:-[1-9])?$/i.test(normCleanDir);
 
   return {
     battedDirection:
-      !cleanDir || hasRawDecorGlyph || isPrefixThrowErr || isNonCanonicalFcDir
+      !cleanDir ||
+      hasRawDecorGlyph ||
+      isPrefixThrowErr ||
+      isNonCanonicalFcDir ||
+      isNonCanonicalBuntHitDir
         ? composed.battedDirection
         : normCleanDir,
     resultLabel: finalLabel,

@@ -232,6 +232,11 @@ export function TeamSymbolRulesSettingsSection({
       options: SYMBOL_RULE_FIELD_CONFIGS.flyLiner.options,
     },
     {
+      key: "buntMark",
+      title: SYMBOL_RULE_FIELD_CONFIGS.buntMark.title,
+      options: SYMBOL_RULE_FIELD_CONFIGS.buntMark.options,
+    },
+    {
       key: "hitLine",
       title: SYMBOL_RULE_FIELD_CONFIGS.hitLine.title,
       options: SYMBOL_RULE_FIELD_CONFIGS.hitLine.options,
@@ -245,6 +250,11 @@ export function TeamSymbolRulesSettingsSection({
       key: "pitchMark",
       title: SYMBOL_RULE_FIELD_CONFIGS.pitchMark.title,
       options: SYMBOL_RULE_FIELD_CONFIGS.pitchMark.options,
+    },
+    {
+      key: "buntPitchMark",
+      title: SYMBOL_RULE_FIELD_CONFIGS.buntPitchMark.title,
+      options: SYMBOL_RULE_FIELD_CONFIGS.buntPitchMark.options,
     },
     {
       key: "pickoffMark",
@@ -366,7 +376,7 @@ export function TeamSymbolRulesSettingsSection({
         </div>
       </div>
 
-      {/* 3. 各記号の詳細カスタマイズ（9項目） */}
+      {/* 3. 各記号の詳細カスタマイズ */}
       <div className="space-y-3 pt-1 border-t border-border/60">
         {fieldSections.map((sec) => {
           const currentVal = rules[sec.key];
@@ -432,7 +442,7 @@ export function TeamSymbolRulesSettingsSection({
               onChange={(e) =>
                 setRules((prev) => ({ ...prev, customNote: e.target.value }))
               }
-              placeholder="例: 臨時代走はTR表記、バントは◆囲み"
+              placeholder="例: 臨時代走はTR表記、タイブレーク開始走者はTB"
               className="flex-1 h-10 px-3 rounded-xl bg-muted/40 border border-border text-xs font-bold text-foreground placeholder:text-muted-foreground/60"
             />
             <button

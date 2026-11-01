@@ -2854,46 +2854,72 @@ export function Step3PinpointReview({
                   </div>
 
                   <div className="space-y-2">
-                    {(
-                      [
-                        { group: "hit", title: "安打" },
-                        { group: "walk_sac", title: "四死球・敬遠・打撃妨害・犠打飛" },
-                        { group: "out", title: "アウト・三振・振逃アウト・インフィールドF・妨害" },
-                        { group: "reach", title: "振逃セーフ・失策・野選・途中断" },
-                      ] as const
-                    ).map((cat) => {
-                      const items = AT_BAT_RESULT_PRESETS.filter(
-                        (p) => p.group === cat.group
+                    {(() => {
+                      const editingPresetMeta = parseFieldingMeta(
+                        editingAtBat.resultCode,
+                        editingAtBat.battedDirection,
+                        editingAtBat.resultLabel
                       );
                       return (
-                        <div key={cat.group} className="space-y-1">
-                          <span className="text-[10px] font-bold text-muted-foreground block">
-                            {cat.title}
-                          </span>
-                          <div className="grid grid-cols-4 gap-1">
-                            {items.map((preset) => {
-                              const sameCodeCount = AT_BAT_RESULT_PRESETS.filter(
-                                (x) => x.code === preset.code
-                              ).length;
-                              const active =
-                                editingAtBat.resultCode === preset.code &&
-                                (sameCodeCount === 1 ||
-                                  editingAtBat.resultLabel ===
-                                    preset.defaultLabel ||
-                                  (preset.id === "so_swing" &&
-                                    editingAtBat.resultLabel !== "見逃し三振" &&
-                                    editingAtBat.resultLabel !==
-                                      "スリーバント失敗") ||
-                                  (preset.id === "lineout" &&
-                                    (editingAtBat.resultLabel.includes("直") ||
-                                      editingAtBat.resultLabel.includes(
-                                        "ライナー"
-                                      ))) ||
-                                  (preset.id === "flyout" &&
-                                    !editingAtBat.resultLabel.includes("直") &&
-                                    !editingAtBat.resultLabel.includes(
-                                      "ライナー"
-                                    )));
+                        [
+                          { group: "hit", title: "安打" },
+                          {
+                            group: "walk_sac",
+                            title: "四死球・敬遠・打撃妨害・犠打飛",
+                          },
+                          {
+                            group: "out",
+                            title: "アウト・三振・振逃アウト・インフィールドF・妨害",
+                          },
+                          {
+                            group: "reach",
+                            title: "振逃セーフ・失策・野選・途中断",
+                          },
+                        ] as const
+                      ).map((cat) => {
+                        const items = AT_BAT_RESULT_PRESETS.filter(
+                          (p) => p.group === cat.group
+                        );
+                        return (
+                          <div key={cat.group} className="space-y-1">
+                            <span className="text-[10px] font-bold text-muted-foreground block">
+                              {cat.title}
+                            </span>
+                            <div className="grid grid-cols-4 gap-1">
+                              {items.map((preset) => {
+                                const sameCodeCount =
+                                  AT_BAT_RESULT_PRESETS.filter(
+                                    (x) => x.code === preset.code
+                                  ).length;
+                                const isLinerLabel =
+                                  editingAtBat.resultLabel.includes("直") ||
+                                  editingAtBat.resultLabel.includes("ライナー");
+                                const active =
+                                  editingAtBat.resultCode === preset.code &&
+                                  (sameCodeCount === 1 ||
+                                    (preset.id === "single" &&
+                                      !editingPresetMeta.isBunt) ||
+                                    (preset.id === "bunt_single" &&
+                                      editingPresetMeta.isBunt) ||
+                                    (preset.id === "groundout" &&
+                                      !editingPresetMeta.isBunt) ||
+                                    (preset.id === "bunt_groundout" &&
+                                      editingPresetMeta.isBunt) ||
+                                    (preset.id === "lineout" && isLinerLabel) ||
+                                    (preset.id === "bunt_flyout" &&
+                                      editingPresetMeta.isBunt &&
+                                      !isLinerLabel) ||
+                                    (preset.id === "flyout" &&
+                                      !editingPresetMeta.isBunt &&
+                                      !isLinerLabel) ||
+                                    (preset.code === "strikeout" &&
+                                      (editingAtBat.resultLabel ===
+                                        preset.defaultLabel ||
+                                        (preset.id === "so_swing" &&
+                                          editingAtBat.resultLabel !==
+                                            "見逃し三振" &&
+                                          editingAtBat.resultLabel !==
+                                            "スリーバント失敗"))));
                               return (
                                 <button
                                   key={preset.id}
@@ -3157,12 +3183,13 @@ export function Step3PinpointReview({
                                 >
                                   {preset.shortLabel}
                                 </button>
-                              );
-                            })}
+                                );
+                              })}
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      });
+                    })()}
                   </div>
 
                   {/* 2-B. 守備位置・打球方向・送球ルート ワンタップ指定パネル */}
@@ -3328,6 +3355,7 @@ export function Step3PinpointReview({
                           hitZone: nextZone,
                           flyStyle: overrides?.flyStyle ?? cur.flyStyle,
                           errorStyle: nextErrorStyle,
+                          isBunt: cur.isBunt,
                           fallbackLabel: prev.resultLabel,
                         });
 
@@ -3427,16 +3455,31 @@ export function Step3PinpointReview({
                                       AT_BAT_RESULT_PRESETS.find(
                                         (p) => p.code === prev.resultCode
                                       );
-                                    const clearedDir = defaultGenericDirection(
-                                      prev.resultCode,
-                                      {
-                                        flyStyle: prevMeta.flyStyle,
-                                        clearPos: true,
-                                      }
-                                    );
+                                    const clearedDir =
+                                      prevMeta.isBunt &&
+                                      prev.resultCode === "single"
+                                        ? "BH"
+                                        : defaultGenericDirection(
+                                            prev.resultCode,
+                                            {
+                                              flyStyle: prevMeta.flyStyle,
+                                              clearPos: true,
+                                            }
+                                          );
                                     const clearedLabel =
-                                      prev.resultCode === "flyout" &&
-                                      prevMeta.flyStyle === "liner"
+                                      prevMeta.isBunt &&
+                                      prev.resultCode === "single"
+                                        ? "バント安打"
+                                        : prevMeta.isBunt &&
+                                          prev.resultCode === "groundout"
+                                        ? "バントゴロ"
+                                        : prevMeta.isBunt &&
+                                          prev.resultCode === "flyout"
+                                        ? prevMeta.flyStyle === "foul_fly"
+                                          ? "バント邪飛"
+                                          : "バント飛"
+                                        : prev.resultCode === "flyout" &&
+                                          prevMeta.flyStyle === "liner"
                                         ? "直（ライナー）"
                                         : genericPreset?.defaultLabel ||
                                           prev.resultLabel;
@@ -3510,8 +3553,8 @@ export function Step3PinpointReview({
                               })}
                             </div>
 
-                            {/* 安打時の打球性質・左中間/右中間チップ */}
-                            {isHitCode && (
+                            {/* 安打時の打球性質・左中間/右中間チップ（バント安打時は非表示） */}
+                            {isHitCode && !fMeta.isBunt && (
                               <div className="pt-1 space-y-1">
                                 <span className="text-[10px] font-bold text-muted-foreground block">
                                   打球ゾーン・性質:

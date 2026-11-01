@@ -110,6 +110,8 @@ export function inferCanonicalResultCode(
   }
   if (
     upper === "1B" ||
+    /^BH(?:[1-9](?:-[1-9])?)?$/i.test(upper) ||
+    /^[1-9]BH$/i.test(upper) ||
     label.includes("単打") ||
     label.includes("安打") ||
     label.includes("ヒット") ||
@@ -183,9 +185,6 @@ export function inferCanonicalResultCode(
   if (upper === "SF" || label.includes("犠飛")) {
     return "sac_fly";
   }
-  if (upper === "SAC" || upper === "SH" || label.includes("犠打") || label.includes("バント")) {
-    return "sac_bunt";
-  }
   if (upper.includes("TP") || label.includes("三重殺") || label.includes("トリプルプレー")) {
     return "triple_play";
   }
@@ -195,6 +194,33 @@ export function inferCanonicalResultCode(
     label.includes("ゲッツー")
   ) {
     return "double_play";
+  }
+  if (
+    label.includes("バント") &&
+    !label.includes("犠打") &&
+    !label.includes("送り")
+  ) {
+    if (label.includes("野選") || upper.includes("FC")) {
+      return "fc";
+    }
+    if (
+      label.includes("飛") ||
+      label.includes("フライ") ||
+      label.includes("直") ||
+      label.includes("ライナー")
+    ) {
+      return "flyout";
+    }
+    if (
+      label.includes("ゴロ") ||
+      label.includes("封") ||
+      label.includes("凡退")
+    ) {
+      return "groundout";
+    }
+  }
+  if (upper === "SAC" || upper === "SH" || label.includes("犠打") || label.includes("バント")) {
+    return "sac_bunt";
   }
   if (
     label.includes("インフィールド") ||

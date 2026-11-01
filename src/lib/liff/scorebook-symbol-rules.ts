@@ -30,6 +30,16 @@ export type PickoffMarkStyle =
   | "full_arrow"
   | "kanji_num"
   | "hidden";
+export type BuntMarkStyle =
+  | "square_all_bh"
+  | "square_sac"
+  | "diamond_sac"
+  | "b_prefix";
+export type BuntPitchMarkStyle =
+  | "v_dot_circle_dot"
+  | "filled_triangle"
+  | "inv_triangle_diamond"
+  | "same_as_normal";
 export type FlyLinerMarkStyle = "umbrella" | "paren" | "alphabet";
 export type AdvanceErrorMarkStyle = "english" | "kanji";
 export type PositionLabelStyle = "kanji" | "number" | "english";
@@ -43,7 +53,9 @@ export interface ScorebookSymbolRules {
   hitLine: HitLineStyle;
   runMark: RunMarkStyle;
   pitchMark: PitchMarkStyle;
+  buntPitchMark: BuntPitchMarkStyle;
   pickoffMark: PickoffMarkStyle;
+  buntMark: BuntMarkStyle;
   flyLiner: FlyLinerMarkStyle;
   advanceError: AdvanceErrorMarkStyle;
   positionLabel: PositionLabelStyle;
@@ -62,7 +74,9 @@ export const STANDARD_SCOREBOOK_SYMBOL_RULES: ScorebookSymbolRules = {
   hitLine: "red_slash",
   runMark: "red_dot",
   pitchMark: "waseda_symbols",
+  buntPitchMark: "filled_triangle",
   pickoffMark: "chevron_arrow",
+  buntMark: "diamond_sac",
   flyLiner: "umbrella",
   advanceError: "english",
   positionLabel: "number",
@@ -82,7 +96,9 @@ export const DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES: ScorebookSymbolRules = {
   hitLine: "red_slash",
   runMark: "red_dot",
   pitchMark: "waseda_symbols",
+  buntPitchMark: "v_dot_circle_dot",
   pickoffMark: "chevron_arrow",
+  buntMark: "square_all_bh",
   flyLiner: "umbrella",
   advanceError: "english",
   positionLabel: "number",
@@ -100,7 +116,7 @@ export const SCOREBOOK_SYMBOL_PRESETS: readonly ScorebookSymbolPreset[] = [
   {
     id: "waseda_standard",
     label: "早稲田・成美堂 標準",
-    description: "3段メンバー欄・ⅠⅡⅢ・反転K・B/DB・傘フライ",
+    description: "3段メンバー欄・ⅠⅡⅢ・反転K・◇犠打・傘フライ",
     rules: {
       ...STANDARD_SCOREBOOK_SYMBOL_RULES,
       pickoffMark: "full_arrow",
@@ -110,7 +126,7 @@ export const SCOREBOOK_SYMBOL_PRESETS: readonly ScorebookSymbolPreset[] = [
   {
     id: "youth_senior",
     label: "少年・シニア 丸数字式",
-    description: "3段メンバー欄・①②③・×空振り・＞∧＜牽制",
+    description: "①②③・×空振り・□バント/BH・V点/○点・＞∧＜牽制",
     rules: {
       cellStyle: "quadrant",
       lineupStyle: "classic_three_row",
@@ -120,7 +136,9 @@ export const SCOREBOOK_SYMBOL_PRESETS: readonly ScorebookSymbolPreset[] = [
       hitLine: "red_slash",
       runMark: "red_dot",
       pitchMark: "cross_swing",
+      buntPitchMark: "v_dot_circle_dot",
       pickoffMark: "chevron_arrow",
+      buntMark: "square_all_bh",
       flyLiner: "paren",
       advanceError: "kanji",
       positionLabel: "number",
@@ -130,7 +148,7 @@ export const SCOREBOOK_SYMBOL_PRESETS: readonly ScorebookSymbolPreset[] = [
   {
     id: "numbered_modern",
     label: "球数番号・英字式",
-    description: "球数番号BS・BB/HBP・8F/8L・シンプル選手欄",
+    description: "球数番号BS・BB/HBP・B添字/BH・8F/8L",
     rules: {
       cellStyle: "quadrant",
       lineupStyle: "compact_order_first",
@@ -140,7 +158,9 @@ export const SCOREBOOK_SYMBOL_PRESETS: readonly ScorebookSymbolPreset[] = [
       hitLine: "parallel_bars",
       runMark: "double_circle",
       pitchMark: "numbered_bs",
+      buntPitchMark: "inv_triangle_diamond",
       pickoffMark: "kanji_num",
+      buntMark: "b_prefix",
       flyLiner: "alphabet",
       advanceError: "english",
       positionLabel: "english",
@@ -150,7 +170,7 @@ export const SCOREBOOK_SYMBOL_PRESETS: readonly ScorebookSymbolPreset[] = [
   {
     id: "mono_print",
     label: "白黒印刷くっきり式",
-    description: "3段メンバー欄・黒太線ヒット・コピー判別容易",
+    description: "3段メンバー欄・黒太線ヒット・□犠打・コピー判別容易",
     rules: {
       cellStyle: "quadrant",
       lineupStyle: "classic_three_row",
@@ -160,7 +180,9 @@ export const SCOREBOOK_SYMBOL_PRESETS: readonly ScorebookSymbolPreset[] = [
       hitLine: "mono_bold",
       runMark: "kanji_toku",
       pitchMark: "slash_swing",
+      buntPitchMark: "filled_triangle",
       pickoffMark: "chevron_arrow",
+      buntMark: "square_sac",
       flyLiner: "umbrella",
       advanceError: "kanji",
       positionLabel: "kanji",
@@ -249,6 +271,31 @@ export const SYMBOL_RULE_FIELD_CONFIGS = {
       { value: "numbered_bs", label: "球数番号式", sample: "B/S枠に 1,2,3..." },
     ] satisfies ReadonlyArray<SymbolRuleFieldOption<PitchMarkStyle>>,
   },
+  buntPitchMark: {
+    title: "投球（BSO）欄のバント記号（ファウル / 空振り）",
+    options: [
+      {
+        value: "v_dot_circle_dot",
+        label: "Vに点・丸に点式",
+        sample: "BF＝Vの中に・ / 空振＝○の中に・",
+      },
+      {
+        value: "filled_triangle",
+        label: "黒塗り三角式（早稲田）",
+        sample: "BF＝▲ / 空振＝通常空振",
+      },
+      {
+        value: "inv_triangle_diamond",
+        label: "逆三角・ひし形式",
+        sample: "BF＝▽ / 空振＝◇",
+      },
+      {
+        value: "same_as_normal",
+        label: "通常記号と区別しない",
+        sample: "BF＝△ / 空振＝通常空振",
+      },
+    ] satisfies ReadonlyArray<SymbolRuleFieldOption<BuntPitchMarkStyle>>,
+  },
   pickoffMark: {
     title: "牽制球（1塁 / 2塁 / 3塁）表記",
     options: [
@@ -273,6 +320,31 @@ export const SYMBOL_RULE_FIELD_CONFIGS = {
         sample: "投球記号のみ表示",
       },
     ] satisfies ReadonlyArray<SymbolRuleFieldOption<PickoffMarkStyle>>,
+  },
+  buntMark: {
+    title: "バント打球（犠打・バント凡退・バント安打）表記",
+    options: [
+      {
+        value: "square_all_bh",
+        label: "四角囲み □（全バント）＋ BH",
+        sample: "犠・凡 □[5-3] / 安 BH5",
+      },
+      {
+        value: "square_sac",
+        label: "四角囲み □（犠打のみ）＋ BH",
+        sample: "犠 □[1-3] / 安 BH5",
+      },
+      {
+        value: "diamond_sac",
+        label: "ひし形 ◇（早稲田標準）",
+        sample: "犠 ◇1-3 / 凡・安は通常",
+      },
+      {
+        value: "b_prefix",
+        label: "◇犠打 ＋ B添字・BH式",
+        sample: "犠 ◇1-3 / 凡 B5-3 / 安 BH5",
+      },
+    ] satisfies ReadonlyArray<SymbolRuleFieldOption<BuntMarkStyle>>,
   },
   flyLiner: {
     title: "フライ・ライナー表記",
@@ -364,10 +436,25 @@ export function sanitizeScorebookSymbolRules(
       ],
       fallback.pitchMark
     ),
+    buntPitchMark: isOneOf(
+      obj.buntPitchMark,
+      [
+        "v_dot_circle_dot",
+        "filled_triangle",
+        "inv_triangle_diamond",
+        "same_as_normal",
+      ],
+      fallback.buntPitchMark
+    ),
     pickoffMark: isOneOf(
       obj.pickoffMark,
       ["chevron_arrow", "full_arrow", "kanji_num", "hidden"],
       fallback.pickoffMark
+    ),
+    buntMark: isOneOf(
+      obj.buntMark,
+      ["square_all_bh", "square_sac", "diamond_sac", "b_prefix"],
+      fallback.buntMark
     ),
     flyLiner: isOneOf(
       obj.flyLiner,
@@ -470,6 +557,11 @@ export function summarizeSymbolRulesBadges(
   else if (rules.walkHbp === "kanji") badges.push("四/死");
   else badges.push("B/DB");
 
+  if (rules.buntMark === "square_all_bh") badges.push("□バント＋BH");
+  else if (rules.buntMark === "square_sac") badges.push("□犠打＋BH");
+  else if (rules.buntMark === "b_prefix") badges.push("◇犠打＋B/BH");
+  else badges.push("◇犠打");
+
   if (rules.flyLiner === "paren") badges.push("(8)フライ");
   else if (rules.flyLiner === "alphabet") badges.push("8F/8L");
   else badges.push("傘フライ");
@@ -483,6 +575,9 @@ export function summarizeSymbolRulesBadges(
   } else if (rules.pitchMark === "slash_swing") {
     badges.push("／空振り");
   }
+
+  if (rules.buntPitchMark === "v_dot_circle_dot") badges.push("V・/○・バント球");
+  else if (rules.buntPitchMark === "inv_triangle_diamond") badges.push("▽/◇バント球");
 
   if (rules.pickoffMark === "chevron_arrow") badges.push("＞∧＜牽制");
   else if (rules.pickoffMark === "full_arrow") badges.push("→↑←牽制");
@@ -660,17 +755,19 @@ export function formatAdvanceMethodByRules(
 }
 
 export interface FormattedPlayNotation {
-  /** メイン文字列（例: "6-3", "8", "K", "B", "6E"） */
+  /** メイン文字列（例: "6-3", "8", "K", "B", "6E", "BH5"） */
   mainText: string;
   /** サブ添字（例: 振り逃げ時の "2-3" や "WP"、3バント失敗の "3B" など） */
   subText?: string;
-  /** 視覚装飾種別（SVG側で傘・直線・犠打ダイヤ・反転K・丸Kを精密描画） */
+  /** 視覚装飾種別（SVG側で傘・直線・犠打ダイヤ・四角枠・反転K・丸Kを精密描画） */
   decorator:
     | "none"
     | "umbrella"
     | "overline"
     | "sac_diamond"
+    | "sac_square"
     | "sac_fly_umbrella"
+    | "bunt_fly_square_umbrella"
     | "reverse_k"
     | "circle_k"
     | "hit";
@@ -713,8 +810,12 @@ function inferFielderToken(
   const labelChain = label.match(/[1-9](?:-[1-9])+/);
   if (labelChain) return labelChain[0];
 
+  const cleanLabelForPos = label.replace(
+    /二塁打|三塁打|三重殺|三振|二封|三封|一死|二死|三死|スリーバント/g,
+    ""
+  );
   for (const [pattern, code] of KANJI_DIR_TO_NUM) {
-    if (pattern.test(dir) || pattern.test(label)) {
+    if (pattern.test(dir) || pattern.test(cleanLabelForPos)) {
       return code;
     }
   }
@@ -740,6 +841,23 @@ function isLinerPlay(ab: ScorebookV2AtBat): boolean {
   return /直|ライナー|[1-9]L\b|^L[1-9]/i.test(combined);
 }
 
+function isBuntAtBatPlay(ab: ScorebookV2AtBat): boolean {
+  if (ab.resultCode === "sac_bunt") return true;
+  const dir = (ab.battedDirection || "").trim();
+  const label = (ab.resultLabel || "").trim();
+  if (/3バント|スリーバント/.test(label)) return false;
+  if (/バント/.test(label)) return true;
+  if (
+    /^BH(?:[1-9](?:-[1-9])?)?$/i.test(dir) ||
+    /^[1-9]BH$/i.test(dir) ||
+    /^B[1-9](?:-[1-9]|F|L)?$/i.test(dir)
+  ) {
+    return true;
+  }
+  if (/^□/.test(dir) || /^\[[1-9](?:-[1-9])+\]$/.test(dir)) return true;
+  return false;
+}
+
 /**
  * 1打席の結果・打球方向・投球履歴を、指定された記号ルール（標準 or チームルール）の表記へ変換する
  */
@@ -751,6 +869,7 @@ export function formatAtBatPlayNotation(
   const dir = (ab.battedDirection || "").trim();
   const label = (ab.resultLabel || "").trim();
   const useRed = rules.hitLine !== "mono_bold";
+  const isBuntPlay = isBuntAtBatPlay(ab);
 
   // 1. 安打系
   if (
@@ -763,6 +882,13 @@ export function formatAtBatPlayNotation(
     if (rc === "home_run") {
       return {
         mainText: fielder ? `HR(${fielder})` : "HR",
+        decorator: "hit",
+        isRedInk: useRed,
+      };
+    }
+    if (isBuntPlay && rules.buntMark !== "diamond_sac") {
+      return {
+        mainText: fielder ? `BH${fielder}` : "BH",
         decorator: "hit",
         isRedInk: useRed,
       };
@@ -864,10 +990,14 @@ export function formatAtBatPlayNotation(
   // 4. 犠打（送りバント）
   if (rc === "sac_bunt") {
     const token = inferFielderToken(dir, label, "1-3");
-    const main = token.includes("-") ? token : `${token}-3`;
+    const main = token.includes("-") || token === "3" ? token : `${token}-3`;
+    const sacDecorator =
+      rules.buntMark === "square_all_bh" || rules.buntMark === "square_sac"
+        ? "sac_square"
+        : "sac_diamond";
     return {
       mainText: main,
-      decorator: "sac_diamond",
+      decorator: sacDecorator,
       isRedInk: false,
     };
   }
@@ -904,25 +1034,55 @@ export function formatAtBatPlayNotation(
     const liner = !isIf && isLinerPlay(ab);
 
     if (rules.flyLiner === "umbrella") {
+      if (isBuntPlay && rules.buntMark === "square_all_bh" && !liner) {
+        return {
+          mainText: f,
+          subText: isIf ? "IF" : isFoulFly ? "F" : undefined,
+          decorator: "bunt_fly_square_umbrella",
+          isRedInk: false,
+        };
+      }
       return {
         mainText: f,
-        subText: isIf ? "IF" : isFoulFly ? "F" : undefined,
+        subText: isIf
+          ? "IF"
+          : isBuntPlay && rules.buntMark === "b_prefix"
+          ? isFoulFly
+            ? "BF"
+            : "B"
+          : isFoulFly
+          ? "F"
+          : undefined,
         decorator: liner ? "overline" : "umbrella",
         isRedInk: false,
       };
     }
     if (rules.flyLiner === "paren") {
+      const baseText = liner ? `[${f}]` : `(${f})`;
       return {
-        mainText: liner ? `[${f}]` : `(${f})`,
+        mainText:
+          isBuntPlay && rules.buntMark === "b_prefix"
+            ? `B${baseText}`
+            : baseText,
         subText: isIf ? "IF" : isFoulFly ? "F" : undefined,
-        decorator: "none",
+        decorator:
+          isBuntPlay && rules.buntMark === "square_all_bh"
+            ? "sac_square"
+            : "none",
         isRedInk: false,
       };
     }
+    const alphaText = liner ? `${f}L` : isFoulFly ? `${f}FF` : `${f}F`;
     return {
-      mainText: liner ? `${f}L` : isFoulFly ? `${f}FF` : `${f}F`,
+      mainText:
+        isBuntPlay && rules.buntMark === "b_prefix"
+          ? `B${alphaText}`
+          : alphaText,
       subText: isIf ? "IF" : undefined,
-      decorator: "none",
+      decorator:
+        isBuntPlay && rules.buntMark === "square_all_bh"
+          ? "sac_square"
+          : "none",
       isRedInk: false,
     };
   }
@@ -942,10 +1102,15 @@ export function formatAtBatPlayNotation(
   if (rc === "fc") {
     const chain = inferFielderToken(dir, label, "");
     const fcTag = rules.advanceError === "kanji" ? "野" : "FC";
+    const fcMain = chain || fcTag;
     return {
-      mainText: chain || fcTag,
+      mainText:
+        isBuntPlay && rules.buntMark === "b_prefix" ? `B${fcMain}` : fcMain,
       subText: chain ? fcTag : undefined,
-      decorator: "none",
+      decorator:
+        isBuntPlay && rules.buntMark === "square_all_bh"
+          ? "sac_square"
+          : "none",
       isRedInk: false,
     };
   }
@@ -960,14 +1125,18 @@ export function formatAtBatPlayNotation(
       main = `${main}-3`;
     }
     return {
-      mainText: main,
+      mainText:
+        isBuntPlay && rules.buntMark === "b_prefix" ? `B${main}` : main,
       subText:
         rc === "double_play"
           ? "DP"
           : rc === "triple_play"
           ? "TP"
           : undefined,
-      decorator: "none",
+      decorator:
+        isBuntPlay && rules.buntMark === "square_all_bh"
+          ? "sac_square"
+          : "none",
       isRedInk: false,
     };
   }

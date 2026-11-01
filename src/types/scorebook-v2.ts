@@ -261,6 +261,7 @@ export interface AtBatResultPreset {
 
 export const AT_BAT_RESULT_PRESETS: AtBatResultPreset[] = [
   { id: "single", code: "single", shortLabel: "単打", defaultLabel: "安打", group: "hit", defaultOuts: 0 },
+  { id: "bunt_single", code: "single", shortLabel: "バント安打", defaultLabel: "バント安打", group: "hit", defaultOuts: 0 },
   { id: "double", code: "double", shortLabel: "二塁打", defaultLabel: "二塁打", group: "hit", defaultOuts: 0 },
   { id: "triple", code: "triple", shortLabel: "三塁打", defaultLabel: "三塁打", group: "hit", defaultOuts: 0 },
   { id: "home_run", code: "home_run", shortLabel: "本塁打", defaultLabel: "本塁打", group: "hit", defaultOuts: 0 },
@@ -271,7 +272,9 @@ export const AT_BAT_RESULT_PRESETS: AtBatResultPreset[] = [
   { id: "sac_bunt", code: "sac_bunt", shortLabel: "犠打", defaultLabel: "犠打", group: "walk_sac", defaultOuts: 1 },
   { id: "sac_fly", code: "sac_fly", shortLabel: "犠飛", defaultLabel: "犠飛", group: "walk_sac", defaultOuts: 1 },
   { id: "groundout", code: "groundout", shortLabel: "ゴロ/封殺", defaultLabel: "内ゴロ", group: "out", defaultOuts: 1 },
+  { id: "bunt_groundout", code: "groundout", shortLabel: "バントゴロ", defaultLabel: "バントゴロ", group: "out", defaultOuts: 1 },
   { id: "flyout", code: "flyout", shortLabel: "フライ/邪飛", defaultLabel: "飛球", group: "out", defaultOuts: 1 },
+  { id: "bunt_flyout", code: "flyout", shortLabel: "バント飛球", defaultLabel: "バント飛", group: "out", defaultOuts: 1 },
   { id: "lineout", code: "flyout", shortLabel: "ライナー", defaultLabel: "直（ライナー）", group: "out", defaultOuts: 1 },
   { id: "infield_fly", code: "infield_fly", shortLabel: "インフィールドF", defaultLabel: "インフィールドフライ", group: "out", defaultOuts: 1 },
   { id: "so_swing", code: "strikeout", shortLabel: "空振り三振", defaultLabel: "空振り三振", group: "out", defaultOuts: 1 },

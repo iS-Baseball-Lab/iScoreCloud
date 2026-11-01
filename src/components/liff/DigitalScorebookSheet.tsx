@@ -150,8 +150,16 @@ function renderPitchColumn(
       seq += 1;
       if (p === "ball") {
         ballTokens.push(String(seq));
+      } else if (p === "bunt_foul" && rules.buntPitchMark !== "same_as_normal") {
+        strikeTokens.push(`${seq}BF`);
       } else if (p === "foul" || p === "bunt_foul") {
         strikeTokens.push(`${seq}F`);
+      } else if (
+        p === "bunt_swinging" &&
+        (rules.buntPitchMark === "v_dot_circle_dot" ||
+          rules.buntPitchMark === "inv_triangle_diamond")
+      ) {
+        strikeTokens.push(`${seq}BS`);
       } else {
         strikeTokens.push(String(seq));
       }
@@ -251,6 +259,35 @@ function renderPitchColumn(
             />
           );
         }
+        if (p === "bunt_swinging") {
+          if (rules.buntPitchMark === "v_dot_circle_dot") {
+            // バント空振り＝○の中に・（外周白抜き丸＋中心黒点）
+            return (
+              <g key={idx}>
+                <circle
+                  cx={cx}
+                  cy={cy}
+                  r={2.85}
+                  fill="none"
+                  stroke={COLOR_INK}
+                  strokeWidth={1.15}
+                />
+                <circle cx={cx} cy={cy} r={0.95} fill={COLOR_INK} />
+              </g>
+            );
+          }
+          if (rules.buntPitchMark === "inv_triangle_diamond") {
+            return (
+              <polygon
+                key={idx}
+                points={`${cx},${cy - 2.9} ${cx + 2.8},${cy} ${cx},${cy + 2.9} ${cx - 2.8},${cy}`}
+                fill="none"
+                stroke={COLOR_INK}
+                strokeWidth={1.15}
+              />
+            );
+          }
+        }
         if (p === "swinging_strike" || p === "bunt_swinging") {
           if (
             rules.pitchMark === "cross_swing" ||
@@ -325,6 +362,44 @@ function renderPitchColumn(
           );
         }
         if (p === "bunt_foul") {
+          if (rules.buntPitchMark === "v_dot_circle_dot") {
+            // バントファウル＝Vの中に・（上向き開きのVシェブロン＋内側黒点）
+            return (
+              <g key={idx}>
+                <polyline
+                  points={`${cx - 2.9},${cy - 2.3} ${cx},${cy + 2.6} ${cx + 2.9},${cy - 2.3}`}
+                  fill="none"
+                  stroke={COLOR_INK}
+                  strokeWidth={1.2}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <circle cx={cx} cy={cy - 0.85} r={0.95} fill={COLOR_INK} />
+              </g>
+            );
+          }
+          if (rules.buntPitchMark === "inv_triangle_diamond") {
+            return (
+              <polygon
+                key={idx}
+                points={`${cx},${cy + 2.7} ${cx - 3},${cy - 2.3} ${cx + 3},${cy - 2.3}`}
+                fill="none"
+                stroke={COLOR_INK}
+                strokeWidth={1.15}
+              />
+            );
+          }
+          if (rules.buntPitchMark === "same_as_normal") {
+            return (
+              <polygon
+                key={idx}
+                points={`${cx},${cy - 2.7} ${cx - 3},${cy + 2.3} ${cx + 3},${cy + 2.3}`}
+                fill="none"
+                stroke={COLOR_INK}
+                strokeWidth={1.15}
+              />
+            );
+          }
           return (
             <polygon
               key={idx}
@@ -803,7 +878,8 @@ function renderPlayNotation(
 
   if (
     notation.decorator === "umbrella" ||
-    notation.decorator === "sac_fly_umbrella"
+    notation.decorator === "sac_fly_umbrella" ||
+    notation.decorator === "bunt_fly_square_umbrella"
   ) {
     return (
       <g>
@@ -815,17 +891,28 @@ function renderPlayNotation(
             strokeWidth={1.1}
           />
         )}
+        {notation.decorator === "bunt_fly_square_umbrella" && (
+          <rect
+            x={px - 8.5}
+            y={py - 13}
+            width={17}
+            height={16.5}
+            fill="none"
+            stroke={ink}
+            strokeWidth={1.15}
+          />
+        )}
         <path
-          d={`M ${px - 6.2} ${py - 8.2} Q ${px} ${py - 13.2} ${px + 6.2} ${py - 8.2}`}
+          d={`M ${px - 5.8} ${py - 8.2} Q ${px} ${py - 12.6} ${px + 5.8} ${py - 8.2}`}
           fill="none"
           stroke={ink}
-          strokeWidth={1.4}
+          strokeWidth={1.35}
           strokeLinecap="round"
         />
         <text
           x={px}
           y={py + 0.5}
-          fontSize={9.8}
+          fontSize={9.6}
           fontWeight={900}
           textAnchor="middle"
           fill={ink}
@@ -835,10 +922,23 @@ function renderPlayNotation(
         </text>
         {notation.subText && (
           <text
-            x={px + 8.5}
-            y={py + 0.5}
-            fontSize={6.5}
+            x={
+              notation.decorator === "bunt_fly_square_umbrella"
+                ? px
+                : px + 8.5
+            }
+            y={
+              notation.decorator === "bunt_fly_square_umbrella"
+                ? py + 9.2
+                : py + 0.5
+            }
+            fontSize={6.2}
             fontWeight={800}
+            textAnchor={
+              notation.decorator === "bunt_fly_square_umbrella"
+                ? "middle"
+                : "start"
+            }
             fill={COLOR_MUTED}
             fontFamily={FONT_MONO}
           >
@@ -876,6 +976,49 @@ function renderPlayNotation(
     );
   }
 
+  if (notation.decorator === "sac_square") {
+    const boxW = notation.mainText.length >= 5 ? 21 : 19;
+    const boxH = 12.2;
+    const boxFontSize = notation.mainText.length >= 5 ? 6.8 : 8.1;
+    return (
+      <g>
+        <rect
+          x={px - boxW / 2}
+          y={py - 9.5}
+          width={boxW}
+          height={boxH}
+          fill="none"
+          stroke={ink}
+          strokeWidth={1.15}
+        />
+        <text
+          x={px}
+          y={py - 0.5}
+          fontSize={boxFontSize}
+          fontWeight={900}
+          textAnchor="middle"
+          fill={ink}
+          fontFamily={FONT_MONO}
+        >
+          {notation.mainText}
+        </text>
+        {notation.subText && (
+          <text
+            x={px}
+            y={py + 8.3}
+            fontSize={5.8}
+            fontWeight={800}
+            textAnchor="middle"
+            fill={COLOR_MUTED}
+            fontFamily={FONT_MONO}
+          >
+            {notation.subText}
+          </text>
+        )}
+      </g>
+    );
+  }
+
   if (notation.decorator === "sac_diamond") {
     return (
       <g>
@@ -896,6 +1039,19 @@ function renderPlayNotation(
         >
           {notation.mainText}
         </text>
+        {notation.subText && (
+          <text
+            x={px}
+            y={py + 9.2}
+            fontSize={5.8}
+            fontWeight={800}
+            textAnchor="middle"
+            fill={COLOR_MUTED}
+            fontFamily={FONT_MONO}
+          >
+            {notation.subText}
+          </text>
+        )}
       </g>
     );
   }
@@ -2935,101 +3091,148 @@ export function DigitalScorebookSheet({
 }
 
 /**
- * スコア設定ページや切替ヘルプ用の「3マス・リアルタイム記号プレビュー」コンポーネント
+ * スコア設定ページ用のリアルタイム記号プレビュー（上段：メンバー欄＋1・2回、下段：5パターンの打席サンプル）
  */
 export function ScorebookSymbolSamplePreview({
   rules,
 }: {
   rules: ScorebookSymbolRules;
 }) {
+  const topInning1Cell: CompiledScorebookCell = {
+    cellKey: "top-1",
+    inning: 1,
+    columnIndex: 1,
+    battingOrder: 1,
+    atBat: {
+      id: "top-ab-1",
+      inning: 1,
+      isTop: true,
+      columnIndex: 1,
+      battingOrder: 1,
+      batterName: "丸山",
+      batterPlayerId: null,
+      pitcherName: "投手",
+      pitcherPlayerId: null,
+      resultCode: "double",
+      resultLabel: "左中間二塁打",
+      battedDirection: "78",
+      rbi: 1,
+      outsInPlay: 0,
+      endingOuts: 0,
+      runsInPlay: 1,
+      balls: 1,
+      strikes: 1,
+      pitches: ["ball", "strike", "hit"],
+      advances: [],
+      confidence: "high",
+    },
+    isTiebreakRunnerOnly: false,
+    segments: {
+      1: {
+        segment: 1,
+        status: "safe",
+        isBatterHit: true,
+        hitBases: 2,
+        method: "hit",
+        isPrePlay: false,
+      },
+      2: {
+        segment: 2,
+        status: "safe",
+        isBatterHit: true,
+        hitBases: 2,
+        method: "hit",
+        isPrePlay: false,
+      },
+      3: {
+        segment: 3,
+        status: "safe",
+        isBatterHit: false,
+        hitBases: 0,
+        method: "steal",
+        isPrePlay: true,
+      },
+      4: {
+        segment: 4,
+        status: "safe",
+        isBatterHit: false,
+        hitBases: 0,
+        method: "hit",
+        drivingBatterOrder: 3,
+        isPrePlay: false,
+      },
+    },
+    outNumber: null,
+    runScored: true,
+    isResidual: false,
+    isInningEndCell: false,
+    hasPitcherChangeBefore: false,
+  };
+
+  const topInning2BuntHitCell: CompiledScorebookCell = {
+    cellKey: "top-2",
+    inning: 2,
+    columnIndex: 1,
+    battingOrder: 1,
+    atBat: {
+      id: "top-ab-2",
+      inning: 2,
+      isTop: true,
+      columnIndex: 1,
+      battingOrder: 1,
+      batterName: "丸山",
+      batterPlayerId: null,
+      pitcherName: "投手",
+      pitcherPlayerId: null,
+      resultCode: "single",
+      resultLabel: "三バント安打 (BH5)",
+      battedDirection: "BH5",
+      rbi: 0,
+      outsInPlay: 0,
+      endingOuts: 0,
+      runsInPlay: 0,
+      balls: 1,
+      strikes: 0,
+      pitches: ["ball", "pickoff_1b", "hit"],
+      advances: [],
+      confidence: "high",
+    },
+    isTiebreakRunnerOnly: false,
+    segments: {
+      1: {
+        segment: 1,
+        status: "safe",
+        isBatterHit: true,
+        hitBases: 1,
+        method: "hit",
+        isPrePlay: false,
+      },
+      2: null,
+      3: null,
+      4: null,
+    },
+    outNumber: null,
+    runScored: false,
+    isResidual: true,
+    isInningEndCell: false,
+    hasPitcherChangeBefore: false,
+  };
+
   const sampleCells: Array<{ title: string; cell: CompiledScorebookCell }> = [
     {
-      title: "二塁打＋盗塁＋生還",
+      title: "見逃三振(1死)",
       cell: {
         cellKey: "s-1",
         inning: 1,
         columnIndex: 1,
-        battingOrder: 1,
+        battingOrder: 2,
         atBat: {
           id: "s-ab-1",
           inning: 1,
           isTop: true,
           columnIndex: 1,
-          battingOrder: 1,
-          batterName: "サンプル1",
-          batterPlayerId: null,
-          pitcherName: "投手",
-          pitcherPlayerId: null,
-          resultCode: "double",
-          resultLabel: "左中間二塁打",
-          battedDirection: "78",
-          rbi: 1,
-          outsInPlay: 0,
-          endingOuts: 0,
-          runsInPlay: 1,
-          balls: 1,
-          strikes: 1,
-          pitches: ["ball", "strike", "hit"],
-          advances: [],
-          confidence: "high",
-        },
-        isTiebreakRunnerOnly: false,
-        segments: {
-          1: {
-            segment: 1,
-            status: "safe",
-            isBatterHit: true,
-            hitBases: 2,
-            method: "hit",
-            isPrePlay: false,
-          },
-          2: {
-            segment: 2,
-            status: "safe",
-            isBatterHit: true,
-            hitBases: 2,
-            method: "hit",
-            isPrePlay: false,
-          },
-          3: {
-            segment: 3,
-            status: "safe",
-            isBatterHit: false,
-            hitBases: 0,
-            method: "steal",
-            isPrePlay: true,
-          },
-          4: {
-            segment: 4,
-            status: "safe",
-            isBatterHit: false,
-            hitBases: 0,
-            method: "hit",
-            drivingBatterOrder: 3,
-            isPrePlay: false,
-          },
-        },
-        outNumber: null,
-        runScored: true,
-        isResidual: false,
-        isInningEndCell: false,
-        hasPitcherChangeBefore: false,
-      },
-    },
-    {
-      title: "見逃し三振（1死）",
-      cell: {
-        cellKey: "s-2",
-        inning: 1,
-        columnIndex: 1,
-        battingOrder: 2,
-        atBat: {
-          id: "s-ab-2",
-          inning: 1,
-          isTop: true,
-          columnIndex: 1,
           battingOrder: 2,
-          batterName: "サンプル2",
+          batterName: "サンプル1",
           batterPlayerId: null,
           pitcherName: "投手",
           pitcherPlayerId: null,
@@ -3056,19 +3259,97 @@ export function ScorebookSymbolSamplePreview({
       },
     },
     {
-      title: "中飛（2死）",
+      title: "犠打・バント球",
+      cell: {
+        cellKey: "s-2",
+        inning: 1,
+        columnIndex: 1,
+        battingOrder: 3,
+        atBat: {
+          id: "s-ab-2",
+          inning: 1,
+          isTop: true,
+          columnIndex: 1,
+          battingOrder: 3,
+          batterName: "サンプル2",
+          batterPlayerId: null,
+          pitcherName: "投手",
+          pitcherPlayerId: null,
+          resultCode: "sac_bunt",
+          resultLabel: "投犠打 (1-3)",
+          battedDirection: "1-3",
+          rbi: 0,
+          outsInPlay: 1,
+          endingOuts: 2,
+          runsInPlay: 0,
+          balls: 0,
+          strikes: 2,
+          pitches: ["bunt_swinging", "bunt_foul", "in_play"],
+          advances: [],
+          confidence: "high",
+        },
+        isTiebreakRunnerOnly: false,
+        segments: { 1: null, 2: null, 3: null, 4: null },
+        outNumber: 2,
+        runScored: false,
+        isResidual: false,
+        isInningEndCell: false,
+        hasPitcherChangeBefore: false,
+      },
+    },
+    {
+      title: "バントゴロ凡",
       cell: {
         cellKey: "s-3",
         inning: 1,
         columnIndex: 1,
-        battingOrder: 3,
+        battingOrder: 4,
         atBat: {
           id: "s-ab-3",
           inning: 1,
           isTop: true,
           columnIndex: 1,
-          battingOrder: 3,
+          battingOrder: 4,
           batterName: "サンプル3",
+          batterPlayerId: null,
+          pitcherName: "投手",
+          pitcherPlayerId: null,
+          resultCode: "groundout",
+          resultLabel: "三バントゴロ (5-3)",
+          battedDirection: "5-3",
+          rbi: 0,
+          outsInPlay: 1,
+          endingOuts: 3,
+          runsInPlay: 0,
+          balls: 1,
+          strikes: 1,
+          pitches: ["ball", "bunt_foul", "in_play"],
+          advances: [],
+          confidence: "high",
+        },
+        isTiebreakRunnerOnly: false,
+        segments: { 1: null, 2: null, 3: null, 4: null },
+        outNumber: 3,
+        runScored: false,
+        isResidual: false,
+        isInningEndCell: false,
+        hasPitcherChangeBefore: false,
+      },
+    },
+    {
+      title: "中飛(2死)",
+      cell: {
+        cellKey: "s-4",
+        inning: 1,
+        columnIndex: 1,
+        battingOrder: 5,
+        atBat: {
+          id: "s-ab-4",
+          inning: 1,
+          isTop: true,
+          columnIndex: 1,
+          battingOrder: 5,
+          batterName: "サンプル4",
           batterPlayerId: null,
           pitcherName: "投手",
           pitcherPlayerId: null,
@@ -3097,17 +3378,17 @@ export function ScorebookSymbolSamplePreview({
     {
       title: "四球＋残塁",
       cell: {
-        cellKey: "s-4",
+        cellKey: "s-5",
         inning: 1,
         columnIndex: 1,
-        battingOrder: 4,
+        battingOrder: 6,
         atBat: {
-          id: "s-ab-4",
+          id: "s-ab-5",
           inning: 1,
           isTop: true,
           columnIndex: 1,
-          battingOrder: 4,
-          batterName: "サンプル4",
+          battingOrder: 6,
+          batterName: "サンプル5",
           batterPlayerId: null,
           pitcherName: "投手",
           pitcherPlayerId: null,
@@ -3168,10 +3449,10 @@ export function ScorebookSymbolSamplePreview({
     ],
   };
 
-  const gap = 8;
+  const gap = 5;
   const lineupW = getLineupTotalWidth(rules);
   const colHeadH = 30;
-  const topPreviewW = lineupW + CELL_W;
+  const topPreviewW = lineupW + CELL_W * 2;
   const cellsRowW =
     sampleCells.length * CELL_W + (sampleCells.length - 1) * gap;
   const totalW = Math.max(topPreviewW, cellsRowW) + 12;
@@ -3191,7 +3472,7 @@ export function ScorebookSymbolSamplePreview({
     >
       <rect x={0} y={0} width={totalW} height={totalH} fill={COLOR_PAPER} />
 
-      {/* 上段：メンバー欄＋1回マスのリアルプレビュー */}
+      {/* 上段：メンバー欄＋1回（二塁打生還）・2回（バント安打）マスのリアルプレビュー */}
       <g>
         <rect
           x={topOriginX}
@@ -3215,6 +3496,14 @@ export function ScorebookSymbolSamplePreview({
           stroke={COLOR_FRAME}
           strokeWidth={1.5}
         />
+        <line
+          x1={topOriginX + lineupW + CELL_W}
+          y1={topOriginY}
+          x2={topOriginX + lineupW + CELL_W}
+          y2={topOriginY + colHeadH + CELL_H}
+          stroke={COLOR_GRID}
+          strokeWidth={0.9}
+        />
         <text
           x={topOriginX + lineupW + CELL_W / 2}
           y={topOriginY + (isClassicHead ? 20.5 : 19.5)}
@@ -3224,6 +3513,16 @@ export function ScorebookSymbolSamplePreview({
           fill={COLOR_INK}
         >
           {isClassicHead ? "1" : "1回"}
+        </text>
+        <text
+          x={topOriginX + lineupW + CELL_W + CELL_W / 2}
+          y={topOriginY + (isClassicHead ? 20.5 : 19.5)}
+          fontSize={isClassicHead ? 13.5 : 11}
+          fontWeight={900}
+          textAnchor="middle"
+          fill={COLOR_INK}
+        >
+          {isClassicHead ? "2" : "2回"}
         </text>
 
         {renderBatterLineupRowSvg({
@@ -3236,9 +3535,15 @@ export function ScorebookSymbolSamplePreview({
           ry: topOriginY + colHeadH,
         })}
         {renderSingleScorebookCellSvg(
-          sampleCells[0].cell,
+          topInning1Cell,
           rules,
           topOriginX + lineupW,
+          topOriginY + colHeadH
+        )}
+        {renderSingleScorebookCellSvg(
+          topInning2BuntHitCell,
+          rules,
+          topOriginX + lineupW + CELL_W,
           topOriginY + colHeadH
         )}
         <line
@@ -3260,7 +3565,7 @@ export function ScorebookSymbolSamplePreview({
         />
       </g>
 
-      {/* 下段：4パターンの打席・走塁記号サンプル */}
+      {/* 下段：5パターンの打席・バント・走塁記号サンプル */}
       {sampleCells.map((item, idx) => {
         const ox = (totalW - cellsRowW) / 2 + idx * (CELL_W + gap);
         return (
@@ -3268,7 +3573,7 @@ export function ScorebookSymbolSamplePreview({
             <text
               x={ox + CELL_W / 2}
               y={cellsLabelY}
-              fontSize={7.8}
+              fontSize={7.3}
               fontWeight={900}
               textAnchor="middle"
               fill={COLOR_MUTED}

@@ -721,6 +721,8 @@ interface GeminiExtractedSymbolRulesResponse {
   outMark?: string;
   strikeout?: string;
   walkHbp?: string;
+  buntMark?: string;
+  buntPitchMark?: string;
   hitLine?: string;
   runMark?: string;
   pitchMark?: string;
@@ -806,6 +808,8 @@ liffScorebookRouter.post("/extract-symbol-rules", async (c) => {
   "outMark": "roman" | "circled", // アウト記号: Ⅰ・Ⅱ・Ⅲ なら "roman"、①・②・③ なら "circled"
   "strikeout": "k_called_reverse" | "k_called_circle" | "k_only" | "so", // 三振: 見逃しが左右反転Kなら "k_called_reverse"、丸囲みⓀなら "k_called_circle"、区別なしKなら "k_only"、SO表記なら "so"
   "walkHbp": "b_db" | "bb_hbp" | "kanji", // 四死球: B/DBなら "b_db"、BB/HBPなら "bb_hbp"、四/死なら "kanji"
+  "buntMark": "square_all_bh" | "square_sac" | "diamond_sac" | "b_prefix", // バント結果表記: 犠打もバント凡退も四角囲み□[5-3]＋バント安打BH5なら "square_all_bh"、犠打のみ四角囲み□[1-3]なら "square_sac"、早稲田式の菱形囲み◇1-3なら "diamond_sac"、B1-3/BH5のB添字式なら "b_prefix"
+  "buntPitchMark": "v_dot_circle_dot" | "filled_triangle" | "inv_triangle_diamond" | "same_as_normal", // BSOバント球記号: バントファウルがVの中に・＆バント空振りが○の中に・(⊙)なら "v_dot_circle_dot"、黒塗り三角▲なら "filled_triangle"、逆三角▽/ダイヤ◇なら "inv_triangle_diamond"、通常球と同じ記号なら "same_as_normal"
   "hitLine": "red_slash" | "parallel_bars" | "mono_bold", // 安打線: 赤線＋斜線ハッシュなら "red_slash"、塁打数分の平行バーなら "parallel_bars"、白黒太線のみなら "mono_bold"
   "runMark": "red_dot" | "double_circle" | "kanji_toku", // 得点マーク: 中央塗り丸●なら "red_dot"、二重丸◎なら "double_circle"、丸得なら "kanji_toku"
   "pitchMark": "waseda_symbols" | "cross_swing" | "cross_dot_swing" | "slash_swing" | "numbered_bs", // 投球BSO: ○見逃/●空振/ーB/△F なら "waseda_symbols"、○見逃/×空振/ーB(横棒ボール) なら "cross_swing"、○見逃/×空振/・B(点・黒点ボール) なら "cross_dot_swing"、○見逃/／空振 なら "slash_swing"、B/S欄に投球番号1,2,3を書く方式なら "numbered_bs"
@@ -1779,7 +1783,7 @@ ${targetInningMetaLines.join("\n")}
      ・『●』（中まで完全に黒塗りの丸）または BSO枠内のバツ『×』・斜線『／』＝ **空振りストライク "W"**
      ・『ー』『-』（短い横棒）または『・』（鉛筆の点）＝ **ボール "B"**
      ・『△』『▽』『レ』『V』（角がある白抜き三角・チェック）＝ **ファウル "F"** （※中に少しでも隙間があれば "F"！2S後のインプレーや後続球がある△は100% "F"）
-     ・『▲』『▼』（中まで黒塗りの三角）＝ **バントファウル "BF"**
+     ・『▲』『▼』（中まで黒塗りの三角）または『V・』（Vの中に点）＝ **バントファウル "BF"**、『⊙』『○・』（白抜き丸の中心に点）＝ **バント空振り "BS"**
      ・『＞』『→』（右向きの矢先/矢印・塗りなし）＝ **1塁牽制 "P1"**、『∧』『↑』（底辺のない山型の上矢先/上矢印 ※底辺が閉じた△ファウルと厳密区別！）＝ **2塁牽制 "P2"**、『＜』『←』（左向きの矢先/矢印）＝ **3塁牽制 "P3"**
      ・縦に詰めて書かれた『○』『×』『ー』『△』が上下接触したり印刷横線と『△』が重なって『ム』『A』『4』に見えても、[BSO投球拡大]で接触点を切り離し上から1球ずつ分解すること！
    - **記法B（BS段別・球数番号式・成美堂式/市販スコアブック）**: B（ボール）段とS（ストライク）段に **『1, 2, 3, 4...』と球数番号を書く方式**（例: B段に「1, 3」、S段に「2」、ファウルに「4」や「④」）の場合は、**番号順（1➔2➔3➔4...）に ["B", "S", "B", "F", ...] と全球を時系列復元**し、obs にも 左:B1,S2,B3,F4 と明記すること！
@@ -1817,10 +1821,10 @@ ${targetInningMetaLines.join("\n")}
 4. **安打（rc: "single" | "double" | "triple" | "home_run"）の打球方向（dir）**:
    - 本塁→1塁が太い実線・赤線（b1: true）で、1塁線上の斜線『/』=単打、2塁まで実線＋『//』=二塁打、3塁まで実線＋『///』=三塁打、本塁一周実線または『HR』『////』=本塁打。
    - **守備方向の読み方（数字記法と打球線記法の両対応）**:
-     ① 数字が書かれている場合: **7**(左), **8**(中), **9**(右), **7-8**(左中間), **8-9**(右中間), **6**(遊内安), **5**(三内安), **4**(二内安) をそのまま dir に設定（※b1: true かつ中央アウト無しの 7/8/9 はフライではなく安打です！）。
+     ① 数字・バント安打記号が書かれている場合: **7**(左), **8**(中), **9**(右), **7-8**(左中間), **8-9**(右中間), **6**(遊内安), **5**(三内安), **4**(二内安)、およびバント安打 **BH1〜BH6（例: BH5=三バント安打, BH1=投バント安打）** をそのまま dir に設定（※b1: true かつ中央アウト無しの 7/8/9 や BH5 は安打です！）。
      ② 早稲田式の打球方向線（本塁からダイヤモンド外へ伸びる線＋先端の点『・』や山『⌒』）で書かれている場合: ダイヤモンドの向きに合わせて **左上（三遊間〜レフト側）="7"**、**真上（二塁ベース上〜センター側）="8"**、**右上（一二塁間〜ライト側）="9"**、**左斜め上中間="7-8"**、**右斜め上中間="8-9"** と正確に判定してください（左上7と右上9を絶対に逆にしないこと）！
-5. **犠打・失策・野選・四死球・その他**:
-   - 四角『□』やダイヤ『◇』で囲まれた送球番号（例: **[1-3], ◇1-3, ◇5-4**）➔ **rc: "sac_bunt"**, dir: "1-3" 等。三塁走者生還の外野飛球 ➔ **rc: "sac_fly"**。
+5. **犠打・バント凡退・失策・野選・四死球・その他**:
+   - 四角『□』やダイヤ『◇』で囲まれた送球番号（例: **[1-3], [5-3], ◇1-3, ◇5-4**）➔ 走者進塁を伴う送りバントなら **rc: "sac_bunt"**, dir: "1-3" 等。**無走者時**にバントを四角『□』等で囲むチーム表記（例: 無走者で **[5-3]**）は犠打ではなくバントゴロ凡退なので **rc: "groundout"**, dir: "5-3", rl: "三バントゴロ" とすること！三塁走者生還の外野飛球 ➔ **rc: "sac_fly"**。
    - 捕球失策 **『E6』『E4』『E5』** ➔ **rc: "error"**, dir: "E6" 等（b1: true, o: 0）。内野ゴロ等の悪送球 **『4E-3』『6E-3』『5E-3』『6E-4』** や送球先なし悪送球 **『4E』『6E』** ➔ **rc: "error"**, dir: "4E-3" / "4E" 等（b1: true, o: 0、絶対にゴロアウト groundout と混同しないこと！）。送球先落球 **『6-3E』『6-E3』** ➔ **rc: "error"**, dir: "6-3E"。野選 **『FC』『FC6-2』『FC5-2』『FC4-6』『O.B.』** ➔ **rc: "fc"**, dir: "FC6-2" / "FC6" 等。
    - 四球は**本塁→1塁が実線（b1: true）かつBSOにボール4球かつ右下英字『B』**のときのみ ➔ **rc: "walk"**。死球『D』『HBP』➔ **rc: "hit_by_pitch"**。敬遠 ➔ **rc: "intentional_walk"**。
    - 振り逃げアウト『K 2-3』➔ **rc: "dropped_third_strike_out"**, o: 1。振り逃げ出塁『K-E2』➔ **rc: "dropped_third_strike"**, o: 0。
@@ -5997,7 +6001,7 @@ function extractPitchesFromObsLeftZone(obs: string): string[] {
   // 1. 成美堂式・球数番号記法（例: "B1,S2,B3,F4" や "B:1,3 S:2 F:4" や "1B,2S,3F"）の時系列復元
   const numberedEntries: Array<{ seq: number; code: string }> = [];
   const groupRegex =
-    /\b(BF|B|S|W|F)\s*[:：]?\s*([1-9](?:\s*[,、・]\s*[1-9])*)/gi;
+    /\b(BF|BS|B|S|W|F)\s*[:：]?\s*([1-9](?:\s*[,、・]\s*[1-9])*)/gi;
   let gm: RegExpExecArray | null = null;
   while ((gm = groupRegex.exec(zone)) !== null) {
     const rawKind = gm[1].toUpperCase();
@@ -6010,7 +6014,7 @@ function extractPitchesFromObsLeftZone(obs: string): string[] {
     }
   }
   if (numberedEntries.length === 0) {
-    const revRegex = /\b([1-9])\s*[:：.]?\s*(BF|B|S|W|F)\b/gi;
+    const revRegex = /\b([1-9])\s*[:：.]?\s*(BF|BS|B|S|W|F)\b/gi;
     let rm: RegExpExecArray | null = null;
     while ((rm = revRegex.exec(zone)) !== null) {
       numberedEntries.push({
@@ -6051,6 +6055,18 @@ function extractPitchesFromObsLeftZone(obs: string): string[] {
       tokens.push("BF");
       continue;
     }
+    if (up === "BS" || part === "バント空振り" || part === "バント空") {
+      tokens.push("BS");
+      continue;
+    }
+    if (/^[V∨▽]の?中[に・･]?[・･点]$/i.test(part)) {
+      tokens.push("BF");
+      continue;
+    }
+    if (/^[○◯〇]の?中[に・･]?[・･点]$/.test(part)) {
+      tokens.push("BS");
+      continue;
+    }
     if (up === "P1" || part === "1牽" || part === "一牽") {
       tokens.push("P1");
       continue;
@@ -6080,9 +6096,16 @@ function extractPitchesFromObsLeftZone(obs: string): string[] {
       continue;
     }
 
-    for (const ch of Array.from(part)) {
+    // 複合バント球記号（『V・』=バントファウル、『○・』=バント空振り）を単一文字へ畳み込んでから1文字分解する
+    const collapsedPart = part
+      .replace(/[V∨▽v][・･•∙]/g, "▲")
+      .replace(/[○◯〇][・･•∙]/g, "⊙");
+
+    for (const ch of Array.from(collapsedPart)) {
       if (ch === "○" || ch === "◯" || ch === "〇") {
         tokens.push("S");
+      } else if (ch === "⊙" || ch === "⊚" || ch === "◐") {
+        tokens.push("BS");
       } else if (ch === "●" || ch === "／" || ch === "＼" || ch === "×") {
         tokens.push("W");
       } else if (
@@ -6105,7 +6128,8 @@ function extractPitchesFromObsLeftZone(obs: string): string[] {
         ch === "レ" ||
         ch === "✓" ||
         ch === "✔" ||
-        ch === "V"
+        ch === "V" ||
+        ch === "∨"
       ) {
         tokens.push("F");
       } else if (ch === "▲" || ch === "▼") {
@@ -6383,6 +6407,27 @@ function reconcileRawAtBatEvidence(
       if (rawResultLabel && /ゴロ/.test(rawResultLabel)) {
         rawResultLabel = "";
       }
+    } else if (
+      // 3-D2. 無走者時に四角枠 [5-3] 等のバント表記が犠打("sac_bunt")と出力された場合、公認野球規則に基づきバントゴロ/バント飛へ自動補正
+      prelimCode === "sac_bunt" &&
+      !hasAnyActiveRunner &&
+      rawRuns === 0 &&
+      effectiveB1 !== true
+    ) {
+      if (
+        /^[⌒︵︶∩^傘]/.test(normDir) ||
+        /[1-9][FL]$/i.test(normDir) ||
+        /飛|フライ/.test(rawResultLabel || "")
+      ) {
+        rawResultCode = "flyout";
+        rawResultLabel = /邪/.test(rawResultLabel || "") || /F$/i.test(normDir)
+          ? "バント邪飛"
+          : "バント飛";
+      } else {
+        rawResultCode = "groundout";
+        rawResultLabel = "バントゴロ";
+      }
+      outsInPlay = Math.max(1, outsInPlay);
     }
 
     // 3-E. obs の左BSO観察記号と rawPitches の整合チェック:
@@ -6478,6 +6523,11 @@ function normalizePitchArray(
       s === "bf" ||
       s === "▲" ||
       s === "▼" ||
+      s === "v・" ||
+      s === "∨・" ||
+      s === "▽・" ||
+      s === "v･" ||
+      s === "∨･" ||
       s.includes("バントファウル") ||
       s.includes("バントf") ||
       s.includes("スリーバント")
@@ -6487,6 +6537,12 @@ function normalizePitchArray(
       s === "bunt_swinging" ||
       s === "bs" ||
       s === "◐" ||
+      s === "⊙" ||
+      s === "⊚" ||
+      s === "○・" ||
+      s === "◯・" ||
+      s === "〇・" ||
+      s === "○･" ||
       s.includes("バント空")
     ) {
       mapped.push("bunt_swinging");
