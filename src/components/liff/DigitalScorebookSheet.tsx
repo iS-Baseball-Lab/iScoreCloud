@@ -43,28 +43,68 @@ const COLOR_BLUE_SOFT = "#eff6ff";
 
 const CELL_W = 88;
 const CELL_H = 74;
-const BSO_W = 18;
+const BSO_W = 19;
 
-// 1マス内ダイヤモンド頂点座標
-const PT_HP = { x: 52, y: 55 };
-const PT_1B = { x: 74, y: 34 };
-const PT_2B = { x: 52, y: 13 };
-const PT_3B = { x: 30, y: 34 };
-const PT_CENTER = { x: 52, y: 34 };
+interface SegmentEndpointDef {
+  from: { x: number; y: number };
+  to: { x: number; y: number };
+  labelPos: { x: number; y: number };
+}
 
-const SEGMENT_ENDPOINTS: Record<
-  BaseSegmentIndex,
-  {
-    from: { x: number; y: number };
-    to: { x: number; y: number };
-    labelPos: { x: number; y: number };
-  }
-> = {
-  1: { from: PT_HP, to: PT_1B, labelPos: { x: 69, y: 49 } },
-  2: { from: PT_1B, to: PT_2B, labelPos: { x: 70, y: 18 } },
-  3: { from: PT_2B, to: PT_3B, labelPos: { x: 34, y: 18 } },
-  4: { from: PT_3B, to: PT_HP, labelPos: { x: 33, y: 49 } },
+interface CellGeometry {
+  ptHP: { x: number; y: number };
+  pt1B: { x: number; y: number };
+  pt2B: { x: number; y: number };
+  pt3B: { x: number; y: number };
+  ptCenter: { x: number; y: number };
+  playNotationPos: { x: number; y: number };
+  segments: Record<BaseSegmentIndex, SegmentEndpointDef>;
+  hasQuadrantCrosshairs: boolean;
+  hasBaseMiniSquares: boolean;
+}
+
+// ① 十字点線・4分割ダイヤ型（成美堂・早稲田・リトルシニア定番）
+const QUADRANT_CELL_GEOMETRY: CellGeometry = {
+  ptHP: { x: 53.5, y: 53.5 },
+  pt1B: { x: 70, y: 37 },
+  pt2B: { x: 53.5, y: 20.5 },
+  pt3B: { x: 37, y: 37 },
+  ptCenter: { x: 53.5, y: 37 },
+  playNotationPos: { x: 72, y: 63 },
+  segments: {
+    1: { from: { x: 53.5, y: 53.5 }, to: { x: 70, y: 37 }, labelPos: { x: 72, y: 50 } },
+    2: { from: { x: 70, y: 37 }, to: { x: 53.5, y: 20.5 }, labelPos: { x: 72.5, y: 20 } },
+    3: { from: { x: 53.5, y: 20.5 }, to: { x: 37, y: 37 }, labelPos: { x: 34.5, y: 20 } },
+    4: { from: { x: 37, y: 37 }, to: { x: 53.5, y: 53.5 }, labelPos: { x: 34.5, y: 58 } },
+  },
+  hasQuadrantCrosshairs: true,
+  hasBaseMiniSquares: false,
 };
+
+// ② 大ダイヤ単独・ベース小四角型（シンプル型）
+const SIMPLE_DIAMOND_CELL_GEOMETRY: CellGeometry = {
+  ptHP: { x: 53.5, y: 55 },
+  pt1B: { x: 74.5, y: 34 },
+  pt2B: { x: 53.5, y: 13 },
+  pt3B: { x: 32.5, y: 34 },
+  ptCenter: { x: 53.5, y: 34 },
+  playNotationPos: { x: 71.5, y: 64 },
+  segments: {
+    1: { from: { x: 53.5, y: 55 }, to: { x: 74.5, y: 34 }, labelPos: { x: 70, y: 49 } },
+    2: { from: { x: 74.5, y: 34 }, to: { x: 53.5, y: 13 }, labelPos: { x: 71, y: 18 } },
+    3: { from: { x: 53.5, y: 13 }, to: { x: 32.5, y: 34 }, labelPos: { x: 35, y: 18 } },
+    4: { from: { x: 32.5, y: 34 }, to: { x: 53.5, y: 55 }, labelPos: { x: 34, y: 49 } },
+  },
+  hasQuadrantCrosshairs: false,
+  hasBaseMiniSquares: true,
+};
+
+function getCellGeometry(rules: ScorebookSymbolRules): CellGeometry {
+  if (rules.cellStyle === "simple_diamond") {
+    return SIMPLE_DIAMOND_CELL_GEOMETRY;
+  }
+  return QUADRANT_CELL_GEOMETRY;
+}
 
 function renderPitchColumn(
   pitches: CanonicalPitchResult[],
@@ -301,21 +341,24 @@ function renderPitchColumn(
 function renderHitHashMarks(
   hitBases: 1 | 2 | 3 | 4,
   rules: ScorebookSymbolRules,
+  cellGeom: CellGeometry,
   ox: number,
   oy: number
 ): React.ReactNode {
   const color = rules.hitLine === "mono_bold" ? COLOR_INK : COLOR_RED;
-  const mx = ox + (PT_HP.x + PT_1B.x) / 2;
-  const my = oy + (PT_HP.y + PT_1B.y) / 2;
-  // HP->1B 単位ベクトル (0.724, -0.690), 法線 (0.690, 0.724)
-  const ux = 0.724;
-  const uy = -0.69;
-  const nx = 0.69;
-  const ny = 0.724;
+  const mx = ox + (cellGeom.ptHP.x + cellGeom.pt1B.x) / 2;
+  const my = oy + (cellGeom.ptHP.y + cellGeom.pt1B.y) / 2;
+  const dx = cellGeom.pt1B.x - cellGeom.ptHP.x;
+  const dy = cellGeom.pt1B.y - cellGeom.ptHP.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len;
+  const uy = dy / len;
+  const nx = -uy;
+  const ny = ux;
 
   const count = hitBases;
-  const halfLen = rules.hitLine === "parallel_bars" ? 5.2 : 4.2;
-  const spacing = 3.6;
+  const halfLen = rules.hitLine === "parallel_bars" ? 4.8 : 3.9;
+  const spacing = cellGeom.hasQuadrantCrosshairs ? 3.2 : 3.6;
   const offsets: number[] = [];
   for (let i = 0; i < count; i++) {
     offsets.push((i - (count - 1) / 2) * spacing);
@@ -334,7 +377,7 @@ function renderHitHashMarks(
             x2={cx + nx * halfLen}
             y2={cy + ny * halfLen}
             stroke={color}
-            strokeWidth={rules.hitLine === "parallel_bars" ? 1.9 : 1.5}
+            strokeWidth={rules.hitLine === "parallel_bars" ? 1.85 : 1.5}
             strokeLinecap="round"
           />
         );
@@ -346,10 +389,11 @@ function renderHitHashMarks(
 function renderDiamondSegment(
   seg: CompiledDiamondSegment,
   rules: ScorebookSymbolRules,
+  cellGeom: CellGeometry,
   ox: number,
   oy: number
 ): React.ReactNode {
-  const geom = SEGMENT_ENDPOINTS[seg.segment];
+  const geom = cellGeom.segments[seg.segment];
   const x1 = ox + geom.from.x;
   const y1 = oy + geom.from.y;
   const x2 = ox + geom.to.x;
@@ -374,8 +418,8 @@ function renderDiamondSegment(
     const dx = x2 - x1;
     const dy = y2 - y1;
     const len = Math.hypot(dx, dy) || 1;
-    const nx = (-dy / len) * 4.2;
-    const ny = (dx / len) * 4.2;
+    const nx = (-dy / len) * 4.0;
+    const ny = (dx / len) * 4.0;
 
     return (
       <g key={`seg-${seg.segment}`}>
@@ -428,7 +472,7 @@ function renderDiamondSegment(
       {seg.segment === 1 &&
         seg.isBatterHit &&
         seg.hitBases !== 0 &&
-        renderHitHashMarks(seg.hitBases, rules, ox, oy)}
+        renderHitHashMarks(seg.hitBases, rules, cellGeom, ox, oy)}
       {advLabel && (
         <text
           x={ox + geom.labelPos.x}
@@ -449,12 +493,14 @@ function renderDiamondSegment(
 function renderCenterStatus(
   cell: CompiledScorebookCell,
   rules: ScorebookSymbolRules,
+  cellGeom: CellGeometry,
   ox: number,
   oy: number
 ): React.ReactNode {
-  const cx = ox + PT_CENTER.x;
-  const cy = oy + PT_CENTER.y;
+  const cx = ox + cellGeom.ptCenter.x;
+  const cy = oy + cellGeom.ptCenter.y;
   const runColor = rules.hitLine === "mono_bold" ? COLOR_INK : COLOR_RED;
+  const compact = cellGeom.hasQuadrantCrosshairs;
 
   if (cell.runScored) {
     if (rules.runMark === "double_circle") {
@@ -463,12 +509,12 @@ function renderCenterStatus(
           <circle
             cx={cx}
             cy={cy}
-            r={7.8}
+            r={compact ? 7.0 : 7.8}
             fill={COLOR_PAPER}
             stroke={runColor}
-            strokeWidth={1.8}
+            strokeWidth={1.7}
           />
-          <circle cx={cx} cy={cy} r={4.2} fill={runColor} />
+          <circle cx={cx} cy={cy} r={compact ? 3.7 : 4.2} fill={runColor} />
         </g>
       );
     }
@@ -478,15 +524,15 @@ function renderCenterStatus(
           <circle
             cx={cx}
             cy={cy}
-            r={8.2}
+            r={compact ? 7.4 : 8.2}
             fill={COLOR_PAPER}
             stroke={runColor}
-            strokeWidth={1.6}
+            strokeWidth={1.55}
           />
           <text
             x={cx}
-            y={cy + 3.5}
-            fontSize={9.5}
+            y={cy + 3.2}
+            fontSize={compact ? 8.8 : 9.5}
             fontWeight={900}
             textAnchor="middle"
             fill={runColor}
@@ -497,7 +543,7 @@ function renderCenterStatus(
         </g>
       );
     }
-    return <circle cx={cx} cy={cy} r={7.2} fill={runColor} />;
+    return <circle cx={cx} cy={cy} r={compact ? 6.3 : 7.2} fill={runColor} />;
   }
 
   if (cell.outNumber) {
@@ -505,8 +551,8 @@ function renderCenterStatus(
     return (
       <text
         x={cx}
-        y={cy + 4.5}
-        fontSize={13}
+        y={cy + 4.3}
+        fontSize={compact ? 12.2 : 13}
         fontWeight={900}
         textAnchor="middle"
         fill={COLOR_INK}
@@ -521,8 +567,8 @@ function renderCenterStatus(
     return (
       <text
         x={cx}
-        y={cy + 4.5}
-        fontSize={12.5}
+        y={cy + 4.2}
+        fontSize={compact ? 11.8 : 12.5}
         fontWeight={800}
         fontStyle="italic"
         textAnchor="middle"
@@ -539,13 +585,14 @@ function renderCenterStatus(
 
 function renderPlayNotation(
   notation: FormattedPlayNotation,
+  cellGeom: CellGeometry,
   ox: number,
   oy: number
 ): React.ReactNode {
   if (!notation.mainText) return null;
 
-  const px = ox + 71;
-  const py = oy + 64;
+  const px = ox + cellGeom.playNotationPos.x;
+  const py = oy + cellGeom.playNotationPos.y;
   const ink = notation.isRedInk ? COLOR_RED : COLOR_INK;
 
   if (notation.decorator === "reverse_k") {
@@ -761,9 +808,12 @@ export function renderSingleScorebookCellSvg(
   oy: number
 ): React.ReactNode {
   const ab = cell?.atBat ?? null;
+  const cellGeom = getCellGeometry(rules);
   const playNotation = ab ? formatAtBatPlayNotation(ab, rules) : null;
   const rbiCount = Math.max(0, ab?.rbi || 0);
   const rbiColor = rules.hitLine === "mono_bold" ? COLOR_INK : COLOR_RED;
+  const showBsoSubLines =
+    rules.cellStyle === "quadrant_bso_grid" && rules.pitchMark !== "numbered_bs";
 
   return (
     <g>
@@ -778,37 +828,96 @@ export function renderSingleScorebookCellSvg(
         strokeWidth={0.9}
       />
 
-      {/* 左BSO縦区切り線 */}
+      {/* 左BSO縦区切り線（標準の「十字4分割＋BSO空欄」では中を完全白紙に保つ） */}
       <line
         x1={ox + BSO_W}
         y1={oy}
         x2={ox + BSO_W}
         y2={oy + CELL_H}
-        stroke={COLOR_GRID_LIGHT}
+        stroke={COLOR_GRID}
         strokeWidth={0.85}
       />
 
-      {/* 事前印刷の点線ダイヤモンド＋4ベース小四角 */}
+      {/* BSO横仕切り線（「十字4分割＋横枠」選択時のみ描画） */}
+      {showBsoSubLines && (
+        <g>
+          <line
+            x1={ox}
+            y1={oy + 24.5}
+            x2={ox + BSO_W}
+            y2={oy + 24.5}
+            stroke={COLOR_GRID_LIGHT}
+            strokeWidth={0.75}
+            strokeDasharray="2,2"
+          />
+          <line
+            x1={ox}
+            y1={oy + 49.5}
+            x2={ox + BSO_W}
+            y2={oy + 49.5}
+            stroke={COLOR_GRID_LIGHT}
+            strokeWidth={0.75}
+            strokeDasharray="2,2"
+          />
+        </g>
+      )}
+
+      {/* 事前印刷の点線ダイヤモンド ＆ 十字4分割ガイド点線 */}
       <polygon
-        points={`${ox + PT_HP.x},${oy + PT_HP.y} ${ox + PT_1B.x},${oy + PT_1B.y} ${ox + PT_2B.x},${oy + PT_2B.y} ${ox + PT_3B.x},${oy + PT_3B.y}`}
+        points={`${ox + cellGeom.ptHP.x},${oy + cellGeom.ptHP.y} ${ox + cellGeom.pt1B.x},${oy + cellGeom.pt1B.y} ${ox + cellGeom.pt2B.x},${oy + cellGeom.pt2B.y} ${ox + cellGeom.pt3B.x},${oy + cellGeom.pt3B.y}`}
         fill="none"
-        stroke="#cbd5e1"
-        strokeWidth={0.9}
-        strokeDasharray="2,2"
+        stroke={cellGeom.hasQuadrantCrosshairs ? "#94a3b8" : "#cbd5e1"}
+        strokeWidth={cellGeom.hasQuadrantCrosshairs ? 0.95 : 0.9}
+        strokeDasharray={cellGeom.hasQuadrantCrosshairs ? "2.2,2.1" : "2,2"}
       />
-      {[PT_HP, PT_1B, PT_2B, PT_3B].map((pt, bIdx) => (
-        <rect
-          key={bIdx}
-          x={ox + pt.x - 1.8}
-          y={oy + pt.y - 1.8}
-          width={3.6}
-          height={3.6}
-          fill={COLOR_PAPER}
-          stroke="#94a3b8"
-          strokeWidth={0.8}
-          transform={`rotate(45 ${ox + pt.x} ${oy + pt.y})`}
-        />
-      ))}
+      {cellGeom.hasQuadrantCrosshairs && (
+        <g stroke="#94a3b8" strokeWidth={0.95} strokeDasharray="2.2,2.1">
+          {/* 上辺 ➔ 二塁頂点 */}
+          <line
+            x1={ox + cellGeom.pt2B.x}
+            y1={oy}
+            x2={ox + cellGeom.pt2B.x}
+            y2={oy + cellGeom.pt2B.y}
+          />
+          {/* 本塁頂点 ➔ 下辺 */}
+          <line
+            x1={ox + cellGeom.ptHP.x}
+            y1={oy + cellGeom.ptHP.y}
+            x2={ox + cellGeom.ptHP.x}
+            y2={oy + CELL_H}
+          />
+          {/* BSO境界 ➔ 三塁頂点 */}
+          <line
+            x1={ox + BSO_W}
+            y1={oy + cellGeom.pt3B.y}
+            x2={ox + cellGeom.pt3B.x}
+            y2={oy + cellGeom.pt3B.y}
+          />
+          {/* 一塁頂点 ➔ 右辺 */}
+          <line
+            x1={ox + cellGeom.pt1B.x}
+            y1={oy + cellGeom.pt1B.y}
+            x2={ox + CELL_W}
+            y2={oy + cellGeom.pt1B.y}
+          />
+        </g>
+      )}
+      {cellGeom.hasBaseMiniSquares &&
+        [cellGeom.ptHP, cellGeom.pt1B, cellGeom.pt2B, cellGeom.pt3B].map(
+          (pt, bIdx) => (
+            <rect
+              key={bIdx}
+              x={ox + pt.x - 1.8}
+              y={oy + pt.y - 1.8}
+              width={3.6}
+              height={3.6}
+              fill={COLOR_PAPER}
+              stroke="#94a3b8"
+              strokeWidth={0.8}
+              transform={`rotate(45 ${ox + pt.x} ${oy + pt.y})`}
+            />
+          )
+        )}
 
       {/* 途中投手交代の波線マーク（マス上辺） */}
       {cell?.hasPitcherChangeBefore && (
@@ -830,11 +939,11 @@ export function renderSingleScorebookCellSvg(
         ([1, 2, 3, 4] as const).map((segIdx) => {
           const seg = cell.segments[segIdx];
           if (!seg) return null;
-          return renderDiamondSegment(seg, rules, ox, oy);
+          return renderDiamondSegment(seg, rules, cellGeom, ox, oy);
         })}
 
       {/* 中央ステータス（●得点 / ⅠⅡⅢ・①②③アウト / ℓ残塁） */}
-      {cell && renderCenterStatus(cell, rules, ox, oy)}
+      {cell && renderCenterStatus(cell, rules, cellGeom, ox, oy)}
 
       {/* 右上：打点ドット表示 */}
       {rbiCount > 0 && (
@@ -852,7 +961,7 @@ export function renderSingleScorebookCellSvg(
       )}
 
       {/* 右下：打撃結果記号 */}
-      {playNotation && renderPlayNotation(playNotation, ox, oy)}
+      {playNotation && renderPlayNotation(playNotation, cellGeom, ox, oy)}
 
       {/* イニング3アウト終了打者マスの右下斜線 */}
       {cell?.isInningEndCell && (

@@ -216,6 +216,11 @@ export function TeamSymbolRulesSettingsSection({
     options: ReadonlyArray<{ value: string; label: string; sample: string }>;
   }> = [
     {
+      key: "cellStyle",
+      title: SYMBOL_RULE_FIELD_CONFIGS.cellStyle.title,
+      options: SYMBOL_RULE_FIELD_CONFIGS.cellStyle.options,
+    },
+    {
       key: "outMark",
       title: SYMBOL_RULE_FIELD_CONFIGS.outMark.title,
       options: SYMBOL_RULE_FIELD_CONFIGS.outMark.options,

@@ -8,6 +8,7 @@ import type {
 
 export type ScorebookNotationMode = "standard" | "team";
 
+export type CellGridStyle = "quadrant" | "quadrant_bso_grid" | "simple_diamond";
 export type OutMarkStyle = "roman" | "circled";
 export type StrikeoutMarkStyle =
   | "k_called_reverse"
@@ -28,6 +29,7 @@ export type AdvanceErrorMarkStyle = "english" | "kanji";
 export type PositionLabelStyle = "kanji" | "number" | "english";
 
 export interface ScorebookSymbolRules {
+  cellStyle: CellGridStyle;
   outMark: OutMarkStyle;
   strikeout: StrikeoutMarkStyle;
   walkHbp: WalkHbpMarkStyle;
@@ -44,6 +46,7 @@ export interface ScorebookSymbolRules {
  * 標準（早稲田・成美堂出版式）のスコアブック記号ルール
  */
 export const STANDARD_SCOREBOOK_SYMBOL_RULES: ScorebookSymbolRules = {
+  cellStyle: "quadrant",
   outMark: "roman",
   strikeout: "k_called_reverse",
   walkHbp: "b_db",
@@ -61,6 +64,7 @@ export const STANDARD_SCOREBOOK_SYMBOL_RULES: ScorebookSymbolRules = {
  * ※ ユーザーがスコア設定でいつでも自由に変更可能
  */
 export const DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES: ScorebookSymbolRules = {
+  cellStyle: "quadrant",
   outMark: "circled",
   strikeout: "k_called_circle",
   walkHbp: "b_db",
@@ -84,14 +88,15 @@ export const SCOREBOOK_SYMBOL_PRESETS: readonly ScorebookSymbolPreset[] = [
   {
     id: "waseda_standard",
     label: "早稲田・成美堂 標準",
-    description: "ⅠⅡⅢ・反転K・B/DB・傘フライ・赤太線",
+    description: "十字4分割・ⅠⅡⅢ・反転K・B/DB・傘フライ",
     rules: { ...STANDARD_SCOREBOOK_SYMBOL_RULES },
   },
   {
     id: "youth_senior",
     label: "少年・シニア 丸数字式",
-    description: "①②③・×空振り・見逃しⓀ・(8)フライ",
+    description: "十字4分割・①②③・×空振り・見逃しⓀ",
     rules: {
+      cellStyle: "quadrant",
       outMark: "circled",
       strikeout: "k_called_circle",
       walkHbp: "b_db",
@@ -109,6 +114,7 @@ export const SCOREBOOK_SYMBOL_PRESETS: readonly ScorebookSymbolPreset[] = [
     label: "球数番号・英字式",
     description: "球数番号BS・BB/HBP・8F/8L・守備英字",
     rules: {
+      cellStyle: "quadrant",
       outMark: "circled",
       strikeout: "k_called_reverse",
       walkHbp: "bb_hbp",
@@ -126,6 +132,7 @@ export const SCOREBOOK_SYMBOL_PRESETS: readonly ScorebookSymbolPreset[] = [
     label: "白黒印刷くっきり式",
     description: "黒太線ヒット・◎得点・コピーでも判別容易",
     rules: {
+      cellStyle: "quadrant",
       outMark: "roman",
       strikeout: "k_called_circle",
       walkHbp: "kanji",
@@ -147,6 +154,14 @@ export interface SymbolRuleFieldOption<T extends string> {
 }
 
 export const SYMBOL_RULE_FIELD_CONFIGS = {
+  cellStyle: {
+    title: "1打席マスの罫線デザイン",
+    options: [
+      { value: "quadrant", label: "十字4分割（標準）", sample: "4部屋・BSO空欄" },
+      { value: "quadrant_bso_grid", label: "十字4分割＋横枠", sample: "4部屋・BSO線入" },
+      { value: "simple_diamond", label: "大ダイヤ単独型", sample: "十字なしシンプル" },
+    ] satisfies ReadonlyArray<SymbolRuleFieldOption<CellGridStyle>>,
+  },
   outMark: {
     title: "アウトカウント表記",
     options: [
@@ -249,6 +264,11 @@ export function sanitizeScorebookSymbolRules(
       : fallback.customNote || "";
 
   return {
+    cellStyle: isOneOf(
+      obj.cellStyle,
+      ["quadrant", "quadrant_bso_grid", "simple_diamond"],
+      fallback.cellStyle
+    ),
     outMark: isOneOf(obj.outMark, ["roman", "circled"], fallback.outMark),
     strikeout: isOneOf(
       obj.strikeout,
@@ -360,6 +380,9 @@ export function summarizeSymbolRulesBadges(
   rules: ScorebookSymbolRules
 ): string[] {
   const badges: string[] = [];
+  if (rules.cellStyle === "simple_diamond") badges.push("大ダイヤ単独マス");
+  else if (rules.cellStyle === "quadrant_bso_grid") badges.push("十字4分割＋BSO線");
+  else badges.push("十字4分割マス");
   badges.push(rules.outMark === "circled" ? "①②③アウト" : "ⅠⅡⅢアウト");
   if (rules.strikeout === "k_called_reverse") badges.push("見逃し反転K");
   else if (rules.strikeout === "k_called_circle") badges.push("見逃しⓀ");

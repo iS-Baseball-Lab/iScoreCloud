@@ -778,6 +778,7 @@ liffScorebookRouter.post("/extract-symbol-rules", async (c) => {
 
 出力JSONスキーマ:
 {
+  "cellStyle": "quadrant" | "quadrant_bso_grid" | "simple_diamond", // マス枠線: 中央小ダイヤから上下左右へ十字点線が伸びBSO欄が空欄なら "quadrant"、十字4分割で左BSO欄に横仕切り線があれば "quadrant_bso_grid"、十字点線なしの大きなダイヤのみなら "simple_diamond"（不明なら "quadrant"）
   "outMark": "roman" | "circled", // アウト記号: Ⅰ・Ⅱ・Ⅲ なら "roman"、①・②・③ なら "circled"
   "strikeout": "k_called_reverse" | "k_called_circle" | "k_only" | "so", // 三振: 見逃しが左右反転Kなら "k_called_reverse"、丸囲みⓀなら "k_called_circle"、区別なしKなら "k_only"、SO表記なら "so"
   "walkHbp": "b_db" | "bb_hbp" | "kanji", // 四死球: B/DBなら "b_db"、BB/HBPなら "bb_hbp"、四/死なら "kanji"
