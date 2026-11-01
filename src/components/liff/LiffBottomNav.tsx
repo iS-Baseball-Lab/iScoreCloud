@@ -104,7 +104,7 @@ const MENU_ITEMS: MenuItem[] = [
   },
   {
     title: "チーム成績",
-    subtitle: "勝敗・打撃個人成績",
+    subtitle: "勝敗・得失点・個人成績",
     href: "/liff/stats",
     icon: Trophy,
     colorClass: "bg-amber-500/15 text-amber-600 dark:text-amber-400",

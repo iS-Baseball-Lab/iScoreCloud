@@ -1,47 +1,263 @@
 // filepath: src/app/liff/stats/page.tsx
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
+import Link from "next/link";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { useLiff } from "@/components/liff/LiffProvider";
-import { Trophy, Award, TrendingUp, User, Flame, Activity, Loader2 } from "lucide-react";
+import { EmptyState } from "@/components/layout/EmptyState";
+import { cn } from "@/lib/utils";
+import {
+  Trophy,
+  Flame,
+  Activity,
+  Loader2,
+  Shield,
+  ChevronRight,
+  ScanLine,
+  Target,
+  TrendingUp,
+  BarChart3,
+  Plus,
+} from "lucide-react";
 
-interface TeamStatsData {
+type StatsFilterKey = "all" | "official" | "exchange" | "practice";
+type StatsMainTab = "matches" | "batting" | "pitching";
+type BatterSortKey = "hits" | "avg" | "rbi" | "runs";
+
+interface TeamStatsSummary {
   totalMatches: number;
   wins: number;
   losses: number;
   draws: number;
   winRate: string;
+  winRatePercent: number;
   runsScored: number;
   runsAllowed: number;
   runDiff: string;
+  avgRunsScored: string;
+  avgRunsAllowed: string;
+  maxRunsScored: number;
+  shutouts: number;
+  teamHits: number;
+  opponentHits: number;
+  teamErrors: number;
+  opponentErrors: number;
+  teamAvg: string;
+  teamOps: string;
+  teamHomeRuns: number;
+  teamStolenBases: number;
+  teamEra: string;
+}
+
+interface StatsMatchItem {
+  id: string;
+  date: string;
+  opponent: string;
+  matchType: "official" | "exchange" | "practice";
+  tournamentName: string | null;
+  venueName: string | null;
+  battingOrder: "first" | "second";
+  myScore: number;
+  opponentScore: number;
+  result: "win" | "loss" | "draw";
+  myHits: number;
+  opponentHits: number;
+  myErrors: number;
+  opponentErrors: number;
+  isColdGame: boolean;
+  isTiebreaker: boolean;
+}
+
+interface SeasonBatterStat {
+  id: string;
+  name: string;
+  uniformNumber: string;
+  games: number;
+  plateAppearances: number;
+  atBats: number;
+  hits: number;
+  doubles: number;
+  triples: number;
+  homeRuns: number;
+  totalBases: number;
+  rbi: number;
+  runs: number;
+  walks: number;
+  hitByPitch: number;
+  strikeouts: number;
+  sacBunts: number;
+  sacFlies: number;
+  stolenBases: number;
+  avg: string;
+  obp: string;
+  ops: string;
+}
+
+interface SeasonPitcherStat {
+  id: string;
+  name: string;
+  uniformNumber: string;
+  games: number;
+  outs: number;
+  ip: string;
+  battersFaced: number;
+  hitsAllowed: number;
+  homeRunsAllowed: number;
+  strikeouts: number;
+  walks: number;
+  hitByPitch: number;
+  runs: number;
+  earnedRuns: number;
+  era: string;
+  whip: string;
+}
+
+interface StatsSectionData {
+  summary: TeamStatsSummary;
+  battingStats: SeasonBatterStat[];
+  pitchingStats: SeasonPitcherStat[];
+}
+
+interface LiffStatsApiResponse {
+  success: boolean;
+  isDemo?: boolean;
+  team?: {
+    id: string;
+    name: string;
+    orgName: string;
+    year: number;
+  };
+  stats?: TeamStatsSummary | null;
+  sectionsByFilter?: Record<StatsFilterKey, StatsSectionData>;
+  matches?: StatsMatchItem[];
+  error?: string;
+}
+
+const EMPTY_SUMMARY: TeamStatsSummary = {
+  totalMatches: 0,
+  wins: 0,
+  losses: 0,
+  draws: 0,
+  winRate: ".000",
+  winRatePercent: 0,
+  runsScored: 0,
+  runsAllowed: 0,
+  runDiff: "0",
+  avgRunsScored: "0.0",
+  avgRunsAllowed: "0.0",
+  maxRunsScored: 0,
+  shutouts: 0,
+  teamHits: 0,
+  opponentHits: 0,
+  teamErrors: 0,
+  opponentErrors: 0,
+  teamAvg: ".000",
+  teamOps: ".000",
+  teamHomeRuns: 0,
+  teamStolenBases: 0,
+  teamEra: "0.00",
+};
+
+const EMPTY_SECTION: StatsSectionData = {
+  summary: EMPTY_SUMMARY,
+  battingStats: [],
+  pitchingStats: [],
+};
+
+const MATCH_TYPE_META: Record<
+  "official" | "exchange" | "practice",
+  { label: string; badgeClass: string }
+> = {
+  official: {
+    label: "公式戦",
+    badgeClass:
+      "bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/70 dark:text-amber-300 dark:border-amber-800",
+  },
+  exchange: {
+    label: "交流戦",
+    badgeClass:
+      "bg-indigo-100 text-indigo-800 border-indigo-300 dark:bg-indigo-950/70 dark:text-indigo-300 dark:border-indigo-800",
+  },
+  practice: {
+    label: "OP戦",
+    badgeClass:
+      "bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700",
+  },
+};
+
+function formatCompactDate(raw: string): string {
+  const trimmed = (raw || "").trim();
+  const matched = trimmed.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (!matched) return trimmed;
+  const [, yyyy, mm, dd] = matched;
+  return `${yyyy}/${mm.padStart(2, "0")}/${dd.padStart(2, "0")}`;
+}
+
+function parseRateValue(rateText: string): number {
+  if (!rateText) return 0;
+  const normalized = rateText.startsWith(".") ? `0${rateText}` : rateText;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function cleanUniform(raw: string): string {
+  const t = (raw || "").replace(/^#/, "").trim();
+  return t && t !== "-" ? t : "-";
 }
 
 export default function LiffStatsPage() {
-  const { currentTeam } = useLiff();
-  const [tab, setTab] = useState<"team" | "batting" | "pitching">("team");
-  const [stats, setStats] = useState<TeamStatsData>({
-    totalMatches: 0,
-    wins: 0,
-    losses: 0,
-    draws: 0,
-    winRate: ".000",
-    runsScored: 0,
-    runsAllowed: 0,
-    runDiff: "0",
+  const { currentTeam, isLoadingTeam } = useLiff();
+  const [filter, setFilter] = useState<StatsFilterKey>("all");
+  const [tab, setTab] = useState<StatsMainTab>("matches");
+  const [batterSort, setBatterSort] = useState<BatterSortKey>("hits");
+  const [seasonYear, setSeasonYear] = useState<number>(() => new Date().getFullYear());
+  const [sectionsByFilter, setSectionsByFilter] = useState<
+    Record<StatsFilterKey, StatsSectionData>
+  >({
+    all: EMPTY_SECTION,
+    official: EMPTY_SECTION,
+    exchange: EMPTY_SECTION,
+    practice: EMPTY_SECTION,
   });
-  const [isLoading, setIsLoading] = useState(true);
+  const [matchesList, setMatchesList] = useState<StatsMatchItem[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
 
   const loadStats = useCallback(async () => {
+    if (isLoadingTeam && !currentTeam?.id) return;
     try {
       setIsLoading(true);
-      const teamId = currentTeam?.id || "demo-team";
-      const res = await fetch(`/api/liff/stats?teamId=${teamId}`);
+      const teamId =
+        currentTeam?.id ||
+        (typeof window !== "undefined"
+          ? localStorage.getItem("iscore_selectedTeamId") || "demo-team"
+          : "demo-team");
+      const res = await fetch(`/api/liff/stats?teamId=${encodeURIComponent(teamId)}`);
       if (res.ok) {
-        const data = await res.json() as { success: boolean; stats?: TeamStatsData };
-        if (data.stats) {
-          setStats(data.stats);
+        const data = (await res.json()) as LiffStatsApiResponse;
+        if (data.team?.year) {
+          setSeasonYear(data.team.year);
+        }
+        if (data.sectionsByFilter) {
+          setSectionsByFilter(data.sectionsByFilter);
+        } else if (data.stats) {
+          const fallbackSection: StatsSectionData = {
+            summary: { ...EMPTY_SUMMARY, ...data.stats },
+            battingStats: [],
+            pitchingStats: [],
+          };
+          setSectionsByFilter({
+            all: fallbackSection,
+            official: fallbackSection,
+            exchange: fallbackSection,
+            practice: fallbackSection,
+          });
+        }
+        if (Array.isArray(data.matches)) {
+          setMatchesList(data.matches);
+        } else {
+          setMatchesList([]);
         }
       }
     } catch (err) {
@@ -49,269 +265,1066 @@ export default function LiffStatsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [currentTeam?.id]);
+  }, [currentTeam?.id, isLoadingTeam]);
 
   useEffect(() => {
     loadStats();
   }, [loadStats]);
 
-  const teamStats = {
-    matches: stats.totalMatches,
-    wins: stats.wins,
-    losses: stats.losses,
-    draws: stats.draws,
-    winRate: stats.winRate,
-    runsScored: stats.runsScored,
-    runsAllowed: stats.runsAllowed,
+  const activeSection = sectionsByFilter[filter] || EMPTY_SECTION;
+  const summary = activeSection.summary;
+
+  const filteredMatches = useMemo(() => {
+    if (filter === "all") return matchesList;
+    return matchesList.filter((m) => m.matchType === filter);
+  }, [matchesList, filter]);
+
+  const sortedBatters = useMemo(() => {
+    const copy = [...activeSection.battingStats];
+    copy.sort((a, b) => {
+      if (batterSort === "avg") {
+        const avgDiff = parseRateValue(b.avg) - parseRateValue(a.avg);
+        if (avgDiff !== 0) return avgDiff;
+        return b.hits - a.hits;
+      }
+      if (batterSort === "rbi") {
+        if (b.rbi !== a.rbi) return b.rbi - a.rbi;
+        return b.hits - a.hits;
+      }
+      if (batterSort === "runs") {
+        if (b.runs !== a.runs) return b.runs - a.runs;
+        return b.hits - a.hits;
+      }
+      if (b.hits !== a.hits) return b.hits - a.hits;
+      if (b.rbi !== a.rbi) return b.rbi - a.rbi;
+      return b.plateAppearances - a.plateAppearances;
+    });
+    return copy;
+  }, [activeSection.battingStats, batterSort]);
+
+  // 打撃リーダー TOP3（打率・打点・安打）
+  const avgLeaders = useMemo(() => {
+    const eligible = activeSection.battingStats.filter((b) => b.atBats >= 2);
+    const pool =
+      eligible.length >= 3
+        ? eligible
+        : activeSection.battingStats.filter((b) => b.atBats >= 1);
+    return [...pool]
+      .sort((a, b) => {
+        const d = parseRateValue(b.avg) - parseRateValue(a.avg);
+        if (d !== 0) return d;
+        return b.hits - a.hits;
+      })
+      .slice(0, 3);
+  }, [activeSection.battingStats]);
+
+  const rbiLeaders = useMemo(() => {
+    return [...activeSection.battingStats]
+      .filter((b) => b.rbi > 0)
+      .sort((a, b) => (b.rbi !== a.rbi ? b.rbi - a.rbi : b.hits - a.hits))
+      .slice(0, 3);
+  }, [activeSection.battingStats]);
+
+  const hitLeaders = useMemo(() => {
+    return [...activeSection.battingStats]
+      .filter((b) => b.hits > 0)
+      .sort((a, b) => (b.hits !== a.hits ? b.hits - a.hits : b.totalBases - a.totalBases))
+      .slice(0, 3);
+  }, [activeSection.battingStats]);
+
+  // 投手リーダー TOP3（防御率・奪三振）
+  const eraLeaders = useMemo(() => {
+    const eligible = activeSection.pitchingStats.filter((p) => p.outs >= 3);
+    const pool = eligible.length > 0 ? eligible : activeSection.pitchingStats;
+    return [...pool]
+      .sort((a, b) => {
+        const d = Number(a.era) - Number(b.era);
+        if (d !== 0) return d;
+        return b.outs - a.outs;
+      })
+      .slice(0, 3);
+  }, [activeSection.pitchingStats]);
+
+  const soLeaders = useMemo(() => {
+    return [...activeSection.pitchingStats]
+      .filter((p) => p.strikeouts > 0)
+      .sort((a, b) =>
+        b.strikeouts !== a.strikeouts ? b.strikeouts - a.strikeouts : b.outs - a.outs
+      )
+      .slice(0, 3);
+  }, [activeSection.pitchingStats]);
+
+  const totalRunsFlow = summary.runsScored + summary.runsAllowed;
+  const scoredBarPercent =
+    totalRunsFlow > 0
+      ? Math.max(8, Math.min(92, Math.round((summary.runsScored / totalRunsFlow) * 100)))
+      : 50;
+
+  const runDiffNum = summary.runsScored - summary.runsAllowed;
+  const filterTitleLabel =
+    filter === "official"
+      ? "公式戦 成績"
+      : filter === "exchange"
+      ? "交流戦 成績"
+      : filter === "practice"
+      ? "OP戦 成績"
+      : `${seasonYear}シーズン 通算成績`;
+
+  const teamDisplayName = currentTeam?.name || "チーム";
+  const sharePayload = {
+    title: `【チーム成績】${teamDisplayName} ${summary.wins}勝${summary.losses}敗${
+      summary.draws > 0 ? `${summary.draws}分` : ""
+    } (勝率 ${summary.winRate})`,
+    text: `総得点 ${summary.runsScored} (平均 ${summary.avgRunsScored}) / 総失点 ${summary.runsAllowed} (平均 ${summary.avgRunsAllowed}) / 得失点差 ${summary.runDiff}`,
   };
 
-  const battingRankings = [
-    { rank: 1, name: "佐藤 翔太", uniform: "10", value: ".438", label: "打率", detail: "32打数 14安打" },
-    { rank: 2, name: "鈴木 蓮", uniform: "1", value: ".387", label: "打率", detail: "31打数 12安打" },
-    { rank: 3, name: "田中 健太", uniform: "6", value: ".355", label: "打率", detail: "31打数 11安打" },
-  ];
-
-  const hrRankings = [
-    { rank: 1, name: "渡辺 陽向", uniform: "4", value: "3 本", label: "本塁打", detail: "打点 12" },
-    { rank: 2, name: "佐藤 翔太", uniform: "10", value: "2 本", label: "本塁打", detail: "打点 9" },
-    { rank: 3, name: "山下 颯太", uniform: "8", value: "2 本", label: "本塁打", detail: "打点 8" },
-  ];
-
-  const pitchingRankings = [
-    { rank: 1, name: "鈴木 蓮", uniform: "1", value: "1.85", label: "防御率", detail: "24回 奪三振 28 (5勝0敗)" },
-    { rank: 2, name: "高橋 陸", uniform: "11", value: "2.40", label: "防御率", detail: "18回 奪三振 19 (4勝1敗)" },
-    { rank: 3, name: "小林 樹", uniform: "18", value: "3.15", label: "防御率", detail: "12回 奪三振 10 (3勝2敗)" },
-  ];
+  const countAll = sectionsByFilter.all.summary.totalMatches;
+  const countOfficial = sectionsByFilter.official.summary.totalMatches;
+  const countExchange = sectionsByFilter.exchange.summary.totalMatches;
+  const countPractice = sectionsByFilter.practice.summary.totalMatches;
 
   return (
     <div className="flex flex-col flex-1">
-      <LiffHeader />
+      <LiffHeader shareData={sharePayload} />
 
       <div className="p-4 space-y-4">
-        {/* ページ内ヘッダー */}
+        {/* ページ内ヘッダー（メニュー項目「チーム成績」と完全統一） */}
         <LiffPageHeader
-          title="成績 & ランキング"
-          subtitle="2026年度 チーム・個人スタッツ"
+          title="チーム成績"
+          subtitle={`${seasonYear}年度 勝敗・得失点・個人成績`}
           icon={
-            <span className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center font-black">
+            <span className="w-8 h-8 rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center font-black">
               <Trophy className="w-4 h-4" />
             </span>
           }
           showBack
-          shareData={{
-            title: `【成績速報】チーム勝率 ${teamStats.winRate} (${teamStats.wins}勝${teamStats.losses}敗)`,
-            text: `打率・本塁打・投手成績ランキングをチェック！`,
-          }}
+          shareData={sharePayload}
         />
-        {/* 🏆 チーム勝敗サマリーカード */}
-        <section className="bg-card border-2 border-amber-500/40 rounded-3xl p-4 shadow-sm space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5 font-black text-xs text-amber-600 dark:text-amber-400">
-              <Trophy className="w-4 h-4 shrink-0" />
-              <span>2026シーズン 通算成績</span>
-            </div>
-            <span className="text-xs font-black px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600">
-              勝率 {teamStats.winRate}
-            </span>
-          </div>
 
-          <div className="grid grid-cols-4 gap-2 text-center pt-1">
-            <div className="p-2 rounded-2xl bg-muted/50 border border-border/50">
-              <span className="text-[10px] text-muted-foreground font-bold block">試合</span>
-              <span className="text-base font-black text-foreground">{teamStats.matches}</span>
-            </div>
-            <div className="p-2 rounded-2xl bg-emerald-500/10 border border-emerald-500/20">
-              <span className="text-[10px] text-emerald-600 font-bold block">勝利</span>
-              <span className="text-base font-black text-emerald-600">{teamStats.wins}</span>
-            </div>
-            <div className="p-2 rounded-2xl bg-rose-500/10 border border-rose-500/20">
-              <span className="text-[10px] text-rose-600 font-bold block">敗戦</span>
-              <span className="text-base font-black text-rose-600">{teamStats.losses}</span>
-            </div>
-            <div className="p-2 rounded-2xl bg-muted/50 border border-border/50">
-              <span className="text-[10px] text-muted-foreground font-bold block">引分</span>
-              <span className="text-base font-black text-foreground">{teamStats.draws}</span>
-            </div>
-          </div>
-        </section>
-
-        {/* スタッツカテゴリタブ */}
-        <div className="flex p-1 bg-muted/60 rounded-2xl border border-border">
-          <button
-            type="button"
-            onClick={() => setTab("batting")}
-            className={`flex-1 py-2 rounded-xl text-xs font-black transition-all ${
-              tab === "batting"
-                ? "bg-card text-foreground shadow-xs"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            🏏 打撃ランキング
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab("pitching")}
-            className={`flex-1 py-2 rounded-xl text-xs font-black transition-all ${
-              tab === "pitching"
-                ? "bg-card text-foreground shadow-xs"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            ⚾ 投手ランキング
-          </button>
+        {/* 試合種別フィルタータブ */}
+        <div className="grid grid-cols-4 gap-1 p-1 bg-muted/70 rounded-2xl border border-border">
+          {(
+            [
+              { key: "all" as const, label: "すべて", count: countAll },
+              { key: "official" as const, label: "🏆 公式戦", count: countOfficial },
+              { key: "exchange" as const, label: "🤝 交流戦", count: countExchange },
+              { key: "practice" as const, label: "⚾ OP戦", count: countPractice },
+            ] as const
+          ).map((item) => {
+            const active = filter === item.key;
+            return (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => setFilter(item.key)}
+                className={cn(
+                  "py-1.5 px-1 rounded-xl text-[11px] font-black transition-all truncate tabular-nums",
+                  active
+                    ? "bg-card text-foreground shadow-xs border border-border/60"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {item.label} ({item.count})
+              </button>
+            );
+          })}
         </div>
 
-        {/* 打撃ランキング表示 */}
-        {tab === "batting" && (
-          <div className="space-y-4">
-            {/* 打率TOP3 */}
-            <div className="bg-card border border-border rounded-2xl p-4 shadow-xs space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xs font-black text-foreground flex items-center gap-1.5">
-                  <Flame className="w-3.5 h-3.5 text-rose-500" />
-                  <span>打率 リーダー TOP3</span>
-                </h3>
-              </div>
-
-              <div className="space-y-2">
-                {battingRankings.map((item) => (
-                  <div
-                    key={item.rank}
-                    className="flex items-center justify-between p-2.5 rounded-xl bg-muted/30 text-xs"
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <span
-                        className={`w-5 h-5 rounded-md font-black text-xs flex items-center justify-center ${
-                          item.rank === 1
-                            ? "bg-amber-400 text-amber-950 shadow-xs"
-                            : item.rank === 2
-                            ? "bg-slate-300 text-slate-800"
-                            : "bg-amber-700/30 text-amber-900 dark:text-amber-200"
-                        }`}
-                      >
-                        {item.rank}
-                      </span>
-                      <div>
-                        <span className="font-bold text-foreground">
-                          {item.name}
-                        </span>
-                        <span className="text-[10px] text-muted-foreground ml-1.5">
-                          #{item.uniform}
-                        </span>
-                        <span className="text-[10px] text-muted-foreground block">
-                          {item.detail}
-                        </span>
-                      </div>
-                    </div>
-
-                    <span className="text-base font-black tabular-nums text-foreground">
-                      {item.value}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* 本塁打TOP3 */}
-            <div className="bg-card border border-border rounded-2xl p-4 shadow-xs space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xs font-black text-foreground flex items-center gap-1.5">
-                  <Trophy className="w-3.5 h-3.5 text-amber-500" />
-                  <span>本塁打 リーダー TOP3</span>
-                </h3>
-              </div>
-
-              <div className="space-y-2">
-                {hrRankings.map((item) => (
-                  <div
-                    key={item.rank}
-                    className="flex items-center justify-between p-2.5 rounded-xl bg-muted/30 text-xs"
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <span
-                        className={`w-5 h-5 rounded-md font-black text-xs flex items-center justify-center ${
-                          item.rank === 1
-                            ? "bg-amber-400 text-amber-950 shadow-xs"
-                            : item.rank === 2
-                            ? "bg-slate-300 text-slate-800"
-                            : "bg-amber-700/30 text-amber-900 dark:text-amber-200"
-                        }`}
-                      >
-                        {item.rank}
-                      </span>
-                      <div>
-                        <span className="font-bold text-foreground">
-                          {item.name}
-                        </span>
-                        <span className="text-[10px] text-muted-foreground ml-1.5">
-                          #{item.uniform}
-                        </span>
-                        <span className="text-[10px] text-muted-foreground block">
-                          {item.detail}
-                        </span>
-                      </div>
-                    </div>
-
-                    <span className="text-base font-black tabular-nums text-foreground">
-                      {item.value}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
+        {isLoading ? (
+          <div className="rounded-3xl bg-card border border-border p-12 flex flex-col items-center justify-center gap-2.5 shadow-xs">
+            <Loader2 className="w-7 h-7 animate-spin text-primary" />
+            <p className="text-xs font-bold text-muted-foreground">
+              チーム成績を集計中...
+            </p>
           </div>
-        )}
-
-        {/* 投手ランキング表示 */}
-        {tab === "pitching" && (
-          <div className="space-y-4">
-            <div className="bg-card border border-border rounded-2xl p-4 shadow-xs space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xs font-black text-foreground flex items-center gap-1.5">
-                  <Activity className="w-3.5 h-3.5 text-blue-500" />
-                  <span>防御率 リーダー TOP3</span>
-                </h3>
+        ) : (
+          <>
+            {/* 🏆 チーム勝敗 & 得点・失点サマリーカード（ソリッド高視認性設計） */}
+            <section className="bg-card border-2 border-amber-500/40 rounded-3xl p-4 shadow-sm space-y-3.5">
+              {/* ヘッダー行 */}
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 font-black text-xs text-amber-700 dark:text-amber-400">
+                  <Trophy className="w-4 h-4 shrink-0" />
+                  <span>{filterTitleLabel}</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-black px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 border border-amber-300/70 dark:border-amber-800 tabular-nums">
+                    勝率 {summary.winRate} ({summary.winRatePercent}%)
+                  </span>
+                </div>
               </div>
 
-              <div className="space-y-2">
-                {pitchingRankings.map((item) => (
-                  <div
-                    key={item.rank}
-                    className="flex items-center justify-between p-2.5 rounded-xl bg-muted/30 text-xs"
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <span
-                        className={`w-5 h-5 rounded-md font-black text-xs flex items-center justify-center ${
-                          item.rank === 1
-                            ? "bg-amber-400 text-amber-950 shadow-xs"
-                            : item.rank === 2
-                            ? "bg-slate-300 text-slate-800"
-                            : "bg-amber-700/30 text-amber-900 dark:text-amber-200"
-                        }`}
-                      >
-                        {item.rank}
-                      </span>
-                      <div>
-                        <span className="font-bold text-foreground">
-                          {item.name}
-                        </span>
-                        <span className="text-[10px] text-muted-foreground ml-1.5">
-                          #{item.uniform}
-                        </span>
-                        <span className="text-[10px] text-muted-foreground block">
-                          {item.detail}
-                        </span>
-                      </div>
-                    </div>
+              {/* 1段目：試合・勝利・敗戦・引分 */}
+              <div className="grid grid-cols-4 gap-2 text-center">
+                <div className="p-2.5 rounded-2xl bg-muted border border-border">
+                  <span className="text-[10px] text-muted-foreground font-bold block">
+                    試合
+                  </span>
+                  <span className="text-lg font-black text-foreground tabular-nums">
+                    {summary.totalMatches}
+                  </span>
+                </div>
+                <div className="p-2.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800/70">
+                  <span className="text-[10px] text-emerald-700 dark:text-emerald-300 font-bold block">
+                    勝利
+                  </span>
+                  <span className="text-lg font-black text-emerald-700 dark:text-emerald-300 tabular-nums">
+                    {summary.wins}
+                  </span>
+                </div>
+                <div className="p-2.5 rounded-2xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800/70">
+                  <span className="text-[10px] text-rose-700 dark:text-rose-300 font-bold block">
+                    敗戦
+                  </span>
+                  <span className="text-lg font-black text-rose-700 dark:text-rose-300 tabular-nums">
+                    {summary.losses}
+                  </span>
+                </div>
+                <div className="p-2.5 rounded-2xl bg-muted border border-border">
+                  <span className="text-[10px] text-muted-foreground font-bold block">
+                    引分
+                  </span>
+                  <span className="text-lg font-black text-foreground tabular-nums">
+                    {summary.draws}
+                  </span>
+                </div>
+              </div>
 
-                    <span className="text-base font-black tabular-nums text-foreground">
-                      {item.value}
+              {/* 2段目：総得点・総失点・得失点差 ＆ バランスバー */}
+              <div className="rounded-2xl bg-muted/60 border border-border p-3 space-y-2.5">
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  {/* 総得点 */}
+                  <div className="p-2 rounded-xl bg-card border border-emerald-200 dark:border-emerald-900/70">
+                    <span className="text-[10px] font-black text-emerald-700 dark:text-emerald-400 block">
+                      総得点
+                    </span>
+                    <div className="flex items-baseline justify-center gap-0.5 mt-0.5">
+                      <span className="text-xl font-black text-emerald-700 dark:text-emerald-300 tabular-nums">
+                        {summary.runsScored}
+                      </span>
+                      <span className="text-[10px] font-bold text-muted-foreground">
+                        点
+                      </span>
+                    </div>
+                    <span className="text-[9.5px] font-bold text-muted-foreground tabular-nums block mt-0.5">
+                      平均 {summary.avgRunsScored} 点
                     </span>
                   </div>
-                ))}
+
+                  {/* 総失点 */}
+                  <div className="p-2 rounded-xl bg-card border border-rose-200 dark:border-rose-900/70">
+                    <span className="text-[10px] font-black text-rose-700 dark:text-rose-400 block">
+                      総失点
+                    </span>
+                    <div className="flex items-baseline justify-center gap-0.5 mt-0.5">
+                      <span className="text-xl font-black text-rose-700 dark:text-rose-300 tabular-nums">
+                        {summary.runsAllowed}
+                      </span>
+                      <span className="text-[10px] font-bold text-muted-foreground">
+                        点
+                      </span>
+                    </div>
+                    <span className="text-[9.5px] font-bold text-muted-foreground tabular-nums block mt-0.5">
+                      平均 {summary.avgRunsAllowed} 点
+                    </span>
+                  </div>
+
+                  {/* 得失点差 */}
+                  <div className="p-2 rounded-xl bg-card border border-border">
+                    <span className="text-[10px] font-black text-muted-foreground block">
+                      得失点差
+                    </span>
+                    <div className="flex items-baseline justify-center gap-0.5 mt-0.5">
+                      <span
+                        className={cn(
+                          "text-xl font-black tabular-nums",
+                          runDiffNum > 0
+                            ? "text-emerald-700 dark:text-emerald-300"
+                            : runDiffNum < 0
+                            ? "text-rose-700 dark:text-rose-300"
+                            : "text-foreground"
+                        )}
+                      >
+                        {summary.runDiff}
+                      </span>
+                    </div>
+                    <span className="text-[9.5px] font-bold text-muted-foreground tabular-nums block mt-0.5">
+                      最高{summary.maxRunsScored}点
+                      {summary.shutouts > 0 ? `・完封${summary.shutouts}` : ""}
+                    </span>
+                  </div>
+                </div>
+
+                {/* 得点 vs 失点 比率バー */}
+                {totalRunsFlow > 0 && (
+                  <div className="space-y-1">
+                    <div className="h-2.5 w-full rounded-full overflow-hidden flex bg-rose-500 dark:bg-rose-600">
+                      <div
+                        className="h-full bg-emerald-500 dark:bg-emerald-500 transition-all duration-500"
+                        style={{ width: `${scoredBarPercent}%` }}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between text-[10px] font-bold text-muted-foreground tabular-nums px-0.5">
+                      <span>
+                        チーム安打 <strong className="text-foreground">{summary.teamHits}</strong> / 失策{" "}
+                        <strong className="text-foreground">{summary.teamErrors}</strong>
+                      </span>
+                      <span>
+                        被安打 <strong className="text-foreground">{summary.opponentHits}</strong> / 相手失策{" "}
+                        <strong className="text-foreground">{summary.opponentErrors}</strong>
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
+
+              {/* 3段目：チーム打撃・投手4指標 */}
+              <div className="grid grid-cols-4 gap-1.5 text-center pt-0.5">
+                <div className="py-2 px-1 rounded-xl bg-muted/50 border border-border/70">
+                  <span className="text-[9.5px] font-bold text-muted-foreground block">
+                    チーム打率
+                  </span>
+                  <span className="text-xs font-black text-foreground tabular-nums mt-0.5 block">
+                    {summary.teamAvg}
+                  </span>
+                </div>
+                <div className="py-2 px-1 rounded-xl bg-muted/50 border border-border/70">
+                  <span className="text-[9.5px] font-bold text-muted-foreground block">
+                    チームOPS
+                  </span>
+                  <span className="text-xs font-black text-foreground tabular-nums mt-0.5 block">
+                    {summary.teamOps}
+                  </span>
+                </div>
+                <div className="py-2 px-1 rounded-xl bg-muted/50 border border-border/70">
+                  <span className="text-[9.5px] font-bold text-muted-foreground block">
+                    本塁打 / 盗塁
+                  </span>
+                  <span className="text-xs font-black text-foreground tabular-nums mt-0.5 block">
+                    {summary.teamHomeRuns} / {summary.teamStolenBases}
+                  </span>
+                </div>
+                <div className="py-2 px-1 rounded-xl bg-muted/50 border border-border/70">
+                  <span className="text-[9.5px] font-bold text-muted-foreground block">
+                    チーム防御率
+                  </span>
+                  <span className="text-xs font-black text-foreground tabular-nums mt-0.5 block">
+                    {summary.teamEra}
+                  </span>
+                </div>
+              </div>
+
+              {/* 4段目：「すべて」表示時の試合種別ごとの勝敗・得失点内訳 */}
+              {filter === "all" && summary.totalMatches > 0 && (
+                <div className="pt-2 border-t border-border/70 space-y-1.5">
+                  <p className="text-[10px] font-black text-muted-foreground px-0.5">
+                    試合種別ごとの勝敗・得失点内訳（タップで絞り込み）
+                  </p>
+                  <div className="space-y-1">
+                    {(
+                      [
+                        { key: "official" as const, meta: MATCH_TYPE_META.official },
+                        { key: "exchange" as const, meta: MATCH_TYPE_META.exchange },
+                        { key: "practice" as const, meta: MATCH_TYPE_META.practice },
+                      ] as const
+                    ).map(({ key, meta }) => {
+                      const sub = sectionsByFilter[key].summary;
+                      if (sub.totalMatches === 0) return null;
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => setFilter(key)}
+                          className="w-full flex items-center justify-between px-2.5 py-2 rounded-xl bg-muted/40 hover:bg-muted border border-border/70 text-xs transition-colors active:scale-[0.99]"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span
+                              className={cn(
+                                "px-1.5 py-0.5 rounded-md border text-[10px] font-black shrink-0",
+                                meta.badgeClass
+                              )}
+                            >
+                              {meta.label}
+                            </span>
+                            <span className="font-black text-foreground tabular-nums">
+                              {sub.wins}勝{sub.losses}敗
+                              {sub.draws > 0 ? `${sub.draws}分` : ""}
+                            </span>
+                            <span className="text-[10px] font-bold text-muted-foreground tabular-nums">
+                              ({sub.winRate})
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0 tabular-nums text-[11px] font-bold">
+                            <span className="text-emerald-700 dark:text-emerald-400 font-black">
+                              得{sub.runsScored}
+                            </span>
+                            <span className="text-muted-foreground">/</span>
+                            <span className="text-rose-700 dark:text-rose-400 font-black">
+                              失{sub.runsAllowed}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground">
+                              ({sub.runDiff})
+                            </span>
+                            <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </section>
+
+            {/* メイン切り替えタブ（試合別スコア / 打撃成績 / 投手成績） */}
+            <div className="grid grid-cols-3 gap-1 p-1 bg-muted/70 rounded-2xl border border-border">
+              <button
+                type="button"
+                onClick={() => setTab("matches")}
+                className={cn(
+                  "py-2 rounded-xl text-xs font-black transition-all",
+                  tab === "matches"
+                    ? "bg-card text-foreground shadow-xs border border-border/60"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                📊 試合別スコア
+              </button>
+              <button
+                type="button"
+                onClick={() => setTab("batting")}
+                className={cn(
+                  "py-2 rounded-xl text-xs font-black transition-all",
+                  tab === "batting"
+                    ? "bg-card text-foreground shadow-xs border border-border/60"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                🏏 打撃成績
+              </button>
+              <button
+                type="button"
+                onClick={() => setTab("pitching")}
+                className={cn(
+                  "py-2 rounded-xl text-xs font-black transition-all",
+                  tab === "pitching"
+                    ? "bg-card text-foreground shadow-xs border border-border/60"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                ⚾ 投手成績
+              </button>
             </div>
-          </div>
+
+            {/* ━━━ Tab 1: 試合別スコア（各試合の得点・失点一覧） ━━━ */}
+            {tab === "matches" && (
+              <section className="space-y-2.5">
+                {filteredMatches.length === 0 ? (
+                  <div className="py-6 space-y-4">
+                    <EmptyState
+                      icon={Shield}
+                      title="確定済みの試合結果がありません"
+                      description="試合結果が登録されると、試合ごとの勝敗・得点・失点がここに一覧表示されます"
+                    />
+                    <div className="flex justify-center">
+                      <Link
+                        href="/liff/matches"
+                        className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-2xl bg-primary text-primary-foreground text-xs font-black shadow-xs hover:bg-primary/90 active:scale-95 transition-all"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span>試合情報ページを開く</span>
+                      </Link>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between px-1">
+                      <h3 className="text-xs font-black text-foreground flex items-center gap-1.5">
+                        <BarChart3 className="w-3.5 h-3.5 text-primary" />
+                        <span>試合ごとの得点・失点履歴 ({filteredMatches.length}試合)</span>
+                      </h3>
+                      <span className="text-[10px] font-bold text-muted-foreground">
+                        タップで試合詳細へ
+                      </span>
+                    </div>
+
+                    <div className="space-y-2">
+                      {filteredMatches.map((m) => {
+                        const typeMeta = MATCH_TYPE_META[m.matchType];
+                        const resultBadge =
+                          m.result === "win"
+                            ? {
+                                text: "勝",
+                                cls: "bg-emerald-600 text-white",
+                                scoreCls: "text-emerald-700 dark:text-emerald-300",
+                              }
+                            : m.result === "loss"
+                            ? {
+                                text: "負",
+                                cls: "bg-rose-600 text-white",
+                                scoreCls: "text-rose-700 dark:text-rose-300",
+                              }
+                            : {
+                                text: "分",
+                                cls: "bg-slate-500 text-white",
+                                scoreCls: "text-foreground",
+                              };
+
+                        const hasHitsOrErrors =
+                          m.myHits > 0 ||
+                          m.opponentHits > 0 ||
+                          m.myErrors > 0 ||
+                          m.opponentErrors > 0;
+
+                        return (
+                          <Link
+                            key={m.id}
+                            href={`/liff/matches?id=${encodeURIComponent(m.id)}`}
+                            className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-card hover:bg-muted/40 border border-border shadow-xs transition-all active:scale-[0.99]"
+                          >
+                            {/* 左：勝敗バッジ ＋ 試合情報 */}
+                            <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                              <span
+                                className={cn(
+                                  "w-8 h-8 rounded-xl font-black text-xs flex items-center justify-center shrink-0 shadow-2xs",
+                                  resultBadge.cls
+                                )}
+                              >
+                                {resultBadge.text}
+                              </span>
+
+                              <div className="min-w-0 flex-1 space-y-0.5">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="text-[11px] font-bold text-muted-foreground tabular-nums">
+                                    {formatCompactDate(m.date)}
+                                  </span>
+                                  <span
+                                    className={cn(
+                                      "px-1.5 py-0.2 rounded border text-[9.5px] font-black",
+                                      typeMeta.badgeClass
+                                    )}
+                                  >
+                                    {typeMeta.label}
+                                  </span>
+                                  {m.isColdGame && (
+                                    <span className="px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300 text-[9.5px] font-black">
+                                      コールド
+                                    </span>
+                                  )}
+                                  {m.isTiebreaker && (
+                                    <span className="px-1.5 py-0.2 rounded bg-purple-100 text-purple-800 dark:bg-purple-950/70 dark:text-purple-300 text-[9.5px] font-black">
+                                      TB
+                                    </span>
+                                  )}
+                                </div>
+
+                                {m.tournamentName && (
+                                  <p className="text-[10.5px] font-bold text-amber-700 dark:text-amber-400 truncate">
+                                    {m.tournamentName}
+                                  </p>
+                                )}
+
+                                <p className="text-xs sm:text-sm font-black text-foreground truncate">
+                                  vs {m.opponent}
+                                </p>
+
+                                {m.venueName && (
+                                  <p className="text-[10px] font-bold text-muted-foreground truncate">
+                                    ＠{m.venueName}（{m.battingOrder === "first" ? "先攻" : "後攻"}）
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* 右：得点 - 失点 スコア表示 */}
+                            <div className="flex items-center gap-2 shrink-0">
+                              <div className="text-right">
+                                <div className="flex items-baseline justify-end gap-1 tabular-nums">
+                                  <span
+                                    className={cn(
+                                      "text-lg font-black leading-none",
+                                      resultBadge.scoreCls
+                                    )}
+                                  >
+                                    {m.myScore}
+                                  </span>
+                                  <span className="text-xs font-black text-muted-foreground">
+                                    -
+                                  </span>
+                                  <span className="text-lg font-black text-foreground leading-none">
+                                    {m.opponentScore}
+                                  </span>
+                                </div>
+                                <p className="text-[9.5px] font-bold text-muted-foreground tabular-nums mt-1">
+                                  得{m.myScore} / 失{m.opponentScore}
+                                </p>
+                                {hasHitsOrErrors && (
+                                  <p className="text-[9px] font-bold text-muted-foreground/90 tabular-nums">
+                                    安{m.myHits}・失策{m.myErrors}
+                                  </p>
+                                )}
+                              </div>
+                              <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                            </div>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </section>
+            )}
+
+            {/* ━━━ Tab 2: 打撃成績（実データ連動リーダー ＆ 一覧表） ━━━ */}
+            {tab === "batting" && (
+              <section className="space-y-4">
+                {activeSection.battingStats.length === 0 ? (
+                  <div className="py-6 space-y-4">
+                    <EmptyState
+                      icon={Flame}
+                      title="打撃成績データがまだありません"
+                      description="スコアブック取り込みまたはライブスコア入力を保存すると、個人打撃成績が自動集計されます"
+                    />
+                    <div className="flex justify-center">
+                      <Link
+                        href="/liff/tools/scorebook-import"
+                        className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-2xl bg-primary text-primary-foreground text-xs font-black shadow-xs hover:bg-primary/90 active:scale-95 transition-all"
+                      >
+                        <ScanLine className="w-4 h-4" />
+                        <span>スコアブックを取り込む</span>
+                      </Link>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {/* 打率リーダー TOP3 */}
+                    {avgLeaders.length > 0 && (
+                      <div className="bg-card border border-border rounded-2xl p-4 shadow-xs space-y-3">
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-xs font-black text-foreground flex items-center gap-1.5">
+                            <Flame className="w-3.5 h-3.5 text-rose-500" />
+                            <span>打率 リーダー TOP3</span>
+                          </h3>
+                          <span className="text-[10px] font-bold text-muted-foreground">
+                            AVG
+                          </span>
+                        </div>
+
+                        <div className="space-y-2">
+                          {avgLeaders.map((item, idx) => {
+                            const rank = idx + 1;
+                            const uni = cleanUniform(item.uniformNumber);
+                            return (
+                              <div
+                                key={`avg-${item.id}`}
+                                className="flex items-center justify-between p-2.5 rounded-xl bg-muted/40 border border-border/60 text-xs"
+                              >
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                  <span
+                                    className={cn(
+                                      "w-5 h-5 rounded-md font-black text-xs flex items-center justify-center shrink-0",
+                                      rank === 1
+                                        ? "bg-amber-400 text-amber-950 shadow-2xs"
+                                        : rank === 2
+                                        ? "bg-slate-300 text-slate-800"
+                                        : "bg-amber-700/25 text-amber-900 dark:text-amber-200"
+                                    )}
+                                  >
+                                    {rank}
+                                  </span>
+                                  <div className="min-w-0">
+                                    <span className="font-black text-foreground">
+                                      {item.name}
+                                    </span>
+                                    {uni !== "-" && (
+                                      <span className="text-[10px] text-muted-foreground ml-1.5 font-bold">
+                                        #{uni}
+                                      </span>
+                                    )}
+                                    <span className="text-[10px] text-muted-foreground block tabular-nums">
+                                      {item.atBats}打数 {item.hits}安打（打点{item.rbi}・得点{item.runs}）
+                                    </span>
+                                  </div>
+                                </div>
+                                <span className="text-base font-black tabular-nums text-foreground shrink-0">
+                                  {item.avg}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 打点 ＆ 安打リーダー 2カラム */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {rbiLeaders.length > 0 && (
+                        <div className="bg-card border border-border rounded-2xl p-3.5 shadow-xs space-y-2.5">
+                          <h3 className="text-xs font-black text-foreground flex items-center gap-1.5">
+                            <Target className="w-3.5 h-3.5 text-amber-500" />
+                            <span>打点 TOP3</span>
+                          </h3>
+                          <div className="space-y-1.5">
+                            {rbiLeaders.map((item, idx) => (
+                              <div
+                                key={`rbi-${item.id}`}
+                                className="flex items-center justify-between px-2.5 py-2 rounded-xl bg-muted/40 text-xs"
+                              >
+                                <span className="font-bold text-foreground truncate">
+                                  {idx + 1}. {item.name}
+                                </span>
+                                <span className="font-black tabular-nums text-amber-700 dark:text-amber-400 shrink-0">
+                                  {item.rbi} 打点
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {hitLeaders.length > 0 && (
+                        <div className="bg-card border border-border rounded-2xl p-3.5 shadow-xs space-y-2.5">
+                          <h3 className="text-xs font-black text-foreground flex items-center gap-1.5">
+                            <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />
+                            <span>安打 TOP3</span>
+                          </h3>
+                          <div className="space-y-1.5">
+                            {hitLeaders.map((item, idx) => (
+                              <div
+                                key={`hit-${item.id}`}
+                                className="flex items-center justify-between px-2.5 py-2 rounded-xl bg-muted/40 text-xs"
+                              >
+                                <span className="font-bold text-foreground truncate">
+                                  {idx + 1}. {item.name}
+                                </span>
+                                <span className="font-black tabular-nums text-emerald-700 dark:text-emerald-400 shrink-0">
+                                  {item.hits} 安打
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 全選手 打撃成績一覧テーブル */}
+                    <div className="bg-card border border-border rounded-2xl shadow-xs overflow-hidden">
+                      <div className="p-3 border-b border-border flex items-center justify-between gap-2 flex-wrap">
+                        <h3 className="text-xs font-black text-foreground">
+                          個人打撃成績一覧（{sortedBatters.length}名）
+                        </h3>
+                        <div className="flex items-center gap-1 bg-muted p-0.5 rounded-lg border border-border/60">
+                          {(
+                            [
+                              { key: "hits" as const, label: "安打順" },
+                              { key: "avg" as const, label: "打率順" },
+                              { key: "rbi" as const, label: "打点順" },
+                              { key: "runs" as const, label: "得点順" },
+                            ] as const
+                          ).map((s) => (
+                            <button
+                              key={s.key}
+                              type="button"
+                              onClick={() => setBatterSort(s.key)}
+                              className={cn(
+                                "px-2 py-0.5 rounded-md text-[10px] font-black transition-colors",
+                                batterSort === s.key
+                                  ? "bg-card text-foreground shadow-2xs"
+                                  : "text-muted-foreground hover:text-foreground"
+                              )}
+                            >
+                              {s.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs border-collapse whitespace-nowrap">
+                          <thead>
+                            <tr className="bg-muted text-muted-foreground border-b border-border text-[10px] font-black">
+                              <th className="sticky left-0 z-10 bg-muted text-left py-2 px-3 border-r border-border">
+                                選手名
+                              </th>
+                              <th className="py-2 px-2 text-right">打率</th>
+                              <th className="py-2 px-2 text-right">試合</th>
+                              <th className="py-2 px-2 text-right">打席</th>
+                              <th className="py-2 px-2 text-right">打数</th>
+                              <th className="py-2 px-2 text-right">安打</th>
+                              <th className="py-2 px-2 text-right">二塁</th>
+                              <th className="py-2 px-2 text-right">三塁</th>
+                              <th className="py-2 px-2 text-right">本塁</th>
+                              <th className="py-2 px-2 text-right">打点</th>
+                              <th className="py-2 px-2 text-right">得点</th>
+                              <th className="py-2 px-2 text-right">盗塁</th>
+                              <th className="py-2 px-2 text-right">四死</th>
+                              <th className="py-2 px-2 text-right">三振</th>
+                              <th className="py-2 px-2.5 text-right">OPS</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-border/70 tabular-nums">
+                            {sortedBatters.map((b) => {
+                              const uni = cleanUniform(b.uniformNumber);
+                              return (
+                                <tr
+                                  key={b.id}
+                                  className="hover:bg-muted/30 transition-colors"
+                                >
+                                  <td className="sticky left-0 z-10 bg-card py-2.5 px-3 border-r border-border font-black text-foreground">
+                                    <span>{b.name}</span>
+                                    {uni !== "-" && (
+                                      <span className="ml-1 text-[10px] font-bold text-muted-foreground">
+                                        #{uni}
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="py-2.5 px-2 text-right font-black text-primary">
+                                    {b.avg}
+                                  </td>
+                                  <td className="py-2.5 px-2 text-right font-bold">
+                                    {b.games}
+                                  </td>
+                                  <td className="py-2.5 px-2 text-right font-bold">
+                                    {b.plateAppearances}
+                                  </td>
+                                  <td className="py-2.5 px-2 text-right font-bold">
+                                    {b.atBats}
+                                  </td>
+                                  <td className="py-2.5 px-2 text-right font-black text-foreground">
+                                    {b.hits}
+                                  </td>
+                                  <td className="py-2.5 px-2 text-right text-muted-foreground font-bold">
+                                    {b.doubles}
+                                  </td>
+                                  <td className="py-2.5 px-2 text-right text-muted-foreground font-bold">
+                                    {b.triples}
+                                  </td>
+                                  <td className="py-2.5 px-2 text-right font-bold">
+                                    {b.homeRuns}
+                                  </td>
+                                  <td className="py-2.5 px-2 text-right font-black text-amber-700 dark:text-amber-400">
+                                    {b.rbi}
+                                  </td>
+                                  <td className="py-2.5 px-2 text-right font-black text-emerald-700 dark:text-emerald-400">
+                                    {b.runs}
+                                  </td>
+                                  <td className="py-2.5 px-2 text-right font-bold">
+                                    {b.stolenBases}
+                                  </td>
+                                  <td className="py-2.5 px-2 text-right text-muted-foreground font-bold">
+                                    {b.walks + b.hitByPitch}
+                                  </td>
+                                  <td className="py-2.5 px-2 text-right text-muted-foreground font-bold">
+                                    {b.strikeouts}
+                                  </td>
+                                  <td className="py-2.5 px-2.5 text-right font-black">
+                                    {b.ops}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </section>
+            )}
+
+            {/* ━━━ Tab 3: 投手成績（実データ連動リーダー ＆ 一覧表） ━━━ */}
+            {tab === "pitching" && (
+              <section className="space-y-4">
+                {activeSection.pitchingStats.length === 0 ? (
+                  <div className="py-6 space-y-4">
+                    <EmptyState
+                      icon={Activity}
+                      title="投手成績データがまだありません"
+                      description="スコアブック取り込みまたはライブスコア入力を保存すると、投手の投球回・失点・防御率が自動集計されます"
+                    />
+                    <div className="flex justify-center">
+                      <Link
+                        href="/liff/tools/scorebook-import"
+                        className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-2xl bg-primary text-primary-foreground text-xs font-black shadow-xs hover:bg-primary/90 active:scale-95 transition-all"
+                      >
+                        <ScanLine className="w-4 h-4" />
+                        <span>スコアブックを取り込む</span>
+                      </Link>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {/* 防御率リーダー TOP3 */}
+                    {eraLeaders.length > 0 && (
+                      <div className="bg-card border border-border rounded-2xl p-4 shadow-xs space-y-3">
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-xs font-black text-foreground flex items-center gap-1.5">
+                            <Activity className="w-3.5 h-3.5 text-blue-500" />
+                            <span>防御率 リーダー TOP3</span>
+                          </h3>
+                          <span className="text-[10px] font-bold text-muted-foreground">
+                            7回換算 ERA
+                          </span>
+                        </div>
+
+                        <div className="space-y-2">
+                          {eraLeaders.map((item, idx) => {
+                            const rank = idx + 1;
+                            const uni = cleanUniform(item.uniformNumber);
+                            return (
+                              <div
+                                key={`era-${item.id}`}
+                                className="flex items-center justify-between p-2.5 rounded-xl bg-muted/40 border border-border/60 text-xs"
+                              >
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                  <span
+                                    className={cn(
+                                      "w-5 h-5 rounded-md font-black text-xs flex items-center justify-center shrink-0",
+                                      rank === 1
+                                        ? "bg-amber-400 text-amber-950 shadow-2xs"
+                                        : rank === 2
+                                        ? "bg-slate-300 text-slate-800"
+                                        : "bg-amber-700/25 text-amber-900 dark:text-amber-200"
+                                    )}
+                                  >
+                                    {rank}
+                                  </span>
+                                  <div className="min-w-0">
+                                    <span className="font-black text-foreground">
+                                      {item.name}
+                                    </span>
+                                    {uni !== "-" && (
+                                      <span className="text-[10px] text-muted-foreground ml-1.5 font-bold">
+                                        #{uni}
+                                      </span>
+                                    )}
+                                    <span className="text-[10px] text-muted-foreground block tabular-nums">
+                                      {item.games}登板 {item.ip}回 奪三振{item.strikeouts}（失点{item.runs}・自責{item.earnedRuns}）
+                                    </span>
+                                  </div>
+                                </div>
+                                <span className="text-base font-black tabular-nums text-foreground shrink-0">
+                                  {item.era}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 奪三振リーダー TOP3 */}
+                    {soLeaders.length > 0 && (
+                      <div className="bg-card border border-border rounded-2xl p-3.5 shadow-xs space-y-2.5">
+                        <h3 className="text-xs font-black text-foreground flex items-center gap-1.5">
+                          <Flame className="w-3.5 h-3.5 text-sky-500" />
+                          <span>奪三振 TOP3</span>
+                        </h3>
+                        <div className="space-y-1.5">
+                          {soLeaders.map((item, idx) => (
+                            <div
+                              key={`so-${item.id}`}
+                              className="flex items-center justify-between px-2.5 py-2 rounded-xl bg-muted/40 text-xs"
+                            >
+                              <span className="font-bold text-foreground truncate">
+                                {idx + 1}. {item.name}（{item.ip}回）
+                              </span>
+                              <span className="font-black tabular-nums text-sky-700 dark:text-sky-400 shrink-0">
+                                {item.strikeouts} 奪三振
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 全投手 成績一覧テーブル */}
+                    <div className="bg-card border border-border rounded-2xl shadow-xs overflow-hidden">
+                      <div className="p-3 border-b border-border flex items-center justify-between">
+                        <h3 className="text-xs font-black text-foreground">
+                          個人投手成績一覧（{activeSection.pitchingStats.length}名）
+                        </h3>
+                        <span className="text-[10px] font-bold text-muted-foreground">
+                          防御率は7回制換算
+                        </span>
+                      </div>
+
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs border-collapse whitespace-nowrap">
+                          <thead>
+                            <tr className="bg-muted text-muted-foreground border-b border-border text-[10px] font-black">
+                              <th className="sticky left-0 z-10 bg-muted text-left py-2 px-3 border-r border-border">
+                                投手名
+                              </th>
+                              <th className="py-2 px-2 text-right">防御率</th>
+                              <th className="py-2 px-2 text-right">登板</th>
+                              <th className="py-2 px-2 text-right">投球回</th>
+                              <th className="py-2 px-2 text-right">失点</th>
+                              <th className="py-2 px-2 text-right">自責</th>
+                              <th className="py-2 px-2 text-right">奪三振</th>
+                              <th className="py-2 px-2 text-right">被安打</th>
+                              <th className="py-2 px-2 text-right">四死</th>
+                              <th className="py-2 px-2 text-right">被本</th>
+                              <th className="py-2 px-2.5 text-right">WHIP</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-border/70 tabular-nums">
+                            {activeSection.pitchingStats.map((p) => {
+                              const uni = cleanUniform(p.uniformNumber);
+                              return (
+                                <tr
+                                  key={p.id}
+                                  className="hover:bg-muted/30 transition-colors"
+                                >
+                                  <td className="sticky left-0 z-10 bg-card py-2.5 px-3 border-r border-border font-black text-foreground">
+                                    <span>{p.name}</span>
+                                    {uni !== "-" && (
+                                      <span className="ml-1 text-[10px] font-bold text-muted-foreground">
+                                        #{uni}
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="py-2.5 px-2 text-right font-black text-primary">
+                                    {p.era}
+                                  </td>
+                                  <td className="py-2.5 px-2 text-right font-bold">
+                                    {p.games}
+                                  </td>
+                                  <td className="py-2.5 px-2 text-right font-black">
+                                    {p.ip}
+                                  </td>
+                                  <td className="py-2.5 px-2 text-right font-black text-rose-700 dark:text-rose-400">
+                                    {p.runs}
+                                  </td>
+                                  <td className="py-2.5 px-2 text-right font-bold">
+                                    {p.earnedRuns}
+                                  </td>
+                                  <td className="py-2.5 px-2 text-right font-black text-sky-700 dark:text-sky-400">
+                                    {p.strikeouts}
+                                  </td>
+                                  <td className="py-2.5 px-2 text-right font-bold">
+                                    {p.hitsAllowed}
+                                  </td>
+                                  <td className="py-2.5 px-2 text-right text-muted-foreground font-bold">
+                                    {p.walks + p.hitByPitch}
+                                  </td>
+                                  <td className="py-2.5 px-2 text-right text-muted-foreground font-bold">
+                                    {p.homeRunsAllowed}
+                                  </td>
+                                  <td className="py-2.5 px-2.5 text-right font-black">
+                                    {p.whip}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </section>
+            )}
+          </>
         )}
 
         <div className="h-8 w-full shrink-0" aria-hidden="true" />

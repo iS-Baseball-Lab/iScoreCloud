@@ -1,11 +1,16 @@
 // filepath: src/api/liff.ts
 import { Hono } from "hono";
 import { drizzle } from "drizzle-orm/d1";
-import { eq, desc, asc, gte, and, or, sql } from "drizzle-orm";
+import { eq, desc, asc, gte, and, or, inArray, sql } from "drizzle-orm";
 import {
   teams,
   organizations,
   matches,
+  matchLineups,
+  atBats,
+  baseAdvances,
+  playLogs,
+  matchScorebookSnapshots,
   events,
   attendances,
   venues,
@@ -27,6 +32,7 @@ import {
   teamGroups,
   teamGroupMembers,
 } from "@/db/schema";
+import type { ScorebookSheetStructure, ScorebookV2AtBat } from "@/types/scorebook-v2";
 import { ensureEventColumns, ensureRulesTable, ensureLinksTable, ensureMemberOrderColumn, ensureStatusConfigColumn, ensureMemberSubLabelsColumn, ensureMatchLineupColumns, ensurePlayerProfileColumns } from "@/lib/db-helper";
 import type { WorkerEnv, AuthUser } from "@/types/api";
 import { getAuth } from "@/lib/auth";
@@ -3118,69 +3124,1485 @@ app.delete("/grounds/:id", async (c) => {
 });
 
 /**
- * チーム成績・スタッツ取得API
+ * チーム成績・スタッツ取得API（勝敗・得失点内訳・試合別スコア・個人打撃/投手成績）
  */
+type StatsFilterKey = "all" | "official" | "exchange" | "practice";
+
+interface LiffStatsSummaryPayload {
+  totalMatches: number;
+  wins: number;
+  losses: number;
+  draws: number;
+  winRate: string;
+  winRatePercent: number;
+  runsScored: number;
+  runsAllowed: number;
+  runDiff: string;
+  avgRunsScored: string;
+  avgRunsAllowed: string;
+  maxRunsScored: number;
+  shutouts: number;
+  teamHits: number;
+  opponentHits: number;
+  teamErrors: number;
+  opponentErrors: number;
+  teamAvg: string;
+  teamOps: string;
+  teamHomeRuns: number;
+  teamStolenBases: number;
+  teamEra: string;
+}
+
+interface LiffStatsMatchItemPayload {
+  id: string;
+  date: string;
+  opponent: string;
+  matchType: "official" | "exchange" | "practice";
+  tournamentName: string | null;
+  venueName: string | null;
+  battingOrder: "first" | "second";
+  myScore: number;
+  opponentScore: number;
+  result: "win" | "loss" | "draw";
+  myHits: number;
+  opponentHits: number;
+  myErrors: number;
+  opponentErrors: number;
+  isColdGame: boolean;
+  isTiebreaker: boolean;
+}
+
+interface LiffSeasonBatterStatPayload {
+  id: string;
+  name: string;
+  uniformNumber: string;
+  games: number;
+  plateAppearances: number;
+  atBats: number;
+  hits: number;
+  doubles: number;
+  triples: number;
+  homeRuns: number;
+  totalBases: number;
+  rbi: number;
+  runs: number;
+  walks: number;
+  hitByPitch: number;
+  strikeouts: number;
+  sacBunts: number;
+  sacFlies: number;
+  stolenBases: number;
+  avg: string;
+  obp: string;
+  ops: string;
+}
+
+interface LiffSeasonPitcherStatPayload {
+  id: string;
+  name: string;
+  uniformNumber: string;
+  games: number;
+  outs: number;
+  ip: string;
+  battersFaced: number;
+  hitsAllowed: number;
+  homeRunsAllowed: number;
+  strikeouts: number;
+  walks: number;
+  hitByPitch: number;
+  runs: number;
+  earnedRuns: number;
+  era: string;
+  whip: string;
+}
+
+interface LiffStatsSectionPayload {
+  summary: LiffStatsSummaryPayload;
+  battingStats: LiffSeasonBatterStatPayload[];
+  pitchingStats: LiffSeasonPitcherStatPayload[];
+}
+
+function formatBaseballRate(val: number): string {
+  if (!Number.isFinite(val) || val <= 0) return ".000";
+  if (val >= 1) return "1.00";
+  return val.toFixed(3).replace(/^0/, "");
+}
+
+function formatOpsRate(val: number): string {
+  if (!Number.isFinite(val) || val <= 0) return ".000";
+  const fixed = val.toFixed(3);
+  return fixed.startsWith("0.") ? fixed.slice(1) : fixed;
+}
+
+function normalizeStatsMatchCategory(
+  rawType: string | null | undefined
+): "official" | "exchange" | "practice" {
+  if (rawType === "official") return "official";
+  if (rawType === "exchange") return "exchange";
+  return "practice";
+}
+
+function isNonRbiAdvanceReasonForSeason(rawReason: string | null | undefined): boolean {
+  const r = String(rawReason || "").trim().toLowerCase();
+  if (!r) return false;
+  return (
+    r === "wp" ||
+    r === "pb" ||
+    r === "balk" ||
+    r === "steal" ||
+    r === "pickoff_error" ||
+    r === "error" ||
+    r === "obstruction" ||
+    r.includes("暴投") ||
+    r.includes("捕逸") ||
+    r.includes("ボーク") ||
+    r.includes("盗塁") ||
+    r.includes("失策") ||
+    r.includes("エラー")
+  );
+}
+
+function buildDemoStatsResponse() {
+  const demoMatches: LiffStatsMatchItemPayload[] = [
+    {
+      id: "demo-match-1",
+      date: "2026-10-25 13:00",
+      opponent: "相模原西リトルシニア",
+      matchType: "practice",
+      tournamentName: null,
+      venueName: "東芝エレベーターG",
+      battingOrder: "second",
+      myScore: 6,
+      opponentScore: 3,
+      result: "win",
+      myHits: 9,
+      opponentHits: 5,
+      myErrors: 1,
+      opponentErrors: 2,
+      isColdGame: false,
+      isTiebreaker: false,
+    },
+    {
+      id: "demo-match-2",
+      date: "2026-10-18 10:00",
+      opponent: "横浜青葉ボーイズ",
+      matchType: "exchange",
+      tournamentName: "秋季一年生交流戦",
+      venueName: "多摩川緑地野球場",
+      battingOrder: "first",
+      myScore: 8,
+      opponentScore: 2,
+      result: "win",
+      myHits: 11,
+      opponentHits: 4,
+      myErrors: 0,
+      opponentErrors: 3,
+      isColdGame: false,
+      isTiebreaker: false,
+    },
+    {
+      id: "demo-match-3",
+      date: "2026-10-11 09:00",
+      opponent: "川崎中央クラブ",
+      matchType: "official",
+      tournamentName: "市連盟秋季大会 準々決勝",
+      venueName: "等々力球場",
+      battingOrder: "second",
+      myScore: 4,
+      opponentScore: 5,
+      result: "loss",
+      myHits: 7,
+      opponentHits: 8,
+      myErrors: 2,
+      opponentErrors: 1,
+      isColdGame: false,
+      isTiebreaker: true,
+    },
+    {
+      id: "demo-match-4",
+      date: "2026-10-04 11:00",
+      opponent: "世田谷イーグルス",
+      matchType: "official",
+      tournamentName: "市連盟秋季大会 2回戦",
+      venueName: "多摩川緑地野球場",
+      battingOrder: "first",
+      myScore: 7,
+      opponentScore: 0,
+      result: "win",
+      myHits: 10,
+      opponentHits: 2,
+      myErrors: 0,
+      opponentErrors: 1,
+      isColdGame: true,
+      isTiebreaker: false,
+    },
+    {
+      id: "demo-match-5",
+      date: "2026-09-27 13:30",
+      opponent: "港北ファイターズ",
+      matchType: "exchange",
+      tournamentName: "秋季一年生交流戦",
+      venueName: "新横浜少年野球場",
+      battingOrder: "second",
+      myScore: 5,
+      opponentScore: 5,
+      result: "draw",
+      myHits: 8,
+      opponentHits: 7,
+      myErrors: 1,
+      opponentErrors: 1,
+      isColdGame: false,
+      isTiebreaker: false,
+    },
+  ];
+
+  const demoBatters: LiffSeasonBatterStatPayload[] = [
+    {
+      id: "demo-player-1",
+      name: "山田 翔太",
+      uniformNumber: "10",
+      games: 14,
+      plateAppearances: 37,
+      atBats: 32,
+      hits: 14,
+      doubles: 4,
+      triples: 1,
+      homeRuns: 2,
+      totalBases: 26,
+      rbi: 11,
+      runs: 13,
+      walks: 4,
+      hitByPitch: 1,
+      strikeouts: 3,
+      sacBunts: 0,
+      sacFlies: 0,
+      stolenBases: 7,
+      avg: ".438",
+      obp: ".514",
+      ops: "1.326",
+    },
+    {
+      id: "demo-player-2",
+      name: "佐藤 健太",
+      uniformNumber: "1",
+      games: 14,
+      plateAppearances: 34,
+      atBats: 31,
+      hits: 12,
+      doubles: 3,
+      triples: 0,
+      homeRuns: 1,
+      totalBases: 18,
+      rbi: 9,
+      runs: 10,
+      walks: 3,
+      hitByPitch: 0,
+      strikeouts: 4,
+      sacBunts: 0,
+      sacFlies: 0,
+      stolenBases: 4,
+      avg: ".387",
+      obp: ".441",
+      ops: "1.022",
+    },
+    {
+      id: "demo-player-6",
+      name: "渡辺 陽向",
+      uniformNumber: "4",
+      games: 14,
+      plateAppearances: 38,
+      atBats: 33,
+      hits: 12,
+      doubles: 2,
+      triples: 1,
+      homeRuns: 3,
+      totalBases: 25,
+      rbi: 14,
+      runs: 12,
+      walks: 5,
+      hitByPitch: 0,
+      strikeouts: 5,
+      sacBunts: 0,
+      sacFlies: 0,
+      stolenBases: 6,
+      avg: ".364",
+      obp: ".447",
+      ops: "1.205",
+    },
+    {
+      id: "demo-player-4",
+      name: "高橋 陸",
+      uniformNumber: "8",
+      games: 13,
+      plateAppearances: 36,
+      atBats: 31,
+      hits: 11,
+      doubles: 2,
+      triples: 1,
+      homeRuns: 1,
+      totalBases: 18,
+      rbi: 8,
+      runs: 11,
+      walks: 4,
+      hitByPitch: 1,
+      strikeouts: 4,
+      sacBunts: 0,
+      sacFlies: 0,
+      stolenBases: 9,
+      avg: ".355",
+      obp: ".444",
+      ops: "1.025",
+    },
+    {
+      id: "demo-player-3",
+      name: "鈴木 大輔",
+      uniformNumber: "2",
+      games: 14,
+      plateAppearances: 35,
+      atBats: 30,
+      hits: 10,
+      doubles: 2,
+      triples: 0,
+      homeRuns: 1,
+      totalBases: 15,
+      rbi: 7,
+      runs: 8,
+      walks: 4,
+      hitByPitch: 0,
+      strikeouts: 3,
+      sacBunts: 1,
+      sacFlies: 0,
+      stolenBases: 2,
+      avg: ".333",
+      obp: ".412",
+      ops: ".912",
+    },
+  ];
+
+  const demoPitchers: LiffSeasonPitcherStatPayload[] = [
+    {
+      id: "demo-player-2",
+      name: "佐藤 健太",
+      uniformNumber: "1",
+      games: 8,
+      outs: 72,
+      ip: "24.0",
+      battersFaced: 88,
+      hitsAllowed: 14,
+      homeRunsAllowed: 1,
+      strikeouts: 28,
+      walks: 5,
+      hitByPitch: 1,
+      runs: 7,
+      earnedRuns: 5,
+      era: "1.46",
+      whip: "0.79",
+    },
+    {
+      id: "demo-player-4",
+      name: "高橋 陸",
+      uniformNumber: "8",
+      games: 6,
+      outs: 54,
+      ip: "18.0",
+      battersFaced: 62,
+      hitsAllowed: 11,
+      homeRunsAllowed: 0,
+      strikeouts: 19,
+      walks: 4,
+      hitByPitch: 1,
+      runs: 6,
+      earnedRuns: 5,
+      era: "1.94",
+      whip: "0.83",
+    },
+    {
+      id: "demo-player-10",
+      name: "小林 樹",
+      uniformNumber: "18",
+      games: 5,
+      outs: 36,
+      ip: "12.0",
+      battersFaced: 45,
+      hitsAllowed: 9,
+      homeRunsAllowed: 1,
+      strikeouts: 14,
+      walks: 3,
+      hitByPitch: 0,
+      runs: 5,
+      earnedRuns: 4,
+      era: "2.33",
+      whip: "1.00",
+    },
+  ];
+
+  const makeDemoSummary = (
+    totalMatches: number,
+    wins: number,
+    losses: number,
+    draws: number,
+    runsScored: number,
+    runsAllowed: number,
+    maxRunsScored: number,
+    shutouts: number
+  ): LiffStatsSummaryPayload => {
+    const decided = wins + losses;
+    const diff = runsScored - runsAllowed;
+    return {
+      totalMatches,
+      wins,
+      losses,
+      draws,
+      winRate: decided > 0 ? formatBaseballRate(wins / decided) : ".000",
+      winRatePercent: decided > 0 ? Math.round((wins / decided) * 100) : 0,
+      runsScored,
+      runsAllowed,
+      runDiff: diff > 0 ? `+${diff}` : `${diff}`,
+      avgRunsScored: totalMatches > 0 ? (runsScored / totalMatches).toFixed(1) : "0.0",
+      avgRunsAllowed: totalMatches > 0 ? (runsAllowed / totalMatches).toFixed(1) : "0.0",
+      maxRunsScored,
+      shutouts,
+      teamHits: 112,
+      opponentHits: 64,
+      teamErrors: 11,
+      opponentErrors: 19,
+      teamAvg: ".342",
+      teamOps: ".918",
+      teamHomeRuns: 8,
+      teamStolenBases: 31,
+      teamEra: "1.81",
+    };
+  };
+
+  const allSummary = makeDemoSummary(14, 10, 3, 1, 86, 42, 11, 2);
+  const officialSummary = makeDemoSummary(5, 4, 1, 0, 31, 14, 9, 1);
+  const exchangeSummary = makeDemoSummary(5, 3, 1, 1, 32, 16, 8, 1);
+  const practiceSummary = makeDemoSummary(4, 3, 1, 0, 23, 12, 7, 0);
+
+  return {
+    success: true,
+    isDemo: true,
+    team: {
+      id: DEMO_TEAM.id,
+      name: DEMO_TEAM.name,
+      orgName: DEMO_TEAM.orgName,
+      year: DEMO_TEAM.year || 2026,
+    },
+    stats: allSummary,
+    sectionsByFilter: {
+      all: { summary: allSummary, battingStats: demoBatters, pitchingStats: demoPitchers },
+      official: { summary: officialSummary, battingStats: demoBatters, pitchingStats: demoPitchers },
+      exchange: { summary: exchangeSummary, battingStats: demoBatters, pitchingStats: demoPitchers },
+      practice: { summary: practiceSummary, battingStats: demoBatters, pitchingStats: demoPitchers },
+    },
+    matches: demoMatches,
+  };
+}
+
 app.get("/stats", async (c) => {
   const db = drizzle(c.env.DB);
   const teamId = c.req.query("teamId");
 
   try {
     if (!teamId || teamId === "demo-team") {
-      return c.json({
-        success: true,
-        isDemo: true,
-        stats: {
-          totalMatches: 14,
-          wins: 10,
-          losses: 3,
-          draws: 1,
-          winRate: ".769",
-          runsScored: 86,
-          runsAllowed: 42,
-          runDiff: "+44",
-        },
-      });
+      return c.json(buildDemoStatsResponse());
     }
 
-    const teamMatches = await db
+    const teamRow = await db
       .select({
+        id: teams.id,
+        name: teams.name,
+        orgName: organizations.name,
+        year: teams.year,
+      })
+      .from(teams)
+      .leftJoin(organizations, eq(teams.organizationId, organizations.id))
+      .where(eq(teams.id, teamId))
+      .get();
+
+    const rawTeamMatches = await db
+      .select({
+        id: matches.id,
+        date: matches.date,
+        opponent: matches.opponent,
+        matchType: matches.matchType,
+        battingOrder: matches.battingOrder,
         status: matches.status,
         myScore: matches.myScore,
         opponentScore: matches.opponentScore,
+        myHits: matches.myHits,
+        opponentHits: matches.opponentHits,
+        myErrors: matches.myErrors,
+        opponentErrors: matches.opponentErrors,
+        isColdGame: matches.isColdGame,
+        isTiebreaker: matches.isTiebreaker,
+        createdAt: matches.createdAt,
+        tournamentName: tournaments.name,
+        venueShortName: venues.shortName,
+        venueFullName: venues.name,
+        surfaceDetails: matches.surfaceDetails,
       })
       .from(matches)
+      .leftJoin(tournaments, eq(matches.tournamentId, tournaments.id))
+      .leftJoin(venues, eq(matches.venueId, venues.id))
       .where(eq(matches.teamId, teamId))
+      .orderBy(desc(matches.date), desc(matches.createdAt))
       .all();
 
-    const finished = teamMatches.filter((m) => m.status === "finished" && m.myScore !== null && m.opponentScore !== null);
-    const wins = finished.filter((m) => (m.myScore ?? 0) > (m.opponentScore ?? 0)).length;
-    const losses = finished.filter((m) => (m.myScore ?? 0) < (m.opponentScore ?? 0)).length;
-    const draws = finished.filter((m) => (m.myScore ?? 0) === (m.opponentScore ?? 0)).length;
-    const total = wins + losses + draws;
-    const winRate = total > 0 ? (wins / (wins + losses || 1)).toFixed(3).replace(/^0/, "") : ".000";
+    const finishedRaw = rawTeamMatches
+      .filter(
+        (m) =>
+          m.status === "finished" &&
+          m.myScore !== null &&
+          m.opponentScore !== null
+      )
+      .sort((a, b) =>
+        b.date.replace(/\//g, "-").localeCompare(a.date.replace(/\//g, "-"))
+      );
 
-    const runsScored = finished.reduce((acc, m) => acc + (m.myScore || 0), 0);
-    const runsAllowed = finished.reduce((acc, m) => acc + (m.opponentScore || 0), 0);
-    const diff = runsScored - runsAllowed;
-    const runDiff = diff > 0 ? `+${diff}` : `${diff}`;
+    const finishedIds = finishedRaw.map((m) => m.id);
+    const rosterPlayers = await db
+      .select({
+        id: players.id,
+        name: players.name,
+        uniformNumber: players.uniformNumber,
+      })
+      .from(players)
+      .where(eq(players.teamId, teamId))
+      .all();
+
+    const normalizeNameKey = (raw: string | null | undefined): string =>
+      (raw || "").replace(/[\s　]+/g, "").trim();
+
+    const playerMetaById = new Map<string, { name: string; uniformNumber: string }>();
+    const playerIdByCleanName = new Map<string, string>();
+    for (const rp of rosterPlayers) {
+      playerMetaById.set(rp.id, {
+        name: rp.name,
+        uniformNumber: rp.uniformNumber || "-",
+      });
+      const cn = normalizeNameKey(rp.name);
+      if (cn && !playerIdByCleanName.has(cn)) {
+        playerIdByCleanName.set(cn, rp.id);
+      }
+    }
+
+    const chunkIds = (ids: string[], size = 50): string[][] => {
+      const out: string[][] = [];
+      for (let i = 0; i < ids.length; i += size) {
+        out.push(ids.slice(i, i + size));
+      }
+      return out;
+    };
+
+    const allAtBats: Array<typeof atBats.$inferSelect> = [];
+    const allAdvances: Array<typeof baseAdvances.$inferSelect> = [];
+    const allPlayLogs: Array<{
+      atBatId: string | null;
+      matchId: string;
+      description: string;
+    }> = [];
+    const allLineups: Array<{
+      matchId: string;
+      playerId: string;
+    }> = [];
+    const allSnapshots: Array<typeof matchScorebookSnapshots.$inferSelect> = [];
+
+    if (finishedIds.length > 0) {
+      const idChunks = chunkIds(finishedIds, 50);
+      for (const batch of idChunks) {
+        const [abRows, advRows, plRows, luRows, snapRows] = await Promise.all([
+          db
+            .select()
+            .from(atBats)
+            .where(inArray(atBats.matchId, batch))
+            .orderBy(asc(atBats.inning), asc(atBats.createdAt))
+            .all(),
+          db
+            .select()
+            .from(baseAdvances)
+            .where(inArray(baseAdvances.matchId, batch))
+            .all(),
+          db
+            .select({
+              atBatId: playLogs.atBatId,
+              matchId: playLogs.matchId,
+              description: playLogs.description,
+            })
+            .from(playLogs)
+            .where(inArray(playLogs.matchId, batch))
+            .all(),
+          db
+            .select({
+              matchId: matchLineups.matchId,
+              playerId: matchLineups.playerId,
+            })
+            .from(matchLineups)
+            .where(inArray(matchLineups.matchId, batch))
+            .all(),
+          db
+            .select()
+            .from(matchScorebookSnapshots)
+            .where(inArray(matchScorebookSnapshots.matchId, batch))
+            .all(),
+        ]);
+        allAtBats.push(...abRows);
+        allAdvances.push(...advRows);
+        allPlayLogs.push(...plRows);
+        allLineups.push(...luRows);
+        allSnapshots.push(...snapRows);
+      }
+    }
+
+    // スナップショットとプレイログからの補完マップ構築
+    const explicitRbiByAtBatId = new Map<string, number>();
+    const playLogDescByAtBatId = new Map<string, string>();
+    for (const pl of allPlayLogs) {
+      if (!pl.atBatId || !pl.description) continue;
+      playLogDescByAtBatId.set(pl.atBatId, pl.description);
+      const rbiMatch = pl.description.match(/打点(\d+)/);
+      if (rbiMatch) {
+        explicitRbiByAtBatId.set(pl.atBatId, Number(rbiMatch[1]));
+      }
+    }
+
+    const extractBatterFromLog = (descText: string | undefined): string => {
+      if (!descText) return "";
+      const m = descText.match(/^(?:\d+番\s*)?([^:：]+)[：:]/);
+      return m ? m[1].trim() : "";
+    };
+
+    const matchMetaMap = new Map<
+      string,
+      { isMyTeamTop: boolean; matchType: "official" | "exchange" | "practice" }
+    >();
+    for (const m of finishedRaw) {
+      matchMetaMap.set(m.id, {
+        isMyTeamTop: m.battingOrder === "first",
+        matchType: normalizeStatsMatchCategory(m.matchType),
+      });
+    }
+
+    const snapMapByDbAtBatId = new Map<string, ScorebookV2AtBat>();
+    const oppStructureByMatchId = new Map<string, ScorebookSheetStructure>();
+    const snapByMatchId = new Map<string, typeof matchScorebookSnapshots.$inferSelect>();
+    for (const sn of allSnapshots) {
+      snapByMatchId.set(sn.matchId, sn);
+    }
+
+    const atBatsByMatchId = new Map<string, Array<typeof atBats.$inferSelect>>();
+    for (const ab of allAtBats) {
+      const list = atBatsByMatchId.get(ab.matchId) || [];
+      list.push(ab);
+      atBatsByMatchId.set(ab.matchId, list);
+    }
+
+    for (const m of finishedRaw) {
+      const sn = snapByMatchId.get(m.id);
+      if (!sn) continue;
+      const isTop = m.battingOrder === "first";
+      const myAtBatsJson = isTop ? sn.topAtBatsJson : sn.bottomAtBatsJson;
+      const oppAtBatsJson = isTop ? sn.bottomAtBatsJson : sn.topAtBatsJson;
+      const myStructJson = isTop ? sn.topStructureJson : sn.bottomStructureJson;
+      const oppStructJson = isTop ? sn.bottomStructureJson : sn.topStructureJson;
+
+      let mySnapAbs: ScorebookV2AtBat[] = [];
+      let oppSnapAbs: ScorebookV2AtBat[] = [];
+      try {
+        if (myAtBatsJson) mySnapAbs = JSON.parse(myAtBatsJson) as ScorebookV2AtBat[];
+      } catch {}
+      try {
+        if (oppAtBatsJson) oppSnapAbs = JSON.parse(oppAtBatsJson) as ScorebookV2AtBat[];
+      } catch {}
+      try {
+        if (myStructJson) {
+          const mySt = JSON.parse(myStructJson) as ScorebookSheetStructure;
+          for (const slot of mySt.batters || []) {
+            if (slot.playerId && slot.name?.trim()) {
+              const prev = playerMetaById.get(slot.playerId);
+              if (!prev) {
+                playerMetaById.set(slot.playerId, {
+                  name: slot.name.trim(),
+                  uniformNumber: slot.uniformNumber?.trim() || "-",
+                });
+              }
+            }
+          }
+        }
+      } catch {}
+      try {
+        if (oppStructJson) {
+          oppStructureByMatchId.set(
+            m.id,
+            JSON.parse(oppStructJson) as ScorebookSheetStructure
+          );
+        }
+      } catch {}
+
+      const myQueueByInn = new Map<number, ScorebookV2AtBat[]>();
+      for (const sAb of mySnapAbs) {
+        const q = myQueueByInn.get(sAb.inning) || [];
+        q.push(sAb);
+        myQueueByInn.set(sAb.inning, q);
+      }
+      const oppQueueByInn = new Map<number, ScorebookV2AtBat[]>();
+      for (const sAb of oppSnapAbs) {
+        const q = oppQueueByInn.get(sAb.inning) || [];
+        q.push(sAb);
+        oppQueueByInn.set(sAb.inning, q);
+      }
+      const myOffsets = new Map<number, number>();
+      const oppOffsets = new Map<number, number>();
+      for (const dbAb of atBatsByMatchId.get(m.id) || []) {
+        if (dbAb.isTop === isTop) {
+          const idx = myOffsets.get(dbAb.inning) || 0;
+          myOffsets.set(dbAb.inning, idx + 1);
+          const sAb = myQueueByInn.get(dbAb.inning)?.[idx];
+          if (sAb) snapMapByDbAtBatId.set(dbAb.id, sAb);
+        } else {
+          const idx = oppOffsets.get(dbAb.inning) || 0;
+          oppOffsets.set(dbAb.inning, idx + 1);
+          const sAb = oppQueueByInn.get(dbAb.inning)?.[idx];
+          if (sAb) snapMapByDbAtBatId.set(dbAb.id, sAb);
+        }
+      }
+    }
+
+    const classifyHitKind = (res: string) => {
+      const is2B =
+        res === "double" ||
+        res.includes("2B") ||
+        res.includes("二塁打") ||
+        res.includes("２塁打");
+      const is3B =
+        res === "triple" ||
+        res.includes("3B") ||
+        res.includes("三塁打") ||
+        res.includes("３塁打");
+      const isHR =
+        res === "home_run" || res.includes("HR") || res.includes("本塁打");
+      const is1B =
+        res === "single" ||
+        res.includes("1B") ||
+        res.includes("単打") ||
+        (res.includes("安") && !is2B && !is3B && !isHR);
+      return { is1B, is2B, is3B, isHR, isHit: is1B || is2B || is3B || isHR };
+    };
+
+    const isErrorResult = (res: string): boolean =>
+      res === "error" ||
+      res.includes("E") ||
+      res.includes("失策") ||
+      res.includes("エラー");
+
+    // 各試合の安打・失策数を打席データからも自動補完し、試合別スコア一覧を生成
+    const enrichedMatches: LiffStatsMatchItemPayload[] = finishedRaw.map((m) => {
+      const isMyTop = m.battingOrder === "first";
+      const mAbs = atBatsByMatchId.get(m.id) || [];
+      let calcMyHits = 0;
+      let calcOppHits = 0;
+      let calcMyErrors = 0;
+      let calcOppErrors = 0;
+
+      for (const ab of mAbs) {
+        const res = ab.result || "";
+        const { isHit } = classifyHitKind(res);
+        const err = isErrorResult(res);
+        if (ab.isTop === isMyTop) {
+          if (isHit) calcMyHits++;
+          if (err) calcOppErrors++;
+        } else {
+          if (isHit) calcOppHits++;
+          if (err) calcMyErrors++;
+        }
+      }
+
+      const myScore = m.myScore ?? 0;
+      const oppScore = m.opponentScore ?? 0;
+      const result: "win" | "loss" | "draw" =
+        myScore > oppScore ? "win" : myScore < oppScore ? "loss" : "draw";
+
+      const venueDisplay =
+        m.venueShortName?.trim() ||
+        m.venueFullName?.trim() ||
+        m.surfaceDetails?.trim() ||
+        null;
+
+      return {
+        id: m.id,
+        date: m.date,
+        opponent: m.opponent,
+        matchType: normalizeStatsMatchCategory(m.matchType),
+        tournamentName: m.tournamentName || null,
+        venueName: venueDisplay,
+        battingOrder: m.battingOrder === "first" ? "first" : "second",
+        myScore,
+        opponentScore: oppScore,
+        result,
+        myHits: Math.max(m.myHits || 0, calcMyHits),
+        opponentHits: Math.max(m.opponentHits || 0, calcOppHits),
+        myErrors: Math.max(m.myErrors || 0, calcMyErrors),
+        opponentErrors: Math.max(m.opponentErrors || 0, calcOppErrors),
+        isColdGame: Boolean(m.isColdGame),
+        isTiebreaker: Boolean(m.isTiebreaker),
+      };
+    });
+
+    const advancesByAtBatId = new Map<string, Array<typeof baseAdvances.$inferSelect>>();
+    for (const adv of allAdvances) {
+      const arr = advancesByAtBatId.get(adv.atBatId) || [];
+      arr.push(adv);
+      advancesByAtBatId.set(adv.atBatId, arr);
+    }
+    const abById = new Map(allAtBats.map((a) => [a.id, a]));
+
+    // スコープ別の集計関数（全体 / 公式戦 / 交流戦 / OP戦）
+    const buildSectionForFilter = (filterKey: StatsFilterKey): LiffStatsSectionPayload => {
+      const targetMatches =
+        filterKey === "all"
+          ? enrichedMatches
+          : enrichedMatches.filter((m) => m.matchType === filterKey);
+      const targetMatchIds = new Set(targetMatches.map((m) => m.id));
+
+      interface BatterAcc {
+        id: string;
+        name: string;
+        uniformNumber: string;
+        matchSet: Set<string>;
+        plateAppearances: number;
+        atBats: number;
+        singles: number;
+        doubles: number;
+        triples: number;
+        homeRuns: number;
+        hits: number;
+        walks: number;
+        hitByPitch: number;
+        runs: number;
+        rbi: number;
+        stolenBases: number;
+        strikeouts: number;
+        sacBunts: number;
+        sacFlies: number;
+      }
+
+      interface PitcherAcc {
+        id: string;
+        name: string;
+        uniformNumber: string;
+        matchSet: Set<string>;
+        outs: number;
+        battersFaced: number;
+        hitsAllowed: number;
+        homeRunsAllowed: number;
+        strikeouts: number;
+        walks: number;
+        hitByPitch: number;
+        runs: number;
+        earnedRuns: number;
+      }
+
+      const batterMap = new Map<string, BatterAcc>();
+      const pitcherMap = new Map<string, PitcherAcc>();
+      const pitcherKeyByAtBatId = new Map<string, string>();
+
+      const ensureBatter = (
+        key: string,
+        fallbackName: string,
+        fallbackNumber = "-"
+      ): BatterAcc => {
+        const existing = batterMap.get(key);
+        if (existing) return existing;
+        const meta = playerMetaById.get(key);
+        const created: BatterAcc = {
+          id: key,
+          name: meta?.name || fallbackName || "不明",
+          uniformNumber: meta?.uniformNumber || fallbackNumber || "-",
+          matchSet: new Set<string>(),
+          plateAppearances: 0,
+          atBats: 0,
+          singles: 0,
+          doubles: 0,
+          triples: 0,
+          homeRuns: 0,
+          hits: 0,
+          walks: 0,
+          hitByPitch: 0,
+          runs: 0,
+          rbi: 0,
+          stolenBases: 0,
+          strikeouts: 0,
+          sacBunts: 0,
+          sacFlies: 0,
+        };
+        batterMap.set(key, created);
+        return created;
+      };
+
+      const ensurePitcher = (
+        key: string,
+        fallbackName: string,
+        fallbackNumber = "-"
+      ): PitcherAcc => {
+        const existing = pitcherMap.get(key);
+        if (existing) return existing;
+        const meta = playerMetaById.get(key);
+        const created: PitcherAcc = {
+          id: key,
+          name: meta?.name || fallbackName || "不明",
+          uniformNumber: meta?.uniformNumber || fallbackNumber || "-",
+          matchSet: new Set<string>(),
+          outs: 0,
+          battersFaced: 0,
+          hitsAllowed: 0,
+          homeRunsAllowed: 0,
+          strikeouts: 0,
+          walks: 0,
+          hitByPitch: 0,
+          runs: 0,
+          earnedRuns: 0,
+        };
+        pitcherMap.set(key, created);
+        return created;
+      };
+
+      // 出場ラインナップからの試合数記録
+      for (const lu of allLineups) {
+        if (!targetMatchIds.has(lu.matchId) || !lu.playerId) continue;
+        if (playerMetaById.has(lu.playerId)) {
+          ensureBatter(lu.playerId, "").matchSet.add(lu.matchId);
+        }
+      }
+
+      for (const ab of allAtBats) {
+        if (!targetMatchIds.has(ab.matchId)) continue;
+        const mMeta = matchMetaMap.get(ab.matchId);
+        if (!mMeta) continue;
+
+        const isMyAttack = ab.isTop === mMeta.isMyTeamTop;
+        const snapAb = snapMapByDbAtBatId.get(ab.id);
+        const res = ab.result || "";
+
+        if (isMyAttack) {
+          const fallbackName =
+            snapAb?.batterName?.trim() ||
+            extractBatterFromLog(playLogDescByAtBatId.get(ab.id)) ||
+            "";
+          const cleanBatter = normalizeNameKey(fallbackName);
+          const batterKey =
+            ab.batterId ||
+            snapAb?.batterPlayerId ||
+            (cleanBatter
+              ? playerIdByCleanName.get(cleanBatter) || `name:${cleanBatter}`
+              : "");
+
+          if (batterKey && res !== "other" && !res.includes("途中断")) {
+            const b = ensureBatter(batterKey, fallbackName);
+            b.matchSet.add(ab.matchId);
+            b.plateAppearances++;
+
+            const isWalk =
+              res === "walk" ||
+              res === "intentional_walk" ||
+              res.includes("BB") ||
+              res.includes("四球") ||
+              res.includes("敬遠");
+            const isHbp =
+              res === "hit_by_pitch" ||
+              res.includes("HP") ||
+              res.includes("DB") ||
+              res.includes("死球");
+            const isSacBunt =
+              res === "sac_bunt" ||
+              res.includes("SH") ||
+              res.includes("犠打") ||
+              (res.includes("犠") && !res.includes("飛"));
+            const isSacFly =
+              res === "sac_fly" || res.includes("SF") || res.includes("犠飛");
+            const isInterferenceReach =
+              res === "interference" || res.includes("打撃妨害");
+
+            if (isWalk) b.walks++;
+            if (isHbp) b.hitByPitch++;
+            if (isSacBunt) b.sacBunts++;
+            if (isSacFly) b.sacFlies++;
+
+            if (
+              !isWalk &&
+              !isHbp &&
+              !isSacBunt &&
+              !isSacFly &&
+              !isInterferenceReach
+            ) {
+              b.atBats++;
+            }
+
+            const { is1B, is2B, is3B, isHR } = classifyHitKind(res);
+            if (isHR) {
+              b.homeRuns++;
+              b.hits++;
+            } else if (is3B) {
+              b.triples++;
+              b.hits++;
+            } else if (is2B) {
+              b.doubles++;
+              b.hits++;
+            } else if (is1B) {
+              b.singles++;
+              b.hits++;
+            }
+
+            const isStrikeoutPlay =
+              res === "strikeout" ||
+              res === "dropped_third_strike" ||
+              res === "dropped_third_strike_out" ||
+              res.includes("K") ||
+              res.includes("三振") ||
+              res.includes("振逃");
+            if (isStrikeoutPlay) b.strikeouts++;
+
+            const isDoublePlay =
+              res === "double_play" ||
+              res === "triple_play" ||
+              res.includes("DP") ||
+              res.includes("併殺") ||
+              res.includes("三重殺") ||
+              res.includes("ゲッツー");
+            const isErr = isErrorResult(res);
+
+            const abSafeRuns = (advancesByAtBatId.get(ab.id) || []).filter(
+              (a) => a.toBase === 4 && !a.isOut
+            );
+            const snapSelfScored = Boolean(
+              snapAb?.advances?.some(
+                (a) => a.from === "BAT" && a.to === "HP" && !a.isOut
+              )
+            );
+            const hasBatterSelfRunRow =
+              abSafeRuns.some(
+                (a) => a.runnerId === batterKey || a.fromBase === 0
+              ) ||
+              (abSafeRuns.length > 0 && snapSelfScored);
+
+            if (isHR && !hasBatterSelfRunRow) {
+              b.runs++;
+            }
+
+            const explicitRbi = explicitRbiByAtBatId.get(ab.id);
+            const rbiCount =
+              typeof explicitRbi === "number"
+                ? explicitRbi
+                : typeof snapAb?.rbi === "number"
+                ? snapAb.rbi
+                : isDoublePlay || isErr || isStrikeoutPlay
+                ? 0
+                : isWalk || isHbp || isInterferenceReach
+                ? Math.min(
+                    1,
+                    abSafeRuns.filter(
+                      (a) => !isNonRbiAdvanceReasonForSeason(a.reason)
+                    ).length
+                  )
+                : abSafeRuns.filter(
+                    (a) => !isNonRbiAdvanceReasonForSeason(a.reason)
+                  ).length + (isHR && !hasBatterSelfRunRow ? 1 : 0);
+            b.rbi += rbiCount;
+          }
+
+          // 走塁（得点・盗塁）集計
+          const abAdvances = advancesByAtBatId.get(ab.id) || [];
+          abAdvances.forEach((adv, advIdx) => {
+            const snapAdv = snapAb?.advances?.[advIdx];
+            const fallbackRunner = snapAdv?.runnerName?.trim() || "";
+            const cleanRunner = normalizeNameKey(fallbackRunner);
+            const runnerKey =
+              adv.runnerId ||
+              (cleanRunner
+                ? playerIdByCleanName.get(cleanRunner) || `name:${cleanRunner}`
+                : "");
+            if (!runnerKey) return;
+
+            const rAcc = ensureBatter(runnerKey, fallbackRunner);
+            rAcc.matchSet.add(ab.matchId);
+            if (adv.toBase === 4 && !adv.isOut) {
+              rAcc.runs++;
+            }
+            const reasonStr = String(adv.reason || "");
+            if (
+              !adv.isOut &&
+              (reasonStr === "steal" ||
+                reasonStr.includes("stolen") ||
+                reasonStr.includes("SB") ||
+                reasonStr.includes("盗塁"))
+            ) {
+              rAcc.stolenBases++;
+            }
+          });
+        } else {
+          // 自チーム守備イニング（投手成績）
+          const oppSt = oppStructureByMatchId.get(ab.matchId);
+          const fallbackPitcher = snapAb?.pitcherName?.trim() || "";
+          const cleanPitcher = normalizeNameKey(fallbackPitcher);
+          const matchedStint = oppSt?.pitchers?.find(
+            (st) =>
+              (ab.pitcherId && st.playerId === ab.pitcherId) ||
+              (cleanPitcher && normalizeNameKey(st.name) === cleanPitcher)
+          );
+          const pitcherKey =
+            ab.pitcherId ||
+            snapAb?.pitcherPlayerId ||
+            matchedStint?.playerId ||
+            (cleanPitcher &&
+            cleanPitcher !== "相手投手" &&
+            cleanPitcher !== "投手" &&
+            cleanPitcher !== "不明"
+              ? playerIdByCleanName.get(cleanPitcher) || `name:${cleanPitcher}`
+              : "");
+
+          if (!pitcherKey) continue;
+          pitcherKeyByAtBatId.set(ab.id, pitcherKey);
+
+          const p = ensurePitcher(
+            pitcherKey,
+            fallbackPitcher,
+            matchedStint?.uniformNumber?.trim() || "-"
+          );
+          p.matchSet.add(ab.matchId);
+
+          if (res !== "other" && !res.includes("途中断")) {
+            p.battersFaced++;
+          }
+
+          const { isHit, isHR } = classifyHitKind(res);
+          if (isHit) p.hitsAllowed++;
+          if (isHR) p.homeRunsAllowed++;
+
+          if (
+            res === "strikeout" ||
+            res === "dropped_third_strike" ||
+            res === "dropped_third_strike_out" ||
+            res.includes("K") ||
+            res.includes("三振") ||
+            res.includes("振逃")
+          ) {
+            p.strikeouts++;
+          }
+          if (
+            res === "walk" ||
+            res === "intentional_walk" ||
+            res.includes("BB") ||
+            res.includes("四球") ||
+            res.includes("敬遠")
+          ) {
+            p.walks++;
+          }
+          if (
+            res === "hit_by_pitch" ||
+            res.includes("HP") ||
+            res.includes("DB") ||
+            res.includes("死球")
+          ) {
+            p.hitByPitch++;
+          }
+
+          const isOut =
+            res.includes("アウト") ||
+            res.includes("K") ||
+            res.includes("三振") ||
+            res.includes("ゴロ") ||
+            res.includes("フライ") ||
+            res.includes("ライナー") ||
+            res.includes("併殺") ||
+            res.includes("犠") ||
+            /^[1-9]-[1-9]$/.test(res) ||
+            /^[1-9]F$/.test(res) ||
+            /^[1-9]L$/.test(res) ||
+            res === "groundout" ||
+            res === "flyout" ||
+            res === "lineout" ||
+            res === "infield_fly" ||
+            res === "strikeout" ||
+            res === "dropped_third_strike_out" ||
+            res === "sac_bunt" ||
+            res === "sac_fly" ||
+            res === "interference_out" ||
+            res === "double_play" ||
+            res === "triple_play" ||
+            res.includes("DP") ||
+            res.includes("TP");
+
+          if (isOut) {
+            if (
+              res === "triple_play" ||
+              res.includes("三重殺") ||
+              res.includes("TP")
+            ) {
+              p.outs += 3;
+            } else if (
+              res === "double_play" ||
+              res.includes("併殺") ||
+              res.includes("DP")
+            ) {
+              p.outs += 2;
+            } else {
+              p.outs += 1;
+            }
+          }
+
+          const defAdvances = advancesByAtBatId.get(ab.id) || [];
+          for (const adv of defAdvances) {
+            const rStr = String(adv.reason || "");
+            if (
+              adv.isOut &&
+              adv.fromBase > 0 &&
+              (rStr === "caught_stealing" ||
+                rStr === "pickoff_out" ||
+                rStr === "interference_out" ||
+                rStr === "appeal_out" ||
+                rStr === "out_on_base" ||
+                rStr.includes("盗塁") ||
+                rStr.includes("牽制"))
+            ) {
+              p.outs += 1;
+            }
+            if (adv.toBase === 4 && !adv.isOut) {
+              p.runs += 1;
+              const lowReason = rStr.toLowerCase();
+              const lowAbRes = res.toLowerCase();
+              const isUnearned =
+                lowReason === "error" ||
+                lowReason === "pb" ||
+                lowReason === "pickoff_error" ||
+                lowReason.includes("失策") ||
+                lowReason.includes("エラー") ||
+                lowReason.includes("捕逸") ||
+                lowAbRes === "error" ||
+                lowAbRes.includes("失策") ||
+                lowAbRes.includes("エラー");
+              if (!isUnearned) {
+                p.earnedRuns += 1;
+              }
+            }
+          }
+        }
+      }
+
+      const battingStats: LiffSeasonBatterStatPayload[] = Array.from(
+        batterMap.values()
+      )
+        .filter(
+          (b) =>
+            b.plateAppearances > 0 ||
+            b.runs > 0 ||
+            b.stolenBases > 0 ||
+            b.rbi > 0
+        )
+        .map((b) => {
+          const totalBases =
+            b.singles + b.doubles * 2 + b.triples * 3 + b.homeRuns * 4;
+          const avgNum = b.atBats > 0 ? b.hits / b.atBats : 0;
+          const obpDenom = b.atBats + b.walks + b.hitByPitch + b.sacFlies;
+          const obpNum =
+            obpDenom > 0 ? (b.hits + b.walks + b.hitByPitch) / obpDenom : 0;
+          const slgNum = b.atBats > 0 ? totalBases / b.atBats : 0;
+          return {
+            id: b.id,
+            name: b.name,
+            uniformNumber: b.uniformNumber,
+            games: b.matchSet.size,
+            plateAppearances: b.plateAppearances,
+            atBats: b.atBats,
+            hits: b.hits,
+            doubles: b.doubles,
+            triples: b.triples,
+            homeRuns: b.homeRuns,
+            totalBases,
+            rbi: b.rbi,
+            runs: b.runs,
+            walks: b.walks,
+            hitByPitch: b.hitByPitch,
+            strikeouts: b.strikeouts,
+            sacBunts: b.sacBunts,
+            sacFlies: b.sacFlies,
+            stolenBases: b.stolenBases,
+            avg: b.atBats > 0 ? formatBaseballRate(avgNum) : ".000",
+            obp: obpDenom > 0 ? formatBaseballRate(obpNum) : ".000",
+            ops:
+              b.atBats > 0 || obpDenom > 0
+                ? formatOpsRate(obpNum + slgNum)
+                : ".000",
+          };
+        })
+        .sort((a, b) => {
+          if (b.hits !== a.hits) return b.hits - a.hits;
+          if (b.rbi !== a.rbi) return b.rbi - a.rbi;
+          return b.plateAppearances - a.plateAppearances;
+        });
+
+      const pitchingStats: LiffSeasonPitcherStatPayload[] = Array.from(
+        pitcherMap.values()
+      )
+        .filter((p) => p.battersFaced > 0 || p.outs > 0)
+        .map((p) => {
+          const fullInn = Math.floor(p.outs / 3);
+          const remOuts = p.outs % 3;
+          const ip = remOuts > 0 ? `${fullInn}.${remOuts}` : `${fullInn}.0`;
+          const eraVal = p.outs > 0 ? (p.earnedRuns * 7 * 3) / p.outs : 0;
+          const whipVal =
+            p.outs > 0 ? ((p.hitsAllowed + p.walks) * 3) / p.outs : 0;
+          return {
+            id: p.id,
+            name: p.name,
+            uniformNumber: p.uniformNumber,
+            games: p.matchSet.size,
+            outs: p.outs,
+            ip,
+            battersFaced: p.battersFaced,
+            hitsAllowed: p.hitsAllowed,
+            homeRunsAllowed: p.homeRunsAllowed,
+            strikeouts: p.strikeouts,
+            walks: p.walks,
+            hitByPitch: p.hitByPitch,
+            runs: p.runs,
+            earnedRuns: p.earnedRuns,
+            era: p.outs > 0 ? eraVal.toFixed(2) : "0.00",
+            whip: p.outs > 0 ? whipVal.toFixed(2) : "0.00",
+          };
+        })
+        .sort((a, b) => {
+          if (b.outs !== a.outs) return b.outs - a.outs;
+          return b.strikeouts - a.strikeouts;
+        });
+
+      const wins = targetMatches.filter((m) => m.result === "win").length;
+      const losses = targetMatches.filter((m) => m.result === "loss").length;
+      const draws = targetMatches.filter((m) => m.result === "draw").length;
+      const total = targetMatches.length;
+      const decided = wins + losses;
+      const winRate =
+        decided > 0 ? formatBaseballRate(wins / decided) : ".000";
+      const winRatePercent =
+        decided > 0 ? Math.round((wins / decided) * 100) : 0;
+
+      const runsScored = targetMatches.reduce((acc, m) => acc + m.myScore, 0);
+      const runsAllowed = targetMatches.reduce(
+        (acc, m) => acc + m.opponentScore,
+        0
+      );
+      const diff = runsScored - runsAllowed;
+      const runDiff = diff > 0 ? `+${diff}` : `${diff}`;
+      const avgRunsScored =
+        total > 0 ? (runsScored / total).toFixed(1) : "0.0";
+      const avgRunsAllowed =
+        total > 0 ? (runsAllowed / total).toFixed(1) : "0.0";
+      const maxRunsScored =
+        total > 0 ? Math.max(...targetMatches.map((m) => m.myScore)) : 0;
+      const shutouts = targetMatches.filter(
+        (m) => m.result === "win" && m.opponentScore === 0
+      ).length;
+
+      const totalAB = battingStats.reduce((s, b) => s + b.atBats, 0);
+      const totalBatterHits = battingStats.reduce((s, b) => s + b.hits, 0);
+      const totalWalks = battingStats.reduce((s, b) => s + b.walks, 0);
+      const totalHbp = battingStats.reduce((s, b) => s + b.hitByPitch, 0);
+      const totalSf = battingStats.reduce((s, b) => s + b.sacFlies, 0);
+      const totalTb = battingStats.reduce((s, b) => s + b.totalBases, 0);
+      const totalHr = battingStats.reduce((s, b) => s + b.homeRuns, 0);
+      const totalSb = battingStats.reduce((s, b) => s + b.stolenBases, 0);
+
+      const obpDen = totalAB + totalWalks + totalHbp + totalSf;
+      const teamObp =
+        obpDen > 0 ? (totalBatterHits + totalWalks + totalHbp) / obpDen : 0;
+      const teamSlg = totalAB > 0 ? totalTb / totalAB : 0;
+
+      const totalPitcherOuts = pitchingStats.reduce((s, p) => s + p.outs, 0);
+      const totalPitcherEr = pitchingStats.reduce(
+        (s, p) => s + p.earnedRuns,
+        0
+      );
+
+      const matchSumMyHits = targetMatches.reduce(
+        (s, m) => s + m.myHits,
+        0
+      );
+      const matchSumOppHits = targetMatches.reduce(
+        (s, m) => s + m.opponentHits,
+        0
+      );
+      const matchSumMyErr = targetMatches.reduce(
+        (s, m) => s + m.myErrors,
+        0
+      );
+      const matchSumOppErr = targetMatches.reduce(
+        (s, m) => s + m.opponentErrors,
+        0
+      );
+
+      return {
+        summary: {
+          totalMatches: total,
+          wins,
+          losses,
+          draws,
+          winRate,
+          winRatePercent,
+          runsScored,
+          runsAllowed,
+          runDiff,
+          avgRunsScored,
+          avgRunsAllowed,
+          maxRunsScored,
+          shutouts,
+          teamHits: Math.max(matchSumMyHits, totalBatterHits),
+          opponentHits: matchSumOppHits,
+          teamErrors: matchSumMyErr,
+          opponentErrors: matchSumOppErr,
+          teamAvg: totalAB > 0 ? formatBaseballRate(totalBatterHits / totalAB) : ".000",
+          teamOps:
+            totalAB > 0 || obpDen > 0
+              ? formatOpsRate(teamObp + teamSlg)
+              : ".000",
+          teamHomeRuns: totalHr,
+          teamStolenBases: totalSb,
+          teamEra:
+            totalPitcherOuts > 0
+              ? ((totalPitcherEr * 7 * 3) / totalPitcherOuts).toFixed(2)
+              : "0.00",
+        },
+        battingStats,
+        pitchingStats,
+      };
+    };
+
+    const sectionsByFilter: Record<StatsFilterKey, LiffStatsSectionPayload> = {
+      all: buildSectionForFilter("all"),
+      official: buildSectionForFilter("official"),
+      exchange: buildSectionForFilter("exchange"),
+      practice: buildSectionForFilter("practice"),
+    };
 
     return c.json({
       success: true,
       isDemo: false,
-      stats: {
-        totalMatches: total,
-        wins,
-        losses,
-        draws,
-        winRate,
-        runsScored,
-        runsAllowed,
-        runDiff,
+      team: {
+        id: teamRow?.id || teamId,
+        name: teamRow
+          ? `${teamRow.orgName ? `${teamRow.orgName} ` : ""}${teamRow.name}`.trim()
+          : "チーム",
+        orgName: teamRow?.orgName || teamRow?.name || "チーム",
+        year: teamRow?.year || new Date().getFullYear(),
       },
+      stats: sectionsByFilter.all.summary,
+      sectionsByFilter,
+      matches: enrichedMatches,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Failed to load liff stats:", error);
-    return c.json({ success: false, stats: null });
+    return c.json({
+      success: false,
+      stats: null,
+      error: error instanceof Error ? error.message : "成績データの取得に失敗しました",
+    });
   }
 });
 
