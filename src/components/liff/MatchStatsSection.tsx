@@ -9,9 +9,11 @@ import {
   BookOpen,
   ChevronDown,
   ChevronUp,
+  Edit3,
   Flame,
   ScanLine,
   Target,
+  Trash2,
   Zap,
 } from "lucide-react";
 import { EmptyState } from "@/components/layout/EmptyState";
@@ -142,6 +144,7 @@ interface MatchStatsSectionProps {
   playLogs: LiffRawPlayLogItem[];
   boxscoreAtBats: LiffBoxscoreAtBatItem[];
   isLoadingStats: boolean;
+  onRequestDeletePersonalStats?: () => void;
 }
 
 const CANONICAL_RESULT_JA: Record<string, string> = {
@@ -496,6 +499,7 @@ export function MatchStatsSection({
   playLogs,
   boxscoreAtBats,
   isLoadingStats,
+  onRequestDeletePersonalStats,
 }: MatchStatsSectionProps) {
   const [batterColumnMode, setBatterColumnMode] = useState<"full" | "compact">("full");
   const [selectedTimelineInning, setSelectedTimelineInning] = useState<number | "all">(
@@ -790,6 +794,37 @@ export function MatchStatsSection({
 
   return (
     <div className="space-y-5">
+      {/* 🛠️ 個人データ操作バー（修正・削除） */}
+      {!isDemoMatch && onRequestDeletePersonalStats && (
+        <div className="rounded-2xl border border-border bg-card px-3.5 py-2.5 shadow-2xs flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 text-xs font-black text-foreground min-w-0">
+            <Target className="w-4 h-4 text-primary shrink-0" />
+            <span className="truncate">個人成績・打席データ</span>
+          </div>
+
+          <div className="flex items-center gap-1.5 shrink-0">
+            <Link
+              href={`/liff/tools/scorebook-import?matchId=${encodeURIComponent(
+                matchId
+              )}&mode=edit`}
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black shadow-2xs active:scale-95 transition-all"
+            >
+              <Edit3 className="w-3 h-3 shrink-0" />
+              <span>打席・成績を修正</span>
+            </Link>
+
+            <button
+              type="button"
+              onClick={onRequestDeletePersonalStats}
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-rose-300 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/50 hover:bg-rose-100 dark:hover:bg-rose-950 text-rose-700 dark:text-rose-300 text-[11px] font-black active:scale-95 transition-all cursor-pointer"
+            >
+              <Trash2 className="w-3 h-3 shrink-0" />
+              <span>個人データを削除</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 🌟 1. 本日の注目選手（Web版 HighlightHero と同一ロジック） */}
       {highlightHeroes.length > 0 && (
         <section className="space-y-2" aria-label="本日の注目選手">

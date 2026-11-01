@@ -6,9 +6,13 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { SectionHeader } from "@/components/layout/SectionHeader";
 import { EmptyState } from "@/components/layout/EmptyState";
-import { Edit2, ShieldAlert, Sparkles, MapPin, Share2, History, Target, EyeOff, FileSpreadsheet, Lock, Activity, Trophy, ChevronLeft, ChevronRight, Calendar, Zap, TrendingUp, Video, Edit3, X, Play, Plus, BookOpen, AlertCircle, Award, Flame, Users, Loader2 } from "lucide-react";
+import { Edit2, ShieldAlert, Sparkles, MapPin, Share2, History, Target, EyeOff, FileSpreadsheet, Lock, Activity, Trophy, ChevronLeft, ChevronRight, Calendar, Zap, TrendingUp, Video, Edit3, X, Play, Plus, BookOpen, AlertCircle, Award, Flame, Users, Loader2, Trash2 } from "lucide-react";
 import { MatchTimeline } from "@/components/matches/MatchTimeline";
 import { parseD1PlayLog, PlayLog } from "@/components/matches/PlayLogCard";
+import {
+  DeletePersonalStatsModal,
+  type DeletePersonalStatsOptions,
+} from "@/components/matches/DeletePersonalStatsModal";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import {
@@ -317,9 +321,12 @@ function MatchResultContent() {
   const [inputYoutubeUrl, setInputYoutubeUrl] = useState("");
   const [isSavingUrl, setIsSavingUrl] = useState(false);
   const [isReaggregating, setIsReaggregating] = useState(false);
+  const [showDeleteStatsModal, setShowDeleteStatsModal] = useState(false);
+  const [isDeletingPersonalStats, setIsDeletingPersonalStats] = useState(false);
 
   // データ取得ロジック
   useEffect(() => {
+    setShowDeleteStatsModal(false);
     if (!matchId) return;
     const fetchData = async () => {
       try {
@@ -458,6 +465,70 @@ function MatchResultContent() {
       setIsReaggregating(false);
     }
   };
+  // 個人データ一括削除処理
+  const handleDeletePersonalStats = async (options: DeletePersonalStatsOptions) => {
+    if (!match || isDeletingPersonalStats) return;
+    setIsDeletingPersonalStats(true);
+    try {
+      const res = await fetch("/api/liff/scorebook/saved", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          matchId: match.id,
+          clearLineups: options.clearLineups,
+          resetMatchScore: options.resetMatchScore,
+        }),
+      });
+      const data = (await res.json()) as {
+        success?: boolean;
+        error?: string;
+      };
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "個人データの削除に失敗しました");
+      }
+
+      setStats([]);
+      setPitcherStats([]);
+      setAtBats([]);
+      setPlayLogs([]);
+      setApiGameDetails(null);
+      setAiAnalysis(null);
+
+      if (options.clearLineups) {
+        setMyLineup([]);
+        setOpponentLineup([]);
+      }
+
+      if (options.resetMatchScore) {
+        setMatch((prev) =>
+          prev
+            ? {
+                ...prev,
+                myScore: 0,
+                opponentScore: 0,
+                myInningScores: "[]",
+                opponentInningScores: "[]",
+                myHits: 0,
+                opponentHits: 0,
+                myErrors: 0,
+                opponentErrors: 0,
+                liveMyScore: 0,
+                liveOpponentScore: 0,
+              }
+            : prev
+        );
+      }
+
+      setShowDeleteStatsModal(false);
+      toast.success("この試合の個人データを削除しました");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(msg || "個人データの削除に失敗しました");
+    } finally {
+      setIsDeletingPersonalStats(false);
+    }
+  };
+
   // YouTube URL 保存処理
   const handleSaveYoutubeUrl = async () => {
     if (!matchId) return;
@@ -596,12 +667,17 @@ function MatchResultContent() {
   const hasGameDetails = Object.values(gameDetails).some(arr => arr.length > 0);
 
   const youtubeVideoId = getYoutubeVideoId(match.youtubeUrl);
+  const hasPersonalStatsData =
+    stats.length > 0 ||
+    pitcherStats.length > 0 ||
+    atBats.length > 0 ||
+    playLogs.length > 0;
 
   return (
     <div className="w-full min-h-screen pb-16 text-foreground animate-in fade-in duration-500">
 
       {/* 💡 アクションヘッダー */}
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 pt-4 sm:pt-6 mb-4 sm:mb-6 flex items-center justify-between">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 pt-4 sm:pt-6 mb-4 sm:mb-6 flex flex-wrap items-center justify-between gap-2">
         <Button 
           variant="outline" 
           size="sm" 
@@ -611,7 +687,18 @@ function MatchResultContent() {
           <ChevronLeft className="h-4 w-4" />
           戻る
         </Button>
-        <div className="flex gap-2.5 items-center">
+        <div className="flex flex-wrap gap-2 items-center ml-auto">
+          {hasPersonalStatsData && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowDeleteStatsModal(true)}
+              className="h-10 px-3 sm:px-4 rounded-[var(--radius-xl)] font-black gap-1.5 shadow-sm border-rose-300 dark:border-rose-800 bg-card text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/50 text-xs sm:text-sm"
+            >
+              <Trash2 className="h-4 w-4" />
+              個人データ削除
+            </Button>
+          )}
           <Button 
             variant="outline" 
             size="sm"
@@ -1500,6 +1587,17 @@ function MatchResultContent() {
           </div>
         </div>
       )}
+
+      <DeletePersonalStatsModal
+        isOpen={showDeleteStatsModal}
+        matchId={match.id}
+        opponentName={match.opponent}
+        matchDateText={match.date}
+        scoreSummaryText={`${match.myScore}-${match.opponentScore}`}
+        isDeleting={isDeletingPersonalStats}
+        onCancel={() => setShowDeleteStatsModal(false)}
+        onConfirm={(options) => void handleDeletePersonalStats(options)}
+      />
     </div>
   );
 }

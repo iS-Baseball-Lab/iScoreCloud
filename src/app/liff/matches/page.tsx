@@ -31,6 +31,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ScanLine,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/layout/EmptyState";
@@ -67,8 +68,25 @@ import {
   type LiffRawPlayLogItem,
 } from "@/components/liff/MatchStatsSection";
 import { getDemoMatchStatsBundle } from "@/lib/liff/demo-match-stats";
+import {
+  DeletePersonalStatsModal,
+  type DeletePersonalStatsOptions,
+} from "@/components/matches/DeletePersonalStatsModal";
+import {
+  clearScorebookDraft,
+  peekScorebookDraftMeta,
+} from "@/lib/liff/scorebook-draft";
 
 // ━━━ APIレスポンス型定義 (any排除) ━━━
+interface DeletePersonalStatsApiResponse {
+  success?: boolean;
+  matchId?: string;
+  deletedAtBatsCount?: number;
+  clearLineups?: boolean;
+  resetMatchScore?: boolean;
+  error?: string;
+}
+
 interface MatchDetailApiResponse {
   success?: boolean;
   match?: Match & { teamId?: string };
@@ -266,6 +284,8 @@ function MatchesContent() {
   const [loadedMatchId, setLoadedMatchId] = useState<string | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [isAddressCopied, setIsAddressCopied] = useState(false);
+  const [showDeleteStatsModal, setShowDeleteStatsModal] = useState(false);
+  const [isDeletingPersonalStats, setIsDeletingPersonalStats] = useState(false);
 
   // 試合一覧用ステート
   const [matchesList, setMatchesList] = useState<MatchCardData[]>([]);
@@ -282,10 +302,79 @@ function MatchesContent() {
     }, 2000);
   }, []);
 
+  const handleDeletePersonalStats = useCallback(
+    async (options: DeletePersonalStatsOptions) => {
+      if (!match || isDeletingPersonalStats) return;
+      setIsDeletingPersonalStats(true);
+      try {
+        const res = await fetch("/api/liff/scorebook/saved", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            matchId: match.id,
+            clearLineups: options.clearLineups,
+            resetMatchScore: options.resetMatchScore,
+          }),
+        });
+        const data = (await res.json()) as DeletePersonalStatsApiResponse;
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || "個人データの削除に失敗しました");
+        }
+
+        // 端末内のスコアブック途中下書きがこの試合のものだった場合はあわせて破棄
+        const teamKey = currentTeam?.id || "default";
+        const draftMeta = peekScorebookDraftMeta(teamKey);
+        if (draftMeta?.selectedMatchId === match.id) {
+          await clearScorebookDraft(teamKey);
+        }
+
+        setMatchStats([]);
+        setPitcherStats([]);
+        setGameDetails(null);
+        setPlayLogs([]);
+        setBoxscoreAtBats([]);
+        setMySubstitutions([]);
+
+        if (options.clearLineups) {
+          setMyLineup([]);
+          setOpponentLineup([]);
+        }
+
+        if (options.resetMatchScore) {
+          setMatch((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  myScore: 0,
+                  opponentScore: 0,
+                  myInningScores: [],
+                  opponentInningScores: [],
+                  myHits: 0,
+                  opponentHits: 0,
+                  myErrors: 0,
+                  opponentErrors: 0,
+                }
+              : prev
+          );
+        }
+
+        setShowDeleteStatsModal(false);
+        toast.success("この試合の個人データを削除しました");
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        toast.error(msg || "個人データの削除に失敗しました");
+      } finally {
+        setIsDeletingPersonalStats(false);
+      }
+    },
+    [match, isDeletingPersonalStats, currentTeam?.id]
+  );
+
   // 1. 試合詳細 ＆ 出場メンバー・成績データのロード (matchId がある場合)
   useEffect(() => {
     setIsAddressCopied(false);
     setLineupTeamTab("my");
+    setShowDeleteStatsModal(false);
     if (!matchId) {
       setDetailError(null);
       setPrevMatch(null);
@@ -787,6 +876,12 @@ function MatchesContent() {
           )}`
         : baseShareText;
 
+    const hasPersonalStatsData =
+      matchStats.length > 0 ||
+      pitcherStats.length > 0 ||
+      playLogs.length > 0 ||
+      boxscoreAtBats.length > 0;
+
     return (
       <div className="flex flex-col flex-1">
         <LiffHeader />
@@ -1065,36 +1160,48 @@ function MatchesContent() {
               </div>
 
               {!isDemo && !isDemoMatchId(match.id) && !isRainout && (
-                <div className="px-3 py-2.5 border-t border-border bg-muted/30 flex items-center justify-between gap-2">
-                  <span className="text-[10px] font-bold text-muted-foreground truncate">
+                <div className="px-3 py-2.5 border-t border-border bg-muted/30 flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-[10px] font-bold text-muted-foreground min-w-0 flex-1 truncate">
                     {isFutureOrScheduled
                       ? "試合後に紙スコアブックをAIで一括取り込みできます"
                       : "打席結果・1球順序・選手交代・個人成績を後からでも修正できます"}
                   </span>
-                  <Link
-                    href={
-                      isFutureOrScheduled
-                        ? `/liff/tools/scorebook-import?matchId=${encodeURIComponent(
-                            match.id
-                          )}`
-                        : `/liff/tools/scorebook-import?matchId=${encodeURIComponent(
-                            match.id
-                          )}&mode=edit`
-                    }
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black shadow-2xs active:scale-95 transition-all shrink-0"
-                  >
-                    {isFutureOrScheduled ? (
-                      <>
-                        <ScanLine className="w-3.5 h-3.5" />
-                        <span>スコア取り込み</span>
-                      </>
-                    ) : (
-                      <>
-                        <Edit3 className="w-3.5 h-3.5" />
-                        <span>打席・選手交代を修正</span>
-                      </>
+                  <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+                    {!isFutureOrScheduled && hasPersonalStatsData && (
+                      <button
+                        type="button"
+                        onClick={() => setShowDeleteStatsModal(true)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-card border border-rose-300 dark:border-rose-800 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/50 text-[11px] font-black shadow-2xs active:scale-95 transition-all cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                        <span>個人データ削除</span>
+                      </button>
                     )}
-                  </Link>
+                    <Link
+                      href={
+                        isFutureOrScheduled
+                          ? `/liff/tools/scorebook-import?matchId=${encodeURIComponent(
+                              match.id
+                            )}`
+                          : `/liff/tools/scorebook-import?matchId=${encodeURIComponent(
+                              match.id
+                            )}&mode=edit`
+                      }
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black shadow-2xs active:scale-95 transition-all shrink-0"
+                    >
+                      {isFutureOrScheduled ? (
+                        <>
+                          <ScanLine className="w-3.5 h-3.5" />
+                          <span>スコア取り込み</span>
+                        </>
+                      ) : (
+                        <>
+                          <Edit3 className="w-3.5 h-3.5" />
+                          <span>打席・選手交代を修正</span>
+                        </>
+                      )}
+                    </Link>
+                  </div>
                 </div>
               )}
             </div>
@@ -1115,6 +1222,11 @@ function MatchesContent() {
             playLogs={playLogs}
             boxscoreAtBats={boxscoreAtBats}
             isLoadingStats={isStatsLoading}
+            onRequestDeletePersonalStats={
+              !isDemo && !isDemoMatchId(match.id) && !isRainout
+                ? () => setShowDeleteStatsModal(true)
+                : undefined
+            }
           />
 
           {/* 👥 3. 出場メンバー（見出しはカード外・内部ブロックもすべて見出しを枠外に統一） */}
@@ -1713,6 +1825,19 @@ function MatchesContent() {
               )}
             </nav>
           )}
+
+          <DeletePersonalStatsModal
+            isOpen={showDeleteStatsModal}
+            matchId={match.id}
+            opponentName={match.opponent}
+            matchDateText={formattedDateTime || match.date}
+            scoreSummaryText={
+              isFutureOrScheduled ? undefined : `${match.myScore}-${match.opponentScore}`
+            }
+            isDeleting={isDeletingPersonalStats}
+            onCancel={() => setShowDeleteStatsModal(false)}
+            onConfirm={(options) => void handleDeletePersonalStats(options)}
+          />
 
           <div className="h-8 w-full shrink-0" aria-hidden="true" />
         </div>

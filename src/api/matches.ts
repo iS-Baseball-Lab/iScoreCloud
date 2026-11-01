@@ -3,7 +3,7 @@ import { ensureMatchLineupColumns } from "@/lib/db-helper";
 import { Hono } from "hono";
 import { drizzle } from "drizzle-orm/d1";
 import { MatchService } from "@/services/match.service";
-import { eq, sql, desc, asc, and } from "drizzle-orm";
+import { eq, sql, desc, asc, and, inArray } from "drizzle-orm";
 import {
   matchUndoHistories,
   atBats,
@@ -15,13 +15,14 @@ import {
 import { matches, matchLineups } from "@/db/schema/match";
 import { players } from "@/db/schema/team";
 import { simulateSheetRunners } from "@/lib/liff/scorebook-runners";
+import type { WorkerEnv } from "@/types/api";
 import type {
   ScorebookSheetStructure,
   ScorebookV2AtBat,
 } from "@/types/scorebook-v2";
 import scorebookRouter from "./matches/scorebook";
 
-const app = new Hono<{ Bindings: { DB: D1Database } }>();
+const app = new Hono<{ Bindings: WorkerEnv }>();
 
 app.route("/", scorebookRouter);
 
@@ -169,21 +170,127 @@ app.post("/:id/validations/resolve", async (c) => {
   }
 });
 
-// 🌟 プレイログと成績データをすべて削除（リセット）
+async function deleteMatchPersonalRecordsSafely(
+  db: ReturnType<typeof drizzle>,
+  bucket: R2Bucket | undefined,
+  matchId: string
+): Promise<number> {
+  const existingAbs = await db
+    .select({ id: atBats.id })
+    .from(atBats)
+    .where(eq(atBats.matchId, matchId))
+    .all();
+  const abIds = existingAbs.map((r) => r.id);
+
+  // 外部キー制約（base_advances.pitch_id -> pitches.id, play_logs.at_bat_id -> at_bats.id）を遵守し子テーブルから順に削除
+  await db.delete(baseAdvances).where(eq(baseAdvances.matchId, matchId));
+  await db.delete(playLogs).where(eq(playLogs.matchId, matchId));
+
+  const idChunkSize = 40;
+  for (let i = 0; i < abIds.length; i += idChunkSize) {
+    const slice = abIds.slice(i, i + idChunkSize);
+    if (slice.length === 0) continue;
+    await db.delete(pitches).where(inArray(pitches.atBatId, slice));
+    await db.delete(atBats).where(inArray(atBats.id, slice));
+  }
+  await db.delete(atBats).where(eq(atBats.matchId, matchId));
+
+  try {
+    const existingSnap = await db
+      .select({
+        topImageUrl: matchScorebookSnapshots.topImageUrl,
+        bottomImageUrl: matchScorebookSnapshots.bottomImageUrl,
+      })
+      .from(matchScorebookSnapshots)
+      .where(eq(matchScorebookSnapshots.matchId, matchId))
+      .get();
+
+    if (existingSnap && bucket) {
+      const prefix = "/api/images/";
+      for (const url of [
+        existingSnap.topImageUrl,
+        existingSnap.bottomImageUrl,
+      ]) {
+        if (url && url.startsWith("/api/images/scorebooks/")) {
+          const r2Key = url.slice(prefix.length);
+          await bucket.delete(r2Key).catch(() => {});
+        }
+      }
+    }
+    await db
+      .delete(matchScorebookSnapshots)
+      .where(eq(matchScorebookSnapshots.matchId, matchId));
+  } catch {
+    // snapshot table optional in older environments
+  }
+
+  try {
+    await db
+      .delete(matchUndoHistories)
+      .where(eq(matchUndoHistories.matchId, matchId));
+  } catch {
+    // undo table optional
+  }
+
+  return abIds.length;
+}
+
+// 🌟 プレイログと個人成績データをすべて削除（試合の基本情報・イニングスコアは保持）
 app.delete("/:id/reset-logs", async (c) => {
   try {
     const db = drizzle(c.env.DB);
     const matchId = c.req.param("id");
+    const clearLineups =
+      c.req.query("clearLineups") === "1" ||
+      c.req.query("clearLineups") === "true";
+    const resetMatchScore =
+      c.req.query("resetMatchScore") === "1" ||
+      c.req.query("resetMatchScore") === "true";
 
-    // playLogs と atBats を matchId で削除
-    // ※ atBats を削除すると、cascade で pitches, base_advances も削除される
-    await db.delete(playLogs).where(eq(playLogs.matchId, matchId));
-    await db.delete(atBats).where(eq(atBats.matchId, matchId));
+    const deletedAtBatsCount = await deleteMatchPersonalRecordsSafely(
+      db,
+      c.env.BUCKET,
+      matchId
+    );
 
-    // スコアバリデーションの履歴もクリア
-    await db.update(matches).set({ scorebookValidations: "[]" }).where(eq(matches.id, matchId));
+    if (clearLineups) {
+      await db.delete(matchLineups).where(eq(matchLineups.matchId, matchId));
+    } else {
+      await db
+        .delete(matchLineups)
+        .where(
+          and(
+            eq(matchLineups.matchId, matchId),
+            eq(matchLineups.isStarting, false)
+          )
+        );
+    }
 
-    return c.json({ success: true });
+    const patch: Partial<typeof matches.$inferInsert> = {
+      scorebookValidations: "[]",
+      balls: 0,
+      strikes: 0,
+      outs: 0,
+      runners: JSON.stringify({ base1: null, base2: null, base3: null }),
+    };
+    if (clearLineups) {
+      patch.myLineup = "[]";
+      patch.opponentLineup = "[]";
+    }
+    if (resetMatchScore) {
+      patch.myScore = 0;
+      patch.opponentScore = 0;
+      patch.myInningScores = "[]";
+      patch.opponentInningScores = "[]";
+      patch.myHits = 0;
+      patch.opponentHits = 0;
+      patch.myErrors = 0;
+      patch.opponentErrors = 0;
+    }
+
+    await db.update(matches).set(patch).where(eq(matches.id, matchId));
+
+    return c.json({ success: true, deletedAtBatsCount });
   } catch (error) {
     console.error("Failed to reset logs:", error);
     return c.json({ success: false, error: "Failed to reset play logs" }, 500);
@@ -241,32 +348,29 @@ app.post("/:id/reset", async (c) => {
   const matchId = c.req.param("id");
 
   try {
-    // 試合の関連テーブルを一括クリア＆ matches レコードの 0 リセット
-    await db.batch([
-      db.delete(playLogs).where(eq(playLogs.matchId, matchId)) as any,
-      db.delete(atBats).where(eq(atBats.matchId, matchId)) as any,
-      db.delete(matchUndoHistories).where(eq(matchUndoHistories.matchId, matchId)) as any,
-      db
-        .update(matches)
-        .set({
-          myScore: 0,
-          opponentScore: 0,
-          currentInning: 1,
-          isBottom: false,
-          balls: 0,
-          strikes: 0,
-          outs: 0,
-          runners: JSON.stringify({ base1: null, base2: null, base3: null }),
-          myInningScores: "[]",
-          opponentInningScores: "[]",
-          myHits: 0,
-          opponentHits: 0,
-          myErrors: 0,
-          opponentErrors: 0,
-          status: "live",
-        })
-        .where(eq(matches.id, matchId)) as any,
-    ]);
+    // 外部キー制約を遵守して関連テーブルを一括クリア＆ matches レコードを 0 リセット
+    await deleteMatchPersonalRecordsSafely(db, c.env.BUCKET, matchId);
+    await db
+      .update(matches)
+      .set({
+        myScore: 0,
+        opponentScore: 0,
+        currentInning: 1,
+        isBottom: false,
+        balls: 0,
+        strikes: 0,
+        outs: 0,
+        runners: JSON.stringify({ base1: null, base2: null, base3: null }),
+        myInningScores: "[]",
+        opponentInningScores: "[]",
+        myHits: 0,
+        opponentHits: 0,
+        myErrors: 0,
+        opponentErrors: 0,
+        scorebookValidations: "[]",
+        status: "live",
+      })
+      .where(eq(matches.id, matchId));
 
     return c.json({ success: true });
   } catch (error) {

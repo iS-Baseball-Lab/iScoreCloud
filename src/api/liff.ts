@@ -4066,9 +4066,21 @@ app.get("/stats", async (c) => {
         return created;
       };
 
-      // 出場ラインナップからの試合数記録
+      // 出場ラインナップからの試合数記録（実際に打席・個人データが存在する試合のみ対象とし、個人データ削除済み試合のスタメン残存による試合数水増しを防止）
+      const matchesWithPersonalData = new Set<string>();
+      for (const ab of allAtBats) {
+        if (targetMatchIds.has(ab.matchId)) {
+          matchesWithPersonalData.add(ab.matchId);
+        }
+      }
       for (const lu of allLineups) {
-        if (!targetMatchIds.has(lu.matchId) || !lu.playerId) continue;
+        if (
+          !targetMatchIds.has(lu.matchId) ||
+          !matchesWithPersonalData.has(lu.matchId) ||
+          !lu.playerId
+        ) {
+          continue;
+        }
         if (playerMetaById.has(lu.playerId)) {
           ensureBatter(lu.playerId, "").matchSet.add(lu.matchId);
         }

@@ -109,6 +109,8 @@ interface Step1MatchAndImagesProps {
   onReportError?: (message: string) => void;
   onLoadSavedScorebook?: () => void;
   isLoadingSavedScorebook?: boolean;
+  onRequestDeleteSavedScorebook?: () => void;
+  isDeletingSavedScorebook?: boolean;
 }
 
 type ImagePickerTarget = "top" | "bottom" | "legend";
@@ -429,6 +431,8 @@ export function Step1MatchAndImages({
   onReportError,
   onLoadSavedScorebook,
   isLoadingSavedScorebook = false,
+  onRequestDeleteSavedScorebook,
+  isDeletingSavedScorebook = false,
 }: Step1MatchAndImagesProps) {
   const lastCameraTargetRef = useRef<ImagePickerTarget>("top");
   const [cameraTarget, setCameraTarget] = useState<ImagePickerTarget | null>(
@@ -1050,7 +1054,11 @@ export function Step1MatchAndImages({
 
                 <button
                   type="button"
-                  disabled={isLoadingSavedScorebook || isAnalyzingStructure}
+                  disabled={
+                    isLoadingSavedScorebook ||
+                    isDeletingSavedScorebook ||
+                    isAnalyzingStructure
+                  }
                   onClick={onLoadSavedScorebook}
                   className="w-full h-11 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-xs active:scale-98 transition-all cursor-pointer"
                 >
@@ -1066,6 +1074,31 @@ export function Step1MatchAndImages({
                     </>
                   )}
                 </button>
+
+                {onRequestDeleteSavedScorebook && (
+                  <button
+                    type="button"
+                    disabled={
+                      isLoadingSavedScorebook ||
+                      isDeletingSavedScorebook ||
+                      isAnalyzingStructure
+                    }
+                    onClick={onRequestDeleteSavedScorebook}
+                    className="w-full h-9 px-3 rounded-xl bg-card hover:bg-rose-50 dark:hover:bg-rose-950/50 disabled:opacity-50 border border-rose-300 dark:border-rose-800 text-rose-600 dark:text-rose-400 text-[11px] font-black flex items-center justify-center gap-1.5 active:scale-98 transition-all cursor-pointer"
+                  >
+                    {isDeletingSavedScorebook ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                        <span>個人データを削除中...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                        <span>保存済みの個人データ（打席・成績）を削除する</span>
+                      </>
+                    )}
+                  </button>
+                )}
               </div>
             )}
           </div>

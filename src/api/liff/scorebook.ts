@@ -4529,6 +4529,172 @@ liffScorebookRouter.get("/saved", async (c) => {
 });
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 5-C. 試合の個人データ（打席・投球・走塁・打席経過・スコアブックスナップショット）一括削除
+//   - デフォルトでは試合日程・会場・動画URL・イニングスコア（勝敗・得失点）・スタメン・出欠はそのまま保持
+//   - オプションでスタメンクリア（clearLineups）・イニングスコアリセット（resetMatchScore）も選択可能
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+interface DeleteSavedScorebookPayload {
+  matchId?: string;
+  clearLineups?: boolean;
+  resetMatchScore?: boolean;
+}
+
+liffScorebookRouter.delete("/saved", async (c) => {
+  await ensureMatchLineupColumns(c.env.DB);
+  const db = drizzle(c.env.DB, { schema });
+
+  let bodyPayload: DeleteSavedScorebookPayload = {};
+  try {
+    const contentType = c.req.header("content-type") || "";
+    if (contentType.includes("application/json")) {
+      bodyPayload = (await c.req.json()) as DeleteSavedScorebookPayload;
+    }
+  } catch {
+    bodyPayload = {};
+  }
+
+  const queryMatchId = (c.req.query("matchId") || "").trim();
+  const matchId = (bodyPayload.matchId || queryMatchId).trim();
+  const clearLineups =
+    bodyPayload.clearLineups === true ||
+    c.req.query("clearLineups") === "1" ||
+    c.req.query("clearLineups") === "true";
+  const resetMatchScore =
+    bodyPayload.resetMatchScore === true ||
+    c.req.query("resetMatchScore") === "1" ||
+    c.req.query("resetMatchScore") === "true";
+
+  if (!matchId) {
+    return c.json({ success: false, error: "試合IDが指定されていません" }, 400);
+  }
+
+  try {
+    const match = await db
+      .select({ id: matches.id })
+      .from(matches)
+      .where(eq(matches.id, matchId))
+      .get();
+
+    if (!match) {
+      return c.json({ success: false, error: "対象の試合が見つかりません" }, 404);
+    }
+
+    const existingAbs = await db
+      .select({ id: atBats.id })
+      .from(atBats)
+      .where(eq(atBats.matchId, match.id))
+      .all();
+    const abIds = existingAbs.map((r) => r.id);
+
+    // 1. 外部キー制約（base_advances.pitch_id -> pitches.id, play_logs.at_bat_id -> at_bats.id）を遵守し子テーブルから順に削除
+    await db.delete(baseAdvances).where(eq(baseAdvances.matchId, match.id));
+    await db.delete(playLogs).where(eq(playLogs.matchId, match.id));
+    if (abIds.length > 0) {
+      await deleteByAtBatIdsChunked(db, abIds);
+    }
+    await db.delete(atBats).where(eq(atBats.matchId, match.id));
+
+    // 2. スコアブックスナップショット＆R2上の前処理済みシート画像を削除
+    try {
+      const existingSnap = await db
+        .select({
+          topImageUrl: matchScorebookSnapshots.topImageUrl,
+          bottomImageUrl: matchScorebookSnapshots.bottomImageUrl,
+        })
+        .from(matchScorebookSnapshots)
+        .where(eq(matchScorebookSnapshots.matchId, match.id))
+        .get();
+
+      if (existingSnap && c.env.BUCKET) {
+        const prefix = "/api/images/";
+        for (const url of [
+          existingSnap.topImageUrl,
+          existingSnap.bottomImageUrl,
+        ]) {
+          if (url && url.startsWith("/api/images/scorebooks/")) {
+            const r2Key = url.slice(prefix.length);
+            await c.env.BUCKET.delete(r2Key).catch(() => {});
+          }
+        }
+      }
+
+      await db
+        .delete(matchScorebookSnapshots)
+        .where(eq(matchScorebookSnapshots.matchId, match.id));
+    } catch (snapErr) {
+      console.warn("[LiffScorebookV2] Snapshot delete skipped:", snapErr);
+    }
+
+    // 3. UNDO履歴を削除
+    try {
+      await db
+        .delete(schema.matchUndoHistories)
+        .where(eq(schema.matchUndoHistories.matchId, match.id));
+    } catch {
+      // optional undo table ignore
+    }
+
+    // 4. 途中交代レコード（isStarting === false）を削除。clearLineups 指定時はスタメンもクリア
+    if (clearLineups) {
+      await db.delete(matchLineups).where(eq(matchLineups.matchId, match.id));
+    } else {
+      await db
+        .delete(matchLineups)
+        .where(
+          and(
+            eq(matchLineups.matchId, match.id),
+            eq(matchLineups.isStarting, false)
+          )
+        );
+    }
+
+    // 5. matches 本体のバリデーション・進行中カウントをクリア（試合スコア・勝敗はデフォルト保持）
+    const matchUpdatePatch: Partial<typeof matches.$inferInsert> = {
+      scorebookValidations: "[]",
+      balls: 0,
+      strikes: 0,
+      outs: 0,
+      runners: JSON.stringify({ base1: null, base2: null, base3: null }),
+    };
+
+    if (clearLineups) {
+      matchUpdatePatch.myLineup = "[]";
+      matchUpdatePatch.opponentLineup = "[]";
+    }
+
+    if (resetMatchScore) {
+      matchUpdatePatch.myScore = 0;
+      matchUpdatePatch.opponentScore = 0;
+      matchUpdatePatch.myInningScores = "[]";
+      matchUpdatePatch.opponentInningScores = "[]";
+      matchUpdatePatch.myHits = 0;
+      matchUpdatePatch.opponentHits = 0;
+      matchUpdatePatch.myErrors = 0;
+      matchUpdatePatch.opponentErrors = 0;
+    }
+
+    await db
+      .update(matches)
+      .set(matchUpdatePatch)
+      .where(eq(matches.id, match.id));
+
+    return c.json({
+      success: true,
+      matchId: match.id,
+      deletedAtBatsCount: abIds.length,
+      clearLineups,
+      resetMatchScore,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return c.json(
+      { success: false, error: `個人データの削除に失敗しました: ${msg}` },
+      500
+    );
+  }
+});
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // 内部ヘルパー関数群
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 

@@ -72,6 +72,11 @@ import {
   Clock,
   Edit3,
 } from "lucide-react";
+import { toast } from "sonner";
+import {
+  DeletePersonalStatsModal,
+  type DeletePersonalStatsOptions,
+} from "@/components/matches/DeletePersonalStatsModal";
 
 type WizardStep = 1 | 2 | 3 | 4;
 
@@ -110,6 +115,15 @@ interface SavedScorebookApiResponse {
   bottomAtBats?: ScorebookV2AtBat[];
   topImageUrl?: string | null;
   bottomImageUrl?: string | null;
+  error?: string;
+}
+
+interface DeleteSavedScorebookApiResponse {
+  success?: boolean;
+  matchId?: string;
+  deletedAtBatsCount?: number;
+  clearLineups?: boolean;
+  resetMatchScore?: boolean;
   error?: string;
 }
 
@@ -321,6 +335,9 @@ export default function LiffScorebookImportPage() {
     bottomDataUrl: null,
   });
   const [isLoadingSavedScorebook, setIsLoadingSavedScorebook] = useState(false);
+  const [showDeleteSavedModal, setShowDeleteSavedModal] = useState(false);
+  const [isDeletingSavedScorebook, setIsDeletingSavedScorebook] =
+    useState(false);
   const [isEditingSavedMatch, setIsEditingSavedMatch] = useState(false);
   const [hasDirtyReEdit, setHasDirtyReEdit] = useState(false);
   const didAutoLoadEditQueryRef = useRef(false);
@@ -566,6 +583,90 @@ export default function LiffScorebookImportPage() {
     },
     [selectedMatchId]
   );
+
+  const handleDeleteSavedScorebook = useCallback(
+    async (options: DeletePersonalStatsOptions) => {
+      if (!selectedMatchId || isDeletingSavedScorebook) return;
+      setIsDeletingSavedScorebook(true);
+      setErrorBanner(null);
+      try {
+        const res = await fetch("/api/liff/scorebook/saved", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            matchId: selectedMatchId,
+            clearLineups: options.clearLineups,
+            resetMatchScore: options.resetMatchScore,
+          }),
+        });
+        const data = (await res.json()) as DeleteSavedScorebookApiResponse;
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || "個人データの削除に失敗しました");
+        }
+
+        const teamKey = resolvedTeamId || currentTeam?.id || "default";
+        const draftMeta = peekScorebookDraftMeta(teamKey);
+        if (
+          draftMeta?.selectedMatchId === selectedMatchId ||
+          isEditingSavedMatch
+        ) {
+          await clearScorebookDraft(teamKey);
+          setAvailableDraftMeta(null);
+          setLastAutoSavedAt(null);
+          setRestoredDraftBannerAt(null);
+        }
+
+        setTopStructure(null);
+        setBottomStructure(null);
+        setTopAtBats([]);
+        setBottomAtBats([]);
+        setSavedTopImageUrl(null);
+        setSavedBottomImageUrl(null);
+        setTimingSummary(null);
+        setStructureCompletedTimings([]);
+        setDeepCompletedTimings([]);
+        setSaveSummary(null);
+        setIsEditingSavedMatch(false);
+        setHasDirtyReEdit(false);
+        setStep(1);
+
+        setMatches((prev) =>
+          prev.map((m) =>
+            m.id === selectedMatchId
+              ? {
+                  ...m,
+                  hasExistingAtBats: false,
+                  myScore: options.resetMatchScore ? 0 : m.myScore,
+                  opponentScore: options.resetMatchScore ? 0 : m.opponentScore,
+                }
+              : m
+          )
+        );
+
+        setShowDeleteSavedModal(false);
+        toast.success("この試合の個人データを削除しました");
+        await fetchContext();
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        setErrorBanner(msg);
+        toast.error(msg || "個人データの削除に失敗しました");
+      } finally {
+        setIsDeletingSavedScorebook(false);
+      }
+    },
+    [
+      selectedMatchId,
+      isDeletingSavedScorebook,
+      resolvedTeamId,
+      currentTeam?.id,
+      isEditingSavedMatch,
+      fetchContext,
+    ]
+  );
+
+  useEffect(() => {
+    setShowDeleteSavedModal(false);
+  }, [selectedMatchId]);
 
   useEffect(() => {
     fetchContext();
@@ -2990,6 +3091,10 @@ export default function LiffScorebookImportPage() {
                 isCreatingMatch={isCreatingMatch}
                 onLoadSavedScorebook={() => void handleLoadSavedScorebook()}
                 isLoadingSavedScorebook={isLoadingSavedScorebook}
+                onRequestDeleteSavedScorebook={() =>
+                  setShowDeleteSavedModal(true)
+                }
+                isDeletingSavedScorebook={isDeletingSavedScorebook}
                 importScope={importScope}
                 onChangeImportScope={setImportScope}
                 topImage={topImage}
@@ -3091,15 +3196,28 @@ export default function LiffScorebookImportPage() {
             {step === 3 && (
               <div className="space-y-3">
                 {isEditingSavedMatch && (
-                  <div className="p-3 rounded-2xl bg-card border-2 border-indigo-500/45 shadow-2xs flex items-start gap-2.5">
-                    <Edit3 className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
-                    <div className="space-y-0.5 min-w-0">
-                      <p className="text-xs font-black text-foreground">
-                        保存済みデータの再編集モード
-                      </p>
-                      <p className="text-[10px] font-bold text-muted-foreground leading-relaxed">
-                        打席結果・1球順序・走者進塁（または「骨格確認へ戻る」で打順・選手交代・登板投手）を修正して保存すると、スコアボードと個人成績が最新内容で再集計されます。
-                      </p>
+                  <div className="p-3 rounded-2xl bg-card border-2 border-indigo-500/45 shadow-2xs space-y-2">
+                    <div className="flex items-start justify-between gap-2.5">
+                      <div className="flex items-start gap-2.5 min-w-0">
+                        <Edit3 className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
+                        <div className="space-y-0.5 min-w-0">
+                          <p className="text-xs font-black text-foreground">
+                            保存済みデータの再編集モード
+                          </p>
+                          <p className="text-[10px] font-bold text-muted-foreground leading-relaxed">
+                            打席結果・1球順序・走者進塁（または「骨格確認へ戻る」で打順・選手交代・登板投手）を修正して保存すると、スコアボードと個人成績が最新内容で再集計されます。
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={isSaving || isDeletingSavedScorebook}
+                        onClick={() => setShowDeleteSavedModal(true)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-card border border-rose-300 dark:border-rose-800 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/50 text-[10px] font-black shrink-0 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+                      >
+                        <Trash2 className="w-3 h-3 shrink-0" />
+                        <span>個人データ削除</span>
+                      </button>
                     </div>
                   </div>
                 )}
@@ -3257,6 +3375,19 @@ export default function LiffScorebookImportPage() {
               </section>
             )}
           </>
+        )}
+
+        {selectedMatch && (
+          <DeletePersonalStatsModal
+            isOpen={showDeleteSavedModal}
+            matchId={selectedMatch.id}
+            opponentName={selectedMatch.opponent}
+            matchDateText={selectedMatch.date}
+            scoreSummaryText={`${selectedMatch.myScore}-${selectedMatch.opponentScore}`}
+            isDeleting={isDeletingSavedScorebook}
+            onCancel={() => setShowDeleteSavedModal(false)}
+            onConfirm={(options) => void handleDeleteSavedScorebook(options)}
+          />
         )}
       </div>
     </div>
