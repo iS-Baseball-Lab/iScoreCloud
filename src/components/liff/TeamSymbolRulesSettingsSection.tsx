@@ -428,9 +428,7 @@ export function TeamSymbolRulesSettingsSection({
         {fieldSections.map((sec) => {
           const currentVal = rules[sec.key];
           const gridClass =
-            sec.options.length === 2
-              ? "grid-cols-2"
-              : sec.options.length === 4
+            sec.options.length === 2 || sec.options.length >= 4
               ? "grid-cols-2"
               : "grid-cols-3";
           return (

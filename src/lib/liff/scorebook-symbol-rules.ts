@@ -17,7 +17,12 @@ export type StrikeoutMarkStyle =
 export type WalkHbpMarkStyle = "b_db" | "bb_hbp" | "kanji";
 export type HitLineStyle = "red_slash" | "parallel_bars" | "mono_bold";
 export type RunMarkStyle = "red_dot" | "double_circle" | "kanji_toku";
-export type PitchMarkStyle = "waseda_symbols" | "slash_swing" | "numbered_bs";
+export type PitchMarkStyle =
+  | "waseda_symbols"
+  | "cross_swing"
+  | "cross_dot_swing"
+  | "slash_swing"
+  | "numbered_bs";
 export type FlyLinerMarkStyle = "umbrella" | "paren" | "alphabet";
 export type AdvanceErrorMarkStyle = "english" | "kanji";
 export type PositionLabelStyle = "kanji" | "number" | "english";
@@ -85,14 +90,14 @@ export const SCOREBOOK_SYMBOL_PRESETS: readonly ScorebookSymbolPreset[] = [
   {
     id: "youth_senior",
     label: "少年・シニア 丸数字式",
-    description: "①②③・見逃しⓀ・(8)フライ・B/DB",
+    description: "①②③・×空振り・見逃しⓀ・(8)フライ",
     rules: {
       outMark: "circled",
       strikeout: "k_called_circle",
       walkHbp: "b_db",
       hitLine: "red_slash",
       runMark: "red_dot",
-      pitchMark: "waseda_symbols",
+      pitchMark: "cross_swing",
       flyLiner: "paren",
       advanceError: "kanji",
       positionLabel: "kanji",
@@ -186,6 +191,8 @@ export const SYMBOL_RULE_FIELD_CONFIGS = {
     title: "投球（BSO）記録方式",
     options: [
       { value: "waseda_symbols", label: "早稲田記号式", sample: "○見逃 ●空振 ーB △F" },
+      { value: "cross_swing", label: "×空振り式（横棒B）", sample: "○見逃 ×空振 ーB △F" },
+      { value: "cross_dot_swing", label: "×空振り式（点・B）", sample: "○見逃 ×空振 ・B △F" },
       { value: "slash_swing", label: "斜線空振り式", sample: "○見逃 ／空振 ・B △F" },
       { value: "numbered_bs", label: "球数番号式", sample: "B/S枠に 1,2,3..." },
     ] satisfies ReadonlyArray<SymbolRuleFieldOption<PitchMarkStyle>>,
@@ -261,7 +268,13 @@ export function sanitizeScorebookSymbolRules(
     ),
     pitchMark: isOneOf(
       obj.pitchMark,
-      ["waseda_symbols", "slash_swing", "numbered_bs"],
+      [
+        "waseda_symbols",
+        "cross_swing",
+        "cross_dot_swing",
+        "slash_swing",
+        "numbered_bs",
+      ],
       fallback.pitchMark
     ),
     flyLiner: isOneOf(
@@ -362,7 +375,14 @@ export function summarizeSymbolRulesBadges(
   else badges.push("傘フライ");
 
   if (rules.pitchMark === "numbered_bs") badges.push("球数番号BS");
-  else if (rules.pitchMark === "slash_swing") badges.push("／空振り");
+  else if (
+    rules.pitchMark === "cross_swing" ||
+    rules.pitchMark === "cross_dot_swing"
+  ) {
+    badges.push("×空振り");
+  } else if (rules.pitchMark === "slash_swing") {
+    badges.push("／空振り");
+  }
 
   if (rules.hitLine === "mono_bold") badges.push("白黒太線");
   else if (rules.hitLine === "parallel_bars") badges.push("塁打バー");

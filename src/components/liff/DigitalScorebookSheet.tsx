@@ -152,7 +152,7 @@ function renderPitchColumn(
     );
   }
 
-  // 早稲田記号式 or 斜線空振り式
+  // 早稲田記号式・×空振り式・斜線空振り式
   const visible = pitches.filter(
     (p) => p !== "in_play" && p !== "hit" && p !== "hbp"
   );
@@ -181,6 +181,33 @@ function renderPitchColumn(
           );
         }
         if (p === "swinging_strike" || p === "bunt_swinging") {
+          if (
+            rules.pitchMark === "cross_swing" ||
+            rules.pitchMark === "cross_dot_swing"
+          ) {
+            return (
+              <g key={idx}>
+                <line
+                  x1={cx - 2.6}
+                  y1={cy - 2.6}
+                  x2={cx + 2.6}
+                  y2={cy + 2.6}
+                  stroke={COLOR_INK}
+                  strokeWidth={1.35}
+                  strokeLinecap="round"
+                />
+                <line
+                  x1={cx + 2.6}
+                  y1={cy - 2.6}
+                  x2={cx - 2.6}
+                  y2={cy + 2.6}
+                  stroke={COLOR_INK}
+                  strokeWidth={1.35}
+                  strokeLinecap="round"
+                />
+              </g>
+            );
+          }
           if (rules.pitchMark === "slash_swing") {
             return (
               <line
@@ -197,7 +224,10 @@ function renderPitchColumn(
           return <circle key={idx} cx={cx} cy={cy} r={2.6} fill={COLOR_INK} />;
         }
         if (p === "ball") {
-          if (rules.pitchMark === "slash_swing") {
+          if (
+            rules.pitchMark === "slash_swing" ||
+            rules.pitchMark === "cross_dot_swing"
+          ) {
             return <circle key={idx} cx={cx} cy={cy} r={1.45} fill={COLOR_INK} />;
           }
           return (
