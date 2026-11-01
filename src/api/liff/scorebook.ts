@@ -5,6 +5,12 @@ import { eq, and, asc, desc, inArray } from "drizzle-orm";
 import * as schema from "@/db/schema";
 import { ensureMatchLineupColumns } from "@/lib/db-helper";
 import {
+  DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES,
+  parseScorebookSymbolRulesJson,
+  sanitizeScorebookSymbolRules,
+  type ScorebookSymbolRules,
+} from "@/lib/liff/scorebook-symbol-rules";
+import {
   defaultGenericDirection,
   harmonizeOcrFieldingAndLabel,
 } from "@/lib/liff/scorebook-fielding";
@@ -349,6 +355,7 @@ liffScorebookRouter.get("/context", async (c) => {
             id: teams.id,
             name: teams.name,
             scorebookLegendUrl: teams.scorebookLegendUrl,
+            scorebookSymbolRules: teams.scorebookSymbolRules,
           })
           .from(teams)
           .where(eq(teams.id, requestedTeamId))
@@ -361,6 +368,7 @@ liffScorebookRouter.get("/context", async (c) => {
           id: teams.id,
           name: teams.name,
           scorebookLegendUrl: teams.scorebookLegendUrl,
+          scorebookSymbolRules: teams.scorebookSymbolRules,
         })
         .from(teams)
         .get();
@@ -456,7 +464,14 @@ liffScorebookRouter.get("/context", async (c) => {
     return c.json({
       success: true,
       isDemo: false,
-      team: targetTeam,
+      team: {
+        id: targetTeam.id,
+        name: targetTeam.name,
+        scorebookLegendUrl: targetTeam.scorebookLegendUrl,
+        scorebookSymbolRules: parseScorebookSymbolRulesJson(
+          targetTeam.scorebookSymbolRules
+        ),
+      },
       roster: sortedRoster,
       matches: formattedMatches,
     });
@@ -604,6 +619,218 @@ liffScorebookRouter.post("/legend", async (c) => {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return c.json({ success: false, error: `早見表の保存に失敗しました: ${msg}` }, 500);
+  }
+});
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 1-C. スコア設定：チーム共通「チーム記号ルール（清書表示切替用）」の保存・AI自動読取
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+interface UpdateTeamSymbolRulesPayload {
+  teamId?: string;
+  clear?: boolean;
+  rules?: Partial<ScorebookSymbolRules> | null;
+}
+
+liffScorebookRouter.post("/symbol-rules", async (c) => {
+  await ensureMatchLineupColumns(c.env.DB);
+  const db = drizzle(c.env.DB, { schema });
+
+  try {
+    const body = (await c.req.json()) as UpdateTeamSymbolRulesPayload;
+    let targetTeam = body.teamId
+      ? await db
+          .select({ id: teams.id })
+          .from(teams)
+          .where(eq(teams.id, body.teamId))
+          .get()
+      : undefined;
+
+    if (!targetTeam) {
+      targetTeam = await db.select({ id: teams.id }).from(teams).get();
+    }
+
+    if (!targetTeam) {
+      return c.json({ success: false, error: "対象チームが見つかりません" }, 404);
+    }
+
+    if (body.clear || body.rules === null) {
+      await db
+        .update(teams)
+        .set({ scorebookSymbolRules: null })
+        .where(eq(teams.id, targetTeam.id));
+      return c.json({
+        success: true,
+        teamId: targetTeam.id,
+        scorebookSymbolRules: null,
+      });
+    }
+
+    const sanitized = sanitizeScorebookSymbolRules(
+      body.rules,
+      DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES
+    );
+    await db
+      .update(teams)
+      .set({ scorebookSymbolRules: JSON.stringify(sanitized) })
+      .where(eq(teams.id, targetTeam.id));
+
+    return c.json({
+      success: true,
+      teamId: targetTeam.id,
+      scorebookSymbolRules: sanitized,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return c.json(
+      { success: false, error: `チーム記号ルールの保存に失敗しました: ${msg}` },
+      500
+    );
+  }
+});
+
+interface ExtractTeamSymbolRulesPayload {
+  teamId?: string;
+  imageBase64?: string;
+  mimeType?: string;
+  saveToTeam?: boolean;
+}
+
+interface GeminiExtractedSymbolRulesResponse {
+  outMark?: string;
+  strikeout?: string;
+  walkHbp?: string;
+  hitLine?: string;
+  runMark?: string;
+  pitchMark?: string;
+  flyLiner?: string;
+  advanceError?: string;
+  positionLabel?: string;
+  customNote?: string;
+  summary?: string;
+}
+
+liffScorebookRouter.post("/extract-symbol-rules", async (c) => {
+  const apiKey = c.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    return c.json(
+      { success: false, error: "GEMINI_API_KEY が設定されていません" },
+      500
+    );
+  }
+
+  await ensureMatchLineupColumns(c.env.DB);
+  const db = drizzle(c.env.DB, { schema });
+
+  try {
+    const body = (await c.req.json()) as ExtractTeamSymbolRulesPayload;
+    let targetTeam = body.teamId
+      ? await db
+          .select({
+            id: teams.id,
+            scorebookLegendUrl: teams.scorebookLegendUrl,
+          })
+          .from(teams)
+          .where(eq(teams.id, body.teamId))
+          .get()
+      : undefined;
+
+    if (!targetTeam) {
+      targetTeam = await db
+        .select({
+          id: teams.id,
+          scorebookLegendUrl: teams.scorebookLegendUrl,
+        })
+        .from(teams)
+        .get();
+    }
+
+    if (!targetTeam) {
+      return c.json({ success: false, error: "対象チームが見つかりません" }, 404);
+    }
+
+    const cleanOverride = body.imageBase64
+      ? body.imageBase64.includes(",")
+        ? (body.imageBase64.split(",")[1] || "").trim()
+        : body.imageBase64.trim()
+      : undefined;
+
+    const legendPart = await resolveLegendImagePart(
+      c,
+      db,
+      targetTeam.id,
+      cleanOverride,
+      body.mimeType
+    );
+
+    if (!legendPart) {
+      return c.json(
+        {
+          success: false,
+          error:
+            "スコア記号早見表の画像が見つかりません。先に早見表画像を登録してください。",
+        },
+        400
+      );
+    }
+
+    const extractPrompt = `あなたは日本の野球スコアブック（早稲田式・成美堂式・慶應式・少年野球/中学硬式独自ルール等）の専門家です。
+添付された「チームのスコア記号早見表（記載例）」画像を注意深く観察し、このチームが採用している記号ルールを以下の選択肢から最も近いものへ分類しJSONで返してください。画像に明記されていない項目は一般的な早稲田式の値を選んでください。
+
+出力JSONスキーマ:
+{
+  "outMark": "roman" | "circled", // アウト記号: Ⅰ・Ⅱ・Ⅲ なら "roman"、①・②・③ なら "circled"
+  "strikeout": "k_called_reverse" | "k_called_circle" | "k_only" | "so", // 三振: 見逃しが左右反転Kなら "k_called_reverse"、丸囲みⓀなら "k_called_circle"、区別なしKなら "k_only"、SO表記なら "so"
+  "walkHbp": "b_db" | "bb_hbp" | "kanji", // 四死球: B/DBなら "b_db"、BB/HBPなら "bb_hbp"、四/死なら "kanji"
+  "hitLine": "red_slash" | "parallel_bars" | "mono_bold", // 安打線: 赤線＋斜線ハッシュなら "red_slash"、塁打数分の平行バーなら "parallel_bars"、白黒太線のみなら "mono_bold"
+  "runMark": "red_dot" | "double_circle" | "kanji_toku", // 得点マーク: 中央塗り丸●なら "red_dot"、二重丸◎なら "double_circle"、丸得なら "kanji_toku"
+  "pitchMark": "waseda_symbols" | "slash_swing" | "numbered_bs", // 投球BSO: ○見逃/●空振/ーB/△F なら "waseda_symbols"、○見逃/／空振 なら "slash_swing"、B/S欄に投球番号1,2,3を書く方式なら "numbered_bs"
+  "flyLiner": "umbrella" | "paren" | "alphabet", // フライ・ライナー: 傘曲線︵8・直線￣8なら "umbrella"、(8)・[8]なら "paren"、8F・8Lなら "alphabet"
+  "advanceError": "english" | "kanji", // 盗塁・暴投・失策: S/WP/PB/6Eなら "english"、盗/暴/捕/6失なら "kanji"
+  "positionLabel": "kanji" | "number" | "english", // 守備位置表記: 投・捕・遊なら "kanji"、1〜9なら "number"、P/C/SSなら "english"
+  "customNote": "早見表に記載されている特記事項（50文字以内・なければ空文字）",
+  "summary": "読み取った記号ルールの特徴を日本語1文（60文字以内）で要約"
+}`;
+
+    const rawExtracted =
+      await callGeminiStructuredJson<GeminiExtractedSymbolRulesResponse>(
+        apiKey,
+        extractPrompt,
+        [legendPart],
+        "chunk",
+        undefined,
+        { maxBudgetMs: 36_000 }
+      );
+
+    const sanitized = sanitizeScorebookSymbolRules(
+      rawExtracted,
+      DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES
+    );
+
+    if (body.saveToTeam !== false) {
+      await db
+        .update(teams)
+        .set({ scorebookSymbolRules: JSON.stringify(sanitized) })
+        .where(eq(teams.id, targetTeam.id));
+    }
+
+    return c.json({
+      success: true,
+      teamId: targetTeam.id,
+      scorebookSymbolRules: sanitized,
+      summary:
+        typeof rawExtracted.summary === "string" && rawExtracted.summary.trim()
+          ? rawExtracted.summary.trim()
+          : "早見表画像からチームの記号ルールを読み取りました",
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return c.json(
+      {
+        success: false,
+        error: `早見表からの記号ルール自動読取に失敗しました: ${msg}`,
+      },
+      500
+    );
   }
 });
 
@@ -4507,6 +4734,16 @@ liffScorebookRouter.get("/saved", async (c) => {
         ? "top_only"
         : "bottom_only";
 
+    const matchTeam = await db
+      .select({
+        name: teams.name,
+        scorebookLegendUrl: teams.scorebookLegendUrl,
+        scorebookSymbolRules: teams.scorebookSymbolRules,
+      })
+      .from(teams)
+      .where(eq(teams.id, match.teamId))
+      .get();
+
     return c.json({
       success: true,
       matchId: match.id,
@@ -4518,6 +4755,11 @@ liffScorebookRouter.get("/saved", async (c) => {
       topImageUrl: topAtBats.length > 0 ? snap?.topImageUrl ?? null : null,
       bottomImageUrl:
         bottomAtBats.length > 0 ? snap?.bottomImageUrl ?? null : null,
+      teamName: matchTeam?.name ?? null,
+      scorebookLegendUrl: matchTeam?.scorebookLegendUrl ?? null,
+      teamSymbolRules: parseScorebookSymbolRulesJson(
+        matchTeam?.scorebookSymbolRules
+      ),
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

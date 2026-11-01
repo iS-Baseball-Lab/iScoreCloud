@@ -221,6 +221,8 @@ export async function ensureMatchLineupColumns(d1?: any) {
   if (!d1 || isMatchLineupSchemaReady) return;
 
   const alterQueries = [
+    "ALTER TABLE teams ADD COLUMN scorebook_legend_url text",
+    "ALTER TABLE teams ADD COLUMN scorebook_symbol_rules text",
     "ALTER TABLE matches ADD COLUMN my_lineup text DEFAULT '[]'",
     "ALTER TABLE matches ADD COLUMN opponent_lineup text DEFAULT '[]'",
     "ALTER TABLE matches ADD COLUMN my_attendance text DEFAULT '{}'",

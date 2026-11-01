@@ -24,7 +24,9 @@ import {
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { ScorebookCameraModal } from "@/components/liff/ScorebookCameraModal";
+import { TeamSymbolRulesSettingsSection } from "@/components/liff/TeamSymbolRulesSettingsSection";
 import { useLiff } from "@/components/liff/LiffProvider";
+import type { ScorebookSymbolRules } from "@/lib/liff/scorebook-symbol-rules";
 import { getClientQueryParam } from "@/lib/liff/liff-client";
 import {
   ensureCompactApiImage,
@@ -50,6 +52,7 @@ interface ScoreContextApiResponse {
     id: string;
     name: string;
     scorebookLegendUrl: string | null;
+    scorebookSymbolRules?: ScorebookSymbolRules | null;
   } | null;
   error?: string;
 }
@@ -73,9 +76,12 @@ export default function LiffScoreSettingsPage() {
   const { currentTeam } = useLiff();
 
   const [isLoadingTeam, setIsLoadingTeam] = useState(true);
+  const [isDemoContext, setIsDemoContext] = useState(false);
   const [resolvedTeamId, setResolvedTeamId] = useState<string>("");
   const [resolvedTeamName, setResolvedTeamName] = useState<string>("");
   const [savedLegendUrl, setSavedLegendUrl] = useState<string | null>(null);
+  const [savedTeamSymbolRules, setSavedTeamSymbolRules] =
+    useState<ScorebookSymbolRules | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const [stagedLegend, setStagedLegend] = useState<StagedLegendState | null>(
@@ -110,14 +116,17 @@ export default function LiffScoreSettingsPage() {
         throw new Error(data.error || "チーム設定の取得に失敗しました");
       }
 
+      setIsDemoContext(Boolean(data.isDemo));
       if (data.team) {
         setResolvedTeamId(data.team.id);
         setResolvedTeamName(data.team.name);
         setSavedLegendUrl(data.team.scorebookLegendUrl);
+        setSavedTeamSymbolRules(data.team.scorebookSymbolRules ?? null);
       } else {
         setResolvedTeamId(qTeam);
         setResolvedTeamName(currentTeam?.name || "マイチーム");
         setSavedLegendUrl(null);
+        setSavedTeamSymbolRules(null);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -818,6 +827,16 @@ export default function LiffScoreSettingsPage() {
             </div>
           )}
         </section>
+
+        {/* ━━━ セクション 2.5: 📒 チーム記号ルール（清書シート表示切替用） ━━━ */}
+        <TeamSymbolRulesSettingsSection
+          teamId={resolvedTeamId}
+          teamName={resolvedTeamName}
+          isDemo={isDemoContext}
+          savedLegendUrl={savedLegendUrl}
+          initialCloudRules={savedTeamSymbolRules}
+          isLoadingTeam={isLoadingTeam}
+        />
 
         {/* ━━━ セクション 3: ⚙️ AIスコアブック取り込みの初期設定 ━━━ */}
         <section className="rounded-3xl bg-card border-2 border-primary/20 p-4 space-y-4 shadow-sm">

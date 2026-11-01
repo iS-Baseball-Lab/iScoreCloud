@@ -72,6 +72,7 @@ import {
   type LiffPitcherStatItem,
   type LiffRawPlayLogItem,
 } from "@/components/liff/MatchStatsSection";
+import { MatchScorebookSection } from "@/components/liff/MatchScorebookSection";
 import { getDemoMatchStatsBundle } from "@/lib/liff/demo-match-stats";
 import {
   DeletePersonalStatsModal,
@@ -1183,6 +1184,39 @@ function MatchesContent() {
               </div>
             </div>
           </section>
+
+          {/* 📒 2.3 デジタルスコアブック清書シート（標準 ⇄ チーム記号ルール表示切替・PNG保存・A4印刷） */}
+          <MatchScorebookSection
+            matchMeta={{
+              matchId: match.id,
+              date: formattedDateTime || match.date,
+              matchTypeLabel,
+              tournamentName: customTournamentName || null,
+              venueName: basicVenueLabel || venueInfo.officialName || null,
+              topTeamName,
+              bottomTeamName,
+              scheduledInnings: match.innings || 7,
+              topInningScores: topScores.filter(
+                (v): v is number => typeof v === "number"
+              ),
+              bottomInningScores: bottomScores.filter(
+                (v): v is number => typeof v === "number"
+              ),
+              topTotalRuns: firstScore ?? 0,
+              bottomTotalRuns: secondScore ?? 0,
+              topTotalHits: typeof topHits === "number" ? topHits : 0,
+              bottomTotalHits: typeof bottomHits === "number" ? bottomHits : 0,
+              topTotalErrors: typeof topErrors === "number" ? topErrors : 0,
+              bottomTotalErrors:
+                typeof bottomErrors === "number" ? bottomErrors : 0,
+            }}
+            isMyTeamTop={match.battingOrder !== "second"}
+            hasPersonalStatsData={hasPersonalStatsData}
+            isLoadingStats={isStatsLoading}
+            isFutureOrScheduled={isFutureOrScheduled}
+            isRainout={isRainout}
+            isDemoMatch={isDemo || isDemoMatchId(match.id)}
+          />
 
           {/* 📊 2.5 取り込み成績データ（注目選手・打撃20項目・詳細・投手成績・タイムライン） */}
           <MatchStatsSection

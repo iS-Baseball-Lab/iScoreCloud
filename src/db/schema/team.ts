@@ -38,6 +38,7 @@ export const teams = sqliteTable('teams', {
   reportGameSetEnabled: integer('report_game_set_enabled', { mode: 'boolean' }).notNull().default(true),
   createdBy: text('created_by').notNull().references(() => user.id),
   scorebookLegendUrl: text('scorebook_legend_url'),
+  scorebookSymbolRules: text('scorebook_symbol_rules'),
   memberSortOrder: text('member_sort_order'),
   attendanceStatusConfig: text('attendance_status_config'),
   memberSubLabels: text('member_sub_labels'),
