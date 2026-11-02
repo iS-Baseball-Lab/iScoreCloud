@@ -76,7 +76,7 @@ export function LiffToolSubNav() {
   const pathname = usePathname();
 
   return (
-    <div className="grid grid-cols-4 gap-1 p-1 rounded-2xl bg-muted/80 dark:bg-muted/50 border border-border/60">
+    <div className="grid grid-cols-4 gap-1 p-1 rounded-2xl bg-muted border border-border">
       {LIFF_TOOLS.map((tool) => {
         const Icon = tool.icon;
         const isActive = pathname === tool.href;
@@ -87,8 +87,8 @@ export function LiffToolSubNav() {
             href={tool.href}
             className={`flex flex-col items-center justify-center gap-1 py-2 px-1 rounded-xl border text-center transition-all active:scale-95 ${
               isActive
-                ? "bg-card text-foreground border-border/50 shadow-sm font-black"
-                : "border-transparent text-muted-foreground hover:text-foreground font-bold"
+                ? "bg-card text-foreground border-border shadow-xs font-black"
+                : "bg-transparent border-transparent text-muted-foreground hover:text-foreground hover:bg-card font-bold"
             }`}
           >
             <Icon className={`w-4 h-4 shrink-0 ${isActive ? "text-primary" : ""}`} />
@@ -107,15 +107,15 @@ export function LiffToolOtherLinks() {
   const otherTools = LIFF_TOOLS.filter((tool) => tool.href !== pathname);
 
   return (
-    <section className="rounded-2xl bg-card border border-border/60 shadow-xs overflow-hidden">
-      <div className="px-4 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="w-7 h-7 rounded-xl bg-primary/12 text-primary flex items-center justify-center">
+    <section className="rounded-2xl bg-card border border-border shadow-xs overflow-hidden">
+      <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <span className="w-7 h-7 rounded-xl bg-primary/20 text-blue-300 border border-primary/40 flex items-center justify-center">
             <Wrench className="w-4 h-4" />
           </span>
           <div>
-            <h2 className="text-xs font-black text-foreground">その他の開発予定ツール</h2>
-            <p className="text-[10px] font-bold text-muted-foreground">
+            <h2 className="text-xs font-black text-white">その他の開発予定ツール</h2>
+            <p className="text-[10px] font-bold text-slate-300">
               タップして各ツールの構成枠を確認できます
             </p>
           </div>
@@ -130,7 +130,7 @@ export function LiffToolOtherLinks() {
               ? "bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 border-emerald-500/25"
               : tool.id === "carpool-generator"
               ? "bg-amber-500/12 text-amber-700 dark:text-amber-300 border-amber-500/30"
-              : "bg-muted text-muted-foreground border-border/60";
+              : "bg-card text-muted-foreground border-border";
           const hoverBorderClass =
             tool.id === "carpool-generator"
               ? "hover:border-teal-500/40"
@@ -140,7 +140,7 @@ export function LiffToolOtherLinks() {
             <Link
               key={tool.id}
               href={tool.href}
-              className={`flex items-center gap-3 p-3 rounded-2xl bg-muted/35 hover:bg-muted/70 border border-border/60 ${hoverBorderClass} transition-all active:scale-98 group`}
+              className={`flex items-center gap-3 p-3 rounded-2xl bg-muted hover:bg-accent border border-border ${hoverBorderClass} transition-all active:scale-98 group`}
             >
               <span
                 className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${tool.iconColorClass}`}

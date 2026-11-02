@@ -473,61 +473,65 @@ export function LiffBottomNav() {
           📑 「その他」タップ時の全メニュー一覧ボトムシート
           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {isOtherMenuOpen && (
-        <div className="fixed inset-0 z-40 flex justify-center items-end bg-slate-950/50 animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-40 flex justify-center items-end bg-slate-950/60 animate-in fade-in duration-200">
           <div 
             className="absolute inset-0"
             onClick={() => setIsOtherMenuOpen(false)}
           />
 
-          <div className="w-full max-w-lg bg-background rounded-t-2xl border-t border-x border-border shadow-2xl p-5 pb-36 space-y-4 relative z-10 animate-in slide-in-from-bottom duration-200 max-h-[85vh] overflow-y-auto">
-            {/* 🏷️ スティッキーヘッダー & 3分割カテゴリタブ */}
-            <div className="sticky -top-5 -mt-5 pt-5 pb-3 bg-background z-10 border-b border-border space-y-3">
-              <div className="flex items-center justify-between">
+          <div className="w-full max-w-lg bg-background rounded-t-2xl border-t border-x border-border shadow-2xl px-5 pb-36 pt-0 space-y-4 relative z-10 animate-in slide-in-from-bottom duration-200 max-h-[85vh] overflow-y-auto">
+            {/* 🏷️ スティッキーヘッダー (A-3 Dark Solid Header Cap) & 3分割カテゴリタブ */}
+            <div className="sticky top-0 -mx-5 bg-background z-10 border-b border-border">
+              <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-5 py-3.5 rounded-t-2xl flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <LayoutGrid className="w-4 h-4 text-primary" />
-                  <h4 className="text-sm font-black text-foreground">メニュー一覧</h4>
+                  <span className="w-7 h-7 rounded-xl bg-primary/20 text-blue-300 border border-primary/40 flex items-center justify-center">
+                    <LayoutGrid className="w-4 h-4" />
+                  </span>
+                  <h4 className="text-sm font-black text-white">メニュー一覧</h4>
                 </div>
                 <button
                   type="button"
                   onClick={() => setIsOtherMenuOpen(false)}
-                  className="p-1.5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground active:scale-90 transition-all"
+                  className="p-1.5 rounded-full text-slate-300 hover:text-white hover:bg-slate-800 active:scale-90 transition-all cursor-pointer"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
               {/* 🏷️ 均等3分割セグメントタブ（横スクロール一切なし・全画面幅フィット） */}
-              <div className="grid grid-cols-3 gap-1 p-1 bg-muted/80 dark:bg-muted/50 rounded-2xl border border-border/60">
-                {MENU_TABS.map((tab) => {
-                  const isSelected = selectedCategory === tab.id;
-                  const TabIcon = tab.icon;
-                  const count = MENU_ITEMS.filter((i) => i.category === tab.id).length;
+              <div className="px-5 py-3 bg-card">
+                <div className="grid grid-cols-3 gap-1 p-1 bg-muted rounded-2xl border border-border">
+                  {MENU_TABS.map((tab) => {
+                    const isSelected = selectedCategory === tab.id;
+                    const TabIcon = tab.icon;
+                    const count = MENU_ITEMS.filter((i) => i.category === tab.id).length;
 
-                  return (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      onClick={() => setSelectedCategory(tab.id)}
-                      className={`flex items-center justify-center gap-1.5 py-2 px-1 rounded-xl border text-xs transition-all active:scale-95 ${
-                        isSelected
-                          ? "bg-card text-foreground border-border/50 shadow-sm font-black"
-                          : "border-transparent text-muted-foreground hover:text-foreground font-bold"
-                      }`}
-                    >
-                      <TabIcon className={`w-3.5 h-3.5 shrink-0 ${isSelected ? "text-primary" : ""}`} />
-                      <span className="truncate">{tab.label}</span>
-                      <span
-                        className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
-                          isSelected 
-                            ? "bg-primary/12 text-primary font-black" 
-                            : "bg-card/80 text-muted-foreground"
+                    return (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => setSelectedCategory(tab.id)}
+                        className={`flex items-center justify-center gap-1.5 py-2 px-1 rounded-xl border text-xs transition-all active:scale-95 ${
+                          isSelected
+                            ? "bg-card text-foreground border-border shadow-xs font-black"
+                            : "border-transparent text-muted-foreground hover:text-foreground font-bold"
                         }`}
                       >
-                        {count}
-                      </span>
-                    </button>
-                  );
-                })}
+                        <TabIcon className={`w-3.5 h-3.5 shrink-0 ${isSelected ? "text-primary" : ""}`} />
+                        <span className="truncate">{tab.label}</span>
+                        <span
+                          className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                            isSelected 
+                              ? "bg-primary/12 text-primary font-black" 
+                              : "bg-card text-muted-foreground border border-border"
+                          }`}
+                        >
+                          {count}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
 
@@ -555,7 +559,7 @@ export function LiffBottomNav() {
                               key={item.href}
                               href={item.href}
                               onClick={() => setIsOtherMenuOpen(false)}
-                              className={`flex items-center gap-3 p-3 rounded-2xl border border-border/60 bg-card shadow-xs ${item.hoverBorderClass ?? "hover:border-primary/40"} transition-all group active:scale-95 ${
+                              className={`flex items-center gap-3 p-3 rounded-2xl border border-border bg-card shadow-xs ${item.hoverBorderClass ?? "hover:border-primary/40"} transition-all group active:scale-95 ${
                                 isFullWidth ? "col-span-2" : ""
                               }`}
                             >
@@ -592,7 +596,7 @@ export function LiffBottomNav() {
                       key={item.href}
                       href={item.href}
                       onClick={() => setIsOtherMenuOpen(false)}
-                      className={`flex items-center gap-3 p-3 rounded-2xl border border-border/60 bg-card shadow-xs hover:border-primary/40 transition-all group active:scale-95 ${
+                      className={`flex items-center gap-3 p-3 rounded-2xl border border-border bg-card shadow-xs hover:border-primary/40 transition-all group active:scale-95 ${
                         isFullWidth ? "col-span-2" : ""
                       }`}
                     >
@@ -617,11 +621,11 @@ export function LiffBottomNav() {
             )}
 
             {/* 📜 法務・規約リンク */}
-            <div className="pt-3 border-t border-border/50 flex items-center justify-center gap-3">
+            <div className="pt-3 border-t border-border flex items-center justify-center gap-3">
               <Link
                 href="/liff/terms"
                 onClick={() => setIsOtherMenuOpen(false)}
-                className="py-1.5 px-3 rounded-full bg-card hover:bg-muted active:scale-95 border border-border/60 text-[11px] font-bold text-muted-foreground hover:text-foreground shadow-xs transition-all flex items-center gap-1.5"
+                className="py-1.5 px-3 rounded-full bg-card hover:bg-muted active:scale-95 border border-border text-[11px] font-bold text-muted-foreground hover:text-foreground shadow-xs transition-all flex items-center gap-1.5"
               >
                 <FileText className="w-3.5 h-3.5 text-primary" />
                 <span>利用規約</span>
@@ -630,7 +634,7 @@ export function LiffBottomNav() {
               <Link
                 href="/liff/privacy"
                 onClick={() => setIsOtherMenuOpen(false)}
-                className="py-1.5 px-3 rounded-full bg-card hover:bg-muted active:scale-95 border border-border/60 text-[11px] font-bold text-muted-foreground hover:text-foreground shadow-xs transition-all flex items-center gap-1.5"
+                className="py-1.5 px-3 rounded-full bg-card hover:bg-muted active:scale-95 border border-border text-[11px] font-bold text-muted-foreground hover:text-foreground shadow-xs transition-all flex items-center gap-1.5"
               >
                 <ShieldCheck className="w-3.5 h-3.5 text-primary" />
                 <span>プライバシーポリシー</span>

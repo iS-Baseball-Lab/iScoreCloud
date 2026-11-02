@@ -453,20 +453,35 @@ function MatchesContent() {
         setBoxscoreAtBats([]);
         setOpponentLineup([]);
 
-        // 🅱️ 実チームDB処理（試合詳細 + スタメン・出欠 + 個人成績・打席経過を並列取得）
-        const [matchRes, lineupsRes, statsRes, logsRes, boxscoreRes] = await Promise.all([
-          fetch(`/api/matches/${encodeURIComponent(targetMatchId)}`, { cache: "no-store" }),
-          fetch(`/api/matches/${encodeURIComponent(targetMatchId)}/lineups`, { cache: "no-store" }),
-          fetch(`/api/matches/${encodeURIComponent(targetMatchId)}/stats`, {
-            cache: "no-store",
-          }).catch(() => null),
-          fetch(`/api/matches/${encodeURIComponent(targetMatchId)}/logs`, {
-            cache: "no-store",
-          }).catch(() => null),
-          fetch(`/api/matches/${encodeURIComponent(targetMatchId)}/boxscore`, {
-            cache: "no-store",
-          }).catch(() => null),
-        ]);
+        // 🅱️ 実チームDB処理（試合詳細 + スタメン・出欠 + 個人成績・打席経過 + 既知チーム選手名簿を並列取得）
+        const rawKnownTeamId =
+          currentTeam?.id && currentTeam.id !== "demo-team"
+            ? currentTeam.id
+            : typeof window !== "undefined"
+              ? localStorage.getItem("iscore_selectedTeamId")
+              : null;
+        const knownTeamId =
+          rawKnownTeamId && !isDemoTeamId(rawKnownTeamId) ? rawKnownTeamId : null;
+
+        const [matchRes, lineupsRes, statsRes, logsRes, boxscoreRes, prefetchedPlayersRes] =
+          await Promise.all([
+            fetch(`/api/matches/${encodeURIComponent(targetMatchId)}`, { cache: "no-store" }),
+            fetch(`/api/matches/${encodeURIComponent(targetMatchId)}/lineups`, { cache: "no-store" }),
+            fetch(`/api/matches/${encodeURIComponent(targetMatchId)}/stats`, {
+              cache: "no-store",
+            }).catch(() => null),
+            fetch(`/api/matches/${encodeURIComponent(targetMatchId)}/logs`, {
+              cache: "no-store",
+            }).catch(() => null),
+            fetch(`/api/matches/${encodeURIComponent(targetMatchId)}/boxscore`, {
+              cache: "no-store",
+            }).catch(() => null),
+            knownTeamId
+              ? fetch(`/api/teams/${encodeURIComponent(knownTeamId)}/players`, {
+                  cache: "no-store",
+                }).catch(() => null)
+              : Promise.resolve(null),
+          ]);
 
         if (!matchRes.ok) {
           throw new Error("試合データの取得に失敗しました");
@@ -537,17 +552,21 @@ function MatchesContent() {
           }
         }
 
-        // 控え・欠席一覧を表示するため、試合レコード自身の teamId を最優先して選手名簿を取得
-        const targetTeamId =
+        // 控え・欠席一覧を表示するため、試合レコード自身の teamId を最優先して選手名簿を取得（Stage 1 並列取得済みの場合は即利用）
+        const effectiveTeamId =
           data.match.teamId ||
+          knownTeamId ||
           currentTeam?.id ||
           (typeof window !== "undefined" ? localStorage.getItem("iscore_selectedTeamId") : null);
 
-        if (targetTeamId && !isDemoTeamId(targetTeamId)) {
-          const playersRes = await fetch(`/api/teams/${encodeURIComponent(targetTeamId)}/players`, {
-            cache: "no-store",
-          });
-          if (playersRes.ok && !isCancelled) {
+        if (effectiveTeamId && !isDemoTeamId(effectiveTeamId)) {
+          const playersRes =
+            effectiveTeamId === knownTeamId && prefetchedPlayersRes
+              ? prefetchedPlayersRes
+              : await fetch(`/api/teams/${encodeURIComponent(effectiveTeamId)}/players`, {
+                  cache: "no-store",
+                }).catch(() => null);
+          if (playersRes && playersRes.ok && !isCancelled) {
             const playersData = (await playersRes.json()) as LineupPlayer[];
             const activePlayers = (Array.isArray(playersData) ? playersData : []).filter(
               (p) => p.isActive !== false && p.isActive !== 0
@@ -818,14 +837,14 @@ function MatchesContent() {
           : "OP戦";
     const matchTypeBadgeClass =
       match.matchType === "official"
-        ? "bg-amber-500/12 text-amber-700 dark:text-amber-300 border border-amber-500/30"
+        ? "bg-amber-400 text-slate-950 border border-amber-400"
         : match.matchType === "exchange"
-          ? "bg-sky-500/12 text-sky-700 dark:text-sky-300 border border-sky-500/25"
-          : "bg-muted text-muted-foreground border border-border/60";
+          ? "bg-sky-500 text-white border border-sky-500"
+          : "bg-slate-800 text-slate-200 border border-slate-700";
 
     const inningsBadgeLabel = `${match.innings || 7}回制`;
     const neutralBadgeClass =
-      "bg-muted/50 text-foreground/85 border-border/60";
+      "bg-slate-800 text-slate-200 border-slate-700";
 
     const rawTournament = (match.tournamentName || match.tournament || "").trim();
     const customTournamentName =
@@ -842,7 +861,7 @@ function MatchesContent() {
     const battingOrderBadgeClass =
       match.battingOrder === "first" || match.battingOrder === "second"
         ? neutralBadgeClass
-        : "bg-muted/35 text-muted-foreground border-border/60";
+        : "bg-slate-800 text-slate-300 border-slate-700";
 
     const benchSideLabel =
       match.benchSide === "1B"
@@ -852,8 +871,8 @@ function MatchesContent() {
           : "ベンチ未定";
     const benchSideBadgeClass =
       match.benchSide === "1B" || match.benchSide === "3B"
-        ? "bg-primary/10 text-primary border-primary/20"
-        : "bg-muted/35 text-muted-foreground border-border/60";
+        ? "bg-primary text-primary-foreground border-primary"
+        : "bg-slate-800 text-slate-300 border-slate-700";
 
     const venueInfo = buildVenueDisplayInfo(match);
     const formattedDateTime = formatBasicMatchDateTime(match.date);
@@ -911,7 +930,7 @@ function MatchesContent() {
                 <div
                   role="navigation"
                   aria-label="前後の試合切替"
-                  className="inline-flex items-center h-[34px] rounded-2xl bg-card border border-border/60 shadow-xs divide-x divide-border/60 overflow-hidden"
+                  className="inline-flex items-center h-[34px] rounded-2xl bg-card border border-border shadow-xs divide-x divide-border overflow-hidden"
                 >
                   {prevMatch ? (
                     <Link
@@ -967,81 +986,112 @@ function MatchesContent() {
             }}
           />
 
-          {/* 📋 1. 基本情報カード（見出しなし・1行目バッジ群＋日時 / 2行目大会名(任意) / 最終行 vs 相手名 ＠球場名） */}
+          {/* 📋 1. 基本情報・スコアヒーローカード（A-3 上帯ダークキャップ × 純白高コントラストボディ） */}
           <section aria-label="基本情報">
-            <div className="rounded-2xl border border-border/60 bg-card shadow-xs px-3.5 py-3 space-y-1.5">
-              {/* 1行目：試合種別・イニング制・先攻後攻・一塁側/三塁側 ＋ 日付・開始時刻 */}
-              <div className="flex items-center flex-wrap gap-x-1.5 gap-y-1">
-                <span
-                  className={cn(
-                    "inline-flex items-center px-1.5 py-0.5 rounded-md border text-[11px] font-black leading-tight",
-                    matchTypeBadgeClass
-                  )}
-                >
-                  {matchTypeLabel}
-                </span>
-
-                <span
-                  className={cn(
-                    "inline-flex items-center px-1.5 py-0.5 rounded-md border text-[11px] font-black leading-tight tabular-nums",
-                    neutralBadgeClass
-                  )}
-                >
-                  {inningsBadgeLabel}
-                </span>
-
-                <span
-                  className={cn(
-                    "inline-flex items-center px-1.5 py-0.5 rounded-md border text-[11px] font-black leading-tight",
-                    battingOrderBadgeClass
-                  )}
-                >
-                  {battingOrderLabel}
-                </span>
-
-                <span
-                  className={cn(
-                    "inline-flex items-center px-1.5 py-0.5 rounded-md border text-[11px] font-black leading-tight",
-                    benchSideBadgeClass
-                  )}
-                >
-                  {benchSideLabel}
-                </span>
-
-                {!isFutureOrScheduled && !isRainout && !isStatsLoading && (
-                  hasPersonalStatsData ? (
-                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[11px] font-black leading-tight bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 border-emerald-500/25">
-                      <CheckCircle2 className="w-3 h-3 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                      <span>スコア取込済</span>
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-md border text-[11px] font-black leading-tight bg-muted/50 text-muted-foreground border-border/60">
-                      スコア未取込
-                    </span>
-                  )
-                )}
-
-                {formattedDateTime && (
-                  <span className="text-[11px] sm:text-xs font-bold tabular-nums text-foreground/85 leading-tight shrink-0">
-                    {formattedDateTime}
+            <div className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+              {/* 上帯ダークソリッドキャップ：バッジ群・日時・大会名 */}
+              <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3 space-y-1.5">
+                <div className="flex items-center flex-wrap gap-x-1.5 gap-y-1">
+                  <span
+                    className={cn(
+                      "inline-flex items-center px-1.5 py-0.5 rounded-md border text-[11px] font-black leading-tight",
+                      matchTypeBadgeClass
+                    )}
+                  >
+                    {matchTypeLabel}
                   </span>
+
+                  <span
+                    className={cn(
+                      "inline-flex items-center px-1.5 py-0.5 rounded-md border text-[11px] font-black leading-tight tabular-nums",
+                      neutralBadgeClass
+                    )}
+                  >
+                    {inningsBadgeLabel}
+                  </span>
+
+                  <span
+                    className={cn(
+                      "inline-flex items-center px-1.5 py-0.5 rounded-md border text-[11px] font-black leading-tight",
+                      battingOrderBadgeClass
+                    )}
+                  >
+                    {battingOrderLabel}
+                  </span>
+
+                  <span
+                    className={cn(
+                      "inline-flex items-center px-1.5 py-0.5 rounded-md border text-[11px] font-black leading-tight",
+                      benchSideBadgeClass
+                    )}
+                  >
+                    {benchSideLabel}
+                  </span>
+
+                  {!isFutureOrScheduled && !isRainout && !isStatsLoading && (
+                    hasPersonalStatsData ? (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[11px] font-black leading-tight bg-emerald-500 text-slate-950 border-emerald-500">
+                        <CheckCircle2 className="w-3 h-3 shrink-0 text-slate-950" />
+                        <span>スコア取込済</span>
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded-md border text-[11px] font-black leading-tight bg-slate-800 text-slate-300 border-slate-700">
+                        スコア未取込
+                      </span>
+                    )
+                  )}
+
+                  {formattedDateTime && (
+                    <span className="text-[11px] sm:text-xs font-bold tabular-nums text-slate-300 leading-tight shrink-0">
+                      {formattedDateTime}
+                    </span>
+                  )}
+                </div>
+
+                {/* 2行目（大会名がある場合のみ表示） */}
+                {customTournamentName && (
+                  <p className="text-xs sm:text-[13px] font-bold text-slate-200 leading-snug break-words">
+                    {customTournamentName}
+                  </p>
                 )}
               </div>
 
-              {/* 2行目（大会名がある場合のみ表示） */}
-              {customTournamentName && (
-                <p className="text-xs sm:text-[13px] font-bold text-foreground/85 leading-snug break-words">
-                  {customTournamentName}
-                </p>
-              )}
+              {/* 下段ソリッドボディ：vs 相手チーム名 ＋ ＠球場名 ＋ 試合結果スコア */}
+              <div className="px-4 py-3.5 bg-card flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[15px] sm:text-base font-black text-foreground leading-snug tracking-tight min-w-0">
+                  <span className="break-words">vs {match.opponent}</span>
+                  {basicVenueLabel && (
+                    <span className="text-xs sm:text-sm font-extrabold text-muted-foreground break-words">
+                      ＠{basicVenueLabel}
+                    </span>
+                  )}
+                </div>
 
-              {/* 最終行：vs 相手チーム名 ＋ ＠球場名（少し大きめのフォント） */}
-              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[15px] sm:text-base font-black text-foreground leading-snug tracking-tight pt-0.5">
-                <span className="break-words">vs {match.opponent}</span>
-                {basicVenueLabel && (
-                  <span className="font-extrabold text-foreground/90 break-words">
-                    ＠{basicVenueLabel}
-                  </span>
+                {!isFutureOrScheduled && !isRainout && (
+                  <div className="flex items-center gap-2 shrink-0 tabular-nums">
+                    <span className="text-lg sm:text-xl font-black text-foreground leading-none">
+                      <span className={isWin ? "text-primary" : ""}>{match.myScore}</span>
+                      <span className="mx-1 text-muted-foreground text-sm">-</span>
+                      <span>{match.opponentScore}</span>
+                    </span>
+                    {isLive ? (
+                      <span className="px-2 py-0.5 rounded bg-rose-600 text-white text-[10px] font-black">
+                        LIVE
+                      </span>
+                    ) : isWin ? (
+                      <span className="px-2 py-0.5 rounded bg-blue-600 text-white text-[10px] font-black">
+                        WIN
+                      </span>
+                    ) : isLose ? (
+                      <span className="px-2 py-0.5 rounded bg-rose-600 text-white text-[10px] font-black">
+                        LOSE
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded bg-zinc-500 text-white text-[10px] font-black">
+                        DRAW
+                      </span>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
@@ -1064,7 +1114,7 @@ function MatchesContent() {
                 />
 
                 {/* ⚠️ 動画取り扱いに関する注意書き */}
-                <div className="p-3 rounded-2xl border border-border/60 border-l-4 border-l-primary bg-card shadow-xs flex items-start gap-2 text-[11px] text-muted-foreground font-bold">
+                <div className="p-3 rounded-2xl border border-border border-l-4 border-l-primary bg-card shadow-xs flex items-start gap-2 text-[11px] text-muted-foreground font-bold">
                   <ShieldAlert className="w-4 h-4 text-primary shrink-0 mt-0.5" />
                   <p className="leading-snug">
                     本動画は選手・チームのプライバシー保護のため<strong className="text-foreground">YouTube限定公開</strong>です。SNS等への無断転載・拡散はご遠慮ください。
@@ -1072,7 +1122,7 @@ function MatchesContent() {
                 </div>
               </div>
             ) : (
-              <div className="p-4 rounded-2xl border border-border/60 bg-card text-center text-xs font-bold text-muted-foreground shadow-xs">
+              <div className="p-4 rounded-2xl border border-border bg-card text-center text-xs font-bold text-muted-foreground shadow-xs">
                 この試合には動画リンクが設定されていません
               </div>
             )}
@@ -1091,7 +1141,7 @@ function MatchesContent() {
                   LIVE
                 </span>
               ) : isRainout ? (
-                <span className="px-2 py-0.5 rounded bg-muted text-muted-foreground border border-border/60 text-[10px] font-black">
+                <span className="px-2 py-0.5 rounded bg-muted text-muted-foreground border border-border text-[10px] font-black">
                   雨天中止
                 </span>
               ) : isWin ? (
@@ -1113,25 +1163,25 @@ function MatchesContent() {
               )}
             </div>
 
-            <div className="w-full overflow-hidden rounded-2xl border border-border/60 bg-card shadow-xs flex flex-col">
+            <div className="w-full overflow-hidden rounded-2xl border border-border bg-card shadow-xs flex flex-col">
               <div className="overflow-x-auto scrollbar-none">
                 <table className="w-full text-center whitespace-nowrap text-xs">
-                  <thead>
-                    <tr className="border-b border-border/50 bg-primary/[0.04] dark:bg-primary/[0.07] text-[10px] text-muted-foreground font-black">
-                      <th className="p-2 text-left pl-3 min-w-[92px]">TEAM</th>
+                  <thead className="bg-[#0f172a] text-slate-100 border-b-[3px] border-primary">
+                    <tr className="text-[10px] font-black">
+                      <th className="p-2 text-left pl-3 min-w-[92px] text-white">TEAM</th>
                       {inningsArray.map((inningNum) => (
-                        <th key={inningNum} className="w-6 p-2 font-mono">
+                        <th key={inningNum} className="w-6 p-2 font-mono text-slate-200">
                           {inningNum}
                         </th>
                       ))}
-                      <th className="w-8 p-2 bg-primary/10 text-primary font-black border-l border-border/60 font-mono">
+                      <th className="w-8 p-2 bg-primary text-primary-foreground font-black border-l border-slate-700 font-mono">
                         R
                       </th>
-                      <th className="w-6 p-2 font-mono">H</th>
-                      <th className="w-6 p-2 pr-3 font-mono">E</th>
+                      <th className="w-6 p-2 font-mono text-slate-200">H</th>
+                      <th className="w-6 p-2 pr-3 font-mono text-slate-200">E</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-border/60 text-xs font-black">
+                  <tbody className="divide-y divide-border text-xs font-black">
                     {/* 先攻チーム */}
                     <tr className="hover:bg-muted/20">
                       <td className="p-2 text-left pl-3 font-bold truncate max-w-[105px] text-foreground">
@@ -1142,7 +1192,7 @@ function MatchesContent() {
                           {formatScoreCell(topScores[i], false, false, false)}
                         </td>
                       ))}
-                      <td className="p-2 font-mono bg-primary/10 text-primary font-black border-l border-border/60 text-sm">
+                      <td className="p-2 font-mono bg-primary/10 text-primary font-black border-l border-border text-sm">
                         {isFutureOrScheduled ? "-" : firstScore}
                       </td>
                       <td className="p-2 font-mono text-muted-foreground text-[11px]">
@@ -1168,7 +1218,7 @@ function MatchesContent() {
                           )}
                         </td>
                       ))}
-                      <td className="p-2 font-mono bg-primary/10 text-primary font-black border-l border-border/60 text-sm">
+                      <td className="p-2 font-mono bg-primary/10 text-primary font-black border-l border-border text-sm">
                         {isFutureOrScheduled ? "-" : secondScore}
                       </td>
                       <td className="p-2 font-mono text-muted-foreground text-[11px]">
@@ -1210,17 +1260,38 @@ function MatchesContent() {
               </h2>
             </div>
 
-            <div className="rounded-2xl border border-border/60 bg-card p-3.5 shadow-xs space-y-3.5">
+            <div className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+              {/* A-3 上帯ダークソリッドキャップ */}
+              <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Users className="w-4 h-4 text-sky-400 shrink-0" />
+                  <span className="text-xs font-black text-white truncate">
+                    出場メンバー・ベンチ・欠席
+                  </span>
+                  <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-200 border border-slate-700 text-[10px] font-black font-mono tabular-nums shrink-0">
+                    スタメン {filledStarters.length}名
+                  </span>
+                </div>
+                <Link
+                  href={`/liff/matches/lineup?id=${encodeURIComponent(match.id)}`}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 text-[11px] font-black transition-all active:scale-95 shrink-0"
+                >
+                  <Edit3 className="w-3 h-3 text-sky-400" />
+                  <span>{filledStarters.length > 0 ? "編集" : "登録"}</span>
+                </Link>
+              </div>
+
+              <div className="p-3.5 space-y-3.5">
               {/* 自チーム / 相手チーム 切り替え（相手スタメンが存在する場合のみ表示） */}
               {filledOpponentStarters.length > 0 && (
-                <div className="grid grid-cols-2 gap-1 bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl border border-border/60">
+                <div className="grid grid-cols-2 gap-1 bg-muted p-1 rounded-2xl border border-border">
                   <button
                     type="button"
                     onClick={() => setLineupTeamTab("my")}
                     className={cn(
                       "py-1.5 px-2 rounded-xl text-[11px] transition-all flex items-center justify-center gap-1.5 truncate cursor-pointer",
                       lineupTeamTab === "my"
-                        ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                        ? "bg-card text-foreground shadow-sm border border-border font-black"
                         : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
                     )}
                   >
@@ -1238,7 +1309,7 @@ function MatchesContent() {
                     className={cn(
                       "py-1.5 px-2 rounded-xl text-[11px] transition-all flex items-center justify-center gap-1.5 truncate cursor-pointer",
                       lineupTeamTab === "opponent"
-                        ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                        ? "bg-card text-foreground shadow-sm border border-border font-black"
                         : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
                     )}
                   >
@@ -1265,15 +1336,15 @@ function MatchesContent() {
                     </span>
                   </div>
 
-                  <div className="rounded-xl border border-border/60 overflow-hidden bg-card">
-                    <div className="grid grid-cols-[2.25rem_3.25rem_1fr_2.75rem] items-center bg-muted/50 border-b border-border/60 px-2 py-1 text-[9px] font-black text-muted-foreground font-mono tracking-wider">
+                  <div className="rounded-xl border border-border overflow-hidden bg-card">
+                    <div className="grid grid-cols-[2.25rem_3.25rem_1fr_2.75rem] items-center bg-muted/50 border-b border-border px-2 py-1 text-[9px] font-black text-muted-foreground font-mono tracking-wider">
                       <span className="text-center">ORD</span>
                       <span className="text-center">POS</span>
                       <span className="pl-2">PLAYER</span>
                       <span className="pr-1 text-right">NO.</span>
                     </div>
 
-                    <div className="divide-y divide-border/60">
+                    <div className="divide-y divide-border">
                       {filledOpponentStarters.map((slot) => {
                         const posInfo = getPositionBadgeInfo(slot.position);
                         return (
@@ -1298,7 +1369,7 @@ function MatchesContent() {
                                   {posInfo.label}
                                 </span>
                               ) : (
-                                <span className="inline-flex items-center justify-center w-11 py-0.5 rounded-md bg-muted text-muted-foreground font-black text-[10px] leading-tight border border-border/60">
+                                <span className="inline-flex items-center justify-center w-11 py-0.5 rounded-md bg-muted text-muted-foreground font-black text-[10px] leading-tight border border-border">
                                   {slot.position || "-"}
                                 </span>
                               )}
@@ -1341,7 +1412,7 @@ function MatchesContent() {
                 </div>
 
                 {filledStarters.length === 0 ? (
-                  <div className="rounded-xl bg-muted/35 border border-dashed border-border/60 p-4 text-center space-y-2.5">
+                  <div className="rounded-xl bg-muted/35 border border-dashed border-border p-4 text-center space-y-2.5">
                     <div className="space-y-0.5">
                       <p className="text-xs font-black text-foreground">
                         スタメンがまだ登録されていません
@@ -1359,16 +1430,16 @@ function MatchesContent() {
                     </Link>
                   </div>
                 ) : (
-                  <div className="rounded-xl border border-border/60 overflow-hidden bg-card">
+                  <div className="rounded-xl border border-border overflow-hidden bg-card">
                     {/* スコアボード風カラムヘッダー */}
-                    <div className="grid grid-cols-[2.25rem_3.25rem_1fr_2.75rem] items-center bg-muted/50 border-b border-border/60 px-2 py-1 text-[9px] font-black text-muted-foreground font-mono tracking-wider">
+                    <div className="grid grid-cols-[2.25rem_3.25rem_1fr_2.75rem] items-center bg-muted/50 border-b border-border px-2 py-1 text-[9px] font-black text-muted-foreground font-mono tracking-wider">
                       <span className="text-center">ORD</span>
                       <span className="text-center">POS</span>
                       <span className="pl-2">PLAYER</span>
                       <span className="pr-1 text-right">NO.</span>
                     </div>
 
-                    <div className="divide-y divide-border/60">
+                    <div className="divide-y divide-border">
                       {filledStarters.map((slot) => {
                         const posInfo = getPositionBadgeInfo(slot.position);
                         return (
@@ -1395,7 +1466,7 @@ function MatchesContent() {
                                   {posInfo.label}
                                 </span>
                               ) : (
-                                <span className="inline-flex items-center justify-center w-11 py-0.5 rounded-md bg-muted text-muted-foreground font-black text-[10px] leading-tight border border-border/60">
+                                <span className="inline-flex items-center justify-center w-11 py-0.5 rounded-md bg-muted text-muted-foreground font-black text-[10px] leading-tight border border-border">
                                   未設定
                                 </span>
                               )}
@@ -1440,7 +1511,7 @@ function MatchesContent() {
                     </span>
                   </div>
 
-                  <div className="rounded-xl border border-border/60 overflow-hidden bg-card divide-y divide-border/60">
+                  <div className="rounded-xl border border-border overflow-hidden bg-card divide-y divide-border">
                     {mySubstitutions.map((sub) => {
                       const posInfo = getPositionBadgeInfo(sub.position);
                       const roleBadge =
@@ -1454,7 +1525,7 @@ function MatchesContent() {
                           ? { label: posInfo.label, badgeClass: `${posInfo.color} text-white` }
                           : {
                               label: "途中",
-                              badgeClass: "bg-muted text-foreground border border-border/60",
+                              badgeClass: "bg-muted text-foreground border border-border",
                             };
                       return (
                         <div
@@ -1513,7 +1584,7 @@ function MatchesContent() {
                       </span>
                     </div>
 
-                    <div className="rounded-xl border border-border/60 bg-muted/35 p-2.5">
+                    <div className="rounded-xl border border-border bg-muted/35 p-2.5">
                       {benchPlayers.length === 0 ? (
                         <p className="text-[11px] font-bold text-muted-foreground px-0.5">
                           該当なし
@@ -1524,7 +1595,7 @@ function MatchesContent() {
                             <span
                               key={p.id}
                               className={cn(
-                                "inline-flex items-center gap-1.5 py-1 rounded-lg bg-card border border-border/60 shadow-2xs text-[11px] font-black text-foreground",
+                                "inline-flex items-center gap-1.5 py-1 rounded-lg bg-card border border-border shadow-2xs text-[11px] font-black text-foreground",
                                 p.uniformNumber ? "pl-1.5 pr-2.5" : "px-2.5"
                               )}
                             >
@@ -1548,12 +1619,12 @@ function MatchesContent() {
                         <UserMinus className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                         <span>欠席</span>
                       </span>
-                      <span className="text-[10px] font-black font-mono tabular-nums px-2 py-0.5 rounded-md bg-muted/50 text-muted-foreground border border-border/60">
+                      <span className="text-[10px] font-black font-mono tabular-nums px-2 py-0.5 rounded-md bg-muted/50 text-muted-foreground border border-border">
                         {absentPlayers.length}名
                       </span>
                     </div>
 
-                    <div className="rounded-xl border border-border/60 bg-muted/35 p-2.5">
+                    <div className="rounded-xl border border-border bg-muted/35 p-2.5">
                       {absentPlayers.length === 0 ? (
                         <p className="text-[11px] font-bold text-muted-foreground px-0.5">
                           欠席者なし
@@ -1564,7 +1635,7 @@ function MatchesContent() {
                             <span
                               key={p.id}
                               className={cn(
-                                "inline-flex items-center gap-1.5 py-1 rounded-lg bg-card/90 border border-border/60 text-[11px] font-bold text-muted-foreground",
+                                "inline-flex items-center gap-1.5 py-1 rounded-lg bg-card border border-border text-[11px] font-bold text-muted-foreground",
                                 p.uniformNumber ? "pl-1.5 pr-2.5" : "px-2.5"
                               )}
                             >
@@ -1584,6 +1655,7 @@ function MatchesContent() {
               )}
                 </>
               )}
+              </div>
             </div>
           </section>
 
@@ -1597,17 +1669,36 @@ function MatchesContent() {
 
               <Link
                 href="/liff/grounds"
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl border border-border/60 bg-card hover:bg-muted text-foreground text-[11px] font-bold transition-all active:scale-95 shrink-0 shadow-2xs"
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl border border-border bg-card hover:bg-muted text-foreground text-[11px] font-bold transition-all active:scale-95 shrink-0 shadow-2xs"
               >
                 <Building2 className="w-3 h-3 text-muted-foreground" />
                 <span>球場一覧</span>
               </Link>
             </div>
 
-            <div className="overflow-hidden rounded-2xl border border-border/60 bg-card shadow-xs">
+            <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-xs">
+              {/* A-3 上帯ダークソリッドキャップ (Venue / Map = border-teal-500) */}
+              <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-teal-500 px-4 py-3 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <MapPin className="w-4 h-4 text-teal-400 shrink-0" />
+                  <span className="text-xs font-black text-white truncate">
+                    {venueInfo.officialName || "球場・グラウンド"}
+                  </span>
+                </div>
+                {venueInfo.surfaceNote ? (
+                  <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-200 border border-slate-700 text-[10px] font-black shrink-0">
+                    {venueInfo.surfaceNote}
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-200 border border-slate-700 text-[10px] font-black shrink-0">
+                    MAP
+                  </span>
+                )}
+              </div>
+
               {/* 上部：枠いっぱい（パディングなし）の Google Map */}
               {venueInfo.embedUrl ? (
-                <div className="relative w-full h-[300px] sm:h-[380px] bg-muted/35 border-b border-border/60">
+                <div className="relative w-full h-[300px] sm:h-[380px] bg-muted/35 border-b border-border">
                   <iframe
                     src={venueInfo.embedUrl}
                     title={`${venueInfo.officialName || "球場・グラウンド"} Google Map`}
@@ -1618,8 +1709,8 @@ function MatchesContent() {
                   />
                 </div>
               ) : (
-                <div className="w-full py-7 px-4 bg-muted/35 border-b border-border/60 flex flex-col items-center justify-center text-center gap-2">
-                  <div className="w-10 h-10 rounded-2xl bg-card border border-border/60 flex items-center justify-center text-muted-foreground shadow-2xs">
+                <div className="w-full py-7 px-4 bg-muted/35 border-b border-border flex flex-col items-center justify-center text-center gap-2">
+                  <div className="w-10 h-10 rounded-2xl bg-card border border-border flex items-center justify-center text-muted-foreground shadow-2xs">
                     <MapPin className="w-5 h-5" />
                   </div>
                   <div className="space-y-0.5">
@@ -1677,7 +1768,7 @@ function MatchesContent() {
 
                 {/* 最下部：リンクボタン */}
                 {venueInfo.embedUrl ? (
-                  <div className="pt-2.5 border-t border-border/60 grid grid-cols-2 gap-2">
+                  <div className="pt-2.5 border-t border-border grid grid-cols-2 gap-2">
                     <a
                       href={venueInfo.externalUrl}
                       target="_blank"
@@ -1691,14 +1782,14 @@ function MatchesContent() {
                       href={venueInfo.directionsUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="h-9 px-3 rounded-xl border border-border/60 bg-card hover:bg-muted text-foreground text-xs font-black flex items-center justify-center gap-1.5 active:scale-95 transition-all"
+                      className="h-9 px-3 rounded-xl border border-border bg-card hover:bg-muted text-foreground text-xs font-black flex items-center justify-center gap-1.5 active:scale-95 transition-all"
                     >
                       <Compass className="w-3.5 h-3.5 shrink-0 text-primary" />
                       <span>ルート案内</span>
                     </a>
                   </div>
                 ) : (
-                  <div className="pt-2.5 border-t border-border/60">
+                  <div className="pt-2.5 border-t border-border">
                     <Link
                       href="/liff/grounds"
                       className="w-full h-9 px-4 rounded-xl bg-primary text-primary-foreground text-xs font-black shadow-2xs hover:bg-primary/90 active:scale-95 transition-all flex items-center justify-center gap-1.5"
@@ -1749,13 +1840,13 @@ function MatchesContent() {
           {(prevMatch || nextMatch) && (
             <nav
               aria-label="前後の試合への移動"
-              className="grid grid-cols-2 gap-2.5 pt-2 border-t border-border/60"
+              className="grid grid-cols-2 gap-2.5 pt-2 border-t border-border"
             >
               {prevMatch ? (
                 <Link
                   href={`/liff/matches?id=${encodeURIComponent(prevMatch.id)}`}
                   replace
-                  className="group flex items-center gap-2 rounded-2xl border border-border/60 bg-card hover:border-primary/40 hover:bg-muted/35 px-3 py-2.5 shadow-xs active:scale-[0.98] transition-all min-w-0"
+                  className="group flex items-center gap-2 rounded-2xl border border-border bg-card hover:border-primary/40 hover:bg-muted/35 px-3 py-2.5 shadow-xs active:scale-[0.98] transition-all min-w-0"
                 >
                   <span className="w-7 h-7 rounded-xl bg-muted/50 flex items-center justify-center text-muted-foreground group-hover:bg-primary/10 group-hover:text-primary group-hover:-translate-x-0.5 transition-all shrink-0">
                     <ChevronLeft className="w-4 h-4" />
@@ -1775,7 +1866,7 @@ function MatchesContent() {
                   </div>
                 </Link>
               ) : (
-                <div className="flex items-center gap-2 rounded-2xl border border-dashed border-border/60 bg-card/40 px-3 py-2.5 opacity-55 select-none">
+                <div className="flex items-center gap-2 rounded-2xl border border-dashed border-border bg-muted/40 px-3 py-2.5 opacity-55 select-none">
                   <span className="w-7 h-7 rounded-xl bg-muted/50 flex items-center justify-center text-muted-foreground/40 shrink-0">
                     <ChevronLeft className="w-4 h-4" />
                   </span>
@@ -1791,7 +1882,7 @@ function MatchesContent() {
                 <Link
                   href={`/liff/matches?id=${encodeURIComponent(nextMatch.id)}`}
                   replace
-                  className="group flex items-center justify-end gap-2 rounded-2xl border border-border/60 bg-card hover:border-primary/40 hover:bg-muted/35 px-3 py-2.5 shadow-xs active:scale-[0.98] transition-all min-w-0"
+                  className="group flex items-center justify-end gap-2 rounded-2xl border border-border bg-card hover:border-primary/40 hover:bg-muted/35 px-3 py-2.5 shadow-xs active:scale-[0.98] transition-all min-w-0"
                 >
                   <div className="min-w-0 flex-1 text-right">
                     <p className="text-[10px] font-black text-muted-foreground leading-none mb-1">
@@ -1811,7 +1902,7 @@ function MatchesContent() {
                   </span>
                 </Link>
               ) : (
-                <div className="flex items-center justify-end gap-2 rounded-2xl border border-dashed border-border/60 bg-card/40 px-3 py-2.5 opacity-55 select-none">
+                <div className="flex items-center justify-end gap-2 rounded-2xl border border-dashed border-border bg-muted/40 px-3 py-2.5 opacity-55 select-none">
                   <div className="min-w-0 flex-1 text-right">
                     <p className="text-[10px] font-bold text-muted-foreground leading-tight">
                       次の試合なし
@@ -1831,22 +1922,22 @@ function MatchesContent() {
               aria-label="試合データの修正・削除"
               className="pt-1"
             >
-              <div className="rounded-2xl border border-border/60 bg-card shadow-xs overflow-hidden">
+              <div className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
                 <button
                   type="button"
                   aria-expanded={isManageMenuOpen}
                   onClick={() => setIsManageMenuOpen((prev) => !prev)}
-                  className="w-full px-3.5 py-3 flex items-center justify-between gap-2.5 text-left hover:bg-muted/40 active:bg-muted/60 transition-colors cursor-pointer"
+                  className="w-full bg-[#0f172a] hover:bg-slate-900 text-slate-50 border-b-[3px] border-slate-500 px-4 py-3 flex items-center justify-between gap-2.5 text-left transition-colors cursor-pointer"
                 >
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <span className="w-8 h-8 rounded-xl bg-primary/10 border border-primary/25 flex items-center justify-center text-primary shrink-0">
+                    <span className="w-8 h-8 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-200 shrink-0">
                       <Settings className="w-4 h-4" />
                     </span>
                     <div className="min-w-0">
-                      <p className="text-xs font-black text-foreground leading-snug">
+                      <p className="text-xs font-black text-white leading-snug">
                         試合データの修正・設定・削除
                       </p>
-                      <p className="text-[10px] font-bold text-muted-foreground truncate mt-0.5">
+                      <p className="text-[10px] font-bold text-slate-300 truncate mt-0.5">
                         打席結果・スタメンの修正、スコアブック記号設定、データ削除
                       </p>
                     </div>
@@ -1855,17 +1946,17 @@ function MatchesContent() {
                   <div className="flex items-center gap-2 shrink-0">
                     {!isFutureOrScheduled && !isRainout && !isStatsLoading && (
                       hasPersonalStatsData ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-black bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 border-emerald-500/25">
-                          <CheckCircle2 className="w-3 h-3 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-black bg-emerald-500 text-slate-950 border-emerald-500">
+                          <CheckCircle2 className="w-3 h-3 shrink-0 text-slate-950" />
                           <span>取込済</span>
                         </span>
                       ) : (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full border text-[10px] font-black bg-muted/50 text-muted-foreground border-border/60">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full border text-[10px] font-black bg-slate-800 text-slate-200 border-slate-700">
                           未取込
                         </span>
                       )
                     )}
-                    <span className="w-6 h-6 rounded-lg bg-muted flex items-center justify-center text-muted-foreground">
+                    <span className="w-6 h-6 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-200">
                       {isManageMenuOpen ? (
                         <ChevronUp className="w-4 h-4" />
                       ) : (
@@ -1876,7 +1967,7 @@ function MatchesContent() {
                 </button>
 
                 {isManageMenuOpen && (
-                  <div className="border-t border-border/60 bg-muted/35 p-3.5 space-y-3 animate-in fade-in slide-in-from-top-1 duration-150">
+                  <div className="bg-muted/35 p-3.5 space-y-3 animate-in fade-in slide-in-from-top-1 duration-150">
                     {/* 登録・修正アクション一覧 */}
                     <div className="space-y-2">
                       <p className="text-[10px] font-black text-muted-foreground px-0.5">
@@ -1909,7 +2000,7 @@ function MatchesContent() {
 
                       <Link
                         href={`/liff/matches/lineup?id=${encodeURIComponent(match.id)}`}
-                        className="flex items-center justify-between gap-2.5 p-3 rounded-xl bg-card hover:border-primary/40 hover:bg-muted/50 border border-border/60 shadow-2xs active:scale-[0.99] transition-all"
+                        className="flex items-center justify-between gap-2.5 p-3 rounded-xl bg-card hover:border-primary/40 hover:bg-muted/50 border border-border shadow-2xs active:scale-[0.99] transition-all"
                       >
                         <div className="flex items-center gap-2.5 min-w-0">
                           <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary border border-primary/25 flex items-center justify-center shrink-0">
@@ -1934,7 +2025,7 @@ function MatchesContent() {
                           href={`/liff/tools/scorebook-import?matchId=${encodeURIComponent(
                             match.id
                           )}`}
-                          className="flex items-center justify-between gap-2.5 p-3 rounded-xl bg-card hover:border-primary/40 hover:bg-muted/50 border border-border/60 shadow-2xs active:scale-[0.99] transition-all"
+                          className="flex items-center justify-between gap-2.5 p-3 rounded-xl bg-card hover:border-primary/40 hover:bg-muted/50 border border-border shadow-2xs active:scale-[0.99] transition-all"
                         >
                           <div className="flex items-center gap-2.5 min-w-0">
                             <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary border border-primary/25 flex items-center justify-center shrink-0">
@@ -1959,7 +2050,7 @@ function MatchesContent() {
 
                       <Link
                         href="/liff/settings/score#symbol-rules"
-                        className="flex items-center justify-between gap-2.5 p-3 rounded-xl bg-card hover:border-primary/40 hover:bg-muted/50 border border-border/60 shadow-2xs active:scale-[0.99] transition-all"
+                        className="flex items-center justify-between gap-2.5 p-3 rounded-xl bg-card hover:border-primary/40 hover:bg-muted/50 border border-border shadow-2xs active:scale-[0.99] transition-all"
                       >
                         <div className="flex items-center gap-2.5 min-w-0">
                           <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary border border-primary/25 flex items-center justify-center shrink-0">
@@ -1979,7 +2070,7 @@ function MatchesContent() {
                     </div>
 
                     {/* 削除アクション */}
-                    <div className="pt-2.5 border-t border-border/60 space-y-2">
+                    <div className="pt-2.5 border-t border-border space-y-2">
                       <p className="text-[10px] font-black text-rose-700 dark:text-rose-400 px-0.5">
                         データの削除
                       </p>
@@ -2006,7 +2097,7 @@ function MatchesContent() {
                           <ChevronRight className="w-4 h-4 text-rose-500 shrink-0" />
                         </button>
                       ) : (
-                        <div className="rounded-xl border border-dashed border-border/60 bg-card/70 px-3 py-2.5 flex items-center gap-2 text-[11px] font-bold text-muted-foreground">
+                        <div className="rounded-xl border border-dashed border-border bg-card px-3 py-2.5 flex items-center gap-2 text-[11px] font-bold text-muted-foreground">
                           <Trash2 className="w-3.5 h-3.5 shrink-0 opacity-60" />
                           <span>現在この試合に削除対象の個人データはありません</span>
                         </div>
@@ -2109,7 +2200,7 @@ function MatchesContent() {
         />
 
         {/* 🔒 動画取り扱い・プライバシーに関する重要なお知らせ */}
-        <div className="p-3.5 rounded-2xl border border-border/60 border-l-4 border-l-primary bg-card space-y-1.5 shadow-xs">
+        <div className="p-3.5 rounded-2xl border border-border border-l-4 border-l-primary bg-card space-y-1.5 shadow-xs">
           <div className="flex items-center gap-2 text-xs font-black text-foreground">
             <ShieldAlert className="w-4 h-4 shrink-0 text-primary" />
             <span>【重要】試合動画・写真の取り扱いについて</span>
@@ -2121,14 +2212,14 @@ function MatchesContent() {
         </div>
 
         {/* フィルタータブ */}
-        <div className="grid grid-cols-4 gap-1 bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl border border-border/60">
+        <div className="grid grid-cols-4 gap-1 bg-muted p-1 rounded-2xl border border-border">
           <button
             type="button"
             onClick={() => setFilter("all")}
             className={cn(
               "py-1.5 px-1 rounded-xl text-[11px] transition-all truncate cursor-pointer tabular-nums",
               filter === "all"
-                ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                ? "bg-card text-foreground shadow-sm border border-border font-black"
                 : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
             )}
           >
@@ -2141,7 +2232,7 @@ function MatchesContent() {
             className={cn(
               "py-1.5 px-1 rounded-xl text-[11px] transition-all truncate cursor-pointer tabular-nums",
               filter === "scheduled"
-                ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                ? "bg-card text-foreground shadow-sm border border-border font-black"
                 : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
             )}
           >
@@ -2154,7 +2245,7 @@ function MatchesContent() {
             className={cn(
               "py-1.5 px-1 rounded-xl text-[11px] transition-all truncate cursor-pointer tabular-nums",
               filter === "video"
-                ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                ? "bg-card text-foreground shadow-sm border border-border font-black"
                 : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
             )}
           >
@@ -2167,7 +2258,7 @@ function MatchesContent() {
             className={cn(
               "py-1.5 px-1 rounded-xl text-[11px] transition-all truncate cursor-pointer",
               filter === "official"
-                ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                ? "bg-card text-foreground shadow-sm border border-border font-black"
                 : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
             )}
           >
@@ -2190,7 +2281,7 @@ function MatchesContent() {
                 "px-2.5 py-1 rounded-full text-[10px] transition-all cursor-pointer tabular-nums",
                 scorebookFilter === "all"
                   ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
-                  : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
+                  : "bg-card text-muted-foreground border border-border hover:text-foreground hover:bg-muted/50 font-bold"
               )}
             >
               すべて
@@ -2202,7 +2293,7 @@ function MatchesContent() {
                 "px-2.5 py-1 rounded-full text-[10px] transition-all cursor-pointer tabular-nums inline-flex items-center gap-1",
                 scorebookFilter === "imported"
                   ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
-                  : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
+                  : "bg-card text-muted-foreground border border-border hover:text-foreground hover:bg-muted/50 font-bold"
               )}
             >
               <CheckCircle2 className="w-3 h-3 shrink-0 text-emerald-600 dark:text-emerald-400" />
@@ -2215,7 +2306,7 @@ function MatchesContent() {
                 "px-2.5 py-1 rounded-full text-[10px] transition-all cursor-pointer tabular-nums",
                 scorebookFilter === "unimported"
                   ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
-                  : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
+                  : "bg-card text-muted-foreground border border-border hover:text-foreground hover:bg-muted/50 font-bold"
               )}
             >
               未取込 ({unimportedMatchesCount})

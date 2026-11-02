@@ -161,7 +161,7 @@ function RepeatStepButton({
           stepCallbackRef.current();
         }
       }}
-      className="h-9 px-2 rounded-xl bg-card hover:bg-muted border border-border/60 text-[10px] font-black text-foreground flex items-center justify-center gap-0.5 shrink-0 active:scale-95 transition-transform select-none touch-manipulation cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+      className="h-9 px-2 rounded-xl bg-card hover:bg-muted border border-border text-[10px] font-black text-foreground flex items-center justify-center gap-0.5 shrink-0 active:scale-95 transition-transform select-none touch-manipulation cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
     >
       {children}
     </button>
@@ -335,7 +335,7 @@ function GraduatedAxisScale({
           className={`relative flex-1 min-w-0 h-9 rounded-xl bg-neutral-950 border overflow-hidden select-none touch-pan-y cursor-ew-resize transition-colors ${
             isSliding
               ? "border-primary ring-2 ring-primary/35"
-              : "border-border/60"
+              : "border-border"
           } ${disabled ? "opacity-50 pointer-events-none" : ""}`}
         >
           {/* 目盛り線と10刻みの数値ラベル */}
@@ -377,9 +377,9 @@ function GraduatedAxisScale({
             <div className="w-[2px] flex-1 bg-primary/90" />
           </div>
 
-          {/* 左右端のフェードで目盛りの視認性を向上 */}
-          <div className="absolute inset-y-0 left-0 w-4 bg-gradient-to-r from-neutral-950 to-transparent pointer-events-none" />
-          <div className="absolute inset-y-0 right-0 w-4 bg-gradient-to-l from-neutral-950 to-transparent pointer-events-none" />
+          {/* 左右端のソリッドエッジキャップ */}
+          <div className="absolute inset-y-0 left-0 w-1.5 bg-neutral-950 border-r border-neutral-800 pointer-events-none" />
+          <div className="absolute inset-y-0 right-0 w-1.5 bg-neutral-950 border-l border-neutral-800 pointer-events-none" />
         </div>
 
         <RepeatStepButton
@@ -458,54 +458,59 @@ export function FourCornerFineTuner({
   const strokeHex = accentColor === "indigo" ? "#38bdf8" : "#0ea5e9";
 
   return (
-    <div className="p-2.5 rounded-2xl bg-muted/35 border border-border/60 space-y-2.5">
-      {/* 1. 4点切替セレクター（シートの左上・右上・左下・右下と空間一致する2×2配置） */}
-      <div className="space-y-1.5">
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-[10px] font-black text-foreground flex items-center gap-1">
-            <Crosshair className="w-3.5 h-3.5 text-primary shrink-0" />
-            <span>微調整する角を選択（4点すべて上下・左右に対応）</span>
+    <div className="rounded-2xl bg-card border border-border shadow-xs p-3 space-y-2.5 overflow-hidden">
+      {/* A-3 Dark Solid Header Cap */}
+      <div className="-mx-3 -mt-3 px-3 py-2.5 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary flex items-center justify-between gap-2">
+        <span className="text-[11px] font-black text-white flex items-center gap-1.5 min-w-0">
+          <span className="w-5 h-5 rounded-md bg-primary/20 text-blue-300 border border-primary/40 flex items-center justify-center shrink-0">
+            <Crosshair className="w-3 h-3" />
           </span>
-          <span className="text-[9px] font-bold text-muted-foreground shrink-0">
-            1目盛り = 0.1%
+          <span className="truncate">
+            微調整する角を選択（4点すべて上下・左右に対応）
           </span>
-        </div>
+        </span>
+        <span className="px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 border border-slate-700 text-[9px] font-bold shrink-0">
+          1目盛り = 0.1%
+        </span>
+      </div>
 
-        <div className="grid grid-cols-2 gap-1.5">
-          {CORNER_ITEMS.map((item) => {
-            const pt = corners[item.key];
-            const isSelected = selectedCorner === item.key;
-            return (
-              <button
-                key={item.key}
-                type="button"
-                disabled={disabled}
-                onClick={() => onSelectCorner(item.key)}
-                className={`py-1.5 px-2.5 rounded-xl border text-[11px] font-black flex items-center justify-between gap-1.5 transition-all cursor-pointer active:scale-98 ${
+      {/* 1. 4点切替セレクター（シートの左上・右上・左下・右下と空間一致する2×2配置） */}
+      <div className="grid grid-cols-2 gap-1.5">
+        {CORNER_ITEMS.map((item) => {
+          const pt = corners[item.key];
+          const isSelected = selectedCorner === item.key;
+          return (
+            <button
+              key={item.key}
+              type="button"
+              disabled={disabled}
+              onClick={() => onSelectCorner(item.key)}
+              className={`py-1.5 px-2.5 rounded-xl border text-[11px] font-black flex items-center justify-between gap-1.5 transition-all cursor-pointer active:scale-98 ${
+                isSelected
+                  ? "bg-primary text-primary-foreground border-primary shadow-2xs"
+                  : "bg-muted hover:bg-muted/80 text-foreground border-border"
+              }`}
+            >
+              <span className="flex items-center gap-1">
+                <span>{item.shortArrow}</span>
+                <span>{item.label}</span>
+              </span>
+              <span
+                className={`text-[9px] font-bold tabular-nums ${
                   isSelected
-                    ? "bg-primary text-primary-foreground border-primary shadow-2xs"
-                    : "bg-card hover:bg-muted text-foreground border-border/60"
+                    ? "text-primary-foreground/90"
+                    : "text-muted-foreground"
                 }`}
               >
-                <span className="flex items-center gap-1">
-                  <span>{item.shortArrow}</span>
-                  <span>{item.label}</span>
-                </span>
-                <span
-                  className={`text-[9px] font-bold tabular-nums ${
-                    isSelected ? "text-primary-foreground/90" : "text-muted-foreground"
-                  }`}
-                >
-                  X:{pt[0]} Y:{pt[1]}
-                </span>
-              </button>
-            );
-          })}
-        </div>
+                X:{pt[0]} Y:{pt[1]}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       {/* 2. 指で隠れない「選択中の角の拡大ルーペ（×4 / ×8 切替・十字目盛り付き）」 */}
-      <div className="p-2 rounded-xl bg-card border border-border/60 flex items-center gap-2.5">
+      <div className="p-2 rounded-xl bg-muted border border-border flex items-center gap-2.5">
         <button
           type="button"
           onClick={() => setHighZoom((prev) => !prev)}

@@ -1480,18 +1480,57 @@ liffPlayerGrowthRouter.get("/", async (c) => {
   }
 
   try {
-    const teamRow = await db
-      .select({
-        id: teams.id,
-        name: teams.name,
-        year: teams.year,
-        captainId: teams.captainId,
-        orgName: organizations.name,
-      })
-      .from(teams)
-      .leftJoin(organizations, eq(teams.organizationId, organizations.id))
-      .where(eq(teams.id, teamId))
-      .get();
+    const [teamRow, rawPlayers, rawMatches] = await Promise.all([
+      db
+        .select({
+          id: teams.id,
+          name: teams.name,
+          year: teams.year,
+          captainId: teams.captainId,
+          orgName: organizations.name,
+        })
+        .from(teams)
+        .leftJoin(organizations, eq(teams.organizationId, organizations.id))
+        .where(eq(teams.id, teamId))
+        .get(),
+      db
+        .select({
+          id: players.id,
+          name: players.name,
+          nameKana: players.nameKana,
+          uniformNumber: players.uniformNumber,
+          primaryPosition: players.primaryPosition,
+          subPositions: players.subPositions,
+          throws: players.throws,
+          bats: players.bats,
+          height: players.height,
+          weight: players.weight,
+          profileImageUrl: players.profileImageUrl,
+          notes: players.notes,
+          isActive: players.isActive,
+        })
+        .from(players)
+        .where(eq(players.teamId, teamId))
+        .all(),
+      db
+        .select({
+          id: matches.id,
+          date: matches.date,
+          opponent: matches.opponent,
+          matchType: matches.matchType,
+          battingOrder: matches.battingOrder,
+          status: matches.status,
+          myScore: matches.myScore,
+          opponentScore: matches.opponentScore,
+          createdAt: matches.createdAt,
+          tournamentName: tournaments.name,
+        })
+        .from(matches)
+        .leftJoin(tournaments, eq(matches.tournamentId, tournaments.id))
+        .where(eq(matches.teamId, teamId))
+        .orderBy(asc(matches.date), asc(matches.createdAt))
+        .all(),
+    ]);
 
     if (!teamRow) {
       return c.json(
@@ -1499,26 +1538,6 @@ liffPlayerGrowthRouter.get("/", async (c) => {
         404
       );
     }
-
-    const rawPlayers = await db
-      .select({
-        id: players.id,
-        name: players.name,
-        nameKana: players.nameKana,
-        uniformNumber: players.uniformNumber,
-        primaryPosition: players.primaryPosition,
-        subPositions: players.subPositions,
-        throws: players.throws,
-        bats: players.bats,
-        height: players.height,
-        weight: players.weight,
-        profileImageUrl: players.profileImageUrl,
-        notes: players.notes,
-        isActive: players.isActive,
-      })
-      .from(players)
-      .where(eq(players.teamId, teamId))
-      .all();
 
     if (rawPlayers.length === 0) {
       return c.json(
@@ -1615,26 +1634,6 @@ liffPlayerGrowthRouter.get("/", async (c) => {
         playerIdByCleanName.set(cn, rp.id);
       }
     }
-
-    // チームの試合一覧を時系列順（古い順 -> 新しい順）で取得
-    const rawMatches = await db
-      .select({
-        id: matches.id,
-        date: matches.date,
-        opponent: matches.opponent,
-        matchType: matches.matchType,
-        battingOrder: matches.battingOrder,
-        status: matches.status,
-        myScore: matches.myScore,
-        opponentScore: matches.opponentScore,
-        createdAt: matches.createdAt,
-        tournamentName: tournaments.name,
-      })
-      .from(matches)
-      .leftJoin(tournaments, eq(matches.tournamentId, tournaments.id))
-      .where(eq(matches.teamId, teamId))
-      .orderBy(asc(matches.date), asc(matches.createdAt))
-      .all();
 
     const finishedMatches = rawMatches
       .filter(

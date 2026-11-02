@@ -391,441 +391,451 @@ export default function LiffScoreSettingsPage() {
         )}
 
         {/* ━━━ セクション 1: ⚾ 試合・スコア規定（試合作成・スコア表記ルール） ━━━ */}
-        <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-4 overflow-hidden">
-          <div className="-mx-4 -mt-4 px-4 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 border-l-4 border-l-primary flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Sliders className="w-4 h-4 text-primary" />
-              <h2 className="text-sm font-black text-foreground">
+        <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+          <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="w-7 h-7 rounded-xl bg-primary/20 text-blue-300 border border-primary/40 flex items-center justify-center shrink-0">
+                <Sliders className="w-4 h-4" />
+              </span>
+              <h2 className="text-sm font-black text-white truncate">
                 試合・スコア規定
               </h2>
             </div>
-            <span className="text-[10px] font-bold text-muted-foreground">
+            <span className="text-[10px] font-bold text-slate-300 shrink-0">
               試合作成・表記に反映
             </span>
           </div>
 
-          {/* 1. 規定イニング数 & 新規試合の初期種別 */}
-          <div className="grid grid-cols-2 gap-2.5">
-            <div className="space-y-1">
-              <label className="text-[11px] font-black text-foreground block">
-                規定イニング初期値
-              </label>
-              <select
-                value={scoreSettings.defaultInnings}
-                onChange={(e) =>
-                  updateLocalSetting(
-                    "defaultInnings",
-                    Number(e.target.value),
-                    "規定イニング初期値"
-                  )
-                }
-                className="w-full h-10 px-2.5 rounded-xl bg-muted/35 border border-border/60 text-xs font-black text-foreground focus:outline-hidden focus:border-primary cursor-pointer"
-              >
-                <option value={5}>5回制（低学年等）</option>
-                <option value={6}>6回制（学童等）</option>
-                <option value={7}>7回制（中学・草野球）</option>
-                <option value={9}>9回制</option>
-              </select>
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-[11px] font-black text-foreground block">
-                新規試合の初期種別
-              </label>
-              <select
-                value={scoreSettings.defaultMatchType}
-                onChange={(e) =>
-                  updateLocalSetting(
-                    "defaultMatchType",
-                    e.target.value as ScoreDefaultMatchType,
-                    "新規試合の初期種別"
-                  )
-                }
-                className="w-full h-10 px-2.5 rounded-xl bg-muted/35 border border-border/60 text-xs font-black text-foreground focus:outline-hidden focus:border-primary cursor-pointer"
-              >
-                <option value="practice">OP戦（練習試合）</option>
-                <option value="official">公式戦</option>
-                <option value="exchange">交流戦</option>
-              </select>
-            </div>
-          </div>
-
-          {/* 2. コールドゲーム規定 */}
-          <div className="space-y-1.5 pt-1 border-t border-border/60">
-            <label className="text-xs font-black text-foreground block">
-              コールドゲーム規定
-            </label>
-            <div className="grid grid-cols-3 gap-1.5">
-              {(
-                [
-                  { id: "standard", label: "3回10/4回7点" },
-                  { id: "loose", label: "4回10/5回7点" },
-                  { id: "none", label: "コールドなし" },
-                ] as ReadonlyArray<{ id: ScoreMercyRule; label: string }>
-              ).map((m) => {
-                const isActive = scoreSettings.mercyRule === m.id;
-                return (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onClick={() =>
-                      updateLocalSetting("mercyRule", m.id, "コールド規定")
-                    }
-                    className={`py-2 px-1 rounded-2xl text-xs font-bold transition-all active:scale-95 border cursor-pointer ${
-                      isActive
-                        ? "bg-primary/12 text-primary border-primary shadow-2xs font-black"
-                        : "bg-muted/50 border-border/60 text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    {m.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* 3. 守備位置の表記形式 */}
-          <div className="space-y-1.5 pt-1">
-            <label className="text-xs font-black text-foreground block">
-              守備位置の表記形式
-            </label>
-            <div className="grid grid-cols-3 gap-1.5">
-              {(
-                [
-                  { id: "kanji", label: "漢字 (投・捕・一)" },
-                  { id: "number", label: "守備番号 (1・2・3)" },
-                  { id: "english", label: "英語 (P・C・1B)" },
-                ] as ReadonlyArray<{ id: ScorePositionNotation; label: string }>
-              ).map((p) => {
-                const isActive = scoreSettings.positionNotation === p.id;
-                return (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() =>
-                      updateLocalSetting(
-                        "positionNotation",
-                        p.id,
-                        "守備位置の表記形式"
-                      )
-                    }
-                    className={`py-2 px-1 rounded-2xl text-xs font-bold transition-all active:scale-95 border cursor-pointer ${
-                      isActive
-                        ? "bg-primary/12 text-primary border-primary shadow-2xs font-black"
-                        : "bg-muted/50 border-border/60 text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    {p.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* 4. DH制（指名打者）初期値 */}
-          <div className="pt-1 flex items-center justify-between">
-            <div className="space-y-0.5">
-              <div className="text-xs font-black text-foreground">
-                DH制（指名打者）初期値
+          <div className="p-4 space-y-4">
+            {/* 1. 規定イニング数 & 新規試合の初期種別 */}
+            <div className="grid grid-cols-2 gap-2.5">
+              <div className="space-y-1">
+                <label className="text-[11px] font-black text-foreground block">
+                  規定イニング初期値
+                </label>
+                <select
+                  value={scoreSettings.defaultInnings}
+                  onChange={(e) =>
+                    updateLocalSetting(
+                      "defaultInnings",
+                      Number(e.target.value),
+                      "規定イニング初期値"
+                    )
+                  }
+                  className="w-full h-10 px-2.5 rounded-xl bg-muted/35 border border-border text-xs font-black text-foreground focus:outline-hidden focus:border-primary cursor-pointer"
+                >
+                  <option value={5}>5回制（低学年等）</option>
+                  <option value={6}>6回制（学童等）</option>
+                  <option value={7}>7回制（中学・草野球）</option>
+                  <option value={9}>9回制</option>
+                </select>
               </div>
-              <p className="text-[10px] text-muted-foreground font-bold">
-                新規試合作成時にDH制をデフォルトでONにします
-              </p>
+
+              <div className="space-y-1">
+                <label className="text-[11px] font-black text-foreground block">
+                  新規試合の初期種別
+                </label>
+                <select
+                  value={scoreSettings.defaultMatchType}
+                  onChange={(e) =>
+                    updateLocalSetting(
+                      "defaultMatchType",
+                      e.target.value as ScoreDefaultMatchType,
+                      "新規試合の初期種別"
+                    )
+                  }
+                  className="w-full h-10 px-2.5 rounded-xl bg-muted/35 border border-border text-xs font-black text-foreground focus:outline-hidden focus:border-primary cursor-pointer"
+                >
+                  <option value="practice">OP戦（練習試合）</option>
+                  <option value="official">公式戦</option>
+                  <option value="exchange">交流戦</option>
+                </select>
+              </div>
             </div>
-            <button
-              type="button"
-              onClick={() =>
-                updateLocalSetting(
-                  "dhDefault",
-                  !scoreSettings.dhDefault,
-                  "DH制初期値"
-                )
-              }
-              className={`w-12 h-6 rounded-full transition-colors relative p-0.5 cursor-pointer ${
-                scoreSettings.dhDefault
-                  ? "bg-primary"
-                  : "bg-muted border border-border/60"
-              }`}
-            >
-              <div
-                className={`w-5 h-5 rounded-full bg-white transition-transform ${
+
+            {/* 2. コールドゲーム規定 */}
+            <div className="space-y-1.5 pt-1 border-t border-border">
+              <label className="text-xs font-black text-foreground block">
+                コールドゲーム規定
+              </label>
+              <div className="grid grid-cols-3 gap-1.5">
+                {(
+                  [
+                    { id: "standard", label: "3回10/4回7点" },
+                    { id: "loose", label: "4回10/5回7点" },
+                    { id: "none", label: "コールドなし" },
+                  ] as ReadonlyArray<{ id: ScoreMercyRule; label: string }>
+                ).map((m) => {
+                  const isActive = scoreSettings.mercyRule === m.id;
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() =>
+                        updateLocalSetting("mercyRule", m.id, "コールド規定")
+                      }
+                      className={`py-2 px-1 rounded-2xl text-xs font-bold transition-all active:scale-95 border cursor-pointer ${
+                        isActive
+                          ? "bg-primary/12 text-primary border-primary shadow-2xs font-black"
+                          : "bg-muted/50 border-border text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      {m.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 3. 守備位置の表記形式 */}
+            <div className="space-y-1.5 pt-1">
+              <label className="text-xs font-black text-foreground block">
+                守備位置の表記形式
+              </label>
+              <div className="grid grid-cols-3 gap-1.5">
+                {(
+                  [
+                    { id: "kanji", label: "漢字 (投・捕・一)" },
+                    { id: "number", label: "守備番号 (1・2・3)" },
+                    { id: "english", label: "英語 (P・C・1B)" },
+                  ] as ReadonlyArray<{ id: ScorePositionNotation; label: string }>
+                ).map((p) => {
+                  const isActive = scoreSettings.positionNotation === p.id;
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() =>
+                        updateLocalSetting(
+                          "positionNotation",
+                          p.id,
+                          "守備位置の表記形式"
+                        )
+                      }
+                      className={`py-2 px-1 rounded-2xl text-xs font-bold transition-all active:scale-95 border cursor-pointer ${
+                        isActive
+                          ? "bg-primary/12 text-primary border-primary shadow-2xs font-black"
+                          : "bg-muted/50 border-border text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      {p.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 4. DH制（指名打者）初期値 */}
+            <div className="pt-1 flex items-center justify-between">
+              <div className="space-y-0.5">
+                <div className="text-xs font-black text-foreground">
+                  DH制（指名打者）初期値
+                </div>
+                <p className="text-[10px] text-muted-foreground font-bold">
+                  新規試合作成時にDH制をデフォルトでONにします
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() =>
+                  updateLocalSetting(
+                    "dhDefault",
+                    !scoreSettings.dhDefault,
+                    "DH制初期値"
+                  )
+                }
+                className={`w-12 h-6 rounded-full transition-colors relative p-0.5 cursor-pointer ${
                   scoreSettings.dhDefault
-                    ? "translate-x-6 shadow-xs"
-                    : "translate-x-0"
+                    ? "bg-primary"
+                    : "bg-muted border border-border"
                 }`}
-              />
-            </button>
+              >
+                <div
+                  className={`w-5 h-5 rounded-full bg-white transition-transform ${
+                    scoreSettings.dhDefault
+                      ? "translate-x-6 shadow-xs"
+                      : "translate-x-0"
+                  }`}
+                />
+              </button>
+            </div>
           </div>
         </section>
 
         {/* ━━━ セクション 2: 📘 スコア記号早見表（チーム共通・毎回自動参照） ━━━ */}
-        <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3.5 overflow-hidden">
-          <div className="-mx-4 -mt-4 px-4 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 border-l-4 border-l-primary flex items-center justify-between gap-2">
+        <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+          <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
-              <BookOpen className="w-4 h-4 text-primary shrink-0" />
-              <h2 className="text-sm font-black text-foreground truncate">
+              <span className="w-7 h-7 rounded-xl bg-primary/20 text-blue-300 border border-primary/40 flex items-center justify-center shrink-0">
+                <BookOpen className="w-4 h-4" />
+              </span>
+              <h2 className="text-sm font-black text-white truncate">
                 スコア記号早見表（チーム共通）
               </h2>
             </div>
 
             {isLoadingTeam ? (
-              <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-muted/50 text-muted-foreground">
+              <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700 shrink-0">
                 確認中...
               </span>
             ) : stagedLegend ? (
-              <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-amber-500/12 text-amber-700 dark:text-amber-300 border border-amber-500/30 shrink-0">
+              <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/30 shrink-0">
                 未保存プレビュー
               </span>
             ) : savedLegendUrl ? (
-              <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 border border-emerald-500/25 flex items-center gap-1 shrink-0">
+              <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 flex items-center gap-1 shrink-0">
                 <CheckCircle2 className="w-3 h-3" />
                 登録済み・自動適用中
               </span>
             ) : (
-              <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-muted/50 text-muted-foreground border border-border/60 shrink-0">
+              <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700 shrink-0">
                 未登録（標準ルール）
               </span>
             )}
           </div>
 
-          <p className="text-[11px] font-bold text-muted-foreground leading-relaxed">
-            お使いのスコアブック表紙裏などの「記入例・記号早見表」を1度登録しておけば、
-            <strong className="text-foreground font-black">
-              毎回のスコアブック取り込みで添付し直す必要はありません。
-            </strong>
-            {resolvedTeamName ? `（${resolvedTeamName} 共通設定）` : ""}
-          </p>
+          <div className="p-4 space-y-3.5">
+            <p className="text-[11px] font-bold text-muted-foreground leading-relaxed">
+              お使いのスコアブック表紙裏などの「記入例・記号早見表」を1度登録しておけば、
+              <strong className="text-foreground font-black">
+                毎回のスコアブック取り込みで添付し直す必要はありません。
+              </strong>
+              {resolvedTeamName ? `（${resolvedTeamName} 共通設定）` : ""}
+            </p>
 
-          {isLoadingTeam ? (
-            <div className="py-10 rounded-2xl bg-muted/35 border border-border/60 flex flex-col items-center justify-center gap-2">
-              <Loader2 className="w-6 h-6 animate-spin text-primary" />
-              <span className="text-xs font-bold text-muted-foreground">
-                登録状況を読み込み中...
-              </span>
-            </div>
-          ) : stagedLegend ? (
-            /* 新しく選択した画像の保存前プレビュー＆回転補正 */
-            <div className="space-y-3">
-              <div className="relative rounded-2xl overflow-hidden bg-slate-950 border border-primary/40 aspect-4/3 flex items-center justify-center">
-                {stagedLegend.isProcessing || !stagedLegend.processed ? (
-                  <div className="flex flex-col items-center gap-2 text-white">
-                    <Loader2 className="w-6 h-6 animate-spin text-primary" />
-                    <span className="text-xs font-bold">
-                      画像を最適化中...
-                    </span>
-                  </div>
-                ) : (
-                  <img
-                    src={stagedLegend.processed.dataUrl}
-                    alt="保存前のスコア記号早見表プレビュー"
-                    className="w-full h-full object-contain"
-                  />
-                )}
+            {isLoadingTeam ? (
+              <div className="py-10 rounded-2xl bg-muted/35 border border-border flex flex-col items-center justify-center gap-2">
+                <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                <span className="text-xs font-bold text-muted-foreground">
+                  登録状況を読み込み中...
+                </span>
               </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={handleRotateStaged}
-                  disabled={stagedLegend.isProcessing || isSavingLegend}
-                  className="py-2.5 px-3 rounded-xl bg-card hover:bg-muted border border-border/60 text-xs font-black text-foreground flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer"
-                >
-                  <RotateCw className="w-4 h-4 text-primary" />
-                  <span>90°回転して向きを揃える</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleToggleEnhanceStaged}
-                  disabled={stagedLegend.isProcessing || isSavingLegend}
-                  className={`py-2.5 px-3 rounded-xl border text-xs font-black flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer ${
-                    stagedLegend.enhancePencil
-                      ? "bg-primary/12 text-primary border-primary"
-                      : "bg-card text-foreground border-border/60 hover:bg-muted"
-                  }`}
-                >
-                  <Sparkles className="w-4 h-4 shrink-0" />
-                  <span>
-                    {stagedLegend.enhancePencil
-                      ? "濃さ強調: ON"
-                      : "原本カラー（標準）"}
-                  </span>
-                </button>
-              </div>
-
-              <div className="flex gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={() => setStagedLegend(null)}
-                  disabled={isSavingLegend}
-                  className="py-3 px-4 rounded-2xl bg-card hover:bg-muted border border-border/60 text-xs font-black text-muted-foreground hover:text-foreground active:scale-95 transition-all cursor-pointer"
-                >
-                  キャンセル
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => void handleSaveLegendToCloud()}
-                  disabled={
-                    stagedLegend.isProcessing ||
-                    !stagedLegend.processed ||
-                    isSavingLegend
-                  }
-                  className="flex-1 py-3 px-4 rounded-2xl bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground text-xs font-black shadow-xs flex items-center justify-center gap-2 active:scale-95 transition-all cursor-pointer"
-                >
-                  {isSavingLegend ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>保存中...</span>
-                    </>
+            ) : stagedLegend ? (
+              /* 新しく選択した画像の保存前プレビュー＆回転補正 */
+              <div className="space-y-3">
+                <div className="relative rounded-2xl overflow-hidden bg-slate-950 border border-primary/40 aspect-4/3 flex items-center justify-center">
+                  {stagedLegend.isProcessing || !stagedLegend.processed ? (
+                    <div className="flex flex-col items-center gap-2 text-white">
+                      <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                      <span className="text-xs font-bold">
+                        画像を最適化中...
+                      </span>
+                    </div>
                   ) : (
-                    <>
-                      <Save className="w-4 h-4" />
-                      <span>この早見表を保存する（毎回自動適用）</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-          ) : savedLegendUrl ? (
-            /* すでに登録済みの早見表がある状態 */
-            <div className="space-y-3">
-              <div
-                onClick={() => setIsZoomOpen(true)}
-                className="relative rounded-2xl overflow-hidden bg-slate-950 border border-border/60 aspect-4/3 flex items-center justify-center cursor-pointer group"
-              >
-                <img
-                  src={savedLegendUrl}
-                  alt="登録済みのスコア記号早見表"
-                  className="w-full h-full object-contain"
-                />
-                <span className="absolute bottom-2.5 right-2.5 px-2.5 py-1 rounded-xl bg-black/75 text-white text-[10px] font-black flex items-center gap-1 shadow-xs">
-                  <ZoomIn className="w-3.5 h-3.5" />
-                  <span>タップで拡大確認</span>
-                </span>
-              </div>
-
-              <div className="p-2.5 rounded-2xl bg-emerald-500/12 border border-emerald-500/25 flex items-center gap-2 text-[11px] font-black text-emerald-700 dark:text-emerald-400">
-                <CheckCircle2 className="w-4 h-4 shrink-0" />
-                <span>
-                  スコアブック取り込み（STEP 1・2）で毎回自動的にこの早見表を参照します
-                </span>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  disabled={isSavingLegend}
-                  onClick={() => setIsCameraModalOpen(true)}
-                  className="py-2.5 px-3 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all cursor-pointer disabled:opacity-50"
-                >
-                  <Camera className="w-4 h-4 shrink-0" />
-                  <span>カメラで撮り直す</span>
-                </button>
-
-                {isSavingLegend ? (
-                  <span className="py-2.5 px-3 rounded-2xl bg-card border border-border/60 text-foreground font-black text-xs flex items-center justify-center gap-1.5 opacity-50">
-                    <ImagePlus className="w-4 h-4 text-primary shrink-0" />
-                    <span>アルバムから変更</span>
-                  </span>
-                ) : (
-                  <div className="relative overflow-hidden py-2.5 px-3 rounded-2xl bg-card border border-border/60 text-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs hover:bg-muted">
-                    <ImagePlus className="w-4 h-4 text-primary shrink-0 pointer-events-none" />
-                    <span className="pointer-events-none">アルバムから変更</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      aria-label="スコア記号早見表をアルバムから変更"
-                      onChange={handleLegendInputChange}
-                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                    <img
+                      src={stagedLegend.processed.dataUrl}
+                      alt="保存前のスコア記号早見表プレビュー"
+                      className="w-full h-full object-contain"
                     />
-                  </div>
-                )}
-              </div>
+                  )}
+                </div>
 
-              {!confirmClearLegend ? (
-                <div className="flex justify-end">
+                <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
-                    onClick={() => setConfirmClearLegend(true)}
-                    className="px-2.5 py-1.5 rounded-xl text-[11px] font-bold text-muted-foreground hover:text-destructive hover:bg-destructive/10 flex items-center gap-1 transition-colors cursor-pointer"
+                    onClick={handleRotateStaged}
+                    disabled={stagedLegend.isProcessing || isSavingLegend}
+                    className="py-2.5 px-3 rounded-xl bg-card hover:bg-muted border border-border text-xs font-black text-foreground flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>登録済みの早見表を削除する</span>
+                    <RotateCw className="w-4 h-4 text-primary" />
+                    <span>90°回転して向きを揃える</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleToggleEnhanceStaged}
+                    disabled={stagedLegend.isProcessing || isSavingLegend}
+                    className={`py-2.5 px-3 rounded-xl border text-xs font-black flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer ${
+                      stagedLegend.enhancePencil
+                        ? "bg-primary/12 text-primary border-primary"
+                        : "bg-card text-foreground border-border hover:bg-muted"
+                    }`}
+                  >
+                    <Sparkles className="w-4 h-4 shrink-0" />
+                    <span>
+                      {stagedLegend.enhancePencil
+                        ? "濃さ強調: ON"
+                        : "原本カラー（標準）"}
+                    </span>
                   </button>
                 </div>
-              ) : (
-                <div className="p-3 rounded-2xl bg-destructive/10 border border-destructive/30 flex items-center justify-between gap-2">
-                  <span className="text-[11px] font-black text-destructive">
-                    早見表の登録を解除しますか？
+
+                <div className="flex gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setStagedLegend(null)}
+                    disabled={isSavingLegend}
+                    className="py-3 px-4 rounded-2xl bg-card hover:bg-muted border border-border text-xs font-black text-muted-foreground hover:text-foreground active:scale-95 transition-all cursor-pointer"
+                  >
+                    キャンセル
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => void handleSaveLegendToCloud()}
+                    disabled={
+                      stagedLegend.isProcessing ||
+                      !stagedLegend.processed ||
+                      isSavingLegend
+                    }
+                    className="flex-1 py-3 px-4 rounded-2xl bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground text-xs font-black shadow-xs flex items-center justify-center gap-2 active:scale-95 transition-all cursor-pointer"
+                  >
+                    {isSavingLegend ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>保存中...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-4 h-4" />
+                        <span>この早見表を保存する（毎回自動適用）</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            ) : savedLegendUrl ? (
+              /* すでに登録済みの早見表がある状態 */
+              <div className="space-y-3">
+                <div
+                  onClick={() => setIsZoomOpen(true)}
+                  className="relative rounded-2xl overflow-hidden bg-slate-950 border border-border aspect-4/3 flex items-center justify-center cursor-pointer group"
+                >
+                  <img
+                    src={savedLegendUrl}
+                    alt="登録済みのスコア記号早見表"
+                    loading="lazy"
+                    decoding="async"
+                    className="w-full h-full object-contain"
+                  />
+                  <span className="absolute bottom-2.5 right-2.5 px-2.5 py-1 rounded-xl bg-slate-900/90 text-white border border-slate-700 text-[10px] font-black flex items-center gap-1 shadow-xs">
+                    <ZoomIn className="w-3.5 h-3.5" />
+                    <span>タップで拡大確認</span>
                   </span>
-                  <div className="flex items-center gap-1.5 shrink-0">
+                </div>
+
+                <div className="p-2.5 rounded-2xl bg-emerald-500/12 border border-emerald-500/25 flex items-center gap-2 text-[11px] font-black text-emerald-700 dark:text-emerald-400">
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  <span>
+                    スコアブック取り込み（STEP 1・2）で毎回自動的にこの早見表を参照します
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    disabled={isSavingLegend}
+                    onClick={() => setIsCameraModalOpen(true)}
+                    className="py-2.5 px-3 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    <Camera className="w-4 h-4 shrink-0" />
+                    <span>カメラで撮り直す</span>
+                  </button>
+
+                  {isSavingLegend ? (
+                    <span className="py-2.5 px-3 rounded-2xl bg-card border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 opacity-50">
+                      <ImagePlus className="w-4 h-4 text-primary shrink-0" />
+                      <span>アルバムから変更</span>
+                    </span>
+                  ) : (
+                    <div className="relative overflow-hidden py-2.5 px-3 rounded-2xl bg-card border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs hover:bg-muted">
+                      <ImagePlus className="w-4 h-4 text-primary shrink-0 pointer-events-none" />
+                      <span className="pointer-events-none">アルバムから変更</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        aria-label="スコア記号早見表をアルバムから変更"
+                        onChange={handleLegendInputChange}
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {!confirmClearLegend ? (
+                  <div className="flex justify-end">
                     <button
                       type="button"
-                      onClick={() => setConfirmClearLegend(false)}
-                      disabled={isSavingLegend}
-                      className="px-2.5 py-1.5 rounded-xl bg-card border border-border/60 text-[11px] font-black text-foreground cursor-pointer"
+                      onClick={() => setConfirmClearLegend(true)}
+                      className="px-2.5 py-1.5 rounded-xl text-[11px] font-bold text-muted-foreground hover:text-destructive hover:bg-destructive/10 flex items-center gap-1 transition-colors cursor-pointer"
                     >
-                      やめる
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void handleClearSavedLegend()}
-                      disabled={isSavingLegend}
-                      className="px-3 py-1.5 rounded-xl bg-destructive text-white text-[11px] font-black cursor-pointer"
-                    >
-                      {isSavingLegend ? "削除中..." : "削除する"}
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>登録済みの早見表を削除する</span>
                     </button>
                   </div>
-                </div>
-              )}
-            </div>
-          ) : (
-            /* 未登録時のアップロードエリア */
-            <div className="rounded-2xl border border-dashed border-border/60 bg-muted/35 p-5 flex flex-col items-center text-center space-y-3">
-              <div className="w-11 h-11 rounded-2xl bg-primary/10 text-primary flex items-center justify-center">
-                <BookOpen className="w-5 h-5" />
-              </div>
-              <div className="space-y-1">
-                <p className="text-xs font-black text-foreground">
-                  スコア記号早見表がまだ登録されていません
-                </p>
-                <p className="text-[11px] font-bold text-muted-foreground leading-relaxed">
-                  成美堂・早稲田式・独自ルールなど、普段お使いのスコアブック記載例ページを撮影して登録してください
-                </p>
-              </div>
-              <div className="grid grid-cols-2 gap-2.5 w-full pt-1">
-                <button
-                  type="button"
-                  disabled={isSavingLegend}
-                  onClick={() => setIsCameraModalOpen(true)}
-                  className="py-3 px-3 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-xs active:scale-95 transition-all cursor-pointer disabled:opacity-50"
-                >
-                  <Camera className="w-4 h-4 shrink-0" />
-                  <span>カメラ撮影</span>
-                </button>
-
-                {isSavingLegend ? (
-                  <span className="py-3 px-3 rounded-2xl bg-card border border-border/60 text-foreground font-black text-xs flex items-center justify-center gap-1.5 opacity-50">
-                    <ImagePlus className="w-4 h-4 text-primary shrink-0" />
-                    <span>アルバム選択</span>
-                  </span>
                 ) : (
-                  <div className="relative overflow-hidden py-3 px-3 rounded-2xl bg-card border border-border/60 text-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs hover:bg-muted">
-                    <ImagePlus className="w-4 h-4 text-primary shrink-0 pointer-events-none" />
-                    <span className="pointer-events-none">アルバム選択</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      aria-label="スコア記号早見表をアルバムから選択"
-                      onChange={handleLegendInputChange}
-                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                    />
+                  <div className="p-3 rounded-2xl bg-destructive/10 border border-destructive/30 flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-black text-destructive">
+                      早見表の登録を解除しますか？
+                    </span>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setConfirmClearLegend(false)}
+                        disabled={isSavingLegend}
+                        className="px-2.5 py-1.5 rounded-xl bg-card border border-border text-[11px] font-black text-foreground cursor-pointer"
+                      >
+                        やめる
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleClearSavedLegend()}
+                        disabled={isSavingLegend}
+                        className="px-3 py-1.5 rounded-xl bg-destructive text-white text-[11px] font-black cursor-pointer"
+                      >
+                        {isSavingLegend ? "削除中..." : "削除する"}
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
-            </div>
-          )}
+            ) : (
+              /* 未登録時のアップロードエリア */
+              <div className="rounded-2xl border border-dashed border-border bg-muted/35 p-5 flex flex-col items-center text-center space-y-3">
+                <div className="w-11 h-11 rounded-2xl bg-primary/10 text-primary flex items-center justify-center">
+                  <BookOpen className="w-5 h-5" />
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs font-black text-foreground">
+                    スコア記号早見表がまだ登録されていません
+                  </p>
+                  <p className="text-[11px] font-bold text-muted-foreground leading-relaxed">
+                    成美堂・早稲田式・独自ルールなど、普段お使いのスコアブック記載例ページを撮影して登録してください
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-2.5 w-full pt-1">
+                  <button
+                    type="button"
+                    disabled={isSavingLegend}
+                    onClick={() => setIsCameraModalOpen(true)}
+                    className="py-3 px-3 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-xs active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    <Camera className="w-4 h-4 shrink-0" />
+                    <span>カメラ撮影</span>
+                  </button>
+
+                  {isSavingLegend ? (
+                    <span className="py-3 px-3 rounded-2xl bg-card border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 opacity-50">
+                      <ImagePlus className="w-4 h-4 text-primary shrink-0" />
+                      <span>アルバム選択</span>
+                    </span>
+                  ) : (
+                    <div className="relative overflow-hidden py-3 px-3 rounded-2xl bg-card border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs hover:bg-muted">
+                      <ImagePlus className="w-4 h-4 text-primary shrink-0 pointer-events-none" />
+                      <span className="pointer-events-none">アルバム選択</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        aria-label="スコア記号早見表をアルバムから選択"
+                        onChange={handleLegendInputChange}
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         </section>
 
         {/* ━━━ セクション 2.5: 📒 チーム記号ルール（清書シート表示切替用） ━━━ */}
@@ -839,107 +849,111 @@ export default function LiffScoreSettingsPage() {
         />
 
         {/* ━━━ セクション 3: ⚙️ AIスコアブック取り込みの初期設定 ━━━ */}
-        <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-4 overflow-hidden">
-          <div className="-mx-4 -mt-4 px-4 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 border-l-4 border-l-primary flex items-center gap-2">
-            <ScanLine className="w-4 h-4 text-primary" />
-            <h2 className="text-sm font-black text-foreground">
+        <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+          <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3 flex items-center gap-2">
+            <span className="w-7 h-7 rounded-xl bg-primary/20 text-blue-300 border border-primary/40 flex items-center justify-center shrink-0">
+              <ScanLine className="w-4 h-4" />
+            </span>
+            <h2 className="text-sm font-black text-white">
               AIスコアブック取り込みの初期設定
             </h2>
           </div>
 
-          {/* 1. 取り込むシート範囲の初期値 */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-black text-foreground block">
-              取り込むシート範囲の初期値
-            </label>
-            <div className="grid grid-cols-3 gap-1.5">
-              {(
-                [
-                  { id: "both" as const, label: "先攻＋後攻 (2枚)" },
-                  { id: "top_only" as const, label: "先攻シートのみ" },
-                  { id: "bottom_only" as const, label: "後攻シートのみ" },
-                ] as ReadonlyArray<{ id: ImportScopeMode; label: string }>
-              ).map((opt) => {
-                const isActive = scoreSettings.defaultImportScope === opt.id;
-                return (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    onClick={() =>
-                      updateLocalSetting(
-                        "defaultImportScope",
-                        opt.id,
-                        "シート範囲の初期値"
-                      )
-                    }
-                    className={`py-2.5 px-2 rounded-2xl border text-[11px] transition-all active:scale-95 cursor-pointer ${
-                      isActive
-                        ? "bg-primary/12 text-primary border-primary shadow-2xs font-black"
-                        : "bg-muted/50 border-border/60 text-muted-foreground hover:text-foreground font-bold"
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                );
-              })}
-            </div>
-            <p className="text-[10px] font-bold text-muted-foreground">
-              ※ 取り込み画面を開くたびにこの範囲が最初から選ばれます（画面内で都度変更も可能）
-            </p>
-          </div>
-
-          {/* 2. 画像補正の初期モード */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-black text-foreground block">
-              シート撮影時の初期画質モード
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              {(
-                [
-                  {
-                    value: false,
-                    title: "原本高精細（推奨）",
-                    desc: "赤・青ペンの色分けと細い罫線を忠実に保持",
-                  },
-                  {
-                    value: true,
-                    title: "濃さ強調ON",
-                    desc: "薄いHB/2H鉛筆の筆跡を毎回自動で引き締め",
-                  },
-                ] as const
-              ).map((opt) => {
-                const isActive =
-                  scoreSettings.defaultEnhancePencil === opt.value;
-                return (
-                  <button
-                    key={String(opt.value)}
-                    type="button"
-                    onClick={() =>
-                      updateLocalSetting(
-                        "defaultEnhancePencil",
-                        opt.value,
-                        "初期画質モード"
-                      )
-                    }
-                    className={`p-3 rounded-2xl border text-left transition-all active:scale-95 cursor-pointer space-y-0.5 ${
-                      isActive
-                        ? "bg-primary/12 text-primary border-primary shadow-2xs"
-                        : "bg-muted/50 border-border/60 text-foreground"
-                    }`}
-                  >
-                    <p className="text-xs font-black">{opt.title}</p>
-                    <p
-                      className={`text-[10px] leading-snug ${
+          <div className="p-4 space-y-4">
+            {/* 1. 取り込むシート範囲の初期値 */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-black text-foreground block">
+                取り込むシート範囲の初期値
+              </label>
+              <div className="grid grid-cols-3 gap-1.5">
+                {(
+                  [
+                    { id: "both" as const, label: "先攻＋後攻 (2枚)" },
+                    { id: "top_only" as const, label: "先攻シートのみ" },
+                    { id: "bottom_only" as const, label: "後攻シートのみ" },
+                  ] as ReadonlyArray<{ id: ImportScopeMode; label: string }>
+                ).map((opt) => {
+                  const isActive = scoreSettings.defaultImportScope === opt.id;
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() =>
+                        updateLocalSetting(
+                          "defaultImportScope",
+                          opt.id,
+                          "シート範囲の初期値"
+                        )
+                      }
+                      className={`py-2.5 px-2 rounded-2xl border text-[11px] transition-all active:scale-95 cursor-pointer ${
                         isActive
-                          ? "text-primary/80 font-bold"
-                          : "text-muted-foreground font-bold"
+                          ? "bg-primary/12 text-primary border-primary shadow-2xs font-black"
+                          : "bg-muted/50 border-border text-muted-foreground hover:text-foreground font-bold"
                       }`}
                     >
-                      {opt.desc}
-                    </p>
-                  </button>
-                );
-              })}
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-[10px] font-bold text-muted-foreground">
+                ※ 取り込み画面を開くたびにこの範囲が最初から選ばれます（画面内で都度変更も可能）
+              </p>
+            </div>
+
+            {/* 2. 画像補正の初期モード */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-black text-foreground block">
+                シート撮影時の初期画質モード
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                {(
+                  [
+                    {
+                      value: false,
+                      title: "原本高精細（推奨）",
+                      desc: "赤・青ペンの色分けと細い罫線を忠実に保持",
+                    },
+                    {
+                      value: true,
+                      title: "濃さ強調ON",
+                      desc: "薄いHB/2H鉛筆の筆跡を毎回自動で引き締め",
+                    },
+                  ] as const
+                ).map((opt) => {
+                  const isActive =
+                    scoreSettings.defaultEnhancePencil === opt.value;
+                  return (
+                    <button
+                      key={String(opt.value)}
+                      type="button"
+                      onClick={() =>
+                        updateLocalSetting(
+                          "defaultEnhancePencil",
+                          opt.value,
+                          "初期画質モード"
+                        )
+                      }
+                      className={`p-3 rounded-2xl border text-left transition-all active:scale-95 cursor-pointer space-y-0.5 ${
+                        isActive
+                          ? "bg-primary/12 text-primary border-primary shadow-2xs"
+                          : "bg-muted/50 border-border text-foreground"
+                      }`}
+                    >
+                      <p className="text-xs font-black">{opt.title}</p>
+                      <p
+                        className={`text-[10px] leading-snug ${
+                          isActive
+                            ? "text-primary/80 font-bold"
+                            : "text-muted-foreground font-bold"
+                        }`}
+                      >
+                        {opt.desc}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </section>
@@ -956,7 +970,7 @@ export default function LiffScoreSettingsPage() {
 
           <Link
             href="/liff/settings/team"
-            className="p-3.5 rounded-2xl border border-border/60 bg-card shadow-xs hover:border-primary/40 transition-all flex items-center justify-between group active:scale-[0.99]"
+            className="p-3.5 rounded-2xl border border-border bg-card shadow-xs hover:border-primary/40 transition-all flex items-center justify-between group active:scale-[0.99]"
           >
             <div className="flex items-center gap-3 min-w-0">
               <span className="w-9 h-9 rounded-xl bg-slate-500/12 text-slate-700 dark:text-slate-300 flex items-center justify-center shrink-0">
@@ -981,31 +995,33 @@ export default function LiffScoreSettingsPage() {
       {/* 全画面拡大プレビューモーダル */}
       {isZoomOpen && previewImageUrl && (
         <div
-          className="fixed inset-0 z-50 bg-black/92 flex flex-col p-3"
+          className="fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-3"
           onClick={() => setIsZoomOpen(false)}
         >
-          <div className="flex items-center justify-between pb-2 text-white">
-            <span className="text-xs font-black">
-              登録済みスコア記号早見表プレビュー
-            </span>
-            <button
-              type="button"
-              onClick={() => setIsZoomOpen(false)}
-              className="p-2 rounded-full bg-white/15 hover:bg-white/25 text-white cursor-pointer"
-              aria-label="閉じる"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
           <div
-            className="flex-1 overflow-auto flex items-center justify-center"
+            className="w-full max-w-3xl max-h-[90vh] rounded-2xl border border-border bg-card shadow-xs overflow-hidden flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
-            <img
-              src={previewImageUrl}
-              alt="スコア記号早見表の拡大表示"
-              className="max-w-full max-h-full object-contain rounded-xl"
-            />
+            <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3 flex items-center justify-between gap-2 shrink-0">
+              <span className="text-xs sm:text-sm font-black text-white truncate">
+                登録済みスコア記号早見表プレビュー
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsZoomOpen(false)}
+                className="p-1.5 rounded-full text-slate-300 hover:text-white hover:bg-slate-800 cursor-pointer transition-colors"
+                aria-label="閉じる"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto p-3 bg-slate-950 flex items-center justify-center">
+              <img
+                src={previewImageUrl}
+                alt="スコア記号早見表の拡大表示"
+                className="max-w-full max-h-[75vh] object-contain rounded-xl"
+              />
+            </div>
           </div>
         </div>
       )}

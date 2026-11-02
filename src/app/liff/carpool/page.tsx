@@ -93,7 +93,7 @@ export default function LiffCarpoolPage() {
           </div>
         ) : !carpoolInfo || cars.length === 0 ? (
           /* 空ステート */
-          <div className="flex flex-col items-center justify-center py-16 text-center rounded-2xl border border-border/60 bg-card shadow-xs p-6 space-y-3">
+          <div className="flex flex-col items-center justify-center py-16 text-center rounded-2xl border border-border bg-card shadow-xs overflow-hidden p-6 space-y-3">
             <div className="w-12 h-12 rounded-2xl bg-teal-500/12 flex items-center justify-center text-teal-600 dark:text-teal-400">
               <Car className="w-6 h-6" />
             </div>
@@ -263,7 +263,7 @@ export default function LiffCarpoolPage() {
                     </div>
                   </div>
 
-                  <div className="space-y-1.5 pt-1 border-t border-border/60">
+                  <div className="space-y-1.5 pt-1 border-t border-border">
                     <span className="text-[10px] font-bold text-muted-foreground block">
                       同乗者一覧:
                     </span>
@@ -290,7 +290,7 @@ export default function LiffCarpoolPage() {
 
         {/* 注意事項 */}
         {carpoolInfo?.notes && (
-          <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 text-xs text-foreground">
+          <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden p-4 text-xs text-foreground">
             <div className="p-3 rounded-xl bg-amber-500/[0.06] dark:bg-amber-500/[0.10] border border-amber-500/20 border-l-4 border-l-amber-500 space-y-1.5">
               <div className="flex items-center gap-1.5 font-black text-amber-700 dark:text-amber-300">
                 <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />

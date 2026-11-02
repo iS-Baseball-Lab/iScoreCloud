@@ -1175,25 +1175,25 @@ export function Step3PinpointReview({
     <div className="space-y-4">
       {/* AI解析タイム計測サマリー（トータル秒数＋イニング別秒数） */}
       {timingSummary && timingSummary.inningEntries.length > 0 && (
-        <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-2.5 overflow-hidden">
-          <div className="-mx-4 -mt-4 px-4 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 border-l-4 border-l-primary flex items-center justify-between gap-2 flex-wrap">
+        <section className="rounded-2xl border border-border bg-card shadow-xs p-4 space-y-2.5 overflow-hidden">
+          <div className="-mx-4 -mt-4 px-4 py-3 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-2">
-              <span className="w-6 h-6 rounded-lg bg-primary/12 text-primary flex items-center justify-center shrink-0">
+              <span className="w-6 h-6 rounded-lg bg-primary/20 text-blue-300 border border-primary/40 flex items-center justify-center shrink-0">
                 <Clock className="w-3.5 h-3.5" />
               </span>
-              <h2 className="text-xs font-black text-foreground">
+              <h2 className="text-xs font-black text-white">
                 AI解析タイム計測
               </h2>
             </div>
 
             <div className="flex items-center gap-1.5">
-              <span className="px-2.5 py-1 rounded-lg bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 border border-emerald-500/25 text-[11px] font-black tabular-nums">
+              <span className="px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[11px] font-black tabular-nums">
                 合計 {formatTotalElapsedSeconds(timingSummary.deepTotalMs)}
               </span>
               <button
                 type="button"
                 onClick={() => setShowTimingDetails((prev) => !prev)}
-                className="px-2 py-1 rounded-lg bg-card hover:bg-muted border border-border/60 text-[10px] font-black text-foreground inline-flex items-center gap-0.5 cursor-pointer"
+                className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[10px] font-black text-slate-200 hover:text-white inline-flex items-center gap-0.5 cursor-pointer transition-colors"
               >
                 <span>{showTimingDetails ? "内訳を隠す" : "イニング別を表示"}</span>
                 {showTimingDetails ? (
@@ -1222,7 +1222,7 @@ export function Step3PinpointReview({
           {showTimingDetails && (
             <div className="space-y-2 pt-0.5">
               {topTimingEntries.length > 0 && (
-                <div className="p-2.5 rounded-2xl bg-muted/35 border border-border/60 space-y-1.5">
+                <div className="p-2.5 rounded-2xl bg-muted border border-border space-y-1.5">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-[10px] font-black text-foreground">
                       先攻（表）イニング別秒数
@@ -1255,7 +1255,7 @@ export function Step3PinpointReview({
                               ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
                               : isEntryError
                               ? "bg-card border border-destructive/60 text-destructive font-black"
-                              : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
+                              : "bg-card text-muted-foreground border border-border hover:text-foreground hover:bg-muted font-bold"
                           }`}
                         >
                           <span>{entry.label}</span>
@@ -1278,7 +1278,7 @@ export function Step3PinpointReview({
               )}
 
               {bottomTimingEntries.length > 0 && (
-                <div className="p-2.5 rounded-2xl bg-muted/35 border border-border/60 space-y-1.5">
+                <div className="p-2.5 rounded-2xl bg-muted border border-border space-y-1.5">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-[10px] font-black text-foreground">
                       後攻（裏）イニング別秒数
@@ -1311,7 +1311,7 @@ export function Step3PinpointReview({
                               ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
                               : isEntryError
                               ? "bg-card border border-destructive/60 text-destructive font-black"
-                              : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
+                              : "bg-card text-muted-foreground border border-border hover:text-foreground hover:bg-muted font-bold"
                           }`}
                         >
                           <span>{entry.label}</span>
@@ -1339,7 +1339,7 @@ export function Step3PinpointReview({
 
       {/* 総合整合性サマリーバナー */}
       {totalIssuesCount === 0 ? (
-        <section className="rounded-2xl border border-border/60 border-l-4 border-l-emerald-500 bg-card shadow-xs p-4 flex items-start gap-3">
+        <section className="rounded-2xl border border-border border-l-4 border-l-emerald-500 bg-card shadow-xs p-4 flex items-start gap-3">
           <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
           <div className="space-y-0.5">
             <h2 className="text-xs font-black text-emerald-700 dark:text-emerald-400">
@@ -1351,7 +1351,7 @@ export function Step3PinpointReview({
           </div>
         </section>
       ) : (
-        <section className="rounded-2xl border border-border/60 border-l-4 border-l-amber-500 bg-card shadow-xs p-4 space-y-2.5">
+        <section className="rounded-2xl border border-border border-l-4 border-l-amber-500 bg-card shadow-xs p-4 space-y-2.5">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
@@ -1365,7 +1365,7 @@ export function Step3PinpointReview({
               className={`px-2.5 py-1 rounded-full text-[10px] transition-all cursor-pointer ${
                 onlyFlagged
                   ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
-                  : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
+                  : "bg-card text-muted-foreground border border-border hover:text-foreground hover:bg-muted font-bold"
               }`}
             >
               {onlyFlagged ? "すべて表示に戻す" : "要確認のみ絞込"}
@@ -1376,7 +1376,7 @@ export function Step3PinpointReview({
             (missingOrderGapsCount > 0 ||
               excessOutInningsCount > 0 ||
               isRepairingOrderGaps) && (
-              <div className="p-2.5 rounded-2xl bg-muted/35 border border-border/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="p-2.5 rounded-2xl bg-muted border border-border flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <p className="text-[11px] font-bold text-foreground leading-snug">
                   野球規則整合チェックで{" "}
                   <strong className="text-amber-700 dark:text-amber-300">
@@ -1434,7 +1434,7 @@ export function Step3PinpointReview({
                     setSelectedInning(iss.inning);
                   }
                 }}
-                className="w-full text-left p-2 rounded-xl bg-muted/35 hover:bg-muted border border-border/60 flex items-start justify-between gap-2 transition-all cursor-pointer"
+                className="w-full text-left p-2 rounded-xl bg-muted hover:bg-accent border border-border flex items-start justify-between gap-2 transition-all cursor-pointer"
               >
                 <span className="text-[11px] font-bold text-foreground leading-snug">
                   <strong
@@ -1458,7 +1458,7 @@ export function Step3PinpointReview({
 
       {/* 先攻 / 後攻 タブ切替 */}
       {importScope === "both" && (
-        <div className="grid grid-cols-2 gap-1 bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl border border-border/60">
+        <div className="grid grid-cols-2 gap-1 bg-muted p-1 rounded-2xl border border-border">
           <button
             type="button"
             onClick={() => {
@@ -1467,7 +1467,7 @@ export function Step3PinpointReview({
             }}
             className={`py-2.5 px-2 rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
               activeSide === "top"
-                ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                ? "bg-card text-foreground shadow-xs border border-border font-black"
                 : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
             }`}
           >
@@ -1489,7 +1489,7 @@ export function Step3PinpointReview({
             }}
             className={`py-2.5 px-2 rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
               activeSide === "bottom"
-                ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                ? "bg-card text-foreground shadow-xs border border-border font-black"
                 : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
             }`}
           >
@@ -1507,7 +1507,7 @@ export function Step3PinpointReview({
 
       {/* 後から選手交代・継投クイック編集バー */}
       {currentStructure && (
-        <div className="p-3 rounded-2xl border border-border/60 bg-card shadow-xs flex items-center justify-between gap-2 flex-wrap">
+        <div className="p-3 rounded-2xl border border-border bg-card shadow-xs flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-2 min-w-0">
             <span className="w-7 h-7 rounded-xl bg-primary/12 text-primary flex items-center justify-center shrink-0">
               <Users className="w-4 h-4" />
@@ -1547,7 +1547,7 @@ export function Step3PinpointReview({
           className={`px-3 py-1.5 rounded-xl text-xs shrink-0 cursor-pointer transition-colors ${
             selectedInning === "all"
               ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
-              : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
+              : "bg-card text-muted-foreground border border-border hover:text-foreground hover:bg-muted font-bold"
           }`}
         >
           全回 ({currentList.length}打席)
@@ -1560,7 +1560,7 @@ export function Step3PinpointReview({
             className={`px-3 py-1.5 rounded-xl text-xs shrink-0 cursor-pointer transition-colors ${
               selectedInning === inn
                 ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
-                : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
+                : "bg-card text-muted-foreground border border-border hover:text-foreground hover:bg-muted font-bold"
             }`}
           >
             {inn}回{isTop ? "表" : "裏"}
@@ -1597,15 +1597,15 @@ export function Step3PinpointReview({
                 className={`rounded-2xl border bg-card shadow-xs p-3.5 space-y-2.5 overflow-hidden ${
                   hasInningLevelIssue
                     ? "border-destructive/60"
-                    : "border-border/60"
+                    : "border-border"
                 }`}
               >
-                <div className="-mx-3.5 -mt-3.5 px-3.5 py-2.5 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 border-l-4 border-l-primary flex items-center justify-between gap-1.5 flex-wrap">
+                <div className="-mx-3.5 -mt-3.5 px-3.5 py-2.5 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary flex items-center justify-between gap-1.5 flex-wrap">
                   <div className="flex items-center gap-2">
-                    <span className="px-2.5 py-0.5 rounded-lg bg-primary/12 text-primary border border-primary/30 text-xs font-black">
+                    <span className="px-2.5 py-0.5 rounded-lg bg-primary/20 text-blue-300 border border-primary/40 text-xs font-black">
                       {inn}回{isTop ? "表" : "裏"}
                     </span>
-                    <span className="text-[11px] font-bold text-muted-foreground">
+                    <span className="text-[11px] font-bold text-slate-300">
                       得点 {innRuns} / アウト計 {innOuts}
                     </span>
                   </div>
@@ -1616,7 +1616,7 @@ export function Step3PinpointReview({
                         type="button"
                         disabled={isAnyReanalyzing || isSaving}
                         onClick={() => onReanalyzeInning(isTop, inn)}
-                        className="px-2 py-1 rounded-lg bg-primary/12 hover:bg-primary/18 border border-primary/30 text-[10px] font-black text-primary flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                        className="px-2 py-1 rounded-lg bg-primary/20 hover:bg-primary/30 border border-primary/40 text-[10px] font-black text-blue-200 hover:text-white flex items-center gap-1 cursor-pointer disabled:opacity-50 transition-colors"
                       >
                         {isReanalyzingThisInning ? (
                           <>
@@ -1635,7 +1635,7 @@ export function Step3PinpointReview({
                     <button
                       type="button"
                       onClick={() => handleAddAtBatInInning(inn)}
-                      className="px-2 py-1 rounded-lg bg-card hover:bg-muted border border-border/60 text-[10px] font-black text-foreground flex items-center gap-0.5 cursor-pointer"
+                      className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[10px] font-black text-slate-200 hover:text-white flex items-center gap-0.5 cursor-pointer transition-colors"
                     >
                       <Plus className="w-3 h-3" />
                       <span>打席追加</span>
@@ -1649,7 +1649,7 @@ export function Step3PinpointReview({
                       className={`py-3.5 px-3 rounded-2xl border border-dashed text-center space-y-2.5 ${
                         hasInningLevelIssue
                           ? "bg-destructive/5 border-destructive/45"
-                          : "bg-card border-border/60 shadow-xs"
+                          : "bg-card border-border shadow-xs"
                       }`}
                     >
                       <p className="text-[11px] font-bold text-foreground">
@@ -1705,14 +1705,14 @@ export function Step3PinpointReview({
                               ? "bg-destructive/5 border-destructive/45"
                               : hasWarning
                               ? "bg-amber-500/[0.06] border-amber-500/35"
-                              : "bg-muted/35 border-border/60"
+                              : "bg-muted border-border"
                           }`}
                         >
                           {/* メイン領域タップで詳細・1球編集モーダルを開く */}
                           <button
                             type="button"
                             onClick={() => setEditingAtBatId(ab.id)}
-                            className="w-full text-left p-3 space-y-2 hover:bg-muted/40 active:scale-99 transition-all cursor-pointer"
+                            className="w-full text-left p-3 space-y-2 hover:bg-accent active:scale-99 transition-all cursor-pointer"
                           >
                             <div className="flex items-center justify-between gap-2">
                               <div className="flex items-center gap-2 min-w-0">
@@ -1742,7 +1742,7 @@ export function Step3PinpointReview({
                                       className={`px-1.5 py-0.5 rounded-full text-[10px] font-black ${
                                         ab.rbi > 0
                                           ? "bg-primary/12 text-primary border border-primary/30"
-                                          : "bg-muted/50 border border-border/60 text-muted-foreground"
+                                          : "bg-card border border-border text-muted-foreground"
                                       }`}
                                     >
                                       打点{ab.rbi}
@@ -1756,7 +1756,7 @@ export function Step3PinpointReview({
                                   )
                                 )}
                                 {ab.outsInPlay > 0 && (
-                                  <span className="px-2 py-0.5 rounded-full bg-muted border border-border/60 text-foreground text-[10px] font-black">
+                                  <span className="px-2 py-0.5 rounded-full bg-card border border-border text-foreground text-[10px] font-black">
                                     {ab.outsInPlay}死
                                   </span>
                                 )}
@@ -1772,7 +1772,7 @@ export function Step3PinpointReview({
                                   className={`px-2.5 py-0.5 rounded-lg text-xs font-black ${
                                     isHit
                                       ? "bg-rose-500/15 text-rose-600 dark:text-rose-400"
-                                      : "bg-card border border-border/60 text-foreground"
+                                      : "bg-card border border-border text-foreground"
                                   }`}
                                 >
                                   {ab.resultLabel}
@@ -1847,7 +1847,7 @@ export function Step3PinpointReview({
                           </button>
 
                           {/* クイック操作バー: 同回内の順序入替 ＆ ワンタップイニング移動 */}
-                          <div className="px-2.5 py-1.5 bg-card/75 border-t border-border/60 flex items-center justify-between gap-2">
+                          <div className="px-2.5 py-1.5 bg-card border-t border-border flex items-center justify-between gap-2">
                             <div className="flex items-center gap-1">
                               <button
                                 type="button"
@@ -1855,7 +1855,7 @@ export function Step3PinpointReview({
                                 onClick={() =>
                                   handleReorderWithinInning(ab.id, "up")
                                 }
-                                className="h-6 px-1.5 rounded-md bg-muted/50 hover:bg-muted border border-border/60 text-[10px] font-black text-foreground flex items-center gap-0.5 disabled:opacity-35 cursor-pointer disabled:cursor-not-allowed"
+                                className="h-6 px-1.5 rounded-md bg-muted hover:bg-accent border border-border text-[10px] font-black text-foreground flex items-center gap-0.5 disabled:opacity-35 cursor-pointer disabled:cursor-not-allowed"
                                 aria-label="1つ上の打席順へ"
                               >
                                 <ArrowUp className="w-3 h-3" />
@@ -1870,7 +1870,7 @@ export function Step3PinpointReview({
                                 onClick={() =>
                                   handleReorderWithinInning(ab.id, "down")
                                 }
-                                className="h-6 px-1.5 rounded-md bg-muted/50 hover:bg-muted border border-border/60 text-[10px] font-black text-foreground flex items-center gap-0.5 disabled:opacity-35 cursor-pointer disabled:cursor-not-allowed"
+                                className="h-6 px-1.5 rounded-md bg-muted hover:bg-accent border border-border text-[10px] font-black text-foreground flex items-center gap-0.5 disabled:opacity-35 cursor-pointer disabled:cursor-not-allowed"
                                 aria-label="1つ下の打席順へ"
                               >
                                 <ArrowDown className="w-3 h-3" />
@@ -1904,7 +1904,7 @@ export function Step3PinpointReview({
                                   )
                                 }
                                 aria-label="イニング移動先を選択"
-                                className="h-6 px-1.5 rounded-md bg-card border border-border/60 text-[10px] font-black text-foreground cursor-pointer"
+                                className="h-6 px-1.5 rounded-md bg-card border border-border text-[10px] font-black text-foreground cursor-pointer"
                               >
                                 {selectableTargetInnings.map((targetInn) => (
                                   <option key={targetInn} value={targetInn}>
@@ -1959,7 +1959,7 @@ export function Step3PinpointReview({
             type="button"
             disabled={isSaving}
             onClick={onBack}
-            className="h-13 px-4 rounded-2xl bg-card border border-border/60 hover:bg-muted text-xs font-black text-foreground flex items-center gap-1 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+            className="h-13 px-4 rounded-2xl bg-card border border-border hover:bg-muted text-xs font-black text-foreground flex items-center gap-1 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
           >
             <ChevronLeft className="w-4 h-4" />
             <span>骨格確認へ</span>
@@ -1992,15 +1992,15 @@ export function Step3PinpointReview({
       {mounted &&
         editingAtBat &&
         createPortal(
-          <div className="fixed inset-0 z-[9999] flex justify-center items-end sm:items-center bg-black/70 p-0 sm:p-4 animate-in fade-in duration-150">
+          <div className="fixed inset-0 z-[9999] flex justify-center items-end sm:items-center bg-slate-950/60 p-0 sm:p-4 animate-in fade-in duration-150">
             <div
               className="absolute inset-0"
               onClick={() => setEditingAtBatId(null)}
             />
 
-            <div className="relative z-10 w-full max-w-lg max-h-[92dvh] rounded-t-2xl sm:rounded-2xl border border-border/60 bg-card shadow-xs flex flex-col overflow-hidden">
-              {/* モーダルヘッダー（前後打席送り付き） */}
-              <div className="px-4 py-3 border-b border-border/60 bg-card flex items-center justify-between gap-2 shrink-0">
+            <div className="relative z-10 w-full max-w-lg max-h-[92dvh] rounded-t-2xl sm:rounded-2xl border border-border bg-card shadow-xl flex flex-col overflow-hidden">
+              {/* モーダルヘッダー（A-3 Dark Solid Header Cap ＋ 前後打席送り付き） */}
+              <div className="px-4 py-3 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary flex items-center justify-between gap-2 shrink-0">
                 <div className="flex items-center gap-1.5">
                   <button
                     type="button"
@@ -2009,19 +2009,19 @@ export function Step3PinpointReview({
                       editingIndex > 0 &&
                       setEditingAtBatId(currentList[editingIndex - 1].id)
                     }
-                    className="p-1.5 rounded-xl bg-muted/50 hover:bg-muted border border-border/60 disabled:opacity-35 cursor-pointer"
+                    className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 hover:text-white disabled:opacity-35 cursor-pointer transition-colors"
                     aria-label="前の打席"
                   >
                     <ChevronLeft className="w-4 h-4" />
                   </button>
 
                   <div>
-                    <p className="text-xs font-black text-foreground">
+                    <p className="text-xs font-black text-white">
                       {editingAtBat.inning}回{editingAtBat.isTop ? "表" : "裏"} ・{" "}
                       {editingAtBat.battingOrder}番 {editingAtBat.batterName}
                     </p>
                     <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
-                      <span className="text-[10px] font-bold text-muted-foreground">
+                      <span className="text-[10px] font-bold text-slate-300">
                         打席 {editingIndex + 1} / {currentList.length}（投手:{" "}
                         {editingAtBat.pitcherName || "未設定"}）
                       </span>
@@ -2031,7 +2031,7 @@ export function Step3PinpointReview({
                           setPlayerSubInitialTab("batter");
                           setShowPlayerSubPanel(true);
                         }}
-                        className="px-1.5 py-0.2 rounded-md bg-primary/10 hover:bg-primary/15 border border-primary/25 text-primary text-[9px] font-black cursor-pointer"
+                        className="px-1.5 py-0.2 rounded-md bg-primary/20 hover:bg-primary/30 border border-primary/40 text-blue-300 hover:text-white text-[9px] font-black cursor-pointer transition-colors"
                       >
                         打者交代
                       </button>
@@ -2041,7 +2041,7 @@ export function Step3PinpointReview({
                           setPlayerSubInitialTab("pitcher");
                           setShowPlayerSubPanel(true);
                         }}
-                        className="px-1.5 py-0.2 rounded-md bg-primary/10 hover:bg-primary/15 border border-primary/25 text-primary text-[9px] font-black cursor-pointer"
+                        className="px-1.5 py-0.2 rounded-md bg-primary/20 hover:bg-primary/30 border border-primary/40 text-blue-300 hover:text-white text-[9px] font-black cursor-pointer transition-colors"
                       >
                         投手交代
                       </button>
@@ -2055,7 +2055,7 @@ export function Step3PinpointReview({
                       editingIndex < currentList.length - 1 &&
                       setEditingAtBatId(currentList[editingIndex + 1].id)
                     }
-                    className="p-1.5 rounded-xl bg-muted/50 hover:bg-muted border border-border/60 disabled:opacity-35 cursor-pointer"
+                    className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 hover:text-white disabled:opacity-35 cursor-pointer transition-colors"
                     aria-label="次の打席"
                   >
                     <ChevronRight className="w-4 h-4" />
@@ -2065,7 +2065,8 @@ export function Step3PinpointReview({
                 <button
                   type="button"
                   onClick={() => setEditingAtBatId(null)}
-                  className="p-1.5 rounded-full bg-muted/50 hover:bg-muted border border-border/60 text-foreground cursor-pointer"
+                  className="p-1.5 rounded-full bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white cursor-pointer transition-colors"
+                  aria-label="閉じる"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -2075,10 +2076,10 @@ export function Step3PinpointReview({
               <div className="p-4 space-y-4 overflow-y-auto flex-1">
                 {/* 1. 元スコアブック画像 該当マス拡大プレビュー（走者がいる場合は前の走者のマスも同時並列表示） */}
                 {currentSheetImage && (
-                  <div className="rounded-2xl bg-neutral-950 border border-border/60 overflow-hidden">
-                    <div className="px-3 py-1.5 bg-neutral-900 flex items-center justify-between gap-2 text-white">
+                  <div className="rounded-2xl bg-neutral-950 border border-border overflow-hidden">
+                    <div className="px-3 py-1.5 bg-[#0f172a] border-b border-slate-800 flex items-center justify-between gap-2 text-white">
                       <span className="text-[10px] font-black flex items-center gap-1 min-w-0 truncate">
-                        <ZoomIn className="w-3.5 h-3.5 text-primary shrink-0" />
+                        <ZoomIn className="w-3.5 h-3.5 text-blue-400 shrink-0" />
                         <span className="truncate">
                           {showFullSheetInModal
                             ? "シート全体画像"
@@ -2130,7 +2131,7 @@ export function Step3PinpointReview({
                               className={`px-1.5 py-0.5 rounded-md text-[9px] font-black cursor-pointer transition-colors ${
                                 (editingAtBat.columnIndex || 1) === colNo
                                   ? "bg-primary text-primary-foreground"
-                                  : "bg-white/10 text-white/80 hover:bg-white/20"
+                                  : "bg-slate-800 text-slate-200 hover:bg-slate-700 border border-slate-700"
                               }`}
                             >
                               {colNo}列目
@@ -2142,7 +2143,7 @@ export function Step3PinpointReview({
                           onClick={() =>
                             setShowFullSheetInModal((prev) => !prev)
                           }
-                          className="px-2 py-0.5 rounded-md bg-white/15 hover:bg-white/25 text-[10px] font-bold flex items-center gap-1 cursor-pointer"
+                          className="px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 hover:text-white text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
                         >
                           <Maximize2 className="w-3 h-3" />
                           <span>
@@ -2192,7 +2193,7 @@ export function Step3PinpointReview({
                             }`;
                         return (
                           <div className="p-2 space-y-1.5">
-                            <div className="flex items-center justify-between gap-2 px-2 py-1 rounded-lg bg-neutral-900">
+                            <div className="flex items-center justify-between gap-2 px-2 py-1 rounded-lg bg-[#0f172a] border border-slate-800">
                               <span className="text-[10px] font-black text-white">
                                 {activeBadge}（タップで並べて表示へ戻る）
                               </span>
@@ -2202,7 +2203,7 @@ export function Step3PinpointReview({
                                   onClick={() =>
                                     setEditingAtBatId(focusedRunner.atBatId)
                                   }
-                                  className="px-2 py-0.5 rounded-md bg-white/15 hover:bg-white/25 text-white text-[9px] font-black cursor-pointer"
+                                  className="px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 hover:text-white text-[9px] font-black cursor-pointer transition-colors"
                                 >
                                   この走者の打席へ
                                 </button>
@@ -2235,7 +2236,7 @@ export function Step3PinpointReview({
                             return (
                               <div
                                 key={`top-rc-${rc.startBase}`}
-                                className="rounded-xl bg-neutral-900 border border-border/60 overflow-hidden flex flex-col"
+                                className="rounded-xl bg-neutral-900 border border-border overflow-hidden flex flex-col"
                               >
                                 <div className="px-2 py-1 bg-muted text-foreground flex items-center justify-between gap-1">
                                   <span className="text-[10px] font-black truncate">
@@ -2254,7 +2255,7 @@ export function Step3PinpointReview({
                                       onClick={() =>
                                         setEditingAtBatId(rc.atBatId)
                                       }
-                                      className="px-1.5 py-0.5 rounded bg-card hover:bg-muted/80 border border-border/60 text-foreground text-[9px] font-black shrink-0 cursor-pointer"
+                                      className="px-1.5 py-0.5 rounded bg-card hover:bg-accent border border-border text-foreground text-[9px] font-black shrink-0 cursor-pointer"
                                     >
                                       打席へ
                                     </button>
@@ -2308,7 +2309,7 @@ export function Step3PinpointReview({
                             </button>
                           </div>
                         </div>
-                        <p className="text-[10px] font-bold text-white/80 text-center">
+                        <p className="text-[10px] font-bold text-slate-300 text-center">
                           ※走者の進塁・得点●・封殺ⅠⅡⅢは「走者マス」、投球・打球は「今回の打者マス」で確認できます（マスタップで拡大）
                         </p>
                       </div>
@@ -2323,29 +2324,43 @@ export function Step3PinpointReview({
                   ).some((iss) => iss.category === "order");
 
                   return (
-                    <div
-                      className={`rounded-2xl border border-border/60 bg-card shadow-xs transition-colors ${
-                        showOrderAdjustPanel ? "p-3 space-y-2.5" : ""
-                      }`}
-                    >
+                    <div className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden transition-colors">
                       <button
                         type="button"
                         onClick={() =>
                           setShowOrderAdjustPanel((prev) => !prev)
                         }
                         aria-expanded={showOrderAdjustPanel}
-                        className={`w-full flex items-center justify-between gap-2 text-left cursor-pointer ${
+                        className={`w-full flex items-center justify-between gap-2 text-left cursor-pointer transition-colors ${
                           showOrderAdjustPanel
-                            ? ""
-                            : "px-3 py-2.5 rounded-2xl hover:bg-muted/50"
+                            ? "px-3 py-2.5 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary"
+                            : "px-3 py-2.5 rounded-2xl hover:bg-muted"
                         }`}
                       >
                         <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-                          <ArrowRightLeft className="w-3.5 h-3.5 text-primary shrink-0" />
-                          <span className="text-xs font-black text-foreground">
+                          <ArrowRightLeft
+                            className={`w-3.5 h-3.5 shrink-0 ${
+                              showOrderAdjustPanel
+                                ? "text-blue-400"
+                                : "text-primary"
+                            }`}
+                          />
+                          <span
+                            className={`text-xs font-black ${
+                              showOrderAdjustPanel
+                                ? "text-white"
+                                : "text-foreground"
+                            }`}
+                          >
                             イニング・打順・並び順の調整
                           </span>
-                          <span className="px-1.5 py-0.5 rounded-md bg-muted/50 border border-border/60 text-[10px] font-black text-muted-foreground">
+                          <span
+                            className={`px-1.5 py-0.5 rounded-md border text-[10px] font-black ${
+                              showOrderAdjustPanel
+                                ? "bg-slate-800 border-slate-700 text-slate-300"
+                                : "bg-muted border-border text-muted-foreground"
+                            }`}
+                          >
                             {editingAtBat.inning}回
                             {editingAtBat.isTop ? "表" : "裏"}・
                             {editingAtBat.battingOrder}番（回内
@@ -2353,12 +2368,24 @@ export function Step3PinpointReview({
                             {editingInningPeers.length}）
                           </span>
                           {hasOrderIssueOnCurrent && (
-                            <span className="px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 text-[9px] font-black">
+                            <span
+                              className={`px-1.5 py-0.5 rounded-full border text-[9px] font-black ${
+                                showOrderAdjustPanel
+                                  ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
+                                  : "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30"
+                              }`}
+                            >
                               打順要確認
                             </span>
                           )}
                         </div>
-                        <span className="text-[10px] font-black text-primary flex items-center gap-0.5 shrink-0">
+                        <span
+                          className={`text-[10px] font-black flex items-center gap-0.5 shrink-0 ${
+                            showOrderAdjustPanel
+                              ? "text-blue-300"
+                              : "text-primary"
+                          }`}
+                        >
                           <span>{showOrderAdjustPanel ? "閉じる" : "展開"}</span>
                           {showOrderAdjustPanel ? (
                             <ChevronUp className="w-3.5 h-3.5" />
@@ -2369,7 +2396,7 @@ export function Step3PinpointReview({
                       </button>
 
                       {showOrderAdjustPanel && (
-                        <div className="space-y-2.5 pt-2 border-t border-border/60">
+                        <div className="p-3 space-y-2.5">
                           {/* イニング変更（前後ワンタップ＋選択式） */}
                           <div className="grid grid-cols-12 gap-1.5 items-center">
                             <button
@@ -2381,7 +2408,7 @@ export function Step3PinpointReview({
                                   editingAtBat.inning - 1
                                 )
                               }
-                              className="col-span-4 h-9 px-2 rounded-xl bg-card border border-border/60 hover:bg-muted text-xs font-black text-foreground flex items-center justify-center gap-1 disabled:opacity-35 active:scale-95 transition-all cursor-pointer disabled:cursor-not-allowed"
+                              className="col-span-4 h-9 px-2 rounded-xl bg-card border border-border hover:bg-muted text-xs font-black text-foreground flex items-center justify-center gap-1 disabled:opacity-35 active:scale-95 transition-all cursor-pointer disabled:cursor-not-allowed"
                             >
                               <ChevronLeft className="w-3.5 h-3.5 text-primary shrink-0" />
                               <span>
@@ -2416,7 +2443,7 @@ export function Step3PinpointReview({
                                   editingAtBat.inning + 1
                                 )
                               }
-                              className="col-span-4 h-9 px-2 rounded-xl bg-card border border-border/60 hover:bg-muted text-xs font-black text-foreground flex items-center justify-center gap-1 disabled:opacity-35 active:scale-95 transition-all cursor-pointer disabled:cursor-not-allowed"
+                              className="col-span-4 h-9 px-2 rounded-xl bg-card border border-border hover:bg-muted text-xs font-black text-foreground flex items-center justify-center gap-1 disabled:opacity-35 active:scale-95 transition-all cursor-pointer disabled:cursor-not-allowed"
                             >
                               <span>{editingAtBat.inning + 1}回へ移動</span>
                               <ChevronRight className="w-3.5 h-3.5 text-primary shrink-0" />
@@ -2435,7 +2462,7 @@ export function Step3PinpointReview({
                                   )
                                 }
                                 aria-label="打順を変更"
-                                className="w-full h-8 px-2 rounded-xl bg-card border border-border/60 text-[11px] font-black text-foreground cursor-pointer"
+                                className="w-full h-8 px-2 rounded-xl bg-card border border-border text-[11px] font-black text-foreground cursor-pointer"
                               >
                                 {Array.from(
                                   { length: maxBattingOrder },
@@ -2460,7 +2487,7 @@ export function Step3PinpointReview({
                               onClick={() =>
                                 handleReorderWithinInning(editingAtBat.id, "up")
                               }
-                              className="col-span-3 h-8 px-2 rounded-xl bg-card border border-border/60 hover:bg-muted text-[11px] font-black text-foreground flex items-center justify-center gap-1 disabled:opacity-35 cursor-pointer disabled:cursor-not-allowed"
+                              className="col-span-3 h-8 px-2 rounded-xl bg-card border border-border hover:bg-muted text-[11px] font-black text-foreground flex items-center justify-center gap-1 disabled:opacity-35 cursor-pointer disabled:cursor-not-allowed"
                             >
                               <ArrowUp className="w-3 h-3" />
                               <span>順を上へ</span>
@@ -2479,7 +2506,7 @@ export function Step3PinpointReview({
                                   "down"
                                 )
                               }
-                              className="col-span-3 h-8 px-2 rounded-xl bg-card border border-border/60 hover:bg-muted text-[11px] font-black text-foreground flex items-center justify-center gap-1 disabled:opacity-35 cursor-pointer disabled:cursor-not-allowed"
+                              className="col-span-3 h-8 px-2 rounded-xl bg-card border border-border hover:bg-muted text-[11px] font-black text-foreground flex items-center justify-center gap-1 disabled:opacity-35 cursor-pointer disabled:cursor-not-allowed"
                             >
                               <ArrowDown className="w-3 h-3" />
                               <span>順を下へ</span>
@@ -2489,7 +2516,7 @@ export function Step3PinpointReview({
                           {/* 1イニング9人一巡などで先頭打者がズレていた場合のワンタップ打順回転 */}
                           {editingInningPeers.length >= 2 &&
                             editingIndexWithinInning > 0 && (
-                              <div className="pt-1 border-t border-border/60 flex items-center justify-between gap-2 flex-wrap">
+                              <div className="pt-1 border-t border-border flex items-center justify-between gap-2 flex-wrap">
                                 <span className="text-[10px] font-bold text-muted-foreground">
                                   打者一巡などでこの回の先頭位置がズレている場合:
                                 </span>
@@ -2512,7 +2539,7 @@ export function Step3PinpointReview({
                             )}
 
                           {/* 打者一巡などの列ズレ一括シフト */}
-                          <div className="pt-1 border-t border-border/60 flex items-center justify-between gap-1.5 flex-wrap">
+                          <div className="pt-1 border-t border-border flex items-center justify-between gap-1.5 flex-wrap">
                             <span className="text-[10px] font-bold text-muted-foreground">
                               以降の打席も丸ごと列ズレしている場合:
                             </span>
@@ -2539,7 +2566,7 @@ export function Step3PinpointReview({
                                     1
                                   )
                                 }
-                                className="h-7 px-2.5 rounded-lg bg-card border border-border/60 hover:bg-muted text-foreground text-[10px] font-black active:scale-95 transition-all cursor-pointer disabled:opacity-35 disabled:cursor-not-allowed"
+                                className="h-7 px-2.5 rounded-lg bg-card border border-border hover:bg-muted text-foreground text-[10px] font-black active:scale-95 transition-all cursor-pointer disabled:opacity-35 disabled:cursor-not-allowed"
                               >
                                 以降すべて +1回
                               </button>
@@ -2569,7 +2596,7 @@ export function Step3PinpointReview({
                 />
 
                 {/* STEP 1: 1球ごとの投球・牽制・ボーク順序エディタ（実際の試合・スコアラー記入順の先頭！） */}
-                <div className="p-3 rounded-2xl border border-border/60 bg-card shadow-xs space-y-2.5 overflow-hidden">
+                <div className="p-3 rounded-2xl border border-border bg-card shadow-xs space-y-2.5 overflow-hidden">
                   {(() => {
                     const modalPickoffCnt = editingAtBat.pitches.filter((p) =>
                       isPickoffPitch(p)
@@ -2582,9 +2609,9 @@ export function Step3PinpointReview({
                       modalPickoffCnt -
                       modalBalkCnt;
                     return (
-                      <div className="-mx-3 -mt-3 px-3 py-2.5 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 border-l-4 border-l-primary flex items-center justify-between gap-2 flex-wrap">
-                        <span className="text-xs font-black text-foreground flex items-center gap-1.5">
-                          <span className="px-1.5 py-0.5 rounded-md bg-primary/12 text-primary border border-primary/30 text-[10px] font-black">
+                      <div className="-mx-3 -mt-3 px-3 py-2.5 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary flex items-center justify-between gap-2 flex-wrap">
+                        <span className="text-xs font-black text-white flex items-center gap-1.5">
+                          <span className="px-1.5 py-0.5 rounded-md bg-primary/20 text-blue-300 border border-primary/40 text-[10px] font-black">
                             STEP 1
                           </span>
                           <span>
@@ -2595,7 +2622,7 @@ export function Step3PinpointReview({
                             {modalBalkCnt > 0 ? ` / BK${modalBalkCnt}` : ""}）
                           </span>
                         </span>
-                        <span className="px-2 py-0.5 rounded-md bg-card border border-border/60 text-[11px] font-black text-primary">
+                        <span className="px-2 py-0.5 rounded-md bg-slate-800 border border-slate-700 text-[11px] font-black text-blue-300">
                           B:{editingAtBat.balls} - S:{editingAtBat.strikes}
                         </span>
                       </div>
@@ -2605,7 +2632,7 @@ export function Step3PinpointReview({
                   {/* 登録済み球順リスト */}
                   <div className="space-y-1.5">
                     {editingAtBat.pitches.length === 0 ? (
-                      <div className="px-3 py-2 rounded-xl bg-muted/35 border border-dashed border-border/60 text-[11px] font-bold text-muted-foreground text-center">
+                      <div className="px-3 py-2 rounded-xl bg-muted border border-dashed border-border text-[11px] font-bold text-muted-foreground text-center">
                         まだ投球が登録されていません。下のボタンから1球ずつ追加してください。
                       </div>
                     ) : (
@@ -2628,14 +2655,14 @@ export function Step3PinpointReview({
                           return (
                             <div
                               key={`${editingAtBat.id}-edit-p-${pIdx}`}
-                              className="flex items-center justify-between gap-1.5 p-1.5 rounded-xl bg-muted/35 border border-border/60"
+                              className="flex items-center justify-between gap-1.5 p-1.5 rounded-xl bg-muted border border-border"
                             >
                               <div className="flex items-center gap-2 min-w-0">
                                 <span
                                   className={`min-w-5 h-5 px-1 rounded-full text-[10px] font-black flex items-center justify-center shrink-0 ${
                                     isMound
                                       ? "bg-primary/10 text-primary"
-                                      : "bg-card border border-border/60 text-foreground"
+                                      : "bg-card border border-border text-foreground"
                                   }`}
                                 >
                                   {isMound ? moundBadge : editRealSeq}
@@ -2684,7 +2711,7 @@ export function Step3PinpointReview({
                                       return applyPitchSequenceChange(prev, next);
                                     })
                                   }
-                                  className="p-1 rounded-md bg-card border border-border/60 disabled:opacity-30 cursor-pointer"
+                                  className="p-1 rounded-md bg-card border border-border disabled:opacity-30 cursor-pointer"
                                 >
                                   <ArrowLeft className="w-3 h-3" />
                                 </button>
@@ -2703,7 +2730,7 @@ export function Step3PinpointReview({
                                       return applyPitchSequenceChange(prev, next);
                                     })
                                   }
-                                  className="p-1 rounded-md bg-card border border-border/60 disabled:opacity-30 cursor-pointer"
+                                  className="p-1 rounded-md bg-card border border-border disabled:opacity-30 cursor-pointer"
                                 >
                                   <ArrowRight className="w-3 h-3" />
                                 </button>
@@ -2797,7 +2824,7 @@ export function Step3PinpointReview({
                       editingAtBat.resultCode === "strikeout";
 
                     return (
-                      <div className="px-2.5 py-1.5 rounded-xl bg-muted/35 border border-border/60 flex items-center justify-between gap-2 text-[10px] font-black">
+                      <div className="px-2.5 py-1.5 rounded-xl bg-muted border border-border flex items-center justify-between gap-2 text-[10px] font-black">
                         {lastBP === "hit" ? (
                           <span className="text-primary">
                             最終球: 安打球 ➔ 下の STEP 2 で安打種別・打球方向を選択
@@ -2821,10 +2848,10 @@ export function Step3PinpointReview({
                 </div>
 
                 {/* STEP 2: 打撃結果・守備位置ワンタップ選択 */}
-                <div className="p-3 rounded-2xl border border-border/60 bg-card shadow-xs space-y-2.5 overflow-hidden">
-                  <div className="-mx-3 -mt-3 px-3 py-2.5 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 border-l-4 border-l-primary flex items-center justify-between gap-2 flex-wrap">
-                    <label className="text-xs font-black text-foreground flex items-center gap-1.5">
-                      <span className="px-1.5 py-0.5 rounded-md bg-primary/12 text-primary border border-primary/30 text-[10px] font-black">
+                <div className="p-3 rounded-2xl border border-border bg-card shadow-xs space-y-2.5 overflow-hidden">
+                  <div className="-mx-3 -mt-3 px-3 py-2.5 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary flex items-center justify-between gap-2 flex-wrap">
+                    <label className="text-xs font-black text-white flex items-center gap-1.5">
+                      <span className="px-1.5 py-0.5 rounded-md bg-primary/20 text-blue-300 border border-primary/40 text-[10px] font-black">
                         STEP 2
                       </span>
                       <span>打撃結果・守備位置（インプレー内容／確定結果）</span>
@@ -2839,7 +2866,7 @@ export function Step3PinpointReview({
                             confidenceReason: undefined,
                           }))
                         }
-                        className="px-2.5 py-1 rounded-full bg-emerald-500/12 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 text-[10px] font-black flex items-center gap-1 cursor-pointer"
+                        className="px-2.5 py-1 rounded-full bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 hover:text-white border border-emerald-500/40 text-[10px] font-black flex items-center gap-1 cursor-pointer transition-colors"
                       >
                         <Check className="w-3 h-3" />
                         <span>確認済みにする</span>
@@ -3172,7 +3199,7 @@ export function Step3PinpointReview({
                                   className={`py-1.5 px-1 rounded-xl text-[10px] border transition-all cursor-pointer ${
                                     active
                                       ? "bg-primary text-primary-foreground border-primary font-black shadow-2xs"
-                                      : "bg-card border-border/60 text-foreground font-bold hover:bg-muted/60"
+                                      : "bg-card border-border text-foreground font-bold hover:bg-muted"
                                   }`}
                                 >
                                   {preset.shortLabel}
@@ -3414,7 +3441,7 @@ export function Step3PinpointReview({
                     };
 
                     return (
-                      <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 space-y-2">
+                      <div className="p-3 rounded-2xl bg-muted border border-border space-y-2">
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="text-xs font-black text-foreground">
@@ -3484,7 +3511,7 @@ export function Step3PinpointReview({
                                     };
                                   });
                                 }}
-                                className="px-2 py-0.5 rounded-lg bg-card border border-border/60 hover:bg-muted text-[10px] font-black text-muted-foreground hover:text-foreground cursor-pointer"
+                                className="px-2 py-0.5 rounded-lg bg-card border border-border hover:bg-accent text-[10px] font-black text-muted-foreground hover:text-foreground cursor-pointer"
                               >
                                 位置クリア
                               </button>
@@ -3514,7 +3541,7 @@ export function Step3PinpointReview({
                                     className={`py-1.5 px-2 rounded-xl text-[11px] border transition-all cursor-pointer ${
                                       isSelected
                                         ? "bg-primary text-primary-foreground border-primary font-black shadow-2xs"
-                                        : "bg-card border-border/60 text-foreground font-black hover:bg-muted"
+                                        : "bg-card border-border text-foreground font-black hover:bg-accent"
                                     }`}
                                   >
                                     {pos.code} {pos.shortJa}（{pos.fullJa}）
@@ -3538,7 +3565,7 @@ export function Step3PinpointReview({
                                     className={`py-1.5 px-1 rounded-xl text-[11px] border transition-all cursor-pointer ${
                                       isSelected
                                         ? "bg-primary text-primary-foreground border-primary font-black shadow-2xs"
-                                        : "bg-card border-border/60 text-foreground font-black hover:bg-muted"
+                                        : "bg-card border-border text-foreground font-black hover:bg-accent"
                                     }`}
                                   >
                                     {pos.badgeLabel}
@@ -3598,7 +3625,7 @@ export function Step3PinpointReview({
                                             z.id === "gap_lc" ||
                                             z.id === "gap_rc")
                                             ? "bg-primary text-primary-foreground border-primary font-black"
-                                            : "bg-card border-border/60 text-foreground font-bold hover:bg-muted"
+                                            : "bg-card border-border text-foreground font-bold hover:bg-accent"
                                         }`}
                                       >
                                         {z.label}
@@ -3617,7 +3644,7 @@ export function Step3PinpointReview({
                                 fMeta.hitZone !== "over") ||
                                 fMeta.hitZone === "infield") && (
                                 <div className="pt-1">
-                                  <div className="p-2 rounded-xl bg-card border border-border/60 space-y-1">
+                                  <div className="p-2 rounded-xl bg-card border border-border space-y-1">
                                     <span className="text-[10px] font-black text-foreground block">
                                       内野安打の送球先を指定（例:{" "}
                                       {fMeta.primaryPos === "3"
@@ -3685,7 +3712,7 @@ export function Step3PinpointReview({
                                               className={`py-1.5 px-1 rounded-lg text-[10px] border transition-all cursor-pointer ${
                                                 isTgtActive
                                                   ? "bg-primary text-primary-foreground border-primary font-black"
-                                                  : "bg-muted/35 border-border/60 text-foreground font-bold hover:bg-muted"
+                                                  : "bg-muted border-border text-foreground font-bold hover:bg-accent"
                                               }`}
                                             >
                                               {tgt.label}
@@ -3740,7 +3767,7 @@ export function Step3PinpointReview({
                                         className={`py-1 px-1.5 rounded-lg text-[10px] border transition-all cursor-pointer ${
                                           isTgtActive
                                             ? "bg-primary text-primary-foreground border-primary font-black"
-                                            : "bg-card border-border/60 text-foreground font-bold hover:bg-muted"
+                                            : "bg-card border-border text-foreground font-bold hover:bg-accent"
                                         }`}
                                       >
                                         {tgt.label}
@@ -3776,7 +3803,7 @@ export function Step3PinpointReview({
                                         className={`py-1 px-2 rounded-lg text-[10px] border transition-all cursor-pointer ${
                                           isRelayActive
                                             ? "bg-primary text-primary-foreground border-primary font-black"
-                                            : "bg-card border-border/60 text-foreground font-bold hover:bg-muted"
+                                            : "bg-card border-border text-foreground font-bold hover:bg-accent"
                                         }`}
                                       >
                                         {relay}
@@ -3827,7 +3854,7 @@ export function Step3PinpointReview({
                                       className={`py-1 px-1.5 rounded-lg text-[10px] border transition-all cursor-pointer ${
                                         fMeta.flyStyle === st.id
                                           ? "bg-primary text-primary-foreground border-primary font-black"
-                                          : "bg-card border-border/60 text-foreground font-bold hover:bg-muted"
+                                          : "bg-card border-border text-foreground font-bold hover:bg-accent"
                                       }`}
                                     >
                                       {st.label}
@@ -3868,7 +3895,7 @@ export function Step3PinpointReview({
                                       className={`py-1.5 px-2 rounded-lg text-[10px] border transition-all cursor-pointer ${
                                         fMeta.errorStyle === es.id
                                           ? "bg-primary text-primary-foreground border-primary font-black"
-                                          : "bg-card border-border/60 text-foreground font-bold hover:bg-muted"
+                                          : "bg-card border-border text-foreground font-bold hover:bg-accent"
                                       }`}
                                     >
                                       {es.label}
@@ -3877,7 +3904,7 @@ export function Step3PinpointReview({
                                 </div>
 
                                 {fMeta.errorStyle === "throwing" && (
-                                  <div className="p-2 rounded-xl bg-card border border-border/60 space-y-1">
+                                  <div className="p-2 rounded-xl bg-card border border-border space-y-1">
                                     <span className="text-[10px] font-black text-foreground block">
                                       悪送球の送球先を指定（例:{" "}
                                       {fMeta.primaryPos === "3"
@@ -3946,7 +3973,7 @@ export function Step3PinpointReview({
                                               className={`py-1.5 px-1 rounded-lg text-[10px] border transition-all cursor-pointer ${
                                                 isTgtActive
                                                   ? "bg-primary text-primary-foreground border-primary font-black"
-                                                  : "bg-muted/35 border-border/60 text-foreground font-bold hover:bg-muted"
+                                                  : "bg-muted border-border text-foreground font-bold hover:bg-accent"
                                               }`}
                                             >
                                               {tgt.label}
@@ -3962,7 +3989,7 @@ export function Step3PinpointReview({
                             {/* 野選（FC）時の送球先セレクター（FC6-2 / FC5-2 / FC4-6 / FC6 等） */}
                             {isFcCode && fMeta.primaryPos && (
                               <div className="pt-1">
-                                <div className="p-2 rounded-xl bg-card border border-border/60 space-y-1">
+                                <div className="p-2 rounded-xl bg-card border border-border space-y-1">
                                   <span className="text-[10px] font-black text-foreground block">
                                     野選の送球先を指定（例: FC{fMeta.primaryPos}
                                     -2 / FC{fMeta.primaryPos}-
@@ -4026,7 +4053,7 @@ export function Step3PinpointReview({
                                             className={`py-1.5 px-1 rounded-lg text-[10px] border transition-all cursor-pointer ${
                                               isTgtActive
                                                 ? "bg-primary text-primary-foreground border-primary font-black"
-                                                : "bg-muted/35 border-border/60 text-foreground font-bold hover:bg-muted"
+                                                : "bg-muted border-border text-foreground font-bold hover:bg-accent"
                                             }`}
                                           >
                                             {tgt.label}
@@ -4057,7 +4084,7 @@ export function Step3PinpointReview({
                             resultLabel: e.target.value,
                           }))
                         }
-                        className="w-full h-9 px-2 rounded-xl bg-card border border-border/60 text-xs font-black text-foreground"
+                        className="w-full h-9 px-2 rounded-xl bg-card border border-border text-xs font-black text-foreground"
                       />
                     </div>
 
@@ -4075,7 +4102,7 @@ export function Step3PinpointReview({
                           }))
                         }
                         placeholder="6-3 / 8"
-                        className="w-full h-9 px-1.5 rounded-xl bg-card border border-border/60 text-xs font-black text-foreground"
+                        className="w-full h-9 px-1.5 rounded-xl bg-card border border-border text-xs font-black text-foreground"
                       />
                     </div>
 
@@ -4092,7 +4119,7 @@ export function Step3PinpointReview({
                             outsInPlay: Number(e.target.value),
                           }))
                         }
-                        className="w-full h-9 px-1 rounded-xl bg-card border border-border/60 text-xs font-black text-foreground"
+                        className="w-full h-9 px-1 rounded-xl bg-card border border-border text-xs font-black text-foreground"
                       >
                         <option value={0}>0死</option>
                         <option value={1}>1死</option>
@@ -4125,7 +4152,7 @@ export function Step3PinpointReview({
                             };
                           });
                         }}
-                        className="w-full h-9 px-1 rounded-xl bg-card border border-border/60 text-xs font-black text-foreground"
+                        className="w-full h-9 px-1 rounded-xl bg-card border border-border text-xs font-black text-foreground"
                       >
                         {[0, 1, 2, 3, 4].map((r) => (
                           <option key={r} value={r}>
@@ -4167,7 +4194,7 @@ export function Step3PinpointReview({
                             };
                           });
                         }}
-                        className="w-full h-9 px-1 rounded-xl bg-card border border-border/60 text-xs font-black text-foreground"
+                        className="w-full h-9 px-1 rounded-xl bg-card border border-border text-xs font-black text-foreground"
                       >
                         {[0, 1, 2, 3, 4].map((r) => (
                           <option key={r} value={r}>

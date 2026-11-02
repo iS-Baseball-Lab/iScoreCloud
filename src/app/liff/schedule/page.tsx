@@ -188,7 +188,7 @@ const getAttendanceBadgeInfo = (st: string | undefined) => {
         mark: "？",
         label: "未定",
         badgeClass: "bg-muted text-muted-foreground",
-        bgLight: "bg-muted text-muted-foreground border-border/60",
+        bgLight: "bg-muted text-muted-foreground border-border",
       };
   }
 };
@@ -827,14 +827,14 @@ export default function LiffSchedulePage() {
         />
 
         {/* 🔀 タブ切り替え（予定一覧 / スケジューラー） */}
-        <div className="flex bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl border border-border/60 gap-1">
+        <div className="flex bg-muted p-1 rounded-2xl border border-border gap-1">
           <button
             type="button"
             onClick={() => handleTabChange("list")}
             className={cn(
               "flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl text-xs transition-all cursor-pointer",
               activeTab === "list"
-                ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                ? "bg-card text-foreground shadow-sm border border-border font-black"
                 : "text-muted-foreground hover:text-foreground font-bold border border-transparent active:scale-95"
             )}
           >
@@ -847,7 +847,7 @@ export default function LiffSchedulePage() {
             className={cn(
               "flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl text-xs transition-all cursor-pointer",
               activeTab === "planner"
-                ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                ? "bg-card text-foreground shadow-sm border border-border font-black"
                 : "text-muted-foreground hover:text-foreground font-bold border border-transparent active:scale-95"
             )}
           >
@@ -1001,19 +1001,19 @@ export default function LiffSchedulePage() {
 
         {/* フィルター切り替え ＆ 過去日トグル ＆ 昇順/降順ソート */}
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex-1 flex items-center gap-1 p-1 bg-muted/80 dark:bg-muted/50 rounded-2xl border border-border/60">
+          <div className="flex-1 flex items-center gap-1 p-1 bg-muted rounded-2xl border border-border">
             <button
               type="button"
               onClick={() => setFilter("all")}
               className={`flex-1 flex items-center justify-center gap-1 py-1.5 px-1 rounded-xl text-xs transition-all cursor-pointer ${
                 filter === "all"
-                  ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                  ? "bg-card text-foreground shadow-sm border border-border font-black"
                   : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
               }`}
             >
               <span>すべて</span>
               <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black leading-none ${
-                filter === "all" ? "bg-primary/12 text-primary" : "bg-background/70 text-muted-foreground"
+                filter === "all" ? "bg-primary/12 text-primary" : "bg-card text-muted-foreground"
               }`}>
                 {eventsInCurrentMonth.length}
               </span>
@@ -1023,7 +1023,7 @@ export default function LiffSchedulePage() {
               onClick={() => setFilter("match")}
               className={`flex-1 py-1.5 rounded-xl text-xs transition-all cursor-pointer ${
                 filter === "match"
-                  ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                  ? "bg-card text-foreground shadow-sm border border-border font-black"
                   : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
               }`}
             >
@@ -1034,7 +1034,7 @@ export default function LiffSchedulePage() {
               onClick={() => setFilter("practice")}
               className={`flex-1 py-1.5 rounded-xl text-xs transition-all cursor-pointer ${
                 filter === "practice"
-                  ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                  ? "bg-card text-foreground shadow-sm border border-border font-black"
                   : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
               }`}
             >
@@ -1050,7 +1050,7 @@ export default function LiffSchedulePage() {
               className={`flex items-center gap-1 px-2.5 py-2 rounded-2xl text-xs transition-all active:scale-95 cursor-pointer ${
                 showPastDates
                   ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
-                  : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
+                  : "bg-card text-muted-foreground border border-border hover:text-foreground hover:bg-muted font-bold"
               }`}
               title={showPastDates ? "過去日を表示中（クリックで非表示）" : "過去日を非表示中（クリックで表示）"}
             >
@@ -1071,7 +1071,7 @@ export default function LiffSchedulePage() {
             <button
               type="button"
               onClick={() => setSortOrder(prev => prev === "asc" ? "desc" : "asc")}
-              className="py-2 px-2.5 rounded-2xl bg-card hover:bg-muted/50 text-foreground text-xs font-black border border-border/60 shadow-2xs transition-all active:scale-95 flex items-center gap-1 shrink-0 cursor-pointer"
+              className="py-2 px-2.5 rounded-2xl bg-card hover:bg-muted text-foreground text-xs font-black border border-border shadow-2xs transition-all active:scale-95 flex items-center gap-1 shrink-0 cursor-pointer"
               title={sortOrder === "asc" ? "現在：昇順（直近から）" : "現在：降順（未来から）"}
             >
               <span>{sortOrder === "asc" ? "↑ 昇順" : "↓ 降順"}</span>
@@ -1085,7 +1085,7 @@ export default function LiffSchedulePage() {
             {[1, 2, 3].map((i) => (
               <div
                 key={i}
-                className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3"
+                className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden p-4 space-y-3"
               >
                 <div className="flex justify-between items-center">
                   <div className="h-5 w-24 bg-muted rounded-full" />
@@ -1095,14 +1095,14 @@ export default function LiffSchedulePage() {
                   <div className="h-6 w-40 bg-muted rounded-lg" />
                   <div className="h-4 w-56 bg-muted rounded" />
                 </div>
-                <div className="h-20 bg-muted/50 rounded-2xl" />
-                <div className="h-24 bg-muted/50 rounded-2xl" />
+                <div className="h-20 bg-muted rounded-2xl" />
+                <div className="h-24 bg-muted rounded-2xl" />
               </div>
             ))}
           </div>
         ) : filteredEvents.length === 0 ? (
           /* 空ステート */
-          <div className="flex flex-col items-center justify-center py-12 text-center rounded-2xl border border-border/60 bg-card shadow-xs p-6 space-y-3">
+          <div className="flex flex-col items-center justify-center py-12 text-center rounded-2xl border border-border bg-card shadow-xs overflow-hidden p-6 space-y-3">
             <div className="w-12 h-12 rounded-2xl bg-teal-500/12 flex items-center justify-center text-teal-600 dark:text-teal-400">
               <CalendarIcon className="w-6 h-6" />
             </div>
@@ -1295,14 +1295,14 @@ export default function LiffSchedulePage() {
                                 className={`px-3 py-1.5 rounded-xl text-xs shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
                                   isSel
                                     ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
-                                    : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
+                                    : "bg-card text-muted-foreground border border-border hover:text-foreground hover:bg-muted font-bold"
                                 }`}
                               >
                                 <span>{grp.amType === "match" || grp.eventType === "match" ? "⚾" : "🏃"}</span>
                                 <span>{grp.name}</span>
                                 {grp.targetGroup && grp.targetGroup !== "全体" && (
                                   <span className={`px-1.5 py-0.2 rounded-md text-[9.5px] font-bold ${
-                                    isSel ? "bg-primary/15 text-primary" : "bg-muted/60 text-muted-foreground"
+                                    isSel ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"
                                   }`}>
                                     {grp.targetGroup}
                                   </span>
@@ -1318,7 +1318,7 @@ export default function LiffSchedulePage() {
                             <div className="grid grid-cols-2 gap-2">
                               {/* ☀️ 午前 */}
                               {currentGroup.hasAm !== false && currentGroup.amType !== "off" ? (
-                                <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 flex flex-col justify-between space-y-2">
+                                <div className="p-3 rounded-2xl bg-muted/35 border border-border flex flex-col justify-between space-y-2">
                                   <div className="flex items-center justify-between gap-1">
                                     <span className="px-2 py-0.5 rounded-md bg-sky-500/12 text-sky-700 dark:text-sky-300 border border-sky-500/25 text-[10.5px] font-black flex items-center gap-1 shrink-0">
                                       <span>☀️ 午前</span>
@@ -1331,7 +1331,7 @@ export default function LiffSchedulePage() {
                                       {currentGroup.amType === "match" ? "⚾ 試合" : "🏃 練習"}
                                     </span>
                                   </div>
-                                  <div className="p-2 rounded-xl bg-card border border-border/60 space-y-1">
+                                  <div className="p-2 rounded-xl bg-card border border-border space-y-1">
                                     <div className="flex items-center gap-1.5 text-xs font-black text-foreground">
                                       <Clock className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400 shrink-0" />
                                       <span className="truncate">{currentGroup.amTime || currentGroup.time || "08:00〜12:00"}</span>
@@ -1343,16 +1343,16 @@ export default function LiffSchedulePage() {
                                   </div>
                                 </div>
                               ) : (
-                                <div className="p-3 rounded-2xl bg-muted/20 border border-dashed border-border/60 flex flex-col justify-between space-y-2 opacity-75">
+                                <div className="p-3 rounded-2xl bg-muted/20 border border-dashed border-border flex flex-col justify-between space-y-2 opacity-75">
                                   <div className="flex items-center justify-between gap-1">
-                                    <span className="px-2 py-0.5 rounded-md bg-muted/50 text-muted-foreground border border-border/60 text-[10.5px] font-bold flex items-center gap-1 shrink-0">
+                                    <span className="px-2 py-0.5 rounded-md bg-muted text-muted-foreground border border-border text-[10.5px] font-bold flex items-center gap-1 shrink-0">
                                       <span>☀️ 午前</span>
                                     </span>
-                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-muted/50 text-muted-foreground border border-border/60">
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-muted text-muted-foreground border border-border">
                                       🏖️ なし
                                     </span>
                                   </div>
-                                  <div className="p-2 rounded-xl bg-card/60 border border-border/60 space-y-1">
+                                  <div className="p-2 rounded-xl bg-card border border-border space-y-1">
                                     <div className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground">
                                       <Clock className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
                                       <span>なし (午後集合)</span>
@@ -1367,7 +1367,7 @@ export default function LiffSchedulePage() {
 
                               {/* 🌙 午後 */}
                               {currentGroup.hasPm && currentGroup.pmType !== "off" ? (
-                                <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 flex flex-col justify-between space-y-2">
+                                <div className="p-3 rounded-2xl bg-muted/35 border border-border flex flex-col justify-between space-y-2">
                                   <div className="flex items-center justify-between gap-1">
                                     <span className="px-2 py-0.5 rounded-md bg-indigo-500/12 text-indigo-700 dark:text-indigo-300 border border-indigo-500/25 text-[10.5px] font-black flex items-center gap-1 shrink-0">
                                       <span>🌙 午後</span>
@@ -1380,7 +1380,7 @@ export default function LiffSchedulePage() {
                                       {currentGroup.pmType === "match" ? "⚾ 試合" : "🏃 練習"}
                                     </span>
                                   </div>
-                                  <div className="p-2 rounded-xl bg-card border border-border/60 space-y-1">
+                                  <div className="p-2 rounded-xl bg-card border border-border space-y-1">
                                     <div className="flex items-center gap-1.5 text-xs font-black text-foreground">
                                       <Clock className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
                                       <span className="truncate">{currentGroup.pmTime ? currentGroup.pmTime : "解散・なし"}</span>
@@ -1392,16 +1392,16 @@ export default function LiffSchedulePage() {
                                   </div>
                                 </div>
                               ) : (
-                                <div className="p-3 rounded-2xl bg-muted/20 border border-dashed border-border/60 flex flex-col justify-between space-y-2 opacity-75">
+                                <div className="p-3 rounded-2xl bg-muted/20 border border-dashed border-border flex flex-col justify-between space-y-2 opacity-75">
                                   <div className="flex items-center justify-between gap-1">
-                                    <span className="px-2 py-0.5 rounded-md bg-muted/50 text-muted-foreground border border-border/60 text-[10.5px] font-bold flex items-center gap-1 shrink-0">
+                                    <span className="px-2 py-0.5 rounded-md bg-muted text-muted-foreground border border-border text-[10.5px] font-bold flex items-center gap-1 shrink-0">
                                       <span>🌙 午後</span>
                                     </span>
-                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-muted/50 text-muted-foreground border border-border/60">
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-muted text-muted-foreground border border-border">
                                       🏖️ なし
                                     </span>
                                   </div>
-                                  <div className="p-2 rounded-xl bg-card/60 border border-border/60 space-y-1">
+                                  <div className="p-2 rounded-xl bg-card border border-border space-y-1">
                                     <div className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground">
                                       <Clock className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
                                       <span>解散・なし</span>
@@ -1416,7 +1416,7 @@ export default function LiffSchedulePage() {
                             </div>
                           ) : (
                             /* 単一活動表示 */
-                            <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 space-y-2">
+                            <div className="p-3 rounded-2xl bg-muted/35 border border-border space-y-2">
                               <div className="flex items-center justify-between gap-1.5">
                                 <div className="flex items-center gap-1.5">
                                   <span className="px-2 py-0.5 rounded-md bg-sky-500/12 text-sky-700 dark:text-sky-300 border border-sky-500/25 text-[10px] font-black">
@@ -1437,11 +1437,11 @@ export default function LiffSchedulePage() {
                                 )}
                               </div>
                               <div className="grid grid-cols-2 gap-2 text-xs font-bold">
-                                <div className="flex items-center gap-1.5 text-foreground bg-card p-2 rounded-xl border border-border/60">
+                                <div className="flex items-center gap-1.5 text-foreground bg-card p-2 rounded-xl border border-border">
                                   <Clock className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400 shrink-0" />
                                   <span className="truncate font-black">{currentGroup.time || currentGroup.amTime || "時間調整中"}</span>
                                 </div>
-                                <div className="flex items-center gap-1.5 text-foreground bg-card p-2 rounded-xl border border-border/60">
+                                <div className="flex items-center gap-1.5 text-foreground bg-card p-2 rounded-xl border border-border">
                                   <MapPin className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 shrink-0" />
                                   <span className="truncate font-black">{currentGroup.location || currentGroup.amLocation || "グラウンド"}</span>
                                 </div>
@@ -1456,7 +1456,7 @@ export default function LiffSchedulePage() {
                         <div className="grid grid-cols-2 gap-2">
                           {/* ☀️ 【午前】 */}
                           {ev.hasAm !== false && ev.amType !== "off" ? (
-                            <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 flex flex-col justify-between space-y-2">
+                            <div className="p-3 rounded-2xl bg-muted/35 border border-border flex flex-col justify-between space-y-2">
                               <div className="flex items-center justify-between gap-1">
                                 <span className="px-2 py-0.5 rounded-md bg-sky-500/12 text-sky-700 dark:text-sky-300 border border-sky-500/25 text-[10.5px] font-black flex items-center gap-1 shrink-0">
                                   <span>☀️ 午前</span>
@@ -1469,7 +1469,7 @@ export default function LiffSchedulePage() {
                                   {ev.amType === "match" ? "⚾ 試合" : "🏃 練習"}
                                 </span>
                               </div>
-                              <div className="p-2 rounded-xl bg-card border border-border/60 space-y-1">
+                              <div className="p-2 rounded-xl bg-card border border-border space-y-1">
                                 <div className="flex items-center gap-1.5 text-xs font-black text-foreground">
                                   <Clock className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400 shrink-0" />
                                   <span className="truncate">{ev.amTime || ev.time || "08:00〜12:00"}</span>
@@ -1481,16 +1481,16 @@ export default function LiffSchedulePage() {
                               </div>
                             </div>
                           ) : (
-                            <div className="p-3 rounded-2xl bg-muted/20 border border-dashed border-border/60 flex flex-col justify-between space-y-2 opacity-75">
+                            <div className="p-3 rounded-2xl bg-muted/20 border border-dashed border-border flex flex-col justify-between space-y-2 opacity-75">
                               <div className="flex items-center justify-between gap-1">
-                                <span className="px-2 py-0.5 rounded-md bg-muted/50 text-muted-foreground border border-border/60 text-[10.5px] font-bold flex items-center gap-1 shrink-0">
+                                <span className="px-2 py-0.5 rounded-md bg-muted text-muted-foreground border border-border text-[10.5px] font-bold flex items-center gap-1 shrink-0">
                                   <span>☀️ 午前</span>
                                 </span>
-                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-muted/50 text-muted-foreground border border-border/60">
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-muted text-muted-foreground border border-border">
                                   🏖️ なし
                                 </span>
                               </div>
-                              <div className="p-2 rounded-xl bg-card/60 border border-border/60 space-y-1">
+                              <div className="p-2 rounded-xl bg-card border border-border space-y-1">
                                 <div className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground">
                                   <Clock className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
                                   <span>なし (午後集合)</span>
@@ -1505,7 +1505,7 @@ export default function LiffSchedulePage() {
 
                           {/* 🌙 【午後】 */}
                           {ev.hasPm && ev.pmType !== "off" ? (
-                            <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 flex flex-col justify-between space-y-2">
+                            <div className="p-3 rounded-2xl bg-muted/35 border border-border flex flex-col justify-between space-y-2">
                               <div className="flex items-center justify-between gap-1">
                                 <span className="px-2 py-0.5 rounded-md bg-indigo-500/12 text-indigo-700 dark:text-indigo-300 border border-indigo-500/25 text-[10.5px] font-black flex items-center gap-1 shrink-0">
                                   <span>🌙 午後</span>
@@ -1518,7 +1518,7 @@ export default function LiffSchedulePage() {
                                   {ev.pmType === "match" ? "⚾ 試合" : "🏃 練習"}
                                 </span>
                               </div>
-                              <div className="p-2 rounded-xl bg-card border border-border/60 space-y-1">
+                              <div className="p-2 rounded-xl bg-card border border-border space-y-1">
                                 <div className="flex items-center gap-1.5 text-xs font-black text-foreground">
                                   <Clock className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
                                   <span className="truncate">{ev.pmTime ? ev.pmTime : "解散・なし"}</span>
@@ -1530,16 +1530,16 @@ export default function LiffSchedulePage() {
                               </div>
                             </div>
                           ) : (
-                            <div className="p-3 rounded-2xl bg-muted/20 border border-dashed border-border/60 flex flex-col justify-between space-y-2 opacity-75">
+                            <div className="p-3 rounded-2xl bg-muted/20 border border-dashed border-border flex flex-col justify-between space-y-2 opacity-75">
                               <div className="flex items-center justify-between gap-1">
-                                <span className="px-2 py-0.5 rounded-md bg-muted/50 text-muted-foreground border border-border/60 text-[10.5px] font-bold flex items-center gap-1 shrink-0">
+                                <span className="px-2 py-0.5 rounded-md bg-muted text-muted-foreground border border-border text-[10.5px] font-bold flex items-center gap-1 shrink-0">
                                   <span>🌙 午後</span>
                                 </span>
-                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-muted/50 text-muted-foreground border border-border/60">
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-muted text-muted-foreground border border-border">
                                   🏖️ なし
                                 </span>
                               </div>
-                              <div className="p-2 rounded-xl bg-card/60 border border-border/60 space-y-1">
+                              <div className="p-2 rounded-xl bg-card border border-border space-y-1">
                                 <div className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground">
                                   <Clock className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
                                   <span>解散・なし</span>
@@ -1554,7 +1554,7 @@ export default function LiffSchedulePage() {
                         </div>
                       ) : (
                         /* 単一活動表示 */
-                        <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 space-y-2">
+                        <div className="p-3 rounded-2xl bg-muted/35 border border-border space-y-2">
                           <div className="flex items-center justify-between gap-1.5">
                             <div className="flex items-center gap-1.5">
                               <span className="px-2 py-0.5 rounded-md bg-sky-500/12 text-sky-700 dark:text-sky-300 border border-sky-500/25 text-[10px] font-black">
@@ -1575,11 +1575,11 @@ export default function LiffSchedulePage() {
                             )}
                           </div>
                           <div className="grid grid-cols-2 gap-2 text-xs font-bold">
-                            <div className="flex items-center gap-1.5 text-foreground bg-card p-2 rounded-xl border border-border/60">
+                            <div className="flex items-center gap-1.5 text-foreground bg-card p-2 rounded-xl border border-border">
                               <Clock className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400 shrink-0" />
                               <span className="truncate font-black">{ev.time || "時間調整中"}</span>
                             </div>
-                            <div className="flex items-center gap-1.5 text-foreground bg-card p-2 rounded-xl border border-border/60">
+                            <div className="flex items-center gap-1.5 text-foreground bg-card p-2 rounded-xl border border-border">
                               <MapPin className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 shrink-0" />
                               <span className="truncate font-black">{ev.location || "グラウンド"}</span>
                             </div>
@@ -1589,11 +1589,11 @@ export default function LiffSchedulePage() {
                     )}
 
                     {/* ④ 📋 その他の詳細情報ブロック（上から：お弁当・補食、連絡事項、配車、当番） */}
-                    <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 space-y-2.5 text-xs">
+                    <div className="p-3 rounded-2xl bg-muted/35 border border-border space-y-2.5 text-xs">
                       {/* 1. お弁当 & 補食 */}
                       <div className="grid grid-cols-2 gap-2 font-bold">
                         {/* お弁当 */}
-                        <div className="flex items-center justify-between p-2 rounded-xl bg-card border border-border/60">
+                        <div className="flex items-center justify-between p-2 rounded-xl bg-card border border-border">
                           <span className="text-muted-foreground flex items-center gap-1.5 text-[11px]">
                             <Utensils className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
                             <span>お弁当</span>
@@ -1608,7 +1608,7 @@ export default function LiffSchedulePage() {
                         </div>
 
                         {/* 補食 */}
-                        <div className="flex items-center justify-between p-2 rounded-xl bg-card border border-border/60">
+                        <div className="flex items-center justify-between p-2 rounded-xl bg-card border border-border">
                           <span className="text-muted-foreground flex items-center gap-1.5 text-[11px]">
                             <span className="text-xs leading-none">🍌</span>
                             <span>補食</span>
@@ -1630,7 +1630,7 @@ export default function LiffSchedulePage() {
 
                         if (!hasMemo) {
                           return (
-                            <div className="pt-2 border-t border-border/60 flex items-center justify-between text-[11px]">
+                            <div className="pt-2 border-t border-border flex items-center justify-between text-[11px]">
                               <span className="text-muted-foreground flex items-center gap-1.5">
                                 <FileText className="w-3.5 h-3.5 text-muted-foreground/60" />
                                 <span>連絡事項</span>
@@ -1641,12 +1641,12 @@ export default function LiffSchedulePage() {
                         }
 
                         return (
-                          <div className="pt-2 border-t border-border/60 space-y-1.5">
+                          <div className="pt-2 border-t border-border space-y-1.5">
                             {/* アコーディオンヘッダー・開閉トグルボタン */}
                             <button
                               type="button"
                               onClick={() => toggleMemo(ev.id)}
-                              className="w-full flex items-center justify-between p-2 rounded-xl bg-card border border-border/60 border-l-4 border-l-amber-500 hover:bg-muted/50 active:scale-[0.99] transition-all cursor-pointer select-none shadow-2xs"
+                              className="w-full flex items-center justify-between p-2 rounded-xl bg-card border border-border border-l-4 border-l-amber-500 hover:bg-muted active:scale-[0.99] transition-all cursor-pointer select-none shadow-2xs"
                             >
                               <div className="flex items-center gap-2 min-w-0">
                                 <FileText className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
@@ -1668,7 +1668,7 @@ export default function LiffSchedulePage() {
 
                             {/* アコーディオン本文 */}
                             {isExpanded && (
-                              <div className="animate-in fade-in slide-in-from-top-1 duration-150 p-2.5 rounded-xl bg-card border border-border/60 border-l-4 border-l-amber-500 text-foreground leading-relaxed text-[11px] font-bold whitespace-pre-wrap shadow-2xs">
+                              <div className="animate-in fade-in slide-in-from-top-1 duration-150 p-2.5 rounded-xl bg-card border border-border border-l-4 border-l-amber-500 text-foreground leading-relaxed text-[11px] font-bold whitespace-pre-wrap shadow-2xs">
                                 {ev.memo}
                               </div>
                             )}
@@ -1677,7 +1677,7 @@ export default function LiffSchedulePage() {
                       })()}
 
                       {/* 3. 配車 */}
-                      <div className="pt-2 border-t border-border/60 flex items-center justify-between font-bold">
+                      <div className="pt-2 border-t border-border flex items-center justify-between font-bold">
                         <div className="flex items-center gap-2 min-w-0">
                           <Car className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 shrink-0" />
                           <span className="text-muted-foreground text-[11px] shrink-0">配車:</span>
@@ -1840,25 +1840,25 @@ export default function LiffSchedulePage() {
         };
 
         return (
-          <div className="fixed inset-0 z-[9999] bg-black/75 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-150">
+          <div className="fixed inset-0 z-[9999] bg-slate-950/60 flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-150">
             <div
-              className="w-full max-w-2xl rounded-t-2xl sm:rounded-2xl border border-border/60 bg-card shadow-xs overflow-hidden max-h-[90vh] flex flex-col animate-in slide-in-from-bottom-4 duration-200"
+              className="w-full max-w-2xl rounded-t-2xl sm:rounded-2xl border border-border bg-card shadow-xl overflow-hidden max-h-[90vh] flex flex-col animate-in slide-in-from-bottom-4 duration-200"
               onClick={(e) => e.stopPropagation()}
             >
-              {/* モーダルヘッダー */}
-              <div className="px-5 py-3.5 border-b border-border/50 flex items-center justify-between bg-primary/[0.04] dark:bg-primary/[0.07] shrink-0">
-                <div className="flex items-center gap-2">
-                  <span className="px-2.5 py-1 rounded-xl bg-primary/12 text-primary border border-primary/25 text-xs font-black shrink-0">
+              {/* モーダルヘッダー: A-3 上帯ダークキャップ */}
+              <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-teal-500 px-4 py-3 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2.5">
+                  <span className="px-2.5 py-1 rounded-xl bg-teal-500/20 text-teal-300 border border-teal-400/30 text-xs font-black shrink-0 tabular-nums">
                     {editingEvent.date}
                   </span>
-                  <h3 className="text-sm font-black text-foreground">
+                  <h3 className="text-sm font-black text-white">
                     予定の詳細編集
                   </h3>
                 </div>
                 <button
                   type="button"
                   onClick={() => setEditingEvent(null)}
-                  className="p-1.5 rounded-xl hover:bg-muted text-muted-foreground hover:text-foreground active:scale-95 transition-all cursor-pointer"
+                  className="p-1.5 rounded-xl hover:bg-slate-800 text-slate-300 hover:text-white active:scale-95 transition-all cursor-pointer"
                 >
                   <span className="text-base font-black leading-none">✕</span>
                 </button>
@@ -1867,7 +1867,7 @@ export default function LiffSchedulePage() {
               {/* モーダル本文 */}
               <div className="p-4 sm:p-6 overflow-y-auto space-y-4 text-xs">
                 {/* 1. 予定タイトル（デフォルト: 通常練習 ＆ クイック選択） */}
-                <div className="space-y-2.5 p-3.5 rounded-2xl bg-muted/35 border border-border/60">
+                <div className="space-y-2.5 p-3.5 rounded-2xl bg-muted/35 border border-border">
                   <div className="space-y-1">
                     <div className="flex items-center justify-between">
                       <label className="text-[11px] font-black text-foreground">予定タイトル</label>
@@ -1878,7 +1878,7 @@ export default function LiffSchedulePage() {
                       value={editingEvent.title}
                       onChange={(e) => setEditingEvent({ ...editingEvent, title: e.target.value })}
                       placeholder="通常練習"
-                      className="w-full px-3 py-2 rounded-xl bg-card border border-border/60 text-xs font-black text-foreground focus:outline-hidden focus:border-primary"
+                      className="w-full px-3 py-2 rounded-xl bg-card border border-border text-xs font-black text-foreground focus:outline-hidden focus:border-primary"
                     />
                   </div>
 
@@ -1893,7 +1893,7 @@ export default function LiffSchedulePage() {
                         className={`px-2 py-0.5 rounded-lg text-[10.5px] transition-all active:scale-95 cursor-pointer ${
                           (editingEvent.title || "通常練習") === preset
                             ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
-                            : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
+                            : "bg-card text-muted-foreground border border-border hover:text-foreground hover:bg-muted font-bold"
                         }`}
                       >
                         {preset}
@@ -1903,7 +1903,7 @@ export default function LiffSchedulePage() {
                 </div>
 
                 {/* 🌟 2. グループ分けタブ ＆ グループ追加 ＆ 活動グループ内での対象チーム選択 */}
-                <div className="space-y-3 p-3.5 rounded-2xl bg-muted/35 border border-border/60">
+                <div className="space-y-3 p-3.5 rounded-2xl bg-muted/35 border border-border">
                   <div className="flex items-center justify-between">
                     <div>
                       <label className="text-[11px] font-black text-foreground flex items-center gap-1">
@@ -1938,7 +1938,7 @@ export default function LiffSchedulePage() {
                             });
                             setActiveEditGroupId("main");
                           }}
-                          className="py-1 px-2.5 rounded-xl bg-card hover:bg-rose-500/10 text-muted-foreground hover:text-rose-600 dark:hover:text-rose-400 text-[10.5px] font-bold border border-border/60 active:scale-95 transition-all flex items-center gap-1 cursor-pointer"
+                          className="py-1 px-2.5 rounded-xl bg-card hover:bg-rose-500/10 text-muted-foreground hover:text-rose-600 dark:hover:text-rose-400 text-[10.5px] font-bold border border-border active:scale-95 transition-all flex items-center gap-1 cursor-pointer"
                           title="グループ分けを解除して単一活動に戻す"
                         >
                           <RotateCcw className="w-3 h-3" />
@@ -2040,7 +2040,7 @@ export default function LiffSchedulePage() {
                             className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs shrink-0 transition-all ${
                               isSel
                                 ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
-                                : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
+                                : "bg-card text-muted-foreground border border-border hover:text-foreground hover:bg-muted font-bold"
                             }`}
                           >
                             <button
@@ -2052,7 +2052,7 @@ export default function LiffSchedulePage() {
                               <span>{grp.name}</span>
                               {grp.targetGroup && grp.targetGroup !== "全体" && (
                                 <span className={`px-1.5 py-0.2 rounded-md text-[9.5px] font-bold ${
-                                  isSel ? "bg-primary/15 text-primary" : "bg-muted/60 text-muted-foreground"
+                                  isSel ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"
                                 }`}>
                                   {grp.targetGroup}
                                 </span>
@@ -2106,7 +2106,7 @@ export default function LiffSchedulePage() {
                   </div>
 
                   {/* 🎯 対象チーム・グループ選択（活動グループの内側で選択！） */}
-                  <div className="pt-2 border-t border-border/60 space-y-2">
+                  <div className="pt-2 border-t border-border space-y-2">
                     {hasGroups && currentEditGroup && (
                       <div className="flex items-center gap-2">
                         <span className="text-[10.5px] font-bold text-muted-foreground shrink-0">グループ表示名:</span>
@@ -2118,7 +2118,7 @@ export default function LiffSchedulePage() {
                             setEditingEvent({ ...editingEvent, activityGroups: updated });
                           }}
                           placeholder="グループ名（例: Aチーム（試合組）/ Bチーム（練習組））"
-                          className="font-black text-xs text-foreground bg-card border border-border/60 px-3 py-1.5 rounded-xl w-full focus:outline-hidden focus:border-primary"
+                          className="font-black text-xs text-foreground bg-card border border-border px-3 py-1.5 rounded-xl w-full focus:outline-hidden focus:border-primary"
                         />
                       </div>
                     )}
@@ -2150,7 +2150,7 @@ export default function LiffSchedulePage() {
                               className={`px-2.5 py-1 rounded-xl text-xs transition-all active:scale-95 cursor-pointer ${
                                 isSel
                                   ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
-                                  : "bg-card hover:bg-muted/50 text-muted-foreground hover:text-foreground border border-border/60 font-bold"
+                                  : "bg-card hover:bg-muted text-muted-foreground hover:text-foreground border border-border font-bold"
                               }`}
                             >
                               {tg}
@@ -2163,15 +2163,15 @@ export default function LiffSchedulePage() {
                 </div>
 
                 {/* 🌟 3. 午前・午後の設定エリア（タイトルを別行にし、活動種別・時間帯・場所をすっきり配置） */}
-                <div className="space-y-3.5 p-4 rounded-2xl bg-card border border-border/60 shadow-xs">
+                <div className="space-y-3.5 p-4 rounded-2xl bg-card border border-border shadow-xs">
                   {/* ☀️ 午前ブロック */}
                   <div className={`p-3.5 rounded-2xl border space-y-2.5 transition-all ${
                     curHasAm
-                      ? "bg-muted/35 border-border/60"
-                      : "bg-muted/20 border-border/60 opacity-80"
+                      ? "bg-muted/35 border-border"
+                      : "bg-muted/20 border-border opacity-80"
                   }`}>
                     {/* 1行目: 午前の活動タイトル & ON/OFF 切替スイッチ */}
-                    <div className="flex items-center justify-between pb-2 border-b border-border/60">
+                    <div className="flex items-center justify-between pb-2 border-b border-border">
                       <span className="text-xs font-black text-foreground flex items-center gap-1.5">
                         <Sun className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
                         <span>午前の活動</span>
@@ -2192,7 +2192,7 @@ export default function LiffSchedulePage() {
                         className={`px-2.5 py-0.5 rounded-full text-[10.5px] font-black border transition-all cursor-pointer ${
                           curHasAm
                             ? "bg-sky-500/12 text-sky-700 dark:text-sky-300 border-sky-500/35 shadow-2xs"
-                            : "bg-muted/50 text-muted-foreground border-border/60"
+                            : "bg-muted text-muted-foreground border-border"
                         }`}
                       >
                         {curHasAm ? "✓ 午前あり" : "🏖️ なし (午後集合)"}
@@ -2212,7 +2212,7 @@ export default function LiffSchedulePage() {
                                 type="button"
                                 onClick={() => updateCurrentActivity({ amType: t.id as any })}
                                 className={`px-2.5 py-1 rounded-xl text-xs font-black border transition-all active:scale-95 cursor-pointer ${
-                                  isSel ? t.color + " shadow-xs font-black" : "bg-card border-border/60 text-muted-foreground hover:text-foreground"
+                                  isSel ? t.color + " shadow-xs font-black" : "bg-card border-border text-muted-foreground hover:text-foreground"
                                 }`}
                               >
                                 {t.icon} {t.label}
@@ -2229,7 +2229,7 @@ export default function LiffSchedulePage() {
                         <div className="grid grid-cols-2 gap-2.5">
                           <div>
                             <label className="text-[10px] font-bold text-muted-foreground block mb-0.5">時間帯</label>
-                            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-card border border-border/60">
+                            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-card border border-border">
                               <Clock className="w-3.5 h-3.5 text-primary shrink-0" />
                               <input
                                 type="text"
@@ -2243,7 +2243,7 @@ export default function LiffSchedulePage() {
 
                           <div>
                             <label className="text-[10px] font-bold text-muted-foreground block mb-0.5">球場・場所</label>
-                            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-card border border-border/60">
+                            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-card border border-border">
                               <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
                               <input
                                 type="text"
@@ -2267,7 +2267,7 @@ export default function LiffSchedulePage() {
                                   key={v.id}
                                   type="button"
                                   onClick={() => updateCurrentActivity({ amLocation: displayName })}
-                                  className="px-1.5 py-0.5 rounded-md text-[9.5px] font-bold bg-card border border-border/60 text-muted-foreground hover:text-foreground shrink-0 cursor-pointer"
+                                  className="px-1.5 py-0.5 rounded-md text-[9.5px] font-bold bg-card border border-border text-muted-foreground hover:text-foreground shrink-0 cursor-pointer"
                                 >
                                   🏟️ {displayName}
                                 </button>
@@ -2286,11 +2286,11 @@ export default function LiffSchedulePage() {
                   {/* 🌙 午後ブロック */}
                   <div className={`p-3.5 rounded-2xl border space-y-2.5 transition-all ${
                     curHasPm && curPmType !== "off"
-                      ? "bg-muted/35 border-border/60"
-                      : "bg-muted/20 border-border/60 opacity-80"
+                      ? "bg-muted/35 border-border"
+                      : "bg-muted/20 border-border opacity-80"
                   }`}>
                     {/* 1行目: 午後の活動タイトル & ON/OFF 切替スイッチ */}
-                    <div className="flex items-center justify-between pb-2 border-b border-border/60">
+                    <div className="flex items-center justify-between pb-2 border-b border-border">
                       <span className="text-xs font-black text-foreground flex items-center gap-1.5">
                         <Moon className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
                         <span>午後の活動</span>
@@ -2311,7 +2311,7 @@ export default function LiffSchedulePage() {
                         className={`px-2.5 py-0.5 rounded-full text-[10.5px] font-black border transition-all cursor-pointer ${
                           curHasPm && curPmType !== "off"
                             ? "bg-indigo-500/12 text-indigo-700 dark:text-indigo-300 border-indigo-500/35 shadow-2xs"
-                            : "bg-muted/50 text-muted-foreground border-border/60"
+                            : "bg-muted text-muted-foreground border-border"
                         }`}
                       >
                         {curHasPm && curPmType !== "off" ? "✓ 午後あり" : "🏖️ なし (午前解散)"}
@@ -2331,7 +2331,7 @@ export default function LiffSchedulePage() {
                                 type="button"
                                 onClick={() => updateCurrentActivity({ pmType: t.id as any })}
                                 className={`px-2.5 py-1 rounded-xl text-xs font-black border transition-all active:scale-95 cursor-pointer ${
-                                  isSel ? t.color + " shadow-xs font-black" : "bg-card border-border/60 text-muted-foreground hover:text-foreground"
+                                  isSel ? t.color + " shadow-xs font-black" : "bg-card border-border text-muted-foreground hover:text-foreground"
                                 }`}
                               >
                                 {t.icon} {t.label}
@@ -2348,7 +2348,7 @@ export default function LiffSchedulePage() {
                         <div className="grid grid-cols-2 gap-2.5">
                           <div>
                             <label className="text-[10px] font-bold text-muted-foreground block mb-0.5">時間帯</label>
-                            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-card border border-border/60">
+                            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-card border border-border">
                               <Clock className="w-3.5 h-3.5 text-primary shrink-0" />
                               <input
                                 type="text"
@@ -2373,7 +2373,7 @@ export default function LiffSchedulePage() {
                                 </button>
                               )}
                             </div>
-                            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-card border border-border/60">
+                            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-card border border-border">
                               <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
                               <input
                                 type="text"
@@ -2397,7 +2397,7 @@ export default function LiffSchedulePage() {
                                   key={v.id}
                                   type="button"
                                   onClick={() => updateCurrentActivity({ pmLocation: displayName })}
-                                  className="px-1.5 py-0.5 rounded-md text-[9.5px] font-bold bg-card border border-border/60 text-muted-foreground hover:text-foreground shrink-0 cursor-pointer"
+                                  className="px-1.5 py-0.5 rounded-md text-[9.5px] font-bold bg-card border border-border text-muted-foreground hover:text-foreground shrink-0 cursor-pointer"
                                 >
                                   🏟️ {displayName}
                                 </button>
@@ -2415,7 +2415,7 @@ export default function LiffSchedulePage() {
 
                   {/* グループ固有の当番・配車（複数グループ時） */}
                   {hasGroups && currentEditGroup && (
-                    <div className="grid grid-cols-2 gap-2.5 pt-2 border-t border-border/60">
+                    <div className="grid grid-cols-2 gap-2.5 pt-2 border-t border-border">
                       <div>
                         <label className="text-[10px] font-bold text-muted-foreground block mb-0.5">このグループのお当番</label>
                         <input
@@ -2423,7 +2423,7 @@ export default function LiffSchedulePage() {
                           value={curDutyGroup}
                           onChange={(e) => updateCurrentActivity({ dutyGroup: e.target.value })}
                           placeholder="例: 1班"
-                          className="w-full px-2.5 py-1.5 rounded-xl bg-muted/35 border border-border/60 text-xs font-bold text-foreground focus:outline-hidden"
+                          className="w-full px-2.5 py-1.5 rounded-xl bg-muted/35 border border-border text-xs font-bold text-foreground focus:outline-hidden"
                         />
                       </div>
                       <div>
@@ -2433,7 +2433,7 @@ export default function LiffSchedulePage() {
                           value={curCarInfo}
                           onChange={(e) => updateCurrentActivity({ carInfo: e.target.value })}
                           placeholder="例: 3台/現地集合"
-                          className="w-full px-2.5 py-1.5 rounded-xl bg-muted/35 border border-border/60 text-xs font-bold text-foreground focus:outline-hidden"
+                          className="w-full px-2.5 py-1.5 rounded-xl bg-muted/35 border border-border text-xs font-bold text-foreground focus:outline-hidden"
                         />
                       </div>
                     </div>
@@ -2441,7 +2441,7 @@ export default function LiffSchedulePage() {
                 </div>
 
                 {/* 📋 4. 全体共通情報（当番・お弁当・補食・連絡事項） */}
-                <div className="space-y-3 p-3.5 rounded-2xl bg-muted/35 border border-border/60">
+                <div className="space-y-3 p-3.5 rounded-2xl bg-muted/35 border border-border">
                   {/* お当番（グループ分けなし時） */}
                   {!hasGroups && (
                     <div>
@@ -2455,7 +2455,7 @@ export default function LiffSchedulePage() {
                             className={`py-1 text-center rounded-lg text-[11px] transition-all active:scale-95 cursor-pointer ${
                               editingEvent.dutyGroup === dg
                                 ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/35 font-black shadow-2xs"
-                                : "bg-card border border-border/60 text-muted-foreground hover:text-foreground hover:bg-muted/50 font-bold"
+                                : "bg-card border border-border text-muted-foreground hover:text-foreground hover:bg-muted font-bold"
                             }`}
                           >
                             {dg}
@@ -2477,7 +2477,7 @@ export default function LiffSchedulePage() {
                           className={`flex-1 py-1.5 rounded-xl text-[11px] font-bold border transition-all flex items-center justify-center gap-1 cursor-pointer ${
                             editingEvent.needsLunch === true
                               ? "border-amber-500/35 bg-amber-500/12 text-amber-700 dark:text-amber-300 font-black shadow-2xs"
-                              : "bg-card border-border/60 text-muted-foreground hover:text-foreground"
+                              : "bg-card border-border text-muted-foreground hover:text-foreground"
                           }`}
                         >
                           <Utensils className="w-3 h-3 text-amber-600 dark:text-amber-400" />
@@ -2489,7 +2489,7 @@ export default function LiffSchedulePage() {
                           className={`flex-1 py-1.5 rounded-xl text-[11px] font-bold border transition-all flex items-center justify-center gap-1 cursor-pointer ${
                             editingEvent.needsLunch !== true
                               ? "border-primary/35 bg-primary/12 text-primary font-black shadow-2xs"
-                              : "bg-card border-border/60 text-muted-foreground hover:text-foreground"
+                              : "bg-card border-border text-muted-foreground hover:text-foreground"
                           }`}
                         >
                           <span>不要</span>
@@ -2507,7 +2507,7 @@ export default function LiffSchedulePage() {
                           className={`flex-1 py-1.5 rounded-xl text-[11px] font-bold border transition-all flex items-center justify-center gap-1 cursor-pointer ${
                             editingEvent.needsSnack === true
                               ? "border-emerald-500/35 bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 font-black shadow-2xs"
-                              : "bg-card border-border/60 text-muted-foreground hover:text-foreground"
+                              : "bg-card border-border text-muted-foreground hover:text-foreground"
                           }`}
                         >
                           <span className="text-xs leading-none">🍌</span>
@@ -2519,7 +2519,7 @@ export default function LiffSchedulePage() {
                           className={`flex-1 py-1.5 rounded-xl text-[11px] font-bold border transition-all flex items-center justify-center gap-1 cursor-pointer ${
                             editingEvent.needsSnack !== true
                               ? "border-primary/35 bg-primary/12 text-primary font-black shadow-2xs"
-                              : "bg-card border-border/60 text-muted-foreground hover:text-foreground"
+                              : "bg-card border-border text-muted-foreground hover:text-foreground"
                           }`}
                         >
                           <span>不要</span>
@@ -2529,25 +2529,25 @@ export default function LiffSchedulePage() {
                   </div>
 
                   {/* 連絡事項 */}
-                  <div className="space-y-1 pt-2 border-t border-border/60">
+                  <div className="space-y-1 pt-2 border-t border-border">
                     <label className="text-[10.5px] font-black text-foreground">連絡事項・持ち物</label>
                     <textarea
                       rows={2}
                       value={editingEvent.memo || ""}
                       onChange={(e) => setEditingEvent({ ...editingEvent, memo: e.target.value })}
                       placeholder="ユニフォーム正装、スパイク持参、雨天時は7:00連絡など"
-                      className="w-full px-3 py-2 rounded-xl bg-card border border-border/60 text-xs font-bold text-foreground focus:outline-hidden focus:border-primary resize-none"
+                      className="w-full px-3 py-2 rounded-xl bg-card border border-border text-xs font-bold text-foreground focus:outline-hidden focus:border-primary resize-none"
                     />
                   </div>
                 </div>
               </div>
 
               {/* モーダルフッター */}
-              <div className="px-5 py-3.5 pb-[max(env(safe-area-inset-bottom),24px)] sm:pb-3.5 border-t border-border/60 flex items-center justify-between bg-card shrink-0 gap-3">
+              <div className="px-5 py-3.5 pb-[max(env(safe-area-inset-bottom),24px)] sm:pb-3.5 border-t border-border flex items-center justify-between bg-card shrink-0 gap-3">
                 <button
                   type="button"
                   onClick={() => setEditingEvent(null)}
-                  className="py-2.5 px-4 rounded-xl text-xs font-bold border border-border/60 bg-card text-muted-foreground hover:text-foreground hover:bg-muted active:scale-95 transition-all cursor-pointer"
+                  className="py-2.5 px-4 rounded-xl text-xs font-bold border border-border bg-card text-muted-foreground hover:text-foreground hover:bg-muted active:scale-95 transition-all cursor-pointer"
                 >
                   キャンセル
                 </button>

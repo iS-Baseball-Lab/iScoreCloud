@@ -363,7 +363,7 @@ export default function LiffLinksPage() {
             className={`px-3.5 py-1.5 rounded-xl text-xs shrink-0 transition-all cursor-pointer ${
               selectedScope === "all"
                 ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
-                : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
+                : "bg-card text-muted-foreground border border-border hover:text-foreground hover:bg-muted/50 font-bold"
             }`}
           >
             すべて ({links.length})
@@ -374,7 +374,7 @@ export default function LiffLinksPage() {
             className={`px-3.5 py-1.5 rounded-xl text-xs shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
               selectedScope === "organization"
                 ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
-                : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
+                : "bg-card text-muted-foreground border border-border hover:text-foreground hover:bg-muted/50 font-bold"
             }`}
           >
             <Building2 className="w-3.5 h-3.5" />
@@ -386,7 +386,7 @@ export default function LiffLinksPage() {
             className={`px-3.5 py-1.5 rounded-xl text-xs shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
               selectedScope === "team"
                 ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
-                : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
+                : "bg-card text-muted-foreground border border-border hover:text-foreground hover:bg-muted/50 font-bold"
             }`}
           >
             <Users2 className="w-3.5 h-3.5" />
@@ -403,7 +403,7 @@ export default function LiffLinksPage() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="サイト名やキーワードで検索..."
-              className="w-full pl-9.5 pr-8 py-2.5 rounded-2xl bg-card border border-border/60 text-xs placeholder:text-muted-foreground/70 focus:outline-hidden focus:ring-2 focus:ring-primary/40 transition-all"
+              className="w-full pl-9.5 pr-8 py-2.5 rounded-2xl bg-card border border-border text-xs placeholder:text-muted-foreground/70 focus:outline-hidden focus:ring-2 focus:ring-primary/40 transition-all"
             />
             {searchQuery && (
               <button
@@ -443,7 +443,7 @@ export default function LiffLinksPage() {
                 className={`px-3 py-1.5 rounded-xl text-xs shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
                   isSelected
                     ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
-                    : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
+                    : "bg-card text-muted-foreground border border-border hover:text-foreground hover:bg-muted/50 font-bold"
                 }`}
               >
                 <Icon className="w-3.5 h-3.5" />
@@ -453,142 +453,173 @@ export default function LiffLinksPage() {
           })}
         </div>
 
-        {/* 📋 リンクカード一覧 */}
-        {isLoading ? (
-          <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-2">
-            <Loader2 className="w-6 h-6 animate-spin text-primary" />
-            <span className="text-xs font-bold">関連リンクを読み込み中...</span>
+        {/* 📋 リンク一覧セクションカード (A-3 Dark Solid Header Cap) */}
+        <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+          <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-amber-500 px-4 py-3 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="w-7 h-7 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-400/30 flex items-center justify-center shrink-0">
+                <Link2 className="w-4 h-4" />
+              </span>
+              <div className="min-w-0">
+                <h2 className="text-xs sm:text-sm font-black text-white truncate">
+                  {selectedCategory === "all"
+                    ? "関連リンク一覧"
+                    : `${categories.find((c) => c.id === selectedCategory)?.label || ""} のリンク`}
+                </h2>
+                <p className="text-[10px] font-bold text-slate-300 truncate">
+                  公式サイト・大会速報・予約ポータルへ直接アクセス
+                </p>
+              </div>
+            </div>
+            <span className="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-200 border border-slate-700 text-[11px] font-black shrink-0">
+              {filteredLinks.length}件
+            </span>
           </div>
-        ) : filteredLinks.length === 0 ? (
-          <div className="p-8 rounded-2xl border border-border/60 bg-card shadow-xs text-center space-y-2">
-            <AlertCircle className="w-8 h-8 text-amber-600 dark:text-amber-400 mx-auto" />
-            <p className="text-xs font-black text-foreground">
-              該当する関連リンクが見つかりませんでした
-            </p>
-            <p className="text-[11px] text-muted-foreground">
-              検索条件を変更するか、新しいリンクを登録してください。
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {filteredLinks.map((link) => {
-              const isOrg = link.scope === "organization";
-              const isImportant = !!link.isImportant;
 
-              return (
-                <div
-                  key={link.id}
-                  className={`rounded-2xl border border-border/60 bg-card shadow-xs hover:border-primary/40 transition-all duration-200 overflow-hidden ${
-                    isImportant ? "border-l-4 border-l-amber-500" : ""
-                  }`}
-                >
-                  <div className="p-3.5 sm:p-4 space-y-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-start gap-2.5 min-w-0 flex-1">
-                        {link.imageUrl ? (
-                          <div className="w-10 h-10 rounded-xl overflow-hidden border border-border/60 bg-muted/35 shrink-0 flex items-center justify-center">
-                            <img src={link.imageUrl} alt={link.title} className="w-full h-full object-cover" />
-                          </div>
-                        ) : (
-                          <span className="w-9 h-9 rounded-xl flex items-center justify-center text-xs font-black shrink-0 bg-amber-500/12 text-amber-600 dark:text-amber-400">
-                            {getCategoryIcon(link.category)}
-                          </span>
-                        )}
+          <div className="p-4">
+            {isLoading ? (
+              <div className="flex flex-col items-center justify-center py-12 text-muted-foreground gap-2">
+                <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                <span className="text-xs font-bold">関連リンクを読み込み中...</span>
+              </div>
+            ) : filteredLinks.length === 0 ? (
+              <div className="p-8 rounded-2xl border border-border bg-muted/20 text-center space-y-2">
+                <AlertCircle className="w-8 h-8 text-amber-600 dark:text-amber-400 mx-auto" />
+                <p className="text-xs font-black text-foreground">
+                  該当する関連リンクが見つかりませんでした
+                </p>
+                <p className="text-[11px] text-muted-foreground">
+                  検索条件を変更するか、新しいリンクを登録してください。
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {filteredLinks.map((link) => {
+                  const isOrg = link.scope === "organization";
+                  const isImportant = !!link.isImportant;
 
-                        <div className="space-y-1 min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            {/* 🔥 おすすめ/公式ピン留めバッジ */}
-                            {isImportant && (
-                              <span className="px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 text-[9.5px] font-black shrink-0 flex items-center gap-0.5">
-                                <Flame className="w-3 h-3" />
-                                <span>公式・推奨</span>
+                  return (
+                    <div
+                      key={link.id}
+                      className={`rounded-2xl border border-border bg-card shadow-xs hover:border-primary/40 transition-all duration-200 overflow-hidden ${
+                        isImportant ? "border-l-4 border-l-amber-500" : ""
+                      }`}
+                    >
+                      <div className="p-3.5 sm:p-4 space-y-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                            {link.imageUrl ? (
+                              <div className="w-10 h-10 rounded-xl overflow-hidden border border-border bg-muted/35 shrink-0 flex items-center justify-center">
+                                <img
+                                  src={link.imageUrl}
+                                  alt={link.title}
+                                  loading="lazy"
+                                  decoding="async"
+                                  className="w-full h-full object-cover"
+                                />
+                              </div>
+                            ) : (
+                              <span className="w-9 h-9 rounded-xl flex items-center justify-center text-xs font-black shrink-0 bg-amber-500/12 text-amber-600 dark:text-amber-400">
+                                {getCategoryIcon(link.category)}
                               </span>
                             )}
 
-                            {/* スコープバッジ */}
-                            <span
-                              className={`px-2 py-0.5 rounded-md text-[9.5px] font-black shrink-0 ${
-                                isOrg
-                                  ? "bg-primary/10 text-primary border border-primary/25"
-                                  : "bg-muted text-muted-foreground border border-border/60"
-                              }`}
-                            >
-                              {link.scopeLabel}
-                            </span>
+                            <div className="space-y-1 min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                {/* 🔥 おすすめ/公式ピン留めバッジ */}
+                                {isImportant && (
+                                  <span className="px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 text-[9.5px] font-black shrink-0 flex items-center gap-0.5">
+                                    <Flame className="w-3 h-3" />
+                                    <span>公式・推奨</span>
+                                  </span>
+                                )}
 
-                            {/* カテゴリバッジ */}
-                            <span className="px-2 py-0.5 rounded-md bg-muted text-muted-foreground text-[9.5px] font-black shrink-0">
-                              {link.categoryLabel}
+                                {/* スコープバッジ */}
+                                <span
+                                  className={`px-2 py-0.5 rounded-md text-[9.5px] font-black shrink-0 ${
+                                    isOrg
+                                      ? "bg-primary/10 text-primary border border-primary/25"
+                                      : "bg-muted text-muted-foreground border border-border"
+                                  }`}
+                                >
+                                  {link.scopeLabel}
+                                </span>
+
+                                {/* カテゴリバッジ */}
+                                <span className="px-2 py-0.5 rounded-md bg-muted text-muted-foreground text-[9.5px] font-black shrink-0">
+                                  {link.categoryLabel}
+                                </span>
+                              </div>
+
+                              <h3 className="text-xs sm:text-sm font-black text-foreground leading-snug">
+                                {link.title}
+                              </h3>
+                            </div>
+                          </div>
+
+                          {/* 編集ボタン */}
+                          <button
+                            type="button"
+                            onClick={(e) => openEditModal(link, e)}
+                            className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted active:scale-95 transition-all shrink-0"
+                            title="編集"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+
+                        {/* 説明文 */}
+                        {link.description && (
+                          <p className="text-xs text-foreground/80 font-bold whitespace-pre-wrap leading-relaxed">
+                            {link.description}
+                          </p>
+                        )}
+
+                        {/* URL ＆ アクションボタン群 */}
+                        <div className="pt-2 border-t border-border flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                            <button
+                              type="button"
+                              onClick={(e) => handleCopyUrl(link, e)}
+                              className="px-2.5 py-1.5 rounded-xl bg-card hover:bg-muted border border-border text-muted-foreground hover:text-foreground text-[11px] font-bold flex items-center gap-1 shrink-0 transition-all cursor-pointer"
+                              title="URLをコピー"
+                            >
+                              {copiedId === link.id ? (
+                                <>
+                                  <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                                  <span className="text-emerald-700 dark:text-emerald-400 font-black">コピー済</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="w-3.5 h-3.5" />
+                                  <span>URLコピー</span>
+                                </>
+                              )}
+                            </button>
+                            <span className="text-[10px] text-muted-foreground truncate font-mono">
+                              {link.url.replace(/^https?:\/\//i, "")}
                             </span>
                           </div>
 
-                          <h3 className="text-xs sm:text-sm font-black text-foreground leading-snug">
-                            {link.title}
-                          </h3>
+                          {/* 🌐 サイトを開くリンクボタン */}
+                          <a
+                            href={link.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-3.5 py-1.5 rounded-xl bg-primary text-primary-foreground text-xs font-black flex items-center gap-1 shrink-0 hover:bg-primary/90 active:scale-95 transition-all shadow-xs cursor-pointer"
+                          >
+                            <span>開く</span>
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
                         </div>
                       </div>
-
-                      {/* 編集ボタン */}
-                      <button
-                        type="button"
-                        onClick={(e) => openEditModal(link, e)}
-                        className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted active:scale-95 transition-all shrink-0"
-                        title="編集"
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                      </button>
                     </div>
-
-                    {/* 説明文 */}
-                    {link.description && (
-                      <p className="text-xs text-foreground/80 font-bold whitespace-pre-wrap leading-relaxed">
-                        {link.description}
-                      </p>
-                    )}
-
-                    {/* URL ＆ アクションボタン群 */}
-                    <div className="pt-2 border-t border-border/60 flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                        <button
-                          type="button"
-                          onClick={(e) => handleCopyUrl(link, e)}
-                          className="px-2.5 py-1.5 rounded-xl bg-card hover:bg-muted border border-border/60 text-muted-foreground hover:text-foreground text-[11px] font-bold flex items-center gap-1 shrink-0 transition-all cursor-pointer"
-                          title="URLをコピー"
-                        >
-                          {copiedId === link.id ? (
-                            <>
-                              <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                              <span className="text-emerald-700 dark:text-emerald-400 font-black">コピー済</span>
-                            </>
-                          ) : (
-                            <>
-                              <Copy className="w-3.5 h-3.5" />
-                              <span>URLコピー</span>
-                            </>
-                          )}
-                        </button>
-                        <span className="text-[10px] text-muted-foreground truncate font-mono">
-                          {link.url.replace(/^https?:\/\//i, "")}
-                        </span>
-                      </div>
-
-                      {/* 🌐 サイトを開くリンクボタン */}
-                      <a
-                        href={link.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="px-3.5 py-1.5 rounded-xl bg-primary text-primary-foreground text-xs font-black flex items-center gap-1 shrink-0 hover:bg-primary/90 active:scale-95 transition-all shadow-xs cursor-pointer"
-                      >
-                        <span>開く</span>
-                        <ExternalLink className="w-3.5 h-3.5" />
-                      </a>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+                  );
+                })}
+              </div>
+            )}
           </div>
-        )}
+        </section>
 
         <div className="h-8 w-full shrink-0" aria-hidden="true" />
       </div>
@@ -597,19 +628,19 @@ export default function LiffLinksPage() {
       {/* ➕ 新規登録モーダル (ポータル描画) */}
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {mounted && isCreateModalOpen && createPortal(
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/60 animate-in fade-in duration-200">
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-md rounded-2xl border border-border/60 bg-card shadow-xs p-5 space-y-4 max-h-[90vh] overflow-y-auto"
+            className="w-full max-w-md rounded-2xl border border-border bg-card shadow-xs overflow-hidden max-h-[90vh] flex flex-col"
           >
-            <div className="flex items-center justify-between border-b border-border/60 pb-3">
-              <div className="flex items-center gap-2">
-                <span className="w-8 h-8 rounded-xl bg-amber-500/12 text-amber-600 dark:text-amber-400 flex items-center justify-center font-black">
+            <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-amber-500 px-4 py-3 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2.5">
+                <span className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-400/30 flex items-center justify-center font-black">
                   <Link2 className="w-4 h-4" />
                 </span>
                 <div>
-                  <h3 className="text-sm font-black text-foreground">関連リンクの登録</h3>
-                  <p className="text-[10px] text-muted-foreground font-bold">
+                  <h3 className="text-sm font-black text-white">関連リンクの登録</h3>
+                  <p className="text-[10px] text-slate-300 font-bold">
                     連盟・大会速報・施設予約・公式SNS
                   </p>
                 </div>
@@ -617,212 +648,220 @@ export default function LiffLinksPage() {
               <button
                 type="button"
                 onClick={() => setIsCreateModalOpen(false)}
-                className="p-1.5 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted"
+                className="p-1.5 rounded-full text-slate-300 hover:text-white hover:bg-slate-800 transition-all"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            {submitError && (
-              <div className="p-3 rounded-2xl bg-destructive/10 text-destructive text-xs font-bold flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>{submitError}</span>
-              </div>
-            )}
+            <div className="p-5 space-y-4 overflow-y-auto">
+              {submitError && (
+                <div className="p-3 rounded-2xl bg-destructive/10 text-destructive text-xs font-bold flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{submitError}</span>
+                </div>
+              )}
 
-            <form onSubmit={handleCreateLink} className="space-y-4 text-xs font-bold">
-              {/* ⭐ 公式・推奨ピン留め選択 */}
-              <div
-                onClick={() => setNewIsImportant(!newIsImportant)}
-                className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 select-none ${
-                  newIsImportant
-                    ? "bg-amber-500/12 border-amber-500/40 text-amber-700 dark:text-amber-300"
-                    : "bg-muted/35 border-border/60 text-muted-foreground hover:bg-muted"
-                }`}
-              >
-                <div className="flex items-center gap-2.5">
-                  <span className={`w-7 h-7 rounded-xl flex items-center justify-center text-sm font-black ${
-                    newIsImportant ? "bg-amber-500/20 text-amber-700 dark:text-amber-300" : "bg-muted text-muted-foreground"
-                  }`}>
-                    <Flame className="w-4 h-4" />
-                  </span>
-                  <div>
-                    <span className="font-black text-xs text-foreground block">公式・推奨リンクに設定する</span>
-                    <span className="text-[10px] text-muted-foreground font-bold block">
-                      一覧の上部に優先表示され、推奨バッジが付きます
+              <form onSubmit={handleCreateLink} className="space-y-4 text-xs font-bold">
+                {/* ⭐ 公式・推奨ピン留め選択 */}
+                <div
+                  onClick={() => setNewIsImportant(!newIsImportant)}
+                  className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 select-none ${
+                    newIsImportant
+                      ? "bg-amber-500/12 border-amber-500/40 text-amber-700 dark:text-amber-300"
+                      : "bg-muted/35 border-border text-muted-foreground hover:bg-muted"
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <span className={`w-7 h-7 rounded-xl flex items-center justify-center text-sm font-black ${
+                      newIsImportant ? "bg-amber-500/20 text-amber-700 dark:text-amber-300" : "bg-muted text-muted-foreground"
+                    }`}>
+                      <Flame className="w-4 h-4" />
                     </span>
+                    <div>
+                      <span className="font-black text-xs text-foreground block">公式・推奨リンクに設定する</span>
+                      <span className="text-[10px] text-muted-foreground font-bold block">
+                        一覧の上部に優先表示され、推奨バッジが付きます
+                      </span>
+                    </div>
                   </div>
+                  <input
+                    type="checkbox"
+                    checked={newIsImportant}
+                    onChange={(e) => setNewIsImportant(e.target.checked)}
+                    className="w-4 h-4 rounded accent-primary"
+                  />
                 </div>
-                <input
-                  type="checkbox"
-                  checked={newIsImportant}
-                  onChange={(e) => setNewIsImportant(e.target.checked)}
-                  className="w-4 h-4 rounded accent-primary"
-                />
-              </div>
 
-              {/* スコープ選択 */}
-              <div className="space-y-1.5">
-                <label className="text-muted-foreground">公開範囲</label>
-                <div className="grid grid-cols-2 gap-1 bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl border border-border/60">
-                  <button
-                    type="button"
-                    onClick={() => setNewScope("organization")}
-                    className={`py-2 px-3 rounded-xl text-xs transition-all cursor-pointer ${
-                      newScope === "organization"
-                        ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
-                        : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
-                    }`}
-                  >
-                    🏢 チーム全体（共通）
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setNewScope("team")}
-                    className={`py-2 px-3 rounded-xl text-xs transition-all cursor-pointer ${
-                      newScope === "team"
-                        ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
-                        : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
-                    }`}
-                  >
-                    👥 {currentTeam?.teamName || "この編成"} のみ
-                  </button>
-                </div>
-              </div>
-
-              {/* カテゴリ選択 */}
-              <div className="space-y-1.5">
-                <label className="text-muted-foreground">カテゴリ</label>
-                <select
-                  value={newCategory}
-                  onChange={(e) => setNewCategory(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-xl bg-card border border-border/60 text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40"
-                >
-                  <option value="league">🌐 連盟・協会公式サイト</option>
-                  <option value="tournament">🏆 大会速報・組み合わせ表</option>
-                  <option value="weather">☀️ 天気予報・雨雲レーダー・暑さ指数</option>
-                  <option value="sns">📱 チーム公式SNS (Instagram/YouTube/HP)</option>
-                  <option value="grounds">🏟️ 球場・施設予約ポータル</option>
-                  <option value="partner">🤝 提携ショップ・スポンサー</option>
-                  <option value="other">🔗 その他・お役立ちリンク</option>
-                </select>
-              </div>
-
-              {/* タイトル */}
-              <div className="space-y-1.5">
-                <label className="text-muted-foreground">サイト名・リンク名</label>
-                <input
-                  type="text"
-                  required
-                  value={newTitle}
-                  onChange={(e) => setNewTitle(e.target.value)}
-                  placeholder="例: 全日本軟式野球連盟 (JSBB)"
-                  className="w-full px-3 py-2.5 rounded-xl bg-card border border-border/60 text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40 placeholder:text-muted-foreground/60"
-                />
-              </div>
-
-              {/* URL */}
-              <div className="space-y-1.5">
-                <label className="text-muted-foreground">URL (リンク先)</label>
-                <input
-                  type="url"
-                  required
-                  value={newUrl}
-                  onChange={(e) => setNewUrl(e.target.value)}
-                  placeholder="https://..."
-                  className="w-full px-3 py-2.5 rounded-xl bg-card border border-border/60 text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40 placeholder:text-muted-foreground/60 font-mono text-[11px]"
-                />
-              </div>
-
-              {/* 説明文 */}
-              <div className="space-y-1.5">
-                <label className="text-muted-foreground">概要・説明 (任意)</label>
-                <textarea
-                  rows={3}
-                  value={newDescription}
-                  onChange={(e) => setNewDescription(e.target.value)}
-                  placeholder="リンク先の内容や用途について簡単に記載してください"
-                  className="w-full px-3 py-2.5 rounded-xl bg-card border border-border/60 text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40 placeholder:text-muted-foreground/60 leading-relaxed"
-                />
-              </div>
-
-              {/* 📷 ロゴ・画像添付エリア */}
-              <div className="space-y-2 p-3 rounded-2xl bg-muted/35 border border-border/60">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-black text-foreground flex items-center gap-1.5">
-                    <ImageIcon className="w-4 h-4 text-primary" />
-                    <span>ロゴ・サムネイル画像 (任意)</span>
-                  </span>
-                  {newImageUrl && (
+                {/* スコープ選択 */}
+                <div className="space-y-1.5">
+                  <label className="text-muted-foreground">公開範囲</label>
+                  <div className="grid grid-cols-2 gap-1 bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl border border-border">
                     <button
                       type="button"
-                      onClick={() => setNewImageUrl("")}
-                      className="text-[10px] text-destructive hover:underline font-bold"
+                      onClick={() => setNewScope("organization")}
+                      className={`py-2 px-3 rounded-xl text-xs transition-all cursor-pointer ${
+                        newScope === "organization"
+                          ? "bg-card text-foreground shadow-sm border border-border font-black"
+                          : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
+                      }`}
                     >
-                      画像を削除
+                      🏢 チーム全体（共通）
                     </button>
-                  )}
-                </div>
-
-                {newImageUrl ? (
-                  <div className="relative rounded-xl overflow-hidden border border-border/60 bg-card max-h-32 flex items-center justify-center">
-                    <img src={newImageUrl} alt="プレビュー" className="max-h-32 w-full object-contain" />
-                  </div>
-                ) : (
-                  <div>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => handleImageUpload(e, false)}
-                      className="hidden"
-                    />
                     <button
                       type="button"
-                      disabled={isUploadingImage}
-                      onClick={() => fileInputRef.current?.click()}
-                      className="w-full py-2.5 px-3 rounded-xl border border-dashed border-border/60 hover:border-primary/40 bg-card hover:bg-muted/50 text-muted-foreground hover:text-foreground font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+                      onClick={() => setNewScope("team")}
+                      className={`py-2 px-3 rounded-xl text-xs transition-all cursor-pointer ${
+                        newScope === "team"
+                          ? "bg-card text-foreground shadow-sm border border-border font-black"
+                          : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
+                      }`}
                     >
-                      {isUploadingImage ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                          <span>アップロード中...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Upload className="w-4 h-4 text-primary" />
-                          <span>ロゴ画像を選択</span>
-                        </>
-                      )}
+                      👥 {currentTeam?.teamName || "この編成"} のみ
                     </button>
                   </div>
-                )}
-              </div>
+                </div>
 
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-border/60">
-                <button
-                  type="button"
-                  onClick={() => setIsCreateModalOpen(false)}
-                  className="px-4 py-2.5 rounded-xl bg-card border border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground font-black text-xs transition-all cursor-pointer"
-                >
-                  キャンセル
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting || !newTitle.trim() || !newUrl.trim()}
-                  className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground font-black text-xs shadow-xs hover:bg-primary/90 active:scale-95 disabled:opacity-50 transition-all flex items-center gap-1.5 cursor-pointer"
-                >
-                  {isSubmitting ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      <span>登録中...</span>
-                    </>
+                {/* カテゴリ選択 */}
+                <div className="space-y-1.5">
+                  <label className="text-muted-foreground">カテゴリ</label>
+                  <select
+                    value={newCategory}
+                    onChange={(e) => setNewCategory(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-xl bg-card border border-border text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                  >
+                    <option value="league">🌐 連盟・協会公式サイト</option>
+                    <option value="tournament">🏆 大会速報・組み合わせ表</option>
+                    <option value="weather">☀️ 天気予報・雨雲レーダー・暑さ指数</option>
+                    <option value="sns">📱 チーム公式SNS (Instagram/YouTube/HP)</option>
+                    <option value="grounds">🏟️ 球場・施設予約ポータル</option>
+                    <option value="partner">🤝 提携ショップ・スポンサー</option>
+                    <option value="other">🔗 その他・お役立ちリンク</option>
+                  </select>
+                </div>
+
+                {/* タイトル */}
+                <div className="space-y-1.5">
+                  <label className="text-muted-foreground">サイト名・リンク名</label>
+                  <input
+                    type="text"
+                    required
+                    value={newTitle}
+                    onChange={(e) => setNewTitle(e.target.value)}
+                    placeholder="例: 全日本軟式野球連盟 (JSBB)"
+                    className="w-full px-3 py-2.5 rounded-xl bg-card border border-border text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40 placeholder:text-muted-foreground/60"
+                  />
+                </div>
+
+                {/* URL */}
+                <div className="space-y-1.5">
+                  <label className="text-muted-foreground">URL (リンク先)</label>
+                  <input
+                    type="url"
+                    required
+                    value={newUrl}
+                    onChange={(e) => setNewUrl(e.target.value)}
+                    placeholder="https://..."
+                    className="w-full px-3 py-2.5 rounded-xl bg-card border border-border text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40 placeholder:text-muted-foreground/60 font-mono text-[11px]"
+                  />
+                </div>
+
+                {/* 説明文 */}
+                <div className="space-y-1.5">
+                  <label className="text-muted-foreground">概要・説明 (任意)</label>
+                  <textarea
+                    rows={3}
+                    value={newDescription}
+                    onChange={(e) => setNewDescription(e.target.value)}
+                    placeholder="リンク先の内容や用途について簡単に記載してください"
+                    className="w-full px-3 py-2.5 rounded-xl bg-card border border-border text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40 placeholder:text-muted-foreground/60 leading-relaxed"
+                  />
+                </div>
+
+                {/* 📷 ロゴ・画像添付エリア */}
+                <div className="space-y-2 p-3 rounded-2xl bg-muted/35 border border-border">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black text-foreground flex items-center gap-1.5">
+                      <ImageIcon className="w-4 h-4 text-primary" />
+                      <span>ロゴ・サムネイル画像 (任意)</span>
+                    </span>
+                    {newImageUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setNewImageUrl("")}
+                        className="text-[10px] text-destructive hover:underline font-bold"
+                      >
+                        画像を削除
+                      </button>
+                    )}
+                  </div>
+
+                  {newImageUrl ? (
+                    <div className="relative rounded-xl overflow-hidden border border-border bg-card max-h-32 flex items-center justify-center">
+                      <img
+                        src={newImageUrl}
+                        alt="プレビュー"
+                        loading="lazy"
+                        decoding="async"
+                        className="max-h-32 w-full object-contain"
+                      />
+                    </div>
                   ) : (
-                    <span>登録する</span>
+                    <div>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => handleImageUpload(e, false)}
+                        className="hidden"
+                      />
+                      <button
+                        type="button"
+                        disabled={isUploadingImage}
+                        onClick={() => fileInputRef.current?.click()}
+                        className="w-full py-2.5 px-3 rounded-xl border border-dashed border-border hover:border-primary/40 bg-card hover:bg-muted/50 text-muted-foreground hover:text-foreground font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+                      >
+                        {isUploadingImage ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                            <span>アップロード中...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="w-4 h-4 text-primary" />
+                            <span>ロゴ画像を選択</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
                   )}
-                </button>
-              </div>
-            </form>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
+                  <button
+                    type="button"
+                    onClick={() => setIsCreateModalOpen(false)}
+                    className="px-4 py-2.5 rounded-xl bg-card border border-border text-muted-foreground hover:bg-muted hover:text-foreground font-black text-xs transition-all cursor-pointer"
+                  >
+                    キャンセル
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting || !newTitle.trim() || !newUrl.trim()}
+                    className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground font-black text-xs shadow-xs hover:bg-primary/90 active:scale-95 disabled:opacity-50 transition-all flex items-center gap-1.5 cursor-pointer"
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>登録中...</span>
+                      </>
+                    ) : (
+                      <span>登録する</span>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
         </div>,
         document.body
@@ -832,239 +871,247 @@ export default function LiffLinksPage() {
       {/* ✏️ 編集・削除モーダル (ポータル描画) */}
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {mounted && editingLink && createPortal(
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/60 animate-in fade-in duration-200">
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-md rounded-2xl border border-border/60 bg-card shadow-xs p-5 space-y-4 max-h-[90vh] overflow-y-auto"
+            className="w-full max-w-md rounded-2xl border border-border bg-card shadow-xs overflow-hidden max-h-[90vh] flex flex-col"
           >
-            <div className="flex items-center justify-between border-b border-border/60 pb-3">
-              <div className="flex items-center gap-2">
-                <span className="w-8 h-8 rounded-xl bg-amber-500/12 text-amber-600 dark:text-amber-400 flex items-center justify-center font-black">
+            <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-amber-500 px-4 py-3 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2.5">
+                <span className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-400/30 flex items-center justify-center font-black">
                   <Pencil className="w-4 h-4" />
                 </span>
                 <div>
-                  <h3 className="text-sm font-black text-foreground">関連リンクの編集</h3>
-                  <p className="text-[10px] text-muted-foreground font-bold">リンク情報の更新または削除</p>
+                  <h3 className="text-sm font-black text-white">関連リンクの編集</h3>
+                  <p className="text-[10px] text-slate-300 font-bold">リンク情報の更新または削除</p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setEditingLink(null)}
-                className="p-1.5 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted"
+                className="p-1.5 rounded-full text-slate-300 hover:text-white hover:bg-slate-800 transition-all"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            {submitError && (
-              <div className="p-3 rounded-2xl bg-destructive/10 text-destructive text-xs font-bold flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>{submitError}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleUpdateLink} className="space-y-4 text-xs font-bold">
-              {/* ⭐ 公式・推奨ピン留め選択 */}
-              <div
-                onClick={() => setEditIsImportant(!editIsImportant)}
-                className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 select-none ${
-                  editIsImportant
-                    ? "bg-amber-500/12 border-amber-500/40 text-amber-700 dark:text-amber-300"
-                    : "bg-muted/35 border-border/60 text-muted-foreground hover:bg-muted"
-                }`}
-              >
-                <div className="flex items-center gap-2.5">
-                  <span className={`w-7 h-7 rounded-xl flex items-center justify-center text-sm font-black ${
-                    editIsImportant ? "bg-amber-500/20 text-amber-700 dark:text-amber-300" : "bg-muted text-muted-foreground"
-                  }`}>
-                    <Flame className="w-4 h-4" />
-                  </span>
-                  <div>
-                    <span className="font-black text-xs text-foreground block">公式・推奨リンクに設定する</span>
-                    <span className="text-[10px] text-muted-foreground font-bold block">
-                      一覧の上部に優先表示され、推奨バッジが付きます
-                    </span>
-                  </div>
+            <div className="p-5 space-y-4 overflow-y-auto">
+              {submitError && (
+                <div className="p-3 rounded-2xl bg-destructive/10 text-destructive text-xs font-bold flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{submitError}</span>
                 </div>
-                <input
-                  type="checkbox"
-                  checked={editIsImportant}
-                  onChange={(e) => setEditIsImportant(e.target.checked)}
-                  className="w-4 h-4 rounded accent-primary"
-                />
-              </div>
+              )}
 
-              {/* スコープ選択 */}
-              <div className="space-y-1.5">
-                <label className="text-muted-foreground">公開範囲</label>
-                <div className="grid grid-cols-2 gap-1 bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl border border-border/60">
-                  <button
-                    type="button"
-                    onClick={() => setEditScope("organization")}
-                    className={`py-2 px-3 rounded-xl text-xs transition-all cursor-pointer ${
-                      editScope === "organization"
-                        ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
-                        : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
-                    }`}
-                  >
-                    🏢 チーム全体（共通）
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setEditScope("team")}
-                    className={`py-2 px-3 rounded-xl text-xs transition-all cursor-pointer ${
-                      editScope === "team"
-                        ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
-                        : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
-                    }`}
-                  >
-                    👥 {currentTeam?.teamName || "この編成"} のみ
-                  </button>
-                </div>
-              </div>
-
-              {/* カテゴリ選択 */}
-              <div className="space-y-1.5">
-                <label className="text-muted-foreground">カテゴリ</label>
-                <select
-                  value={editCategory}
-                  onChange={(e) => setEditCategory(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-xl bg-card border border-border/60 text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+              <form onSubmit={handleUpdateLink} className="space-y-4 text-xs font-bold">
+                {/* ⭐ 公式・推奨ピン留め選択 */}
+                <div
+                  onClick={() => setEditIsImportant(!editIsImportant)}
+                  className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 select-none ${
+                    editIsImportant
+                      ? "bg-amber-500/12 border-amber-500/40 text-amber-700 dark:text-amber-300"
+                      : "bg-muted/35 border-border text-muted-foreground hover:bg-muted"
+                  }`}
                 >
-                  <option value="league">🌐 連盟・協会公式サイト</option>
-                  <option value="tournament">🏆 大会速報・組み合わせ表</option>
-                  <option value="weather">☀️ 天気予報・雨雲レーダー・暑さ指数</option>
-                  <option value="sns">📱 チーム公式SNS (Instagram/YouTube/HP)</option>
-                  <option value="grounds">🏟️ 球場・施設予約ポータル</option>
-                  <option value="partner">🤝 提携ショップ・スポンサー</option>
-                  <option value="other">🔗 その他・お役立ちリンク</option>
-                </select>
-              </div>
+                  <div className="flex items-center gap-2.5">
+                    <span className={`w-7 h-7 rounded-xl flex items-center justify-center text-sm font-black ${
+                      editIsImportant ? "bg-amber-500/20 text-amber-700 dark:text-amber-300" : "bg-muted text-muted-foreground"
+                    }`}>
+                      <Flame className="w-4 h-4" />
+                    </span>
+                    <div>
+                      <span className="font-black text-xs text-foreground block">公式・推奨リンクに設定する</span>
+                      <span className="text-[10px] text-muted-foreground font-bold block">
+                        一覧の上部に優先表示され、推奨バッジが付きます
+                      </span>
+                    </div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={editIsImportant}
+                    onChange={(e) => setEditIsImportant(e.target.checked)}
+                    className="w-4 h-4 rounded accent-primary"
+                  />
+                </div>
 
-              {/* タイトル */}
-              <div className="space-y-1.5">
-                <label className="text-muted-foreground">サイト名・リンク名</label>
-                <input
-                  type="text"
-                  required
-                  value={editTitle}
-                  onChange={(e) => setEditTitle(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-xl bg-card border border-border/60 text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40"
-                />
-              </div>
-
-              {/* URL */}
-              <div className="space-y-1.5">
-                <label className="text-muted-foreground">URL (リンク先)</label>
-                <input
-                  type="url"
-                  required
-                  value={editUrl}
-                  onChange={(e) => setEditUrl(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-xl bg-card border border-border/60 text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40 font-mono text-[11px]"
-                />
-              </div>
-
-              {/* 説明文 */}
-              <div className="space-y-1.5">
-                <label className="text-muted-foreground">概要・説明 (任意)</label>
-                <textarea
-                  rows={3}
-                  value={editDescription}
-                  onChange={(e) => setEditDescription(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-xl bg-card border border-border/60 text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40 leading-relaxed"
-                />
-              </div>
-
-              {/* 📷 ロゴ・画像添付エリア */}
-              <div className="space-y-2 p-3 rounded-2xl bg-muted/35 border border-border/60">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-black text-foreground flex items-center gap-1.5">
-                    <ImageIcon className="w-4 h-4 text-primary" />
-                    <span>ロゴ・サムネイル画像 (任意)</span>
-                  </span>
-                  {editImageUrl && (
+                {/* スコープ選択 */}
+                <div className="space-y-1.5">
+                  <label className="text-muted-foreground">公開範囲</label>
+                  <div className="grid grid-cols-2 gap-1 bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl border border-border">
                     <button
                       type="button"
-                      onClick={() => setEditImageUrl("")}
-                      className="text-[10px] text-destructive hover:underline font-bold"
+                      onClick={() => setEditScope("organization")}
+                      className={`py-2 px-3 rounded-xl text-xs transition-all cursor-pointer ${
+                        editScope === "organization"
+                          ? "bg-card text-foreground shadow-sm border border-border font-black"
+                          : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
+                      }`}
                     >
-                      画像を削除
+                      🏢 チーム全体（共通）
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditScope("team")}
+                      className={`py-2 px-3 rounded-xl text-xs transition-all cursor-pointer ${
+                        editScope === "team"
+                          ? "bg-card text-foreground shadow-sm border border-border font-black"
+                          : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
+                      }`}
+                    >
+                      👥 {currentTeam?.teamName || "この編成"} のみ
+                    </button>
+                  </div>
+                </div>
+
+                {/* カテゴリ選択 */}
+                <div className="space-y-1.5">
+                  <label className="text-muted-foreground">カテゴリ</label>
+                  <select
+                    value={editCategory}
+                    onChange={(e) => setEditCategory(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-xl bg-card border border-border text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                  >
+                    <option value="league">🌐 連盟・協会公式サイト</option>
+                    <option value="tournament">🏆 大会速報・組み合わせ表</option>
+                    <option value="weather">☀️ 天気予報・雨雲レーダー・暑さ指数</option>
+                    <option value="sns">📱 チーム公式SNS (Instagram/YouTube/HP)</option>
+                    <option value="grounds">🏟️ 球場・施設予約ポータル</option>
+                    <option value="partner">🤝 提携ショップ・スポンサー</option>
+                    <option value="other">🔗 その他・お役立ちリンク</option>
+                  </select>
+                </div>
+
+                {/* タイトル */}
+                <div className="space-y-1.5">
+                  <label className="text-muted-foreground">サイト名・リンク名</label>
+                  <input
+                    type="text"
+                    required
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-xl bg-card border border-border text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                  />
+                </div>
+
+                {/* URL */}
+                <div className="space-y-1.5">
+                  <label className="text-muted-foreground">URL (リンク先)</label>
+                  <input
+                    type="url"
+                    required
+                    value={editUrl}
+                    onChange={(e) => setEditUrl(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-xl bg-card border border-border text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40 font-mono text-[11px]"
+                  />
+                </div>
+
+                {/* 説明文 */}
+                <div className="space-y-1.5">
+                  <label className="text-muted-foreground">概要・説明 (任意)</label>
+                  <textarea
+                    rows={3}
+                    value={editDescription}
+                    onChange={(e) => setEditDescription(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-xl bg-card border border-border text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40 leading-relaxed"
+                  />
+                </div>
+
+                {/* 📷 ロゴ・画像添付エリア */}
+                <div className="space-y-2 p-3 rounded-2xl bg-muted/35 border border-border">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black text-foreground flex items-center gap-1.5">
+                      <ImageIcon className="w-4 h-4 text-primary" />
+                      <span>ロゴ・サムネイル画像 (任意)</span>
+                    </span>
+                    {editImageUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setEditImageUrl("")}
+                        className="text-[10px] text-destructive hover:underline font-bold"
+                      >
+                        画像を削除
+                      </button>
+                    )}
+                  </div>
+
+                  {editImageUrl ? (
+                    <div className="relative rounded-xl overflow-hidden border border-border bg-card max-h-32 flex items-center justify-center">
+                      <img
+                        src={editImageUrl}
+                        alt="プレビュー"
+                        loading="lazy"
+                        decoding="async"
+                        className="max-h-32 w-full object-contain"
+                      />
+                    </div>
+                  ) : (
+                    <div>
+                      <input
+                        ref={editFileInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => handleImageUpload(e, true)}
+                        className="hidden"
+                      />
+                      <button
+                        type="button"
+                        disabled={isEditUploadingImage}
+                        onClick={() => editFileInputRef.current?.click()}
+                        className="w-full py-2.5 px-3 rounded-xl border border-dashed border-border hover:border-primary/40 bg-card hover:bg-muted/50 text-muted-foreground hover:text-foreground font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+                      >
+                        {isEditUploadingImage ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                            <span>アップロード中...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="w-4 h-4 text-primary" />
+                            <span>ロゴ画像を選択</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
                   )}
                 </div>
 
-                {editImageUrl ? (
-                  <div className="relative rounded-xl overflow-hidden border border-border/60 bg-card max-h-32 flex items-center justify-center">
-                    <img src={editImageUrl} alt="プレビュー" className="max-h-32 w-full object-contain" />
-                  </div>
-                ) : (
-                  <div>
-                    <input
-                      ref={editFileInputRef}
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => handleImageUpload(e, true)}
-                      className="hidden"
-                    />
+                <div className="flex items-center justify-between pt-2 border-t border-border">
+                  <button
+                    type="button"
+                    onClick={handleDeleteLink}
+                    disabled={isDeleting}
+                    className="px-3 py-2 rounded-xl border border-rose-500/40 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 font-black text-xs transition-all flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>削除</span>
+                  </button>
+
+                  <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      disabled={isEditUploadingImage}
-                      onClick={() => editFileInputRef.current?.click()}
-                      className="w-full py-2.5 px-3 rounded-xl border border-dashed border-border/60 hover:border-primary/40 bg-card hover:bg-muted/50 text-muted-foreground hover:text-foreground font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+                      onClick={() => setEditingLink(null)}
+                      className="px-4 py-2.5 rounded-xl bg-card border border-border text-muted-foreground hover:bg-muted hover:text-foreground font-black text-xs transition-all cursor-pointer"
                     >
-                      {isEditUploadingImage ? (
+                      キャンセル
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isSubmitting || !editTitle.trim() || !editUrl.trim()}
+                      className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground font-black text-xs shadow-xs hover:bg-primary/90 active:scale-95 disabled:opacity-50 transition-all flex items-center gap-1.5 cursor-pointer"
+                    >
+                      {isSubmitting ? (
                         <>
-                          <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                          <span>アップロード中...</span>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>更新中...</span>
                         </>
                       ) : (
-                        <>
-                          <Upload className="w-4 h-4 text-primary" />
-                          <span>ロゴ画像を選択</span>
-                        </>
+                        <span>保存する</span>
                       )}
                     </button>
                   </div>
-                )}
-              </div>
-
-              <div className="flex items-center justify-between pt-2 border-t border-border/60">
-                <button
-                  type="button"
-                  onClick={handleDeleteLink}
-                  disabled={isDeleting}
-                  className="px-3 py-2 rounded-xl text-destructive hover:bg-destructive/10 font-black text-xs transition-all flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>削除</span>
-                </button>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setEditingLink(null)}
-                    className="px-4 py-2.5 rounded-xl bg-card border border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground font-black text-xs transition-all cursor-pointer"
-                  >
-                    キャンセル
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isSubmitting || !editTitle.trim() || !editUrl.trim()}
-                    className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground font-black text-xs shadow-xs hover:bg-primary/90 active:scale-95 disabled:opacity-50 transition-all flex items-center gap-1.5 cursor-pointer"
-                  >
-                    {isSubmitting ? (
-                      <>
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        <span>更新中...</span>
-                      </>
-                    ) : (
-                      <span>保存する</span>
-                    )}
-                  </button>
                 </div>
-              </div>
-            </form>
+              </form>
+            </div>
           </div>
         </div>,
         document.body

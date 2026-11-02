@@ -422,25 +422,34 @@ export default function LiffAdminDashboardPage() {
 
         {/* 🔒 権限エラー表示（IT管理者・監督でない場合） */}
         {!isLoading && !isAuthorized && (
-          <div className="p-6 rounded-2xl border border-border/60 bg-card shadow-xs text-center space-y-3">
-            <Lock className="w-10 h-10 text-rose-600 mx-auto" />
-            <h3 className="text-base font-black text-foreground">権限がありません</h3>
-            <p className="text-xs text-muted-foreground font-bold">
-              この画面はチームの「IT管理者」または「監督・代表」に指定されたメンバーのみ利用可能です。
-            </p>
-            <Link
-              href="/liff"
-              className="inline-block mt-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-black"
-            >
-              チームHUBへ戻る
-            </Link>
+          <div className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+            <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-rose-500 px-4 py-3 flex items-center gap-2.5">
+              <span className="w-7 h-7 rounded-xl bg-rose-500/20 text-rose-300 border border-rose-400/30 flex items-center justify-center shrink-0">
+                <Lock className="w-4 h-4" />
+              </span>
+              <div>
+                <h3 className="text-sm font-black text-white">権限がありません</h3>
+                <p className="text-[10px] font-bold text-slate-300">アクセス制限エリア</p>
+              </div>
+            </div>
+            <div className="p-6 text-center space-y-3">
+              <p className="text-xs text-muted-foreground font-bold">
+                この画面はチームの「IT管理者」または「監督・代表」に指定されたメンバーのみ利用可能です。
+              </p>
+              <Link
+                href="/liff"
+                className="inline-block mt-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-black"
+              >
+                チームHUBへ戻る
+              </Link>
+            </div>
           </div>
         )}
 
         {isAuthorized && (
           <>
             {/* 🧢 チーム＆権限ステータスサマリー */}
-            <div className="p-3.5 rounded-2xl border border-border/60 bg-card shadow-xs flex items-center justify-between">
+            <div className="p-3.5 rounded-2xl border border-border bg-card shadow-xs flex items-center justify-between">
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5 mb-0.5">
                   <ShieldCheck className="w-4 h-4 text-primary shrink-0" />
@@ -458,7 +467,7 @@ export default function LiffAdminDashboardPage() {
                   "px-2.5 py-1 rounded-xl border",
                   pendingCount > 0
                     ? "bg-amber-500/15 border-amber-500/30"
-                    : "bg-muted/35 border-border/60"
+                    : "bg-muted/35 border-border"
                 )}>
                   <span className={cn(
                     "text-[9px] font-bold block",
@@ -471,7 +480,7 @@ export default function LiffAdminDashboardPage() {
                     {pendingCount}件
                   </span>
                 </div>
-                <div className="px-2.5 py-1 rounded-xl bg-muted/35 border border-border/60">
+                <div className="px-2.5 py-1 rounded-xl bg-muted/35 border border-border">
                   <span className="text-[9px] font-bold text-muted-foreground block">総メンバー</span>
                   <span className="text-xs font-black text-foreground">
                     {data?.stats?.activeCount || 0}名
@@ -481,14 +490,14 @@ export default function LiffAdminDashboardPage() {
             </div>
 
             {/* 🌟 セグメントタブ切り替え */}
-            <div className="flex items-center gap-1 bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl border border-border/60">
+            <div className="flex items-center gap-1 bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl border border-border">
               <button
                 type="button"
                 onClick={() => setActiveTab("requests")}
                 className={cn(
                   "flex-1 flex items-center justify-center gap-1.5 py-2 px-1 rounded-xl text-xs transition-all cursor-pointer",
                   activeTab === "requests"
-                    ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                    ? "bg-card text-foreground shadow-sm border border-border font-black"
                     : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
                 )}
               >
@@ -507,7 +516,7 @@ export default function LiffAdminDashboardPage() {
                 className={cn(
                   "flex-1 flex items-center justify-center gap-1.5 py-2 px-1 rounded-xl text-xs transition-all cursor-pointer",
                   activeTab === "members"
-                    ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                    ? "bg-card text-foreground shadow-sm border border-border font-black"
                     : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
                 )}
               >
@@ -521,7 +530,7 @@ export default function LiffAdminDashboardPage() {
                 className={cn(
                   "flex-1 flex items-center justify-center gap-1.5 py-2 px-1 rounded-xl text-xs transition-all cursor-pointer",
                   activeTab === "invite"
-                    ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                    ? "bg-card text-foreground shadow-sm border border-border font-black"
                     : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
                 )}
               >
@@ -534,254 +543,286 @@ export default function LiffAdminDashboardPage() {
                 🅰️ 【参加承認】タブ
             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
             {activeTab === "requests" && (
-              <div className="space-y-3 animate-in fade-in duration-200">
-                <div className="flex items-center justify-between px-1">
-                  <h3 className="text-xs font-black text-muted-foreground flex items-center gap-1.5">
-                    <UserPlus className="w-3.5 h-3.5 text-primary" />
-                    <span>参加申請一覧 ({pendingCount}件)</span>
-                  </h3>
-                  <span className="text-[11px] font-bold text-muted-foreground">
-                    承認すると予定や出欠が解禁されます
+              <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden animate-in fade-in duration-200">
+                <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-slate-500 px-4 py-3 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span className="w-7 h-7 rounded-xl bg-slate-800 text-slate-200 border border-slate-700 flex items-center justify-center shrink-0">
+                      <UserPlus className="w-4 h-4" />
+                    </span>
+                    <div className="min-w-0">
+                      <h3 className="text-xs sm:text-sm font-black text-white truncate">
+                        参加申請一覧
+                      </h3>
+                      <p className="text-[10px] font-bold text-slate-300 truncate">
+                        承認すると予定や出欠が解禁されます
+                      </p>
+                    </div>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-200 border border-slate-700 text-[11px] font-black shrink-0">
+                    {pendingCount}件
                   </span>
                 </div>
 
-                {isLoading ? (
-                  <div className="p-8 rounded-2xl border border-border/60 bg-card shadow-xs text-center text-xs font-bold text-muted-foreground">
-                    申請データを読み込み中...
-                  </div>
-                ) : pendingCount === 0 ? (
-                  <div className="p-8 rounded-2xl border border-border/60 bg-card shadow-xs text-center space-y-2">
-                    <Check className="w-8 h-8 text-emerald-600 dark:text-emerald-400 mx-auto" />
-                    <p className="text-xs font-black text-foreground">承認待ちの申請はありません</p>
-                    <p className="text-[11px] text-muted-foreground font-medium">
-                      新しい保護者や指導者が招待コードを入力すると、ここに申請が届きます
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-2.5">
-                    {data?.pendingRequests?.map((req) => (
-                      <div
-                        key={req.memberId}
-                        className="p-3.5 rounded-2xl border border-border/60 bg-card shadow-xs space-y-3"
-                      >
-                        {/* 承認待ちカード内ヘッダー */}
-                        <div className="p-2.5 rounded-xl bg-amber-500/[0.06] dark:bg-amber-500/[0.10] border border-amber-500/20 border-l-4 border-l-amber-500 flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-1.5 mb-1 flex-wrap">
-                              <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30">
-                                承認待ち
-                              </span>
-                              <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-primary/12 text-primary border border-primary/25">
-                                {req.memberType === "father" ? "父" : req.memberType === "mother" ? "母" : req.memberType === "staff" ? "指導・スタッフ" : "保護者"}
-                              </span>
-                              <span className="text-[10px] font-bold text-muted-foreground flex items-center gap-0.5">
-                                <Clock className="w-3 h-3 text-amber-600 dark:text-amber-400" />
-                                {req.joinedAt ? new Date(req.joinedAt).toLocaleDateString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "申請中"}
-                              </span>
+                <div className="p-4">
+                  {isLoading ? (
+                    <div className="p-8 rounded-2xl border border-border bg-muted/20 text-center text-xs font-bold text-muted-foreground">
+                      申請データを読み込み中...
+                    </div>
+                  ) : pendingCount === 0 ? (
+                    <div className="p-8 rounded-2xl border border-border bg-muted/20 text-center space-y-2">
+                      <Check className="w-8 h-8 text-emerald-600 dark:text-emerald-400 mx-auto" />
+                      <p className="text-xs font-black text-foreground">承認待ちの申請はありません</p>
+                      <p className="text-[11px] text-muted-foreground font-medium">
+                        新しい保護者や指導者が招待コードを入力すると、ここに申請が届きます
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2.5">
+                      {data?.pendingRequests?.map((req) => (
+                        <div
+                          key={req.memberId}
+                          className="p-3.5 rounded-2xl border border-border bg-card shadow-xs space-y-3"
+                        >
+                          {/* 承認待ちカード内ヘッダー */}
+                          <div className="p-2.5 rounded-xl bg-amber-500/[0.06] dark:bg-amber-500/[0.10] border border-amber-500/20 border-l-4 border-l-amber-500 flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                                <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30">
+                                  承認待ち
+                                </span>
+                                <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-primary/12 text-primary border border-primary/25">
+                                  {req.memberType === "father" ? "父" : req.memberType === "mother" ? "母" : req.memberType === "staff" ? "指導・スタッフ" : "保護者"}
+                                </span>
+                                <span className="text-[10px] font-bold text-muted-foreground flex items-center gap-0.5">
+                                  <Clock className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                                  {req.joinedAt ? new Date(req.joinedAt).toLocaleDateString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "申請中"}
+                                </span>
+                              </div>
+                              <h4 className="text-sm font-black text-foreground truncate">
+                                {req.name}
+                              </h4>
+                              {req.nameKana && (
+                                <p className="text-[10px] font-bold text-muted-foreground truncate">
+                                  {req.nameKana}
+                                </p>
+                              )}
                             </div>
-                            <h4 className="text-sm font-black text-foreground truncate">
-                              {req.name}
-                            </h4>
-                            {req.nameKana && (
-                              <p className="text-[10px] font-bold text-muted-foreground truncate">
-                                {req.nameKana}
-                              </p>
-                            )}
+                          </div>
+
+                          {/* 連絡先情報 */}
+                          {(req.phone || req.email) && (
+                            <div className="p-2 rounded-xl bg-muted/35 border border-border text-[11px] space-y-1">
+                              {req.phone && (
+                                <div className="flex items-center gap-1.5 text-muted-foreground">
+                                  <Phone className="w-3 h-3 shrink-0" />
+                                  <a href={`tel:${req.phone}`} className="font-bold text-primary hover:underline">
+                                    {req.phone}
+                                  </a>
+                                </div>
+                              )}
+                              {req.email && (
+                                <div className="flex items-center gap-1.5 text-muted-foreground truncate">
+                                  <Mail className="w-3 h-3 shrink-0" />
+                                  <span className="truncate">{req.email}</span>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* 操作ボタン */}
+                          <div className="flex items-center gap-2 pt-1 border-t border-border">
+                            <Button
+                              type="button"
+                              size="sm"
+                              onClick={() => handleRequestAction(req.memberId, "approve")}
+                              className="flex-1 h-9 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 font-black text-xs shadow-xs gap-1"
+                            >
+                              <Check className="w-4 h-4" />
+                              <span>承認する</span>
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                if (window.confirm(`${req.name} さんの参加申請を却下しますか？`)) {
+                                  handleRequestAction(req.memberId, "reject");
+                                }
+                              }}
+                              className="h-9 px-3 rounded-xl border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-600 hover:text-white hover:border-rose-600 font-bold text-xs"
+                            >
+                              <X className="w-4 h-4 mr-0.5" />
+                              <span>却下</span>
+                            </Button>
                           </div>
                         </div>
-
-                        {/* 連絡先情報 */}
-                        {(req.phone || req.email) && (
-                          <div className="p-2 rounded-xl bg-muted/35 border border-border/60 text-[11px] space-y-1">
-                            {req.phone && (
-                              <div className="flex items-center gap-1.5 text-muted-foreground">
-                                <Phone className="w-3 h-3 shrink-0" />
-                                <a href={`tel:${req.phone}`} className="font-bold text-primary hover:underline">
-                                  {req.phone}
-                                </a>
-                              </div>
-                            )}
-                            {req.email && (
-                              <div className="flex items-center gap-1.5 text-muted-foreground truncate">
-                                <Mail className="w-3 h-3 shrink-0" />
-                                <span className="truncate">{req.email}</span>
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        {/* 操作ボタン */}
-                        <div className="flex items-center gap-2 pt-1 border-t border-border/60">
-                          <Button
-                            type="button"
-                            size="sm"
-                            onClick={() => handleRequestAction(req.memberId, "approve")}
-                            className="flex-1 h-9 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 font-black text-xs shadow-xs gap-1"
-                          >
-                            <Check className="w-4 h-4" />
-                            <span>承認する</span>
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              if (window.confirm(`${req.name} さんの参加申請を却下しますか？`)) {
-                                handleRequestAction(req.memberId, "reject");
-                              }
-                            }}
-                            className="h-9 px-3 rounded-xl border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-600 hover:text-white hover:border-rose-600 font-bold text-xs"
-                          >
-                            <X className="w-4 h-4 mr-0.5" />
-                            <span>却下</span>
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </section>
             )}
 
             {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                 🅱️ 【メンバー・班管理】タブ
             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
             {activeTab === "members" && (
-              <div className="space-y-3 animate-in fade-in duration-200">
-                {/* 検索 & フィルター */}
-                <div className="space-y-2">
-                  <div className="relative">
-                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      type="text"
-                      placeholder="名前・班（例: 山田, 1班）で絞り込み"
-                      value={memberSearch}
-                      onChange={(e) => setMemberSearch(e.target.value)}
-                      className="pl-9 h-10 rounded-xl text-xs font-bold bg-card border-border/60 shadow-xs"
-                    />
-                    {memberSearch && (
-                      <button
-                        type="button"
-                        onClick={() => setMemberSearch("")}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="flex items-center gap-1.5 text-xs">
-                    {(["all", "staff", "parent"] as const).map((t) => (
-                      <button
-                        key={t}
-                        type="button"
-                        onClick={() => setMemberFilter(t)}
-                        className={cn(
-                          "px-3 py-1.5 rounded-xl text-[11px] transition-all cursor-pointer",
-                          memberFilter === t
-                            ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
-                            : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
-                        )}
-                      >
-                        {t === "all" ? "全員" : t === "staff" ? "指導・スタッフ" : "保護者"}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* メンバー統合バー */}
-                  <div className="flex items-center justify-between pt-1">
-                    <span className="text-[11px] font-black text-muted-foreground">
-                      メンバー一覧 ({filteredActiveMembers.length}名)
+              <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden animate-in fade-in duration-200">
+                <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-slate-500 px-4 py-3 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span className="w-7 h-7 rounded-xl bg-slate-800 text-slate-200 border border-slate-700 flex items-center justify-center shrink-0">
+                      <Users className="w-4 h-4" />
                     </span>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleOpenMergeModal()}
-                      className="h-7 px-2.5 rounded-xl text-[11px] font-black border-primary/25 text-primary bg-primary/10 hover:bg-primary/15 flex items-center gap-1 shadow-xs"
-                    >
-                      <GitMerge className="w-3 h-3" />
-                      <span>メンバー統合</span>
-                    </Button>
+                    <div className="min-w-0">
+                      <h3 className="text-xs sm:text-sm font-black text-white truncate">
+                        メンバー・班管理
+                      </h3>
+                      <p className="text-[10px] font-bold text-slate-300 truncate">
+                        役割権限・当番班・重複アカウント統合
+                      </p>
+                    </div>
                   </div>
+                  <span className="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-200 border border-slate-700 text-[11px] font-black shrink-0">
+                    {filteredActiveMembers.length}名
+                  </span>
                 </div>
 
-                {/* メンバー一覧 */}
-                <div className="space-y-2">
-                  {filteredActiveMembers.length === 0 ? (
-                    <div className="p-8 text-center text-xs font-bold text-muted-foreground rounded-2xl border border-border/60 bg-card shadow-xs">
-                      一致するメンバーが見つかりません
+                <div className="p-4 space-y-3">
+                  {/* 検索 & フィルター */}
+                  <div className="space-y-2">
+                    <div className="relative">
+                      <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        type="text"
+                        placeholder="名前・班（例: 山田, 1班）で絞り込み"
+                        value={memberSearch}
+                        onChange={(e) => setMemberSearch(e.target.value)}
+                        className="pl-9 h-10 rounded-xl text-xs font-bold bg-card border-border shadow-xs"
+                      />
+                      {memberSearch && (
+                        <button
+                          type="button"
+                          onClick={() => setMemberSearch("")}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
-                  ) : (
-                    filteredActiveMembers.map((member) => (
-                      <div
-                        key={member.memberId}
-                        className="p-3 rounded-2xl border border-border/60 bg-card shadow-xs flex items-center justify-between gap-2"
+
+                    <div className="flex items-center gap-1.5 text-xs">
+                      {(["all", "staff", "parent"] as const).map((t) => (
+                        <button
+                          key={t}
+                          type="button"
+                          onClick={() => setMemberFilter(t)}
+                          className={cn(
+                            "px-3 py-1.5 rounded-xl text-[11px] transition-all cursor-pointer",
+                            memberFilter === t
+                              ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
+                              : "bg-card text-muted-foreground border border-border hover:text-foreground hover:bg-muted/50 font-bold"
+                          )}
+                        >
+                          {t === "all" ? "全員" : t === "staff" ? "指導・スタッフ" : "保護者"}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* メンバー統合バー */}
+                    <div className="flex items-center justify-between pt-1">
+                      <span className="text-[11px] font-black text-muted-foreground">
+                        メンバー一覧 ({filteredActiveMembers.length}名)
+                      </span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleOpenMergeModal()}
+                        className="h-7 px-2.5 rounded-xl text-[11px] font-black border-primary/30 text-primary bg-primary/10 hover:bg-primary/15 flex items-center gap-1 shadow-xs"
                       >
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5 mb-1 flex-wrap">
-                            <span className="text-[10px] font-black px-1.5 py-0.2 rounded bg-muted/50 text-muted-foreground border border-border/60">
-                              {ROLE_OPTIONS.find((r) => r.id === member.role)?.label || member.role}
-                            </span>
-                            {member.userId ? (
-                              <span className="text-[10px] font-black px-1.5 py-0.2 rounded bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 border border-emerald-500/25 flex items-center gap-0.5">
-                                <UserCheck className="w-2.5 h-2.5" />
-                                <span>連携済</span>
+                        <GitMerge className="w-3 h-3" />
+                        <span>メンバー統合</span>
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* メンバー一覧 */}
+                  <div className="space-y-2">
+                    {filteredActiveMembers.length === 0 ? (
+                      <div className="p-8 text-center text-xs font-bold text-muted-foreground rounded-2xl border border-border bg-muted/20">
+                        一致するメンバーが見つかりません
+                      </div>
+                    ) : (
+                      filteredActiveMembers.map((member) => (
+                        <div
+                          key={member.memberId}
+                          className="p-3 rounded-2xl border border-border bg-card shadow-xs flex items-center justify-between gap-2"
+                        >
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                              <span className="text-[10px] font-black px-1.5 py-0.2 rounded bg-muted/50 text-muted-foreground border border-border">
+                                {ROLE_OPTIONS.find((r) => r.id === member.role)?.label || member.role}
                               </span>
-                            ) : (
-                              <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-muted/50 text-muted-foreground border border-border/60">
-                                手動名簿
-                              </span>
-                            )}
-                            {member.subLabel && (
-                              <span className="text-[10px] font-black px-1.5 py-0.2 rounded bg-amber-500/12 text-amber-700 dark:text-amber-300 border border-amber-500/25">
-                                {member.subLabel}
-                              </span>
+                              {member.userId ? (
+                                <span className="text-[10px] font-black px-1.5 py-0.2 rounded bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 border border-emerald-500/25 flex items-center gap-0.5">
+                                  <UserCheck className="w-2.5 h-2.5" />
+                                  <span>連携済</span>
+                                </span>
+                              ) : (
+                                <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-muted/50 text-muted-foreground border border-border">
+                                  手動名簿
+                                </span>
+                              )}
+                              {member.subLabel && (
+                                <span className="text-[10px] font-black px-1.5 py-0.2 rounded bg-amber-500/12 text-amber-700 dark:text-amber-300 border border-amber-500/25">
+                                  {member.subLabel}
+                                </span>
+                              )}
+                            </div>
+                            <h4 className="text-sm font-black text-foreground truncate">
+                              {member.name}
+                            </h4>
+                            {member.phone && (
+                              <p className="text-[10px] font-bold text-muted-foreground">
+                                {member.phone}
+                              </p>
                             )}
                           </div>
-                          <h4 className="text-sm font-black text-foreground truncate">
-                            {member.name}
-                          </h4>
-                          {member.phone && (
-                            <p className="text-[10px] font-bold text-muted-foreground">
-                              {member.phone}
-                            </p>
-                          )}
-                        </div>
 
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleOpenMergeModal(member)}
-                            title="他のアカウントと統合（マージ）"
-                            className="h-8 px-2 rounded-xl text-xs font-bold border-primary/25 text-primary bg-primary/10 hover:bg-primary/15 gap-1"
-                          >
-                            <GitMerge className="w-3 h-3" />
-                            <span>統合</span>
-                          </Button>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleOpenMergeModal(member)}
+                              title="他のアカウントと統合（マージ）"
+                              className="h-8 px-2 rounded-xl text-xs font-bold border-primary/30 text-primary bg-primary/10 hover:bg-primary/15 gap-1"
+                            >
+                              <GitMerge className="w-3 h-3" />
+                              <span>統合</span>
+                            </Button>
 
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              setEditingMember(member);
-                              setEditRole(member.role || "parent");
-                              setEditSubLabel(member.subLabel || "");
-                            }}
-                            className="h-8 px-2.5 rounded-xl text-xs font-bold border-border/60 bg-card hover:bg-muted text-foreground gap-1"
-                          >
-                            <Edit2 className="w-3 h-3 text-primary" />
-                            <span>変更</span>
-                          </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setEditingMember(member);
+                                setEditRole(member.role || "parent");
+                                setEditSubLabel(member.subLabel || "");
+                              }}
+                              className="h-8 px-2.5 rounded-xl text-xs font-bold border-border bg-card hover:bg-muted text-foreground gap-1"
+                            >
+                              <Edit2 className="w-3 h-3 text-primary" />
+                              <span>変更</span>
+                            </Button>
+                          </div>
                         </div>
-                      </div>
-                    ))
-                  )}
+                      ))
+                    )}
+                  </div>
                 </div>
-              </div>
+              </section>
             )}
 
             {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -789,53 +830,74 @@ export default function LiffAdminDashboardPage() {
             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
             {activeTab === "invite" && (
               <div className="space-y-4 animate-in fade-in duration-200">
-                {/* 🔑 招待コードカード */}
-                <div className="p-4 rounded-2xl border border-border/60 bg-card shadow-xs space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-black text-muted-foreground flex items-center gap-1.5">
-                      <Sparkles className="w-3.5 h-3.5 text-primary" />
-                      <span>チーム招待コード</span>
-                    </span>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 border border-emerald-500/25">
+                {/* 🔑 招待コードカード (A-3 Dark Solid Header Cap) */}
+                <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+                  <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span className="w-7 h-7 rounded-xl bg-primary/20 text-blue-300 border border-primary/40 flex items-center justify-center shrink-0">
+                        <Sparkles className="w-4 h-4" />
+                      </span>
+                      <div className="min-w-0">
+                        <h3 className="text-xs sm:text-sm font-black text-white truncate">
+                          チーム招待コード
+                        </h3>
+                        <p className="text-[10px] font-bold text-slate-300 truncate">
+                          LINEミニアプリへの参加案内・共有
+                        </p>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 shrink-0">
                       LINEから直接参加可
                     </span>
                   </div>
 
-                  <div className="p-3 rounded-xl bg-muted/35 border border-border/60 flex items-center justify-between gap-2">
-                    <span className="font-mono text-sm sm:text-base font-black tracking-widest text-foreground select-all truncate">
-                      {inviteCode}
-                    </span>
+                  <div className="p-4 space-y-3">
+                    <div className="p-3 rounded-xl bg-muted/35 border border-border flex items-center justify-between gap-2">
+                      <span className="font-mono text-sm sm:text-base font-black tracking-widest text-foreground select-all truncate">
+                        {inviteCode}
+                      </span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={handleCopyInvite}
+                        className="h-8 px-3 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 font-black text-xs shrink-0 gap-1"
+                      >
+                        {isCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                        <span>{isCopied ? "コピー済" : "コピー"}</span>
+                      </Button>
+                    </div>
+
                     <Button
                       type="button"
-                      size="sm"
-                      onClick={handleCopyInvite}
-                      className="h-8 px-3 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 font-black text-xs shrink-0 gap-1"
+                      onClick={handleShareLine}
+                      className="w-full h-10 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 font-black text-xs gap-1.5 shadow-xs"
                     >
-                      {isCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                      <span>{isCopied ? "コピー済" : "コピー"}</span>
+                      <Share2 className="w-4 h-4" />
+                      <span>LINEでメンバーを招待する</span>
                     </Button>
                   </div>
+                </section>
 
-                  <Button
-                    type="button"
-                    onClick={handleShareLine}
-                    className="w-full h-10 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 font-black text-xs gap-1.5 shadow-xs"
-                  >
-                    <Share2 className="w-4 h-4" />
-                    <span>LINEでメンバーを招待する</span>
-                  </Button>
-                </div>
-
-                {/* 🚀 管理クイックショートカット */}
-                <div className="space-y-2">
-                  <h4 className="text-xs font-black text-muted-foreground px-1">
-                    管理者向けクイックショートカット
-                  </h4>
+                {/* 🚀 管理クイックショートカット (A-3 Dark Solid Header Cap) */}
+                <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+                  <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-slate-500 px-4 py-3 flex items-center gap-2.5">
+                    <span className="w-7 h-7 rounded-xl bg-slate-800 text-slate-200 border border-slate-700 flex items-center justify-center shrink-0">
+                      <Settings className="w-4 h-4" />
+                    </span>
+                    <div>
+                      <h4 className="text-xs sm:text-sm font-black text-white">
+                        管理者向けクイックショートカット
+                      </h4>
+                      <p className="text-[10px] font-bold text-slate-300">
+                        出欠集計・予定作成・チーム環境設定
+                      </p>
+                    </div>
+                  </div>
                   
-                  <div className="grid grid-cols-1 gap-2">
+                  <div className="p-4 grid grid-cols-1 gap-2">
                     <Link
                       href="/liff/schedule/board"
-                      className="p-3.5 rounded-2xl border border-border/60 bg-card shadow-xs hover:border-primary/40 transition-all flex items-center justify-between group"
+                      className="p-3.5 rounded-2xl border border-border bg-card shadow-xs hover:border-primary/40 transition-all flex items-center justify-between group"
                     >
                       <div className="flex items-center gap-3">
                         <div className="w-9 h-9 rounded-xl bg-teal-500/12 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
@@ -855,7 +917,7 @@ export default function LiffAdminDashboardPage() {
 
                     <Link
                       href="/liff/schedule?tab=planner"
-                      className="p-3.5 rounded-2xl border border-border/60 bg-card shadow-xs hover:border-primary/40 transition-all flex items-center justify-between group"
+                      className="p-3.5 rounded-2xl border border-border bg-card shadow-xs hover:border-primary/40 transition-all flex items-center justify-between group"
                     >
                       <div className="flex items-center gap-3">
                         <div className="w-9 h-9 rounded-xl bg-teal-500/12 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
@@ -875,7 +937,7 @@ export default function LiffAdminDashboardPage() {
 
                     <Link
                       href="/liff/settings/team"
-                      className="p-3.5 rounded-2xl border border-border/60 bg-card shadow-xs hover:border-primary/40 transition-all flex items-center justify-between group"
+                      className="p-3.5 rounded-2xl border border-border bg-card shadow-xs hover:border-primary/40 transition-all flex items-center justify-between group"
                     >
                       <div className="flex items-center gap-3">
                         <div className="w-9 h-9 rounded-xl bg-slate-500/12 text-slate-700 dark:text-slate-300 border border-slate-500/25 flex items-center justify-center shrink-0">
@@ -893,7 +955,7 @@ export default function LiffAdminDashboardPage() {
                       <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
                     </Link>
                   </div>
-                </div>
+                </section>
               </div>
             )}
           </>
@@ -904,107 +966,114 @@ export default function LiffAdminDashboardPage() {
 
       {/* 🌟 メンバー役割・班編集ポップアップモーダル */}
       {editingMember && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="w-full max-w-sm rounded-2xl border border-border/60 bg-card shadow-xs p-5 space-y-4 animate-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between border-b border-border/60 pb-3">
-              <div>
-                <span className="text-[10px] font-black uppercase text-primary tracking-wider">メンバー設定</span>
-                <h3 className="text-base font-black text-foreground truncate">{editingMember.name} さん</h3>
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/60 animate-in fade-in duration-150">
+          <div className="w-full max-w-sm rounded-2xl border border-border bg-card shadow-xs overflow-hidden animate-in zoom-in-95 duration-150">
+            <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-slate-500 px-4 py-3 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span className="w-8 h-8 rounded-xl bg-slate-800 text-slate-200 border border-slate-700 flex items-center justify-center shrink-0">
+                  <Edit2 className="w-4 h-4" />
+                </span>
+                <div className="min-w-0">
+                  <span className="text-[10px] font-black uppercase text-slate-300 tracking-wider block">メンバー設定</span>
+                  <h3 className="text-sm sm:text-base font-black text-white truncate">{editingMember.name} さん</h3>
+                </div>
               </div>
               <button
                 type="button"
                 onClick={() => setEditingMember(null)}
-                className="w-8 h-8 rounded-full bg-muted/50 flex items-center justify-center text-muted-foreground hover:text-foreground"
+                className="p-1.5 rounded-full text-slate-300 hover:text-white hover:bg-slate-800 transition-colors shrink-0"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            {/* 1. 役割 (Role) の選択 */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-black text-foreground">チーム内の役割 (Role)</label>
-              <div className="grid grid-cols-2 gap-1.5">
-                {ROLE_OPTIONS.map((opt) => (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    onClick={() => setEditRole(opt.id)}
-                    className={cn(
-                      "p-2 rounded-xl text-left border transition-all cursor-pointer",
-                      editRole === opt.id
-                        ? "border-primary/35 bg-primary/12 text-primary shadow-2xs font-black"
-                        : "bg-card text-foreground border-border/60 hover:bg-muted/50 font-bold"
-                    )}
-                  >
-                    <p className="text-xs leading-none">{opt.label}</p>
-                    <p className={cn("text-[9px] mt-1 leading-none truncate", editRole === opt.id ? "text-primary/80" : "text-muted-foreground")}>
-                      {opt.desc}
-                    </p>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* 2. 班・サブラベルの設定 */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-black text-foreground">当番班・サブラベル</label>
-                <span className="text-[10px] text-muted-foreground font-bold">出欠表の氏名下に表示</span>
+            <div className="p-5 space-y-4">
+              {/* 1. 役割 (Role) の選択 */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-black text-foreground">チーム内の役割 (Role)</label>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {ROLE_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => setEditRole(opt.id)}
+                      className={cn(
+                        "p-2 rounded-xl text-left border transition-all cursor-pointer",
+                        editRole === opt.id
+                          ? "border-primary/35 bg-primary/12 text-primary shadow-2xs font-black"
+                          : "bg-card text-foreground border-border hover:bg-muted/50 font-bold"
+                      )}
+                    >
+                      <p className="text-xs leading-none">{opt.label}</p>
+                      <p className={cn("text-[9px] mt-1 leading-none truncate", editRole === opt.id ? "text-primary/80" : "text-muted-foreground")}>
+                        {opt.desc}
+                      </p>
+                    </button>
+                  ))}
+                </div>
               </div>
 
-              <div className="flex flex-wrap gap-1 mb-1.5">
-                {PRESET_SUB_LABELS.map((label) => (
+              {/* 2. 班・サブラベルの設定 */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-black text-foreground">当番班・サブラベル</label>
+                  <span className="text-[10px] text-muted-foreground font-bold">出欠表の氏名下に表示</span>
+                </div>
+
+                <div className="flex flex-wrap gap-1 mb-1.5">
+                  {PRESET_SUB_LABELS.map((label) => (
+                    <button
+                      key={label}
+                      type="button"
+                      onClick={() => setEditSubLabel(label)}
+                      className={cn(
+                        "px-2 py-1 rounded-lg text-xs border transition-all",
+                        editSubLabel === label
+                          ? "bg-primary/12 text-primary border-primary/35 font-black shadow-2xs"
+                          : "bg-card text-muted-foreground border-border hover:text-foreground hover:bg-muted/50 font-bold"
+                      )}
+                    >
+                      {label}
+                    </button>
+                  ))}
                   <button
-                    key={label}
                     type="button"
-                    onClick={() => setEditSubLabel(label)}
-                    className={cn(
-                      "px-2 py-1 rounded-lg text-xs border transition-all",
-                      editSubLabel === label
-                        ? "bg-primary/12 text-primary border-primary/35 font-black shadow-2xs"
-                        : "bg-card text-muted-foreground border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
-                    )}
+                    onClick={() => setEditSubLabel("")}
+                    className="px-2 py-1 rounded-lg text-xs font-bold bg-card text-muted-foreground border border-border hover:text-rose-600"
                   >
-                    {label}
+                    解除
                   </button>
-                ))}
-                <button
+                </div>
+
+                <Input
+                  type="text"
+                  placeholder="自由入力 (例: 1班, 捕手, 配車)"
+                  value={editSubLabel}
+                  maxLength={8}
+                  onChange={(e) => setEditSubLabel(e.target.value)}
+                  className="h-9 rounded-xl text-xs font-bold bg-muted/35 border-border"
+                />
+              </div>
+
+              {/* アクションボタン */}
+              <div className="flex items-center gap-2 pt-2">
+                <Button
                   type="button"
-                  onClick={() => setEditSubLabel("")}
-                  className="px-2 py-1 rounded-lg text-xs font-bold bg-card text-muted-foreground border border-border/60 hover:text-rose-600"
+                  variant="outline"
+                  onClick={() => setEditingMember(null)}
+                  className="flex-1 h-10 rounded-xl border-border text-xs font-bold"
                 >
-                  解除
-                </button>
+                  キャンセル
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleSaveMemberRole}
+                  disabled={isSavingMember}
+                  className="flex-1 h-10 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 font-black text-xs shadow-xs"
+                >
+                  {isSavingMember ? "保存中..." : "変更を保存"}
+                </Button>
               </div>
-
-              <Input
-                type="text"
-                placeholder="自由入力 (例: 1班, 捕手, 配車)"
-                value={editSubLabel}
-                maxLength={8}
-                onChange={(e) => setEditSubLabel(e.target.value)}
-                className="h-9 rounded-xl text-xs font-bold bg-muted/35 border-border/60"
-              />
-            </div>
-
-            {/* アクションボタン */}
-            <div className="flex items-center gap-2 pt-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setEditingMember(null)}
-                className="flex-1 h-10 rounded-xl border-border/60 text-xs font-bold"
-              >
-                キャンセル
-              </Button>
-              <Button
-                type="button"
-                onClick={handleSaveMemberRole}
-                disabled={isSavingMember}
-                className="flex-1 h-10 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 font-black text-xs shadow-xs"
-              >
-                {isSavingMember ? "保存中..." : "変更を保存"}
-              </Button>
             </div>
           </div>
         </div>
@@ -1014,29 +1083,29 @@ export default function LiffAdminDashboardPage() {
           🔗 メンバー統合（マージ）ダイアログ
       ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {isMergeModalOpen && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-3 bg-background/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full max-w-md rounded-2xl border border-border/60 bg-card shadow-xs p-5 space-y-4 max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-200">
-            {/* ヘッダー */}
-            <div className="flex items-center justify-between pb-3 border-b border-border/60">
-              <div className="flex items-center gap-2">
-                <div className="w-9 h-9 rounded-2xl bg-primary/10 text-primary flex items-center justify-center">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-3 bg-slate-950/60 animate-in fade-in duration-200">
+          <div className="w-full max-w-md rounded-2xl border border-border bg-card shadow-xs overflow-hidden max-h-[90vh] flex flex-col animate-in zoom-in-95 duration-200">
+            {/* ヘッダー (A-3 Dark Solid Header Cap) */}
+            <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3 flex items-center justify-between gap-2 shrink-0">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-9 h-9 rounded-xl bg-primary/20 text-blue-300 border border-primary/40 flex items-center justify-center shrink-0">
                   <GitMerge className="w-5 h-5" />
                 </div>
-                <div>
-                  <h3 className="text-base font-black text-foreground">メンバー統合（マージ）</h3>
-                  <p className="text-[10px] font-bold text-muted-foreground">手動登録名簿とLINE参加アカウントを合流</p>
+                <div className="min-w-0">
+                  <h3 className="text-sm sm:text-base font-black text-white truncate">メンバー統合（マージ）</h3>
+                  <p className="text-[10px] font-bold text-slate-300 truncate">手動登録名簿とLINE参加アカウントを合流</p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setIsMergeModalOpen(false)}
-                className="p-1.5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground transition-all"
+                className="p-1.5 rounded-full text-slate-300 hover:text-white hover:bg-slate-800 transition-all shrink-0"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="space-y-4 text-xs">
+            <div className="p-5 space-y-4 text-xs overflow-y-auto">
               {/* ① 残す名簿メンバー（手動登録・マスター側） */}
               <div className="space-y-1.5">
                 <label className="text-xs font-black text-foreground flex items-center gap-1.5">
@@ -1049,7 +1118,7 @@ export default function LiffAdminDashboardPage() {
                     const found = data?.activeMembers?.find((m) => m.memberId === e.target.value);
                     setMergeTargetMember(found || null);
                   }}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-border/60 bg-background text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/20"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/20"
                 >
                   <option value="">残すメンバーを選択...</option>
                   {data?.activeMembers?.map((m) => (
@@ -1072,7 +1141,7 @@ export default function LiffAdminDashboardPage() {
                 <select
                   value={selectedSourceMemberId}
                   onChange={(e) => setSelectedSourceMemberId(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-border/60 bg-background text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/20"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/20"
                 >
                   <option value="">統合するアカウントを選択...</option>
                   {data?.activeMembers
@@ -1094,12 +1163,12 @@ export default function LiffAdminDashboardPage() {
                 if (!mergeTargetMember || !source) return null;
 
                 return (
-                  <div className="p-3.5 rounded-2xl bg-muted/35 border border-border/60 border-l-4 border-l-primary space-y-2 animate-in fade-in duration-150">
+                  <div className="p-3.5 rounded-2xl bg-muted/35 border border-border border-l-4 border-l-primary space-y-2 animate-in fade-in duration-150">
                     <div className="flex items-center gap-1.5 font-black text-primary">
                       <Sparkles className="w-4 h-4 shrink-0" />
                       <span>メンバー統合（マージ）プレビュー</span>
                     </div>
-                    <div className="p-2.5 rounded-xl bg-card border border-border/60 space-y-1 text-[11px] font-bold">
+                    <div className="p-2.5 rounded-xl bg-card border border-border space-y-1 text-[11px] font-bold">
                       <div className="flex items-center justify-between">
                         <span className="text-muted-foreground">残す名簿データ:</span>
                         <span className="font-black text-foreground">{mergeTargetMember.name} (出欠・過去記録を保持)</span>
@@ -1123,7 +1192,7 @@ export default function LiffAdminDashboardPage() {
                   variant="outline"
                   onClick={() => setIsMergeModalOpen(false)}
                   disabled={isMerging}
-                  className="flex-1 h-11 rounded-xl border-border/60 font-black text-xs"
+                  className="flex-1 h-11 rounded-xl border-border font-black text-xs"
                 >
                   キャンセル
                 </Button>

@@ -63,15 +63,24 @@ export const MatchService = {
 
     const scorebookMatchIds = new Set<string>();
     const matchIds = rows.map((r) => r.id);
-    for (let i = 0; i < matchIds.length; i += 80) {
-      const chunk = matchIds.slice(i, i + 80);
-      const abRows = await db
-        .select({ matchId: atBats.matchId })
-        .from(atBats)
-        .where(inArray(atBats.matchId, chunk))
-        .all();
-      for (const ab of abRows) {
-        if (ab.matchId) scorebookMatchIds.add(ab.matchId);
+    if (matchIds.length > 0) {
+      const chunks: string[][] = [];
+      for (let i = 0; i < matchIds.length; i += 80) {
+        chunks.push(matchIds.slice(i, i + 80));
+      }
+      const chunkResults = await Promise.all(
+        chunks.map((chunk) =>
+          db
+            .selectDistinct({ matchId: atBats.matchId })
+            .from(atBats)
+            .where(inArray(atBats.matchId, chunk))
+            .all()
+        )
+      );
+      for (const abRows of chunkResults) {
+        for (const ab of abRows) {
+          if (ab.matchId) scorebookMatchIds.add(ab.matchId);
+        }
       }
     }
 

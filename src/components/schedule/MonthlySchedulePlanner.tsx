@@ -399,14 +399,14 @@ export function MonthlySchedulePlanner({
       )}
 
       {/* 🌟 1. ヘッダー：月操作 ＆ アクションボタン */}
-      <div className="p-4 rounded-2xl border border-border/60 bg-card shadow-xs space-y-3">
+      <div className="p-4 rounded-2xl border border-border bg-card shadow-xs overflow-hidden space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           {/* 月移動 */}
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={handlePrevMonth}
-              className="p-2 rounded-xl bg-muted/50 hover:bg-muted text-foreground border border-border/60 transition-all active:scale-95 cursor-pointer"
+              className="p-2 rounded-xl bg-muted hover:bg-muted/80 text-foreground border border-border transition-all active:scale-95 cursor-pointer"
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
@@ -418,7 +418,7 @@ export function MonthlySchedulePlanner({
             <button
               type="button"
               onClick={handleNextMonth}
-              className="p-2 rounded-xl bg-muted/50 hover:bg-muted text-foreground border border-border/60 transition-all active:scale-95 cursor-pointer"
+              className="p-2 rounded-xl bg-muted hover:bg-muted/80 text-foreground border border-border transition-all active:scale-95 cursor-pointer"
             >
               <ChevronRight className="w-4 h-4" />
             </button>
@@ -426,7 +426,7 @@ export function MonthlySchedulePlanner({
             <button
               type="button"
               onClick={handleToday}
-              className="px-3 py-1.5 rounded-xl bg-card hover:bg-muted border border-border/60 text-xs font-black text-foreground transition-all active:scale-95 cursor-pointer"
+              className="px-3 py-1.5 rounded-xl bg-card hover:bg-muted border border-border text-xs font-black text-foreground transition-all active:scale-95 cursor-pointer"
             >
               今月
             </button>
@@ -446,7 +446,7 @@ export function MonthlySchedulePlanner({
             <button
               type="button"
               onClick={handleClearMonth}
-              className="py-2 px-2.5 rounded-xl bg-card hover:bg-rose-500/10 border border-border/60 text-muted-foreground hover:text-rose-600 text-xs font-bold transition-all active:scale-95 cursor-pointer"
+              className="py-2 px-2.5 rounded-xl bg-card hover:bg-rose-500/10 border border-border text-muted-foreground hover:text-rose-600 text-xs font-bold transition-all active:scale-95 cursor-pointer"
               title="今月の選択をクリア"
             >
               <Trash2 className="w-3.5 h-3.5" />
@@ -471,79 +471,119 @@ export function MonthlySchedulePlanner({
       </div>
 
       {/* 🌟 2. 月間カレンダーグリッド */}
-      <div className="p-3.5 rounded-2xl border border-border/60 bg-card shadow-xs space-y-2">
-        {/* 曜日ヘッダー */}
-        <div className="grid grid-cols-7 gap-1 text-center text-xs font-black">
-          {weekDays.map((w, idx) => (
-            <div
-              key={w}
-              className={cn(
-                "py-1.5 rounded-lg",
-                idx === 0 ? "text-red-500 bg-red-500/5" : idx === 6 ? "text-blue-500 bg-blue-500/5" : "text-muted-foreground"
-              )}
+      <div className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+        {/* A-3 上帯ダークキャップ（月ナビゲーション） */}
+        <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-teal-500 px-4 py-3 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="w-6 h-6 rounded-lg bg-teal-500/20 text-teal-300 border border-teal-400/30 flex items-center justify-center shrink-0">
+              <CalendarIcon className="w-3.5 h-3.5" />
+            </span>
+            <span className="text-sm font-black text-white tracking-tight tabular-nums">
+              {currentYear}年 {currentMonth + 1}月 カレンダー
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              type="button"
+              onClick={handleToday}
+              className="px-2.5 py-1 text-[11px] font-black rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-100 transition-all active:scale-95 cursor-pointer"
             >
-              {w}
-            </div>
-          ))}
+              今月
+            </button>
+            <button
+              type="button"
+              onClick={handlePrevMonth}
+              className="p-1 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-all cursor-pointer"
+              title="前月"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={handleNextMonth}
+              className="p-1 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-all cursor-pointer"
+              title="翌月"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
-        {/* 日付セル一覧 */}
-        <div className="grid grid-cols-7 gap-1">
-          {calendarDays.map((d, idx) => {
-            const dateStr = formatDateString(d.date);
-            const isSelected = selectedDayItems.some(it => it.dateStr === dateStr);
-            const isToday = dateStr === formatDateString(new Date());
-            const isSun = d.date.getDay() === 0;
-            const isSat = d.date.getDay() === 6;
-
-            return (
-              <button
-                key={idx}
-                type="button"
-                onClick={() => handleToggleDate(d.date)}
+        <div className="p-3.5 space-y-2">
+          {/* 曜日ヘッダー */}
+          <div className="grid grid-cols-7 gap-1 text-center text-xs font-black">
+            {weekDays.map((w, idx) => (
+              <div
+                key={w}
                 className={cn(
-                  "flex flex-col items-center justify-center p-2 rounded-2xl min-h-[58px] sm:min-h-[64px] transition-all relative cursor-pointer active:scale-95",
-                  isSelected
-                    ? "bg-primary/12 text-foreground font-black shadow-2xs border border-primary/40"
-                    : isToday
-                    ? "bg-primary/10 border border-primary/40 text-foreground font-black"
-                    : d.isCurrentMonth
-                    ? "bg-muted/35 hover:bg-muted/60 text-foreground border border-border/60"
-                    : "bg-muted/15 text-muted-foreground/30 border border-transparent"
+                  "py-1.5 rounded-lg",
+                  idx === 0 ? "text-red-500 bg-red-500/5" : idx === 6 ? "text-blue-500 bg-blue-500/5" : "text-muted-foreground"
                 )}
               >
-                {/* 日付数字 */}
-                <span
+                {w}
+              </div>
+            ))}
+          </div>
+
+          {/* 日付セル一覧 */}
+          <div className="grid grid-cols-7 gap-1">
+            {calendarDays.map((d, idx) => {
+              const dateStr = formatDateString(d.date);
+              const isSelected = selectedDayItems.some(it => it.dateStr === dateStr);
+              const isToday = dateStr === formatDateString(new Date());
+              const isSun = d.date.getDay() === 0;
+              const isSat = d.date.getDay() === 6;
+
+              return (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => handleToggleDate(d.date)}
                   className={cn(
-                    "text-sm",
-                    isSun
-                      ? "text-red-500 font-black"
-                      : isSat
-                      ? "text-blue-500 font-black"
-                      : isSelected
-                      ? "text-primary font-black"
-                      : "font-bold"
+                    "flex flex-col items-center justify-center p-2 rounded-2xl min-h-[58px] sm:min-h-[64px] transition-all relative cursor-pointer active:scale-95",
+                    isSelected
+                      ? "bg-primary/12 text-foreground font-black shadow-2xs border border-primary/40"
+                      : isToday
+                      ? "bg-primary/10 border border-primary/40 text-foreground font-black"
+                      : d.isCurrentMonth
+                      ? "bg-muted/35 hover:bg-muted/60 text-foreground border border-border"
+                      : "bg-muted/15 text-muted-foreground/30 border border-transparent"
                   )}
                 >
-                  {d.date.getDate()}
-                </span>
-
-                {/* 選択状態ラベル */}
-                {isSelected ? (
-                  <span className="mt-1 px-1.5 py-0.2 rounded-md bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 text-[9.5px] font-black tracking-tight leading-none flex items-center gap-0.5">
-                    <Check className="w-2.5 h-2.5" />
-                    <span>活動日</span>
+                  {/* 日付数字 */}
+                  <span
+                    className={cn(
+                      "text-sm",
+                      isSun
+                        ? "text-red-500 font-black"
+                        : isSat
+                        ? "text-blue-500 font-black"
+                        : isSelected
+                        ? "text-primary font-black"
+                        : "font-bold"
+                    )}
+                  >
+                    {d.date.getDate()}
                   </span>
-                ) : (
-                  isToday && (
-                    <span className="mt-1 text-[9px] font-bold text-primary opacity-80 leading-none">
-                      今日
+
+                  {/* 選択状態ラベル */}
+                  {isSelected ? (
+                    <span className="mt-1 px-1.5 py-0.2 rounded-md bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 text-[9.5px] font-black tracking-tight leading-none flex items-center gap-0.5">
+                      <Check className="w-2.5 h-2.5" />
+                      <span>活動日</span>
                     </span>
-                  )
-                )}
-              </button>
-            );
-          })}
+                  ) : (
+                    isToday && (
+                      <span className="mt-1 text-[9px] font-bold text-primary opacity-80 leading-none">
+                        今日
+                      </span>
+                    )
+                  )}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 
@@ -553,17 +593,17 @@ export function MonthlySchedulePlanner({
         const currentMonthItems = selectedDayItems.filter(it => it.dateStr.startsWith(currentMonthPrefix));
 
         return (
-          <div className="rounded-2xl border border-border/60 bg-card shadow-xs overflow-hidden">
-            {/* ヘッダー */}
-            <div className="px-4 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+          <div className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+            {/* ヘッダー: A-3 上帯ダークキャップ */}
+            <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-teal-500 px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
               <div className="flex items-center gap-2">
-                <h3 className="text-sm font-black text-foreground flex items-center gap-1.5">
-                  <span className="w-6 h-6 rounded-lg bg-teal-500/12 text-teal-600 dark:text-teal-400 flex items-center justify-center">
+                <h3 className="text-sm font-black text-white flex items-center gap-1.5">
+                  <span className="w-6 h-6 rounded-lg bg-teal-500/20 text-teal-300 border border-teal-400/30 flex items-center justify-center">
                     <Layers className="w-3.5 h-3.5" />
                   </span>
                   <span>{currentMonth + 1}月の活動日 & 当番一覧</span>
                 </h3>
-                <span className="px-2 py-0.5 rounded-full bg-primary/12 text-primary border border-primary/25 text-xs font-black">
+                <span className="px-2 py-0.5 rounded-full bg-slate-800 text-slate-200 border border-slate-700 text-xs font-black tabular-nums">
                   {currentMonthItems.length}日
                 </span>
               </div>
@@ -573,17 +613,17 @@ export function MonthlySchedulePlanner({
                   <button
                     type="button"
                     onClick={handleAutoRotateDuties}
-                    className="py-1 px-2.5 rounded-xl bg-card hover:bg-muted text-foreground text-xs font-black border border-border/60 flex items-center gap-1 transition-all active:scale-95 cursor-pointer shadow-2xs"
+                    className="py-1 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 text-xs font-black border border-slate-700 flex items-center gap-1 transition-all active:scale-95 cursor-pointer"
                     title="1班〜4班を日付順に均等に割り当てます"
                   >
-                    <RotateCw className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                    <RotateCw className="w-3 h-3 text-amber-400" />
                     <span>当番を1〜4班で順繰り割当</span>
                   </button>
                 )}
 
                 <Link
                   href="/liff/schedule"
-                  className="text-xs font-black text-primary hover:underline flex items-center gap-0.5 ml-auto sm:ml-0"
+                  className="text-xs font-black text-teal-300 hover:text-teal-200 hover:underline flex items-center gap-0.5 ml-auto sm:ml-0"
                 >
                   <span>予定 & 出欠表へ</span>
                   <ChevronRight className="w-3.5 h-3.5" />
@@ -618,7 +658,7 @@ export function MonthlySchedulePlanner({
                       <div
                         key={it.id}
                         className={cn(
-                          "p-3 sm:p-3.5 rounded-2xl bg-muted/35 hover:bg-muted/50 border border-border/60 border-l-4 hover:border-primary/40 transition-all flex flex-col md:flex-row md:items-center justify-between gap-3",
+                          "p-3 sm:p-3.5 rounded-2xl bg-muted/35 hover:bg-muted/50 border border-border border-l-4 hover:border-primary/40 transition-all flex flex-col md:flex-row md:items-center justify-between gap-3",
                           it.eventType === "match"
                             ? "border-l-primary"
                             : it.eventType === "camp"
@@ -636,7 +676,7 @@ export function MonthlySchedulePlanner({
                                 ? "bg-red-500/10 text-red-500 border-red-500/20"
                                 : isSat
                                 ? "bg-blue-500/10 text-blue-500 border-blue-500/20"
-                                : "bg-card text-foreground border-border/60"
+                                : "bg-card text-foreground border-border"
                             )}
                           >
                             <span className="text-[10px] opacity-75">{m}/{d}</span>
@@ -654,7 +694,7 @@ export function MonthlySchedulePlanner({
                               <select
                                 value={it.eventType || "practice"}
                                 onChange={(e) => handleUpdateEventType(it.dateStr, e.target.value as "practice" | "match" | "camp")}
-                                className="text-[10.5px] font-bold px-2 py-0.5 rounded-lg bg-card border border-border/60 text-foreground cursor-pointer focus:outline-hidden"
+                                className="text-[10.5px] font-bold px-2 py-0.5 rounded-lg bg-card border border-border text-foreground cursor-pointer focus:outline-hidden"
                               >
                                 <option value="practice">🏃 通常練習</option>
                                 <option value="match">⚾ 公式戦・試合</option>
@@ -671,7 +711,7 @@ export function MonthlySchedulePlanner({
                                   "px-2 py-0.5 rounded-md text-[10px] font-black transition-all flex items-center gap-1 cursor-pointer",
                                   it.needsLunch
                                     ? "bg-amber-500/12 text-amber-700 dark:text-amber-300 border border-amber-500/25"
-                                    : "bg-card text-muted-foreground border border-border/60 hover:text-foreground line-through opacity-65"
+                                    : "bg-card text-muted-foreground border border-border hover:text-foreground line-through opacity-65"
                                 )}
                               >
                                 <span>🍙</span>
@@ -697,8 +737,8 @@ export function MonthlySchedulePlanner({
                         </div>
 
                         {/* 下段 / 右側: 当番選択ボタン群 */}
-                        <div className="flex items-center justify-between md:justify-end gap-2 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-border/60">
-                          <div className="flex items-center gap-1 bg-muted/80 dark:bg-muted/50 p-1 rounded-xl border border-border/60 overflow-x-auto scrollbar-none">
+                        <div className="flex items-center justify-between md:justify-end gap-2 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-border">
+                          <div className="flex items-center gap-1 bg-muted p-1 rounded-xl border border-border overflow-x-auto scrollbar-none">
                             <span className="text-[10px] font-black text-amber-700 dark:text-amber-300 pl-1.5 pr-0.5 shrink-0 flex items-center gap-0.5">
                               <span>📋</span>
                               <span>当番:</span>
@@ -715,7 +755,7 @@ export function MonthlySchedulePlanner({
                                     "px-2.5 py-1 rounded-lg text-xs transition-all active:scale-95 shrink-0 cursor-pointer",
                                     isCurDuty
                                       ? dg === "なし"
-                                        ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                                        ? "bg-card text-foreground shadow-sm border border-border font-black"
                                         : "bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/35 shadow-2xs font-black"
                                       : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
                                   )}
@@ -737,7 +777,7 @@ export function MonthlySchedulePlanner({
                               onChange={(e) => {
                                 if (e.target.value) handleUpdateDuty(it.dateStr, e.target.value);
                               }}
-                              className="text-[10px] font-bold px-1.5 py-1 rounded-lg bg-card border border-border/60 text-muted-foreground hover:text-foreground cursor-pointer focus:outline-hidden shrink-0"
+                              className="text-[10px] font-bold px-1.5 py-1 rounded-lg bg-card border border-border text-muted-foreground hover:text-foreground cursor-pointer focus:outline-hidden shrink-0"
                               title="その他の当番を選択"
                             >
                               <option value="" disabled>他</option>
@@ -770,7 +810,7 @@ export function MonthlySchedulePlanner({
 
               {/* 保存ボタン */}
               {currentMonthItems.length > 0 && (
-                <div className="pt-2 border-t border-border/60 flex justify-end">
+                <div className="pt-2 border-t border-border flex justify-end">
                   <button
                     type="button"
                     onClick={handleSaveAll}

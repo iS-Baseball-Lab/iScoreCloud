@@ -296,188 +296,192 @@ export function TeamSymbolRulesSettingsSection({
   return (
     <section
       id="symbol-rules"
-      className="scroll-mt-16 rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-4 overflow-hidden"
+      className="scroll-mt-16 rounded-2xl border border-border bg-card shadow-xs overflow-hidden"
     >
       {/* ヘッダー */}
-      <div className="-mx-4 -mt-4 px-4 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 border-l-4 border-l-primary flex items-center justify-between gap-2">
+      <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          <FileSpreadsheet className="w-4 h-4 text-primary shrink-0" />
-          <h2 className="text-sm font-black text-foreground truncate">
+          <span className="w-7 h-7 rounded-xl bg-primary/20 text-blue-300 border border-primary/40 flex items-center justify-center shrink-0">
+            <FileSpreadsheet className="w-4 h-4" />
+          </span>
+          <h2 className="text-sm font-black text-white truncate">
             チーム記号ルール（清書シート表示用）
           </h2>
         </div>
 
         {isSaving ? (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/25 text-[10px] font-black shrink-0">
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-primary/20 text-blue-300 border border-primary/40 text-[10px] font-black shrink-0">
             <Loader2 className="w-3 h-3 animate-spin" />
             保存中...
           </span>
         ) : hasSavedCloud ? (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 border border-emerald-500/25 text-[10px] font-black shrink-0">
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 text-[10px] font-black shrink-0">
             <CheckCircle2 className="w-3 h-3" />
             チーム保存済
           </span>
         ) : (
-          <span className="px-2.5 py-0.5 rounded-full bg-muted/50 text-muted-foreground border border-border/60 text-[10px] font-bold shrink-0">
+          <span className="px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700 text-[10px] font-bold shrink-0">
             カスタム可能
           </span>
         )}
       </div>
 
-      <p className="text-[11px] font-bold text-muted-foreground leading-relaxed">
-        ここで設定した
-        <strong className="text-foreground font-black">
-          マス目や記号ルールが試合情報ページのスコアブック（清書シート）にそのまま反映
-        </strong>
-        されます。設定内容は
-        {teamName ? ` ${teamName} ` : "チーム"}全員に共有されます。
-      </p>
+      <div className="p-4 space-y-4">
+        <p className="text-[11px] font-bold text-muted-foreground leading-relaxed">
+          ここで設定した
+          <strong className="text-foreground font-black">
+            マス目や記号ルールが試合情報ページのスコアブック（清書シート）にそのまま反映
+          </strong>
+          されます。設定内容は
+          {teamName ? ` ${teamName} ` : "チーム"}全員に共有されます。
+        </p>
 
-      {/* リアルタイム4マス記号プレビュー */}
-      <div className="space-y-1.5 rounded-2xl bg-muted/35 border border-border/60 p-2.5">
-        <div className="flex items-center justify-between px-0.5">
-          <span className="text-[11px] font-black text-foreground flex items-center gap-1">
-            <Sparkles className="w-3.5 h-3.5 text-primary" />
-            <span>現在の「チーム記号ルール」プレビュー</span>
-          </span>
-          <span className="text-[10px] font-bold text-muted-foreground">
-            タップで即反映
-          </span>
+        {/* リアルタイム4マス記号プレビュー */}
+        <div className="space-y-1.5 rounded-2xl bg-muted/35 border border-border p-2.5">
+          <div className="flex items-center justify-between px-0.5">
+            <span className="text-[11px] font-black text-foreground flex items-center gap-1">
+              <Sparkles className="w-3.5 h-3.5 text-primary" />
+              <span>現在の「チーム記号ルール」プレビュー</span>
+            </span>
+            <span className="text-[10px] font-bold text-muted-foreground">
+              タップで即反映
+            </span>
+          </div>
+          <ScorebookSymbolSamplePreview rules={rules} />
         </div>
-        <ScorebookSymbolSamplePreview rules={rules} />
-      </div>
 
-      {/* 登録済み早見表画像からのAIワンタップ自動抽出ボタン */}
-      {!isLoadingTeam && savedLegendUrl && (
-        <div className="space-y-2">
-          <button
-            type="button"
-            disabled={isExtractingAi}
-            onClick={handleExtractFromLegendWithAi}
-            className="w-full py-3 px-3.5 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground font-black text-xs flex items-center justify-center gap-2 shadow-xs active:scale-[0.98] transition-all cursor-pointer disabled:opacity-60"
-          >
-            {isExtractingAi ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin shrink-0" />
-                <span>登録済みの早見表画像をAI解析中...</span>
-              </>
-            ) : (
-              <>
-                <Wand2 className="w-4 h-4 shrink-0" />
-                <span>登録済みの「早見表画像」からAIで自動設定する</span>
-              </>
-            )}
-          </button>
-
-          {lastAiSummary && (
-            <div className="p-2.5 rounded-xl bg-primary/10 border border-primary/25 text-[11px] font-bold text-foreground leading-snug">
-              AI読取結果: {lastAiSummary}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* 1. かんたん一括プリセット */}
-      <div className="space-y-1.5 pt-1 border-t border-border/60">
-        <label className="text-xs font-black text-foreground block">
-          定番テンプレートから一括セット
-        </label>
-        <div className="grid grid-cols-2 gap-1.5">
-          {SCOREBOOK_SYMBOL_PRESETS.map((preset) => (
+        {/* 登録済み早見表画像からのAIワンタップ自動抽出ボタン */}
+        {!isLoadingTeam && savedLegendUrl && (
+          <div className="space-y-2">
             <button
-              key={preset.id}
               type="button"
-              onClick={() => handleApplyPreset(preset.label, preset.rules)}
-              className="p-2.5 rounded-2xl border border-border/60 bg-card hover:bg-muted hover:border-primary/40 text-left transition-all active:scale-95 cursor-pointer"
+              disabled={isExtractingAi}
+              onClick={handleExtractFromLegendWithAi}
+              className="w-full py-3 px-3.5 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground font-black text-xs flex items-center justify-center gap-2 shadow-xs active:scale-[0.98] transition-all cursor-pointer disabled:opacity-60"
             >
-              <p className="text-[11px] font-black text-foreground leading-tight">
-                {preset.label}
-              </p>
-              <p className="text-[10px] font-bold text-muted-foreground leading-snug mt-0.5">
-                {preset.description}
-              </p>
+              {isExtractingAi ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                  <span>登録済みの早見表画像をAI解析中...</span>
+                </>
+              ) : (
+                <>
+                  <Wand2 className="w-4 h-4 shrink-0" />
+                  <span>登録済みの「早見表画像」からAIで自動設定する</span>
+                </>
+              )}
             </button>
-          ))}
-        </div>
-      </div>
 
-      {/* 3. 各記号の詳細カスタマイズ */}
-      <div className="space-y-3 pt-1 border-t border-border/60">
-        {fieldSections.map((sec) => {
-          const currentVal = rules[sec.key];
-          const gridClass =
-            sec.options.length === 2 || sec.options.length >= 4
-              ? "grid-cols-2"
-              : "grid-cols-3";
-          return (
-            <div key={sec.key} className="space-y-1.5">
-              <label className="text-[11px] font-black text-foreground block">
-                {sec.title}
-              </label>
-              <div className={cn("grid gap-1.5", gridClass)}>
-                {sec.options.map((opt) => {
-                  const isActive = currentVal === opt.value;
-                  return (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      onClick={() =>
-                        handleFieldSelect(
-                          sec.key,
-                          opt.value as ScorebookSymbolRules[typeof sec.key],
-                          sec.title
-                        )
-                      }
-                      className={cn(
-                        "py-2 px-2 rounded-xl border text-left transition-all active:scale-95 cursor-pointer",
-                        isActive
-                          ? "bg-primary/12 text-primary border-primary shadow-2xs"
-                          : "bg-muted/50 border-border/60 text-foreground hover:bg-muted"
-                      )}
-                    >
-                      <p className="text-[11px] font-black leading-tight truncate">
-                        {opt.label}
-                      </p>
-                      <p
+            {lastAiSummary && (
+              <div className="p-2.5 rounded-xl bg-primary/10 border border-primary/25 text-[11px] font-bold text-foreground leading-snug">
+                AI読取結果: {lastAiSummary}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 1. かんたん一括プリセット */}
+        <div className="space-y-1.5 pt-1 border-t border-border">
+          <label className="text-xs font-black text-foreground block">
+            定番テンプレートから一括セット
+          </label>
+          <div className="grid grid-cols-2 gap-1.5">
+            {SCOREBOOK_SYMBOL_PRESETS.map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                onClick={() => handleApplyPreset(preset.label, preset.rules)}
+                className="p-2.5 rounded-2xl border border-border bg-card hover:bg-muted hover:border-primary/40 text-left transition-all active:scale-95 cursor-pointer"
+              >
+                <p className="text-[11px] font-black text-foreground leading-tight">
+                  {preset.label}
+                </p>
+                <p className="text-[10px] font-bold text-muted-foreground leading-snug mt-0.5">
+                  {preset.description}
+                </p>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 3. 各記号の詳細カスタマイズ */}
+        <div className="space-y-3 pt-1 border-t border-border">
+          {fieldSections.map((sec) => {
+            const currentVal = rules[sec.key];
+            const gridClass =
+              sec.options.length === 2 || sec.options.length >= 4
+                ? "grid-cols-2"
+                : "grid-cols-3";
+            return (
+              <div key={sec.key} className="space-y-1.5">
+                <label className="text-[11px] font-black text-foreground block">
+                  {sec.title}
+                </label>
+                <div className={cn("grid gap-1.5", gridClass)}>
+                  {sec.options.map((opt) => {
+                    const isActive = currentVal === opt.value;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() =>
+                          handleFieldSelect(
+                            sec.key,
+                            opt.value as ScorebookSymbolRules[typeof sec.key],
+                            sec.title
+                          )
+                        }
                         className={cn(
-                          "text-[10px] font-mono font-bold leading-tight mt-0.5 truncate",
-                          isActive ? "text-primary/80" : "text-muted-foreground"
+                          "py-2 px-2 rounded-xl border text-left transition-all active:scale-95 cursor-pointer",
+                          isActive
+                            ? "bg-primary/12 text-primary border-primary shadow-2xs"
+                            : "bg-muted/50 border-border text-foreground hover:bg-muted"
                         )}
                       >
-                        {opt.sample}
-                      </p>
-                    </button>
-                  );
-                })}
+                        <p className="text-[11px] font-black leading-tight truncate">
+                          {opt.label}
+                        </p>
+                        <p
+                          className={cn(
+                            "text-[10px] font-mono font-bold leading-tight mt-0.5 truncate",
+                            isActive ? "text-primary/80" : "text-muted-foreground"
+                          )}
+                        >
+                          {opt.sample}
+                        </p>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
 
-        {/* チーム補足メモ（ヘッダーに小さく印字可能） */}
-        <div className="space-y-1.5 pt-1">
-          <label className="text-[11px] font-black text-foreground block">
-            チーム独自ルール補足メモ（任意・シート上部に印字）
-          </label>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              maxLength={80}
-              value={rules.customNote || ""}
-              onChange={(e) =>
-                setRules((prev) => ({ ...prev, customNote: e.target.value }))
-              }
-              placeholder="例: 臨時代走はTR表記、タイブレーク開始走者はTB"
-              className="flex-1 h-10 px-3 rounded-xl bg-muted/35 border border-border/60 text-xs font-bold text-foreground placeholder:text-muted-foreground/60 focus:outline-hidden focus:border-primary"
-            />
-            <button
-              type="button"
-              disabled={isSaving}
-              onClick={() => void persistRules(rules, "補足メモ")}
-              className="h-10 px-3.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black shrink-0 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
-            >
-              保存
-            </button>
+          {/* チーム補足メモ（ヘッダーに小さく印字可能） */}
+          <div className="space-y-1.5 pt-1">
+            <label className="text-[11px] font-black text-foreground block">
+              チーム独自ルール補足メモ（任意・シート上部に印字）
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                maxLength={80}
+                value={rules.customNote || ""}
+                onChange={(e) =>
+                  setRules((prev) => ({ ...prev, customNote: e.target.value }))
+                }
+                placeholder="例: 臨時代走はTR表記、タイブレーク開始走者はTB"
+                className="flex-1 h-10 px-3 rounded-xl bg-muted/35 border border-border text-xs font-bold text-foreground placeholder:text-muted-foreground/60 focus:outline-hidden focus:border-primary"
+              />
+              <button
+                type="button"
+                disabled={isSaving}
+                onClick={() => void persistRules(rules, "補足メモ")}
+                className="h-10 px-3.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black shrink-0 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+              >
+                保存
+              </button>
+            </div>
           </div>
         </div>
       </div>

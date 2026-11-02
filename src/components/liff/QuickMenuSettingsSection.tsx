@@ -134,19 +134,19 @@ export function QuickMenuSettingsSection() {
   return (
     <section
       id="quick-menu"
-      className="scroll-mt-20 rounded-2xl border border-border/60 bg-card shadow-xs overflow-hidden"
+      className="scroll-mt-20 rounded-2xl border border-border bg-card shadow-xs overflow-hidden"
     >
       {/* ヘッダー */}
-      <div className="px-4 py-3.5 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 space-y-1.5">
+      <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3 space-y-1.5">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
-            <span className="w-7 h-7 rounded-xl bg-slate-500/12 text-slate-700 dark:text-slate-300 flex items-center justify-center shrink-0">
+            <span className="w-7 h-7 rounded-xl bg-primary/20 text-blue-300 border border-primary/40 flex items-center justify-center shrink-0">
               <LayoutGrid className="w-4 h-4" />
             </span>
-            <h2 className="text-sm font-black text-foreground truncate">
+            <h2 className="text-sm font-black text-white truncate">
               クイックメニュー設定
             </h2>
-            <span className="px-2 py-0.5 rounded-full bg-primary/12 text-primary text-[10px] font-black shrink-0 font-mono">
+            <span className="px-2 py-0.5 rounded-full bg-slate-800 text-slate-200 border border-slate-700 text-[10px] font-black shrink-0 font-mono">
               {selectedItems.length}件表示中
             </span>
           </div>
@@ -155,14 +155,14 @@ export function QuickMenuSettingsSection() {
             <button
               type="button"
               onClick={handleReset}
-              className="py-1 px-2.5 rounded-full bg-card hover:bg-muted active:scale-95 border border-border/60 text-[10px] font-black text-muted-foreground hover:text-foreground transition-all flex items-center gap-1 shrink-0"
+              className="py-1 px-2.5 rounded-full bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700 text-[10px] font-black text-slate-300 hover:text-white transition-all flex items-center gap-1 shrink-0"
             >
               <RotateCcw className="w-3 h-3" />
               <span>初期設定に戻す</span>
             </button>
           )}
         </div>
-        <p className="text-[11px] font-bold text-muted-foreground leading-relaxed">
+        <p className="text-[11px] font-bold text-slate-300 leading-relaxed">
           トップページの「クイックメニュー」に並べる機能と表示順をカスタマイズできます。
         </p>
       </div>
@@ -173,7 +173,7 @@ export function QuickMenuSettingsSection() {
         <label className="text-xs font-black text-foreground block">
           表示レイアウト
         </label>
-        <div className="grid grid-cols-3 gap-1 p-1 rounded-2xl bg-muted/80 dark:bg-muted/50 border border-border/60">
+        <div className="grid grid-cols-3 gap-1 p-1 rounded-2xl bg-muted/80 dark:bg-muted/50 border border-border">
           {QUICK_MENU_LAYOUT_OPTIONS.map((opt) => {
             const isActive = config.layout === opt.id;
             return (
@@ -183,7 +183,7 @@ export function QuickMenuSettingsSection() {
                 onClick={() => handleLayoutChange(opt.id, opt.label)}
                 className={`flex flex-col items-center justify-center py-2 px-1.5 rounded-xl border transition-all active:scale-95 gap-0.5 ${
                   isActive
-                    ? "bg-card text-foreground border-border/50 shadow-sm font-black"
+                    ? "bg-card text-foreground border-border shadow-sm font-black"
                     : "border-transparent text-muted-foreground hover:text-foreground font-bold"
                 }`}
               >
@@ -223,7 +223,7 @@ export function QuickMenuSettingsSection() {
                 className={`flex flex-col items-start justify-between p-2.5 rounded-2xl border text-left transition-all active:scale-95 gap-1 ${
                   isMatchingPreset
                     ? "border-primary bg-primary/10 text-primary font-black shadow-2xs"
-                    : "bg-card border-border/60 hover:border-primary/40 text-foreground font-bold"
+                    : "bg-card border-border hover:border-primary/40 text-foreground font-bold"
                 }`}
               >
                 <div className="flex items-center justify-between w-full gap-1">
@@ -272,7 +272,7 @@ export function QuickMenuSettingsSection() {
               return (
                 <div
                   key={item.id}
-                  className="flex items-center gap-2.5 p-2.5 rounded-2xl bg-muted/35 border border-border/60"
+                  className="flex items-center gap-2.5 p-2.5 rounded-2xl bg-muted/35 border border-border"
                 >
                   <span className="w-5 h-5 rounded-full bg-primary/10 text-primary text-[10px] font-black flex items-center justify-center shrink-0 font-mono">
                     {idx + 1}
@@ -297,7 +297,7 @@ export function QuickMenuSettingsSection() {
                       disabled={isFirst}
                       onClick={() => handleMoveItem(idx, -1)}
                       aria-label={`${item.label}を上へ移動`}
-                      className="w-8 h-8 rounded-xl border border-border/60 bg-card hover:bg-muted text-foreground flex items-center justify-center disabled:opacity-30 disabled:pointer-events-none active:scale-90 transition-all"
+                      className="w-8 h-8 rounded-xl border border-border bg-card hover:bg-muted text-foreground flex items-center justify-center disabled:opacity-30 disabled:pointer-events-none active:scale-90 transition-all"
                     >
                       <ArrowUp className="w-3.5 h-3.5" />
                     </button>
@@ -306,7 +306,7 @@ export function QuickMenuSettingsSection() {
                       disabled={isLast}
                       onClick={() => handleMoveItem(idx, 1)}
                       aria-label={`${item.label}を下へ移動`}
-                      className="w-8 h-8 rounded-xl border border-border/60 bg-card hover:bg-muted text-foreground flex items-center justify-center disabled:opacity-30 disabled:pointer-events-none active:scale-90 transition-all"
+                      className="w-8 h-8 rounded-xl border border-border bg-card hover:bg-muted text-foreground flex items-center justify-center disabled:opacity-30 disabled:pointer-events-none active:scale-90 transition-all"
                     >
                       <ArrowDown className="w-3.5 h-3.5" />
                     </button>
@@ -327,7 +327,7 @@ export function QuickMenuSettingsSection() {
       </div>
 
       {/* 4. カテゴリ別メニュー追加・ON/OFF切替 */}
-      <div className="space-y-2.5 pt-2 border-t border-border/60">
+      <div className="space-y-2.5 pt-2 border-t border-border">
         <div className="flex items-center justify-between">
           <label className="text-xs font-black text-foreground">
             メニューの追加・ON/OFF切替
@@ -338,7 +338,7 @@ export function QuickMenuSettingsSection() {
         </div>
 
         {/* カテゴリ切替タブ */}
-        <div className="grid grid-cols-4 gap-1 p-1 rounded-2xl bg-muted/80 dark:bg-muted/50 border border-border/60">
+        <div className="grid grid-cols-4 gap-1 p-1 rounded-2xl bg-muted/80 dark:bg-muted/50 border border-border">
           {QUICK_MENU_CATEGORIES.map((cat) => {
             const isTabActive = activeCategory === cat.id;
             const enabledInCat = QUICK_MENU_CATALOG.filter(
@@ -352,7 +352,7 @@ export function QuickMenuSettingsSection() {
                 onClick={() => setActiveCategory(cat.id)}
                 className={`flex flex-col items-center justify-center py-2 px-1 rounded-xl border text-[11px] transition-all active:scale-95 gap-0.5 ${
                   isTabActive
-                    ? "bg-card text-foreground border-border/50 shadow-sm font-black"
+                    ? "bg-card text-foreground border-border shadow-sm font-black"
                     : "border-transparent text-muted-foreground hover:text-foreground font-bold"
                 }`}
               >
@@ -365,7 +365,7 @@ export function QuickMenuSettingsSection() {
                       ? "bg-primary/12 text-primary font-black"
                       : enabledInCat > 0
                         ? "bg-primary/10 text-primary font-black"
-                        : "bg-card/80 text-muted-foreground font-bold"
+                        : "bg-card text-muted-foreground font-bold"
                   }`}
                 >
                   {enabledInCat}件ON
@@ -391,7 +391,7 @@ export function QuickMenuSettingsSection() {
                 className={`flex items-center gap-2.5 p-2.5 rounded-2xl border text-left transition-all active:scale-95 ${
                   isSelected
                     ? "border-primary/40 bg-primary/10 shadow-2xs"
-                    : `bg-card border-border/60 ${tone.hoverBorderClass}`
+                    : `bg-card border-border ${tone.hoverBorderClass}`
                 }`}
               >
                 <span
@@ -421,7 +421,7 @@ export function QuickMenuSettingsSection() {
                   className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${
                     isSelected
                       ? "bg-primary text-primary-foreground"
-                      : "bg-muted/50 border border-border/60 text-muted-foreground"
+                      : "bg-muted/50 border border-border text-muted-foreground"
                   }`}
                 >
                   {isSelected ? (
@@ -440,7 +440,7 @@ export function QuickMenuSettingsSection() {
       <div className="pt-1">
         <Link
           href="/liff"
-          className="w-full py-2.5 px-4 rounded-2xl bg-card hover:bg-muted border border-border/60 hover:border-primary/40 text-xs font-black text-foreground flex items-center justify-center gap-1.5 active:scale-[0.99] transition-all"
+          className="w-full py-2.5 px-4 rounded-2xl bg-card hover:bg-muted border border-border hover:border-primary/40 text-xs font-black text-foreground flex items-center justify-center gap-1.5 active:scale-[0.99] transition-all"
         >
           <span>トップページでクイックメニューを確認する</span>
           <ExternalLink className="w-3.5 h-3.5 text-primary" />

@@ -38,30 +38,41 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
     const savedLegend = localStorage.getItem(LEGEND_STORAGE_KEY) || undefined;
 
     if (savedId && savedName) {
-      setCurrentTeam({ 
-        id: savedId, 
-        name: savedName, 
-        organizationCategory: savedCategory, 
+      setCurrentTeam({
+        id: savedId,
+        name: savedName,
+        organizationCategory: savedCategory,
         logoImageUrl: savedLogo,
-        scorebookLegendUrl: savedLegend
+        scorebookLegendUrl: savedLegend,
       });
     }
     setIsLoading(false);
 
-    // 🌟 データベースから最新のチーム情報（早見表画像・ロゴ等）を非同期フェッチして全端末で同期
-    if (savedId) {
-      fetch('/api/teams', { cache: "no-store" })
-        .then(res => res.ok ? res.json() : null)
-        .then((data: any) => {
+    // 🌟 LIFF 画面（/liff 配下）では LiffProvider がチーム同期を担うため不要な /api/teams フェッチをスキップ
+    const isLiffRoute = window.location.pathname.startsWith("/liff");
+    if (savedId && !isLiffRoute) {
+      fetch("/api/teams", { cache: "no-store" })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data: unknown) => {
           if (Array.isArray(data)) {
-            const matched = data.find((t: any) => t.id === savedId);
+            const matched = data.find(
+              (t: { id?: string }) => t.id === savedId
+            ) as
+              | {
+                  id: string;
+                  name: string;
+                  category?: string;
+                  logoImageUrl?: string;
+                  scorebookLegendUrl?: string;
+                }
+              | undefined;
             if (matched) {
               const serverTeam: Team = {
                 id: matched.id,
                 name: matched.name,
                 organizationCategory: matched.category || undefined,
                 logoImageUrl: matched.logoImageUrl || undefined,
-                scorebookLegendUrl: matched.scorebookLegendUrl || undefined
+                scorebookLegendUrl: matched.scorebookLegendUrl || undefined,
               };
               setCurrentTeam(serverTeam);
               localStorage.setItem(STORAGE_KEY, serverTeam.id);
@@ -72,7 +83,7 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
             }
           }
         })
-        .catch(err => {
+        .catch((err) => {
           console.error("Failed to sync team data from server:", err);
         });
     }

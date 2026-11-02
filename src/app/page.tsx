@@ -121,21 +121,21 @@ export default function LandingPage() {
               animate={p.type === "h" ? { x: "200%" } : p.type === "v" ? { y: "200%" } : { x: "150%", y: "150%", opacity: [0, 1, 0] }}
               transition={{ duration: p.duration, repeat: Infinity, ease: "circIn", delay: p.delay }}
               className={cn(
-                "absolute blur-[1px] shadow-[0_0_12px_rgba(var(--primary),0.7)]",
-                p.type === "h" ? "h-[1.5px] w-64 bg-gradient-to-r from-transparent via-primary/80 to-transparent" :
-                  p.type === "v" ? "w-[1.5px] h-64 bg-gradient-to-b from-transparent via-primary/80 to-transparent" :
-                    "w-48 h-[1px] bg-gradient-to-br from-transparent via-primary/60 to-transparent rotate-45"
+                "absolute",
+                p.type === "h" ? "h-[1.5px] w-64 bg-primary/40" :
+                  p.type === "v" ? "w-[1.5px] h-64 bg-primary/40" :
+                    "w-48 h-[1px] bg-primary/30 rotate-45"
               )}
             />
           ))}
         </AnimatePresence>
 
-        {/* 視認性を調整するための最前面グラデーション */}
-        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-background/10 to-background/90" />
+        {/* 視認性を調整するためのソリッドオーバーレイ */}
+        <div className="absolute inset-0 bg-background/75 dark:bg-slate-950/75" />
       </div>
 
       {/* 🌟 固定ヘッダー（iScoreCloudへ名称変更） */}
-      <header className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 md:px-12 h-20 transition-all duration-300 bg-background/20 backdrop-blur-md border-b border-border/30">
+      <header className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 md:px-12 h-20 transition-all duration-300 bg-card border-b-[3px] border-primary shadow-xs">
         <Link href="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
           <img src="/logo.webp" alt="iScoreCloud Logo" className="h-10 w-10 object-contain drop-shadow-sm" />
           <span className="text-3xl font-black italic tracking-tighter text-foreground">
@@ -144,10 +144,10 @@ export default function LandingPage() {
         </Link>
 
         <div className="flex items-center gap-4">
-          <div className="flex items-center p-1 border border-border/30 rounded-full bg-background/40 backdrop-blur-md">
-            <button onClick={() => handleThemeChange("light")} className={cn("p-2 rounded-full transition-all", theme === "light" ? "bg-background text-foreground" : "text-muted-foreground")}><Sun className="h-5 w-5" /></button>
-            <button onClick={() => handleThemeChange("system")} className={cn("p-2 rounded-full transition-all", theme === "system" ? "bg-background text-foreground" : "text-muted-foreground")}><Monitor className="h-5 w-5" /></button>
-            <button onClick={() => handleThemeChange("dark")} className={cn("p-2 rounded-full transition-all", theme === "dark" ? "bg-background text-foreground" : "text-muted-foreground")}><Moon className="h-5 w-5" /></button>
+          <div className="flex items-center p-1 border border-border rounded-full bg-muted">
+            <button onClick={() => handleThemeChange("light")} className={cn("p-2 rounded-full transition-all", theme === "light" ? "bg-card text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground")}><Sun className="h-5 w-5" /></button>
+            <button onClick={() => handleThemeChange("system")} className={cn("p-2 rounded-full transition-all", theme === "system" ? "bg-card text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground")}><Monitor className="h-5 w-5" /></button>
+            <button onClick={() => handleThemeChange("dark")} className={cn("p-2 rounded-full transition-all", theme === "dark" ? "bg-card text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground")}><Moon className="h-5 w-5" /></button>
           </div>
         </div>
       </header>
@@ -181,7 +181,7 @@ export default function LandingPage() {
         </div>
       </main>
 
-      <footer className="relative z-10 w-full border-t border-border/40 bg-background/60 backdrop-blur-md py-12 mt-auto text-center md:text-left">
+      <footer className="relative z-10 w-full border-t border-border bg-card py-12 mt-auto text-center md:text-left">
         <div className="max-w-5xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2 opacity-80">
             <img src="/logo.webp" alt="Logo" className="h-6 w-6 grayscale" />

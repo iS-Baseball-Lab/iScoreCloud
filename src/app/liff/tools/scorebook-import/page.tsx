@@ -2930,7 +2930,7 @@ export default function LiffScorebookImportPage() {
           rightElement={
             <Link
               href="/liff/settings/score"
-              className="px-2.5 py-1.5 rounded-2xl bg-card border border-border/60 hover:bg-muted text-foreground text-[11px] font-black flex items-center gap-1.5 shadow-xs active:scale-95 transition-all"
+              className="px-2.5 py-1.5 rounded-2xl bg-card border border-border hover:bg-muted text-foreground text-[11px] font-black flex items-center gap-1.5 shadow-xs active:scale-95 transition-all"
             >
               <span className="w-5 h-5 rounded-lg bg-slate-500/12 text-slate-700 dark:text-slate-300 flex items-center justify-center shrink-0">
                 <Settings className="w-3 h-3" />
@@ -2961,7 +2961,7 @@ export default function LiffScorebookImportPage() {
                       ? "bg-primary/12 text-primary border-primary/40 shadow-2xs"
                       : done
                       ? "bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 border-emerald-500/25"
-                      : "bg-card text-muted-foreground border-border/60"
+                      : "bg-card text-muted-foreground border-border"
                   }`}
                 >
                   {s.label}
@@ -2972,7 +2972,7 @@ export default function LiffScorebookImportPage() {
 
           {/* 自動下書き保存ステータスバー */}
           {step !== 4 && lastAutoSavedAt && (
-            <div className="px-3 py-1.5 rounded-2xl border border-border/60 bg-card shadow-xs flex items-center justify-between gap-2">
+            <div className="px-3 py-1.5 rounded-2xl border border-border bg-card shadow-xs flex items-center justify-between gap-2">
               <div className="flex items-center gap-1.5 min-w-0">
                 <Save className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
                 <span className="text-[10px] font-bold text-muted-foreground truncate">
@@ -2993,7 +2993,7 @@ export default function LiffScorebookImportPage() {
 
         {/* 前回の途中データがある場合のオンデマンド復元バナー（初期表示時はメモリに読み込まず軽快に起動） */}
         {step === 1 && availableDraftMeta && !lastAutoSavedAt && (
-          <div className="p-3.5 rounded-2xl border border-border/60 border-l-4 border-l-amber-500 bg-card shadow-xs space-y-2.5">
+          <div className="p-3.5 rounded-2xl border border-border border-l-4 border-l-amber-500 bg-card shadow-xs space-y-2.5">
             <div className="flex items-start gap-2">
               <RotateCcw className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
               <div className="space-y-0.5 min-w-0">
@@ -3028,7 +3028,7 @@ export default function LiffScorebookImportPage() {
                 type="button"
                 disabled={isRestoringDraft}
                 onClick={() => void handleDiscardDraft()}
-                className="py-2 px-3 rounded-xl bg-muted/50 hover:bg-destructive/10 border border-border/60 text-xs font-black text-muted-foreground hover:text-destructive flex items-center gap-1 cursor-pointer active:scale-95 transition-all"
+                className="py-2 px-3 rounded-xl bg-muted hover:bg-destructive/10 border border-border text-xs font-black text-muted-foreground hover:text-destructive flex items-center gap-1 cursor-pointer active:scale-95 transition-all"
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 <span>破棄</span>
@@ -3039,7 +3039,7 @@ export default function LiffScorebookImportPage() {
 
         {/* 前回の途中入力を復元した際の通知バナー */}
         {step !== 4 && restoredDraftBannerAt && (
-          <div className="p-3 rounded-2xl border border-border/60 border-l-4 border-l-amber-500 bg-card shadow-xs flex items-center justify-between gap-2">
+          <div className="p-3 rounded-2xl border border-border border-l-4 border-l-amber-500 bg-card shadow-xs flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
               <CheckCircle2 className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
               <p className="text-[11px] font-black text-foreground leading-snug">
@@ -3198,29 +3198,29 @@ export default function LiffScorebookImportPage() {
             {step === 3 && (
               <div className="space-y-3">
                 {isEditingSavedMatch && (
-                  <div className="p-3 rounded-2xl border border-border/60 bg-card shadow-xs space-y-2">
-                    <div className="flex items-start justify-between gap-2.5">
-                      <div className="flex items-start gap-2.5 min-w-0">
-                        <Edit3 className="w-4 h-4 text-primary shrink-0 mt-0.5" />
-                        <div className="space-y-0.5 min-w-0">
-                          <p className="text-xs font-black text-foreground">
-                            保存済みデータの再編集モード
-                          </p>
-                          <p className="text-[10px] font-bold text-muted-foreground leading-relaxed">
-                            打席結果・1球順序・走者進塁（または「骨格確認へ戻る」で打順・選手交代・登板投手）を修正して保存すると、スコアボードと個人成績が最新内容で再集計されます。
-                          </p>
-                        </div>
+                  <div className="rounded-2xl border border-border bg-card shadow-xs p-3.5 space-y-2.5 overflow-hidden">
+                    <div className="-mx-3.5 -mt-3.5 px-3.5 py-2.5 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="w-6 h-6 rounded-lg bg-primary/20 text-blue-300 border border-primary/40 flex items-center justify-center shrink-0">
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </span>
+                        <p className="text-xs font-black text-white truncate">
+                          保存済みデータの再編集モード
+                        </p>
                       </div>
                       <button
                         type="button"
                         disabled={isSaving || isDeletingSavedScorebook}
                         onClick={() => setShowDeleteSavedModal(true)}
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-card border border-rose-300 dark:border-rose-800 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/50 text-[10px] font-black shrink-0 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-200 hover:text-white text-[10px] font-black shrink-0 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
                       >
                         <Trash2 className="w-3 h-3 shrink-0" />
                         <span>個人データ削除</span>
                       </button>
                     </div>
+                    <p className="text-[10px] font-bold text-muted-foreground leading-relaxed">
+                      打席結果・1球順序・走者進塁（または「骨格確認へ戻る」で打順・選手交代・登板投手）を修正して保存すると、スコアボードと個人成績が最新内容で再集計されます。
+                    </p>
                   </div>
                 )}
 
@@ -3271,15 +3271,26 @@ export default function LiffScorebookImportPage() {
             )}
 
             {step === 4 && saveSummary && (
-              <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-6 text-center space-y-5">
+              <section className="rounded-2xl border border-border bg-card shadow-xs p-6 text-center space-y-5 overflow-hidden">
+                <div className="-mx-6 -mt-6 px-5 py-3.5 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="w-6 h-6 rounded-lg bg-primary/20 text-blue-300 border border-primary/40 flex items-center justify-center shrink-0">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                    </span>
+                    <span className="text-xs font-black text-white truncate">
+                      スコアブック取込サマリー
+                    </span>
+                  </div>
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-black shrink-0">
+                    取込完了
+                  </span>
+                </div>
+
                 <div className="w-14 h-14 rounded-full bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 border border-emerald-500/25 flex items-center justify-center mx-auto">
                   <CheckCircle2 className="w-8 h-8" />
                 </div>
 
                 <div className="space-y-1">
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 border border-emerald-500/25 text-[10px] font-black mb-1">
-                    取込完了
-                  </span>
                   <h2 className="text-base font-black text-foreground">
                     {isEditingSavedMatch
                       ? "打席・個人成績の修正を保存しました！"
@@ -3291,7 +3302,7 @@ export default function LiffScorebookImportPage() {
                 </div>
 
                 <div className="grid grid-cols-3 gap-2">
-                  <div className="p-3 rounded-2xl bg-muted/35 border border-border/60">
+                  <div className="p-3 rounded-2xl bg-muted border border-border">
                     <span className="text-[10px] font-bold text-muted-foreground block">
                       確定スコア
                     </span>
@@ -3299,7 +3310,7 @@ export default function LiffScorebookImportPage() {
                       {saveSummary.myScore} - {saveSummary.opponentScore}
                     </span>
                   </div>
-                  <div className="p-3 rounded-2xl bg-muted/35 border border-border/60">
+                  <div className="p-3 rounded-2xl bg-muted border border-border">
                     <span className="text-[10px] font-bold text-muted-foreground block">
                       記録打席数
                     </span>
@@ -3307,7 +3318,7 @@ export default function LiffScorebookImportPage() {
                       {saveSummary.savedAtBatsCount}打席
                     </span>
                   </div>
-                  <div className="p-3 rounded-2xl bg-muted/35 border border-border/60">
+                  <div className="p-3 rounded-2xl bg-muted border border-border">
                     <span className="text-[10px] font-bold text-muted-foreground block">
                       記録投球数
                     </span>
@@ -3318,7 +3329,7 @@ export default function LiffScorebookImportPage() {
                 </div>
 
                 {timingSummary && (
-                  <div className="px-3 py-2 rounded-2xl bg-muted/50 border border-border/60 flex items-center justify-center gap-1.5 text-[11px] font-black text-foreground tabular-nums">
+                  <div className="px-3 py-2 rounded-2xl bg-muted border border-border flex items-center justify-center gap-1.5 text-[11px] font-black text-foreground tabular-nums">
                     <Clock className="w-3.5 h-3.5 text-primary shrink-0" />
                     <span>
                       AI解析タイム: 合計{" "}
@@ -3359,7 +3370,7 @@ export default function LiffScorebookImportPage() {
 
                   <Link
                     href="/liff/stats"
-                    className="w-full h-11 rounded-2xl bg-card hover:bg-muted border border-border/60 text-foreground font-black text-xs flex items-center justify-center gap-2 transition-colors"
+                    className="w-full h-11 rounded-2xl bg-card hover:bg-muted border border-border text-foreground font-black text-xs flex items-center justify-center gap-2 transition-colors"
                   >
                     <Trophy className="w-4 h-4 text-primary" />
                     <span>チーム成績・個人成績を確認する</span>
@@ -3371,7 +3382,7 @@ export default function LiffScorebookImportPage() {
                       void handleDiscardDraft();
                       fetchContext();
                     }}
-                    className="w-full h-11 rounded-2xl bg-card hover:bg-muted border border-border/60 text-muted-foreground font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                    className="w-full h-11 rounded-2xl bg-card hover:bg-muted border border-border text-muted-foreground font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
                   >
                     <RotateCcw className="w-3.5 h-3.5" />
                     <span>続けて別のシートを取り込む</span>

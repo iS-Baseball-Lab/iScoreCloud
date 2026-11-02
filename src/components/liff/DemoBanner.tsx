@@ -10,7 +10,7 @@ interface DemoBannerProps {
 
 export function DemoBanner({ onOpenJoinModal }: DemoBannerProps) {
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-border/60 border-l-4 border-l-amber-500 bg-card p-4 shadow-xs">
+    <div className="relative overflow-hidden rounded-2xl border border-border border-l-4 border-l-amber-500 bg-card p-4 shadow-xs">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 relative z-10">
         <div className="flex items-start gap-2.5">
           <div className="w-8 h-8 rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 mt-0.5">

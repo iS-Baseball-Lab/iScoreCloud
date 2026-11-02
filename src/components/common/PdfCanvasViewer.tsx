@@ -183,7 +183,7 @@ export function PdfCanvasViewer({
     const viewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(abs)}&embedded=true`;
     return (
       <div
-        className={`relative w-full rounded-2xl overflow-hidden border border-border/60 bg-card shadow-xs ${className}`}
+        className={`relative w-full rounded-2xl overflow-hidden border border-border bg-card shadow-xs ${className}`}
         style={aspectRatioA4 ? { aspectRatio: "210 / 297" } : undefined}
       >
         <iframe
@@ -198,7 +198,7 @@ export function PdfCanvasViewer({
 
   return (
     <div
-      className={`relative w-full rounded-2xl overflow-hidden border border-border/60 bg-card shadow-xs flex flex-col items-center justify-start select-none ${className}`}
+      className={`relative w-full rounded-2xl overflow-hidden border border-border bg-card shadow-xs flex flex-col items-center justify-start select-none ${className}`}
       style={aspectRatioA4 ? { aspectRatio: "210 / 297" } : undefined}
     >
       {/* 読込中インジケーター (初回のみ) */}
@@ -240,23 +240,23 @@ export function PdfCanvasViewer({
 
       {/* 複数ページ時のページネーションバー */}
       {numPages > 1 && (
-        <div className="absolute bottom-2.5 inset-x-0 mx-auto w-fit flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/75 text-white backdrop-blur-md shadow-lg text-xs font-black z-20">
+        <div className="absolute bottom-2.5 inset-x-0 mx-auto w-fit flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#0f172a] text-slate-50 border border-slate-700 border-b-2 border-b-amber-500 shadow-lg text-xs font-black z-20">
           <button
             type="button"
             disabled={currentPage <= 1}
             onClick={() => handlePageChange(currentPage - 1)}
-            className="p-0.5 rounded-full hover:bg-white/20 disabled:opacity-30 cursor-pointer transition-colors"
+            className="p-0.5 rounded-full text-slate-300 hover:text-white hover:bg-slate-800 disabled:opacity-30 cursor-pointer transition-colors"
           >
             <ChevronLeft className="w-3.5 h-3.5" />
           </button>
-          <span className="text-[11px] tracking-widest font-bold">
+          <span className="text-[11px] tracking-widest font-bold text-white">
             {currentPage} / {numPages}
           </span>
           <button
             type="button"
             disabled={currentPage >= numPages}
             onClick={() => handlePageChange(currentPage + 1)}
-            className="p-0.5 rounded-full hover:bg-white/20 disabled:opacity-30 cursor-pointer transition-colors"
+            className="p-0.5 rounded-full text-slate-300 hover:text-white hover:bg-slate-800 disabled:opacity-30 cursor-pointer transition-colors"
           >
             <ChevronRight className="w-3.5 h-3.5" />
           </button>

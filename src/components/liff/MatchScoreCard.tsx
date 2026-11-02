@@ -257,6 +257,8 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
               <img
                 src={`https://img.youtube.com/vi/${youtubeVideoId}/hqdefault.jpg`}
                 alt="Game Video Thumbnail"
+                loading="lazy"
+                decoding="async"
                 onLoad={() => setIsThumbLoaded(true)}
                 className={cn(
                   "w-full h-full object-cover transition-transform duration-500 group-hover/thumb:scale-105",

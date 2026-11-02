@@ -34,7 +34,7 @@ import {
 } from "@/db/schema";
 import type { ScorebookSheetStructure, ScorebookV2AtBat } from "@/types/scorebook-v2";
 import { aggregateTeamPlayerPositions } from "@/lib/liff/player-positions-and-growth";
-import { ensureEventColumns, ensureRulesTable, ensureLinksTable, ensureMemberOrderColumn, ensureStatusConfigColumn, ensureMemberSubLabelsColumn, ensureMatchLineupColumns, ensurePlayerProfileColumns } from "@/lib/db-helper";
+import { ensureEventColumns, ensureRulesTable, ensureLinksTable, ensureMemberOrderColumn, ensureStatusConfigColumn, ensureMemberSubLabelsColumn, ensureMatchLineupColumns, ensurePlayerProfileColumns, ensureVenuesColumns } from "@/lib/db-helper";
 import type { WorkerEnv, AuthUser } from "@/types/api";
 import { getAuth } from "@/lib/auth";
 import { canManageTeam } from "@/lib/roles";
@@ -70,26 +70,39 @@ async function expandCandidateUserIds(
 
   try {
     const initialIds = Array.from(idSet);
-    const byAccountId = await db
+    const linkedRows = await db
       .select({ userId: account.userId, accountId: account.accountId })
       .from(account)
-      .where(or(...initialIds.map((id) => eq(account.accountId, id))))
+      .where(
+        or(
+          inArray(account.accountId, initialIds),
+          inArray(account.userId, initialIds)
+        )
+      )
       .all();
-    for (const row of byAccountId) {
-      if (row.userId && !IGNORED_MOCK_USER_IDS.has(row.userId)) {
+
+    const newlyDiscoveredUserIds: string[] = [];
+    for (const row of linkedRows) {
+      if (row.userId && !IGNORED_MOCK_USER_IDS.has(row.userId) && !idSet.has(row.userId)) {
         idSet.add(row.userId);
+        newlyDiscoveredUserIds.push(row.userId);
+      }
+      if (row.accountId && !IGNORED_MOCK_USER_IDS.has(row.accountId)) {
+        idSet.add(row.accountId);
       }
     }
 
-    const afterStep1 = Array.from(idSet);
-    const byUserId = await db
-      .select({ userId: account.userId, accountId: account.accountId })
-      .from(account)
-      .where(or(...afterStep1.map((id) => eq(account.userId, id))))
-      .all();
-    for (const row of byUserId) {
-      if (row.accountId && !IGNORED_MOCK_USER_IDS.has(row.accountId)) {
-        idSet.add(row.accountId);
+    // 1段目で新たな Better-Auth userId が見つかった場合のみ、それに紐づく別プロバイダ accountId を補完
+    if (newlyDiscoveredUserIds.length > 0) {
+      const extraRows = await db
+        .select({ accountId: account.accountId })
+        .from(account)
+        .where(inArray(account.userId, newlyDiscoveredUserIds))
+        .all();
+      for (const row of extraRows) {
+        if (row.accountId && !IGNORED_MOCK_USER_IDS.has(row.accountId)) {
+          idSet.add(row.accountId);
+        }
       }
     }
   } catch (err) {
@@ -602,64 +615,28 @@ app.get("/hub", async (c) => {
   const userName = c.req.query("userName");
 
   try {
-    // ユーザー特定（セッション or LINE userId or accountテーブル連携）
-    let sessionUser: any = null;
-    try {
-      const auth = getAuth(c.env.DB, c.env);
-      const session = await auth.api.getSession({ headers: c.req.raw.headers as any }).catch(() => null);
-      sessionUser = session?.user;
-    } catch {}
+    // ユーザー特定（Better-Auth Cookie がある場合のみ getSession を実行） + 全チーム一覧を並列取得
+    const cookieHeader = c.req.header("cookie") || "";
+    const sessionPromise = cookieHeader.includes("better-auth")
+      ? (async () => {
+          try {
+            const auth = getAuth(c.env.DB, c.env);
+            const session = await auth.api.getSession({ headers: c.req.raw.headers as any }).catch(() => null);
+            return session?.user ?? null;
+          } catch {
+            return null;
+          }
+        })()
+      : Promise.resolve(null);
 
-    const authUserId = sessionUser?.id;
-    const isSysAdmin = (sessionUser as AuthUser)?.role === "SYSTEM_ADMIN";
-
-    // 候補となるすべてのユーザーID（LINE userId + Web Better-Auth ID を account テーブルで双方向展開）
-    const candidateIdsArray = await expandCandidateUserIds(db, [userId, authUserId]);
-
-    // ユーザーが所属（承認済み）しているチームID一覧を取得
-    const userTeamIds = new Set<string>();
-    if (candidateIdsArray.length > 0) {
-      const memberships = await db
-        .select({ teamId: teamMembers.teamId })
-        .from(teamMembers)
-        .where(
-          and(
-            or(...candidateIdsArray.map((uid) => eq(teamMembers.userId, uid))),
-            or(eq(teamMembers.status, "active"), sql`${teamMembers.status} IS NULL`)
-          )
-        )
-        .all();
-      for (const m of memberships) {
-        if (m.teamId) userTeamIds.add(m.teamId);
-      }
-    }
-
-    // 名前一致による所属チームの補完（手動登録されたメンバーとの照合）
-    if (userName && userName.trim()) {
-      try {
-        const cleanName = userName.trim();
-        const matchedByName = await db
-          .select({ teamId: teamMembers.teamId })
-          .from(teamMembers)
-          .where(
-            and(
-              eq(teamMembers.name, cleanName),
-              or(eq(teamMembers.status, "active"), sql`${teamMembers.status} IS NULL`)
-            )
-          )
-          .all();
-        for (const m of matchedByName) {
-          if (m.teamId) userTeamIds.add(m.teamId);
-        }
-      } catch {}
-    }
-
-    // 全チーム一覧の取得 (チームスイッチャー用)
-    const allTeams = await db
+    const allTeamsPromise = db
       .select({
         id: teams.id,
         name: teams.name,
         shortName: teams.name,
+        managerName: teams.managerName,
+        homeGround: teams.homeGround,
+        year: teams.year,
         orgName: organizations.name,
         logoImageUrl: organizations.logoImageUrl,
       })
@@ -667,6 +644,41 @@ app.get("/hub", async (c) => {
       .leftJoin(organizations, eq(teams.organizationId, organizations.id))
       .orderBy(desc(teams.createdAt))
       .all();
+
+    const [sessionUser, allTeams] = await Promise.all([sessionPromise, allTeamsPromise]);
+
+    const authUserId = sessionUser?.id;
+
+    // 候補となるすべてのユーザーID（LINE userId + Web Better-Auth ID を account テーブルで展開）
+    const candidateIdsArray = await expandCandidateUserIds(db, [userId, authUserId]);
+
+    // ユーザーが所属（承認済み）しているチームID一覧を1クエリで取得（userId または 名前一致を統合）
+    const userTeamIds = new Set<string>();
+    const cleanName = userName?.trim() || "";
+    const memberConditions = [];
+    if (candidateIdsArray.length > 0) {
+      memberConditions.push(inArray(teamMembers.userId, candidateIdsArray));
+    }
+    if (cleanName) {
+      memberConditions.push(eq(teamMembers.name, cleanName));
+    }
+    if (memberConditions.length > 0) {
+      try {
+        const memberships = await db
+          .select({ teamId: teamMembers.teamId })
+          .from(teamMembers)
+          .where(
+            and(
+              or(...memberConditions),
+              or(eq(teamMembers.status, "active"), sql`${teamMembers.status} IS NULL`)
+            )
+          )
+          .all();
+        for (const m of memberships) {
+          if (m.teamId) userTeamIds.add(m.teamId);
+        }
+      } catch {}
+    }
 
     // チームリストの生成:
     // 所属チームを上位に表示しつつ、すべての有効なチームを選択可能にする
@@ -704,35 +716,20 @@ app.get("/hub", async (c) => {
       });
     }
 
-    let targetTeam: any = null;
+    let targetTeam: (typeof allTeams)[number] | null = null;
 
-    // 1. 指定チームが存在すれば確実にロード（アクセス遮断を解除し、正常表示）
+    // 1. allTeams からメモリ上で即時解決（不要な再クエリを廃止）
     if (requestedTeamId) {
-      targetTeam = await db
-        .select({
-          id: teams.id,
-          name: teams.name,
-          managerName: teams.managerName,
-          homeGround: teams.homeGround,
-          year: teams.year,
-          orgName: organizations.name,
-          logoImageUrl: organizations.logoImageUrl,
-        })
-        .from(teams)
-        .leftJoin(organizations, eq(teams.organizationId, organizations.id))
-        .where(eq(teams.id, requestedTeamId))
-        .get();
+      targetTeam = allTeams.find((t) => t.id === requestedTeamId) || null;
     }
 
     // 2. 指定がない場合でユーザーに所属チームがある場合は所属チームを自動選択
-    if (!targetTeam) {
-      if (userTeamIds.size > 0) {
-        const firstUserTeamId = Array.from(userTeamIds)[0];
-        targetTeam = allTeams.find(t => t.id === firstUserTeamId) || null;
-      }
+    if (!targetTeam && userTeamIds.size > 0) {
+      const firstUserTeamId = Array.from(userTeamIds)[0];
+      targetTeam = allTeams.find((t) => t.id === firstUserTeamId) || null;
     }
 
-    // 3. それでも無ければ全チームの先頭チームを採用（チームがあればデモではなく本番チームへ）
+    // 3. それでも無ければ全チームの先頭チームを採用
     if (!targetTeam && allTeams.length > 0) {
       targetTeam = allTeams[0];
     }
@@ -753,73 +750,120 @@ app.get("/hub", async (c) => {
     const teamId = targetTeam.id;
     const fullTeamName = `${targetTeam.orgName ? `${targetTeam.orgName} ` : ""}${targetTeam.name}`.trim();
 
-    // チームのイベント一覧を取得（日付順）
-    const allEventsList = await db
-      .select()
-      .from(events)
-      .where(eq(events.teamId, teamId))
-      .orderBy(asc(events.startAt))
-      .all();
+    // ⚡ イベント・メンバー・球場・直近10試合の4クエリを完全並列取得
+    const [allEventsList, teamMemberList, teamVenues, matchesList] = await Promise.all([
+      db
+        .select()
+        .from(events)
+        .where(eq(events.teamId, teamId))
+        .orderBy(asc(events.startAt))
+        .all(),
+      candidateIdsArray.length > 0 || cleanName
+        ? db
+            .select({
+              id: teamMembers.id,
+              userId: teamMembers.userId,
+              name: teamMembers.name,
+              memberType: teamMembers.memberType,
+              status: teamMembers.status,
+            })
+            .from(teamMembers)
+            .where(eq(teamMembers.teamId, teamId))
+            .all()
+        : Promise.resolve([]),
+      db.select({ name: venues.name, shortName: venues.shortName }).from(venues).all(),
+      db
+        .select({
+          id: matches.id,
+          opponent: matches.opponent,
+          date: matches.date,
+          status: matches.status,
+          myScore: matches.myScore,
+          opponentScore: matches.opponentScore,
+          youtubeUrl: matches.youtubeUrl,
+          matchType: matches.matchType,
+          tournamentName: tournaments.name,
+          tournamentId: matches.tournamentId,
+          venueName: venues.name,
+          venueShortName: venues.shortName,
+          surfaceDetails: matches.surfaceDetails,
+          battingOrder: matches.battingOrder,
+          innings: matches.innings,
+          myInningScores: matches.myInningScores,
+          opponentInningScores: matches.opponentInningScores,
+          myHits: matches.myHits,
+          opponentHits: matches.opponentHits,
+          myErrors: matches.myErrors,
+          opponentErrors: matches.opponentErrors,
+          myLineup: matches.myLineup,
+        })
+        .from(matches)
+        .leftJoin(tournaments, eq(matches.tournamentId, tournaments.id))
+        .leftJoin(venues, eq(matches.venueId, venues.id))
+        .where(eq(matches.teamId, teamId))
+        .orderBy(desc(matches.date), desc(matches.createdAt))
+        .limit(10)
+        .all(),
+    ]);
 
-    // ログインユーザーの出欠リストを取得 (candidateIdsArray および userName から照合)
-    let userAttendances: Record<string, string> = {};
+    // ログインユーザーの memberId をメモリ上で即時解決
+    const userAttendances: Record<string, string> = {};
     let currentMemberId: string | null = null;
 
     if (candidateIdsArray.length > 0) {
-      const matchedMembers = await db
-        .select({ id: teamMembers.id })
-        .from(teamMembers)
-        .where(
-          and(
-            eq(teamMembers.teamId, teamId),
-            or(...candidateIdsArray.map((uid) => eq(teamMembers.userId, uid)))
-          )
-        )
-        .all();
+      const candidateSet = new Set(candidateIdsArray);
+      const matchedMembers = teamMemberList.filter((m) => m.userId && candidateSet.has(m.userId));
       const canonical = matchedMembers.find((m) => !m.id.startsWith("tm_")) || matchedMembers[0];
       if (canonical) currentMemberId = canonical.id;
     }
 
-    if (!currentMemberId && userName) {
-      const teamMemberList = await db
-        .select({
-          id: teamMembers.id,
-          name: teamMembers.name,
-          memberType: teamMembers.memberType,
-          status: teamMembers.status,
-        })
-        .from(teamMembers)
-        .where(eq(teamMembers.teamId, teamId))
-        .all();
-      const matched = findMatchingAdultMemberByName(teamMemberList, [userName]);
+    if (!currentMemberId && cleanName) {
+      const matched = findMatchingAdultMemberByName(teamMemberList, [cleanName]);
       if (matched) currentMemberId = matched.id;
     }
 
     const attConditions = [];
-    for (const uid of candidateIdsArray) {
-      attConditions.push(eq(attendances.userId, uid));
+    if (candidateIdsArray.length > 0) {
+      attConditions.push(inArray(attendances.userId, candidateIdsArray));
     }
-    if (currentMemberId) attConditions.push(eq(attendances.memberId, currentMemberId));
+    if (currentMemberId) {
+      attConditions.push(eq(attendances.memberId, currentMemberId));
+    }
 
-    if (attConditions.length > 0) {
-      const atts = await db
-        .select({
-          eventId: attendances.eventId,
-          status: attendances.status,
-        })
-        .from(attendances)
-        .where(or(...attConditions))
-        .all();
-      
-      for (const a of atts) {
-        if (a.eventId && a.status) {
-          userAttendances[a.eventId] = a.status;
-        }
+    const hubMatchIds = matchesList.map((m) => m.id);
+
+    // ⚡ 出欠ステータス取得と at_bats 存在確認（selectDistinct で最大10行のみ転送）を並列取得
+    const [atts, abRows] = await Promise.all([
+      attConditions.length > 0
+        ? db
+            .select({
+              eventId: attendances.eventId,
+              status: attendances.status,
+            })
+            .from(attendances)
+            .where(or(...attConditions))
+            .all()
+        : Promise.resolve([]),
+      hubMatchIds.length > 0
+        ? db
+            .selectDistinct({ matchId: atBats.matchId })
+            .from(atBats)
+            .where(inArray(atBats.matchId, hubMatchIds))
+            .all()
+        : Promise.resolve([]),
+    ]);
+
+    for (const a of atts) {
+      if (a.eventId && a.status) {
+        userAttendances[a.eventId] = a.status;
       }
     }
 
-    // 登録球場一覧を取得（略称優先マッピング用）
-    const teamVenues = await db.select({ name: venues.name, shortName: venues.shortName }).from(venues).all();
+    const hubScorebookIds = new Set<string>();
+    for (const ab of abRows) {
+      if (ab.matchId) hubScorebookIds.add(ab.matchId);
+    }
+
     const venueMap = new Map<string, string>();
     for (const v of teamVenues) {
       if (v.name && v.shortName && v.shortName.trim()) {
@@ -905,52 +949,6 @@ app.get("/hub", async (c) => {
     });
 
     const nextEvent = formattedEventsList[0] || null;
-
-    const matchesList = await db
-      .select({
-        id: matches.id,
-        opponent: matches.opponent,
-        date: matches.date,
-        status: matches.status,
-        myScore: matches.myScore,
-        opponentScore: matches.opponentScore,
-        youtubeUrl: matches.youtubeUrl,
-        matchType: matches.matchType,
-        tournamentName: tournaments.name,
-        tournamentId: matches.tournamentId,
-        venueName: venues.name,
-        venueShortName: venues.shortName,
-        surfaceDetails: matches.surfaceDetails,
-        battingOrder: matches.battingOrder,
-        innings: matches.innings,
-        myInningScores: matches.myInningScores,
-        opponentInningScores: matches.opponentInningScores,
-        myHits: matches.myHits,
-        opponentHits: matches.opponentHits,
-        myErrors: matches.myErrors,
-        opponentErrors: matches.opponentErrors,
-        myLineup: matches.myLineup,
-      })
-      .from(matches)
-      .leftJoin(tournaments, eq(matches.tournamentId, tournaments.id))
-      .leftJoin(venues, eq(matches.venueId, venues.id))
-      .where(eq(matches.teamId, teamId))
-      .orderBy(desc(matches.date), desc(matches.createdAt))
-      .limit(10)
-      .all();
-
-    const hubScorebookIds = new Set<string>();
-    const hubMatchIds = matchesList.map((m) => m.id);
-    if (hubMatchIds.length > 0) {
-      const abRows = await db
-        .select({ matchId: atBats.matchId })
-        .from(atBats)
-        .where(inArray(atBats.matchId, hubMatchIds))
-        .all();
-      for (const ab of abRows) {
-        if (ab.matchId) hubScorebookIds.add(ab.matchId);
-      }
-    }
 
     const formattedMatches = matchesList.map(m => {
       let hasLineup = false;
@@ -1082,13 +1080,20 @@ app.get("/matches", async (c) => {
 
     const listScorebookIds = new Set<string>();
     const listMatchIds = rawMatches.map((m) => m.id);
+    const chunks: string[][] = [];
     for (let i = 0; i < listMatchIds.length; i += 80) {
-      const chunk = listMatchIds.slice(i, i + 80);
-      const abRows = await db
-        .select({ matchId: atBats.matchId })
-        .from(atBats)
-        .where(inArray(atBats.matchId, chunk))
-        .all();
+      chunks.push(listMatchIds.slice(i, i + 80));
+    }
+    const chunkResults = await Promise.all(
+      chunks.map((chunk) =>
+        db
+          .selectDistinct({ matchId: atBats.matchId })
+          .from(atBats)
+          .where(inArray(atBats.matchId, chunk))
+          .all()
+      )
+    );
+    for (const abRows of chunkResults) {
       for (const ab of abRows) {
         if (ab.matchId) listScorebookIds.add(ab.matchId);
       }
@@ -1230,74 +1235,118 @@ app.get("/schedule", async (c) => {
       });
     }
 
-    // 実チームのイベント一覧を取得（昇順：直近・古い日付から順に）
-    const eventList = await db
-      .select()
-      .from(events)
-      .where(eq(events.teamId, teamId))
-      .orderBy(asc(events.startAt))
-      .all();
+    // ⚡ イベント一覧・球場一覧・チームメンバー・セッションを並列取得
+    const cookieHeader = c.req.header("cookie") || "";
+    const sessionPromise = cookieHeader.includes("better-auth")
+      ? (async () => {
+          try {
+            const auth = getAuth(c.env.DB, c.env);
+            const session = await auth.api
+              .getSession({ headers: c.req.raw.headers as unknown as Headers })
+              .catch(() => null);
+            return session?.user ?? null;
+          } catch {
+            return null;
+          }
+        })()
+      : Promise.resolve(null);
 
-    // ログインユーザーの memberId を特定（account双方向連携 & 名前照合）
-    let authUserId: string | undefined;
-    let authUserName: string | undefined;
-    try {
-      const auth = getAuth(c.env.DB, c.env);
-      const session = await auth.api
-        .getSession({ headers: c.req.raw.headers as unknown as Headers })
-        .catch(() => null);
-      authUserId = session?.user?.id;
-      authUserName = session?.user?.name || undefined;
-    } catch {}
-
-    const schedCandidateIds = await expandCandidateUserIds(db, [userId, authUserId]);
-    const schedMemberIdsSet = new Set<string>();
-    const requestedMemberId = c.req.query("memberId");
-
-    if (schedCandidateIds.length > 0) {
-      const matchedMembers = await db
-        .select({ id: teamMembers.id })
-        .from(teamMembers)
-        .where(
-          and(
-            eq(teamMembers.teamId, teamId),
-            or(...schedCandidateIds.map((uid) => eq(teamMembers.userId, uid)))
-          )
-        )
-        .all();
-      for (const m of matchedMembers) {
-        schedMemberIdsSet.add(m.id);
-      }
-    }
-
-    if (schedMemberIdsSet.size === 0 && requestedMemberId && !requestedMemberId.startsWith("demo-")) {
-      const reqMember = await db
-        .select({ id: teamMembers.id, userId: teamMembers.userId })
-        .from(teamMembers)
-        .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.id, requestedMemberId)))
-        .get();
-      if (reqMember && (!reqMember.userId || schedCandidateIds.includes(reqMember.userId))) {
-        schedMemberIdsSet.add(reqMember.id);
-      }
-    }
-
-    if (schedMemberIdsSet.size === 0 && (userName || authUserName)) {
-      const teamMemberList = await db
+    const [eventList, teamVenues, teamMemberList, sessionUser] = await Promise.all([
+      db
+        .select()
+        .from(events)
+        .where(eq(events.teamId, teamId))
+        .orderBy(asc(events.startAt))
+        .all(),
+      db.select({ name: venues.name, shortName: venues.shortName }).from(venues).all(),
+      db
         .select({
           id: teamMembers.id,
+          userId: teamMembers.userId,
           name: teamMembers.name,
           memberType: teamMembers.memberType,
           status: teamMembers.status,
         })
         .from(teamMembers)
         .where(eq(teamMembers.teamId, teamId))
-        .all();
+        .all(),
+      sessionPromise,
+    ]);
+
+    const authUserId = sessionUser?.id;
+    const authUserName = sessionUser?.name || undefined;
+
+    // ⚡ account連携展開 と 全イベント分の出欠レコード一括取得（N+1クエリを完全排除！）を並列実行
+    const eventIds = eventList.map((ev) => ev.id);
+    const attendanceChunks: string[][] = [];
+    for (let i = 0; i < eventIds.length; i += 80) {
+      attendanceChunks.push(eventIds.slice(i, i + 80));
+    }
+
+    const [schedCandidateIds, attChunkResults] = await Promise.all([
+      expandCandidateUserIds(db, [userId, authUserId]),
+      Promise.all(
+        attendanceChunks.map((chunk) =>
+          db
+            .select({
+              eventId: attendances.eventId,
+              status: attendances.status,
+              userId: attendances.userId,
+              memberId: attendances.memberId,
+              selectedGroupId: attendances.selectedGroupId,
+            })
+            .from(attendances)
+            .where(inArray(attendances.eventId, chunk))
+            .all()
+        )
+      ),
+    ]);
+
+    const attendancesByEventId = new Map<
+      string,
+      Array<{
+        status: string | null;
+        userId: string | null;
+        memberId: string | null;
+        selectedGroupId: string | null;
+      }>
+    >();
+    for (const rows of attChunkResults) {
+      for (const row of rows) {
+        if (!row.eventId) continue;
+        let bucket = attendancesByEventId.get(row.eventId);
+        if (!bucket) {
+          bucket = [];
+          attendancesByEventId.set(row.eventId, bucket);
+        }
+        bucket.push(row);
+      }
+    }
+
+    const schedMemberIdsSet = new Set<string>();
+    const requestedMemberId = c.req.query("memberId");
+    const schedCandidateSet = new Set(schedCandidateIds);
+
+    if (schedCandidateIds.length > 0) {
+      for (const m of teamMemberList) {
+        if (m.userId && schedCandidateSet.has(m.userId)) {
+          schedMemberIdsSet.add(m.id);
+        }
+      }
+    }
+
+    if (schedMemberIdsSet.size === 0 && requestedMemberId && !requestedMemberId.startsWith("demo-")) {
+      const reqMember = teamMemberList.find((m) => m.id === requestedMemberId);
+      if (reqMember && (!reqMember.userId || schedCandidateSet.has(reqMember.userId))) {
+        schedMemberIdsSet.add(reqMember.id);
+      }
+    }
+
+    if (schedMemberIdsSet.size === 0 && (userName || authUserName)) {
       const matched = findMatchingAdultMemberByName(teamMemberList, [userName, authUserName]);
       if (matched) schedMemberIdsSet.add(matched.id);
     }
 
-    // 登録球場一覧を取得（略称優先マッピング用）
-    const teamVenues = await db.select({ name: venues.name, shortName: venues.shortName }).from(venues).all();
     const venueMap = new Map<string, string>();
     for (const v of teamVenues) {
       if (v.name && v.shortName && v.shortName.trim()) {
@@ -1305,19 +1354,9 @@ app.get("/schedule", async (c) => {
       }
     }
 
-    // 各イベントの出欠集計
-    const formattedEvents = await Promise.all(
-      eventList.map(async (ev) => {
-        const attList = await db
-          .select({
-            status: attendances.status,
-            userId: attendances.userId,
-            memberId: attendances.memberId,
-            selectedGroupId: attendances.selectedGroupId,
-          })
-          .from(attendances)
-          .where(eq(attendances.eventId, ev.id))
-          .all();
+    // 各イベントの出欠集計（メモリ上で O(N) 計算、DB クエリ 0 回）
+    const formattedEvents = eventList.map((ev) => {
+      const attList = attendancesByEventId.get(ev.id) || [];
 
         const dutyCount = attList.filter((a) => a.status === "duty").length;
         const helpCount = attList.filter((a) => a.status === "help" || a.status === "present").length;
@@ -1448,8 +1487,7 @@ app.get("/schedule", async (c) => {
             game: gameCount,
           },
         };
-      })
-    );
+      });
 
     return c.json({
       success: true,
@@ -1670,21 +1708,63 @@ app.get("/attendance-matrix", async (c) => {
       });
     }
 
-    // 1. ログインユーザー特定（Session cookie / LINE LIFF / account連携 / チーム創設者のハイブリッド判定）
-    const auth = getAuth(c.env.DB, c.env);
-    const session = await auth.api.getSession({ headers: c.req.raw.headers as unknown as Headers }).catch(() => null);
-    const authUserId = session?.user?.id;
-    const authUserName = session?.user?.name;
-    const isSysAdmin = (session?.user as AuthUser)?.role === "SYSTEM_ADMIN";
-    const requestedMemberId = c.req.query("memberId");
+    // ⚡ 1. セッション・チーム設定・メンバー・親子関係・選手・イベントの6クエリを完全並列取得
+    const cookieHeader = c.req.header("cookie") || "";
+    const sessionPromise = cookieHeader.includes("better-auth")
+      ? (async () => {
+          try {
+            const auth = getAuth(c.env.DB, c.env);
+            const session = await auth.api
+              .getSession({ headers: c.req.raw.headers as unknown as Headers })
+              .catch(() => null);
+            return session?.user ?? null;
+          } catch {
+            return null;
+          }
+        })()
+      : Promise.resolve(null);
 
-    // チーム設定および創設者（オーナー）チェック
-    const teamRecord = await db.select({ 
-      createdBy: teams.createdBy, 
-      memberSortOrder: teams.memberSortOrder,
-      attendanceStatusConfig: teams.attendanceStatusConfig,
-      memberSubLabels: teams.memberSubLabels,
-    }).from(teams).where(eq(teams.id, teamId)).get();
+    const [
+      sessionUser,
+      teamRecord,
+      allTeamMembersRaw,
+      relations,
+      allPlayersRaw,
+      allEvents,
+    ] = await Promise.all([
+      sessionPromise,
+      db
+        .select({
+          createdBy: teams.createdBy,
+          memberSortOrder: teams.memberSortOrder,
+          attendanceStatusConfig: teams.attendanceStatusConfig,
+          memberSubLabels: teams.memberSubLabels,
+        })
+        .from(teams)
+        .where(eq(teams.id, teamId))
+        .get(),
+      db.select().from(teamMembers).where(eq(teamMembers.teamId, teamId)).all(),
+      db
+        .select({
+          parentId: parentChildRelations.parentId,
+          childId: parentChildRelations.childId,
+        })
+        .from(parentChildRelations)
+        .where(eq(parentChildRelations.teamId, teamId))
+        .all(),
+      db.select().from(players).where(eq(players.teamId, teamId)).all(),
+      db
+        .select()
+        .from(events)
+        .where(eq(events.teamId, teamId))
+        .orderBy(asc(events.startAt))
+        .all(),
+    ]);
+
+    const authUserId = sessionUser?.id;
+    const authUserName = sessionUser?.name;
+    const isSysAdmin = (sessionUser as AuthUser | null)?.role === "SYSTEM_ADMIN";
+    const requestedMemberId = c.req.query("memberId");
 
     let parsedSortOrder: Record<string, string[]> = {};
     try {
@@ -1694,17 +1774,35 @@ app.get("/attendance-matrix", async (c) => {
     } catch {}
     const orderedIdsSet = new Set<string>(Object.values(parsedSortOrder).flat());
 
-    // 候補となるすべてのユーザーID（LINE userId + Web Better-Auth ID を双方向展開）
-    const searchUserIds = await expandCandidateUserIds(db, [userId, authUserId]);
+    // ⚡ 候補ユーザーID展開 と 当該チームイベントのみの出欠一括取得（全テーブルスキャン廃止）を並列実行
+    const teamEventIds = allEvents.map((ev) => ev.id);
+    const matrixAttChunks: string[][] = [];
+    for (let i = 0; i < teamEventIds.length; i += 80) {
+      matrixAttChunks.push(teamEventIds.slice(i, i + 80));
+    }
+
+    const [searchUserIds, attChunkResults] = await Promise.all([
+      expandCandidateUserIds(db, [userId, authUserId]),
+      Promise.all(
+        matrixAttChunks.map((chunk) =>
+          db
+            .select({
+              eventId: attendances.eventId,
+              playerId: attendances.playerId,
+              memberId: attendances.memberId,
+              status: attendances.status,
+              comment: attendances.comment,
+            })
+            .from(attendances)
+            .where(inArray(attendances.eventId, chunk))
+            .all()
+        )
+      ),
+    ]);
+
     const isTeamCreator = Boolean(
       teamRecord?.createdBy && searchUserIds.includes(teamRecord.createdBy)
     );
-
-    const allTeamMembersRaw = await db
-      .select()
-      .from(teamMembers)
-      .where(eq(teamMembers.teamId, teamId))
-      .all();
 
     const activeAllMembers = allTeamMembersRaw.filter(
       (m) => m.status === "active" || !m.status
@@ -1762,16 +1860,6 @@ app.get("/attendance-matrix", async (c) => {
       })
     );
 
-    // 2. 親子関係の取得
-    const relations = await db
-      .select({
-        parentId: parentChildRelations.parentId,
-        childId: parentChildRelations.childId,
-      })
-      .from(parentChildRelations)
-      .where(eq(parentChildRelations.teamId, teamId))
-      .all();
-
     const myPlayerIds =
       myMemberIds.length > 0
         ? Array.from(
@@ -1782,13 +1870,6 @@ app.get("/attendance-matrix", async (c) => {
             )
           )
         : [];
-
-    // 3. 選手一覧取得（在籍選手のみ）
-    const allPlayersRaw = await db
-      .select()
-      .from(players)
-      .where(eq(players.teamId, teamId))
-      .all();
 
     const allPlayers = allPlayersRaw.filter(p => p.isActive !== false);
 
@@ -1907,14 +1988,6 @@ app.get("/attendance-matrix", async (c) => {
     // 👪 保護者全体（母 + 父 + 一般保護者）
     const allParentsList = [...mothersList, ...fathersList, ...otherParentsList];
 
-    // 5. イベント一覧取得
-    const allEvents = await db
-      .select()
-      .from(events)
-      .where(eq(events.teamId, teamId))
-      .orderBy(asc(events.startAt))
-      .all();
-
     const wStr = ["日", "月", "火", "水", "木", "金", "土"];
     const formattedEvents = allEvents.map(ev => {
       const st = new Date(ev.startAt);
@@ -1937,11 +2010,27 @@ app.get("/attendance-matrix", async (c) => {
       };
     });
 
-    // 6. 出欠レコードの取得 & マトリクス構築
-    const allAttendances = await db
-      .select()
-      .from(attendances)
-      .all();
+    // ⚡ 6. 出欠レコードを O(N) でイベントごとにバケット化してマトリクス構築
+    const attendancesByEvent = new Map<
+      string,
+      Array<{
+        playerId: string | null;
+        memberId: string | null;
+        status: string | null;
+        comment: string | null;
+      }>
+    >();
+    for (const rows of attChunkResults) {
+      for (const att of rows) {
+        if (!att.eventId) continue;
+        let bucket = attendancesByEvent.get(att.eventId);
+        if (!bucket) {
+          bucket = [];
+          attendancesByEvent.set(att.eventId, bucket);
+        }
+        bucket.push(att);
+      }
+    }
 
     const matrix: Record<string, Record<string, { status: string; comment: string }>> = {};
     const eventSummaries: Record<string, any> = {};
@@ -1954,7 +2043,7 @@ app.get("/attendance-matrix", async (c) => {
       let game = 0;
       let absent = 0;
 
-      const evAtts = allAttendances.filter(a => a.eventId === ev.id);
+      const evAtts = attendancesByEvent.get(ev.id) || [];
       for (const att of evAtts) {
         const key = att.playerId || att.memberId;
         if (!key) continue;
@@ -2814,42 +2903,57 @@ app.get("/carpool", async (c) => {
       });
     }
 
-    // 各車の乗車メンバー（riders）の取得
-    const carsWithPassengers = await Promise.all(
-      carpoolsList.map(async (car, index) => {
-        const riders = await db
-          .select({
-            riderPlayerName: players.name,
-            riderMemberName: teamMembers.name,
-            riderMemberType: teamMembers.memberType,
-          })
-          .from(eventCarpoolRiders)
-          .leftJoin(players, eq(eventCarpoolRiders.playerId, players.id))
-          .leftJoin(teamMembers, eq(eventCarpoolRiders.memberId, teamMembers.id))
-          .where(eq(eventCarpoolRiders.carpoolId, car.id))
-          .all();
+    // ⚡ 全車両の乗車メンバー（riders）を1回の inArray クエリで一括取得（N+1クエリを排除）
+    const carpoolIds = carpoolsList.map((car) => car.id);
+    const allRiders =
+      carpoolIds.length > 0
+        ? await db
+            .select({
+              carpoolId: eventCarpoolRiders.carpoolId,
+              riderPlayerName: players.name,
+              riderMemberName: teamMembers.name,
+              riderMemberType: teamMembers.memberType,
+            })
+            .from(eventCarpoolRiders)
+            .leftJoin(players, eq(eventCarpoolRiders.playerId, players.id))
+            .leftJoin(teamMembers, eq(eventCarpoolRiders.memberId, teamMembers.id))
+            .where(inArray(eventCarpoolRiders.carpoolId, carpoolIds))
+            .all()
+        : [];
 
-        const passengers = riders.map((r) => {
-          if (r.riderPlayerName) {
-            return { name: `${r.riderPlayerName} (選手)`, type: "player" as const };
-          }
-          return {
-            name: `${r.riderMemberName || "メンバー"} (${r.riderMemberType === "staff" ? "指導者" : "保護者"})`,
-            type: "adult" as const,
-          };
-        });
+    const ridersByCarpoolId = new Map<string, typeof allRiders>();
+    for (const r of allRiders) {
+      if (!r.carpoolId) continue;
+      let list = ridersByCarpoolId.get(r.carpoolId);
+      if (!list) {
+        list = [];
+        ridersByCarpoolId.set(r.carpoolId, list);
+      }
+      list.push(r);
+    }
 
+    const carsWithPassengers = carpoolsList.map((car, index) => {
+      const riders = ridersByCarpoolId.get(car.id) || [];
+      const passengers = riders.map((r) => {
+        if (r.riderPlayerName) {
+          return { name: `${r.riderPlayerName} (選手)`, type: "player" as const };
+        }
         return {
-          carNumber: index + 1,
-          driverName: car.driverName || "ドライバー",
-          carModel: car.carName ? `${car.carName}${car.carColor ? ` (${car.carColor})` : ""}` : "登録車",
-          plate: car.numberPlate || "未登録",
-          capacity: car.capacity || 4,
-          isCargo: car.carType === "cargo",
-          passengers,
+          name: `${r.riderMemberName || "メンバー"} (${r.riderMemberType === "staff" ? "指導者" : "保護者"})`,
+          type: "adult" as const,
         };
-      })
-    );
+      });
+
+      return {
+        carNumber: index + 1,
+        driverName: car.driverName || "ドライバー",
+        carModel: car.carName ? `${car.carName}${car.carColor ? ` (${car.carColor})` : ""}` : "登録車",
+        plate: car.numberPlate || "未登録",
+        capacity: car.capacity || 4,
+        isCargo: car.carType === "cargo",
+        passengers,
+      };
+    });
 
     return c.json({
       success: true,
@@ -3021,21 +3125,6 @@ app.get("/grounds", async (c) => {
     return c.json({ success: true, isDemo: true, venues: DEMO_VENUES });
   }
 });
-
-/**
- * 🏟️ 球場・施設 テーブルカラムの安全な存在確認
- */
-async function ensureVenuesColumns(d1: any) {
-  try {
-    await d1.prepare("ALTER TABLE venues ADD COLUMN category TEXT DEFAULT 'stadium'").run();
-  } catch {}
-  try {
-    await d1.prepare("ALTER TABLE venues ADD COLUMN parking_info TEXT").run();
-  } catch {}
-  try {
-    await d1.prepare("ALTER TABLE venues ADD COLUMN spike_rule TEXT").run();
-  } catch {}
-}
 
 /**
  * ➕ 球場・施設 新規登録API
@@ -3647,46 +3736,56 @@ app.get("/stats", async (c) => {
       return c.json(buildDemoStatsResponse());
     }
 
-    const teamRow = await db
-      .select({
-        id: teams.id,
-        name: teams.name,
-        orgName: organizations.name,
-        year: teams.year,
-      })
-      .from(teams)
-      .leftJoin(organizations, eq(teams.organizationId, organizations.id))
-      .where(eq(teams.id, teamId))
-      .get();
-
-    const rawTeamMatches = await db
-      .select({
-        id: matches.id,
-        date: matches.date,
-        opponent: matches.opponent,
-        matchType: matches.matchType,
-        battingOrder: matches.battingOrder,
-        status: matches.status,
-        myScore: matches.myScore,
-        opponentScore: matches.opponentScore,
-        myHits: matches.myHits,
-        opponentHits: matches.opponentHits,
-        myErrors: matches.myErrors,
-        opponentErrors: matches.opponentErrors,
-        isColdGame: matches.isColdGame,
-        isTiebreaker: matches.isTiebreaker,
-        createdAt: matches.createdAt,
-        tournamentName: tournaments.name,
-        venueShortName: venues.shortName,
-        venueFullName: venues.name,
-        surfaceDetails: matches.surfaceDetails,
-      })
-      .from(matches)
-      .leftJoin(tournaments, eq(matches.tournamentId, tournaments.id))
-      .leftJoin(venues, eq(matches.venueId, venues.id))
-      .where(eq(matches.teamId, teamId))
-      .orderBy(desc(matches.date), desc(matches.createdAt))
-      .all();
+    const [teamRow, rawTeamMatches, rosterPlayers] = await Promise.all([
+      db
+        .select({
+          id: teams.id,
+          name: teams.name,
+          orgName: organizations.name,
+          year: teams.year,
+        })
+        .from(teams)
+        .leftJoin(organizations, eq(teams.organizationId, organizations.id))
+        .where(eq(teams.id, teamId))
+        .get(),
+      db
+        .select({
+          id: matches.id,
+          date: matches.date,
+          opponent: matches.opponent,
+          matchType: matches.matchType,
+          battingOrder: matches.battingOrder,
+          status: matches.status,
+          myScore: matches.myScore,
+          opponentScore: matches.opponentScore,
+          myHits: matches.myHits,
+          opponentHits: matches.opponentHits,
+          myErrors: matches.myErrors,
+          opponentErrors: matches.opponentErrors,
+          isColdGame: matches.isColdGame,
+          isTiebreaker: matches.isTiebreaker,
+          createdAt: matches.createdAt,
+          tournamentName: tournaments.name,
+          venueShortName: venues.shortName,
+          venueFullName: venues.name,
+          surfaceDetails: matches.surfaceDetails,
+        })
+        .from(matches)
+        .leftJoin(tournaments, eq(matches.tournamentId, tournaments.id))
+        .leftJoin(venues, eq(matches.venueId, venues.id))
+        .where(eq(matches.teamId, teamId))
+        .orderBy(desc(matches.date), desc(matches.createdAt))
+        .all(),
+      db
+        .select({
+          id: players.id,
+          name: players.name,
+          uniformNumber: players.uniformNumber,
+        })
+        .from(players)
+        .where(eq(players.teamId, teamId))
+        .all(),
+    ]);
 
     const finishedRaw = rawTeamMatches
       .filter(
@@ -3700,15 +3799,6 @@ app.get("/stats", async (c) => {
       );
 
     const finishedIds = finishedRaw.map((m) => m.id);
-    const rosterPlayers = await db
-      .select({
-        id: players.id,
-        name: players.name,
-        uniformNumber: players.uniformNumber,
-      })
-      .from(players)
-      .where(eq(players.teamId, teamId))
-      .all();
 
     const normalizeNameKey = (raw: string | null | undefined): string =>
       (raw || "").replace(/[\s　]+/g, "").trim();
@@ -7741,48 +7831,75 @@ app.get("/players", async (c) => {
   }
 
   try {
-    const teamRow = await db
-      .select({
-        id: teams.id,
-        name: teams.name,
-        year: teams.year,
-        managerName: teams.managerName,
-        captainId: teams.captainId,
-        orgName: organizations.name,
-        logoImageUrl: organizations.logoImageUrl,
-      })
-      .from(teams)
-      .leftJoin(organizations, eq(teams.organizationId, organizations.id))
-      .where(eq(teams.id, teamId))
-      .get();
+    const [teamRow, rawPlayers, battingQueryRes, pitchingQueryRes] = await Promise.all([
+      db
+        .select({
+          id: teams.id,
+          name: teams.name,
+          year: teams.year,
+          managerName: teams.managerName,
+          captainId: teams.captainId,
+          orgName: organizations.name,
+          logoImageUrl: organizations.logoImageUrl,
+        })
+        .from(teams)
+        .leftJoin(organizations, eq(teams.organizationId, organizations.id))
+        .where(eq(teams.id, teamId))
+        .get(),
+      db
+        .select({
+          id: players.id,
+          name: players.name,
+          nameKana: players.nameKana,
+          uniformNumber: players.uniformNumber,
+          nickname: players.nickname,
+          primaryPosition: players.primaryPosition,
+          subPositions: players.subPositions,
+          throws: players.throws,
+          bats: players.bats,
+          height: players.height,
+          weight: players.weight,
+          profileImageUrl: players.profileImageUrl,
+          notes: players.notes,
+          isActive: players.isActive,
+          joinedAt: players.joinedAt,
+        })
+        .from(players)
+        .where(eq(players.teamId, teamId))
+        .all(),
+      c.env.DB.prepare(`
+        SELECT
+          ab.batter_id AS playerId,
+          COUNT(ab.result) AS pa,
+          SUM(CASE WHEN ab.result IN ('single','1B','double','2B','triple','3B','home_run','HR','groundout','flyout','double_play','strikeout','K','SO','error','E','fc','FC') THEN 1 ELSE 0 END) AS ab,
+          SUM(CASE WHEN ab.result IN ('single','1B','double','2B','triple','3B','home_run','HR') THEN 1 ELSE 0 END) AS hits,
+          SUM(CASE WHEN ab.result IN ('home_run','HR') THEN 1 ELSE 0 END) AS hr,
+          SUM(CASE WHEN ab.result IN ('walk','BB','HBP','hit_by_pitch') THEN 1 ELSE 0 END) AS walks
+        FROM at_bats ab
+        JOIN matches m ON ab.match_id = m.id
+        WHERE m.team_id = ? AND m.status = 'finished' AND ab.batter_id IS NOT NULL
+        GROUP BY ab.batter_id
+      `).bind(teamId).all().catch(() => ({ results: [] })),
+      c.env.DB.prepare(`
+        SELECT
+          ab.pitcher_id AS playerId,
+          COUNT(ab.result) AS battersFaced,
+          SUM(CASE WHEN ab.result IN ('groundout','flyout','strikeout','K','SO','sac_bunt','sac_fly') THEN 1 WHEN ab.result = 'double_play' THEN 2 ELSE 0 END) AS outs,
+          SUM(CASE WHEN ab.result IN ('strikeout','K','SO') THEN 1 ELSE 0 END) AS strikeouts,
+          SUM(CASE WHEN ab.result IN ('single','1B','double','2B','triple','3B','home_run','HR') THEN 1 ELSE 0 END) AS hitsAllowed,
+          SUM(CASE WHEN ab.result IN ('walk','BB','HBP','hit_by_pitch') THEN 1 ELSE 0 END) AS walks
+        FROM at_bats ab
+        JOIN matches m ON ab.match_id = m.id
+        WHERE m.team_id = ? AND m.status = 'finished' AND ab.pitcher_id IS NOT NULL
+        GROUP BY ab.pitcher_id
+      `).bind(teamId).all().catch(() => ({ results: [] })),
+    ]);
 
     if (!teamRow) {
       return c.json({ success: false, error: "指定されたチームが見つかりません" }, 404);
     }
 
-    const rawPlayers = await db
-      .select({
-        id: players.id,
-        name: players.name,
-        nameKana: players.nameKana,
-        uniformNumber: players.uniformNumber,
-        nickname: players.nickname,
-        primaryPosition: players.primaryPosition,
-        subPositions: players.subPositions,
-        throws: players.throws,
-        bats: players.bats,
-        height: players.height,
-        weight: players.weight,
-        profileImageUrl: players.profileImageUrl,
-        notes: players.notes,
-        isActive: players.isActive,
-        joinedAt: players.joinedAt,
-      })
-      .from(players)
-      .where(eq(players.teamId, teamId))
-      .all();
-
-    // シーズン打撃成績の集計
+    // シーズン打撃成績・投手成績のマップ構築
     interface BatterAggRow {
       playerId: string;
       pa: number;
@@ -7804,62 +7921,30 @@ app.get("/players", async (c) => {
     const battingMap = new Map<string, BatterAggRow>();
     const pitchingMap = new Map<string, PitcherAggRow>();
 
-    try {
-      const { results: bRows } = await c.env.DB.prepare(`
-        SELECT
-          ab.batter_id AS playerId,
-          COUNT(ab.result) AS pa,
-          SUM(CASE WHEN ab.result IN ('single','1B','double','2B','triple','3B','home_run','HR','groundout','flyout','double_play','strikeout','K','SO','error','E','fc','FC') THEN 1 ELSE 0 END) AS ab,
-          SUM(CASE WHEN ab.result IN ('single','1B','double','2B','triple','3B','home_run','HR') THEN 1 ELSE 0 END) AS hits,
-          SUM(CASE WHEN ab.result IN ('home_run','HR') THEN 1 ELSE 0 END) AS hr,
-          SUM(CASE WHEN ab.result IN ('walk','BB','HBP','hit_by_pitch') THEN 1 ELSE 0 END) AS walks
-        FROM at_bats ab
-        JOIN matches m ON ab.match_id = m.id
-        WHERE m.team_id = ? AND m.status = 'finished' AND ab.batter_id IS NOT NULL
-        GROUP BY ab.batter_id
-      `).bind(teamId).all();
-
-      for (const r of (bRows || []) as unknown as BatterAggRow[]) {
-        if (r.playerId) {
-          battingMap.set(r.playerId, {
-            playerId: r.playerId,
-            pa: Number(r.pa) || 0,
-            ab: Number(r.ab) || 0,
-            hits: Number(r.hits) || 0,
-            hr: Number(r.hr) || 0,
-            walks: Number(r.walks) || 0,
-          });
-        }
+    for (const r of (battingQueryRes.results || []) as unknown as BatterAggRow[]) {
+      if (r.playerId) {
+        battingMap.set(r.playerId, {
+          playerId: r.playerId,
+          pa: Number(r.pa) || 0,
+          ab: Number(r.ab) || 0,
+          hits: Number(r.hits) || 0,
+          hr: Number(r.hr) || 0,
+          walks: Number(r.walks) || 0,
+        });
       }
+    }
 
-      const { results: pRows } = await c.env.DB.prepare(`
-        SELECT
-          ab.pitcher_id AS playerId,
-          COUNT(ab.result) AS battersFaced,
-          SUM(CASE WHEN ab.result IN ('groundout','flyout','strikeout','K','SO','sac_bunt','sac_fly') THEN 1 WHEN ab.result = 'double_play' THEN 2 ELSE 0 END) AS outs,
-          SUM(CASE WHEN ab.result IN ('strikeout','K','SO') THEN 1 ELSE 0 END) AS strikeouts,
-          SUM(CASE WHEN ab.result IN ('single','1B','double','2B','triple','3B','home_run','HR') THEN 1 ELSE 0 END) AS hitsAllowed,
-          SUM(CASE WHEN ab.result IN ('walk','BB','HBP','hit_by_pitch') THEN 1 ELSE 0 END) AS walks
-        FROM at_bats ab
-        JOIN matches m ON ab.match_id = m.id
-        WHERE m.team_id = ? AND m.status = 'finished' AND ab.pitcher_id IS NOT NULL
-        GROUP BY ab.pitcher_id
-      `).bind(teamId).all();
-
-      for (const r of (pRows || []) as unknown as PitcherAggRow[]) {
-        if (r.playerId) {
-          pitchingMap.set(r.playerId, {
-            playerId: r.playerId,
-            battersFaced: Number(r.battersFaced) || 0,
-            outs: Number(r.outs) || 0,
-            strikeouts: Number(r.strikeouts) || 0,
-            hitsAllowed: Number(r.hitsAllowed) || 0,
-            walks: Number(r.walks) || 0,
-          });
-        }
+    for (const r of (pitchingQueryRes.results || []) as unknown as PitcherAggRow[]) {
+      if (r.playerId) {
+        pitchingMap.set(r.playerId, {
+          playerId: r.playerId,
+          battersFaced: Number(r.battersFaced) || 0,
+          outs: Number(r.outs) || 0,
+          strikeouts: Number(r.strikeouts) || 0,
+          hitsAllowed: Number(r.hitsAllowed) || 0,
+          walks: Number(r.walks) || 0,
+        });
       }
-    } catch (statErr) {
-      console.warn("Optional player stats aggregation skipped:", statErr);
     }
 
     const { byPlayerId: aggregatedPosMap } = await aggregateTeamPlayerPositions(

@@ -46,7 +46,7 @@ export default function LiffCarpoolGeneratorPage() {
         <LiffToolSubNav />
 
         {/* ステータス・コンセプト概要バナー */}
-        <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-2.5">
+        <section className="rounded-2xl border border-border bg-card shadow-xs p-4 space-y-2.5 overflow-hidden">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="px-2 py-0.5 rounded-lg bg-teal-500/12 text-teal-600 dark:text-teal-400 text-[10px] font-black">
               NEW PROJECT
@@ -64,12 +64,12 @@ export default function LiffCarpoolGeneratorPage() {
         </section>
 
         {/* 想定ワークフロー枠（たたき台） */}
-        <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3.5 overflow-hidden">
-          <div className="-mx-4 -mt-4 px-4 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 border-l-4 border-l-primary flex items-center justify-between">
-            <h3 className="text-sm font-black text-foreground">
+        <section className="rounded-2xl border border-border bg-card shadow-xs p-4 space-y-3.5 overflow-hidden">
+          <div className="-mx-4 -mt-4 bg-[#0f172a] text-slate-50 border-b-[3px] border-teal-500 px-4 py-3 flex items-center justify-between">
+            <h3 className="text-sm font-black text-white">
               想定ワークフロー（たたき台枠）
             </h3>
-            <span className="text-[10px] font-bold text-muted-foreground">
+            <span className="px-2 py-0.5 rounded-full bg-teal-500/20 text-teal-300 border border-teal-500/40 text-[10px] font-bold">
               ヒアリング用ラフ
             </span>
           </div>
@@ -101,7 +101,7 @@ export default function LiffCarpoolGeneratorPage() {
               return (
                 <div
                   key={item.step}
-                  className="flex items-start gap-3 p-3 rounded-xl bg-muted/35 border border-border/60"
+                  className="flex items-start gap-3 p-3 rounded-xl bg-muted border border-border"
                 >
                   <span className="w-8 h-8 rounded-xl bg-teal-500/12 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0 mt-0.5">
                     <StepIcon className="w-4 h-4" />
@@ -121,10 +121,12 @@ export default function LiffCarpoolGeneratorPage() {
         </section>
 
         {/* 配車係ミーティング用 確認アジェンダ枠 */}
-        <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3 overflow-hidden">
-          <div className="-mx-4 -mt-4 px-4 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 border-l-4 border-l-primary flex items-center gap-2">
-            <MessageCircleQuestion className="w-4 h-4 text-teal-600 dark:text-teal-400" />
-            <h3 className="text-xs font-black text-foreground">
+        <section className="rounded-2xl border border-border bg-card shadow-xs p-4 space-y-3 overflow-hidden">
+          <div className="-mx-4 -mt-4 bg-[#0f172a] text-slate-50 border-b-[3px] border-teal-500 px-4 py-3 flex items-center gap-2">
+            <span className="w-6 h-6 rounded-lg bg-teal-500/20 text-teal-300 border border-teal-500/40 flex items-center justify-center">
+              <MessageCircleQuestion className="w-3.5 h-3.5" />
+            </span>
+            <h3 className="text-xs font-black text-white">
               配車係ミーティングでの確認ポイントメモ
             </h3>
           </div>
@@ -139,7 +141,7 @@ export default function LiffCarpoolGeneratorPage() {
             ].map((agenda, idx) => (
               <div
                 key={agenda}
-                className="flex items-start gap-2.5 p-2.5 rounded-xl bg-muted/35 border border-border/60"
+                className="flex items-start gap-2.5 p-2.5 rounded-xl bg-muted border border-border"
               >
                 <span className="w-5 h-5 rounded-full bg-teal-500/12 text-teal-600 dark:text-teal-400 text-[10px] font-black flex items-center justify-center shrink-0 mt-0.5">
                   {idx + 1}
@@ -154,7 +156,7 @@ export default function LiffCarpoolGeneratorPage() {
           <div className="grid grid-cols-2 gap-2 pt-1">
             <Link
               href="/liff/carpool"
-              className="py-2.5 px-3 rounded-2xl bg-card hover:bg-muted hover:border-primary/40 border border-border/60 text-xs font-black text-foreground flex items-center justify-between transition-all active:scale-98"
+              className="py-2.5 px-3 rounded-2xl bg-card hover:bg-muted hover:border-teal-500/40 border border-border text-xs font-black text-foreground flex items-center justify-between transition-all active:scale-98"
             >
               <span className="flex items-center gap-1.5 truncate">
                 <span className="w-6 h-6 rounded-lg bg-teal-500/12 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
@@ -167,7 +169,7 @@ export default function LiffCarpoolGeneratorPage() {
 
             <Link
               href="/liff/profile"
-              className="py-2.5 px-3 rounded-2xl bg-card hover:bg-muted hover:border-primary/40 border border-border/60 text-xs font-black text-foreground flex items-center justify-between transition-all active:scale-98"
+              className="py-2.5 px-3 rounded-2xl bg-card hover:bg-muted hover:border-teal-500/40 border border-border text-xs font-black text-foreground flex items-center justify-between transition-all active:scale-98"
             >
               <span className="flex items-center gap-1.5 truncate">
                 <span className="w-6 h-6 rounded-lg bg-slate-500/12 text-slate-700 dark:text-slate-300 flex items-center justify-center shrink-0">

@@ -437,7 +437,7 @@ export default function LiffRulesPage() {
             className={`px-3.5 py-1.5 rounded-xl text-xs shrink-0 transition-all cursor-pointer ${
               selectedScope === "all"
                 ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
-                : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
+                : "bg-card text-muted-foreground border border-border hover:text-foreground hover:bg-muted/50 font-bold"
             }`}
           >
             すべて ({rules.length})
@@ -448,7 +448,7 @@ export default function LiffRulesPage() {
             className={`px-3.5 py-1.5 rounded-xl text-xs shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
               selectedScope === "organization"
                 ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
-                : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
+                : "bg-card text-muted-foreground border border-border hover:text-foreground hover:bg-muted/50 font-bold"
             }`}
           >
             <Building2 className="w-3.5 h-3.5" />
@@ -460,7 +460,7 @@ export default function LiffRulesPage() {
             className={`px-3.5 py-1.5 rounded-xl text-xs shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
               selectedScope === "team"
                 ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
-                : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
+                : "bg-card text-muted-foreground border border-border hover:text-foreground hover:bg-muted/50 font-bold"
             }`}
           >
             <Users2 className="w-3.5 h-3.5" />
@@ -477,7 +477,7 @@ export default function LiffRulesPage() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="キーワードで検索 (例: 遠征、用具...)"
-              className="w-full pl-9.5 pr-8 py-2.5 rounded-2xl bg-card border border-border/60 text-xs placeholder:text-muted-foreground/70 focus:outline-hidden focus:ring-2 focus:ring-primary/40 transition-all"
+              className="w-full pl-9.5 pr-8 py-2.5 rounded-2xl bg-card border border-border text-xs placeholder:text-muted-foreground/70 focus:outline-hidden focus:ring-2 focus:ring-primary/40 transition-all"
             />
             {searchQuery && (
               <button
@@ -517,7 +517,7 @@ export default function LiffRulesPage() {
                 className={`px-3 py-1.5 rounded-xl text-xs shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
                   isSelected
                     ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
-                    : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
+                    : "bg-card text-muted-foreground border border-border hover:text-foreground hover:bg-muted/50 font-bold"
                 }`}
               >
                 <Icon className="w-3.5 h-3.5" />
@@ -527,232 +527,258 @@ export default function LiffRulesPage() {
           })}
         </div>
 
-        {/* 📋 ルール & 注意事項 アコーディオン一覧 */}
-        {isLoading ? (
-          <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-2">
-            <Loader2 className="w-6 h-6 animate-spin text-primary" />
-            <span className="text-xs font-bold">ルール & 注意事項を読み込み中...</span>
+        {/* 📋 ルール & 注意事項 セクションカード (A-3 Dark Solid Header Cap) */}
+        <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+          <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-amber-500 px-4 py-3 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="w-7 h-7 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-400/30 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-4 h-4" />
+              </span>
+              <div className="min-w-0">
+                <h2 className="text-xs sm:text-sm font-black text-white truncate">
+                  {selectedCategory === "all"
+                    ? "ルール & 注意事項一覧"
+                    : `${categories.find((c) => c.id === selectedCategory)?.label || ""} のガイドライン`}
+                </h2>
+                <p className="text-[10px] font-bold text-slate-300 truncate">
+                  項目をタップすると詳細・図解・PDFが開きます
+                </p>
+              </div>
+            </div>
+            <span className="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-200 border border-slate-700 text-[11px] font-black shrink-0">
+              {filteredRules.length}件
+            </span>
           </div>
-        ) : filteredRules.length === 0 ? (
-          <div className="p-8 rounded-2xl border border-border/60 bg-card shadow-xs text-center space-y-2">
-            <AlertCircle className="w-8 h-8 text-amber-600 dark:text-amber-400 mx-auto" />
-            <p className="text-xs font-black text-foreground">
-              該当するルール & 注意事項が見つかりませんでした
-            </p>
-            <p className="text-[11px] text-muted-foreground">
-              検索条件を変更するか、新しいルール & 注意事項を登録してください。
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {filteredRules.map((rule) => {
-              const isOpen = openIds.includes(rule.id);
-              const isOrg = rule.scope === "organization";
-              const isImportant = !!rule.isImportant;
 
-              return (
-                <div
-                  key={rule.id}
-                  className={`rounded-2xl border border-border/60 bg-card shadow-xs transition-all duration-200 overflow-hidden hover:border-primary/40 ${
-                    isImportant ? "border-l-4 border-l-amber-500" : ""
-                  } ${isOpen ? "ring-1 ring-primary/25" : ""}`}
-                >
-                  {/* ヘッダー・開閉トグル */}
-                  <div
-                    onClick={() => toggleAccordion(rule.id)}
-                    className="p-3.5 sm:p-4 cursor-pointer select-none flex items-start justify-between gap-3"
-                  >
-                    <div className="flex items-start gap-2.5 min-w-0 flex-1">
-                      <span className="w-5 h-5 rounded-lg flex items-center justify-center text-xs font-black shrink-0 mt-0.5 bg-amber-500/12 text-amber-600 dark:text-amber-400">
-                        {isImportant ? "🔥" : "⚠️"}
-                      </span>
+          <div className="p-4">
+            {isLoading ? (
+              <div className="flex flex-col items-center justify-center py-12 text-muted-foreground gap-2">
+                <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                <span className="text-xs font-bold">ルール & 注意事項を読み込み中...</span>
+              </div>
+            ) : filteredRules.length === 0 ? (
+              <div className="p-8 rounded-2xl border border-border bg-muted/20 text-center space-y-2">
+                <AlertCircle className="w-8 h-8 text-amber-600 dark:text-amber-400 mx-auto" />
+                <p className="text-xs font-black text-foreground">
+                  該当するルール & 注意事項が見つかりませんでした
+                </p>
+                <p className="text-[11px] text-muted-foreground">
+                  検索条件を変更するか、新しいルール & 注意事項を登録してください。
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {filteredRules.map((rule) => {
+                  const isOpen = openIds.includes(rule.id);
+                  const isOrg = rule.scope === "organization";
+                  const isImportant = !!rule.isImportant;
 
-                      <div className="space-y-1 min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          {/* 🔥 重要バッジ */}
-                          {isImportant && (
-                            <span className="px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 text-[9.5px] font-black shrink-0 flex items-center gap-0.5">
-                              <Flame className="w-3 h-3" />
-                              <span>重要</span>
-                            </span>
-                          )}
+                  return (
+                    <div
+                      key={rule.id}
+                      className={`rounded-2xl border border-border bg-card shadow-xs transition-all duration-200 overflow-hidden hover:border-primary/40 ${
+                        isImportant ? "border-l-4 border-l-amber-500" : ""
+                      } ${isOpen ? "ring-1 ring-primary/25" : ""}`}
+                    >
+                      {/* ヘッダー・開閉トグル */}
+                      <div
+                        onClick={() => toggleAccordion(rule.id)}
+                        className="p-3.5 sm:p-4 cursor-pointer select-none flex items-start justify-between gap-3"
+                      >
+                        <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                          <span className="w-5 h-5 rounded-lg flex items-center justify-center text-xs font-black shrink-0 mt-0.5 bg-amber-500/12 text-amber-600 dark:text-amber-400">
+                            {isImportant ? "🔥" : "⚠️"}
+                          </span>
 
-                          {/* スコープバッジ */}
-                          <span
-                            className={`px-2 py-0.5 rounded-md text-[9.5px] font-black shrink-0 ${
-                              isOrg
-                                ? "bg-primary/10 text-primary border border-primary/25"
-                                : "bg-muted text-muted-foreground border border-border/60"
+                          <div className="space-y-1 min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {/* 🔥 重要バッジ */}
+                              {isImportant && (
+                                <span className="px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 text-[9.5px] font-black shrink-0 flex items-center gap-0.5">
+                                  <Flame className="w-3 h-3" />
+                                  <span>重要</span>
+                                </span>
+                              )}
+
+                              {/* スコープバッジ */}
+                              <span
+                                className={`px-2 py-0.5 rounded-md text-[9.5px] font-black shrink-0 ${
+                                  isOrg
+                                    ? "bg-primary/10 text-primary border border-primary/25"
+                                    : "bg-muted text-muted-foreground border border-border"
+                                }`}
+                              >
+                                {rule.scopeLabel}
+                              </span>
+
+                              {/* カテゴリバッジ */}
+                              <span className="px-2 py-0.5 rounded-md bg-muted text-muted-foreground text-[9.5px] font-black shrink-0">
+                                {rule.categoryLabel}
+                              </span>
+
+                              {/* 画像添付バッジ */}
+                              {rule.imageUrl && (
+                                <span className="px-1.5 py-0.5 rounded-md bg-primary/10 text-primary text-[9.5px] font-black shrink-0 flex items-center gap-0.5 border border-primary/25">
+                                  <ImageIcon className="w-2.5 h-2.5" />
+                                  <span>写真あり</span>
+                                </span>
+                              )}
+
+                              {/* PDF添付バッジ */}
+                              {rule.pdfUrl && (
+                                <span className="px-1.5 py-0.5 rounded-md bg-rose-500/12 text-rose-600 dark:text-rose-400 text-[9.5px] font-black shrink-0 flex items-center gap-0.5 border border-rose-500/25">
+                                  <FileText className="w-2.5 h-2.5" />
+                                  <span>PDFあり</span>
+                                </span>
+                              )}
+                            </div>
+
+                            <h3 className="text-xs sm:text-sm font-black text-foreground leading-snug">
+                              {rule.title}
+                            </h3>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1 shrink-0 mt-0.5">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openEditModal(rule);
+                            }}
+                            className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted active:scale-95 transition-all"
+                            title="編集"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+
+                          <div
+                            className={`p-1.5 rounded-lg text-muted-foreground transition-transform duration-200 ${
+                              isOpen ? "rotate-180 text-primary" : ""
                             }`}
                           >
-                            {rule.scopeLabel}
-                          </span>
+                            <ChevronDown className="w-4 h-4" />
+                          </div>
+                        </div>
+                      </div>
 
-                          {/* カテゴリバッジ */}
-                          <span className="px-2 py-0.5 rounded-md bg-muted text-muted-foreground text-[9.5px] font-black shrink-0">
-                            {rule.categoryLabel}
-                          </span>
+                      {/* 本文エリア */}
+                      {isOpen && (
+                        <div className="px-4 pb-4 pt-2.5 border-t border-border space-y-3 animate-in fade-in slide-in-from-top-1 duration-150">
+                          <p className="text-xs sm:text-[13px] text-foreground/90 font-bold whitespace-pre-wrap leading-relaxed">
+                            {rule.content}
+                          </p>
 
-                          {/* 画像添付バッジ */}
+                          {/* 📷 添付画像表示 */}
                           {rule.imageUrl && (
-                            <span className="px-1.5 py-0.5 rounded-md bg-primary/10 text-primary text-[9.5px] font-black shrink-0 flex items-center gap-0.5 border border-primary/25">
-                              <ImageIcon className="w-2.5 h-2.5" />
-                              <span>写真あり</span>
-                            </span>
+                            <div className="space-y-1.5 pt-1">
+                              <div className="flex items-center justify-between text-[11px] font-bold text-muted-foreground">
+                                <span className="flex items-center gap-1 font-black text-foreground/80">
+                                  <ImageIcon className="w-3.5 h-3.5 text-primary" />
+                                  <span>参考画像・図解</span>
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setPreviewImageModalUrl(rule.imageUrl || null)}
+                                  className="text-primary hover:underline flex items-center gap-1 text-[11px] font-black cursor-pointer"
+                                >
+                                  <Eye className="w-3.5 h-3.5" />
+                                  <span>タップで拡大</span>
+                                </button>
+                              </div>
+                              <div
+                                onClick={() => setPreviewImageModalUrl(rule.imageUrl || null)}
+                                className="relative overflow-hidden rounded-2xl border border-border bg-muted/35 cursor-pointer group flex items-center justify-center p-1"
+                              >
+                                <img
+                                  src={rule.imageUrl}
+                                  alt={rule.title}
+                                  className="w-full h-auto object-contain max-h-80 sm:max-h-96 rounded-xl group-hover:scale-[1.01] transition-transform duration-200"
+                                  loading="lazy"
+                                  decoding="async"
+                                />
+                              </div>
+                            </div>
                           )}
 
-                          {/* PDF添付バッジ */}
+                          {/* 📄 添付PDF資料（インライン表示＆拡大・ダウンロード） */}
                           {rule.pdfUrl && (
-                            <span className="px-1.5 py-0.5 rounded-md bg-rose-500/12 text-rose-600 dark:text-rose-400 text-[9.5px] font-black shrink-0 flex items-center gap-0.5 border border-rose-500/25">
-                              <FileText className="w-2.5 h-2.5" />
-                              <span>PDFあり</span>
-                            </span>
+                            <div className="space-y-2 pt-1">
+                              <div className="flex items-center justify-between text-[11px] font-bold text-muted-foreground">
+                                <span className="flex items-center gap-1.5 font-black text-foreground/80 min-w-0">
+                                  <FileText className="w-3.5 h-3.5 text-primary shrink-0" />
+                                  <span className="truncate">{rule.pdfName || "添付PDF資料"}</span>
+                                </span>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setPreviewPdfModal({
+                                        url: rule.pdfUrl!,
+                                        name: rule.pdfName || "添付PDF資料.pdf",
+                                      })
+                                    }
+                                    className="px-2 py-1 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 flex items-center gap-1 text-[11px] font-black cursor-pointer transition-colors"
+                                  >
+                                    <Eye className="w-3 h-3" />
+                                    <span>全画面</span>
+                                  </button>
+                                  <a
+                                    href={getExternalBrowserUrl(rule.pdfUrl)}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="px-2 py-1 rounded-lg border border-border hover:bg-muted text-muted-foreground hover:text-foreground flex items-center gap-1 text-[11px] font-bold transition-colors"
+                                  >
+                                    <ExternalLink className="w-3 h-3" />
+                                    <span>ブラウザ</span>
+                                  </a>
+                                </div>
+                              </div>
+
+                              {/* 📄 PDF インラインプレビュー (純白・黒余白ゼロ・A4比率) */}
+                              <PdfCanvasViewer
+                                url={rule.pdfUrl}
+                                title={rule.pdfName || "添付PDF資料"}
+                                aspectRatioA4={true}
+                              />
+
+                              {/* 補助ボタンバー */}
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 px-1 pt-0.5">
+                                <span className="text-[10px] text-muted-foreground font-medium">
+                                  💡 枠内でスクロール閲覧できます。表示されない場合は「ブラウザで開く」をお試しください。
+                                </span>
+                                <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                                  <a
+                                    href={getExternalBrowserUrl(rule.pdfUrl)}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-[10px] font-black text-primary hover:underline flex items-center gap-0.5"
+                                  >
+                                    <span>ブラウザで開く</span>
+                                    <ExternalLink className="w-2.5 h-2.5" />
+                                  </a>
+                                  <span className="text-border">•</span>
+                                  <a
+                                    href={getAbsoluteUrl(rule.pdfUrl)}
+                                    download={rule.pdfName || "添付資料.pdf"}
+                                    className="text-[10px] font-black text-muted-foreground hover:text-foreground flex items-center gap-0.5"
+                                  >
+                                    <span>保存</span>
+                                    <Download className="w-2.5 h-2.5" />
+                                  </a>
+                                </div>
+                              </div>
+                            </div>
                           )}
                         </div>
-
-                        <h3 className="text-xs sm:text-sm font-black text-foreground leading-snug">
-                          {rule.title}
-                        </h3>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-1 shrink-0 mt-0.5">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openEditModal(rule);
-                        }}
-                        className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted active:scale-95 transition-all"
-                        title="編集"
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                      </button>
-
-                      <div
-                        className={`p-1.5 rounded-lg text-muted-foreground transition-transform duration-200 ${
-                          isOpen ? "rotate-180 text-primary" : ""
-                        }`}
-                      >
-                        <ChevronDown className="w-4 h-4" />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* 本文エリア */}
-                  {isOpen && (
-                    <div className="px-4 pb-4 pt-2.5 border-t border-border/60 space-y-3 animate-in fade-in slide-in-from-top-1 duration-150">
-                      <p className="text-xs sm:text-[13px] text-foreground/90 font-bold whitespace-pre-wrap leading-relaxed">
-                        {rule.content}
-                      </p>
-
-                      {/* 📷 添付画像表示 */}
-                      {rule.imageUrl && (
-                        <div className="space-y-1.5 pt-1">
-                          <div className="flex items-center justify-between text-[11px] font-bold text-muted-foreground">
-                            <span className="flex items-center gap-1 font-black text-foreground/80">
-                              <ImageIcon className="w-3.5 h-3.5 text-primary" />
-                              <span>参考画像・図解</span>
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => setPreviewImageModalUrl(rule.imageUrl || null)}
-                              className="text-primary hover:underline flex items-center gap-1 text-[11px] font-black cursor-pointer"
-                            >
-                              <Eye className="w-3.5 h-3.5" />
-                              <span>タップで拡大</span>
-                            </button>
-                          </div>
-                          <div
-                            onClick={() => setPreviewImageModalUrl(rule.imageUrl || null)}
-                            className="relative overflow-hidden rounded-2xl border border-border/60 bg-muted/35 cursor-pointer group flex items-center justify-center p-1"
-                          >
-                            <img
-                              src={rule.imageUrl}
-                              alt={rule.title}
-                              className="w-full h-auto object-contain max-h-80 sm:max-h-96 rounded-xl group-hover:scale-[1.01] transition-transform duration-200"
-                              loading="lazy"
-                            />
-                          </div>
-                        </div>
-                      )}
-
-                      {/* 📄 添付PDF資料（インライン表示＆拡大・ダウンロード） */}
-                      {rule.pdfUrl && (
-                        <div className="space-y-2 pt-1">
-                          <div className="flex items-center justify-between text-[11px] font-bold text-muted-foreground">
-                            <span className="flex items-center gap-1.5 font-black text-foreground/80 min-w-0">
-                              <FileText className="w-3.5 h-3.5 text-primary shrink-0" />
-                              <span className="truncate">{rule.pdfName || "添付PDF資料"}</span>
-                            </span>
-                            <div className="flex items-center gap-1.5 shrink-0">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setPreviewPdfModal({
-                                    url: rule.pdfUrl!,
-                                    name: rule.pdfName || "添付PDF資料.pdf",
-                                  })
-                                }
-                                className="px-2 py-1 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 flex items-center gap-1 text-[11px] font-black cursor-pointer transition-colors"
-                              >
-                                <Eye className="w-3 h-3" />
-                                <span>全画面</span>
-                              </button>
-                              <a
-                                href={getExternalBrowserUrl(rule.pdfUrl)}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="px-2 py-1 rounded-lg border border-border/60 hover:bg-muted text-muted-foreground hover:text-foreground flex items-center gap-1 text-[11px] font-bold transition-colors"
-                              >
-                                <ExternalLink className="w-3 h-3" />
-                                <span>ブラウザ</span>
-                              </a>
-                            </div>
-                          </div>
-
-                          {/* 📄 PDF インラインプレビュー (純白・黒余白ゼロ・A4比率) */}
-                          <PdfCanvasViewer
-                            url={rule.pdfUrl}
-                            title={rule.pdfName || "添付PDF資料"}
-                            aspectRatioA4={true}
-                          />
-
-                          {/* 補助ボタンバー */}
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 px-1 pt-0.5">
-                            <span className="text-[10px] text-muted-foreground font-medium">
-                              💡 枠内でスクロール閲覧できます。表示されない場合は「ブラウザで開く」をお試しください。
-                            </span>
-                            <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
-                              <a
-                                href={getExternalBrowserUrl(rule.pdfUrl)}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-[10px] font-black text-primary hover:underline flex items-center gap-0.5"
-                              >
-                                <span>ブラウザで開く</span>
-                                <ExternalLink className="w-2.5 h-2.5" />
-                              </a>
-                              <span className="text-border">•</span>
-                              <a
-                                href={getAbsoluteUrl(rule.pdfUrl)}
-                                download={rule.pdfName || "添付資料.pdf"}
-                                className="text-[10px] font-black text-muted-foreground hover:text-foreground flex items-center gap-0.5"
-                              >
-                                <span>保存</span>
-                                <Download className="w-2.5 h-2.5" />
-                              </a>
-                            </div>
-                          </div>
-                        </div>
                       )}
                     </div>
-                  )}
-                </div>
-              );
-            })}
+                  );
+                })}
+              </div>
+            )}
           </div>
-        )}
+        </section>
 
         <div className="h-8 w-full shrink-0" aria-hidden="true" />
       </div>
@@ -763,20 +789,20 @@ export default function LiffRulesPage() {
       {mounted && previewImageModalUrl && createPortal(
         <div
           onClick={() => setPreviewImageModalUrl(null)}
-          className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-in fade-in duration-200"
+          className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/60 animate-in fade-in duration-200"
         >
           <div className="relative max-w-2xl max-h-[90vh] w-full flex flex-col items-center">
             <button
               type="button"
               onClick={() => setPreviewImageModalUrl(null)}
-              className="absolute -top-10 right-0 p-1.5 rounded-full bg-white/20 text-white hover:bg-white/30"
+              className="absolute -top-10 right-0 p-1.5 rounded-full bg-slate-900 text-slate-200 border border-slate-700 hover:bg-slate-800 hover:text-white"
             >
               <X className="w-6 h-6" />
             </button>
             <img
               src={previewImageModalUrl}
               alt="拡大画像"
-              className="max-h-[85vh] max-w-full rounded-2xl object-contain shadow-2xl border border-white/20"
+              className="max-h-[85vh] max-w-full rounded-2xl object-contain shadow-2xl border border-slate-700"
             />
           </div>
         </div>,
@@ -787,22 +813,22 @@ export default function LiffRulesPage() {
       {/* 📄 PDF全画面閲覧モーダル */}
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {mounted && previewPdfModal && createPortal(
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-2 sm:p-4 bg-black/85 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-2 sm:p-4 bg-slate-950/60 animate-in fade-in duration-200">
           <div
             className="absolute inset-0"
             onClick={() => setPreviewPdfModal(null)}
           />
-          <div className="relative w-full max-w-4xl h-[92vh] rounded-2xl border border-border/60 bg-card shadow-xs overflow-hidden flex flex-col z-10 animate-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between p-3.5 sm:p-4 border-b border-border/60 bg-card/95">
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="w-8 h-8 rounded-xl bg-amber-500/12 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+          <div className="relative w-full max-w-4xl h-[92vh] rounded-2xl border border-border bg-card shadow-xs overflow-hidden flex flex-col z-10 animate-in zoom-in-95 duration-200">
+            <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-amber-500 px-4 py-3 flex items-center justify-between gap-2 shrink-0">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-400/30 flex items-center justify-center shrink-0">
                   <FileText className="w-4 h-4" />
                 </span>
                 <div className="min-w-0">
-                  <h3 className="text-xs sm:text-sm font-black text-foreground truncate">
+                  <h3 className="text-xs sm:text-sm font-black text-white truncate">
                     {previewPdfModal.name}
                   </h3>
-                  <p className="text-[10px] text-muted-foreground font-bold">PDFプレビュー表示</p>
+                  <p className="text-[10px] text-slate-300 font-bold">PDFプレビュー表示</p>
                 </div>
               </div>
 
@@ -811,7 +837,7 @@ export default function LiffRulesPage() {
                   href={getExternalBrowserUrl(previewPdfModal.url)}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="px-2.5 py-1.5 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 text-xs font-black flex items-center gap-1 transition-colors"
+                  className="px-2.5 py-1.5 rounded-xl bg-primary/20 text-blue-300 border border-primary/40 hover:bg-primary/30 text-xs font-black flex items-center gap-1 transition-colors"
                 >
                   <ExternalLink className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">ブラウザで開く</span>
@@ -819,7 +845,7 @@ export default function LiffRulesPage() {
                 <a
                   href={getAbsoluteUrl(previewPdfModal.url)}
                   download={previewPdfModal.name}
-                  className="px-2.5 py-1.5 rounded-xl border border-border/60 hover:bg-muted text-muted-foreground hover:text-foreground text-xs font-black flex items-center gap-1 transition-colors"
+                  className="px-2.5 py-1.5 rounded-xl bg-slate-800 text-slate-200 border border-slate-700 hover:bg-slate-700 hover:text-white text-xs font-black flex items-center gap-1 transition-colors"
                   title="ダウンロード"
                 >
                   <Download className="w-3.5 h-3.5" />
@@ -828,7 +854,7 @@ export default function LiffRulesPage() {
                 <button
                   type="button"
                   onClick={() => setPreviewPdfModal(null)}
-                  className="p-1.5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                  className="p-1.5 rounded-full text-slate-300 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -853,19 +879,19 @@ export default function LiffRulesPage() {
       {/* ➕ 新規登録モーダル (ポータル描画) */}
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {mounted && isCreateModalOpen && createPortal(
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/60 animate-in fade-in duration-200">
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-md rounded-2xl border border-border/60 bg-card shadow-xs p-5 space-y-4 max-h-[90vh] overflow-y-auto"
+            className="w-full max-w-md rounded-2xl border border-border bg-card shadow-xs overflow-hidden max-h-[90vh] flex flex-col"
           >
-            <div className="flex items-center justify-between border-b border-border/60 pb-3">
-              <div className="flex items-center gap-2">
-                <span className="w-8 h-8 rounded-xl bg-amber-500/12 text-amber-600 dark:text-amber-400 flex items-center justify-center font-black">
+            <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-amber-500 px-4 py-3 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2.5">
+                <span className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-400/30 flex items-center justify-center font-black">
                   <AlertTriangle className="w-4 h-4" />
                 </span>
                 <div>
-                  <h3 className="text-sm font-black text-foreground">新しいルール & 注意事項の登録</h3>
-                  <p className="text-[10px] text-muted-foreground font-bold">
+                  <h3 className="text-sm font-black text-white">新しいルール & 注意事項の登録</h3>
+                  <p className="text-[10px] text-slate-300 font-bold">
                     チーム共通ルールや活動上の注意を共有
                   </p>
                 </div>
@@ -873,285 +899,287 @@ export default function LiffRulesPage() {
               <button
                 type="button"
                 onClick={() => setIsCreateModalOpen(false)}
-                className="p-1.5 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted"
+                className="p-1.5 rounded-full text-slate-300 hover:text-white hover:bg-slate-800 transition-all"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            {submitError && (
-              <div className="p-3 rounded-2xl bg-destructive/10 text-destructive text-xs font-bold flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>{submitError}</span>
-              </div>
-            )}
+            <div className="p-5 space-y-4 overflow-y-auto">
+              {submitError && (
+                <div className="p-3 rounded-2xl bg-destructive/10 text-destructive text-xs font-bold flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{submitError}</span>
+                </div>
+              )}
 
-            <form onSubmit={handleCreateRule} className="space-y-4 text-xs font-bold">
-              {/* 🔥 重要バッジ・フラグ選択 */}
-              <div
-                onClick={() => setNewIsImportant(!newIsImportant)}
-                className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 select-none ${
-                  newIsImportant
-                    ? "bg-amber-500/12 border-amber-500/40 text-amber-700 dark:text-amber-300"
-                    : "bg-muted/35 border-border/60 text-muted-foreground hover:bg-muted"
-                }`}
-              >
-                <div className="flex items-center gap-2.5">
-                  <span className={`w-7 h-7 rounded-xl flex items-center justify-center text-sm font-black ${
-                    newIsImportant ? "bg-amber-500/20 text-amber-700 dark:text-amber-300" : "bg-muted text-muted-foreground"
-                  }`}>
-                    <Flame className="w-4 h-4" />
-                  </span>
-                  <div>
-                    <span className="font-black text-xs text-foreground block">重要ルールに設定する</span>
-                    <span className="text-[10px] text-muted-foreground font-bold block">
-                      一覧の上部に優先表示され、目立つ重要バッジが付きます
+              <form onSubmit={handleCreateRule} className="space-y-4 text-xs font-bold">
+                {/* 🔥 重要バッジ・フラグ選択 */}
+                <div
+                  onClick={() => setNewIsImportant(!newIsImportant)}
+                  className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 select-none ${
+                    newIsImportant
+                      ? "bg-amber-500/12 border-amber-500/40 text-amber-700 dark:text-amber-300"
+                      : "bg-muted/35 border-border text-muted-foreground hover:bg-muted"
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <span className={`w-7 h-7 rounded-xl flex items-center justify-center text-sm font-black ${
+                      newIsImportant ? "bg-amber-500/20 text-amber-700 dark:text-amber-300" : "bg-muted text-muted-foreground"
+                    }`}>
+                      <Flame className="w-4 h-4" />
                     </span>
-                  </div>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={newIsImportant}
-                  onChange={(e) => setNewIsImportant(e.target.checked)}
-                  className="w-4 h-4 rounded accent-primary"
-                />
-              </div>
-
-              {/* スコープ選択 */}
-              <div className="space-y-1.5">
-                <label className="text-muted-foreground">公開範囲</label>
-                <div className="grid grid-cols-2 gap-1 bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl border border-border/60">
-                  <button
-                    type="button"
-                    onClick={() => setNewScope("team")}
-                    className={`py-2 px-3 rounded-xl text-xs transition-all cursor-pointer ${
-                      newScope === "team"
-                        ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
-                        : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
-                    }`}
-                  >
-                    👥 {currentTeam?.teamName || "この編成"} のみ
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setNewScope("organization")}
-                    className={`py-2 px-3 rounded-xl text-xs transition-all cursor-pointer ${
-                      newScope === "organization"
-                        ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
-                        : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
-                    }`}
-                  >
-                    🏢 チーム全体（共通）
-                  </button>
-                </div>
-              </div>
-
-              {/* カテゴリ選択 */}
-              <div className="space-y-1.5">
-                <label className="text-muted-foreground">カテゴリ</label>
-                <select
-                  value={newCategory}
-                  onChange={(e) => setNewCategory(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-xl bg-card border border-border/60 text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40"
-                >
-                  <option value="match">🏆 試合・遠征</option>
-                  <option value="carpool">🚗 配車・送迎</option>
-                  <option value="duty">📋 当番・保護者</option>
-                  <option value="venue">🏟️ グラウンド・観戦</option>
-                  <option value="equipment">⚾ 用具・ユニフォーム</option>
-                  <option value="safety">☀️ 熱中症・安全管理</option>
-                  <option value="emergency">🌧️ 雨天・緊急連絡</option>
-                  <option value="general">💡 その他・心得</option>
-                </select>
-              </div>
-
-              {/* タイトル */}
-              <div className="space-y-1.5">
-                <label className="text-muted-foreground">タイトル</label>
-                <input
-                  type="text"
-                  required
-                  value={newTitle}
-                  onChange={(e) => setNewTitle(e.target.value)}
-                  placeholder="例: 配車時のチャイルドシート着用について"
-                  className="w-full px-3 py-2.5 rounded-xl bg-card border border-border/60 text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40 placeholder:text-muted-foreground/60"
-                />
-              </div>
-
-              {/* 詳細内容 */}
-              <div className="space-y-1.5">
-                <label className="text-muted-foreground">詳細内容・箇条書き</label>
-                <textarea
-                  required
-                  rows={5}
-                  value={newContent}
-                  onChange={(e) => setNewContent(e.target.value)}
-                  placeholder="ルールや注意事項の詳しい内容や遵守事項を記入してください（箇条書き推奨）"
-                  className="w-full px-3 py-2.5 rounded-xl bg-card border border-border/60 text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40 placeholder:text-muted-foreground/60 leading-relaxed"
-                />
-              </div>
-
-              {/* 📷 画像添付エリア */}
-              <div className="space-y-2 p-3 rounded-2xl bg-muted/35 border border-border/60">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-black text-foreground flex items-center gap-1.5">
-                    <ImageIcon className="w-4 h-4 text-primary" />
-                    <span>参考画像・図解の添付 (任意)</span>
-                  </span>
-                  {newImageUrl && (
-                    <button
-                      type="button"
-                      onClick={() => setNewImageUrl("")}
-                      className="text-[10px] text-destructive hover:underline font-bold"
-                    >
-                      画像を削除
-                    </button>
-                  )}
-                </div>
-
-                {newImageUrl ? (
-                  <div className="relative rounded-xl overflow-hidden border border-border/60 bg-card max-h-40 flex items-center justify-center">
-                    <img src={newImageUrl} alt="プレビュー" className="max-h-40 w-full object-cover" />
-                  </div>
-                ) : (
-                  <div>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => handleImageUpload(e, false)}
-                      className="hidden"
-                    />
-                    <button
-                      type="button"
-                      disabled={isUploadingImage}
-                      onClick={() => fileInputRef.current?.click()}
-                      className="w-full py-2.5 px-3 rounded-xl border border-dashed border-border/60 hover:border-primary/40 bg-card hover:bg-muted/50 text-muted-foreground hover:text-foreground font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
-                    >
-                      {isUploadingImage ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                          <span>アップロード中...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Upload className="w-4 h-4 text-primary" />
-                          <span>写真・画像を選択または撮影</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {/* 📄 PDF添付エリア */}
-              <div className="space-y-2 p-3 rounded-2xl bg-muted/35 border border-border/60">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-black text-foreground flex items-center gap-1.5">
-                    <FileText className="w-4 h-4 text-primary" />
-                    <span>PDF資料・規約の添付 (任意)</span>
-                  </span>
-                  {newPdfUrl && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setNewPdfUrl("");
-                        setNewPdfName("");
-                      }}
-                      className="text-[10px] text-destructive hover:underline font-bold cursor-pointer"
-                    >
-                      PDFを削除
-                    </button>
-                  )}
-                </div>
-
-                {newPdfUrl ? (
-                  <div className="flex items-center justify-between p-2.5 rounded-xl border border-border/60 bg-card">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
-                        <FileText className="w-4 h-4" />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-xs font-black text-foreground truncate">
-                          {newPdfName || "添付PDFファイル"}
-                        </p>
-                        <a
-                          href={newPdfUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-[10px] text-primary hover:underline font-bold flex items-center gap-0.5 mt-0.5"
-                        >
-                          <span>プレビュー確認</span>
-                          <ExternalLink className="w-2.5 h-2.5" />
-                        </a>
-                      </div>
+                    <div>
+                      <span className="font-black text-xs text-foreground block">重要ルールに設定する</span>
+                      <span className="text-[10px] text-muted-foreground font-bold block">
+                        一覧の上部に優先表示され、目立つ重要バッジが付きます
+                      </span>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setNewPdfUrl("");
-                        setNewPdfName("");
-                      }}
-                      className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
                   </div>
-                ) : (
-                  <div>
-                    <input
-                      ref={pdfInputRef}
-                      type="file"
-                      accept="application/pdf,.pdf"
-                      onChange={(e) => handlePdfUpload(e, false)}
-                      className="hidden"
-                    />
-                    <button
-                      type="button"
-                      disabled={isUploadingPdf}
-                      onClick={() => pdfInputRef.current?.click()}
-                      className="w-full py-2.5 px-3 rounded-xl border border-dashed border-border/60 hover:border-primary/40 bg-card hover:bg-muted/50 text-muted-foreground hover:text-foreground font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
-                    >
-                      {isUploadingPdf ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                          <span>アップロード中...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Upload className="w-4 h-4 text-primary" />
-                          <span>PDFファイルを選択 (規約・マニュアル等)</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-                )}
-              </div>
+                  <input
+                    type="checkbox"
+                    checked={newIsImportant}
+                    onChange={(e) => setNewIsImportant(e.target.checked)}
+                    className="w-4 h-4 rounded accent-primary"
+                  />
+                </div>
 
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-border/60">
-                <button
-                  type="button"
-                  onClick={() => setIsCreateModalOpen(false)}
-                  className="px-4 py-2.5 rounded-xl bg-card border border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground font-black text-xs transition-all"
-                >
-                  キャンセル
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting || !newTitle.trim() || !newContent.trim()}
-                  className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground font-black text-xs shadow-xs hover:bg-primary/90 active:scale-95 disabled:opacity-50 transition-all flex items-center gap-1.5"
-                >
-                  {isSubmitting ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      <span>登録中...</span>
-                    </>
+                {/* スコープ選択 */}
+                <div className="space-y-1.5">
+                  <label className="text-muted-foreground">公開範囲</label>
+                  <div className="grid grid-cols-2 gap-1 bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl border border-border">
+                    <button
+                      type="button"
+                      onClick={() => setNewScope("team")}
+                      className={`py-2 px-3 rounded-xl text-xs transition-all cursor-pointer ${
+                        newScope === "team"
+                          ? "bg-card text-foreground shadow-sm border border-border font-black"
+                          : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
+                      }`}
+                    >
+                      👥 {currentTeam?.teamName || "この編成"} のみ
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNewScope("organization")}
+                      className={`py-2 px-3 rounded-xl text-xs transition-all cursor-pointer ${
+                        newScope === "organization"
+                          ? "bg-card text-foreground shadow-sm border border-border font-black"
+                          : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
+                      }`}
+                    >
+                      🏢 チーム全体（共通）
+                    </button>
+                  </div>
+                </div>
+
+                {/* カテゴリ選択 */}
+                <div className="space-y-1.5">
+                  <label className="text-muted-foreground">カテゴリ</label>
+                  <select
+                    value={newCategory}
+                    onChange={(e) => setNewCategory(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-xl bg-card border border-border text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                  >
+                    <option value="match">🏆 試合・遠征</option>
+                    <option value="carpool">🚗 配車・送迎</option>
+                    <option value="duty">📋 当番・保護者</option>
+                    <option value="venue">🏟️ グラウンド・観戦</option>
+                    <option value="equipment">⚾ 用具・ユニフォーム</option>
+                    <option value="safety">☀️ 熱中症・安全管理</option>
+                    <option value="emergency">🌧️ 雨天・緊急連絡</option>
+                    <option value="general">💡 その他・心得</option>
+                  </select>
+                </div>
+
+                {/* タイトル */}
+                <div className="space-y-1.5">
+                  <label className="text-muted-foreground">タイトル</label>
+                  <input
+                    type="text"
+                    required
+                    value={newTitle}
+                    onChange={(e) => setNewTitle(e.target.value)}
+                    placeholder="例: 配車時のチャイルドシート着用について"
+                    className="w-full px-3 py-2.5 rounded-xl bg-card border border-border text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40 placeholder:text-muted-foreground/60"
+                  />
+                </div>
+
+                {/* 詳細内容 */}
+                <div className="space-y-1.5">
+                  <label className="text-muted-foreground">詳細内容・箇条書き</label>
+                  <textarea
+                    required
+                    rows={5}
+                    value={newContent}
+                    onChange={(e) => setNewContent(e.target.value)}
+                    placeholder="ルールや注意事項の詳しい内容や遵守事項を記入してください（箇条書き推奨）"
+                    className="w-full px-3 py-2.5 rounded-xl bg-card border border-border text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40 placeholder:text-muted-foreground/60 leading-relaxed"
+                  />
+                </div>
+
+                {/* 📷 画像添付エリア */}
+                <div className="space-y-2 p-3 rounded-2xl bg-muted/35 border border-border">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black text-foreground flex items-center gap-1.5">
+                      <ImageIcon className="w-4 h-4 text-primary" />
+                      <span>参考画像・図解の添付 (任意)</span>
+                    </span>
+                    {newImageUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setNewImageUrl("")}
+                        className="text-[10px] text-destructive hover:underline font-bold"
+                      >
+                        画像を削除
+                      </button>
+                    )}
+                  </div>
+
+                  {newImageUrl ? (
+                    <div className="relative rounded-xl overflow-hidden border border-border bg-card max-h-40 flex items-center justify-center">
+                      <img src={newImageUrl} alt="プレビュー" loading="lazy" decoding="async" className="max-h-40 w-full object-cover" />
+                    </div>
                   ) : (
-                    <span>登録する</span>
+                    <div>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => handleImageUpload(e, false)}
+                        className="hidden"
+                      />
+                      <button
+                        type="button"
+                        disabled={isUploadingImage}
+                        onClick={() => fileInputRef.current?.click()}
+                        className="w-full py-2.5 px-3 rounded-xl border border-dashed border-border hover:border-primary/40 bg-card hover:bg-muted/50 text-muted-foreground hover:text-foreground font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+                      >
+                        {isUploadingImage ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                            <span>アップロード中...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="w-4 h-4 text-primary" />
+                            <span>写真・画像を選択または撮影</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
                   )}
-                </button>
-              </div>
-            </form>
+                </div>
+
+                {/* 📄 PDF添付エリア */}
+                <div className="space-y-2 p-3 rounded-2xl bg-muted/35 border border-border">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black text-foreground flex items-center gap-1.5">
+                      <FileText className="w-4 h-4 text-primary" />
+                      <span>PDF資料・規約の添付 (任意)</span>
+                    </span>
+                    {newPdfUrl && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewPdfUrl("");
+                          setNewPdfName("");
+                        }}
+                        className="text-[10px] text-destructive hover:underline font-bold cursor-pointer"
+                      >
+                        PDFを削除
+                      </button>
+                    )}
+                  </div>
+
+                  {newPdfUrl ? (
+                    <div className="flex items-center justify-between p-2.5 rounded-xl border border-border bg-card">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                          <FileText className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-black text-foreground truncate">
+                            {newPdfName || "添付PDFファイル"}
+                          </p>
+                          <a
+                            href={newPdfUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[10px] text-primary hover:underline font-bold flex items-center gap-0.5 mt-0.5"
+                          >
+                            <span>プレビュー確認</span>
+                            <ExternalLink className="w-2.5 h-2.5" />
+                          </a>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewPdfUrl("");
+                          setNewPdfName("");
+                        }}
+                        className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div>
+                      <input
+                        ref={pdfInputRef}
+                        type="file"
+                        accept="application/pdf,.pdf"
+                        onChange={(e) => handlePdfUpload(e, false)}
+                        className="hidden"
+                      />
+                      <button
+                        type="button"
+                        disabled={isUploadingPdf}
+                        onClick={() => pdfInputRef.current?.click()}
+                        className="w-full py-2.5 px-3 rounded-xl border border-dashed border-border hover:border-primary/40 bg-card hover:bg-muted/50 text-muted-foreground hover:text-foreground font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+                      >
+                        {isUploadingPdf ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                            <span>アップロード中...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="w-4 h-4 text-primary" />
+                            <span>PDFファイルを選択 (規約・マニュアル等)</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
+                  <button
+                    type="button"
+                    onClick={() => setIsCreateModalOpen(false)}
+                    className="px-4 py-2.5 rounded-xl bg-card border border-border text-muted-foreground hover:bg-muted hover:text-foreground font-black text-xs transition-all"
+                  >
+                    キャンセル
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting || !newTitle.trim() || !newContent.trim()}
+                    className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground font-black text-xs shadow-xs hover:bg-primary/90 active:scale-95 disabled:opacity-50 transition-all flex items-center gap-1.5"
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>登録中...</span>
+                      </>
+                    ) : (
+                      <span>登録する</span>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
         </div>,
         document.body
@@ -1161,313 +1189,315 @@ export default function LiffRulesPage() {
       {/* ✏️ 編集・削除モーダル (ポータル描画) */}
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {mounted && editingRule && createPortal(
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/60 animate-in fade-in duration-200">
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-md rounded-2xl border border-border/60 bg-card shadow-xs p-5 space-y-4 max-h-[90vh] overflow-y-auto"
+            className="w-full max-w-md rounded-2xl border border-border bg-card shadow-xs overflow-hidden max-h-[90vh] flex flex-col"
           >
-            <div className="flex items-center justify-between border-b border-border/60 pb-3">
-              <div className="flex items-center gap-2">
-                <span className="w-8 h-8 rounded-xl bg-amber-500/12 text-amber-600 dark:text-amber-400 flex items-center justify-center font-black">
+            <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-amber-500 px-4 py-3 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2.5">
+                <span className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-400/30 flex items-center justify-center font-black">
                   <Pencil className="w-4 h-4" />
                 </span>
                 <div>
-                  <h3 className="text-sm font-black text-foreground">ルール & 注意事項の編集</h3>
-                  <p className="text-[10px] text-muted-foreground font-bold">内容の更新または削除</p>
+                  <h3 className="text-sm font-black text-white">ルール & 注意事項の編集</h3>
+                  <p className="text-[10px] text-slate-300 font-bold">内容の更新または削除</p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setEditingRule(null)}
-                className="p-1.5 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted"
+                className="p-1.5 rounded-full text-slate-300 hover:text-white hover:bg-slate-800 transition-all"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            {submitError && (
-              <div className="p-3 rounded-2xl bg-destructive/10 text-destructive text-xs font-bold flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>{submitError}</span>
-              </div>
-            )}
+            <div className="p-5 space-y-4 overflow-y-auto">
+              {submitError && (
+                <div className="p-3 rounded-2xl bg-destructive/10 text-destructive text-xs font-bold flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{submitError}</span>
+                </div>
+              )}
 
-            <form onSubmit={handleUpdateRule} className="space-y-4 text-xs font-bold">
-              {/* 🔥 重要バッジ・フラグ選択 */}
-              <div
-                onClick={() => setEditIsImportant(!editIsImportant)}
-                className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 select-none ${
-                  editIsImportant
-                    ? "bg-amber-500/12 border-amber-500/40 text-amber-700 dark:text-amber-300"
-                    : "bg-muted/35 border-border/60 text-muted-foreground hover:bg-muted"
-                }`}
-              >
-                <div className="flex items-center gap-2.5">
-                  <span className={`w-7 h-7 rounded-xl flex items-center justify-center text-sm font-black ${
-                    editIsImportant ? "bg-amber-500/20 text-amber-700 dark:text-amber-300" : "bg-muted text-muted-foreground"
-                  }`}>
-                    <Flame className="w-4 h-4" />
-                  </span>
-                  <div>
-                    <span className="font-black text-xs text-foreground block">重要ルールに設定する</span>
-                    <span className="text-[10px] text-muted-foreground font-bold block">
-                      一覧の上部に優先表示され、目立つ重要バッジが付きます
+              <form onSubmit={handleUpdateRule} className="space-y-4 text-xs font-bold">
+                {/* 🔥 重要バッジ・フラグ選択 */}
+                <div
+                  onClick={() => setEditIsImportant(!editIsImportant)}
+                  className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 select-none ${
+                    editIsImportant
+                      ? "bg-amber-500/12 border-amber-500/40 text-amber-700 dark:text-amber-300"
+                      : "bg-muted/35 border-border text-muted-foreground hover:bg-muted"
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <span className={`w-7 h-7 rounded-xl flex items-center justify-center text-sm font-black ${
+                      editIsImportant ? "bg-amber-500/20 text-amber-700 dark:text-amber-300" : "bg-muted text-muted-foreground"
+                    }`}>
+                      <Flame className="w-4 h-4" />
                     </span>
-                  </div>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={editIsImportant}
-                  onChange={(e) => setEditIsImportant(e.target.checked)}
-                  className="w-4 h-4 rounded accent-primary"
-                />
-              </div>
-
-              {/* スコープ選択 */}
-              <div className="space-y-1.5">
-                <label className="text-muted-foreground">公開範囲</label>
-                <div className="grid grid-cols-2 gap-1 bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl border border-border/60">
-                  <button
-                    type="button"
-                    onClick={() => setEditScope("team")}
-                    className={`py-2 px-3 rounded-xl text-xs transition-all cursor-pointer ${
-                      editScope === "team"
-                        ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
-                        : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
-                    }`}
-                  >
-                    👥 {currentTeam?.teamName || "この編成"} のみ
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setEditScope("organization")}
-                    className={`py-2 px-3 rounded-xl text-xs transition-all cursor-pointer ${
-                      editScope === "organization"
-                        ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
-                        : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
-                    }`}
-                  >
-                    🏢 チーム全体（共通）
-                  </button>
-                </div>
-              </div>
-
-              {/* カテゴリ選択 */}
-              <div className="space-y-1.5">
-                <label className="text-muted-foreground">カテゴリ</label>
-                <select
-                  value={editCategory}
-                  onChange={(e) => setEditCategory(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-xl bg-card border border-border/60 text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40"
-                >
-                  <option value="match">🏆 試合・遠征</option>
-                  <option value="carpool">🚗 配車・送迎</option>
-                  <option value="duty">📋 当番・保護者</option>
-                  <option value="venue">🏟️ グラウンド・観戦</option>
-                  <option value="equipment">⚾ 用具・ユニフォーム</option>
-                  <option value="safety">☀️ 熱中症・安全管理</option>
-                  <option value="emergency">🌧️ 雨天・緊急連絡</option>
-                  <option value="general">💡 その他・心得</option>
-                </select>
-              </div>
-
-              {/* タイトル */}
-              <div className="space-y-1.5">
-                <label className="text-muted-foreground">タイトル</label>
-                <input
-                  type="text"
-                  required
-                  value={editTitle}
-                  onChange={(e) => setEditTitle(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-xl bg-card border border-border/60 text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40"
-                />
-              </div>
-
-              {/* 詳細内容 */}
-              <div className="space-y-1.5">
-                <label className="text-muted-foreground">詳細内容</label>
-                <textarea
-                  required
-                  rows={5}
-                  value={editContent}
-                  onChange={(e) => setEditContent(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-xl bg-card border border-border/60 text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40 leading-relaxed"
-                />
-              </div>
-
-              {/* 📷 画像添付エリア */}
-              <div className="space-y-2 p-3 rounded-2xl bg-muted/35 border border-border/60">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-black text-foreground flex items-center gap-1.5">
-                    <ImageIcon className="w-4 h-4 text-primary" />
-                    <span>参考画像・図解の添付 (任意)</span>
-                  </span>
-                  {editImageUrl && (
-                    <button
-                      type="button"
-                      onClick={() => setEditImageUrl("")}
-                      className="text-[10px] text-destructive hover:underline font-bold"
-                    >
-                      画像を削除
-                    </button>
-                  )}
-                </div>
-
-                {editImageUrl ? (
-                  <div className="relative rounded-xl overflow-hidden border border-border/60 bg-card max-h-40 flex items-center justify-center">
-                    <img src={editImageUrl} alt="プレビュー" className="max-h-40 w-full object-cover" />
-                  </div>
-                ) : (
-                  <div>
-                    <input
-                      ref={editFileInputRef}
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => handleImageUpload(e, true)}
-                      className="hidden"
-                    />
-                    <button
-                      type="button"
-                      disabled={isEditUploadingImage}
-                      onClick={() => editFileInputRef.current?.click()}
-                      className="w-full py-2.5 px-3 rounded-xl border border-dashed border-border/60 hover:border-primary/40 bg-card hover:bg-muted/50 text-muted-foreground hover:text-foreground font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
-                    >
-                      {isEditUploadingImage ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                          <span>アップロード中...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Upload className="w-4 h-4 text-primary" />
-                          <span>写真・画像を選択または撮影</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {/* 📄 PDF添付エリア */}
-              <div className="space-y-2 p-3 rounded-2xl bg-muted/35 border border-border/60">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-black text-foreground flex items-center gap-1.5">
-                    <FileText className="w-4 h-4 text-primary" />
-                    <span>PDF資料・規約の添付 (任意)</span>
-                  </span>
-                  {editPdfUrl && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditPdfUrl("");
-                        setEditPdfName("");
-                      }}
-                      className="text-[10px] text-destructive hover:underline font-bold cursor-pointer"
-                    >
-                      PDFを削除
-                    </button>
-                  )}
-                </div>
-
-                {editPdfUrl ? (
-                  <div className="flex items-center justify-between p-2.5 rounded-xl border border-border/60 bg-card">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
-                        <FileText className="w-4 h-4" />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-xs font-black text-foreground truncate">
-                          {editPdfName || "添付PDFファイル"}
-                        </p>
-                        <a
-                          href={editPdfUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-[10px] text-primary hover:underline font-bold flex items-center gap-0.5 mt-0.5"
-                        >
-                          <span>プレビュー確認</span>
-                          <ExternalLink className="w-2.5 h-2.5" />
-                        </a>
-                      </div>
+                    <div>
+                      <span className="font-black text-xs text-foreground block">重要ルールに設定する</span>
+                      <span className="text-[10px] text-muted-foreground font-bold block">
+                        一覧の上部に優先表示され、目立つ重要バッジが付きます
+                      </span>
                     </div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={editIsImportant}
+                    onChange={(e) => setEditIsImportant(e.target.checked)}
+                    className="w-4 h-4 rounded accent-primary"
+                  />
+                </div>
+
+                {/* スコープ選択 */}
+                <div className="space-y-1.5">
+                  <label className="text-muted-foreground">公開範囲</label>
+                  <div className="grid grid-cols-2 gap-1 bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl border border-border">
                     <button
                       type="button"
-                      onClick={() => {
-                        setEditPdfUrl("");
-                        setEditPdfName("");
-                      }}
-                      className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
+                      onClick={() => setEditScope("team")}
+                      className={`py-2 px-3 rounded-xl text-xs transition-all cursor-pointer ${
+                        editScope === "team"
+                          ? "bg-card text-foreground shadow-sm border border-border font-black"
+                          : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
+                      }`}
                     >
-                      <X className="w-4 h-4" />
+                      👥 {currentTeam?.teamName || "この編成"} のみ
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditScope("organization")}
+                      className={`py-2 px-3 rounded-xl text-xs transition-all cursor-pointer ${
+                        editScope === "organization"
+                          ? "bg-card text-foreground shadow-sm border border-border font-black"
+                          : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
+                      }`}
+                    >
+                      🏢 チーム全体（共通）
                     </button>
                   </div>
-                ) : (
-                  <div>
-                    <input
-                      ref={editPdfInputRef}
-                      type="file"
-                      accept="application/pdf,.pdf"
-                      onChange={(e) => handlePdfUpload(e, true)}
-                      className="hidden"
-                    />
+                </div>
+
+                {/* カテゴリ選択 */}
+                <div className="space-y-1.5">
+                  <label className="text-muted-foreground">カテゴリ</label>
+                  <select
+                    value={editCategory}
+                    onChange={(e) => setEditCategory(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-xl bg-card border border-border text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                  >
+                    <option value="match">🏆 試合・遠征</option>
+                    <option value="carpool">🚗 配車・送迎</option>
+                    <option value="duty">📋 当番・保護者</option>
+                    <option value="venue">🏟️ グラウンド・観戦</option>
+                    <option value="equipment">⚾ 用具・ユニフォーム</option>
+                    <option value="safety">☀️ 熱中症・安全管理</option>
+                    <option value="emergency">🌧️ 雨天・緊急連絡</option>
+                    <option value="general">💡 その他・心得</option>
+                  </select>
+                </div>
+
+                {/* タイトル */}
+                <div className="space-y-1.5">
+                  <label className="text-muted-foreground">タイトル</label>
+                  <input
+                    type="text"
+                    required
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-xl bg-card border border-border text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                  />
+                </div>
+
+                {/* 詳細内容 */}
+                <div className="space-y-1.5">
+                  <label className="text-muted-foreground">詳細内容</label>
+                  <textarea
+                    required
+                    rows={5}
+                    value={editContent}
+                    onChange={(e) => setEditContent(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-xl bg-card border border-border text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40 leading-relaxed"
+                  />
+                </div>
+
+                {/* 📷 画像添付エリア */}
+                <div className="space-y-2 p-3 rounded-2xl bg-muted/35 border border-border">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black text-foreground flex items-center gap-1.5">
+                      <ImageIcon className="w-4 h-4 text-primary" />
+                      <span>参考画像・図解の添付 (任意)</span>
+                    </span>
+                    {editImageUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setEditImageUrl("")}
+                        className="text-[10px] text-destructive hover:underline font-bold"
+                      >
+                        画像を削除
+                      </button>
+                    )}
+                  </div>
+
+                  {editImageUrl ? (
+                    <div className="relative rounded-xl overflow-hidden border border-border bg-card max-h-40 flex items-center justify-center">
+                      <img src={editImageUrl} alt="プレビュー" loading="lazy" decoding="async" className="max-h-40 w-full object-cover" />
+                    </div>
+                  ) : (
+                    <div>
+                      <input
+                        ref={editFileInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => handleImageUpload(e, true)}
+                        className="hidden"
+                      />
+                      <button
+                        type="button"
+                        disabled={isEditUploadingImage}
+                        onClick={() => editFileInputRef.current?.click()}
+                        className="w-full py-2.5 px-3 rounded-xl border border-dashed border-border hover:border-primary/40 bg-card hover:bg-muted/50 text-muted-foreground hover:text-foreground font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+                      >
+                        {isEditUploadingImage ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                            <span>アップロード中...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="w-4 h-4 text-primary" />
+                            <span>写真・画像を選択または撮影</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* 📄 PDF添付エリア */}
+                <div className="space-y-2 p-3 rounded-2xl bg-muted/35 border border-border">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black text-foreground flex items-center gap-1.5">
+                      <FileText className="w-4 h-4 text-primary" />
+                      <span>PDF資料・規約の添付 (任意)</span>
+                    </span>
+                    {editPdfUrl && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditPdfUrl("");
+                          setEditPdfName("");
+                        }}
+                        className="text-[10px] text-destructive hover:underline font-bold cursor-pointer"
+                      >
+                        PDFを削除
+                      </button>
+                    )}
+                  </div>
+
+                  {editPdfUrl ? (
+                    <div className="flex items-center justify-between p-2.5 rounded-xl border border-border bg-card">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                          <FileText className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-black text-foreground truncate">
+                            {editPdfName || "添付PDFファイル"}
+                          </p>
+                          <a
+                            href={editPdfUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[10px] text-primary hover:underline font-bold flex items-center gap-0.5 mt-0.5"
+                          >
+                            <span>プレビュー確認</span>
+                            <ExternalLink className="w-2.5 h-2.5" />
+                          </a>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditPdfUrl("");
+                          setEditPdfName("");
+                        }}
+                        className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div>
+                      <input
+                        ref={editPdfInputRef}
+                        type="file"
+                        accept="application/pdf,.pdf"
+                        onChange={(e) => handlePdfUpload(e, true)}
+                        className="hidden"
+                      />
+                      <button
+                        type="button"
+                        disabled={isEditUploadingPdf}
+                        onClick={() => editPdfInputRef.current?.click()}
+                        className="w-full py-2.5 px-3 rounded-xl border border-dashed border-border hover:border-primary/40 bg-card hover:bg-muted/50 text-muted-foreground hover:text-foreground font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+                      >
+                        {isEditUploadingPdf ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                            <span>アップロード中...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="w-4 h-4 text-primary" />
+                            <span>PDFファイルを選択 (規約・マニュアル等)</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between pt-2 border-t border-border">
+                  <button
+                    type="button"
+                    onClick={handleDeleteRule}
+                    disabled={isDeleting}
+                    className="px-3 py-2 rounded-xl border border-rose-500 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 font-black text-xs transition-all flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>削除</span>
+                  </button>
+
+                  <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      disabled={isEditUploadingPdf}
-                      onClick={() => editPdfInputRef.current?.click()}
-                      className="w-full py-2.5 px-3 rounded-xl border border-dashed border-border/60 hover:border-primary/40 bg-card hover:bg-muted/50 text-muted-foreground hover:text-foreground font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+                      onClick={() => setEditingRule(null)}
+                      className="px-4 py-2.5 rounded-xl bg-card border border-border text-muted-foreground hover:bg-muted hover:text-foreground font-black text-xs transition-all cursor-pointer"
                     >
-                      {isEditUploadingPdf ? (
+                      キャンセル
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isSubmitting || !editTitle.trim() || !editContent.trim()}
+                      className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground font-black text-xs shadow-xs hover:bg-primary/90 active:scale-95 disabled:opacity-50 transition-all flex items-center gap-1.5 cursor-pointer"
+                    >
+                      {isSubmitting ? (
                         <>
-                          <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                          <span>アップロード中...</span>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>更新中...</span>
                         </>
                       ) : (
-                        <>
-                          <Upload className="w-4 h-4 text-primary" />
-                          <span>PDFファイルを選択 (規約・マニュアル等)</span>
-                        </>
+                        <span>保存する</span>
                       )}
                     </button>
                   </div>
-                )}
-              </div>
-
-              <div className="flex items-center justify-between pt-2 border-t border-border/60">
-                <button
-                  type="button"
-                  onClick={handleDeleteRule}
-                  disabled={isDeleting}
-                  className="px-3 py-2 rounded-xl text-destructive hover:bg-destructive/10 font-black text-xs transition-all flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>削除</span>
-                </button>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setEditingRule(null)}
-                    className="px-4 py-2.5 rounded-xl bg-card border border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground font-black text-xs transition-all cursor-pointer"
-                  >
-                    キャンセル
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isSubmitting || !editTitle.trim() || !editContent.trim()}
-                    className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground font-black text-xs shadow-xs hover:bg-primary/90 active:scale-95 disabled:opacity-50 transition-all flex items-center gap-1.5 cursor-pointer"
-                  >
-                    {isSubmitting ? (
-                      <>
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        <span>更新中...</span>
-                      </>
-                    ) : (
-                      <span>保存する</span>
-                    )}
-                  </button>
                 </div>
-              </div>
-            </form>
+              </form>
+            </div>
           </div>
         </div>,
         document.body

@@ -403,18 +403,47 @@ liffScorebookRouter.get("/context", async (c) => {
       });
     }
 
-    const rosterRows = await db
-      .select({
-        id: players.id,
-        name: players.name,
-        nameKana: players.nameKana,
-        uniformNumber: players.uniformNumber,
-        primaryPosition: players.primaryPosition,
-        bats: players.bats,
-      })
-      .from(players)
-      .where(eq(players.teamId, targetTeam.id))
-      .all();
+    const [rosterRows, matchRows, distinctAbResult] = await Promise.all([
+      db
+        .select({
+          id: players.id,
+          name: players.name,
+          nameKana: players.nameKana,
+          uniformNumber: players.uniformNumber,
+          primaryPosition: players.primaryPosition,
+          bats: players.bats,
+        })
+        .from(players)
+        .where(eq(players.teamId, targetTeam.id))
+        .all(),
+      db
+        .select({
+          id: matches.id,
+          opponent: matches.opponent,
+          date: matches.date,
+          matchType: matches.matchType,
+          tournamentId: matches.tournamentId,
+          tournamentName: tournaments.name,
+          battingOrder: matches.battingOrder,
+          innings: matches.innings,
+          status: matches.status,
+          myScore: matches.myScore,
+          opponentScore: matches.opponentScore,
+          myInningScores: matches.myInningScores,
+          opponentInningScores: matches.opponentInningScores,
+        })
+        .from(matches)
+        .leftJoin(tournaments, eq(matches.tournamentId, tournaments.id))
+        .where(eq(matches.teamId, targetTeam.id))
+        .orderBy(desc(matches.date), desc(matches.createdAt))
+        .all(),
+      c.env.DB.prepare(
+        `SELECT DISTINCT ab.match_id AS matchId FROM at_bats ab JOIN matches m ON ab.match_id = m.id WHERE m.team_id = ?`
+      )
+        .bind(targetTeam.id)
+        .all()
+        .catch(() => ({ results: [] })),
+    ]);
 
     const sortedRoster: ScorebookRosterPlayer[] = [...rosterRows].sort((a, b) => {
       const na = parseInt(a.uniformNumber, 10);
@@ -423,40 +452,10 @@ liffScorebookRouter.get("/context", async (c) => {
       return a.uniformNumber.localeCompare(b.uniformNumber);
     });
 
-    const matchRows = await db
-      .select({
-        id: matches.id,
-        opponent: matches.opponent,
-        date: matches.date,
-        matchType: matches.matchType,
-        tournamentId: matches.tournamentId,
-        tournamentName: tournaments.name,
-        battingOrder: matches.battingOrder,
-        innings: matches.innings,
-        status: matches.status,
-        myScore: matches.myScore,
-        opponentScore: matches.opponentScore,
-        myInningScores: matches.myInningScores,
-        opponentInningScores: matches.opponentInningScores,
-      })
-      .from(matches)
-      .leftJoin(tournaments, eq(matches.tournamentId, tournaments.id))
-      .where(eq(matches.teamId, targetTeam.id))
-      .orderBy(desc(matches.date), desc(matches.createdAt))
-      .all();
-
     // すでに打席データが入っている試合ID一覧を取得
-    const matchIds = matchRows.map((m) => m.id);
     const existingAtBatMatchIds = new Set<string>();
-    if (matchIds.length > 0) {
-      const abRows = await db
-        .select({ matchId: atBats.matchId })
-        .from(atBats)
-        .where(inArray(atBats.matchId, matchIds))
-        .all();
-      for (const r of abRows) {
-        existingAtBatMatchIds.add(r.matchId);
-      }
+    for (const r of (distinctAbResult.results || []) as Array<{ matchId?: string }>) {
+      if (r.matchId) existingAtBatMatchIds.add(r.matchId);
     }
 
     const formattedMatches: ScorebookMatchSummary[] = [...matchRows]
@@ -4130,22 +4129,28 @@ liffScorebookRouter.get("/saved", async (c) => {
   }
 
   try {
-    const match = await db
-      .select()
-      .from(matches)
-      .where(eq(matches.id, matchId))
-      .get();
+    const [match, allAbRows, snap] = await Promise.all([
+      db
+        .select()
+        .from(matches)
+        .where(eq(matches.id, matchId))
+        .get(),
+      db
+        .select()
+        .from(atBats)
+        .where(eq(atBats.matchId, matchId))
+        .orderBy(asc(atBats.inning), asc(atBats.createdAt))
+        .all(),
+      db
+        .select()
+        .from(matchScorebookSnapshots)
+        .where(eq(matchScorebookSnapshots.matchId, matchId))
+        .get(),
+    ]);
 
     if (!match) {
       return c.json({ success: false, error: "対象の試合が見つかりません" }, 404);
     }
-
-    const allAbRows = await db
-      .select()
-      .from(atBats)
-      .where(eq(atBats.matchId, match.id))
-      .orderBy(asc(atBats.inning), asc(atBats.createdAt))
-      .all();
 
     if (allAbRows.length === 0) {
       return c.json(
@@ -4157,27 +4162,32 @@ liffScorebookRouter.get("/saved", async (c) => {
       );
     }
 
-    const roster = await db
-      .select({
-        id: players.id,
-        name: players.name,
-        nameKana: players.nameKana,
-        uniformNumber: players.uniformNumber,
-        primaryPosition: players.primaryPosition,
-        bats: players.bats,
-      })
-      .from(players)
-      .where(eq(players.teamId, match.teamId))
-      .all();
+    const [roster, matchTeam] = await Promise.all([
+      db
+        .select({
+          id: players.id,
+          name: players.name,
+          nameKana: players.nameKana,
+          uniformNumber: players.uniformNumber,
+          primaryPosition: players.primaryPosition,
+          bats: players.bats,
+        })
+        .from(players)
+        .where(eq(players.teamId, match.teamId))
+        .all(),
+      db
+        .select({
+          name: teams.name,
+          scorebookLegendUrl: teams.scorebookLegendUrl,
+          scorebookSymbolRules: teams.scorebookSymbolRules,
+        })
+        .from(teams)
+        .where(eq(teams.id, match.teamId))
+        .get(),
+    ]);
 
     const rosterById = new Map(roster.map((p) => [p.id, p]));
     const isMyTeamFirst = match.battingOrder === "first";
-
-    const snap = await db
-      .select()
-      .from(matchScorebookSnapshots)
-      .where(eq(matchScorebookSnapshots.matchId, match.id))
-      .get();
 
     const topDbAbs = allAbRows.filter((r) => r.isTop);
     const bottomDbAbs = allAbRows.filter((r) => !r.isTop);
@@ -4805,16 +4815,6 @@ liffScorebookRouter.get("/saved", async (c) => {
 
     topStructure = enrichStructureHandedness(topStructure);
     bottomStructure = enrichStructureHandedness(bottomStructure);
-
-    const matchTeam = await db
-      .select({
-        name: teams.name,
-        scorebookLegendUrl: teams.scorebookLegendUrl,
-        scorebookSymbolRules: teams.scorebookSymbolRules,
-      })
-      .from(teams)
-      .where(eq(teams.id, match.teamId))
-      .get();
 
     return c.json({
       success: true,

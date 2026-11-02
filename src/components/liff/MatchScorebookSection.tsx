@@ -93,6 +93,7 @@ export function MatchScorebookSection({
     string | null
   >(null);
   const [isExportingPng, setIsExportingPng] = useState(false);
+  const [mountOffscreenSheet, setMountOffscreenSheet] = useState(false);
 
   const topSvgRef = useRef<SVGSVGElement | null>(null);
   const bottomSvgRef = useRef<SVGSVGElement | null>(null);
@@ -239,8 +240,21 @@ export function MatchScorebookSection({
   const activeModel = activeSide === "top" ? topModel : bottomModel;
   const hasBothSides = Boolean(topModel && bottomModel);
 
+  const ensureBothSidesMounted = useCallback(async () => {
+    if (!hasBothSides) return;
+    if (!topSvgRef.current || !bottomSvgRef.current) {
+      setMountOffscreenSheet(true);
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      });
+    }
+  }, [hasBothSides]);
+
   const handleExportPng = useCallback(
     async (scope: "current" | "both") => {
+      if (scope === "both") {
+        await ensureBothSidesMounted();
+      }
       const targets: SVGSVGElement[] = [];
       if (scope === "both") {
         if (topSvgRef.current) targets.push(topSvgRef.current);
@@ -328,6 +342,7 @@ export function MatchScorebookSection({
     },
     [
       activeSide,
+      ensureBothSidesMounted,
       matchMeta.date,
       matchMeta.topTeamName,
       matchMeta.bottomTeamName,
@@ -335,7 +350,10 @@ export function MatchScorebookSection({
   );
 
   const handlePrintSheet = useCallback(
-    (scope: "current" | "both") => {
+    async (scope: "current" | "both") => {
+      if (scope === "both") {
+        await ensureBothSidesMounted();
+      }
       const targets: SVGSVGElement[] = [];
       if (scope === "both") {
         if (topSvgRef.current) targets.push(topSvgRef.current);
@@ -356,6 +374,7 @@ export function MatchScorebookSection({
     },
     [
       activeSide,
+      ensureBothSidesMounted,
       matchMeta.date,
       matchMeta.topTeamName,
       matchMeta.bottomTeamName,
@@ -380,7 +399,7 @@ export function MatchScorebookSection({
         </h2>
       </div>
 
-      <div className="rounded-2xl border border-border/60 bg-card shadow-xs overflow-hidden">
+      <div className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
         {isLoadingStats || isLoadingSheet ? (
           <div className="py-10 px-4 flex flex-col items-center justify-center gap-2 text-muted-foreground">
             <Loader2 className="w-6 h-6 animate-spin text-primary" />
@@ -396,13 +415,13 @@ export function MatchScorebookSection({
           </div>
         ) : !topModel && !bottomModel ? null : (
           <>
-            {/* カードヘッダー帯 */}
-            <div className="px-3.5 py-2.5 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5 text-[11px] font-black text-foreground">
+            {/* A-3 上帯ダークキャップ */}
+            <div className="px-4 py-2.5 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 text-xs font-black text-white">
                 <FileSpreadsheet className="w-3.5 h-3.5 text-primary shrink-0" />
                 <span>デジタル清書スコアシート</span>
               </div>
-              <span className="text-[10px] font-bold text-muted-foreground">
+              <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-200 border border-slate-700 text-[10px] font-bold">
                 {hasBothSides
                   ? "先攻・後攻 両面データ"
                   : activeSide === "top"
@@ -516,8 +535,8 @@ export function MatchScorebookSection({
               </div>
             )}
 
-            {/* 反対側シートも2枚一括PNG/印刷用にオフスクリーン保持 */}
-            {hasBothSides && (
+            {/* 反対側シートは両面保存・両面印刷の実行時にのみオンデマンドでマウント（初期描画のSVGノード数を50%削減） */}
+            {hasBothSides && mountOffscreenSheet && (
               <div
                 aria-hidden="true"
                 className="fixed -left-[9999px] top-0 pointer-events-none opacity-0 overflow-hidden w-0 h-0"

@@ -13,7 +13,7 @@ export default function LiffScheduleAdminPage() {
 
   return (
     <div className="flex items-center justify-center min-h-[50vh] p-4">
-      <div className="rounded-2xl border border-border/60 bg-card shadow-xs px-5 py-4 text-xs font-bold text-muted-foreground">
+      <div className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden px-5 py-4 text-xs font-bold text-muted-foreground">
         活動予定（スケジューラー）へ移動中...
       </div>
     </div>

@@ -38,7 +38,7 @@ const app = new Hono<{ Bindings: WorkerEnv }>()
 app.use('*', cors({
   origin: '*',
   allowHeaders: ['Content-Type', 'Authorization'],
-  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   exposeHeaders: ['Content-Length'],
   maxAge: 86400,
 }))
@@ -80,11 +80,20 @@ export default {
     }
 
     const assetRes = await env.ASSETS.fetch(request)
+    if (url.pathname.startsWith('/_next/static/')) {
+      const headers = new Headers(assetRes.headers)
+      headers.set('Cache-Control', 'public, max-age=31536000, immutable')
+      return new Response(assetRes.body, {
+        status: assetRes.status,
+        statusText: assetRes.statusText,
+        headers,
+      })
+    }
+
     const contentType = assetRes.headers.get('content-type') || ''
     if (contentType.includes('text/html')) {
       const headers = new Headers(assetRes.headers)
-      headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
-      headers.set('Pragma', 'no-cache')
+      headers.set('Cache-Control', 'public, max-age=0, must-revalidate')
       return new Response(assetRes.body, {
         status: assetRes.status,
         statusText: assetRes.statusText,

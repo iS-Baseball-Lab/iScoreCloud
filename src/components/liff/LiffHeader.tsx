@@ -145,14 +145,14 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <div
-                className={`flex items-center gap-2 pl-1 pr-2.5 py-1 rounded-full backdrop-blur-md border text-foreground shadow-xs hover:opacity-90 transition-all cursor-pointer flex-1 max-w-[200px] min-[400px]:max-w-[230px] sm:max-w-[290px] outline-hidden select-none ${
+                className={`flex items-center gap-2 pl-1 pr-2.5 py-1 rounded-full border text-foreground shadow-xs hover:opacity-90 transition-all cursor-pointer flex-1 max-w-[200px] min-[400px]:max-w-[230px] sm:max-w-[290px] outline-hidden select-none ${
                   isDemo
-                    ? "bg-amber-500/10 border-amber-500/40"
-                    : "bg-primary/10 border-primary/40"
+                    ? "bg-amber-50 dark:bg-slate-900 border-amber-500"
+                    : "bg-muted border-border"
                 }`}
                 title={`${orgDisplayName} (${teamDisplayName})`}
               >
-                <Avatar className="h-8 w-8 sm:h-8.5 sm:w-8.5 border border-primary/30 bg-background shrink-0 overflow-hidden">
+                <Avatar className="h-8 w-8 sm:h-8.5 sm:w-8.5 border border-border bg-card shrink-0 overflow-hidden">
                   {currentTeam?.logoImageUrl ? (
                     <img
                       src={currentTeam.logoImageUrl}
@@ -161,7 +161,7 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
                     />
                   ) : (
                     <AvatarFallback
-                      className="w-full h-full flex items-center justify-center font-black text-xs select-none bg-background text-primary"
+                      className="w-full h-full flex items-center justify-center font-black text-xs select-none bg-card text-primary"
                     >
                       {orgDisplayName.slice(0, 2).toUpperCase()}
                     </AvatarFallback>
@@ -181,10 +181,10 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
                     {teamDisplayName}
                   </span>
                 </div>
-                <ChevronDown className="h-3.5 w-3.5 text-primary/80 shrink-0 ml-0.5" />
+                <ChevronDown className="h-3.5 w-3.5 text-primary shrink-0 ml-0.5" />
               </div>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-64 p-1.5 space-y-1">
+            <DropdownMenuContent align="end" className="w-64 rounded-2xl border border-border bg-card p-1.5 shadow-xl space-y-1">
               <DropdownMenuLabel className="text-[10px] font-bold text-muted-foreground uppercase px-2 py-1">
                 チーム切り替え
               </DropdownMenuLabel>
@@ -252,10 +252,10 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
 
             <DropdownMenuContent
               align="end"
-              className="w-68 sm:w-72 rounded-2xl border-border/60 bg-card p-2.5 shadow-2xl space-y-2"
+              className="w-68 sm:w-72 rounded-2xl border border-border bg-card p-2.5 shadow-2xl space-y-2"
             >
               {/* ユーザー情報ヘッダー */}
-              <div className="flex items-center gap-2.5 p-2 rounded-xl bg-muted/60">
+              <div className="flex items-center gap-2.5 p-2 rounded-xl bg-muted border border-border">
                 <Avatar className="h-10 w-10 border border-border">
                   {profile?.pictureUrl && (
                     <AvatarImage src={profile.pictureUrl} alt={displayName} />
@@ -291,7 +291,7 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
                 </DropdownMenuItem>
               )}
 
-              <DropdownMenuSeparator className="bg-border/60" />
+              <DropdownMenuSeparator className="bg-border" />
 
               {/* 👤 プロフィール & ⚙️ アプリ設定へのダイレクトリンク */}
               <div className="space-y-1">
@@ -356,14 +356,14 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
                 </DropdownMenuItem>
               </div>
 
-              <DropdownMenuSeparator className="bg-border/60" />
+              <DropdownMenuSeparator className="bg-border" />
 
               {/* 🌓 外観モード (クイック切替) */}
               <div className="pt-0.5">
                 <p className="text-[10px] font-black text-muted-foreground mb-1.5 pl-1">
                   外観モード
                 </p>
-                <div className="flex gap-1 p-1 rounded-2xl bg-muted/80 dark:bg-muted/50 border border-border/60">
+                <div className="flex gap-1 p-1 rounded-2xl bg-muted border border-border">
                   {APPEARANCES.map((a) => {
                     const Icon = a.icon;
                     const isActive = theme === a.id;
@@ -378,7 +378,7 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
                         className={cn(
                           "flex-1 flex flex-col items-center justify-center py-1.5 gap-1 rounded-xl border transition-all active:scale-95",
                           isActive
-                            ? "bg-card border-border/50 text-foreground font-black shadow-sm"
+                            ? "bg-card border-border text-foreground font-black shadow-xs"
                             : "border-transparent text-muted-foreground hover:text-foreground font-bold"
                         )}
                       >
@@ -393,7 +393,7 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
               {/* LINEシェア */}
               {shareData && (
                 <>
-                  <DropdownMenuSeparator className="bg-border/60" />
+                  <DropdownMenuSeparator className="bg-border" />
                   <DropdownMenuItem
                     onClick={handleShare}
                     className="flex items-center gap-2 p-2 cursor-pointer font-bold text-xs rounded-xl"

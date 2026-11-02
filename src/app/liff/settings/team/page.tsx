@@ -126,105 +126,113 @@ export default function LiffTeamSettingsPage() {
         />
 
         {/* ━━━ セクション 1: 🛡️ チーム基本情報 ━━━ */}
-        <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3.5 overflow-hidden">
-          <div className="-mx-4 -mt-4 px-4 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 border-l-4 border-l-primary flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Building className="w-4 h-4 text-primary" />
-              <h2 className="text-sm font-black text-foreground">チーム基本情報</h2>
+        <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+          <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-slate-500 px-4 py-3 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="w-7 h-7 rounded-xl bg-slate-800 text-slate-200 border border-slate-700 flex items-center justify-center shrink-0">
+                <Building className="w-4 h-4" />
+              </span>
+              <h2 className="text-sm font-black text-white truncate">チーム基本情報</h2>
             </div>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700 shrink-0">
               ID: {currentTeam?.id || "team_1"}
             </span>
           </div>
 
-          {/* チーム名 */}
-          <div className="space-y-1">
-            <label className="text-xs font-black text-foreground">チーム名称</label>
-            <input
-              type="text"
-              value={teamName}
-              onChange={(e) => setTeamName(e.target.value)}
-              placeholder="チーム名を入力"
-              className="w-full px-3 py-2 rounded-xl bg-muted/35 border border-border/60 text-xs font-bold text-foreground focus:outline-hidden focus:border-primary"
-            />
-          </div>
+          <div className="p-4 space-y-3.5">
+            {/* チーム名 */}
+            <div className="space-y-1">
+              <label className="text-xs font-black text-foreground">チーム名称</label>
+              <input
+                type="text"
+                value={teamName}
+                onChange={(e) => setTeamName(e.target.value)}
+                placeholder="チーム名を入力"
+                className="w-full px-3 py-2 rounded-xl bg-muted/35 border border-border text-xs font-bold text-foreground focus:outline-hidden focus:border-primary"
+              />
+            </div>
 
-          {/* 年代・所属カテゴリ */}
-          <div className="space-y-1">
-            <label className="text-xs font-black text-foreground">所属カテゴリー（年代区分）</label>
-            <select
-              value={category}
-              onChange={(e) => {
-                setCategory(e.target.value);
-                // カテゴリに応じてスコア設定の規定イニング初期値を最適化
-                const nextInnings =
-                  e.target.value === "gakudou"
-                    ? 6
-                    : e.target.value === "high_school" ||
-                      e.target.value === "general_hard"
-                    ? 9
-                    : 7;
-                saveSetting("iscore_setting_default_innings", String(nextInnings));
-              }}
-              className="w-full px-3 py-2 rounded-xl bg-muted/35 border border-border/60 text-xs font-bold text-foreground focus:outline-hidden focus:border-primary"
-            >
-              {ORGANIZATION_CATEGORIES.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.label}
-                </option>
-              ))}
-            </select>
-            <p className="text-[10px] text-muted-foreground font-bold">
-              ※ 規定イニング・コールド・守備表記などの詳細な試合規定は「スコア設定」から変更できます
-            </p>
+            {/* 年代・所属カテゴリ */}
+            <div className="space-y-1">
+              <label className="text-xs font-black text-foreground">所属カテゴリー（年代区分）</label>
+              <select
+                value={category}
+                onChange={(e) => {
+                  setCategory(e.target.value);
+                  // カテゴリに応じてスコア設定の規定イニング初期値を最適化
+                  const nextInnings =
+                    e.target.value === "gakudou"
+                      ? 6
+                      : e.target.value === "high_school" ||
+                        e.target.value === "general_hard"
+                      ? 9
+                      : 7;
+                  saveSetting("iscore_setting_default_innings", String(nextInnings));
+                }}
+                className="w-full px-3 py-2 rounded-xl bg-muted/35 border border-border text-xs font-bold text-foreground focus:outline-hidden focus:border-primary"
+              >
+                {ORGANIZATION_CATEGORIES.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+              <p className="text-[10px] text-muted-foreground font-bold">
+                ※ 規定イニング・コールド・守備表記などの詳細な試合規定は「スコア設定」から変更できます
+              </p>
+            </div>
           </div>
         </section>
 
         {/* ━━━ セクション 2: 👥 活動グループ（班分け） ━━━ */}
-        <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3.5 overflow-hidden">
-          <div className="-mx-4 -mt-4 px-4 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 border-l-4 border-l-primary flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Layers className="w-4 h-4 text-primary" />
-              <h2 className="text-sm font-black text-foreground">活動グループ（チーム区分）</h2>
-            </div>
-            <span className="text-[10px] font-bold text-muted-foreground">予定作成時に選択可能</span>
-          </div>
-
-          <div className="flex flex-wrap gap-1.5">
-            {targetGroups.map((group) => (
-              <span
-                key={group}
-                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-muted/50 border border-border/60 text-xs font-black text-foreground"
-              >
-                <span>{group}</span>
-                {group !== "全体" && (
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveGroup(group)}
-                    className="text-muted-foreground hover:text-destructive font-bold ml-0.5 cursor-pointer"
-                  >
-                    ×
-                  </button>
-                )}
+        <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+          <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-slate-500 px-4 py-3 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="w-7 h-7 rounded-xl bg-slate-800 text-slate-200 border border-slate-700 flex items-center justify-center shrink-0">
+                <Layers className="w-4 h-4" />
               </span>
-            ))}
+              <h2 className="text-sm font-black text-white truncate">活動グループ（チーム区分）</h2>
+            </div>
+            <span className="text-[10px] font-bold text-slate-300 shrink-0">予定作成時に選択可能</span>
           </div>
 
-          <div className="flex items-center gap-2 pt-1">
-            <input
-              type="text"
-              value={newGroupInput}
-              onChange={(e) => setNewGroupInput(e.target.value)}
-              placeholder="新しい区分 (例: ジュニア組, Cチーム)"
-              className="flex-1 px-3 py-1.5 rounded-xl bg-muted/35 border border-border/60 text-xs font-bold text-foreground focus:outline-hidden focus:border-primary"
-            />
-            <button
-              type="button"
-              onClick={handleAddGroup}
-              className="py-1.5 px-3 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black active:scale-95 transition-all cursor-pointer"
-            >
-              追加
-            </button>
+          <div className="p-4 space-y-3.5">
+            <div className="flex flex-wrap gap-1.5">
+              {targetGroups.map((group) => (
+                <span
+                  key={group}
+                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-muted/50 border border-border text-xs font-black text-foreground"
+                >
+                  <span>{group}</span>
+                  {group !== "全体" && (
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveGroup(group)}
+                      className="text-muted-foreground hover:text-destructive font-bold ml-0.5 cursor-pointer"
+                    >
+                      ×
+                    </button>
+                  )}
+                </span>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-2 pt-1">
+              <input
+                type="text"
+                value={newGroupInput}
+                onChange={(e) => setNewGroupInput(e.target.value)}
+                placeholder="新しい区分 (例: ジュニア組, Cチーム)"
+                className="flex-1 px-3 py-1.5 rounded-xl bg-muted/35 border border-border text-xs font-bold text-foreground focus:outline-hidden focus:border-primary"
+              />
+              <button
+                type="button"
+                onClick={handleAddGroup}
+                className="py-1.5 px-3 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black active:scale-95 transition-all cursor-pointer"
+              >
+                追加
+              </button>
+            </div>
           </div>
         </section>
 
@@ -236,7 +244,7 @@ export default function LiffTeamSettingsPage() {
 
           <Link
             href="/liff/settings/score"
-            className="p-3.5 rounded-2xl border border-border/60 bg-card shadow-xs hover:border-primary/40 flex items-center gap-3 group active:scale-98 transition-all"
+            className="p-3.5 rounded-2xl border border-border bg-card shadow-xs hover:border-primary/40 flex items-center gap-3 group active:scale-98 transition-all"
           >
             <span className="w-10 h-10 rounded-xl bg-slate-500/12 text-slate-700 dark:text-slate-300 flex items-center justify-center font-black shrink-0 group-hover:scale-105 transition-transform">
               <BookOpen className="w-5 h-5" />
@@ -255,7 +263,7 @@ export default function LiffTeamSettingsPage() {
           <div className="grid grid-cols-2 gap-2.5">
             <Link
               href="/liff/grounds"
-              className="p-3.5 rounded-2xl border border-border/60 bg-card shadow-xs hover:border-primary/40 flex items-center gap-3 group active:scale-95 transition-all"
+              className="p-3.5 rounded-2xl border border-border bg-card shadow-xs hover:border-primary/40 flex items-center gap-3 group active:scale-95 transition-all"
             >
               <span className="w-10 h-10 rounded-xl bg-teal-500/12 text-teal-600 dark:text-teal-400 flex items-center justify-center font-black shrink-0 group-hover:scale-105 transition-transform">
                 <MapPin className="w-5 h-5" />
@@ -269,7 +277,7 @@ export default function LiffTeamSettingsPage() {
 
             <Link
               href="/liff/carpool"
-              className="p-3.5 rounded-2xl border border-border/60 bg-card shadow-xs hover:border-primary/40 flex items-center gap-3 group active:scale-95 transition-all"
+              className="p-3.5 rounded-2xl border border-border bg-card shadow-xs hover:border-primary/40 flex items-center gap-3 group active:scale-95 transition-all"
             >
               <span className="w-10 h-10 rounded-xl bg-teal-500/12 text-teal-600 dark:text-teal-400 flex items-center justify-center font-black shrink-0 group-hover:scale-105 transition-transform">
                 <Car className="w-5 h-5" />
@@ -284,30 +292,34 @@ export default function LiffTeamSettingsPage() {
         </section>
 
         {/* ━━━ セクション 5: 🔔 LINE通知・連携ステータス ━━━ */}
-        <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3 overflow-hidden">
-          <div className="-mx-4 -mt-4 px-4 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 border-l-4 border-l-primary flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Bell className="w-4 h-4 text-primary" />
-              <h2 className="text-sm font-black text-foreground">LINE速報配信・通知連携</h2>
+        <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+          <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-slate-500 px-4 py-3 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="w-7 h-7 rounded-xl bg-slate-800 text-slate-200 border border-slate-700 flex items-center justify-center shrink-0">
+                <Bell className="w-4 h-4" />
+              </span>
+              <h2 className="text-sm font-black text-white truncate">LINE速報配信・通知連携</h2>
             </div>
-            <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 border border-emerald-500/25">
+            <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 shrink-0">
               連携稼働中
             </span>
           </div>
 
-          <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 space-y-2">
-            <div className="flex items-center justify-between text-xs font-bold">
-              <span className="text-muted-foreground">配信先LINEグループ</span>
-              <span className="text-foreground font-black">チーム連絡網 (公式)</span>
+          <div className="p-4 space-y-3">
+            <div className="p-3 rounded-2xl bg-muted/35 border border-border space-y-2">
+              <div className="flex items-center justify-between text-xs font-bold">
+                <span className="text-muted-foreground">配信先LINEグループ</span>
+                <span className="text-foreground font-black">チーム連絡網 (公式)</span>
+              </div>
+              <div className="flex items-center justify-between text-xs font-bold">
+                <span className="text-muted-foreground">試合速報自動配信</span>
+                <span className="text-emerald-700 dark:text-emerald-400 font-black">有効 (イニング毎)</span>
+              </div>
             </div>
-            <div className="flex items-center justify-between text-xs font-bold">
-              <span className="text-muted-foreground">試合速報自動配信</span>
-              <span className="text-emerald-700 dark:text-emerald-400 font-black">有効 (イニング毎)</span>
-            </div>
+            <p className="text-[10px] text-muted-foreground font-bold">
+              ※ LINEグループの変更やBot設定はWeb管理画面（ダッシュボード）から実施できます
+            </p>
           </div>
-          <p className="text-[10px] text-muted-foreground font-bold">
-            ※ LINEグループの変更やBot設定はWeb管理画面（ダッシュボード）から実施できます
-          </p>
         </section>
 
         {/* 💾 一括保存ボタン */}

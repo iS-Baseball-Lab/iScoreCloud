@@ -139,14 +139,14 @@ app.get("/:id/logs", async (c) => {
   try {
     const db = drizzle(c.env.DB);
     const matchId = c.req.param("id");
-    const logs = await MatchService.getPlayLogs(db, matchId);
-
-    // バリデーションも取得
-    const matchData = await db
-      .select({ scorebookValidations: matches.scorebookValidations })
-      .from(matches)
-      .where(eq(matches.id, matchId))
-      .get();
+    const [logs, matchData] = await Promise.all([
+      MatchService.getPlayLogs(db, matchId),
+      db
+        .select({ scorebookValidations: matches.scorebookValidations })
+        .from(matches)
+        .where(eq(matches.id, matchId))
+        .get(),
+    ]);
     let validationMessages: unknown[] = [];
     if (matchData?.scorebookValidations) {
       try {
@@ -727,48 +727,48 @@ app.get("/:id/boxscore", async (c) => {
   const matchId = c.req.param("id");
 
   try {
-    const rows = await db
-      .select({
-        id: atBats.id,
-        inning: atBats.inning,
-        isTop: atBats.isTop,
-        result: atBats.result,
-        batterId: atBats.batterId,
-        batterName: sql<string>`batter.name`,
-        batterNumber: sql<string>`batter.uniform_number`,
-        pitcherId: atBats.pitcherId,
-        pitcherName: sql<string>`pitcher.name`,
-      })
-      .from(atBats)
-      .leftJoin(sql`players as batter`, sql`batter.id = ${atBats.batterId}`)
-      .leftJoin(sql`players as pitcher`, sql`pitcher.id = ${atBats.pitcherId}`)
-      .where(eq(atBats.matchId, matchId))
-      .orderBy(atBats.inning, atBats.createdAt)
-      .all();
+    const [rows, snapRow, logs] = await Promise.all([
+      db
+        .select({
+          id: atBats.id,
+          inning: atBats.inning,
+          isTop: atBats.isTop,
+          result: atBats.result,
+          batterId: atBats.batterId,
+          batterName: sql<string>`batter.name`,
+          batterNumber: sql<string>`batter.uniform_number`,
+          pitcherId: atBats.pitcherId,
+          pitcherName: sql<string>`pitcher.name`,
+        })
+        .from(atBats)
+        .leftJoin(sql`players as batter`, sql`batter.id = ${atBats.batterId}`)
+        .leftJoin(sql`players as pitcher`, sql`pitcher.id = ${atBats.pitcherId}`)
+        .where(eq(atBats.matchId, matchId))
+        .orderBy(atBats.inning, atBats.createdAt)
+        .all(),
+      db
+        .select()
+        .from(matchScorebookSnapshots)
+        .where(eq(matchScorebookSnapshots.matchId, matchId))
+        .get()
+        .catch(() => undefined),
+      db
+        .select({ atBatId: playLogs.atBatId, description: playLogs.description })
+        .from(playLogs)
+        .where(eq(playLogs.matchId, matchId))
+        .all()
+        .catch(() => [] as Array<{ atBatId: string | null; description: string | null }>),
+    ]);
 
     let topSnapAtBats: ScorebookV2AtBat[] = [];
     let bottomSnapAtBats: ScorebookV2AtBat[] = [];
     const logDescByAtBatId = new Map<string, string>();
-    try {
-      const snapRow = await db
-        .select()
-        .from(matchScorebookSnapshots)
-        .where(eq(matchScorebookSnapshots.matchId, matchId))
-        .get();
-      if (snapRow) {
-        topSnapAtBats = safeParseJson<ScorebookV2AtBat[]>(snapRow.topAtBatsJson) || [];
-        bottomSnapAtBats = safeParseJson<ScorebookV2AtBat[]>(snapRow.bottomAtBatsJson) || [];
-      }
-      const logs = await db
-        .select({ atBatId: playLogs.atBatId, description: playLogs.description })
-        .from(playLogs)
-        .where(eq(playLogs.matchId, matchId))
-        .all();
-      for (const l of logs) {
-        if (l.atBatId && l.description) logDescByAtBatId.set(l.atBatId, l.description);
-      }
-    } catch {
-      // optional snapshot table may not exist
+    if (snapRow) {
+      topSnapAtBats = safeParseJson<ScorebookV2AtBat[]>(snapRow.topAtBatsJson) || [];
+      bottomSnapAtBats = safeParseJson<ScorebookV2AtBat[]>(snapRow.bottomAtBatsJson) || [];
+    }
+    for (const l of logs) {
+      if (l.atBatId && l.description) logDescByAtBatId.set(l.atBatId, l.description);
     }
 
     const seqCountByInningSide = new Map<string, number>();
@@ -815,106 +815,78 @@ app.get("/:id/stats", async (c) => {
   const matchId = c.req.param("id");
 
   try {
-    const match = await db.select().from(matches).where(eq(matches.id, matchId)).get();
-    if (!match) return c.json({ success: false, error: "Match not found" }, 404);
-
-    const isMyTeamTop = match.battingOrder === "first";
-
-    const dbAtBats = await db
-      .select({
-        id: atBats.id,
-        inning: atBats.inning,
-        isTop: atBats.isTop,
-        result: atBats.result,
-        batterId: atBats.batterId,
-        batterName: sql<string>`batter.name`,
-        batterNumber: sql<string>`batter.uniform_number`,
-        pitcherId: atBats.pitcherId,
-        pitcherName: sql<string>`pitcher.name`,
-        pitcherNumber: sql<string>`pitcher.uniform_number`,
-      })
-      .from(atBats)
-      .leftJoin(sql`players as batter`, sql`batter.id = ${atBats.batterId}`)
-      .leftJoin(sql`players as pitcher`, sql`pitcher.id = ${atBats.pitcherId}`)
-      .where(eq(atBats.matchId, matchId))
-      .orderBy(asc(atBats.inning), asc(atBats.createdAt))
-      .all();
-
-    const dbAdvances = await db
-      .select({
-        id: baseAdvances.id,
-        matchId: baseAdvances.matchId,
-        atBatId: baseAdvances.atBatId,
-        pitchId: baseAdvances.pitchId,
-        runnerId: baseAdvances.runnerId,
-        fromBase: baseAdvances.fromBase,
-        toBase: baseAdvances.toBase,
-        reason: baseAdvances.reason,
-        isOut: baseAdvances.isOut,
-        runnerName: sql<string>`runner.name`,
-        runnerNumber: sql<string>`runner.uniform_number`,
-      })
-      .from(baseAdvances)
-      .leftJoin(sql`players as runner`, sql`runner.id = ${baseAdvances.runnerId}`)
-      .where(eq(baseAdvances.matchId, matchId))
-      .all();
-
-    const dbPitches = await db
-      .select({
-        id: pitches.id,
-        atBatId: pitches.atBatId,
-        result: pitches.result,
-      })
-      .from(pitches)
-      .innerJoin(atBats, eq(pitches.atBatId, atBats.id))
-      .where(eq(atBats.matchId, matchId))
-      .all();
-
-    const dbPlayLogs = await db
-      .select({
-        atBatId: playLogs.atBatId,
-        description: playLogs.description,
-      })
-      .from(playLogs)
-      .where(eq(playLogs.matchId, matchId))
-      .all();
-
-    let myStructure: ScorebookSheetStructure | null = null;
-    let oppStructure: ScorebookSheetStructure | null = null;
-    let mySnapAtBats: ScorebookV2AtBat[] = [];
-    let oppSnapAtBats: ScorebookV2AtBat[] = [];
-    let dbLineups: Array<{
-      playerId: string;
-      battingOrder: number;
-      position: string;
-      isStarting: boolean;
-      inningEntered: number | null;
-      name: string | null;
-      uniformNumber: string | null;
-    }> = [];
-
-    try {
-      const snapRow = await db
+    const [
+      match,
+      dbAtBats,
+      dbAdvances,
+      dbPitches,
+      dbPlayLogs,
+      snapRow,
+      dbLineups,
+    ] = await Promise.all([
+      db.select().from(matches).where(eq(matches.id, matchId)).get(),
+      db
+        .select({
+          id: atBats.id,
+          inning: atBats.inning,
+          isTop: atBats.isTop,
+          result: atBats.result,
+          batterId: atBats.batterId,
+          batterName: sql<string>`batter.name`,
+          batterNumber: sql<string>`batter.uniform_number`,
+          pitcherId: atBats.pitcherId,
+          pitcherName: sql<string>`pitcher.name`,
+          pitcherNumber: sql<string>`pitcher.uniform_number`,
+        })
+        .from(atBats)
+        .leftJoin(sql`players as batter`, sql`batter.id = ${atBats.batterId}`)
+        .leftJoin(sql`players as pitcher`, sql`pitcher.id = ${atBats.pitcherId}`)
+        .where(eq(atBats.matchId, matchId))
+        .orderBy(asc(atBats.inning), asc(atBats.createdAt))
+        .all(),
+      db
+        .select({
+          id: baseAdvances.id,
+          matchId: baseAdvances.matchId,
+          atBatId: baseAdvances.atBatId,
+          pitchId: baseAdvances.pitchId,
+          runnerId: baseAdvances.runnerId,
+          fromBase: baseAdvances.fromBase,
+          toBase: baseAdvances.toBase,
+          reason: baseAdvances.reason,
+          isOut: baseAdvances.isOut,
+          runnerName: sql<string>`runner.name`,
+          runnerNumber: sql<string>`runner.uniform_number`,
+        })
+        .from(baseAdvances)
+        .leftJoin(sql`players as runner`, sql`runner.id = ${baseAdvances.runnerId}`)
+        .where(eq(baseAdvances.matchId, matchId))
+        .all(),
+      db
+        .select({
+          id: pitches.id,
+          atBatId: pitches.atBatId,
+          result: pitches.result,
+        })
+        .from(pitches)
+        .innerJoin(atBats, eq(pitches.atBatId, atBats.id))
+        .where(eq(atBats.matchId, matchId))
+        .all(),
+      db
+        .select({
+          atBatId: playLogs.atBatId,
+          description: playLogs.description,
+        })
+        .from(playLogs)
+        .where(eq(playLogs.matchId, matchId))
+        .all(),
+      db
         .select()
         .from(matchScorebookSnapshots)
         .where(eq(matchScorebookSnapshots.matchId, matchId))
-        .get();
-      if (snapRow) {
-        const topStruct = safeParseJson<ScorebookSheetStructure>(snapRow.topStructureJson);
-        const botStruct = safeParseJson<ScorebookSheetStructure>(snapRow.bottomStructureJson);
-        const topAbs = safeParseJson<ScorebookV2AtBat[]>(snapRow.topAtBatsJson) || [];
-        const botAbs = safeParseJson<ScorebookV2AtBat[]>(snapRow.bottomAtBatsJson) || [];
-        myStructure = isMyTeamTop ? topStruct : botStruct;
-        oppStructure = isMyTeamTop ? botStruct : topStruct;
-        mySnapAtBats = isMyTeamTop ? topAbs : botAbs;
-        oppSnapAtBats = isMyTeamTop ? botAbs : topAbs;
-      }
-    } catch {
-      // optional snapshot table may not exist in older local test DBs
-    }
-
-    try {
-      dbLineups = await db
+        .get()
+        .catch(() => undefined),
+      db
         .select({
           playerId: matchLineups.playerId,
           battingOrder: matchLineups.battingOrder,
@@ -928,9 +900,36 @@ app.get("/:id/stats", async (c) => {
         .leftJoin(players, eq(matchLineups.playerId, players.id))
         .where(eq(matchLineups.matchId, matchId))
         .orderBy(asc(matchLineups.battingOrder), asc(matchLineups.inningEntered))
-        .all();
-    } catch {
-      // ignore if lineups query fails
+        .all()
+        .catch(() => [] as Array<{
+          playerId: string;
+          battingOrder: number;
+          position: string;
+          isStarting: boolean;
+          inningEntered: number | null;
+          name: string | null;
+          uniformNumber: string | null;
+        }>),
+    ]);
+
+    if (!match) return c.json({ success: false, error: "Match not found" }, 404);
+
+    const isMyTeamTop = match.battingOrder === "first";
+
+    let myStructure: ScorebookSheetStructure | null = null;
+    let oppStructure: ScorebookSheetStructure | null = null;
+    let mySnapAtBats: ScorebookV2AtBat[] = [];
+    let oppSnapAtBats: ScorebookV2AtBat[] = [];
+
+    if (snapRow) {
+      const topStruct = safeParseJson<ScorebookSheetStructure>(snapRow.topStructureJson);
+      const botStruct = safeParseJson<ScorebookSheetStructure>(snapRow.bottomStructureJson);
+      const topAbs = safeParseJson<ScorebookV2AtBat[]>(snapRow.topAtBatsJson) || [];
+      const botAbs = safeParseJson<ScorebookV2AtBat[]>(snapRow.bottomAtBatsJson) || [];
+      myStructure = isMyTeamTop ? topStruct : botStruct;
+      oppStructure = isMyTeamTop ? botStruct : topStruct;
+      mySnapAtBats = isMyTeamTop ? topAbs : botAbs;
+      oppSnapAtBats = isMyTeamTop ? botAbs : topAbs;
     }
 
     const explicitRbiByAtBatId = new Map<string, number>();

@@ -119,7 +119,7 @@ function getPosMeta(raw: string | null | undefined): PositionLabelMeta {
     return {
       shortLabel: "未設定",
       code: "-",
-      pillClass: "bg-muted text-muted-foreground border border-border/60",
+      pillClass: "bg-muted text-muted-foreground border border-border",
       barClass: "bg-muted-foreground/40",
     };
   }
@@ -154,7 +154,7 @@ function getPosMeta(raw: string | null | undefined): PositionLabelMeta {
   return {
     shortLabel: clean,
     code: key,
-    pillClass: "bg-muted text-muted-foreground border border-border/60",
+    pillClass: "bg-muted text-muted-foreground border border-border",
     barClass: "bg-muted-foreground/40",
   };
 }
@@ -199,7 +199,7 @@ const MATCH_TYPE_BADGES: Record<
   },
   practice: {
     label: "OP戦",
-    cls: "bg-muted text-muted-foreground border-border/60",
+    cls: "bg-muted text-muted-foreground border-border",
   },
 };
 
@@ -274,7 +274,7 @@ function BattingGrowthChart({
       </div>
 
       {/* SVG グラフ本体（ソリッド背景） */}
-      <div className="rounded-2xl bg-muted/35 border border-border/60 p-2">
+      <div className="rounded-2xl bg-muted/35 border border-border p-2">
         <svg
           viewBox={`0 0 ${width} ${height}`}
           className="w-full h-auto select-none"
@@ -462,7 +462,7 @@ function BattingGrowthChart({
 
       {/* 選択した試合のソリッド詳細コールアウト */}
       {activeItem && (
-        <div className="rounded-2xl bg-card border border-border/60 border-l-4 border-l-primary p-3 shadow-2xs flex items-center justify-between gap-2">
+        <div className="rounded-2xl bg-card border border-border border-l-4 border-l-primary p-3 shadow-2xs flex items-center justify-between gap-2">
           <div className="min-w-0 space-y-0.5">
             <div className="flex items-center gap-1.5 flex-wrap text-[10px]">
               <span className="font-black text-foreground tabular-nums">
@@ -496,7 +496,7 @@ function BattingGrowthChart({
           {!activeItem.matchId.startsWith("demo-match-") && (
             <Link
               href={`/liff/matches?id=${encodeURIComponent(activeItem.matchId)}`}
-              className="px-2.5 py-1.5 rounded-xl bg-card hover:bg-muted border border-border/60 text-[10px] font-black text-foreground shrink-0 flex items-center gap-0.5 shadow-2xs active:scale-95 transition-all"
+              className="px-2.5 py-1.5 rounded-xl bg-card hover:bg-muted border border-border text-[10px] font-black text-foreground shrink-0 flex items-center gap-0.5 shadow-2xs active:scale-95 transition-all"
             >
               <span>試合詳細</span>
               <ChevronRight className="w-3.5 h-3.5" />
@@ -572,7 +572,7 @@ function PitchingGrowthChart({
         </div>
       </div>
 
-      <div className="rounded-2xl bg-muted/35 border border-border/60 p-2">
+      <div className="rounded-2xl bg-muted/35 border border-border p-2">
         <svg
           viewBox={`0 0 ${width} ${height}`}
           className="w-full h-auto select-none"
@@ -689,7 +689,7 @@ function PitchingGrowthChart({
       </div>
 
       {activeItem && (
-        <div className="rounded-2xl bg-card border border-border/60 border-l-4 border-l-primary p-3 shadow-2xs flex items-center justify-between gap-2">
+        <div className="rounded-2xl bg-card border border-border border-l-4 border-l-primary p-3 shadow-2xs flex items-center justify-between gap-2">
           <div className="min-w-0 space-y-0.5">
             <div className="flex items-center gap-1.5 flex-wrap text-[10px]">
               <span className="font-black text-foreground tabular-nums">
@@ -717,7 +717,7 @@ function PitchingGrowthChart({
           {!activeItem.matchId.startsWith("demo-match-") && (
             <Link
               href={`/liff/matches?id=${encodeURIComponent(activeItem.matchId)}`}
-              className="px-2.5 py-1.5 rounded-xl bg-card hover:bg-muted border border-border/60 text-[10px] font-black text-foreground shrink-0 flex items-center gap-0.5 shadow-2xs active:scale-95 transition-all"
+              className="px-2.5 py-1.5 rounded-xl bg-card hover:bg-muted border border-border text-[10px] font-black text-foreground shrink-0 flex items-center gap-0.5 shadow-2xs active:scale-95 transition-all"
             >
               <span>試合詳細</span>
               <ChevronRight className="w-3.5 h-3.5" />
@@ -853,7 +853,7 @@ function PlayerGrowthContent() {
           rightElement={
             <Link
               href="/liff/players"
-              className="px-2.5 py-1.5 rounded-xl bg-card border border-border/60 hover:bg-muted text-[11px] font-black text-foreground flex items-center gap-1 active:scale-95 transition-all shadow-2xs"
+              className="px-2.5 py-1.5 rounded-xl bg-card border border-border hover:bg-muted text-[11px] font-black text-foreground flex items-center gap-1 active:scale-95 transition-all shadow-2xs"
             >
               <IdCard className="w-3.5 h-3.5 text-primary" />
               <span>選手名鑑</span>
@@ -863,7 +863,7 @@ function PlayerGrowthContent() {
         />
 
         {isLoading ? (
-          <div className="rounded-2xl border border-border/60 bg-card p-12 flex flex-col items-center justify-center gap-2.5 shadow-xs">
+          <div className="rounded-2xl border border-border bg-card p-12 flex flex-col items-center justify-center gap-2.5 shadow-xs">
             <Loader2 className="w-7 h-7 animate-spin text-primary" />
             <p className="text-xs font-bold text-muted-foreground">
               選手の成長データを分析中...
@@ -889,14 +889,14 @@ function PlayerGrowthContent() {
           <>
             {/* ━━━ 🔄 選手クイック切替バー（前後ボタン＋セレクター） ━━━ */}
             {roster.length > 1 && (
-              <div className="flex items-center gap-1.5 rounded-2xl border border-border/60 bg-card p-1.5 shadow-xs">
+              <div className="flex items-center gap-1.5 rounded-2xl border border-border bg-card p-1.5 shadow-xs">
                 <button
                   type="button"
                   disabled={!prevRosterPlayer}
                   onClick={() =>
                     prevRosterPlayer && handleSwitchPlayer(prevRosterPlayer.id)
                   }
-                  className="h-9 w-9 rounded-xl border border-border/60 bg-muted/50 hover:bg-muted disabled:opacity-35 flex items-center justify-center text-foreground active:scale-95 transition-all shrink-0"
+                  className="h-9 w-9 rounded-xl border border-border bg-muted/50 hover:bg-muted disabled:opacity-35 flex items-center justify-center text-foreground active:scale-95 transition-all shrink-0"
                   aria-label="前の選手へ切替"
                 >
                   <ChevronLeft className="w-4 h-4" />
@@ -906,7 +906,7 @@ function PlayerGrowthContent() {
                   value={player.id}
                   onChange={(e) => handleSwitchPlayer(e.target.value)}
                   aria-label="表示する選手を選択"
-                  className="flex-1 h-9 px-3 rounded-xl bg-muted/35 border border-border/60 text-xs font-black text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40 truncate"
+                  className="flex-1 h-9 px-3 rounded-xl bg-muted/35 border border-border text-xs font-black text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40 truncate"
                 >
                   {roster.map((rp) => {
                     const pMeta = getPosMeta(rp.primaryPosition);
@@ -925,7 +925,7 @@ function PlayerGrowthContent() {
                   onClick={() =>
                     nextRosterPlayer && handleSwitchPlayer(nextRosterPlayer.id)
                   }
-                  className="h-9 w-9 rounded-xl border border-border/60 bg-muted/50 hover:bg-muted disabled:opacity-35 flex items-center justify-center text-foreground active:scale-95 transition-all shrink-0"
+                  className="h-9 w-9 rounded-xl border border-border bg-muted/50 hover:bg-muted disabled:opacity-35 flex items-center justify-center text-foreground active:scale-95 transition-all shrink-0"
                   aria-label="次の選手へ切替"
                 >
                   <ChevronRight className="w-4 h-4" />
@@ -1020,14 +1020,14 @@ function PlayerGrowthContent() {
 
                     {/* サブ守備位置行 */}
                     {subLabels.length > 0 && (
-                      <div className="flex items-center gap-1.5 flex-wrap pt-2 border-t border-border/60 text-[11px]">
+                      <div className="flex items-center gap-1.5 flex-wrap pt-2 border-t border-border text-[11px]">
                         <span className="font-bold text-muted-foreground shrink-0">
                           サブ守備位置:
                         </span>
                         {subLabels.map((lbl, idx) => (
                           <span
                             key={`${lbl}-${idx}`}
-                            className="px-2 py-0.5 rounded-md bg-muted/50 border border-border/60 text-foreground font-black text-[10.5px]"
+                            className="px-2 py-0.5 rounded-md bg-muted/50 border border-border text-foreground font-black text-[10.5px]"
                           >
                             {lbl}
                           </span>
@@ -1078,7 +1078,7 @@ function PlayerGrowthContent() {
                       "py-1.5 px-1 rounded-xl text-[11px] transition-all truncate tabular-nums",
                       active
                         ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
-                        : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
+                        : "bg-card text-muted-foreground border border-border hover:text-foreground hover:bg-muted/50 font-bold"
                     )}
                   >
                     {item.label} ({item.count})
@@ -1105,7 +1105,7 @@ function PlayerGrowthContent() {
                   </Link>
                   <Link
                     href="/liff/matches"
-                    className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-2xl bg-card border border-border/60 text-foreground text-xs font-black shadow-xs active:scale-95 transition-all"
+                    className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-2xl bg-card border border-border text-foreground text-xs font-black shadow-xs active:scale-95 transition-all"
                   >
                     <span>試合情報を見る</span>
                   </Link>
@@ -1161,7 +1161,7 @@ function PlayerGrowthContent() {
                     {/* 直近比較 3カラムカード */}
                     <div className="grid grid-cols-3 gap-2 text-center">
                       {/* 直近打率 */}
-                      <div className="p-2.5 rounded-2xl bg-muted/35 border border-border/60 space-y-1">
+                      <div className="p-2.5 rounded-2xl bg-muted/35 border border-border space-y-1">
                         <span className="text-[9.5px] font-bold text-muted-foreground block">
                           直近打率
                         </span>
@@ -1186,7 +1186,7 @@ function PlayerGrowthContent() {
                       </div>
 
                       {/* 直近出塁率 */}
-                      <div className="p-2.5 rounded-2xl bg-muted/35 border border-border/60 space-y-1">
+                      <div className="p-2.5 rounded-2xl bg-muted/35 border border-border space-y-1">
                         <span className="text-[9.5px] font-bold text-muted-foreground block">
                           直近出塁率
                         </span>
@@ -1209,7 +1209,7 @@ function PlayerGrowthContent() {
                       </div>
 
                       {/* 直近三振率（低いほど良化） */}
-                      <div className="p-2.5 rounded-2xl bg-muted/35 border border-border/60 space-y-1">
+                      <div className="p-2.5 rounded-2xl bg-muted/35 border border-border space-y-1">
                         <span className="text-[9.5px] font-bold text-muted-foreground block">
                           直近三振率
                         </span>
@@ -1261,7 +1261,7 @@ function PlayerGrowthContent() {
                           {activeSection.battingSummary.avg}
                         </span>
                       </div>
-                      <div className="p-2 rounded-2xl bg-muted/50 border border-border/60">
+                      <div className="p-2 rounded-2xl bg-muted/50 border border-border">
                         <span className="text-[9.5px] font-bold text-muted-foreground block">
                           出塁率
                         </span>
@@ -1269,7 +1269,7 @@ function PlayerGrowthContent() {
                           {activeSection.battingSummary.obp}
                         </span>
                       </div>
-                      <div className="p-2 rounded-2xl bg-muted/50 border border-border/60">
+                      <div className="p-2 rounded-2xl bg-muted/50 border border-border">
                         <span className="text-[9.5px] font-bold text-muted-foreground block">
                           OPS
                         </span>
@@ -1277,7 +1277,7 @@ function PlayerGrowthContent() {
                           {activeSection.battingSummary.ops}
                         </span>
                       </div>
-                      <div className="p-2 rounded-2xl bg-muted/50 border border-border/60">
+                      <div className="p-2 rounded-2xl bg-muted/50 border border-border">
                         <span className="text-[9.5px] font-bold text-muted-foreground block">
                           安打 / 長打
                         </span>
@@ -1291,7 +1291,7 @@ function PlayerGrowthContent() {
                         </span>
                       </div>
 
-                      <div className="p-2 rounded-2xl bg-muted/50 border border-border/60">
+                      <div className="p-2 rounded-2xl bg-muted/50 border border-border">
                         <span className="text-[9.5px] font-bold text-muted-foreground block">
                           打点 / 得点
                         </span>
@@ -1300,7 +1300,7 @@ function PlayerGrowthContent() {
                           {activeSection.battingSummary.runs}
                         </span>
                       </div>
-                      <div className="p-2 rounded-2xl bg-muted/50 border border-border/60">
+                      <div className="p-2 rounded-2xl bg-muted/50 border border-border">
                         <span className="text-[9.5px] font-bold text-muted-foreground block">
                           盗塁
                         </span>
@@ -1308,7 +1308,7 @@ function PlayerGrowthContent() {
                           {activeSection.battingSummary.sb}
                         </span>
                       </div>
-                      <div className="p-2 rounded-2xl bg-muted/50 border border-border/60">
+                      <div className="p-2 rounded-2xl bg-muted/50 border border-border">
                         <span className="text-[9.5px] font-bold text-muted-foreground block">
                           四死球率
                         </span>
@@ -1316,7 +1316,7 @@ function PlayerGrowthContent() {
                           {activeSection.battingSummary.bbRatePercent}%
                         </span>
                       </div>
-                      <div className="p-2 rounded-2xl bg-muted/50 border border-border/60">
+                      <div className="p-2 rounded-2xl bg-muted/50 border border-border">
                         <span className="text-[9.5px] font-bold text-muted-foreground block">
                           三振率
                         </span>
@@ -1335,7 +1335,7 @@ function PlayerGrowthContent() {
 
                     {/* 月別ステップアップ推移 */}
                     {activeSection.monthlyBatting.length > 0 && (
-                      <div className="pt-2 border-t border-border/60 space-y-2">
+                      <div className="pt-2 border-t border-border space-y-2">
                         <div className="flex items-center justify-between">
                           <span className="text-[11px] font-black text-foreground flex items-center gap-1">
                             <Calendar className="w-3.5 h-3.5 text-primary" />
@@ -1352,7 +1352,7 @@ function PlayerGrowthContent() {
                           {activeSection.monthlyBatting.map((m) => (
                             <div
                               key={m.month}
-                              className="px-3 py-2 rounded-xl bg-muted/35 border border-border/60 flex items-center justify-between gap-2 text-xs"
+                              className="px-3 py-2 rounded-xl bg-muted/35 border border-border flex items-center justify-between gap-2 text-xs"
                             >
                               <div className="min-w-0">
                                 <span className="font-black text-foreground">
@@ -1497,7 +1497,7 @@ function PlayerGrowthContent() {
                           {activeSection.pitchingSummary.era}
                         </span>
                       </div>
-                      <div className="p-2 rounded-2xl bg-muted/50 border border-border/60">
+                      <div className="p-2 rounded-2xl bg-muted/50 border border-border">
                         <span className="text-[9.5px] font-bold text-muted-foreground block">
                           ストライク率
                         </span>
@@ -1508,7 +1508,7 @@ function PlayerGrowthContent() {
                             : "--"}
                         </span>
                       </div>
-                      <div className="p-2 rounded-2xl bg-muted/50 border border-border/60">
+                      <div className="p-2 rounded-2xl bg-muted/50 border border-border">
                         <span className="text-[9.5px] font-bold text-muted-foreground block">
                           投球回
                         </span>
@@ -1516,7 +1516,7 @@ function PlayerGrowthContent() {
                           {activeSection.pitchingSummary.ip}
                         </span>
                       </div>
-                      <div className="p-2 rounded-2xl bg-muted/50 border border-border/60">
+                      <div className="p-2 rounded-2xl bg-muted/50 border border-border">
                         <span className="text-[9.5px] font-bold text-muted-foreground block">
                           WHIP
                         </span>
@@ -1525,7 +1525,7 @@ function PlayerGrowthContent() {
                         </span>
                       </div>
 
-                      <div className="p-2 rounded-2xl bg-muted/50 border border-border/60">
+                      <div className="p-2 rounded-2xl bg-muted/50 border border-border">
                         <span className="text-[9.5px] font-bold text-muted-foreground block">
                           奪三振
                         </span>
@@ -1533,7 +1533,7 @@ function PlayerGrowthContent() {
                           {activeSection.pitchingSummary.strikeouts}
                         </span>
                       </div>
-                      <div className="p-2 rounded-2xl bg-muted/50 border border-border/60">
+                      <div className="p-2 rounded-2xl bg-muted/50 border border-border">
                         <span className="text-[9.5px] font-bold text-muted-foreground block">
                           与四死球
                         </span>
@@ -1542,7 +1542,7 @@ function PlayerGrowthContent() {
                             activeSection.pitchingSummary.hbp}
                         </span>
                       </div>
-                      <div className="p-2 rounded-2xl bg-muted/50 border border-border/60">
+                      <div className="p-2 rounded-2xl bg-muted/50 border border-border">
                         <span className="text-[9.5px] font-bold text-muted-foreground block">
                           K/BB
                         </span>
@@ -1550,7 +1550,7 @@ function PlayerGrowthContent() {
                           {activeSection.pitchingSummary.kBbRatio}
                         </span>
                       </div>
-                      <div className="p-2 rounded-2xl bg-muted/50 border border-border/60">
+                      <div className="p-2 rounded-2xl bg-muted/50 border border-border">
                         <span className="text-[9.5px] font-bold text-muted-foreground block">
                           総球数
                         </span>
@@ -1598,7 +1598,7 @@ function PlayerGrowthContent() {
                             return (
                               <div
                                 key={pc.position}
-                                className="px-3 py-2 rounded-xl bg-muted/35 border border-border/60 flex items-center justify-between gap-3 text-xs"
+                                className="px-3 py-2 rounded-xl bg-muted/35 border border-border flex items-center justify-between gap-3 text-xs"
                               >
                                 <div className="flex items-center gap-2 min-w-0">
                                   <span
@@ -1606,7 +1606,7 @@ function PlayerGrowthContent() {
                                       "px-1.5 py-0.5 rounded-md text-[9.5px] font-black shrink-0",
                                       isMain
                                         ? meta.pillClass
-                                        : "bg-muted text-muted-foreground border border-border/60"
+                                        : "bg-muted text-muted-foreground border border-border"
                                     )}
                                   >
                                     {isMain ? "メイン" : "サブ"}
@@ -1646,7 +1646,7 @@ function PlayerGrowthContent() {
                     )}
 
                     {player.battingOrderCounts.length > 0 && (
-                      <div className="pt-2 border-t border-border/60 space-y-2">
+                      <div className="pt-2 border-t border-border space-y-2">
                         <span className="text-[11px] font-black text-foreground block">
                           出場打順の経験内訳
                         </span>
@@ -1658,7 +1658,7 @@ function PlayerGrowthContent() {
                                 "px-2.5 py-1 rounded-xl border text-xs font-black tabular-nums",
                                 idx === 0
                                   ? "bg-primary/10 border-primary/25 text-primary"
-                                  : "bg-muted/50 border-border/60 text-foreground"
+                                  : "bg-muted/50 border-border text-foreground"
                               )}
                             >
                               {bo.order}番{" "}
@@ -1680,14 +1680,14 @@ function PlayerGrowthContent() {
                     <h3 className="text-xs font-black text-foreground">
                       試合別 個人成績ログ（{orderedGameLogs.length}試合）
                     </h3>
-                    <div className="inline-flex items-center gap-1 bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl border border-border/60">
+                    <div className="inline-flex items-center gap-1 bg-muted p-1 rounded-2xl border border-border">
                       <button
                         type="button"
                         onClick={() => setLogSortOrder("desc")}
                         className={cn(
                           "px-2.5 py-1 rounded-xl text-[10px] transition-all",
                           logSortOrder === "desc"
-                            ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                            ? "bg-card text-foreground shadow-sm border border-border font-black"
                             : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
                         )}
                       >
@@ -1701,7 +1701,7 @@ function PlayerGrowthContent() {
                         className={cn(
                           "px-2.5 py-1 rounded-xl text-[10px] transition-all",
                           logSortOrder === "asc"
-                            ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                            ? "bg-card text-foreground shadow-sm border border-border font-black"
                             : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
                         )}
                       >
@@ -1737,7 +1737,7 @@ function PlayerGrowthContent() {
                       return (
                         <div
                           key={g.matchId}
-                          className="rounded-2xl border border-border/60 bg-card p-3.5 shadow-xs space-y-2.5"
+                          className="rounded-2xl border border-border bg-card p-3.5 shadow-xs space-y-2.5"
                         >
                           {/* 上段：日付・種別・相手・チーム勝敗 */}
                           <div className="flex items-start justify-between gap-2">
@@ -1755,7 +1755,7 @@ function PlayerGrowthContent() {
                                   {typeBadge.label}
                                 </span>
                                 {roleLabel && (
-                                  <span className="px-1.5 py-0.2 rounded bg-muted/50 border border-border/60 text-[9.5px] font-black text-foreground">
+                                  <span className="px-1.5 py-0.2 rounded bg-muted/50 border border-border text-[9.5px] font-black text-foreground">
                                     {roleLabel}
                                   </span>
                                 )}
@@ -1784,7 +1784,7 @@ function PlayerGrowthContent() {
                                   href={`/liff/matches?id=${encodeURIComponent(
                                     g.matchId
                                   )}`}
-                                  className="p-1.5 rounded-lg bg-muted/50 hover:bg-muted border border-border/60 text-foreground transition-colors"
+                                  className="p-1.5 rounded-lg bg-muted/50 hover:bg-muted border border-border text-foreground transition-colors"
                                   aria-label="試合詳細を開く"
                                 >
                                   <ChevronRight className="w-3.5 h-3.5" />
@@ -1804,7 +1804,7 @@ function PlayerGrowthContent() {
                                     ? "bg-primary/12 text-primary border-primary/30"
                                     : chip.kind === "walk" || chip.kind === "sac"
                                     ? "bg-sky-500/12 text-sky-700 dark:text-sky-300 border-sky-500/25"
-                                    : "bg-muted/50 text-muted-foreground border-border/60";
+                                    : "bg-muted/50 text-muted-foreground border-border";
 
                                 return (
                                   <span
@@ -1826,7 +1826,7 @@ function PlayerGrowthContent() {
                           )}
 
                           {/* 1試合打撃スタッツ行 */}
-                          <div className="flex items-center justify-between pt-1.5 border-t border-border/60 text-[11px] tabular-nums">
+                          <div className="flex items-center justify-between pt-1.5 border-t border-border text-[11px] tabular-nums">
                             <span className="font-bold text-foreground">
                               {g.ab}打数{" "}
                               <strong className="text-primary">{g.hits}安打</strong>

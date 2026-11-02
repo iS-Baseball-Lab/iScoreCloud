@@ -64,7 +64,7 @@ export default function LiffCheerSongsPage() {
         <LiffToolSubNav />
 
         {/* コンセプト概要バナー */}
-        <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-2.5">
+        <section className="rounded-2xl border border-border bg-card shadow-xs p-4 space-y-2.5 overflow-hidden">
           <div className="flex items-center gap-2">
             <span className="px-2 py-0.5 rounded-lg bg-primary/12 text-primary text-[10px] font-black">
               CONCEPT
@@ -79,13 +79,15 @@ export default function LiffCheerSongsPage() {
         </section>
 
         {/* 選手選択＆テーマ切替 プレビュー枠 */}
-        <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-4 overflow-hidden">
-          <div className="-mx-4 -mt-4 px-4 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 border-l-4 border-l-primary flex items-center justify-between">
-            <span className="text-xs font-black text-foreground flex items-center gap-1.5">
-              <Users className="w-4 h-4 text-primary" />
+        <section className="rounded-2xl border border-border bg-card shadow-xs p-4 space-y-4 overflow-hidden">
+          <div className="-mx-4 -mt-4 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3 flex items-center justify-between">
+            <span className="text-xs font-black text-white flex items-center gap-2">
+              <span className="w-6 h-6 rounded-lg bg-primary/20 text-blue-300 border border-primary/40 flex items-center justify-center">
+                <Users className="w-3.5 h-3.5" />
+              </span>
               打席の選手を選択（サンプル切替）
             </span>
-            <span className="text-[10px] font-bold text-muted-foreground">
+            <span className="text-[10px] font-bold text-slate-300">
               選手名鑑・打順連動予定
             </span>
           </div>
@@ -103,7 +105,7 @@ export default function LiffCheerSongsPage() {
                     className={`py-2 px-2 rounded-2xl text-center transition-all active:scale-95 cursor-pointer ${
                       isSelected
                         ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
-                        : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
+                        : "bg-card text-muted-foreground border border-border hover:text-foreground hover:bg-muted font-bold"
                     }`}
                   >
                     <span
@@ -123,7 +125,7 @@ export default function LiffCheerSongsPage() {
           </div>
 
           {/* 応援歌カテゴリタブ */}
-          <div className="grid grid-cols-3 gap-1 bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl border border-border/60">
+          <div className="grid grid-cols-3 gap-1 bg-muted p-1 rounded-2xl border border-border">
             {[
               { id: "attack" as const, label: "通常打席テーマ" },
               { id: "chance" as const, label: "チャンステーマ" },
@@ -135,7 +137,7 @@ export default function LiffCheerSongsPage() {
                 onClick={() => setSelectedCategory(tab.id)}
                 className={`py-2 px-2 rounded-xl text-xs transition-all cursor-pointer ${
                   selectedCategory === tab.id
-                    ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                    ? "bg-card text-foreground shadow-xs border border-border font-black"
                     : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
                 }`}
               >
@@ -145,7 +147,7 @@ export default function LiffCheerSongsPage() {
           </div>
 
           {/* 屋外視認性重視の歌詞カード表示枠 */}
-          <div className="rounded-2xl bg-muted/35 text-foreground p-5 space-y-3 border border-border/60">
+          <div className="rounded-2xl bg-muted text-foreground p-5 space-y-3 border border-border">
             <div className="flex items-center justify-between">
               <span className="px-2.5 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-black">
                 {selectedCategory === "attack"
@@ -213,10 +215,12 @@ export default function LiffCheerSongsPage() {
         </section>
 
         {/* 今後の実装予定メモ */}
-        <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3">
-          <div className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-primary" />
-            <h3 className="text-xs font-black text-foreground">
+        <section className="rounded-2xl border border-border bg-card shadow-xs p-4 space-y-3 overflow-hidden">
+          <div className="-mx-4 -mt-4 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3 flex items-center gap-2">
+            <span className="w-6 h-6 rounded-lg bg-primary/20 text-blue-300 border border-primary/40 flex items-center justify-center">
+              <Sparkles className="w-3.5 h-3.5" />
+            </span>
+            <h3 className="text-xs font-black text-white">
               搭載予定の機能リスト
             </h3>
           </div>
@@ -229,7 +233,7 @@ export default function LiffCheerSongsPage() {
 
           <Link
             href="/liff/players"
-            className="w-full py-2.5 px-4 rounded-2xl bg-card hover:bg-muted hover:border-primary/40 border border-border/60 text-xs font-black text-foreground flex items-center justify-between transition-all active:scale-98"
+            className="w-full py-2.5 px-4 rounded-2xl bg-card hover:bg-muted hover:border-primary/40 border border-border text-xs font-black text-foreground flex items-center justify-between transition-all active:scale-98"
           >
             <span className="flex items-center gap-2">
               <IdCard className="w-3.5 h-3.5 text-primary" />

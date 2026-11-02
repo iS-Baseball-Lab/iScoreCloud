@@ -254,7 +254,7 @@ export default function LiffFaqPage() {
             className={`px-3.5 py-1.5 rounded-xl text-xs shrink-0 transition-all cursor-pointer ${
               selectedScope === "all"
                 ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
-                : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
+                : "bg-card text-muted-foreground border border-border hover:text-foreground hover:bg-muted/50 font-bold"
             }`}
           >
             すべて ({faqs.length})
@@ -265,7 +265,7 @@ export default function LiffFaqPage() {
             className={`px-3.5 py-1.5 rounded-xl text-xs shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
               selectedScope === "organization"
                 ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
-                : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
+                : "bg-card text-muted-foreground border border-border hover:text-foreground hover:bg-muted/50 font-bold"
             }`}
           >
             <Building2 className="w-3.5 h-3.5" />
@@ -277,7 +277,7 @@ export default function LiffFaqPage() {
             className={`px-3.5 py-1.5 rounded-xl text-xs shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
               selectedScope === "team"
                 ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
-                : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
+                : "bg-card text-muted-foreground border border-border hover:text-foreground hover:bg-muted/50 font-bold"
             }`}
           >
             <Users2 className="w-3.5 h-3.5" />
@@ -294,7 +294,7 @@ export default function LiffFaqPage() {
               placeholder="知りたいことを検索 (例: 雨天、配車、合宿)..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9.5 pr-8 py-2.5 bg-card border border-border/60 rounded-2xl text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/40 transition-all"
+              className="w-full pl-9.5 pr-8 py-2.5 bg-card border border-border rounded-2xl text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/40 transition-all"
             />
             {searchQuery && (
               <button
@@ -331,7 +331,7 @@ export default function LiffFaqPage() {
               className={`px-3 py-1.5 rounded-xl text-xs shrink-0 transition-all cursor-pointer ${
                 selectedCategory === cat.id
                   ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
-                  : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
+                  : "bg-card text-muted-foreground border border-border hover:text-foreground hover:bg-muted/50 font-bold"
               }`}
             >
               {cat.label}
@@ -339,113 +339,139 @@ export default function LiffFaqPage() {
           ))}
         </div>
 
-        {/* ローディング */}
-        {isLoading ? (
-          <div className="flex flex-col items-center justify-center py-16 text-muted-foreground space-y-2">
-            <Loader2 className="w-6 h-6 animate-spin text-primary" />
-            <span className="text-xs font-bold">Q&Aを読み込み中...</span>
-          </div>
-        ) : filteredFaqs.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-center rounded-2xl border border-border/60 bg-card shadow-xs p-6 space-y-3">
-            <div className="w-12 h-12 rounded-2xl bg-amber-500/12 text-amber-600 dark:text-amber-400 flex items-center justify-center">
-              <MessageCircleQuestion className="w-6 h-6" />
+        {/* Q&A セクションカード (A-3 Dark Solid Header Cap) */}
+        <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+          <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-amber-500 px-4 py-3 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="w-7 h-7 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-400/30 flex items-center justify-center shrink-0">
+                <HelpCircle className="w-4 h-4" />
+              </span>
+              <div className="min-w-0">
+                <h2 className="text-xs sm:text-sm font-black text-white truncate">
+                  {selectedCategory === "all"
+                    ? "Q&A一覧"
+                    : `${categories.find((cat) => cat.id === selectedCategory)?.label || ""} のQ&A`}
+                </h2>
+                <p className="text-[10px] font-bold text-slate-300 truncate">
+                  質問をタップすると回答が開きます
+                </p>
+              </div>
             </div>
-            <div className="space-y-1">
-              <h4 className="text-sm font-black text-foreground">該当するQ&Aがありません</h4>
-              <p className="text-xs font-bold text-muted-foreground">
-                上の「Q&Aを追加」ボタンから新しい質問と回答を登録できます。
-              </p>
-            </div>
+            <span className="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-200 border border-slate-700 text-[11px] font-black shrink-0">
+              {filteredFaqs.length}件
+            </span>
           </div>
-        ) : (
-          /* Q&A アコーディオン一覧 */
-          <div className="space-y-3">
-            {filteredFaqs.map((faq) => {
-              const isOpen = openIds.includes(faq.id);
-              return (
-                <div
-                  key={faq.id}
-                  className={`rounded-2xl border border-border/60 bg-card shadow-xs overflow-hidden transition-all hover:border-primary/40 ${
-                    isOpen ? "ring-1 ring-primary/25" : ""
-                  }`}
-                >
-                  <div className="w-full p-4 text-left flex items-start justify-between gap-3">
-                    <button
-                      type="button"
-                      onClick={() => toggleAccordion(faq.id)}
-                      className="flex items-start gap-2.5 min-w-0 flex-1 focus:outline-hidden text-left"
+
+          <div className="p-4">
+            {/* ローディング */}
+            {isLoading ? (
+              <div className="flex flex-col items-center justify-center py-12 text-muted-foreground space-y-2">
+                <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                <span className="text-xs font-bold">Q&Aを読み込み中...</span>
+              </div>
+            ) : filteredFaqs.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center rounded-2xl border border-border bg-muted/20 p-6 space-y-3">
+                <div className="w-12 h-12 rounded-2xl bg-amber-500/12 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+                  <MessageCircleQuestion className="w-6 h-6" />
+                </div>
+                <div className="space-y-1">
+                  <h4 className="text-sm font-black text-foreground">該当するQ&Aがありません</h4>
+                  <p className="text-xs font-bold text-muted-foreground">
+                    上の「追加」ボタンから新しい質問と回答を登録できます。
+                  </p>
+                </div>
+              </div>
+            ) : (
+              /* Q&A アコーディオン一覧 */
+              <div className="space-y-3">
+                {filteredFaqs.map((faq) => {
+                  const isOpen = openIds.includes(faq.id);
+                  return (
+                    <div
+                      key={faq.id}
+                      className={`rounded-2xl border border-border bg-card shadow-xs overflow-hidden transition-all hover:border-primary/40 ${
+                        isOpen ? "ring-1 ring-primary/25" : ""
+                      }`}
                     >
-                      <span className="w-6 h-6 rounded-lg bg-primary/12 text-primary font-black text-xs flex items-center justify-center shrink-0 mt-0.5">
-                        Q
-                      </span>
-                      <div className="space-y-1.5 min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          {/* スコープバッジ */}
-                          <span
-                            className={`px-2 py-0.5 rounded-md text-[10px] font-black flex items-center gap-1 ${
-                              faq.scope === "organization"
-                                ? "bg-primary/10 text-primary border border-primary/25"
-                                : "bg-muted text-muted-foreground border border-border/60"
+                      <div className="w-full p-4 text-left flex items-start justify-between gap-3">
+                        <button
+                          type="button"
+                          onClick={() => toggleAccordion(faq.id)}
+                          className="flex items-start gap-2.5 min-w-0 flex-1 focus:outline-hidden text-left"
+                        >
+                          <span className="w-6 h-6 rounded-lg bg-primary/12 text-primary font-black text-xs flex items-center justify-center shrink-0 mt-0.5">
+                            Q
+                          </span>
+                          <div className="space-y-1.5 min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {/* スコープバッジ */}
+                              <span
+                                className={`px-2 py-0.5 rounded-md text-[10px] font-black flex items-center gap-1 ${
+                                  faq.scope === "organization"
+                                    ? "bg-primary/10 text-primary border border-primary/25"
+                                    : "bg-muted text-muted-foreground border border-border"
+                                }`}
+                              >
+                                {faq.scope === "organization" ? (
+                                  <Building2 className="w-3 h-3" />
+                                ) : (
+                                  <Users2 className="w-3 h-3" />
+                                )}
+                                <span>{faq.scopeLabel}</span>
+                              </span>
+
+                              <span className="px-2 py-0.5 rounded-md bg-muted text-muted-foreground text-[10px] font-black">
+                                {faq.categoryLabel}
+                              </span>
+                            </div>
+                            <h3 className="text-xs sm:text-sm font-black text-foreground tracking-tight leading-snug">
+                              {faq.question}
+                            </h3>
+                          </div>
+                        </button>
+
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => openEditModal(faq)}
+                            className="p-1.5 rounded-xl border border-border bg-card hover:bg-muted text-muted-foreground hover:text-foreground transition-all flex items-center gap-1 text-[11px] font-black"
+                            title="Q&Aを編集・削除"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                            <span>編集</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => toggleAccordion(faq.id)}
+                            className={`w-6 h-6 rounded-full bg-muted flex items-center justify-center transition-transform duration-200 ${
+                              isOpen ? "rotate-180 bg-primary/12 text-primary" : "text-muted-foreground"
                             }`}
                           >
-                            {faq.scope === "organization" ? (
-                              <Building2 className="w-3 h-3" />
-                            ) : (
-                              <Users2 className="w-3 h-3" />
-                            )}
-                            <span>{faq.scopeLabel}</span>
-                          </span>
-
-                          <span className="px-2 py-0.5 rounded-md bg-muted text-muted-foreground text-[10px] font-black">
-                            {faq.categoryLabel}
-                          </span>
+                            <ChevronDown className="w-3.5 h-3.5" />
+                          </button>
                         </div>
-                        <h3 className="text-xs sm:text-sm font-black text-foreground tracking-tight leading-snug">
-                          {faq.question}
-                        </h3>
                       </div>
-                    </button>
 
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => openEditModal(faq)}
-                        className="p-1.5 rounded-xl border border-border/60 bg-card hover:bg-muted text-muted-foreground hover:text-foreground transition-all flex items-center gap-1 text-[11px] font-black"
-                        title="Q&Aを編集・削除"
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                        <span>編集</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => toggleAccordion(faq.id)}
-                        className={`w-6 h-6 rounded-full bg-muted flex items-center justify-center transition-transform duration-200 ${
-                          isOpen ? "rotate-180 bg-primary/12 text-primary" : "text-muted-foreground"
-                        }`}
-                      >
-                        <ChevronDown className="w-3.5 h-3.5" />
-                      </button>
+                      {isOpen && (
+                        <div className="px-4 pb-4 pt-2 border-t border-border border-l-4 border-l-emerald-500 bg-emerald-500/[0.04] dark:bg-emerald-500/[0.08] animate-in fade-in duration-200">
+                          <div className="flex items-start gap-2.5 mt-1.5">
+                            <span className="w-6 h-6 rounded-lg bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 font-black text-xs flex items-center justify-center shrink-0 mt-0.5">
+                              A
+                            </span>
+                            <p className="text-xs text-foreground/90 font-bold leading-relaxed whitespace-pre-wrap flex-1">
+                              {faq.answer}
+                            </p>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  </div>
-
-                  {isOpen && (
-                    <div className="px-4 pb-4 pt-2 border-t border-border/60 border-l-4 border-l-emerald-500/60 bg-emerald-500/[0.03] dark:bg-emerald-500/[0.06] animate-in fade-in duration-200">
-                      <div className="flex items-start gap-2.5 mt-1.5">
-                        <span className="w-6 h-6 rounded-lg bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 font-black text-xs flex items-center justify-center shrink-0 mt-0.5">
-                          A
-                        </span>
-                        <p className="text-xs text-foreground/90 font-bold leading-relaxed whitespace-pre-wrap flex-1">
-                          {faq.answer}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                  );
+                })}
+              </div>
+            )}
           </div>
-        )}
+        </section>
 
         <div className="h-8 w-full shrink-0" aria-hidden="true" />
       </div>
@@ -456,146 +482,147 @@ export default function LiffFaqPage() {
       {isCreateModalOpen &&
         mounted &&
         createPortal(
-          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-background/80 backdrop-blur-md overflow-y-auto animate-in fade-in duration-200">
-            <div className="w-full max-w-md rounded-2xl border border-border/60 bg-card shadow-xs p-5 sm:p-6 space-y-4 my-auto max-h-[92vh] overflow-y-auto animate-in zoom-in-95 duration-200">
-              
-              <div className="flex items-center justify-between pb-3 border-b border-border/60 sticky top-0 bg-card z-10">
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-slate-950/60 overflow-y-auto animate-in fade-in duration-200">
+            <div className="w-full max-w-md rounded-2xl border border-border bg-card shadow-xs overflow-hidden my-auto max-h-[92vh] flex flex-col animate-in zoom-in-95 duration-200">
+              <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-amber-500 px-4 py-3 flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-2xl bg-amber-500/12 text-amber-600 dark:text-amber-400 flex items-center justify-center font-black">
+                  <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-400/30 flex items-center justify-center font-black">
                     <Plus className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="text-base font-black text-foreground">Q&Aの新規登録</h3>
-                    <p className="text-[11px] font-bold text-muted-foreground">よくある質問と回答を共有</p>
+                    <h3 className="text-base font-black text-white">Q&Aの新規登録</h3>
+                    <p className="text-[11px] font-bold text-slate-300">よくある質問と回答を共有</p>
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => setIsCreateModalOpen(false)}
-                  className="p-1.5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground transition-all"
+                  className="p-1.5 rounded-full text-slate-300 hover:text-white hover:bg-slate-800 transition-all"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
-              {submitError && (
-                <div className="p-3 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-xs font-bold flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>{submitError}</span>
-                </div>
-              )}
-
-              <form onSubmit={handleCreateFaq} className="space-y-4">
-                {/* 登録スコープ選択 */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-black text-foreground">
-                    登録範囲 (公開対象) <span className="text-destructive">*</span>
-                  </label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setNewScope("organization")}
-                      className={`p-3 rounded-2xl text-left border transition-all flex flex-col gap-1 ${
-                        newScope === "organization"
-                          ? "bg-primary/10 border-primary text-primary shadow-xs"
-                          : "bg-background border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
-                      }`}
-                    >
-                      <div className="flex items-center gap-1.5 font-black text-xs">
-                        <Building2 className="w-4 h-4 shrink-0" />
-                        <span>チーム全体</span>
-                      </div>
-                      <p className="text-[10px] font-medium leading-tight opacity-80">
-                        {currentTeam?.orgName || "クラブ"}の全編成・全学年で共通
-                      </p>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setNewScope("team")}
-                      className={`p-3 rounded-2xl text-left border transition-all flex flex-col gap-1 ${
-                        newScope === "team"
-                          ? "bg-primary/10 border-primary text-primary shadow-xs"
-                          : "bg-background border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
-                      }`}
-                    >
-                      <div className="flex items-center gap-1.5 font-black text-xs">
-                        <Users2 className="w-4 h-4 shrink-0" />
-                        <span>{currentTeam?.teamName || "この編成"}</span>
-                      </div>
-                      <p className="text-[10px] font-medium leading-tight opacity-80">
-                        {currentTeam?.teamName || "選択中の編成"} メンバーに公開
-                      </p>
-                    </button>
+              <div className="p-5 sm:p-6 space-y-4 overflow-y-auto">
+                {submitError && (
+                  <div className="p-3 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-xs font-bold flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{submitError}</span>
                   </div>
-                </div>
+                )}
 
-                {/* カテゴリ選択 */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-black text-foreground">カテゴリ</label>
-                  <select
-                    value={newCategory}
-                    onChange={(e) => setNewCategory(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-border/60 bg-background text-xs font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/20"
+                <form onSubmit={handleCreateFaq} className="space-y-4">
+                  {/* 登録スコープ選択 */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-black text-foreground">
+                      登録範囲 (公開対象) <span className="text-destructive">*</span>
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setNewScope("organization")}
+                        className={`p-3 rounded-2xl text-left border transition-all flex flex-col gap-1 ${
+                          newScope === "organization"
+                            ? "bg-primary/10 border-primary text-primary shadow-xs"
+                            : "bg-background border-border text-muted-foreground hover:bg-muted hover:text-foreground"
+                        }`}
+                      >
+                        <div className="flex items-center gap-1.5 font-black text-xs">
+                          <Building2 className="w-4 h-4 shrink-0" />
+                          <span>チーム全体</span>
+                        </div>
+                        <p className="text-[10px] font-medium leading-tight opacity-80">
+                          {currentTeam?.orgName || "クラブ"}の全編成・全学年で共通
+                        </p>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setNewScope("team")}
+                        className={`p-3 rounded-2xl text-left border transition-all flex flex-col gap-1 ${
+                          newScope === "team"
+                            ? "bg-primary/10 border-primary text-primary shadow-xs"
+                            : "bg-background border-border text-muted-foreground hover:bg-muted hover:text-foreground"
+                        }`}
+                      >
+                        <div className="flex items-center gap-1.5 font-black text-xs">
+                          <Users2 className="w-4 h-4 shrink-0" />
+                          <span>{currentTeam?.teamName || "この編成"}</span>
+                        </div>
+                        <p className="text-[10px] font-medium leading-tight opacity-80">
+                          {currentTeam?.teamName || "選択中の編成"} メンバーに公開
+                        </p>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* カテゴリ選択 */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-black text-foreground">カテゴリ</label>
+                    <select
+                      value={newCategory}
+                      onChange={(e) => setNewCategory(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/20"
+                    >
+                      <option value="rain">雨天・中止判断</option>
+                      <option value="duty">当番・配車</option>
+                      <option value="equipment">用具・持ち物</option>
+                      <option value="trip">遠征・合宿</option>
+                      <option value="cost">部費・保険</option>
+                      <option value="manner">観戦マナー</option>
+                      <option value="general">その他・全般</option>
+                    </select>
+                  </div>
+
+                  {/* 質問（Q） */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-black text-foreground">
+                      質問 (Q) <span className="text-destructive">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="例: 雨天時の練習中止の連絡は何時頃入りますか？"
+                      value={newQuestion}
+                      onChange={(e) => setNewQuestion(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/20"
+                      required
+                    />
+                  </div>
+
+                  {/* 回答（A） */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-black text-foreground">
+                      回答 (A) <span className="text-destructive">*</span>
+                    </label>
+                    <textarea
+                      rows={4}
+                      placeholder="保護者や選手に向けた分かりやすい回答を記入"
+                      value={newAnswer}
+                      onChange={(e) => setNewAnswer(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/20 resize-none"
+                      required
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isSubmitting || !newQuestion.trim() || !newAnswer.trim()}
+                    className="w-full py-3 rounded-2xl bg-primary text-primary-foreground font-black text-xs hover:bg-primary/90 active:scale-[0.99] transition-all flex items-center justify-center gap-2 shadow-xs disabled:opacity-50"
                   >
-                    <option value="rain">雨天・中止判断</option>
-                    <option value="duty">当番・配車</option>
-                    <option value="equipment">用具・持ち物</option>
-                    <option value="trip">遠征・合宿</option>
-                    <option value="cost">部費・保険</option>
-                    <option value="manner">観戦マナー</option>
-                    <option value="general">その他・全般</option>
-                  </select>
-                </div>
-
-                {/* 質問（Q） */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-black text-foreground">
-                    質問 (Q) <span className="text-destructive">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="例: 雨天時の練習中止の連絡は何時頃入りますか？"
-                    value={newQuestion}
-                    onChange={(e) => setNewQuestion(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-border/60 bg-background text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/20"
-                    required
-                  />
-                </div>
-
-                {/* 回答（A） */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-black text-foreground">
-                    回答 (A) <span className="text-destructive">*</span>
-                  </label>
-                  <textarea
-                    rows={4}
-                    placeholder="保護者や選手に向けた分かりやすい回答を記入"
-                    value={newAnswer}
-                    onChange={(e) => setNewAnswer(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-border/60 bg-background text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/20 resize-none"
-                    required
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={isSubmitting || !newQuestion.trim() || !newAnswer.trim()}
-                  className="w-full py-3 rounded-2xl bg-primary text-primary-foreground font-black text-xs hover:bg-primary/90 active:scale-[0.99] transition-all flex items-center justify-center gap-2 shadow-xs disabled:opacity-50"
-                >
-                  {isSubmitting ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>登録中...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Plus className="w-4 h-4" />
-                      <span>Q&Aを登録する</span>
-                    </>
-                  )}
-                </button>
-              </form>
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>登録中...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="w-4 h-4" />
+                        <span>Q&Aを登録する</span>
+                      </>
+                    )}
+                  </button>
+                </form>
+              </div>
             </div>
           </div>,
           document.body
@@ -607,157 +634,158 @@ export default function LiffFaqPage() {
       {editingFaq &&
         mounted &&
         createPortal(
-          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-background/80 backdrop-blur-md overflow-y-auto animate-in fade-in duration-200">
-            <div className="w-full max-w-md rounded-2xl border border-border/60 bg-card shadow-xs p-5 sm:p-6 space-y-4 my-auto max-h-[92vh] overflow-y-auto animate-in zoom-in-95 duration-200">
-              
-              <div className="flex items-center justify-between pb-3 border-b border-border/60 sticky top-0 bg-card z-10">
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-slate-950/60 overflow-y-auto animate-in fade-in duration-200">
+            <div className="w-full max-w-md rounded-2xl border border-border bg-card shadow-xs overflow-hidden my-auto max-h-[92vh] flex flex-col animate-in zoom-in-95 duration-200">
+              <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-amber-500 px-4 py-3 flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-2xl bg-amber-500/12 text-amber-600 dark:text-amber-400 flex items-center justify-center font-black">
+                  <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-400/30 flex items-center justify-center font-black">
                     <Pencil className="w-4 h-4" />
                   </div>
                   <div>
-                    <h3 className="text-base font-black text-foreground">Q&Aの編集</h3>
-                    <p className="text-[11px] font-bold text-muted-foreground">公開範囲や質問・回答の更新・削除</p>
+                    <h3 className="text-base font-black text-white">Q&Aの編集</h3>
+                    <p className="text-[11px] font-bold text-slate-300">公開範囲や質問・回答の更新・削除</p>
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => setEditingFaq(null)}
-                  className="p-1.5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground transition-all"
+                  className="p-1.5 rounded-full text-slate-300 hover:text-white hover:bg-slate-800 transition-all"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
-              {submitError && (
-                <div className="p-3 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-xs font-bold flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>{submitError}</span>
-                </div>
-              )}
+              <div className="p-5 sm:p-6 space-y-4 overflow-y-auto">
+                {submitError && (
+                  <div className="p-3 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-xs font-bold flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{submitError}</span>
+                  </div>
+                )}
 
-              <form onSubmit={handleUpdateFaq} className="space-y-4">
-                {/* 登録スコープ選択 */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-black text-foreground">
-                    登録範囲 (公開対象) <span className="text-destructive">*</span>
-                  </label>
-                  <div className="grid grid-cols-2 gap-2">
+                <form onSubmit={handleUpdateFaq} className="space-y-4">
+                  {/* 登録スコープ選択 */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-black text-foreground">
+                      登録範囲 (公開対象) <span className="text-destructive">*</span>
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setEditScope("organization")}
+                        className={`p-3 rounded-2xl text-left border transition-all flex flex-col gap-1 ${
+                          editScope === "organization"
+                            ? "bg-primary/10 border-primary text-primary shadow-xs"
+                            : "bg-background border-border text-muted-foreground hover:bg-muted hover:text-foreground"
+                        }`}
+                      >
+                        <div className="flex items-center gap-1.5 font-black text-xs">
+                          <Building2 className="w-4 h-4 shrink-0" />
+                          <span>チーム全体</span>
+                        </div>
+                        <p className="text-[10px] font-medium leading-tight opacity-80">
+                          {currentTeam?.orgName || "クラブ"}の全編成・全学年で共通
+                        </p>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setEditScope("team")}
+                        className={`p-3 rounded-2xl text-left border transition-all flex flex-col gap-1 ${
+                          editScope === "team"
+                            ? "bg-primary/10 border-primary text-primary shadow-xs"
+                            : "bg-background border-border text-muted-foreground hover:bg-muted hover:text-foreground"
+                        }`}
+                      >
+                        <div className="flex items-center gap-1.5 font-black text-xs">
+                          <Users2 className="w-4 h-4 shrink-0" />
+                          <span>{currentTeam?.teamName || "この編成"}</span>
+                        </div>
+                        <p className="text-[10px] font-medium leading-tight opacity-80">
+                          {currentTeam?.teamName || "選択中の編成"} メンバーに公開
+                        </p>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* カテゴリ選択 */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-black text-foreground">カテゴリ</label>
+                    <select
+                      value={editCategory}
+                      onChange={(e) => setEditCategory(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/20"
+                    >
+                      <option value="rain">雨天・中止判断</option>
+                      <option value="duty">当番・配車</option>
+                      <option value="equipment">用具・持ち物</option>
+                      <option value="trip">遠征・合宿</option>
+                      <option value="cost">部費・保険</option>
+                      <option value="manner">観戦マナー</option>
+                      <option value="general">その他・全般</option>
+                    </select>
+                  </div>
+
+                  {/* 質問（Q） */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-black text-foreground">
+                      質問 (Q) <span className="text-destructive">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={editQuestion}
+                      onChange={(e) => setEditQuestion(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/20"
+                      required
+                    />
+                  </div>
+
+                  {/* 回答（A） */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-black text-foreground">
+                      回答 (A) <span className="text-destructive">*</span>
+                    </label>
+                    <textarea
+                      rows={4}
+                      value={editAnswer}
+                      onChange={(e) => setEditAnswer(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/20 resize-none"
+                      required
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-2">
                     <button
                       type="button"
-                      onClick={() => setEditScope("organization")}
-                      className={`p-3 rounded-2xl text-left border transition-all flex flex-col gap-1 ${
-                        editScope === "organization"
-                          ? "bg-primary/10 border-primary text-primary shadow-xs"
-                          : "bg-background border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
-                      }`}
+                      onClick={handleDeleteFaq}
+                      disabled={isDeleting || isSubmitting}
+                      className="py-3 px-4 rounded-2xl border border-rose-500/40 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 font-black text-xs transition-all flex items-center justify-center gap-1.5 shrink-0 active:scale-95 disabled:opacity-50"
                     >
-                      <div className="flex items-center gap-1.5 font-black text-xs">
-                        <Building2 className="w-4 h-4 shrink-0" />
-                        <span>チーム全体</span>
-                      </div>
-                      <p className="text-[10px] font-medium leading-tight opacity-80">
-                        {currentTeam?.orgName || "クラブ"}の全編成・全学年で共通
-                      </p>
+                      {isDeleting ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="w-4 h-4" />
+                      )}
+                      <span>削除</span>
                     </button>
 
                     <button
-                      type="button"
-                      onClick={() => setEditScope("team")}
-                      className={`p-3 rounded-2xl text-left border transition-all flex flex-col gap-1 ${
-                        editScope === "team"
-                          ? "bg-primary/10 border-primary text-primary shadow-xs"
-                          : "bg-background border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
-                      }`}
+                      type="submit"
+                      disabled={isSubmitting || isDeleting || !editQuestion.trim() || !editAnswer.trim()}
+                      className="flex-1 py-3 rounded-2xl bg-primary text-primary-foreground font-black text-xs hover:bg-primary/90 active:scale-[0.99] transition-all flex items-center justify-center gap-2 shadow-xs disabled:opacity-50"
                     >
-                      <div className="flex items-center gap-1.5 font-black text-xs">
-                        <Users2 className="w-4 h-4 shrink-0" />
-                        <span>{currentTeam?.teamName || "この編成"}</span>
-                      </div>
-                      <p className="text-[10px] font-medium leading-tight opacity-80">
-                        {currentTeam?.teamName || "選択中の編成"} メンバーに公開
-                      </p>
+                      {isSubmitting ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>保存中...</span>
+                        </>
+                      ) : (
+                        <span>変更を保存</span>
+                      )}
                     </button>
                   </div>
-                </div>
-
-                {/* カテゴリ選択 */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-black text-foreground">カテゴリ</label>
-                  <select
-                    value={editCategory}
-                    onChange={(e) => setEditCategory(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-border/60 bg-background text-xs font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/20"
-                  >
-                    <option value="rain">雨天・中止判断</option>
-                    <option value="duty">当番・配車</option>
-                    <option value="equipment">用具・持ち物</option>
-                    <option value="trip">遠征・合宿</option>
-                    <option value="cost">部費・保険</option>
-                    <option value="manner">観戦マナー</option>
-                    <option value="general">その他・全般</option>
-                  </select>
-                </div>
-
-                {/* 質問（Q） */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-black text-foreground">
-                    質問 (Q) <span className="text-destructive">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={editQuestion}
-                    onChange={(e) => setEditQuestion(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-border/60 bg-background text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/20"
-                    required
-                  />
-                </div>
-
-                {/* 回答（A） */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-black text-foreground">
-                    回答 (A) <span className="text-destructive">*</span>
-                  </label>
-                  <textarea
-                    rows={4}
-                    value={editAnswer}
-                    onChange={(e) => setEditAnswer(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-border/60 bg-background text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/20 resize-none"
-                    required
-                  />
-                </div>
-
-                <div className="flex items-center gap-2 pt-2">
-                  <button
-                    type="button"
-                    onClick={handleDeleteFaq}
-                    disabled={isDeleting || isSubmitting}
-                    className="py-3 px-4 rounded-2xl border border-destructive/30 text-destructive hover:bg-destructive/10 font-black text-xs transition-all flex items-center justify-center gap-1.5 shrink-0 active:scale-95 disabled:opacity-50"
-                  >
-                    {isDeleting ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Trash2 className="w-4 h-4" />
-                    )}
-                    <span>削除</span>
-                  </button>
-
-                  <button
-                    type="submit"
-                    disabled={isSubmitting || isDeleting || !editQuestion.trim() || !editAnswer.trim()}
-                    className="flex-1 py-3 rounded-2xl bg-primary text-primary-foreground font-black text-xs hover:bg-primary/90 active:scale-[0.99] transition-all flex items-center justify-center gap-2 shadow-xs disabled:opacity-50"
-                  >
-                    {isSubmitting ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>保存中...</span>
-                      </>
-                    ) : (
-                      <span>変更を保存</span>
-                    )}
-                  </button>
-                </div>
-              </form>
+                </form>
+              </div>
             </div>
           </div>,
           document.body

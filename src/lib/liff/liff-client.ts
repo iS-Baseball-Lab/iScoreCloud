@@ -28,19 +28,24 @@ export async function initLiff(liffId?: string): Promise<{ liff: Liff | null; is
     localStorage.setItem("iscore_liff_id", queryLiffId);
   }
 
-  // 2. まだ LIFF ID が未確定の場合、Cloudflare Workers API (/api/liff/config) から自動フェッチ
+  // 2. まだ LIFF ID が未確定の場合、Cloudflare Workers API (/api/liff/config) から自動フェッチ（セッション中1回のみ）
   if (!targetLiffId) {
-    try {
-      const configRes = await fetch("/api/liff/config");
-      if (configRes.ok) {
-        const configData = (await configRes.json()) as { success?: boolean; liffId?: string };
-        if (configData.liffId) {
-          targetLiffId = configData.liffId;
-          localStorage.setItem("iscore_liff_id", configData.liffId);
+    const checkedNoLiff = sessionStorage.getItem("iscore_liff_id_empty");
+    if (!checkedNoLiff) {
+      try {
+        const configRes = await fetch("/api/liff/config");
+        if (configRes.ok) {
+          const configData = (await configRes.json()) as { success?: boolean; liffId?: string };
+          if (configData.liffId) {
+            targetLiffId = configData.liffId;
+            localStorage.setItem("iscore_liff_id", configData.liffId);
+          } else {
+            sessionStorage.setItem("iscore_liff_id_empty", "1");
+          }
         }
+      } catch {
+        // ignore fetch error
       }
-    } catch {
-      // ignore fetch error
     }
   }
 

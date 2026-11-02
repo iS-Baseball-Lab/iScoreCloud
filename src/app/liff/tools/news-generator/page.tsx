@@ -65,7 +65,7 @@ export default function LiffNewsGeneratorPage() {
         <LiffToolSubNav />
 
         {/* コンセプト概要バナー */}
-        <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-2.5">
+        <section className="rounded-2xl border border-border bg-card shadow-xs p-4 space-y-2.5 overflow-hidden">
           <div className="flex items-center gap-2">
             <span className="px-2 py-0.5 rounded-lg bg-primary/12 text-primary text-[10px] font-black">
               CONCEPT
@@ -80,15 +80,17 @@ export default function LiffNewsGeneratorPage() {
         </section>
 
         {/* 簡易入力フォーム枠（ワイヤーフレーム） */}
-        <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-4 overflow-hidden">
-          <div className="-mx-4 -mt-4 px-4 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 border-l-4 border-l-primary flex items-center justify-between">
+        <section className="rounded-2xl border border-border bg-card shadow-xs p-4 space-y-4 overflow-hidden">
+          <div className="-mx-4 -mt-4 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Zap className="w-4 h-4 text-primary" />
-              <h3 className="text-sm font-black text-foreground">
+              <span className="w-6 h-6 rounded-lg bg-primary/20 text-blue-300 border border-primary/40 flex items-center justify-center">
+                <Zap className="w-3.5 h-3.5" />
+              </span>
+              <h3 className="text-sm font-black text-white">
                 かんたん速報入力フォーム枠
               </h3>
             </div>
-            <span className="text-[10px] font-bold text-muted-foreground">
+            <span className="px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700 text-[10px] font-bold">
               UIイメージ
             </span>
           </div>
@@ -98,7 +100,7 @@ export default function LiffNewsGeneratorPage() {
             <label className="text-[11px] font-black text-muted-foreground">
               1. 速報のタイミングを選択
             </label>
-            <div className="grid grid-cols-3 gap-1 bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl border border-border/60">
+            <div className="grid grid-cols-3 gap-1 bg-muted p-1 rounded-2xl border border-border">
               {[
                 { id: "start" as const, label: "試合開始" },
                 { id: "inning" as const, label: "得点・経過" },
@@ -110,7 +112,7 @@ export default function LiffNewsGeneratorPage() {
                   onClick={() => setScene(tab.id)}
                   className={`py-2 px-2 rounded-xl text-xs transition-all cursor-pointer ${
                     scene === tab.id
-                      ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                      ? "bg-card text-foreground shadow-xs border border-border font-black"
                       : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
                   }`}
                 >
@@ -122,7 +124,7 @@ export default function LiffNewsGeneratorPage() {
 
           {/* ② 対戦相手・イニング・スコア簡易枠 */}
           <div className="grid grid-cols-2 gap-2.5">
-            <div className="p-3 rounded-xl bg-muted/35 border border-border/60 space-y-1">
+            <div className="p-3 rounded-xl bg-muted border border-border space-y-1">
               <span className="text-[10px] font-bold text-muted-foreground block">
                 2. 対戦相手・大会名
               </span>
@@ -134,7 +136,7 @@ export default function LiffNewsGeneratorPage() {
               </p>
             </div>
 
-            <div className="p-3 rounded-xl bg-muted/35 border border-border/60 space-y-1">
+            <div className="p-3 rounded-xl bg-muted border border-border space-y-1">
               <span className="text-[10px] font-bold text-muted-foreground block">
                 3. イニング・現在スコア
               </span>
@@ -165,30 +167,30 @@ export default function LiffNewsGeneratorPage() {
               ].map((chip) => (
                 <span
                   key={chip}
-                  className="px-2.5 py-1 rounded-full bg-muted/50 border border-border/60 text-[10px] font-bold text-muted-foreground"
+                  className="px-2.5 py-1 rounded-full bg-muted border border-border text-[10px] font-bold text-muted-foreground"
                 >
                   ＋ {chip}
                 </span>
               ))}
             </div>
-            <div className="rounded-xl bg-muted/35 border border-border/60 p-3 text-xs font-bold text-muted-foreground">
+            <div className="rounded-xl bg-muted border border-border p-3 text-xs font-bold text-muted-foreground">
               選手名チップをタップして「#10 〇〇のタイムリーで2点追加！」のように素早く入力できる欄を配置予定
             </div>
           </div>
         </section>
 
         {/* LINE速報テキスト プレビュー枠 */}
-        <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-xs font-black text-foreground">
+        <section className="rounded-2xl border border-border bg-card shadow-xs p-4 space-y-3 overflow-hidden">
+          <div className="-mx-4 -mt-4 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3 flex items-center justify-between">
+            <h3 className="text-xs font-black text-white">
               生成される速報メッセージ例
             </h3>
-            <span className="text-[10px] font-bold text-primary">
+            <span className="px-2 py-0.5 rounded-full bg-primary/20 text-blue-300 border border-primary/40 text-[10px] font-bold">
               LINEトーク最適化フォーマット
             </span>
           </div>
 
-          <pre className="rounded-xl bg-muted/35 border border-border/60 p-3.5 text-xs font-bold text-foreground whitespace-pre-wrap font-sans leading-relaxed">
+          <pre className="rounded-xl bg-muted border border-border p-3.5 text-xs font-bold text-foreground whitespace-pre-wrap font-sans leading-relaxed">
             {samplePreviewText[scene]}
           </pre>
 
@@ -214,7 +216,7 @@ export default function LiffNewsGeneratorPage() {
             <button
               type="button"
               disabled
-              className="py-2.5 px-3 rounded-2xl bg-muted/50 text-muted-foreground border border-border/60 text-xs font-black flex items-center justify-center gap-1.5 cursor-not-allowed"
+              className="py-2.5 px-3 rounded-2xl bg-muted text-muted-foreground border border-border text-xs font-black flex items-center justify-center gap-1.5 cursor-not-allowed"
             >
               <Share2 className="w-4 h-4" />
               <span>LINEで送る（準備中）</span>

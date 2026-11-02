@@ -575,688 +575,704 @@ export default function LiffProfilePage() {
         />
 
         {isLoading ? (
-          <div className="rounded-2xl border border-border/60 bg-card shadow-xs p-10 flex flex-col items-center justify-center gap-2.5">
+          <div className="rounded-2xl border border-border bg-card shadow-xs p-10 flex flex-col items-center justify-center gap-2.5">
             <Loader2 className="w-6 h-6 animate-spin text-primary" />
             <p className="text-xs font-bold text-muted-foreground">プロフィール情報を読み込み中...</p>
           </div>
         ) : (
           <>
             {/* ━━━ セクション 1: 🪪 アカウント & チーム内基本情報 ━━━ */}
-            <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-4 overflow-hidden">
-              <div className="-mx-4 -mt-4 px-4 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 border-l-4 border-l-primary flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <UserCircle className="w-4 h-4 text-primary" />
-                  <h2 className="text-sm font-black text-foreground">アカウント & 基本情報</h2>
+            <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+              <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-slate-500 px-4 py-3 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="w-7 h-7 rounded-xl bg-slate-800 text-slate-200 border border-slate-700 flex items-center justify-center shrink-0">
+                    <UserCircle className="w-4 h-4" />
+                  </span>
+                  <h2 className="text-sm font-black text-white truncate">アカウント & 基本情報</h2>
                 </div>
                 {isLoggedIn && (
-                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 border border-emerald-500/25 text-[10px] font-black shrink-0">
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 text-[10px] font-black shrink-0">
                     LINE連携済
                   </span>
                 )}
               </div>
 
-              {/* LINEアカウント状態ヘッダー */}
-              <div className="flex items-center gap-3 p-3 rounded-2xl bg-muted/50 border border-border/60">
-                <Avatar className="h-12 w-12 border border-primary/30 shrink-0">
-                  {profile?.pictureUrl && (
-                    <AvatarImage src={profile.pictureUrl} alt={lineDisplayName} />
-                  )}
-                  <AvatarFallback className="bg-primary text-primary-foreground font-black text-base">
-                    {avatarInitial}
-                  </AvatarFallback>
-                </Avatar>
+              <div className="p-4 space-y-4">
+                {/* LINEアカウント状態ヘッダー */}
+                <div className="flex items-center gap-3 p-3 rounded-2xl bg-muted/50 border border-border">
+                  <Avatar className="h-12 w-12 border border-primary/30 shrink-0">
+                    {profile?.pictureUrl && (
+                      <AvatarImage src={profile.pictureUrl} alt={lineDisplayName} />
+                    )}
+                    <AvatarFallback className="bg-primary text-primary-foreground font-black text-base">
+                      {avatarInitial}
+                    </AvatarFallback>
+                  </Avatar>
 
-                <div className="min-w-0 flex-1 space-y-1">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="text-sm font-black text-foreground truncate">
-                      {profile?.displayName || displayName || "ゲストユーザー"}
-                    </span>
-                    <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-black">
-                      {roleLabel}
-                    </span>
-                    {(isDemoMode || providerIsDemo) && (
-                      <span className="px-2 py-0.5 rounded-full bg-amber-500/12 text-amber-700 dark:text-amber-300 border border-amber-500/30 text-[10px] font-black">
-                        体験デモ
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-sm font-black text-foreground truncate">
+                        {profile?.displayName || displayName || "ゲストユーザー"}
                       </span>
+                      <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-black">
+                        {roleLabel}
+                      </span>
+                      {(isDemoMode || providerIsDemo) && (
+                        <span className="px-2 py-0.5 rounded-full bg-amber-500/12 text-amber-700 dark:text-amber-300 border border-amber-500/30 text-[10px] font-black">
+                          体験デモ
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className={`w-2 h-2 rounded-full shrink-0 ${
+                          isLoggedIn ? "bg-emerald-500" : "bg-muted-foreground/50"
+                        }`}
+                      />
+                      <span className="text-[11px] font-bold text-muted-foreground truncate">
+                        {isLoggedIn
+                          ? `LINE連携中 ・ ${currentTeam?.name || "チーム未選択"}`
+                          : "LINE未連携（ブラウザ表示）"}
+                      </span>
+                    </div>
+
+                    {groups.length > 0 && (
+                      <div className="flex items-center gap-1 flex-wrap pt-0.5">
+                        {groups.map((g) => (
+                          <span
+                            key={g.groupId}
+                            className="px-2 py-0.5 rounded-md bg-card border border-border text-[10px] font-bold text-foreground"
+                          >
+                            {g.groupName}
+                            {g.role ? ` (${g.role})` : ""}
+                          </span>
+                        ))}
+                      </div>
                     )}
                   </div>
 
-                  <div className="flex items-center gap-1.5">
-                    <span
-                      className={`w-2 h-2 rounded-full shrink-0 ${
-                        isLoggedIn ? "bg-emerald-500" : "bg-muted-foreground/50"
-                      }`}
-                    />
-                    <span className="text-[11px] font-bold text-muted-foreground truncate">
-                      {isLoggedIn
-                        ? `LINE連携中 ・ ${currentTeam?.name || "チーム未選択"}`
-                        : "LINE未連携（ブラウザ表示）"}
-                    </span>
-                  </div>
-
-                  {groups.length > 0 && (
-                    <div className="flex items-center gap-1 flex-wrap pt-0.5">
-                      {groups.map((g) => (
-                        <span
-                          key={g.groupId}
-                          className="px-2 py-0.5 rounded-md bg-card border border-border/60 text-[10px] font-bold text-foreground"
-                        >
-                          {g.groupName}
-                          {g.role ? ` (${g.role})` : ""}
-                        </span>
-                      ))}
-                    </div>
+                  {!isLoggedIn && (
+                    <button
+                      type="button"
+                      onClick={login}
+                      className="py-2 px-3 rounded-xl bg-primary hover:bg-primary/90 active:scale-95 text-primary-foreground text-xs font-black shrink-0 transition-all shadow-xs"
+                    >
+                      LINE連携
+                    </button>
                   )}
                 </div>
 
-                {!isLoggedIn && (
-                  <button
-                    type="button"
-                    onClick={login}
-                    className="py-2 px-3 rounded-xl bg-primary hover:bg-primary/90 active:scale-95 text-primary-foreground text-xs font-black shrink-0 transition-all shadow-xs"
-                  >
-                    LINE連携
-                  </button>
-                )}
-              </div>
-
-              {/* チーム内表示名 */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-black text-foreground block">
-                  チーム内の表示名 <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={displayName}
-                  onChange={(e) => setDisplayName(e.target.value)}
-                  placeholder="例: 山田 太郎 / 山田（翔太父）"
-                  className="w-full px-3.5 py-2.5 rounded-2xl bg-background border border-border/60 text-sm font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
-                />
-                <p className="text-[10px] font-bold text-muted-foreground">
-                  出欠一覧表や配車表でチーム全員に表示される名前です。LINE名がニックネームの方も分かりやすい表記に変更できます。
-                </p>
-              </div>
-
-              {/* フリガナ & 電話番号 */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-black text-foreground block">フリガナ</label>
-                  <input
-                    type="text"
-                    value={nameKana}
-                    onChange={(e) => setNameKana(e.target.value)}
-                    placeholder="例: ヤマダ タロウ"
-                    className="w-full px-3 py-2 rounded-2xl bg-background border border-border/60 text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-black text-foreground flex items-center gap-1">
-                    <Phone className="w-3 h-3 text-primary" />
-                    <span>緊急連絡先（電話番号）</span>
+                {/* チーム内表示名 */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black text-foreground block">
+                    チーム内の表示名 <span className="text-rose-500">*</span>
                   </label>
                   <input
-                    type="tel"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    placeholder="例: 090-1234-5678"
-                    className="w-full px-3 py-2 rounded-2xl bg-background border border-border/60 text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                    type="text"
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    placeholder="例: 山田 太郎 / 山田（翔太父）"
+                    className="w-full px-3.5 py-2.5 rounded-2xl bg-background border border-border text-sm font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                  />
+                  <p className="text-[10px] font-bold text-muted-foreground">
+                    出欠一覧表や配車表でチーム全員に表示される名前です。LINE名がニックネームの方も分かりやすい表記に変更できます。
+                  </p>
+                </div>
+
+                {/* フリガナ & 電話番号 */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-xs font-black text-foreground block">フリガナ</label>
+                    <input
+                      type="text"
+                      value={nameKana}
+                      onChange={(e) => setNameKana(e.target.value)}
+                      placeholder="例: ヤマダ タロウ"
+                      className="w-full px-3 py-2 rounded-2xl bg-background border border-border text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-black text-foreground flex items-center gap-1">
+                      <Phone className="w-3 h-3 text-primary" />
+                      <span>緊急連絡先（電話番号）</span>
+                    </label>
+                    <input
+                      type="tel"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      placeholder="例: 090-1234-5678"
+                      className="w-full px-3 py-2 rounded-2xl bg-background border border-border text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                    />
+                  </div>
+                </div>
+
+                {/* チームでの立場 */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black text-foreground block">チームでの主な立場</label>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                    {MEMBER_TYPE_OPTIONS.map((opt) => {
+                      const active = memberType === opt.id;
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => setMemberType(opt.id)}
+                          className={`py-2 px-2 rounded-2xl text-xs transition-all active:scale-95 border ${
+                            active
+                              ? "bg-primary/12 text-primary border-primary shadow-2xs font-black"
+                              : "bg-muted/50 border-border text-muted-foreground hover:text-foreground font-bold"
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 担当班・役割タグ */}
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-foreground flex items-center gap-1.5">
+                    <Tag className="w-3.5 h-3.5 text-primary" />
+                    <span>当番班・担当タグ（任意）</span>
+                  </label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {PRESET_SUB_LABELS.map((preset) => {
+                      const active = subLabel.trim() === preset;
+                      return (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => setSubLabel(active ? "" : preset)}
+                          className={`px-2.5 py-1 rounded-xl text-[11px] transition-all active:scale-95 ${
+                            active
+                              ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
+                              : "bg-card text-muted-foreground border border-border hover:text-foreground hover:bg-muted/50 font-bold"
+                          }`}
+                        >
+                          {preset}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <input
+                    type="text"
+                    value={subLabel}
+                    onChange={(e) => setSubLabel(e.target.value)}
+                    placeholder="自由入力も可（例: 2班・会計 / 審判部）"
+                    className="w-full px-3 py-2 rounded-2xl bg-background border border-border text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
                   />
                 </div>
-              </div>
 
-              {/* チームでの立場 */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-black text-foreground block">チームでの主な立場</label>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-                  {MEMBER_TYPE_OPTIONS.map((opt) => {
-                    const active = memberType === opt.id;
-                    return (
-                      <button
-                        key={opt.id}
-                        type="button"
-                        onClick={() => setMemberType(opt.id)}
-                        className={`py-2 px-2 rounded-2xl text-xs transition-all active:scale-95 border ${
-                          active
-                            ? "bg-primary/12 text-primary border-primary shadow-2xs font-black"
-                            : "bg-muted/50 border-border/60 text-muted-foreground hover:text-foreground font-bold"
-                        }`}
-                      >
-                        {opt.label}
-                      </button>
-                    );
-                  })}
-                </div>
+                {/* 基本情報保存ボタン */}
+                <button
+                  type="button"
+                  onClick={handleSaveProfile}
+                  disabled={isSavingProfile}
+                  className="w-full py-3 px-4 rounded-2xl bg-primary hover:bg-primary/90 active:scale-[0.99] text-primary-foreground text-xs sm:text-sm font-black shadow-xs transition-all flex items-center justify-center gap-2 disabled:opacity-60"
+                >
+                  {isSavingProfile ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Save className="w-4 h-4" />
+                  )}
+                  <span>基本プロフィールを保存</span>
+                </button>
               </div>
-
-              {/* 担当班・役割タグ */}
-              <div className="space-y-2">
-                <label className="text-xs font-black text-foreground flex items-center gap-1.5">
-                  <Tag className="w-3.5 h-3.5 text-primary" />
-                  <span>当番班・担当タグ（任意）</span>
-                </label>
-                <div className="flex flex-wrap gap-1.5">
-                  {PRESET_SUB_LABELS.map((preset) => {
-                    const active = subLabel.trim() === preset;
-                    return (
-                      <button
-                        key={preset}
-                        type="button"
-                        onClick={() => setSubLabel(active ? "" : preset)}
-                        className={`px-2.5 py-1 rounded-xl text-[11px] transition-all active:scale-95 ${
-                          active
-                            ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
-                            : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
-                        }`}
-                      >
-                        {preset}
-                      </button>
-                    );
-                  })}
-                </div>
-                <input
-                  type="text"
-                  value={subLabel}
-                  onChange={(e) => setSubLabel(e.target.value)}
-                  placeholder="自由入力も可（例: 2班・会計 / 審判部）"
-                  className="w-full px-3 py-2 rounded-2xl bg-background border border-border/60 text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
-                />
-              </div>
-
-              {/* 基本情報保存ボタン */}
-              <button
-                type="button"
-                onClick={handleSaveProfile}
-                disabled={isSavingProfile}
-                className="w-full py-3 px-4 rounded-2xl bg-primary hover:bg-primary/90 active:scale-[0.99] text-primary-foreground text-xs sm:text-sm font-black shadow-xs transition-all flex items-center justify-center gap-2 disabled:opacity-60"
-              >
-                {isSavingProfile ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Save className="w-4 h-4" />
-                )}
-                <span>基本プロフィールを保存</span>
-              </button>
             </section>
 
             {/* ━━━ セクション 2: 👦 お子様（選手）との親子紐付け ━━━ */}
             {memberType !== "player" && (
-              <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3.5 overflow-hidden">
-                <div className="-mx-4 -mt-4 px-4 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 border-l-4 border-l-primary flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Users className="w-4 h-4 text-primary" />
-                    <h2 className="text-sm font-black text-foreground">お子様（選手）の紐付け</h2>
+              <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+                <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-slate-500 px-4 py-3 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="w-7 h-7 rounded-xl bg-slate-800 text-slate-200 border border-slate-700 flex items-center justify-center shrink-0">
+                      <Users className="w-4 h-4" />
+                    </span>
+                    <h2 className="text-sm font-black text-white truncate">お子様（選手）の紐付け</h2>
                   </div>
-                  <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+                  <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-800 text-slate-200 border border-slate-700 shrink-0">
                     出欠・配車に自動連動
                   </span>
                 </div>
 
-                <p className="text-[11px] font-bold text-muted-foreground leading-relaxed">
-                  チームの選手名簿からお子様を紐付けると、活動予定での親子出欠回答や配車表の親子同乗ルール判定にそのまま反映されます（兄弟複数登録可）。
-                </p>
+                <div className="p-4 space-y-3.5">
+                  <p className="text-[11px] font-bold text-muted-foreground leading-relaxed">
+                    チームの選手名簿からお子様を紐付けると、活動予定での親子出欠回答や配車表の親子同乗ルール判定にそのまま反映されます（兄弟複数登録可）。
+                  </p>
 
-                {/* 紐付け済みのお子様リスト */}
-                {myChildren.length === 0 ? (
-                  <div className="p-3.5 rounded-2xl bg-muted/35 border border-dashed border-border/60 text-center">
-                    <p className="text-xs font-bold text-muted-foreground">
-                      まだお子様（選手）が紐付けられていません
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {myChildren.map((child) => (
-                      <div
-                        key={child.relationId}
-                        className="flex items-center justify-between p-3 rounded-2xl bg-emerald-500/[0.06] border border-emerald-500/25"
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <span className="min-w-[40px] h-7 px-2 rounded-xl bg-primary text-primary-foreground text-xs font-black flex items-center justify-center shrink-0">
-                            {formatUniformBadge(child.uniformNumber)}
-                          </span>
-                          <span className="text-sm font-black text-foreground truncate">
-                            {child.childName}
-                          </span>
-                          <span className="px-2 py-0.5 rounded-full bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 border border-emerald-500/25 text-[10px] font-black shrink-0">
-                            登録済
-                          </span>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => handleUnlinkChild(child)}
-                          disabled={isUpdatingChildId === child.childId}
-                          className="py-1.5 px-2.5 rounded-xl bg-card hover:bg-rose-500/10 text-muted-foreground hover:text-rose-600 border border-border/60 text-[11px] font-bold transition-all active:scale-95 flex items-center gap-1 shrink-0"
-                        >
-                          {isUpdatingChildId === child.childId ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          ) : (
-                            <X className="w-3.5 h-3.5" />
-                          )}
-                          <span>解除</span>
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* 選手名簿ピッカー開閉ボタン */}
-                <button
-                  type="button"
-                  onClick={() => setIsChildPickerOpen((prev) => !prev)}
-                  className="w-full py-2.5 px-3 rounded-2xl bg-card hover:bg-muted border border-border/60 text-xs font-black text-foreground transition-all active:scale-98 flex items-center justify-center gap-1.5"
-                >
-                  {isChildPickerOpen ? (
-                    <>
-                      <X className="w-4 h-4" />
-                      <span>選手一覧を閉じる</span>
-                    </>
-                  ) : (
-                    <>
-                      <Plus className="w-4 h-4 text-primary" />
-                      <span>選手名簿からお子様を追加</span>
-                    </>
-                  )}
-                </button>
-
-                {/* インライン選手名簿ピッカー */}
-                {isChildPickerOpen && (
-                  <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 space-y-2.5">
-                    <div className="relative">
-                      <Search className="w-3.5 h-3.5 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
-                      <input
-                        type="text"
-                        value={playerSearchQuery}
-                        onChange={(e) => setPlayerSearchQuery(e.target.value)}
-                        placeholder="名前・背番号で選手を検索..."
-                        className="w-full pl-8 pr-3 py-2 rounded-xl bg-card border border-border/60 text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
-                      />
-                    </div>
-
-                    {filteredPlayers.length === 0 ? (
-                      <p className="text-xs font-bold text-muted-foreground text-center py-4">
-                        該当する選手が見つかりません
+                  {/* 紐付け済みのお子様リスト */}
+                  {myChildren.length === 0 ? (
+                    <div className="p-3.5 rounded-2xl bg-muted/35 border border-dashed border-border text-center">
+                      <p className="text-xs font-bold text-muted-foreground">
+                        まだお子様（選手）が紐付けられていません
                       </p>
-                    ) : (
-                      <div className="max-h-56 overflow-y-auto space-y-1.5 pr-0.5">
-                        {filteredPlayers.map((player) => {
-                          const isLinked = linkedChildIds.has(player.id);
-                          const isBusy = isUpdatingChildId === player.id;
-                          return (
-                            <button
-                              key={player.id}
-                              type="button"
-                              disabled={isLinked || isBusy}
-                              onClick={() => handleLinkChild(player)}
-                              className={`w-full flex items-center justify-between p-2.5 rounded-xl border text-left transition-all ${
-                                isLinked
-                                  ? "bg-emerald-500/12 border-emerald-500/25 text-emerald-700 dark:text-emerald-400 cursor-default"
-                                  : "bg-card hover:bg-muted border-border/60 text-foreground active:scale-[0.99]"
-                              }`}
-                            >
-                              <div className="flex items-center gap-2 min-w-0">
-                                <span className="min-w-[36px] px-1.5 py-0.5 rounded-lg bg-muted text-foreground text-[11px] font-black text-center shrink-0">
-                                  {formatUniformBadge(player.uniformNumber)}
-                                </span>
-                                <span className="text-xs font-black truncate">{player.name}</span>
-                                {player.primaryPosition && (
-                                  <span className="text-[10px] font-bold text-muted-foreground shrink-0">
-                                    {player.primaryPosition}
-                                  </span>
-                                )}
-                              </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {myChildren.map((child) => (
+                        <div
+                          key={child.relationId}
+                          className="flex items-center justify-between p-3 rounded-2xl bg-emerald-500/[0.06] border border-emerald-500/25"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <span className="min-w-[40px] h-7 px-2 rounded-xl bg-primary text-primary-foreground text-xs font-black flex items-center justify-center shrink-0">
+                              {formatUniformBadge(child.uniformNumber)}
+                            </span>
+                            <span className="text-sm font-black text-foreground truncate">
+                              {child.childName}
+                            </span>
+                            <span className="px-2 py-0.5 rounded-full bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 border border-emerald-500/25 text-[10px] font-black shrink-0">
+                              登録済
+                            </span>
+                          </div>
 
-                              <span className="text-[11px] font-black shrink-0 flex items-center gap-1">
-                                {isBusy ? (
-                                  <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
-                                ) : isLinked ? (
-                                  <>
-                                    <Check className="w-3.5 h-3.5" />
-                                    <span>紐付け済</span>
-                                  </>
-                                ) : (
-                                  <span className="text-primary">＋ 追加</span>
-                                )}
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
+                          <button
+                            type="button"
+                            onClick={() => handleUnlinkChild(child)}
+                            disabled={isUpdatingChildId === child.childId}
+                            className="py-1.5 px-2.5 rounded-xl bg-card hover:bg-rose-500/10 text-muted-foreground hover:text-rose-600 border border-border text-[11px] font-bold transition-all active:scale-95 flex items-center gap-1 shrink-0"
+                          >
+                            {isUpdatingChildId === child.childId ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <X className="w-3.5 h-3.5" />
+                            )}
+                            <span>解除</span>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* 選手名簿ピッカー開閉ボタン */}
+                  <button
+                    type="button"
+                    onClick={() => setIsChildPickerOpen((prev) => !prev)}
+                    className="w-full py-2.5 px-3 rounded-2xl bg-card hover:bg-muted border border-border text-xs font-black text-foreground transition-all active:scale-98 flex items-center justify-center gap-1.5"
+                  >
+                    {isChildPickerOpen ? (
+                      <>
+                        <X className="w-4 h-4" />
+                        <span>選手一覧を閉じる</span>
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="w-4 h-4 text-primary" />
+                        <span>選手名簿からお子様を追加</span>
+                      </>
                     )}
-                  </div>
-                )}
+                  </button>
+
+                  {/* インライン選手名簿ピッカー */}
+                  {isChildPickerOpen && (
+                    <div className="p-3 rounded-2xl bg-muted/35 border border-border space-y-2.5">
+                      <div className="relative">
+                        <Search className="w-3.5 h-3.5 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+                        <input
+                          type="text"
+                          value={playerSearchQuery}
+                          onChange={(e) => setPlayerSearchQuery(e.target.value)}
+                          placeholder="名前・背番号で選手を検索..."
+                          className="w-full pl-8 pr-3 py-2 rounded-xl bg-card border border-border text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                        />
+                      </div>
+
+                      {filteredPlayers.length === 0 ? (
+                        <p className="text-xs font-bold text-muted-foreground text-center py-4">
+                          該当する選手が見つかりません
+                        </p>
+                      ) : (
+                        <div className="max-h-56 overflow-y-auto space-y-1.5 pr-0.5">
+                          {filteredPlayers.map((player) => {
+                            const isLinked = linkedChildIds.has(player.id);
+                            const isBusy = isUpdatingChildId === player.id;
+                            return (
+                              <button
+                                key={player.id}
+                                type="button"
+                                disabled={isLinked || isBusy}
+                                onClick={() => handleLinkChild(player)}
+                                className={`w-full flex items-center justify-between p-2.5 rounded-xl border text-left transition-all ${
+                                  isLinked
+                                    ? "bg-emerald-500/12 border-emerald-500/25 text-emerald-700 dark:text-emerald-400 cursor-default"
+                                    : "bg-card hover:bg-muted border-border text-foreground active:scale-[0.99]"
+                                }`}
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="min-w-[36px] px-1.5 py-0.5 rounded-lg bg-muted text-foreground text-[11px] font-black text-center shrink-0">
+                                    {formatUniformBadge(player.uniformNumber)}
+                                  </span>
+                                  <span className="text-xs font-black truncate">{player.name}</span>
+                                  {player.primaryPosition && (
+                                    <span className="text-[10px] font-bold text-muted-foreground shrink-0">
+                                      {player.primaryPosition}
+                                    </span>
+                                  )}
+                                </div>
+
+                                <span className="text-[11px] font-black shrink-0 flex items-center gap-1">
+                                  {isBusy ? (
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
+                                  ) : isLinked ? (
+                                    <>
+                                      <Check className="w-3.5 h-3.5" />
+                                      <span>紐付け済</span>
+                                    </>
+                                  ) : (
+                                    <span className="text-primary">＋ 追加</span>
+                                  )}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </section>
             )}
 
             {/* ━━━ セクション 3: 🚗 配車初期値 & マイカー登録 ━━━ */}
-            <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-4 overflow-hidden">
-              <div className="-mx-4 -mt-4 px-4 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 border-l-4 border-l-primary flex items-center gap-2">
-                <Car className="w-4 h-4 text-teal-600 dark:text-teal-400" />
-                <h2 className="text-sm font-black text-foreground">配車希望 & マイカー登録</h2>
+            <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+              <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-teal-500 px-4 py-3 flex items-center gap-2">
+                <span className="w-7 h-7 rounded-xl bg-teal-500/20 text-teal-300 border border-teal-400/30 flex items-center justify-center shrink-0">
+                  <Car className="w-4 h-4" />
+                </span>
+                <h2 className="text-sm font-black text-white">配車希望 & マイカー登録</h2>
               </div>
 
-              {/* デフォルト配車希望 */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-black text-foreground block">
-                  遠征・試合時のデフォルト配車希望
-                </label>
-                <div className="grid grid-cols-3 gap-1.5">
-                  {(
-                    [
-                      { id: "can_drive", label: "🚗 車出し可" },
-                      { id: "need_ride", label: "🙋 送迎希望" },
-                      { id: "not_needed", label: "🚶 自走・不要" },
-                    ] as const
-                  ).map((carOpt) => {
-                    const active = defaultCarStatus === carOpt.id;
-                    return (
-                      <button
-                        key={carOpt.id}
-                        type="button"
-                        onClick={() => handleSelectDefaultCarStatus(carOpt.id)}
-                        className={`py-2.5 px-1 rounded-2xl text-xs transition-all active:scale-95 border ${
-                          active
-                            ? "bg-primary/12 text-primary border-primary shadow-2xs font-black"
-                            : "bg-muted/50 border-border/60 text-muted-foreground hover:text-foreground font-bold"
-                        }`}
-                      >
-                        {carOpt.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* マイカー登録一覧 */}
-              <div className="space-y-2.5 pt-1 border-t border-border/60">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <span className="text-xs font-black text-foreground block">
-                      登録マイカー（配車表連動）
-                    </span>
-                    <span className="text-[10px] font-bold text-muted-foreground block">
-                      車出し可能な車両を登録しておくと配車作成がスムーズになります
-                    </span>
+              <div className="p-4 space-y-4">
+                {/* デフォルト配車希望 */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black text-foreground block">
+                    遠征・試合時のデフォルト配車希望
+                  </label>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {(
+                      [
+                        { id: "can_drive", label: "🚗 車出し可" },
+                        { id: "need_ride", label: "🙋 送迎希望" },
+                        { id: "not_needed", label: "🚶 自走・不要" },
+                      ] as const
+                    ).map((carOpt) => {
+                      const active = defaultCarStatus === carOpt.id;
+                      return (
+                        <button
+                          key={carOpt.id}
+                          type="button"
+                          onClick={() => handleSelectDefaultCarStatus(carOpt.id)}
+                          className={`py-2.5 px-1 rounded-2xl text-xs transition-all active:scale-95 border ${
+                            active
+                              ? "bg-primary/12 text-primary border-primary shadow-2xs font-black"
+                              : "bg-muted/50 border-border text-muted-foreground hover:text-foreground font-bold"
+                          }`}
+                        >
+                          {carOpt.label}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
-                {myCars.length === 0 ? (
-                  <div className="p-3.5 rounded-2xl bg-muted/35 border border-dashed border-border/60 text-center">
-                    <p className="text-xs font-bold text-muted-foreground">
-                      登録されている車両はありません
-                    </p>
+                {/* マイカー登録一覧 */}
+                <div className="space-y-2.5 pt-1 border-t border-border">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-black text-foreground block">
+                        登録マイカー（配車表連動）
+                      </span>
+                      <span className="text-[10px] font-bold text-muted-foreground block">
+                        車出し可能な車両を登録しておくと配車作成がスムーズになります
+                      </span>
+                    </div>
                   </div>
-                ) : (
-                  <div className="space-y-2">
-                    {myCars.map((car) => (
-                      <div
-                        key={car.id}
-                        className="p-3 rounded-2xl bg-muted/35 border border-border/60 flex items-center justify-between gap-2"
-                      >
-                        <div className="min-w-0 space-y-1">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="text-xs sm:text-sm font-black text-foreground truncate">
-                              {car.name}
-                            </span>
-                            <span
-                              className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
-                                car.carType === "cargo"
-                                  ? "bg-primary/10 text-primary"
-                                  : "bg-muted text-muted-foreground border border-border/60"
-                              }`}
-                            >
-                              {car.carType === "cargo" ? "📦 道具車" : "🚙 普通車"}
-                            </span>
-                            <span className="px-2 py-0.5 rounded-full bg-muted text-foreground text-[10px] font-black">
-                              定員 {car.capacity}名
-                            </span>
+
+                  {myCars.length === 0 ? (
+                    <div className="p-3.5 rounded-2xl bg-muted/35 border border-dashed border-border text-center">
+                      <p className="text-xs font-bold text-muted-foreground">
+                        登録されている車両はありません
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {myCars.map((car) => (
+                        <div
+                          key={car.id}
+                          className="p-3 rounded-2xl bg-muted/35 border border-border flex items-center justify-between gap-2"
+                        >
+                          <div className="min-w-0 space-y-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-xs sm:text-sm font-black text-foreground truncate">
+                                {car.name}
+                              </span>
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                                  car.carType === "cargo"
+                                    ? "bg-primary/10 text-primary"
+                                    : "bg-muted text-muted-foreground border border-border"
+                                }`}
+                              >
+                                {car.carType === "cargo" ? "📦 道具車" : "🚙 普通車"}
+                              </span>
+                              <span className="px-2 py-0.5 rounded-full bg-muted text-foreground text-[10px] font-black">
+                                定員 {car.capacity}名
+                              </span>
+                            </div>
+
+                            {(car.color || car.numberPlate) && (
+                              <p className="text-[11px] font-bold text-muted-foreground">
+                                {[car.color, car.numberPlate ? `ナンバー: ${car.numberPlate}` : null]
+                                  .filter(Boolean)
+                                  .join(" ・ ")}
+                              </p>
+                            )}
                           </div>
 
-                          {(car.color || car.numberPlate) && (
-                            <p className="text-[11px] font-bold text-muted-foreground">
-                              {[car.color, car.numberPlate ? `ナンバー: ${car.numberPlate}` : null]
-                                .filter(Boolean)
-                                .join(" ・ ")}
-                            </p>
-                          )}
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => openEditCarForm(car)}
+                              className="p-2 rounded-xl bg-card hover:bg-muted border border-border text-muted-foreground hover:text-foreground transition-all active:scale-95"
+                              title="車両を編集"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteCar(car)}
+                              disabled={deletingCarId === car.id}
+                              className="p-2 rounded-xl bg-card hover:bg-rose-500/10 border border-border text-muted-foreground hover:text-rose-600 transition-all active:scale-95"
+                              title="車両を削除"
+                            >
+                              {deletingCarId === car.id ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <Trash2 className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+                          </div>
                         </div>
-
-                        <div className="flex items-center gap-1 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => openEditCarForm(car)}
-                            className="p-2 rounded-xl bg-card hover:bg-muted border border-border/60 text-muted-foreground hover:text-foreground transition-all active:scale-95"
-                            title="車両を編集"
-                          >
-                            <Edit3 className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteCar(car)}
-                            disabled={deletingCarId === car.id}
-                            className="p-2 rounded-xl bg-card hover:bg-rose-500/10 border border-border/60 text-muted-foreground hover:text-rose-600 transition-all active:scale-95"
-                            title="車両を削除"
-                          >
-                            {deletingCarId === car.id ? (
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            ) : (
-                              <Trash2 className="w-3.5 h-3.5" />
-                            )}
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* マイカー追加・編集フォーム */}
-                {isCarFormOpen ? (
-                  <div className="p-3.5 rounded-2xl bg-muted/35 border border-border/60 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-black text-foreground">
-                        {editingCarId ? "マイカー情報を編集" : "マイカーを新規登録"}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsCarFormOpen(false);
-                          setEditingCarId(null);
-                        }}
-                        className="p-1 rounded-lg text-muted-foreground hover:text-foreground"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
+                      ))}
                     </div>
+                  )}
 
-                    <div className="space-y-1">
-                      <label className="text-[11px] font-black text-foreground block">
-                        車種名 <span className="text-rose-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={carName}
-                        onChange={(e) => setCarName(e.target.value)}
-                        placeholder="例: セレナ / アルファード / フリード"
-                        className="w-full px-3 py-2 rounded-xl bg-card border border-border/60 text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2.5">
-                      <div className="space-y-1">
-                        <label className="text-[11px] font-black text-foreground block">
-                          乗車定員（運転手除く）
-                        </label>
-                        <select
-                          value={carCapacity}
-                          onChange={(e) => setCarCapacity(Number(e.target.value))}
-                          className="w-full px-3 py-2 rounded-xl bg-card border border-border/60 text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                  {/* マイカー追加・編集フォーム */}
+                  {isCarFormOpen ? (
+                    <div className="p-3.5 rounded-2xl bg-muted/35 border border-border space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-black text-foreground">
+                          {editingCarId ? "マイカー情報を編集" : "マイカーを新規登録"}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsCarFormOpen(false);
+                            setEditingCarId(null);
+                          }}
+                          className="p-1 rounded-lg text-muted-foreground hover:text-foreground"
                         >
-                          {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
-                            <option key={n} value={n}>
-                              {n}名（運転手除く）
-                            </option>
-                          ))}
-                        </select>
+                          <X className="w-4 h-4" />
+                        </button>
                       </div>
 
                       <div className="space-y-1">
-                        <label className="text-[11px] font-black text-foreground block">車両区分</label>
-                        <div className="grid grid-cols-2 gap-1">
-                          <button
-                            type="button"
-                            onClick={() => setCarType("normal")}
-                            className={`py-2 px-1.5 rounded-xl text-[11px] border transition-all ${
-                              carType === "normal"
-                                ? "bg-primary/12 text-primary border-primary font-black"
-                                : "bg-card border-border/60 text-muted-foreground hover:bg-muted font-bold"
-                            }`}
+                        <label className="text-[11px] font-black text-foreground block">
+                          車種名 <span className="text-rose-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={carName}
+                          onChange={(e) => setCarName(e.target.value)}
+                          placeholder="例: セレナ / アルファード / フリード"
+                          className="w-full px-3 py-2 rounded-xl bg-card border border-border text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2.5">
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-black text-foreground block">
+                            乗車定員（運転手除く）
+                          </label>
+                          <select
+                            value={carCapacity}
+                            onChange={(e) => setCarCapacity(Number(e.target.value))}
+                            className="w-full px-3 py-2 rounded-xl bg-card border border-border text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
                           >
-                            普通車
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setCarType("cargo")}
-                            className={`py-2 px-1.5 rounded-xl text-[11px] border transition-all flex items-center justify-center gap-0.5 ${
-                              carType === "cargo"
-                                ? "bg-primary/12 text-primary border-primary font-black"
-                                : "bg-card border-border/60 text-muted-foreground hover:bg-muted font-bold"
-                            }`}
-                          >
-                            <Package className="w-3 h-3" />
-                            <span>道具車</span>
-                          </button>
+                            {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
+                              <option key={n} value={n}>
+                                {n}名（運転手除く）
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-black text-foreground block">車両区分</label>
+                          <div className="grid grid-cols-2 gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setCarType("normal")}
+                              className={`py-2 px-1.5 rounded-xl text-[11px] border transition-all ${
+                                carType === "normal"
+                                  ? "bg-primary/12 text-primary border-primary font-black"
+                                  : "bg-card border-border text-muted-foreground hover:bg-muted font-bold"
+                              }`}
+                            >
+                              普通車
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setCarType("cargo")}
+                              className={`py-2 px-1.5 rounded-xl text-[11px] border transition-all flex items-center justify-center gap-0.5 ${
+                                carType === "cargo"
+                                  ? "bg-primary/12 text-primary border-primary font-black"
+                                  : "bg-card border-border text-muted-foreground hover:bg-muted font-bold"
+                              }`}
+                            >
+                              <Package className="w-3 h-3" />
+                              <span>道具車</span>
+                            </button>
+                          </div>
                         </div>
                       </div>
-                    </div>
 
-                    <div className="grid grid-cols-2 gap-2.5">
-                      <div className="space-y-1">
-                        <label className="text-[11px] font-black text-foreground block">
-                          車体カラー（任意）
-                        </label>
-                        <input
-                          type="text"
-                          value={carColor}
-                          onChange={(e) => setCarColor(e.target.value)}
-                          placeholder="例: ホワイト / 黒"
-                          className="w-full px-3 py-2 rounded-xl bg-card border border-border/60 text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
-                        />
+                      <div className="grid grid-cols-2 gap-2.5">
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-black text-foreground block">
+                            車体カラー（任意）
+                          </label>
+                          <input
+                            type="text"
+                            value={carColor}
+                            onChange={(e) => setCarColor(e.target.value)}
+                            placeholder="例: ホワイト / 黒"
+                            className="w-full px-3 py-2 rounded-xl bg-card border border-border text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-black text-foreground block">
+                            ナンバー下4桁（任意）
+                          </label>
+                          <input
+                            type="text"
+                            value={carPlate}
+                            onChange={(e) => setCarPlate(e.target.value)}
+                            placeholder="例: 12-34"
+                            className="w-full px-3 py-2 rounded-xl bg-card border border-border text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                          />
+                        </div>
                       </div>
 
-                      <div className="space-y-1">
-                        <label className="text-[11px] font-black text-foreground block">
-                          ナンバー下4桁（任意）
-                        </label>
-                        <input
-                          type="text"
-                          value={carPlate}
-                          onChange={(e) => setCarPlate(e.target.value)}
-                          placeholder="例: 12-34"
-                          className="w-full px-3 py-2 rounded-xl bg-card border border-border/60 text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
-                        />
+                      <div className="flex items-center gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsCarFormOpen(false);
+                            setEditingCarId(null);
+                          }}
+                          className="flex-1 py-2.5 rounded-xl bg-card hover:bg-muted text-xs font-bold text-foreground border border-border transition-all"
+                        >
+                          キャンセル
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleSaveCar}
+                          disabled={isSavingCar}
+                          className="flex-1 py-2.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black shadow-xs transition-all flex items-center justify-center gap-1.5 disabled:opacity-60"
+                        >
+                          {isSavingCar ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Check className="w-3.5 h-3.5" />
+                          )}
+                          <span>{editingCarId ? "更新する" : "登録する"}</span>
+                        </button>
                       </div>
                     </div>
-
-                    <div className="flex items-center gap-2 pt-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsCarFormOpen(false);
-                          setEditingCarId(null);
-                        }}
-                        className="flex-1 py-2.5 rounded-xl bg-card hover:bg-muted text-xs font-bold text-foreground border border-border/60 transition-all"
-                      >
-                        キャンセル
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleSaveCar}
-                        disabled={isSavingCar}
-                        className="flex-1 py-2.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black shadow-xs transition-all flex items-center justify-center gap-1.5 disabled:opacity-60"
-                      >
-                        {isSavingCar ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <Check className="w-3.5 h-3.5" />
-                        )}
-                        <span>{editingCarId ? "更新する" : "登録する"}</span>
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={openNewCarForm}
-                    className="w-full py-2.5 px-3 rounded-2xl bg-card hover:bg-muted border border-border/60 text-xs font-black text-foreground transition-all active:scale-98 flex items-center justify-center gap-1.5"
-                  >
-                    <Plus className="w-4 h-4 text-primary" />
-                    <span>マイカーを追加登録</span>
-                  </button>
-                )}
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={openNewCarForm}
+                      className="w-full py-2.5 px-3 rounded-2xl bg-card hover:bg-muted border border-border text-xs font-black text-foreground transition-all active:scale-98 flex items-center justify-center gap-1.5"
+                    >
+                      <Plus className="w-4 h-4 text-primary" />
+                      <span>マイカーを追加登録</span>
+                    </button>
+                  )}
+                </div>
               </div>
             </section>
 
             {/* ━━━ セクション 4: 🧢 所属チーム切替 & チーム参加 ━━━ */}
-            <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3 overflow-hidden">
-              <div className="-mx-4 -mt-4 px-4 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 border-l-4 border-l-primary flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4 text-primary" />
-                <h2 className="text-sm font-black text-foreground">所属チーム</h2>
+            <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+              <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-slate-500 px-4 py-3 flex items-center gap-2">
+                <span className="w-7 h-7 rounded-xl bg-slate-800 text-slate-200 border border-slate-700 flex items-center justify-center shrink-0">
+                  <ShieldCheck className="w-4 h-4" />
+                </span>
+                <h2 className="text-sm font-black text-white">所属チーム</h2>
               </div>
 
-              {teams.length > 0 && (
-                <div className="space-y-1.5">
-                  {teams.map((t) => {
-                    const isCurrent = currentTeam?.id === t.id;
-                    return (
-                      <button
-                        key={t.id}
-                        type="button"
-                        onClick={() => {
-                          if (!isCurrent) {
-                            selectTeam(t.id);
-                            toast.success(`表示チームを「${t.name}」に切り替えました`);
-                          }
-                        }}
-                        className={`w-full flex items-center justify-between p-3 rounded-2xl border text-left transition-all ${
-                          isCurrent
-                            ? "bg-primary/10 border-primary text-primary"
-                            : "bg-muted/35 hover:bg-muted border-border/60 text-foreground active:scale-[0.99]"
-                        }`}
-                      >
-                        <div className="min-w-0">
-                          <p className="text-xs sm:text-sm font-black truncate">
-                            {t.orgName || t.name}
-                          </p>
-                          {t.teamName && (
-                            <p className="text-[10px] font-bold text-muted-foreground truncate">
-                              {t.teamName}
+              <div className="p-4 space-y-3">
+                {teams.length > 0 && (
+                  <div className="space-y-1.5">
+                    {teams.map((t) => {
+                      const isCurrent = currentTeam?.id === t.id;
+                      return (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() => {
+                            if (!isCurrent) {
+                              selectTeam(t.id);
+                              toast.success(`表示チームを「${t.name}」に切り替えました`);
+                            }
+                          }}
+                          className={`w-full flex items-center justify-between p-3 rounded-2xl border text-left transition-all ${
+                            isCurrent
+                              ? "bg-primary/10 border-primary text-primary"
+                              : "bg-muted/35 hover:bg-muted border-border text-foreground active:scale-[0.99]"
+                          }`}
+                        >
+                          <div className="min-w-0">
+                            <p className="text-xs sm:text-sm font-black truncate">
+                              {t.orgName || t.name}
                             </p>
+                            {t.teamName && (
+                              <p className="text-[10px] font-bold text-muted-foreground truncate">
+                                {t.teamName}
+                              </p>
+                            )}
+                          </div>
+                          {isCurrent ? (
+                            <span className="px-2.5 py-1 rounded-full bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 border border-emerald-500/25 text-[10px] font-black shrink-0 flex items-center gap-1">
+                              <Check className="w-3 h-3" />
+                              <span>選択中</span>
+                            </span>
+                          ) : (
+                            <span className="text-[11px] font-bold text-muted-foreground shrink-0">
+                              切替
+                            </span>
                           )}
-                        </div>
-                        {isCurrent ? (
-                          <span className="px-2.5 py-1 rounded-full bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 border border-emerald-500/25 text-[10px] font-black shrink-0 flex items-center gap-1">
-                            <Check className="w-3 h-3" />
-                            <span>選択中</span>
-                          </span>
-                        ) : (
-                          <span className="text-[11px] font-bold text-muted-foreground shrink-0">
-                            切替
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
 
-              <button
-                type="button"
-                onClick={() => setIsJoinModalOpen(true)}
-                className="w-full py-2.5 px-3 rounded-2xl bg-primary/10 hover:bg-primary/15 border border-primary/25 text-xs font-black text-primary transition-all active:scale-98 flex items-center justify-center gap-1.5"
-              >
-                <UserPlus className="w-4 h-4" />
-                <span>招待コードで別のチームに参加</span>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => setIsJoinModalOpen(true)}
+                  className="w-full py-2.5 px-3 rounded-2xl bg-primary/10 hover:bg-primary/15 border border-primary/25 text-xs font-black text-primary transition-all active:scale-98 flex items-center justify-center gap-1.5"
+                >
+                  <UserPlus className="w-4 h-4" />
+                  <span>招待コードで別のチームに参加</span>
+                </button>
+              </div>
             </section>
           </>
         )}

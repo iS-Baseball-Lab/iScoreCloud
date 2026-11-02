@@ -8,6 +8,7 @@ import { HubQuickNav } from "@/components/liff/HubQuickNav";
 import { HubCalendarSection } from "@/components/liff/HubCalendarSection";
 import type { MatchCardData } from "@/components/liff/MatchScoreCard";
 import { useLiff } from "@/components/liff/LiffProvider";
+import { buildLiffHubUrl, fetchLiffJsonSWR, peekLiffApiCache } from "@/lib/liff/api-cache";
 import Link from "next/link";
 import { UserPlus, ShieldCheck } from "lucide-react";
 import { DemoBanner } from "@/components/liff/DemoBanner";
@@ -22,25 +23,48 @@ interface HubDataResponse {
     shortName: string;
     homeGround?: string | null;
   };
-  nextEvent?: any;
-  events?: any[];
+  nextEvent?: unknown;
+  events?: unknown[];
   matches?: MatchCardData[];
 }
 
+function resolveInitialHubCache(): HubDataResponse | null {
+  if (typeof window === "undefined") return null;
+  const tid = localStorage.getItem("iscore_selectedTeamId");
+  const uid = localStorage.getItem("iscore_user_id") || localStorage.getItem("iscore_userId") || "";
+  const uName = localStorage.getItem("iscore_user_name") || "";
+  if (tid) {
+    const exact = peekLiffApiCache<HubDataResponse>(
+      buildLiffHubUrl({ teamId: tid, userId: uid, userName: uName })
+    );
+    if (exact) return exact;
+  }
+  return peekLiffApiCache<HubDataResponse>(
+    buildLiffHubUrl({ teamId: null, userId: uid, userName: uName })
+  );
+}
+
 export default function LiffHubPage() {
-  const { profile, currentTeam, selectTeam, isLoadingTeam, isLoggedIn, login, isDemo, refreshTeams } = useLiff();
+  const { profile, currentTeam, isLoadingTeam, isLoggedIn, login, isDemo, refreshTeams } = useLiff();
   const [userName, setUserName] = useState<string>(() => {
     if (typeof window !== "undefined") {
       return localStorage.getItem("iscore_user_name") || "メンバー";
     }
     return "メンバー";
   });
-  const [nextEvent, setNextEvent] = useState<any>(null);
-  const [events, setEvents] = useState<any[]>([]);
-  const [matches, setMatches] = useState<MatchCardData[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+
+  const initialCached = resolveInitialHubCache();
+  const [nextEvent, setNextEvent] = useState<unknown>(initialCached?.nextEvent ?? null);
+  const [events, setEvents] = useState<unknown[]>(
+    Array.isArray(initialCached?.events) ? initialCached!.events! : []
+  );
+  const [matches, setMatches] = useState<MatchCardData[]>(
+    Array.isArray(initialCached?.matches) ? initialCached!.matches! : []
+  );
+  const [isLoading, setIsLoading] = useState<boolean>(!initialCached);
   const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
-  const hasLoadedRef = useRef(false);
+  const hasLoadedRef = useRef<boolean>(Boolean(initialCached));
+  const prevTeamIdRef = useRef<string | undefined>(currentTeam?.id);
 
   // LINEプロフィール取得時の名前反映
   useEffect(() => {
@@ -49,50 +73,85 @@ export default function LiffHubPage() {
     }
   }, [profile?.displayName]);
 
-  // DBからチーム情報・次回予定・試合一覧を完全自動取得（currentTeam.id に応じて連動）
-  const loadHubData = useCallback(async (teamId?: string) => {
-    if (isLoadingTeam && !currentTeam?.id) return;
+  const applyHubData = useCallback((data: HubDataResponse) => {
+    setNextEvent(data.nextEvent ?? null);
+    setEvents(Array.isArray(data.events) ? data.events : []);
+    setMatches(Array.isArray(data.matches) ? data.matches : []);
+    hasLoadedRef.current = true;
+    setIsLoading(false);
+  }, []);
 
-    try {
-      if (!hasLoadedRef.current) {
+  // DBからチーム情報・次回予定・試合一覧を取得（SWR + LiffProviderとのリクエスト完全統合）
+  const loadHubData = useCallback(
+    async (teamId?: string, forceRefresh = false) => {
+      if (isLoadingTeam && !currentTeam?.id && !teamId) return;
+
+      const targetTeamId =
+        teamId ||
+        currentTeam?.id ||
+        (typeof window !== "undefined" ? localStorage.getItem("iscore_selectedTeamId") : null) ||
+        null;
+      const uid =
+        profile?.userId ||
+        (typeof window !== "undefined"
+          ? localStorage.getItem("iscore_user_id") || localStorage.getItem("iscore_userId") || ""
+          : "");
+      const uName =
+        profile?.displayName ||
+        (typeof window !== "undefined" ? localStorage.getItem("iscore_user_name") || "" : "");
+
+      const endpoint = buildLiffHubUrl({
+        teamId: targetTeamId,
+        userId: uid,
+        userName: uName,
+      });
+
+      const cached = !forceRefresh ? peekLiffApiCache<HubDataResponse>(endpoint) : null;
+      if (cached) {
+        applyHubData(cached);
+      } else if (!hasLoadedRef.current) {
         setIsLoading(true);
       }
-      const targetTeamId = teamId || currentTeam?.id || "demo-team";
-      const uid = profile?.userId || (typeof window !== "undefined" ? (localStorage.getItem("iscore_user_id") || localStorage.getItem("iscore_userId") || "") : "");
-      const uName = profile?.displayName || (typeof window !== "undefined" ? (localStorage.getItem("iscore_user_name") || "") : "");
-      const endpoint = `/api/liff/hub?teamId=${targetTeamId}&userId=${uid}&userName=${encodeURIComponent(uName)}`;
-      const res = await fetch(endpoint);
 
-      if (res.ok) {
-        const data = (await res.json()) as HubDataResponse;
-        if (data.nextEvent) {
-          setNextEvent(data.nextEvent);
-        } else {
-          setNextEvent(null);
-        }
-        if (Array.isArray(data.events)) {
-          setEvents(data.events);
-        }
-        if (Array.isArray(data.matches)) {
-          setMatches(data.matches);
-        }
-        hasLoadedRef.current = true;
+      try {
+        const data = await fetchLiffJsonSWR<HubDataResponse>(endpoint, {
+          forceRefresh,
+          onRevalidate: (fresh) => applyHubData(fresh),
+        });
+        applyHubData(data);
+      } catch (error) {
+        console.error("Failed to load hub data:", error);
+        setIsLoading(false);
       }
-    } catch (error) {
-      console.error("Failed to load hub data:", error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [currentTeam?.id, isLoadingTeam]);
+    },
+    [applyHubData, currentTeam?.id, isLoadingTeam, profile?.displayName, profile?.userId]
+  );
 
   useEffect(() => {
-    // チーム変更時は一旦クリアして前チームのデータを引きずらない
-    setEvents([]);
-    setMatches([]);
-    setNextEvent(null);
-    hasLoadedRef.current = false;
-    loadHubData();
-  }, [currentTeam?.id]);
+    const currentId = currentTeam?.id;
+    // 別のチームへ明示的に切り替えた場合のみキャッシュがない時にクリアする
+    if (prevTeamIdRef.current && currentId && prevTeamIdRef.current !== currentId) {
+      const uid =
+        profile?.userId ||
+        (typeof window !== "undefined"
+          ? localStorage.getItem("iscore_user_id") || localStorage.getItem("iscore_userId") || ""
+          : "");
+      const uName =
+        profile?.displayName ||
+        (typeof window !== "undefined" ? localStorage.getItem("iscore_user_name") || "" : "");
+      const nextCached = peekLiffApiCache<HubDataResponse>(
+        buildLiffHubUrl({ teamId: currentId, userId: uid, userName: uName })
+      );
+      if (!nextCached) {
+        setEvents([]);
+        setMatches([]);
+        setNextEvent(null);
+        hasLoadedRef.current = false;
+      }
+    }
+    prevTeamIdRef.current = currentId;
+    void loadHubData(currentId, false);
+  }, [currentTeam?.id, loadHubData, profile?.displayName, profile?.userId]);
 
   const teamName = currentTeam?.name || "チーム";
 
@@ -161,7 +220,7 @@ export default function LiffHubPage() {
               isDemo={isDemo}
               userId={profile?.userId || undefined}
               userName={userName || undefined}
-              nextEvent={nextEvent}
+              nextEvent={nextEvent as never}
               eventsList={events}
               latestMatch={matches[0] || null}
               isLoading={isLoading && !hasLoadedRef.current}
@@ -191,8 +250,8 @@ export default function LiffHubPage() {
         onClose={() => setIsJoinModalOpen(false)}
         onSuccess={() => {
           setIsJoinModalOpen(false);
-          refreshTeams();
-          loadHubData();
+          void refreshTeams();
+          void loadHubData(currentTeam?.id, true);
         }}
       />
     </div>

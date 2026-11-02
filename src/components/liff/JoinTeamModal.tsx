@@ -95,29 +95,31 @@ export function JoinTeamModal({ isOpen, onClose, onSuccess }: JoinTeamModalProps
   };
 
   return createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-background/80 backdrop-blur-md overflow-y-auto animate-in fade-in duration-200">
-      <div className="w-full max-w-md bg-card rounded-2xl border border-border/60 shadow-2xl p-5 sm:p-6 space-y-4 my-auto max-h-[88vh] overflow-y-auto animate-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-slate-950/60 overflow-y-auto animate-in fade-in duration-200">
+      <div className="w-full max-w-md bg-card rounded-2xl border border-border shadow-xl overflow-hidden my-auto max-h-[88vh] flex flex-col animate-in zoom-in-95 duration-200">
         
-        {/* ヘッダー */}
-        <div className="flex items-center justify-between pb-3 border-b border-border/50 sticky top-0 bg-card z-10">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
+        {/* ヘッダー (A-3 Dark Solid Header Cap) */}
+        <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-slate-800 border border-slate-700 text-sky-400 flex items-center justify-center shrink-0">
               <UserPlus className="w-5 h-5" />
             </div>
-            <div>
-              <h3 className="text-base font-black text-foreground">チーム参加申請</h3>
-              <p className="text-[11px] font-bold text-muted-foreground">招待コードを入力して参加申請</p>
+            <div className="min-w-0">
+              <h3 className="text-base font-black text-white truncate">チーム参加申請</h3>
+              <p className="text-[11px] font-bold text-slate-300 truncate">招待コードを入力して参加申請</p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground transition-all"
+            aria-label="閉じる"
+            className="w-8 h-8 rounded-xl text-slate-300 hover:text-white hover:bg-slate-800 flex items-center justify-center transition-all shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
+        <div className="p-5 sm:p-6 space-y-4 overflow-y-auto">
         {/* 申請完了画面 */}
         {statusResult ? (
           <div className="py-4 space-y-4 text-center">
@@ -140,7 +142,7 @@ export function JoinTeamModal({ isOpen, onClose, onSuccess }: JoinTeamModalProps
                 {statusResult.message}
               </p>
             </div>
-            <div className="p-3.5 rounded-2xl bg-muted/50 border border-border/60 border-l-4 border-l-amber-500 text-left text-xs font-bold text-muted-foreground space-y-1">
+            <div className="p-3.5 rounded-2xl bg-muted/50 border border-border border-l-4 border-l-amber-500 text-left text-xs font-bold text-muted-foreground space-y-1">
               <p className="text-foreground font-black">🔒 セキュリティ・承認制について</p>
               <p>チーム管理者が承認するまで、個人情報や配車表・詳細予定は非公開となります。承認後に自動的にチームHUBが解禁されます。</p>
             </div>
@@ -192,7 +194,7 @@ export function JoinTeamModal({ isOpen, onClose, onSuccess }: JoinTeamModalProps
 
             <div className="space-y-1.5">
               <label className="text-xs font-black text-foreground">区分</label>
-              <div className="grid grid-cols-3 gap-1 p-1 rounded-2xl bg-muted/80 dark:bg-muted/50 border border-border/60">
+              <div className="grid grid-cols-3 gap-1 p-1 rounded-2xl bg-muted border border-border">
                 {(
                   [
                     { id: "parent", label: "保護者" },
@@ -206,7 +208,7 @@ export function JoinTeamModal({ isOpen, onClose, onSuccess }: JoinTeamModalProps
                     onClick={() => setMemberType(item.id)}
                     className={`py-2 rounded-xl text-xs border transition-all ${
                       memberType === item.id
-                        ? "bg-card text-foreground border-border/50 font-black shadow-sm"
+                        ? "bg-card text-foreground border-border font-black shadow-sm"
                         : "border-transparent text-muted-foreground hover:text-foreground font-bold"
                     }`}
                   >
@@ -227,7 +229,7 @@ export function JoinTeamModal({ isOpen, onClose, onSuccess }: JoinTeamModalProps
               />
             </div>
 
-            <div className="p-3 rounded-2xl bg-muted/40 border border-border/60 text-[11px] text-muted-foreground font-bold flex items-start gap-2">
+            <div className="p-3 rounded-2xl bg-muted/50 border border-border text-[11px] text-muted-foreground font-bold flex items-start gap-2">
               <Shield className="w-4 h-4 text-primary shrink-0 mt-0.5" />
               <span>チーム管理者の承認完了後、予定や配車表などのチーム限定機能が解禁されます。</span>
             </div>
@@ -251,6 +253,7 @@ export function JoinTeamModal({ isOpen, onClose, onSuccess }: JoinTeamModalProps
             </button>
           </form>
         )}
+        </div>
       </div>
     </div>,
     document.body

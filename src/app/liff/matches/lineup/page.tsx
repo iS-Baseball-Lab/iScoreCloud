@@ -987,49 +987,63 @@ function LiffLineupContent() {
             </Button>
           </div>
         ) : (
-          <section className="rounded-2xl border border-border/60 bg-card p-3.5 shadow-xs space-y-2.5">
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5 mb-1 flex-wrap">
-                  <span
-                    className={cn(
-                      "text-[10px] font-black px-1.5 py-0.5 rounded border",
-                      currentMatch?.matchType === "official"
-                        ? "bg-amber-500/12 text-amber-700 dark:text-amber-300 border-amber-500/30"
-                        : currentMatch?.matchType === "exchange"
-                        ? "bg-sky-500/12 text-sky-700 dark:text-sky-300 border-sky-500/25"
-                        : "bg-muted text-muted-foreground border-border/60"
-                    )}
-                  >
-                    {currentMatch?.matchType === "official"
-                      ? "公式戦"
+          <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+            {/* A-3 上帯ダークソリッドキャップ */}
+            <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                <span
+                  className={cn(
+                    "text-[10px] font-black px-1.5 py-0.5 rounded border",
+                    currentMatch?.matchType === "official"
+                      ? "bg-amber-400 text-slate-950 border-amber-400"
                       : currentMatch?.matchType === "exchange"
-                      ? "交流戦"
-                      : "OP戦"}
-                  </span>
-                  {currentMatch?.tournamentName && (
-                    <span className="text-[11px] font-bold text-muted-foreground truncate">
-                      {currentMatch.tournamentName}
-                    </span>
+                      ? "bg-sky-500 text-white border-sky-500"
+                      : "bg-slate-800 text-slate-200 border-slate-700"
                   )}
-                  <span
-                    className={cn(
-                      "text-[10px] font-black px-1.5 py-0.5 rounded",
-                      currentMatch?.status === "live"
-                        ? "bg-rose-600 text-white"
-                        : currentMatch?.status === "finished"
-                        ? "bg-muted text-muted-foreground"
-                        : "bg-primary/10 text-primary"
-                    )}
-                  >
-                    {currentMatch?.status === "live"
-                      ? "試合中"
-                      : currentMatch?.status === "finished"
-                      ? "試合終了"
-                      : "試合予定"}
+                >
+                  {currentMatch?.matchType === "official"
+                    ? "公式戦"
+                    : currentMatch?.matchType === "exchange"
+                    ? "交流戦"
+                    : "OP戦"}
+                </span>
+                {currentMatch?.tournamentName && (
+                  <span className="text-[11px] font-bold text-slate-300 truncate">
+                    {currentMatch.tournamentName}
                   </span>
-                </div>
+                )}
+                <span
+                  className={cn(
+                    "text-[10px] font-black px-1.5 py-0.5 rounded",
+                    currentMatch?.status === "live"
+                      ? "bg-rose-600 text-white"
+                      : currentMatch?.status === "finished"
+                      ? "bg-slate-800 text-slate-200 border border-slate-700"
+                      : "bg-primary text-primary-foreground"
+                  )}
+                >
+                  {currentMatch?.status === "live"
+                    ? "試合中"
+                    : currentMatch?.status === "finished"
+                    ? "試合終了"
+                    : "試合予定"}
+                </span>
+              </div>
 
+              {matchesList.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => setIsMatchPickerOpen((prev) => !prev)}
+                  className="px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[11px] font-black text-white flex items-center gap-1 shrink-0 active:scale-95 transition-all cursor-pointer"
+                >
+                  <ArrowLeftRight className="w-3.5 h-3.5 text-sky-400" />
+                  <span>試合切替</span>
+                </button>
+              )}
+            </div>
+
+            <div className="p-3.5 space-y-2.5 bg-card">
+              <div className="min-w-0">
                 <h2 className="text-base font-black text-foreground truncate">
                   {currentMatch ? `vs ${currentMatch.opponent}` : "試合情報を読み込み中..."}
                 </h2>
@@ -1053,61 +1067,50 @@ function LiffLineupContent() {
                 )}
               </div>
 
-              {matchesList.length > 1 && (
-                <button
-                  type="button"
-                  onClick={() => setIsMatchPickerOpen((prev) => !prev)}
-                  className="px-2.5 py-1.5 rounded-xl bg-card hover:bg-muted border border-border/60 text-[11px] font-black text-foreground flex items-center gap-1 shrink-0 active:scale-95 transition-all"
-                >
-                  <ArrowLeftRight className="w-3.5 h-3.5 text-primary" />
-                  <span>試合切替</span>
-                </button>
-              )}
-            </div>
-
-            {/* 試合切替ドロワー */}
-            {isMatchPickerOpen && matchesList.length > 1 && (
-              <div className="pt-2.5 border-t border-border/60 space-y-1.5 max-h-52 overflow-y-auto">
-                <p className="text-[10px] font-black text-muted-foreground px-1">
-                  登録する試合を選択してください
-                </p>
-                {matchesList.map((m) => {
-                  const isCurrent = m.id === selectedMatchId;
-                  return (
-                    <button
-                      key={m.id}
-                      type="button"
-                      onClick={() => handleSelectMatch(m.id)}
-                      className={cn(
-                        "w-full flex items-center justify-between p-2.5 rounded-xl border text-left transition-all",
-                        isCurrent
-                          ? "bg-primary/10 border-primary text-primary"
-                          : "bg-muted/35 hover:bg-muted/60 border-border/60 text-foreground"
-                      )}
-                    >
-                      <div className="min-w-0 flex-1">
-                        <p className="text-xs font-black truncate text-foreground">vs {m.opponent}</p>
-                        <p className="text-[10px] font-bold text-muted-foreground truncate">
-                          {m.date} {m.venueShortName || m.venueName ? `• ${m.venueShortName || m.venueName}` : ""}
-                        </p>
-                      </div>
-                      <span
+              {/* 試合切替ドロワー */}
+              {isMatchPickerOpen && matchesList.length > 1 && (
+                <div className="pt-2.5 border-t border-border space-y-1.5 max-h-52 overflow-y-auto">
+                  <p className="text-[10px] font-black text-muted-foreground px-1">
+                    登録する試合を選択してください
+                  </p>
+                  {matchesList.map((m) => {
+                    const isCurrent = m.id === selectedMatchId;
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => handleSelectMatch(m.id)}
                         className={cn(
-                          "text-[10px] font-black px-2 py-0.5 rounded-md shrink-0 ml-2",
-                          m.status === "scheduled"
-                            ? "bg-primary/15 text-primary"
-                            : m.status === "live"
-                            ? "bg-rose-600 text-white"
-                            : "bg-muted text-muted-foreground"
+                          "w-full flex items-center justify-between p-2.5 rounded-xl border text-left transition-all",
+                          isCurrent
+                            ? "bg-primary/10 border-primary text-primary"
+                            : "bg-muted/35 hover:bg-muted/60 border-border text-foreground"
                         )}
                       >
-                        {m.status === "scheduled" ? "予定" : m.status === "live" ? "試合中" : "終了"}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-black truncate text-foreground">vs {m.opponent}</p>
+                          <p className="text-[10px] font-bold text-muted-foreground truncate">
+                            {m.date} {m.venueShortName || m.venueName ? `• ${m.venueShortName || m.venueName}` : ""}
+                          </p>
+                        </div>
+                        <span
+                          className={cn(
+                            "text-[10px] font-black px-2 py-0.5 rounded-md shrink-0 ml-2",
+                            m.status === "scheduled"
+                              ? "bg-primary/15 text-primary"
+                              : m.status === "live"
+                              ? "bg-rose-600 text-white"
+                              : "bg-muted text-muted-foreground"
+                          )}
+                        >
+                          {m.status === "scheduled" ? "予定" : m.status === "live" ? "試合中" : "終了"}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </section>
         )}
 
@@ -1122,7 +1125,7 @@ function LiffLineupContent() {
             {currentMatch &&
               currentMatch.status === "finished" &&
               !isDemoMatchId(currentMatch.id) && (
-                <div className="p-3.5 rounded-2xl border border-border/60 border-l-4 border-l-primary bg-card shadow-xs flex items-center justify-between gap-2 flex-wrap">
+                <div className="p-3.5 rounded-2xl border border-border border-l-4 border-l-primary bg-card shadow-xs flex items-center justify-between gap-2 flex-wrap">
                   <div className="min-w-0">
                     <p className="text-xs font-black text-foreground">
                       試合途中の「選手交代・代打・代走・継投」を追加・修正したい場合
@@ -1146,14 +1149,14 @@ function LiffLineupContent() {
             {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                 🔀 自チーム / 相手チーム タブ切り替え（Web版流用）
             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-            <div className="flex gap-1 bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl border border-border/60">
+            <div className="flex gap-1 bg-muted p-1 rounded-2xl border border-border">
               <button
                 type="button"
                 onClick={() => setActiveTab("myTeam")}
                 className={cn(
                   "flex-1 py-2.5 text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer",
                   activeTab === "myTeam"
-                    ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                    ? "bg-card text-foreground shadow-sm border border-border font-black"
                     : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
                 )}
               >
@@ -1171,7 +1174,7 @@ function LiffLineupContent() {
                 className={cn(
                   "flex-1 py-2.5 text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer",
                   activeTab === "opponent"
-                    ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                    ? "bg-card text-foreground shadow-sm border border-border font-black"
                     : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
                 )}
               >
@@ -1194,7 +1197,7 @@ function LiffLineupContent() {
                     <select
                       value={selectedTemplateId}
                       onChange={handleLoadTemplate}
-                      className="w-full h-11 rounded-2xl border border-border/60 bg-card shadow-xs pl-9 pr-8 text-xs font-black text-foreground focus:outline-none focus:border-primary appearance-none cursor-pointer"
+                      className="w-full h-11 rounded-2xl border border-border bg-card shadow-xs pl-9 pr-8 text-xs font-black text-foreground focus:outline-none focus:border-primary appearance-none cursor-pointer"
                     >
                       <option value="">テンプレート読込</option>
                       {templates.map((t) => (
@@ -1231,19 +1234,24 @@ function LiffLineupContent() {
             {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                 ⚾ 【セクション1】スターティングメンバー
             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-            <section className="space-y-2.5">
-              <div className="flex items-center justify-between px-1">
-                <h3 className="text-xs font-black text-foreground flex items-center gap-1.5">
-                  <UserStar className="w-4 h-4 text-primary" />
+            <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+              <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3 flex items-center justify-between gap-2">
+                <h3 className="text-xs font-black text-white flex items-center gap-1.5">
+                  <UserStar className="w-4 h-4 text-amber-400" />
                   <span>スターティングメンバー</span>
                 </h3>
-                {activeTab === "myTeam" && (
-                  <span className="text-[11px] font-black bg-primary/10 text-primary px-2.5 py-0.5 rounded-full">
+                {activeTab === "myTeam" ? (
+                  <span className="text-[11px] font-black bg-slate-800 text-slate-100 border border-slate-700 px-2.5 py-0.5 rounded-full tabular-nums">
                     スタメン: {startingPlayerIds.length} / {myLineup.length}人
+                  </span>
+                ) : (
+                  <span className="text-[11px] font-black bg-slate-800 text-slate-200 border border-slate-700 px-2.5 py-0.5 rounded-full tabular-nums">
+                    {opponentLineup.length}人制
                   </span>
                 )}
               </div>
 
+              <div className="p-3 space-y-2.5 bg-card">
               <div className="space-y-2">
                 {(activeTab === "myTeam" ? myLineup : opponentLineup).map((player, index) => {
                   const disabledPos = getDisabledPositions(
@@ -1263,8 +1271,8 @@ function LiffLineupContent() {
                       className={cn(
                         "flex items-center gap-2 p-2 rounded-2xl bg-card shadow-xs transition-all",
                         isCompleted
-                          ? "border border-border/60"
-                          : "border border-dashed border-border/60"
+                          ? "border border-border"
+                          : "border border-dashed border-border"
                       )}
                     >
                       <div
@@ -1311,7 +1319,7 @@ function LiffLineupContent() {
                                 {posDef.label}
                               </span>
                             ) : (
-                              <span className="px-2 py-1 rounded-lg bg-muted text-muted-foreground font-black text-[10px] shrink-0 border border-border/60">
+                              <span className="px-2 py-1 rounded-lg bg-muted text-muted-foreground font-black text-[10px] shrink-0 border border-border">
                                 守備未設定
                               </span>
                             )}
@@ -1348,7 +1356,7 @@ function LiffLineupContent() {
                               "w-16 h-11 rounded-xl font-black text-xs appearance-none text-center shadow-2xs cursor-pointer shrink-0",
                               posDef
                                 ? `${posDef.color} text-white`
-                                : "bg-muted text-foreground border border-border/60"
+                                : "bg-muted text-foreground border border-border"
                             )}
                           >
                             <option value="">守備</option>
@@ -1409,28 +1417,30 @@ function LiffLineupContent() {
                 <Plus className="w-4 h-4" />
                 <span>打順（バッター）を追加（全員打撃対応）</span>
               </Button>
+              </div>
             </section>
 
             {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                 👥 【セクション2】ベンチ（控え）・欠席メンバー
             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
             {activeTab === "myTeam" && (
-              <section className="space-y-3 pt-4 border-t border-border/60 border-dashed">
-                <div className="flex items-center justify-between px-1">
-                  <h3 className="text-xs font-black text-foreground flex items-center gap-1.5">
-                    <Users className="w-4 h-4 text-primary" />
+              <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+                <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3 flex items-center justify-between gap-2 flex-wrap">
+                  <h3 className="text-xs font-black text-white flex items-center gap-1.5">
+                    <Users className="w-4 h-4 text-sky-400" />
                     <span>ベンチ（控え）・欠席メンバー</span>
                   </h3>
                   <div className="flex gap-1.5">
-                    <span className="text-[10px] font-black bg-primary/10 text-primary border border-primary/25 px-2 py-0.5 rounded-full">
+                    <span className="text-[10px] font-black bg-primary text-primary-foreground px-2 py-0.5 rounded-full tabular-nums">
                       控え: {benchCount}人
                     </span>
-                    <span className="text-[10px] font-black bg-muted/50 text-muted-foreground border border-border/60 px-2 py-0.5 rounded-full">
+                    <span className="text-[10px] font-black bg-slate-800 text-slate-200 border border-slate-700 px-2 py-0.5 rounded-full tabular-nums">
                       欠席: {absentCount}人
                     </span>
                   </div>
                 </div>
 
+                <div className="p-3 bg-card">
                 {teamPlayers.length === 0 ? (
                   <EmptyState
                     icon={Users}
@@ -1438,7 +1448,7 @@ function LiffLineupContent() {
                     description="チームに選手名簿が登録されると、スタメン・控え・欠席の振り分けが行えます"
                   />
                 ) : remainingPlayers.length === 0 ? (
-                  <div className="text-center py-6 bg-card rounded-2xl border border-border/60 shadow-xs">
+                  <div className="text-center py-6 bg-card rounded-2xl border border-border shadow-xs">
                     <p className="text-xs font-black text-muted-foreground">
                       全選手がスタメンに登録されています
                     </p>
@@ -1454,7 +1464,7 @@ function LiffLineupContent() {
                         <div
                           key={player.id}
                           className={cn(
-                            "flex items-center justify-between p-2.5 pl-3.5 rounded-2xl border border-border/60 shadow-xs transition-all",
+                            "flex items-center justify-between p-2.5 pl-3.5 rounded-2xl border border-border shadow-xs transition-all",
                             isAbsent ? "bg-muted/35" : "bg-card"
                           )}
                         >
@@ -1489,7 +1499,7 @@ function LiffLineupContent() {
                           </div>
 
                           {/* 控え / 欠席 セグメントトグル */}
-                          <div className="flex gap-0.5 bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl w-[142px] shrink-0 border border-border/60">
+                          <div className="flex gap-0.5 bg-muted p-1 rounded-2xl w-[142px] shrink-0 border border-border">
                             <button
                               type="button"
                               onClick={() => {
@@ -1503,7 +1513,7 @@ function LiffLineupContent() {
                               className={cn(
                                 "flex-1 flex items-center justify-center py-1.5 rounded-xl text-[11px] transition-all cursor-pointer",
                                 status === "bench"
-                                  ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                                  ? "bg-card text-foreground shadow-sm border border-border font-black"
                                   : "text-muted-foreground hover:text-foreground font-bold border border-transparent",
                                 isLockedBySchedule && "opacity-45 cursor-not-allowed"
                               )}
@@ -1524,7 +1534,7 @@ function LiffLineupContent() {
                               className={cn(
                                 "flex-1 flex items-center justify-center py-1.5 rounded-xl text-[11px] transition-all cursor-pointer",
                                 status === "absent"
-                                  ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                                  ? "bg-card text-foreground shadow-sm border border-border font-black"
                                   : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
                               )}
                             >
@@ -1542,6 +1552,7 @@ function LiffLineupContent() {
                     })}
                   </div>
                 )}
+                </div>
               </section>
             )}
 
@@ -1572,7 +1583,7 @@ function LiffLineupContent() {
                 type="button"
                 variant="outline"
                 onClick={handleCopyLineupText}
-                className="w-full h-11 rounded-2xl border-border/60 bg-card font-black text-xs text-foreground hover:bg-muted gap-1.5 shadow-xs"
+                className="w-full h-11 rounded-2xl border-border bg-card font-black text-xs text-foreground hover:bg-muted gap-1.5 shadow-xs"
               >
                 {isCopied ? (
                   <>
@@ -1598,52 +1609,55 @@ function LiffLineupContent() {
       ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {isTemplateModalOpen && (
         <div
-          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 animate-in fade-in duration-150"
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/60 animate-in fade-in duration-150"
           onClick={() => setIsTemplateModalOpen(false)}
         >
           <div
-            className="bg-card w-full max-w-sm rounded-2xl border border-border/60 p-6 shadow-xs space-y-4"
+            className="bg-card w-full max-w-sm rounded-2xl border border-border shadow-xs overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-base font-black text-foreground">テンプレート保存</h3>
-                <p className="text-[11px] font-bold text-muted-foreground">
+            <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3 flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <h3 className="text-sm font-black text-white">テンプレート保存</h3>
+                <p className="text-[11px] font-bold text-slate-300 mt-0.5">
                   現在のスタメンを基本オーダーとして保存します
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setIsTemplateModalOpen(false)}
-                className="p-1.5 rounded-full bg-muted text-muted-foreground hover:text-foreground"
+                className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-300 hover:text-white hover:bg-slate-800 transition-colors shrink-0"
+                aria-label="閉じる"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <Input
-              placeholder="例：Aチーム 基本オーダー"
-              className="h-12 rounded-2xl bg-muted/50 border-border/60 font-bold text-sm"
-              value={templateName}
-              onChange={(e) => setTemplateName(e.target.value)}
-            />
+            <div className="p-5 space-y-4 bg-card">
+              <Input
+                placeholder="例：Aチーム 基本オーダー"
+                className="h-12 rounded-2xl bg-muted/50 border-border font-bold text-sm"
+                value={templateName}
+                onChange={(e) => setTemplateName(e.target.value)}
+              />
 
-            <div className="flex gap-2.5 pt-1">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setIsTemplateModalOpen(false)}
-                className="flex-1 h-12 rounded-2xl border-border/60 font-black"
-              >
-                キャンセル
-              </Button>
-              <Button
-                type="button"
-                onClick={handleSaveTemplate}
-                className="flex-1 h-12 rounded-2xl font-black shadow-xs"
-              >
-                保存する
-              </Button>
+              <div className="flex gap-2.5 pt-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsTemplateModalOpen(false)}
+                  className="flex-1 h-12 rounded-2xl border-border font-black"
+                >
+                  キャンセル
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleSaveTemplate}
+                  className="flex-1 h-12 rounded-2xl font-black shadow-xs"
+                >
+                  保存する
+                </Button>
+              </div>
             </div>
           </div>
         </div>
@@ -1654,23 +1668,23 @@ function LiffLineupContent() {
       ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {activeSelectionIndex !== null && myLineup[activeSelectionIndex] && (
         <div
-          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/65 animate-in fade-in duration-150"
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/60 animate-in fade-in duration-150"
           onClick={() => {
             setActiveSelectionIndex(null);
             setTempSelectedPlayer(null);
           }}
         >
           <div
-            className="bg-card w-full max-w-md rounded-2xl border border-border/60 p-5 shadow-xs flex flex-col max-h-[82vh] animate-in zoom-in-95 duration-150"
+            className="bg-card w-full max-w-md rounded-2xl border border-border shadow-xs overflow-hidden flex flex-col max-h-[82vh] animate-in zoom-in-95 duration-150"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* モーダルヘッダー */}
-            <div className="flex items-center justify-between pb-3 border-b border-border/60">
-              <div>
-                <h3 className="text-base font-black text-foreground">
+            {/* モーダルヘッダー (A-3 ダークソリッドキャップ) */}
+            <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3 flex items-center justify-between gap-2 shrink-0">
+              <div className="min-w-0">
+                <h3 className="text-sm font-black text-white">
                   {modalStep === "player" ? "選手を選択" : "守備位置を選択"}
                 </h3>
-                <p className="text-[11px] text-muted-foreground font-bold">
+                <p className="text-[11px] text-slate-300 font-bold mt-0.5 truncate">
                   {activeSelectionIndex + 1}番打者
                   {modalStep === "position" && tempSelectedPlayer
                     ? ` : ${tempSelectedPlayer.uniformNumber ? `#${tempSelectedPlayer.uniformNumber} ` : ""}${tempSelectedPlayer.name}`
@@ -1683,198 +1697,200 @@ function LiffLineupContent() {
                   setActiveSelectionIndex(null);
                   setTempSelectedPlayer(null);
                 }}
-                className="p-2 rounded-full bg-muted text-muted-foreground hover:text-foreground"
+                className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-300 hover:text-white hover:bg-slate-800 transition-colors shrink-0"
                 aria-label="閉じる"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            {modalStep === "player" ? (
-              /* ステップ1: 選手選択 */
-              <>
-                <div className="my-3 relative">
-                  <Input
-                    placeholder="選手名または背番号で検索..."
-                    value={playerSearchQuery}
-                    onChange={(e) => setPlayerSearchQuery(e.target.value)}
-                    className="h-11 rounded-xl bg-muted/50 border-border/60 font-bold pl-3.5 pr-12 text-sm"
-                  />
-                  {playerSearchQuery && (
+            <div className="p-5 flex flex-col flex-1 overflow-hidden bg-card">
+              {modalStep === "player" ? (
+                /* ステップ1: 選手選択 */
+                <>
+                  <div className="mb-3 relative">
+                    <Input
+                      placeholder="選手名または背番号で検索..."
+                      value={playerSearchQuery}
+                      onChange={(e) => setPlayerSearchQuery(e.target.value)}
+                      className="h-11 rounded-xl bg-muted/50 border-border font-bold pl-3.5 pr-12 text-sm"
+                    />
+                    {playerSearchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setPlayerSearchQuery("")}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-black text-muted-foreground hover:text-foreground"
+                      >
+                        クリア
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto space-y-2 pr-0.5 min-h-[260px]">
+                    {/* 選択解除ボタン */}
                     <button
                       type="button"
-                      onClick={() => setPlayerSearchQuery("")}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-black text-muted-foreground hover:text-foreground"
+                      onClick={() => {
+                        const list = [...myLineup];
+                        list[activeSelectionIndex] = {
+                          ...list[activeSelectionIndex],
+                          playerId: "",
+                          name: "",
+                          uniformNumber: "",
+                          position: "",
+                        };
+                        setMyLineup(list);
+                        setActiveSelectionIndex(null);
+                        setTempSelectedPlayer(null);
+                        toast.success(`${activeSelectionIndex + 1}番の選択を解除しました`);
+                      }}
+                      className="w-full flex items-center justify-center gap-2 p-2.5 rounded-xl border border-dashed border-border text-xs font-black text-muted-foreground hover:bg-muted/40 hover:text-foreground transition-all cursor-pointer"
                     >
-                      クリア
+                      選択をクリアする（空欄にする）
                     </button>
-                  )}
-                </div>
 
-                <div className="flex-1 overflow-y-auto space-y-2 pr-0.5 min-h-[260px]">
-                  {/* 選択解除ボタン */}
+                    {(() => {
+                      const query = playerSearchQuery.trim().toLowerCase();
+                      const filtered = teamPlayers.filter((p) => {
+                        const nameMatch = p.name.toLowerCase().includes(query);
+                        const numMatch = p.uniformNumber ? p.uniformNumber.includes(query) : false;
+                        return nameMatch || numMatch;
+                      });
+
+                      if (filtered.length === 0) {
+                        return (
+                          <div className="text-center py-10">
+                            <p className="text-xs font-bold text-muted-foreground">選手が見つかりません</p>
+                          </div>
+                        );
+                      }
+
+                      const disabledPlayers = getDisabledPlayers(myLineup, activeSelectionIndex);
+
+                      return filtered.map((p) => {
+                        const isAlreadySelected = disabledPlayers.includes(p.id);
+                        const isAbsent = attendance[p.id] === "absent";
+                        const isDisabled = isAlreadySelected || isAbsent;
+                        const assignedOrder = myLineup.find(
+                          (item, idx) => idx !== activeSelectionIndex && item.playerId === p.id
+                        )?.order;
+
+                        return (
+                          <button
+                            key={p.id}
+                            type="button"
+                            disabled={isDisabled}
+                            onClick={() => {
+                              setTempSelectedPlayer(p);
+                              setModalStep("position");
+                            }}
+                            className={cn(
+                              "w-full flex items-center justify-between p-3 rounded-xl border transition-all text-left cursor-pointer",
+                              myLineup[activeSelectionIndex].playerId === p.id
+                                ? "bg-primary/10 border-primary text-primary"
+                                : "bg-card hover:bg-muted/40 border-border",
+                              isDisabled && "opacity-45 cursor-not-allowed bg-muted/35 hover:bg-muted/35"
+                            )}
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <span className="text-xs font-black min-w-[26px] text-primary">
+                                {p.uniformNumber ? `#${p.uniformNumber}` : "-"}
+                              </span>
+                              <span className="text-sm font-black text-foreground truncate">
+                                {p.name}
+                              </span>
+                            </div>
+
+                            <div className="flex gap-1.5 items-center shrink-0 ml-2">
+                              {isAlreadySelected && (
+                                <span className="text-[10px] font-black bg-muted text-muted-foreground px-2 py-0.5 rounded-md">
+                                  選択中 ({assignedOrder}番)
+                                </span>
+                              )}
+                              {isAbsent && (
+                                <span className="text-[10px] font-black bg-muted text-muted-foreground px-2 py-0.5 rounded-md">
+                                  欠席
+                                </span>
+                              )}
+                              {!isAlreadySelected && !isAbsent && (
+                                <span className="text-[10px] font-black bg-primary/10 text-primary px-2 py-0.5 rounded-md">
+                                  起用可能
+                                </span>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      });
+                    })()}
+                  </div>
+                </>
+              ) : (
+                /* ステップ2: 守備位置選択 */
+                <div className="flex flex-col flex-1 overflow-hidden">
                   <button
                     type="button"
-                    onClick={() => {
-                      const list = [...myLineup];
-                      list[activeSelectionIndex] = {
-                        ...list[activeSelectionIndex],
-                        playerId: "",
-                        name: "",
-                        uniformNumber: "",
-                        position: "",
-                      };
-                      setMyLineup(list);
-                      setActiveSelectionIndex(null);
-                      setTempSelectedPlayer(null);
-                      toast.success(`${activeSelectionIndex + 1}番の選択を解除しました`);
-                    }}
-                    className="w-full flex items-center justify-center gap-2 p-2.5 rounded-xl border border-dashed border-border/60 text-xs font-black text-muted-foreground hover:bg-muted/40 hover:text-foreground transition-all cursor-pointer"
+                    onClick={() => setModalStep("player")}
+                    className="text-xs text-primary font-black flex items-center gap-1 hover:underline mb-3 self-start cursor-pointer"
                   >
-                    選択をクリアする（空欄にする）
+                    ← 選手選択に戻る
                   </button>
 
-                  {(() => {
-                    const query = playerSearchQuery.trim().toLowerCase();
-                    const filtered = teamPlayers.filter((p) => {
-                      const nameMatch = p.name.toLowerCase().includes(query);
-                      const numMatch = p.uniformNumber ? p.uniformNumber.includes(query) : false;
-                      return nameMatch || numMatch;
-                    });
+                  <p className="text-xs text-muted-foreground font-bold mb-3">
+                    {tempSelectedPlayer?.name} 選手の守備位置を選択してください
+                  </p>
 
-                    if (filtered.length === 0) {
-                      return (
-                        <div className="text-center py-10">
-                          <p className="text-xs font-bold text-muted-foreground">選手が見つかりません</p>
-                        </div>
-                      );
-                    }
+                  <div className="grid grid-cols-2 gap-2.5 flex-1 overflow-y-auto pr-0.5">
+                    {(() => {
+                      const disabledPos = getDisabledPositions(myLineup, activeSelectionIndex);
 
-                    const disabledPlayers = getDisabledPlayers(myLineup, activeSelectionIndex);
+                      return LINEUP_POSITIONS.map((pos) => {
+                        const isPosDisabled = disabledPos.includes(pos.id);
+                        const isCurrentPos = myLineup[activeSelectionIndex].position === pos.id;
 
-                    return filtered.map((p) => {
-                      const isAlreadySelected = disabledPlayers.includes(p.id);
-                      const isAbsent = attendance[p.id] === "absent";
-                      const isDisabled = isAlreadySelected || isAbsent;
-                      const assignedOrder = myLineup.find(
-                        (item, idx) => idx !== activeSelectionIndex && item.playerId === p.id
-                      )?.order;
-
-                      return (
-                        <button
-                          key={p.id}
-                          type="button"
-                          disabled={isDisabled}
-                          onClick={() => {
-                            setTempSelectedPlayer(p);
-                            setModalStep("position");
-                          }}
-                          className={cn(
-                            "w-full flex items-center justify-between p-3 rounded-xl border transition-all text-left cursor-pointer",
-                            myLineup[activeSelectionIndex].playerId === p.id
-                              ? "bg-primary/10 border-primary text-primary"
-                              : "bg-card hover:bg-muted/40 border-border/60",
-                            isDisabled && "opacity-45 cursor-not-allowed bg-muted/35 hover:bg-muted/35"
-                          )}
-                        >
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <span className="text-xs font-black min-w-[26px] text-primary">
-                              {p.uniformNumber ? `#${p.uniformNumber}` : "-"}
-                            </span>
-                            <span className="text-sm font-black text-foreground truncate">
-                              {p.name}
-                            </span>
-                          </div>
-
-                          <div className="flex gap-1.5 items-center shrink-0 ml-2">
-                            {isAlreadySelected && (
-                              <span className="text-[10px] font-black bg-muted text-muted-foreground px-2 py-0.5 rounded-md">
-                                選択中 ({assignedOrder}番)
+                        return (
+                          <button
+                            key={pos.id}
+                            type="button"
+                            disabled={isPosDisabled}
+                            onClick={() => {
+                              if (!tempSelectedPlayer) return;
+                              const list = [...myLineup];
+                              list[activeSelectionIndex] = {
+                                ...list[activeSelectionIndex],
+                                playerId: tempSelectedPlayer.id,
+                                name: tempSelectedPlayer.name,
+                                uniformNumber: tempSelectedPlayer.uniformNumber || "",
+                                position: pos.id,
+                              };
+                              setMyLineup(list);
+                              setActiveSelectionIndex(null);
+                              setTempSelectedPlayer(null);
+                              toast.success(
+                                `${activeSelectionIndex + 1}番に ${tempSelectedPlayer.name} (${pos.label}) を設定しました`
+                              );
+                            }}
+                            className={cn(
+                              "h-12 rounded-2xl font-black text-xs text-white transition-all flex items-center justify-center shadow-xs relative cursor-pointer active:scale-95",
+                              pos.color,
+                              isCurrentPos && "ring-4 ring-primary/40",
+                              isPosDisabled &&
+                                "opacity-35 cursor-not-allowed bg-muted text-muted-foreground shadow-none"
+                            )}
+                          >
+                            <span>{pos.label}</span>
+                            {isPosDisabled && (
+                              <span className="absolute bottom-1 right-2 text-[9px] opacity-80">
+                                選択済
                               </span>
                             )}
-                            {isAbsent && (
-                              <span className="text-[10px] font-black bg-muted text-muted-foreground px-2 py-0.5 rounded-md">
-                                欠席
-                              </span>
-                            )}
-                            {!isAlreadySelected && !isAbsent && (
-                              <span className="text-[10px] font-black bg-primary/10 text-primary px-2 py-0.5 rounded-md">
-                                起用可能
-                              </span>
-                            )}
-                          </div>
-                        </button>
-                      );
-                    });
-                  })()}
+                          </button>
+                        );
+                      });
+                    })()}
+                  </div>
                 </div>
-              </>
-            ) : (
-              /* ステップ2: 守備位置選択 */
-              <div className="pt-3 flex flex-col flex-1 overflow-hidden">
-                <button
-                  type="button"
-                  onClick={() => setModalStep("player")}
-                  className="text-xs text-primary font-black flex items-center gap-1 hover:underline mb-3 self-start cursor-pointer"
-                >
-                  ← 選手選択に戻る
-                </button>
-
-                <p className="text-xs text-muted-foreground font-bold mb-3">
-                  {tempSelectedPlayer?.name} 選手の守備位置を選択してください
-                </p>
-
-                <div className="grid grid-cols-2 gap-2.5 flex-1 overflow-y-auto pr-0.5">
-                  {(() => {
-                    const disabledPos = getDisabledPositions(myLineup, activeSelectionIndex);
-
-                    return LINEUP_POSITIONS.map((pos) => {
-                      const isPosDisabled = disabledPos.includes(pos.id);
-                      const isCurrentPos = myLineup[activeSelectionIndex].position === pos.id;
-
-                      return (
-                        <button
-                          key={pos.id}
-                          type="button"
-                          disabled={isPosDisabled}
-                          onClick={() => {
-                            if (!tempSelectedPlayer) return;
-                            const list = [...myLineup];
-                            list[activeSelectionIndex] = {
-                              ...list[activeSelectionIndex],
-                              playerId: tempSelectedPlayer.id,
-                              name: tempSelectedPlayer.name,
-                              uniformNumber: tempSelectedPlayer.uniformNumber || "",
-                              position: pos.id,
-                            };
-                            setMyLineup(list);
-                            setActiveSelectionIndex(null);
-                            setTempSelectedPlayer(null);
-                            toast.success(
-                              `${activeSelectionIndex + 1}番に ${tempSelectedPlayer.name} (${pos.label}) を設定しました`
-                            );
-                          }}
-                          className={cn(
-                            "h-12 rounded-2xl font-black text-xs text-white transition-all flex items-center justify-center shadow-xs relative cursor-pointer active:scale-95",
-                            pos.color,
-                            isCurrentPos && "ring-4 ring-primary/40",
-                            isPosDisabled &&
-                              "opacity-35 cursor-not-allowed bg-muted text-muted-foreground shadow-none"
-                          )}
-                        >
-                          <span>{pos.label}</span>
-                          {isPosDisabled && (
-                            <span className="absolute bottom-1 right-2 text-[9px] opacity-80">
-                              選択済
-                            </span>
-                          )}
-                        </button>
-                      );
-                    });
-                  })()}
-                </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -1884,159 +1900,162 @@ function LiffLineupContent() {
       ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {isCreateMatchModalOpen && (
         <div
-          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/65 animate-in fade-in duration-150"
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/60 animate-in fade-in duration-150"
           onClick={() => setIsCreateMatchModalOpen(false)}
         >
           <form
             onSubmit={handleCreateMatch}
             onClick={(e) => e.stopPropagation()}
-            className="bg-card w-full max-w-md rounded-2xl border border-border/60 p-5 shadow-xs space-y-3.5 max-h-[85vh] overflow-y-auto"
+            className="bg-card w-full max-w-md rounded-2xl border border-border shadow-xs overflow-hidden flex flex-col max-h-[85vh]"
           >
-            <div className="flex items-center justify-between pb-2 border-b border-border/60">
-              <div>
-                <h3 className="text-base font-black text-foreground">新しい試合予定を作成</h3>
-                <p className="text-[11px] font-bold text-muted-foreground">
+            <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3 flex items-center justify-between gap-2 shrink-0">
+              <div className="min-w-0">
+                <h3 className="text-sm font-black text-white">新しい試合予定を作成</h3>
+                <p className="text-[11px] font-bold text-slate-300 mt-0.5">
                   作成後すぐにスタメン・控え・欠席を登録できます
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setIsCreateMatchModalOpen(false)}
-                className="p-1.5 rounded-full bg-muted text-muted-foreground hover:text-foreground"
+                className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-300 hover:text-white hover:bg-slate-800 transition-colors shrink-0"
+                aria-label="閉じる"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="space-y-1">
-              <label className="text-xs font-black text-foreground">対戦相手 *</label>
-              <Input
-                required
-                placeholder="例：ブルーサンダース"
-                value={newOpponent}
-                onChange={(e) => setNewOpponent(e.target.value)}
-                className="h-11 rounded-xl bg-muted/50 border-border/60 font-bold text-sm"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-2.5">
+            <div className="p-5 space-y-3.5 overflow-y-auto bg-card">
               <div className="space-y-1">
-                <label className="text-xs font-black text-foreground">試合日 *</label>
+                <label className="text-xs font-black text-foreground">対戦相手 *</label>
                 <Input
-                  type="date"
                   required
-                  value={newDate}
-                  onChange={(e) => setNewDate(e.target.value)}
-                  className="h-11 rounded-xl bg-muted/50 border-border/60 font-bold text-xs"
+                  placeholder="例：ブルーサンダース"
+                  value={newOpponent}
+                  onChange={(e) => setNewOpponent(e.target.value)}
+                  className="h-11 rounded-xl bg-muted/50 border-border font-bold text-sm"
                 />
               </div>
-              <div className="space-y-1">
-                <label className="text-xs font-black text-foreground">開始予定時刻</label>
-                <Input
-                  type="time"
-                  value={newTime}
-                  onChange={(e) => setNewTime(e.target.value)}
-                  className="h-11 rounded-xl bg-muted/50 border-border/60 font-bold text-xs"
-                />
-              </div>
-            </div>
 
-            <div className="space-y-1">
-              <label className="text-xs font-black text-foreground">試合種別</label>
-              <div className="grid grid-cols-3 gap-1.5">
-                {(
-                  [
-                    { id: "practice", label: "練習試合" },
-                    { id: "official", label: "公式戦" },
-                    { id: "exchange", label: "交流戦" },
-                  ] as const
-                ).map((item) => (
+              <div className="grid grid-cols-2 gap-2.5">
+                <div className="space-y-1">
+                  <label className="text-xs font-black text-foreground">試合日 *</label>
+                  <Input
+                    type="date"
+                    required
+                    value={newDate}
+                    onChange={(e) => setNewDate(e.target.value)}
+                    className="h-11 rounded-xl bg-muted/50 border-border font-bold text-xs"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-black text-foreground">開始予定時刻</label>
+                  <Input
+                    type="time"
+                    value={newTime}
+                    onChange={(e) => setNewTime(e.target.value)}
+                    className="h-11 rounded-xl bg-muted/50 border-border font-bold text-xs"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-black text-foreground">試合種別</label>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {(
+                    [
+                      { id: "practice", label: "練習試合" },
+                      { id: "official", label: "公式戦" },
+                      { id: "exchange", label: "交流戦" },
+                    ] as const
+                  ).map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => setNewMatchType(item.id)}
+                      className={cn(
+                        "py-2 rounded-xl text-xs border transition-all cursor-pointer",
+                        newMatchType === item.id
+                          ? "bg-primary/12 text-primary border-primary/35 font-black shadow-2xs"
+                          : "bg-card text-muted-foreground border-border hover:text-foreground hover:bg-muted/50 font-bold"
+                      )}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {newMatchType !== "practice" && (
+                <div className="space-y-1">
+                  <label className="text-xs font-black text-foreground">大会名</label>
+                  <Input
+                    placeholder="例：秋季大会 2回戦"
+                    value={newTournamentName}
+                    onChange={(e) => setNewTournamentName(e.target.value)}
+                    className="h-11 rounded-xl bg-muted/50 border-border font-bold text-sm"
+                  />
+                </div>
+              )}
+
+              <div className="space-y-1">
+                <label className="text-xs font-black text-foreground">先攻・後攻（仮設定可）</label>
+                <div className="grid grid-cols-2 gap-2">
                   <button
-                    key={item.id}
                     type="button"
-                    onClick={() => setNewMatchType(item.id)}
+                    onClick={() => setNewBattingOrder("first")}
                     className={cn(
                       "py-2 rounded-xl text-xs border transition-all cursor-pointer",
-                      newMatchType === item.id
+                      newBattingOrder === "first"
                         ? "bg-primary/12 text-primary border-primary/35 font-black shadow-2xs"
-                        : "bg-card text-muted-foreground border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
+                        : "bg-card text-muted-foreground border-border hover:text-foreground hover:bg-muted/50 font-bold"
                     )}
                   >
-                    {item.label}
+                    先攻（表）
                   </button>
-                ))}
+                  <button
+                    type="button"
+                    onClick={() => setNewBattingOrder("second")}
+                    className={cn(
+                      "py-2 rounded-xl text-xs border transition-all cursor-pointer",
+                      newBattingOrder === "second"
+                        ? "bg-primary/12 text-primary border-primary/35 font-black shadow-2xs"
+                        : "bg-card text-muted-foreground border-border hover:text-foreground hover:bg-muted/50 font-bold"
+                    )}
+                  >
+                    後攻（裏）
+                  </button>
+                </div>
               </div>
-            </div>
 
-            {newMatchType !== "practice" && (
               <div className="space-y-1">
-                <label className="text-xs font-black text-foreground">大会名</label>
+                <label className="text-xs font-black text-foreground">球場・グラウンド</label>
                 <Input
-                  placeholder="例：秋季大会 2回戦"
-                  value={newTournamentName}
-                  onChange={(e) => setNewTournamentName(e.target.value)}
-                  className="h-11 rounded-xl bg-muted/50 border-border/60 font-bold text-sm"
+                  placeholder="例：多摩川緑地野球場"
+                  value={newVenue}
+                  onChange={(e) => setNewVenue(e.target.value)}
+                  className="h-11 rounded-xl bg-muted/50 border-border font-bold text-sm"
                 />
               </div>
-            )}
 
-            <div className="space-y-1">
-              <label className="text-xs font-black text-foreground">先攻・後攻（仮設定可）</label>
-              <div className="grid grid-cols-2 gap-2">
-                <button
+              <div className="flex gap-2.5 pt-2">
+                <Button
                   type="button"
-                  onClick={() => setNewBattingOrder("first")}
-                  className={cn(
-                    "py-2 rounded-xl text-xs border transition-all cursor-pointer",
-                    newBattingOrder === "first"
-                      ? "bg-primary/12 text-primary border-primary/35 font-black shadow-2xs"
-                      : "bg-card text-muted-foreground border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
-                  )}
+                  variant="outline"
+                  onClick={() => setIsCreateMatchModalOpen(false)}
+                  className="flex-1 h-12 rounded-2xl border-border font-black"
                 >
-                  先攻（表）
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setNewBattingOrder("second")}
-                  className={cn(
-                    "py-2 rounded-xl text-xs border transition-all cursor-pointer",
-                    newBattingOrder === "second"
-                      ? "bg-primary/12 text-primary border-primary/35 font-black shadow-2xs"
-                      : "bg-card text-muted-foreground border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
-                  )}
+                  キャンセル
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={isCreatingMatch}
+                  className="flex-1 h-12 rounded-2xl font-black gap-1.5"
                 >
-                  後攻（裏）
-                </button>
+                  {isCreatingMatch ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                  <span>作成して登録へ</span>
+                </Button>
               </div>
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-xs font-black text-foreground">球場・グラウンド</label>
-              <Input
-                placeholder="例：多摩川緑地野球場"
-                value={newVenue}
-                onChange={(e) => setNewVenue(e.target.value)}
-                className="h-11 rounded-xl bg-muted/50 border-border/60 font-bold text-sm"
-              />
-            </div>
-
-            <div className="flex gap-2.5 pt-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setIsCreateMatchModalOpen(false)}
-                className="flex-1 h-12 rounded-2xl border-border/60 font-black"
-              >
-                キャンセル
-              </Button>
-              <Button
-                type="submit"
-                disabled={isCreatingMatch}
-                className="flex-1 h-12 rounded-2xl font-black gap-1.5"
-              >
-                {isCreatingMatch ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                <span>作成して登録へ</span>
-              </Button>
             </div>
           </form>
         </div>
