@@ -161,7 +161,7 @@ function RepeatStepButton({
           stepCallbackRef.current();
         }
       }}
-      className="h-9 px-2 rounded-xl bg-card hover:bg-muted border border-border text-[10px] font-black text-foreground flex items-center justify-center gap-0.5 shrink-0 active:scale-95 transition-transform select-none touch-manipulation cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+      className="h-9 px-2 rounded-xl bg-card hover:bg-muted border border-border/60 text-[10px] font-black text-foreground flex items-center justify-center gap-0.5 shrink-0 active:scale-95 transition-transform select-none touch-manipulation cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
     >
       {children}
     </button>
@@ -224,7 +224,7 @@ function GraduatedAxisScale({
           <span className="text-muted-foreground">
             {negHint} ⇄ {posHint}
           </span>
-          <span className="px-1.5 py-0.5 rounded-md bg-slate-900 text-amber-300 border border-slate-700">
+          <span className="px-1.5 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/25">
             {value}
           </span>
         </div>
@@ -237,9 +237,9 @@ function GraduatedAxisScale({
           onStep={() => onChange(clampAxis(value - 5))}
         >
           {isVerticalAxis ? (
-            <ArrowUp className="w-3 h-3 text-sky-600 dark:text-sky-400" />
+            <ArrowUp className="w-3 h-3 text-primary" />
           ) : (
-            <ArrowLeft className="w-3 h-3 text-sky-600 dark:text-sky-400" />
+            <ArrowLeft className="w-3 h-3 text-primary" />
           )}
           <span>5</span>
         </RepeatStepButton>
@@ -250,9 +250,9 @@ function GraduatedAxisScale({
           onStep={() => onChange(clampAxis(value - 1))}
         >
           {isVerticalAxis ? (
-            <ArrowUp className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+            <ArrowUp className="w-3 h-3 text-primary" />
           ) : (
-            <ArrowLeft className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+            <ArrowLeft className="w-3 h-3 text-primary" />
           )}
           <span>1</span>
         </RepeatStepButton>
@@ -332,10 +332,10 @@ function GraduatedAxisScale({
             dragStateRef.current = null;
             setIsSliding(false);
           }}
-          className={`relative flex-1 min-w-0 h-9 rounded-xl bg-slate-950 border overflow-hidden select-none touch-pan-y cursor-ew-resize transition-colors ${
+          className={`relative flex-1 min-w-0 h-9 rounded-xl bg-neutral-950 border overflow-hidden select-none touch-pan-y cursor-ew-resize transition-colors ${
             isSliding
-              ? "border-amber-400 ring-2 ring-amber-400/35"
-              : "border-slate-700"
+              ? "border-primary ring-2 ring-primary/35"
+              : "border-border/60"
           } ${disabled ? "opacity-50 pointer-events-none" : ""}`}
         >
           {/* 目盛り線と10刻みの数値ラベル */}
@@ -353,17 +353,17 @@ function GraduatedAxisScale({
                   className="absolute bottom-0 top-0 -translate-x-1/2 flex flex-col items-center justify-end"
                 >
                   {isMajor && (
-                    <span className="text-[8px] font-black text-slate-300 leading-none mb-0.5 tabular-nums">
+                    <span className="text-[8px] font-black text-neutral-300 leading-none mb-0.5 tabular-nums">
                       {t}
                     </span>
                   )}
                   <div
                     className={
                       isMajor
-                        ? "w-[1.5px] h-3.5 bg-slate-200"
+                        ? "w-[1.5px] h-3.5 bg-neutral-200"
                         : isMid
-                        ? "w-px h-2.5 bg-slate-400"
-                        : "w-px h-1.5 bg-slate-600"
+                        ? "w-px h-2.5 bg-neutral-400"
+                        : "w-px h-1.5 bg-neutral-600"
                     }
                   />
                 </div>
@@ -371,15 +371,15 @@ function GraduatedAxisScale({
             })}
           </div>
 
-          {/* 中央の固定アンバー指針（▼＋縦ヘアライン） */}
+          {/* 中央の固定テーマカラー指針（▼＋縦ヘアライン） */}
           <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 pointer-events-none flex flex-col items-center justify-between z-10">
-            <div className="w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-t-[6px] border-t-amber-400" />
-            <div className="w-[2px] flex-1 bg-amber-400/90" />
+            <div className="w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-t-[6px] border-t-primary" />
+            <div className="w-[2px] flex-1 bg-primary/90" />
           </div>
 
           {/* 左右端のフェードで目盛りの視認性を向上 */}
-          <div className="absolute inset-y-0 left-0 w-4 bg-gradient-to-r from-slate-950 to-transparent pointer-events-none" />
-          <div className="absolute inset-y-0 right-0 w-4 bg-gradient-to-l from-slate-950 to-transparent pointer-events-none" />
+          <div className="absolute inset-y-0 left-0 w-4 bg-gradient-to-r from-neutral-950 to-transparent pointer-events-none" />
+          <div className="absolute inset-y-0 right-0 w-4 bg-gradient-to-l from-neutral-950 to-transparent pointer-events-none" />
         </div>
 
         <RepeatStepButton
@@ -389,9 +389,9 @@ function GraduatedAxisScale({
         >
           <span>1</span>
           {isVerticalAxis ? (
-            <ArrowDown className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+            <ArrowDown className="w-3 h-3 text-primary" />
           ) : (
-            <ArrowRight className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+            <ArrowRight className="w-3 h-3 text-primary" />
           )}
         </RepeatStepButton>
 
@@ -402,9 +402,9 @@ function GraduatedAxisScale({
         >
           <span>5</span>
           {isVerticalAxis ? (
-            <ArrowDown className="w-3 h-3 text-sky-600 dark:text-sky-400" />
+            <ArrowDown className="w-3 h-3 text-primary" />
           ) : (
-            <ArrowRight className="w-3 h-3 text-sky-600 dark:text-sky-400" />
+            <ArrowRight className="w-3 h-3 text-primary" />
           )}
         </RepeatStepButton>
       </div>
@@ -458,12 +458,12 @@ export function FourCornerFineTuner({
   const strokeHex = accentColor === "indigo" ? "#38bdf8" : "#0ea5e9";
 
   return (
-    <div className="p-2.5 rounded-2xl bg-muted/60 border border-border space-y-2.5">
+    <div className="p-2.5 rounded-2xl bg-muted/35 border border-border/60 space-y-2.5">
       {/* 1. 4点切替セレクター（シートの左上・右上・左下・右下と空間一致する2×2配置） */}
       <div className="space-y-1.5">
         <div className="flex items-center justify-between gap-2">
           <span className="text-[10px] font-black text-foreground flex items-center gap-1">
-            <Crosshair className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+            <Crosshair className="w-3.5 h-3.5 text-primary shrink-0" />
             <span>微調整する角を選択（4点すべて上下・左右に対応）</span>
           </span>
           <span className="text-[9px] font-bold text-muted-foreground shrink-0">
@@ -483,8 +483,8 @@ export function FourCornerFineTuner({
                 onClick={() => onSelectCorner(item.key)}
                 className={`py-1.5 px-2.5 rounded-xl border text-[11px] font-black flex items-center justify-between gap-1.5 transition-all cursor-pointer active:scale-98 ${
                   isSelected
-                    ? "bg-amber-500 text-white border-amber-500 shadow-2xs"
-                    : "bg-card hover:bg-muted text-foreground border-border"
+                    ? "bg-primary text-primary-foreground border-primary shadow-2xs"
+                    : "bg-card hover:bg-muted text-foreground border-border/60"
                 }`}
               >
                 <span className="flex items-center gap-1">
@@ -493,7 +493,7 @@ export function FourCornerFineTuner({
                 </span>
                 <span
                   className={`text-[9px] font-bold tabular-nums ${
-                    isSelected ? "text-white/95" : "text-muted-foreground"
+                    isSelected ? "text-primary-foreground/90" : "text-muted-foreground"
                   }`}
                 >
                   X:{pt[0]} Y:{pt[1]}
@@ -505,12 +505,12 @@ export function FourCornerFineTuner({
       </div>
 
       {/* 2. 指で隠れない「選択中の角の拡大ルーペ（×4 / ×8 切替・十字目盛り付き）」 */}
-      <div className="p-2 rounded-xl bg-card border border-border flex items-center gap-2.5">
+      <div className="p-2 rounded-xl bg-card border border-border/60 flex items-center gap-2.5">
         <button
           type="button"
           onClick={() => setHighZoom((prev) => !prev)}
           title="タップで拡大倍率（×4 / ×8）を切り替え"
-          className="relative w-20 h-20 rounded-xl overflow-hidden bg-slate-950 border-2 border-amber-500 shrink-0 cursor-pointer group"
+          className="relative w-20 h-20 rounded-xl overflow-hidden bg-neutral-950 border border-primary shrink-0 cursor-pointer group"
         >
           {/* 画像本来の縦横比を取得する軽量非表示img */}
           <img
@@ -615,7 +615,7 @@ export function FourCornerFineTuner({
             />
           </svg>
 
-          <span className="absolute bottom-1 right-1 px-1 py-0.5 rounded bg-slate-950/90 text-amber-300 text-[8px] font-black flex items-center gap-0.5 border border-slate-700">
+          <span className="absolute bottom-1 right-1 px-1 py-0.5 rounded bg-black/80 text-white text-[8px] font-black flex items-center gap-0.5 border border-white/20">
             <ZoomIn className="w-2.5 h-2.5" />
             <span>{highZoom ? "×8" : "×4"}</span>
           </span>
@@ -623,7 +623,7 @@ export function FourCornerFineTuner({
 
         <div className="flex-1 min-w-0 space-y-1">
           <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="px-2 py-0.5 rounded-md bg-amber-500 text-white text-[10px] font-black">
+            <span className="px-2 py-0.5 rounded-md bg-primary text-primary-foreground text-[10px] font-black">
               {activeMeta.shortArrow} {activeMeta.label}を微調整中
             </span>
             <span className="text-[9px] font-bold text-muted-foreground">

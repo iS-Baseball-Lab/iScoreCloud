@@ -176,17 +176,17 @@ const MATCH_TYPE_META: Record<
   official: {
     label: "公式戦",
     badgeClass:
-      "bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/70 dark:text-amber-300 dark:border-amber-800",
+      "bg-primary/12 text-primary border-primary/25",
   },
   exchange: {
     label: "交流戦",
     badgeClass:
-      "bg-indigo-100 text-indigo-800 border-indigo-300 dark:bg-indigo-950/70 dark:text-indigo-300 dark:border-indigo-800",
+      "bg-primary/10 text-primary border-primary/20",
   },
   practice: {
     label: "OP戦",
     badgeClass:
-      "bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700",
+      "bg-muted/50 text-muted-foreground border-border/60",
   },
 };
 
@@ -416,7 +416,7 @@ export default function LiffStatsPage() {
           title="チーム成績"
           subtitle={`${seasonYear}年度 勝敗・得失点・個人成績`}
           icon={
-            <span className="w-8 h-8 rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center font-black">
+            <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
               <Trophy className="w-4 h-4" />
             </span>
           }
@@ -425,7 +425,7 @@ export default function LiffStatsPage() {
         />
 
         {/* 試合種別フィルタータブ */}
-        <div className="grid grid-cols-4 gap-1 p-1 bg-muted/70 rounded-2xl border border-border">
+        <div className="grid grid-cols-4 gap-1 p-1 bg-muted/50 rounded-2xl border border-border/60">
           {(
             [
               { key: "all" as const, label: "すべて", count: countAll },
@@ -443,7 +443,7 @@ export default function LiffStatsPage() {
                 className={cn(
                   "py-1.5 px-1 rounded-xl text-[11px] font-black transition-all truncate tabular-nums",
                   active
-                    ? "bg-card text-foreground shadow-xs border border-border/60"
+                    ? "bg-card text-primary shadow-xs border border-border/60"
                     : "text-muted-foreground hover:text-foreground"
                 )}
               >
@@ -454,7 +454,7 @@ export default function LiffStatsPage() {
         </div>
 
         {isLoading ? (
-          <div className="rounded-3xl bg-card border border-border p-12 flex flex-col items-center justify-center gap-2.5 shadow-xs">
+          <div className="rounded-2xl border border-border/60 bg-card p-12 flex flex-col items-center justify-center gap-2.5 shadow-xs">
             <Loader2 className="w-7 h-7 animate-spin text-primary" />
             <p className="text-xs font-bold text-muted-foreground">
               チーム成績を集計中...
@@ -463,15 +463,15 @@ export default function LiffStatsPage() {
         ) : (
           <>
             {/* 🏆 チーム勝敗 & 得点・失点サマリーカード（ソリッド高視認性設計） */}
-            <section className="bg-card border-2 border-amber-500/40 rounded-3xl p-4 shadow-sm space-y-3.5">
+            <section className="rounded-2xl border border-border/60 bg-card p-4 shadow-xs space-y-3.5">
               {/* ヘッダー行 */}
               <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-1.5 font-black text-xs text-amber-700 dark:text-amber-400">
+                <div className="flex items-center gap-1.5 font-black text-xs text-primary">
                   <Trophy className="w-4 h-4 shrink-0" />
                   <span>{filterTitleLabel}</span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-black px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 border border-amber-300/70 dark:border-amber-800 tabular-nums">
+                  <span className="text-xs font-black px-2.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/25 tabular-nums">
                     勝率 {summary.winRate} ({summary.winRatePercent}%)
                   </span>
                 </div>
@@ -479,7 +479,7 @@ export default function LiffStatsPage() {
 
               {/* 1段目：試合・勝利・敗戦・引分 */}
               <div className="grid grid-cols-4 gap-2 text-center">
-                <div className="p-2.5 rounded-2xl bg-muted border border-border">
+                <div className="p-2.5 rounded-xl bg-muted/35 border border-border/60">
                   <span className="text-[10px] text-muted-foreground font-bold block">
                     試合
                   </span>
@@ -487,23 +487,23 @@ export default function LiffStatsPage() {
                     {summary.totalMatches}
                   </span>
                 </div>
-                <div className="p-2.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800/70">
-                  <span className="text-[10px] text-emerald-700 dark:text-emerald-300 font-bold block">
+                <div className="p-2.5 rounded-xl bg-primary/10 border border-primary/25">
+                  <span className="text-[10px] text-primary font-bold block">
                     勝利
                   </span>
-                  <span className="text-lg font-black text-emerald-700 dark:text-emerald-300 tabular-nums">
+                  <span className="text-lg font-black text-primary tabular-nums">
                     {summary.wins}
                   </span>
                 </div>
-                <div className="p-2.5 rounded-2xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800/70">
-                  <span className="text-[10px] text-rose-700 dark:text-rose-300 font-bold block">
+                <div className="p-2.5 rounded-xl bg-muted/50 border border-border/60">
+                  <span className="text-[10px] text-muted-foreground font-bold block">
                     敗戦
                   </span>
-                  <span className="text-lg font-black text-rose-700 dark:text-rose-300 tabular-nums">
+                  <span className="text-lg font-black text-foreground tabular-nums">
                     {summary.losses}
                   </span>
                 </div>
-                <div className="p-2.5 rounded-2xl bg-muted border border-border">
+                <div className="p-2.5 rounded-xl bg-muted/35 border border-border/60">
                   <span className="text-[10px] text-muted-foreground font-bold block">
                     引分
                   </span>
@@ -514,15 +514,15 @@ export default function LiffStatsPage() {
               </div>
 
               {/* 2段目：総得点・総失点・得失点差 ＆ バランスバー */}
-              <div className="rounded-2xl bg-muted/60 border border-border p-3 space-y-2.5">
+              <div className="rounded-xl bg-muted/35 border border-border/60 p-3 space-y-2.5">
                 <div className="grid grid-cols-3 gap-2 text-center">
                   {/* 総得点 */}
-                  <div className="p-2 rounded-xl bg-card border border-emerald-200 dark:border-emerald-900/70">
-                    <span className="text-[10px] font-black text-emerald-700 dark:text-emerald-400 block">
+                  <div className="p-2 rounded-xl bg-card border border-primary/25">
+                    <span className="text-[10px] font-black text-primary block">
                       総得点
                     </span>
                     <div className="flex items-baseline justify-center gap-0.5 mt-0.5">
-                      <span className="text-xl font-black text-emerald-700 dark:text-emerald-300 tabular-nums">
+                      <span className="text-xl font-black text-primary tabular-nums">
                         {summary.runsScored}
                       </span>
                       <span className="text-[10px] font-bold text-muted-foreground">
@@ -535,12 +535,12 @@ export default function LiffStatsPage() {
                   </div>
 
                   {/* 総失点 */}
-                  <div className="p-2 rounded-xl bg-card border border-rose-200 dark:border-rose-900/70">
-                    <span className="text-[10px] font-black text-rose-700 dark:text-rose-400 block">
+                  <div className="p-2 rounded-xl bg-card border border-border/60">
+                    <span className="text-[10px] font-black text-muted-foreground block">
                       総失点
                     </span>
                     <div className="flex items-baseline justify-center gap-0.5 mt-0.5">
-                      <span className="text-xl font-black text-rose-700 dark:text-rose-300 tabular-nums">
+                      <span className="text-xl font-black text-foreground tabular-nums">
                         {summary.runsAllowed}
                       </span>
                       <span className="text-[10px] font-bold text-muted-foreground">
@@ -553,7 +553,7 @@ export default function LiffStatsPage() {
                   </div>
 
                   {/* 得失点差 */}
-                  <div className="p-2 rounded-xl bg-card border border-border">
+                  <div className="p-2 rounded-xl bg-card border border-border/60">
                     <span className="text-[10px] font-black text-muted-foreground block">
                       得失点差
                     </span>
@@ -562,9 +562,7 @@ export default function LiffStatsPage() {
                         className={cn(
                           "text-xl font-black tabular-nums",
                           runDiffNum > 0
-                            ? "text-emerald-700 dark:text-emerald-300"
-                            : runDiffNum < 0
-                            ? "text-rose-700 dark:text-rose-300"
+                            ? "text-primary"
                             : "text-foreground"
                         )}
                       >
@@ -581,9 +579,9 @@ export default function LiffStatsPage() {
                 {/* 得点 vs 失点 比率バー */}
                 {totalRunsFlow > 0 && (
                   <div className="space-y-1">
-                    <div className="h-2.5 w-full rounded-full overflow-hidden flex bg-rose-500 dark:bg-rose-600">
+                    <div className="h-2.5 w-full rounded-full overflow-hidden flex bg-muted border border-border/60">
                       <div
-                        className="h-full bg-emerald-500 dark:bg-emerald-500 transition-all duration-500"
+                        className="h-full bg-primary transition-all duration-500"
                         style={{ width: `${scoredBarPercent}%` }}
                       />
                     </div>
@@ -603,7 +601,7 @@ export default function LiffStatsPage() {
 
               {/* 3段目：チーム打撃・投手4指標 */}
               <div className="grid grid-cols-4 gap-1.5 text-center pt-0.5">
-                <div className="py-2 px-1 rounded-xl bg-muted/50 border border-border/70">
+                <div className="py-2 px-1 rounded-xl bg-muted/35 border border-border/60">
                   <span className="text-[9.5px] font-bold text-muted-foreground block">
                     チーム打率
                   </span>
@@ -611,7 +609,7 @@ export default function LiffStatsPage() {
                     {summary.teamAvg}
                   </span>
                 </div>
-                <div className="py-2 px-1 rounded-xl bg-muted/50 border border-border/70">
+                <div className="py-2 px-1 rounded-xl bg-muted/35 border border-border/60">
                   <span className="text-[9.5px] font-bold text-muted-foreground block">
                     チームOPS
                   </span>
@@ -619,7 +617,7 @@ export default function LiffStatsPage() {
                     {summary.teamOps}
                   </span>
                 </div>
-                <div className="py-2 px-1 rounded-xl bg-muted/50 border border-border/70">
+                <div className="py-2 px-1 rounded-xl bg-muted/35 border border-border/60">
                   <span className="text-[9.5px] font-bold text-muted-foreground block">
                     本塁打 / 盗塁
                   </span>
@@ -627,7 +625,7 @@ export default function LiffStatsPage() {
                     {summary.teamHomeRuns} / {summary.teamStolenBases}
                   </span>
                 </div>
-                <div className="py-2 px-1 rounded-xl bg-muted/50 border border-border/70">
+                <div className="py-2 px-1 rounded-xl bg-muted/35 border border-border/60">
                   <span className="text-[9.5px] font-bold text-muted-foreground block">
                     チーム防御率
                   </span>
@@ -639,7 +637,7 @@ export default function LiffStatsPage() {
 
               {/* 4段目：「すべて」表示時の試合種別ごとの勝敗・得失点内訳 */}
               {filter === "all" && summary.totalMatches > 0 && (
-                <div className="pt-2 border-t border-border/70 space-y-1.5">
+                <div className="pt-2 border-t border-border/60 space-y-1.5">
                   <p className="text-[10px] font-black text-muted-foreground px-0.5">
                     試合種別ごとの勝敗・得失点内訳（タップで絞り込み）
                   </p>
@@ -658,7 +656,7 @@ export default function LiffStatsPage() {
                           key={key}
                           type="button"
                           onClick={() => setFilter(key)}
-                          className="w-full flex items-center justify-between px-2.5 py-2 rounded-xl bg-muted/40 hover:bg-muted border border-border/70 text-xs transition-colors active:scale-[0.99]"
+                          className="w-full flex items-center justify-between px-2.5 py-2 rounded-xl bg-muted/35 hover:bg-muted/60 border border-border/60 text-xs transition-colors active:scale-[0.99]"
                         >
                           <div className="flex items-center gap-2 min-w-0">
                             <span
@@ -678,11 +676,11 @@ export default function LiffStatsPage() {
                             </span>
                           </div>
                           <div className="flex items-center gap-1.5 shrink-0 tabular-nums text-[11px] font-bold">
-                            <span className="text-emerald-700 dark:text-emerald-400 font-black">
+                            <span className="text-primary font-black">
                               得{sub.runsScored}
                             </span>
                             <span className="text-muted-foreground">/</span>
-                            <span className="text-rose-700 dark:text-rose-400 font-black">
+                            <span className="text-foreground font-black">
                               失{sub.runsAllowed}
                             </span>
                             <span className="text-[10px] text-muted-foreground">
@@ -699,14 +697,14 @@ export default function LiffStatsPage() {
             </section>
 
             {/* メイン切り替えタブ（試合別スコア / 打撃成績 / 投手成績） */}
-            <div className="grid grid-cols-3 gap-1 p-1 bg-muted/70 rounded-2xl border border-border">
+            <div className="grid grid-cols-3 gap-1 p-1 bg-muted/50 rounded-2xl border border-border/60">
               <button
                 type="button"
                 onClick={() => setTab("matches")}
                 className={cn(
                   "py-2 rounded-xl text-xs font-black transition-all",
                   tab === "matches"
-                    ? "bg-card text-foreground shadow-xs border border-border/60"
+                    ? "bg-card text-primary shadow-xs border border-border/60"
                     : "text-muted-foreground hover:text-foreground"
                 )}
               >
@@ -718,7 +716,7 @@ export default function LiffStatsPage() {
                 className={cn(
                   "py-2 rounded-xl text-xs font-black transition-all",
                   tab === "batting"
-                    ? "bg-card text-foreground shadow-xs border border-border/60"
+                    ? "bg-card text-primary shadow-xs border border-border/60"
                     : "text-muted-foreground hover:text-foreground"
                 )}
               >
@@ -730,7 +728,7 @@ export default function LiffStatsPage() {
                 className={cn(
                   "py-2 rounded-xl text-xs font-black transition-all",
                   tab === "pitching"
-                    ? "bg-card text-foreground shadow-xs border border-border/60"
+                    ? "bg-card text-primary shadow-xs border border-border/60"
                     : "text-muted-foreground hover:text-foreground"
                 )}
               >
@@ -765,7 +763,7 @@ export default function LiffStatsPage() {
                         <BarChart3 className="w-3.5 h-3.5 text-primary shrink-0" />
                         <span>試合ごとの得点・失点履歴 ({filteredMatches.length}試合)</span>
                       </h3>
-                      <span className="inline-flex items-center gap-1 text-[10px] font-black text-indigo-700 dark:text-indigo-300 tabular-nums">
+                      <span className="inline-flex items-center gap-1 text-[10px] font-black text-primary tabular-nums">
                         <BookOpen className="w-3 h-3 shrink-0" />
                         <span>
                           スコア取込済 {importedInFilterCount} / {filteredMatches.length}試合
@@ -774,7 +772,7 @@ export default function LiffStatsPage() {
                     </div>
 
                     {/* スコア取込状況フィルター */}
-                    <div className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-muted/70 border border-border">
+                    <div className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-muted/50 border border-border/60">
                       {(
                         [
                           {
@@ -800,7 +798,7 @@ export default function LiffStatsPage() {
                             className={cn(
                               "py-1 px-1.5 rounded-lg text-[10px] font-black transition-all truncate cursor-pointer tabular-nums",
                               active
-                                ? "bg-card text-foreground shadow-2xs border border-border/60"
+                                ? "bg-card text-primary shadow-2xs border border-border/60"
                                 : "text-muted-foreground hover:text-foreground"
                             )}
                           >
@@ -831,17 +829,17 @@ export default function LiffStatsPage() {
                             ? {
                                 text: "勝",
                                 cls: "bg-emerald-600 text-white",
-                                scoreCls: "text-emerald-700 dark:text-emerald-300",
+                                scoreCls: "text-primary",
                               }
                             : m.result === "loss"
                             ? {
                                 text: "負",
                                 cls: "bg-rose-600 text-white",
-                                scoreCls: "text-rose-700 dark:text-rose-300",
+                                scoreCls: "text-foreground",
                               }
                             : {
                                 text: "分",
-                                cls: "bg-slate-500 text-white",
+                                cls: "bg-zinc-500 text-white",
                                 scoreCls: "text-foreground",
                               };
 
@@ -855,7 +853,7 @@ export default function LiffStatsPage() {
                           <Link
                             key={m.id}
                             href={`/liff/matches?id=${encodeURIComponent(m.id)}`}
-                            className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-card hover:bg-muted/40 border border-border shadow-xs transition-all active:scale-[0.99]"
+                            className="flex items-center justify-between gap-3 p-3 rounded-2xl border border-border/60 bg-card hover:border-primary/40 shadow-xs transition-all active:scale-[0.99]"
                           >
                             {/* 左：勝敗バッジ ＋ 試合情報 */}
                             <div className="flex items-center gap-2.5 min-w-0 flex-1">
@@ -882,29 +880,29 @@ export default function LiffStatsPage() {
                                     {typeMeta.label}
                                   </span>
                                   {m.hasScorebook ? (
-                                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 text-[9.5px] font-black">
+                                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded border border-primary/25 bg-primary/10 text-primary text-[9.5px] font-black">
                                       <CheckCircle2 className="w-2.5 h-2.5 shrink-0" />
                                       取込済
                                     </span>
                                   ) : (
-                                    <span className="inline-flex items-center px-1.5 py-0.2 rounded border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[9.5px] font-bold">
+                                    <span className="inline-flex items-center px-1.5 py-0.2 rounded border border-border/60 bg-muted/50 text-muted-foreground text-[9.5px] font-bold">
                                       未取込
                                     </span>
                                   )}
                                   {m.isColdGame && (
-                                    <span className="px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300 text-[9.5px] font-black">
+                                    <span className="px-1.5 py-0.2 rounded border border-primary/20 bg-primary/10 text-primary text-[9.5px] font-black">
                                       コールド
                                     </span>
                                   )}
                                   {m.isTiebreaker && (
-                                    <span className="px-1.5 py-0.2 rounded bg-purple-100 text-purple-800 dark:bg-purple-950/70 dark:text-purple-300 text-[9.5px] font-black">
+                                    <span className="px-1.5 py-0.2 rounded border border-primary/20 bg-primary/10 text-primary text-[9.5px] font-black">
                                       TB
                                     </span>
                                   )}
                                 </div>
 
                                 {m.tournamentName && (
-                                  <p className="text-[10.5px] font-bold text-amber-700 dark:text-amber-400 truncate">
+                                  <p className="text-[10.5px] font-bold text-primary truncate">
                                     {m.tournamentName}
                                   </p>
                                 )}
@@ -985,10 +983,10 @@ export default function LiffStatsPage() {
                   <>
                     {/* 打率リーダー TOP3 */}
                     {avgLeaders.length > 0 && (
-                      <div className="bg-card border border-border rounded-2xl p-4 shadow-xs space-y-3">
+                      <div className="rounded-2xl border border-border/60 bg-card p-4 shadow-xs space-y-3">
                         <div className="flex items-center justify-between">
                           <h3 className="text-xs font-black text-foreground flex items-center gap-1.5">
-                            <Flame className="w-3.5 h-3.5 text-rose-500" />
+                            <Flame className="w-3.5 h-3.5 text-primary" />
                             <span>打率 リーダー TOP3</span>
                           </h3>
                           <span className="text-[10px] font-bold text-muted-foreground">
@@ -1008,10 +1006,10 @@ export default function LiffStatsPage() {
                                     className={cn(
                                       "w-5 h-5 rounded-md font-black text-xs flex items-center justify-center shrink-0",
                                       rank === 1
-                                        ? "bg-amber-400 text-amber-950 shadow-2xs"
+                                        ? "bg-primary text-primary-foreground shadow-2xs"
                                         : rank === 2
-                                        ? "bg-slate-300 text-slate-800"
-                                        : "bg-amber-700/25 text-amber-900 dark:text-amber-200"
+                                        ? "bg-primary/15 text-primary border border-primary/25"
+                                        : "bg-muted text-muted-foreground border border-border/60"
                                     )}
                                   >
                                     {rank}
@@ -1031,7 +1029,7 @@ export default function LiffStatsPage() {
                                   </div>
                                 </div>
                                 <div className="flex items-center gap-1.5 shrink-0">
-                                  <span className="text-base font-black tabular-nums text-foreground">
+                                  <span className="text-base font-black tabular-nums text-primary">
                                     {item.avg}
                                   </span>
                                   {canLinkGrowth && (
@@ -1045,14 +1043,14 @@ export default function LiffStatsPage() {
                               <Link
                                 key={`avg-${item.id}`}
                                 href={`/liff/players/growth?id=${encodeURIComponent(item.id)}`}
-                                className="flex items-center justify-between p-2.5 rounded-xl bg-muted/40 hover:bg-muted border border-border/60 text-xs transition-colors active:scale-[0.99]"
+                                className="flex items-center justify-between p-2.5 rounded-xl bg-muted/35 hover:bg-muted/60 hover:border-primary/40 border border-border/60 text-xs transition-all active:scale-[0.99]"
                               >
                                 {inner}
                               </Link>
                             ) : (
                               <div
                                 key={`avg-${item.id}`}
-                                className="flex items-center justify-between p-2.5 rounded-xl bg-muted/40 border border-border/60 text-xs"
+                                className="flex items-center justify-between p-2.5 rounded-xl bg-muted/35 border border-border/60 text-xs"
                               >
                                 {inner}
                               </div>
@@ -1065,21 +1063,21 @@ export default function LiffStatsPage() {
                     {/* 打点 ＆ 安打リーダー 2カラム */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {rbiLeaders.length > 0 && (
-                        <div className="bg-card border border-border rounded-2xl p-3.5 shadow-xs space-y-2.5">
+                        <div className="rounded-2xl border border-border/60 bg-card p-3.5 shadow-xs space-y-2.5">
                           <h3 className="text-xs font-black text-foreground flex items-center gap-1.5">
-                            <Target className="w-3.5 h-3.5 text-amber-500" />
+                            <Target className="w-3.5 h-3.5 text-primary" />
                             <span>打点 TOP3</span>
                           </h3>
                           <div className="space-y-1.5">
                             {rbiLeaders.map((item, idx) => (
                               <div
                                 key={`rbi-${item.id}`}
-                                className="flex items-center justify-between px-2.5 py-2 rounded-xl bg-muted/40 text-xs"
+                                className="flex items-center justify-between px-2.5 py-2 rounded-xl bg-muted/35 border border-border/60 text-xs"
                               >
                                 <span className="font-bold text-foreground truncate">
                                   {idx + 1}. {item.name}
                                 </span>
-                                <span className="font-black tabular-nums text-amber-700 dark:text-amber-400 shrink-0">
+                                <span className="font-black tabular-nums text-primary shrink-0">
                                   {item.rbi} 打点
                                 </span>
                               </div>
@@ -1089,21 +1087,21 @@ export default function LiffStatsPage() {
                       )}
 
                       {hitLeaders.length > 0 && (
-                        <div className="bg-card border border-border rounded-2xl p-3.5 shadow-xs space-y-2.5">
+                        <div className="rounded-2xl border border-border/60 bg-card p-3.5 shadow-xs space-y-2.5">
                           <h3 className="text-xs font-black text-foreground flex items-center gap-1.5">
-                            <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />
+                            <TrendingUp className="w-3.5 h-3.5 text-primary" />
                             <span>安打 TOP3</span>
                           </h3>
                           <div className="space-y-1.5">
                             {hitLeaders.map((item, idx) => (
                               <div
                                 key={`hit-${item.id}`}
-                                className="flex items-center justify-between px-2.5 py-2 rounded-xl bg-muted/40 text-xs"
+                                className="flex items-center justify-between px-2.5 py-2 rounded-xl bg-muted/35 border border-border/60 text-xs"
                               >
                                 <span className="font-bold text-foreground truncate">
                                   {idx + 1}. {item.name}
                                 </span>
-                                <span className="font-black tabular-nums text-emerald-700 dark:text-emerald-400 shrink-0">
+                                <span className="font-black tabular-nums text-primary shrink-0">
                                   {item.hits} 安打
                                 </span>
                               </div>
@@ -1114,12 +1112,12 @@ export default function LiffStatsPage() {
                     </div>
 
                     {/* 全選手 打撃成績一覧テーブル */}
-                    <div className="bg-card border border-border rounded-2xl shadow-xs overflow-hidden">
-                      <div className="p-3 border-b border-border flex items-center justify-between gap-2 flex-wrap">
+                    <div className="rounded-2xl border border-border/60 bg-card shadow-xs overflow-hidden">
+                      <div className="p-3 border-b border-border/60 flex items-center justify-between gap-2 flex-wrap">
                         <h3 className="text-xs font-black text-foreground">
                           個人打撃成績一覧（{sortedBatters.length}名）
                         </h3>
-                        <div className="flex items-center gap-1 bg-muted p-0.5 rounded-lg border border-border/60">
+                        <div className="flex items-center gap-1 bg-muted/50 p-0.5 rounded-lg border border-border/60">
                           {(
                             [
                               { key: "hits" as const, label: "安打順" },
@@ -1135,7 +1133,7 @@ export default function LiffStatsPage() {
                               className={cn(
                                 "px-2 py-0.5 rounded-md text-[10px] font-black transition-colors",
                                 batterSort === s.key
-                                  ? "bg-card text-foreground shadow-2xs"
+                                  ? "bg-card text-primary shadow-2xs"
                                   : "text-muted-foreground hover:text-foreground"
                               )}
                             >
@@ -1148,8 +1146,8 @@ export default function LiffStatsPage() {
                       <div className="overflow-x-auto">
                         <table className="w-full text-xs border-collapse whitespace-nowrap">
                           <thead>
-                            <tr className="bg-muted text-muted-foreground border-b border-border text-[10px] font-black">
-                              <th className="sticky left-0 z-10 bg-muted text-left py-2 px-3 border-r border-border">
+                            <tr className="bg-muted text-muted-foreground border-b border-border/60 text-[10px] font-black">
+                              <th className="sticky left-0 z-10 bg-muted text-left py-2 px-3 border-r border-border/60">
                                 選手名
                               </th>
                               <th className="py-2 px-2 text-right">打率</th>
@@ -1168,7 +1166,7 @@ export default function LiffStatsPage() {
                               <th className="py-2 px-2.5 text-right">OPS</th>
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-border/70 tabular-nums">
+                          <tbody className="divide-y divide-border/60 tabular-nums">
                             {sortedBatters.map((b) => {
                               const uni = cleanUniform(b.uniformNumber);
                               const canLinkGrowth = !b.id.startsWith("name:");
@@ -1177,7 +1175,7 @@ export default function LiffStatsPage() {
                                   key={b.id}
                                   className="hover:bg-muted/30 transition-colors"
                                 >
-                                  <td className="sticky left-0 z-10 bg-card py-2.5 px-3 border-r border-border font-black text-foreground">
+                                  <td className="sticky left-0 z-10 bg-card py-2.5 px-3 border-r border-border/60 font-black text-foreground">
                                     {canLinkGrowth ? (
                                       <Link
                                         href={`/liff/players/growth?id=${encodeURIComponent(b.id)}`}
@@ -1215,7 +1213,14 @@ export default function LiffStatsPage() {
                                   <td className="py-2.5 px-2 text-right font-bold">
                                     {b.atBats}
                                   </td>
-                                  <td className="py-2.5 px-2 text-right font-black text-foreground">
+                                  <td
+                                    className={cn(
+                                      "py-2.5 px-2 text-right font-black",
+                                      batterSort === "hits"
+                                        ? "text-primary"
+                                        : "text-foreground"
+                                    )}
+                                  >
                                     {b.hits}
                                   </td>
                                   <td className="py-2.5 px-2 text-right text-muted-foreground font-bold">
@@ -1227,10 +1232,24 @@ export default function LiffStatsPage() {
                                   <td className="py-2.5 px-2 text-right font-bold">
                                     {b.homeRuns}
                                   </td>
-                                  <td className="py-2.5 px-2 text-right font-black text-amber-700 dark:text-amber-400">
+                                  <td
+                                    className={cn(
+                                      "py-2.5 px-2 text-right font-black",
+                                      batterSort === "rbi"
+                                        ? "text-primary"
+                                        : "text-foreground"
+                                    )}
+                                  >
                                     {b.rbi}
                                   </td>
-                                  <td className="py-2.5 px-2 text-right font-black text-emerald-700 dark:text-emerald-400">
+                                  <td
+                                    className={cn(
+                                      "py-2.5 px-2 text-right font-black",
+                                      batterSort === "runs"
+                                        ? "text-primary"
+                                        : "text-foreground"
+                                    )}
+                                  >
                                     {b.runs}
                                   </td>
                                   <td className="py-2.5 px-2 text-right font-bold">
@@ -1281,10 +1300,10 @@ export default function LiffStatsPage() {
                   <>
                     {/* 防御率リーダー TOP3 */}
                     {eraLeaders.length > 0 && (
-                      <div className="bg-card border border-border rounded-2xl p-4 shadow-xs space-y-3">
+                      <div className="rounded-2xl border border-border/60 bg-card p-4 shadow-xs space-y-3">
                         <div className="flex items-center justify-between">
                           <h3 className="text-xs font-black text-foreground flex items-center gap-1.5">
-                            <Activity className="w-3.5 h-3.5 text-blue-500" />
+                            <Activity className="w-3.5 h-3.5 text-primary" />
                             <span>防御率 リーダー TOP3</span>
                           </h3>
                           <span className="text-[10px] font-bold text-muted-foreground">
@@ -1304,10 +1323,10 @@ export default function LiffStatsPage() {
                                     className={cn(
                                       "w-5 h-5 rounded-md font-black text-xs flex items-center justify-center shrink-0",
                                       rank === 1
-                                        ? "bg-amber-400 text-amber-950 shadow-2xs"
+                                        ? "bg-primary text-primary-foreground shadow-2xs"
                                         : rank === 2
-                                        ? "bg-slate-300 text-slate-800"
-                                        : "bg-amber-700/25 text-amber-900 dark:text-amber-200"
+                                        ? "bg-primary/15 text-primary border border-primary/25"
+                                        : "bg-muted text-muted-foreground border border-border/60"
                                     )}
                                   >
                                     {rank}
@@ -1327,7 +1346,7 @@ export default function LiffStatsPage() {
                                   </div>
                                 </div>
                                 <div className="flex items-center gap-1.5 shrink-0">
-                                  <span className="text-base font-black tabular-nums text-foreground">
+                                  <span className="text-base font-black tabular-nums text-primary">
                                     {item.era}
                                   </span>
                                   {canLinkGrowth && (
@@ -1341,14 +1360,14 @@ export default function LiffStatsPage() {
                               <Link
                                 key={`era-${item.id}`}
                                 href={`/liff/players/growth?id=${encodeURIComponent(item.id)}`}
-                                className="flex items-center justify-between p-2.5 rounded-xl bg-muted/40 hover:bg-muted border border-border/60 text-xs transition-colors active:scale-[0.99]"
+                                className="flex items-center justify-between p-2.5 rounded-xl bg-muted/35 hover:bg-muted/60 hover:border-primary/40 border border-border/60 text-xs transition-all active:scale-[0.99]"
                               >
                                 {inner}
                               </Link>
                             ) : (
                               <div
                                 key={`era-${item.id}`}
-                                className="flex items-center justify-between p-2.5 rounded-xl bg-muted/40 border border-border/60 text-xs"
+                                className="flex items-center justify-between p-2.5 rounded-xl bg-muted/35 border border-border/60 text-xs"
                               >
                                 {inner}
                               </div>
@@ -1360,21 +1379,21 @@ export default function LiffStatsPage() {
 
                     {/* 奪三振リーダー TOP3 */}
                     {soLeaders.length > 0 && (
-                      <div className="bg-card border border-border rounded-2xl p-3.5 shadow-xs space-y-2.5">
+                      <div className="rounded-2xl border border-border/60 bg-card p-3.5 shadow-xs space-y-2.5">
                         <h3 className="text-xs font-black text-foreground flex items-center gap-1.5">
-                          <Flame className="w-3.5 h-3.5 text-sky-500" />
+                          <Flame className="w-3.5 h-3.5 text-primary" />
                           <span>奪三振 TOP3</span>
                         </h3>
                         <div className="space-y-1.5">
                           {soLeaders.map((item, idx) => (
                             <div
                               key={`so-${item.id}`}
-                              className="flex items-center justify-between px-2.5 py-2 rounded-xl bg-muted/40 text-xs"
+                              className="flex items-center justify-between px-2.5 py-2 rounded-xl bg-muted/35 border border-border/60 text-xs"
                             >
                               <span className="font-bold text-foreground truncate">
                                 {idx + 1}. {item.name}（{item.ip}回）
                               </span>
-                              <span className="font-black tabular-nums text-sky-700 dark:text-sky-400 shrink-0">
+                              <span className="font-black tabular-nums text-primary shrink-0">
                                 {item.strikeouts} 奪三振
                               </span>
                             </div>
@@ -1384,8 +1403,8 @@ export default function LiffStatsPage() {
                     )}
 
                     {/* 全投手 成績一覧テーブル */}
-                    <div className="bg-card border border-border rounded-2xl shadow-xs overflow-hidden">
-                      <div className="p-3 border-b border-border flex items-center justify-between">
+                    <div className="rounded-2xl border border-border/60 bg-card shadow-xs overflow-hidden">
+                      <div className="p-3 border-b border-border/60 flex items-center justify-between">
                         <h3 className="text-xs font-black text-foreground">
                           個人投手成績一覧（{activeSection.pitchingStats.length}名）
                         </h3>
@@ -1397,8 +1416,8 @@ export default function LiffStatsPage() {
                       <div className="overflow-x-auto">
                         <table className="w-full text-xs border-collapse whitespace-nowrap">
                           <thead>
-                            <tr className="bg-muted text-muted-foreground border-b border-border text-[10px] font-black">
-                              <th className="sticky left-0 z-10 bg-muted text-left py-2 px-3 border-r border-border">
+                            <tr className="bg-muted text-muted-foreground border-b border-border/60 text-[10px] font-black">
+                              <th className="sticky left-0 z-10 bg-muted text-left py-2 px-3 border-r border-border/60">
                                 投手名
                               </th>
                               <th className="py-2 px-2 text-right">防御率</th>
@@ -1413,7 +1432,7 @@ export default function LiffStatsPage() {
                               <th className="py-2 px-2.5 text-right">WHIP</th>
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-border/70 tabular-nums">
+                          <tbody className="divide-y divide-border/60 tabular-nums">
                             {activeSection.pitchingStats.map((p) => {
                               const uni = cleanUniform(p.uniformNumber);
                               const canLinkGrowth = !p.id.startsWith("name:");
@@ -1422,7 +1441,7 @@ export default function LiffStatsPage() {
                                   key={p.id}
                                   className="hover:bg-muted/30 transition-colors"
                                 >
-                                  <td className="sticky left-0 z-10 bg-card py-2.5 px-3 border-r border-border font-black text-foreground">
+                                  <td className="sticky left-0 z-10 bg-card py-2.5 px-3 border-r border-border/60 font-black text-foreground">
                                     {canLinkGrowth ? (
                                       <Link
                                         href={`/liff/players/growth?id=${encodeURIComponent(p.id)}`}
@@ -1457,13 +1476,13 @@ export default function LiffStatsPage() {
                                   <td className="py-2.5 px-2 text-right font-black">
                                     {p.ip}
                                   </td>
-                                  <td className="py-2.5 px-2 text-right font-black text-rose-700 dark:text-rose-400">
+                                  <td className="py-2.5 px-2 text-right font-black text-foreground">
                                     {p.runs}
                                   </td>
                                   <td className="py-2.5 px-2 text-right font-bold">
                                     {p.earnedRuns}
                                   </td>
-                                  <td className="py-2.5 px-2 text-right font-black text-sky-700 dark:text-sky-400">
+                                  <td className="py-2.5 px-2 text-right font-black text-primary">
                                     {p.strikeouts}
                                   </td>
                                   <td className="py-2.5 px-2 text-right font-bold">

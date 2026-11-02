@@ -188,60 +188,30 @@ interface CategoryStyleDef {
   ring: string;
 }
 
+const ACTIVE_CATEGORY_STYLE: CategoryStyleDef = {
+  stageBg: "bg-primary/10 border-b border-border/60",
+  pillSolid: "bg-primary text-primary-foreground",
+  pillSoft: "bg-primary/10 text-primary border-primary/25",
+  barSolid: "bg-primary",
+  dot: "bg-primary",
+  filterActive: "bg-primary text-primary-foreground border-primary shadow-xs",
+  ring: "ring-primary/30",
+};
+
 const CATEGORY_STYLES: Record<RosterCategory, CategoryStyleDef> = {
-  投手: {
-    stageBg: "bg-gradient-to-br from-slate-900 via-sky-950 to-blue-900",
-    pillSolid: "bg-sky-500 text-white",
-    pillSoft: "bg-sky-500/12 text-sky-700 dark:text-sky-300 border-sky-500/30",
-    barSolid: "bg-sky-500",
-    dot: "bg-sky-400",
-    filterActive: "bg-sky-600 text-white border-sky-600 shadow-xs",
-    ring: "ring-sky-400/60",
-  },
-  捕手: {
-    stageBg: "bg-gradient-to-br from-slate-900 via-orange-950 to-rose-950",
-    pillSolid: "bg-orange-500 text-white",
-    pillSoft: "bg-orange-500/12 text-orange-700 dark:text-orange-300 border-orange-500/30",
-    barSolid: "bg-orange-500",
-    dot: "bg-orange-400",
-    filterActive: "bg-orange-600 text-white border-orange-600 shadow-xs",
-    ring: "ring-orange-400/60",
-  },
-  内野手: {
-    stageBg: "bg-gradient-to-br from-slate-900 via-emerald-950 to-teal-950",
-    pillSolid: "bg-emerald-500 text-white",
-    pillSoft: "bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 border-emerald-500/30",
-    barSolid: "bg-emerald-500",
-    dot: "bg-emerald-400",
-    filterActive: "bg-emerald-600 text-white border-emerald-600 shadow-xs",
-    ring: "ring-emerald-400/60",
-  },
-  外野手: {
-    stageBg: "bg-gradient-to-br from-slate-900 via-amber-950 to-yellow-950",
-    pillSolid: "bg-amber-500 text-slate-950",
-    pillSoft: "bg-amber-500/15 text-amber-800 dark:text-amber-300 border-amber-500/30",
-    barSolid: "bg-amber-500",
-    dot: "bg-amber-400",
-    filterActive: "bg-amber-500 text-slate-950 border-amber-500 shadow-xs",
-    ring: "ring-amber-400/60",
-  },
-  DH: {
-    stageBg: "bg-gradient-to-br from-slate-900 via-purple-950 to-indigo-950",
-    pillSolid: "bg-purple-500 text-white",
-    pillSoft: "bg-purple-500/12 text-purple-700 dark:text-purple-300 border-purple-500/30",
-    barSolid: "bg-purple-500",
-    dot: "bg-purple-400",
-    filterActive: "bg-purple-600 text-white border-purple-600 shadow-xs",
-    ring: "ring-purple-400/60",
-  },
+  投手: ACTIVE_CATEGORY_STYLE,
+  捕手: ACTIVE_CATEGORY_STYLE,
+  内野手: ACTIVE_CATEGORY_STYLE,
+  外野手: ACTIVE_CATEGORY_STYLE,
+  DH: ACTIVE_CATEGORY_STYLE,
   未設定: {
-    stageBg: "bg-gradient-to-br from-slate-900 via-slate-800 to-zinc-900",
-    pillSolid: "bg-slate-600 text-white",
-    pillSoft: "bg-muted text-muted-foreground border-border",
-    barSolid: "bg-slate-500",
-    dot: "bg-slate-400",
-    filterActive: "bg-slate-700 text-white border-slate-700 shadow-xs",
-    ring: "ring-slate-400/50",
+    stageBg: "bg-muted/50 border-b border-border/60",
+    pillSolid: "bg-muted text-muted-foreground border border-border/60",
+    pillSoft: "bg-muted/50 text-muted-foreground border-border/60",
+    barSolid: "bg-muted-foreground/40",
+    dot: "bg-muted-foreground",
+    filterActive: "bg-primary text-primary-foreground border-primary shadow-xs",
+    ring: "ring-border",
   },
 };
 
@@ -394,7 +364,7 @@ export default function LiffPlayersDirectoryPage() {
           title="選手名鑑"
           subtitle={`${seasonYear} OFFICIAL ROSTER`}
           icon={
-            <span className="w-8 h-8 rounded-xl bg-cyan-500/15 text-cyan-600 dark:text-cyan-400 flex items-center justify-center font-black">
+            <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
               <IdCard className="w-4.5 h-4.5" />
             </span>
           }
@@ -421,12 +391,12 @@ export default function LiffPlayersDirectoryPage() {
         />
 
         {/* ━━━ 🏟️ スタジアム風ロースターヒーローバナー ━━━ */}
-        <section className="relative overflow-hidden rounded-3xl bg-slate-900 text-white border border-slate-800 p-4 shadow-md space-y-3.5">
+        <section className="relative overflow-hidden rounded-2xl border border-border/60 bg-card text-foreground p-4 shadow-xs space-y-3.5">
           {/* アスレチック斜線 & ダイヤモンド装飾 */}
           <svg
             aria-hidden="true"
             viewBox="0 0 160 160"
-            className="pointer-events-none absolute -right-6 -top-6 w-40 h-40 text-white/[0.05]"
+            className="pointer-events-none absolute -right-6 -top-6 w-40 h-40 text-primary/[0.06]"
             fill="none"
           >
             <rect
@@ -445,40 +415,40 @@ export default function LiffPlayersDirectoryPage() {
           <div className="relative z-10 flex items-start justify-between gap-3">
             <div className="min-w-0 space-y-1">
               <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="px-2 py-0.5 rounded-full bg-cyan-400/20 text-cyan-300 border border-cyan-400/30 text-[10px] font-black tracking-widest uppercase">
+                <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/25 text-[10px] font-black tracking-widest uppercase">
                   {seasonYear} ROSTER
                 </span>
                 {hasMatchAggregatedPositions && (
-                  <span className="px-2 py-0.5 rounded-full bg-emerald-400/20 text-emerald-300 border border-emerald-400/35 text-[10px] font-black">
+                  <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/25 text-[10px] font-black">
                     実戦守備集計
                   </span>
                 )}
                 {(isDemoMode || providerDemo) && (
-                  <span className="px-2 py-0.5 rounded-full bg-amber-400/20 text-amber-300 border border-amber-400/30 text-[10px] font-black">
+                  <span className="px-2 py-0.5 rounded-full bg-muted/50 text-muted-foreground border border-border/60 text-[10px] font-black">
                     DEMO
                   </span>
                 )}
               </div>
 
-              <h2 className="text-lg sm:text-xl font-black tracking-tight text-white truncate">
+              <h2 className="text-lg sm:text-xl font-black tracking-tight text-foreground truncate">
                 {teamHeadline}
               </h2>
 
-              <div className="flex items-center gap-2 text-[11px] font-bold text-slate-300 flex-wrap">
+              <div className="flex items-center gap-2 text-[11px] font-bold text-muted-foreground flex-wrap">
                 {teamSubname && teamSubname !== teamHeadline && <span>{teamSubname}</span>}
                 {teamInfo?.managerName && (
-                  <span className="px-2 py-0.5 rounded-md bg-white/10 text-white text-[10px] font-bold">
+                  <span className="px-2 py-0.5 rounded-md bg-muted/50 border border-border/60 text-foreground text-[10px] font-bold">
                     監督: {teamInfo.managerName}
                   </span>
                 )}
               </div>
             </div>
 
-            <div className="shrink-0 text-right bg-white/10 border border-white/15 rounded-2xl px-3 py-2">
-              <span className="text-[9.5px] font-bold text-slate-300 block uppercase tracking-wider">
+            <div className="shrink-0 text-right bg-primary/10 border border-primary/25 rounded-2xl px-3 py-2">
+              <span className="text-[9.5px] font-bold text-primary/80 block uppercase tracking-wider">
                 PLAYERS
               </span>
-              <span className="text-2xl font-black italic tracking-tighter tabular-nums text-white leading-none">
+              <span className="text-2xl font-black italic tracking-tighter tabular-nums text-primary leading-none">
                 {players.length}
               </span>
             </div>
@@ -496,15 +466,19 @@ export default function LiffPlayersDirectoryPage() {
                   onClick={() => setSelectedCategory(active ? "すべて" : cat)}
                   className={`py-2 px-2 rounded-2xl border text-left transition-all active:scale-95 ${
                     active
-                      ? "bg-white text-slate-950 border-white shadow-sm"
-                      : "bg-slate-800/90 hover:bg-slate-800 border-slate-700/80 text-white"
+                      ? "bg-primary text-primary-foreground border-primary shadow-xs"
+                      : "bg-muted/35 hover:bg-muted/60 border-border/60 text-foreground"
                   }`}
                 >
                   <div className="flex items-center gap-1.5">
-                    <span className={`w-2 h-2 rounded-full shrink-0 ${st.dot}`} />
+                    <span
+                      className={`w-2 h-2 rounded-full shrink-0 ${
+                        active ? "bg-primary-foreground" : st.dot
+                      }`}
+                    />
                     <span
                       className={`text-[10px] font-black truncate ${
-                        active ? "text-slate-700" : "text-slate-300"
+                        active ? "text-primary-foreground/90" : "text-muted-foreground"
                       }`}
                     >
                       {cat}
@@ -514,7 +488,7 @@ export default function LiffPlayersDirectoryPage() {
                     {categoryCounts[cat]}
                     <span
                       className={`text-[10px] font-bold ml-0.5 ${
-                        active ? "text-slate-600" : "text-slate-400"
+                        active ? "text-primary-foreground/80" : "text-muted-foreground"
                       }`}
                     >
                       名
@@ -537,7 +511,7 @@ export default function LiffPlayersDirectoryPage() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="背番号・選手名で検索..."
-                className="w-full pl-9 pr-8 py-2.5 rounded-2xl bg-card border border-border text-xs font-bold text-foreground shadow-2xs focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                className="w-full pl-9 pr-8 py-2.5 rounded-2xl bg-card border border-border/60 text-xs font-bold text-foreground shadow-xs focus:outline-hidden focus:ring-2 focus:ring-primary/40"
               />
               {searchQuery && (
                 <button
@@ -552,7 +526,7 @@ export default function LiffPlayersDirectoryPage() {
             </div>
 
             {/* 表示モード切替（カード / リスト） */}
-            <div className="flex items-center p-1 rounded-2xl bg-card border border-border shadow-2xs shrink-0">
+            <div className="flex items-center p-1 rounded-2xl bg-card border border-border/60 shadow-xs shrink-0">
               <button
                 type="button"
                 onClick={() => setViewMode("grid")}
@@ -600,7 +574,7 @@ export default function LiffPlayersDirectoryPage() {
                   className={`px-3 py-1.5 rounded-full border text-xs whitespace-nowrap transition-all active:scale-95 flex items-center gap-1.5 shrink-0 ${
                     isSelected
                       ? `${activeClass} font-black`
-                      : "bg-card border-border text-muted-foreground hover:text-foreground font-bold"
+                      : "bg-card border-border/60 text-muted-foreground hover:text-foreground font-bold"
                   }`}
                 >
                   <span>{tab}</span>
@@ -619,7 +593,7 @@ export default function LiffPlayersDirectoryPage() {
 
         {/* ━━━ ⚾ 選手一覧エリア ━━━ */}
         {isLoading ? (
-          <div className="rounded-3xl bg-card border border-border p-12 flex flex-col items-center justify-center gap-2.5 shadow-sm">
+          <div className="rounded-2xl border border-border/60 bg-card p-12 flex flex-col items-center justify-center gap-2.5 shadow-xs">
             <Loader2 className="w-7 h-7 animate-spin text-primary" />
             <p className="text-xs font-bold text-muted-foreground">選手名鑑を読み込み中...</p>
           </div>
@@ -652,14 +626,14 @@ export default function LiffPlayersDirectoryPage() {
                   key={player.id}
                   type="button"
                   onClick={() => setSelectedPlayerId(player.id)}
-                  className="group relative rounded-3xl bg-card border border-border/90 hover:border-primary/60 shadow-sm overflow-hidden text-left flex flex-col transition-all active:scale-[0.98] focus:outline-hidden"
+                  className="group relative rounded-2xl border border-border/60 bg-card hover:border-primary/40 shadow-xs overflow-hidden text-left flex flex-col transition-all active:scale-[0.98] focus:outline-hidden"
                 >
                   {/* 上部ビジュアルステージ */}
                   <div className={`relative h-28 w-full p-2.5 flex flex-col justify-between overflow-hidden ${style.stageBg}`}>
                     {/* 巨大ウォーターマーク背番号 */}
                     <span
                       aria-hidden="true"
-                      className="pointer-events-none select-none absolute -right-1 -bottom-3 text-[64px] font-black italic tracking-tighter leading-none text-white/[0.13] tabular-nums group-hover:scale-105 transition-transform duration-300"
+                      className="pointer-events-none select-none absolute -right-1 -bottom-3 text-[64px] font-black italic tracking-tighter leading-none text-primary/[0.12] tabular-nums group-hover:scale-105 transition-transform duration-300"
                     >
                       {numStr}
                     </span>
@@ -667,12 +641,12 @@ export default function LiffPlayersDirectoryPage() {
                     {/* 上段バッジ列: 背番号 + 主将マーク / メイン守備位置 */}
                     <div className="relative z-10 flex items-center justify-between gap-1">
                       <div className="flex items-center gap-1">
-                        <span className="px-2 py-0.5 rounded-lg bg-white text-slate-950 text-xs font-black italic tracking-tight tabular-nums shadow-xs">
+                        <span className="px-2 py-0.5 rounded-lg bg-card text-foreground border border-border/60 text-xs font-black italic tracking-tight tabular-nums shadow-2xs">
                           #{numStr}
                         </span>
                         {player.isCaptain && (
-                          <span className="px-1.5 py-0.5 rounded-lg bg-amber-400 text-amber-950 text-[10px] font-black flex items-center gap-0.5 shadow-xs">
-                            <Crown className="w-2.5 h-2.5 fill-amber-950" />
+                          <span className="px-1.5 py-0.5 rounded-lg bg-primary text-primary-foreground text-[10px] font-black flex items-center gap-0.5 shadow-2xs">
+                            <Crown className="w-2.5 h-2.5 fill-current" />
                             <span>C</span>
                           </span>
                         )}
@@ -686,7 +660,7 @@ export default function LiffPlayersDirectoryPage() {
 
                     {/* 下段: 選手フォト / アスレチックモノグラム */}
                     <div className="relative z-10 flex items-end justify-between">
-                      <Avatar className={`h-12 w-12 border-2 border-white/90 shadow-md ring-2 ${style.ring}`}>
+                      <Avatar className={`h-12 w-12 border-2 border-card shadow-xs ring-2 ${style.ring}`}>
                         {player.profileImageUrl && (
                           <AvatarImage
                             src={player.profileImageUrl}
@@ -694,12 +668,12 @@ export default function LiffPlayersDirectoryPage() {
                             className="object-cover"
                           />
                         )}
-                        <AvatarFallback className="bg-slate-800 text-white font-black text-base">
+                        <AvatarFallback className="bg-primary/15 text-primary font-black text-base">
                           {initial}
                         </AvatarFallback>
                       </Avatar>
 
-                      <span className="text-[10px] font-black tracking-widest text-white/75 uppercase">
+                      <span className="text-[10px] font-black tracking-widest text-primary/80 uppercase">
                         {posMeta.code}
                       </span>
                     </div>
@@ -726,7 +700,7 @@ export default function LiffPlayersDirectoryPage() {
                           {subLabelsShort.slice(0, 2).map((lbl, idx) => (
                             <span
                               key={`${player.id}-sub-${idx}`}
-                              className="px-1.5 py-0.2 rounded-md bg-muted border border-border/80 text-[9.5px] font-black text-foreground leading-tight"
+                              className="px-1.5 py-0.2 rounded-md bg-muted/50 border border-border/60 text-[9.5px] font-black text-foreground leading-tight"
                             >
                               {lbl}
                             </span>
@@ -756,8 +730,8 @@ export default function LiffPlayersDirectoryPage() {
 
                       {/* ミニ成績ハイライトバー */}
                       {posMeta.category === "投手" && player.pitching ? (
-                        <div className="px-2 py-1 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-between text-[10px]">
-                          <span className="font-bold text-sky-700 dark:text-sky-300">
+                        <div className="px-2 py-1 rounded-xl bg-primary/10 border border-primary/25 flex items-center justify-between text-[10px]">
+                          <span className="font-bold text-primary">
                             {player.pitching.inningsText}回
                           </span>
                           <span className="font-black text-foreground tabular-nums">
@@ -765,7 +739,7 @@ export default function LiffPlayersDirectoryPage() {
                           </span>
                         </div>
                       ) : player.batting ? (
-                        <div className="px-2 py-1 rounded-xl bg-primary/8 border border-primary/20 flex items-center justify-between text-[10px]">
+                        <div className="px-2 py-1 rounded-xl bg-primary/10 border border-primary/25 flex items-center justify-between text-[10px]">
                           <span className="font-bold text-muted-foreground">打率</span>
                           <span className="font-black text-primary tabular-nums">
                             {player.batting.avg}
@@ -775,7 +749,7 @@ export default function LiffPlayersDirectoryPage() {
                           </span>
                         </div>
                       ) : (
-                        <div className="px-2 py-1 rounded-xl bg-muted/60 flex items-center justify-between text-[10px] text-muted-foreground font-bold">
+                        <div className="px-2 py-1 rounded-xl bg-muted/50 border border-border/60 flex items-center justify-between text-[10px] text-muted-foreground font-bold">
                           <span>詳細・成長記録</span>
                           <ChevronRight className="w-3 h-3" />
                         </div>
@@ -805,7 +779,7 @@ export default function LiffPlayersDirectoryPage() {
                   key={player.id}
                   type="button"
                   onClick={() => setSelectedPlayerId(player.id)}
-                  className="w-full rounded-2xl bg-card border border-border/90 hover:border-primary/50 shadow-2xs overflow-hidden flex items-stretch text-left transition-all active:scale-[0.99]"
+                  className="w-full rounded-2xl border border-border/60 bg-card hover:border-primary/40 shadow-xs overflow-hidden flex items-stretch text-left transition-all active:scale-[0.99]"
                 >
                   {/* ポジションカラー縦アクセントバー */}
                   <div className={`w-1.5 shrink-0 ${style.barSolid}`} />
@@ -822,7 +796,7 @@ export default function LiffPlayersDirectoryPage() {
                         </span>
                       </div>
 
-                      <Avatar className="h-10 w-10 border border-border shrink-0">
+                      <Avatar className="h-10 w-10 border border-border/60 shrink-0">
                         {player.profileImageUrl && (
                           <AvatarImage
                             src={player.profileImageUrl}
@@ -830,7 +804,7 @@ export default function LiffPlayersDirectoryPage() {
                             className="object-cover"
                           />
                         )}
-                        <AvatarFallback className="bg-muted text-foreground font-black text-sm">
+                        <AvatarFallback className="bg-primary/10 text-primary font-black text-sm">
                           {initial}
                         </AvatarFallback>
                       </Avatar>
@@ -841,8 +815,8 @@ export default function LiffPlayersDirectoryPage() {
                             {player.name}
                           </span>
                           {player.isCaptain && (
-                            <span className="px-1.5 py-0.2 rounded-md bg-amber-400 text-amber-950 text-[9.5px] font-black flex items-center gap-0.5">
-                              <Crown className="w-2.5 h-2.5 fill-amber-950" />
+                            <span className="px-1.5 py-0.2 rounded-md bg-primary/10 text-primary border border-primary/25 text-[9.5px] font-black flex items-center gap-0.5">
+                              <Crown className="w-2.5 h-2.5 fill-current" />
                               <span>主将</span>
                             </span>
                           )}
@@ -855,7 +829,7 @@ export default function LiffPlayersDirectoryPage() {
                             {mainGames > 0 ? `(${mainGames})` : ""}
                           </span>
                           {subLabelsShort.length > 0 && (
-                            <span className="px-1.5 py-0.2 rounded-md bg-muted border border-border text-[10px] font-bold text-foreground truncate max-w-[140px]">
+                            <span className="px-1.5 py-0.2 rounded-md bg-muted/50 border border-border/60 text-[10px] font-bold text-foreground truncate max-w-[140px]">
                               サブ:{subLabelsShort.join("・")}
                             </span>
                           )}
@@ -879,7 +853,7 @@ export default function LiffPlayersDirectoryPage() {
                           <span className="text-[9.5px] font-bold text-muted-foreground block">
                             奪三振
                           </span>
-                          <span className="text-xs font-black text-sky-600 dark:text-sky-400 tabular-nums">
+                          <span className="text-xs font-black text-primary tabular-nums">
                             {player.pitching.strikeouts}
                           </span>
                         </div>
@@ -929,36 +903,36 @@ export default function LiffPlayersDirectoryPage() {
               onClick={() => setSelectedPlayerId(null)}
             />
 
-            <div className="relative z-10 w-full max-w-md rounded-3xl bg-card border border-border shadow-2xl overflow-hidden max-h-[88dvh] flex flex-col animate-in zoom-in-95 duration-200">
+            <div className="relative z-10 w-full max-w-md rounded-2xl border border-border/60 bg-card shadow-xs overflow-hidden max-h-[88dvh] flex flex-col animate-in zoom-in-95 duration-200">
               {/* 選手カードヒーローヘッダー */}
-              <div className={`relative p-5 text-white overflow-hidden shrink-0 ${style.stageBg}`}>
+              <div className={`relative p-5 text-foreground overflow-hidden shrink-0 ${style.stageBg}`}>
                 <span
                   aria-hidden="true"
-                  className="pointer-events-none select-none absolute right-2 -bottom-5 text-[108px] font-black italic tracking-tighter leading-none text-white/[0.12] tabular-nums"
+                  className="pointer-events-none select-none absolute right-2 -bottom-5 text-[108px] font-black italic tracking-tighter leading-none text-primary/[0.10] tabular-nums"
                 >
                   {numStr}
                 </span>
 
                 {/* 上部バー: 前後の選手クイック切替ピル & 閉じるボタン */}
                 <div className="relative z-10 flex items-center justify-between mb-4">
-                  <div className="inline-flex items-center rounded-full bg-white/15 border border-white/20 p-0.5">
+                  <div className="inline-flex items-center rounded-full bg-card border border-border/60 p-0.5 shadow-2xs">
                     <button
                       type="button"
                       disabled={!prevPlayer}
                       onClick={() => prevPlayer && setSelectedPlayerId(prevPlayer.id)}
-                      className="w-7 h-7 rounded-full flex items-center justify-center text-white disabled:opacity-30 hover:bg-white/15 active:scale-90 transition-all"
+                      className="w-7 h-7 rounded-full flex items-center justify-center text-foreground disabled:opacity-30 hover:bg-muted active:scale-90 transition-all"
                       aria-label="前の選手"
                     >
                       <ChevronLeft className="w-4 h-4" />
                     </button>
-                    <span className="px-2 text-[11px] font-black tabular-nums text-white/95">
+                    <span className="px-2 text-[11px] font-black tabular-nums text-foreground">
                       {selectedIndex + 1}/{filteredPlayers.length}
                     </span>
                     <button
                       type="button"
                       disabled={!nextPlayer}
                       onClick={() => nextPlayer && setSelectedPlayerId(nextPlayer.id)}
-                      className="w-7 h-7 rounded-full flex items-center justify-center text-white disabled:opacity-30 hover:bg-white/15 active:scale-90 transition-all"
+                      className="w-7 h-7 rounded-full flex items-center justify-center text-foreground disabled:opacity-30 hover:bg-muted active:scale-90 transition-all"
                       aria-label="次の選手"
                     >
                       <ChevronRight className="w-4 h-4" />
@@ -968,7 +942,7 @@ export default function LiffPlayersDirectoryPage() {
                   <button
                     type="button"
                     onClick={() => setSelectedPlayerId(null)}
-                    className="w-8 h-8 rounded-full bg-white/15 hover:bg-white/25 text-white flex items-center justify-center active:scale-90 transition-all"
+                    className="w-8 h-8 rounded-full bg-card border border-border/60 hover:bg-muted text-muted-foreground hover:text-foreground flex items-center justify-center active:scale-90 transition-all shadow-2xs"
                     aria-label="閉じる"
                   >
                     <X className="w-4 h-4" />
@@ -977,7 +951,7 @@ export default function LiffPlayersDirectoryPage() {
 
                 {/* 選手メインプロフィール */}
                 <div className="relative z-10 flex items-center gap-4">
-                  <Avatar className={`h-18 w-18 border-3 border-white shadow-lg ring-4 ${style.ring} shrink-0`}>
+                  <Avatar className={`h-18 w-18 border-2 border-card shadow-xs ring-2 ${style.ring} shrink-0`}>
                     {selectedPlayer.profileImageUrl && (
                       <AvatarImage
                         src={selectedPlayer.profileImageUrl}
@@ -985,33 +959,33 @@ export default function LiffPlayersDirectoryPage() {
                         className="object-cover"
                       />
                     )}
-                    <AvatarFallback className="bg-slate-800 text-white font-black text-2xl">
+                    <AvatarFallback className="bg-primary/15 text-primary font-black text-2xl">
                       {initial}
                     </AvatarFallback>
                   </Avatar>
 
                   <div className="min-w-0 space-y-1">
                     <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="px-2.5 py-0.5 rounded-lg bg-white text-slate-950 text-xs font-black italic tabular-nums">
+                      <span className="px-2.5 py-0.5 rounded-lg bg-card text-foreground border border-border/60 text-xs font-black italic tabular-nums">
                         #{numStr}
                       </span>
                       <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-black ${style.pillSolid}`}>
                         {posMeta.shortLabel}
                       </span>
                       {selectedPlayer.isCaptain && (
-                        <span className="px-2 py-0.5 rounded-full bg-amber-400 text-amber-950 text-[10px] font-black flex items-center gap-1">
-                          <Crown className="w-3 h-3 fill-amber-950" />
+                        <span className="px-2 py-0.5 rounded-full bg-primary text-primary-foreground text-[10px] font-black flex items-center gap-1">
+                          <Crown className="w-3 h-3 fill-current" />
                           <span>CAPTAIN</span>
                         </span>
                       )}
                     </div>
 
                     {selectedPlayer.nameKana && (
-                      <p className="text-[10px] font-bold text-white/75 tracking-widest">
+                      <p className="text-[10px] font-bold text-muted-foreground tracking-widest">
                         {selectedPlayer.nameKana}
                       </p>
                     )}
-                    <h3 className="text-xl font-black tracking-tight text-white truncate">
+                    <h3 className="text-xl font-black tracking-tight text-foreground truncate">
                       {selectedPlayer.name}
                     </h3>
                   </div>
@@ -1024,7 +998,7 @@ export default function LiffPlayersDirectoryPage() {
                 <Link
                   href={`/liff/players/growth?id=${encodeURIComponent(selectedPlayer.id)}`}
                   onClick={() => setSelectedPlayerId(null)}
-                  className="w-full py-3 px-4 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm active:scale-[0.99] transition-all flex items-center justify-between gap-2"
+                  className="w-full py-3 px-4 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground shadow-xs active:scale-[0.99] transition-all flex items-center justify-between gap-2"
                 >
                   <div className="flex items-center gap-2.5 min-w-0">
                     <span className="w-7 h-7 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
@@ -1044,25 +1018,25 @@ export default function LiffPlayersDirectoryPage() {
 
                 {/* 基本スペック 4グリッド */}
                 <div className="grid grid-cols-4 gap-2 text-center">
-                  <div className="p-2.5 rounded-2xl bg-muted/60 border border-border/70">
+                  <div className="p-2.5 rounded-2xl bg-muted/50 border border-border/60">
                     <span className="text-[9.5px] font-bold text-muted-foreground block">背番号</span>
                     <span className="text-sm font-black text-foreground tabular-nums mt-0.5 block">
                       #{numStr}
                     </span>
                   </div>
-                  <div className="p-2.5 rounded-2xl bg-muted/60 border border-border/70">
+                  <div className="p-2.5 rounded-2xl bg-muted/50 border border-border/60">
                     <span className="text-[9.5px] font-bold text-muted-foreground block">メイン守備</span>
                     <span className="text-xs font-black text-foreground mt-0.5 block truncate">
                       {posMeta.shortLabel}
                     </span>
                   </div>
-                  <div className="p-2.5 rounded-2xl bg-muted/60 border border-border/70">
+                  <div className="p-2.5 rounded-2xl bg-muted/50 border border-border/60">
                     <span className="text-[9.5px] font-bold text-muted-foreground block">投打</span>
                     <span className="text-xs font-black text-foreground mt-0.5 block">
                       {tbLabel}
                     </span>
                   </div>
-                  <div className="p-2.5 rounded-2xl bg-muted/60 border border-border/70">
+                  <div className="p-2.5 rounded-2xl bg-muted/50 border border-border/60">
                     <span className="text-[9.5px] font-bold text-muted-foreground block">体格</span>
                     <span className="text-[11px] font-black text-foreground tabular-nums mt-0.5 block">
                       {selectedPlayer.height
@@ -1074,12 +1048,12 @@ export default function LiffPlayersDirectoryPage() {
 
                 {/* 🧤 実戦守備位置（メイン＆サブ集計内訳） */}
                 {posCounts.length > 0 ? (
-                  <div className="rounded-2xl bg-background border border-border p-3.5 space-y-2.5">
+                  <div className="rounded-2xl bg-muted/35 border border-border/60 p-3.5 space-y-2.5">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs font-black text-foreground">
                         実戦守備位置（メイン / サブ）
                       </span>
-                      <span className="px-2 py-0.5 rounded-full bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 text-[10px] font-black tabular-nums">
+                      <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/25 text-[10px] font-black tabular-nums">
                         試合データ集計 ({selectedPlayer.totalPositionGames || posCounts[0].games}試合)
                       </span>
                     </div>
@@ -1092,14 +1066,14 @@ export default function LiffPlayersDirectoryPage() {
                         return (
                           <div
                             key={pc.position}
-                            className="flex items-center justify-between gap-2 px-2.5 py-2 rounded-xl bg-card border border-border text-xs"
+                            className="flex items-center justify-between gap-2 px-2.5 py-2 rounded-xl bg-card border border-border/60 text-xs"
                           >
                             <div className="flex items-center gap-2 min-w-0">
                               <span
                                 className={`px-1.5 py-0.5 rounded-md text-[9.5px] font-black shrink-0 ${
                                   isMain
                                     ? pcStyle.pillSolid
-                                    : "bg-muted text-muted-foreground border border-border"
+                                    : "bg-muted text-muted-foreground border border-border/60"
                                 }`}
                               >
                                 {isMain ? "メイン" : "サブ"}
@@ -1132,13 +1106,13 @@ export default function LiffPlayersDirectoryPage() {
                     </div>
                   </div>
                 ) : subLabels.length > 0 ? (
-                  <div className="flex items-center gap-2 px-3 py-2 rounded-2xl bg-muted/40 border border-border/60 text-xs">
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-2xl bg-muted/35 border border-border/60 text-xs">
                     <span className="font-bold text-muted-foreground shrink-0">サブ守備位置:</span>
                     <div className="flex items-center gap-1.5 flex-wrap">
                       {subLabels.map((lbl, idx) => (
                         <span
                           key={`${lbl}-${idx}`}
-                          className="px-2 py-0.5 rounded-lg bg-card border border-border text-[11px] font-black text-foreground"
+                          className="px-2 py-0.5 rounded-lg bg-card border border-border/60 text-[11px] font-black text-foreground"
                         >
                           {lbl}
                         </span>
@@ -1149,7 +1123,7 @@ export default function LiffPlayersDirectoryPage() {
 
                 {/* 選手紹介メモ */}
                 {selectedPlayer.notes && (
-                  <div className="p-3.5 rounded-2xl bg-primary/6 border border-primary/20 space-y-1">
+                  <div className="p-3.5 rounded-2xl bg-primary/10 border border-primary/25 space-y-1">
                     <div className="flex items-center gap-1.5 text-[11px] font-black text-primary">
                       <Sparkles className="w-3.5 h-3.5" />
                       <span>PLAYER NOTE</span>
@@ -1162,10 +1136,10 @@ export default function LiffPlayersDirectoryPage() {
 
                 {/* 今シーズン打撃成績 */}
                 {selectedPlayer.batting && (
-                  <div className="rounded-2xl bg-background border border-border p-3.5 space-y-2.5">
+                  <div className="rounded-2xl bg-muted/35 border border-border/60 p-3.5 space-y-2.5">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-black text-foreground flex items-center gap-1.5">
-                        <Flame className="w-3.5 h-3.5 text-rose-500" />
+                        <Flame className="w-3.5 h-3.5 text-primary" />
                         <span>今シーズン打撃成績</span>
                       </span>
                       <span className="text-[10px] font-bold text-muted-foreground tabular-nums">
@@ -1174,25 +1148,25 @@ export default function LiffPlayersDirectoryPage() {
                     </div>
 
                     <div className="grid grid-cols-4 gap-2 text-center">
-                      <div className="p-2 rounded-xl bg-card border border-border">
+                      <div className="p-2 rounded-xl bg-card border border-border/60">
                         <span className="text-[9.5px] font-bold text-muted-foreground block">打率</span>
                         <span className="text-sm font-black text-primary tabular-nums">
                           {selectedPlayer.batting.avg}
                         </span>
                       </div>
-                      <div className="p-2 rounded-xl bg-card border border-border">
+                      <div className="p-2 rounded-xl bg-card border border-border/60">
                         <span className="text-[9.5px] font-bold text-muted-foreground block">安打</span>
                         <span className="text-sm font-black text-foreground tabular-nums">
                           {selectedPlayer.batting.hits}
                         </span>
                       </div>
-                      <div className="p-2 rounded-xl bg-card border border-border">
+                      <div className="p-2 rounded-xl bg-card border border-border/60">
                         <span className="text-[9.5px] font-bold text-muted-foreground block">本塁打</span>
                         <span className="text-sm font-black text-foreground tabular-nums">
                           {selectedPlayer.batting.hr}
                         </span>
                       </div>
-                      <div className="p-2 rounded-xl bg-card border border-border">
+                      <div className="p-2 rounded-xl bg-card border border-border/60">
                         <span className="text-[9.5px] font-bold text-muted-foreground block">四死球</span>
                         <span className="text-sm font-black text-foreground tabular-nums">
                           {selectedPlayer.batting.walks}
@@ -1204,10 +1178,10 @@ export default function LiffPlayersDirectoryPage() {
 
                 {/* 今シーズン投手成績 */}
                 {selectedPlayer.pitching && (
-                  <div className="rounded-2xl bg-background border border-border p-3.5 space-y-2.5">
+                  <div className="rounded-2xl bg-muted/35 border border-border/60 p-3.5 space-y-2.5">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-black text-foreground flex items-center gap-1.5">
-                        <Activity className="w-3.5 h-3.5 text-sky-500" />
+                        <Activity className="w-3.5 h-3.5 text-primary" />
                         <span>今シーズン投手成績</span>
                       </span>
                       <span className="text-[10px] font-bold text-muted-foreground tabular-nums">
@@ -1216,25 +1190,25 @@ export default function LiffPlayersDirectoryPage() {
                     </div>
 
                     <div className="grid grid-cols-4 gap-2 text-center">
-                      <div className="p-2 rounded-xl bg-card border border-border">
+                      <div className="p-2 rounded-xl bg-card border border-border/60">
                         <span className="text-[9.5px] font-bold text-muted-foreground block">投球回</span>
-                        <span className="text-sm font-black text-sky-600 dark:text-sky-400 tabular-nums">
+                        <span className="text-sm font-black text-primary tabular-nums">
                           {selectedPlayer.pitching.inningsText}
                         </span>
                       </div>
-                      <div className="p-2 rounded-xl bg-card border border-border">
+                      <div className="p-2 rounded-xl bg-card border border-border/60">
                         <span className="text-[9.5px] font-bold text-muted-foreground block">奪三振</span>
                         <span className="text-sm font-black text-foreground tabular-nums">
                           {selectedPlayer.pitching.strikeouts}
                         </span>
                       </div>
-                      <div className="p-2 rounded-xl bg-card border border-border">
+                      <div className="p-2 rounded-xl bg-card border border-border/60">
                         <span className="text-[9.5px] font-bold text-muted-foreground block">被安打</span>
                         <span className="text-sm font-black text-foreground tabular-nums">
                           {selectedPlayer.pitching.hitsAllowed}
                         </span>
                       </div>
-                      <div className="p-2 rounded-xl bg-card border border-border">
+                      <div className="p-2 rounded-xl bg-card border border-border/60">
                         <span className="text-[9.5px] font-bold text-muted-foreground block">四死球</span>
                         <span className="text-sm font-black text-foreground tabular-nums">
                           {selectedPlayer.pitching.walks}
@@ -1248,9 +1222,9 @@ export default function LiffPlayersDirectoryPage() {
                 <Link
                   href="/liff/stats"
                   onClick={() => setSelectedPlayerId(null)}
-                  className="w-full py-2.5 px-4 rounded-2xl bg-muted hover:bg-muted/80 border border-border text-xs font-black text-foreground transition-all flex items-center justify-center gap-2"
+                  className="w-full py-2.5 px-4 rounded-2xl bg-card hover:bg-muted border border-border/60 text-xs font-black text-foreground transition-all flex items-center justify-center gap-2 shadow-2xs"
                 >
-                  <Trophy className="w-3.5 h-3.5 text-amber-500" />
+                  <Trophy className="w-3.5 h-3.5 text-primary" />
                   <span>チーム成績・ランキングを見る</span>
                 </Link>
               </div>

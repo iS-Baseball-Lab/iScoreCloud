@@ -222,11 +222,8 @@ export function MatchCard({
 
   return (
     <div className={cn(
-      "group relative overflow-hidden transition-all duration-200 ease-out",
-      "rounded-[var(--radius-2xl)] border",
-      isExpanded
-        ? "border-primary/40 shadow-sm shadow-primary/5"
-        : "border-border/50 shadow-sm"
+      "group relative rounded-2xl border border-border/60 bg-card shadow-xs overflow-hidden transition-all duration-200 ease-out",
+      isExpanded && "border-primary/40"
     )}>
       
       {/* スワイプ時のみ背面の編集・削除アクションを表示 */}
@@ -238,7 +235,7 @@ export function MatchCard({
           <div className="absolute top-0 left-0 h-full w-[75px]">
             <button
               onClick={(e) => { e.stopPropagation(); router.push(`/matches/edit?id=${match.id}`); }}
-              className="flex flex-col items-center justify-center w-full h-full bg-blue-500 text-white active:bg-blue-600 transition-colors"
+              className="flex flex-col items-center justify-center w-full h-full bg-primary text-primary-foreground active:bg-primary/90 transition-colors"
             >
               <Edit2 className="h-5 w-5 mb-1" />
               <span className="text-[10px] font-black uppercase tracking-wider">編集</span>
@@ -263,14 +260,13 @@ export function MatchCard({
         onTouchEnd={handleTouchEnd}
         style={{ transform: `translateX(${currentOffset}px)`, touchAction: enableSwipe ? "pan-y" : "auto" }}
         className={cn(
-          "relative z-10 h-full transition-transform duration-200 ease-out",
-          isExpanded ? "bg-primary/5 dark:bg-primary/10" : "bg-card"
+          "relative z-10 h-full bg-card transition-transform duration-200 ease-out"
         )}
       >
         {/* 🌟 試合動画がある場合、カード上部に埋め込む（カスタムサムネイル表記でYouTubeタイトルのオーバーレイを完全消去） */}
         {youtubeVideoId && (
           <div 
-            className="w-full aspect-video border-b border-border/50 overflow-hidden bg-black relative group/video"
+            className="w-full aspect-video border-b border-border/60 overflow-hidden bg-black relative group/video"
             onTouchStart={(e) => e.stopPropagation()}
             onTouchMove={(e) => e.stopPropagation()}
             onTouchEnd={(e) => e.stopPropagation()}
@@ -304,7 +300,7 @@ export function MatchCard({
 
                 {/* 3. 洗練されたカスタム再生ボタン */}
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-rose-600/90 text-white flex items-center justify-center shadow-lg group-hover/thumb:scale-110 group-hover/thumb:bg-rose-600 transition-all duration-300 ring-4 ring-white/20">
+                  <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-primary/90 text-primary-foreground flex items-center justify-center shadow-lg group-hover/thumb:scale-110 group-hover/thumb:bg-primary transition-all duration-300 ring-4 ring-white/20">
                     <Play className="w-7 h-7 sm:w-8 sm:h-8 fill-current translate-x-0.5" />
                   </div>
                 </div>
@@ -312,7 +308,7 @@ export function MatchCard({
                 {/* 4. アプリ標準のクリーンな再生ガイドラベル */}
                 <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between text-[11px] font-bold text-white/90 drop-shadow-sm pointer-events-none">
                   <span className="flex items-center gap-1.5 bg-black/50 backdrop-blur-md px-3 py-1.2 rounded-full border border-white/15">
-                    <Play className="w-3.5 h-3.5 fill-current text-rose-500" />
+                    <Play className="w-3.5 h-3.5 fill-current text-primary" />
                     タップして試合動画を再生
                   </span>
                 </div>
@@ -329,22 +325,22 @@ export function MatchCard({
             <div className="flex-1 min-w-0">
               <div className="flex items-center flex-wrap gap-2 mb-1.5">
                 <span className={cn(
-                  "w-16 text-center text-[10px] sm:text-xs font-black px-1.5 py-0.5 rounded shadow-sm shrink-0",
-                  match.matchType === 'official' ? "bg-amber-500/10 text-amber-600 border border-amber-500/20" :
-                  match.matchType === 'exchange' ? "bg-blue-500/10 text-blue-600 border border-blue-500/20" :
-                  "bg-emerald-500/10 text-emerald-600 border border-emerald-500/20"
+                  "w-16 text-center text-[10px] sm:text-xs font-black px-1.5 py-0.5 rounded shrink-0",
+                  match.matchType === 'official' ? "bg-primary/12 text-primary border border-primary/25" :
+                  match.matchType === 'exchange' ? "bg-primary/10 text-primary border border-primary/20" :
+                  "bg-muted/50 text-muted-foreground border border-border/60"
                 )}>
                   {match.matchType === 'official' ? '公式戦' : match.matchType === 'exchange' ? '交流戦' : 'OP戦'}
                 </span>
 
                 {!isFuture && match.status !== 'rainout' && match.status !== 'scheduled' && (
                   match.hasScorebook ? (
-                    <span className="inline-flex items-center gap-1 text-[10px] sm:text-xs font-black px-2 py-0.5 rounded border bg-indigo-100 text-indigo-800 border-indigo-300 dark:bg-indigo-950/80 dark:text-indigo-300 dark:border-indigo-800 shrink-0">
+                    <span className="inline-flex items-center gap-1 text-[10px] sm:text-xs font-black px-2 py-0.5 rounded border bg-primary/10 text-primary border-primary/25 shrink-0">
                       <CheckCircle2 className="h-3 w-3 shrink-0" />
                       <span>スコア取込済</span>
                     </span>
                   ) : (
-                    <span className="inline-flex items-center text-[10px] sm:text-xs font-black px-2 py-0.5 rounded border bg-slate-100 text-slate-600 border-slate-300 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700 shrink-0">
+                    <span className="inline-flex items-center text-[10px] sm:text-xs font-black px-2 py-0.5 rounded border bg-muted/50 text-muted-foreground border-border/60 shrink-0">
                       未取込
                     </span>
                   )
@@ -392,21 +388,21 @@ export function MatchCard({
               )}
               {match.status === 'rainout' && (
                 <div className="w-16 text-center">
-                  <span className="block w-full bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/30 text-[10px] sm:text-[11px] font-black py-0.5 rounded shadow-sm">雨天中止</span>
+                  <span className="block w-full bg-muted/50 text-muted-foreground border border-border/60 text-[10px] sm:text-[11px] font-black py-0.5 rounded">雨天中止</span>
                 </div>
               )}
               
               {match.status === 'rainout' ? (
-                <div className="px-2.5 py-1.5 bg-blue-500/5 dark:bg-blue-500/10 rounded-xl border border-blue-500/20 text-center min-w-[85px] flex flex-col items-center justify-center">
-                  <p className="text-[10px] font-black text-blue-600 dark:text-blue-400 leading-none">☔ 中止</p>
+                <div className="px-2.5 py-1.5 bg-muted/35 rounded-xl border border-border/60 text-center min-w-[85px] flex flex-col items-center justify-center">
+                  <p className="text-[10px] font-black text-muted-foreground leading-none">☔ 中止</p>
                 </div>
               ) : isFuture ? (
-                <div className="px-1 py-1.5 bg-primary/10 rounded-xl border border-primary/20 text-center min-w-[85px] flex flex-col items-center justify-center">
+                <div className="px-1 py-1.5 bg-primary/10 rounded-xl border border-primary/25 text-center min-w-[85px] flex flex-col items-center justify-center">
                   <p className="text-[8px] font-black text-primary/70 uppercase leading-none mb-0.5">START IN</p>
                   <MatchCountdown date={match.date} />
                 </div>
               ) : (
-                <div className="flex items-center gap-2 px-3 py-1.5 bg-primary/5 rounded-xl border border-primary/20">
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-primary/5 rounded-xl border border-primary/25">
                   <div className="text-center w-7">
                     <p className="text-[9px] font-black text-primary/70 uppercase leading-none">先</p>
                     <span className="text-xl font-black tabular-nums leading-none text-foreground">{firstScore}</span>
@@ -424,11 +420,11 @@ export function MatchCard({
 
           {isExpanded && (
             <div className="mt-4 pt-2 animate-in fade-in slide-in-from-top-2 duration-300">
-              <div className="w-full overflow-hidden rounded-xl border border-border bg-card shadow-sm flex flex-col pointer-events-auto">
+              <div className="w-full overflow-hidden rounded-xl border border-border/60 bg-card shadow-xs flex flex-col pointer-events-auto">
                 
                 <div className="overflow-x-auto">
                   <table className="w-full text-center whitespace-nowrap">
-                    <thead className="bg-primary/5 border-b border-border/50">
+                    <thead className="bg-muted/35 border-b border-border/60">
                       <tr>
                         <th className="py-2 px-3 text-left font-normal text-muted-foreground text-xs w-20 md:w-32">TEAM</th>
                         {Array.from({ length: inningCount }).map((_, i) => (
@@ -437,7 +433,7 @@ export function MatchCard({
                         <th className="py-2 px-3 text-sm md:text-base font-bold text-primary">R</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-border/50 text-xs sm:text-sm font-medium tabular-nums">
+                    <tbody className="divide-y divide-border/60 text-xs sm:text-sm font-medium tabular-nums">
                       <tr>
                         <td className="py-2 px-3 text-left">
                           <div className="w-16 truncate md:w-auto md:whitespace-normal">
@@ -468,14 +464,14 @@ export function MatchCard({
                   </table>
                 </div>
                 
-                <div className="p-3 border-t border-border/50 bg-muted/20 flex gap-2">
+                <div className="p-3 border-t border-border/60 bg-muted/35 flex gap-2">
                   {match.status === 'live' ? (
                     <Button
                       onClick={(e) => {
                         e.stopPropagation();
                         router.push(`/matches/score?id=${match.id}`);
                       }}
-                      className="flex-1 h-11 rounded-[var(--radius-lg)] font-black gap-1.5 shadow-sm text-xs sm:text-sm bg-primary text-primary-foreground hover:scale-[1.02] transition-transform shadow-[0_0_15px_rgba(var(--primary),0.2)]"
+                      className="flex-1 h-11 rounded-[var(--radius-lg)] font-black gap-1.5 shadow-xs text-xs sm:text-sm bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
                     >
                       <PlayCircle className="h-4 w-4" strokeWidth={2.5} />
                       ライブスコアへ進む
@@ -487,9 +483,10 @@ export function MatchCard({
                           e.stopPropagation();
                           router.push(`/matches/lineup?id=${match.id}`);
                         }}
-                        className="flex-1 h-11 rounded-[var(--radius-lg)] font-black gap-1.5 shadow-sm text-[10px] sm:text-xs bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-900 dark:text-zinc-100 border border-zinc-200 dark:border-zinc-700 transition-colors"
+                        variant="outline"
+                        className="flex-1 h-11 rounded-[var(--radius-lg)] font-black gap-1.5 shadow-xs text-[10px] sm:text-xs bg-card text-foreground border border-border/60 hover:bg-muted transition-colors"
                       >
-                        <Users className="h-4 w-4" strokeWidth={2.5} />
+                        <Users className="h-4 w-4 text-primary" strokeWidth={2.5} />
                         スタメン
                       </Button>
                       <Button
@@ -497,7 +494,7 @@ export function MatchCard({
                           e.stopPropagation();
                           router.push(`/matches/score?id=${match.id}`);
                         }}
-                        className="flex-1 h-11 rounded-[var(--radius-lg)] font-black gap-1.5 shadow-sm text-[10px] sm:text-xs bg-primary text-primary-foreground hover:scale-[1.02] transition-transform shadow-[0_0_15px_rgba(var(--primary),0.2)]"
+                        className="flex-1 h-11 rounded-[var(--radius-lg)] font-black gap-1.5 shadow-xs text-[10px] sm:text-xs bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
                       >
                         <PlayCircle className="h-4 w-4" strokeWidth={2.5} />
                         ライブ入力
@@ -508,7 +505,7 @@ export function MatchCard({
                           router.push(`/matches/result?id=${match.id}`);
                         }}
                         variant="outline"
-                        className="flex-1 h-11 rounded-[var(--radius-lg)] font-black gap-1.5 shadow-sm text-[10px] sm:text-xs bg-card border-border hover:bg-primary/5 hover:text-primary transition-colors"
+                        className="flex-1 h-11 rounded-[var(--radius-lg)] font-black gap-1.5 shadow-xs text-[10px] sm:text-xs bg-card text-foreground border border-border/60 hover:bg-muted transition-colors"
                       >
                         <ClipboardList className="h-4 w-4 text-primary" strokeWidth={2.5} />
                         試合明細
@@ -521,9 +518,10 @@ export function MatchCard({
                           e.stopPropagation();
                           router.push(`/matches/edit?id=${match.id}`);
                         }}
-                        className="flex-1 h-11 rounded-[var(--radius-lg)] font-black gap-1.5 shadow-sm text-[10px] sm:text-xs bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-900 dark:text-zinc-100 border border-zinc-200 dark:border-zinc-700 transition-colors"
+                        variant="outline"
+                        className="flex-1 h-11 rounded-[var(--radius-lg)] font-black gap-1.5 shadow-xs text-[10px] sm:text-xs bg-card text-foreground border border-border/60 hover:bg-muted transition-colors"
                       >
-                        <Edit2 className="h-4 w-4" strokeWidth={2.5} />
+                        <Edit2 className="h-4 w-4 text-primary" strokeWidth={2.5} />
                         試合編集
                       </Button>
                       <Button
@@ -532,7 +530,7 @@ export function MatchCard({
                           router.push(`/matches/result?id=${match.id}`);
                         }}
                         variant="outline"
-                        className="flex-1 h-11 rounded-[var(--radius-lg)] font-black gap-1.5 shadow-sm text-[10px] sm:text-xs bg-card border-border hover:bg-primary/5 hover:text-primary transition-colors"
+                        className="flex-1 h-11 rounded-[var(--radius-lg)] font-black gap-1.5 shadow-xs text-[10px] sm:text-xs bg-card text-foreground border border-border/60 hover:bg-muted transition-colors"
                       >
                         <ClipboardList className="h-4 w-4 text-primary" strokeWidth={2.5} />
                         試合明細
@@ -546,7 +544,7 @@ export function MatchCard({
                           router.push(`/matches/scorebook?id=${match.id}`);
                         }}
                         variant="outline"
-                        className="flex-1 h-11 rounded-[var(--radius-lg)] font-black gap-1.5 shadow-sm text-[10px] sm:text-xs bg-card border-border hover:bg-primary/5 hover:text-primary transition-colors"
+                        className="flex-1 h-11 rounded-[var(--radius-lg)] font-black gap-1.5 shadow-xs text-[10px] sm:text-xs bg-card text-foreground border border-border/60 hover:bg-muted transition-colors"
                       >
                         <BookOpen className="h-4 w-4 text-primary" strokeWidth={2.5} />
                         スコアブック
@@ -556,7 +554,7 @@ export function MatchCard({
                           e.stopPropagation();
                           router.push(`/matches/score?id=${match.id}`);
                         }}
-                        className="flex-1 h-11 rounded-[var(--radius-lg)] font-black gap-1.5 shadow-sm text-[10px] sm:text-xs bg-primary text-primary-foreground hover:scale-[1.02] transition-transform shadow-[0_0_15px_rgba(var(--primary),0.2)]"
+                        className="flex-1 h-11 rounded-[var(--radius-lg)] font-black gap-1.5 shadow-xs text-[10px] sm:text-xs bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
                       >
                         <PlayCircle className="h-4 w-4" strokeWidth={2.5} />
                         ライブスコア
@@ -566,9 +564,10 @@ export function MatchCard({
                           e.stopPropagation();
                           router.push(`/matches/result?id=${match.id}`);
                         }}
-                        className="flex-1 h-11 rounded-[var(--radius-lg)] font-black gap-1.5 shadow-sm text-[10px] sm:text-xs bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-900 dark:text-zinc-100 border border-zinc-200 dark:border-zinc-700 transition-colors"
+                        variant="outline"
+                        className="flex-1 h-11 rounded-[var(--radius-lg)] font-black gap-1.5 shadow-xs text-[10px] sm:text-xs bg-card text-foreground border border-border/60 hover:bg-muted transition-colors"
                       >
-                        <ClipboardList className="h-4 w-4" strokeWidth={2.5} />
+                        <ClipboardList className="h-4 w-4 text-primary" strokeWidth={2.5} />
                         試合明細
                       </Button>
                     </>

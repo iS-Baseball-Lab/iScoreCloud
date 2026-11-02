@@ -63,7 +63,7 @@ const ATTENDANCE_STATUSES: Record<AttendanceMarkType, AttendanceStatusConfig> = 
     label: "出席（当番）",
     shortLabel: "当番",
     badgeClass: "bg-red-500 text-white font-black shadow-xs",
-    buttonClass: "border-red-500/40 bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-500/20 active:scale-95",
+    buttonClass: "border-border/60 bg-card text-foreground hover:bg-muted active:scale-95",
     description: "お茶当番・鍵当番・救急当番など",
   },
   help: {
@@ -72,7 +72,7 @@ const ATTENDANCE_STATUSES: Record<AttendanceMarkType, AttendanceStatusConfig> = 
     label: "出席（ヘルプ）",
     shortLabel: "ヘルプ",
     badgeClass: "bg-blue-600 text-white font-black shadow-xs",
-    buttonClass: "border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 active:scale-95",
+    buttonClass: "border-border/60 bg-card text-foreground hover:bg-muted active:scale-95",
     description: "通常の練習・試合参加、車出し手伝いなど",
   },
   setup: {
@@ -81,7 +81,7 @@ const ATTENDANCE_STATUSES: Record<AttendanceMarkType, AttendanceStatusConfig> = 
     label: "出席（設営・撤収のみ）",
     shortLabel: "設営撤収",
     badgeClass: "bg-amber-500 text-white font-black shadow-xs",
-    buttonClass: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 active:scale-95",
+    buttonClass: "border-border/60 bg-card text-foreground hover:bg-muted active:scale-95",
     description: "朝のグラウンド作り、または夕方の片付けのみ",
   },
   game: {
@@ -90,7 +90,7 @@ const ATTENDANCE_STATUSES: Record<AttendanceMarkType, AttendanceStatusConfig> = 
     label: "出席（試合のみ）",
     shortLabel: "試合のみ",
     badgeClass: "bg-emerald-600 text-white font-black shadow-xs",
-    buttonClass: "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 active:scale-95",
+    buttonClass: "border-border/60 bg-card text-foreground hover:bg-muted active:scale-95",
     description: "公式戦・練習試合の時間帯のみ参加",
   },
   absent: {
@@ -98,8 +98,8 @@ const ATTENDANCE_STATUSES: Record<AttendanceMarkType, AttendanceStatusConfig> = 
     mark: "×",
     label: "欠席",
     shortLabel: "欠席",
-    badgeClass: "bg-slate-400 text-white font-bold",
-    buttonClass: "border-slate-500/30 bg-slate-500/10 text-slate-600 dark:text-slate-400 hover:bg-slate-500/20 active:scale-95",
+    badgeClass: "bg-muted-foreground/70 text-background font-bold",
+    buttonClass: "border-border/60 bg-card text-foreground hover:bg-muted active:scale-95",
     description: "終日不参加",
   },
   pending: {
@@ -107,8 +107,8 @@ const ATTENDANCE_STATUSES: Record<AttendanceMarkType, AttendanceStatusConfig> = 
     mark: "－",
     label: "未定・未回答",
     shortLabel: "未回答",
-    badgeClass: "bg-muted text-muted-foreground font-medium border border-border/50",
-    buttonClass: "border-border/60 bg-muted/40 text-muted-foreground hover:bg-muted/70 active:scale-95",
+    badgeClass: "bg-muted text-muted-foreground font-medium border border-border/60",
+    buttonClass: "border-border/60 bg-card text-foreground hover:bg-muted active:scale-95",
     description: "調整中または回答前",
   },
 };
@@ -135,28 +135,28 @@ const DEFAULT_GROUP_STATUS_CONFIG: GroupStatusConfigMap = {
     { id: "help", mark: "○", label: "ヘルプ", enabled: false, bgClass: "bg-blue-600" },
     { id: "setup", mark: "▲", label: "設営撤収", enabled: false, bgClass: "bg-amber-500" },
     { id: "game", mark: "△", label: "試合のみ", enabled: true, bgClass: "bg-emerald-600" },
-    { id: "absent", mark: "×", label: "欠席", enabled: true, bgClass: "bg-slate-400" },
+    { id: "absent", mark: "×", label: "欠席", enabled: true, bgClass: "bg-muted-foreground/70" },
   ],
   mother: [
     { id: "duty", mark: "◎", label: "当番", enabled: true, bgClass: "bg-red-500" },
     { id: "help", mark: "○", label: "ヘルプ", enabled: true, bgClass: "bg-blue-600" },
     { id: "setup", mark: "▲", label: "設営撤収", enabled: true, bgClass: "bg-amber-500" },
     { id: "game", mark: "△", label: "試合のみ", enabled: true, bgClass: "bg-emerald-600" },
-    { id: "absent", mark: "×", label: "欠席", enabled: true, bgClass: "bg-slate-400" },
+    { id: "absent", mark: "×", label: "欠席", enabled: true, bgClass: "bg-muted-foreground/70" },
   ],
   father: [
     { id: "duty", mark: "◎", label: "当番", enabled: true, bgClass: "bg-red-500" },
     { id: "help", mark: "○", label: "ヘルプ", enabled: true, bgClass: "bg-blue-600" },
     { id: "setup", mark: "▲", label: "設営撤収", enabled: true, bgClass: "bg-amber-500" },
     { id: "game", mark: "△", label: "試合のみ", enabled: true, bgClass: "bg-emerald-600" },
-    { id: "absent", mark: "×", label: "欠席", enabled: true, bgClass: "bg-slate-400" },
+    { id: "absent", mark: "×", label: "欠席", enabled: true, bgClass: "bg-muted-foreground/70" },
   ],
   staff: [
     { id: "duty", mark: "◎", label: "当番", enabled: true, bgClass: "bg-red-500" },
     { id: "help", mark: "○", label: "指導参加", enabled: true, bgClass: "bg-blue-600" },
     { id: "setup", mark: "▲", label: "設営撤収", enabled: true, bgClass: "bg-amber-500" },
     { id: "game", mark: "△", label: "試合のみ", enabled: true, bgClass: "bg-emerald-600" },
-    { id: "absent", mark: "×", label: "欠席", enabled: true, bgClass: "bg-slate-400" },
+    { id: "absent", mark: "×", label: "欠席", enabled: true, bgClass: "bg-muted-foreground/70" },
   ],
 };
 
@@ -272,7 +272,7 @@ function SortableMemberRow({
       id={person.id}
       dragListener={false}
       dragControls={controls}
-      className="flex items-center justify-between p-1.5 rounded-xl bg-card border border-border/70 hover:border-primary/40 shadow-xs transition-colors select-none"
+      className="flex items-center justify-between p-1.5 rounded-xl bg-card border border-border/60 hover:border-primary/40 shadow-xs transition-colors select-none"
       whileDrag={{
         scale: 1.02,
         boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.25), 0 8px 10px -6px rgba(0, 0, 0, 0.2)",
@@ -291,7 +291,7 @@ function SortableMemberRow({
           <GripVertical className="w-4 h-4" />
         </div>
 
-        <span className="w-4 h-4 rounded-full bg-black/10 dark:bg-white/10 text-[9px] font-black flex items-center justify-center text-muted-foreground shrink-0">
+        <span className="w-4 h-4 rounded-full bg-muted text-[9px] font-black flex items-center justify-center text-muted-foreground shrink-0">
           {index + 1}
         </span>
         {person.uniformNumber && (
@@ -989,19 +989,19 @@ export default function AttendanceMatrixBoardPage() {
           id === "help" ? "bg-[#dbeafe] dark:bg-[#172554] text-blue-700 dark:text-blue-300" :
           id === "setup" ? "bg-[#fef3c7] dark:bg-[#451a03] text-amber-700 dark:text-amber-300" :
           id === "game" ? "bg-[#d1fae5] dark:bg-[#064e3b] text-emerald-700 dark:text-emerald-300" :
-          "bg-[#e2e8f0] dark:bg-[#1e293b] text-slate-700 dark:text-slate-300",
+          "bg-muted text-muted-foreground",
         cellTextClass:
           id === "duty" ? "text-red-700 dark:text-red-300 bg-red-50/90 dark:bg-red-950/40 font-black" :
           id === "help" ? "text-blue-700 dark:text-blue-300 bg-blue-50/90 dark:bg-blue-950/40 font-black" :
           id === "setup" ? "text-amber-700 dark:text-amber-300 bg-amber-50/90 dark:bg-amber-950/40 font-black" :
           id === "game" ? "text-emerald-700 dark:text-emerald-300 bg-emerald-50/90 dark:bg-emerald-950/40 font-black" :
-          "text-slate-700 dark:text-slate-300 bg-slate-100/80 dark:bg-slate-800/50 font-black",
+          "text-muted-foreground bg-muted/50 font-black",
         cellMutedClass:
           id === "duty" ? "text-red-400/40 dark:text-red-400/25 bg-red-50/40 dark:bg-red-950/20 font-medium" :
           id === "help" ? "text-blue-400/40 dark:text-blue-400/25 bg-blue-50/40 dark:bg-blue-950/20 font-medium" :
           id === "setup" ? "text-amber-400/40 dark:text-amber-400/25 bg-amber-50/40 dark:bg-amber-950/20 font-medium" :
           id === "game" ? "text-emerald-400/40 dark:text-emerald-400/25 bg-emerald-50/40 dark:bg-emerald-950/20 font-medium" :
-          "text-slate-400/40 dark:text-slate-400/25 bg-slate-50/40 dark:bg-slate-900/20 font-medium",
+          "text-muted-foreground/40 bg-muted/20 font-medium",
       };
     });
   }, [selectedGroupTab, groupStatusConfig]);
@@ -1385,7 +1385,7 @@ export default function AttendanceMatrixBoardPage() {
           title="出欠一覧表"
           subtitle="当番集計・出欠確認"
           icon={
-            <span className="w-8 h-8 rounded-xl bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-black">
+            <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
               <ClipboardCheck className="w-4 h-4" />
             </span>
           }
@@ -1397,29 +1397,29 @@ export default function AttendanceMatrixBoardPage() {
         />
 
         {/* ① 👥 グループ切り分けタブ（上段・横幅いっぱいに均等配置） */}
-        <div className="grid grid-cols-5 gap-1.5 w-full bg-muted/40 p-1.5 rounded-2xl border border-border/70 shadow-2xs">
-          {[
-            { id: "player", label: "選手", count: groups.players.length, activeClass: "bg-emerald-600 text-white font-black shadow-xs" },
-            { id: "mother", label: "母", count: groups.mothers.length, activeClass: "bg-rose-500 text-white font-black shadow-xs" },
-            { id: "father", label: "父", count: groups.fathers.length, activeClass: "bg-blue-600 text-white font-black shadow-xs" },
-            { id: "staff", label: "スタッフ", count: groups.staff.length, activeClass: "bg-purple-600 text-white font-black shadow-xs" },
-            { id: "all", label: "全員", count: new Set([...groups.players, ...(groups.parents.length > 0 ? groups.parents : [...groups.mothers, ...groups.fathers]), ...groups.staff].map(m => m.id)).size, activeClass: "bg-primary text-primary-foreground font-black shadow-xs shadow-primary/20" },
-          ].map(tab => {
+        <div className="grid grid-cols-5 gap-1 w-full bg-muted p-1 rounded-2xl border border-border/60">
+          {([
+            { id: "player" as GroupTabType, label: "選手", count: groups.players.length },
+            { id: "mother" as GroupTabType, label: "母", count: groups.mothers.length },
+            { id: "father" as GroupTabType, label: "父", count: groups.fathers.length },
+            { id: "staff" as GroupTabType, label: "スタッフ", count: groups.staff.length },
+            { id: "all" as GroupTabType, label: "全員", count: new Set([...groups.players, ...(groups.parents.length > 0 ? groups.parents : [...groups.mothers, ...groups.fathers]), ...groups.staff].map(m => m.id)).size },
+          ]).map(tab => {
             const isTabActive = !isLoading && selectedGroupTab === tab.id;
             return (
               <button
                 key={tab.id}
                 type="button"
-                onClick={() => setSelectedGroupTab(tab.id as any)}
+                onClick={() => setSelectedGroupTab(tab.id)}
                 className={`flex items-center justify-center gap-1 py-1.5 px-0.5 rounded-xl text-[10.5px] font-black transition-all active:scale-95 ${
                   isTabActive
-                    ? tab.activeClass
-                    : "bg-card hover:bg-muted text-muted-foreground border border-border/60"
+                    ? "bg-card text-primary font-black shadow-xs"
+                    : "text-muted-foreground hover:text-foreground"
                 }`}
               >
                 <span>{tab.label}</span>
                 <span className={`text-[8.5px] px-1 py-0 rounded-full font-bold leading-none ${
-                  isTabActive ? "bg-white/20 text-white" : "bg-black/5 dark:bg-white/10 text-muted-foreground"
+                  isTabActive ? "bg-primary/12 text-primary" : "bg-background/70 text-muted-foreground"
                 }`}>
                   {isLoading ? "-" : tab.count}
                 </span>
@@ -1429,7 +1429,7 @@ export default function AttendanceMatrixBoardPage() {
         </div>
 
         {/* ② 🏷️ 凡例 ＆ アクション操作バー（グループ別の凡例を横幅いっぱいに均等配置） */}
-        <div className="bg-card rounded-2xl px-3 py-2 border border-border/80 shadow-2xs space-y-2">
+        <div className="rounded-2xl border border-border/60 bg-card shadow-xs px-3 py-2.5 space-y-2">
           <div className="flex items-center justify-between gap-1 text-[9.5px]">
             <div className="flex items-center gap-1.5 font-black text-muted-foreground">
               <span className="w-1.5 h-1.5 rounded-full bg-primary" />
@@ -1443,7 +1443,7 @@ export default function AttendanceMatrixBoardPage() {
               <button
                 type="button"
                 onClick={handleOpenStatusConfigModal}
-                className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9.5px] font-bold bg-muted hover:bg-muted/80 text-foreground border border-border/70 active:scale-95 transition-all shrink-0"
+                className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9.5px] font-bold bg-muted/50 hover:bg-muted text-foreground border border-border/60 active:scale-95 transition-all shrink-0"
                 title="グループ別のステータス表示有無と名称を設定"
               >
                 <SlidersHorizontal className="w-3 h-3 text-primary" />
@@ -1454,7 +1454,7 @@ export default function AttendanceMatrixBoardPage() {
               <button
                 type="button"
                 onClick={handleOpenOrderModal}
-                className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9.5px] font-bold bg-muted hover:bg-muted/80 text-foreground border border-border/70 active:scale-95 transition-all shrink-0"
+                className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9.5px] font-bold bg-muted/50 hover:bg-muted text-foreground border border-border/60 active:scale-95 transition-all shrink-0"
                 title="グループ内のメンバー列の並び順を設定"
               >
                 <ArrowUpDown className="w-3 h-3 text-primary" />
@@ -1466,10 +1466,10 @@ export default function AttendanceMatrixBoardPage() {
                 <button
                   type="button"
                   onClick={handleOpenSubLabelsModal}
-                  className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9.5px] font-bold bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-500/40 active:scale-95 transition-all shrink-0"
+                  className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9.5px] font-bold bg-primary/10 hover:bg-primary/15 text-primary border border-primary/25 active:scale-95 transition-all shrink-0"
                   title="メンバーの班（1班・2班等）やサブラベルを一括設定"
                 >
-                  <Tag className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                  <Tag className="w-3 h-3 text-primary" />
                   <span>班・ラベル</span>
                 </button>
               )}
@@ -1480,13 +1480,13 @@ export default function AttendanceMatrixBoardPage() {
                   onClick={() => setIsManagerOverrideMode(prev => !prev)}
                   className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9.5px] font-black transition-all active:scale-95 border ${
                     isManagerOverrideMode
-                      ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/40 shadow-xs"
-                      : "bg-muted text-muted-foreground border-border/60 hover:text-foreground"
+                      ? "bg-primary text-primary-foreground border-primary shadow-xs"
+                      : "bg-muted/50 text-muted-foreground border-border/60 hover:text-foreground"
                   }`}
                 >
                   {isManagerOverrideMode ? (
                     <>
-                      <Unlock className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                      <Unlock className="w-3 h-3" />
                       <span>代理入力ON</span>
                     </>
                   ) : (
@@ -1501,16 +1501,16 @@ export default function AttendanceMatrixBoardPage() {
           </div>
 
           {/* 凡例アイコン（グループで有効なステータスのみ・横幅いっぱいに均等配置） */}
-          <div className="flex items-center gap-1 text-[9.5px] pt-1 border-t border-border/50 overflow-x-auto no-scrollbar">
+          <div className="flex items-center gap-1 text-[9.5px] pt-1.5 border-t border-border/60 overflow-x-auto no-scrollbar">
             {activeLegendItems.length === 0 ? (
               <span className="text-[9px] text-muted-foreground py-1 px-2">有効なステータスがありません</span>
             ) : (
               activeLegendItems.map((item) => (
                 <div
                   key={item.id}
-                  className="flex-1 min-w-[50px] flex items-center justify-center gap-1 font-bold py-1 px-0.5 rounded-lg bg-muted/40 border border-border/40 text-center"
+                  className="flex-1 min-w-[50px] flex items-center justify-center gap-1 font-bold py-1 px-0.5 rounded-lg bg-muted/35 border border-border/60 text-center"
                 >
-                  <span className={`w-3.5 h-3.5 rounded-full ${item.bgClass} text-white flex items-center justify-center text-[9px] font-black shrink-0`}>
+                  <span className={`w-3.5 h-3.5 rounded-full ${item.bgClass} ${item.id === "absent" ? "text-background" : "text-white"} flex items-center justify-center text-[9px] font-black shrink-0`}>
                     {item.mark}
                   </span>
                   <span className="truncate text-foreground text-[9px]">{item.label}</span>
@@ -1521,7 +1521,7 @@ export default function AttendanceMatrixBoardPage() {
         </div>
 
         {/* ③ 📅 月単位選択 ＆ 過去日表示切替 ＆ 検索バー (コンパクト統合) */}
-        <div className="bg-card rounded-2xl p-2 sm:p-2.5 border border-border/80 shadow-2xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 text-[9.5px]">
+        <div className="rounded-2xl border border-border/60 bg-card shadow-xs p-2 sm:p-2.5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 text-[9.5px]">
           {/* 月選択ピル */}
           <div className="flex items-center gap-1 overflow-x-auto no-scrollbar py-0.5">
             <span className="font-black text-muted-foreground shrink-0 flex items-center gap-0.5 mr-0.5">
@@ -1534,8 +1534,8 @@ export default function AttendanceMatrixBoardPage() {
               onClick={() => setSelectedMonth("all")}
               className={`px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap transition-all active:scale-95 shrink-0 ${
                 selectedMonth === "all"
-                  ? "bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900 font-black shadow-xs"
-                  : "bg-muted/70 hover:bg-muted text-muted-foreground border border-border/60"
+                  ? "bg-primary text-primary-foreground font-black shadow-xs"
+                  : "bg-muted/50 hover:bg-muted text-muted-foreground border border-border/60"
               }`}
             >
               全期間
@@ -1553,8 +1553,8 @@ export default function AttendanceMatrixBoardPage() {
                   onClick={() => setSelectedMonth(m)}
                   className={`px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap transition-all active:scale-95 shrink-0 ${
                     selectedMonth === m
-                      ? "bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900 font-black shadow-xs"
-                      : "bg-muted/70 hover:bg-muted text-muted-foreground border border-border/60"
+                      ? "bg-primary text-primary-foreground font-black shadow-xs"
+                      : "bg-muted/50 hover:bg-muted text-muted-foreground border border-border/60"
                   }`}
                 >
                   {label}{isCurrent ? "(今月)" : ""}
@@ -1571,8 +1571,8 @@ export default function AttendanceMatrixBoardPage() {
               onClick={() => setShowPastDates(prev => !prev)}
               className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9.5px] font-bold transition-all active:scale-95 border shrink-0 ${
                 showPastDates
-                  ? "bg-primary/15 text-primary border-primary/40 font-black"
-                  : "bg-muted text-muted-foreground border-border/60 hover:text-foreground"
+                  ? "bg-primary/10 text-primary border-primary/25 font-black"
+                  : "bg-muted/50 text-muted-foreground border-border/60 hover:text-foreground"
               }`}
             >
               {showPastDates ? (
@@ -1596,7 +1596,7 @@ export default function AttendanceMatrixBoardPage() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="メンバー名検索..."
-                className="w-full pl-6 pr-5 py-0.5 text-[10px] rounded-lg bg-card border border-border/80 focus:outline-none focus:ring-1 focus:ring-primary text-foreground placeholder:text-muted-foreground h-6"
+                className="w-full pl-6 pr-5 py-0.5 text-[10px] rounded-lg bg-muted/35 border border-border/60 focus:outline-none focus:ring-1 focus:ring-primary text-foreground placeholder:text-muted-foreground h-6"
               />
               {searchQuery && (
                 <button
@@ -1615,12 +1615,12 @@ export default function AttendanceMatrixBoardPage() {
             📊 出欠マトリクス表（スプレッドシート型UI・余白極小・不透明完全固定）
             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
         {isLoading ? (
-          <div className="p-8 flex flex-col items-center justify-center gap-2 bg-card rounded-xl border border-border">
+          <div className="p-8 flex flex-col items-center justify-center gap-2 rounded-2xl border border-border/60 bg-card shadow-xs">
             <Loader2 className="w-5 h-5 animate-spin text-primary" />
             <p className="text-[11px] text-muted-foreground font-bold">出欠一覧表を読み込み中...</p>
           </div>
         ) : filteredEvents.length === 0 ? (
-          <div className="p-6 text-center bg-card rounded-xl border border-border">
+          <div className="p-6 text-center rounded-2xl border border-border/60 bg-card shadow-xs">
             <AlertCircle className="w-6 h-6 text-muted-foreground mx-auto mb-1.5" />
             <p className="text-xs font-black text-foreground">表示する予定・イベントがありません</p>
             {events.length > 0 && !showPastDates ? (
@@ -1629,7 +1629,7 @@ export default function AttendanceMatrixBoardPage() {
                 <button
                   type="button"
                   onClick={() => setShowPastDates(true)}
-                  className="px-2.5 py-1 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary text-[10px] font-black transition-all"
+                  className="px-2.5 py-1 rounded-lg bg-primary/10 hover:bg-primary/15 text-primary border border-primary/25 text-[10px] font-black transition-all"
                 >
                   過去日の予定を表示する
                 </button>
@@ -1639,7 +1639,7 @@ export default function AttendanceMatrixBoardPage() {
             )}
           </div>
         ) : (
-          <div className="relative bg-card rounded-2xl border border-border shadow-xs overflow-hidden">
+          <div className="relative rounded-2xl border border-border/60 bg-card shadow-xs overflow-hidden">
             <div className="overflow-x-auto relative" style={{ WebkitOverflowScrolling: "touch" }}>
               <table className="w-max min-w-full text-left border-separate border-spacing-0 select-none" style={{ borderCollapse: "separate", borderSpacing: 0 }}>
                 {/* 📌 ヘッダー行 (メンバー一覧 & 出欠記号別集計ヘッダー: 縦固定化なし) */}
@@ -1647,7 +1647,7 @@ export default function AttendanceMatrixBoardPage() {
                   <tr className="h-9">
                     {/* 左側固定セル: イベント情報列 (横スクロール時のみ左固定・完全固定幅124px) */}
                     <th
-                      className="sticky left-0 z-20 bg-slate-100 dark:bg-zinc-800 border-b-2 border-r border-border w-[124px] min-w-[124px] max-w-[124px] p-1 text-[11px] font-black text-foreground shadow-xs align-middle"
+                      className="sticky left-0 z-20 bg-muted border-b border-r border-border/60 w-[124px] min-w-[124px] max-w-[124px] p-1 text-[11px] font-black text-foreground shadow-xs align-middle"
                     >
                       <div className="flex items-center justify-between gap-1">
                         <span className="text-[11px] font-black truncate">日付 / 班 / イベント</span>
@@ -1661,7 +1661,7 @@ export default function AttendanceMatrixBoardPage() {
                     {activeSummaryStatuses.map((st) => (
                       <th
                         key={st.id}
-                        className={`w-6 min-w-[25px] max-w-[25px] p-0.5 text-center border-b-2 border-r border-border font-black text-[11px] align-middle ${st.headerBgClass}`}
+                        className={`w-6 min-w-[25px] max-w-[25px] p-0.5 text-center border-b border-r border-border/60 font-black text-[11px] align-middle ${st.headerBgClass}`}
                         title={`${st.mark} ${st.label}`}
                       >
                         {st.mark}
@@ -1679,12 +1679,12 @@ export default function AttendanceMatrixBoardPage() {
                         <th
                           key={person.id}
                           onClick={myInfo.isManager ? () => handleOpenSingleSubLabelModal(person) : undefined}
-                          className={`w-9 min-w-[35px] max-w-[35px] p-0.5 text-center border-b-2 border-r border-border align-middle transition-colors select-none ${
+                          className={`w-9 min-w-[35px] max-w-[35px] p-0.5 text-center border-b border-r border-border/60 align-middle transition-colors select-none ${
                             myInfo.isManager ? "cursor-pointer hover:brightness-95" : ""
                           } ${
                             isMe
-                              ? "bg-blue-200 dark:bg-blue-900 text-blue-950 dark:text-blue-100 ring-1 ring-inset ring-blue-500 font-black"
-                              : "bg-slate-100 dark:bg-zinc-800 text-foreground"
+                              ? "bg-primary/15 text-primary font-black"
+                              : "bg-muted text-foreground"
                           }`}
                           title={myInfo.isManager ? `${person.name}: タップして班・ラベルを変更` : person.name}
                         >
@@ -1694,29 +1694,29 @@ export default function AttendanceMatrixBoardPage() {
                                 #{person.uniformNumber}
                               </span>
                             ) : person.groupType === "mother" ? (
-                              <span className="text-[8.5px] font-black text-rose-600 dark:text-rose-400">母</span>
+                              <span className="text-[8.5px] font-black text-muted-foreground">母</span>
                             ) : person.groupType === "father" ? (
-                              <span className="text-[8.5px] font-black text-blue-600 dark:text-blue-400">父</span>
+                              <span className="text-[8.5px] font-black text-muted-foreground">父</span>
                             ) : person.groupType === "staff" ? (
-                              <span className="text-[8.5px] font-black text-purple-600 dark:text-purple-400">指導</span>
+                              <span className="text-[8.5px] font-black text-muted-foreground">指導</span>
                             ) : (
-                              <span className="text-[8.5px] font-black text-amber-600 dark:text-amber-400">保護</span>
+                              <span className="text-[8.5px] font-black text-muted-foreground">保護</span>
                             )}
-                            <span className={`text-[9.5px] font-black truncate max-w-[33px] mt-0.5 ${isMe ? "text-blue-950 dark:text-blue-100 font-black" : "text-foreground"}`}>
+                            <span className={`text-[9.5px] font-black truncate max-w-[33px] mt-0.5 ${isMe ? "text-primary font-black" : "text-foreground"}`}>
                               {person.name.length > 3 ? person.name.slice(0, 3) : person.name}
                             </span>
                             {/* 3行目: 班・サブラベル (班バッジ風スタイル) */}
                             <div className="min-h-[14px] flex items-center justify-center mt-0.5">
                               {subLabel ? (
                                 <span
-                                  className="text-[8px] font-black px-1 py-0.2 rounded bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 truncate max-w-[33px] whitespace-nowrap leading-tight"
+                                  className="text-[8px] font-black px-1 py-0.2 rounded bg-primary/10 text-primary border border-primary/25 truncate max-w-[33px] whitespace-nowrap leading-tight"
                                   title={subLabel}
                                 >
                                   {subLabel}
                                 </span>
                               ) : myInfo.isManager ? (
                                 <span
-                                  className="text-[7.5px] font-bold text-muted-foreground/50 hover:text-amber-600 dark:hover:text-amber-400 px-0.5 py-0.2 rounded hover:bg-amber-500/15 leading-tight transition-colors"
+                                  className="text-[7.5px] font-bold text-muted-foreground/60 hover:text-primary px-0.5 py-0.2 rounded hover:bg-primary/10 leading-tight transition-colors"
                                   title="タップして班・ラベルを設定"
                                 >
                                   +班
@@ -1762,9 +1762,9 @@ export default function AttendanceMatrixBoardPage() {
 
                     return (
                       <tr key={ev.id} className="hover:bg-muted/30 transition-colors group">
-                        {/* ① 左側固定セル: 日付・班・イベント (完全不透明bg-white/zinc-900・幅124px・日付幅52px完全統一) */}
+                        {/* ① 左側固定セル: 日付・班・イベント (完全不透明bg-card・幅124px・日付幅52px完全統一) */}
                         <td
-                          className="sticky left-0 z-10 bg-white dark:bg-zinc-900 border-b border-r border-border w-[124px] min-w-[124px] max-w-[124px] p-1 shadow-xs"
+                          className="sticky left-0 z-10 bg-card border-b border-r border-border/60 w-[124px] min-w-[124px] max-w-[124px] p-1 shadow-xs"
                         >
                           <div className="flex items-center justify-between gap-0.5 leading-tight">
                             <div className="flex items-center gap-1 min-w-0">
@@ -1772,16 +1772,16 @@ export default function AttendanceMatrixBoardPage() {
                               <span
                                 className={`w-[52px] min-w-[52px] max-w-[52px] text-center inline-block tabular-nums font-bold text-[10px] py-0.5 px-0.5 rounded shrink-0 ${
                                   isSunday
-                                    ? "bg-red-500/15 text-red-600 dark:text-red-400"
+                                    ? "bg-red-500/10 text-red-500"
                                     : isSaturday
-                                    ? "bg-blue-500/15 text-blue-600 dark:text-blue-400"
-                                    : "bg-muted text-foreground"
+                                    ? "bg-blue-500/10 text-blue-500"
+                                    : "bg-muted/50 text-foreground"
                                 }`}
                               >
                                 {ev.date}({ev.dayOfWeek})
                               </span>
                               {ev.dutyGroup && ev.dutyGroup !== "なし" && (
-                                <span className="w-[28px] min-w-[28px] max-w-[28px] text-center inline-flex items-center justify-center text-[8.5px] font-black py-0.5 rounded bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 whitespace-nowrap shrink-0">
+                                <span className="w-[28px] min-w-[28px] max-w-[28px] text-center inline-flex items-center justify-center text-[8.5px] font-black py-0.5 rounded bg-primary/10 text-primary border border-primary/25 whitespace-nowrap shrink-0">
                                   {ev.dutyGroup}
                                 </span>
                               )}
@@ -1792,7 +1792,7 @@ export default function AttendanceMatrixBoardPage() {
                               type="button"
                               onClick={() => handleCopyLineSummary(ev)}
                               title="LINE連絡用に集計コピー"
-                              className="w-6 h-6 flex items-center justify-center text-muted-foreground hover:text-primary active:text-primary bg-muted/50 hover:bg-primary/10 active:bg-primary/20 rounded border border-border/40 active:scale-95 transition-all cursor-pointer shrink-0"
+                              className="w-6 h-6 flex items-center justify-center text-muted-foreground hover:text-primary active:text-primary bg-muted/50 hover:bg-primary/10 active:bg-primary/20 rounded border border-border/60 active:scale-95 transition-all cursor-pointer shrink-0"
                             >
                               <ClipboardCopy className="w-3.5 h-3.5" />
                             </button>
@@ -1806,10 +1806,10 @@ export default function AttendanceMatrixBoardPage() {
                           {ev.description && (
                             <p
                               onClick={() => handleOpenDayNoteModal(ev)}
-                              className="text-[8.5px] text-amber-700 dark:text-amber-300 font-bold truncate max-w-[115px] mt-0.5 cursor-pointer hover:underline flex items-center gap-0.5 leading-tight bg-amber-500/10 px-1 py-0.5 rounded border border-amber-500/20"
+                              className="text-[8.5px] text-primary font-bold truncate max-w-[115px] mt-0.5 cursor-pointer hover:underline flex items-center gap-0.5 leading-tight bg-primary/10 px-1 py-0.5 rounded border border-primary/25"
                               title={`備考: ${ev.description} (タップして編集)`}
                             >
-                              <MessageSquare className="w-2 h-2 shrink-0 text-amber-600 dark:text-amber-400" />
+                              <MessageSquare className="w-2 h-2 shrink-0 text-primary" />
                               <span className="truncate">{ev.description}</span>
                             </p>
                           )}
@@ -1821,7 +1821,7 @@ export default function AttendanceMatrixBoardPage() {
                           return (
                             <td
                               key={st.id}
-                              className={`w-6 min-w-[25px] max-w-[25px] p-0.5 text-center border-b border-r border-border font-black text-[10.5px] ${
+                              className={`w-6 min-w-[25px] max-w-[25px] p-0.5 text-center border-b border-r border-border/60 font-black text-[10.5px] ${
                                 count > 0 ? st.cellTextClass : st.cellMutedClass
                               }`}
                             >
@@ -1844,13 +1844,13 @@ export default function AttendanceMatrixBoardPage() {
                             <td
                               key={person.id}
                               onClick={() => handleCellClick(ev, person)}
-                              className={`w-9 min-w-[35px] max-w-[35px] p-0.5 text-center border-b border-r border-border/50 bg-white dark:bg-zinc-900 transition-all overflow-hidden ${
+                              className={`w-9 min-w-[35px] max-w-[35px] p-0.5 text-center border-b border-r border-border/60 bg-card transition-all overflow-hidden ${
                                 isEditable
                                   ? "cursor-pointer hover:bg-primary/10 active:scale-90"
                                   : att.comment
-                                  ? "cursor-pointer hover:bg-amber-500/15 active:scale-90"
+                                  ? "cursor-pointer hover:bg-primary/10 active:scale-90"
                                   : "opacity-90"
-                              } ${isMe ? "bg-blue-50/50 dark:bg-blue-950/30" : ""}`}
+                              } ${isMe ? "bg-primary/5" : ""}`}
                             >
                               <div className="relative z-0 inline-flex items-center justify-center">
                                 <span
@@ -1864,7 +1864,7 @@ export default function AttendanceMatrixBoardPage() {
                                 {/* コメント/メモがある場合のドットインジケータ */}
                                 {att.comment && (
                                   <span
-                                    className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-amber-400 border border-card ring-1 ring-black/20"
+                                    className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-primary border border-card"
                                     title={att.comment}
                                   />
                                 )}
@@ -1894,7 +1894,7 @@ export default function AttendanceMatrixBoardPage() {
               onClick={() => !isSavingCell && setEditingCell(null)}
             />
 
-            <div className="relative w-full max-w-md bg-card rounded-2xl border border-border shadow-2xl p-4 sm:p-5 space-y-3.5 max-h-[85vh] overflow-y-auto no-scrollbar">
+            <div className="relative w-full max-w-md rounded-2xl border border-border/60 bg-card shadow-xs p-4 sm:p-5 space-y-3.5 max-h-[85vh] overflow-y-auto no-scrollbar">
               {/* モーダルヘッダー */}
               <div className="flex items-start justify-between pb-2 border-b border-border/60">
                 <div>
@@ -1954,8 +1954,10 @@ export default function AttendanceMatrixBoardPage() {
                           type="button"
                           onClick={() => handleSaveCell(key, editingCell.comment)}
                           disabled={isSavingCell}
-                          className={`flex items-center gap-2 p-2.5 rounded-2xl border text-left transition-all ${baseItem.buttonClass} ${
-                            isSelected ? "ring-2 ring-primary ring-offset-2 font-black shadow-xs scale-[1.02]" : "opacity-80"
+                          className={`flex items-center gap-2 p-2.5 rounded-2xl border text-left transition-all active:scale-95 ${
+                            isSelected
+                              ? "border-primary bg-primary/10 text-primary font-black shadow-xs"
+                              : "border-border/60 bg-card text-foreground hover:bg-muted"
                           }`}
                         >
                           <span className={`w-7 h-7 rounded-xl flex items-center justify-center text-xs shrink-0 ${baseItem.badgeClass}`}>
@@ -1986,13 +1988,13 @@ export default function AttendanceMatrixBoardPage() {
                     value={editingCell.comment}
                     onChange={(e) => setEditingCell(prev => prev ? { ...prev, comment: e.target.value } : null)}
                     placeholder="早退や車出し可など..."
-                    className="flex-1 px-3 py-2 text-xs rounded-xl bg-muted/50 border border-border focus:outline-none focus:ring-1 focus:ring-primary text-foreground placeholder:text-muted-foreground"
+                    className="flex-1 px-3 py-2 text-xs rounded-xl bg-muted/35 border border-border/60 focus:outline-none focus:ring-1 focus:ring-primary text-foreground placeholder:text-muted-foreground"
                   />
                   <button
                     type="button"
                     disabled={isSavingCell}
                     onClick={() => handleSaveCell(editingCell.currentStatus, editingCell.comment)}
-                    className="px-4 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-black hover:brightness-110 active:scale-95 transition-all shrink-0"
+                    className="px-4 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-black hover:bg-primary/90 active:scale-95 transition-all shrink-0"
                   >
                     {isSavingCell ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "メモ保存"}
                   </button>
@@ -2011,11 +2013,11 @@ export default function AttendanceMatrixBoardPage() {
               className="absolute inset-0"
               onClick={() => setViewingComment(null)}
             />
-            <div className="relative w-full max-w-sm bg-card rounded-2xl border border-border shadow-2xl p-4 sm:p-5 space-y-3.5 animate-in zoom-in-95 duration-150">
+            <div className="relative w-full max-w-sm rounded-2xl border border-border/60 bg-card shadow-xs p-4 sm:p-5 space-y-3.5 animate-in zoom-in-95 duration-150">
               {/* モーダルヘッダー */}
               <div className="flex items-start justify-between pb-2 border-b border-border/60">
                 <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-lg bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                  <div className="w-7 h-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
                     <MessageSquare className="w-4 h-4" />
                   </div>
                   <div className="min-w-0">
@@ -2038,7 +2040,7 @@ export default function AttendanceMatrixBoardPage() {
               </div>
 
               {/* 出欠ステータス & グループ情報 */}
-              <div className="flex items-center justify-between p-2.5 rounded-xl bg-muted/40 border border-border/50">
+              <div className="flex items-center justify-between p-2.5 rounded-xl bg-muted/35 border border-border/60">
                 <div className="flex items-center gap-2">
                   {(() => {
                     const statusConfig = ATTENDANCE_STATUSES[viewingComment.status] || ATTENDANCE_STATUSES.pending;
@@ -2060,7 +2062,7 @@ export default function AttendanceMatrixBoardPage() {
                   })()}
                 </div>
                 {viewingComment.person.subText && (
-                  <span className="text-[10px] font-bold text-muted-foreground px-2 py-0.5 rounded-full bg-background border border-border/60">
+                  <span className="text-[10px] font-bold text-muted-foreground px-2 py-0.5 rounded-full bg-card border border-border/60">
                     {viewingComment.person.subText}
                   </span>
                 )}
@@ -2071,7 +2073,7 @@ export default function AttendanceMatrixBoardPage() {
                 <label className="text-[11px] font-black text-foreground flex items-center gap-1">
                   <span>コメント・備考メモ:</span>
                 </label>
-                <div className="p-3 rounded-xl bg-amber-500/5 dark:bg-amber-500/10 border border-amber-500/30 text-xs font-medium text-foreground whitespace-pre-wrap break-words leading-relaxed select-text shadow-2xs">
+                <div className="p-3 rounded-xl bg-muted/35 border border-border/60 text-xs font-medium text-foreground whitespace-pre-wrap break-words leading-relaxed select-text">
                   {viewingComment.comment}
                 </div>
               </div>
@@ -2085,7 +2087,7 @@ export default function AttendanceMatrixBoardPage() {
               <button
                 type="button"
                 onClick={() => setViewingComment(null)}
-                className="w-full py-2.5 rounded-xl bg-muted hover:bg-muted/80 text-foreground font-black text-xs active:scale-95 transition-all border border-border/60"
+                className="w-full py-2.5 rounded-xl bg-card hover:bg-muted text-foreground font-black text-xs active:scale-95 transition-all border border-border/60"
               >
                 閉じる
               </button>
@@ -2103,10 +2105,10 @@ export default function AttendanceMatrixBoardPage() {
               onClick={() => !isSavingDayNote && setEditingDayNote(null)}
             />
 
-            <div className="relative w-full max-w-md bg-card rounded-2xl border border-border shadow-2xl p-4 sm:p-5 space-y-3.5 max-h-[85vh] overflow-y-auto no-scrollbar">
+            <div className="relative w-full max-w-md rounded-2xl border border-border/60 bg-card shadow-xs p-4 sm:p-5 space-y-3.5 max-h-[85vh] overflow-y-auto no-scrollbar">
               <div className="flex items-start justify-between pb-2 border-b border-border/60">
                 <div className="flex items-center gap-1.5 min-w-0">
-                  <span className="w-6 h-6 rounded-lg bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center font-black shrink-0">
+                  <span className="w-6 h-6 rounded-lg bg-primary/10 text-primary flex items-center justify-center font-black shrink-0">
                     <FileText className="w-3.5 h-3.5" />
                   </span>
                   <div>
@@ -2145,7 +2147,7 @@ export default function AttendanceMatrixBoardPage() {
                         ...prev,
                         description: prev.description ? `${prev.description} / ${tag}` : tag
                       } : null)}
-                      className="px-2 py-0.5 rounded-md bg-muted hover:bg-muted/80 text-[9.5px] font-bold text-foreground border border-border/70 active:scale-95 transition-all"
+                      className="px-2 py-0.5 rounded-md bg-muted/50 hover:bg-muted text-[9.5px] font-bold text-foreground border border-border/60 active:scale-95 transition-all"
                     >
                       + {tag}
                     </button>
@@ -2166,16 +2168,16 @@ export default function AttendanceMatrixBoardPage() {
                   value={editingDayNote.description}
                   onChange={(e) => setEditingDayNote(prev => prev ? { ...prev, description: e.target.value } : null)}
                   placeholder="例: 雨天時は7時にLINE連絡。持ち物は多めの水分とお弁当..."
-                  className="w-full px-3 py-2 text-xs rounded-xl bg-muted/50 border border-border focus:outline-none focus:ring-1 focus:ring-primary text-foreground placeholder:text-muted-foreground resize-none leading-relaxed"
+                  className="w-full px-3 py-2 text-xs rounded-xl bg-muted/35 border border-border/60 focus:outline-none focus:ring-1 focus:ring-primary text-foreground placeholder:text-muted-foreground resize-none leading-relaxed"
                 />
               </div>
 
               {/* フッター操作ボタン */}
-              <div className="flex items-center justify-end gap-2 pt-1 border-t border-border">
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-border/60">
                 <button
                   type="button"
                   onClick={() => setEditingDayNote(null)}
-                  className="px-3 py-1.5 rounded-xl border border-border text-xs font-bold text-muted-foreground hover:bg-muted active:scale-95 transition-all"
+                  className="px-3 py-1.5 rounded-xl bg-card border border-border/60 text-xs font-bold text-foreground hover:bg-muted active:scale-95 transition-all"
                 >
                   キャンセル
                 </button>
@@ -2183,7 +2185,7 @@ export default function AttendanceMatrixBoardPage() {
                   type="button"
                   disabled={isSavingDayNote}
                   onClick={() => handleSaveDayNote(editingDayNote.description)}
-                  className="px-4 py-1.5 rounded-xl bg-primary text-primary-foreground text-xs font-black hover:brightness-110 active:scale-95 transition-all flex items-center gap-1"
+                  className="px-4 py-1.5 rounded-xl bg-primary text-primary-foreground text-xs font-black hover:bg-primary/90 active:scale-95 transition-all flex items-center gap-1"
                 >
                   {isSavingDayNote ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
                   <span>備考を保存</span>
@@ -2198,8 +2200,8 @@ export default function AttendanceMatrixBoardPage() {
             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
         {isOrderModalOpen && (
           <div className="fixed inset-0 z-[70] flex items-center justify-center p-3 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
-            <div className="w-full max-w-md bg-card rounded-2xl border border-border shadow-xl p-3.5 space-y-3">
-              <div className="flex items-center justify-between border-b border-border pb-2">
+            <div className="w-full max-w-md rounded-2xl border border-border/60 bg-card shadow-xs p-3.5 space-y-3">
+              <div className="flex items-center justify-between border-b border-border/60 pb-2">
                 <div className="flex items-center gap-1.5 min-w-0">
                   <span className="w-6 h-6 rounded-lg bg-primary/10 text-primary flex items-center justify-center font-black shrink-0">
                     <ArrowUpDown className="w-3.5 h-3.5" />
@@ -2219,7 +2221,7 @@ export default function AttendanceMatrixBoardPage() {
               </div>
 
               {/* グループ切り替えタブ */}
-              <div className="flex items-center gap-1 border-b border-border/60 pb-1.5">
+              <div className="flex items-center gap-1 bg-muted p-1 rounded-xl border border-border/60">
                 {[
                   { key: "player" as const, label: "選手", count: groups.players.length },
                   { key: "mother" as const, label: "母", count: groups.mothers.length },
@@ -2232,8 +2234,8 @@ export default function AttendanceMatrixBoardPage() {
                     onClick={() => setOrderModalGroup(tab.key)}
                     className={`flex-1 py-1 text-center rounded-lg text-[10.5px] font-bold transition-all ${
                       orderModalGroup === tab.key
-                        ? "bg-primary text-primary-foreground font-black shadow-xs"
-                        : "bg-muted/50 text-muted-foreground hover:text-foreground"
+                        ? "bg-card text-primary font-black shadow-xs"
+                        : "text-muted-foreground hover:text-foreground"
                     }`}
                   >
                     {tab.label} ({tab.count})
@@ -2249,7 +2251,7 @@ export default function AttendanceMatrixBoardPage() {
                     <button
                       type="button"
                       onClick={() => handlePresetSort("number")}
-                      className="px-2 py-0.5 rounded-md bg-muted hover:bg-muted/80 text-foreground border border-border/70 font-bold"
+                      className="px-2 py-0.5 rounded-md bg-card hover:bg-muted text-foreground border border-border/60 font-bold"
                     >
                       背番号順
                     </button>
@@ -2257,14 +2259,14 @@ export default function AttendanceMatrixBoardPage() {
                   <button
                     type="button"
                     onClick={() => handlePresetSort("name")}
-                    className="px-2 py-0.5 rounded-md bg-muted hover:bg-muted/80 text-foreground border border-border/70 font-bold"
+                    className="px-2 py-0.5 rounded-md bg-card hover:bg-muted text-foreground border border-border/60 font-bold"
                   >
                     五十音順
                   </button>
                   <button
                     type="button"
                     onClick={() => handlePresetSort("reset")}
-                    className="px-2 py-0.5 rounded-md bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground border border-border/70"
+                    className="px-2 py-0.5 rounded-md bg-card hover:bg-muted text-muted-foreground hover:text-foreground border border-border/60"
                   >
                     初期順
                   </button>
@@ -2272,7 +2274,7 @@ export default function AttendanceMatrixBoardPage() {
               </div>
 
               {/* 操作ガイド */}
-              <div className="flex items-center gap-1.5 text-[9.5px] text-muted-foreground bg-muted/40 px-2.5 py-1.5 rounded-lg border border-border/50">
+              <div className="flex items-center gap-1.5 text-[9.5px] text-muted-foreground bg-muted/35 px-2.5 py-1.5 rounded-lg border border-border/60">
                 <GripVertical className="w-3.5 h-3.5 shrink-0 text-muted-foreground/70" />
                 <span>左側のハンドル（⋮⋮）をつかんでドラッグ＆ドロップで並び替えできます</span>
               </div>
@@ -2311,11 +2313,11 @@ export default function AttendanceMatrixBoardPage() {
               </div>
 
               {/* フッター操作ボタン */}
-              <div className="flex items-center justify-end gap-2 pt-1 border-t border-border">
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-border/60">
                 <button
                   type="button"
                   onClick={() => setIsOrderModalOpen(false)}
-                  className="px-3 py-1.5 rounded-xl border border-border text-xs font-bold text-muted-foreground hover:bg-muted active:scale-95 transition-all"
+                  className="px-3 py-1.5 rounded-xl bg-card border border-border/60 text-xs font-bold text-foreground hover:bg-muted active:scale-95 transition-all"
                 >
                   キャンセル
                 </button>
@@ -2323,7 +2325,7 @@ export default function AttendanceMatrixBoardPage() {
                   type="button"
                   disabled={isSavingOrder}
                   onClick={handleSaveOrder}
-                  className="px-4 py-1.5 rounded-xl bg-primary text-primary-foreground text-xs font-black hover:brightness-110 active:scale-95 transition-all flex items-center gap-1"
+                  className="px-4 py-1.5 rounded-xl bg-primary text-primary-foreground text-xs font-black hover:bg-primary/90 active:scale-95 transition-all flex items-center gap-1"
                 >
                   {isSavingOrder ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
                   <span>並び順を保存</span>
@@ -2338,9 +2340,9 @@ export default function AttendanceMatrixBoardPage() {
             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
         {isStatusConfigModalOpen && (
           <div className="fixed inset-0 z-[70] flex items-center justify-center p-3 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
-            <div className="w-full max-w-md bg-card rounded-2xl border border-border shadow-2xl p-4 sm:p-5 space-y-4 max-h-[85vh] overflow-y-auto no-scrollbar">
+            <div className="w-full max-w-md rounded-2xl border border-border/60 bg-card shadow-xs p-4 sm:p-5 space-y-4 max-h-[85vh] overflow-y-auto no-scrollbar">
               {/* ヘッダー */}
-              <div className="flex items-start justify-between border-b border-border pb-2.5">
+              <div className="flex items-start justify-between border-b border-border/60 pb-2.5">
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="w-7 h-7 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black shrink-0">
                     <SlidersHorizontal className="w-4 h-4" />
@@ -2360,7 +2362,7 @@ export default function AttendanceMatrixBoardPage() {
               </div>
 
               {/* グループ切り替えタブ */}
-              <div className="flex items-center gap-1 bg-muted/40 p-1 rounded-xl border border-border/60">
+              <div className="flex items-center gap-1 bg-muted p-1 rounded-xl border border-border/60">
                 {[
                   { key: "player" as const, label: "選手" },
                   { key: "mother" as const, label: "母" },
@@ -2373,7 +2375,7 @@ export default function AttendanceMatrixBoardPage() {
                     onClick={() => setStatusModalGroup(tab.key)}
                     className={`flex-1 py-1.5 text-center rounded-lg text-xs font-bold transition-all ${
                       statusModalGroup === tab.key
-                        ? "bg-primary text-primary-foreground font-black shadow-xs"
+                        ? "bg-card text-primary font-black shadow-xs"
                         : "text-muted-foreground hover:text-foreground"
                     }`}
                   >
@@ -2395,12 +2397,12 @@ export default function AttendanceMatrixBoardPage() {
                       key={item.id}
                       className={`flex items-center justify-between p-2 rounded-xl border transition-all ${
                         item.enabled
-                          ? "bg-card border-border shadow-2xs"
-                          : "bg-muted/30 border-border/50 opacity-60"
+                          ? "bg-card border-border/60 shadow-2xs"
+                          : "bg-muted/35 border-border/60 opacity-60"
                       }`}
                     >
                       <div className="flex items-center gap-2 flex-1 min-w-0 mr-2">
-                        <span className={`w-6 h-6 rounded-lg ${item.bgClass} text-white font-black text-xs flex items-center justify-center shrink-0 shadow-xs`}>
+                        <span className={`w-6 h-6 rounded-lg ${item.bgClass} ${item.id === "absent" ? "text-background" : "text-white"} font-black text-xs flex items-center justify-center shrink-0 shadow-xs`}>
                           {item.mark}
                         </span>
                         <input
@@ -2409,7 +2411,7 @@ export default function AttendanceMatrixBoardPage() {
                           disabled={!item.enabled}
                           onChange={(e) => handleChangeStatusLabel(item.id, e.target.value)}
                           placeholder="名称を入力..."
-                          className="flex-1 min-w-0 px-2 py-1 text-xs font-bold rounded-lg bg-muted/50 border border-border/70 focus:outline-none focus:ring-1 focus:ring-primary text-foreground disabled:opacity-40"
+                          className="flex-1 min-w-0 px-2 py-1 text-xs font-bold rounded-lg bg-muted/35 border border-border/60 focus:outline-none focus:ring-1 focus:ring-primary text-foreground disabled:opacity-40"
                         />
                       </div>
 
@@ -2418,8 +2420,8 @@ export default function AttendanceMatrixBoardPage() {
                         onClick={() => handleToggleStatus(item.id)}
                         className={`px-2.5 py-1 rounded-lg text-[10.5px] font-black transition-all shrink-0 active:scale-95 border ${
                           item.enabled
-                            ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/40"
-                            : "bg-muted text-muted-foreground border-border/60 hover:text-foreground"
+                            ? "bg-primary/10 text-primary border-primary/25"
+                            : "bg-muted/50 text-muted-foreground border-border/60 hover:text-foreground"
                         }`}
                       >
                         {item.enabled ? "使用中" : "非表示"}
@@ -2430,11 +2432,11 @@ export default function AttendanceMatrixBoardPage() {
               </div>
 
               {/* フッター操作ボタン */}
-              <div className="flex items-center justify-between gap-2 pt-2 border-t border-border">
+              <div className="flex items-center justify-between gap-2 pt-2 border-t border-border/60">
                 <button
                   type="button"
                   onClick={handleResetStatusGroup}
-                  className="px-2.5 py-1.5 rounded-xl border border-border text-[11px] font-bold text-muted-foreground hover:bg-muted active:scale-95 transition-all"
+                  className="px-2.5 py-1.5 rounded-xl bg-card border border-border/60 text-[11px] font-bold text-muted-foreground hover:text-foreground hover:bg-muted active:scale-95 transition-all"
                 >
                   初期値に戻す
                 </button>
@@ -2443,7 +2445,7 @@ export default function AttendanceMatrixBoardPage() {
                   <button
                     type="button"
                     onClick={() => setIsStatusConfigModalOpen(false)}
-                    className="px-3 py-1.5 rounded-xl border border-border text-xs font-bold text-muted-foreground hover:bg-muted active:scale-95 transition-all"
+                    className="px-3 py-1.5 rounded-xl bg-card border border-border/60 text-xs font-bold text-foreground hover:bg-muted active:scale-95 transition-all"
                   >
                     キャンセル
                   </button>
@@ -2451,7 +2453,7 @@ export default function AttendanceMatrixBoardPage() {
                     type="button"
                     disabled={isSavingStatusConfig}
                     onClick={handleSaveStatusConfig}
-                    className="px-4 py-1.5 rounded-xl bg-primary text-primary-foreground text-xs font-black hover:brightness-110 active:scale-95 transition-all flex items-center gap-1"
+                    className="px-4 py-1.5 rounded-xl bg-primary text-primary-foreground text-xs font-black hover:bg-primary/90 active:scale-95 transition-all flex items-center gap-1"
                   >
                     {isSavingStatusConfig ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
                     <span>設定を保存</span>
@@ -2467,11 +2469,11 @@ export default function AttendanceMatrixBoardPage() {
             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
         {isSubLabelsModalOpen && (
           <div className="fixed inset-0 z-[70] flex items-center justify-center p-3 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
-            <div className="w-full max-w-md bg-card rounded-2xl border border-border shadow-2xl p-4 sm:p-5 space-y-3.5 max-h-[88vh] overflow-y-auto no-scrollbar">
+            <div className="w-full max-w-md rounded-2xl border border-border/60 bg-card shadow-xs p-4 sm:p-5 space-y-3.5 max-h-[88vh] overflow-y-auto no-scrollbar">
               {/* ヘッダー */}
-              <div className="flex items-start justify-between border-b border-border pb-2.5">
+              <div className="flex items-start justify-between border-b border-border/60 pb-2.5">
                 <div className="flex items-center gap-2 min-w-0">
-                  <span className="w-7 h-7 rounded-xl bg-amber-500/15 text-amber-700 dark:text-amber-400 flex items-center justify-center font-black shrink-0 border border-amber-500/30">
+                  <span className="w-7 h-7 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black shrink-0">
                     <Tag className="w-4 h-4" />
                   </span>
                   <div>
@@ -2489,7 +2491,7 @@ export default function AttendanceMatrixBoardPage() {
               </div>
 
               {/* グループ切り替えタブ */}
-              <div className="flex items-center gap-1 bg-muted/40 p-1 rounded-xl border border-border/60">
+              <div className="flex items-center gap-1 bg-muted p-1 rounded-xl border border-border/60">
                 {[
                   { key: "player" as const, label: "選手", count: groups.players.length },
                   { key: "mother" as const, label: "母", count: groups.mothers.length },
@@ -2502,7 +2504,7 @@ export default function AttendanceMatrixBoardPage() {
                     onClick={() => setSubLabelsModalGroup(tab.key)}
                     className={`flex-1 py-1 text-center rounded-lg text-[10.5px] font-bold transition-all ${
                       subLabelsModalGroup === tab.key
-                        ? "bg-primary text-primary-foreground font-black shadow-xs"
+                        ? "bg-card text-primary font-black shadow-xs"
                         : "text-muted-foreground hover:text-foreground"
                     }`}
                   >
@@ -2512,9 +2514,9 @@ export default function AttendanceMatrixBoardPage() {
               </div>
 
               {/* クイック入力ガイド */}
-              <div className="flex items-center justify-between text-[9.5px] text-muted-foreground px-1 bg-muted/30 py-1.5 rounded-lg border border-border/40">
+              <div className="flex items-center justify-between text-[9.5px] text-muted-foreground px-2 bg-muted/35 py-1.5 rounded-lg border border-border/60">
                 <span className="font-bold flex items-center gap-1">
-                  <Info className="w-3 h-3 text-amber-500" />
+                  <Info className="w-3 h-3 text-primary" />
                   各行の [1班]〜[4班] タップで簡単入力
                 </span>
                 <span>全角・半角どちらもOK</span>
@@ -2545,7 +2547,7 @@ export default function AttendanceMatrixBoardPage() {
                     return (
                       <div
                         key={person.id}
-                        className="flex items-center justify-between gap-1.5 p-2 rounded-xl border border-border/80 bg-card hover:border-amber-500/30 transition-all"
+                        className="flex items-center justify-between gap-1.5 p-2 rounded-xl border border-border/60 bg-card hover:border-primary/40 transition-all"
                       >
                         {/* メンバー表示（番号/区分 ＋ 氏名） */}
                         <div className="flex items-center gap-1.5 min-w-[75px] max-w-[95px] shrink-0">
@@ -2554,13 +2556,13 @@ export default function AttendanceMatrixBoardPage() {
                               #{person.uniformNumber}
                             </span>
                           ) : person.groupType === "mother" ? (
-                            <span className="text-[9px] font-black text-rose-600 dark:text-rose-400 shrink-0">母</span>
+                            <span className="text-[9px] font-black text-muted-foreground shrink-0">母</span>
                           ) : person.groupType === "father" ? (
-                            <span className="text-[9px] font-black text-blue-600 dark:text-blue-400 shrink-0">父</span>
+                            <span className="text-[9px] font-black text-muted-foreground shrink-0">父</span>
                           ) : person.groupType === "staff" ? (
-                            <span className="text-[9px] font-black text-purple-600 dark:text-purple-400 shrink-0">指導</span>
+                            <span className="text-[9px] font-black text-muted-foreground shrink-0">指導</span>
                           ) : (
-                            <span className="text-[9px] font-black text-amber-600 dark:text-amber-400 shrink-0">保護</span>
+                            <span className="text-[9px] font-black text-muted-foreground shrink-0">保護</span>
                           )}
                           <span className="text-xs font-black text-foreground truncate" title={person.name}>
                             {person.name}
@@ -2581,8 +2583,8 @@ export default function AttendanceMatrixBoardPage() {
                               }}
                               className={`px-1.5 py-0.5 rounded text-[9.5px] font-black transition-all active:scale-95 border ${
                                 currentVal === preset
-                                  ? "bg-amber-500 text-white border-amber-600 shadow-xs"
-                                  : "bg-muted/60 hover:bg-muted text-muted-foreground border-border/70 hover:text-foreground"
+                                  ? "bg-primary text-primary-foreground border-primary shadow-xs"
+                                  : "bg-muted/50 hover:bg-muted text-muted-foreground border-border/60 hover:text-foreground"
                               }`}
                             >
                               {preset}
@@ -2604,7 +2606,7 @@ export default function AttendanceMatrixBoardPage() {
                               }));
                             }}
                             placeholder="自由入力"
-                            className="w-full px-2 py-0.5 text-[10.5px] font-bold rounded-lg bg-muted/40 border border-border/70 focus:outline-none focus:ring-1 focus:ring-amber-500 text-foreground text-center"
+                            className="w-full px-2 py-0.5 text-[10.5px] font-bold rounded-lg bg-muted/35 border border-border/60 focus:outline-none focus:ring-1 focus:ring-primary text-foreground text-center"
                           />
                           {currentVal && (
                             <button
@@ -2630,7 +2632,7 @@ export default function AttendanceMatrixBoardPage() {
               </div>
 
               {/* フッター操作ボタン */}
-              <div className="flex items-center justify-between gap-2 pt-2 border-t border-border">
+              <div className="flex items-center justify-between gap-2 pt-2 border-t border-border/60">
                 <button
                   type="button"
                   onClick={() => {
@@ -2649,7 +2651,7 @@ export default function AttendanceMatrixBoardPage() {
                       });
                     }
                   }}
-                  className="px-2.5 py-1.5 rounded-xl border border-border text-[10.5px] font-bold text-muted-foreground hover:bg-muted active:scale-95 transition-all"
+                  className="px-2.5 py-1.5 rounded-xl bg-card border border-border/60 text-[10.5px] font-bold text-muted-foreground hover:text-foreground hover:bg-muted active:scale-95 transition-all"
                 >
                   グループ一括クリア
                 </button>
@@ -2658,7 +2660,7 @@ export default function AttendanceMatrixBoardPage() {
                   <button
                     type="button"
                     onClick={() => setIsSubLabelsModalOpen(false)}
-                    className="px-3 py-1.5 rounded-xl border border-border text-xs font-bold text-muted-foreground hover:bg-muted active:scale-95 transition-all"
+                    className="px-3 py-1.5 rounded-xl bg-card border border-border/60 text-xs font-bold text-foreground hover:bg-muted active:scale-95 transition-all"
                   >
                     キャンセル
                   </button>
@@ -2666,7 +2668,7 @@ export default function AttendanceMatrixBoardPage() {
                     type="button"
                     disabled={isSavingSubLabels}
                     onClick={handleSaveSubLabels}
-                    className="px-4 py-1.5 rounded-xl bg-amber-600 text-white text-xs font-black hover:bg-amber-700 active:scale-95 transition-all flex items-center gap-1 shadow-xs"
+                    className="px-4 py-1.5 rounded-xl bg-primary text-primary-foreground text-xs font-black hover:bg-primary/90 active:scale-95 transition-all flex items-center gap-1 shadow-xs"
                   >
                     {isSavingSubLabels ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
                     <span>設定を保存</span>
@@ -2682,11 +2684,11 @@ export default function AttendanceMatrixBoardPage() {
             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
         {editingSingleSubLabel && (
           <div className="fixed inset-0 z-[75] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
-            <div className="w-full max-w-xs bg-card rounded-2xl border border-border shadow-2xl p-4 space-y-3">
+            <div className="w-full max-w-xs rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3">
               {/* ヘッダー */}
-              <div className="flex items-start justify-between border-b border-border pb-2">
+              <div className="flex items-start justify-between border-b border-border/60 pb-2">
                 <div className="flex items-center gap-2 min-w-0">
-                  <span className="w-6 h-6 rounded-lg bg-amber-500/15 text-amber-700 dark:text-amber-400 flex items-center justify-center font-black shrink-0 border border-amber-500/30">
+                  <span className="w-6 h-6 rounded-lg bg-primary/10 text-primary flex items-center justify-center font-black shrink-0">
                     <Tag className="w-3.5 h-3.5" />
                   </span>
                   <div className="min-w-0">
@@ -2716,8 +2718,8 @@ export default function AttendanceMatrixBoardPage() {
                       onClick={() => setEditingSingleSubLabel(prev => prev ? { ...prev, label: preset } : null)}
                       className={`px-2 py-0.5 rounded text-[10px] font-black transition-all active:scale-95 border ${
                         editingSingleSubLabel.label === preset
-                          ? "bg-amber-500 text-white border-amber-600 shadow-xs"
-                          : "bg-muted/70 hover:bg-muted text-foreground border-border/80"
+                          ? "bg-primary text-primary-foreground border-primary shadow-xs"
+                          : "bg-muted/50 hover:bg-muted text-foreground border-border/60"
                       }`}
                     >
                       {preset}
@@ -2726,7 +2728,7 @@ export default function AttendanceMatrixBoardPage() {
                   <button
                     type="button"
                     onClick={() => setEditingSingleSubLabel(prev => prev ? { ...prev, label: "" } : null)}
-                    className="px-2 py-0.5 rounded text-[10px] font-bold bg-muted/40 hover:bg-muted text-muted-foreground border border-border/60"
+                    className="px-2 py-0.5 rounded text-[10px] font-bold bg-card hover:bg-muted text-muted-foreground border border-border/60"
                   >
                     クリア
                   </button>
@@ -2743,7 +2745,7 @@ export default function AttendanceMatrixBoardPage() {
                   onChange={(e) => setEditingSingleSubLabel(prev => prev ? { ...prev, label: e.target.value } : null)}
                   placeholder="例: 1班, 審判, 配車..."
                   autoFocus
-                  className="w-full px-2.5 py-1 text-xs font-black rounded-lg bg-muted/50 border border-border focus:outline-none focus:ring-1 focus:ring-amber-500 text-foreground"
+                  className="w-full px-2.5 py-1 text-xs font-black rounded-lg bg-muted/35 border border-border/60 focus:outline-none focus:ring-1 focus:ring-primary text-foreground"
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
                       handleSaveSingleSubLabel(editingSingleSubLabel.label);
@@ -2753,11 +2755,11 @@ export default function AttendanceMatrixBoardPage() {
               </div>
 
               {/* フッター */}
-              <div className="flex items-center justify-end gap-1.5 pt-2 border-t border-border">
+              <div className="flex items-center justify-end gap-1.5 pt-2 border-t border-border/60">
                 <button
                   type="button"
                   onClick={() => setEditingSingleSubLabel(null)}
-                  className="px-3 py-1 rounded-lg border border-border text-[11px] font-bold text-muted-foreground hover:bg-muted transition-all"
+                  className="px-3 py-1 rounded-lg bg-card border border-border/60 text-[11px] font-bold text-foreground hover:bg-muted transition-all"
                 >
                   キャンセル
                 </button>
@@ -2765,7 +2767,7 @@ export default function AttendanceMatrixBoardPage() {
                   type="button"
                   disabled={isSavingSingleSubLabel}
                   onClick={() => handleSaveSingleSubLabel(editingSingleSubLabel.label)}
-                  className="px-3.5 py-1 rounded-lg bg-amber-600 text-white text-[11px] font-black hover:bg-amber-700 active:scale-95 transition-all flex items-center gap-1 shadow-xs"
+                  className="px-3.5 py-1 rounded-lg bg-primary text-primary-foreground text-[11px] font-black hover:bg-primary/90 active:scale-95 transition-all flex items-center gap-1 shadow-xs"
                 >
                   {isSavingSingleSubLabel ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
                   <span>保存</span>

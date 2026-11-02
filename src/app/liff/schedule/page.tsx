@@ -49,10 +49,10 @@ import {
 const TARGET_GROUPS = ["全体", "Aチーム", "Bチーム", "高学年", "低学年", "試合組", "練習組"];
 const DUTY_GROUPS = ["1班", "2班", "3班", "4班", "なし"];
 const EVENT_TYPES = [
-  { id: "practice", label: "練習", icon: "🏃", color: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30" },
-  { id: "match", label: "試合", icon: "⚾", color: "bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/30" },
-  { id: "camp", label: "合宿", icon: "🏕️", color: "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30" },
-  { id: "meeting", label: "ミーティング", icon: "📋", color: "bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30" },
+  { id: "practice", label: "練習", icon: "🏃", color: "border-primary bg-primary/10 text-primary" },
+  { id: "match", label: "試合", icon: "⚾", color: "border-primary bg-primary/10 text-primary" },
+  { id: "camp", label: "合宿", icon: "🏕️", color: "border-primary bg-primary/10 text-primary" },
+  { id: "meeting", label: "ミーティング", icon: "📋", color: "border-primary bg-primary/10 text-primary" },
 ];
 
 export interface ActivityGroup {
@@ -127,8 +127,8 @@ const ATTENDANCE_BUTTONS: Array<{
   { id: "help", mark: "○", label: "ヘルプ", activeClass: "bg-blue-600 text-white shadow-xs" },
   { id: "setup", mark: "▲", label: "設営撤収", activeClass: "bg-amber-500 text-white shadow-xs" },
   { id: "game", mark: "△", label: "試合のみ", activeClass: "bg-emerald-600 text-white shadow-xs" },
-  { id: "absent", mark: "×", label: "欠席", activeClass: "bg-slate-500 text-white shadow-xs" },
-  { id: "pending", mark: "？", label: "未定", activeClass: "bg-slate-700 text-white dark:bg-slate-300 dark:text-slate-900 shadow-xs" },
+  { id: "absent", mark: "×", label: "欠席", activeClass: "bg-muted-foreground/70 text-background shadow-xs" },
+  { id: "pending", mark: "？", label: "未定", activeClass: "bg-muted text-foreground shadow-xs" },
 ];
 
 const getAttendanceBadgeInfo = (st: string | undefined) => {
@@ -180,15 +180,15 @@ const getAttendanceBadgeInfo = (st: string | undefined) => {
       return {
         mark: "×",
         label: "欠席",
-        badgeClass: "bg-slate-400 text-white font-bold",
-        bgLight: "bg-rose-100 text-rose-800 dark:bg-rose-950/50 dark:text-rose-300 border-rose-200 dark:border-rose-800/50",
+        badgeClass: "bg-muted-foreground/70 text-background font-bold",
+        bgLight: "bg-muted text-muted-foreground border-border/60",
       };
     default:
       return {
         mark: "？",
         label: "未定",
         badgeClass: "bg-muted text-muted-foreground",
-        bgLight: "bg-muted text-muted-foreground border-border",
+        bgLight: "bg-muted text-muted-foreground border-border/60",
       };
   }
 };
@@ -815,7 +815,7 @@ export default function LiffSchedulePage() {
           title="活動予定"
           subtitle="活動日程・球場・集合時間・お当番"
           icon={
-            <span className="w-8 h-8 rounded-xl bg-orange-500/15 text-orange-600 dark:text-orange-400 flex items-center justify-center font-black">
+            <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
               <CalendarIcon className="w-4 h-4" />
             </span>
           }
@@ -827,18 +827,18 @@ export default function LiffSchedulePage() {
         />
 
         {/* 🔀 タブ切り替え（予定一覧 / スケジューラー） */}
-        <div className="flex bg-muted/60 p-1 rounded-2xl border border-border/50 gap-1 shadow-2xs">
+        <div className="flex bg-muted p-1 rounded-2xl border border-border/60 gap-1">
           <button
             type="button"
             onClick={() => handleTabChange("list")}
             className={cn(
               "flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl text-xs font-black transition-all cursor-pointer",
               activeTab === "list"
-                ? "bg-background text-foreground shadow-xs border border-border/50"
+                ? "bg-card text-primary shadow-xs"
                 : "text-muted-foreground hover:text-foreground active:scale-95"
             )}
           >
-            <CalendarIcon className="w-3.5 h-3.5 text-orange-500" />
+            <CalendarIcon className="w-3.5 h-3.5" />
             <span>予定一覧・カレンダー</span>
           </button>
           <button
@@ -847,11 +847,11 @@ export default function LiffSchedulePage() {
             className={cn(
               "flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl text-xs font-black transition-all cursor-pointer",
               activeTab === "planner"
-                ? "bg-background text-foreground shadow-xs border border-border/50"
+                ? "bg-card text-primary shadow-xs"
                 : "text-muted-foreground hover:text-foreground active:scale-95"
             )}
           >
-            <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
+            <Sparkles className="w-3.5 h-3.5" />
             <span>予定スケジューラー</span>
           </button>
         </div>
@@ -868,7 +868,7 @@ export default function LiffSchedulePage() {
         ) : (
           <>
             {/* 📅 月間ミニカレンダー (コンパクト設計) */}
-        <div className="p-2.5 sm:p-3 bg-card rounded-2xl border border-border/80 shadow-xs space-y-1.5">
+        <div className="p-2.5 sm:p-3 rounded-2xl border border-border/60 bg-card shadow-xs space-y-1.5">
           <div className="flex items-center justify-between pb-0.5">
             <div className="flex items-center gap-1.5">
               <span className="text-xs sm:text-sm font-black text-foreground">
@@ -878,7 +878,7 @@ export default function LiffSchedulePage() {
                 <button
                   type="button"
                   onClick={() => setSelectedDateStr(null)}
-                  className="px-1.5 py-0.2 text-[9.5px] font-bold rounded-md bg-primary/15 text-primary border border-primary/30 active:scale-95 cursor-pointer"
+                  className="px-1.5 py-0.2 text-[9.5px] font-bold rounded-md bg-primary/10 text-primary border border-primary/25 active:scale-95 cursor-pointer"
                 >
                   絞込解除
                 </button>
@@ -888,7 +888,7 @@ export default function LiffSchedulePage() {
               <button
                 type="button"
                 onClick={handleToday}
-                className="px-2 py-0.5 text-[10.5px] font-black rounded-lg bg-muted hover:bg-muted/80 text-foreground transition-all active:scale-95 cursor-pointer"
+                className="px-2 py-0.5 text-[10.5px] font-black rounded-lg bg-muted/50 hover:bg-muted border border-border/60 text-foreground transition-all active:scale-95 cursor-pointer"
               >
                 今日
               </button>
@@ -914,7 +914,7 @@ export default function LiffSchedulePage() {
             {weekDays.map((w, idx) => (
               <span
                 key={w}
-                className={idx === 0 ? "text-rose-500" : idx === 6 ? "text-blue-500" : "text-muted-foreground"}
+                className={idx === 0 ? "text-red-500" : idx === 6 ? "text-blue-500" : "text-muted-foreground"}
               >
                 {w}
               </span>
@@ -947,7 +947,7 @@ export default function LiffSchedulePage() {
                   }}
                   className={`flex flex-col items-center justify-center py-1 px-0.5 rounded-lg min-h-[30px] sm:min-h-[32px] transition-all relative cursor-pointer ${
                     isSelected
-                      ? "bg-primary text-primary-foreground font-black shadow-xs ring-2 ring-primary/40"
+                      ? "bg-primary text-primary-foreground font-black shadow-xs"
                       : isToday
                       ? "bg-primary/10 border border-primary/40 font-black text-foreground"
                       : d.isCurrentMonth
@@ -960,7 +960,7 @@ export default function LiffSchedulePage() {
                       isSelected
                         ? "text-primary-foreground font-black"
                         : isSun
-                        ? "text-rose-500"
+                        ? "text-red-500"
                         : isSat
                         ? "text-blue-500"
                         : ""
@@ -974,11 +974,20 @@ export default function LiffSchedulePage() {
                     <div className="flex items-center gap-0.5 mt-0.5">
                       <span
                         className={`w-1.5 h-1.5 rounded-full ${
-                          hasMatch ? "bg-rose-500" : "bg-emerald-500"
+                          isSelected
+                            ? "bg-primary-foreground"
+                            : hasMatch
+                            ? "bg-primary"
+                            : "bg-primary/60"
                         }`}
                       />
                       {hasGroups && (
-                        <span className="w-1 h-1 rounded-full bg-amber-500" title="複数グループ活動あり" />
+                        <span
+                          className={`w-1 h-1 rounded-full ${
+                            isSelected ? "bg-primary-foreground/80" : "bg-primary/40"
+                          }`}
+                          title="複数グループ活動あり"
+                        />
                       )}
                     </div>
                   )}
@@ -990,13 +999,13 @@ export default function LiffSchedulePage() {
 
         {/* フィルター切り替え ＆ 過去日トグル ＆ 昇順/降順ソート */}
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex-1 flex items-center gap-1 p-1 bg-muted/60 rounded-2xl border border-border">
+          <div className="flex-1 flex items-center gap-1 p-1 bg-muted rounded-2xl border border-border/60">
             <button
               type="button"
               onClick={() => setFilter("all")}
               className={`flex-1 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
                 filter === "all"
-                  ? "bg-card text-foreground shadow-xs"
+                  ? "bg-card text-primary shadow-xs"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
@@ -1007,7 +1016,7 @@ export default function LiffSchedulePage() {
               onClick={() => setFilter("match")}
               className={`flex-1 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
                 filter === "match"
-                  ? "bg-card text-rose-600 dark:text-rose-400 shadow-xs"
+                  ? "bg-card text-primary shadow-xs"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
@@ -1033,8 +1042,8 @@ export default function LiffSchedulePage() {
               onClick={() => setShowPastDates(prev => !prev)}
               className={`flex items-center gap-1 px-2.5 py-2 rounded-2xl text-xs font-bold transition-all active:scale-95 border cursor-pointer ${
                 showPastDates
-                  ? "bg-primary/15 text-primary border-primary/40 font-black shadow-xs"
-                  : "bg-muted/60 text-muted-foreground border-border hover:text-foreground hover:bg-muted"
+                  ? "bg-primary/10 text-primary border-primary/25 font-black shadow-xs"
+                  : "bg-card text-muted-foreground border-border/60 shadow-xs hover:text-foreground hover:bg-muted"
               }`}
               title={showPastDates ? "過去日を表示中（クリックで非表示）" : "過去日を非表示中（クリックで表示）"}
             >
@@ -1055,7 +1064,7 @@ export default function LiffSchedulePage() {
             <button
               type="button"
               onClick={() => setSortOrder(prev => prev === "asc" ? "desc" : "asc")}
-              className="py-2 px-2.5 rounded-2xl bg-muted/60 hover:bg-muted text-muted-foreground hover:text-foreground text-xs font-black border border-border transition-all active:scale-95 flex items-center gap-1 shrink-0 cursor-pointer"
+              className="py-2 px-2.5 rounded-2xl bg-card hover:bg-muted text-foreground text-xs font-black border border-border/60 shadow-xs transition-all active:scale-95 flex items-center gap-1 shrink-0 cursor-pointer"
               title={sortOrder === "asc" ? "現在：昇順（直近から）" : "現在：降順（未来から）"}
             >
               <span>{sortOrder === "asc" ? "↑ 昇順" : "↓ 降順"}</span>
@@ -1069,7 +1078,7 @@ export default function LiffSchedulePage() {
             {[1, 2, 3].map((i) => (
               <div
                 key={i}
-                className="bg-card border-2 border-primary/30 dark:border-primary/40 rounded-3xl p-4 shadow-md shadow-primary/5 space-y-3"
+                className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3"
               >
                 <div className="flex justify-between items-center">
                   <div className="h-5 w-24 bg-muted rounded-full" />
@@ -1079,14 +1088,14 @@ export default function LiffSchedulePage() {
                   <div className="h-6 w-40 bg-muted rounded-lg" />
                   <div className="h-4 w-56 bg-muted rounded" />
                 </div>
-                <div className="h-20 bg-muted/60 rounded-2xl" />
-                <div className="h-24 bg-muted/60 rounded-2xl" />
+                <div className="h-20 bg-muted/50 rounded-2xl" />
+                <div className="h-24 bg-muted/50 rounded-2xl" />
               </div>
             ))}
           </div>
         ) : filteredEvents.length === 0 ? (
           /* 空ステート */
-          <div className="flex flex-col items-center justify-center py-12 text-center bg-card border-2 border-primary/30 dark:border-primary/40 rounded-3xl p-6 space-y-3 shadow-md shadow-primary/5">
+          <div className="flex flex-col items-center justify-center py-12 text-center rounded-2xl border border-border/60 bg-card shadow-xs p-6 space-y-3">
             <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center text-primary">
               <CalendarIcon className="w-6 h-6" />
             </div>
@@ -1102,7 +1111,7 @@ export default function LiffSchedulePage() {
                   : "上のカレンダーで別の月を選択するか、スケジューラーから予定を登録してください。"}
               </p>
               {!showPastDates && eventsInCurrentMonth.length > 0 && !selectedDateStr && (
-                <p className="text-xs text-amber-600 dark:text-amber-400 font-bold mt-2">
+                <p className="text-xs text-primary font-bold mt-2">
                   ※ 過去日の予定が非表示になっています。「過去日: 非表示」ボタンをタップすると表示できます。
                 </p>
               )}
@@ -1111,7 +1120,7 @@ export default function LiffSchedulePage() {
               <button
                 type="button"
                 onClick={() => setSelectedDateStr(null)}
-                className="py-1.5 px-4 rounded-xl bg-primary text-primary-foreground text-xs font-black shadow-xs active:scale-95 transition-all cursor-pointer"
+                className="py-1.5 px-4 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-black shadow-xs active:scale-95 transition-all cursor-pointer"
               >
                 {currentMonth + 1}月のすべての予定を表示
               </button>
@@ -1141,7 +1150,7 @@ export default function LiffSchedulePage() {
               return (
                 <div
                   key={ev.id}
-                  className="rounded-3xl bg-card border border-border/90 dark:border-border/70 shadow-xs hover:shadow-sm p-4 space-y-3.5 transition-all"
+                  className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3.5 transition-all"
                 >
                   {/* ① 上部ヘッダー：日程・日付 & 曜日バッジ & 対象チーム & 出欠カウント & ✏️ 編集ボタン */}
                   <div className="flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap">
@@ -1154,10 +1163,10 @@ export default function LiffSchedulePage() {
                         {dayOfWeek && (
                           <span className={`px-1.5 py-0.5 rounded-md text-xs font-black border ${
                             isSat
-                              ? "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400 border-blue-200 dark:border-blue-900/40"
+                              ? "bg-blue-500/10 text-blue-500 border-blue-500/20"
                               : isSun
-                              ? "bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400 border-rose-200 dark:border-rose-900/40"
-                              : "bg-muted text-muted-foreground border-border"
+                              ? "bg-red-500/10 text-red-500 border-red-500/20"
+                              : "bg-muted/50 text-muted-foreground border-border/60"
                           }`}>
                             {dayOfWeek}
                           </span>
@@ -1167,27 +1176,27 @@ export default function LiffSchedulePage() {
                       {/* ⚾ 試合 / 🏃 練習 区分バッジ */}
                       <span className={`px-2 py-0.5 rounded-lg text-[10.5px] font-black border shrink-0 ${
                         isMatch
-                          ? "bg-rose-50 text-rose-700 dark:bg-rose-950/30 dark:text-rose-300 border-rose-200 dark:border-rose-900/40"
-                          : "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300 border-emerald-200 dark:border-emerald-900/40"
+                          ? "bg-primary/12 text-primary border-primary/25"
+                          : "bg-muted/50 text-foreground border-border/60"
                       }`}>
                         {isMatch ? "⚾ 試合" : "🏃 練習"}
                       </span>
 
                       {/* 🎯 対象チーム・グループバッジ（Aチーム/Bチーム/全体など） */}
                       {displayTargetGroup && displayTargetGroup !== "全体" && (
-                        <span className="px-2 py-0.5 rounded-lg bg-primary/10 text-primary text-[10.5px] font-black border border-primary/20 shrink-0">
+                        <span className="px-2 py-0.5 rounded-lg bg-primary/10 text-primary text-[10.5px] font-black border border-primary/25 shrink-0">
                           🏷️ {displayTargetGroup}
                         </span>
                       )}
 
                       {hasActivityGroups && (
-                        <span className="px-2 py-0.5 rounded-lg bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 text-[10px] font-black border border-amber-200 dark:border-amber-900/40 flex items-center gap-1 shrink-0">
-                          <Layers className="w-3 h-3 text-amber-500" />
+                        <span className="px-2 py-0.5 rounded-lg bg-primary/10 text-primary text-[10px] font-black border border-primary/25 flex items-center gap-1 shrink-0">
+                          <Layers className="w-3 h-3 text-primary" />
                           <span>{activityGroups.length}班</span>
                         </span>
                       )}
 
-                      <span className="px-2 py-0.5 rounded-full bg-muted text-muted-foreground text-[10px] font-bold">
+                      <span className="px-2 py-0.5 rounded-full bg-muted/50 text-muted-foreground border border-border/60 text-[10px] font-bold">
                         {idx + 1} / {filteredEvents.length}
                       </span>
                     </div>
@@ -1261,17 +1270,17 @@ export default function LiffSchedulePage() {
                               key={grp.id}
                               type="button"
                               onClick={() => setActiveGroupTabMap(prev => ({ ...prev, [ev.id]: grp.id }))}
-                              className={`px-3 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
+                              className={`px-3 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all flex items-center gap-1.5 cursor-pointer border ${
                                 isSel
-                                  ? "bg-primary text-primary-foreground shadow-xs ring-1 ring-primary"
-                                  : "bg-muted/70 text-muted-foreground hover:text-foreground"
+                                  ? "bg-primary text-primary-foreground border-primary shadow-xs"
+                                  : "bg-muted/50 text-muted-foreground border-border/60 hover:text-foreground"
                               }`}
                             >
                               <span>{grp.amType === "match" || grp.eventType === "match" ? "⚾" : "🏃"}</span>
                               <span>{grp.name}</span>
                               {grp.targetGroup && grp.targetGroup !== "全体" && (
                                 <span className={`px-1.5 py-0.2 rounded-md text-[9.5px] font-bold ${
-                                  isSel ? "bg-white/20 text-white" : "bg-primary/10 text-primary"
+                                  isSel ? "bg-primary-foreground/20 text-primary-foreground" : "bg-primary/10 text-primary"
                                 }`}>
                                   {grp.targetGroup}
                                 </span>
@@ -1287,43 +1296,43 @@ export default function LiffSchedulePage() {
                           <div className="grid grid-cols-2 gap-2">
                             {/* ☀️ 午前 */}
                             {currentGroup.hasAm !== false && currentGroup.amType !== "off" ? (
-                              <div className="p-3 rounded-2xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/70 dark:border-amber-900/30 flex flex-col justify-between space-y-2">
+                              <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 flex flex-col justify-between space-y-2">
                                 <div className="flex items-center justify-between">
-                                  <span className="text-[11px] font-black text-amber-800 dark:text-amber-200 flex items-center gap-1.5">
-                                    <Sun className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                                  <span className="text-[11px] font-black text-foreground flex items-center gap-1.5">
+                                    <Sun className="w-3.5 h-3.5 text-primary shrink-0" />
                                     <span>午前</span>
                                   </span>
-                                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${
                                     currentGroup.amType === "match"
-                                      ? "bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300 border border-rose-200 dark:border-rose-800/50"
-                                      : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/50"
+                                      ? "bg-primary/12 text-primary border-primary/25"
+                                      : "bg-card text-muted-foreground border-border/60"
                                   }`}>
                                     {currentGroup.amType === "match" ? "⚾ 試合" : "🏃 練習"}
                                   </span>
                                 </div>
-                                <div className="p-2 rounded-xl bg-card border border-amber-200/50 dark:border-amber-900/30 space-y-1">
+                                <div className="p-2 rounded-xl bg-card border border-border/60 space-y-1">
                                   <div className="flex items-center gap-1.5 text-xs font-black text-foreground">
-                                    <Clock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                                    <Clock className="w-3.5 h-3.5 text-primary shrink-0" />
                                     <span className="truncate">{currentGroup.amTime || currentGroup.time || "08:00〜12:00"}</span>
                                   </div>
                                   <div className="flex items-center gap-1.5 text-[11px] font-bold text-foreground/90 truncate">
-                                    <MapPin className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                    <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
                                     <span className="truncate">{currentGroup.amLocation || currentGroup.location || "グラウンド"}</span>
                                   </div>
                                 </div>
                               </div>
                             ) : (
-                              <div className="p-3 rounded-2xl bg-muted/30 dark:bg-muted/15 border border-dashed border-border/80 flex flex-col justify-between space-y-2 opacity-75">
+                              <div className="p-3 rounded-2xl bg-muted/20 border border-dashed border-border/60 flex flex-col justify-between space-y-2 opacity-75">
                                 <div className="flex items-center justify-between">
                                   <span className="text-[11px] font-bold text-muted-foreground flex items-center gap-1.5">
                                     <Sun className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
                                     <span>午前</span>
                                   </span>
-                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-muted text-muted-foreground border border-border">
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-muted/50 text-muted-foreground border border-border/60">
                                     🏖️ なし
                                   </span>
                                 </div>
-                                <div className="p-2 rounded-xl bg-card/60 border border-border/50 space-y-1">
+                                <div className="p-2 rounded-xl bg-card/60 border border-border/60 space-y-1">
                                   <div className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground">
                                     <Clock className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
                                     <span>なし (午後集合)</span>
@@ -1338,43 +1347,43 @@ export default function LiffSchedulePage() {
 
                             {/* 🌙 午後 */}
                             {currentGroup.hasPm && currentGroup.pmType !== "off" ? (
-                              <div className="p-3 rounded-2xl bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-200/70 dark:border-indigo-900/30 flex flex-col justify-between space-y-2">
+                              <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 flex flex-col justify-between space-y-2">
                                 <div className="flex items-center justify-between">
-                                  <span className="text-[11px] font-black text-indigo-800 dark:text-indigo-200 flex items-center gap-1.5">
-                                    <Moon className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                                  <span className="text-[11px] font-black text-foreground flex items-center gap-1.5">
+                                    <Moon className="w-3.5 h-3.5 text-primary shrink-0" />
                                     <span>午後</span>
                                   </span>
-                                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${
                                     currentGroup.pmType === "match"
-                                      ? "bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300 border border-rose-200 dark:border-rose-800/50"
-                                      : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/50"
+                                      ? "bg-primary/12 text-primary border-primary/25"
+                                      : "bg-card text-muted-foreground border-border/60"
                                   }`}>
                                     {currentGroup.pmType === "match" ? "⚾ 試合" : "🏃 練習"}
                                   </span>
                                 </div>
-                                <div className="p-2 rounded-xl bg-card border border-indigo-200/50 dark:border-indigo-900/30 space-y-1">
+                                <div className="p-2 rounded-xl bg-card border border-border/60 space-y-1">
                                   <div className="flex items-center gap-1.5 text-xs font-black text-foreground">
-                                    <Clock className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                                    <Clock className="w-3.5 h-3.5 text-primary shrink-0" />
                                     <span className="truncate">{currentGroup.pmTime ? currentGroup.pmTime : "解散・なし"}</span>
                                   </div>
                                   <div className="flex items-center gap-1.5 text-[11px] font-bold text-foreground/90 truncate">
-                                    <MapPin className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                    <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
                                     <span className="truncate">{currentGroup.pmLocation || currentGroup.amLocation || "グラウンド"}</span>
                                   </div>
                                 </div>
                               </div>
                             ) : (
-                              <div className="p-3 rounded-2xl bg-muted/30 dark:bg-muted/15 border border-dashed border-border/80 flex flex-col justify-between space-y-2 opacity-75">
+                              <div className="p-3 rounded-2xl bg-muted/20 border border-dashed border-border/60 flex flex-col justify-between space-y-2 opacity-75">
                                 <div className="flex items-center justify-between">
                                   <span className="text-[11px] font-bold text-muted-foreground flex items-center gap-1.5">
                                     <Moon className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
                                     <span>午後</span>
                                   </span>
-                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-muted text-muted-foreground border border-border">
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-muted/50 text-muted-foreground border border-border/60">
                                     🏖️ なし
                                   </span>
                                 </div>
-                                <div className="p-2 rounded-xl bg-card/60 border border-border/50 space-y-1">
+                                <div className="p-2 rounded-xl bg-card/60 border border-border/60 space-y-1">
                                   <div className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground">
                                     <Clock className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
                                     <span>解散・なし</span>
@@ -1389,12 +1398,12 @@ export default function LiffSchedulePage() {
                           </div>
                         ) : (
                           /* 単一活動表示 */
-                          <div className="p-3 rounded-2xl bg-muted/30 dark:bg-muted/20 border border-border/80 space-y-2">
+                          <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 space-y-2">
                             <div className="flex items-center justify-between">
-                              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black ${
+                              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${
                                 currentGroup.eventType === "match" || currentGroup.amType === "match"
-                                  ? "bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-900/40"
-                                  : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-900/40"
+                                  ? "bg-primary/12 text-primary border-primary/25"
+                                  : "bg-card text-muted-foreground border-border/60"
                               }`}>
                                 {currentGroup.eventType === "match" || currentGroup.amType === "match" ? "⚾ 試合" : "🏃 練習"}
                               </span>
@@ -1405,12 +1414,12 @@ export default function LiffSchedulePage() {
                               )}
                             </div>
                             <div className="grid grid-cols-2 gap-2 text-xs font-bold">
-                              <div className="flex items-center gap-1.5 text-foreground bg-card p-2 rounded-xl border border-border/70">
-                                <Clock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                              <div className="flex items-center gap-1.5 text-foreground bg-card p-2 rounded-xl border border-border/60">
+                                <Clock className="w-3.5 h-3.5 text-primary shrink-0" />
                                 <span className="truncate font-black">{currentGroup.time || currentGroup.amTime || "時間調整中"}</span>
                               </div>
-                              <div className="flex items-center gap-1.5 text-foreground bg-card p-2 rounded-xl border border-border/70">
-                                <MapPin className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                              <div className="flex items-center gap-1.5 text-foreground bg-card p-2 rounded-xl border border-border/60">
+                                <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
                                 <span className="truncate font-black">{currentGroup.location || currentGroup.amLocation || "グラウンド"}</span>
                               </div>
                             </div>
@@ -1424,43 +1433,43 @@ export default function LiffSchedulePage() {
                       <div className="grid grid-cols-2 gap-2">
                         {/* ☀️ 【午前】 */}
                         {ev.hasAm !== false && ev.amType !== "off" ? (
-                          <div className="p-3 rounded-2xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/70 dark:border-amber-900/30 flex flex-col justify-between space-y-2">
+                          <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 flex flex-col justify-between space-y-2">
                             <div className="flex items-center justify-between">
-                              <span className="text-[11px] font-black text-amber-800 dark:text-amber-200 flex items-center gap-1.5">
-                                <Sun className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                              <span className="text-[11px] font-black text-foreground flex items-center gap-1.5">
+                                <Sun className="w-3.5 h-3.5 text-primary shrink-0" />
                                 <span>午前</span>
                               </span>
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${
                                 ev.amType === "match"
-                                  ? "bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300 border border-rose-200 dark:border-rose-800/50"
-                                  : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/50"
+                                  ? "bg-primary/12 text-primary border-primary/25"
+                                  : "bg-card text-muted-foreground border-border/60"
                               }`}>
                                 {ev.amType === "match" ? "⚾ 試合" : "🏃 練習"}
                               </span>
                             </div>
-                            <div className="p-2 rounded-xl bg-card border border-amber-200/50 dark:border-amber-900/30 space-y-1">
+                            <div className="p-2 rounded-xl bg-card border border-border/60 space-y-1">
                               <div className="flex items-center gap-1.5 text-xs font-black text-foreground">
-                                <Clock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                                <Clock className="w-3.5 h-3.5 text-primary shrink-0" />
                                 <span className="truncate">{ev.amTime || ev.time || "08:00〜12:00"}</span>
                               </div>
                               <div className="flex items-center gap-1.5 text-[11px] font-bold text-foreground/90 truncate">
-                                <MapPin className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                                <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
                                 <span className="truncate">{ev.amLocation || ev.location || "グラウンド"}</span>
                               </div>
                             </div>
                           </div>
                         ) : (
-                          <div className="p-3 rounded-2xl bg-muted/30 dark:bg-muted/15 border border-dashed border-border/80 flex flex-col justify-between space-y-2 opacity-75">
+                          <div className="p-3 rounded-2xl bg-muted/20 border border-dashed border-border/60 flex flex-col justify-between space-y-2 opacity-75">
                             <div className="flex items-center justify-between">
                               <span className="text-[11px] font-bold text-muted-foreground flex items-center gap-1.5">
                                 <Sun className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
                                 <span>午前</span>
                               </span>
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-muted text-muted-foreground border border-border">
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-muted/50 text-muted-foreground border border-border/60">
                                 🏖️ なし
                               </span>
                             </div>
-                            <div className="p-2 rounded-xl bg-card/60 border border-border/50 space-y-1">
+                            <div className="p-2 rounded-xl bg-card/60 border border-border/60 space-y-1">
                               <div className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground">
                                 <Clock className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
                                 <span>なし (午後集合)</span>
@@ -1475,43 +1484,43 @@ export default function LiffSchedulePage() {
 
                         {/* 🌙 【午後】 */}
                         {ev.hasPm && ev.pmType !== "off" ? (
-                          <div className="p-3 rounded-2xl bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-200/70 dark:border-indigo-900/30 flex flex-col justify-between space-y-2">
+                          <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 flex flex-col justify-between space-y-2">
                             <div className="flex items-center justify-between">
-                              <span className="text-[11px] font-black text-indigo-800 dark:text-indigo-200 flex items-center gap-1.5">
-                                <Moon className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                              <span className="text-[11px] font-black text-foreground flex items-center gap-1.5">
+                                <Moon className="w-3.5 h-3.5 text-primary shrink-0" />
                                 <span>午後</span>
                               </span>
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${
                                 ev.pmType === "match"
-                                  ? "bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300 border border-rose-200 dark:border-rose-800/50"
-                                  : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/50"
+                                  ? "bg-primary/12 text-primary border-primary/25"
+                                  : "bg-card text-muted-foreground border-border/60"
                               }`}>
                                 {ev.pmType === "match" ? "⚾ 試合" : "🏃 練習"}
                               </span>
                             </div>
-                            <div className="p-2 rounded-xl bg-card border border-indigo-200/50 dark:border-indigo-900/30 space-y-1">
+                            <div className="p-2 rounded-xl bg-card border border-border/60 space-y-1">
                               <div className="flex items-center gap-1.5 text-xs font-black text-foreground">
-                                <Clock className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                                <Clock className="w-3.5 h-3.5 text-primary shrink-0" />
                                 <span className="truncate">{ev.pmTime ? ev.pmTime : "解散・なし"}</span>
                               </div>
                               <div className="flex items-center gap-1.5 text-[11px] font-bold text-foreground/90 truncate">
-                                <MapPin className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                                <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
                                 <span className="truncate">{ev.pmLocation || ev.amLocation || "グラウンド"}</span>
                               </div>
                             </div>
                           </div>
                         ) : (
-                          <div className="p-3 rounded-2xl bg-muted/30 dark:bg-muted/15 border border-dashed border-border/80 flex flex-col justify-between space-y-2 opacity-75">
+                          <div className="p-3 rounded-2xl bg-muted/20 border border-dashed border-border/60 flex flex-col justify-between space-y-2 opacity-75">
                             <div className="flex items-center justify-between">
                               <span className="text-[11px] font-bold text-muted-foreground flex items-center gap-1.5">
                                 <Moon className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
                                 <span>午後</span>
                               </span>
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-muted text-muted-foreground border border-border">
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-muted/50 text-muted-foreground border border-border/60">
                                 🏖️ なし
                               </span>
                             </div>
-                            <div className="p-2 rounded-xl bg-card/60 border border-border/50 space-y-1">
+                            <div className="p-2 rounded-xl bg-card/60 border border-border/60 space-y-1">
                               <div className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground">
                                 <Clock className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
                                 <span>解散・なし</span>
@@ -1526,12 +1535,12 @@ export default function LiffSchedulePage() {
                       </div>
                     ) : (
                       /* 単一活動表示 */
-                      <div className="p-3 rounded-2xl bg-muted/30 dark:bg-muted/20 border border-border/80 space-y-2">
+                      <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 space-y-2">
                         <div className="flex items-center justify-between">
-                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black ${
+                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${
                             ev.eventType === "match"
-                              ? "bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-900/40"
-                              : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-900/40"
+                              ? "bg-primary/12 text-primary border-primary/25"
+                              : "bg-card text-muted-foreground border-border/60"
                           }`}>
                             {ev.eventType === "match" ? "⚾ 試合" : "🏃 練習"}
                           </span>
@@ -1542,12 +1551,12 @@ export default function LiffSchedulePage() {
                           )}
                         </div>
                         <div className="grid grid-cols-2 gap-2 text-xs font-bold">
-                          <div className="flex items-center gap-1.5 text-foreground bg-card p-2 rounded-xl border border-border/70">
-                            <Clock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                          <div className="flex items-center gap-1.5 text-foreground bg-card p-2 rounded-xl border border-border/60">
+                            <Clock className="w-3.5 h-3.5 text-primary shrink-0" />
                             <span className="truncate font-black">{ev.time || "時間調整中"}</span>
                           </div>
-                          <div className="flex items-center gap-1.5 text-foreground bg-card p-2 rounded-xl border border-border/70">
-                            <MapPin className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                          <div className="flex items-center gap-1.5 text-foreground bg-card p-2 rounded-xl border border-border/60">
+                            <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
                             <span className="truncate font-black">{ev.location || "グラウンド"}</span>
                           </div>
                         </div>
@@ -1556,18 +1565,18 @@ export default function LiffSchedulePage() {
                   )}
 
                   {/* ④ 📋 その他の詳細情報ブロック（上から：お弁当・補食、連絡事項、配車、当番） */}
-                  <div className="p-3 rounded-2xl bg-muted/30 dark:bg-muted/20 border border-border/70 space-y-2 text-xs">
+                  <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 space-y-2 text-xs">
                     {/* 1. お弁当 & 補食 */}
                     <div className="grid grid-cols-2 gap-2 font-bold">
                       {/* お弁当 */}
                       <div className="flex items-center justify-between p-2 rounded-xl bg-card border border-border/60">
                         <span className="text-muted-foreground flex items-center gap-1.5 text-[11px]">
-                          <Utensils className="w-3.5 h-3.5 text-amber-500" />
+                          <Utensils className="w-3.5 h-3.5 text-primary" />
                           <span>お弁当</span>
                         </span>
                         <span className={`px-2 py-0.5 rounded-md text-[10.5px] font-black ${
                           ev.needsLunch
-                            ? "bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-200 dark:border-amber-800/50"
+                            ? "bg-primary/10 text-primary border border-primary/25"
                             : "text-muted-foreground/60"
                         }`}>
                           {ev.needsLunch ? "🍙 要" : "不要"}
@@ -1582,7 +1591,7 @@ export default function LiffSchedulePage() {
                         </span>
                         <span className={`px-2 py-0.5 rounded-md text-[10.5px] font-black ${
                           ev.needsSnack
-                            ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/50"
+                            ? "bg-primary/10 text-primary border border-primary/25"
                             : "text-muted-foreground/60"
                         }`}>
                           {ev.needsSnack ? "🍌 要" : "不要"}
@@ -1597,7 +1606,7 @@ export default function LiffSchedulePage() {
 
                       if (!hasMemo) {
                         return (
-                          <div className="pt-2 border-t border-border/50 flex items-center justify-between text-[11px]">
+                          <div className="pt-2 border-t border-border/60 flex items-center justify-between text-[11px]">
                             <span className="text-muted-foreground flex items-center gap-1.5">
                               <FileText className="w-3.5 h-3.5 text-muted-foreground/60" />
                               <span>連絡事項</span>
@@ -1608,17 +1617,17 @@ export default function LiffSchedulePage() {
                       }
 
                       return (
-                        <div className="pt-2 border-t border-border/50 space-y-1.5">
+                        <div className="pt-2 border-t border-border/60 space-y-1.5">
                           {/* アコーディオンヘッダー・開閉トグルボタン */}
                           <button
                             type="button"
                             onClick={() => toggleMemo(ev.id)}
-                            className="w-full flex items-center justify-between p-2 rounded-xl bg-card border border-border/60 hover:bg-card/80 active:scale-[0.99] transition-all cursor-pointer select-none"
+                            className="w-full flex items-center justify-between p-2 rounded-xl bg-card border border-border/60 hover:bg-muted/50 active:scale-[0.99] transition-all cursor-pointer select-none"
                           >
                             <div className="flex items-center gap-2 min-w-0">
                               <FileText className="w-3.5 h-3.5 text-primary shrink-0" />
                               <span className="text-[11px] font-black text-foreground">連絡事項</span>
-                              <span className="px-1.5 py-0.2 rounded-md bg-primary/10 text-primary border border-primary/20 text-[9.5px] font-black shrink-0">
+                              <span className="px-1.5 py-0.2 rounded-md bg-primary/10 text-primary border border-primary/25 text-[9.5px] font-black shrink-0">
                                 {isExpanded ? "表示中" : "タップで確認"}
                               </span>
                             </div>
@@ -1635,7 +1644,7 @@ export default function LiffSchedulePage() {
 
                           {/* アコーディオン本文 */}
                           {isExpanded && (
-                            <div className="animate-in fade-in slide-in-from-top-1 duration-150 p-2.5 rounded-xl bg-card border border-border text-foreground leading-relaxed text-[11px] font-bold whitespace-pre-wrap">
+                            <div className="animate-in fade-in slide-in-from-top-1 duration-150 p-2.5 rounded-xl bg-card border border-border/60 text-foreground leading-relaxed text-[11px] font-bold whitespace-pre-wrap">
                               {ev.memo}
                             </div>
                           )}
@@ -1644,9 +1653,9 @@ export default function LiffSchedulePage() {
                     })()}
 
                     {/* 3. 配車 */}
-                    <div className="pt-2 border-t border-border/50 flex items-center justify-between font-bold">
+                    <div className="pt-2 border-t border-border/60 flex items-center justify-between font-bold">
                       <div className="flex items-center gap-2 min-w-0">
-                        <Car className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                        <Car className="w-3.5 h-3.5 text-primary shrink-0" />
                         <span className="text-muted-foreground text-[11px] shrink-0">配車:</span>
                         <span className="text-foreground truncate font-black text-[11px]">
                           {displayCarInfo ? displayCarInfo : "なし（現地集合）"}
@@ -1656,7 +1665,7 @@ export default function LiffSchedulePage() {
                       {displayCarInfo ? (
                         <Link
                           href="/liff/carpool"
-                          className="text-[10.5px] font-black text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-0.5 shrink-0 ml-2"
+                          className="text-[10.5px] font-black text-primary hover:underline flex items-center gap-0.5 shrink-0 ml-2"
                         >
                           <span>配車表へ</span>
                           <ChevronRight className="w-3 h-3" />
@@ -1666,12 +1675,12 @@ export default function LiffSchedulePage() {
 
                     {/* 4. 一番下に当番 */}
                     {displayDutyGroup && (
-                      <div className="pt-2 border-t border-border/50 flex items-center justify-between text-[11px] font-bold">
+                      <div className="pt-2 border-t border-border/60 flex items-center justify-between text-[11px] font-bold">
                         <span className="text-muted-foreground flex items-center gap-1.5">
                           <ClipboardList className="w-3.5 h-3.5 text-primary" />
                           <span>お当番</span>
                         </span>
-                        <span className="px-2.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 font-black flex items-center gap-1">
+                        <span className="px-2.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/25 font-black flex items-center gap-1">
                           <span>📋</span>
                           <span>{displayDutyGroup}</span>
                         </span>
@@ -1763,11 +1772,11 @@ export default function LiffSchedulePage() {
         return (
           <div className="fixed inset-0 z-[9999] bg-black/75 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-150">
             <div
-              className="bg-card w-full max-w-2xl rounded-t-3xl sm:rounded-3xl border-2 border-primary/30 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col animate-in slide-in-from-bottom-4 duration-200"
+              className="w-full max-w-2xl rounded-t-2xl sm:rounded-2xl border border-border/60 bg-card shadow-xs overflow-hidden max-h-[90vh] flex flex-col animate-in slide-in-from-bottom-4 duration-200"
               onClick={(e) => e.stopPropagation()}
             >
               {/* モーダルヘッダー */}
-              <div className="px-5 py-3.5 border-b border-border/80 flex items-center justify-between bg-muted/30 shrink-0">
+              <div className="px-5 py-3.5 border-b border-border/60 flex items-center justify-between bg-muted/35 shrink-0">
                 <div className="flex items-center gap-2">
                   <span className="px-2.5 py-1 rounded-xl bg-primary text-primary-foreground text-xs font-black shrink-0">
                     {editingEvent.date}
@@ -1788,7 +1797,7 @@ export default function LiffSchedulePage() {
               {/* モーダル本文 */}
               <div className="p-4 sm:p-6 overflow-y-auto space-y-4 text-xs">
                 {/* 1. 予定タイトル（デフォルト: 通常練習 ＆ クイック選択） */}
-                <div className="space-y-2.5 p-3.5 rounded-2xl bg-card border border-border/80 shadow-2xs">
+                <div className="space-y-2.5 p-3.5 rounded-2xl bg-muted/35 border border-border/60">
                   <div className="space-y-1">
                     <div className="flex items-center justify-between">
                       <label className="text-[11px] font-black text-foreground">予定タイトル</label>
@@ -1799,7 +1808,7 @@ export default function LiffSchedulePage() {
                       value={editingEvent.title}
                       onChange={(e) => setEditingEvent({ ...editingEvent, title: e.target.value })}
                       placeholder="通常練習"
-                      className="w-full px-3 py-2 rounded-xl bg-muted/30 border border-border/80 text-xs font-black text-foreground focus:outline-hidden focus:border-primary"
+                      className="w-full px-3 py-2 rounded-xl bg-card border border-border/60 text-xs font-black text-foreground focus:outline-hidden focus:border-primary"
                     />
                   </div>
 
@@ -1813,8 +1822,8 @@ export default function LiffSchedulePage() {
                         onClick={() => setEditingEvent({ ...editingEvent, title: preset })}
                         className={`px-2 py-0.5 rounded-lg text-[10.5px] font-black border transition-all active:scale-95 cursor-pointer ${
                           (editingEvent.title || "通常練習") === preset
-                            ? "bg-primary text-primary-foreground border-primary shadow-2xs"
-                            : "bg-muted/40 text-muted-foreground border-border/60 hover:text-foreground"
+                            ? "bg-primary text-primary-foreground border-primary shadow-xs"
+                            : "bg-card text-muted-foreground border-border/60 hover:text-foreground"
                         }`}
                       >
                         {preset}
@@ -1824,7 +1833,7 @@ export default function LiffSchedulePage() {
                 </div>
 
                 {/* 🌟 2. グループ分けタブ ＆ グループ追加 ＆ 活動グループ内での対象チーム選択 */}
-                <div className="space-y-3 p-3.5 rounded-2xl bg-muted/40 border border-border/80">
+                <div className="space-y-3 p-3.5 rounded-2xl bg-muted/35 border border-border/60">
                   <div className="flex items-center justify-between">
                     <div>
                       <label className="text-[11px] font-black text-foreground flex items-center gap-1">
@@ -1859,7 +1868,7 @@ export default function LiffSchedulePage() {
                             });
                             setActiveEditGroupId("main");
                           }}
-                          className="py-1 px-2.5 rounded-xl bg-card hover:bg-rose-500/10 text-muted-foreground hover:text-rose-600 dark:hover:text-rose-400 text-[10.5px] font-bold border border-border/80 active:scale-95 transition-all flex items-center gap-1 cursor-pointer"
+                          className="py-1 px-2.5 rounded-xl bg-card hover:bg-rose-500/10 text-muted-foreground hover:text-rose-600 dark:hover:text-rose-400 text-[10.5px] font-bold border border-border/60 active:scale-95 transition-all flex items-center gap-1 cursor-pointer"
                           title="グループ分けを解除して単一活動に戻す"
                         >
                           <RotateCcw className="w-3 h-3" />
@@ -1933,7 +1942,7 @@ export default function LiffSchedulePage() {
                             setActiveEditGroupId(newGrp.id);
                           }
                         }}
-                        className="py-1 px-3 rounded-xl bg-primary text-primary-foreground text-[10.5px] font-black shadow-xs active:scale-95 transition-all flex items-center gap-1 shrink-0 cursor-pointer"
+                        className="py-1 px-3 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-[10.5px] font-black shadow-xs active:scale-95 transition-all flex items-center gap-1 shrink-0 cursor-pointer"
                       >
                         <Plus className="w-3 h-3" />
                         <span>＋ グループ追加</span>
@@ -1947,7 +1956,7 @@ export default function LiffSchedulePage() {
                       <div className="px-3 py-1.5 rounded-xl bg-primary text-primary-foreground text-xs font-black shadow-xs flex items-center gap-1.5 shrink-0">
                         <span>🏷️ 単一活動（全体）</span>
                         {curTargetGroup && curTargetGroup !== "全体" && (
-                          <span className="bg-white/20 px-1.5 py-0.2 rounded-md text-[10px]">
+                          <span className="bg-primary-foreground/20 px-1.5 py-0.2 rounded-md text-[10px]">
                             {curTargetGroup}
                           </span>
                         )}
@@ -1960,8 +1969,8 @@ export default function LiffSchedulePage() {
                             key={grp.id}
                             className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all border ${
                               isSel
-                                ? "bg-primary text-primary-foreground border-primary shadow-xs ring-1 ring-primary"
-                                : "bg-card text-muted-foreground border-border hover:text-foreground"
+                                ? "bg-primary text-primary-foreground border-primary shadow-xs"
+                                : "bg-card text-muted-foreground border-border/60 hover:text-foreground"
                             }`}
                           >
                             <button
@@ -1973,7 +1982,7 @@ export default function LiffSchedulePage() {
                               <span>{grp.name}</span>
                               {grp.targetGroup && grp.targetGroup !== "全体" && (
                                 <span className={`px-1.5 py-0.2 rounded-md text-[9.5px] font-bold ${
-                                  isSel ? "bg-white/20 text-white" : "bg-primary/10 text-primary"
+                                  isSel ? "bg-primary-foreground/20 text-primary-foreground" : "bg-primary/10 text-primary"
                                 }`}>
                                   {grp.targetGroup}
                                 </span>
@@ -2015,7 +2024,7 @@ export default function LiffSchedulePage() {
                                   }
                                 }
                               }}
-                              className="ml-1 text-primary-foreground/70 hover:text-white dark:hover:text-rose-400 cursor-pointer p-0.5 rounded-full hover:bg-white/20 transition-all"
+                              className="ml-1 text-current opacity-70 hover:opacity-100 hover:text-rose-500 cursor-pointer p-0.5 rounded-full hover:bg-muted/30 transition-all"
                               title={groups.length <= 2 ? "このグループを削除して単一活動に戻す" : "グループ削除"}
                             >
                               <X className="w-3 h-3" />
@@ -2039,7 +2048,7 @@ export default function LiffSchedulePage() {
                             setEditingEvent({ ...editingEvent, activityGroups: updated });
                           }}
                           placeholder="グループ名（例: Aチーム（試合組）/ Bチーム（練習組））"
-                          className="font-black text-xs text-foreground bg-card border border-border/80 px-3 py-1.5 rounded-xl w-full focus:outline-hidden focus:border-primary shadow-2xs"
+                          className="font-black text-xs text-foreground bg-card border border-border/60 px-3 py-1.5 rounded-xl w-full focus:outline-hidden focus:border-primary"
                         />
                       </div>
                     )}
@@ -2050,7 +2059,7 @@ export default function LiffSchedulePage() {
                           <span>🎯</span>
                           <span>{hasGroups && currentEditGroup ? `「${currentEditGroup.name}」の対象チーム・グループ` : "対象チーム・グループ"}</span>
                         </label>
-                        <span className="text-[10px] font-black text-primary bg-primary/10 px-2 py-0.5 rounded-md border border-primary/20">
+                        <span className="text-[10px] font-black text-primary bg-primary/10 px-2 py-0.5 rounded-md border border-primary/25">
                           選択中: {curTargetGroup}
                         </span>
                       </div>
@@ -2071,7 +2080,7 @@ export default function LiffSchedulePage() {
                               className={`px-2.5 py-1 rounded-xl text-xs font-bold border transition-all active:scale-95 cursor-pointer ${
                                 isSel
                                   ? "bg-primary text-primary-foreground border-primary font-black shadow-xs"
-                                  : "bg-card hover:bg-muted text-muted-foreground hover:text-foreground border-border/80"
+                                  : "bg-card hover:bg-muted text-muted-foreground hover:text-foreground border-border/60"
                               }`}
                             >
                               {tg}
@@ -2084,17 +2093,17 @@ export default function LiffSchedulePage() {
                 </div>
 
                 {/* 🌟 3. 午前・午後の設定エリア（タイトルを別行にし、活動種別・時間帯・場所をすっきり配置） */}
-                <div className="space-y-3.5 p-4 rounded-2xl bg-card border border-border/80 shadow-xs">
+                <div className="space-y-3.5 p-4 rounded-2xl bg-card border border-border/60 shadow-xs">
                   {/* ☀️ 午前ブロック */}
                   <div className={`p-3.5 rounded-2xl border space-y-2.5 transition-all ${
                     curHasAm
-                      ? "bg-amber-500/5 dark:bg-amber-500/10 border-amber-500/25"
+                      ? "bg-muted/35 border-border/60"
                       : "bg-muted/20 border-border/60 opacity-80"
                   }`}>
                     {/* 1行目: 午前の活動タイトル & ON/OFF 切替スイッチ */}
-                    <div className="flex items-center justify-between pb-2 border-b border-amber-500/20">
-                      <span className="text-xs font-black text-amber-700 dark:text-amber-300 flex items-center gap-1.5">
-                        <Sun className="w-3.5 h-3.5 text-amber-500" />
+                    <div className="flex items-center justify-between pb-2 border-b border-border/60">
+                      <span className="text-xs font-black text-foreground flex items-center gap-1.5">
+                        <Sun className="w-3.5 h-3.5 text-primary" />
                         <span>午前の活動</span>
                       </span>
 
@@ -2112,8 +2121,8 @@ export default function LiffSchedulePage() {
                         }}
                         className={`px-2.5 py-0.5 rounded-full text-[10.5px] font-black border transition-all cursor-pointer ${
                           curHasAm
-                            ? "bg-amber-500 text-white border-amber-500 shadow-xs"
-                            : "bg-muted text-muted-foreground border-border"
+                            ? "bg-primary text-primary-foreground border-primary shadow-xs"
+                            : "bg-muted/50 text-muted-foreground border-border/60"
                         }`}
                       >
                         {curHasAm ? "✓ 午前あり" : "🏖️ なし (午後集合)"}
@@ -2133,7 +2142,7 @@ export default function LiffSchedulePage() {
                                 type="button"
                                 onClick={() => updateCurrentActivity({ amType: t.id as any })}
                                 className={`px-2.5 py-1 rounded-xl text-xs font-black border transition-all active:scale-95 cursor-pointer ${
-                                  isSel ? t.color + " shadow-xs font-black" : "bg-card border-border/70 text-muted-foreground hover:text-foreground"
+                                  isSel ? t.color + " shadow-xs font-black" : "bg-card border-border/60 text-muted-foreground hover:text-foreground"
                                 }`}
                               >
                                 {t.icon} {t.label}
@@ -2150,8 +2159,8 @@ export default function LiffSchedulePage() {
                         <div className="grid grid-cols-2 gap-2.5">
                           <div>
                             <label className="text-[10px] font-bold text-muted-foreground block mb-0.5">時間帯</label>
-                            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-card border border-border/70">
-                              <Clock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-card border border-border/60">
+                              <Clock className="w-3.5 h-3.5 text-primary shrink-0" />
                               <input
                                 type="text"
                                 value={curAmTime}
@@ -2164,8 +2173,8 @@ export default function LiffSchedulePage() {
 
                           <div>
                             <label className="text-[10px] font-bold text-muted-foreground block mb-0.5">球場・場所</label>
-                            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-card border border-border/70">
-                              <MapPin className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-card border border-border/60">
+                              <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
                               <input
                                 type="text"
                                 value={curAmLocation}
@@ -2207,13 +2216,13 @@ export default function LiffSchedulePage() {
                   {/* 🌙 午後ブロック */}
                   <div className={`p-3.5 rounded-2xl border space-y-2.5 transition-all ${
                     curHasPm && curPmType !== "off"
-                      ? "bg-indigo-500/5 dark:bg-indigo-500/10 border-indigo-500/25"
+                      ? "bg-muted/35 border-border/60"
                       : "bg-muted/20 border-border/60 opacity-80"
                   }`}>
                     {/* 1行目: 午後の活動タイトル & ON/OFF 切替スイッチ */}
-                    <div className="flex items-center justify-between pb-2 border-b border-indigo-500/20">
-                      <span className="text-xs font-black text-indigo-700 dark:text-indigo-300 flex items-center gap-1.5">
-                        <Moon className="w-3.5 h-3.5 text-indigo-500" />
+                    <div className="flex items-center justify-between pb-2 border-b border-border/60">
+                      <span className="text-xs font-black text-foreground flex items-center gap-1.5">
+                        <Moon className="w-3.5 h-3.5 text-primary" />
                         <span>午後の活動</span>
                       </span>
 
@@ -2231,8 +2240,8 @@ export default function LiffSchedulePage() {
                         }}
                         className={`px-2.5 py-0.5 rounded-full text-[10.5px] font-black border transition-all cursor-pointer ${
                           curHasPm && curPmType !== "off"
-                            ? "bg-indigo-500 text-white border-indigo-500 shadow-xs"
-                            : "bg-muted text-muted-foreground border-border"
+                            ? "bg-primary text-primary-foreground border-primary shadow-xs"
+                            : "bg-muted/50 text-muted-foreground border-border/60"
                         }`}
                       >
                         {curHasPm && curPmType !== "off" ? "✓ 午後あり" : "🏖️ なし (午前解散)"}
@@ -2252,7 +2261,7 @@ export default function LiffSchedulePage() {
                                 type="button"
                                 onClick={() => updateCurrentActivity({ pmType: t.id as any })}
                                 className={`px-2.5 py-1 rounded-xl text-xs font-black border transition-all active:scale-95 cursor-pointer ${
-                                  isSel ? t.color + " shadow-xs font-black" : "bg-card border-border/70 text-muted-foreground hover:text-foreground"
+                                  isSel ? t.color + " shadow-xs font-black" : "bg-card border-border/60 text-muted-foreground hover:text-foreground"
                                 }`}
                               >
                                 {t.icon} {t.label}
@@ -2269,8 +2278,8 @@ export default function LiffSchedulePage() {
                         <div className="grid grid-cols-2 gap-2.5">
                           <div>
                             <label className="text-[10px] font-bold text-muted-foreground block mb-0.5">時間帯</label>
-                            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-card border border-border/70">
-                              <Clock className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-card border border-border/60">
+                              <Clock className="w-3.5 h-3.5 text-primary shrink-0" />
                               <input
                                 type="text"
                                 value={curPmTime}
@@ -2294,8 +2303,8 @@ export default function LiffSchedulePage() {
                                 </button>
                               )}
                             </div>
-                            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-card border border-border/70">
-                              <MapPin className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-card border border-border/60">
+                              <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
                               <input
                                 type="text"
                                 value={curPmLocation}
@@ -2344,7 +2353,7 @@ export default function LiffSchedulePage() {
                           value={curDutyGroup}
                           onChange={(e) => updateCurrentActivity({ dutyGroup: e.target.value })}
                           placeholder="例: 1班"
-                          className="w-full px-2.5 py-1.5 rounded-xl bg-muted/40 border border-border/70 text-xs font-bold text-foreground focus:outline-hidden"
+                          className="w-full px-2.5 py-1.5 rounded-xl bg-muted/35 border border-border/60 text-xs font-bold text-foreground focus:outline-hidden"
                         />
                       </div>
                       <div>
@@ -2354,7 +2363,7 @@ export default function LiffSchedulePage() {
                           value={curCarInfo}
                           onChange={(e) => updateCurrentActivity({ carInfo: e.target.value })}
                           placeholder="例: 3台/現地集合"
-                          className="w-full px-2.5 py-1.5 rounded-xl bg-muted/40 border border-border/70 text-xs font-bold text-foreground focus:outline-hidden"
+                          className="w-full px-2.5 py-1.5 rounded-xl bg-muted/35 border border-border/60 text-xs font-bold text-foreground focus:outline-hidden"
                         />
                       </div>
                     </div>
@@ -2362,7 +2371,7 @@ export default function LiffSchedulePage() {
                 </div>
 
                 {/* 📋 4. 全体共通情報（当番・お弁当・補食・連絡事項） */}
-                <div className="space-y-3 p-3.5 rounded-2xl bg-card border border-border/80 shadow-2xs">
+                <div className="space-y-3 p-3.5 rounded-2xl bg-muted/35 border border-border/60">
                   {/* お当番（グループ分けなし時） */}
                   {!hasGroups && (
                     <div>
@@ -2376,7 +2385,7 @@ export default function LiffSchedulePage() {
                             className={`py-1 text-center rounded-lg text-[11px] font-bold border transition-all active:scale-95 cursor-pointer ${
                               editingEvent.dutyGroup === dg
                                 ? "bg-primary text-primary-foreground border-primary font-black shadow-xs"
-                                : "bg-muted/40 border-border/70 text-muted-foreground hover:text-foreground"
+                                : "bg-card border-border/60 text-muted-foreground hover:text-foreground"
                             }`}
                           >
                             {dg}
@@ -2397,8 +2406,8 @@ export default function LiffSchedulePage() {
                           onClick={() => setEditingEvent({ ...editingEvent, needsLunch: true })}
                           className={`flex-1 py-1.5 rounded-xl text-[11px] font-bold border transition-all flex items-center justify-center gap-1 cursor-pointer ${
                             editingEvent.needsLunch === true
-                              ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/40 font-black"
-                              : "bg-muted/30 border-border/70 text-muted-foreground"
+                              ? "border-primary bg-primary/10 text-primary font-black"
+                              : "bg-card border-border/60 text-muted-foreground hover:text-foreground"
                           }`}
                         >
                           <Utensils className="w-3 h-3" />
@@ -2409,8 +2418,8 @@ export default function LiffSchedulePage() {
                           onClick={() => setEditingEvent({ ...editingEvent, needsLunch: false })}
                           className={`flex-1 py-1.5 rounded-xl text-[11px] font-bold border transition-all flex items-center justify-center gap-1 cursor-pointer ${
                             editingEvent.needsLunch !== true
-                              ? "bg-primary/15 text-primary border-primary/40 font-black"
-                              : "bg-muted/30 border-border/70 text-muted-foreground"
+                              ? "border-primary bg-primary/10 text-primary font-black"
+                              : "bg-card border-border/60 text-muted-foreground hover:text-foreground"
                           }`}
                         >
                           <span>不要</span>
@@ -2427,8 +2436,8 @@ export default function LiffSchedulePage() {
                           onClick={() => setEditingEvent({ ...editingEvent, needsSnack: true })}
                           className={`flex-1 py-1.5 rounded-xl text-[11px] font-bold border transition-all flex items-center justify-center gap-1 cursor-pointer ${
                             editingEvent.needsSnack === true
-                              ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/40 font-black"
-                              : "bg-muted/30 border-border/70 text-muted-foreground"
+                              ? "border-primary bg-primary/10 text-primary font-black"
+                              : "bg-card border-border/60 text-muted-foreground hover:text-foreground"
                           }`}
                         >
                           <span className="text-xs leading-none">🍌</span>
@@ -2439,8 +2448,8 @@ export default function LiffSchedulePage() {
                           onClick={() => setEditingEvent({ ...editingEvent, needsSnack: false })}
                           className={`flex-1 py-1.5 rounded-xl text-[11px] font-bold border transition-all flex items-center justify-center gap-1 cursor-pointer ${
                             editingEvent.needsSnack !== true
-                              ? "bg-primary/15 text-primary border-primary/40 font-black"
-                              : "bg-muted/30 border-border/70 text-muted-foreground"
+                              ? "border-primary bg-primary/10 text-primary font-black"
+                              : "bg-card border-border/60 text-muted-foreground hover:text-foreground"
                           }`}
                         >
                           <span>不要</span>
@@ -2457,18 +2466,18 @@ export default function LiffSchedulePage() {
                       value={editingEvent.memo || ""}
                       onChange={(e) => setEditingEvent({ ...editingEvent, memo: e.target.value })}
                       placeholder="ユニフォーム正装、スパイク持参、雨天時は7:00連絡など"
-                      className="w-full px-3 py-2 rounded-xl bg-muted/30 border border-border/80 text-xs font-bold text-foreground focus:outline-hidden focus:border-primary resize-none"
+                      className="w-full px-3 py-2 rounded-xl bg-card border border-border/60 text-xs font-bold text-foreground focus:outline-hidden focus:border-primary resize-none"
                     />
                   </div>
                 </div>
               </div>
 
               {/* モーダルフッター */}
-              <div className="px-5 py-3.5 pb-[max(env(safe-area-inset-bottom),24px)] sm:pb-3.5 border-t border-border/80 flex items-center justify-between bg-card shrink-0 gap-3 shadow-lg">
+              <div className="px-5 py-3.5 pb-[max(env(safe-area-inset-bottom),24px)] sm:pb-3.5 border-t border-border/60 flex items-center justify-between bg-card shrink-0 gap-3">
                 <button
                   type="button"
                   onClick={() => setEditingEvent(null)}
-                  className="py-2.5 px-4 rounded-xl text-xs font-bold text-muted-foreground hover:text-foreground hover:bg-muted active:scale-95 transition-all cursor-pointer"
+                  className="py-2.5 px-4 rounded-xl text-xs font-bold border border-border/60 bg-card text-muted-foreground hover:text-foreground hover:bg-muted active:scale-95 transition-all cursor-pointer"
                 >
                   キャンセル
                 </button>
@@ -2477,7 +2486,7 @@ export default function LiffSchedulePage() {
                   type="button"
                   onClick={handleSaveEventEdit}
                   disabled={isSavingEdit}
-                  className="py-2.5 px-6 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-black shadow-md transition-all active:scale-95 flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                  className="py-2.5 px-6 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-black shadow-xs transition-all active:scale-95 flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
                 >
                   <Save className="w-4 h-4" />
                   <span>{isSavingEdit ? "保存中..." : "予定を更新する"}</span>

@@ -96,12 +96,12 @@ export function JoinTeamModal({ isOpen, onClose, onSuccess }: JoinTeamModalProps
 
   return createPortal(
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-background/80 backdrop-blur-md overflow-y-auto animate-in fade-in duration-200">
-      <div className="w-full max-w-md bg-card rounded-3xl border border-border shadow-2xl p-5 sm:p-6 space-y-4 my-auto max-h-[88vh] overflow-y-auto animate-in zoom-in-95 duration-200">
+      <div className="w-full max-w-md bg-card rounded-2xl border border-border/60 shadow-2xl p-5 sm:p-6 space-y-4 my-auto max-h-[88vh] overflow-y-auto animate-in zoom-in-95 duration-200">
         
         {/* ヘッダー */}
         <div className="flex items-center justify-between pb-3 border-b border-border/50 sticky top-0 bg-card z-10">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-2xl bg-primary/10 text-primary flex items-center justify-center">
+            <div className="w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
               <UserPlus className="w-5 h-5" />
             </div>
             <div>
@@ -121,7 +121,7 @@ export function JoinTeamModal({ isOpen, onClose, onSuccess }: JoinTeamModalProps
         {/* 申請完了画面 */}
         {statusResult ? (
           <div className="py-4 space-y-4 text-center">
-            <div className="w-14 h-14 mx-auto rounded-3xl bg-amber-500/10 text-amber-500 flex items-center justify-center">
+            <div className="w-14 h-14 mx-auto rounded-2xl bg-primary/10 text-primary flex items-center justify-center">
               <Clock className="w-8 h-8 animate-pulse" />
             </div>
             <div className="space-y-1">
@@ -215,8 +215,8 @@ export function JoinTeamModal({ isOpen, onClose, onSuccess }: JoinTeamModalProps
               />
             </div>
 
-            <div className="p-3 rounded-2xl bg-muted/40 border border-border/50 text-[11px] text-muted-foreground font-bold flex items-start gap-2">
-              <Shield className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+            <div className="p-3 rounded-2xl bg-muted/40 border border-border/60 text-[11px] text-muted-foreground font-bold flex items-start gap-2">
+              <Shield className="w-4 h-4 text-primary shrink-0 mt-0.5" />
               <span>チーム管理者の承認完了後、予定や配車表などのチーム限定機能が解禁されます。</span>
             </div>
 

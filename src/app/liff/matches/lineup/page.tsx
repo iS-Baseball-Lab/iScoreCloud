@@ -987,7 +987,7 @@ function LiffLineupContent() {
             </Button>
           </div>
         ) : (
-          <section className="rounded-2xl bg-card border-2 border-primary/25 p-3.5 shadow-xs space-y-2.5">
+          <section className="rounded-2xl border border-border/60 bg-card p-3.5 shadow-xs space-y-2.5">
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5 mb-1 flex-wrap">
@@ -995,10 +995,10 @@ function LiffLineupContent() {
                     className={cn(
                       "text-[10px] font-black px-1.5 py-0.5 rounded border",
                       currentMatch?.matchType === "official"
-                        ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/25"
+                        ? "bg-primary/12 text-primary border-primary/25"
                         : currentMatch?.matchType === "exchange"
-                        ? "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/25"
-                        : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/25"
+                        ? "bg-primary/10 text-primary border-primary/20"
+                        : "bg-muted/50 text-muted-foreground border-border/60"
                     )}
                   >
                     {currentMatch?.matchType === "official"
@@ -1057,7 +1057,7 @@ function LiffLineupContent() {
                 <button
                   type="button"
                   onClick={() => setIsMatchPickerOpen((prev) => !prev)}
-                  className="px-2.5 py-1.5 rounded-xl bg-muted hover:bg-muted/80 border border-border text-[11px] font-black text-foreground flex items-center gap-1 shrink-0 active:scale-95 transition-all"
+                  className="px-2.5 py-1.5 rounded-xl bg-card hover:bg-muted border border-border/60 text-[11px] font-black text-foreground flex items-center gap-1 shrink-0 active:scale-95 transition-all"
                 >
                   <ArrowLeftRight className="w-3.5 h-3.5 text-primary" />
                   <span>試合切替</span>
@@ -1081,12 +1081,12 @@ function LiffLineupContent() {
                       className={cn(
                         "w-full flex items-center justify-between p-2.5 rounded-xl border text-left transition-all",
                         isCurrent
-                          ? "bg-primary/10 border-primary text-foreground"
-                          : "bg-background hover:bg-muted/50 border-border/60 text-foreground"
+                          ? "bg-primary/10 border-primary text-primary"
+                          : "bg-muted/35 hover:bg-muted/60 border-border/60 text-foreground"
                       )}
                     >
                       <div className="min-w-0 flex-1">
-                        <p className="text-xs font-black truncate">vs {m.opponent}</p>
+                        <p className="text-xs font-black truncate text-foreground">vs {m.opponent}</p>
                         <p className="text-[10px] font-bold text-muted-foreground truncate">
                           {m.date} {m.venueShortName || m.venueName ? `• ${m.venueShortName || m.venueName}` : ""}
                         </p>
@@ -1097,7 +1097,7 @@ function LiffLineupContent() {
                           m.status === "scheduled"
                             ? "bg-primary/15 text-primary"
                             : m.status === "live"
-                            ? "bg-rose-500/15 text-rose-600"
+                            ? "bg-rose-600 text-white"
                             : "bg-muted text-muted-foreground"
                         )}
                       >
@@ -1122,7 +1122,7 @@ function LiffLineupContent() {
             {currentMatch &&
               currentMatch.status === "finished" &&
               !isDemoMatchId(currentMatch.id) && (
-                <div className="p-3 rounded-2xl bg-card border border-indigo-500/40 shadow-2xs flex items-center justify-between gap-2 flex-wrap">
+                <div className="p-3.5 rounded-2xl border border-border/60 bg-card shadow-xs flex items-center justify-between gap-2 flex-wrap">
                   <div className="min-w-0">
                     <p className="text-xs font-black text-foreground">
                       試合途中の「選手交代・代打・代走・継投」を追加・修正したい場合
@@ -1135,7 +1135,7 @@ function LiffLineupContent() {
                     href={`/liff/tools/scorebook-import?matchId=${encodeURIComponent(
                       currentMatch.id
                     )}&mode=edit`}
-                    className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black inline-flex items-center gap-1.5 shrink-0"
+                    className="px-3 py-2 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-[11px] font-black inline-flex items-center gap-1.5 shrink-0"
                   >
                     <Users className="w-3.5 h-3.5" />
                     <span>選手交代・打席を編集</span>
@@ -1146,7 +1146,7 @@ function LiffLineupContent() {
             {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                 🔀 自チーム / 相手チーム タブ切り替え（Web版流用）
             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-            <div className="flex bg-muted/60 p-1 rounded-2xl border border-border">
+            <div className="flex bg-muted/50 p-1 rounded-2xl border border-border/60">
               <button
                 type="button"
                 onClick={() => setActiveTab("myTeam")}
@@ -1166,7 +1166,7 @@ function LiffLineupContent() {
                 className={cn(
                   "flex-1 py-2.5 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer",
                   activeTab === "opponent"
-                    ? "bg-rose-600 text-white shadow-xs"
+                    ? "bg-primary text-primary-foreground shadow-xs"
                     : "text-muted-foreground hover:text-foreground"
                 )}
               >
@@ -1184,7 +1184,7 @@ function LiffLineupContent() {
                     <select
                       value={selectedTemplateId}
                       onChange={handleLoadTemplate}
-                      className="w-full h-11 bg-card border-2 border-border rounded-2xl pl-9 pr-8 text-xs font-black text-foreground focus:outline-none focus:border-primary appearance-none cursor-pointer"
+                      className="w-full h-11 rounded-2xl border border-border/60 bg-card shadow-xs pl-9 pr-8 text-xs font-black text-foreground focus:outline-none focus:border-primary appearance-none cursor-pointer"
                     >
                       <option value="">テンプレート読込</option>
                       {templates.map((t) => (
@@ -1199,7 +1199,7 @@ function LiffLineupContent() {
                     type="button"
                     variant="outline"
                     onClick={() => setIsTemplateModalOpen(true)}
-                    className="h-11 rounded-2xl border-2 border-primary/25 bg-card text-primary font-black px-4 text-xs"
+                    className="h-11 rounded-2xl border border-primary/25 bg-primary/10 hover:bg-primary/15 text-primary font-black px-4 text-xs shadow-xs"
                   >
                     <Save className="w-4 h-4 mr-1.5" />
                     テンプレ保存
@@ -1210,7 +1210,7 @@ function LiffLineupContent() {
                   type="button"
                   onClick={handleFillDummyOpponent}
                   variant="outline"
-                  className="w-full h-11 rounded-2xl border-2 border-rose-500/30 bg-card text-rose-600 dark:text-rose-400 font-black text-xs"
+                  className="w-full h-11 rounded-2xl border border-primary/25 bg-primary/10 hover:bg-primary/15 text-primary font-black text-xs shadow-xs"
                 >
                   <Wand2 className="w-4 h-4 mr-1.5" />
                   相手スタメンを一括生成
@@ -1251,10 +1251,10 @@ function LiffLineupContent() {
                     <div
                       key={index}
                       className={cn(
-                        "flex items-center gap-2 p-2 rounded-2xl transition-all",
+                        "flex items-center gap-2 p-2 rounded-2xl bg-card shadow-xs transition-all",
                         isCompleted
-                          ? "bg-card border-2 border-primary/35 shadow-xs"
-                          : "bg-card border-2 border-border border-dashed"
+                          ? "border border-border/60"
+                          : "border border-dashed border-border/60"
                       )}
                     >
                       <div
@@ -1301,7 +1301,7 @@ function LiffLineupContent() {
                                 {posDef.label}
                               </span>
                             ) : (
-                              <span className="px-2 py-1 rounded-lg bg-muted text-muted-foreground font-black text-[10px] shrink-0 border border-border">
+                              <span className="px-2 py-1 rounded-lg bg-muted text-muted-foreground font-black text-[10px] shrink-0 border border-border/60">
                                 守備未設定
                               </span>
                             )}
@@ -1338,7 +1338,7 @@ function LiffLineupContent() {
                               "w-16 h-11 rounded-xl font-black text-xs appearance-none text-center shadow-2xs cursor-pointer shrink-0",
                               posDef
                                 ? `${posDef.color} text-white`
-                                : "bg-muted text-foreground border border-border"
+                                : "bg-muted text-foreground border border-border/60"
                             )}
                           >
                             <option value="">守備</option>
@@ -1394,7 +1394,7 @@ function LiffLineupContent() {
                 type="button"
                 variant="outline"
                 onClick={() => handleAddBatter(activeTab)}
-                className="w-full h-11 rounded-2xl border-2 border-dashed border-primary/35 bg-card text-primary font-black text-xs flex items-center justify-center gap-1.5 hover:bg-primary/5 active:scale-[0.98] transition-all cursor-pointer"
+                className="w-full h-11 rounded-2xl border border-dashed border-primary/35 bg-card text-primary font-black text-xs flex items-center justify-center gap-1.5 hover:bg-primary/5 active:scale-[0.98] transition-all cursor-pointer shadow-xs"
               >
                 <Plus className="w-4 h-4" />
                 <span>打順（バッター）を追加（全員打撃対応）</span>
@@ -1405,17 +1405,17 @@ function LiffLineupContent() {
                 👥 【セクション2】ベンチ（控え）・欠席メンバー
             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
             {activeTab === "myTeam" && (
-              <section className="space-y-3 pt-4 border-t-2 border-border/60 border-dashed">
+              <section className="space-y-3 pt-4 border-t border-border/60 border-dashed">
                 <div className="flex items-center justify-between px-1">
                   <h3 className="text-xs font-black text-foreground flex items-center gap-1.5">
-                    <Users className="w-4 h-4 text-muted-foreground" />
+                    <Users className="w-4 h-4 text-primary" />
                     <span>ベンチ（控え）・欠席メンバー</span>
                   </h3>
                   <div className="flex gap-1.5">
-                    <span className="text-[10px] font-black bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded-full">
+                    <span className="text-[10px] font-black bg-primary/10 text-primary border border-primary/25 px-2 py-0.5 rounded-full">
                       控え: {benchCount}人
                     </span>
-                    <span className="text-[10px] font-black bg-rose-500/15 text-rose-700 dark:text-rose-300 px-2 py-0.5 rounded-full">
+                    <span className="text-[10px] font-black bg-muted/50 text-muted-foreground border border-border/60 px-2 py-0.5 rounded-full">
                       欠席: {absentCount}人
                     </span>
                   </div>
@@ -1428,7 +1428,7 @@ function LiffLineupContent() {
                     description="チームに選手名簿が登録されると、スタメン・控え・欠席の振り分けが行えます"
                   />
                 ) : remainingPlayers.length === 0 ? (
-                  <div className="text-center py-6 bg-card rounded-2xl border border-border">
+                  <div className="text-center py-6 bg-card rounded-2xl border border-border/60 shadow-xs">
                     <p className="text-xs font-black text-muted-foreground">
                       全選手がスタメンに登録されています
                     </p>
@@ -1444,10 +1444,8 @@ function LiffLineupContent() {
                         <div
                           key={player.id}
                           className={cn(
-                            "flex items-center justify-between p-2.5 pl-3.5 rounded-2xl transition-all",
-                            isAbsent
-                              ? "bg-card border-2 border-rose-500/30 shadow-2xs"
-                              : "bg-card border-2 border-border"
+                            "flex items-center justify-between p-2.5 pl-3.5 rounded-2xl border border-border/60 shadow-xs transition-all",
+                            isAbsent ? "bg-muted/35" : "bg-card"
                           )}
                         >
                           <div className="flex items-center gap-2.5 min-w-0 mr-2">
@@ -1455,7 +1453,7 @@ function LiffLineupContent() {
                               className={cn(
                                 "text-xs font-black min-w-[24px] text-center px-1 py-0.5 rounded-md shrink-0",
                                 isAbsent
-                                  ? "bg-rose-500/10 text-rose-600/70 dark:text-rose-400/70"
+                                  ? "bg-muted text-muted-foreground"
                                   : "bg-primary/10 text-primary"
                               )}
                             >
@@ -1466,14 +1464,14 @@ function LiffLineupContent() {
                                 className={cn(
                                   "text-sm font-black block truncate",
                                   isAbsent
-                                    ? "text-rose-600/70 dark:text-rose-400/70 line-through"
+                                    ? "text-muted-foreground line-through"
                                     : "text-foreground"
                                 )}
                               >
                                 {player.name}
                               </span>
                               {isLockedBySchedule && (
-                                <span className="text-[9.5px] font-bold text-rose-600 dark:text-rose-400 block">
+                                <span className="text-[9.5px] font-bold text-muted-foreground block">
                                   ※出欠表で欠席登録済
                                 </span>
                               )}
@@ -1481,7 +1479,7 @@ function LiffLineupContent() {
                           </div>
 
                           {/* 控え / 欠席 セグメントトグル */}
-                          <div className="flex bg-muted p-1 rounded-xl w-[136px] shrink-0 border border-border/60">
+                          <div className="flex bg-muted/50 p-1 rounded-xl w-[136px] shrink-0 border border-border/60">
                             <button
                               type="button"
                               onClick={() => {
@@ -1495,7 +1493,7 @@ function LiffLineupContent() {
                               className={cn(
                                 "flex-1 flex items-center justify-center py-1.5 rounded-lg text-[11px] font-black transition-all cursor-pointer",
                                 status === "bench"
-                                  ? "bg-card text-emerald-600 dark:text-emerald-400 shadow-xs"
+                                  ? "bg-card text-primary shadow-xs"
                                   : "text-muted-foreground hover:text-foreground",
                                 isLockedBySchedule && "opacity-45 cursor-not-allowed"
                               )}
@@ -1511,7 +1509,7 @@ function LiffLineupContent() {
                               className={cn(
                                 "flex-1 flex items-center justify-center py-1.5 rounded-lg text-[11px] font-black transition-all cursor-pointer",
                                 status === "absent"
-                                  ? "bg-card text-rose-600 dark:text-rose-400 shadow-xs"
+                                  ? "bg-card text-foreground shadow-xs"
                                   : "text-muted-foreground hover:text-foreground"
                               )}
                             >
@@ -1554,11 +1552,11 @@ function LiffLineupContent() {
                 type="button"
                 variant="outline"
                 onClick={handleCopyLineupText}
-                className="w-full h-11 rounded-2xl border-border bg-card font-black text-xs text-foreground hover:bg-muted gap-1.5"
+                className="w-full h-11 rounded-2xl border-border/60 bg-card font-black text-xs text-foreground hover:bg-muted gap-1.5 shadow-xs"
               >
                 {isCopied ? (
                   <>
-                    <Check className="w-4 h-4 text-emerald-600" />
+                    <Check className="w-4 h-4 text-primary" />
                     <span>メンバー表をコピーしました！</span>
                   </>
                 ) : (
@@ -1584,7 +1582,7 @@ function LiffLineupContent() {
           onClick={() => setIsTemplateModalOpen(false)}
         >
           <div
-            className="bg-card w-full max-w-sm rounded-3xl border-2 border-border p-6 shadow-2xl space-y-4"
+            className="bg-card w-full max-w-sm rounded-2xl border border-border/60 p-6 shadow-xs space-y-4"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between">
@@ -1605,7 +1603,7 @@ function LiffLineupContent() {
 
             <Input
               placeholder="例：Aチーム 基本オーダー"
-              className="h-12 rounded-2xl bg-muted/50 border-border font-bold text-sm"
+              className="h-12 rounded-2xl bg-muted/50 border-border/60 font-bold text-sm"
               value={templateName}
               onChange={(e) => setTemplateName(e.target.value)}
             />
@@ -1615,14 +1613,14 @@ function LiffLineupContent() {
                 type="button"
                 variant="outline"
                 onClick={() => setIsTemplateModalOpen(false)}
-                className="flex-1 h-12 rounded-2xl font-black"
+                className="flex-1 h-12 rounded-2xl border-border/60 font-black"
               >
                 キャンセル
               </Button>
               <Button
                 type="button"
                 onClick={handleSaveTemplate}
-                className="flex-1 h-12 rounded-2xl font-black shadow-sm"
+                className="flex-1 h-12 rounded-2xl font-black shadow-xs"
               >
                 保存する
               </Button>
@@ -1643,11 +1641,11 @@ function LiffLineupContent() {
           }}
         >
           <div
-            className="bg-card w-full max-w-md rounded-3xl border-2 border-border p-5 shadow-2xl flex flex-col max-h-[82vh] animate-in zoom-in-95 duration-150"
+            className="bg-card w-full max-w-md rounded-2xl border border-border/60 p-5 shadow-xs flex flex-col max-h-[82vh] animate-in zoom-in-95 duration-150"
             onClick={(e) => e.stopPropagation()}
           >
             {/* モーダルヘッダー */}
-            <div className="flex items-center justify-between pb-3 border-b border-border">
+            <div className="flex items-center justify-between pb-3 border-b border-border/60">
               <div>
                 <h3 className="text-base font-black text-foreground">
                   {modalStep === "player" ? "選手を選択" : "守備位置を選択"}
@@ -1680,7 +1678,7 @@ function LiffLineupContent() {
                     placeholder="選手名または背番号で検索..."
                     value={playerSearchQuery}
                     onChange={(e) => setPlayerSearchQuery(e.target.value)}
-                    className="h-11 rounded-xl bg-muted/50 border-border font-bold pl-3.5 pr-12 text-sm"
+                    className="h-11 rounded-xl bg-muted/50 border-border/60 font-bold pl-3.5 pr-12 text-sm"
                   />
                   {playerSearchQuery && (
                     <button
@@ -1711,7 +1709,7 @@ function LiffLineupContent() {
                       setTempSelectedPlayer(null);
                       toast.success(`${activeSelectionIndex + 1}番の選択を解除しました`);
                     }}
-                    className="w-full flex items-center justify-center gap-2 p-2.5 rounded-xl border border-dashed border-border text-xs font-black text-muted-foreground hover:bg-muted/40 hover:text-foreground transition-all cursor-pointer"
+                    className="w-full flex items-center justify-center gap-2 p-2.5 rounded-xl border border-dashed border-border/60 text-xs font-black text-muted-foreground hover:bg-muted/40 hover:text-foreground transition-all cursor-pointer"
                   >
                     選択をクリアする（空欄にする）
                   </button>
@@ -1752,11 +1750,11 @@ function LiffLineupContent() {
                             setModalStep("position");
                           }}
                           className={cn(
-                            "w-full flex items-center justify-between p-3 rounded-xl border-2 transition-all text-left cursor-pointer",
+                            "w-full flex items-center justify-between p-3 rounded-xl border transition-all text-left cursor-pointer",
                             myLineup[activeSelectionIndex].playerId === p.id
                               ? "bg-primary/10 border-primary text-primary"
-                              : "bg-card hover:bg-muted/40 border-border",
-                            isDisabled && "opacity-45 cursor-not-allowed bg-muted/30 hover:bg-muted/30"
+                              : "bg-card hover:bg-muted/40 border-border/60",
+                            isDisabled && "opacity-45 cursor-not-allowed bg-muted/35 hover:bg-muted/35"
                           )}
                         >
                           <div className="flex items-center gap-2.5 min-w-0">
@@ -1775,12 +1773,12 @@ function LiffLineupContent() {
                               </span>
                             )}
                             {isAbsent && (
-                              <span className="text-[10px] font-black bg-rose-500/15 text-rose-600 dark:text-rose-400 px-2 py-0.5 rounded-md">
+                              <span className="text-[10px] font-black bg-muted text-muted-foreground px-2 py-0.5 rounded-md">
                                 欠席
                               </span>
                             )}
                             {!isAlreadySelected && !isAbsent && (
-                              <span className="text-[10px] font-black bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 px-2 py-0.5 rounded-md">
+                              <span className="text-[10px] font-black bg-primary/10 text-primary px-2 py-0.5 rounded-md">
                                 起用可能
                               </span>
                             )}
@@ -1837,11 +1835,11 @@ function LiffLineupContent() {
                             );
                           }}
                           className={cn(
-                            "h-12 rounded-2xl font-black text-xs text-white transition-all flex items-center justify-center shadow-sm relative cursor-pointer active:scale-95",
+                            "h-12 rounded-2xl font-black text-xs text-white transition-all flex items-center justify-center shadow-xs relative cursor-pointer active:scale-95",
                             pos.color,
                             isCurrentPos && "ring-4 ring-primary/40",
                             isPosDisabled &&
-                              "opacity-30 cursor-not-allowed bg-zinc-400 dark:bg-zinc-800 text-zinc-500 shadow-none"
+                              "opacity-35 cursor-not-allowed bg-muted text-muted-foreground shadow-none"
                           )}
                         >
                           <span>{pos.label}</span>
@@ -1872,9 +1870,9 @@ function LiffLineupContent() {
           <form
             onSubmit={handleCreateMatch}
             onClick={(e) => e.stopPropagation()}
-            className="bg-card w-full max-w-md rounded-3xl border-2 border-border p-5 shadow-2xl space-y-3.5 max-h-[85vh] overflow-y-auto"
+            className="bg-card w-full max-w-md rounded-2xl border border-border/60 p-5 shadow-xs space-y-3.5 max-h-[85vh] overflow-y-auto"
           >
-            <div className="flex items-center justify-between pb-2 border-b border-border">
+            <div className="flex items-center justify-between pb-2 border-b border-border/60">
               <div>
                 <h3 className="text-base font-black text-foreground">新しい試合予定を作成</h3>
                 <p className="text-[11px] font-bold text-muted-foreground">
@@ -1897,7 +1895,7 @@ function LiffLineupContent() {
                 placeholder="例：ブルーサンダース"
                 value={newOpponent}
                 onChange={(e) => setNewOpponent(e.target.value)}
-                className="h-11 rounded-xl bg-muted/40 border-border font-bold text-sm"
+                className="h-11 rounded-xl bg-muted/50 border-border/60 font-bold text-sm"
               />
             </div>
 
@@ -1909,7 +1907,7 @@ function LiffLineupContent() {
                   required
                   value={newDate}
                   onChange={(e) => setNewDate(e.target.value)}
-                  className="h-11 rounded-xl bg-muted/40 border-border font-bold text-xs"
+                  className="h-11 rounded-xl bg-muted/50 border-border/60 font-bold text-xs"
                 />
               </div>
               <div className="space-y-1">
@@ -1918,7 +1916,7 @@ function LiffLineupContent() {
                   type="time"
                   value={newTime}
                   onChange={(e) => setNewTime(e.target.value)}
-                  className="h-11 rounded-xl bg-muted/40 border-border font-bold text-xs"
+                  className="h-11 rounded-xl bg-muted/50 border-border/60 font-bold text-xs"
                 />
               </div>
             </div>
@@ -1941,7 +1939,7 @@ function LiffLineupContent() {
                       "py-2 rounded-xl text-xs font-black border transition-all cursor-pointer",
                       newMatchType === item.id
                         ? "bg-primary text-primary-foreground border-primary"
-                        : "bg-muted/40 text-muted-foreground border-border"
+                        : "bg-muted/50 text-muted-foreground border-border/60"
                     )}
                   >
                     {item.label}
@@ -1957,7 +1955,7 @@ function LiffLineupContent() {
                   placeholder="例：秋季大会 2回戦"
                   value={newTournamentName}
                   onChange={(e) => setNewTournamentName(e.target.value)}
-                  className="h-11 rounded-xl bg-muted/40 border-border font-bold text-sm"
+                  className="h-11 rounded-xl bg-muted/50 border-border/60 font-bold text-sm"
                 />
               </div>
             )}
@@ -1972,7 +1970,7 @@ function LiffLineupContent() {
                     "py-2 rounded-xl text-xs font-black border transition-all cursor-pointer",
                     newBattingOrder === "first"
                       ? "bg-primary text-primary-foreground border-primary"
-                      : "bg-muted/40 text-muted-foreground border-border"
+                      : "bg-muted/50 text-muted-foreground border-border/60"
                   )}
                 >
                   先攻（表）
@@ -1984,7 +1982,7 @@ function LiffLineupContent() {
                     "py-2 rounded-xl text-xs font-black border transition-all cursor-pointer",
                     newBattingOrder === "second"
                       ? "bg-primary text-primary-foreground border-primary"
-                      : "bg-muted/40 text-muted-foreground border-border"
+                      : "bg-muted/50 text-muted-foreground border-border/60"
                   )}
                 >
                   後攻（裏）
@@ -1998,7 +1996,7 @@ function LiffLineupContent() {
                 placeholder="例：多摩川緑地野球場"
                 value={newVenue}
                 onChange={(e) => setNewVenue(e.target.value)}
-                className="h-11 rounded-xl bg-muted/40 border-border font-bold text-sm"
+                className="h-11 rounded-xl bg-muted/50 border-border/60 font-bold text-sm"
               />
             </div>
 
@@ -2007,7 +2005,7 @@ function LiffLineupContent() {
                 type="button"
                 variant="outline"
                 onClick={() => setIsCreateMatchModalOpen(false)}
-                className="flex-1 h-12 rounded-2xl font-black"
+                className="flex-1 h-12 rounded-2xl border-border/60 font-black"
               >
                 キャンセル
               </Button>

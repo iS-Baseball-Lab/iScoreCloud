@@ -8,7 +8,7 @@ import { ShieldCheck, Lock, Fingerprint, Eye, Share2, UserCheck } from "lucide-r
 
 export default function LiffPrivacyPage() {
   const styles = {
-    card: "p-4 rounded-3xl bg-card border-2 border-primary/20 shadow-xs space-y-3",
+    card: "p-4 rounded-2xl border border-border/60 bg-card shadow-xs space-y-3",
     h3: "text-sm font-black text-foreground flex items-center gap-2",
     p: "text-xs leading-relaxed text-muted-foreground",
     li: "text-xs leading-relaxed text-muted-foreground flex items-start gap-2",
@@ -24,7 +24,7 @@ export default function LiffPrivacyPage() {
           title="プライバシーポリシー"
           subtitle="個人情報の取扱いと保護方針"
           icon={
-            <span className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-black">
+            <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
               <ShieldCheck className="w-4 h-4" />
             </span>
           }
@@ -32,7 +32,7 @@ export default function LiffPrivacyPage() {
         />
 
         {/* 前文 */}
-        <div className="p-3.5 rounded-2xl bg-primary/5 border border-primary/20 space-y-2">
+        <div className="p-4 rounded-2xl border border-border/60 bg-card shadow-xs space-y-2">
           <div className="flex items-center gap-2 text-xs font-black text-primary">
             <Lock className="w-4 h-4" />
             <span>個人情報保護への取り組み</span>
@@ -109,7 +109,7 @@ export default function LiffPrivacyPage() {
           <p className={styles.p}>
             通信の暗号化（SSL/TLS）など適切なセキュリティ対策を講じています。保有個人データの開示・訂正・利用停止・削除等のご請求およびお問い合わせは、下記窓口までご連絡ください。
           </p>
-          <div className="p-3 rounded-2xl bg-muted/50 border border-border/50 space-y-1.5 text-xs">
+          <div className="p-3 rounded-xl bg-muted/35 border border-border/60 space-y-1.5 text-xs">
             <div className="font-bold text-foreground">
               運営者: iS Baseball Lab（iScoreCloud 運営事務局）
             </div>
@@ -120,7 +120,7 @@ export default function LiffPrivacyPage() {
               </a>
             </div>
           </div>
-          <div className="pt-2 border-t border-border/40 text-[10px] font-bold text-muted-foreground flex justify-between">
+          <div className="pt-2 border-t border-border/60 text-[10px] font-bold text-muted-foreground flex justify-between">
             <span>制定: 2026年4月1日</span>
             <span>改訂: 2026年10月14日</span>
           </div>

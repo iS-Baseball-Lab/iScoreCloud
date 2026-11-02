@@ -417,15 +417,15 @@ export default function LiffAdminDashboardPage() {
 
         {/* 🔒 権限エラー表示（IT管理者・監督でない場合） */}
         {!isLoading && !isAuthorized && (
-          <div className="p-6 rounded-2xl bg-card border-2 border-rose-500/20 text-center space-y-3">
-            <Lock className="w-10 h-10 text-rose-500 mx-auto" />
+          <div className="p-6 rounded-2xl border border-border/60 bg-card shadow-xs text-center space-y-3">
+            <Lock className="w-10 h-10 text-rose-600 mx-auto" />
             <h3 className="text-base font-black text-foreground">権限がありません</h3>
             <p className="text-xs text-muted-foreground font-bold">
               この画面はチームの「IT管理者」または「監督・代表」に指定されたメンバーのみ利用可能です。
             </p>
             <Link
               href="/liff"
-              className="inline-block mt-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-black"
+              className="inline-block mt-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-black"
             >
               チームHUBへ戻る
             </Link>
@@ -435,7 +435,7 @@ export default function LiffAdminDashboardPage() {
         {isAuthorized && (
           <>
             {/* 🧢 チーム＆権限ステータスサマリー */}
-            <div className="p-3.5 rounded-2xl bg-gradient-to-r from-primary/10 via-primary/5 to-transparent border border-primary/20 flex items-center justify-between">
+            <div className="p-3.5 rounded-2xl border border-border/60 bg-card shadow-xs flex items-center justify-between">
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5 mb-0.5">
                   <ShieldCheck className="w-4 h-4 text-primary shrink-0" />
@@ -449,13 +449,13 @@ export default function LiffAdminDashboardPage() {
               </div>
 
               <div className="flex items-center gap-2 shrink-0 text-right">
-                <div className="px-2.5 py-1 rounded-xl bg-card border border-border shadow-2xs">
+                <div className="px-2.5 py-1 rounded-xl bg-muted/35 border border-border/60">
                   <span className="text-[9px] font-bold text-muted-foreground block">未承認</span>
-                  <span className={cn("text-xs font-black", pendingCount > 0 ? "text-orange-500 animate-pulse" : "text-foreground")}>
+                  <span className={cn("text-xs font-black", pendingCount > 0 ? "text-primary animate-pulse" : "text-foreground")}>
                     {pendingCount}件
                   </span>
                 </div>
-                <div className="px-2.5 py-1 rounded-xl bg-card border border-border shadow-2xs">
+                <div className="px-2.5 py-1 rounded-xl bg-muted/35 border border-border/60">
                   <span className="text-[9px] font-bold text-muted-foreground block">総メンバー</span>
                   <span className="text-xs font-black text-foreground">
                     {data?.stats?.activeCount || 0}名
@@ -465,21 +465,21 @@ export default function LiffAdminDashboardPage() {
             </div>
 
             {/* 🌟 セグメントタブ切り替え */}
-            <div className="flex items-center p-1 bg-muted/60 backdrop-blur-md rounded-2xl border border-border shadow-2xs">
+            <div className="flex items-center p-1 bg-muted rounded-2xl border border-border/60">
               <button
                 type="button"
                 onClick={() => setActiveTab("requests")}
                 className={cn(
                   "flex-1 flex items-center justify-center gap-1.5 py-2 px-1 rounded-xl text-xs font-black transition-all cursor-pointer",
                   activeTab === "requests"
-                    ? "bg-card text-foreground shadow-xs ring-1 ring-border"
+                    ? "bg-card text-primary shadow-xs"
                     : "text-muted-foreground hover:text-foreground"
                 )}
               >
                 <UserCheck className="w-3.5 h-3.5" />
                 <span>参加承認</span>
                 {pendingCount > 0 && (
-                  <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-orange-500 text-white text-[10px] font-black animate-pulse">
+                  <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-primary text-primary-foreground text-[10px] font-black animate-pulse">
                     {pendingCount}
                   </span>
                 )}
@@ -491,7 +491,7 @@ export default function LiffAdminDashboardPage() {
                 className={cn(
                   "flex-1 flex items-center justify-center gap-1.5 py-2 px-1 rounded-xl text-xs font-black transition-all cursor-pointer",
                   activeTab === "members"
-                    ? "bg-card text-foreground shadow-xs ring-1 ring-border"
+                    ? "bg-card text-primary shadow-xs"
                     : "text-muted-foreground hover:text-foreground"
                 )}
               >
@@ -505,7 +505,7 @@ export default function LiffAdminDashboardPage() {
                 className={cn(
                   "flex-1 flex items-center justify-center gap-1.5 py-2 px-1 rounded-xl text-xs font-black transition-all cursor-pointer",
                   activeTab === "invite"
-                    ? "bg-card text-foreground shadow-xs ring-1 ring-border"
+                    ? "bg-card text-primary shadow-xs"
                     : "text-muted-foreground hover:text-foreground"
                 )}
               >
@@ -530,12 +530,12 @@ export default function LiffAdminDashboardPage() {
                 </div>
 
                 {isLoading ? (
-                  <div className="p-8 text-center text-xs font-bold text-muted-foreground">
+                  <div className="p-8 rounded-2xl border border-border/60 bg-card shadow-xs text-center text-xs font-bold text-muted-foreground">
                     申請データを読み込み中...
                   </div>
                 ) : pendingCount === 0 ? (
-                  <div className="p-8 rounded-2xl bg-card border border-border/60 text-center space-y-2">
-                    <Check className="w-8 h-8 text-emerald-500 mx-auto" />
+                  <div className="p-8 rounded-2xl border border-border/60 bg-card shadow-xs text-center space-y-2">
+                    <Check className="w-8 h-8 text-primary mx-auto" />
                     <p className="text-xs font-black text-foreground">承認待ちの申請はありません</p>
                     <p className="text-[11px] text-muted-foreground font-medium">
                       新しい保護者や指導者が招待コードを入力すると、ここに申請が届きます
@@ -546,12 +546,12 @@ export default function LiffAdminDashboardPage() {
                     {data?.pendingRequests?.map((req) => (
                       <div
                         key={req.memberId}
-                        className="p-3.5 rounded-2xl bg-card border-2 border-orange-500/25 shadow-xs space-y-3"
+                        className="p-3.5 rounded-2xl border border-border/60 bg-card shadow-xs space-y-3"
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
                             <div className="flex items-center gap-1.5 mb-1">
-                              <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-orange-500/15 text-orange-600 dark:text-orange-400 border border-orange-500/30">
+                              <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/25">
                                 {req.memberType === "father" ? "父" : req.memberType === "mother" ? "母" : req.memberType === "staff" ? "指導・スタッフ" : "保護者"}
                               </span>
                               <span className="text-[10px] font-bold text-muted-foreground flex items-center gap-0.5">
@@ -572,7 +572,7 @@ export default function LiffAdminDashboardPage() {
 
                         {/* 連絡先情報 */}
                         {(req.phone || req.email) && (
-                          <div className="p-2 rounded-xl bg-muted/40 border border-border/40 text-[11px] space-y-1">
+                          <div className="p-2 rounded-xl bg-muted/35 border border-border/60 text-[11px] space-y-1">
                             {req.phone && (
                               <div className="flex items-center gap-1.5 text-muted-foreground">
                                 <Phone className="w-3 h-3 shrink-0" />
@@ -591,12 +591,12 @@ export default function LiffAdminDashboardPage() {
                         )}
 
                         {/* 操作ボタン */}
-                        <div className="flex items-center gap-2 pt-1 border-t border-border/40">
+                        <div className="flex items-center gap-2 pt-1 border-t border-border/60">
                           <Button
                             type="button"
                             size="sm"
                             onClick={() => handleRequestAction(req.memberId, "approve")}
-                            className="flex-1 h-9 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-xs gap-1"
+                            className="flex-1 h-9 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 font-black text-xs shadow-xs gap-1"
                           >
                             <Check className="w-4 h-4" />
                             <span>承認する</span>
@@ -610,7 +610,7 @@ export default function LiffAdminDashboardPage() {
                                 handleRequestAction(req.memberId, "reject");
                               }
                             }}
-                            className="h-9 px-3 rounded-xl border-rose-200 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/20 font-bold text-xs"
+                            className="h-9 px-3 rounded-xl border-rose-200 dark:border-rose-900/50 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/20 font-bold text-xs"
                           >
                             <X className="w-4 h-4 mr-0.5" />
                             <span>却下</span>
@@ -637,7 +637,7 @@ export default function LiffAdminDashboardPage() {
                       placeholder="名前・班（例: 山田, 1班）で絞り込み"
                       value={memberSearch}
                       onChange={(e) => setMemberSearch(e.target.value)}
-                      className="pl-9 h-10 rounded-xl text-xs font-bold bg-card border-border"
+                      className="pl-9 h-10 rounded-xl text-xs font-bold bg-card border-border/60 shadow-xs"
                     />
                     {memberSearch && (
                       <button
@@ -659,8 +659,8 @@ export default function LiffAdminDashboardPage() {
                         className={cn(
                           "px-3 py-1.5 rounded-xl font-black text-[11px] transition-all cursor-pointer",
                           memberFilter === t
-                            ? "bg-primary text-primary-foreground shadow-2xs"
-                            : "bg-card text-muted-foreground border border-border hover:text-foreground"
+                            ? "bg-primary text-primary-foreground shadow-xs"
+                            : "bg-card text-muted-foreground border border-border/60 hover:bg-muted hover:text-foreground"
                         )}
                       >
                         {t === "all" ? "全員" : t === "staff" ? "指導・スタッフ" : "保護者"}
@@ -678,7 +678,7 @@ export default function LiffAdminDashboardPage() {
                       variant="outline"
                       size="sm"
                       onClick={() => handleOpenMergeModal()}
-                      className="h-7 px-2.5 rounded-xl text-[11px] font-black border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 bg-indigo-50/50 dark:bg-indigo-950/20 hover:bg-indigo-100 flex items-center gap-1 shadow-2xs"
+                      className="h-7 px-2.5 rounded-xl text-[11px] font-black border-primary/25 text-primary bg-primary/10 hover:bg-primary/15 flex items-center gap-1 shadow-xs"
                     >
                       <GitMerge className="w-3 h-3" />
                       <span>メンバー統合</span>
@@ -689,32 +689,32 @@ export default function LiffAdminDashboardPage() {
                 {/* メンバー一覧 */}
                 <div className="space-y-2">
                   {filteredActiveMembers.length === 0 ? (
-                    <div className="p-8 text-center text-xs font-bold text-muted-foreground bg-card rounded-2xl border border-border">
+                    <div className="p-8 text-center text-xs font-bold text-muted-foreground rounded-2xl border border-border/60 bg-card shadow-xs">
                       一致するメンバーが見つかりません
                     </div>
                   ) : (
                     filteredActiveMembers.map((member) => (
                       <div
                         key={member.memberId}
-                        className="p-3 rounded-2xl bg-card border border-border shadow-2xs flex items-center justify-between gap-2"
+                        className="p-3 rounded-2xl border border-border/60 bg-card shadow-xs flex items-center justify-between gap-2"
                       >
                         <div className="min-w-0">
                           <div className="flex items-center gap-1.5 mb-1 flex-wrap">
-                            <span className="text-[10px] font-black px-1.5 py-0.2 rounded bg-muted text-muted-foreground border border-border">
+                            <span className="text-[10px] font-black px-1.5 py-0.2 rounded bg-muted/50 text-muted-foreground border border-border/60">
                               {ROLE_OPTIONS.find((r) => r.id === member.role)?.label || member.role}
                             </span>
                             {member.userId ? (
-                              <span className="text-[10px] font-black px-1.5 py-0.2 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 flex items-center gap-0.5">
+                              <span className="text-[10px] font-black px-1.5 py-0.2 rounded bg-primary/10 text-primary border border-primary/25 flex items-center gap-0.5">
                                 <UserCheck className="w-2.5 h-2.5" />
                                 <span>連携済</span>
                               </span>
                             ) : (
-                              <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-slate-500/10 text-slate-500 dark:text-slate-400 border border-slate-500/20">
+                              <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-muted/50 text-muted-foreground border border-border/60">
                                 手動名簿
                               </span>
                             )}
                             {member.subLabel && (
-                              <span className="text-[10px] font-black px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30">
+                              <span className="text-[10px] font-black px-1.5 py-0.2 rounded bg-primary/10 text-primary border border-primary/25">
                                 {member.subLabel}
                               </span>
                             )}
@@ -736,7 +736,7 @@ export default function LiffAdminDashboardPage() {
                             size="sm"
                             onClick={() => handleOpenMergeModal(member)}
                             title="他のアカウントと統合（マージ）"
-                            className="h-8 px-2 rounded-xl text-xs font-bold border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 bg-indigo-50/40 dark:bg-indigo-950/20 hover:bg-indigo-100/60 gap-1"
+                            className="h-8 px-2 rounded-xl text-xs font-bold border-primary/25 text-primary bg-primary/10 hover:bg-primary/15 gap-1"
                           >
                             <GitMerge className="w-3 h-3" />
                             <span>統合</span>
@@ -751,7 +751,7 @@ export default function LiffAdminDashboardPage() {
                               setEditRole(member.role || "parent");
                               setEditSubLabel(member.subLabel || "");
                             }}
-                            className="h-8 px-2.5 rounded-xl text-xs font-bold border-border bg-muted/40 hover:bg-muted gap-1"
+                            className="h-8 px-2.5 rounded-xl text-xs font-bold border-border/60 bg-card hover:bg-muted text-foreground gap-1"
                           >
                             <Edit2 className="w-3 h-3 text-primary" />
                             <span>変更</span>
@@ -770,18 +770,18 @@ export default function LiffAdminDashboardPage() {
             {activeTab === "invite" && (
               <div className="space-y-4 animate-in fade-in duration-200">
                 {/* 🔑 招待コードカード */}
-                <div className="p-4 rounded-2xl bg-gradient-to-br from-card via-card to-primary/5 border border-border shadow-xs space-y-3">
+                <div className="p-4 rounded-2xl border border-border/60 bg-card shadow-xs space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-black text-muted-foreground flex items-center gap-1.5">
                       <Sparkles className="w-3.5 h-3.5 text-primary" />
                       <span>チーム招待コード</span>
                     </span>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/25">
                       LINEから直接参加可
                     </span>
                   </div>
 
-                  <div className="p-3 rounded-xl bg-muted/50 border border-border/80 flex items-center justify-between gap-2">
+                  <div className="p-3 rounded-xl bg-muted/35 border border-border/60 flex items-center justify-between gap-2">
                     <span className="font-mono text-sm sm:text-base font-black tracking-widest text-foreground select-all truncate">
                       {inviteCode}
                     </span>
@@ -789,7 +789,7 @@ export default function LiffAdminDashboardPage() {
                       type="button"
                       size="sm"
                       onClick={handleCopyInvite}
-                      className="h-8 px-3 rounded-lg bg-primary text-primary-foreground font-black text-xs shrink-0 gap-1"
+                      className="h-8 px-3 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 font-black text-xs shrink-0 gap-1"
                     >
                       {isCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                       <span>{isCopied ? "コピー済" : "コピー"}</span>
@@ -799,7 +799,7 @@ export default function LiffAdminDashboardPage() {
                   <Button
                     type="button"
                     onClick={handleShareLine}
-                    className="w-full h-10 rounded-xl bg-[#06C755] hover:bg-[#05b34c] text-white font-black text-xs gap-1.5 shadow-xs"
+                    className="w-full h-10 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 font-black text-xs gap-1.5 shadow-xs"
                   >
                     <Share2 className="w-4 h-4" />
                     <span>LINEでメンバーを招待する</span>
@@ -815,10 +815,10 @@ export default function LiffAdminDashboardPage() {
                   <div className="grid grid-cols-1 gap-2">
                     <Link
                       href="/liff/schedule/board"
-                      className="p-3.5 rounded-2xl bg-card border border-border hover:border-primary/50 transition-all flex items-center justify-between shadow-2xs group"
+                      className="p-3.5 rounded-2xl border border-border/60 bg-card shadow-xs hover:border-primary/40 transition-all flex items-center justify-between group"
                     >
                       <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-xl bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                        <div className="w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
                           <ClipboardCheck className="w-5 h-5" />
                         </div>
                         <div>
@@ -835,10 +835,10 @@ export default function LiffAdminDashboardPage() {
 
                     <Link
                       href="/liff/schedule?tab=planner"
-                      className="p-3.5 rounded-2xl bg-card border border-border hover:border-primary/50 transition-all flex items-center justify-between shadow-2xs group"
+                      className="p-3.5 rounded-2xl border border-border/60 bg-card shadow-xs hover:border-primary/40 transition-all flex items-center justify-between group"
                     >
                       <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-xl bg-orange-500/15 text-orange-600 dark:text-orange-400 flex items-center justify-center shrink-0">
+                        <div className="w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
                           <Calendar className="w-5 h-5" />
                         </div>
                         <div>
@@ -855,10 +855,10 @@ export default function LiffAdminDashboardPage() {
 
                     <Link
                       href="/liff/settings/team"
-                      className="p-3.5 rounded-2xl bg-card border border-border hover:border-primary/50 transition-all flex items-center justify-between shadow-2xs group"
+                      className="p-3.5 rounded-2xl border border-border/60 bg-card shadow-xs hover:border-primary/40 transition-all flex items-center justify-between group"
                     >
                       <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-xl bg-primary/15 text-primary flex items-center justify-center shrink-0">
+                        <div className="w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
                           <Settings className="w-5 h-5" />
                         </div>
                         <div>
@@ -885,8 +885,8 @@ export default function LiffAdminDashboardPage() {
       {/* 🌟 メンバー役割・班編集ポップアップモーダル */}
       {editingMember && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="w-full max-w-sm rounded-3xl bg-card border border-border p-5 shadow-2xl space-y-4 animate-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between border-b border-border pb-3">
+          <div className="w-full max-w-sm rounded-2xl border border-border/60 bg-card shadow-xs p-5 space-y-4 animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-border/60 pb-3">
               <div>
                 <span className="text-[10px] font-black uppercase text-primary tracking-wider">メンバー設定</span>
                 <h3 className="text-base font-black text-foreground truncate">{editingMember.name} さん</h3>
@@ -894,7 +894,7 @@ export default function LiffAdminDashboardPage() {
               <button
                 type="button"
                 onClick={() => setEditingMember(null)}
-                className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground"
+                className="w-8 h-8 rounded-full bg-muted/50 flex items-center justify-center text-muted-foreground hover:text-foreground"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -912,12 +912,12 @@ export default function LiffAdminDashboardPage() {
                     className={cn(
                       "p-2 rounded-xl text-left border transition-all cursor-pointer",
                       editRole === opt.id
-                        ? "bg-primary text-primary-foreground border-primary shadow-xs font-black"
-                        : "bg-muted/40 text-foreground border-border hover:bg-muted font-bold"
+                        ? "border-primary bg-primary/10 text-primary shadow-xs font-black"
+                        : "bg-muted/35 text-foreground border-border/60 hover:bg-muted font-bold"
                     )}
                   >
                     <p className="text-xs leading-none">{opt.label}</p>
-                    <p className={cn("text-[9px] mt-1 leading-none truncate", editRole === opt.id ? "text-primary-foreground/80" : "text-muted-foreground")}>
+                    <p className={cn("text-[9px] mt-1 leading-none truncate", editRole === opt.id ? "text-primary/80" : "text-muted-foreground")}>
                       {opt.desc}
                     </p>
                   </button>
@@ -941,8 +941,8 @@ export default function LiffAdminDashboardPage() {
                     className={cn(
                       "px-2 py-1 rounded-lg text-xs font-bold border transition-all",
                       editSubLabel === label
-                        ? "bg-amber-500 text-white border-amber-600 font-black shadow-2xs"
-                        : "bg-muted text-muted-foreground border-border hover:text-foreground"
+                        ? "bg-primary text-primary-foreground border-primary font-black shadow-xs"
+                        : "bg-muted/50 text-muted-foreground border-border/60 hover:text-foreground"
                     )}
                   >
                     {label}
@@ -951,7 +951,7 @@ export default function LiffAdminDashboardPage() {
                 <button
                   type="button"
                   onClick={() => setEditSubLabel("")}
-                  className="px-2 py-1 rounded-lg text-xs font-bold bg-muted/60 text-muted-foreground border border-border hover:text-rose-500"
+                  className="px-2 py-1 rounded-lg text-xs font-bold bg-card text-muted-foreground border border-border/60 hover:text-rose-600"
                 >
                   解除
                 </button>
@@ -963,7 +963,7 @@ export default function LiffAdminDashboardPage() {
                 value={editSubLabel}
                 maxLength={8}
                 onChange={(e) => setEditSubLabel(e.target.value)}
-                className="h-9 rounded-xl text-xs font-bold bg-muted/50 border-border"
+                className="h-9 rounded-xl text-xs font-bold bg-muted/35 border-border/60"
               />
             </div>
 
@@ -973,7 +973,7 @@ export default function LiffAdminDashboardPage() {
                 type="button"
                 variant="outline"
                 onClick={() => setEditingMember(null)}
-                className="flex-1 h-10 rounded-xl text-xs font-bold"
+                className="flex-1 h-10 rounded-xl border-border/60 text-xs font-bold"
               >
                 キャンセル
               </Button>
@@ -981,7 +981,7 @@ export default function LiffAdminDashboardPage() {
                 type="button"
                 onClick={handleSaveMemberRole}
                 disabled={isSavingMember}
-                className="flex-1 h-10 rounded-xl bg-primary text-primary-foreground font-black text-xs shadow-xs"
+                className="flex-1 h-10 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 font-black text-xs shadow-xs"
               >
                 {isSavingMember ? "保存中..." : "変更を保存"}
               </Button>
@@ -995,11 +995,11 @@ export default function LiffAdminDashboardPage() {
       ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {isMergeModalOpen && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-3 bg-background/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full max-w-md bg-card rounded-3xl border border-border shadow-2xl p-5 space-y-4 max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-200">
+          <div className="w-full max-w-md rounded-2xl border border-border/60 bg-card shadow-xs p-5 space-y-4 max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-200">
             {/* ヘッダー */}
-            <div className="flex items-center justify-between pb-3 border-b border-border/50">
+            <div className="flex items-center justify-between pb-3 border-b border-border/60">
               <div className="flex items-center gap-2">
-                <div className="w-9 h-9 rounded-2xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+                <div className="w-9 h-9 rounded-2xl bg-primary/10 text-primary flex items-center justify-center">
                   <GitMerge className="w-5 h-5" />
                 </div>
                 <div>
@@ -1020,7 +1020,7 @@ export default function LiffAdminDashboardPage() {
               {/* ① 残す名簿メンバー（手動登録・マスター側） */}
               <div className="space-y-1.5">
                 <label className="text-xs font-black text-foreground flex items-center gap-1.5">
-                  <span className="w-5 h-5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-[10px] font-black shrink-0">1</span>
+                  <span className="w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[10px] font-black shrink-0">1</span>
                   <span>残す名簿データ（手動登録・マスター側）</span>
                 </label>
                 <select
@@ -1029,7 +1029,7 @@ export default function LiffAdminDashboardPage() {
                     const found = data?.activeMembers?.find((m) => m.memberId === e.target.value);
                     setMergeTargetMember(found || null);
                   }}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/20"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-border/60 bg-background text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/20"
                 >
                   <option value="">残すメンバーを選択...</option>
                   {data?.activeMembers?.map((m) => (
@@ -1046,13 +1046,13 @@ export default function LiffAdminDashboardPage() {
               {/* ② 統合するアカウント（LINE参加・連携側） */}
               <div className="space-y-1.5">
                 <label className="text-xs font-black text-foreground flex items-center gap-1.5">
-                  <span className="w-5 h-5 rounded-full bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-[10px] font-black shrink-0">2</span>
+                  <span className="w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[10px] font-black shrink-0">2</span>
                   <span>合流・統合するアカウント（LINE参加側）</span>
                 </label>
                 <select
                   value={selectedSourceMemberId}
                   onChange={(e) => setSelectedSourceMemberId(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/20"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-border/60 bg-background text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/20"
                 >
                   <option value="">統合するアカウントを選択...</option>
                   {data?.activeMembers
@@ -1074,19 +1074,19 @@ export default function LiffAdminDashboardPage() {
                 if (!mergeTargetMember || !source) return null;
 
                 return (
-                  <div className="p-3.5 rounded-2xl bg-indigo-500/10 dark:bg-indigo-950/20 border border-indigo-500/30 space-y-2 animate-in fade-in duration-150">
-                    <div className="flex items-center gap-1.5 font-black text-indigo-700 dark:text-indigo-300">
+                  <div className="p-3.5 rounded-2xl bg-muted/35 border border-border/60 space-y-2 animate-in fade-in duration-150">
+                    <div className="flex items-center gap-1.5 font-black text-primary">
                       <Sparkles className="w-4 h-4 shrink-0" />
                       <span>メンバー統合（マージ）プレビュー</span>
                     </div>
-                    <div className="p-2.5 rounded-xl bg-card border border-border/70 space-y-1 text-[11px] font-bold">
+                    <div className="p-2.5 rounded-xl bg-card border border-border/60 space-y-1 text-[11px] font-bold">
                       <div className="flex items-center justify-between">
                         <span className="text-muted-foreground">残す名簿データ:</span>
                         <span className="font-black text-foreground">{mergeTargetMember.name} (出欠・過去記録を保持)</span>
                       </div>
                       <div className="flex items-center justify-between">
                         <span className="text-muted-foreground">合流するアカウント:</span>
-                        <span className="font-black text-indigo-600 dark:text-indigo-400">{source.name} (LINEログインを付与)</span>
+                        <span className="font-black text-primary">{source.name} (LINEログインを付与)</span>
                       </div>
                     </div>
                     <p className="text-[10px] text-muted-foreground font-medium leading-relaxed">
@@ -1103,7 +1103,7 @@ export default function LiffAdminDashboardPage() {
                   variant="outline"
                   onClick={() => setIsMergeModalOpen(false)}
                   disabled={isMerging}
-                  className="flex-1 h-11 rounded-xl font-black text-xs"
+                  className="flex-1 h-11 rounded-xl border-border/60 font-black text-xs"
                 >
                   キャンセル
                 </Button>
@@ -1111,7 +1111,7 @@ export default function LiffAdminDashboardPage() {
                   type="button"
                   onClick={handleExecuteMerge}
                   disabled={isMerging || !mergeTargetMember || !selectedSourceMemberId}
-                  className="flex-1 h-11 rounded-xl font-black text-xs bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm"
+                  className="flex-1 h-11 rounded-xl font-black text-xs bg-primary text-primary-foreground hover:bg-primary/90 shadow-xs"
                 >
                   {isMerging ? (
                     <span className="flex items-center gap-1.5">

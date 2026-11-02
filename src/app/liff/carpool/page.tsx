@@ -74,7 +74,7 @@ export default function LiffCarpoolPage() {
           title="配車表 & 集合案内"
           subtitle={carpoolInfo?.date || "次回の配車情報"}
           icon={
-            <span className="w-8 h-8 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center font-black">
+            <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
               <Car className="w-4 h-4" />
             </span>
           }
@@ -93,8 +93,8 @@ export default function LiffCarpoolPage() {
           </div>
         ) : !carpoolInfo || cars.length === 0 ? (
           /* 空ステート */
-          <div className="flex flex-col items-center justify-center py-16 text-center bg-card border border-border rounded-3xl p-6 space-y-3">
-            <div className="w-12 h-12 rounded-2xl bg-muted flex items-center justify-center text-muted-foreground">
+          <div className="flex flex-col items-center justify-center py-16 text-center rounded-2xl border border-border/60 bg-card shadow-xs p-6 space-y-3">
+            <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center text-primary">
               <Car className="w-6 h-6" />
             </div>
             <div className="space-y-1">
@@ -107,9 +107,9 @@ export default function LiffCarpoolPage() {
         ) : (
           <>
             {/* 集合概要カード */}
-            <section className="bg-card border-2 border-primary/40 rounded-3xl p-4 shadow-sm space-y-3">
+            <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3">
           <div className="flex items-center justify-between">
-            <span className="px-2.5 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-black">
+            <span className="px-2.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/25 text-xs font-black">
               🚗 配車情報
             </span>
             <span className="text-xs font-bold text-muted-foreground">
@@ -131,7 +131,7 @@ export default function LiffCarpoolPage() {
             </div>
 
             <div className="flex items-start gap-2">
-              <MapPin className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+              <MapPin className="w-4 h-4 text-primary shrink-0 mt-0.5" />
               <div>
                 <span className="text-[10px] text-muted-foreground block font-bold">集合場所 (出発地)</span>
                 <span className="text-foreground font-black">{carpoolInfo.gatherLocation}</span>
@@ -139,15 +139,15 @@ export default function LiffCarpoolPage() {
             </div>
 
             <div className="flex items-start gap-2">
-              <MapPin className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+              <MapPin className="w-4 h-4 text-primary shrink-0 mt-0.5" />
               <div>
                 <span className="text-[10px] text-muted-foreground block font-bold">目的地 (球場)</span>
                 <span className="text-foreground font-black">{carpoolInfo.destination}</span>
               </div>
             </div>
 
-            <div className="flex items-start gap-2 pt-1 border-t border-border/50">
-              <Fuel className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+            <div className="flex items-start gap-2 pt-1 border-t border-border/60">
+              <Fuel className="w-4 h-4 text-primary shrink-0 mt-0.5" />
               <div>
                 <span className="text-[10px] text-muted-foreground block font-bold">交通費精算の目安</span>
                 <span className="text-foreground font-bold">{carpoolInfo.costShare}</span>
@@ -157,13 +157,13 @@ export default function LiffCarpoolPage() {
         </section>
 
         {/* 行き・帰りタブ切り替え */}
-        <div className="flex p-1 bg-muted/60 rounded-2xl border border-border">
+        <div className="flex p-1 bg-muted rounded-2xl border border-border/60">
           <button
             type="button"
             onClick={() => setDirection("outbound")}
             className={`flex-1 py-2 rounded-xl text-xs font-black transition-all ${
               direction === "outbound"
-                ? "bg-card text-foreground shadow-xs"
+                ? "bg-card text-primary shadow-xs"
                 : "text-muted-foreground hover:text-foreground"
             }`}
           >
@@ -174,7 +174,7 @@ export default function LiffCarpoolPage() {
             onClick={() => setDirection("return")}
             className={`flex-1 py-2 rounded-xl text-xs font-black transition-all ${
               direction === "return"
-                ? "bg-card text-foreground shadow-xs"
+                ? "bg-card text-primary shadow-xs"
                 : "text-muted-foreground hover:text-foreground"
             }`}
           >
@@ -191,12 +191,12 @@ export default function LiffCarpoolPage() {
           {carpoolInfo.cars.map((car) => (
             <div
               key={car.carNumber}
-              className="bg-card border border-border rounded-2xl p-4 shadow-xs space-y-3 overflow-hidden"
+              className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3 overflow-hidden"
             >
               {/* 車両ヘッダー */}
               <div className="flex items-center justify-between pb-2 border-b border-border/60">
                 <div className="flex items-center gap-2">
-                  <span className="w-6 h-6 rounded-lg bg-blue-600 text-white font-black text-xs flex items-center justify-center">
+                  <span className="w-6 h-6 rounded-lg bg-primary text-primary-foreground font-black text-xs flex items-center justify-center">
                     {car.carNumber}
                   </span>
                   <div>
@@ -211,11 +211,11 @@ export default function LiffCarpoolPage() {
 
                 <div className="flex items-center gap-1.5">
                   {car.isCargo && (
-                    <span className="px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-600 dark:text-amber-400 text-[10px] font-black border border-amber-500/30">
+                    <span className="px-2 py-0.5 rounded-md bg-primary/10 text-primary text-[10px] font-black border border-primary/25">
                       📦 道具車
                     </span>
                   )}
-                  <span className="px-2 py-0.5 rounded-md bg-muted text-foreground text-xs font-black">
+                  <span className="px-2 py-0.5 rounded-md bg-muted/50 text-foreground border border-border/60 text-xs font-black">
                     {car.passengers.length} / {car.capacity} 名
                   </span>
                 </div>
@@ -232,8 +232,8 @@ export default function LiffCarpoolPage() {
                       key={idx}
                       className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold ${
                         p.type === "player"
-                          ? "bg-primary/10 text-primary border border-primary/20"
-                          : "bg-muted text-foreground border border-border"
+                          ? "bg-primary/10 text-primary border border-primary/25"
+                          : "bg-muted/50 text-foreground border border-border/60"
                       }`}
                     >
                       {p.name}
@@ -247,12 +247,12 @@ export default function LiffCarpoolPage() {
 
         {/* 注意事項 */}
         {carpoolInfo?.notes && (
-          <section className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-900 dark:text-amber-200 space-y-1.5">
-            <div className="flex items-center gap-1.5 font-black text-amber-700 dark:text-amber-400">
+          <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 text-xs text-foreground space-y-1.5">
+            <div className="flex items-center gap-1.5 font-black text-primary">
               <AlertCircle className="w-4 h-4 shrink-0" />
               <span>配車・送迎時の注意事項</span>
             </div>
-            <p className="font-medium whitespace-pre-line leading-relaxed text-[11px]">
+            <p className="font-medium text-muted-foreground whitespace-pre-line leading-relaxed text-[11px]">
               {carpoolInfo.notes}
             </p>
           </section>

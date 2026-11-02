@@ -296,29 +296,29 @@ export function TeamSymbolRulesSettingsSection({
   return (
     <section
       id="symbol-rules"
-      className="scroll-mt-16 rounded-3xl bg-card border-2 border-indigo-500/30 p-4 space-y-4 shadow-sm"
+      className="scroll-mt-16 rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-4"
     >
       {/* ヘッダー */}
       <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-border/60">
         <div className="flex items-center gap-2 min-w-0">
-          <FileSpreadsheet className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+          <FileSpreadsheet className="w-4 h-4 text-primary shrink-0" />
           <h2 className="text-sm font-black text-foreground truncate">
             チーム記号ルール（清書シート表示用）
           </h2>
         </div>
 
         {isSaving ? (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 text-[10px] font-black shrink-0">
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/25 text-[10px] font-black shrink-0">
             <Loader2 className="w-3 h-3 animate-spin" />
             保存中...
           </span>
         ) : hasSavedCloud ? (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/35 text-[10px] font-black shrink-0">
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/25 text-[10px] font-black shrink-0">
             <CheckCircle2 className="w-3 h-3" />
             チーム保存済
           </span>
         ) : (
-          <span className="px-2.5 py-0.5 rounded-full bg-muted text-muted-foreground border border-border text-[10px] font-bold shrink-0">
+          <span className="px-2.5 py-0.5 rounded-full bg-muted/50 text-muted-foreground border border-border/60 text-[10px] font-bold shrink-0">
             カスタム可能
           </span>
         )}
@@ -334,10 +334,10 @@ export function TeamSymbolRulesSettingsSection({
       </p>
 
       {/* リアルタイム4マス記号プレビュー */}
-      <div className="space-y-1.5 rounded-2xl bg-slate-100 dark:bg-zinc-900 border border-border p-2.5">
+      <div className="space-y-1.5 rounded-2xl bg-muted/35 border border-border/60 p-2.5">
         <div className="flex items-center justify-between px-0.5">
           <span className="text-[11px] font-black text-foreground flex items-center gap-1">
-            <Sparkles className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+            <Sparkles className="w-3.5 h-3.5 text-primary" />
             <span>現在の「チーム記号ルール」プレビュー</span>
           </span>
           <span className="text-[10px] font-bold text-muted-foreground">
@@ -354,7 +354,7 @@ export function TeamSymbolRulesSettingsSection({
             type="button"
             disabled={isExtractingAi}
             onClick={handleExtractFromLegendWithAi}
-            className="w-full py-3 px-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs flex items-center justify-center gap-2 shadow-xs active:scale-[0.98] transition-all cursor-pointer disabled:opacity-60"
+            className="w-full py-3 px-3.5 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground font-black text-xs flex items-center justify-center gap-2 shadow-xs active:scale-[0.98] transition-all cursor-pointer disabled:opacity-60"
           >
             {isExtractingAi ? (
               <>
@@ -370,7 +370,7 @@ export function TeamSymbolRulesSettingsSection({
           </button>
 
           {lastAiSummary && (
-            <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-[11px] font-bold text-emerald-800 dark:text-emerald-200 leading-snug">
+            <div className="p-2.5 rounded-xl bg-primary/10 border border-primary/25 text-[11px] font-bold text-foreground leading-snug">
               AI読取結果: {lastAiSummary}
             </div>
           )}
@@ -388,7 +388,7 @@ export function TeamSymbolRulesSettingsSection({
               key={preset.id}
               type="button"
               onClick={() => handleApplyPreset(preset.label, preset.rules)}
-              className="p-2.5 rounded-2xl border border-border bg-muted/40 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 hover:border-indigo-400 text-left transition-all active:scale-95 cursor-pointer"
+              className="p-2.5 rounded-2xl border border-border/60 bg-card hover:bg-muted hover:border-primary/40 text-left transition-all active:scale-95 cursor-pointer"
             >
               <p className="text-[11px] font-black text-foreground leading-tight">
                 {preset.label}
@@ -431,8 +431,8 @@ export function TeamSymbolRulesSettingsSection({
                       className={cn(
                         "py-2 px-2 rounded-xl border text-left transition-all active:scale-95 cursor-pointer",
                         isActive
-                          ? "bg-indigo-600 text-white border-indigo-600 shadow-2xs"
-                          : "bg-muted/45 border-border/70 text-foreground hover:bg-muted"
+                          ? "bg-primary text-primary-foreground border-primary shadow-2xs"
+                          : "bg-muted/50 border-border/60 text-foreground hover:bg-muted"
                       )}
                     >
                       <p className="text-[11px] font-black leading-tight truncate">
@@ -441,7 +441,7 @@ export function TeamSymbolRulesSettingsSection({
                       <p
                         className={cn(
                           "text-[10px] font-mono font-bold leading-tight mt-0.5 truncate",
-                          isActive ? "text-white/85" : "text-muted-foreground"
+                          isActive ? "text-primary-foreground/85" : "text-muted-foreground"
                         )}
                       >
                         {opt.sample}
@@ -468,13 +468,13 @@ export function TeamSymbolRulesSettingsSection({
                 setRules((prev) => ({ ...prev, customNote: e.target.value }))
               }
               placeholder="例: 臨時代走はTR表記、タイブレーク開始走者はTB"
-              className="flex-1 h-10 px-3 rounded-xl bg-muted/40 border border-border text-xs font-bold text-foreground placeholder:text-muted-foreground/60"
+              className="flex-1 h-10 px-3 rounded-xl bg-muted/35 border border-border/60 text-xs font-bold text-foreground placeholder:text-muted-foreground/60 focus:outline-hidden focus:border-primary"
             />
             <button
               type="button"
               disabled={isSaving}
               onClick={() => void persistRules(rules, "補足メモ")}
-              className="h-10 px-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black shrink-0 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+              className="h-10 px-3.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black shrink-0 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
             >
               保存
             </button>

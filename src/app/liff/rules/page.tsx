@@ -418,7 +418,7 @@ export default function LiffRulesPage() {
           title="ルール & 注意事項"
           subtitle="安全で円滑なチーム活動のためのガイドライン"
           icon={
-            <span className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center font-black">
+            <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
               <AlertTriangle className="w-4 h-4" />
             </span>
           }
@@ -436,8 +436,8 @@ export default function LiffRulesPage() {
             onClick={() => setSelectedScope("all")}
             className={`px-3.5 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all cursor-pointer ${
               selectedScope === "all"
-                ? "bg-foreground text-background shadow-xs"
-                : "bg-muted/70 text-muted-foreground hover:text-foreground"
+                ? "bg-primary text-primary-foreground shadow-xs"
+                : "bg-card border border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
             }`}
           >
             すべて ({rules.length})
@@ -448,7 +448,7 @@ export default function LiffRulesPage() {
             className={`px-3.5 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
               selectedScope === "organization"
                 ? "bg-primary text-primary-foreground shadow-xs"
-                : "bg-muted/70 text-muted-foreground hover:text-foreground"
+                : "bg-card border border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
             }`}
           >
             <Building2 className="w-3.5 h-3.5" />
@@ -459,8 +459,8 @@ export default function LiffRulesPage() {
             onClick={() => setSelectedScope("team")}
             className={`px-3.5 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
               selectedScope === "team"
-                ? "bg-purple-600 text-white shadow-xs"
-                : "bg-muted/70 text-muted-foreground hover:text-foreground"
+                ? "bg-primary text-primary-foreground shadow-xs"
+                : "bg-card border border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
             }`}
           >
             <Users2 className="w-3.5 h-3.5" />
@@ -477,7 +477,7 @@ export default function LiffRulesPage() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="キーワードで検索 (例: 遠征、用具...)"
-              className="w-full pl-9.5 pr-8 py-2.5 rounded-2xl bg-card border border-border text-xs placeholder:text-muted-foreground/70 focus:outline-hidden focus:ring-2 focus:ring-primary/40 transition-all"
+              className="w-full pl-9.5 pr-8 py-2.5 rounded-2xl bg-card border border-border/60 text-xs placeholder:text-muted-foreground/70 focus:outline-hidden focus:ring-2 focus:ring-primary/40 transition-all"
             />
             {searchQuery && (
               <button
@@ -516,8 +516,8 @@ export default function LiffRulesPage() {
                 onClick={() => setSelectedCategory(c.id)}
                 className={`px-3 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
                   isSelected
-                    ? "bg-primary/15 text-primary border border-primary/30 shadow-2xs"
-                    : "bg-card border border-border/70 text-muted-foreground hover:text-foreground"
+                    ? "bg-primary text-primary-foreground shadow-xs"
+                    : "bg-card border border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
                 }`}
               >
                 <Icon className="w-3.5 h-3.5" />
@@ -534,7 +534,7 @@ export default function LiffRulesPage() {
             <span className="text-xs font-bold">ルール & 注意事項を読み込み中...</span>
           </div>
         ) : filteredRules.length === 0 ? (
-          <div className="p-8 rounded-3xl bg-card border border-border text-center space-y-2">
+          <div className="p-8 rounded-2xl border border-border/60 bg-card shadow-xs text-center space-y-2">
             <AlertCircle className="w-8 h-8 text-muted-foreground mx-auto" />
             <p className="text-xs font-black text-foreground">
               該当するルール & 注意事項が見つかりませんでした
@@ -553,14 +553,8 @@ export default function LiffRulesPage() {
               return (
                 <div
                   key={rule.id}
-                  className={`rounded-2xl border transition-all duration-200 overflow-hidden bg-card ${
-                    isImportant
-                      ? isOpen
-                        ? "border-rose-500/60 dark:border-rose-500/50 shadow-md ring-1 ring-rose-500/30"
-                        : "border-rose-500/40 bg-gradient-to-r from-rose-500/5 via-card to-card hover:border-rose-500/60"
-                      : isOpen
-                      ? "border-amber-500/40 shadow-xs ring-1 ring-amber-500/20"
-                      : "border-border/60 hover:border-amber-500/30"
+                  className={`rounded-2xl border bg-card shadow-xs transition-all duration-200 overflow-hidden hover:border-primary/40 ${
+                    isOpen ? "border-primary/40" : "border-border/60"
                   }`}
                 >
                   {/* ヘッダー・開閉トグル */}
@@ -569,11 +563,7 @@ export default function LiffRulesPage() {
                     className="p-3.5 sm:p-4 cursor-pointer select-none flex items-start justify-between gap-3"
                   >
                     <div className="flex items-start gap-2.5 min-w-0 flex-1">
-                      <span className={`w-5 h-5 rounded-lg flex items-center justify-center text-xs font-black shrink-0 mt-0.5 ${
-                        isImportant
-                          ? "bg-rose-500/15 text-rose-600 dark:text-rose-400"
-                          : "bg-amber-500/10 text-amber-600 dark:text-amber-400"
-                      }`}>
+                      <span className="w-5 h-5 rounded-lg flex items-center justify-center text-xs font-black shrink-0 mt-0.5 bg-primary/10 text-primary">
                         {isImportant ? "🔥" : "⚠️"}
                       </span>
 
@@ -581,7 +571,7 @@ export default function LiffRulesPage() {
                         <div className="flex items-center gap-1.5 flex-wrap">
                           {/* 🔥 重要バッジ */}
                           {isImportant && (
-                            <span className="px-2 py-0.5 rounded-md bg-rose-500 text-white text-[9.5px] font-black shrink-0 shadow-2xs flex items-center gap-0.5">
+                            <span className="px-2 py-0.5 rounded-md bg-primary text-primary-foreground text-[9.5px] font-black shrink-0 shadow-2xs flex items-center gap-0.5">
                               <Flame className="w-3 h-3" />
                               <span>重要</span>
                             </span>
@@ -591,8 +581,8 @@ export default function LiffRulesPage() {
                           <span
                             className={`px-2 py-0.5 rounded-md text-[9.5px] font-black shrink-0 ${
                               isOrg
-                                ? "bg-primary/10 text-primary border border-primary/20"
-                                : "bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20"
+                                ? "bg-primary/10 text-primary border border-primary/25"
+                                : "bg-muted text-muted-foreground border border-border/60"
                             }`}
                           >
                             {rule.scopeLabel}
@@ -605,7 +595,7 @@ export default function LiffRulesPage() {
 
                           {/* 画像添付バッジ */}
                           {rule.imageUrl && (
-                            <span className="px-1.5 py-0.5 rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400 text-[9.5px] font-black shrink-0 flex items-center gap-0.5 border border-blue-500/20">
+                            <span className="px-1.5 py-0.5 rounded-md bg-primary/10 text-primary text-[9.5px] font-black shrink-0 flex items-center gap-0.5 border border-primary/25">
                               <ImageIcon className="w-2.5 h-2.5" />
                               <span>写真あり</span>
                             </span>
@@ -613,7 +603,7 @@ export default function LiffRulesPage() {
 
                           {/* PDF添付バッジ */}
                           {rule.pdfUrl && (
-                            <span className="px-1.5 py-0.5 rounded-md bg-rose-500/10 text-rose-600 dark:text-rose-400 text-[9.5px] font-black shrink-0 flex items-center gap-0.5 border border-rose-500/20">
+                            <span className="px-1.5 py-0.5 rounded-md bg-primary/10 text-primary text-[9.5px] font-black shrink-0 flex items-center gap-0.5 border border-primary/25">
                               <FileText className="w-2.5 h-2.5" />
                               <span>PDFあり</span>
                             </span>
@@ -641,11 +631,7 @@ export default function LiffRulesPage() {
 
                       <div
                         className={`p-1.5 rounded-lg text-muted-foreground transition-transform duration-200 ${
-                          isOpen
-                            ? isImportant
-                              ? "rotate-180 text-rose-600 dark:text-rose-400"
-                              : "rotate-180 text-amber-600 dark:text-amber-400"
-                            : ""
+                          isOpen ? "rotate-180 text-primary" : ""
                         }`}
                       >
                         <ChevronDown className="w-4 h-4" />
@@ -655,7 +641,7 @@ export default function LiffRulesPage() {
 
                   {/* 本文エリア */}
                   {isOpen && (
-                    <div className="px-4 pb-4 pt-2.5 border-t border-border/40 space-y-3 animate-in fade-in slide-in-from-top-1 duration-150">
+                    <div className="px-4 pb-4 pt-2.5 border-t border-border/60 space-y-3 animate-in fade-in slide-in-from-top-1 duration-150">
                       <p className="text-xs sm:text-[13px] text-foreground/90 font-bold whitespace-pre-wrap leading-relaxed">
                         {rule.content}
                       </p>
@@ -665,7 +651,7 @@ export default function LiffRulesPage() {
                         <div className="space-y-1.5 pt-1">
                           <div className="flex items-center justify-between text-[11px] font-bold text-muted-foreground">
                             <span className="flex items-center gap-1 font-black text-foreground/80">
-                              <ImageIcon className="w-3.5 h-3.5 text-blue-500" />
+                              <ImageIcon className="w-3.5 h-3.5 text-primary" />
                               <span>参考画像・図解</span>
                             </span>
                             <button
@@ -679,7 +665,7 @@ export default function LiffRulesPage() {
                           </div>
                           <div
                             onClick={() => setPreviewImageModalUrl(rule.imageUrl || null)}
-                            className="relative overflow-hidden rounded-2xl border border-border bg-black/5 dark:bg-white/5 cursor-pointer group flex items-center justify-center p-1"
+                            className="relative overflow-hidden rounded-2xl border border-border/60 bg-muted/35 cursor-pointer group flex items-center justify-center p-1"
                           >
                             <img
                               src={rule.imageUrl}
@@ -696,7 +682,7 @@ export default function LiffRulesPage() {
                         <div className="space-y-2 pt-1">
                           <div className="flex items-center justify-between text-[11px] font-bold text-muted-foreground">
                             <span className="flex items-center gap-1.5 font-black text-foreground/80 min-w-0">
-                              <FileText className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                              <FileText className="w-3.5 h-3.5 text-primary shrink-0" />
                               <span className="truncate">{rule.pdfName || "添付PDF資料"}</span>
                             </span>
                             <div className="flex items-center gap-1.5 shrink-0">
@@ -717,7 +703,7 @@ export default function LiffRulesPage() {
                                 href={getExternalBrowserUrl(rule.pdfUrl)}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="px-2 py-1 rounded-lg border border-border hover:bg-muted text-muted-foreground hover:text-foreground flex items-center gap-1 text-[11px] font-bold transition-colors"
+                                className="px-2 py-1 rounded-lg border border-border/60 hover:bg-muted text-muted-foreground hover:text-foreground flex items-center gap-1 text-[11px] font-bold transition-colors"
                               >
                                 <ExternalLink className="w-3 h-3" />
                                 <span>ブラウザ</span>
@@ -806,10 +792,10 @@ export default function LiffRulesPage() {
             className="absolute inset-0"
             onClick={() => setPreviewPdfModal(null)}
           />
-          <div className="relative w-full max-w-4xl h-[92vh] bg-card rounded-3xl border border-border shadow-2xl overflow-hidden flex flex-col z-10 animate-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between p-3.5 sm:p-4 border-b border-border bg-card/95">
+          <div className="relative w-full max-w-4xl h-[92vh] rounded-2xl border border-border/60 bg-card shadow-xs overflow-hidden flex flex-col z-10 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between p-3.5 sm:p-4 border-b border-border/60 bg-card/95">
               <div className="flex items-center gap-2 min-w-0">
-                <span className="w-8 h-8 rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+                <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
                   <FileText className="w-4 h-4" />
                 </span>
                 <div className="min-w-0">
@@ -833,7 +819,7 @@ export default function LiffRulesPage() {
                 <a
                   href={getAbsoluteUrl(previewPdfModal.url)}
                   download={previewPdfModal.name}
-                  className="px-2.5 py-1.5 rounded-xl border border-border hover:bg-muted text-muted-foreground hover:text-foreground text-xs font-black flex items-center gap-1 transition-colors"
+                  className="px-2.5 py-1.5 rounded-xl border border-border/60 hover:bg-muted text-muted-foreground hover:text-foreground text-xs font-black flex items-center gap-1 transition-colors"
                   title="ダウンロード"
                 >
                   <Download className="w-3.5 h-3.5" />
@@ -849,8 +835,8 @@ export default function LiffRulesPage() {
               </div>
             </div>
 
-            <div className="flex-1 bg-neutral-100 dark:bg-neutral-900 relative w-full h-full overflow-y-auto p-2 sm:p-4 flex items-center justify-center">
-              <div className="w-full max-w-2xl h-auto my-auto shadow-2xl rounded-2xl overflow-hidden">
+            <div className="flex-1 bg-muted/35 relative w-full h-full overflow-y-auto p-2 sm:p-4 flex items-center justify-center">
+              <div className="w-full max-w-2xl h-auto my-auto rounded-2xl overflow-hidden">
                 <PdfCanvasViewer
                   url={previewPdfModal.url}
                   title={previewPdfModal.name}
@@ -870,11 +856,11 @@ export default function LiffRulesPage() {
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-md bg-card border border-border rounded-3xl p-5 shadow-xl space-y-4 max-h-[90vh] overflow-y-auto"
+            className="w-full max-w-md rounded-2xl border border-border/60 bg-card shadow-xs p-5 space-y-4 max-h-[90vh] overflow-y-auto"
           >
             <div className="flex items-center justify-between border-b border-border/60 pb-3">
               <div className="flex items-center gap-2">
-                <span className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center font-black">
+                <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
                   <AlertTriangle className="w-4 h-4" />
                 </span>
                 <div>
@@ -906,13 +892,13 @@ export default function LiffRulesPage() {
                 onClick={() => setNewIsImportant(!newIsImportant)}
                 className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 select-none ${
                   newIsImportant
-                    ? "bg-rose-500/10 border-rose-500/40 text-rose-800 dark:text-rose-200 ring-1 ring-rose-500/30"
-                    : "bg-muted/40 border-border/70 text-muted-foreground hover:bg-muted/60"
+                    ? "bg-primary/10 border-primary text-primary"
+                    : "bg-muted/35 border-border/60 text-muted-foreground hover:bg-muted"
                 }`}
               >
                 <div className="flex items-center gap-2.5">
                   <span className={`w-7 h-7 rounded-xl flex items-center justify-center text-sm font-black ${
-                    newIsImportant ? "bg-rose-500 text-white" : "bg-muted text-muted-foreground"
+                    newIsImportant ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
                   }`}>
                     <Flame className="w-4 h-4" />
                   </span>
@@ -927,7 +913,7 @@ export default function LiffRulesPage() {
                   type="checkbox"
                   checked={newIsImportant}
                   onChange={(e) => setNewIsImportant(e.target.checked)}
-                  className="w-4 h-4 rounded text-rose-600 focus:ring-rose-500"
+                  className="w-4 h-4 rounded accent-primary"
                 />
               </div>
 
@@ -940,8 +926,8 @@ export default function LiffRulesPage() {
                     onClick={() => setNewScope("team")}
                     className={`py-2 px-3 rounded-xl border text-xs font-black transition-all cursor-pointer ${
                       newScope === "team"
-                        ? "bg-purple-600 text-white border-purple-600 shadow-xs"
-                        : "bg-card border-border text-muted-foreground"
+                        ? "bg-primary text-primary-foreground border-primary shadow-xs"
+                        : "bg-card border-border/60 text-muted-foreground hover:bg-muted"
                     }`}
                   >
                     👥 {currentTeam?.teamName || "この編成"} のみ
@@ -952,7 +938,7 @@ export default function LiffRulesPage() {
                     className={`py-2 px-3 rounded-xl border text-xs font-black transition-all cursor-pointer ${
                       newScope === "organization"
                         ? "bg-primary text-primary-foreground border-primary shadow-xs"
-                        : "bg-card border-border text-muted-foreground"
+                        : "bg-card border-border/60 text-muted-foreground hover:bg-muted"
                     }`}
                   >
                     🏢 チーム全体（共通）
@@ -966,7 +952,7 @@ export default function LiffRulesPage() {
                 <select
                   value={newCategory}
                   onChange={(e) => setNewCategory(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-xl bg-card border border-border text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                  className="w-full px-3 py-2.5 rounded-xl bg-card border border-border/60 text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40"
                 >
                   <option value="match">🏆 試合・遠征</option>
                   <option value="carpool">🚗 配車・送迎</option>
@@ -988,7 +974,7 @@ export default function LiffRulesPage() {
                   value={newTitle}
                   onChange={(e) => setNewTitle(e.target.value)}
                   placeholder="例: 配車時のチャイルドシート着用について"
-                  className="w-full px-3 py-2.5 rounded-xl bg-card border border-border text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40 placeholder:text-muted-foreground/60"
+                  className="w-full px-3 py-2.5 rounded-xl bg-card border border-border/60 text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40 placeholder:text-muted-foreground/60"
                 />
               </div>
 
@@ -1001,15 +987,15 @@ export default function LiffRulesPage() {
                   value={newContent}
                   onChange={(e) => setNewContent(e.target.value)}
                   placeholder="ルールや注意事項の詳しい内容や遵守事項を記入してください（箇条書き推奨）"
-                  className="w-full px-3 py-2.5 rounded-xl bg-card border border-border text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40 placeholder:text-muted-foreground/60 leading-relaxed"
+                  className="w-full px-3 py-2.5 rounded-xl bg-card border border-border/60 text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40 placeholder:text-muted-foreground/60 leading-relaxed"
                 />
               </div>
 
               {/* 📷 画像添付エリア */}
-              <div className="space-y-2 p-3 rounded-2xl bg-muted/40 border border-border/70">
+              <div className="space-y-2 p-3 rounded-2xl bg-muted/35 border border-border/60">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-black text-foreground flex items-center gap-1.5">
-                    <ImageIcon className="w-4 h-4 text-blue-500" />
+                    <ImageIcon className="w-4 h-4 text-primary" />
                     <span>参考画像・図解の添付 (任意)</span>
                   </span>
                   {newImageUrl && (
@@ -1024,7 +1010,7 @@ export default function LiffRulesPage() {
                 </div>
 
                 {newImageUrl ? (
-                  <div className="relative rounded-xl overflow-hidden border border-border bg-card max-h-40 flex items-center justify-center">
+                  <div className="relative rounded-xl overflow-hidden border border-border/60 bg-card max-h-40 flex items-center justify-center">
                     <img src={newImageUrl} alt="プレビュー" className="max-h-40 w-full object-cover" />
                   </div>
                 ) : (
@@ -1040,7 +1026,7 @@ export default function LiffRulesPage() {
                       type="button"
                       disabled={isUploadingImage}
                       onClick={() => fileInputRef.current?.click()}
-                      className="w-full py-2.5 px-3 rounded-xl border border-dashed border-border hover:border-primary/50 bg-card hover:bg-muted/50 text-muted-foreground hover:text-foreground font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+                      className="w-full py-2.5 px-3 rounded-xl border border-dashed border-border/60 hover:border-primary/40 bg-card hover:bg-muted/50 text-muted-foreground hover:text-foreground font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
                     >
                       {isUploadingImage ? (
                         <>
@@ -1059,10 +1045,10 @@ export default function LiffRulesPage() {
               </div>
 
               {/* 📄 PDF添付エリア */}
-              <div className="space-y-2 p-3 rounded-2xl bg-muted/40 border border-border/70">
+              <div className="space-y-2 p-3 rounded-2xl bg-muted/35 border border-border/60">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-black text-foreground flex items-center gap-1.5">
-                    <FileText className="w-4 h-4 text-rose-500" />
+                    <FileText className="w-4 h-4 text-primary" />
                     <span>PDF資料・規約の添付 (任意)</span>
                   </span>
                   {newPdfUrl && (
@@ -1080,9 +1066,9 @@ export default function LiffRulesPage() {
                 </div>
 
                 {newPdfUrl ? (
-                  <div className="flex items-center justify-between p-2.5 rounded-xl border border-border bg-card">
+                  <div className="flex items-center justify-between p-2.5 rounded-xl border border-border/60 bg-card">
                     <div className="flex items-center gap-2 min-w-0">
-                      <div className="w-8 h-8 rounded-lg bg-rose-500/10 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+                      <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
                         <FileText className="w-4 h-4" />
                       </div>
                       <div className="min-w-0">
@@ -1124,7 +1110,7 @@ export default function LiffRulesPage() {
                       type="button"
                       disabled={isUploadingPdf}
                       onClick={() => pdfInputRef.current?.click()}
-                      className="w-full py-2.5 px-3 rounded-xl border border-dashed border-border hover:border-primary/50 bg-card hover:bg-muted/50 text-muted-foreground hover:text-foreground font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+                      className="w-full py-2.5 px-3 rounded-xl border border-dashed border-border/60 hover:border-primary/40 bg-card hover:bg-muted/50 text-muted-foreground hover:text-foreground font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
                     >
                       {isUploadingPdf ? (
                         <>
@@ -1133,7 +1119,7 @@ export default function LiffRulesPage() {
                         </>
                       ) : (
                         <>
-                          <Upload className="w-4 h-4 text-rose-500" />
+                          <Upload className="w-4 h-4 text-primary" />
                           <span>PDFファイルを選択 (規約・マニュアル等)</span>
                         </>
                       )}
@@ -1146,14 +1132,14 @@ export default function LiffRulesPage() {
                 <button
                   type="button"
                   onClick={() => setIsCreateModalOpen(false)}
-                  className="px-4 py-2.5 rounded-xl bg-muted text-muted-foreground hover:text-foreground font-black text-xs transition-all"
+                  className="px-4 py-2.5 rounded-xl bg-card border border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground font-black text-xs transition-all"
                 >
                   キャンセル
                 </button>
                 <button
                   type="submit"
                   disabled={isSubmitting || !newTitle.trim() || !newContent.trim()}
-                  className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground font-black text-xs shadow-sm hover:bg-primary/90 active:scale-95 disabled:opacity-50 transition-all flex items-center gap-1.5"
+                  className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground font-black text-xs shadow-xs hover:bg-primary/90 active:scale-95 disabled:opacity-50 transition-all flex items-center gap-1.5"
                 >
                   {isSubmitting ? (
                     <>
@@ -1178,7 +1164,7 @@ export default function LiffRulesPage() {
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-md bg-card border border-border rounded-3xl p-5 shadow-xl space-y-4 max-h-[90vh] overflow-y-auto"
+            className="w-full max-w-md rounded-2xl border border-border/60 bg-card shadow-xs p-5 space-y-4 max-h-[90vh] overflow-y-auto"
           >
             <div className="flex items-center justify-between border-b border-border/60 pb-3">
               <div className="flex items-center gap-2">
@@ -1212,13 +1198,13 @@ export default function LiffRulesPage() {
                 onClick={() => setEditIsImportant(!editIsImportant)}
                 className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 select-none ${
                   editIsImportant
-                    ? "bg-rose-500/10 border-rose-500/40 text-rose-800 dark:text-rose-200 ring-1 ring-rose-500/30"
-                    : "bg-muted/40 border-border/70 text-muted-foreground hover:bg-muted/60"
+                    ? "bg-primary/10 border-primary text-primary"
+                    : "bg-muted/35 border-border/60 text-muted-foreground hover:bg-muted"
                 }`}
               >
                 <div className="flex items-center gap-2.5">
                   <span className={`w-7 h-7 rounded-xl flex items-center justify-center text-sm font-black ${
-                    editIsImportant ? "bg-rose-500 text-white" : "bg-muted text-muted-foreground"
+                    editIsImportant ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
                   }`}>
                     <Flame className="w-4 h-4" />
                   </span>
@@ -1233,7 +1219,7 @@ export default function LiffRulesPage() {
                   type="checkbox"
                   checked={editIsImportant}
                   onChange={(e) => setEditIsImportant(e.target.checked)}
-                  className="w-4 h-4 rounded text-rose-600 focus:ring-rose-500"
+                  className="w-4 h-4 rounded accent-primary"
                 />
               </div>
 
@@ -1246,8 +1232,8 @@ export default function LiffRulesPage() {
                     onClick={() => setEditScope("team")}
                     className={`py-2 px-3 rounded-xl border text-xs font-black transition-all cursor-pointer ${
                       editScope === "team"
-                        ? "bg-purple-600 text-white border-purple-600 shadow-xs"
-                        : "bg-card border-border text-muted-foreground"
+                        ? "bg-primary text-primary-foreground border-primary shadow-xs"
+                        : "bg-card border-border/60 text-muted-foreground hover:bg-muted"
                     }`}
                   >
                     👥 {currentTeam?.teamName || "この編成"} のみ
@@ -1258,7 +1244,7 @@ export default function LiffRulesPage() {
                     className={`py-2 px-3 rounded-xl border text-xs font-black transition-all cursor-pointer ${
                       editScope === "organization"
                         ? "bg-primary text-primary-foreground border-primary shadow-xs"
-                        : "bg-card border-border text-muted-foreground"
+                        : "bg-card border-border/60 text-muted-foreground hover:bg-muted"
                     }`}
                   >
                     🏢 チーム全体（共通）
@@ -1272,7 +1258,7 @@ export default function LiffRulesPage() {
                 <select
                   value={editCategory}
                   onChange={(e) => setEditCategory(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-xl bg-card border border-border text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                  className="w-full px-3 py-2.5 rounded-xl bg-card border border-border/60 text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40"
                 >
                   <option value="match">🏆 試合・遠征</option>
                   <option value="carpool">🚗 配車・送迎</option>
@@ -1293,7 +1279,7 @@ export default function LiffRulesPage() {
                   required
                   value={editTitle}
                   onChange={(e) => setEditTitle(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-xl bg-card border border-border text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                  className="w-full px-3 py-2.5 rounded-xl bg-card border border-border/60 text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40"
                 />
               </div>
 
@@ -1305,15 +1291,15 @@ export default function LiffRulesPage() {
                   rows={5}
                   value={editContent}
                   onChange={(e) => setEditContent(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-xl bg-card border border-border text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40 leading-relaxed"
+                  className="w-full px-3 py-2.5 rounded-xl bg-card border border-border/60 text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40 leading-relaxed"
                 />
               </div>
 
               {/* 📷 画像添付エリア */}
-              <div className="space-y-2 p-3 rounded-2xl bg-muted/40 border border-border/70">
+              <div className="space-y-2 p-3 rounded-2xl bg-muted/35 border border-border/60">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-black text-foreground flex items-center gap-1.5">
-                    <ImageIcon className="w-4 h-4 text-blue-500" />
+                    <ImageIcon className="w-4 h-4 text-primary" />
                     <span>参考画像・図解の添付 (任意)</span>
                   </span>
                   {editImageUrl && (
@@ -1328,7 +1314,7 @@ export default function LiffRulesPage() {
                 </div>
 
                 {editImageUrl ? (
-                  <div className="relative rounded-xl overflow-hidden border border-border bg-card max-h-40 flex items-center justify-center">
+                  <div className="relative rounded-xl overflow-hidden border border-border/60 bg-card max-h-40 flex items-center justify-center">
                     <img src={editImageUrl} alt="プレビュー" className="max-h-40 w-full object-cover" />
                   </div>
                 ) : (
@@ -1344,7 +1330,7 @@ export default function LiffRulesPage() {
                       type="button"
                       disabled={isEditUploadingImage}
                       onClick={() => editFileInputRef.current?.click()}
-                      className="w-full py-2.5 px-3 rounded-xl border border-dashed border-border hover:border-primary/50 bg-card hover:bg-muted/50 text-muted-foreground hover:text-foreground font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+                      className="w-full py-2.5 px-3 rounded-xl border border-dashed border-border/60 hover:border-primary/40 bg-card hover:bg-muted/50 text-muted-foreground hover:text-foreground font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
                     >
                       {isEditUploadingImage ? (
                         <>
@@ -1363,10 +1349,10 @@ export default function LiffRulesPage() {
               </div>
 
               {/* 📄 PDF添付エリア */}
-              <div className="space-y-2 p-3 rounded-2xl bg-muted/40 border border-border/70">
+              <div className="space-y-2 p-3 rounded-2xl bg-muted/35 border border-border/60">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-black text-foreground flex items-center gap-1.5">
-                    <FileText className="w-4 h-4 text-rose-500" />
+                    <FileText className="w-4 h-4 text-primary" />
                     <span>PDF資料・規約の添付 (任意)</span>
                   </span>
                   {editPdfUrl && (
@@ -1384,9 +1370,9 @@ export default function LiffRulesPage() {
                 </div>
 
                 {editPdfUrl ? (
-                  <div className="flex items-center justify-between p-2.5 rounded-xl border border-border bg-card">
+                  <div className="flex items-center justify-between p-2.5 rounded-xl border border-border/60 bg-card">
                     <div className="flex items-center gap-2 min-w-0">
-                      <div className="w-8 h-8 rounded-lg bg-rose-500/10 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+                      <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
                         <FileText className="w-4 h-4" />
                       </div>
                       <div className="min-w-0">
@@ -1428,7 +1414,7 @@ export default function LiffRulesPage() {
                       type="button"
                       disabled={isEditUploadingPdf}
                       onClick={() => editPdfInputRef.current?.click()}
-                      className="w-full py-2.5 px-3 rounded-xl border border-dashed border-border hover:border-primary/50 bg-card hover:bg-muted/50 text-muted-foreground hover:text-foreground font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+                      className="w-full py-2.5 px-3 rounded-xl border border-dashed border-border/60 hover:border-primary/40 bg-card hover:bg-muted/50 text-muted-foreground hover:text-foreground font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
                     >
                       {isEditUploadingPdf ? (
                         <>
@@ -1437,7 +1423,7 @@ export default function LiffRulesPage() {
                         </>
                       ) : (
                         <>
-                          <Upload className="w-4 h-4 text-rose-500" />
+                          <Upload className="w-4 h-4 text-primary" />
                           <span>PDFファイルを選択 (規約・マニュアル等)</span>
                         </>
                       )}
@@ -1461,14 +1447,14 @@ export default function LiffRulesPage() {
                   <button
                     type="button"
                     onClick={() => setEditingRule(null)}
-                    className="px-4 py-2.5 rounded-xl bg-muted text-muted-foreground hover:text-foreground font-black text-xs transition-all cursor-pointer"
+                    className="px-4 py-2.5 rounded-xl bg-card border border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground font-black text-xs transition-all cursor-pointer"
                   >
                     キャンセル
                   </button>
                   <button
                     type="submit"
                     disabled={isSubmitting || !editTitle.trim() || !editContent.trim()}
-                    className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground font-black text-xs shadow-sm hover:bg-primary/90 active:scale-95 disabled:opacity-50 transition-all flex items-center gap-1.5 cursor-pointer"
+                    className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground font-black text-xs shadow-xs hover:bg-primary/90 active:scale-95 disabled:opacity-50 transition-all flex items-center gap-1.5 cursor-pointer"
                   >
                     {isSubmitting ? (
                       <>

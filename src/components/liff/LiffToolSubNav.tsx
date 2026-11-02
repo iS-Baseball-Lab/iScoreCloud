@@ -35,7 +35,7 @@ export const LIFF_TOOLS: LiffToolMeta[] = [
     statusLabel: "v2稼働中",
     statusTone: "indigo",
     icon: ScanLine,
-    iconColorClass: "bg-indigo-500/15 text-indigo-600 dark:text-indigo-400",
+    iconColorClass: "bg-primary/12 text-primary",
   },
   {
     id: "news-generator",
@@ -46,7 +46,7 @@ export const LIFF_TOOLS: LiffToolMeta[] = [
     statusLabel: "準備中",
     statusTone: "rose",
     icon: Megaphone,
-    iconColorClass: "bg-rose-500/15 text-rose-600 dark:text-rose-400",
+    iconColorClass: "bg-primary/12 text-primary",
   },
   {
     id: "cheer-songs",
@@ -57,7 +57,7 @@ export const LIFF_TOOLS: LiffToolMeta[] = [
     statusLabel: "準備中",
     statusTone: "orange",
     icon: Music,
-    iconColorClass: "bg-orange-500/15 text-orange-600 dark:text-orange-400",
+    iconColorClass: "bg-primary/12 text-primary",
   },
   {
     id: "carpool-generator",
@@ -68,7 +68,7 @@ export const LIFF_TOOLS: LiffToolMeta[] = [
     statusLabel: "要MTG・検討中",
     statusTone: "emerald",
     icon: Wand2,
-    iconColorClass: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
+    iconColorClass: "bg-primary/12 text-primary",
   },
 ];
 
@@ -76,7 +76,7 @@ export function LiffToolSubNav() {
   const pathname = usePathname();
 
   return (
-    <div className="grid grid-cols-4 gap-1.5 p-1 rounded-2xl bg-card border border-border shadow-2xs">
+    <div className="grid grid-cols-4 gap-1.5 p-1 rounded-2xl bg-card border border-border/60 shadow-xs">
       {LIFF_TOOLS.map((tool) => {
         const Icon = tool.icon;
         const isActive = pathname === tool.href;
@@ -107,7 +107,7 @@ export function LiffToolOtherLinks() {
   const otherTools = LIFF_TOOLS.filter((tool) => tool.href !== pathname);
 
   return (
-    <section className="rounded-3xl bg-card border border-border shadow-xs p-4 space-y-3">
+    <section className="rounded-2xl bg-card border border-border/60 shadow-xs p-4 space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="w-7 h-7 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
@@ -129,7 +129,7 @@ export function LiffToolOtherLinks() {
             <Link
               key={tool.id}
               href={tool.href}
-              className="flex items-center gap-3 p-3 rounded-2xl bg-muted/40 hover:bg-muted/80 border border-border/70 transition-all active:scale-98 group"
+              className="flex items-center gap-3 p-3 rounded-2xl bg-muted/35 hover:bg-muted/70 border border-border/60 hover:border-primary/40 transition-all active:scale-98 group"
             >
               <span
                 className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${tool.iconColorClass}`}
@@ -141,7 +141,7 @@ export function LiffToolOtherLinks() {
                   <p className="text-xs font-black text-foreground truncate">
                     {tool.title}
                   </p>
-                  <span className="px-1.5 py-0.5 rounded-full text-[9px] font-black bg-background border border-border text-muted-foreground shrink-0">
+                  <span className="px-1.5 py-0.5 rounded-full text-[9px] font-black bg-primary/10 border border-primary/20 text-primary shrink-0">
                     {tool.statusLabel}
                   </span>
                 </div>

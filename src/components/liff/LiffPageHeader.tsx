@@ -66,7 +66,7 @@ export function LiffPageHeader({
           <button
             type="button"
             onClick={() => router.back()}
-            className="p-2 -ml-1 rounded-2xl bg-card border border-border text-foreground hover:bg-muted active:scale-95 transition-all shadow-xs shrink-0"
+            className="p-2 -ml-1 rounded-2xl bg-card border border-border/60 text-foreground hover:bg-muted active:scale-95 transition-all shadow-xs shrink-0"
             aria-label="戻る"
           >
             <ChevronLeft className="w-5 h-5" />
@@ -94,11 +94,11 @@ export function LiffPageHeader({
           <button
             type="button"
             onClick={handleShare}
-            className="p-2 rounded-2xl bg-card border border-border text-foreground hover:bg-muted active:scale-95 transition-all shadow-xs"
+            className="p-2 rounded-2xl bg-card border border-border/60 text-foreground hover:bg-muted active:scale-95 transition-all shadow-xs"
             aria-label="LINEで共有"
             title="LINEで共有"
           >
-            <Share2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+            <Share2 className="w-4 h-4 text-primary" />
           </button>
         )}
       </div>

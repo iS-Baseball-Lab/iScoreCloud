@@ -575,17 +575,17 @@ export default function LiffProfilePage() {
         />
 
         {isLoading ? (
-          <div className="rounded-3xl bg-card border border-border/80 p-10 flex flex-col items-center justify-center gap-2.5 shadow-sm">
+          <div className="rounded-2xl border border-border/60 bg-card shadow-xs p-10 flex flex-col items-center justify-center gap-2.5">
             <Loader2 className="w-6 h-6 animate-spin text-primary" />
             <p className="text-xs font-bold text-muted-foreground">プロフィール情報を読み込み中...</p>
           </div>
         ) : (
           <>
             {/* ━━━ セクション 1: 🪪 アカウント & チーム内基本情報 ━━━ */}
-            <section className="rounded-3xl bg-card border-2 border-primary/20 p-4 space-y-4 shadow-sm">
+            <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-4">
               {/* LINEアカウント状態ヘッダー */}
-              <div className="flex items-center gap-3 p-3 rounded-2xl bg-muted/60 border border-border/70">
-                <Avatar className="h-12 w-12 border-2 border-primary/30 shrink-0">
+              <div className="flex items-center gap-3 p-3 rounded-2xl bg-muted/50 border border-border/60">
+                <Avatar className="h-12 w-12 border border-primary/30 shrink-0">
                   {profile?.pictureUrl && (
                     <AvatarImage src={profile.pictureUrl} alt={lineDisplayName} />
                   )}
@@ -599,11 +599,11 @@ export default function LiffProfilePage() {
                     <span className="text-sm font-black text-foreground truncate">
                       {profile?.displayName || displayName || "ゲストユーザー"}
                     </span>
-                    <span className="px-2 py-0.5 rounded-full bg-primary/15 text-primary text-[10px] font-black">
+                    <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-black">
                       {roleLabel}
                     </span>
                     {(isDemoMode || providerIsDemo) && (
-                      <span className="px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 text-[10px] font-black">
+                      <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/25 text-[10px] font-black">
                         体験デモ
                       </span>
                     )}
@@ -612,7 +612,7 @@ export default function LiffProfilePage() {
                   <div className="flex items-center gap-1.5">
                     <span
                       className={`w-2 h-2 rounded-full shrink-0 ${
-                        isLoggedIn ? "bg-emerald-500" : "bg-amber-500"
+                        isLoggedIn ? "bg-primary" : "bg-muted-foreground/50"
                       }`}
                     />
                     <span className="text-[11px] font-bold text-muted-foreground truncate">
@@ -627,7 +627,7 @@ export default function LiffProfilePage() {
                       {groups.map((g) => (
                         <span
                           key={g.groupId}
-                          className="px-2 py-0.5 rounded-md bg-card border border-border text-[10px] font-bold text-foreground"
+                          className="px-2 py-0.5 rounded-md bg-card border border-border/60 text-[10px] font-bold text-foreground"
                         >
                           {g.groupName}
                           {g.role ? ` (${g.role})` : ""}
@@ -641,7 +641,7 @@ export default function LiffProfilePage() {
                   <button
                     type="button"
                     onClick={login}
-                    className="py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-black shrink-0 transition-all shadow-xs"
+                    className="py-2 px-3 rounded-xl bg-primary hover:bg-primary/90 active:scale-95 text-primary-foreground text-xs font-black shrink-0 transition-all shadow-xs"
                   >
                     LINE連携
                   </button>
@@ -658,7 +658,7 @@ export default function LiffProfilePage() {
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
                   placeholder="例: 山田 太郎 / 山田（翔太父）"
-                  className="w-full px-3.5 py-2.5 rounded-2xl bg-background border border-border text-sm font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                  className="w-full px-3.5 py-2.5 rounded-2xl bg-background border border-border/60 text-sm font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
                 />
                 <p className="text-[10px] font-bold text-muted-foreground">
                   出欠一覧表や配車表でチーム全員に表示される名前です。LINE名がニックネームの方も分かりやすい表記に変更できます。
@@ -674,7 +674,7 @@ export default function LiffProfilePage() {
                     value={nameKana}
                     onChange={(e) => setNameKana(e.target.value)}
                     placeholder="例: ヤマダ タロウ"
-                    className="w-full px-3 py-2 rounded-2xl bg-background border border-border text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                    className="w-full px-3 py-2 rounded-2xl bg-background border border-border/60 text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
                   />
                 </div>
 
@@ -688,7 +688,7 @@ export default function LiffProfilePage() {
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
                     placeholder="例: 090-1234-5678"
-                    className="w-full px-3 py-2 rounded-2xl bg-background border border-border text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                    className="w-full px-3 py-2 rounded-2xl bg-background border border-border/60 text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
                   />
                 </div>
               </div>
@@ -707,7 +707,7 @@ export default function LiffProfilePage() {
                         className={`py-2 px-2 rounded-2xl text-xs transition-all active:scale-95 border ${
                           active
                             ? "bg-primary text-primary-foreground border-primary shadow-xs font-black"
-                            : "bg-muted/50 border-border/70 text-muted-foreground hover:text-foreground font-bold"
+                            : "bg-muted/50 border-border/60 text-muted-foreground hover:text-foreground font-bold"
                         }`}
                       >
                         {opt.label}
@@ -734,7 +734,7 @@ export default function LiffProfilePage() {
                         className={`px-2.5 py-1 rounded-xl text-[11px] transition-all active:scale-95 border ${
                           active
                             ? "bg-primary text-primary-foreground border-primary font-black"
-                            : "bg-muted/50 border-border/70 text-muted-foreground hover:text-foreground font-bold"
+                            : "bg-muted/50 border-border/60 text-muted-foreground hover:text-foreground font-bold"
                         }`}
                       >
                         {preset}
@@ -747,7 +747,7 @@ export default function LiffProfilePage() {
                   value={subLabel}
                   onChange={(e) => setSubLabel(e.target.value)}
                   placeholder="自由入力も可（例: 2班・会計 / 審判部）"
-                  className="w-full px-3 py-2 rounded-2xl bg-background border border-border text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                  className="w-full px-3 py-2 rounded-2xl bg-background border border-border/60 text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
                 />
               </div>
 
@@ -756,7 +756,7 @@ export default function LiffProfilePage() {
                 type="button"
                 onClick={handleSaveProfile}
                 disabled={isSavingProfile}
-                className="w-full py-3 px-4 rounded-2xl bg-primary hover:brightness-105 active:scale-[0.99] text-primary-foreground text-xs sm:text-sm font-black shadow-sm transition-all flex items-center justify-center gap-2 disabled:opacity-60"
+                className="w-full py-3 px-4 rounded-2xl bg-primary hover:bg-primary/90 active:scale-[0.99] text-primary-foreground text-xs sm:text-sm font-black shadow-xs transition-all flex items-center justify-center gap-2 disabled:opacity-60"
               >
                 {isSavingProfile ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -769,13 +769,13 @@ export default function LiffProfilePage() {
 
             {/* ━━━ セクション 2: 👦 お子様（選手）との親子紐付け ━━━ */}
             {memberType !== "player" && (
-              <section className="rounded-3xl bg-card border-2 border-primary/20 p-4 space-y-3.5 shadow-sm">
+              <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3.5">
                 <div className="flex items-center justify-between pb-2 border-b border-border/60">
                   <div className="flex items-center gap-2">
                     <Users className="w-4 h-4 text-primary" />
                     <h2 className="text-sm font-black text-foreground">お子様（選手）の紐付け</h2>
                   </div>
-                  <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-800 dark:text-amber-300">
+                  <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-primary/10 text-primary">
                     出欠・配車に自動連動
                   </span>
                 </div>
@@ -786,7 +786,7 @@ export default function LiffProfilePage() {
 
                 {/* 紐付け済みのお子様リスト */}
                 {myChildren.length === 0 ? (
-                  <div className="p-3.5 rounded-2xl bg-muted/50 border border-dashed border-border text-center">
+                  <div className="p-3.5 rounded-2xl bg-muted/35 border border-dashed border-border/60 text-center">
                     <p className="text-xs font-bold text-muted-foreground">
                       まだお子様（選手）が紐付けられていません
                     </p>
@@ -796,10 +796,10 @@ export default function LiffProfilePage() {
                     {myChildren.map((child) => (
                       <div
                         key={child.relationId}
-                        className="flex items-center justify-between p-3 rounded-2xl bg-amber-500/8 dark:bg-amber-500/12 border border-amber-500/30"
+                        className="flex items-center justify-between p-3 rounded-2xl bg-primary/10 border border-primary/25"
                       >
                         <div className="flex items-center gap-2.5 min-w-0">
-                          <span className="min-w-[40px] h-7 px-2 rounded-xl bg-amber-500 text-white text-xs font-black flex items-center justify-center shrink-0">
+                          <span className="min-w-[40px] h-7 px-2 rounded-xl bg-primary text-primary-foreground text-xs font-black flex items-center justify-center shrink-0">
                             {formatUniformBadge(child.uniformNumber)}
                           </span>
                           <span className="text-sm font-black text-foreground truncate">
@@ -811,7 +811,7 @@ export default function LiffProfilePage() {
                           type="button"
                           onClick={() => handleUnlinkChild(child)}
                           disabled={isUpdatingChildId === child.childId}
-                          className="py-1.5 px-2.5 rounded-xl bg-card hover:bg-rose-500/10 text-muted-foreground hover:text-rose-600 border border-border text-[11px] font-bold transition-all active:scale-95 flex items-center gap-1 shrink-0"
+                          className="py-1.5 px-2.5 rounded-xl bg-card hover:bg-rose-500/10 text-muted-foreground hover:text-rose-600 border border-border/60 text-[11px] font-bold transition-all active:scale-95 flex items-center gap-1 shrink-0"
                         >
                           {isUpdatingChildId === child.childId ? (
                             <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -829,7 +829,7 @@ export default function LiffProfilePage() {
                 <button
                   type="button"
                   onClick={() => setIsChildPickerOpen((prev) => !prev)}
-                  className="w-full py-2.5 px-3 rounded-2xl bg-muted hover:bg-muted/80 border border-border text-xs font-black text-foreground transition-all active:scale-98 flex items-center justify-center gap-1.5"
+                  className="w-full py-2.5 px-3 rounded-2xl bg-card hover:bg-muted border border-border/60 text-xs font-black text-foreground transition-all active:scale-98 flex items-center justify-center gap-1.5"
                 >
                   {isChildPickerOpen ? (
                     <>
@@ -846,7 +846,7 @@ export default function LiffProfilePage() {
 
                 {/* インライン選手名簿ピッカー */}
                 {isChildPickerOpen && (
-                  <div className="p-3 rounded-2xl bg-background border border-border space-y-2.5">
+                  <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 space-y-2.5">
                     <div className="relative">
                       <Search className="w-3.5 h-3.5 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
                       <input
@@ -854,7 +854,7 @@ export default function LiffProfilePage() {
                         value={playerSearchQuery}
                         onChange={(e) => setPlayerSearchQuery(e.target.value)}
                         placeholder="名前・背番号で選手を検索..."
-                        className="w-full pl-8 pr-3 py-2 rounded-xl bg-card border border-border text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                        className="w-full pl-8 pr-3 py-2 rounded-xl bg-card border border-border/60 text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
                       />
                     </div>
 
@@ -875,8 +875,8 @@ export default function LiffProfilePage() {
                               onClick={() => handleLinkChild(player)}
                               className={`w-full flex items-center justify-between p-2.5 rounded-xl border text-left transition-all ${
                                 isLinked
-                                  ? "bg-primary/10 border-primary/30 text-primary cursor-default"
-                                  : "bg-card hover:bg-muted/70 border-border/80 text-foreground active:scale-[0.99]"
+                                  ? "bg-primary/10 border-primary/25 text-primary cursor-default"
+                                  : "bg-card hover:bg-muted border-border/60 text-foreground active:scale-[0.99]"
                               }`}
                             >
                               <div className="flex items-center gap-2 min-w-0">
@@ -914,7 +914,7 @@ export default function LiffProfilePage() {
             )}
 
             {/* ━━━ セクション 3: 🚗 配車初期値 & マイカー登録 ━━━ */}
-            <section className="rounded-3xl bg-card border-2 border-primary/20 p-4 space-y-4 shadow-sm">
+            <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-4">
               <div className="flex items-center gap-2 pb-2 border-b border-border/60">
                 <Car className="w-4 h-4 text-primary" />
                 <h2 className="text-sm font-black text-foreground">配車希望 & マイカー登録</h2>
@@ -942,7 +942,7 @@ export default function LiffProfilePage() {
                         className={`py-2.5 px-1 rounded-2xl text-xs transition-all active:scale-95 border ${
                           active
                             ? "bg-primary text-primary-foreground border-primary shadow-xs font-black"
-                            : "bg-muted/50 border-border/70 text-muted-foreground hover:text-foreground font-bold"
+                            : "bg-muted/50 border-border/60 text-muted-foreground hover:text-foreground font-bold"
                         }`}
                       >
                         {carOpt.label}
@@ -953,7 +953,7 @@ export default function LiffProfilePage() {
               </div>
 
               {/* マイカー登録一覧 */}
-              <div className="space-y-2.5 pt-1 border-t border-border/50">
+              <div className="space-y-2.5 pt-1 border-t border-border/60">
                 <div className="flex items-center justify-between">
                   <div>
                     <span className="text-xs font-black text-foreground block">
@@ -966,7 +966,7 @@ export default function LiffProfilePage() {
                 </div>
 
                 {myCars.length === 0 ? (
-                  <div className="p-3.5 rounded-2xl bg-muted/50 border border-dashed border-border text-center">
+                  <div className="p-3.5 rounded-2xl bg-muted/35 border border-dashed border-border/60 text-center">
                     <p className="text-xs font-bold text-muted-foreground">
                       登録されている車両はありません
                     </p>
@@ -976,7 +976,7 @@ export default function LiffProfilePage() {
                     {myCars.map((car) => (
                       <div
                         key={car.id}
-                        className="p-3 rounded-2xl bg-background border border-border/90 flex items-center justify-between gap-2"
+                        className="p-3 rounded-2xl bg-muted/35 border border-border/60 flex items-center justify-between gap-2"
                       >
                         <div className="min-w-0 space-y-1">
                           <div className="flex items-center gap-1.5 flex-wrap">
@@ -986,8 +986,8 @@ export default function LiffProfilePage() {
                             <span
                               className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
                                 car.carType === "cargo"
-                                  ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
-                                  : "bg-blue-500/15 text-blue-700 dark:text-blue-300"
+                                  ? "bg-primary/10 text-primary"
+                                  : "bg-muted text-muted-foreground border border-border/60"
                               }`}
                             >
                               {car.carType === "cargo" ? "📦 道具車" : "🚙 普通車"}
@@ -1010,7 +1010,7 @@ export default function LiffProfilePage() {
                           <button
                             type="button"
                             onClick={() => openEditCarForm(car)}
-                            className="p-2 rounded-xl bg-card hover:bg-muted border border-border text-muted-foreground hover:text-foreground transition-all active:scale-95"
+                            className="p-2 rounded-xl bg-card hover:bg-muted border border-border/60 text-muted-foreground hover:text-foreground transition-all active:scale-95"
                             title="車両を編集"
                           >
                             <Edit3 className="w-3.5 h-3.5" />
@@ -1019,7 +1019,7 @@ export default function LiffProfilePage() {
                             type="button"
                             onClick={() => handleDeleteCar(car)}
                             disabled={deletingCarId === car.id}
-                            className="p-2 rounded-xl bg-card hover:bg-rose-500/10 border border-border text-muted-foreground hover:text-rose-600 transition-all active:scale-95"
+                            className="p-2 rounded-xl bg-card hover:bg-rose-500/10 border border-border/60 text-muted-foreground hover:text-rose-600 transition-all active:scale-95"
                             title="車両を削除"
                           >
                             {deletingCarId === car.id ? (
@@ -1036,7 +1036,7 @@ export default function LiffProfilePage() {
 
                 {/* マイカー追加・編集フォーム */}
                 {isCarFormOpen ? (
-                  <div className="p-3.5 rounded-2xl bg-background border-2 border-primary/30 space-y-3">
+                  <div className="p-3.5 rounded-2xl bg-muted/35 border border-border/60 space-y-3">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-black text-foreground">
                         {editingCarId ? "マイカー情報を編集" : "マイカーを新規登録"}
@@ -1062,7 +1062,7 @@ export default function LiffProfilePage() {
                         value={carName}
                         onChange={(e) => setCarName(e.target.value)}
                         placeholder="例: セレナ / アルファード / フリード"
-                        className="w-full px-3 py-2 rounded-xl bg-card border border-border text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                        className="w-full px-3 py-2 rounded-xl bg-card border border-border/60 text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
                       />
                     </div>
 
@@ -1074,7 +1074,7 @@ export default function LiffProfilePage() {
                         <select
                           value={carCapacity}
                           onChange={(e) => setCarCapacity(Number(e.target.value))}
-                          className="w-full px-3 py-2 rounded-xl bg-card border border-border text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                          className="w-full px-3 py-2 rounded-xl bg-card border border-border/60 text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
                         >
                           {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
                             <option key={n} value={n}>
@@ -1093,7 +1093,7 @@ export default function LiffProfilePage() {
                             className={`py-2 px-1.5 rounded-xl text-[11px] border transition-all ${
                               carType === "normal"
                                 ? "bg-primary text-primary-foreground border-primary font-black"
-                                : "bg-card border-border text-muted-foreground font-bold"
+                                : "bg-card border-border/60 text-muted-foreground hover:bg-muted font-bold"
                             }`}
                           >
                             普通車
@@ -1103,8 +1103,8 @@ export default function LiffProfilePage() {
                             onClick={() => setCarType("cargo")}
                             className={`py-2 px-1.5 rounded-xl text-[11px] border transition-all flex items-center justify-center gap-0.5 ${
                               carType === "cargo"
-                                ? "bg-amber-600 text-white border-amber-600 font-black"
-                                : "bg-card border-border text-muted-foreground font-bold"
+                                ? "bg-primary text-primary-foreground border-primary font-black"
+                                : "bg-card border-border/60 text-muted-foreground hover:bg-muted font-bold"
                             }`}
                           >
                             <Package className="w-3 h-3" />
@@ -1124,7 +1124,7 @@ export default function LiffProfilePage() {
                           value={carColor}
                           onChange={(e) => setCarColor(e.target.value)}
                           placeholder="例: ホワイト / 黒"
-                          className="w-full px-3 py-2 rounded-xl bg-card border border-border text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                          className="w-full px-3 py-2 rounded-xl bg-card border border-border/60 text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
                         />
                       </div>
 
@@ -1137,7 +1137,7 @@ export default function LiffProfilePage() {
                           value={carPlate}
                           onChange={(e) => setCarPlate(e.target.value)}
                           placeholder="例: 12-34"
-                          className="w-full px-3 py-2 rounded-xl bg-card border border-border text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                          className="w-full px-3 py-2 rounded-xl bg-card border border-border/60 text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
                         />
                       </div>
                     </div>
@@ -1149,7 +1149,7 @@ export default function LiffProfilePage() {
                           setIsCarFormOpen(false);
                           setEditingCarId(null);
                         }}
-                        className="flex-1 py-2.5 rounded-xl bg-muted hover:bg-muted/80 text-xs font-bold text-foreground border border-border transition-all"
+                        className="flex-1 py-2.5 rounded-xl bg-card hover:bg-muted text-xs font-bold text-foreground border border-border/60 transition-all"
                       >
                         キャンセル
                       </button>
@@ -1157,7 +1157,7 @@ export default function LiffProfilePage() {
                         type="button"
                         onClick={handleSaveCar}
                         disabled={isSavingCar}
-                        className="flex-1 py-2.5 rounded-xl bg-primary text-primary-foreground text-xs font-black shadow-xs transition-all flex items-center justify-center gap-1.5 disabled:opacity-60"
+                        className="flex-1 py-2.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black shadow-xs transition-all flex items-center justify-center gap-1.5 disabled:opacity-60"
                       >
                         {isSavingCar ? (
                           <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -1172,7 +1172,7 @@ export default function LiffProfilePage() {
                   <button
                     type="button"
                     onClick={openNewCarForm}
-                    className="w-full py-2.5 px-3 rounded-2xl bg-muted hover:bg-muted/80 border border-border text-xs font-black text-foreground transition-all active:scale-98 flex items-center justify-center gap-1.5"
+                    className="w-full py-2.5 px-3 rounded-2xl bg-card hover:bg-muted border border-border/60 text-xs font-black text-foreground transition-all active:scale-98 flex items-center justify-center gap-1.5"
                   >
                     <Plus className="w-4 h-4 text-primary" />
                     <span>マイカーを追加登録</span>
@@ -1182,7 +1182,7 @@ export default function LiffProfilePage() {
             </section>
 
             {/* ━━━ セクション 4: 🧢 所属チーム切替 & チーム参加 ━━━ */}
-            <section className="rounded-3xl bg-card border-2 border-primary/20 p-4 space-y-3 shadow-sm">
+            <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3">
               <div className="flex items-center gap-2 pb-2 border-b border-border/60">
                 <ShieldCheck className="w-4 h-4 text-primary" />
                 <h2 className="text-sm font-black text-foreground">所属チーム</h2>
@@ -1204,8 +1204,8 @@ export default function LiffProfilePage() {
                         }}
                         className={`w-full flex items-center justify-between p-3 rounded-2xl border text-left transition-all ${
                           isCurrent
-                            ? "bg-primary/10 border-primary/40 text-primary"
-                            : "bg-background hover:bg-muted/60 border-border text-foreground active:scale-[0.99]"
+                            ? "bg-primary/10 border-primary text-primary"
+                            : "bg-muted/35 hover:bg-muted border-border/60 text-foreground active:scale-[0.99]"
                         }`}
                       >
                         <div className="min-w-0">
@@ -1237,7 +1237,7 @@ export default function LiffProfilePage() {
               <button
                 type="button"
                 onClick={() => setIsJoinModalOpen(true)}
-                className="w-full py-2.5 px-3 rounded-2xl bg-primary/10 hover:bg-primary/15 border border-primary/30 text-xs font-black text-primary transition-all active:scale-98 flex items-center justify-center gap-1.5"
+                className="w-full py-2.5 px-3 rounded-2xl bg-primary/10 hover:bg-primary/15 border border-primary/25 text-xs font-black text-primary transition-all active:scale-98 flex items-center justify-center gap-1.5"
               >
                 <UserPlus className="w-4 h-4" />
                 <span>招待コードで別のチームに参加</span>

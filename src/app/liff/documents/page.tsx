@@ -494,7 +494,7 @@ export default function LiffDocumentsPage() {
           title="資料ダウンロード"
           subtitle="チーム規約・配車マニュアル・合宿のしおり"
           icon={
-            <span className="w-8 h-8 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center font-black">
+            <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
               <FileText className="w-4 h-4" />
             </span>
           }
@@ -512,8 +512,8 @@ export default function LiffDocumentsPage() {
             onClick={() => setSelectedScope("all")}
             className={`px-3.5 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all cursor-pointer ${
               selectedScope === "all"
-                ? "bg-foreground text-background shadow-xs"
-                : "bg-muted/70 text-muted-foreground hover:text-foreground"
+                ? "bg-primary text-primary-foreground shadow-xs"
+                : "bg-card border border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
             }`}
           >
             すべて ({documents.length})
@@ -524,7 +524,7 @@ export default function LiffDocumentsPage() {
             className={`px-3.5 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
               selectedScope === "organization"
                 ? "bg-primary text-primary-foreground shadow-xs"
-                : "bg-muted/70 text-muted-foreground hover:text-foreground"
+                : "bg-card border border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
             }`}
           >
             <Building2 className="w-3.5 h-3.5" />
@@ -535,8 +535,8 @@ export default function LiffDocumentsPage() {
             onClick={() => setSelectedScope("team")}
             className={`px-3.5 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
               selectedScope === "team"
-                ? "bg-purple-600 text-white shadow-xs"
-                : "bg-muted/70 text-muted-foreground hover:text-foreground"
+                ? "bg-primary text-primary-foreground shadow-xs"
+                : "bg-card border border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
             }`}
           >
             <Users2 className="w-3.5 h-3.5" />
@@ -553,7 +553,7 @@ export default function LiffDocumentsPage() {
               placeholder="資料名やキーワードで検索..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9.5 pr-8 py-2.5 bg-card border border-border rounded-2xl text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/40 transition-all"
+              className="w-full pl-9.5 pr-8 py-2.5 bg-card border border-border/60 rounded-2xl text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/40 transition-all"
             />
             {searchQuery && (
               <button
@@ -585,10 +585,10 @@ export default function LiffDocumentsPage() {
         <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 -mx-4 px-4 scrollbar-none">
           {[
             { id: "all", label: "すべての形式", icon: FileText },
-            { id: "XLSX", label: "Excel (表計算)", icon: FileSpreadsheet, activeCls: "bg-emerald-600 text-white shadow-xs" },
-            { id: "PDF", label: "PDF", icon: FileText, activeCls: "bg-rose-600 text-white shadow-xs" },
-            { id: "DOCX", label: "Word (文書)", icon: FileText, activeCls: "bg-blue-600 text-white shadow-xs" },
-            { id: "IMG", label: "画像", icon: ImageIcon, activeCls: "bg-purple-600 text-white shadow-xs" },
+            { id: "XLSX", label: "Excel (表計算)", icon: FileSpreadsheet },
+            { id: "PDF", label: "PDF", icon: FileText },
+            { id: "DOCX", label: "Word (文書)", icon: FileText },
+            { id: "IMG", label: "画像", icon: ImageIcon },
           ].map((type) => {
             const Icon = type.icon;
             const isSelected = selectedFileType === type.id;
@@ -599,8 +599,8 @@ export default function LiffDocumentsPage() {
                 onClick={() => setSelectedFileType(type.id)}
                 className={`px-3 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
                   isSelected
-                    ? (type.activeCls || "bg-foreground text-background shadow-xs")
-                    : "bg-card border border-border text-muted-foreground hover:text-foreground"
+                    ? "bg-primary text-primary-foreground shadow-xs"
+                    : "bg-card border border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
                 }`}
               >
                 <Icon className="w-3.5 h-3.5" />
@@ -620,7 +620,7 @@ export default function LiffDocumentsPage() {
               className={`px-3 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all cursor-pointer ${
                 selectedCategory === cat.id
                   ? "bg-primary text-primary-foreground shadow-xs"
-                  : "bg-card border border-border text-muted-foreground hover:text-foreground"
+                  : "bg-card border border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
               }`}
             >
               {cat.label}
@@ -635,7 +635,7 @@ export default function LiffDocumentsPage() {
             <span className="text-xs font-bold">資料を読み込み中...</span>
           </div>
         ) : filteredDocs.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-center bg-card border border-border rounded-3xl p-6 space-y-3">
+          <div className="flex flex-col items-center justify-center py-16 text-center rounded-2xl border border-border/60 bg-card shadow-xs p-6 space-y-3">
             <div className="w-12 h-12 rounded-2xl bg-muted flex items-center justify-center text-muted-foreground">
               <FileText className="w-6 h-6" />
             </div>
@@ -657,21 +657,11 @@ export default function LiffDocumentsPage() {
               return (
                 <div
                   key={doc.id}
-                  className="bg-card border border-border rounded-3xl p-4 shadow-xs space-y-3 hover:border-primary/40 transition-colors"
+                  className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3 hover:border-primary/40 transition-colors"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-start gap-2.5 min-w-0">
-                      <span
-                        className={`w-9 h-9 rounded-2xl flex items-center justify-center shrink-0 font-black text-xs ${
-                          isExcel
-                            ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                            : isWord
-                            ? "bg-blue-500/10 text-blue-600 dark:text-blue-400"
-                            : isImg
-                            ? "bg-purple-500/10 text-purple-600 dark:text-purple-400"
-                            : "bg-rose-500/10 text-rose-600 dark:text-rose-400"
-                        }`}
-                      >
+                      <span className="w-9 h-9 rounded-2xl flex items-center justify-center shrink-0 font-black text-xs bg-primary/10 text-primary">
                         {isExcel ? (
                           <FileSpreadsheet className="w-4 h-4" />
                         ) : isImg ? (
@@ -686,8 +676,8 @@ export default function LiffDocumentsPage() {
                           <span
                             className={`px-2 py-0.5 rounded-md text-[10px] font-black flex items-center gap-1 ${
                               doc.scope === "organization"
-                                ? "bg-primary/10 text-primary border border-primary/20"
-                                : "bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20"
+                                ? "bg-primary/10 text-primary border border-primary/25"
+                                : "bg-muted text-muted-foreground border border-border/60"
                             }`}
                           >
                             {doc.scope === "organization" ? (
@@ -709,17 +699,7 @@ export default function LiffDocumentsPage() {
                       </div>
                     </div>
 
-                    <span
-                      className={`px-2 py-0.5 rounded-md text-[10px] font-black shrink-0 border ${
-                        isExcel
-                          ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
-                          : isWord
-                          ? "bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/20"
-                          : isImg
-                          ? "bg-purple-500/15 text-purple-600 dark:text-purple-400 border-purple-500/20"
-                          : "bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/20"
-                      }`}
-                    >
+                    <span className="px-2 py-0.5 rounded-md text-[10px] font-black shrink-0 border bg-primary/10 text-primary border-primary/25">
                       {isExcel ? "Excel" : isWord ? "Word" : isImg ? "画像" : doc.fileType}
                     </span>
                   </div>
@@ -730,7 +710,7 @@ export default function LiffDocumentsPage() {
                   </p>
                 )}
 
-                <div className="flex items-center justify-between pt-2 border-t border-border/50 text-[11px] font-bold text-muted-foreground">
+                <div className="flex items-center justify-between pt-2 border-t border-border/60 text-[11px] font-bold text-muted-foreground">
                   <div className="flex items-center gap-2">
                     <span>{doc.fileSize}</span>
                     <span>•</span>
@@ -741,7 +721,7 @@ export default function LiffDocumentsPage() {
                     <button
                       type="button"
                       onClick={() => openEditModal(doc)}
-                      className="p-1.5 rounded-xl border border-border hover:bg-muted text-muted-foreground hover:text-foreground transition-all flex items-center gap-1 text-xs font-black"
+                      className="p-1.5 rounded-xl border border-border/60 bg-card hover:bg-muted text-muted-foreground hover:text-foreground transition-all flex items-center gap-1 text-xs font-black"
                       title="資料を編集・削除"
                     >
                       <Pencil className="w-3.5 h-3.5" />
@@ -774,9 +754,9 @@ export default function LiffDocumentsPage() {
         mounted &&
         createPortal(
           <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-background/80 backdrop-blur-md overflow-y-auto animate-in fade-in duration-200">
-            <div className="w-full max-w-md bg-card rounded-3xl border border-border shadow-2xl p-5 sm:p-6 space-y-4 my-auto max-h-[92vh] overflow-y-auto animate-in zoom-in-95 duration-200">
+            <div className="w-full max-w-md rounded-2xl border border-border/60 bg-card shadow-xs p-5 sm:p-6 space-y-4 my-auto max-h-[92vh] overflow-y-auto animate-in zoom-in-95 duration-200">
               
-              <div className="flex items-center justify-between pb-3 border-b border-border/50 sticky top-0 bg-card z-10">
+              <div className="flex items-center justify-between pb-3 border-b border-border/60 sticky top-0 bg-card z-10">
                 <div className="flex items-center gap-2.5">
                   <div className="w-9 h-9 rounded-2xl bg-primary/10 text-primary flex items-center justify-center">
                     <Plus className="w-5 h-5" />
@@ -815,7 +795,7 @@ export default function LiffDocumentsPage() {
                       className={`p-3 rounded-2xl text-left border transition-all flex flex-col gap-1 ${
                         newScope === "organization"
                           ? "bg-primary/10 border-primary text-primary shadow-xs"
-                          : "bg-background border-border text-muted-foreground hover:text-foreground"
+                          : "bg-background border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
                       }`}
                     >
                       <div className="flex items-center gap-1.5 font-black text-xs">
@@ -832,8 +812,8 @@ export default function LiffDocumentsPage() {
                       onClick={() => setNewScope("team")}
                       className={`p-3 rounded-2xl text-left border transition-all flex flex-col gap-1 ${
                         newScope === "team"
-                          ? "bg-purple-500/10 border-purple-500 text-purple-600 dark:text-purple-400 shadow-xs"
-                          : "bg-background border-border text-muted-foreground hover:text-foreground"
+                          ? "bg-primary/10 border-primary text-primary shadow-xs"
+                          : "bg-background border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
                       }`}
                     >
                       <div className="flex items-center gap-1.5 font-black text-xs">
@@ -850,17 +830,17 @@ export default function LiffDocumentsPage() {
                 {/* アップロード方式 */}
                 <div className="space-y-1.5">
                   <label className="text-xs font-black text-foreground">アップロード方法</label>
-                  <div className="grid grid-cols-2 gap-2 p-1 bg-muted/60 rounded-xl border border-border">
+                  <div className="grid grid-cols-2 gap-2 p-1 bg-muted/50 rounded-xl border border-border/60">
                     <button
                       type="button"
                       onClick={() => setUploadMode("file")}
                       className={`py-1.5 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-1.5 ${
                         uploadMode === "file"
-                          ? "bg-card text-foreground shadow-xs"
+                          ? "bg-primary text-primary-foreground shadow-xs"
                           : "text-muted-foreground hover:text-foreground"
                       }`}
                     >
-                      <UploadCloud className="w-3.5 h-3.5 text-primary" />
+                      <UploadCloud className="w-3.5 h-3.5" />
                       <span>ファイル選択 (R2)</span>
                     </button>
 
@@ -869,7 +849,7 @@ export default function LiffDocumentsPage() {
                       onClick={() => setUploadMode("url")}
                       className={`py-1.5 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-1.5 ${
                         uploadMode === "url"
-                          ? "bg-card text-foreground shadow-xs"
+                          ? "bg-primary text-primary-foreground shadow-xs"
                           : "text-muted-foreground hover:text-foreground"
                       }`}
                     >
@@ -894,7 +874,7 @@ export default function LiffDocumentsPage() {
                     />
 
                     {selectedFile ? (
-                      <div className="p-3 rounded-2xl bg-primary/5 border-2 border-dashed border-primary/40 flex items-center justify-between gap-2">
+                      <div className="p-3 rounded-2xl bg-primary/10 border border-dashed border-primary/40 flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2 min-w-0">
                           <Paperclip className="w-4 h-4 text-primary shrink-0" />
                           <div className="min-w-0">
@@ -920,7 +900,7 @@ export default function LiffDocumentsPage() {
                     ) : (
                       <label
                         htmlFor="create-doc-file-input"
-                        className="w-full py-6 rounded-2xl border-2 border-dashed border-border hover:border-primary/50 bg-background/50 hover:bg-muted/40 transition-all flex flex-col items-center justify-center gap-1.5 text-muted-foreground cursor-pointer group active:scale-[0.99]"
+                        className="w-full py-6 rounded-2xl border border-dashed border-border/60 bg-card shadow-xs hover:border-primary/40 hover:bg-muted/35 transition-all flex flex-col items-center justify-center gap-1.5 text-muted-foreground cursor-pointer group active:scale-[0.99]"
                       >
                         <div className="w-10 h-10 rounded-2xl bg-primary/10 text-primary flex items-center justify-center group-hover:scale-110 transition-transform">
                           <UploadCloud className="w-5 h-5" />
@@ -946,7 +926,7 @@ export default function LiffDocumentsPage() {
                         placeholder="Google Drive, Dropbox, PDF等の共有URL"
                         value={newFileUrl}
                         onChange={(e) => setNewFileUrl(e.target.value)}
-                        className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/20"
+                        className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-border/60 bg-background text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/20"
                         required
                       />
                     </div>
@@ -960,10 +940,10 @@ export default function LiffDocumentsPage() {
                   </label>
                   <div className="grid grid-cols-4 gap-1.5">
                     {[
-                      { id: "XLSX", label: "Excel", sub: "表計算", icon: FileSpreadsheet, color: "text-emerald-600 bg-emerald-500/10 border-emerald-500/40" },
-                      { id: "PDF", label: "PDF", sub: "文書", icon: FileText, color: "text-rose-600 bg-rose-500/10 border-rose-500/40" },
-                      { id: "DOCX", label: "Word", sub: "書類", icon: FileText, color: "text-blue-600 bg-blue-500/10 border-blue-500/40" },
-                      { id: "IMG", label: "画像", sub: "写真", icon: ImageIcon, color: "text-purple-600 bg-purple-500/10 border-purple-500/40" },
+                      { id: "XLSX", label: "Excel", sub: "表計算", icon: FileSpreadsheet },
+                      { id: "PDF", label: "PDF", sub: "文書", icon: FileText },
+                      { id: "DOCX", label: "Word", sub: "書類", icon: FileText },
+                      { id: "IMG", label: "画像", sub: "写真", icon: ImageIcon },
                     ].map((fmt) => {
                       const isSelected = newFileType === fmt.id;
                       const Icon = fmt.icon;
@@ -974,8 +954,8 @@ export default function LiffDocumentsPage() {
                           onClick={() => setNewFileType(fmt.id)}
                           className={`p-2 rounded-2xl border text-center transition-all flex flex-col items-center gap-0.5 cursor-pointer ${
                             isSelected
-                              ? `${fmt.color} border-current ring-2 ring-current/25 shadow-xs font-black`
-                              : "bg-background border-border text-muted-foreground hover:text-foreground font-bold"
+                              ? "border-primary bg-primary/10 text-primary shadow-xs font-black"
+                              : "bg-background border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground font-bold"
                           }`}
                         >
                           <Icon className="w-4 h-4 mb-0.5" />
@@ -997,7 +977,7 @@ export default function LiffDocumentsPage() {
                     placeholder="例: 2026年度 遠征合宿のしおり"
                     value={newTitle}
                     onChange={(e) => setNewTitle(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/20"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-border/60 bg-background text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/20"
                     required
                   />
                 </div>
@@ -1008,7 +988,7 @@ export default function LiffDocumentsPage() {
                   <select
                     value={newCategory}
                     onChange={(e) => setNewCategory(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/20"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-border/60 bg-background text-xs font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/20"
                   >
                     <option value="rules">規約・会則</option>
                     <option value="match">大会・試合</option>
@@ -1029,14 +1009,14 @@ export default function LiffDocumentsPage() {
                     placeholder="資料の概要や保護者への連絡事項を記入"
                     value={newDescription}
                     onChange={(e) => setNewDescription(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/20 resize-none"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-border/60 bg-background text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/20 resize-none"
                   />
                 </div>
 
                 <button
                   type="submit"
                   disabled={isSubmitting || (uploadMode === "file" && !selectedFile)}
-                  className="w-full py-3 rounded-2xl bg-primary text-primary-foreground font-black text-xs hover:bg-primary/90 active:scale-[0.99] transition-all flex items-center justify-center gap-2 shadow-sm disabled:opacity-50"
+                  className="w-full py-3 rounded-2xl bg-primary text-primary-foreground font-black text-xs hover:bg-primary/90 active:scale-[0.99] transition-all flex items-center justify-center gap-2 shadow-xs disabled:opacity-50"
                 >
                   {isSubmitting ? (
                     <>
@@ -1063,11 +1043,11 @@ export default function LiffDocumentsPage() {
         mounted &&
         createPortal(
           <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-background/80 backdrop-blur-md overflow-y-auto animate-in fade-in duration-200">
-            <div className="w-full max-w-md bg-card rounded-3xl border border-border shadow-2xl p-5 sm:p-6 space-y-4 my-auto max-h-[92vh] overflow-y-auto animate-in zoom-in-95 duration-200">
+            <div className="w-full max-w-md rounded-2xl border border-border/60 bg-card shadow-xs p-5 sm:p-6 space-y-4 my-auto max-h-[92vh] overflow-y-auto animate-in zoom-in-95 duration-200">
               
-              <div className="flex items-center justify-between pb-3 border-b border-border/50 sticky top-0 bg-card z-10">
+              <div className="flex items-center justify-between pb-3 border-b border-border/60 sticky top-0 bg-card z-10">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-2xl bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center font-black">
+                  <div className="w-9 h-9 rounded-2xl bg-primary/10 text-primary flex items-center justify-center font-black">
                     <Pencil className="w-4 h-4" />
                   </div>
                   <div>
@@ -1104,7 +1084,7 @@ export default function LiffDocumentsPage() {
                       className={`p-3 rounded-2xl text-left border transition-all flex flex-col gap-1 ${
                         editScope === "organization"
                           ? "bg-primary/10 border-primary text-primary shadow-xs"
-                          : "bg-background border-border text-muted-foreground hover:text-foreground"
+                          : "bg-background border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
                       }`}
                     >
                       <div className="flex items-center gap-1.5 font-black text-xs">
@@ -1121,8 +1101,8 @@ export default function LiffDocumentsPage() {
                       onClick={() => setEditScope("team")}
                       className={`p-3 rounded-2xl text-left border transition-all flex flex-col gap-1 ${
                         editScope === "team"
-                          ? "bg-purple-500/10 border-purple-500 text-purple-600 dark:text-purple-400 shadow-xs"
-                          : "bg-background border-border text-muted-foreground hover:text-foreground"
+                          ? "bg-primary/10 border-primary text-primary shadow-xs"
+                          : "bg-background border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
                       }`}
                     >
                       <div className="flex items-center gap-1.5 font-black text-xs">
@@ -1143,10 +1123,10 @@ export default function LiffDocumentsPage() {
                   </label>
                   <div className="grid grid-cols-4 gap-1.5">
                     {[
-                      { id: "XLSX", label: "Excel", sub: "表計算", icon: FileSpreadsheet, color: "text-emerald-600 bg-emerald-500/10 border-emerald-500/40" },
-                      { id: "PDF", label: "PDF", sub: "文書", icon: FileText, color: "text-rose-600 bg-rose-500/10 border-rose-500/40" },
-                      { id: "DOCX", label: "Word", sub: "書類", icon: FileText, color: "text-blue-600 bg-blue-500/10 border-blue-500/40" },
-                      { id: "IMG", label: "画像", sub: "写真", icon: ImageIcon, color: "text-purple-600 bg-purple-500/10 border-purple-500/40" },
+                      { id: "XLSX", label: "Excel", sub: "表計算", icon: FileSpreadsheet },
+                      { id: "PDF", label: "PDF", sub: "文書", icon: FileText },
+                      { id: "DOCX", label: "Word", sub: "書類", icon: FileText },
+                      { id: "IMG", label: "画像", sub: "写真", icon: ImageIcon },
                     ].map((fmt) => {
                       const isSelected = editFileType === fmt.id;
                       const Icon = fmt.icon;
@@ -1157,8 +1137,8 @@ export default function LiffDocumentsPage() {
                           onClick={() => setEditFileType(fmt.id)}
                           className={`p-2 rounded-2xl border text-center transition-all flex flex-col items-center gap-0.5 cursor-pointer ${
                             isSelected
-                              ? `${fmt.color} border-current ring-2 ring-current/25 shadow-xs font-black`
-                              : "bg-background border-border text-muted-foreground hover:text-foreground font-bold"
+                              ? "border-primary bg-primary/10 text-primary shadow-xs font-black"
+                              : "bg-background border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground font-bold"
                           }`}
                         >
                           <Icon className="w-4 h-4 mb-0.5" />
@@ -1179,7 +1159,7 @@ export default function LiffDocumentsPage() {
                     type="text"
                     value={editTitle}
                     onChange={(e) => setEditTitle(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/20"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-border/60 bg-background text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/20"
                     required
                   />
                 </div>
@@ -1190,7 +1170,7 @@ export default function LiffDocumentsPage() {
                   <select
                     value={editCategory}
                     onChange={(e) => setEditCategory(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/20"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-border/60 bg-background text-xs font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/20"
                   >
                     <option value="rules">規約・会則</option>
                     <option value="match">大会・試合</option>
@@ -1206,13 +1186,13 @@ export default function LiffDocumentsPage() {
                 {/* ファイルの変更オプション */}
                 <div className="space-y-1.5">
                   <label className="text-xs font-black text-foreground">ファイルの差し替え</label>
-                  <div className="grid grid-cols-3 gap-1.5 p-1 bg-muted/60 rounded-xl border border-border">
+                  <div className="grid grid-cols-3 gap-1.5 p-1 bg-muted/50 rounded-xl border border-border/60">
                     <button
                       type="button"
                       onClick={() => setEditUploadMode("current")}
                       className={`py-1.5 rounded-lg text-[11px] font-black transition-all cursor-pointer ${
                         editUploadMode === "current"
-                          ? "bg-card text-foreground shadow-xs"
+                          ? "bg-primary text-primary-foreground shadow-xs"
                           : "text-muted-foreground hover:text-foreground"
                       }`}
                     >
@@ -1223,7 +1203,7 @@ export default function LiffDocumentsPage() {
                       onClick={() => setEditUploadMode("file")}
                       className={`py-1.5 rounded-lg text-[11px] font-black transition-all cursor-pointer ${
                         editUploadMode === "file"
-                          ? "bg-card text-foreground shadow-xs"
+                          ? "bg-primary text-primary-foreground shadow-xs"
                           : "text-muted-foreground hover:text-foreground"
                       }`}
                     >
@@ -1234,7 +1214,7 @@ export default function LiffDocumentsPage() {
                       onClick={() => setEditUploadMode("url")}
                       className={`py-1.5 rounded-lg text-[11px] font-black transition-all cursor-pointer ${
                         editUploadMode === "url"
-                          ? "bg-card text-foreground shadow-xs"
+                          ? "bg-primary text-primary-foreground shadow-xs"
                           : "text-muted-foreground hover:text-foreground"
                       }`}
                     >
@@ -1253,7 +1233,7 @@ export default function LiffDocumentsPage() {
                         className="sr-only"
                       />
                       {editSelectedFile ? (
-                        <div className="p-3 rounded-2xl bg-primary/5 border-2 border-dashed border-primary/40 flex items-center justify-between gap-2">
+                        <div className="p-3 rounded-2xl bg-primary/10 border border-dashed border-primary/40 flex items-center justify-between gap-2">
                           <div className="flex items-center gap-2 min-w-0">
                             <Paperclip className="w-4 h-4 text-primary shrink-0" />
                             <p className="text-xs font-black text-foreground truncate">
@@ -1274,7 +1254,7 @@ export default function LiffDocumentsPage() {
                       ) : (
                         <label
                           htmlFor="edit-doc-file-input"
-                          className="w-full py-4 rounded-2xl border-2 border-dashed border-border hover:border-primary/50 bg-background flex flex-col items-center justify-center gap-1 text-muted-foreground cursor-pointer group active:scale-[0.99]"
+                          className="w-full py-4 rounded-2xl border border-dashed border-border/60 bg-card shadow-xs hover:border-primary/40 hover:bg-muted/35 flex flex-col items-center justify-center gap-1 text-muted-foreground cursor-pointer group active:scale-[0.99]"
                         >
                           <UploadCloud className="w-5 h-5 text-primary group-hover:scale-110 transition-transform" />
                           <span className="text-xs font-bold text-foreground">
@@ -1293,7 +1273,7 @@ export default function LiffDocumentsPage() {
                         placeholder="Google Drive, Dropbox等のURL"
                         value={editFileUrl}
                         onChange={(e) => setEditFileUrl(e.target.value)}
-                        className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/20"
+                        className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-border/60 bg-background text-xs font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/20"
                         required
                       />
                     </div>
@@ -1307,7 +1287,7 @@ export default function LiffDocumentsPage() {
                     rows={2}
                     value={editDescription}
                     onChange={(e) => setEditDescription(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/20 resize-none"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-border/60 bg-background text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/20 resize-none"
                   />
                 </div>
 
@@ -1329,7 +1309,7 @@ export default function LiffDocumentsPage() {
                   <button
                     type="submit"
                     disabled={isSubmitting || isDeleting}
-                    className="flex-1 py-3 rounded-2xl bg-primary text-primary-foreground font-black text-xs hover:bg-primary/90 active:scale-[0.99] transition-all flex items-center justify-center gap-2 shadow-sm disabled:opacity-50"
+                    className="flex-1 py-3 rounded-2xl bg-primary text-primary-foreground font-black text-xs hover:bg-primary/90 active:scale-[0.99] transition-all flex items-center justify-center gap-2 shadow-xs disabled:opacity-50"
                   >
                     {isSubmitting ? (
                       <>
@@ -1359,20 +1339,12 @@ export default function LiffDocumentsPage() {
               onClick={() => setPreviewDoc(null)}
             />
 
-            <div className="w-full max-w-lg bg-card rounded-3xl border border-border shadow-2xl overflow-hidden flex flex-col max-h-[92vh] relative z-10 animate-in zoom-in-95 duration-200">
+            <div className="w-full max-w-lg rounded-2xl border border-border/60 bg-card shadow-xs overflow-hidden flex flex-col max-h-[92vh] relative z-10 animate-in zoom-in-95 duration-200">
               
               {/* モーダルヘッダー */}
-              <div className="flex items-center justify-between p-4 border-b border-border/50 bg-card">
+              <div className="flex items-center justify-between p-4 border-b border-border/60 bg-card">
                 <div className="flex items-center gap-2.5 min-w-0">
-                  <span
-                    className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
-                      previewDoc.fileType === "XLSX" || previewDoc.fileUrl.match(/\.(xlsx?|csv|xlsm)($|\?)/i)
-                        ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                        : previewDoc.fileType === "IMG" || previewDoc.fileUrl.startsWith("data:image/")
-                        ? "bg-purple-500/10 text-purple-600 dark:text-purple-400"
-                        : "bg-primary/10 text-primary"
-                    }`}
-                  >
+                  <span className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 bg-primary/10 text-primary">
                     {previewDoc.fileType === "XLSX" || previewDoc.fileUrl.match(/\.(xlsx?|csv|xlsm)($|\?)/i) ? (
                       <FileSpreadsheet className="w-4 h-4" />
                     ) : previewDoc.fileType === "IMG" || previewDoc.fileUrl.startsWith("data:image/") ? (
@@ -1416,10 +1388,10 @@ export default function LiffDocumentsPage() {
               </div>
 
               {/* プレビューコンテンツ本体 */}
-              <div className="flex-1 overflow-y-auto p-4 flex flex-col items-center justify-center bg-muted/30 min-h-[260px] max-h-[70vh]">
+              <div className="flex-1 overflow-y-auto p-4 flex flex-col items-center justify-center bg-muted/35 min-h-[260px] max-h-[70vh]">
                 {previewDoc.fileType === "IMG" || previewDoc.fileUrl.startsWith("data:image/") || previewDoc.fileUrl.match(/\.(png|jpg|jpeg|webp|gif)$/i) ? (
                   <div className="flex flex-col items-center justify-center w-full space-y-3">
-                    <div className="relative max-w-full rounded-2xl overflow-hidden shadow-md border border-border/80 bg-black/5 flex items-center justify-center">
+                    <div className="relative max-w-full rounded-2xl overflow-hidden shadow-xs border border-border/60 bg-black/5 flex items-center justify-center">
                       <img
                         src={previewDoc.fileUrl}
                         alt={previewDoc.title}
@@ -1452,11 +1424,11 @@ export default function LiffDocumentsPage() {
                   </div>
                 ) : previewDoc.fileType === "XLSX" || previewDoc.fileUrl.match(/\.(xlsx?|csv|xlsm)($|\?)/i) ? (
                   <div className="flex flex-col items-center justify-center py-8 px-4 text-center space-y-4 max-w-sm w-full">
-                    <div className="w-16 h-16 rounded-3xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shadow-inner border border-emerald-500/20">
+                    <div className="w-16 h-16 rounded-2xl bg-primary/10 text-primary flex items-center justify-center border border-primary/25">
                       <FileSpreadsheet className="w-8 h-8" />
                     </div>
                     <div className="space-y-1.5">
-                      <span className="px-2.5 py-0.5 rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 text-[10px] font-black border border-emerald-500/20 inline-block">
+                      <span className="px-2.5 py-0.5 rounded-md bg-primary/10 text-primary text-[10px] font-black border border-primary/25 inline-block">
                         Excel スプレッドシート
                       </span>
                       <h4 className="text-sm font-black text-foreground">{previewDoc.title}</h4>
@@ -1465,7 +1437,7 @@ export default function LiffDocumentsPage() {
                       </p>
                     </div>
 
-                    <div className="p-3 rounded-2xl bg-muted/60 border border-border/80 text-[11px] font-bold text-muted-foreground text-left w-full space-y-1">
+                    <div className="p-3 rounded-2xl bg-muted/50 border border-border/60 text-[11px] font-bold text-muted-foreground text-left w-full space-y-1">
                       <p className="flex items-center gap-1.5 text-foreground">
                         <span>💡</span>
                         <span>ご利用方法</span>
@@ -1480,7 +1452,7 @@ export default function LiffDocumentsPage() {
                         href={previewDoc.fileUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="w-full py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black transition-all flex items-center justify-center gap-2 shadow-sm active:scale-95 cursor-pointer"
+                        className="w-full py-3 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black transition-all flex items-center justify-center gap-2 shadow-xs active:scale-95 cursor-pointer"
                       >
                         <ExternalLink className="w-4 h-4" />
                         <span>外部スプレッドシートで開く</span>
@@ -1493,7 +1465,7 @@ export default function LiffDocumentsPage() {
                             ? previewDoc.title
                             : `${previewDoc.title}.xlsx`
                         }
-                        className="w-full py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black transition-all flex items-center justify-center gap-2 shadow-sm active:scale-95 cursor-pointer"
+                        className="w-full py-3 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black transition-all flex items-center justify-center gap-2 shadow-xs active:scale-95 cursor-pointer"
                       >
                         <Download className="w-4 h-4" />
                         <span>Excelファイルをダウンロード</span>
@@ -1502,7 +1474,7 @@ export default function LiffDocumentsPage() {
                   </div>
                 ) : (
                   <div className="flex flex-col items-center justify-center py-10 text-center space-y-3">
-                    <div className="w-16 h-16 rounded-3xl bg-primary/10 text-primary flex items-center justify-center shadow-inner">
+                    <div className="w-16 h-16 rounded-2xl bg-primary/10 text-primary flex items-center justify-center">
                       <FileText className="w-8 h-8" />
                     </div>
                     <div className="space-y-1">
@@ -1516,7 +1488,7 @@ export default function LiffDocumentsPage() {
                         href={previewDoc.fileUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="px-5 py-2.5 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black transition-all flex items-center gap-2 shadow-sm active:scale-95"
+                        className="px-5 py-2.5 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black transition-all flex items-center gap-2 shadow-xs active:scale-95"
                       >
                         <ExternalLink className="w-4 h-4" />
                         <span>外部サイトで閲覧する</span>
@@ -1525,7 +1497,7 @@ export default function LiffDocumentsPage() {
                       <a
                         href={previewDoc.fileUrl}
                         download={previewDoc.title}
-                        className="px-5 py-2.5 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black transition-all flex items-center gap-2 shadow-sm active:scale-95"
+                        className="px-5 py-2.5 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black transition-all flex items-center gap-2 shadow-xs active:scale-95"
                       >
                         <Download className="w-4 h-4" />
                         <span>ファイルを保存する</span>
@@ -1537,7 +1509,7 @@ export default function LiffDocumentsPage() {
 
               {/* モーダルフッター */}
               {previewDoc.description && (
-                <div className="p-3.5 border-t border-border/50 bg-card text-xs text-muted-foreground font-medium">
+                <div className="p-3.5 border-t border-border/60 bg-card text-xs text-muted-foreground font-medium">
                   <p className="line-clamp-2">{previewDoc.description}</p>
                 </div>
               )}

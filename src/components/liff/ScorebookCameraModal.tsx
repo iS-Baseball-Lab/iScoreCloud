@@ -410,7 +410,7 @@ export function ScorebookCameraModal({
       {/* 上部ソリッドヘッダー（常に即タップ可能でデッドロックゼロ） */}
       <div className="px-4 py-3 bg-slate-900 border-b border-slate-800 flex items-center justify-between gap-2 shrink-0">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="w-7 h-7 rounded-lg bg-indigo-600 text-white flex items-center justify-center shrink-0">
+          <span className="w-7 h-7 rounded-lg bg-primary text-primary-foreground flex items-center justify-center shrink-0">
             <Camera className="w-4 h-4" />
           </span>
           <h2 className="text-xs sm:text-sm font-black truncate">{title}</h2>
@@ -440,24 +440,24 @@ export function ScorebookCameraModal({
 
         {/* スコアブック4隅ガイド枠 */}
         {status === "ready" && (
-          <div className="pointer-events-none absolute inset-4 sm:inset-6 border-2 border-dashed border-sky-400/75 rounded-2xl flex flex-col justify-between p-3 z-10">
+          <div className="pointer-events-none absolute inset-4 sm:inset-6 border-2 border-dashed border-primary/80 rounded-2xl flex flex-col justify-between p-3 z-10">
             <div className="flex justify-between">
-              <span className="w-5 h-5 border-t-4 border-l-4 border-sky-400 rounded-tl-md" />
-              <span className="w-5 h-5 border-t-4 border-r-4 border-sky-400 rounded-tr-md" />
+              <span className="w-5 h-5 border-t-4 border-l-4 border-primary rounded-tl-md" />
+              <span className="w-5 h-5 border-t-4 border-r-4 border-primary rounded-tr-md" />
             </div>
-            <div className="mx-auto px-3 py-1 rounded-full bg-slate-950 border border-slate-700 text-[11px] font-black text-sky-300 text-center">
+            <div className="mx-auto px-3 py-1 rounded-full bg-slate-950/95 border border-slate-700 text-[11px] font-black text-white text-center">
               {hintText}
             </div>
             <div className="flex justify-between">
-              <span className="w-5 h-5 border-b-4 border-l-4 border-sky-400 rounded-bl-md" />
-              <span className="w-5 h-5 border-b-4 border-r-4 border-sky-400 rounded-br-md" />
+              <span className="w-5 h-5 border-b-4 border-l-4 border-primary rounded-bl-md" />
+              <span className="w-5 h-5 border-b-4 border-r-4 border-primary rounded-br-md" />
             </div>
           </div>
         )}
 
         {(status === "starting" || status === "capturing") && (
           <div className="absolute inset-0 z-20 bg-slate-950 flex flex-col items-center justify-center gap-3 px-6 text-center">
-            <Loader2 className="w-8 h-8 animate-spin text-indigo-400" />
+            <Loader2 className="w-8 h-8 animate-spin text-primary" />
             <p className="text-xs font-black text-white">
               {status === "capturing"
                 ? "高精細画像を切り出しています..."
@@ -471,8 +471,8 @@ export function ScorebookCameraModal({
 
         {status === "error" && (
           <div className="absolute inset-0 z-20 flex items-center justify-center p-4 overflow-y-auto">
-            <div className="max-w-sm w-full p-5 rounded-3xl bg-slate-900 border-2 border-slate-700 space-y-4 text-center shadow-lg">
-              <div className="w-12 h-12 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center mx-auto">
+            <div className="max-w-sm w-full p-5 rounded-2xl bg-slate-900 border border-slate-700 space-y-4 text-center shadow-lg">
+              <div className="w-12 h-12 rounded-2xl bg-primary/20 text-primary flex items-center justify-center mx-auto">
                 <AlertCircle className="w-6 h-6" />
               </div>
 
@@ -486,7 +486,7 @@ export function ScorebookCameraModal({
               </div>
 
               <div className="space-y-2 pt-1">
-                <div className="relative overflow-hidden w-full py-3 px-4 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black flex items-center justify-center gap-2">
+                <div className="relative overflow-hidden w-full py-3 px-4 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black flex items-center justify-center gap-2">
                   <ImagePlus className="w-4 h-4 shrink-0 pointer-events-none" />
                   <span className="pointer-events-none">
                     アルバムから写真を選択する
@@ -519,7 +519,7 @@ export function ScorebookCameraModal({
         <div className="px-4 py-4 pb-7 bg-slate-900 border-t border-slate-800 flex items-center justify-between gap-3 shrink-0">
           {status !== "capturing" ? (
             <div className="relative overflow-hidden py-2.5 px-3 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white text-[11px] font-black flex items-center gap-1.5">
-              <ImagePlus className="w-4 h-4 text-indigo-400 shrink-0 pointer-events-none" />
+              <ImagePlus className="w-4 h-4 text-primary shrink-0 pointer-events-none" />
               <span className="pointer-events-none">アルバム</span>
               <input
                 type="file"
@@ -537,9 +537,9 @@ export function ScorebookCameraModal({
             type="button"
             disabled={status !== "ready"}
             onClick={() => void handleShutter()}
-            className="h-14 px-7 rounded-full bg-white hover:bg-slate-100 disabled:opacity-40 text-slate-950 font-black text-sm shadow-md flex items-center justify-center gap-2 cursor-pointer active:scale-95 transition-all"
+            className="h-14 px-7 rounded-full bg-primary hover:bg-primary/90 disabled:opacity-40 text-primary-foreground font-black text-sm shadow-md flex items-center justify-center gap-2 cursor-pointer active:scale-95 transition-all"
           >
-            <Camera className="w-5 h-5 text-indigo-600 shrink-0" />
+            <Camera className="w-5 h-5 shrink-0" />
             <span>シャッターを切る</span>
           </button>
 
@@ -549,7 +549,7 @@ export function ScorebookCameraModal({
             onClick={handleSwitchCamera}
             className="py-2.5 px-3 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white text-[11px] font-black flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
           >
-            <RefreshCw className="w-4 h-4 text-sky-400 shrink-0" />
+            <RefreshCw className="w-4 h-4 text-primary shrink-0" />
             <span>切替</span>
           </button>
         </div>

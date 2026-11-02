@@ -3,7 +3,8 @@
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
 import type { Liff } from "@line/liff";
-import { LiffUserProfile, initLiff, getLiffProfile, loginLiff } from "@/lib/liff/liff-client";
+import { LiffUserProfile, initLiff, getLiffProfile } from "@/lib/liff/liff-client";
+import { LIFF_THEME_CHANGE_EVENT, syncLiffThemeClasses } from "@/lib/liff/theme-settings";
 import { authClient } from "@/lib/auth-client";
 
 export interface LiffTeamItem {
@@ -253,6 +254,17 @@ export function LiffProvider({
     } finally {
       setIsLoadingTeam(false);
     }
+  }, []);
+
+  useEffect(() => {
+    syncLiffThemeClasses();
+    const handleThemeSync = () => syncLiffThemeClasses();
+    window.addEventListener(LIFF_THEME_CHANGE_EVENT, handleThemeSync);
+    window.addEventListener("storage", handleThemeSync);
+    return () => {
+      window.removeEventListener(LIFF_THEME_CHANGE_EVENT, handleThemeSync);
+      window.removeEventListener("storage", handleThemeSync);
+    };
   }, []);
 
   useEffect(() => {

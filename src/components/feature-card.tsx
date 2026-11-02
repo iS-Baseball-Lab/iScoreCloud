@@ -29,7 +29,7 @@ export function FeatureCard({ icon, title, description, glowColor }: FeatureCard
       onMouseMove={handleMouseMove}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      className="relative h-full flex flex-col items-center text-center p-6 rounded-[32px] bg-card/40 backdrop-blur-xl border border-border/50 shadow-xl overflow-hidden transition-all duration-500 hover:-translate-y-2 hover:shadow-2xl active:scale-95 group cursor-default"
+      className="relative h-full flex flex-col items-center text-center p-6 rounded-2xl border border-border/60 bg-card shadow-xs overflow-hidden transition-all duration-500 hover:-translate-y-1 hover:border-primary/40 hover:shadow-md active:scale-95 group cursor-default"
     >
       {/* 🌟 ハイブリッド・スポットライト 
           モバイル(md未満): hoverに関係なく、うっすらと呼吸する(animate-pulse)光を固定配置。
@@ -47,7 +47,7 @@ export function FeatureCard({ icon, title, description, glowColor }: FeatureCard
             bg-background/80 などの半透明をやめ、しっかりとした色と強いシャドウで立体感を出しました。
             角も丸めすぎない rounded-[24px] でソリッドに！
         */}
-        <div className="p-4 bg-background dark:bg-card shadow-lg mb-5 border border-border/60 group-hover:scale-110 group-hover:shadow-primary/20 group-hover:shadow-xl transition-all duration-500 rounded-[24px]">
+        <div className="p-4 bg-primary/10 mb-5 border border-primary/20 group-hover:scale-110 transition-all duration-500 rounded-2xl">
           {icon}
         </div>
         <h3 className="text-lg font-black tracking-tight mb-2 group-hover:text-foreground transition-colors">
@@ -58,7 +58,7 @@ export function FeatureCard({ icon, title, description, glowColor }: FeatureCard
         </p>
       </div>
 
-      <div className="absolute inset-0 rounded-[32px] border-2 border-transparent group-hover:border-white/10 transition-colors duration-500 pointer-events-none" />
+      <div className="absolute inset-0 rounded-2xl border border-transparent group-hover:border-primary/20 transition-colors duration-500 pointer-events-none" />
     </div>
   );
 }

@@ -818,14 +818,14 @@ function MatchesContent() {
           : "OP戦";
     const matchTypeBadgeClass =
       match.matchType === "official"
-        ? "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/25"
+        ? "bg-primary/12 text-primary border-primary/25"
         : match.matchType === "exchange"
-          ? "bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/25"
-          : "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/25";
+          ? "bg-primary/10 text-primary border-primary/20"
+          : "bg-muted/50 text-muted-foreground border-border/60";
 
     const inningsBadgeLabel = `${match.innings || 7}回制`;
     const neutralBadgeClass =
-      "bg-slate-100 dark:bg-white/[0.06] text-foreground/85 border-slate-200/90 dark:border-border";
+      "bg-muted/50 text-foreground/85 border-border/60";
 
     const rawTournament = (match.tournamentName || match.tournament || "").trim();
     const customTournamentName =
@@ -842,7 +842,7 @@ function MatchesContent() {
     const battingOrderBadgeClass =
       match.battingOrder === "first" || match.battingOrder === "second"
         ? neutralBadgeClass
-        : "bg-slate-100 dark:bg-white/[0.04] text-muted-foreground border-slate-200/80 dark:border-border";
+        : "bg-muted/35 text-muted-foreground border-border/60";
 
     const benchSideLabel =
       match.benchSide === "1B"
@@ -851,11 +851,9 @@ function MatchesContent() {
           ? "三塁側"
           : "ベンチ未定";
     const benchSideBadgeClass =
-      match.benchSide === "1B"
-        ? "bg-sky-500/10 text-sky-700 dark:text-sky-300 border-sky-500/25"
-        : match.benchSide === "3B"
-          ? "bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/25"
-          : "bg-slate-100 dark:bg-white/[0.04] text-muted-foreground border-slate-200/80 dark:border-border";
+      match.benchSide === "1B" || match.benchSide === "3B"
+        ? "bg-primary/10 text-primary border-primary/20"
+        : "bg-muted/35 text-muted-foreground border-border/60";
 
     const venueInfo = buildVenueDisplayInfo(match);
     const formattedDateTime = formatBasicMatchDateTime(match.date);
@@ -903,7 +901,7 @@ function MatchesContent() {
           <LiffPageHeader
             title="試合情報"
             icon={
-              <span className="w-8 h-8 rounded-xl bg-red-500/10 text-red-600 dark:text-red-400 flex items-center justify-center font-black">
+              <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
                 <Video className="w-4 h-4" />
               </span>
             }
@@ -913,7 +911,7 @@ function MatchesContent() {
                 <div
                   role="navigation"
                   aria-label="前後の試合切替"
-                  className="inline-flex items-center h-[34px] rounded-2xl bg-card border border-border shadow-xs divide-x divide-border overflow-hidden"
+                  className="inline-flex items-center h-[34px] rounded-2xl bg-card border border-border/60 shadow-xs divide-x divide-border/60 overflow-hidden"
                 >
                   {prevMatch ? (
                     <Link
@@ -935,7 +933,7 @@ function MatchesContent() {
                   )}
 
                   {matchPosition && (
-                    <span className="px-2 h-full flex items-center justify-center text-[11px] font-black tabular-nums text-muted-foreground select-none whitespace-nowrap bg-slate-50/70 dark:bg-white/[0.03]">
+                    <span className="px-2 h-full flex items-center justify-center text-[11px] font-black tabular-nums text-muted-foreground select-none whitespace-nowrap bg-muted/35">
                       <span className="text-foreground">{matchPosition.current}</span>
                       <span className="mx-0.5 text-muted-foreground/60">/</span>
                       <span>{matchPosition.total}</span>
@@ -971,7 +969,7 @@ function MatchesContent() {
 
           {/* 📋 1. 基本情報カード（見出しなし・1行目バッジ群＋日時 / 2行目大会名(任意) / 最終行 vs 相手名 ＠球場名） */}
           <section aria-label="基本情報">
-            <div className="rounded-2xl border border-border bg-card shadow-xs px-3.5 py-3 space-y-1.5">
+            <div className="rounded-2xl border border-border/60 bg-card shadow-xs px-3.5 py-3 space-y-1.5">
               {/* 1行目：試合種別・イニング制・先攻後攻・一塁側/三塁側 ＋ 日付・開始時刻 */}
               <div className="flex items-center flex-wrap gap-x-1.5 gap-y-1">
                 <span
@@ -1012,12 +1010,12 @@ function MatchesContent() {
 
                 {!isFutureOrScheduled && !isRainout && !isStatsLoading && (
                   hasPersonalStatsData ? (
-                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[11px] font-black leading-tight bg-indigo-100 text-indigo-800 border-indigo-300 dark:bg-indigo-950/80 dark:text-indigo-300 dark:border-indigo-800">
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[11px] font-black leading-tight bg-primary/10 text-primary border-primary/25">
                       <CheckCircle2 className="w-3 h-3 shrink-0" />
                       <span>スコア取込済</span>
                     </span>
                   ) : (
-                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-md border text-[11px] font-black leading-tight bg-slate-100 text-slate-600 border-slate-300 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700">
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-md border text-[11px] font-black leading-tight bg-muted/50 text-muted-foreground border-border/60">
                       スコア未取込
                     </span>
                   )
@@ -1053,7 +1051,7 @@ function MatchesContent() {
           <section className="space-y-2">
             <div className="flex items-center justify-between px-1">
               <h2 className="flex items-center gap-1.5 text-xs font-black text-foreground">
-                <Video className="w-4 h-4 text-red-500 shrink-0" />
+                <Video className="w-4 h-4 text-primary shrink-0" />
                 <span>試合映像 (YouTube限定公開)</span>
               </h2>
             </div>
@@ -1066,15 +1064,15 @@ function MatchesContent() {
                 />
 
                 {/* ⚠️ 動画取り扱いに関する注意書き */}
-                <div className="p-2.5 rounded-xl bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/25 flex items-start gap-2 text-[11px] text-amber-900 dark:text-amber-200 font-bold">
-                  <ShieldAlert className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <div className="p-3 rounded-2xl border border-border/60 bg-card shadow-xs flex items-start gap-2 text-[11px] text-muted-foreground font-bold">
+                  <ShieldAlert className="w-4 h-4 text-primary shrink-0 mt-0.5" />
                   <p className="leading-snug">
-                    本動画は選手・チームのプライバシー保護のため<strong>YouTube限定公開</strong>です。SNS等への無断転載・拡散はご遠慮ください。
+                    本動画は選手・チームのプライバシー保護のため<strong className="text-foreground">YouTube限定公開</strong>です。SNS等への無断転載・拡散はご遠慮ください。
                   </p>
                 </div>
               </div>
             ) : (
-              <div className="p-4 rounded-2xl bg-card border border-border text-center text-xs font-bold text-muted-foreground shadow-xs">
+              <div className="p-4 rounded-2xl border border-border/60 bg-card text-center text-xs font-bold text-muted-foreground shadow-xs">
                 この試合には動画リンクが設定されていません
               </div>
             )}
@@ -1093,7 +1091,7 @@ function MatchesContent() {
                   LIVE
                 </span>
               ) : isRainout ? (
-                <span className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/30 text-[10px] font-black">
+                <span className="px-2 py-0.5 rounded bg-muted text-muted-foreground border border-border/60 text-[10px] font-black">
                   雨天中止
                 </span>
               ) : isWin ? (
@@ -1115,25 +1113,25 @@ function MatchesContent() {
               )}
             </div>
 
-            <div className="w-full overflow-hidden rounded-2xl border border-border bg-card shadow-xs flex flex-col">
+            <div className="w-full overflow-hidden rounded-2xl border border-border/60 bg-card shadow-xs flex flex-col">
               <div className="overflow-x-auto scrollbar-none">
                 <table className="w-full text-center whitespace-nowrap text-xs">
                   <thead>
-                    <tr className="border-b border-border bg-muted/40 text-[10px] text-muted-foreground font-black">
+                    <tr className="border-b border-border/60 bg-muted/40 text-[10px] text-muted-foreground font-black">
                       <th className="p-2 text-left pl-3 min-w-[92px]">TEAM</th>
                       {inningsArray.map((inningNum) => (
                         <th key={inningNum} className="w-6 p-2 font-mono">
                           {inningNum}
                         </th>
                       ))}
-                      <th className="w-8 p-2 bg-primary/10 text-primary font-black border-l border-border font-mono">
+                      <th className="w-8 p-2 bg-primary/10 text-primary font-black border-l border-border/60 font-mono">
                         R
                       </th>
                       <th className="w-6 p-2 font-mono">H</th>
                       <th className="w-6 p-2 pr-3 font-mono">E</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-border text-xs font-black">
+                  <tbody className="divide-y divide-border/60 text-xs font-black">
                     {/* 先攻チーム */}
                     <tr className="hover:bg-muted/20">
                       <td className="p-2 text-left pl-3 font-bold truncate max-w-[105px] text-foreground">
@@ -1144,7 +1142,7 @@ function MatchesContent() {
                           {formatScoreCell(topScores[i], false, false, false)}
                         </td>
                       ))}
-                      <td className="p-2 font-mono bg-primary/10 text-primary font-black border-l border-border text-sm">
+                      <td className="p-2 font-mono bg-primary/10 text-primary font-black border-l border-border/60 text-sm">
                         {isFutureOrScheduled ? "-" : firstScore}
                       </td>
                       <td className="p-2 font-mono text-muted-foreground text-[11px]">
@@ -1170,7 +1168,7 @@ function MatchesContent() {
                           )}
                         </td>
                       ))}
-                      <td className="p-2 font-mono bg-primary/10 text-primary font-black border-l border-border text-sm">
+                      <td className="p-2 font-mono bg-primary/10 text-primary font-black border-l border-border/60 text-sm">
                         {isFutureOrScheduled ? "-" : secondScore}
                       </td>
                       <td className="p-2 font-mono text-muted-foreground text-[11px]">
@@ -1212,10 +1210,10 @@ function MatchesContent() {
               </h2>
             </div>
 
-            <div className="bg-card border border-border rounded-2xl p-3.5 shadow-xs space-y-3.5">
+            <div className="rounded-2xl border border-border/60 bg-card p-3.5 shadow-xs space-y-3.5">
               {/* 自チーム / 相手チーム 切り替え（相手スタメンが存在する場合のみ表示） */}
               {filledOpponentStarters.length > 0 && (
-                <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-slate-100 dark:bg-zinc-900 border border-border">
+                <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-muted/50 border border-border/60">
                   <button
                     type="button"
                     onClick={() => setLineupTeamTab("my")}
@@ -1234,7 +1232,7 @@ function MatchesContent() {
                     className={cn(
                       "py-1.5 px-2 rounded-lg text-[11px] font-black transition-all truncate cursor-pointer",
                       lineupTeamTab === "opponent"
-                        ? "bg-card text-foreground shadow-xs"
+                        ? "bg-card text-primary shadow-xs"
                         : "text-muted-foreground hover:text-foreground"
                     )}
                   >
@@ -1247,16 +1245,16 @@ function MatchesContent() {
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between px-0.5">
                     <span className="text-[11px] font-black text-foreground flex items-center gap-1.5">
-                      <Shield className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                      <Shield className="w-3.5 h-3.5 text-primary shrink-0" />
                       <span className="truncate">{match.opponent} スタメン</span>
                     </span>
-                    <span className="text-[10px] font-black font-mono tabular-nums px-2 py-0.5 rounded-md bg-slate-100 dark:bg-zinc-800 text-foreground border border-border">
+                    <span className="text-[10px] font-black font-mono tabular-nums px-2 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/25">
                       {filledOpponentStarters.length}名
                     </span>
                   </div>
 
-                  <div className="rounded-xl border border-border overflow-hidden bg-card">
-                    <div className="grid grid-cols-[2.25rem_3.25rem_1fr_2.75rem] items-center bg-slate-100 dark:bg-zinc-800 border-b border-border px-2 py-1 text-[9px] font-black text-muted-foreground font-mono tracking-wider">
+                  <div className="rounded-xl border border-border/60 overflow-hidden bg-card">
+                    <div className="grid grid-cols-[2.25rem_3.25rem_1fr_2.75rem] items-center bg-muted/50 border-b border-border/60 px-2 py-1 text-[9px] font-black text-muted-foreground font-mono tracking-wider">
                       <span className="text-center">ORD</span>
                       <span className="text-center">POS</span>
                       <span className="pl-2">PLAYER</span>
@@ -1269,10 +1267,10 @@ function MatchesContent() {
                         return (
                           <div
                             key={`opp-${slot.order}-${slot.name}-${slot.uniformNumber}`}
-                            className="grid grid-cols-[2.25rem_3.25rem_1fr_2.75rem] items-center px-2 py-1.5 odd:bg-card even:bg-slate-100/90 dark:odd:bg-card dark:even:bg-zinc-900"
+                            className="grid grid-cols-[2.25rem_3.25rem_1fr_2.75rem] items-center px-2 py-1.5 odd:bg-card even:bg-muted/35"
                           >
                             <div className="flex items-center justify-center">
-                              <span className="w-6 h-6 rounded-md bg-slate-100 dark:bg-zinc-800 text-foreground font-mono tabular-nums text-[11px] font-black inline-flex items-center justify-center">
+                              <span className="w-6 h-6 rounded-md bg-muted text-foreground font-mono tabular-nums text-[11px] font-black inline-flex items-center justify-center">
                                 {slot.order}
                               </span>
                             </div>
@@ -1288,7 +1286,7 @@ function MatchesContent() {
                                   {posInfo.label}
                                 </span>
                               ) : (
-                                <span className="inline-flex items-center justify-center w-11 py-0.5 rounded-md bg-muted text-muted-foreground font-black text-[10px] leading-tight border border-border">
+                                <span className="inline-flex items-center justify-center w-11 py-0.5 rounded-md bg-muted text-muted-foreground font-black text-[10px] leading-tight border border-border/60">
                                   {slot.position || "-"}
                                 </span>
                               )}
@@ -1325,13 +1323,13 @@ function MatchesContent() {
                     <UserStar className="w-3.5 h-3.5 text-primary shrink-0" />
                     <span>スターティングメンバー</span>
                   </span>
-                  <span className="text-[10px] font-black font-mono tabular-nums px-2 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20">
+                  <span className="text-[10px] font-black font-mono tabular-nums px-2 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/25">
                     {filledStarters.length}名
                   </span>
                 </div>
 
                 {filledStarters.length === 0 ? (
-                  <div className="rounded-xl bg-slate-50 dark:bg-muted/25 border border-dashed border-border p-4 text-center space-y-2.5">
+                  <div className="rounded-xl bg-muted/35 border border-dashed border-border/60 p-4 text-center space-y-2.5">
                     <div className="space-y-0.5">
                       <p className="text-xs font-black text-foreground">
                         スタメンがまだ登録されていません
@@ -1349,9 +1347,9 @@ function MatchesContent() {
                     </Link>
                   </div>
                 ) : (
-                  <div className="rounded-xl border border-border overflow-hidden bg-card">
+                  <div className="rounded-xl border border-border/60 overflow-hidden bg-card">
                     {/* スコアボード風カラムヘッダー */}
-                    <div className="grid grid-cols-[2.25rem_3.25rem_1fr_2.75rem] items-center bg-slate-100 dark:bg-white/[0.07] border-b border-border px-2 py-1 text-[9px] font-black text-muted-foreground font-mono tracking-wider">
+                    <div className="grid grid-cols-[2.25rem_3.25rem_1fr_2.75rem] items-center bg-muted/50 border-b border-border/60 px-2 py-1 text-[9px] font-black text-muted-foreground font-mono tracking-wider">
                       <span className="text-center">ORD</span>
                       <span className="text-center">POS</span>
                       <span className="pl-2">PLAYER</span>
@@ -1364,7 +1362,7 @@ function MatchesContent() {
                         return (
                           <div
                             key={`${slot.order}-${slot.playerId || slot.name}`}
-                            className="grid grid-cols-[2.25rem_3.25rem_1fr_2.75rem] items-center px-2 py-1.5 odd:bg-card even:bg-slate-100/90 dark:odd:bg-card dark:even:bg-white/[0.045]"
+                            className="grid grid-cols-[2.25rem_3.25rem_1fr_2.75rem] items-center px-2 py-1.5 odd:bg-card even:bg-muted/35"
                           >
                             {/* 打順バッジ */}
                             <div className="flex items-center justify-center">
@@ -1385,7 +1383,7 @@ function MatchesContent() {
                                   {posInfo.label}
                                 </span>
                               ) : (
-                                <span className="inline-flex items-center justify-center w-11 py-0.5 rounded-md bg-muted text-muted-foreground font-black text-[10px] leading-tight border border-border">
+                                <span className="inline-flex items-center justify-center w-11 py-0.5 rounded-md bg-muted text-muted-foreground font-black text-[10px] leading-tight border border-border/60">
                                   未設定
                                 </span>
                               )}
@@ -1422,31 +1420,34 @@ function MatchesContent() {
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between px-0.5">
                     <span className="text-[11px] font-black text-foreground flex items-center gap-1.5">
-                      <Users className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                      <Users className="w-3.5 h-3.5 text-primary shrink-0" />
                       <span>途中出場・選手交代</span>
                     </span>
-                    <span className="text-[10px] font-black font-mono tabular-nums px-2 py-0.5 rounded-md bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border border-indigo-500/20">
+                    <span className="text-[10px] font-black font-mono tabular-nums px-2 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/25">
                       {mySubstitutions.length}名
                     </span>
                   </div>
 
-                  <div className="rounded-xl border border-border overflow-hidden bg-card divide-y divide-border/60">
+                  <div className="rounded-xl border border-border/60 overflow-hidden bg-card divide-y divide-border/60">
                     {mySubstitutions.map((sub) => {
+                      const posInfo = getPositionBadgeInfo(sub.position);
                       const roleBadge =
                         sub.position === "P"
-                          ? { label: "代打", color: "bg-indigo-600" }
+                          ? { label: "代打", badgeClass: "bg-primary text-primary-foreground" }
                           : sub.position === "R"
-                          ? { label: "代走", color: "bg-amber-600" }
+                          ? { label: "代走", badgeClass: "bg-primary/85 text-primary-foreground" }
                           : sub.position === "TR"
-                          ? { label: "臨時代走", color: "bg-teal-600" }
-                          : getPositionBadgeInfo(sub.position) || {
+                          ? { label: "臨時代走", badgeClass: "bg-primary/75 text-primary-foreground" }
+                          : posInfo
+                          ? { label: posInfo.label, badgeClass: `${posInfo.color} text-white` }
+                          : {
                               label: "途中",
-                              color: "bg-slate-600",
+                              badgeClass: "bg-muted text-foreground border border-border/60",
                             };
                       return (
                         <div
                           key={sub.id}
-                          className="grid grid-cols-[4rem_3.5rem_1fr_2.75rem] items-center px-2 py-1.5 odd:bg-card even:bg-slate-100/90 dark:odd:bg-card dark:even:bg-white/[0.045]"
+                          className="grid grid-cols-[4rem_3.5rem_1fr_2.75rem] items-center px-2 py-1.5 odd:bg-card even:bg-muted/35"
                         >
                           <span className="text-[10px] font-black text-muted-foreground font-mono tabular-nums text-center">
                             {sub.inningEntered}回・{sub.battingOrder}番
@@ -1454,8 +1455,8 @@ function MatchesContent() {
                           <div className="flex items-center justify-center">
                             <span
                               className={cn(
-                                "inline-flex items-center justify-center w-12 py-0.5 rounded-md text-white font-black text-[10px] leading-tight shadow-2xs",
-                                roleBadge.color
+                                "inline-flex items-center justify-center w-12 py-0.5 rounded-md font-black text-[10px] leading-tight shadow-2xs",
+                                roleBadge.badgeClass
                               )}
                             >
                               {roleBadge.label}
@@ -1492,15 +1493,15 @@ function MatchesContent() {
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between px-0.5">
                       <span className="text-[11px] font-black text-foreground flex items-center gap-1.5">
-                        <UserCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                        <UserCheck className="w-3.5 h-3.5 text-primary shrink-0" />
                         <span>控え（ベンチ入り）</span>
                       </span>
-                      <span className="text-[10px] font-black font-mono tabular-nums px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20">
+                      <span className="text-[10px] font-black font-mono tabular-nums px-2 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/25">
                         {benchPlayers.length}名
                       </span>
                     </div>
 
-                    <div className="rounded-xl border border-border bg-slate-50/90 dark:bg-muted/25 p-2.5">
+                    <div className="rounded-xl border border-border/60 bg-muted/35 p-2.5">
                       {benchPlayers.length === 0 ? (
                         <p className="text-[11px] font-bold text-muted-foreground px-0.5">
                           該当なし
@@ -1511,12 +1512,12 @@ function MatchesContent() {
                             <span
                               key={p.id}
                               className={cn(
-                                "inline-flex items-center gap-1.5 py-1 rounded-lg bg-card border border-border shadow-2xs text-[11px] font-black text-foreground",
+                                "inline-flex items-center gap-1.5 py-1 rounded-lg bg-card border border-border/60 shadow-2xs text-[11px] font-black text-foreground",
                                 p.uniformNumber ? "pl-1.5 pr-2.5" : "px-2.5"
                               )}
                             >
                               {p.uniformNumber && (
-                                <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 font-mono tabular-nums text-[10px] font-black leading-none">
+                                <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary font-mono tabular-nums text-[10px] font-black leading-none">
                                   #{p.uniformNumber}
                                 </span>
                               )}
@@ -1532,15 +1533,15 @@ function MatchesContent() {
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between px-0.5">
                       <span className="text-[11px] font-black text-foreground flex items-center gap-1.5">
-                        <UserMinus className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400 shrink-0" />
+                        <UserMinus className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                         <span>欠席</span>
                       </span>
-                      <span className="text-[10px] font-black font-mono tabular-nums px-2 py-0.5 rounded-md bg-rose-500/10 text-rose-700 dark:text-rose-300 border border-rose-500/20">
+                      <span className="text-[10px] font-black font-mono tabular-nums px-2 py-0.5 rounded-md bg-muted/50 text-muted-foreground border border-border/60">
                         {absentPlayers.length}名
                       </span>
                     </div>
 
-                    <div className="rounded-xl border border-border bg-slate-50/90 dark:bg-muted/25 p-2.5">
+                    <div className="rounded-xl border border-border/60 bg-muted/35 p-2.5">
                       {absentPlayers.length === 0 ? (
                         <p className="text-[11px] font-bold text-muted-foreground px-0.5">
                           欠席者なし
@@ -1551,12 +1552,12 @@ function MatchesContent() {
                             <span
                               key={p.id}
                               className={cn(
-                                "inline-flex items-center gap-1.5 py-1 rounded-lg bg-card/90 border border-border/80 text-[11px] font-bold text-muted-foreground",
+                                "inline-flex items-center gap-1.5 py-1 rounded-lg bg-card/90 border border-border/60 text-[11px] font-bold text-muted-foreground",
                                 p.uniformNumber ? "pl-1.5 pr-2.5" : "px-2.5"
                               )}
                             >
                               {p.uniformNumber && (
-                                <span className="px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-700 dark:text-rose-300 font-mono tabular-nums text-[10px] font-black leading-none">
+                                <span className="px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-mono tabular-nums text-[10px] font-black leading-none">
                                   #{p.uniformNumber}
                                 </span>
                               )}
@@ -1584,17 +1585,17 @@ function MatchesContent() {
 
               <Link
                 href="/liff/grounds"
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl border border-border bg-card hover:bg-muted text-foreground text-[11px] font-bold transition-all active:scale-95 shrink-0 shadow-2xs"
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl border border-border/60 bg-card hover:bg-muted text-foreground text-[11px] font-bold transition-all active:scale-95 shrink-0 shadow-2xs"
               >
                 <Building2 className="w-3 h-3 text-muted-foreground" />
                 <span>球場一覧</span>
               </Link>
             </div>
 
-            <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-xs">
+            <div className="overflow-hidden rounded-2xl border border-border/60 bg-card shadow-xs">
               {/* 上部：枠いっぱい（パディングなし）の Google Map */}
               {venueInfo.embedUrl ? (
-                <div className="relative w-full h-[300px] sm:h-[380px] bg-muted/30 border-b border-border">
+                <div className="relative w-full h-[300px] sm:h-[380px] bg-muted/35 border-b border-border/60">
                   <iframe
                     src={venueInfo.embedUrl}
                     title={`${venueInfo.officialName || "球場・グラウンド"} Google Map`}
@@ -1605,8 +1606,8 @@ function MatchesContent() {
                   />
                 </div>
               ) : (
-                <div className="w-full py-7 px-4 bg-muted/40 border-b border-border flex flex-col items-center justify-center text-center gap-2">
-                  <div className="w-10 h-10 rounded-2xl bg-card border border-border flex items-center justify-center text-muted-foreground shadow-2xs">
+                <div className="w-full py-7 px-4 bg-muted/35 border-b border-border/60 flex flex-col items-center justify-center text-center gap-2">
+                  <div className="w-10 h-10 rounded-2xl bg-card border border-border/60 flex items-center justify-center text-muted-foreground shadow-2xs">
                     <MapPin className="w-5 h-5" />
                   </div>
                   <div className="space-y-0.5">
@@ -1653,7 +1654,7 @@ function MatchesContent() {
                         aria-label="住所をコピー"
                       >
                         {isAddressCopied ? (
-                          <Check className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                          <Check className="w-3 h-3 text-primary" />
                         ) : (
                           <Copy className="w-3 h-3" />
                         )}
@@ -1678,7 +1679,7 @@ function MatchesContent() {
                       href={venueInfo.directionsUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="h-9 px-3 rounded-xl border border-border bg-background hover:bg-muted text-foreground text-xs font-black flex items-center justify-center gap-1.5 active:scale-95 transition-all"
+                      className="h-9 px-3 rounded-xl border border-border/60 bg-card hover:bg-muted text-foreground text-xs font-black flex items-center justify-center gap-1.5 active:scale-95 transition-all"
                     >
                       <Compass className="w-3.5 h-3.5 shrink-0 text-primary" />
                       <span>ルート案内</span>
@@ -1742,9 +1743,9 @@ function MatchesContent() {
                 <Link
                   href={`/liff/matches?id=${encodeURIComponent(prevMatch.id)}`}
                   replace
-                  className="group flex items-center gap-2 rounded-2xl border border-border bg-card hover:bg-slate-50 dark:hover:bg-white/[0.04] px-3 py-2.5 shadow-xs active:scale-[0.98] transition-all min-w-0"
+                  className="group flex items-center gap-2 rounded-2xl border border-border/60 bg-card hover:border-primary/40 hover:bg-muted/35 px-3 py-2.5 shadow-xs active:scale-[0.98] transition-all min-w-0"
                 >
-                  <span className="w-7 h-7 rounded-xl bg-slate-100 dark:bg-muted flex items-center justify-center text-muted-foreground group-hover:text-primary group-hover:-translate-x-0.5 transition-all shrink-0">
+                  <span className="w-7 h-7 rounded-xl bg-muted/50 flex items-center justify-center text-muted-foreground group-hover:bg-primary/10 group-hover:text-primary group-hover:-translate-x-0.5 transition-all shrink-0">
                     <ChevronLeft className="w-4 h-4" />
                   </span>
                   <div className="min-w-0 flex-1 text-left">
@@ -1762,8 +1763,8 @@ function MatchesContent() {
                   </div>
                 </Link>
               ) : (
-                <div className="flex items-center gap-2 rounded-2xl border border-dashed border-border/70 bg-card/40 px-3 py-2.5 opacity-55 select-none">
-                  <span className="w-7 h-7 rounded-xl bg-muted/60 flex items-center justify-center text-muted-foreground/40 shrink-0">
+                <div className="flex items-center gap-2 rounded-2xl border border-dashed border-border/60 bg-card/40 px-3 py-2.5 opacity-55 select-none">
+                  <span className="w-7 h-7 rounded-xl bg-muted/50 flex items-center justify-center text-muted-foreground/40 shrink-0">
                     <ChevronLeft className="w-4 h-4" />
                   </span>
                   <div className="min-w-0 flex-1 text-left">
@@ -1778,7 +1779,7 @@ function MatchesContent() {
                 <Link
                   href={`/liff/matches?id=${encodeURIComponent(nextMatch.id)}`}
                   replace
-                  className="group flex items-center justify-end gap-2 rounded-2xl border border-border bg-card hover:bg-slate-50 dark:hover:bg-white/[0.04] px-3 py-2.5 shadow-xs active:scale-[0.98] transition-all min-w-0"
+                  className="group flex items-center justify-end gap-2 rounded-2xl border border-border/60 bg-card hover:border-primary/40 hover:bg-muted/35 px-3 py-2.5 shadow-xs active:scale-[0.98] transition-all min-w-0"
                 >
                   <div className="min-w-0 flex-1 text-right">
                     <p className="text-[10px] font-black text-muted-foreground leading-none mb-1">
@@ -1793,18 +1794,18 @@ function MatchesContent() {
                       </p>
                     )}
                   </div>
-                  <span className="w-7 h-7 rounded-xl bg-slate-100 dark:bg-muted flex items-center justify-center text-muted-foreground group-hover:text-primary group-hover:translate-x-0.5 transition-all shrink-0">
+                  <span className="w-7 h-7 rounded-xl bg-muted/50 flex items-center justify-center text-muted-foreground group-hover:bg-primary/10 group-hover:text-primary group-hover:translate-x-0.5 transition-all shrink-0">
                     <ChevronRight className="w-4 h-4" />
                   </span>
                 </Link>
               ) : (
-                <div className="flex items-center justify-end gap-2 rounded-2xl border border-dashed border-border/70 bg-card/40 px-3 py-2.5 opacity-55 select-none">
+                <div className="flex items-center justify-end gap-2 rounded-2xl border border-dashed border-border/60 bg-card/40 px-3 py-2.5 opacity-55 select-none">
                   <div className="min-w-0 flex-1 text-right">
                     <p className="text-[10px] font-bold text-muted-foreground leading-tight">
                       次の試合なし
                     </p>
                   </div>
-                  <span className="w-7 h-7 rounded-xl bg-muted/60 flex items-center justify-center text-muted-foreground/40 shrink-0">
+                  <span className="w-7 h-7 rounded-xl bg-muted/50 flex items-center justify-center text-muted-foreground/40 shrink-0">
                     <ChevronRight className="w-4 h-4" />
                   </span>
                 </div>
@@ -1818,7 +1819,7 @@ function MatchesContent() {
               aria-label="試合データの修正・削除"
               className="pt-1"
             >
-              <div className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+              <div className="rounded-2xl border border-border/60 bg-card shadow-xs overflow-hidden">
                 <button
                   type="button"
                   aria-expanded={isManageMenuOpen}
@@ -1826,7 +1827,7 @@ function MatchesContent() {
                   className="w-full px-3.5 py-3 flex items-center justify-between gap-2.5 text-left hover:bg-muted/40 active:bg-muted/60 transition-colors cursor-pointer"
                 >
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <span className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-muted border border-border flex items-center justify-center text-muted-foreground shrink-0">
+                    <span className="w-8 h-8 rounded-xl bg-primary/10 border border-primary/25 flex items-center justify-center text-primary shrink-0">
                       <Settings className="w-4 h-4" />
                     </span>
                     <div className="min-w-0">
@@ -1842,12 +1843,12 @@ function MatchesContent() {
                   <div className="flex items-center gap-2 shrink-0">
                     {!isFutureOrScheduled && !isRainout && !isStatsLoading && (
                       hasPersonalStatsData ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-black bg-indigo-100 text-indigo-800 border-indigo-300 dark:bg-indigo-950/80 dark:text-indigo-300 dark:border-indigo-800">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-black bg-primary/10 text-primary border-primary/25">
                           <CheckCircle2 className="w-3 h-3 shrink-0" />
                           <span>取込済</span>
                         </span>
                       ) : (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full border text-[10px] font-black bg-slate-100 text-slate-600 border-slate-300 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full border text-[10px] font-black bg-muted/50 text-muted-foreground border-border/60">
                           未取込
                         </span>
                       )
@@ -1863,7 +1864,7 @@ function MatchesContent() {
                 </button>
 
                 {isManageMenuOpen && (
-                  <div className="border-t border-border bg-muted/25 p-3.5 space-y-3 animate-in fade-in slide-in-from-top-1 duration-150">
+                  <div className="border-t border-border/60 bg-muted/35 p-3.5 space-y-3 animate-in fade-in slide-in-from-top-1 duration-150">
                     {/* 登録・修正アクション一覧 */}
                     <div className="space-y-2">
                       <p className="text-[10px] font-black text-muted-foreground px-0.5">
@@ -1875,10 +1876,10 @@ function MatchesContent() {
                           href={`/liff/tools/scorebook-import?matchId=${encodeURIComponent(
                             match.id
                           )}&mode=edit`}
-                          className="flex items-center justify-between gap-2.5 p-3 rounded-xl bg-card hover:bg-indigo-50/70 dark:hover:bg-indigo-950/30 border border-indigo-300 dark:border-indigo-800 shadow-2xs active:scale-[0.99] transition-all"
+                          className="flex items-center justify-between gap-2.5 p-3 rounded-xl bg-card hover:border-primary/40 hover:bg-primary/5 border border-primary/25 shadow-2xs active:scale-[0.99] transition-all"
                         >
                           <div className="flex items-center gap-2.5 min-w-0">
-                            <span className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0">
+                            <span className="w-8 h-8 rounded-xl bg-primary text-primary-foreground flex items-center justify-center shrink-0">
                               <Edit3 className="w-4 h-4" />
                             </span>
                             <div className="min-w-0">
@@ -1890,16 +1891,16 @@ function MatchesContent() {
                               </p>
                             </div>
                           </div>
-                          <ChevronRight className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                          <ChevronRight className="w-4 h-4 text-primary shrink-0" />
                         </Link>
                       )}
 
                       <Link
                         href={`/liff/matches/lineup?id=${encodeURIComponent(match.id)}`}
-                        className="flex items-center justify-between gap-2.5 p-3 rounded-xl bg-card hover:bg-muted/60 border border-border shadow-2xs active:scale-[0.99] transition-all"
+                        className="flex items-center justify-between gap-2.5 p-3 rounded-xl bg-card hover:border-primary/40 hover:bg-muted/50 border border-border/60 shadow-2xs active:scale-[0.99] transition-all"
                       >
                         <div className="flex items-center gap-2.5 min-w-0">
-                          <span className="w-8 h-8 rounded-xl bg-primary/15 text-primary border border-primary/25 flex items-center justify-center shrink-0">
+                          <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary border border-primary/25 flex items-center justify-center shrink-0">
                             <Users className="w-4 h-4" />
                           </span>
                           <div className="min-w-0">
@@ -1921,10 +1922,10 @@ function MatchesContent() {
                           href={`/liff/tools/scorebook-import?matchId=${encodeURIComponent(
                             match.id
                           )}`}
-                          className="flex items-center justify-between gap-2.5 p-3 rounded-xl bg-card hover:bg-muted/60 border border-border shadow-2xs active:scale-[0.99] transition-all"
+                          className="flex items-center justify-between gap-2.5 p-3 rounded-xl bg-card hover:border-primary/40 hover:bg-muted/50 border border-border/60 shadow-2xs active:scale-[0.99] transition-all"
                         >
                           <div className="flex items-center gap-2.5 min-w-0">
-                            <span className="w-8 h-8 rounded-xl bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 flex items-center justify-center shrink-0">
+                            <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary border border-primary/25 flex items-center justify-center shrink-0">
                               <ScanLine className="w-4 h-4" />
                             </span>
                             <div className="min-w-0">
@@ -1946,10 +1947,10 @@ function MatchesContent() {
 
                       <Link
                         href="/liff/settings/score#symbol-rules"
-                        className="flex items-center justify-between gap-2.5 p-3 rounded-xl bg-card hover:bg-muted/60 border border-border shadow-2xs active:scale-[0.99] transition-all"
+                        className="flex items-center justify-between gap-2.5 p-3 rounded-xl bg-card hover:border-primary/40 hover:bg-muted/50 border border-border/60 shadow-2xs active:scale-[0.99] transition-all"
                       >
                         <div className="flex items-center gap-2.5 min-w-0">
-                          <span className="w-8 h-8 rounded-xl bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/25 flex items-center justify-center shrink-0">
+                          <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary border border-primary/25 flex items-center justify-center shrink-0">
                             <FileSpreadsheet className="w-4 h-4" />
                           </span>
                           <div className="min-w-0">
@@ -1966,7 +1967,7 @@ function MatchesContent() {
                     </div>
 
                     {/* 削除アクション */}
-                    <div className="pt-2.5 border-t border-border/70 space-y-2">
+                    <div className="pt-2.5 border-t border-border/60 space-y-2">
                       <p className="text-[10px] font-black text-rose-700 dark:text-rose-400 px-0.5">
                         データの削除
                       </p>
@@ -1993,7 +1994,7 @@ function MatchesContent() {
                           <ChevronRight className="w-4 h-4 text-rose-500 shrink-0" />
                         </button>
                       ) : (
-                        <div className="rounded-xl border border-dashed border-border bg-card/70 px-3 py-2.5 flex items-center gap-2 text-[11px] font-bold text-muted-foreground">
+                        <div className="rounded-xl border border-dashed border-border/60 bg-card/70 px-3 py-2.5 flex items-center gap-2 text-[11px] font-bold text-muted-foreground">
                           <Trash2 className="w-3.5 h-3.5 shrink-0 opacity-60" />
                           <span>現在この試合に削除対象の個人データはありません</span>
                         </div>
@@ -2075,7 +2076,7 @@ function MatchesContent() {
           title="試合情報 & ハイライト"
           subtitle="スコア速報・スタメン登録・ハイライト動画"
           icon={
-            <span className="w-8 h-8 rounded-xl bg-red-500/10 text-red-600 dark:text-red-400 flex items-center justify-center font-black">
+            <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
               <Video className="w-4 h-4" />
             </span>
           }
@@ -2096,25 +2097,25 @@ function MatchesContent() {
         />
 
         {/* 🔒 動画取り扱い・プライバシーに関する重要なお知らせ */}
-        <div className="p-3.5 rounded-2xl bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/30 space-y-1.5 shadow-2xs">
-          <div className="flex items-center gap-2 text-xs font-black text-amber-800 dark:text-amber-300">
-            <ShieldAlert className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+        <div className="p-3.5 rounded-2xl border border-border/60 bg-card space-y-1.5 shadow-xs">
+          <div className="flex items-center gap-2 text-xs font-black text-foreground">
+            <ShieldAlert className="w-4 h-4 shrink-0 text-primary" />
             <span>【重要】試合動画・写真の取り扱いについて</span>
           </div>
-          <p className="text-[11px] font-bold text-amber-950/85 dark:text-amber-100/90 leading-relaxed pl-6">
-            本アプリ内で配信している試合動画は、選手・チーム関係者のプライバシー保護のため<strong>YouTubeの限定公開（リンクを知っている方のみ閲覧可能）</strong>としています。
+          <p className="text-[11px] font-bold text-muted-foreground leading-relaxed pl-6">
+            本アプリ内で配信している試合動画は、選手・チーム関係者のプライバシー保護のため<strong className="text-foreground">YouTubeの限定公開（リンクを知っている方のみ閲覧可能）</strong>としています。
             URLや映像をむやみにSNS（X、Instagram、TikTok、YouTube等）へ転載・拡散しないよう、お取り扱いには十分ご配慮をお願いいたします。
           </p>
         </div>
 
         {/* フィルタータブ */}
-        <div className="grid grid-cols-4 gap-1 p-1 bg-muted/60 rounded-2xl border border-border">
+        <div className="grid grid-cols-4 gap-1 p-1 bg-muted/50 rounded-2xl border border-border/60">
           <button
             type="button"
             onClick={() => setFilter("all")}
             className={`py-1.5 px-1 rounded-xl text-[11px] font-black transition-all truncate ${
               filter === "all"
-                ? "bg-card text-foreground shadow-xs"
+                ? "bg-card text-primary shadow-xs"
                 : "text-muted-foreground hover:text-foreground"
             }`}
           >
@@ -2138,7 +2139,7 @@ function MatchesContent() {
             onClick={() => setFilter("video")}
             className={`py-1.5 px-1 rounded-xl text-[11px] font-black transition-all truncate ${
               filter === "video"
-                ? "bg-card text-red-600 dark:text-red-400 shadow-xs"
+                ? "bg-card text-primary shadow-xs"
                 : "text-muted-foreground hover:text-foreground"
             }`}
           >
@@ -2150,7 +2151,7 @@ function MatchesContent() {
             onClick={() => setFilter("official")}
             className={`py-1.5 px-1 rounded-xl text-[11px] font-black transition-all truncate ${
               filter === "official"
-                ? "bg-card text-amber-600 dark:text-amber-400 shadow-xs"
+                ? "bg-card text-primary shadow-xs"
                 : "text-muted-foreground hover:text-foreground"
             }`}
           >
@@ -2161,18 +2162,18 @@ function MatchesContent() {
         {/* スコアブック取込状況での絞り込みバー */}
         <div className="flex items-center justify-between gap-2 px-1 flex-wrap">
           <span className="inline-flex items-center gap-1 text-[11px] font-black text-muted-foreground">
-            <BookOpen className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+            <BookOpen className="w-3.5 h-3.5 text-primary shrink-0" />
             <span>スコアブック取込状況</span>
           </span>
 
-          <div className="inline-flex items-center gap-1 p-0.5 rounded-xl bg-muted/70 border border-border">
+          <div className="inline-flex items-center gap-1 p-0.5 rounded-xl bg-muted/50 border border-border/60">
             <button
               type="button"
               onClick={() => setScorebookFilter("all")}
               className={cn(
                 "px-2.5 py-1 rounded-lg text-[10px] font-black transition-all cursor-pointer tabular-nums",
                 scorebookFilter === "all"
-                  ? "bg-card text-foreground shadow-2xs border border-border/60"
+                  ? "bg-card text-primary shadow-2xs border border-border/60"
                   : "text-muted-foreground hover:text-foreground"
               )}
             >
@@ -2184,7 +2185,7 @@ function MatchesContent() {
               className={cn(
                 "px-2.5 py-1 rounded-lg text-[10px] font-black transition-all cursor-pointer tabular-nums inline-flex items-center gap-1",
                 scorebookFilter === "imported"
-                  ? "bg-indigo-600 text-white shadow-2xs"
+                  ? "bg-primary text-primary-foreground shadow-2xs"
                   : "text-muted-foreground hover:text-foreground"
               )}
             >
@@ -2197,7 +2198,7 @@ function MatchesContent() {
               className={cn(
                 "px-2.5 py-1 rounded-lg text-[10px] font-black transition-all cursor-pointer tabular-nums",
                 scorebookFilter === "unimported"
-                  ? "bg-slate-700 dark:bg-slate-200 text-white dark:text-slate-900 shadow-2xs"
+                  ? "bg-card text-primary shadow-2xs border border-border/60"
                   : "text-muted-foreground hover:text-foreground"
               )}
             >

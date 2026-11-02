@@ -48,12 +48,12 @@ export default function LiffCheerSongsPage() {
           title="応援歌あんちょこ"
           subtitle="CHEER SONG LYRICS"
           icon={
-            <span className="w-8 h-8 rounded-xl bg-orange-500/15 text-orange-600 dark:text-orange-400 flex items-center justify-center font-black">
+            <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
               <Music className="w-4 h-4" />
             </span>
           }
           rightElement={
-            <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-orange-500/15 text-orange-600 dark:text-orange-400 border border-orange-500/25">
+            <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-primary/10 text-primary border border-primary/25">
               枠プレビュー・準備中
             </span>
           }
@@ -64,9 +64,9 @@ export default function LiffCheerSongsPage() {
         <LiffToolSubNav />
 
         {/* コンセプト概要バナー */}
-        <section className="rounded-3xl bg-card border border-orange-500/30 shadow-xs p-4 space-y-2.5">
+        <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-2.5">
           <div className="flex items-center gap-2">
-            <span className="px-2 py-0.5 rounded-lg bg-orange-500/15 text-orange-600 dark:text-orange-400 text-[10px] font-black">
+            <span className="px-2 py-0.5 rounded-lg bg-primary/10 text-primary text-[10px] font-black">
               CONCEPT
             </span>
             <h2 className="text-xs font-black text-foreground">
@@ -79,12 +79,12 @@ export default function LiffCheerSongsPage() {
         </section>
 
         {/* 選手選択＆テーマ切替 プレビュー枠 */}
-        <section className="rounded-3xl bg-card border border-border shadow-xs p-4 space-y-4">
+        <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-4">
           {/* 選手選択チップ（サンプル連動） */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-black text-foreground flex items-center gap-1.5">
-                <Users className="w-3.5 h-3.5 text-orange-500" />
+                <Users className="w-3.5 h-3.5 text-primary" />
                 打席の選手を選択（サンプル切替）
               </span>
               <span className="text-[10px] font-bold text-muted-foreground">
@@ -102,13 +102,13 @@ export default function LiffCheerSongsPage() {
                     onClick={() => setSelectedPlayer(player)}
                     className={`py-2 px-2 rounded-2xl border text-center transition-all active:scale-95 cursor-pointer ${
                       isSelected
-                        ? "bg-orange-500 text-white border-orange-500 font-black shadow-2xs"
-                        : "bg-muted/40 border-border text-foreground font-bold hover:bg-muted"
+                        ? "bg-primary text-primary-foreground border-primary font-black shadow-2xs"
+                        : "bg-muted/35 border-border/60 text-foreground font-bold hover:bg-muted"
                     }`}
                   >
                     <span
                       className={`text-[9px] block leading-none ${
-                        isSelected ? "text-white/85" : "text-muted-foreground"
+                        isSelected ? "text-primary-foreground/80" : "text-muted-foreground"
                       }`}
                     >
                       #{player.number}
@@ -123,7 +123,7 @@ export default function LiffCheerSongsPage() {
           </div>
 
           {/* 応援歌カテゴリタブ */}
-          <div className="grid grid-cols-3 gap-1.5 p-1 rounded-2xl bg-muted/70 border border-border/60">
+          <div className="grid grid-cols-3 gap-1.5 p-1 rounded-2xl bg-muted/50 border border-border/60">
             {[
               { id: "attack" as const, label: "通常打席テーマ" },
               { id: "chance" as const, label: "チャンステーマ" },
@@ -135,8 +135,8 @@ export default function LiffCheerSongsPage() {
                 onClick={() => setSelectedCategory(tab.id)}
                 className={`py-2 px-2 rounded-xl text-xs transition-all cursor-pointer ${
                   selectedCategory === tab.id
-                    ? "bg-card text-foreground font-black shadow-2xs"
-                    : "text-muted-foreground font-bold"
+                    ? "bg-primary text-primary-foreground font-black shadow-2xs"
+                    : "text-muted-foreground hover:text-foreground font-bold"
                 }`}
               >
                 {tab.label}
@@ -145,31 +145,31 @@ export default function LiffCheerSongsPage() {
           </div>
 
           {/* 屋外視認性重視の歌詞カード表示枠 */}
-          <div className="rounded-3xl bg-slate-900 dark:bg-slate-950 text-white p-5 space-y-3 border border-slate-800 shadow-sm">
+          <div className="rounded-2xl bg-muted/35 text-foreground p-5 space-y-3 border border-border/60">
             <div className="flex items-center justify-between">
-              <span className="px-2.5 py-0.5 rounded-full bg-orange-500/20 text-orange-300 text-[10px] font-black">
+              <span className="px-2.5 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-black">
                 {selectedCategory === "attack"
                   ? "♪ チーム共通ヒッティングマーチ"
                   : selectedCategory === "chance"
                   ? "♪ チャンステーマ（走者得点圏）"
                   : "♪ ナイスプレーコール"}
               </span>
-              <Volume2 className="w-4 h-4 text-slate-400" />
+              <Volume2 className="w-4 h-4 text-muted-foreground" />
             </div>
 
             {selectedCategory === "attack" && (
               <div className="space-y-2.5 text-base sm:text-lg font-black leading-relaxed tracking-wide">
                 <p>
                   さあ行こうぜ{" "}
-                  <span className="px-2 py-0.5 rounded-lg bg-orange-500 text-white">
+                  <span className="px-2 py-0.5 rounded-lg bg-primary text-primary-foreground">
                     {selectedPlayer.callName}！
                   </span>
                 </p>
                 <p>勝利へ導く一撃を</p>
                 <p>今ここで放て</p>
-                <p className="text-sm text-amber-300 pt-1">
+                <p className="text-sm text-primary pt-1">
                   📣 コール：かっ飛ばせー{" "}
-                  <span className="underline decoration-orange-400 decoration-2 underline-offset-4">
+                  <span className="underline decoration-primary decoration-2 underline-offset-4">
                     {selectedPlayer.callName}！
                   </span>{" "}
                   （👏👏・👏👏👏）
@@ -182,14 +182,14 @@ export default function LiffCheerSongsPage() {
                 <p>燃えろ みんなの想いを乗せて</p>
                 <p>
                   決めろ{" "}
-                  <span className="px-2 py-0.5 rounded-lg bg-orange-500 text-white">
+                  <span className="px-2 py-0.5 rounded-lg bg-primary text-primary-foreground">
                     {selectedPlayer.callName}！
                   </span>{" "}
                   今がチャンスだ
                 </p>
-                <p className="text-sm text-amber-300 pt-1">
+                <p className="text-sm text-primary pt-1">
                   📣 コール：打て！打て！{" "}
-                  <span className="underline decoration-orange-400 decoration-2 underline-offset-4">
+                  <span className="underline decoration-primary decoration-2 underline-offset-4">
                     {selectedPlayer.callName}！
                   </span>
                 </p>
@@ -200,11 +200,11 @@ export default function LiffCheerSongsPage() {
               <div className="space-y-2.5 text-base sm:text-lg font-black leading-relaxed tracking-wide">
                 <p>
                   いいぞ いいぞ{" "}
-                  <span className="px-2 py-0.5 rounded-lg bg-orange-500 text-white">
+                  <span className="px-2 py-0.5 rounded-lg bg-primary text-primary-foreground">
                     {selectedPlayer.callName}！
                   </span>
                 </p>
-                <p className="text-sm text-amber-300 pt-1">
+                <p className="text-sm text-primary pt-1">
                   📣 もう一回！いいぞ いいぞ {selectedPlayer.callName}！
                 </p>
               </div>
@@ -213,9 +213,9 @@ export default function LiffCheerSongsPage() {
         </section>
 
         {/* 今後の実装予定メモ */}
-        <section className="rounded-3xl bg-card border border-border shadow-xs p-4 space-y-3">
+        <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3">
           <div className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-orange-500" />
+            <Sparkles className="w-4 h-4 text-primary" />
             <h3 className="text-xs font-black text-foreground">
               搭載予定の機能リスト
             </h3>
@@ -229,7 +229,7 @@ export default function LiffCheerSongsPage() {
 
           <Link
             href="/liff/players"
-            className="w-full py-2.5 px-4 rounded-2xl bg-muted hover:bg-muted/80 border border-border text-xs font-black text-foreground flex items-center justify-between transition-all active:scale-98"
+            className="w-full py-2.5 px-4 rounded-2xl bg-card hover:bg-muted hover:border-primary/40 border border-border/60 text-xs font-black text-foreground flex items-center justify-between transition-all active:scale-98"
           >
             <span className="flex items-center gap-2">
               <IdCard className="w-3.5 h-3.5 text-primary" />

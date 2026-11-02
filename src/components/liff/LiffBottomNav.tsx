@@ -89,7 +89,7 @@ const MENU_ITEMS: MenuItem[] = [
     subtitle: "試合動画 & スコア",
     href: "/liff/matches",
     icon: Video,
-    colorClass: "bg-red-500/15 text-red-600 dark:text-red-400",
+    colorClass: "bg-primary/12 text-primary",
     category: "schedule" as const,
     subGroup: "match_team",
   },
@@ -98,7 +98,7 @@ const MENU_ITEMS: MenuItem[] = [
     subtitle: "スタメン・ベンチ設定",
     href: "/liff/matches/lineup",
     icon: Users,
-    colorClass: "bg-primary/15 text-primary",
+    colorClass: "bg-primary/12 text-primary",
     category: "schedule" as const,
     subGroup: "match_team",
   },
@@ -107,7 +107,7 @@ const MENU_ITEMS: MenuItem[] = [
     subtitle: "勝敗・得失点・個人成績",
     href: "/liff/stats",
     icon: Trophy,
-    colorClass: "bg-amber-500/15 text-amber-600 dark:text-amber-400",
+    colorClass: "bg-primary/12 text-primary",
     category: "schedule" as const,
     subGroup: "match_team",
   },
@@ -116,7 +116,7 @@ const MENU_ITEMS: MenuItem[] = [
     subtitle: "背番号・守備・選手紹介",
     href: "/liff/players",
     icon: IdCard,
-    colorClass: "bg-cyan-500/15 text-cyan-600 dark:text-cyan-400",
+    colorClass: "bg-primary/12 text-primary",
     category: "schedule" as const,
     subGroup: "match_team",
   },
@@ -127,7 +127,7 @@ const MENU_ITEMS: MenuItem[] = [
     subtitle: "当番・イベントスケジュール",
     href: "/liff/schedule",
     icon: Calendar,
-    colorClass: "bg-orange-500/15 text-orange-600 dark:text-orange-400",
+    colorClass: "bg-primary/12 text-primary",
     category: "schedule" as const,
     subGroup: "schedule_access",
   },
@@ -136,7 +136,7 @@ const MENU_ITEMS: MenuItem[] = [
     subtitle: "当番集計・出欠確認",
     href: "/liff/schedule/board",
     icon: ClipboardCheck,
-    colorClass: "bg-indigo-500/15 text-indigo-600 dark:text-indigo-400",
+    colorClass: "bg-primary/12 text-primary",
     category: "schedule" as const,
     subGroup: "schedule_access",
   },
@@ -145,7 +145,7 @@ const MENU_ITEMS: MenuItem[] = [
     subtitle: "乗車割り・集合時間",
     href: "/liff/carpool",
     icon: Car,
-    colorClass: "bg-blue-500/15 text-blue-600 dark:text-blue-400",
+    colorClass: "bg-primary/12 text-primary",
     category: "schedule" as const,
     subGroup: "schedule_access",
   },
@@ -154,7 +154,7 @@ const MENU_ITEMS: MenuItem[] = [
     subtitle: "アクセス・駐車場",
     href: "/liff/grounds",
     icon: MapPin,
-    colorClass: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
+    colorClass: "bg-primary/12 text-primary",
     category: "schedule" as const,
     subGroup: "schedule_access",
   },
@@ -165,7 +165,7 @@ const MENU_ITEMS: MenuItem[] = [
     subtitle: "試合・配車・活動心得",
     href: "/liff/rules",
     icon: AlertTriangle,
-    colorClass: "bg-amber-500/15 text-amber-600 dark:text-amber-400",
+    colorClass: "bg-primary/12 text-primary",
     category: "manual" as const,
     subGroup: "docs",
   },
@@ -174,7 +174,7 @@ const MENU_ITEMS: MenuItem[] = [
     subtitle: "規約・配車マニュアル",
     href: "/liff/documents",
     icon: FileText,
-    colorClass: "bg-purple-500/15 text-purple-600 dark:text-purple-400",
+    colorClass: "bg-primary/12 text-primary",
     category: "manual" as const,
     subGroup: "docs",
   },
@@ -183,7 +183,7 @@ const MENU_ITEMS: MenuItem[] = [
     subtitle: "雨天判断・Q&A",
     href: "/liff/faq",
     icon: HelpCircle,
-    colorClass: "bg-teal-500/15 text-teal-600 dark:text-teal-400",
+    colorClass: "bg-primary/12 text-primary",
     category: "manual" as const,
     subGroup: "docs",
   },
@@ -192,7 +192,7 @@ const MENU_ITEMS: MenuItem[] = [
     subtitle: "連盟・大会速報・SNS",
     href: "/liff/links",
     icon: Link2,
-    colorClass: "bg-sky-500/15 text-sky-600 dark:text-sky-400",
+    colorClass: "bg-primary/12 text-primary",
     category: "manual" as const,
     subGroup: "docs",
   },
@@ -201,7 +201,7 @@ const MENU_ITEMS: MenuItem[] = [
     subtitle: "手書きスコア画像データ化",
     href: "/liff/tools/scorebook-import",
     icon: ScanLine,
-    colorClass: "bg-indigo-500/15 text-indigo-600 dark:text-indigo-400",
+    colorClass: "bg-primary/12 text-primary",
     category: "manual" as const,
     subGroup: "tools",
   },
@@ -210,7 +210,7 @@ const MENU_ITEMS: MenuItem[] = [
     subtitle: "簡易入力で速報文を作成",
     href: "/liff/tools/news-generator",
     icon: Megaphone,
-    colorClass: "bg-rose-500/15 text-rose-600 dark:text-rose-400",
+    colorClass: "bg-primary/12 text-primary",
     category: "manual" as const,
     subGroup: "tools",
   },
@@ -219,7 +219,7 @@ const MENU_ITEMS: MenuItem[] = [
     subtitle: "選手名入り歌詞・コール",
     href: "/liff/tools/cheer-songs",
     icon: Music,
-    colorClass: "bg-orange-500/15 text-orange-600 dark:text-orange-400",
+    colorClass: "bg-primary/12 text-primary",
     category: "manual" as const,
     subGroup: "tools",
   },
@@ -228,7 +228,7 @@ const MENU_ITEMS: MenuItem[] = [
     subtitle: "配車割り作成支援 (検討中)",
     href: "/liff/tools/carpool-generator",
     icon: Wand2,
-    colorClass: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
+    colorClass: "bg-primary/12 text-primary",
     category: "manual" as const,
     subGroup: "tools",
   },
@@ -239,7 +239,7 @@ const MENU_ITEMS: MenuItem[] = [
     subtitle: "表示名・お子様紐付け・マイカー",
     href: "/liff/profile",
     icon: UserCircle,
-    colorClass: "bg-sky-500/15 text-sky-600 dark:text-sky-400",
+    colorClass: "bg-primary/12 text-primary",
     category: "settings" as const,
     subGroup: "settings_general",
   },
@@ -248,7 +248,7 @@ const MENU_ITEMS: MenuItem[] = [
     subtitle: "クイックメニュー・カラー・表示設定",
     href: "/liff/settings",
     icon: Settings,
-    colorClass: "bg-slate-500/15 text-slate-700 dark:text-slate-300",
+    colorClass: "bg-primary/12 text-primary",
     category: "settings" as const,
     subGroup: "settings_general",
   },
@@ -257,7 +257,7 @@ const MENU_ITEMS: MenuItem[] = [
     subtitle: "チーム情報・活動班・マスタ管理",
     href: "/liff/settings/team",
     icon: SlidersHorizontal,
-    colorClass: "bg-primary/15 text-primary",
+    colorClass: "bg-primary/12 text-primary",
     category: "settings" as const,
     subGroup: "settings_general",
   },
@@ -266,7 +266,7 @@ const MENU_ITEMS: MenuItem[] = [
     subtitle: "試合規定・記号早見表・AI読取",
     href: "/liff/settings/score",
     icon: BookOpen,
-    colorClass: "bg-indigo-500/15 text-indigo-600 dark:text-indigo-400",
+    colorClass: "bg-primary/12 text-primary",
     category: "settings" as const,
     subGroup: "settings_general",
   },
@@ -277,7 +277,7 @@ const MENU_ITEMS: MenuItem[] = [
     subtitle: "参加承認・メンバー管理・招待",
     href: "/liff/admin",
     icon: ShieldCheck,
-    colorClass: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
+    colorClass: "bg-primary/12 text-primary",
     category: "settings" as const,
     subGroup: "settings_admin",
   },
@@ -456,9 +456,9 @@ export function LiffBottomNav() {
             onClick={() => setIsOtherMenuOpen(false)}
           />
 
-          <div className="w-full max-w-lg bg-slate-100 dark:bg-slate-950 rounded-t-3xl border-t border-x border-slate-300/80 dark:border-border shadow-2xl p-5 pb-36 space-y-4 relative z-10 animate-in slide-in-from-bottom duration-200 max-h-[85vh] overflow-y-auto">
+          <div className="w-full max-w-lg bg-background rounded-t-2xl border-t border-x border-border/60 shadow-2xl p-5 pb-36 space-y-4 relative z-10 animate-in slide-in-from-bottom duration-200 max-h-[85vh] overflow-y-auto">
             {/* 🏷️ スティッキーヘッダー & 3分割カテゴリタブ */}
-            <div className="sticky -top-5 -mt-5 pt-5 pb-3 bg-slate-100/95 dark:bg-slate-950/95 backdrop-blur-md z-10 border-b border-slate-200 dark:border-border/50 space-y-3">
+            <div className="sticky -top-5 -mt-5 pt-5 pb-3 bg-background/95 backdrop-blur-md z-10 border-b border-border/50 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <LayoutGrid className="w-4 h-4 text-primary" />
@@ -467,14 +467,14 @@ export function LiffBottomNav() {
                 <button
                   type="button"
                   onClick={() => setIsOtherMenuOpen(false)}
-                  className="p-1.5 rounded-full hover:bg-slate-200 dark:hover:bg-muted text-muted-foreground hover:text-foreground active:scale-90 transition-all"
+                  className="p-1.5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground active:scale-90 transition-all"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
               {/* 🏷️ 均等3分割セグメントタブ（横スクロール一切なし・全画面幅フィット） */}
-              <div className="grid grid-cols-3 gap-1 p-1 bg-slate-200/90 dark:bg-muted/60 rounded-2xl border border-slate-300/80 dark:border-border/40">
+              <div className="grid grid-cols-3 gap-1 p-1 bg-card rounded-2xl border border-border/60 shadow-xs">
                 {MENU_TABS.map((tab) => {
                   const isSelected = selectedCategory === tab.id;
                   const TabIcon = tab.icon;
@@ -487,8 +487,8 @@ export function LiffBottomNav() {
                       onClick={() => setSelectedCategory(tab.id)}
                       className={`flex items-center justify-center gap-1.5 py-2 px-1 rounded-xl text-xs transition-all active:scale-95 ${
                         isSelected
-                          ? "bg-primary text-primary-foreground shadow-sm shadow-primary/25 font-black"
-                          : "text-slate-600 dark:text-muted-foreground hover:text-foreground hover:bg-white/60 dark:hover:bg-slate-800 font-bold"
+                          ? "bg-primary text-primary-foreground shadow-xs font-black"
+                          : "text-muted-foreground hover:text-foreground hover:bg-muted/60 font-bold"
                       }`}
                     >
                       <TabIcon className="w-3.5 h-3.5 shrink-0" />
@@ -497,7 +497,7 @@ export function LiffBottomNav() {
                         className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
                           isSelected 
                             ? "bg-primary-foreground/20 text-primary-foreground" 
-                            : "bg-white/90 dark:bg-background/80 text-slate-700 dark:text-muted-foreground"
+                            : "bg-muted text-muted-foreground"
                         }`}
                       >
                         {count}
@@ -518,7 +518,7 @@ export function LiffBottomNav() {
                     <div key={section.key} className="space-y-2">
                       <div className="flex items-center gap-1.5 px-1">
                         <SectionIcon className="w-3.5 h-3.5 text-primary" />
-                        <span className="text-[11px] font-black tracking-tight text-slate-600 dark:text-slate-300">
+                        <span className="text-[11px] font-black tracking-tight text-muted-foreground">
                           {section.label}
                         </span>
                       </div>
@@ -532,7 +532,7 @@ export function LiffBottomNav() {
                               key={item.href}
                               href={item.href}
                               onClick={() => setIsOtherMenuOpen(false)}
-                              className={`flex items-center gap-3 p-3 rounded-2xl bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-850 border border-slate-300 dark:border-slate-800 shadow-sm ring-1 ring-black/5 dark:ring-white/5 transition-all group active:scale-95 ${
+                              className={`flex items-center gap-3 p-3 rounded-2xl border border-border/60 bg-card shadow-xs hover:border-primary/40 transition-all group active:scale-95 ${
                                 isFullWidth ? "col-span-2" : ""
                               }`}
                             >
@@ -540,15 +540,15 @@ export function LiffBottomNav() {
                                 <ItemIcon className="w-5 h-5" />
                               </span>
                               <div className="min-w-0 flex-1">
-                                <p className="text-xs font-black text-slate-900 dark:text-slate-100 truncate">
+                                <p className="text-xs font-black text-foreground truncate">
                                   {item.title}
                                 </p>
-                                <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold truncate">
+                                <p className="text-[10px] text-muted-foreground font-bold truncate">
                                   {item.subtitle}
                                 </p>
                               </div>
                               {isFullWidth && (
-                                <ChevronRight className="w-4 h-4 text-slate-400 mr-1 shrink-0" />
+                                <ChevronRight className="w-4 h-4 text-muted-foreground mr-1 shrink-0" />
                               )}
                             </Link>
                           );
@@ -569,7 +569,7 @@ export function LiffBottomNav() {
                       key={item.href}
                       href={item.href}
                       onClick={() => setIsOtherMenuOpen(false)}
-                      className={`flex items-center gap-3 p-3 rounded-2xl bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-850 border border-slate-300 dark:border-slate-800 shadow-sm ring-1 ring-black/5 dark:ring-white/5 transition-all group active:scale-95 ${
+                      className={`flex items-center gap-3 p-3 rounded-2xl border border-border/60 bg-card shadow-xs hover:border-primary/40 transition-all group active:scale-95 ${
                         isFullWidth ? "col-span-2" : ""
                       }`}
                     >
@@ -577,15 +577,15 @@ export function LiffBottomNav() {
                         <ItemIcon className="w-5 h-5" />
                       </span>
                       <div className="min-w-0 flex-1">
-                        <p className="text-xs font-black text-slate-900 dark:text-slate-100 truncate">
+                        <p className="text-xs font-black text-foreground truncate">
                           {item.title}
                         </p>
-                        <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold truncate">
+                        <p className="text-[10px] text-muted-foreground font-bold truncate">
                           {item.subtitle}
                         </p>
                       </div>
                       {isFullWidth && (
-                        <ChevronRight className="w-4 h-4 text-slate-400 mr-1 shrink-0" />
+                        <ChevronRight className="w-4 h-4 text-muted-foreground mr-1 shrink-0" />
                       )}
                     </Link>
                   );
@@ -594,11 +594,11 @@ export function LiffBottomNav() {
             )}
 
             {/* 📜 法務・規約リンク */}
-            <div className="pt-3 border-t border-slate-200 dark:border-border/40 flex items-center justify-center gap-3">
+            <div className="pt-3 border-t border-border/50 flex items-center justify-center gap-3">
               <Link
                 href="/liff/terms"
                 onClick={() => setIsOtherMenuOpen(false)}
-                className="py-1.5 px-3 rounded-full bg-white dark:bg-slate-900 hover:bg-slate-50 active:scale-95 border border-slate-300/80 dark:border-border/60 text-[11px] font-bold text-muted-foreground hover:text-foreground shadow-2xs transition-all flex items-center gap-1.5"
+                className="py-1.5 px-3 rounded-full bg-card hover:bg-muted active:scale-95 border border-border/60 text-[11px] font-bold text-muted-foreground hover:text-foreground shadow-xs transition-all flex items-center gap-1.5"
               >
                 <FileText className="w-3.5 h-3.5 text-primary" />
                 <span>利用規約</span>
@@ -607,7 +607,7 @@ export function LiffBottomNav() {
               <Link
                 href="/liff/privacy"
                 onClick={() => setIsOtherMenuOpen(false)}
-                className="py-1.5 px-3 rounded-full bg-white dark:bg-slate-900 hover:bg-slate-50 active:scale-95 border border-slate-300/80 dark:border-border/60 text-[11px] font-bold text-muted-foreground hover:text-foreground shadow-2xs transition-all flex items-center gap-1.5"
+                className="py-1.5 px-3 rounded-full bg-card hover:bg-muted active:scale-95 border border-border/60 text-[11px] font-bold text-muted-foreground hover:text-foreground shadow-xs transition-all flex items-center gap-1.5"
               >
                 <ShieldCheck className="w-3.5 h-3.5 text-primary" />
                 <span>プライバシーポリシー</span>

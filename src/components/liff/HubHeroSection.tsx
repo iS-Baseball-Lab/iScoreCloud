@@ -439,15 +439,15 @@ export function HubHeroSection({
   return (
     <div className="space-y-2.5">
       {/* 🌟 1. 上部セグメントタブ（カラーテーマ完全連動：直近の試合 / 直近の予定） */}
-      <div className="flex items-center p-1 bg-primary/10 dark:bg-primary/15 backdrop-blur-md rounded-2xl border-2 border-primary/30 dark:border-primary/40 shadow-xs">
+      <div className="flex items-center p-1 rounded-2xl border border-border/60 bg-card shadow-xs">
         <button
           type="button"
           onClick={() => setActiveTab("score")}
           className={cn(
             "flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-xl text-xs font-black transition-all active:scale-95 cursor-pointer",
             activeTab === "score"
-              ? "bg-primary text-primary-foreground shadow-sm shadow-primary/25 font-black ring-1 ring-primary/30"
-              : "text-foreground/75 hover:text-primary hover:bg-primary/10 font-bold"
+              ? "bg-primary text-primary-foreground shadow-xs font-black"
+              : "text-muted-foreground hover:text-foreground hover:bg-muted/50 font-bold"
           )}
         >
           <Trophy className="w-3.5 h-3.5" />
@@ -460,8 +460,8 @@ export function HubHeroSection({
           className={cn(
             "flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-xl text-xs font-black transition-all active:scale-95 cursor-pointer",
             activeTab === "next"
-              ? "bg-primary text-primary-foreground shadow-sm shadow-primary/25 font-black ring-1 ring-primary/30"
-              : "text-foreground/75 hover:text-primary hover:bg-primary/10 font-bold"
+              ? "bg-primary text-primary-foreground shadow-xs font-black"
+              : "text-muted-foreground hover:text-foreground hover:bg-muted/50 font-bold"
           )}
         >
           <Sparkles className="w-3.5 h-3.5" />
@@ -493,7 +493,7 @@ export function HubHeroSection({
           ) : recentMatch ? (
             <MatchScoreCard match={recentMatch as any} teamName={teamName} initialExpanded={true} />
           ) : (
-            <div className="p-8 rounded-2xl bg-card border border-border/60 text-center space-y-2">
+            <div className="p-8 rounded-2xl border border-border/60 bg-card shadow-xs text-center space-y-2">
               <Trophy className="w-8 h-8 text-muted-foreground/40 mx-auto" />
               <p className="text-xs font-black text-foreground">直近の試合記録はありません</p>
               <p className="text-[11px] text-muted-foreground">新しい試合が行われるとここに速報が表示されます</p>
@@ -525,7 +525,7 @@ export function HubHeroSection({
               {[1, 2].map((i) => (
                 <div
                   key={i}
-                  className="w-[88vw] max-w-[360px] shrink-0 rounded-3xl bg-card border-2 border-primary/30 dark:border-primary/40 p-4 space-y-3.5 animate-pulse shadow-md shadow-primary/5 flex flex-col justify-between"
+                  className="w-[88vw] max-w-[360px] shrink-0 rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3.5 animate-pulse flex flex-col justify-between"
                 >
                   <div className="space-y-3">
                     {/* 上部ヘッダー（日付、バッジ、リンク） */}
@@ -542,18 +542,18 @@ export function HubHeroSection({
 
                     {/* スケジュール（午前・午後） */}
                     <div className="grid grid-cols-2 gap-2">
-                      <div className="h-[62px] bg-muted/50 rounded-2xl p-2 space-y-1.5 border border-border/40">
+                      <div className="h-[62px] bg-muted/50 rounded-2xl p-2 space-y-1.5 border border-border/60">
                         <div className="h-3 w-10 bg-muted rounded" />
                         <div className="h-3 w-20 bg-muted/70 rounded" />
                       </div>
-                      <div className="h-[62px] bg-muted/50 rounded-2xl p-2 space-y-1.5 border border-border/40">
+                      <div className="h-[62px] bg-muted/50 rounded-2xl p-2 space-y-1.5 border border-border/60">
                         <div className="h-3 w-10 bg-muted rounded" />
                         <div className="h-3 w-20 bg-muted/70 rounded" />
                       </div>
                     </div>
 
                     {/* お弁当・配車・当番ブロック */}
-                    <div className="p-3 rounded-2xl bg-muted/30 border border-border/50 space-y-2">
+                    <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 space-y-2">
                       <div className="grid grid-cols-2 gap-2">
                         <div className="h-6 bg-muted/50 rounded-xl" />
                         <div className="h-6 bg-muted/50 rounded-xl" />
@@ -563,7 +563,7 @@ export function HubHeroSection({
                   </div>
 
                   {/* 出欠アコーディオンバー（閉じた状態の高さ） */}
-                  <div className="pt-2 border-t border-primary/15">
+                  <div className="pt-2 border-t border-border/60">
                     <div className="h-9 bg-muted/40 rounded-2xl border border-border/60 flex items-center justify-between px-3">
                       <div className="h-4 w-28 bg-muted rounded" />
                       <div className="h-3 w-8 bg-muted/60 rounded" />
@@ -573,7 +573,7 @@ export function HubHeroSection({
               ))}
             </div>
           ) : weeklyEvents.length === 0 ? (
-            <div className="p-6 rounded-3xl bg-card border-2 border-primary/30 dark:border-primary/40 shadow-md shadow-primary/5 text-center space-y-2">
+            <div className="p-6 rounded-2xl border border-border/60 bg-card shadow-xs text-center space-y-2">
               <div className="w-10 h-10 rounded-full bg-primary/10 text-primary mx-auto flex items-center justify-center">
                 <Calendar className="w-5 h-5" />
               </div>
@@ -582,7 +582,7 @@ export function HubHeroSection({
               <div className="pt-2">
                 <Link
                   href="/liff/schedule"
-                  className="inline-flex items-center gap-1 px-4 py-1.5 rounded-full bg-primary text-primary-foreground text-xs font-black shadow-xs active:scale-95"
+                  className="inline-flex items-center gap-1 px-4 py-1.5 rounded-full bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black shadow-xs active:scale-95"
                 >
                   <span>全予定カレンダーを見る</span>
                   <ChevronRight className="w-3.5 h-3.5" />
@@ -599,13 +599,11 @@ export function HubHeroSection({
                 const dateMatch = ev.date?.match(/^(.*?)(?:\((.)\))?$/);
                 const dateText = dateMatch ? dateMatch[1] : ev.date;
                 const dayOfWeek = dateMatch ? dateMatch[2] : "";
-                const isSat = dayOfWeek === "土";
-                const isSun = dayOfWeek === "日";
 
                 return (
                   <div
                     key={ev.id}
-                    className="w-[88vw] max-w-[360px] shrink-0 snap-center rounded-3xl bg-card border border-border/90 dark:border-border/70 shadow-xs hover:shadow-sm p-4 space-y-3.5 flex flex-col justify-between transition-all"
+                    className="w-[88vw] max-w-[360px] shrink-0 snap-center rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3.5 flex flex-col justify-between transition-all"
                   >
                   <div className="space-y-3">
                     {/* 上部ヘッダー：日程・日付 & 曜日バッジ & 対象チーム & 全予定リンク */}
@@ -617,13 +615,7 @@ export function HubHeroSection({
                             {dateText}
                           </span>
                           {dayOfWeek && (
-                            <span className={`px-1.5 py-0.5 rounded-md text-xs font-black border ${
-                              isSat
-                                ? "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400 border-blue-200 dark:border-blue-900/40"
-                                : isSun
-                                ? "bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400 border-rose-200 dark:border-rose-900/40"
-                                : "bg-muted text-muted-foreground border-border"
-                            }`}>
+                            <span className="px-1.5 py-0.5 rounded-md text-xs font-black bg-muted/50 text-foreground border border-border/60">
                               {dayOfWeek}
                             </span>
                           )}
@@ -632,20 +624,20 @@ export function HubHeroSection({
                         {/* ⚾ 試合 / 🏃 練習 区分バッジ */}
                         <span className={`px-2 py-0.5 rounded-lg text-[10.5px] font-black border shrink-0 ${
                           isMatch
-                            ? "bg-rose-50 text-rose-700 dark:bg-rose-950/30 dark:text-rose-300 border-rose-200 dark:border-rose-900/40"
-                            : "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300 border-emerald-200 dark:border-emerald-900/40"
+                            ? "bg-primary text-primary-foreground border-primary"
+                            : "bg-primary/10 text-primary border-primary/25"
                         }`}>
                           {isMatch ? "⚾ 試合" : "🏃 練習"}
                         </span>
 
                         {/* 🎯 対象チーム・グループバッジ（Aチーム/Bチーム/全体など） */}
                         {ev.targetGroup && ev.targetGroup !== "全体" && (
-                          <span className="px-2 py-0.5 rounded-lg bg-primary/10 text-primary text-[10.5px] font-black border border-primary/20 shrink-0">
+                          <span className="px-2 py-0.5 rounded-lg bg-primary/10 text-primary text-[10.5px] font-black border border-primary/25 shrink-0">
                             🏷️ {ev.targetGroup}
                           </span>
                         )}
 
-                        <span className="px-2 py-0.5 rounded-full bg-muted text-muted-foreground text-[10px] font-bold">
+                        <span className="px-2 py-0.5 rounded-full bg-muted/50 text-muted-foreground border border-border/60 text-[10px] font-bold">
                           {idx + 1} / {weeklyEvents.length}
                         </span>
                       </div>
@@ -664,25 +656,25 @@ export function HubHeroSection({
                     {/* 活動スケジュール表示 */}
                     {ev.activityGroups && ev.activityGroups.length > 0 ? (
                       <div className="space-y-1.5">
-                        <div className="p-3 rounded-2xl bg-muted/40 dark:bg-muted/20 border border-border/80 space-y-2">
+                        <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 space-y-2">
                           <div className="flex items-center justify-between">
                             <span className="text-xs font-black text-foreground flex items-center gap-1.5">
                               <span>{ev.activityGroups[0].eventType === "match" ? "⚾" : "🏃"}</span>
                               <span>{ev.activityGroups[0].name}</span>
                             </span>
                             {ev.activityGroups.length > 1 && (
-                              <span className="text-[10px] font-bold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded-md border border-amber-200 dark:border-amber-900/40">
+                              <span className="text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded-md border border-primary/25">
                                 ＋他{ev.activityGroups.length - 1}班
                               </span>
                             )}
                           </div>
                           <div className="grid grid-cols-2 gap-2 text-xs font-bold">
                             <div className="flex items-center gap-1.5 text-foreground bg-card p-2 rounded-xl border border-border/60 shadow-2xs">
-                              <Clock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                              <Clock className="w-3.5 h-3.5 text-primary shrink-0" />
                               <span className="truncate font-black">{ev.activityGroups[0].time || ev.time}</span>
                             </div>
                             <div className="flex items-center gap-1.5 text-foreground bg-card p-2 rounded-xl border border-border/60 shadow-2xs">
-                              <MapPin className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                              <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
                               <span className="truncate font-black">{ev.activityGroups[0].location || ev.location}</span>
                             </div>
                           </div>
@@ -692,29 +684,29 @@ export function HubHeroSection({
                       /* ☀️🌙 午前/午後分割表示 */
                       <div className="grid grid-cols-2 gap-2">
                         {/* ☀️ 【午前】（左） */}
-                        <div className="p-2.5 rounded-2xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/70 dark:border-amber-900/30 flex flex-col justify-between space-y-2">
+                        <div className="p-2.5 rounded-2xl bg-muted/35 border border-border/60 flex flex-col justify-between space-y-2">
                           <div className="flex items-center justify-between">
-                            <span className="text-[10.5px] font-black text-amber-800 dark:text-amber-200 flex items-center gap-1.5">
-                              <span className="w-4 h-4 rounded-md bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center">
-                                <Sun className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                            <span className="text-[10.5px] font-black text-foreground flex items-center gap-1.5">
+                              <span className="w-4 h-4 rounded-md bg-primary/10 text-primary flex items-center justify-center">
+                                <Sun className="w-3 h-3 text-primary" />
                               </span>
                               <span>午前</span>
                             </span>
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${
                               ev.amType === "match"
-                                ? "bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300 border border-rose-200 dark:border-rose-800/50"
-                                : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/50"
+                                ? "bg-primary text-primary-foreground border-primary"
+                                : "bg-primary/10 text-primary border-primary/25"
                             }`}>
                               {ev.amType === "match" ? "⚾ 試合" : "🏃 練習"}
                             </span>
                           </div>
-                          <div className="p-2 rounded-xl bg-card border border-amber-200/50 dark:border-amber-900/30 space-y-1 shadow-2xs">
+                          <div className="p-2 rounded-xl bg-card border border-border/60 space-y-1 shadow-2xs">
                             <div className="flex items-center gap-1.5 text-xs font-black text-foreground">
-                              <Clock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                              <Clock className="w-3.5 h-3.5 text-primary shrink-0" />
                               <span className="truncate">{ev.amTime || ev.time}</span>
                             </div>
                             <div className="flex items-center gap-1.5 text-[11px] font-bold text-foreground/90 truncate">
-                              <MapPin className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                              <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
                               <span className="truncate">{ev.amLocation || ev.location || "グラウンド"}</span>
                             </div>
                           </div>
@@ -723,33 +715,33 @@ export function HubHeroSection({
                         {/* 🌙 【午後】（右） */}
                         <div className={`p-2.5 rounded-2xl border flex flex-col justify-between space-y-2 ${
                           ev.hasPm && ev.pmType !== "off"
-                            ? "bg-indigo-50/50 dark:bg-indigo-950/20 border-indigo-200/70 dark:border-indigo-900/30"
-                            : "bg-muted/30 dark:bg-muted/15 border-dashed border-border/80 opacity-75"
+                            ? "bg-muted/35 border-border/60"
+                            : "bg-muted/25 border-dashed border-border/60 opacity-75"
                         }`}>
                           <div className="flex items-center justify-between">
-                            <span className="text-[10.5px] font-black text-indigo-800 dark:text-indigo-200 flex items-center gap-1.5">
-                              <span className="w-4 h-4 rounded-md bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center">
-                                <Moon className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
+                            <span className="text-[10.5px] font-black text-foreground flex items-center gap-1.5">
+                              <span className="w-4 h-4 rounded-md bg-primary/10 text-primary flex items-center justify-center">
+                                <Moon className="w-3 h-3 text-primary" />
                               </span>
                               <span>午後</span>
                             </span>
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${
                               !ev.hasPm || ev.pmType === "off"
-                                ? "bg-muted text-muted-foreground border border-border"
+                                ? "bg-muted/50 text-muted-foreground border-border/60"
                                 : ev.pmType === "match"
-                                ? "bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300 border border-rose-200 dark:border-rose-800/50"
-                                : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/50"
+                                ? "bg-primary text-primary-foreground border-primary"
+                                : "bg-primary/10 text-primary border-primary/25"
                             }`}>
                               {!ev.hasPm || ev.pmType === "off" ? "🏖️ なし" : ev.pmType === "match" ? "⚾ 試合" : "🏃 練習"}
                             </span>
                           </div>
-                          <div className="p-2 rounded-xl bg-card border border-indigo-200/50 dark:border-indigo-900/30 space-y-1 shadow-2xs">
+                          <div className="p-2 rounded-xl bg-card border border-border/60 space-y-1 shadow-2xs">
                             <div className="flex items-center gap-1.5 text-xs font-black text-foreground">
-                              <Clock className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                              <Clock className="w-3.5 h-3.5 text-primary shrink-0" />
                               <span className="truncate">{ev.hasPm && ev.pmTime ? ev.pmTime : "解散・なし"}</span>
                             </div>
                             <div className="flex items-center gap-1.5 text-[11px] font-bold text-foreground/90 truncate">
-                              <MapPin className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                              <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
                               <span className="truncate">{ev.hasPm && ev.pmLocation ? ev.pmLocation : (ev.hasPm ? ev.amLocation : "—")}</span>
                             </div>
                           </div>
@@ -757,12 +749,12 @@ export function HubHeroSection({
                       </div>
                     ) : (
                       /* 🏃 単一活動表示 */
-                      <div className="p-3 rounded-2xl bg-muted/40 dark:bg-muted/20 border border-border/80 space-y-2">
+                      <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 space-y-2">
                         <div className="flex items-center justify-between">
-                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black ${
+                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${
                             ev.eventType === "match"
-                              ? "bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300 border border-rose-200 dark:border-rose-800/50"
-                              : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/50"
+                              ? "bg-primary text-primary-foreground border-primary"
+                              : "bg-primary/10 text-primary border-primary/25"
                           }`}>
                             {ev.eventType === "match" ? "⚾ 試合" : "🏃 練習"}
                           </span>
@@ -774,11 +766,11 @@ export function HubHeroSection({
                         </div>
                         <div className="grid grid-cols-2 gap-2 text-xs font-bold">
                           <div className="flex items-center gap-1.5 text-foreground bg-card p-2 rounded-xl border border-border/60 shadow-2xs">
-                            <Clock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                            <Clock className="w-3.5 h-3.5 text-primary shrink-0" />
                             <span className="truncate font-black">{ev.time || "時間調整中"}</span>
                           </div>
                           <div className="flex items-center gap-1.5 text-foreground bg-card p-2 rounded-xl border border-border/60 shadow-2xs">
-                            <MapPin className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                            <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
                             <span className="truncate font-black">{ev.location || "グラウンド"}</span>
                           </div>
                         </div>
@@ -786,18 +778,18 @@ export function HubHeroSection({
                     )}
 
                     {/* 📋 その他の詳細情報ブロック（上から：お弁当・補食、連絡事項、配車、当番） */}
-                    <div className="p-3 rounded-2xl bg-muted/40 dark:bg-muted/25 border border-border/70 space-y-2.5 text-xs">
+                    <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 space-y-2.5 text-xs">
                       {/* 1. お弁当 & 補食 */}
                       <div className="grid grid-cols-2 gap-2 font-bold">
                         {/* お弁当 */}
                         <div className="flex items-center justify-between p-2 rounded-xl bg-card border border-border/60 shadow-2xs">
                           <span className="text-muted-foreground flex items-center gap-1.5 text-[11px]">
-                            <Utensils className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                            <Utensils className="w-3.5 h-3.5 text-primary" />
                             <span>お弁当</span>
                           </span>
                           <span className={`px-2 py-0.5 rounded-md text-[10.5px] font-black ${
                             ev.needsLunch
-                              ? "bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-200 dark:border-amber-900/40"
+                              ? "bg-primary/10 text-primary border border-primary/25"
                               : "text-muted-foreground/70"
                           }`}>
                             {ev.needsLunch ? "🍙 要" : "不要"}
@@ -812,7 +804,7 @@ export function HubHeroSection({
                           </span>
                           <span className={`px-2 py-0.5 rounded-md text-[10.5px] font-black ${
                             ev.needsSnack
-                              ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-900/40"
+                              ? "bg-primary/10 text-primary border border-primary/25"
                               : "text-muted-foreground/70"
                           }`}>
                             {ev.needsSnack ? "🍌 要" : "不要"}
@@ -827,7 +819,7 @@ export function HubHeroSection({
 
                         if (!hasMemo) {
                           return (
-                            <div className="pt-2 border-t border-border/50 flex items-center justify-between text-[11px]">
+                            <div className="pt-2 border-t border-border/60 flex items-center justify-between text-[11px]">
                               <span className="text-muted-foreground flex items-center gap-1.5">
                                 <FileText className="w-3.5 h-3.5 text-muted-foreground/70" />
                                 <span>連絡事項</span>
@@ -838,7 +830,7 @@ export function HubHeroSection({
                         }
 
                         return (
-                          <div className="pt-2 border-t border-border/50 space-y-1.5">
+                          <div className="pt-2 border-t border-border/60 space-y-1.5">
                             {/* アコーディオンヘッダー・開閉トグルボタン */}
                             <button
                               type="button"
@@ -865,7 +857,7 @@ export function HubHeroSection({
 
                             {/* アコーディオン本文 */}
                             {isExpanded && (
-                              <div className="animate-in fade-in slide-in-from-top-1 duration-150 p-2.5 rounded-xl bg-background border border-primary/25 shadow-2xs">
+                              <div className="animate-in fade-in slide-in-from-top-1 duration-150 p-2.5 rounded-xl bg-card border border-primary/25 shadow-2xs">
                                 <p className="text-[11px] font-bold text-foreground/90 whitespace-pre-wrap leading-relaxed">
                                   {ev.memo}
                                 </p>
@@ -876,10 +868,10 @@ export function HubHeroSection({
                       })()}
 
                       {/* 3. 配車 */}
-                      <div className="pt-2 border-t border-border/50 flex items-center justify-between font-bold">
+                      <div className="pt-2 border-t border-border/60 flex items-center justify-between font-bold">
                         <div className="flex items-center gap-2 min-w-0">
-                          <div className="w-6 h-6 rounded-lg bg-blue-500/15 flex items-center justify-center shrink-0">
-                            <Car className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                          <div className="w-6 h-6 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                            <Car className="w-3.5 h-3.5 text-primary" />
                           </div>
                           <span className="text-muted-foreground text-[11px] shrink-0">配車:</span>
                           <span className="text-foreground truncate font-black text-[11px]">
@@ -890,7 +882,7 @@ export function HubHeroSection({
                         {ev.carInfo ? (
                           <Link
                             href="/liff/carpool"
-                            className="text-[10.5px] font-black text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-0.5 shrink-0 ml-2"
+                            className="text-[10.5px] font-black text-primary hover:underline flex items-center gap-0.5 shrink-0 ml-2"
                           >
                             <span>配車表へ</span>
                             <ChevronRight className="w-3.5 h-3.5" />
@@ -900,12 +892,12 @@ export function HubHeroSection({
 
                       {/* 4. 一番下に当番 */}
                       {ev.dutyGroup && (
-                        <div className="pt-2 border-t border-border/50 flex items-center justify-between text-[11px] font-bold">
+                        <div className="pt-2 border-t border-border/60 flex items-center justify-between text-[11px] font-bold">
                           <span className="text-muted-foreground flex items-center gap-1.5">
                             <ClipboardList className="w-3.5 h-3.5 text-primary" />
                             <span>お当番</span>
                           </span>
-                          <span className="px-2.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 font-black flex items-center gap-1">
+                          <span className="px-2.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/25 font-black flex items-center gap-1">
                             <span>📋</span>
                             <span>{ev.dutyGroup}</span>
                           </span>
@@ -920,7 +912,7 @@ export function HubHeroSection({
                     <button
                       type="button"
                       onClick={() => toggleAttendance(ev.id)}
-                      className="w-full flex items-center justify-between p-2.5 rounded-2xl bg-card border border-border/80 hover:border-primary/40 shadow-2xs transition-all cursor-pointer group select-none"
+                      className="w-full flex items-center justify-between p-2.5 rounded-2xl bg-card border border-border/60 hover:border-primary/40 shadow-2xs transition-all cursor-pointer group select-none"
                     >
                       <div className="flex items-center gap-2">
                         <span className="w-7 h-7 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
@@ -929,14 +921,10 @@ export function HubHeroSection({
                         <div className="flex items-center gap-2 text-xs font-black text-foreground">
                           <span>出欠を回答・確認</span>
                           {/* 現在のステータス要約バッジ */}
-                          <span className={`px-2.5 py-0.5 rounded-full text-[10.5px] font-black ${
-                            pStatus === "present"
-                              ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/50"
-                              : pStatus === "late"
-                              ? "bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-200 dark:border-amber-800/50"
-                              : pStatus === "absent"
-                              ? "bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300 border border-rose-200 dark:border-rose-800/50"
-                              : "bg-muted text-muted-foreground border border-border"
+                          <span className={`px-2.5 py-0.5 rounded-full text-[10.5px] font-black border ${
+                            pStatus === "pending"
+                              ? "bg-muted/50 text-muted-foreground border-border/60"
+                              : "bg-primary/10 text-primary border-primary/25"
                           }`}>
                             {pStatus === "present" ? "○ 出席" : pStatus === "late" ? "△ 調整" : pStatus === "absent" ? "× 欠席" : "？ 未定"}
                           </span>
@@ -960,17 +948,17 @@ export function HubHeroSection({
                         {userRole === "parent" && children.map((child) => {
                           const childStatus = getChildAttendance(ev.id, child.id);
                           return (
-                            <div key={child.id} className="p-3 rounded-2xl bg-amber-50/40 dark:bg-amber-950/20 border border-amber-200/80 dark:border-amber-900/40 space-y-2.5">
+                            <div key={child.id} className="p-3 rounded-2xl bg-muted/35 border border-border/60 space-y-2.5">
                               <div className="flex items-center justify-between text-xs">
-                                <span className="font-black text-amber-800 dark:text-amber-200 flex items-center gap-1.5">
-                                  <span className="w-5 h-5 rounded-full bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center text-xs">👦</span>
+                                <span className="font-black text-foreground flex items-center gap-1.5">
+                                  <span className="w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs">👦</span>
                                   <span>お子様（{child.name}{child.uniformNumber ? ` ${child.uniformNumber}` : ""}）の出欠</span>
                                 </span>
                                 <span className="text-[11px] font-bold">
-                                  {childStatus === "present" && <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/50 font-black">○ 参加</span>}
-                                  {childStatus === "late" && <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-200 dark:border-amber-800/50 font-black">△ 調整</span>}
-                                  {childStatus === "absent" && <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300 border border-rose-200 dark:border-rose-800/50 font-black">× 欠席</span>}
-                                  {childStatus === "pending" && <span className="px-2 py-0.5 rounded-full bg-muted text-muted-foreground border border-border font-black">？ 未定</span>}
+                                  {childStatus === "present" && <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/25 font-black">○ 参加</span>}
+                                  {childStatus === "late" && <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/25 font-black">△ 調整</span>}
+                                  {childStatus === "absent" && <span className="px-2 py-0.5 rounded-full bg-muted/60 text-foreground border border-border/60 font-black">× 欠席</span>}
+                                  {childStatus === "pending" && <span className="px-2 py-0.5 rounded-full bg-muted/50 text-muted-foreground border border-border/60 font-black">？ 未定</span>}
                                 </span>
                               </div>
 
@@ -978,10 +966,10 @@ export function HubHeroSection({
                                 <button
                                   type="button"
                                   onClick={() => setChildAttendance(ev.id, child.id, "present")}
-                                  className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black transition-all active:scale-95 cursor-pointer ${
+                                  className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black border transition-all active:scale-95 cursor-pointer ${
                                     childStatus === "present"
-                                      ? "bg-emerald-600 text-white shadow-xs ring-2 ring-emerald-500/40"
-                                      : "bg-card hover:bg-muted text-muted-foreground border border-border/80"
+                                      ? "bg-primary text-primary-foreground border-primary shadow-xs"
+                                      : "bg-card hover:bg-muted text-muted-foreground border-border/60"
                                   }`}
                                 >
                                   <span className="text-base leading-none mb-0.5 font-black">○</span>
@@ -991,10 +979,10 @@ export function HubHeroSection({
                                 <button
                                   type="button"
                                   onClick={() => setChildAttendance(ev.id, child.id, "late")}
-                                  className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black transition-all active:scale-95 cursor-pointer ${
+                                  className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black border transition-all active:scale-95 cursor-pointer ${
                                     childStatus === "late"
-                                      ? "bg-amber-500 text-white shadow-xs ring-2 ring-amber-500/40"
-                                      : "bg-card hover:bg-muted text-muted-foreground border border-border/80"
+                                      ? "bg-primary text-primary-foreground border-primary shadow-xs"
+                                      : "bg-card hover:bg-muted text-muted-foreground border-border/60"
                                   }`}
                                 >
                                   <span className="text-base leading-none mb-0.5 font-black">△</span>
@@ -1004,10 +992,10 @@ export function HubHeroSection({
                                 <button
                                   type="button"
                                   onClick={() => setChildAttendance(ev.id, child.id, "absent")}
-                                  className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black transition-all active:scale-95 cursor-pointer ${
+                                  className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black border transition-all active:scale-95 cursor-pointer ${
                                     childStatus === "absent"
-                                      ? "bg-rose-600 text-white shadow-xs ring-2 ring-rose-500/40"
-                                      : "bg-card hover:bg-muted text-muted-foreground border border-border/80"
+                                      ? "bg-primary text-primary-foreground border-primary shadow-xs"
+                                      : "bg-card hover:bg-muted text-muted-foreground border-border/60"
                                   }`}
                                 >
                                   <span className="text-base leading-none mb-0.5 font-black">×</span>
@@ -1017,10 +1005,10 @@ export function HubHeroSection({
                                 <button
                                   type="button"
                                   onClick={() => setChildAttendance(ev.id, child.id, "pending")}
-                                  className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black transition-all active:scale-95 cursor-pointer ${
+                                  className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black border transition-all active:scale-95 cursor-pointer ${
                                     childStatus === "pending"
-                                      ? "bg-slate-700 text-white dark:bg-slate-300 dark:text-slate-900 shadow-xs ring-2 ring-slate-500/40"
-                                      : "bg-card hover:bg-muted text-muted-foreground border border-border/80"
+                                      ? "bg-primary text-primary-foreground border-primary shadow-xs"
+                                      : "bg-card hover:bg-muted text-muted-foreground border-border/60"
                                   }`}
                                 >
                                   <span className="text-base leading-none mb-0.5 font-black">？</span>
@@ -1032,19 +1020,19 @@ export function HubHeroSection({
                         })}
 
                         {/* 👨 2. 保護者本人（または選手本人）の出欠回答 */}
-                        <div className="space-y-2.5 p-3 rounded-2xl bg-muted/40 dark:bg-muted/20 border border-border/80">
+                        <div className="space-y-2.5 p-3 rounded-2xl bg-muted/35 border border-border/60">
                           <div className="flex items-center justify-between text-xs">
                             <span className="font-black text-foreground flex items-center gap-1.5">
-                              <span className="w-5 h-5 rounded-full bg-muted flex items-center justify-center text-xs">
+                              <span className="w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs">
                                 {userRole === "parent" ? "👨" : "⚾"}
                               </span>
                               <span>{userRole === "parent" ? "保護者（自分）の参加・当番" : "あなたの出欠回答"}</span>
                             </span>
                             <span className="text-[11px] font-bold">
-                              {pStatus === "present" && <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/50 font-black">○ {userRole === "parent" ? "参加・当番可" : "出席"}</span>}
-                              {pStatus === "late" && <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-200 dark:border-amber-800/50 font-black">△ 調整</span>}
-                              {pStatus === "absent" && <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300 border border-rose-200 dark:border-rose-800/50 font-black">× 欠席</span>}
-                              {pStatus === "pending" && <span className="px-2 py-0.5 rounded-full bg-muted text-muted-foreground border border-border font-black">？ 未定</span>}
+                              {pStatus === "present" && <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/25 font-black">○ {userRole === "parent" ? "参加・当番可" : "出席"}</span>}
+                              {pStatus === "late" && <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/25 font-black">△ 調整</span>}
+                              {pStatus === "absent" && <span className="px-2 py-0.5 rounded-full bg-muted/60 text-foreground border border-border/60 font-black">× 欠席</span>}
+                              {pStatus === "pending" && <span className="px-2 py-0.5 rounded-full bg-muted/50 text-muted-foreground border border-border/60 font-black">？ 未定</span>}
                             </span>
                           </div>
 
@@ -1054,10 +1042,10 @@ export function HubHeroSection({
                             <button
                               type="button"
                               onClick={() => setEventAttendance(ev.id, "present")}
-                              className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black transition-all active:scale-95 cursor-pointer ${
+                              className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black border transition-all active:scale-95 cursor-pointer ${
                                 pStatus === "present"
-                                  ? "bg-emerald-600 text-white shadow-xs ring-2 ring-emerald-500/40"
-                                  : "bg-card hover:bg-muted text-muted-foreground border border-border/80"
+                                  ? "bg-primary text-primary-foreground border-primary shadow-xs"
+                                  : "bg-card hover:bg-muted text-muted-foreground border-border/60"
                               }`}
                             >
                               <span className="text-base leading-none mb-0.5 font-black">○</span>
@@ -1068,10 +1056,10 @@ export function HubHeroSection({
                             <button
                               type="button"
                               onClick={() => setEventAttendance(ev.id, "late")}
-                              className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black transition-all active:scale-95 cursor-pointer ${
+                              className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black border transition-all active:scale-95 cursor-pointer ${
                                 pStatus === "late"
-                                  ? "bg-amber-500 text-white shadow-xs ring-2 ring-amber-500/40"
-                                  : "bg-card hover:bg-muted text-muted-foreground border border-border/80"
+                                  ? "bg-primary text-primary-foreground border-primary shadow-xs"
+                                  : "bg-card hover:bg-muted text-muted-foreground border-border/60"
                               }`}
                             >
                               <span className="text-base leading-none mb-0.5 font-black">△</span>
@@ -1082,10 +1070,10 @@ export function HubHeroSection({
                             <button
                               type="button"
                               onClick={() => setEventAttendance(ev.id, "absent")}
-                              className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black transition-all active:scale-95 cursor-pointer ${
+                              className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black border transition-all active:scale-95 cursor-pointer ${
                                 pStatus === "absent"
-                                  ? "bg-rose-600 text-white shadow-xs ring-2 ring-rose-500/40"
-                                  : "bg-card hover:bg-muted text-muted-foreground border border-border/80"
+                                  ? "bg-primary text-primary-foreground border-primary shadow-xs"
+                                  : "bg-card hover:bg-muted text-muted-foreground border-border/60"
                               }`}
                             >
                               <span className="text-base leading-none mb-0.5 font-black">×</span>
@@ -1096,10 +1084,10 @@ export function HubHeroSection({
                             <button
                               type="button"
                               onClick={() => setEventAttendance(ev.id, "pending")}
-                              className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black transition-all active:scale-95 cursor-pointer ${
+                              className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black border transition-all active:scale-95 cursor-pointer ${
                                 pStatus === "pending"
-                                  ? "bg-slate-700 text-white dark:bg-slate-300 dark:text-slate-900 shadow-xs ring-2 ring-slate-500/40"
-                                  : "bg-card hover:bg-muted text-muted-foreground border border-border/80"
+                                  ? "bg-primary text-primary-foreground border-primary shadow-xs"
+                                  : "bg-card hover:bg-muted text-muted-foreground border-border/60"
                               }`}
                             >
                               <span className="text-base leading-none mb-0.5 font-black">？</span>
@@ -1110,10 +1098,10 @@ export function HubHeroSection({
 
                         {/* 参加時の配車アンケート (※試合・遠征時のみ表示) */}
                         {(ev.eventType === "match" || (ev.title && (ev.title.includes("試合") || ev.title.includes("遠征") || ev.title.includes("大会") || ev.title.includes("vs")))) && (pStatus === "present" || pStatus === "late") && (
-                          <div className="p-3 rounded-2xl bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200/70 dark:border-blue-900/30 space-y-2 animate-in fade-in duration-200">
+                          <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 space-y-2 animate-in fade-in duration-200">
                             <div className="flex items-center justify-between text-[11px] font-bold text-foreground">
-                              <span className="flex items-center gap-1.5 font-black text-blue-800 dark:text-blue-200">
-                                <Car className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                              <span className="flex items-center gap-1.5 font-black text-foreground">
+                                <Car className="w-3.5 h-3.5 text-primary" />
                                 <span>配車・移動手段 (試合・遠征)</span>
                               </span>
                             </div>
@@ -1124,8 +1112,8 @@ export function HubHeroSection({
                                 onClick={() => setEventCarStatus(ev.id, "can_drive")}
                                 className={`py-1.5 px-1 rounded-xl text-[10.5px] font-bold border transition-all cursor-pointer ${
                                   cStatus === "can_drive"
-                                    ? "bg-blue-600 text-white border-blue-600 shadow-2xs font-black"
-                                    : "bg-card border-border/80 text-muted-foreground hover:text-foreground"
+                                    ? "bg-primary text-primary-foreground border-primary shadow-2xs font-black"
+                                    : "bg-card border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
                                 }`}
                               >
                                 🚗 車出し可
@@ -1136,8 +1124,8 @@ export function HubHeroSection({
                                 onClick={() => setEventCarStatus(ev.id, "need_ride")}
                                 className={`py-1.5 px-1 rounded-xl text-[10.5px] font-bold border transition-all cursor-pointer ${
                                   cStatus === "need_ride"
-                                    ? "bg-blue-600 text-white border-blue-600 shadow-2xs font-black"
-                                    : "bg-card border-border/80 text-muted-foreground hover:text-foreground"
+                                    ? "bg-primary text-primary-foreground border-primary shadow-2xs font-black"
+                                    : "bg-card border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
                                 }`}
                               >
                                 🙋 送迎希望
@@ -1148,8 +1136,8 @@ export function HubHeroSection({
                                 onClick={() => setEventCarStatus(ev.id, "not_needed")}
                                 className={`py-1.5 px-1 rounded-xl text-[10.5px] font-bold border transition-all cursor-pointer ${
                                   cStatus === "not_needed"
-                                    ? "bg-blue-600 text-white border-blue-600 shadow-2xs font-black"
-                                    : "bg-card border-border/80 text-muted-foreground hover:text-foreground"
+                                    ? "bg-primary text-primary-foreground border-primary shadow-2xs font-black"
+                                    : "bg-card border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
                                 }`}
                               >
                                 🚶 自走・不要

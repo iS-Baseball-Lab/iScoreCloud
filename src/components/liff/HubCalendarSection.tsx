@@ -210,7 +210,7 @@ export function HubCalendarSection({
       </div>
 
       {/* カレンダー本体カード */}
-      <div className="rounded-3xl bg-card border border-border/90 dark:border-border/70 shadow-xs p-3.5 space-y-3">
+      <div className="rounded-2xl border border-border/60 bg-card shadow-xs p-3.5 space-y-3">
         {/* ━━ 1. カレンダーヘッダー（年月切り替え & 今日ボタン） ━━ */}
         <div className="flex items-center justify-between pb-1 border-b border-border/60">
           <div className="flex items-center gap-1.5">
@@ -242,7 +242,7 @@ export function HubCalendarSection({
             <button
               type="button"
               onClick={handleToday}
-              className="px-2 py-0.5 text-[10px] font-black rounded-lg bg-muted hover:bg-muted/80 text-foreground border border-border/60 active:scale-95 transition-all ml-1 cursor-pointer"
+              className="px-2 py-0.5 text-[10px] font-black rounded-lg bg-card hover:bg-muted text-foreground border border-border/60 active:scale-95 transition-all ml-1 cursor-pointer"
             >
               今日
             </button>
@@ -250,9 +250,9 @@ export function HubCalendarSection({
         </div>
 
         {/* ━━ 2. 曜日ヘッダー ━━ */}
-        <div className="grid grid-cols-7 text-center text-[10px] font-black text-muted-foreground uppercase pb-0.5 border-b border-border/50">
+        <div className="grid grid-cols-7 text-center text-[10px] font-black text-muted-foreground uppercase pb-0.5 border-b border-border/60">
           {weekDays.map((day, idx) => (
-            <span key={day} className={cn(idx === 0 && "text-rose-500", idx === 6 && "text-blue-500")}>
+            <span key={day} className={cn(idx === 0 && "text-red-500", idx === 6 && "text-blue-500")}>
               {day}
             </span>
           ))}
@@ -279,7 +279,7 @@ export function HubCalendarSection({
                   "relative h-7 sm:h-8 flex flex-col items-center justify-center rounded-lg transition-all active:scale-95 cursor-pointer border border-transparent select-none py-0.5",
                   !day.isCurrentMonth && "text-muted-foreground/30",
                   day.isCurrentMonth && "hover:bg-muted/60",
-                  day.isCurrentMonth && isSunday && "text-rose-500",
+                  day.isCurrentMonth && isSunday && "text-red-500",
                   day.isCurrentMonth && isSaturday && "text-blue-500",
                   isToday && !isSelected && "bg-primary/10 border-primary/30 text-primary font-black",
                   isSelected && "bg-primary text-primary-foreground hover:bg-primary border-primary font-black shadow-xs"
@@ -295,8 +295,7 @@ export function HubCalendarSection({
                     <span
                       className={cn(
                         "h-1 w-1 rounded-full",
-                        isSelected ? "bg-white" : 
-                        hasEvent.type === "match" ? "bg-rose-500" : "bg-primary"
+                        isSelected ? "bg-primary-foreground" : "bg-primary"
                       )}
                     />
                   </span>
@@ -313,8 +312,8 @@ export function HubCalendarSection({
           {todayCalendarEvents.length > 0 && (
             <div className="space-y-1.5">
               <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
-                <span className="text-xs font-black text-rose-600 dark:text-rose-400 flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-primary animate-ping" />
+                <span className="text-xs font-black text-primary flex items-center gap-1">
                   <span>本日（{todayCalendarEvents[0].date}）の活動予定</span>
                 </span>
               </div>
@@ -324,10 +323,10 @@ export function HubCalendarSection({
                   <Link
                     key={ev.id}
                     href="/liff/schedule"
-                    className="block p-2.5 rounded-2xl bg-rose-50/50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/40 hover:border-rose-300 transition-all group"
+                    className="block p-2.5 rounded-2xl bg-primary/5 border border-primary/25 hover:border-primary/40 transition-all group"
                   >
                     <div className="flex items-start gap-2.5">
-                      <div className="w-[58px] min-w-[58px] max-w-[58px] shrink-0 px-1 py-1 rounded-xl bg-rose-500 text-white flex flex-col items-center justify-center shadow-xs">
+                      <div className="w-[58px] min-w-[58px] max-w-[58px] shrink-0 px-1 py-1 rounded-xl bg-primary text-primary-foreground flex flex-col items-center justify-center shadow-xs">
                         <span className="text-[11px] font-black leading-tight">本日</span>
                         <span className="text-[9px] font-bold mt-0.5 opacity-90">
                           {ev.type === "match" ? "⚾ 試合" : "🏃 練習"}
@@ -337,41 +336,41 @@ export function HubCalendarSection({
                       <div className="min-w-0 flex-1 space-y-1.5">
                         <div className="flex items-center gap-1.5 truncate">
                           {ev.targetGroup && ev.targetGroup !== "全体" && (
-                            <span className="px-1.5 py-0.2 rounded-md bg-rose-500/20 text-rose-700 dark:text-rose-300 text-[9.5px] font-black shrink-0 border border-rose-500/30">
+                            <span className="px-1.5 py-0.2 rounded-md bg-primary/12 text-primary text-[9.5px] font-black shrink-0 border border-primary/25">
                               🏷️ {ev.targetGroup}
                             </span>
                           )}
-                          <h4 className="text-xs font-black text-foreground group-hover:text-rose-600 transition-colors truncate">
+                          <h4 className="text-xs font-black text-foreground group-hover:text-primary transition-colors truncate">
                             {ev.title}
                           </h4>
                         </div>
 
                         <div className="space-y-1 text-[10.5px]">
                           <div className="flex items-center gap-2 font-bold text-foreground/90">
-                            <span className="w-[48px] min-w-[48px] max-w-[48px] py-0.5 rounded bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 text-[9.5px] font-black shrink-0 border border-amber-200 dark:border-amber-900/40 flex items-center justify-center">
+                            <span className="w-[48px] min-w-[48px] max-w-[48px] py-0.5 rounded bg-primary/10 text-primary text-[9.5px] font-black shrink-0 border border-primary/25 flex items-center justify-center">
                               ☀️ 午前
                             </span>
                             <span className="w-[88px] min-w-[88px] max-w-[88px] flex items-center gap-1 shrink-0 text-muted-foreground tabular-nums text-[10px]">
-                              <Clock className="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0" />
+                              <Clock className="w-3 h-3 text-primary shrink-0" />
                               <span className="truncate">{ev.amTime}</span>
                             </span>
                             <span className="flex items-center gap-1 truncate text-foreground min-w-0 flex-1 text-[10px]">
-                              <MapPin className="w-3 h-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                              <MapPin className="w-3 h-3 text-primary shrink-0" />
                               <span className="truncate">{ev.amLocation}</span>
                             </span>
                           </div>
 
                           {ev.hasPm && (
                             <div className="flex items-center gap-2 font-bold text-foreground/90">
-                              <span className="w-[48px] min-w-[48px] max-w-[48px] py-0.5 rounded bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 text-[9.5px] font-black shrink-0 border border-indigo-200 dark:border-indigo-900/40 flex items-center justify-center">
+                              <span className="w-[48px] min-w-[48px] max-w-[48px] py-0.5 rounded bg-muted/60 text-muted-foreground text-[9.5px] font-black shrink-0 border border-border/60 flex items-center justify-center">
                                 🌙 午後
                               </span>
                               <span className="w-[88px] min-w-[88px] max-w-[88px] flex items-center gap-1 shrink-0 text-muted-foreground tabular-nums text-[10px]">
-                                <Clock className="w-3 h-3 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                                <Clock className="w-3 h-3 text-primary shrink-0" />
                                 <span className="truncate">{ev.pmTime || "13:00〜17:00"}</span>
                               </span>
                               <span className="flex items-center gap-1 truncate text-foreground min-w-0 flex-1 text-[10px]">
-                                <MapPin className="w-3 h-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                <MapPin className="w-3 h-3 text-primary shrink-0" />
                                 <span className="truncate">{ev.pmLocation || ev.amLocation}</span>
                               </span>
                             </div>
@@ -379,7 +378,7 @@ export function HubCalendarSection({
                         </div>
                       </div>
 
-                      <ChevronRight className="w-4 h-4 text-rose-400 group-hover:translate-x-0.5 transition-all shrink-0 mt-2" />
+                      <ChevronRight className="w-4 h-4 text-primary group-hover:translate-x-0.5 transition-all shrink-0 mt-2" />
                     </div>
                   </Link>
                 ))}
@@ -399,7 +398,7 @@ export function HubCalendarSection({
                   <Link
                     key={ev.id}
                     href="/liff/schedule"
-                    className="block p-2.5 rounded-2xl bg-primary/5 border border-primary/20 hover:border-primary/40 transition-all group"
+                    className="block p-2.5 rounded-2xl bg-primary/5 border border-primary/25 hover:border-primary/40 transition-all group"
                   >
                     <div className="flex items-start gap-2.5">
                       <div className="w-[58px] min-w-[58px] max-w-[58px] shrink-0 px-1 py-1 rounded-xl bg-primary text-primary-foreground flex flex-col items-center justify-center shadow-xs">
@@ -412,7 +411,7 @@ export function HubCalendarSection({
                       <div className="min-w-0 flex-1 space-y-1">
                         <div className="flex items-center gap-1.5 truncate">
                           {ev.targetGroup && ev.targetGroup !== "全体" && (
-                            <span className="px-1.5 py-0.2 rounded-md bg-primary/15 text-primary text-[9.5px] font-black shrink-0 border border-primary/25">
+                            <span className="px-1.5 py-0.2 rounded-md bg-primary/12 text-primary text-[9.5px] font-black shrink-0 border border-primary/25">
                               🏷️ {ev.targetGroup}
                             </span>
                           )}
@@ -423,30 +422,30 @@ export function HubCalendarSection({
 
                         <div className="space-y-0.5 text-[10px]">
                           <div className="flex items-center gap-1.5 font-bold text-foreground/90">
-                            <span className="w-[46px] min-w-[46px] max-w-[46px] py-0.2 rounded bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 text-[9px] font-black shrink-0 border border-amber-200 dark:border-amber-900/40 flex items-center justify-center">
+                            <span className="w-[46px] min-w-[46px] max-w-[46px] py-0.2 rounded bg-primary/10 text-primary text-[9px] font-black shrink-0 border border-primary/25 flex items-center justify-center">
                               ☀️ 午前
                             </span>
                             <span className="w-[84px] min-w-[84px] max-w-[84px] flex items-center gap-0.5 shrink-0 text-muted-foreground tabular-nums">
-                              <Clock className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                              <Clock className="w-2.5 h-2.5 text-primary shrink-0" />
                               <span className="truncate">{ev.amTime}</span>
                             </span>
                             <span className="flex items-center gap-0.5 truncate text-foreground min-w-0 flex-1">
-                              <MapPin className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                              <MapPin className="w-2.5 h-2.5 text-primary shrink-0" />
                               <span className="truncate">{ev.amLocation}</span>
                             </span>
                           </div>
 
                           {ev.hasPm && (
                             <div className="flex items-center gap-1.5 font-bold text-foreground/90">
-                              <span className="w-[46px] min-w-[46px] max-w-[46px] py-0.2 rounded bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 text-[9px] font-black shrink-0 border border-indigo-200 dark:border-indigo-900/40 flex items-center justify-center">
+                              <span className="w-[46px] min-w-[46px] max-w-[46px] py-0.2 rounded bg-muted/60 text-muted-foreground text-[9px] font-black shrink-0 border border-border/60 flex items-center justify-center">
                                 🌙 午後
                               </span>
                               <span className="w-[84px] min-w-[84px] max-w-[84px] flex items-center gap-0.5 shrink-0 text-muted-foreground tabular-nums">
-                                <Clock className="w-2.5 h-2.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                                <Clock className="w-2.5 h-2.5 text-primary shrink-0" />
                                 <span className="truncate">{ev.pmTime || "13:00〜17:00"}</span>
                               </span>
                               <span className="flex items-center gap-0.5 truncate text-foreground min-w-0 flex-1">
-                                <MapPin className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                <MapPin className="w-2.5 h-2.5 text-primary shrink-0" />
                                 <span className="truncate">{ev.pmLocation || ev.amLocation}</span>
                               </span>
                             </div>
@@ -484,14 +483,14 @@ export function HubCalendarSection({
                 <Link
                   key={ev.id}
                   href="/liff/schedule"
-                  className="block p-2.5 rounded-2xl bg-muted/40 hover:bg-muted/70 border border-border/70 transition-all group"
+                  className="block p-2.5 rounded-2xl bg-muted/35 hover:bg-muted/60 border border-border/60 hover:border-primary/40 transition-all group"
                 >
                   <div className="flex items-start gap-2.5">
                     {/* 均一幅（58px固定）の日付・種別バッジ */}
                     <div className={`w-[58px] min-w-[58px] max-w-[58px] shrink-0 px-1 py-1 rounded-xl flex flex-col items-center justify-center ${
                       ev.type === "match" 
-                        ? "bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-900/40" 
-                        : "bg-primary/10 text-primary border border-primary/20"
+                        ? "bg-primary text-primary-foreground border border-primary shadow-2xs" 
+                        : "bg-primary/10 text-primary border border-primary/25"
                     }`}>
                       <span className="text-[11px] font-black leading-tight tracking-tight">{ev.date}</span>
                       <span className="text-[9px] font-bold mt-0.5 opacity-90">
@@ -503,7 +502,7 @@ export function HubCalendarSection({
                     <div className="min-w-0 flex-1 space-y-1">
                       <div className="flex items-center gap-1.5 truncate">
                         {ev.targetGroup && ev.targetGroup !== "全体" && (
-                          <span className="px-1.5 py-0.2 rounded-md bg-primary/15 text-primary text-[9.5px] font-black shrink-0 border border-primary/25">
+                          <span className="px-1.5 py-0.2 rounded-md bg-primary/12 text-primary text-[9.5px] font-black shrink-0 border border-primary/25">
                             🏷️ {ev.targetGroup}
                           </span>
                         )}
@@ -516,15 +515,15 @@ export function HubCalendarSection({
                       <div className="space-y-0.5 text-[10px]">
                         {/* 午前 */}
                         <div className="flex items-center gap-1.5 font-bold text-foreground/90">
-                          <span className="w-[46px] min-w-[46px] max-w-[46px] py-0.2 rounded bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 text-[9px] font-black shrink-0 border border-amber-200 dark:border-amber-900/40 flex items-center justify-center">
+                          <span className="w-[46px] min-w-[46px] max-w-[46px] py-0.2 rounded bg-primary/10 text-primary text-[9px] font-black shrink-0 border border-primary/25 flex items-center justify-center">
                             ☀️ 午前
                           </span>
                           <span className="w-[84px] min-w-[84px] max-w-[84px] flex items-center gap-0.5 shrink-0 text-muted-foreground tabular-nums">
-                            <Clock className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                            <Clock className="w-2.5 h-2.5 text-primary shrink-0" />
                             <span className="truncate">{ev.amTime}</span>
                           </span>
                           <span className="flex items-center gap-0.5 truncate text-foreground min-w-0 flex-1">
-                            <MapPin className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                            <MapPin className="w-2.5 h-2.5 text-primary shrink-0" />
                             <span className="truncate">{ev.amLocation}</span>
                           </span>
                         </div>
@@ -532,15 +531,15 @@ export function HubCalendarSection({
                         {/* 午後（設定がある場合） */}
                         {ev.hasPm && (
                           <div className="flex items-center gap-1.5 font-bold text-foreground/90">
-                            <span className="w-[46px] min-w-[46px] max-w-[46px] py-0.2 rounded bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 text-[9px] font-black shrink-0 border border-indigo-200 dark:border-indigo-900/40 flex items-center justify-center">
+                            <span className="w-[46px] min-w-[46px] max-w-[46px] py-0.2 rounded bg-muted/60 text-muted-foreground text-[9px] font-black shrink-0 border border-border/60 flex items-center justify-center">
                               🌙 午後
                             </span>
                             <span className="w-[84px] min-w-[84px] max-w-[84px] flex items-center gap-0.5 shrink-0 text-muted-foreground tabular-nums">
-                              <Clock className="w-2.5 h-2.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                              <Clock className="w-2.5 h-2.5 text-primary shrink-0" />
                               <span className="truncate">{ev.pmTime || "13:00〜17:00"}</span>
                             </span>
                             <span className="flex items-center gap-0.5 truncate text-foreground min-w-0 flex-1">
-                              <MapPin className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                              <MapPin className="w-2.5 h-2.5 text-primary shrink-0" />
                               <span className="truncate">{ev.pmLocation || ev.amLocation}</span>
                             </span>
                           </div>

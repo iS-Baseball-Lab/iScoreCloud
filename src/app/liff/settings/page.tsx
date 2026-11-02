@@ -137,10 +137,10 @@ export default function LiffSettingsPage() {
         {/* ━━━ ショートカット: 👤 プロフィール設定はこちら ━━━ */}
         <Link
           href="/liff/profile"
-          className="p-4 rounded-3xl bg-card border-2 border-primary/30 hover:border-primary/60 transition-all flex items-center justify-between group active:scale-[0.99] shadow-sm"
+          className="p-4 rounded-2xl border border-border/60 bg-card shadow-xs hover:border-primary/40 transition-all flex items-center justify-between group active:scale-[0.99]"
         >
           <div className="flex items-center gap-3 min-w-0">
-            <span className="w-10 h-10 rounded-2xl bg-primary/15 text-primary flex items-center justify-center font-black shrink-0 group-hover:scale-105 transition-transform">
+            <span className="w-10 h-10 rounded-2xl bg-primary/10 text-primary flex items-center justify-center font-black shrink-0 group-hover:scale-105 transition-transform">
               <UserCircle className="w-5 h-5" />
             </span>
             <div className="min-w-0">
@@ -159,7 +159,7 @@ export default function LiffSettingsPage() {
         <QuickMenuSettingsSection />
 
         {/* ━━━ セクション 2: 🎨 表示・デザイン設定 ━━━ */}
-        <section className="rounded-3xl bg-card border-2 border-primary/20 p-4 space-y-5 shadow-sm">
+        <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-5">
           <div className="flex items-center gap-2 pb-2 border-b border-border/60">
             <Palette className="w-4 h-4 text-primary" />
             <h2 className="text-sm font-black text-foreground">表示・デザイン設定</h2>
@@ -315,10 +315,10 @@ export default function LiffSettingsPage() {
         {/* ━━━ セクション 2: 📘 スコア設定・🛡️ チーム設定へのショートカット案内 ━━━ */}
         <Link
           href="/liff/settings/score"
-          className="p-4 rounded-3xl bg-indigo-500/10 border-2 border-indigo-500/35 hover:border-indigo-500/60 transition-all flex items-center justify-between group active:scale-[0.99] shadow-xs"
+          className="p-4 rounded-2xl border border-border/60 bg-card shadow-xs hover:border-primary/40 transition-all flex items-center justify-between group active:scale-[0.99]"
         >
           <div className="flex items-center gap-3 min-w-0">
-            <span className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center font-black shadow-xs group-hover:scale-105 transition-transform shrink-0">
+            <span className="w-10 h-10 rounded-2xl bg-primary/10 text-primary flex items-center justify-center font-black group-hover:scale-105 transition-transform shrink-0">
               <BookOpen className="w-5 h-5" />
             </span>
             <div className="min-w-0">
@@ -330,15 +330,15 @@ export default function LiffSettingsPage() {
               </p>
             </div>
           </div>
-          <ChevronRight className="w-5 h-5 text-indigo-600 dark:text-indigo-400 group-hover:translate-x-1 transition-transform shrink-0" />
+          <ChevronRight className="w-5 h-5 text-primary group-hover:translate-x-1 transition-transform shrink-0" />
         </Link>
 
         <Link
           href="/liff/settings/team"
-          className="p-4 rounded-3xl bg-primary/10 border-2 border-primary/30 hover:border-primary/60 transition-all flex items-center justify-between group active:scale-[0.99] shadow-xs"
+          className="p-4 rounded-2xl border border-border/60 bg-card shadow-xs hover:border-primary/40 transition-all flex items-center justify-between group active:scale-[0.99]"
         >
           <div className="flex items-center gap-3 min-w-0">
-            <span className="w-10 h-10 rounded-2xl bg-primary text-primary-foreground flex items-center justify-center font-black shadow-xs group-hover:scale-105 transition-transform shrink-0">
+            <span className="w-10 h-10 rounded-2xl bg-primary/10 text-primary flex items-center justify-center font-black group-hover:scale-105 transition-transform shrink-0">
               <ShieldCheck className="w-5 h-5" />
             </span>
             <div className="min-w-0">
@@ -354,7 +354,7 @@ export default function LiffSettingsPage() {
         </Link>
 
         {/* ━━━ セクション 3: 💾 システム・キャッシュ管理 ━━━ */}
-        <section className="rounded-3xl bg-card border-2 border-primary/20 p-4 space-y-3.5 shadow-sm">
+        <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3.5">
           <div className="flex items-center gap-2 pb-2 border-b border-border/60">
             <Layers className="w-4 h-4 text-primary" />
             <h2 className="text-sm font-black text-foreground">システム & データ管理</h2>
@@ -371,14 +371,14 @@ export default function LiffSettingsPage() {
             <button
               type="button"
               onClick={handleClearCache}
-              className="py-2 px-3 rounded-2xl bg-muted hover:bg-muted/80 active:scale-95 text-xs font-black text-foreground border border-border transition-all flex items-center gap-1 shrink-0"
+              className="py-2 px-3 rounded-2xl bg-card hover:bg-muted active:scale-95 text-xs font-black text-foreground border border-border/60 transition-all flex items-center gap-1 shrink-0"
             >
               <RefreshCw className="w-3.5 h-3.5" />
               <span>クリア</span>
             </button>
           </div>
 
-          <div className="pt-2 border-t border-border/50 flex items-center justify-between text-xs">
+          <div className="pt-2 border-t border-border/60 flex items-center justify-between text-xs">
             <span className="font-bold text-muted-foreground">アプリバージョン</span>
             <span className="font-black text-foreground">iScore for LINEミニアプリ v2.6.0</span>
           </div>
@@ -388,15 +388,15 @@ export default function LiffSettingsPage() {
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-center text-xs">
           <Link
             href="/liff/rules"
-            className="p-3 rounded-2xl bg-card border border-border/60 hover:border-amber-500/40 font-bold text-muted-foreground hover:text-foreground transition-all flex flex-col items-center gap-1 shadow-xs"
+            className="p-3 rounded-2xl border border-border/60 bg-card shadow-xs hover:border-primary/40 font-bold text-muted-foreground hover:text-foreground transition-all flex flex-col items-center gap-1"
           >
-            <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+            <AlertTriangle className="w-4 h-4 text-primary" />
             <span>ルール & 注意事項</span>
           </Link>
 
           <Link
             href="/liff/faq"
-            className="p-3 rounded-2xl bg-card border border-border/60 hover:border-primary/40 font-bold text-muted-foreground hover:text-foreground transition-all flex flex-col items-center gap-1 shadow-xs"
+            className="p-3 rounded-2xl border border-border/60 bg-card shadow-xs hover:border-primary/40 font-bold text-muted-foreground hover:text-foreground transition-all flex flex-col items-center gap-1"
           >
             <HelpCircle className="w-4 h-4 text-primary" />
             <span>よくある質問</span>
@@ -404,15 +404,15 @@ export default function LiffSettingsPage() {
 
           <Link
             href="/liff/links"
-            className="p-3 rounded-2xl bg-card border border-border/60 hover:border-sky-500/40 font-bold text-muted-foreground hover:text-foreground transition-all flex flex-col items-center gap-1 shadow-xs"
+            className="p-3 rounded-2xl border border-border/60 bg-card shadow-xs hover:border-primary/40 font-bold text-muted-foreground hover:text-foreground transition-all flex flex-col items-center gap-1"
           >
-            <Link2 className="w-4 h-4 text-sky-600 dark:text-sky-400" />
+            <Link2 className="w-4 h-4 text-primary" />
             <span>関連リンク集</span>
           </Link>
 
           <Link
             href="/liff/terms"
-            className="p-3 rounded-2xl bg-card border border-border/60 hover:border-primary/40 font-bold text-muted-foreground hover:text-foreground transition-all flex flex-col items-center gap-1 shadow-xs"
+            className="p-3 rounded-2xl border border-border/60 bg-card shadow-xs hover:border-primary/40 font-bold text-muted-foreground hover:text-foreground transition-all flex flex-col items-center gap-1"
           >
             <FileText className="w-4 h-4 text-primary" />
             <span>サービス利用規約</span>
@@ -420,7 +420,7 @@ export default function LiffSettingsPage() {
 
           <Link
             href="/liff/privacy"
-            className="p-3 rounded-2xl bg-card border border-border/60 hover:border-primary/40 font-bold text-muted-foreground hover:text-foreground transition-all flex flex-col items-center gap-1 shadow-xs"
+            className="p-3 rounded-2xl border border-border/60 bg-card shadow-xs hover:border-primary/40 font-bold text-muted-foreground hover:text-foreground transition-all flex flex-col items-center gap-1"
           >
             <ShieldCheck className="w-4 h-4 text-primary" />
             <span>プライバシー</span>

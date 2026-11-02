@@ -77,67 +77,25 @@ export interface QuickMenuToneStyle {
   hoverBorderClass: string;
 }
 
+const UNIFIED_QUICK_MENU_TONE_STYLE: QuickMenuToneStyle = {
+  iconBoxClass: "bg-primary/12 text-primary",
+  badgeClass: "bg-primary/10 text-primary",
+  hoverBorderClass: "hover:border-primary/40",
+};
+
 export const QUICK_MENU_TONE_STYLES: Record<QuickMenuTone, QuickMenuToneStyle> = {
-  primary: {
-    iconBoxClass: "bg-primary/15 text-primary",
-    badgeClass: "bg-primary/15 text-primary",
-    hoverBorderClass: "hover:border-primary/50",
-  },
-  amber: {
-    iconBoxClass: "bg-amber-500/15 text-amber-600 dark:text-amber-400",
-    badgeClass: "bg-amber-500/15 text-amber-700 dark:text-amber-300",
-    hoverBorderClass: "hover:border-amber-500/50",
-  },
-  teal: {
-    iconBoxClass: "bg-teal-500/15 text-teal-600 dark:text-teal-400",
-    badgeClass: "bg-teal-500/15 text-teal-700 dark:text-teal-300",
-    hoverBorderClass: "hover:border-teal-500/50",
-  },
-  purple: {
-    iconBoxClass: "bg-purple-500/15 text-purple-600 dark:text-purple-400",
-    badgeClass: "bg-purple-500/15 text-purple-700 dark:text-purple-300",
-    hoverBorderClass: "hover:border-purple-500/50",
-  },
-  sky: {
-    iconBoxClass: "bg-sky-500/15 text-sky-600 dark:text-sky-400",
-    badgeClass: "bg-sky-500/15 text-sky-700 dark:text-sky-300",
-    hoverBorderClass: "hover:border-sky-500/50",
-  },
-  blue: {
-    iconBoxClass: "bg-blue-500/15 text-blue-600 dark:text-blue-400",
-    badgeClass: "bg-blue-500/15 text-blue-700 dark:text-blue-300",
-    hoverBorderClass: "hover:border-blue-500/50",
-  },
-  red: {
-    iconBoxClass: "bg-red-500/15 text-red-600 dark:text-red-400",
-    badgeClass: "bg-red-500/15 text-red-700 dark:text-red-300",
-    hoverBorderClass: "hover:border-red-500/50",
-  },
-  cyan: {
-    iconBoxClass: "bg-cyan-500/15 text-cyan-600 dark:text-cyan-400",
-    badgeClass: "bg-cyan-500/15 text-cyan-700 dark:text-cyan-300",
-    hoverBorderClass: "hover:border-cyan-500/50",
-  },
-  emerald: {
-    iconBoxClass: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
-    badgeClass: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
-    hoverBorderClass: "hover:border-emerald-500/50",
-  },
-  indigo: {
-    iconBoxClass: "bg-indigo-500/15 text-indigo-600 dark:text-indigo-400",
-    badgeClass: "bg-indigo-500/15 text-indigo-700 dark:text-indigo-300",
-    hoverBorderClass: "hover:border-indigo-500/50",
-  },
-  rose: {
-    iconBoxClass: "bg-rose-500/15 text-rose-600 dark:text-rose-400",
-    badgeClass: "bg-rose-500/15 text-rose-700 dark:text-rose-300",
-    hoverBorderClass: "hover:border-rose-500/50",
-  },
-  orange: {
-    iconBoxClass: "bg-orange-500/15 text-orange-600 dark:text-orange-400",
-    badgeClass: "bg-orange-500/15 text-orange-700 dark:text-orange-300",
-    hoverBorderClass: "hover:border-orange-500/50",
-  },
+  primary: UNIFIED_QUICK_MENU_TONE_STYLE,
+  amber: UNIFIED_QUICK_MENU_TONE_STYLE,
+  teal: UNIFIED_QUICK_MENU_TONE_STYLE,
+  purple: UNIFIED_QUICK_MENU_TONE_STYLE,
+  sky: UNIFIED_QUICK_MENU_TONE_STYLE,
+  blue: UNIFIED_QUICK_MENU_TONE_STYLE,
+  red: UNIFIED_QUICK_MENU_TONE_STYLE,
+  cyan: UNIFIED_QUICK_MENU_TONE_STYLE,
+  emerald: UNIFIED_QUICK_MENU_TONE_STYLE,
+  indigo: UNIFIED_QUICK_MENU_TONE_STYLE,
+  rose: UNIFIED_QUICK_MENU_TONE_STYLE,
+  orange: UNIFIED_QUICK_MENU_TONE_STYLE,
 };
 
 export interface QuickMenuItemDef {

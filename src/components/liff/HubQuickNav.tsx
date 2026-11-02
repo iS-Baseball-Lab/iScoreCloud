@@ -48,14 +48,14 @@ export function HubQuickNav() {
   return (
     <div className="space-y-2.5">
       <div className="flex items-center justify-between px-1">
-        <h3 className="text-xs font-black text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+        <h3 className="text-xs font-black text-foreground flex items-center gap-1.5">
           <LayoutGrid className="w-3.5 h-3.5 text-primary" />
           <span>クイックメニュー</span>
         </h3>
 
         <Link
           href="/liff/settings#quick-menu"
-          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-card border border-border/80 text-[10.5px] font-black text-muted-foreground hover:text-primary hover:border-primary/40 active:scale-95 transition-all shadow-2xs"
+          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-card border border-border/60 text-[10.5px] font-black text-muted-foreground hover:text-primary hover:border-primary/40 active:scale-95 transition-all shadow-xs"
         >
           <SlidersHorizontal className="w-3 h-3 text-primary" />
           <span>メニュー設定</span>
@@ -87,7 +87,7 @@ export function HubQuickNav() {
               <Link
                 key={item.id}
                 href={item.href}
-                className={`flex flex-col items-center justify-center text-center p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-sm hover:shadow-md ${tone.hoverBorderClass} transition-all active:scale-[0.98] group ring-1 ring-black/5 dark:ring-white/5 gap-1.5`}
+                className={`flex flex-col items-center justify-center text-center p-3 rounded-2xl border border-border/60 bg-card shadow-xs ${tone.hoverBorderClass} transition-all active:scale-[0.98] group gap-1.5`}
               >
                 <span
                   className={`w-10 h-10 rounded-xl ${tone.iconBoxClass} flex items-center justify-center font-black shadow-2xs`}
@@ -95,7 +95,7 @@ export function HubQuickNav() {
                   <Icon className="w-5 h-5 group-hover:scale-110 transition-transform" />
                 </span>
                 <div className="space-y-0.5 min-w-0 w-full">
-                  <h4 className="text-xs font-black text-slate-900 dark:text-slate-100 tracking-tight truncate">
+                  <h4 className="text-xs font-black text-foreground tracking-tight truncate">
                     {item.shortLabel}
                   </h4>
                   <span
@@ -117,7 +117,7 @@ export function HubQuickNav() {
               <Link
                 key={item.id}
                 href={item.href}
-                className={`flex items-center gap-2.5 p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-sm hover:shadow-md ${tone.hoverBorderClass} transition-all active:scale-[0.98] group ring-1 ring-black/5 dark:ring-white/5`}
+                className={`flex items-center gap-2.5 p-3 rounded-2xl border border-border/60 bg-card shadow-xs ${tone.hoverBorderClass} transition-all active:scale-[0.98] group`}
               >
                 <span
                   className={`w-9 h-9 rounded-xl ${tone.iconBoxClass} flex items-center justify-center font-black shrink-0 shadow-2xs`}
@@ -125,10 +125,10 @@ export function HubQuickNav() {
                   <Icon className="w-4.5 h-4.5 group-hover:scale-110 transition-transform" />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <h4 className="text-xs font-black text-slate-900 dark:text-slate-100 tracking-tight truncate">
+                  <h4 className="text-xs font-black text-foreground tracking-tight truncate">
                     {item.label}
                   </h4>
-                  <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                  <p className="text-[10px] font-bold text-muted-foreground truncate mt-0.5">
                     {item.description}
                   </p>
                 </div>
@@ -145,7 +145,7 @@ export function HubQuickNav() {
               <Link
                 key={item.id}
                 href={item.href}
-                className={`flex flex-col justify-between p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-sm hover:shadow-md ${tone.hoverBorderClass} transition-all active:scale-[0.98] group ring-1 ring-black/5 dark:ring-white/5`}
+                className={`flex flex-col justify-between p-4 rounded-2xl border border-border/60 bg-card shadow-xs ${tone.hoverBorderClass} transition-all active:scale-[0.98] group`}
               >
                 <div className="flex items-center justify-between">
                   <span
@@ -160,10 +160,10 @@ export function HubQuickNav() {
                   </span>
                 </div>
                 <div className="mt-3.5 space-y-0.5">
-                  <h4 className="text-base font-black text-slate-900 dark:text-slate-100 tracking-tight">
+                  <h4 className="text-base font-black text-foreground tracking-tight">
                     {item.label}
                   </h4>
-                  <p className="text-xs font-bold text-slate-500 dark:text-slate-400">
+                  <p className="text-xs font-bold text-muted-foreground">
                     {item.description}
                   </p>
                 </div>

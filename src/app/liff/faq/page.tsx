@@ -235,7 +235,7 @@ export default function LiffFaqPage() {
           title="よくある質問 (Q&A)"
           subtitle="保護者・選手の疑問を即座に解決"
           icon={
-            <span className="w-8 h-8 rounded-xl bg-teal-500/10 text-teal-600 dark:text-teal-400 flex items-center justify-center font-black">
+            <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
               <HelpCircle className="w-4 h-4" />
             </span>
           }
@@ -253,8 +253,8 @@ export default function LiffFaqPage() {
             onClick={() => setSelectedScope("all")}
             className={`px-3.5 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all cursor-pointer ${
               selectedScope === "all"
-                ? "bg-foreground text-background shadow-xs"
-                : "bg-muted/70 text-muted-foreground hover:text-foreground"
+                ? "bg-primary text-primary-foreground shadow-xs"
+                : "bg-card border border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
             }`}
           >
             すべて ({faqs.length})
@@ -265,7 +265,7 @@ export default function LiffFaqPage() {
             className={`px-3.5 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
               selectedScope === "organization"
                 ? "bg-primary text-primary-foreground shadow-xs"
-                : "bg-muted/70 text-muted-foreground hover:text-foreground"
+                : "bg-card border border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
             }`}
           >
             <Building2 className="w-3.5 h-3.5" />
@@ -276,8 +276,8 @@ export default function LiffFaqPage() {
             onClick={() => setSelectedScope("team")}
             className={`px-3.5 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
               selectedScope === "team"
-                ? "bg-purple-600 text-white shadow-xs"
-                : "bg-muted/70 text-muted-foreground hover:text-foreground"
+                ? "bg-primary text-primary-foreground shadow-xs"
+                : "bg-card border border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
             }`}
           >
             <Users2 className="w-3.5 h-3.5" />
@@ -294,7 +294,7 @@ export default function LiffFaqPage() {
               placeholder="知りたいことを検索 (例: 雨天、配車、合宿)..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9.5 pr-8 py-2.5 bg-card border border-border rounded-2xl text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/40 transition-all"
+              className="w-full pl-9.5 pr-8 py-2.5 bg-card border border-border/60 rounded-2xl text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/40 transition-all"
             />
             {searchQuery && (
               <button
@@ -331,7 +331,7 @@ export default function LiffFaqPage() {
               className={`px-3 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all ${
                 selectedCategory === cat.id
                   ? "bg-primary text-primary-foreground shadow-xs"
-                  : "bg-card border border-border text-muted-foreground hover:text-foreground"
+                  : "bg-card border border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
               }`}
             >
               {cat.label}
@@ -346,7 +346,7 @@ export default function LiffFaqPage() {
             <span className="text-xs font-bold">Q&Aを読み込み中...</span>
           </div>
         ) : filteredFaqs.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-center bg-card border border-border rounded-3xl p-6 space-y-3">
+          <div className="flex flex-col items-center justify-center py-16 text-center rounded-2xl border border-border/60 bg-card shadow-xs p-6 space-y-3">
             <div className="w-12 h-12 rounded-2xl bg-muted flex items-center justify-center text-muted-foreground">
               <MessageCircleQuestion className="w-6 h-6" />
             </div>
@@ -365,8 +365,8 @@ export default function LiffFaqPage() {
               return (
                 <div
                   key={faq.id}
-                  className={`bg-card border rounded-3xl overflow-hidden shadow-xs transition-all ${
-                    isOpen ? "border-primary/50 shadow-md" : "border-border hover:border-border/80"
+                  className={`rounded-2xl border bg-card shadow-xs overflow-hidden transition-all hover:border-primary/40 ${
+                    isOpen ? "border-primary/40" : "border-border/60"
                   }`}
                 >
                   <div className="w-full p-4 text-left flex items-start justify-between gap-3">
@@ -375,7 +375,7 @@ export default function LiffFaqPage() {
                       onClick={() => toggleAccordion(faq.id)}
                       className="flex items-start gap-2.5 min-w-0 flex-1 focus:outline-hidden text-left"
                     >
-                      <span className="w-6 h-6 rounded-lg bg-teal-500/10 text-teal-600 dark:text-teal-400 font-black text-xs flex items-center justify-center shrink-0 mt-0.5">
+                      <span className="w-6 h-6 rounded-lg bg-primary/10 text-primary font-black text-xs flex items-center justify-center shrink-0 mt-0.5">
                         Q
                       </span>
                       <div className="space-y-1.5 min-w-0 flex-1">
@@ -384,8 +384,8 @@ export default function LiffFaqPage() {
                           <span
                             className={`px-2 py-0.5 rounded-md text-[10px] font-black flex items-center gap-1 ${
                               faq.scope === "organization"
-                                ? "bg-primary/10 text-primary border border-primary/20"
-                                : "bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20"
+                                ? "bg-primary/10 text-primary border border-primary/25"
+                                : "bg-muted text-muted-foreground border border-border/60"
                             }`}
                           >
                             {faq.scope === "organization" ? (
@@ -410,7 +410,7 @@ export default function LiffFaqPage() {
                       <button
                         type="button"
                         onClick={() => openEditModal(faq)}
-                        className="p-1.5 rounded-xl border border-border hover:bg-muted text-muted-foreground hover:text-foreground transition-all flex items-center gap-1 text-[11px] font-black"
+                        className="p-1.5 rounded-xl border border-border/60 bg-card hover:bg-muted text-muted-foreground hover:text-foreground transition-all flex items-center gap-1 text-[11px] font-black"
                         title="Q&Aを編集・削除"
                       >
                         <Pencil className="w-3.5 h-3.5" />
@@ -430,7 +430,7 @@ export default function LiffFaqPage() {
                   </div>
 
                   {isOpen && (
-                    <div className="px-4 pb-4 pt-1 border-t border-border/40 bg-muted/20 animate-in fade-in duration-200">
+                    <div className="px-4 pb-4 pt-1 border-t border-border/60 bg-muted/35 animate-in fade-in duration-200">
                       <div className="flex items-start gap-2.5 mt-2">
                         <span className="w-6 h-6 rounded-lg bg-primary/10 text-primary font-black text-xs flex items-center justify-center shrink-0 mt-0.5">
                           A
@@ -457,11 +457,11 @@ export default function LiffFaqPage() {
         mounted &&
         createPortal(
           <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-background/80 backdrop-blur-md overflow-y-auto animate-in fade-in duration-200">
-            <div className="w-full max-w-md bg-card rounded-3xl border border-border shadow-2xl p-5 sm:p-6 space-y-4 my-auto max-h-[92vh] overflow-y-auto animate-in zoom-in-95 duration-200">
+            <div className="w-full max-w-md rounded-2xl border border-border/60 bg-card shadow-xs p-5 sm:p-6 space-y-4 my-auto max-h-[92vh] overflow-y-auto animate-in zoom-in-95 duration-200">
               
-              <div className="flex items-center justify-between pb-3 border-b border-border/50 sticky top-0 bg-card z-10">
+              <div className="flex items-center justify-between pb-3 border-b border-border/60 sticky top-0 bg-card z-10">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-2xl bg-teal-500/10 text-teal-600 dark:text-teal-400 flex items-center justify-center font-black">
+                  <div className="w-9 h-9 rounded-2xl bg-primary/10 text-primary flex items-center justify-center font-black">
                     <Plus className="w-5 h-5" />
                   </div>
                   <div>
@@ -498,7 +498,7 @@ export default function LiffFaqPage() {
                       className={`p-3 rounded-2xl text-left border transition-all flex flex-col gap-1 ${
                         newScope === "organization"
                           ? "bg-primary/10 border-primary text-primary shadow-xs"
-                          : "bg-background border-border text-muted-foreground hover:text-foreground"
+                          : "bg-background border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
                       }`}
                     >
                       <div className="flex items-center gap-1.5 font-black text-xs">
@@ -515,8 +515,8 @@ export default function LiffFaqPage() {
                       onClick={() => setNewScope("team")}
                       className={`p-3 rounded-2xl text-left border transition-all flex flex-col gap-1 ${
                         newScope === "team"
-                          ? "bg-purple-500/10 border-purple-500 text-purple-600 dark:text-purple-400 shadow-xs"
-                          : "bg-background border-border text-muted-foreground hover:text-foreground"
+                          ? "bg-primary/10 border-primary text-primary shadow-xs"
+                          : "bg-background border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
                       }`}
                     >
                       <div className="flex items-center gap-1.5 font-black text-xs">
@@ -536,7 +536,7 @@ export default function LiffFaqPage() {
                   <select
                     value={newCategory}
                     onChange={(e) => setNewCategory(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/20"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-border/60 bg-background text-xs font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/20"
                   >
                     <option value="rain">雨天・中止判断</option>
                     <option value="duty">当番・配車</option>
@@ -558,7 +558,7 @@ export default function LiffFaqPage() {
                     placeholder="例: 雨天時の練習中止の連絡は何時頃入りますか？"
                     value={newQuestion}
                     onChange={(e) => setNewQuestion(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/20"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-border/60 bg-background text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/20"
                     required
                   />
                 </div>
@@ -573,7 +573,7 @@ export default function LiffFaqPage() {
                     placeholder="保護者や選手に向けた分かりやすい回答を記入"
                     value={newAnswer}
                     onChange={(e) => setNewAnswer(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/20 resize-none"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-border/60 bg-background text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/20 resize-none"
                     required
                   />
                 </div>
@@ -581,7 +581,7 @@ export default function LiffFaqPage() {
                 <button
                   type="submit"
                   disabled={isSubmitting || !newQuestion.trim() || !newAnswer.trim()}
-                  className="w-full py-3 rounded-2xl bg-primary text-primary-foreground font-black text-xs hover:bg-primary/90 active:scale-[0.99] transition-all flex items-center justify-center gap-2 shadow-sm disabled:opacity-50"
+                  className="w-full py-3 rounded-2xl bg-primary text-primary-foreground font-black text-xs hover:bg-primary/90 active:scale-[0.99] transition-all flex items-center justify-center gap-2 shadow-xs disabled:opacity-50"
                 >
                   {isSubmitting ? (
                     <>
@@ -608,11 +608,11 @@ export default function LiffFaqPage() {
         mounted &&
         createPortal(
           <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-background/80 backdrop-blur-md overflow-y-auto animate-in fade-in duration-200">
-            <div className="w-full max-w-md bg-card rounded-3xl border border-border shadow-2xl p-5 sm:p-6 space-y-4 my-auto max-h-[92vh] overflow-y-auto animate-in zoom-in-95 duration-200">
+            <div className="w-full max-w-md rounded-2xl border border-border/60 bg-card shadow-xs p-5 sm:p-6 space-y-4 my-auto max-h-[92vh] overflow-y-auto animate-in zoom-in-95 duration-200">
               
-              <div className="flex items-center justify-between pb-3 border-b border-border/50 sticky top-0 bg-card z-10">
+              <div className="flex items-center justify-between pb-3 border-b border-border/60 sticky top-0 bg-card z-10">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-2xl bg-teal-500/10 text-teal-600 dark:text-teal-400 flex items-center justify-center font-black">
+                  <div className="w-9 h-9 rounded-2xl bg-primary/10 text-primary flex items-center justify-center font-black">
                     <Pencil className="w-4 h-4" />
                   </div>
                   <div>
@@ -649,7 +649,7 @@ export default function LiffFaqPage() {
                       className={`p-3 rounded-2xl text-left border transition-all flex flex-col gap-1 ${
                         editScope === "organization"
                           ? "bg-primary/10 border-primary text-primary shadow-xs"
-                          : "bg-background border-border text-muted-foreground hover:text-foreground"
+                          : "bg-background border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
                       }`}
                     >
                       <div className="flex items-center gap-1.5 font-black text-xs">
@@ -666,8 +666,8 @@ export default function LiffFaqPage() {
                       onClick={() => setEditScope("team")}
                       className={`p-3 rounded-2xl text-left border transition-all flex flex-col gap-1 ${
                         editScope === "team"
-                          ? "bg-purple-500/10 border-purple-500 text-purple-600 dark:text-purple-400 shadow-xs"
-                          : "bg-background border-border text-muted-foreground hover:text-foreground"
+                          ? "bg-primary/10 border-primary text-primary shadow-xs"
+                          : "bg-background border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
                       }`}
                     >
                       <div className="flex items-center gap-1.5 font-black text-xs">
@@ -687,7 +687,7 @@ export default function LiffFaqPage() {
                   <select
                     value={editCategory}
                     onChange={(e) => setEditCategory(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/20"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-border/60 bg-background text-xs font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/20"
                   >
                     <option value="rain">雨天・中止判断</option>
                     <option value="duty">当番・配車</option>
@@ -708,7 +708,7 @@ export default function LiffFaqPage() {
                     type="text"
                     value={editQuestion}
                     onChange={(e) => setEditQuestion(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/20"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-border/60 bg-background text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/20"
                     required
                   />
                 </div>
@@ -722,7 +722,7 @@ export default function LiffFaqPage() {
                     rows={4}
                     value={editAnswer}
                     onChange={(e) => setEditAnswer(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/20 resize-none"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-border/60 bg-background text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/20 resize-none"
                     required
                   />
                 </div>
@@ -745,7 +745,7 @@ export default function LiffFaqPage() {
                   <button
                     type="submit"
                     disabled={isSubmitting || isDeleting || !editQuestion.trim() || !editAnswer.trim()}
-                    className="flex-1 py-3 rounded-2xl bg-primary text-primary-foreground font-black text-xs hover:bg-primary/90 active:scale-[0.99] transition-all flex items-center justify-center gap-2 shadow-sm disabled:opacity-50"
+                    className="flex-1 py-3 rounded-2xl bg-primary text-primary-foreground font-black text-xs hover:bg-primary/90 active:scale-[0.99] transition-all flex items-center justify-center gap-2 shadow-xs disabled:opacity-50"
                   >
                     {isSubmitting ? (
                       <>

@@ -8,7 +8,7 @@ import { Scale, FileText, CheckCircle2, Ban, ShieldAlert } from "lucide-react";
 
 export default function LiffTermsPage() {
   const styles = {
-    card: "p-4 rounded-3xl bg-card border-2 border-primary/20 shadow-xs space-y-3",
+    card: "p-4 rounded-2xl border border-border/60 bg-card shadow-xs space-y-3",
     h3: "text-sm font-black text-foreground flex items-center gap-2",
     p: "text-xs leading-relaxed text-muted-foreground",
     li: "text-xs leading-relaxed text-muted-foreground flex items-start gap-2",
@@ -24,7 +24,7 @@ export default function LiffTermsPage() {
           title="サービス利用規約"
           subtitle="iScore for LINEミニアプリ ご利用条件と権利義務"
           icon={
-            <span className="w-8 h-8 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center font-black">
+            <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
               <Scale className="w-4 h-4" />
             </span>
           }
@@ -32,7 +32,7 @@ export default function LiffTermsPage() {
         />
 
         {/* 前文 */}
-        <div className="p-3.5 rounded-2xl bg-primary/5 border border-primary/20 space-y-2">
+        <div className="p-4 rounded-2xl border border-border/60 bg-card shadow-xs space-y-2">
           <div className="flex items-center gap-2 text-xs font-black text-primary">
             <FileText className="w-4 h-4" />
             <span>はじめに</span>
@@ -77,7 +77,7 @@ export default function LiffTermsPage() {
         {/* 第3条 */}
         <div className={styles.card}>
           <h3 className={styles.h3}>
-            <span className="w-5 h-5 rounded-lg bg-rose-500/10 text-rose-600 text-[11px] font-black flex items-center justify-center">3</span>
+            <span className="w-5 h-5 rounded-lg bg-primary/10 text-primary text-[11px] font-black flex items-center justify-center">3</span>
             禁止事項
           </h3>
           <div className="space-y-1.5">
@@ -104,7 +104,7 @@ export default function LiffTermsPage() {
           <p className={styles.p}>
             当運営は、本サービスに起因して生じた損害について故意または重過失がある場合を除き責任を負いません。本規約は必要に応じて随時改訂されます。規約に関するお問い合わせは下記までご連絡ください。
           </p>
-          <div className="p-3 rounded-2xl bg-muted/50 border border-border/50 space-y-1.5 text-xs">
+          <div className="p-3 rounded-xl bg-muted/35 border border-border/60 space-y-1.5 text-xs">
             <div className="font-bold text-foreground">
               運営者: iS Baseball Lab（iScoreCloud 運営事務局）
             </div>
@@ -115,7 +115,7 @@ export default function LiffTermsPage() {
               </a>
             </div>
           </div>
-          <div className="pt-2 border-t border-border/40 text-[10px] font-bold text-muted-foreground flex justify-between">
+          <div className="pt-2 border-t border-border/60 text-[10px] font-bold text-muted-foreground flex justify-between">
             <span>制定: 2026年4月1日</span>
             <span>改訂: 2026年10月14日</span>
           </div>

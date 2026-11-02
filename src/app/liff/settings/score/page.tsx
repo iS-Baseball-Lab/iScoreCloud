@@ -374,7 +374,7 @@ export default function LiffScoreSettingsPage() {
           title="スコア設定"
           subtitle="SCORE & AI IMPORT SETTINGS"
           icon={
-            <span className="w-8 h-8 rounded-xl bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-black">
+            <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
               <BookOpen className="w-4 h-4" />
             </span>
           }
@@ -391,7 +391,7 @@ export default function LiffScoreSettingsPage() {
         )}
 
         {/* ━━━ セクション 1: ⚾ 試合・スコア規定（試合作成・スコア表記ルール） ━━━ */}
-        <section className="rounded-3xl bg-card border-2 border-primary/20 p-4 space-y-4 shadow-sm">
+        <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-4">
           <div className="flex items-center justify-between pb-2 border-b border-border/60">
             <div className="flex items-center gap-2">
               <Sliders className="w-4 h-4 text-primary" />
@@ -419,7 +419,7 @@ export default function LiffScoreSettingsPage() {
                     "規定イニング初期値"
                   )
                 }
-                className="w-full h-10 px-2.5 rounded-xl bg-muted/40 border border-border text-xs font-black text-foreground cursor-pointer"
+                className="w-full h-10 px-2.5 rounded-xl bg-muted/35 border border-border/60 text-xs font-black text-foreground focus:outline-hidden focus:border-primary cursor-pointer"
               >
                 <option value={5}>5回制（低学年等）</option>
                 <option value={6}>6回制（学童等）</option>
@@ -441,7 +441,7 @@ export default function LiffScoreSettingsPage() {
                     "新規試合の初期種別"
                   )
                 }
-                className="w-full h-10 px-2.5 rounded-xl bg-muted/40 border border-border text-xs font-black text-foreground cursor-pointer"
+                className="w-full h-10 px-2.5 rounded-xl bg-muted/35 border border-border/60 text-xs font-black text-foreground focus:outline-hidden focus:border-primary cursor-pointer"
               >
                 <option value="practice">OP戦（練習試合）</option>
                 <option value="official">公式戦</option>
@@ -451,7 +451,7 @@ export default function LiffScoreSettingsPage() {
           </div>
 
           {/* 2. コールドゲーム規定 */}
-          <div className="space-y-1.5 pt-1 border-t border-border/50">
+          <div className="space-y-1.5 pt-1 border-t border-border/60">
             <label className="text-xs font-black text-foreground block">
               コールドゲーム規定
             </label>
@@ -544,7 +544,7 @@ export default function LiffScoreSettingsPage() {
               className={`w-12 h-6 rounded-full transition-colors relative p-0.5 cursor-pointer ${
                 scoreSettings.dhDefault
                   ? "bg-primary"
-                  : "bg-muted border border-border"
+                  : "bg-muted border border-border/60"
               }`}
             >
               <div
@@ -559,30 +559,30 @@ export default function LiffScoreSettingsPage() {
         </section>
 
         {/* ━━━ セクション 2: 📘 スコア記号早見表（チーム共通・毎回自動参照） ━━━ */}
-        <section className="rounded-3xl bg-card border-2 border-indigo-500/30 p-4 space-y-3.5 shadow-sm">
+        <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3.5">
           <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-border/60">
             <div className="flex items-center gap-2 min-w-0">
-              <BookOpen className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+              <BookOpen className="w-4 h-4 text-primary shrink-0" />
               <h2 className="text-sm font-black text-foreground truncate">
                 スコア記号早見表（チーム共通）
               </h2>
             </div>
 
             {isLoadingTeam ? (
-              <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-muted text-muted-foreground">
+              <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-muted/50 text-muted-foreground">
                 確認中...
               </span>
             ) : stagedLegend ? (
-              <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/40 shrink-0">
+              <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/25 shrink-0">
                 未保存プレビュー
               </span>
             ) : savedLegendUrl ? (
-              <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/40 flex items-center gap-1 shrink-0">
+              <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/25 flex items-center gap-1 shrink-0">
                 <CheckCircle2 className="w-3 h-3" />
                 登録済み・自動適用中
               </span>
             ) : (
-              <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-muted text-muted-foreground border border-border shrink-0">
+              <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-muted/50 text-muted-foreground border border-border/60 shrink-0">
                 未登録（標準ルール）
               </span>
             )}
@@ -597,8 +597,8 @@ export default function LiffScoreSettingsPage() {
           </p>
 
           {isLoadingTeam ? (
-            <div className="py-10 rounded-2xl bg-muted/40 border border-border flex flex-col items-center justify-center gap-2">
-              <Loader2 className="w-6 h-6 animate-spin text-indigo-600" />
+            <div className="py-10 rounded-2xl bg-muted/35 border border-border/60 flex flex-col items-center justify-center gap-2">
+              <Loader2 className="w-6 h-6 animate-spin text-primary" />
               <span className="text-xs font-bold text-muted-foreground">
                 登録状況を読み込み中...
               </span>
@@ -606,10 +606,10 @@ export default function LiffScoreSettingsPage() {
           ) : stagedLegend ? (
             /* 新しく選択した画像の保存前プレビュー＆回転補正 */
             <div className="space-y-3">
-              <div className="relative rounded-2xl overflow-hidden bg-slate-950 border-2 border-amber-500/50 aspect-4/3 flex items-center justify-center">
+              <div className="relative rounded-2xl overflow-hidden bg-slate-950 border border-primary/40 aspect-4/3 flex items-center justify-center">
                 {stagedLegend.isProcessing || !stagedLegend.processed ? (
                   <div className="flex flex-col items-center gap-2 text-white">
-                    <Loader2 className="w-6 h-6 animate-spin text-indigo-400" />
+                    <Loader2 className="w-6 h-6 animate-spin text-primary" />
                     <span className="text-xs font-bold">
                       画像を最適化中...
                     </span>
@@ -628,7 +628,7 @@ export default function LiffScoreSettingsPage() {
                   type="button"
                   onClick={handleRotateStaged}
                   disabled={stagedLegend.isProcessing || isSavingLegend}
-                  className="py-2.5 px-3 rounded-xl bg-muted hover:bg-muted/80 border border-border text-xs font-black text-foreground flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer"
+                  className="py-2.5 px-3 rounded-xl bg-card hover:bg-muted border border-border/60 text-xs font-black text-foreground flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer"
                 >
                   <RotateCw className="w-4 h-4 text-primary" />
                   <span>90°回転して向きを揃える</span>
@@ -640,8 +640,8 @@ export default function LiffScoreSettingsPage() {
                   disabled={stagedLegend.isProcessing || isSavingLegend}
                   className={`py-2.5 px-3 rounded-xl border text-xs font-black flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer ${
                     stagedLegend.enhancePencil
-                      ? "bg-indigo-600 text-white border-indigo-600"
-                      : "bg-muted text-foreground border-border"
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "bg-card text-foreground border-border/60 hover:bg-muted"
                   }`}
                 >
                   <Sparkles className="w-4 h-4 shrink-0" />
@@ -658,7 +658,7 @@ export default function LiffScoreSettingsPage() {
                   type="button"
                   onClick={() => setStagedLegend(null)}
                   disabled={isSavingLegend}
-                  className="py-3 px-4 rounded-2xl bg-card border border-border text-xs font-black text-muted-foreground hover:text-foreground active:scale-95 transition-all cursor-pointer"
+                  className="py-3 px-4 rounded-2xl bg-card hover:bg-muted border border-border/60 text-xs font-black text-muted-foreground hover:text-foreground active:scale-95 transition-all cursor-pointer"
                 >
                   キャンセル
                 </button>
@@ -671,7 +671,7 @@ export default function LiffScoreSettingsPage() {
                     !stagedLegend.processed ||
                     isSavingLegend
                   }
-                  className="flex-1 py-3 px-4 rounded-2xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-black shadow-sm flex items-center justify-center gap-2 active:scale-95 transition-all cursor-pointer"
+                  className="flex-1 py-3 px-4 rounded-2xl bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground text-xs font-black shadow-xs flex items-center justify-center gap-2 active:scale-95 transition-all cursor-pointer"
                 >
                   {isSavingLegend ? (
                     <>
@@ -692,7 +692,7 @@ export default function LiffScoreSettingsPage() {
             <div className="space-y-3">
               <div
                 onClick={() => setIsZoomOpen(true)}
-                className="relative rounded-2xl overflow-hidden bg-slate-950 border border-border aspect-4/3 flex items-center justify-center cursor-pointer group"
+                className="relative rounded-2xl overflow-hidden bg-slate-950 border border-border/60 aspect-4/3 flex items-center justify-center cursor-pointer group"
               >
                 <img
                   src={savedLegendUrl}
@@ -705,7 +705,7 @@ export default function LiffScoreSettingsPage() {
                 </span>
               </div>
 
-              <div className="p-2.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center gap-2 text-[11px] font-black text-emerald-700 dark:text-emerald-300">
+              <div className="p-2.5 rounded-2xl bg-primary/10 border border-primary/25 flex items-center gap-2 text-[11px] font-black text-primary">
                 <CheckCircle2 className="w-4 h-4 shrink-0" />
                 <span>
                   スコアブック取り込み（STEP 1・2）で毎回自動的にこの早見表を参照します
@@ -717,20 +717,20 @@ export default function LiffScoreSettingsPage() {
                   type="button"
                   disabled={isSavingLegend}
                   onClick={() => setIsCameraModalOpen(true)}
-                  className="py-2.5 px-3 rounded-2xl bg-primary text-primary-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs hover:opacity-95 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+                  className="py-2.5 px-3 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all cursor-pointer disabled:opacity-50"
                 >
                   <Camera className="w-4 h-4 shrink-0" />
                   <span>カメラで撮り直す</span>
                 </button>
 
                 {isSavingLegend ? (
-                  <span className="py-2.5 px-3 rounded-2xl bg-card border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 opacity-50">
-                    <ImagePlus className="w-4 h-4 text-indigo-500 shrink-0" />
+                  <span className="py-2.5 px-3 rounded-2xl bg-card border border-border/60 text-foreground font-black text-xs flex items-center justify-center gap-1.5 opacity-50">
+                    <ImagePlus className="w-4 h-4 text-primary shrink-0" />
                     <span>アルバムから変更</span>
                   </span>
                 ) : (
-                  <div className="relative overflow-hidden py-2.5 px-3 rounded-2xl bg-card border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs hover:bg-muted/60">
-                    <ImagePlus className="w-4 h-4 text-indigo-500 shrink-0 pointer-events-none" />
+                  <div className="relative overflow-hidden py-2.5 px-3 rounded-2xl bg-card border border-border/60 text-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs hover:bg-muted">
+                    <ImagePlus className="w-4 h-4 text-primary shrink-0 pointer-events-none" />
                     <span className="pointer-events-none">アルバムから変更</span>
                     <input
                       type="file"
@@ -764,7 +764,7 @@ export default function LiffScoreSettingsPage() {
                       type="button"
                       onClick={() => setConfirmClearLegend(false)}
                       disabled={isSavingLegend}
-                      className="px-2.5 py-1.5 rounded-xl bg-card border border-border text-[11px] font-black text-foreground cursor-pointer"
+                      className="px-2.5 py-1.5 rounded-xl bg-card border border-border/60 text-[11px] font-black text-foreground cursor-pointer"
                     >
                       やめる
                     </button>
@@ -782,8 +782,8 @@ export default function LiffScoreSettingsPage() {
             </div>
           ) : (
             /* 未登録時のアップロードエリア */
-            <div className="rounded-2xl border-2 border-dashed border-indigo-500/35 bg-indigo-500/5 p-5 flex flex-col items-center text-center space-y-3">
-              <div className="w-11 h-11 rounded-2xl bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+            <div className="rounded-2xl border border-dashed border-border/60 bg-muted/35 p-5 flex flex-col items-center text-center space-y-3">
+              <div className="w-11 h-11 rounded-2xl bg-primary/10 text-primary flex items-center justify-center">
                 <BookOpen className="w-5 h-5" />
               </div>
               <div className="space-y-1">
@@ -799,20 +799,20 @@ export default function LiffScoreSettingsPage() {
                   type="button"
                   disabled={isSavingLegend}
                   onClick={() => setIsCameraModalOpen(true)}
-                  className="py-3 px-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-xs active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+                  className="py-3 px-3 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-xs active:scale-95 transition-all cursor-pointer disabled:opacity-50"
                 >
                   <Camera className="w-4 h-4 shrink-0" />
                   <span>カメラ撮影</span>
                 </button>
 
                 {isSavingLegend ? (
-                  <span className="py-3 px-3 rounded-2xl bg-card border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 opacity-50">
-                    <ImagePlus className="w-4 h-4 text-indigo-500 shrink-0" />
+                  <span className="py-3 px-3 rounded-2xl bg-card border border-border/60 text-foreground font-black text-xs flex items-center justify-center gap-1.5 opacity-50">
+                    <ImagePlus className="w-4 h-4 text-primary shrink-0" />
                     <span>アルバム選択</span>
                   </span>
                 ) : (
-                  <div className="relative overflow-hidden py-3 px-3 rounded-2xl bg-card border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs hover:bg-muted/60">
-                    <ImagePlus className="w-4 h-4 text-indigo-500 shrink-0 pointer-events-none" />
+                  <div className="relative overflow-hidden py-3 px-3 rounded-2xl bg-card border border-border/60 text-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs hover:bg-muted">
+                    <ImagePlus className="w-4 h-4 text-primary shrink-0 pointer-events-none" />
                     <span className="pointer-events-none">アルバム選択</span>
                     <input
                       type="file"
@@ -839,7 +839,7 @@ export default function LiffScoreSettingsPage() {
         />
 
         {/* ━━━ セクション 3: ⚙️ AIスコアブック取り込みの初期設定 ━━━ */}
-        <section className="rounded-3xl bg-card border-2 border-primary/20 p-4 space-y-4 shadow-sm">
+        <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-4">
           <div className="flex items-center gap-2 pb-2 border-b border-border/60">
             <ScanLine className="w-4 h-4 text-primary" />
             <h2 className="text-sm font-black text-foreground">
@@ -948,7 +948,7 @@ export default function LiffScoreSettingsPage() {
         <div className="space-y-2.5 pt-1">
           <Link
             href="/liff/tools/scorebook-import"
-            className="w-full h-13 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs sm:text-sm shadow-sm flex items-center justify-center gap-2 active:scale-98 transition-all"
+            className="w-full h-13 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground font-black text-xs sm:text-sm shadow-xs flex items-center justify-center gap-2 active:scale-98 transition-all"
           >
             <ScanLine className="w-4 h-4" />
             <span>スコアブック取り込み画面へ進む</span>
@@ -956,10 +956,10 @@ export default function LiffScoreSettingsPage() {
 
           <Link
             href="/liff/settings/team"
-            className="p-3.5 rounded-2xl bg-card border border-border hover:border-primary/50 transition-all flex items-center justify-between group active:scale-[0.99] shadow-2xs"
+            className="p-3.5 rounded-2xl border border-border/60 bg-card shadow-xs hover:border-primary/40 transition-all flex items-center justify-between group active:scale-[0.99]"
           >
             <div className="flex items-center gap-3 min-w-0">
-              <span className="w-9 h-9 rounded-xl bg-primary/12 text-primary flex items-center justify-center shrink-0">
+              <span className="w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
                 <ShieldCheck className="w-4 h-4" />
               </span>
               <div className="min-w-0">
@@ -971,7 +971,7 @@ export default function LiffScoreSettingsPage() {
                 </p>
               </div>
             </div>
-            <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:translate-x-0.5 transition-transform shrink-0" />
+            <ChevronRight className="w-4 h-4 text-primary group-hover:translate-x-0.5 transition-transform shrink-0" />
           </Link>
         </div>
 

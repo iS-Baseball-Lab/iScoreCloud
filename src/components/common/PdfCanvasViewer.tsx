@@ -183,7 +183,7 @@ export function PdfCanvasViewer({
     const viewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(abs)}&embedded=true`;
     return (
       <div
-        className={`relative w-full rounded-2xl overflow-hidden border border-border bg-white shadow-xs ${className}`}
+        className={`relative w-full rounded-2xl overflow-hidden border border-border/60 bg-card shadow-xs ${className}`}
         style={aspectRatioA4 ? { aspectRatio: "210 / 297" } : undefined}
       >
         <iframe
@@ -198,12 +198,12 @@ export function PdfCanvasViewer({
 
   return (
     <div
-      className={`relative w-full rounded-2xl overflow-hidden border border-border bg-white shadow-xs flex flex-col items-center justify-start select-none ${className}`}
+      className={`relative w-full rounded-2xl overflow-hidden border border-border/60 bg-card shadow-xs flex flex-col items-center justify-start select-none ${className}`}
       style={aspectRatioA4 ? { aspectRatio: "210 / 297" } : undefined}
     >
       {/* 読込中インジケーター (初回のみ) */}
       {loading && !renderedImageUrl && (
-        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-white gap-2">
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-card gap-2">
           <Loader2 className="w-6 h-6 animate-spin text-primary" />
           <span className="text-[11px] font-bold text-muted-foreground">PDFを高画質展開中...</span>
         </div>
@@ -211,14 +211,14 @@ export function PdfCanvasViewer({
 
       {/* エラー表示 */}
       {error && (
-        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-white p-4 text-center gap-2">
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-card p-4 text-center gap-2">
           <AlertCircle className="w-8 h-8 text-rose-500" />
           <p className="text-xs font-bold text-foreground">{error}</p>
           <a
             href={getAbsoluteUrl(url)}
             target="_blank"
             rel="noopener noreferrer"
-            className="px-3 py-1.5 rounded-xl bg-primary text-primary-foreground text-xs font-black flex items-center gap-1 mt-2"
+            className="px-3 py-1.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black flex items-center gap-1 mt-2 transition-colors"
           >
             <span>直接開く</span>
             <ExternalLink className="w-3.5 h-3.5" />

@@ -134,7 +134,7 @@ export function ActionStatusBanner({
           return (
             <span
               key={entry.key}
-              className="px-2.5 py-1 rounded-lg bg-indigo-600 text-white text-[10px] font-black tabular-nums inline-flex items-center gap-1"
+              className="px-2.5 py-1 rounded-lg bg-primary text-primary-foreground text-[10px] font-black tabular-nums inline-flex items-center gap-1"
             >
               <Loader2 className="w-3 h-3 animate-spin shrink-0" />
               <span>{entry.label}</span>
@@ -148,14 +148,14 @@ export function ActionStatusBanner({
             {isEntryError ? (
               <AlertCircle className="w-3 h-3 text-destructive shrink-0" />
             ) : (
-              <CheckCircle2 className="w-3 h-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <CheckCircle2 className="w-3 h-3 text-primary shrink-0" />
             )}
             <span>{entry.label}</span>
             <span
               className={
                 isEntryError
                   ? "text-destructive"
-                  : "text-emerald-700 dark:text-emerald-300"
+                  : "text-primary"
               }
             >
               {isEntryError
@@ -169,7 +169,7 @@ export function ActionStatusBanner({
                 className={`ml-0.5 pl-1 border-l inline-flex items-center gap-0.5 ${
                   isEntryError
                     ? "border-destructive/35 text-destructive"
-                    : "border-border text-indigo-600 dark:text-indigo-400"
+                    : "border-border/60 text-primary"
                 }`}
               >
                 <RotateCcw className="w-2.5 h-2.5 shrink-0" />
@@ -182,7 +182,7 @@ export function ActionStatusBanner({
         const badgeClassName = `px-2 py-1 rounded-lg bg-card border text-[10px] font-black tabular-nums inline-flex items-center gap-1 ${
           isEntryError
             ? "border-destructive/60 text-destructive"
-            : "border-emerald-500/45 text-foreground"
+            : "border-border/60 text-foreground"
         } ${
           canClickRetry
             ? "cursor-pointer hover:bg-muted active:scale-95 transition-all"
@@ -215,7 +215,7 @@ export function ActionStatusBanner({
         activeLabels.map((lbl, idx) => (
           <span
             key={`active-${lbl}-${idx}`}
-            className="px-2 py-1 rounded-lg bg-indigo-600 text-white text-[10px] font-black tabular-nums inline-flex items-center gap-1"
+            className="px-2 py-1 rounded-lg bg-primary text-primary-foreground text-[10px] font-black tabular-nums inline-flex items-center gap-1"
           >
             <Loader2 className="w-3 h-3 animate-spin shrink-0" />
             <span>{lbl}</span>
@@ -230,23 +230,23 @@ export function ActionStatusBanner({
   return (
     <div ref={bannerRef} className="space-y-2.5">
       {isLoading && (
-        <div className="p-4 rounded-2xl bg-card border-2 border-indigo-500/45 shadow-xs space-y-2.5">
+        <div className="p-4 rounded-2xl border border-border/60 bg-card shadow-xs space-y-2.5">
           <div className="flex items-start gap-3">
-            <Loader2 className="w-5 h-5 animate-spin text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
+            <Loader2 className="w-5 h-5 animate-spin text-primary shrink-0 mt-0.5" />
             <div className="min-w-0 flex-1 space-y-1">
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <p className="text-xs font-black text-foreground">
                   {loadingTitle}
                 </p>
                 {totalElapsedMs !== null && (
-                  <span className="px-2.5 py-0.5 rounded-lg bg-indigo-600 text-white text-[11px] font-black tabular-nums flex items-center gap-1 shrink-0">
+                  <span className="px-2.5 py-0.5 rounded-lg bg-primary text-primary-foreground text-[11px] font-black tabular-nums flex items-center gap-1 shrink-0">
                     <Clock className="w-3 h-3 shrink-0" />
                     <span>合計 {formatTotalElapsedSeconds(totalElapsedMs)}</span>
                   </span>
                 )}
               </div>
               {loadingDetail && (
-                <p className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 leading-relaxed wrap-break-word">
+                <p className="text-[11px] font-bold text-primary leading-relaxed wrap-break-word">
                   {loadingDetail}
                 </p>
               )}
@@ -254,7 +254,7 @@ export function ActionStatusBanner({
           </div>
 
           {hasTimingBreakdown && (
-            <div className="p-2.5 rounded-xl bg-muted border border-border space-y-1.5">
+            <div className="p-2.5 rounded-xl bg-muted/50 border border-border/60 space-y-1.5">
               <p className="text-[10px] font-black text-muted-foreground">
                 イニング・シート別の解析経過（完了分は自動保持されます）
               </p>
@@ -267,28 +267,28 @@ export function ActionStatusBanner({
       {/* エラー発生時や中断後も、完了済み・エラー箇所の解析経過を消さずに残すパネル */}
       {showIdleBreakdown && (
         <div
-          className={`p-3.5 rounded-2xl bg-card border-2 shadow-xs space-y-2 ${
+          className={`p-3.5 rounded-2xl border bg-card shadow-xs space-y-2 ${
             errorCount > 0
-              ? "border-amber-500/55"
-              : "border-emerald-500/45"
+              ? "border-destructive/40"
+              : "border-border/60"
           }`}
         >
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-1.5">
-              <Clock className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+              <Clock className="w-3.5 h-3.5 text-primary shrink-0" />
               <p className="text-xs font-black text-foreground">
                 解析経過（完了 {successCount}件
                 {errorCount > 0 ? ` / エラー ${errorCount}件` : ""}）
               </p>
             </div>
             {idleDisplayTotalMs !== null && idleDisplayTotalMs > 0 && (
-              <span className="px-2.5 py-0.5 rounded-lg bg-muted border border-border text-foreground text-[11px] font-black tabular-nums shrink-0">
+              <span className="px-2.5 py-0.5 rounded-lg bg-muted/50 border border-border/60 text-foreground text-[11px] font-black tabular-nums shrink-0">
                 合計 {formatTotalElapsedSeconds(idleDisplayTotalMs)}
               </span>
             )}
           </div>
 
-          <div className="p-2.5 rounded-xl bg-muted border border-border space-y-1.5">
+          <div className="p-2.5 rounded-xl bg-muted/50 border border-border/60 space-y-1.5">
             {renderTimingBadges(true)}
             {onRetryEntry && (
               <p className="text-[10px] font-bold text-muted-foreground pt-0.5">
@@ -302,7 +302,7 @@ export function ActionStatusBanner({
       {errorMessage && (
         <div
           role="alert"
-          className="p-4 rounded-2xl bg-card border-2 border-destructive/60 shadow-xs flex items-start gap-2.5"
+          className="p-4 rounded-2xl border border-destructive/60 bg-card shadow-xs flex items-start gap-2.5"
         >
           <AlertCircle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
           <div className="min-w-0 flex-1 space-y-1">

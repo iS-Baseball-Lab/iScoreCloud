@@ -18,15 +18,15 @@ export default function LiffToolsIndexPage() {
           title="便利ツール一覧"
           subtitle="TEAM UTILITY TOOLS"
           icon={
-            <span className="w-8 h-8 rounded-xl bg-primary/15 text-primary flex items-center justify-center font-black">
+            <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
               <Wrench className="w-4 h-4" />
             </span>
           }
           showBack
         />
 
-        <div className="rounded-3xl bg-card border border-border shadow-xs p-4 flex items-start gap-3">
-          <span className="w-9 h-9 rounded-2xl bg-primary/12 text-primary flex items-center justify-center shrink-0 mt-0.5">
+        <div className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 flex items-start gap-3">
+          <span className="w-9 h-9 rounded-2xl bg-primary/10 text-primary flex items-center justify-center shrink-0 mt-0.5">
             <Sparkles className="w-4 h-4" />
           </span>
           <div className="space-y-1">
@@ -46,11 +46,9 @@ export default function LiffToolsIndexPage() {
               <Link
                 key={tool.id}
                 href={tool.href}
-                className="flex items-center gap-3.5 p-4 rounded-3xl bg-card hover:bg-muted/40 border border-border shadow-xs transition-all active:scale-98 group"
+                className="flex items-center gap-3.5 p-4 rounded-2xl border border-border/60 bg-card shadow-xs hover:border-primary/40 hover:bg-muted/35 transition-all active:scale-98 group"
               >
-                <span
-                  className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${tool.iconColorClass}`}
-                >
+                <span className="w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 bg-primary/10 text-primary">
                   <Icon className="w-5 h-5" />
                 </span>
                 <div className="min-w-0 flex-1">

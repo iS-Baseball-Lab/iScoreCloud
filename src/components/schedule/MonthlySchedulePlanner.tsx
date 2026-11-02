@@ -399,14 +399,14 @@ export function MonthlySchedulePlanner({
       )}
 
       {/* 🌟 1. ヘッダー：月操作 ＆ アクションボタン */}
-      <div className="p-4 rounded-3xl bg-card border border-border/80 shadow-xs space-y-3">
+      <div className="p-4 rounded-2xl border border-border/60 bg-card shadow-xs space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           {/* 月移動 */}
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={handlePrevMonth}
-              className="p-2 rounded-xl bg-muted hover:bg-muted/80 text-foreground transition-all active:scale-95 cursor-pointer"
+              className="p-2 rounded-xl bg-muted/50 hover:bg-muted text-foreground border border-border/60 transition-all active:scale-95 cursor-pointer"
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
@@ -418,7 +418,7 @@ export function MonthlySchedulePlanner({
             <button
               type="button"
               onClick={handleNextMonth}
-              className="p-2 rounded-xl bg-muted hover:bg-muted/80 text-foreground transition-all active:scale-95 cursor-pointer"
+              className="p-2 rounded-xl bg-muted/50 hover:bg-muted text-foreground border border-border/60 transition-all active:scale-95 cursor-pointer"
             >
               <ChevronRight className="w-4 h-4" />
             </button>
@@ -426,7 +426,7 @@ export function MonthlySchedulePlanner({
             <button
               type="button"
               onClick={handleToday}
-              className="px-3 py-1.5 rounded-xl bg-muted/60 hover:bg-muted text-xs font-black text-foreground transition-all active:scale-95 cursor-pointer"
+              className="px-3 py-1.5 rounded-xl bg-card hover:bg-muted border border-border/60 text-xs font-black text-foreground transition-all active:scale-95 cursor-pointer"
             >
               今月
             </button>
@@ -446,7 +446,7 @@ export function MonthlySchedulePlanner({
             <button
               type="button"
               onClick={handleClearMonth}
-              className="py-2 px-2.5 rounded-xl bg-muted/60 hover:bg-muted text-muted-foreground hover:text-rose-500 text-xs font-bold transition-all active:scale-95 cursor-pointer"
+              className="py-2 px-2.5 rounded-xl bg-card hover:bg-rose-500/10 border border-border/60 text-muted-foreground hover:text-rose-600 text-xs font-bold transition-all active:scale-95 cursor-pointer"
               title="今月の選択をクリア"
             >
               <Trash2 className="w-3.5 h-3.5" />
@@ -471,7 +471,7 @@ export function MonthlySchedulePlanner({
       </div>
 
       {/* 🌟 2. 月間カレンダーグリッド */}
-      <div className="p-3.5 bg-card rounded-3xl border border-border/80 shadow-xs space-y-2">
+      <div className="p-3.5 rounded-2xl border border-border/60 bg-card shadow-xs space-y-2">
         {/* 曜日ヘッダー */}
         <div className="grid grid-cols-7 gap-1 text-center text-xs font-black">
           {weekDays.map((w, idx) => (
@@ -479,7 +479,7 @@ export function MonthlySchedulePlanner({
               key={w}
               className={cn(
                 "py-1.5 rounded-lg",
-                idx === 0 ? "text-rose-500 bg-rose-500/5" : idx === 6 ? "text-blue-500 bg-blue-500/5" : "text-muted-foreground"
+                idx === 0 ? "text-red-500 bg-red-500/5" : idx === 6 ? "text-blue-500 bg-blue-500/5" : "text-muted-foreground"
               )}
             >
               {w}
@@ -504,12 +504,12 @@ export function MonthlySchedulePlanner({
                 className={cn(
                   "flex flex-col items-center justify-center p-2 rounded-2xl min-h-[58px] sm:min-h-[64px] transition-all relative cursor-pointer active:scale-95",
                   isSelected
-                    ? "bg-primary text-primary-foreground font-black shadow-md ring-2 ring-primary/40"
+                    ? "bg-primary text-primary-foreground font-black shadow-xs border border-primary"
                     : isToday
-                    ? "bg-primary/10 border-2 border-primary/40 text-foreground font-black"
+                    ? "bg-primary/10 border border-primary/40 text-foreground font-black"
                     : d.isCurrentMonth
-                    ? "bg-muted/30 hover:bg-muted/70 text-foreground border border-border/50"
-                    : "bg-muted/10 text-muted-foreground/30 border border-transparent"
+                    ? "bg-muted/35 hover:bg-muted/60 text-foreground border border-border/60"
+                    : "bg-muted/15 text-muted-foreground/30 border border-transparent"
                 )}
               >
                 {/* 日付数字 */}
@@ -519,7 +519,7 @@ export function MonthlySchedulePlanner({
                     isSelected
                       ? "text-primary-foreground font-black"
                       : isSun
-                      ? "text-rose-500 font-black"
+                      ? "text-red-500 font-black"
                       : isSat
                       ? "text-blue-500 font-black"
                       : "font-bold"
@@ -530,7 +530,7 @@ export function MonthlySchedulePlanner({
 
                 {/* 選択状態ラベル */}
                 {isSelected ? (
-                  <span className="mt-1 px-1.5 py-0.2 rounded-md bg-white/20 text-white text-[9.5px] font-black tracking-tight leading-none flex items-center gap-0.5">
+                  <span className="mt-1 px-1.5 py-0.2 rounded-md bg-primary-foreground/20 text-primary-foreground text-[9.5px] font-black tracking-tight leading-none flex items-center gap-0.5">
                     <Check className="w-2.5 h-2.5" />
                     <span>活動日</span>
                   </span>
@@ -553,7 +553,7 @@ export function MonthlySchedulePlanner({
         const currentMonthItems = selectedDayItems.filter(it => it.dateStr.startsWith(currentMonthPrefix));
 
         return (
-          <div className="p-4 rounded-3xl bg-card border border-border/80 shadow-xs space-y-4">
+          <div className="p-4 rounded-2xl border border-border/60 bg-card shadow-xs space-y-4">
             {/* ヘッダー */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2 border-b border-border/60">
               <div className="flex items-center gap-2">
@@ -561,7 +561,7 @@ export function MonthlySchedulePlanner({
                   <Layers className="w-4 h-4 text-primary" />
                   <span>{currentMonth + 1}月の活動日 & 当番一覧</span>
                 </h3>
-                <span className="px-2 py-0.5 rounded-full bg-primary/15 text-primary text-xs font-black">
+                <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-black">
                   {currentMonthItems.length}日
                 </span>
               </div>
@@ -571,7 +571,7 @@ export function MonthlySchedulePlanner({
                   <button
                     type="button"
                     onClick={handleAutoRotateDuties}
-                    className="py-1 px-2.5 rounded-xl bg-muted/60 hover:bg-muted text-foreground text-xs font-black border border-border/80 flex items-center gap-1 transition-all active:scale-95 cursor-pointer"
+                    className="py-1 px-2.5 rounded-xl bg-card hover:bg-muted text-foreground text-xs font-black border border-border/60 flex items-center gap-1 transition-all active:scale-95 cursor-pointer"
                     title="1班〜4班を日付順に均等に割り当てます"
                   >
                     <RotateCw className="w-3 h-3 text-primary" />
@@ -614,19 +614,19 @@ export function MonthlySchedulePlanner({
                   return (
                     <div
                       key={it.id}
-                      className="p-3 sm:p-3.5 rounded-2xl bg-muted/20 hover:bg-muted/40 border border-border/80 shadow-2xs hover:border-primary/40 transition-all flex flex-col md:flex-row md:items-center justify-between gap-3"
+                      className="p-3 sm:p-3.5 rounded-2xl bg-muted/35 hover:bg-muted/50 border border-border/60 hover:border-primary/40 transition-all flex flex-col md:flex-row md:items-center justify-between gap-3"
                     >
                       {/* 上段 / 左側: 日付 ＆ 予定情報 */}
                       <div className="flex items-center gap-2.5 min-w-0">
                         {/* 日付バッジ */}
                         <div
                           className={cn(
-                            "w-12 h-12 rounded-xl flex flex-col items-center justify-center shrink-0 font-black leading-tight border shadow-2xs",
+                            "w-12 h-12 rounded-xl flex flex-col items-center justify-center shrink-0 font-black leading-tight border",
                             isSun
-                              ? "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20"
+                              ? "bg-red-500/10 text-red-500 border-red-500/20"
                               : isSat
-                              ? "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20"
-                              : "bg-muted text-foreground border-border"
+                              ? "bg-blue-500/10 text-blue-500 border-blue-500/20"
+                              : "bg-muted/50 text-foreground border-border/60"
                           )}
                         >
                           <span className="text-[10px] opacity-75">{m}/{d}</span>
@@ -644,7 +644,7 @@ export function MonthlySchedulePlanner({
                             <select
                               value={it.eventType || "practice"}
                               onChange={(e) => handleUpdateEventType(it.dateStr, e.target.value as any)}
-                              className="text-[10.5px] font-bold px-2 py-0.5 rounded-lg bg-card border border-border/70 text-foreground cursor-pointer focus:outline-hidden"
+                              className="text-[10.5px] font-bold px-2 py-0.5 rounded-lg bg-card border border-border/60 text-foreground cursor-pointer focus:outline-hidden"
                             >
                               <option value="practice">⚾ 通常練習</option>
                               <option value="match">🏆 公式戦・試合</option>
@@ -660,8 +660,8 @@ export function MonthlySchedulePlanner({
                               className={cn(
                                 "px-2 py-0.5 rounded-md text-[10px] font-black transition-all flex items-center gap-1 cursor-pointer",
                                 it.needsLunch
-                                  ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30"
-                                  : "bg-muted/50 text-muted-foreground hover:text-foreground line-through opacity-60"
+                                  ? "bg-primary/10 text-primary border border-primary/25"
+                                  : "bg-muted/50 text-muted-foreground border border-border/60 hover:text-foreground line-through opacity-60"
                               )}
                             >
                               <span>🍱</span>
@@ -679,7 +679,7 @@ export function MonthlySchedulePlanner({
                         <button
                           type="button"
                           onClick={() => handleToggleDate(dObj)}
-                          className="md:hidden p-1.5 rounded-xl text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10 transition-all cursor-pointer shrink-0 ml-auto"
+                          className="md:hidden p-1.5 rounded-xl text-muted-foreground hover:text-rose-600 hover:bg-rose-500/10 transition-all cursor-pointer shrink-0 ml-auto"
                           title="活動日を解除"
                         >
                           <X className="w-4 h-4" />
@@ -687,8 +687,8 @@ export function MonthlySchedulePlanner({
                       </div>
 
                       {/* 下段 / 右側: 当番選択ボタン群 */}
-                      <div className="flex items-center justify-between md:justify-end gap-2 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-border/50">
-                        <div className="flex items-center gap-1 bg-muted/40 p-1 rounded-xl border border-border/60 overflow-x-auto scrollbar-none">
+                      <div className="flex items-center justify-between md:justify-end gap-2 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-border/60">
+                        <div className="flex items-center gap-1 bg-muted/50 p-1 rounded-xl border border-border/60 overflow-x-auto scrollbar-none">
                           <span className="text-[10px] font-black text-muted-foreground pl-1.5 pr-0.5 shrink-0 flex items-center gap-0.5">
                             <span>📋</span>
                             <span>当番:</span>
@@ -705,7 +705,7 @@ export function MonthlySchedulePlanner({
                                   "px-2.5 py-1 rounded-lg text-xs font-black transition-all active:scale-95 shrink-0 cursor-pointer",
                                   isCurDuty
                                     ? "bg-primary text-primary-foreground shadow-xs font-black"
-                                    : "text-muted-foreground hover:text-foreground hover:bg-muted/70"
+                                    : "text-muted-foreground hover:text-foreground hover:bg-card"
                                 )}
                               >
                                 {dg}
@@ -725,7 +725,7 @@ export function MonthlySchedulePlanner({
                             onChange={(e) => {
                               if (e.target.value) handleUpdateDuty(it.dateStr, e.target.value);
                             }}
-                            className="text-[10px] font-bold px-1.5 py-1 rounded-lg bg-card border border-border/80 text-muted-foreground hover:text-foreground cursor-pointer focus:outline-hidden shrink-0"
+                            className="text-[10px] font-bold px-1.5 py-1 rounded-lg bg-card border border-border/60 text-muted-foreground hover:text-foreground cursor-pointer focus:outline-hidden shrink-0"
                             title="その他の当番を選択"
                           >
                             <option value="" disabled>他</option>
@@ -744,7 +744,7 @@ export function MonthlySchedulePlanner({
                         <button
                           type="button"
                           onClick={() => handleToggleDate(dObj)}
-                          className="hidden md:flex p-2 rounded-xl text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10 transition-all cursor-pointer"
+                          className="hidden md:flex p-2 rounded-xl text-muted-foreground hover:text-rose-600 hover:bg-rose-500/10 transition-all cursor-pointer"
                           title="活動日を解除"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -763,7 +763,7 @@ export function MonthlySchedulePlanner({
                   type="button"
                   onClick={handleSaveAll}
                   disabled={isSaving}
-                  className="py-2.5 px-6 rounded-2xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-black shadow-md active:scale-95 transition-all flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                  className="py-2.5 px-6 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-black shadow-xs active:scale-95 transition-all flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
                 >
                   <Save className="w-4 h-4" />
                   <span>{isSaving ? "保存中..." : `${currentMonth + 1}月の活動日 & 当番（${currentMonthItems.length}日）を一括保存`}</span>

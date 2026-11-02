@@ -85,12 +85,12 @@ export default function LandingPage() {
   if (!mounted) return null;
 
   const features = [
-    { icon: <Smartphone className="h-10 w-10 text-orange-500" strokeWidth={1.5} />, title: "現場至上主義UI", desc: "太陽光下でも視認性抜群。片手で絶対に間違えない入力設計。", glowColor: "rgba(249, 115, 22, 0.15)" },
-    { icon: <Users className="h-10 w-10 text-blue-500" strokeWidth={1.5} />, title: "チーム完全連携", desc: "マネージャーも監督も。リアルタイムでスタッツと戦況を共有。", glowColor: "rgba(59, 130, 246, 0.15)" },
-    { icon: <FileSpreadsheet className="h-10 w-10 text-green-500" strokeWidth={1.5} />, title: "早稲田式スコア出力", desc: "入力データを伝統的で美しいスコアブック形式に一発変換。", glowColor: "rgba(34, 197, 94, 0.15)" },
-    { icon: <Zap className="h-10 w-10 text-amber-500" strokeWidth={1.5} />, title: "1球速報システム", desc: "球場に来られないメンバーへ。プロ野球並みの1球速報を配信。", glowColor: "rgba(245, 158, 11, 0.15)" },
-    { icon: <TrendingUp className="h-10 w-10 text-purple-500" strokeWidth={1.5} />, title: "プロ級の成績分析", desc: "打率、防御率だけでなく、OPSやWHIPなど高度指標を自動計算。", glowColor: "rgba(168, 85, 247, 0.15)" },
-    { icon: <Sparkles className="h-10 w-10 text-cyan-500" strokeWidth={1.5} />, title: "AI戦況アシスト", desc: "次のプレイの予測や、打者の傾向分析をAIがベンチにアドバイス。", glowColor: "rgba(6, 182, 212, 0.15)" },
+    { icon: <Smartphone className="h-10 w-10 text-primary" strokeWidth={1.5} />, title: "現場至上主義UI", desc: "太陽光下でも視認性抜群。片手で絶対に間違えない入力設計。", glowColor: "color-mix(in oklch, var(--primary) 18%, transparent)" },
+    { icon: <Users className="h-10 w-10 text-primary" strokeWidth={1.5} />, title: "チーム完全連携", desc: "マネージャーも監督も。リアルタイムでスタッツと戦況を共有。", glowColor: "color-mix(in oklch, var(--primary) 18%, transparent)" },
+    { icon: <FileSpreadsheet className="h-10 w-10 text-primary" strokeWidth={1.5} />, title: "早稲田式スコア出力", desc: "入力データを伝統的で美しいスコアブック形式に一発変換。", glowColor: "color-mix(in oklch, var(--primary) 18%, transparent)" },
+    { icon: <Zap className="h-10 w-10 text-primary" strokeWidth={1.5} />, title: "1球速報システム", desc: "球場に来られないメンバーへ。プロ野球並みの1球速報を配信。", glowColor: "color-mix(in oklch, var(--primary) 18%, transparent)" },
+    { icon: <TrendingUp className="h-10 w-10 text-primary" strokeWidth={1.5} />, title: "プロ級の成績分析", desc: "打率、防御率だけでなく、OPSやWHIPなど高度指標を自動計算。", glowColor: "color-mix(in oklch, var(--primary) 18%, transparent)" },
+    { icon: <Sparkles className="h-10 w-10 text-primary" strokeWidth={1.5} />, title: "AI戦況アシスト", desc: "次のプレイの予測や、打者の傾向分析をAIがベンチにアドバイス。", glowColor: "color-mix(in oklch, var(--primary) 18%, transparent)" },
   ];
 
   return (

@@ -375,15 +375,15 @@ export function MatchScorebookSection({
       {/* セクション見出し（他セクションと統一したカード外見出し） */}
       <div className="flex items-center gap-1.5 px-1">
         <h2 className="flex items-center gap-1.5 text-xs font-black text-foreground">
-          <FileSpreadsheet className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+          <FileSpreadsheet className="w-4 h-4 text-primary shrink-0" />
           <span>スコアブック（清書シート）</span>
         </h2>
       </div>
 
-      <div className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+      <div className="rounded-2xl border border-border/60 bg-card shadow-xs overflow-hidden">
         {isLoadingStats || isLoadingSheet ? (
           <div className="py-10 px-4 flex flex-col items-center justify-center gap-2 text-muted-foreground">
-            <Loader2 className="w-6 h-6 animate-spin text-indigo-600 dark:text-indigo-400" />
+            <Loader2 className="w-6 h-6 animate-spin text-primary" />
             <p className="text-xs font-black text-foreground">
               スコアブック清書シートを作成しています...
             </p>
@@ -397,7 +397,7 @@ export function MatchScorebookSection({
         ) : !topModel && !bottomModel ? null : (
           <div className="p-3 sm:p-3.5 space-y-3">
             {/* ━━━ 上段コントロール：先攻（表） ⇄ 後攻（裏） シート切替 ━━━ */}
-            <div className="grid grid-cols-2 gap-1.5 p-1 rounded-xl bg-slate-100 dark:bg-zinc-900 border border-border">
+            <div className="grid grid-cols-2 gap-1.5 p-1 rounded-xl bg-muted/50 border border-border/60">
               <button
                 type="button"
                 disabled={!topModel}
@@ -405,14 +405,21 @@ export function MatchScorebookSection({
                 className={cn(
                   "py-2 px-2.5 rounded-lg text-xs font-black transition-all flex items-center justify-between gap-1.5 cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed",
                   activeSide === "top" && topModel
-                    ? "bg-card text-foreground shadow-xs border border-border"
+                    ? "bg-card text-primary shadow-xs border border-border/60"
                     : "text-muted-foreground hover:text-foreground"
                 )}
               >
                 <span className="truncate">
                   先攻: {matchMeta.topTeamName}
                 </span>
-                <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-slate-200/80 dark:bg-zinc-800 text-foreground shrink-0">
+                <span
+                  className={cn(
+                    "font-mono text-[10px] px-1.5 py-0.5 rounded shrink-0",
+                    activeSide === "top" && topModel
+                      ? "bg-primary/10 text-primary"
+                      : "bg-muted text-muted-foreground"
+                  )}
+                >
                   {topModel ? `${topModel.totals.runs}点` : "未取込"}
                 </span>
               </button>
@@ -424,14 +431,21 @@ export function MatchScorebookSection({
                 className={cn(
                   "py-2 px-2.5 rounded-lg text-xs font-black transition-all flex items-center justify-between gap-1.5 cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed",
                   activeSide === "bottom" && bottomModel
-                    ? "bg-card text-foreground shadow-xs border border-border"
+                    ? "bg-card text-primary shadow-xs border border-border/60"
                     : "text-muted-foreground hover:text-foreground"
                 )}
               >
                 <span className="truncate">
                   後攻: {matchMeta.bottomTeamName}
                 </span>
-                <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-slate-200/80 dark:bg-zinc-800 text-foreground shrink-0">
+                <span
+                  className={cn(
+                    "font-mono text-[10px] px-1.5 py-0.5 rounded shrink-0",
+                    activeSide === "bottom" && bottomModel
+                      ? "bg-primary/10 text-primary"
+                      : "bg-muted text-muted-foreground"
+                  )}
+                >
                   {bottomModel ? `${bottomModel.totals.runs}点` : "未取込"}
                 </span>
               </button>
@@ -439,7 +453,7 @@ export function MatchScorebookSection({
 
             {/* ━━━ スコアブックSVGシート本体（横スクロール＋タップ拡大対応） ━━━ */}
             {activeModel && (
-              <div className="relative rounded-xl border-2 border-slate-300 dark:border-slate-700 bg-[#fffefb] overflow-hidden">
+              <div className="relative rounded-xl border border-border/60 bg-[#fffefb] overflow-hidden">
                 <div className="overflow-x-auto overscroll-x-contain">
                   <div className="min-w-[820px] p-1">
                     {activeSide === "top" && topModel ? (
@@ -463,7 +477,7 @@ export function MatchScorebookSection({
                 </div>
 
                 {/* 横スクロール案内＋全画面拡大フローティングピル */}
-                <div className="px-3 py-1.5 bg-slate-100/95 dark:bg-zinc-900 border-t border-slate-300 dark:border-slate-700 flex items-center justify-between gap-2 text-[10px] font-bold text-muted-foreground">
+                <div className="px-3 py-1.5 bg-muted/50 border-t border-border/60 flex items-center justify-between gap-2 text-[10px] font-bold text-muted-foreground">
                   <span>← 左右にスワイプして全イニング・個人集計を確認 →</span>
                   <button
                     type="button"
@@ -471,7 +485,7 @@ export function MatchScorebookSection({
                       setFullscreenZoom(1);
                       setIsFullscreenOpen(true);
                     }}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-600 text-white font-black text-[10px] shadow-2xs active:scale-95 transition-all cursor-pointer shrink-0"
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 font-black text-[10px] shadow-2xs active:scale-95 transition-all cursor-pointer shrink-0"
                   >
                     <Maximize2 className="w-3 h-3" />
                     <span>拡大表示</span>
@@ -511,7 +525,7 @@ export function MatchScorebookSection({
                 type="button"
                 disabled={isExportingPng}
                 onClick={() => handleExportPng("current")}
-                className="h-10 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all cursor-pointer disabled:opacity-55"
+                className="h-10 px-3 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all cursor-pointer disabled:opacity-55"
               >
                 {isExportingPng ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
@@ -526,7 +540,7 @@ export function MatchScorebookSection({
                   type="button"
                   disabled={isExportingPng}
                   onClick={() => handleExportPng("both")}
-                  className="h-10 px-3 rounded-xl border border-indigo-300 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-800 dark:text-indigo-200 text-xs font-black flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer disabled:opacity-55"
+                  className="h-10 px-3 rounded-xl border border-primary/25 bg-primary/10 hover:bg-primary/15 text-primary text-xs font-black flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer disabled:opacity-55"
                 >
                   <Download className="w-3.5 h-3.5 shrink-0" />
                   <span>先攻・後攻まとめて保存</span>
@@ -538,9 +552,9 @@ export function MatchScorebookSection({
                     setFullscreenZoom(1.25);
                     setIsFullscreenOpen(true);
                   }}
-                  className="h-10 px-3 rounded-xl border border-border bg-background hover:bg-muted text-foreground text-xs font-black flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer"
+                  className="h-10 px-3 rounded-xl border border-border/60 bg-card hover:bg-muted text-foreground text-xs font-black flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer"
                 >
-                  <Maximize2 className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                  <Maximize2 className="w-3.5 h-3.5 text-primary shrink-0" />
                   <span>全画面で大きく見る</span>
                 </button>
               )}
@@ -548,7 +562,7 @@ export function MatchScorebookSection({
               <button
                 type="button"
                 onClick={() => handlePrintSheet(hasBothSides ? "both" : "current")}
-                className="col-span-2 sm:col-span-1 h-10 px-3 rounded-xl border border-border bg-background hover:bg-muted text-foreground text-xs font-black flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer"
+                className="col-span-2 sm:col-span-1 h-10 px-3 rounded-xl border border-border/60 bg-card hover:bg-muted text-foreground text-xs font-black flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer"
               >
                 <Printer className="w-3.5 h-3.5 text-primary shrink-0" />
                 <span>{hasBothSides ? "A4横 両面印刷 / PDF" : "A4横 印刷 / PDF"}</span>
@@ -564,10 +578,10 @@ export function MatchScorebookSection({
           role="dialog"
           aria-modal="true"
           aria-label="スコアブック全画面表示"
-          className="fixed inset-0 z-50 bg-slate-950 flex flex-col"
+          className="fixed inset-0 z-50 bg-black/95 flex flex-col"
         >
           {/* 上部ツールバー */}
-          <div className="px-3 py-2.5 bg-slate-900 border-b border-slate-800 flex items-center justify-between gap-2 shrink-0">
+          <div className="px-3 py-2.5 bg-card border-b border-border/60 flex items-center justify-between gap-2 shrink-0">
             <div className="flex items-center gap-1.5 min-w-0">
               {topModel && (
                 <button
@@ -576,8 +590,8 @@ export function MatchScorebookSection({
                   className={cn(
                     "px-2.5 py-1 rounded-lg text-[11px] font-black transition-all cursor-pointer",
                     activeSide === "top"
-                      ? "bg-white text-slate-950"
-                      : "bg-slate-800 text-slate-300"
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted/50 text-muted-foreground border border-border/60 hover:text-foreground"
                   )}
                 >
                   先攻
@@ -590,8 +604,8 @@ export function MatchScorebookSection({
                   className={cn(
                     "px-2.5 py-1 rounded-lg text-[11px] font-black transition-all cursor-pointer",
                     activeSide === "bottom"
-                      ? "bg-white text-slate-950"
-                      : "bg-slate-800 text-slate-300"
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted/50 text-muted-foreground border border-border/60 hover:text-foreground"
                   )}
                 >
                   後攻
@@ -606,11 +620,11 @@ export function MatchScorebookSection({
                   setFullscreenZoom((z) => Math.max(0.75, +(z - 0.25).toFixed(2)))
                 }
                 aria-label="縮小"
-                className="w-8 h-8 rounded-lg bg-slate-800 text-white flex items-center justify-center cursor-pointer active:scale-95"
+                className="w-8 h-8 rounded-lg bg-card border border-border/60 hover:bg-muted text-foreground flex items-center justify-center cursor-pointer active:scale-95"
               >
                 <ZoomOut className="w-4 h-4" />
               </button>
-              <span className="text-[11px] font-mono font-black text-white w-11 text-center">
+              <span className="text-[11px] font-mono font-black text-foreground w-11 text-center">
                 {Math.round(fullscreenZoom * 100)}%
               </span>
               <button
@@ -619,7 +633,7 @@ export function MatchScorebookSection({
                   setFullscreenZoom((z) => Math.min(2.5, +(z + 0.25).toFixed(2)))
                 }
                 aria-label="拡大"
-                className="w-8 h-8 rounded-lg bg-slate-800 text-white flex items-center justify-center cursor-pointer active:scale-95"
+                className="w-8 h-8 rounded-lg bg-card border border-border/60 hover:bg-muted text-foreground flex items-center justify-center cursor-pointer active:scale-95"
               >
                 <ZoomIn className="w-4 h-4" />
               </button>
@@ -628,7 +642,7 @@ export function MatchScorebookSection({
                 type="button"
                 onClick={() => setIsFullscreenOpen(false)}
                 aria-label="全画面表示を閉じる"
-                className="ml-1 w-9 h-9 rounded-full bg-rose-600 hover:bg-rose-700 text-white flex items-center justify-center cursor-pointer active:scale-95"
+                className="ml-1 w-9 h-9 rounded-full bg-muted hover:bg-muted/80 border border-border/60 text-foreground flex items-center justify-center cursor-pointer active:scale-95"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -660,11 +674,11 @@ export function MatchScorebookSection({
           role="dialog"
           aria-modal="true"
           aria-label="生成スコアブック画像"
-          className="fixed inset-0 z-50 bg-slate-950/95 flex flex-col p-3"
+          className="fixed inset-0 z-50 bg-black/95 flex flex-col p-3"
         >
           <div className="flex items-center justify-between pb-2.5 text-white shrink-0">
             <div className="flex items-center gap-1.5 min-w-0">
-              <ImageIcon className="w-4 h-4 text-emerald-400 shrink-0" />
+              <ImageIcon className="w-4 h-4 text-primary shrink-0" />
               <span className="text-xs font-black truncate">
                 画像を長押しして「写真に保存」できます
               </span>

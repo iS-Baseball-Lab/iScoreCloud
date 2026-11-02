@@ -147,7 +147,7 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
               <div
                 className={`flex items-center gap-2 pl-1 pr-2.5 py-1 rounded-full backdrop-blur-md border text-foreground shadow-xs hover:opacity-90 transition-all cursor-pointer flex-1 max-w-[200px] min-[400px]:max-w-[230px] sm:max-w-[290px] outline-hidden select-none ${
                   isDemo
-                    ? "bg-amber-500/10 border-amber-500/40 text-amber-950 dark:text-amber-100"
+                    ? "bg-primary/10 border-primary/40"
                     : "bg-primary/10 border-primary/40"
                 }`}
                 title={`${orgDisplayName} (${teamDisplayName})`}
@@ -161,9 +161,7 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
                     />
                   ) : (
                     <AvatarFallback
-                      className={`w-full h-full flex items-center justify-center font-black text-xs select-none bg-background ${
-                        isDemo ? "text-amber-600" : "text-primary"
-                      }`}
+                      className="w-full h-full flex items-center justify-center font-black text-xs select-none bg-background text-primary"
                     >
                       {orgDisplayName.slice(0, 2).toUpperCase()}
                     </AvatarFallback>
@@ -176,7 +174,7 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
                   <span
                     className={`text-[9.5px] font-black uppercase truncate leading-none mt-0.5 ${
                       isDemo
-                        ? "text-amber-600 dark:text-amber-400 font-black"
+                        ? "text-primary font-black"
                         : "text-muted-foreground font-bold"
                     }`}
                   >
@@ -273,7 +271,7 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
                   <div className="flex items-center gap-1.5 mt-0.5">
                     <span
                       className={`w-2 h-2 rounded-full shrink-0 ${
-                        isLoggedIn ? "bg-emerald-500" : "bg-amber-500"
+                        isLoggedIn ? "bg-primary" : "bg-muted-foreground/50"
                       }`}
                     />
                     <span className="text-[10px] font-bold text-muted-foreground">
@@ -286,7 +284,7 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
               {!isLoggedIn && (
                 <DropdownMenuItem
                   onClick={login}
-                  className="flex items-center gap-2 p-2.5 cursor-pointer font-black text-xs text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl"
+                  className="flex items-center gap-2 p-2.5 cursor-pointer font-black text-xs text-primary-foreground bg-primary hover:bg-primary/90 rounded-xl"
                 >
                   <User className="w-4 h-4" />
                   <span>LINEでログインして名前を表示</span>
@@ -303,7 +301,7 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
                     className="flex items-center justify-between p-2 cursor-pointer rounded-xl hover:bg-muted transition-colors"
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <span className="w-8 h-8 rounded-lg bg-sky-500/15 text-sky-600 dark:text-sky-400 flex items-center justify-center shrink-0">
+                      <span className="w-8 h-8 rounded-lg bg-primary/12 text-primary flex items-center justify-center shrink-0">
                         <UserCircle className="w-4.5 h-4.5" />
                       </span>
                       <div className="flex flex-col min-w-0">
@@ -323,7 +321,7 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
                     className="flex items-center justify-between p-2 cursor-pointer rounded-xl hover:bg-muted transition-colors"
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <span className="w-8 h-8 rounded-lg bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                      <span className="w-8 h-8 rounded-lg bg-primary/12 text-primary flex items-center justify-center shrink-0">
                         <BookOpen className="w-4 h-4" />
                       </span>
                       <div className="flex flex-col min-w-0">
@@ -343,7 +341,7 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
                     className="flex items-center justify-between p-2 cursor-pointer rounded-xl hover:bg-muted transition-colors"
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <span className="w-8 h-8 rounded-lg bg-primary/15 text-primary flex items-center justify-center shrink-0">
+                      <span className="w-8 h-8 rounded-lg bg-primary/12 text-primary flex items-center justify-center shrink-0">
                         <Settings className="w-4 h-4" />
                       </span>
                       <div className="flex flex-col min-w-0">
@@ -400,7 +398,7 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
                     onClick={handleShare}
                     className="flex items-center gap-2 p-2 cursor-pointer font-bold text-xs rounded-xl"
                   >
-                    <Share2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                    <Share2 className="w-4 h-4 text-primary" />
                     <span>LINEでチームに共有</span>
                   </DropdownMenuItem>
                 </>

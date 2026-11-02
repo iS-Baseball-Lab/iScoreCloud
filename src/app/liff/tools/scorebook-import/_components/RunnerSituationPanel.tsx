@@ -137,7 +137,7 @@ export function AtBatCardRunnerStrip({
   const hasDeferredPersonalRun = Boolean(deferredPersonalRun);
 
   return (
-    <div className="rounded-xl bg-card border border-border px-2.5 py-1.5 space-y-1.5">
+    <div className="rounded-xl bg-card border border-border/60 px-2.5 py-1.5 space-y-1.5">
       {/* 上段: 打席前ダイヤモンド ➔ 打席後ダイヤモンド */}
       <div className="flex items-center justify-between gap-1.5 flex-wrap">
         <div className="flex items-center gap-1.5 min-w-0">
@@ -151,7 +151,7 @@ export function AtBatCardRunnerStrip({
               開始: {formatOutsAndBasesLabel(snapshot.outsBefore, snapshot.basesBefore)}
             </span>
             {beforeRunnersText && (
-              <span className="text-[9px] font-bold text-amber-700 dark:text-amber-300 block truncate leading-tight">
+              <span className="text-[9px] font-bold text-muted-foreground block truncate leading-tight">
                 {beforeRunnersText}
               </span>
             )}
@@ -171,8 +171,8 @@ export function AtBatCardRunnerStrip({
             <span
               className={`text-[10px] font-black block leading-tight ${
                 snapshot.isInningOver
-                  ? "text-slate-600 dark:text-slate-300"
-                  : "text-emerald-700 dark:text-emerald-300"
+                  ? "text-muted-foreground"
+                  : "text-primary"
               }`}
             >
               終了:{" "}
@@ -183,7 +183,7 @@ export function AtBatCardRunnerStrip({
               )}
             </span>
             {afterRunnersText && (
-              <span className="text-[9px] font-bold text-emerald-700 dark:text-emerald-300 block truncate leading-tight">
+              <span className="text-[9px] font-bold text-primary block truncate leading-tight">
                 {afterRunnersText}
               </span>
             )}
@@ -193,7 +193,7 @@ export function AtBatCardRunnerStrip({
 
       {/* 下段: 前の走者がいた場合、それぞれの進塁・生還・アウト・残留、および出塁打者の後続生還（●）を明示 */}
       {(hasPrecedingRunners || hasBatterExtra || hasDeferredPersonalRun) && (
-        <div className="pt-1 border-t border-border/70 flex items-center flex-wrap gap-1">
+        <div className="pt-1 border-t border-border/60 flex items-center flex-wrap gap-1">
           {snapshot.precedingRunners.map((pr) => {
             const rLabel = formatRunnerBadgeName(pr.runner);
             const preTag =
@@ -237,7 +237,7 @@ export function AtBatCardRunnerStrip({
               return (
                 <span
                   key={`${atBat.id}-pr-${pr.startBase}`}
-                  className="px-1.5 py-0.5 rounded-md bg-emerald-500/12 border border-emerald-500/35 text-emerald-800 dark:text-emerald-200 text-[10px] font-black"
+                  className="px-1.5 py-0.5 rounded-md bg-primary/10 border border-primary/25 text-primary text-[10px] font-black"
                 >
                   🏃 {rLabel}: {formatBaseJa(pr.startBase)}→
                   {formatBaseJa(pr.finalBase)}（
@@ -251,7 +251,7 @@ export function AtBatCardRunnerStrip({
               return (
                 <span
                   key={`${atBat.id}-pr-${pr.startBase}`}
-                  className="px-1.5 py-0.5 rounded-md bg-muted border border-border text-muted-foreground text-[10px] font-bold"
+                  className="px-1.5 py-0.5 rounded-md bg-muted/50 border border-border/60 text-muted-foreground text-[10px] font-bold"
                 >
                   {rLabel}: {formatBaseJa(pr.startBase)}残塁
                 </span>
@@ -261,7 +261,7 @@ export function AtBatCardRunnerStrip({
             return (
               <span
                 key={`${atBat.id}-pr-${pr.startBase}`}
-                className="px-1.5 py-0.5 rounded-md bg-amber-500/12 border border-amber-500/35 text-amber-800 dark:text-amber-200 text-[10px] font-black"
+                className="px-1.5 py-0.5 rounded-md bg-muted/50 border border-border/60 text-foreground text-[10px] font-black"
               >
                 ⏸ {rLabel}: {formatBaseJa(pr.startBase)}のまま（進塁時はタップで変更）
               </span>
@@ -273,7 +273,7 @@ export function AtBatCardRunnerStrip({
               className={`px-1.5 py-0.5 rounded-md border text-[10px] font-black ${
                 snapshot.batterSummary.isOutOnBases
                   ? "bg-destructive/12 border-destructive/35 text-destructive"
-                  : "bg-indigo-500/12 border-indigo-500/35 text-indigo-700 dark:text-indigo-300"
+                  : "bg-primary/10 border-primary/25 text-primary"
               }`}
             >
               打者走者({atBat.battingOrder}.{atBat.batterName || "打者"}):{" "}
@@ -290,7 +290,7 @@ export function AtBatCardRunnerStrip({
           )}
 
           {deferredPersonalRun && (
-            <span className="px-1.5 py-0.5 rounded-md bg-sky-500/15 border border-sky-500/35 text-sky-800 dark:text-sky-200 text-[10px] font-black">
+            <span className="px-1.5 py-0.5 rounded-md bg-primary/10 border border-primary/25 text-primary text-[10px] font-black">
               ● 後続（{deferredPersonalRun.scorerBattingOrder}番{" "}
               {deferredPersonalRun.scorerName}）で生還 ➔ 本人の個人得点+1
             </span>
@@ -766,11 +766,11 @@ export function AtBatModalRunnerEditor({
   };
 
   return (
-    <div className="p-3 rounded-2xl bg-amber-500/8 border-2 border-amber-500/35 space-y-3">
+    <div className="p-3 rounded-2xl border border-border/60 bg-card shadow-xs space-y-3">
       {/* セクション見出し */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <span className="text-xs font-black text-foreground flex items-center gap-1.5">
-          <span className="px-1.5 py-0.5 rounded-md bg-amber-500 text-white text-[10px] font-black">
+          <span className="px-1.5 py-0.5 rounded-md bg-primary/10 text-primary text-[10px] font-black">
             STEP 3
           </span>
           <span>走者・進塁（塁上の走者状況 ＆ 前の走者の進塁・生還）</span>
@@ -783,7 +783,7 @@ export function AtBatModalRunnerEditor({
       {/* 1. 打席開始前 ➔ 打席終了後 ビジュアルダイヤモンド比較パネル（ソリッド高視認性） */}
       <div className="grid grid-cols-11 gap-1.5 items-stretch">
         {/* 打席前 */}
-        <div className="col-span-5 p-2.5 rounded-xl bg-card border border-border flex flex-col justify-between gap-1.5">
+        <div className="col-span-5 p-2.5 rounded-xl bg-muted/35 border border-border/60 flex flex-col justify-between gap-1.5">
           <div className="flex items-center gap-2">
             <MiniBaseDiamond bases={basesBefore} size="md" tone="before" />
             <div className="min-w-0">
@@ -795,7 +795,7 @@ export function AtBatModalRunnerEditor({
               </span>
             </div>
           </div>
-          <div className="space-y-0.5 text-[10px] font-bold border-t border-border pt-1">
+          <div className="space-y-0.5 text-[10px] font-bold border-t border-border/60 pt-1">
             {(["3B", "2B", "1B"] as const).map((bKey) => {
               const r = basesBefore[bKey];
               return (
@@ -808,7 +808,7 @@ export function AtBatModalRunnerEditor({
                   </span>
                   <span
                     className={`truncate font-black ${
-                      r ? "text-amber-700 dark:text-amber-300" : "text-muted-foreground/60"
+                      r ? "text-foreground" : "text-muted-foreground/60"
                     }`}
                   >
                     {r ? formatRunnerBadgeName(r) : "ー"}
@@ -821,11 +821,11 @@ export function AtBatModalRunnerEditor({
 
         {/* 矢印 */}
         <div className="col-span-1 flex items-center justify-center">
-          <ArrowRight className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+          <ArrowRight className="w-4 h-4 text-primary" />
         </div>
 
         {/* 打席後 */}
-        <div className="col-span-5 p-2.5 rounded-xl bg-card border border-border flex flex-col justify-between gap-1.5">
+        <div className="col-span-5 p-2.5 rounded-xl bg-muted/35 border border-border/60 flex flex-col justify-between gap-1.5">
           <div className="flex items-center gap-2">
             <MiniBaseDiamond
               bases={basesAfterPlay}
@@ -840,8 +840,8 @@ export function AtBatModalRunnerEditor({
               <span
                 className={`text-xs font-black block leading-tight ${
                   isInningOver
-                    ? "text-slate-700 dark:text-slate-200"
-                    : "text-emerald-700 dark:text-emerald-300"
+                    ? "text-muted-foreground"
+                    : "text-primary"
                 }`}
               >
                 {formatOutsAndBasesLabel(outsAfter, basesAfterPlay, isInningOver)}
@@ -849,13 +849,13 @@ export function AtBatModalRunnerEditor({
             </div>
           </div>
           {isInningOver ? (
-            <div className="border-t border-border pt-1.5 flex items-center justify-center h-full">
-              <span className="px-2 py-0.5 rounded-md bg-slate-700 text-white text-[10px] font-black">
+            <div className="border-t border-border/60 pt-1.5 flex items-center justify-center h-full">
+              <span className="px-2 py-0.5 rounded-md bg-muted text-muted-foreground border border-border/60 text-[10px] font-black">
                 3アウト攻守交代
               </span>
             </div>
           ) : (
-            <div className="space-y-0.5 text-[10px] font-bold border-t border-border pt-1">
+            <div className="space-y-0.5 text-[10px] font-bold border-t border-border/60 pt-1">
               {(["3B", "2B", "1B"] as const).map((bKey) => {
                 const r = basesAfterPlay[bKey];
                 return (
@@ -869,7 +869,7 @@ export function AtBatModalRunnerEditor({
                     <span
                       className={`truncate font-black ${
                         r
-                          ? "text-emerald-700 dark:text-emerald-300"
+                          ? "text-primary"
                           : "text-muted-foreground/60"
                       }`}
                     >
@@ -891,7 +891,7 @@ export function AtBatModalRunnerEditor({
               塁上の走者ごとの結果（タップで進塁先・生還・アウトを指定）:
             </span>
             {precedingRunners.length >= 2 && (
-              <span className="px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/35 text-amber-800 dark:text-amber-200 text-[10px] font-black">
+              <span className="px-2 py-0.5 rounded-full bg-primary/10 border border-primary/25 text-primary text-[10px] font-black">
                 ホームに近い走者順（
                 {precedingRunners
                   .map((r) => formatBaseJa(r.baseAtInPlay ?? r.startBase))
@@ -927,12 +927,12 @@ export function AtBatModalRunnerEditor({
             return (
               <div
                 key={`runner-card-${pr.startBase}`}
-                className="p-2.5 rounded-xl bg-card border border-border space-y-2 shadow-2xs"
+                className="p-2.5 rounded-2xl border border-border/60 bg-card shadow-xs space-y-2"
               >
                 {/* 走者ヘッダー */}
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <div className="flex items-center gap-1.5">
-                    <span className="px-2 py-0.5 rounded-md bg-amber-500 text-white text-[10px] font-black">
+                    <span className="px-2 py-0.5 rounded-md bg-primary/10 text-primary text-[10px] font-black">
                       {precedingRunners.length >= 2 ? `${orderCircled} ` : ""}
                       {formatBaseJa(displayCurrentBase)}走者
                       {displayCurrentBase !== pr.startBase
@@ -977,8 +977,8 @@ export function AtBatModalRunnerEditor({
                               (pr.runner.battingOrder > 0 &&
                                 e.battingOrder === pr.runner.battingOrder)
                           )
-                            ? "bg-indigo-600 text-white border-indigo-600"
-                            : "bg-indigo-500/12 border-indigo-500/35 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-500/20"
+                            ? "bg-primary text-primary-foreground border-primary"
+                            : "bg-primary/10 border-primary/25 text-primary hover:bg-primary/15"
                         }`}
                       >
                         <UserCheck className="w-3 h-3" />
@@ -993,8 +993,8 @@ export function AtBatModalRunnerEditor({
                           : pr.finalBase === "HP"
                           ? "bg-rose-600 text-white"
                           : !isHolding
-                          ? "bg-emerald-600 text-white"
-                          : "bg-muted text-foreground border border-border"
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-muted/50 text-muted-foreground border border-border/60"
                       }`}
                     >
                       {pr.isOut
@@ -1020,7 +1020,7 @@ export function AtBatModalRunnerEditor({
                   );
                   if (!activeEntry) return null;
                   return (
-                    <div className="px-2.5 py-1.5 rounded-xl bg-indigo-500/12 border border-indigo-500/35 flex items-center justify-between gap-2 text-[10px] font-black text-indigo-800 dark:text-indigo-200">
+                    <div className="px-2.5 py-1.5 rounded-xl bg-primary/10 border border-primary/25 flex items-center justify-between gap-2 text-[10px] font-black text-primary">
                       <span>
                         🏃 {activeEntry.subType === "TR" ? "臨時代走 (TR)" : "代走 (PR)"}:{" "}
                         {activeEntry.uniformNumber
@@ -1041,7 +1041,7 @@ export function AtBatModalRunnerEditor({
                             );
                             setOpenPinchRunnerBase(null);
                           }}
-                          className="px-2 py-0.5 rounded-md bg-card border border-border text-destructive text-[10px] font-black cursor-pointer"
+                          className="px-2 py-0.5 rounded-md bg-card border border-border/60 text-destructive text-[10px] font-black cursor-pointer"
                         >
                           解除
                         </button>
@@ -1052,7 +1052,7 @@ export function AtBatModalRunnerEditor({
 
                 {/* インライン代走・臨時代走設定パネル */}
                 {onApplyPinchRunner && openPinchRunnerBase === pr.startBase && (
-                  <div className="p-2.5 rounded-xl bg-muted border border-indigo-500/40 space-y-2">
+                  <div className="p-2.5 rounded-xl bg-muted/50 border border-border/60 space-y-2">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-[10px] font-black text-foreground">
                         {formatBaseJa(pr.startBase)}走者（
@@ -1076,8 +1076,8 @@ export function AtBatModalRunnerEditor({
                         onClick={() => setPrSubType("PR")}
                         className={`py-1.5 px-2 rounded-lg border text-[10px] font-black cursor-pointer ${
                           prSubType === "PR"
-                            ? "bg-indigo-600 text-white border-indigo-600"
-                            : "bg-card border-border text-foreground"
+                            ? "bg-primary text-primary-foreground border-primary"
+                            : "bg-card border-border/60 text-foreground"
                         }`}
                       >
                         代走 (PR)・打順も引継
@@ -1087,8 +1087,8 @@ export function AtBatModalRunnerEditor({
                         onClick={() => setPrSubType("TR")}
                         className={`py-1.5 px-2 rounded-lg border text-[10px] font-black cursor-pointer ${
                           prSubType === "TR"
-                            ? "bg-indigo-600 text-white border-indigo-600"
-                            : "bg-card border-border text-foreground"
+                            ? "bg-primary text-primary-foreground border-primary"
+                            : "bg-card border-border/60 text-foreground"
                         }`}
                       >
                         臨時代走 (TR)・この回のみ
@@ -1107,7 +1107,7 @@ export function AtBatModalRunnerEditor({
                             setPrCustomUniform(matched.uniformNumber || "");
                           }
                         }}
-                        className="w-full h-9 px-2.5 rounded-lg bg-card border border-border text-xs font-bold text-foreground"
+                        className="w-full h-9 px-2.5 rounded-lg bg-card border border-border/60 text-xs font-bold text-foreground"
                       >
                         <option value="">
                           登録メンバーから選択（または下に直接入力）
@@ -1139,7 +1139,7 @@ export function AtBatModalRunnerEditor({
                         value={prCustomUniform}
                         onChange={(e) => setPrCustomUniform(e.target.value)}
                         placeholder="背番"
-                        className="col-span-3 h-9 px-2 rounded-lg bg-card border border-border text-xs font-black text-center text-foreground"
+                        className="col-span-3 h-9 px-2 rounded-lg bg-card border border-border/60 text-xs font-black text-center text-foreground"
                       />
                       <input
                         type="text"
@@ -1157,7 +1157,7 @@ export function AtBatModalRunnerEditor({
                           }
                         }}
                         placeholder="代走の選手名を入力"
-                        className="col-span-9 h-9 px-2.5 rounded-lg bg-card border border-border text-xs font-bold text-foreground"
+                        className="col-span-9 h-9 px-2.5 rounded-lg bg-card border border-border/60 text-xs font-bold text-foreground"
                       />
                     </div>
 
@@ -1188,7 +1188,7 @@ export function AtBatModalRunnerEditor({
                           });
                           setOpenPinchRunnerBase(null);
                         }}
-                        className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-[11px] font-black disabled:opacity-40 cursor-pointer"
+                        className="px-3 py-1.5 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-[11px] font-black disabled:opacity-40 cursor-pointer"
                       >
                         この打席から{prSubType === "TR" ? "臨時代走" : "代走"}を反映
                       </button>
@@ -1201,9 +1201,9 @@ export function AtBatModalRunnerEditor({
                   const rCrop = runnerCellCrops?.[pr.startBase];
                   if (!rCrop?.cropUrl) return null;
                   return (
-                    <div className="rounded-xl bg-slate-950 border border-slate-800 overflow-hidden">
-                      <div className="px-2.5 py-1 bg-slate-900 flex items-center justify-between gap-2">
-                        <span className="text-[10px] font-black text-amber-300 truncate">
+                    <div className="rounded-xl bg-neutral-950 border border-border/60 overflow-hidden">
+                      <div className="px-2.5 py-1 bg-neutral-900 flex items-center justify-between gap-2">
+                        <span className="text-[10px] font-black text-white truncate">
                           原本マス（
                           {rCrop.battingOrder > 0
                             ? `${rCrop.battingOrder}番 `
@@ -1241,7 +1241,7 @@ export function AtBatModalRunnerEditor({
                     {pr.prePlayMoves.map((pm) => (
                       <span
                         key={pm.id}
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-sky-500/12 border border-sky-500/35 text-sky-800 dark:text-sky-200 text-[10px] font-black"
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-primary/10 border border-primary/25 text-primary text-[10px] font-black"
                       >
                         <span>
                           投球間: {formatBaseJa(pm.from)}→{formatBaseJa(pm.to)}（
@@ -1297,9 +1297,9 @@ export function AtBatModalRunnerEditor({
                                 ? tBase === "HP"
                                   ? "bg-rose-600 text-white border-rose-600 shadow-2xs"
                                   : isSameBase
-                                  ? "bg-slate-700 text-white border-slate-700"
-                                  : "bg-emerald-600 text-white border-emerald-600 shadow-2xs"
-                                : "bg-muted/50 border-border text-foreground hover:bg-muted"
+                                  ? "bg-primary/15 text-primary border-primary/40"
+                                  : "bg-primary text-primary-foreground border-primary shadow-2xs"
+                                : "bg-muted/50 border-border/60 text-foreground hover:bg-muted"
                             }`}
                           >
                             {btnLabel}
@@ -1352,8 +1352,8 @@ export function AtBatModalRunnerEditor({
                                 }
                                 className={`px-2 py-1 rounded-lg border text-[10px] font-black cursor-pointer ${
                                   active
-                                    ? "bg-indigo-600 text-white border-indigo-600"
-                                    : "bg-muted/40 border-border text-foreground"
+                                    ? "bg-primary text-primary-foreground border-primary"
+                                    : "bg-muted/40 border-border/60 text-foreground"
                                 }`}
                               >
                                 {chip.label}
@@ -1386,7 +1386,7 @@ export function AtBatModalRunnerEditor({
                               className={`px-2 py-0.5 rounded-lg border text-[10px] font-black cursor-pointer ${
                                 pr.finalBase === ob
                                   ? "bg-destructive text-white border-destructive"
-                                  : "bg-muted/40 border-border text-foreground"
+                                  : "bg-muted/40 border-border/60 text-foreground"
                               }`}
                             >
                               {formatBaseJa(ob)}でアウト
@@ -1409,7 +1409,7 @@ export function AtBatModalRunnerEditor({
                               className={`px-2 py-1 rounded-lg border text-[10px] font-black cursor-pointer ${
                                 pr.effectiveMethod === chip.code
                                   ? "bg-destructive text-white border-destructive"
-                                  : "bg-muted/40 border-border text-foreground"
+                                  : "bg-muted/40 border-border/60 text-foreground"
                               }`}
                             >
                               {chip.label}
@@ -1431,7 +1431,7 @@ export function AtBatModalRunnerEditor({
                           prev === pr.startBase ? null : pr.startBase
                         )
                       }
-                      className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 inline-flex items-center gap-1 cursor-pointer"
+                      className="text-[10px] font-black text-primary inline-flex items-center gap-1 cursor-pointer"
                     >
                       <span>
                         ＋ この走者の盗塁・暴投・捕逸・ボーク・牽制死を記録
@@ -1510,7 +1510,7 @@ export function AtBatModalRunnerEditor({
                               className={`py-1.5 px-1 rounded-lg border text-[10px] font-black cursor-pointer ${
                                 ev.isOut
                                   ? "bg-destructive/10 border-destructive/30 text-destructive"
-                                  : "bg-sky-500/10 border-sky-500/30 text-sky-800 dark:text-sky-200"
+                                  : "bg-primary/10 border-primary/25 text-primary"
                               }`}
                             >
                               {ev.label}
@@ -1526,14 +1526,14 @@ export function AtBatModalRunnerEditor({
           })}
         </div>
       ) : (
-        <div className="p-2.5 rounded-xl bg-card border border-border text-[11px] font-bold text-muted-foreground">
+        <div className="p-2.5 rounded-xl bg-muted/35 border border-border/60 text-[11px] font-bold text-muted-foreground">
           打席開始時は「走者なし」です（前の打席が出塁すると自動でここに走者が表示されます。タイブレークや手動進塁は下のボタンから追加できます）
         </div>
       )}
 
       {/* 3. 打者走者が出塁する結果（単打・二塁打・三塁打・四球・失策・野選等）の送球間進塁・走塁死指定 */}
       {batterSummary?.initialBase && batterSummary.initialBase !== "HP" && (
-        <div className="p-2.5 rounded-xl bg-card border border-border space-y-1.5">
+        <div className="p-2.5 rounded-xl bg-muted/35 border border-border/60 space-y-1.5">
           <div className="flex items-center justify-between gap-2">
             <span className="text-[11px] font-black text-foreground">
               打者走者（{atBat.battingOrder}番 {atBat.batterName || "打者"}）の到達塁:
@@ -1660,9 +1660,9 @@ export function AtBatModalRunnerEditor({
                         ? o.isOut
                           ? "bg-destructive text-white border-destructive"
                           : o.to === null
-                          ? "bg-slate-700 text-white border-slate-700"
-                          : "bg-indigo-600 text-white border-indigo-600"
-                        : "bg-muted/40 border-border text-foreground"
+                          ? "bg-primary/15 text-primary border-primary/40"
+                          : "bg-primary text-primary-foreground border-primary"
+                        : "bg-card border-border/60 text-foreground"
                     }`}
                   >
                     {o.label}
@@ -1675,12 +1675,12 @@ export function AtBatModalRunnerEditor({
       )}
 
       {/* 4. いつでも使える手動追加ボタン ＆ 個別明細リスト */}
-      <div className="pt-1 border-t border-amber-500/25 space-y-2">
+      <div className="pt-1 border-t border-border/60 space-y-2">
         <div className="grid grid-cols-2 gap-1.5">
           <button
             type="button"
             onClick={handleManualAddInPlayAdvance}
-            className="h-9 px-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black flex items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer shadow-2xs"
+            className="h-9 px-2.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-[11px] font-black flex items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer shadow-2xs"
           >
             <Plus className="w-3.5 h-3.5 shrink-0" />
             <span>インプレー進塁を追加</span>
@@ -1689,9 +1689,9 @@ export function AtBatModalRunnerEditor({
           <button
             type="button"
             onClick={() => setShowOtherEventPresets((prev) => !prev)}
-            className="h-9 px-2.5 rounded-xl bg-card border border-border hover:bg-muted text-foreground text-[11px] font-black flex items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer"
+            className="h-9 px-2.5 rounded-xl bg-card border border-border/60 hover:bg-muted text-foreground text-[11px] font-black flex items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer"
           >
-            <Plus className="w-3.5 h-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+            <Plus className="w-3.5 h-3.5 shrink-0 text-primary" />
             <span>盗塁・暴投・他を追加</span>
             {showOtherEventPresets ? (
               <ChevronUp className="w-3 h-3 shrink-0" />
@@ -1702,7 +1702,7 @@ export function AtBatModalRunnerEditor({
         </div>
 
         {showOtherEventPresets && (
-          <div className="grid grid-cols-3 gap-1 p-2 rounded-xl bg-card border border-border">
+          <div className="grid grid-cols-3 gap-1 p-2 rounded-xl bg-muted/35 border border-border/60">
             {QUICK_EVENT_PRESETS.map((q) => (
               <button
                 key={q.label}
@@ -1713,7 +1713,7 @@ export function AtBatModalRunnerEditor({
                     ? "bg-destructive/10 text-destructive border-destructive/25"
                     : q.to === "HP"
                     ? "bg-rose-500/12 text-rose-700 dark:text-rose-300 border-rose-500/30"
-                    : "bg-muted/40 text-foreground border-border"
+                    : "bg-card text-foreground border-border/60"
                 }`}
               >
                 {q.label}
@@ -1737,7 +1737,7 @@ export function AtBatModalRunnerEditor({
               return (
                 <div
                   key={adv.id}
-                  className="p-2 rounded-xl bg-card border border-border space-y-1.5"
+                  className="p-2 rounded-xl bg-muted/35 border border-border/60 space-y-1.5"
                 >
                   {/* 1段目: 走者選択（打順メンバーからワンタップ選択可）＋ セーフ/アウト切替 ＋ 削除 */}
                   <div className="flex items-center gap-1.5">
@@ -1753,7 +1753,7 @@ export function AtBatModalRunnerEditor({
                           }));
                         }}
                         aria-label="走者を選択"
-                        className="h-8 px-1.5 rounded-lg bg-muted/50 border border-border text-[11px] font-black text-foreground min-w-0 flex-1"
+                        className="h-8 px-1.5 rounded-lg bg-card border border-border/60 text-[11px] font-black text-foreground min-w-0 flex-1"
                       >
                         <option value="__custom__">
                           {adv.runnerName
@@ -1782,7 +1782,7 @@ export function AtBatModalRunnerEditor({
                           }))
                         }
                         placeholder="走者名"
-                        className="h-8 px-2 rounded-lg bg-muted/50 border border-border text-[11px] font-black text-foreground w-24 shrink-0"
+                        className="h-8 px-2 rounded-lg bg-card border border-border/60 text-[11px] font-black text-foreground w-24 shrink-0"
                       />
                     )}
 
@@ -1798,7 +1798,7 @@ export function AtBatModalRunnerEditor({
                       className={`h-8 px-2.5 rounded-lg border text-[10px] font-black shrink-0 cursor-pointer ${
                         adv.isOut
                           ? "bg-destructive text-white border-destructive"
-                          : "bg-emerald-600 text-white border-emerald-600"
+                          : "bg-primary text-primary-foreground border-primary"
                       }`}
                     >
                       {adv.isOut ? "アウト" : "セーフ"}
@@ -1825,7 +1825,7 @@ export function AtBatModalRunnerEditor({
                         }))
                       }
                       aria-label="進塁元の塁"
-                      className="col-span-3 h-8 px-1 rounded-lg bg-muted/50 border border-border text-[11px] font-black text-foreground"
+                      className="col-span-3 h-8 px-1 rounded-lg bg-card border border-border/60 text-[11px] font-black text-foreground"
                     >
                       <option value="3B">3塁から</option>
                       <option value="2B">2塁から</option>
@@ -1842,7 +1842,7 @@ export function AtBatModalRunnerEditor({
                         }))
                       }
                       aria-label="進塁先の塁"
-                      className="col-span-3 h-8 px-1 rounded-lg bg-muted/50 border border-border text-[11px] font-black text-foreground"
+                      className="col-span-3 h-8 px-1 rounded-lg bg-card border border-border/60 text-[11px] font-black text-foreground"
                     >
                       <option value="HP">→本塁</option>
                       <option value="3B">→3塁</option>
@@ -1880,7 +1880,7 @@ export function AtBatModalRunnerEditor({
                         }));
                       }}
                       aria-label="進塁・アウト理由"
-                      className="col-span-6 h-8 px-1.5 rounded-lg bg-muted/50 border border-border text-[11px] font-black text-foreground"
+                      className="col-span-6 h-8 px-1.5 rounded-lg bg-card border border-border/60 text-[11px] font-black text-foreground"
                     >
                       {(
                         Object.keys(ADVANCE_METHOD_LABELS) as AdvanceMethodCode[]

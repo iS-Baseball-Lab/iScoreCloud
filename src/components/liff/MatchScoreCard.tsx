@@ -271,7 +271,7 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
 
               {/* 再生ボタン */}
               <div className="absolute inset-0 flex items-center justify-center">
-                <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-rose-600/90 text-white flex items-center justify-center shadow-lg group-hover/thumb:scale-110 group-hover/thumb:bg-rose-600 transition-all duration-300 ring-4 ring-white/20">
+                <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-primary/95 text-primary-foreground flex items-center justify-center shadow-lg group-hover/thumb:scale-110 group-hover/thumb:bg-primary transition-all duration-300 ring-4 ring-white/20">
                   <Play className="w-6 h-6 sm:w-7 sm:h-7 fill-current translate-x-0.5" />
                 </div>
               </div>
@@ -279,10 +279,10 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
               {/* ガイドラベル */}
               <div className="absolute bottom-2.5 left-2.5 right-2.5 flex items-center justify-between text-[10px] sm:text-[11px] font-bold text-white/90 drop-shadow-sm pointer-events-none">
                 <span className="flex items-center gap-1.5 bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/15">
-                  <Play className="w-3 h-3 fill-current text-rose-500" />
+                  <Play className="w-3 h-3 fill-current text-primary" />
                   タップして試合動画を再生
                 </span>
-                <span className="bg-rose-600/90 text-white px-2 py-0.5 rounded-md font-black">
+                <span className="bg-primary text-primary-foreground px-2 py-0.5 rounded-md font-black">
                   YouTube
                 </span>
               </div>
@@ -305,10 +305,8 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
                 className={cn(
                   "text-center text-[10px] font-black px-1.5 py-0.5 rounded shadow-2xs shrink-0",
                   match.matchType === "official"
-                    ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/25"
-                    : match.matchType === "exchange"
-                    ? "bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/25"
-                    : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25"
+                    ? "bg-primary/12 text-primary border border-primary/25"
+                    : "bg-muted text-muted-foreground border border-border/60"
                 )}
               >
                 {match.matchType === "official" ? "公式戦" : match.matchType === "exchange" ? "交流戦" : "OP戦"}
@@ -316,12 +314,12 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
 
               {!isFuture && match.status !== "scheduled" && !isRainout && (
                 match.hasScorebook ? (
-                  <span className="inline-flex items-center gap-0.5 text-[10px] font-black px-1.5 py-0.5 rounded border bg-indigo-100 text-indigo-800 border-indigo-300 dark:bg-indigo-950/80 dark:text-indigo-300 dark:border-indigo-800 shrink-0">
+                  <span className="inline-flex items-center gap-0.5 text-[10px] font-black px-1.5 py-0.5 rounded border bg-primary/10 text-primary border-primary/25 shrink-0">
                     <CheckCircle2 className="w-3 h-3 shrink-0" />
                     <span>スコア取込済</span>
                   </span>
                 ) : (
-                  <span className="inline-flex items-center text-[10px] font-black px-1.5 py-0.5 rounded border bg-slate-100 text-slate-600 border-slate-300 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700 shrink-0">
+                  <span className="inline-flex items-center text-[10px] font-black px-1.5 py-0.5 rounded border bg-muted text-muted-foreground border-border/60 shrink-0">
                     未取込
                   </span>
                 )
@@ -438,7 +436,7 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
 
             <Link
               href={`/liff/matches?id=${match.id}`}
-              className="inline-flex items-center justify-center gap-1 py-1.5 px-3 rounded-xl bg-muted hover:bg-muted/80 border border-border text-foreground text-[11px] font-black transition-all active:scale-95 shrink-0"
+              className="inline-flex items-center justify-center gap-1 py-1.5 px-3 rounded-xl bg-muted hover:bg-muted/80 border border-border/60 text-foreground text-[11px] font-black transition-all active:scale-95 shrink-0"
             >
               <FileText className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
               <span>詳細</span>
@@ -449,7 +447,7 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
         {/* 🌟 3. アコーディオン展開：本家同等のイニングスコアボード */}
         {isExpanded && (
           <div className="mt-3 pt-3 border-t border-border/60 animate-in fade-in slide-in-from-top-2 duration-200">
-            <div className="w-full overflow-hidden rounded-xl border border-border bg-card shadow-xs flex flex-col">
+            <div className="w-full overflow-hidden rounded-xl border border-border/60 bg-card shadow-xs flex flex-col">
               <div className="overflow-x-auto scrollbar-none">
                 <table className="w-full text-center whitespace-nowrap text-xs">
                   <thead>

@@ -13,14 +13,13 @@ interface EmptyStateProps {
 export function EmptyState({ icon: Icon, title, description, className }: EmptyStateProps) {
   return (
     <div className={cn(
-      "flex flex-col items-center justify-center text-center p-10 rounded-3xl transition-all",
-      // 💡 ユーザー最適化設定：bg-card/50, dashed border, shadow-xs
-      "bg-card/50 border-2 border-dashed border-border/40 shadow-xs",
+      "flex flex-col items-center justify-center text-center p-10 rounded-2xl transition-all",
+      "bg-card border border-dashed border-border/60 shadow-xs",
       className
     )}>
       {/* アイコン部分もトーンを合わせて微調整 */}
-      <div className="p-4 bg-primary/5 rounded-full mb-4 border border-primary/5">
-        <Icon className="h-8 w-8 text-primary/30" />
+      <div className="p-4 bg-primary/10 rounded-full mb-4 border border-primary/15">
+        <Icon className="h-8 w-8 text-primary/70" />
       </div>
 
       <h3 className="text-base font-black text-foreground/70 uppercase tracking-wider leading-tight">

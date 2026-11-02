@@ -63,7 +63,7 @@ export function DeletePersonalStatsModal({
       }}
     >
       <div
-        className="w-full max-w-md rounded-3xl bg-card border-2 border-border shadow-2xl p-5 space-y-4 text-foreground animate-in zoom-in-95 duration-150"
+        className="w-full max-w-md rounded-2xl border border-border/60 bg-card shadow-xs p-5 space-y-4 text-foreground animate-in zoom-in-95 duration-150"
         onClick={(e) => e.stopPropagation()}
       >
         {/* ヘッダー */}
@@ -110,8 +110,8 @@ export function DeletePersonalStatsModal({
             </p>
           </div>
 
-          <div className="p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/70 space-y-1">
-            <p className="font-black text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
+          <div className="p-3 rounded-2xl bg-primary/10 border border-primary/25 space-y-1">
+            <p className="font-black text-primary flex items-center gap-1.5">
               <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
               <span>そのまま残るデータ</span>
             </p>
@@ -124,7 +124,7 @@ export function DeletePersonalStatsModal({
         </div>
 
         {/* 追加オプション（デフォルトOFFで誤消去を防止） */}
-        <div className="rounded-2xl bg-muted/60 border border-border p-3 space-y-2.5">
+        <div className="rounded-2xl bg-muted/50 border border-border/60 p-3 space-y-2.5">
           <p className="text-[10px] font-black text-muted-foreground">
             追加オプション（必要な場合のみチェック）
           </p>
@@ -162,7 +162,7 @@ export function DeletePersonalStatsModal({
             type="button"
             disabled={isDeleting}
             onClick={onCancel}
-            className="h-11 px-4 rounded-2xl border border-border bg-card hover:bg-muted text-foreground text-xs font-black transition-all active:scale-95 cursor-pointer disabled:opacity-50"
+            className="h-11 px-4 rounded-2xl border border-border/60 bg-card hover:bg-muted text-foreground text-xs font-black transition-all active:scale-95 cursor-pointer disabled:opacity-50"
           >
             キャンセル
           </button>

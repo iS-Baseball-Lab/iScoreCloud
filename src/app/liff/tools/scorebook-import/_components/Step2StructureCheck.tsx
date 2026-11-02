@@ -516,10 +516,10 @@ export function Step2StructureCheck({
   return (
     <div className="space-y-4">
       {/* ガイドバナー */}
-      <section className="rounded-3xl bg-card border border-indigo-500/35 shadow-xs p-4 space-y-1.5">
+      <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-1.5">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
-            <ShieldCheck className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+            <ShieldCheck className="w-4 h-4 text-primary shrink-0" />
             <h2 className="text-xs font-black text-foreground truncate">
               骨格確認（打順・登板投手・各回得点の確認）
             </h2>
@@ -530,7 +530,7 @@ export function Step2StructureCheck({
               type="button"
               disabled={isBusy}
               onClick={() => onRescanSide(isTop)}
-              className="px-2.5 py-1 rounded-xl bg-indigo-500/12 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-700 dark:text-indigo-300 text-[10px] font-black flex items-center gap-1 shrink-0 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+              className="px-2.5 py-1 rounded-xl bg-primary/10 hover:bg-primary/15 border border-primary/25 text-primary text-[10px] font-black flex items-center gap-1 shrink-0 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
             >
               {isRescanningSide ? (
                 <>
@@ -550,8 +550,8 @@ export function Step2StructureCheck({
           ここで確定した「各回の得点」「打者一巡(2列)の有無」「打順・途中交代・投手」を正解アンカーとして、次のステップで全投球・全打席を精密解析します。
         </p>
         {structureTotalMs !== null && structureTotalMs > 0 && (
-          <div className="pt-1 flex items-center gap-1.5 flex-wrap text-[10px] font-black text-indigo-700 dark:text-indigo-300 tabular-nums">
-            <span className="px-2 py-0.5 rounded-lg bg-indigo-500/12 border border-indigo-500/30 inline-flex items-center gap-1">
+          <div className="pt-1 flex items-center gap-1.5 flex-wrap text-[10px] font-black text-primary tabular-nums">
+            <span className="px-2 py-0.5 rounded-lg bg-primary/10 border border-primary/25 inline-flex items-center gap-1">
               <Clock className="w-3 h-3 shrink-0" />
               <span>
                 骨格スキャン完了: 合計 {formatTotalElapsedSeconds(structureTotalMs)}
@@ -560,7 +560,7 @@ export function Step2StructureCheck({
             {structureTimingEntries.map((entry) => (
               <span
                 key={entry.key}
-                className="px-2 py-0.5 rounded-lg bg-muted border border-border text-foreground"
+                className="px-2 py-0.5 rounded-lg bg-muted/50 border border-border/60 text-foreground"
               >
                 {entry.label}: {formatElapsedSeconds(entry.durationMs)}
               </span>
@@ -571,14 +571,14 @@ export function Step2StructureCheck({
 
       {/* 先攻 / 後攻 シート切替タブ */}
       {importScope === "both" && (
-        <div className="grid grid-cols-2 gap-1.5 p-1 rounded-2xl bg-muted/70 border border-border/60">
+        <div className="grid grid-cols-2 gap-1.5 p-1 rounded-2xl bg-muted/50 border border-border/60">
           <button
             type="button"
             onClick={() => setActiveSide("top")}
             className={`py-2.5 px-3 rounded-xl text-xs transition-all cursor-pointer ${
               activeSide === "top"
-                ? "bg-card text-foreground font-black shadow-2xs"
-                : "text-muted-foreground font-bold"
+                ? "bg-primary text-primary-foreground font-black shadow-2xs"
+                : "text-muted-foreground font-bold hover:text-foreground"
             }`}
           >
             先攻（表）: {topStructure?.isMyTeamBatting ? "自チーム" : opponentName}
@@ -588,8 +588,8 @@ export function Step2StructureCheck({
             onClick={() => setActiveSide("bottom")}
             className={`py-2.5 px-3 rounded-xl text-xs transition-all cursor-pointer ${
               activeSide === "bottom"
-                ? "bg-card text-foreground font-black shadow-2xs"
-                : "text-muted-foreground font-bold"
+                ? "bg-primary text-primary-foreground font-black shadow-2xs"
+                : "text-muted-foreground font-bold hover:text-foreground"
             }`}
           >
             後攻（裏）: {bottomStructure?.isMyTeamBatting ? "自チーム" : opponentName}
@@ -599,10 +599,10 @@ export function Step2StructureCheck({
 
       {/* 手書き原本シート照合＆マス枠キャリブレーションビューア */}
       {activeSheetDataUrl && (
-        <section className="rounded-3xl bg-card border border-border shadow-xs overflow-hidden">
-          <div className="px-3.5 py-2.5 bg-muted/45 border-b border-border flex items-center justify-between gap-2">
+        <section className="rounded-2xl border border-border/60 bg-card shadow-xs overflow-hidden">
+          <div className="px-3.5 py-2.5 bg-muted/35 border-b border-border/60 flex items-center justify-between gap-2">
             <div className="flex items-center gap-1.5 min-w-0">
-              <Grid3X3 className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+              <Grid3X3 className="w-3.5 h-3.5 text-primary shrink-0" />
               <span className="text-[11px] font-black text-foreground truncate">
                 原本シート＆マス枠（{isTop ? "先攻・表" : "後攻・裏"}）
               </span>
@@ -614,8 +614,8 @@ export function Step2StructureCheck({
                 onClick={() => setPreviewMode("grid")}
                 className={`px-2 py-1 rounded-lg text-[10px] font-black cursor-pointer transition-colors ${
                   previewMode === "grid"
-                    ? "bg-indigo-600 text-white"
-                    : "bg-card text-muted-foreground border border-border"
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-card text-muted-foreground border border-border/60 hover:bg-muted"
                 }`}
               >
                 マス枠確認
@@ -625,8 +625,8 @@ export function Step2StructureCheck({
                 onClick={() => setPreviewMode("lineup")}
                 className={`px-2 py-1 rounded-lg text-[10px] font-black cursor-pointer transition-colors ${
                   previewMode === "lineup"
-                    ? "bg-indigo-600 text-white"
-                    : "bg-card text-muted-foreground border border-border"
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-card text-muted-foreground border border-border/60 hover:bg-muted"
                 }`}
               >
                 打順欄ズーム
@@ -636,8 +636,8 @@ export function Step2StructureCheck({
                 onClick={() => setPreviewMode("full")}
                 className={`px-2 py-1 rounded-lg text-[10px] font-black cursor-pointer transition-colors ${
                   previewMode === "full"
-                    ? "bg-indigo-600 text-white"
-                    : "bg-card text-muted-foreground border border-border"
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-card text-muted-foreground border border-border/60 hover:bg-muted"
                 }`}
               >
                 原本のみ
@@ -649,7 +649,7 @@ export function Step2StructureCheck({
                     prev === "hidden" ? "grid" : "hidden"
                   )
                 }
-                className="px-2 py-1 rounded-lg bg-card border border-border text-[10px] font-black text-muted-foreground flex items-center gap-0.5 cursor-pointer"
+                className="px-2 py-1 rounded-lg bg-card border border-border/60 hover:bg-muted text-[10px] font-black text-muted-foreground flex items-center gap-0.5 cursor-pointer"
               >
                 {previewMode === "hidden" ? (
                   <>
@@ -933,17 +933,21 @@ export function Step2StructureCheck({
                           }}
                           className={`absolute -translate-x-1/2 -translate-y-1/2 w-9 h-9 rounded-full border-2 shadow-md touch-none cursor-grab active:cursor-grabbing transition-transform ${
                             active
-                              ? "border-amber-400 bg-amber-500/25 scale-125 z-20"
+                              ? "border-primary bg-primary/25 scale-125 z-20"
                               : isSelected
-                              ? "border-amber-400 bg-amber-500/15 ring-2 ring-white/80 z-20"
-                              : "border-indigo-400 bg-indigo-500/15 z-10"
+                              ? "border-primary bg-primary/15 ring-2 ring-white/80 z-20"
+                              : "border-white/80 bg-black/35 z-10"
                           }`}
                           aria-label={`グリッド${label}角を選択・ドラッグ調整`}
                         >
                           <span
-                            className={`absolute left-1/2 -translate-x-1/2 px-1.5 py-0.5 rounded text-[8px] font-black text-white whitespace-nowrap pointer-events-none shadow-2xs ${
+                            className={`absolute left-1/2 -translate-x-1/2 px-1.5 py-0.5 rounded text-[8px] font-black whitespace-nowrap pointer-events-none shadow-2xs ${
                               isTopRow ? "-bottom-4" : "-top-4"
-                            } ${isSelected ? "bg-amber-500" : "bg-indigo-600"}`}
+                            } ${
+                              isSelected
+                                ? "bg-primary text-primary-foreground"
+                                : "bg-black/80 text-white"
+                            }`}
                           >
                             {label}
                           </span>
@@ -963,7 +967,7 @@ export function Step2StructureCheck({
 
           {/* マス枠4隅・4辺キャリブレーションバー（傾き・歪みも4隅ドラッグで3秒補正！） */}
           {previewMode === "grid" && (
-            <div className="px-3.5 py-2.5 bg-card border-t border-border space-y-2.5">
+            <div className="px-3.5 py-2.5 bg-card border-t border-border/60 space-y-2.5">
               <div className="flex items-center justify-between gap-2">
                 <p className="text-[10px] font-bold text-muted-foreground leading-snug">
                   青・橙枠が「1回〜最終回（複数列含む）」、緑枠が「1番〜{current.batters.length}番」に重なっていればOKです
@@ -973,8 +977,8 @@ export function Step2StructureCheck({
                   onClick={() => setShowGridTuner((prev) => !prev)}
                   className={`px-2.5 py-1 rounded-xl text-[10px] font-black flex items-center gap-1 shrink-0 cursor-pointer transition-colors ${
                     showGridTuner
-                      ? "bg-indigo-600 text-white"
-                      : "bg-indigo-500/12 text-indigo-700 dark:text-indigo-300 border border-indigo-500/30"
+                      ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                      : "bg-primary/10 text-primary border border-primary/25 hover:bg-primary/15"
                   }`}
                 >
                   <SlidersHorizontal className="w-3 h-3" />
@@ -987,13 +991,13 @@ export function Step2StructureCheck({
               {showGridTuner && (
                 <div className="space-y-2.5 pt-0.5">
                   <div className="flex items-center justify-between gap-2">
-                    <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-muted border border-border flex-1">
+                    <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-muted/50 border border-border/60 flex-1">
                       <button
                         type="button"
                         onClick={() => setGridTuneTab("corners")}
                         className={`py-1.5 px-2 rounded-lg text-[10px] font-black transition-all cursor-pointer ${
                           gridTuneTab === "corners"
-                            ? "bg-indigo-600 text-white shadow-2xs"
+                            ? "bg-primary text-primary-foreground shadow-2xs"
                             : "text-muted-foreground hover:text-foreground"
                         }`}
                       >
@@ -1004,7 +1008,7 @@ export function Step2StructureCheck({
                         onClick={() => setGridTuneTab("edges")}
                         className={`py-1.5 px-2 rounded-lg text-[10px] font-black transition-all cursor-pointer ${
                           gridTuneTab === "edges"
-                            ? "bg-indigo-600 text-white shadow-2xs"
+                            ? "bg-primary text-primary-foreground shadow-2xs"
                             : "text-muted-foreground hover:text-foreground"
                         }`}
                       >
@@ -1016,7 +1020,7 @@ export function Step2StructureCheck({
                       <button
                         type="button"
                         onClick={handleResetSkewToRectangle}
-                        className="px-2.5 py-2 rounded-xl bg-card border border-border text-[10px] font-black text-muted-foreground hover:text-foreground shrink-0 cursor-pointer"
+                        className="px-2.5 py-2 rounded-xl bg-card border border-border/60 hover:bg-muted text-[10px] font-black text-muted-foreground hover:text-foreground shrink-0 cursor-pointer"
                       >
                         水平に戻す
                       </button>
@@ -1038,8 +1042,8 @@ export function Step2StructureCheck({
                     />
                   ) : (
                     <>
-                      <div className="px-2.5 py-2 rounded-xl bg-indigo-500/10 border border-indigo-500/30 flex items-center gap-1.5">
-                        <Move className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                      <div className="px-2.5 py-2 rounded-xl bg-primary/10 border border-primary/25 flex items-center gap-1.5">
+                        <Move className="w-3.5 h-3.5 text-primary shrink-0" />
                         <span className="text-[10px] font-black text-foreground leading-snug">
                           上下左右の辺全体を平行にスライドします（傾き・歪みを1点ずつ直す場合は「4隅を1点ずつ微調整」タブをご利用ください）
                         </span>
@@ -1047,9 +1051,9 @@ export function Step2StructureCheck({
 
                       <div className="grid grid-cols-2 gap-2">
                     {/* 1回左端（選手欄との境界） */}
-                    <div className="p-2 rounded-2xl bg-muted/45 border border-border space-y-1">
+                    <div className="p-2 rounded-2xl bg-muted/35 border border-border/60 space-y-1">
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-black text-sky-700 dark:text-sky-300">
+                        <span className="text-[10px] font-black text-primary">
                           1回左端（選手欄境）
                         </span>
                         <span className="text-[10px] font-black text-muted-foreground">
@@ -1062,7 +1066,7 @@ export function Step2StructureCheck({
                           onClick={() =>
                             handleAdjustGridBound("left", gridLeftX - 6)
                           }
-                          className="w-7 h-7 rounded-lg bg-card border border-border text-xs font-black text-foreground active:scale-90 cursor-pointer shrink-0"
+                          className="w-7 h-7 rounded-lg bg-card border border-border/60 hover:bg-muted text-xs font-black text-foreground active:scale-90 cursor-pointer shrink-0"
                         >
                           -
                         </button>
@@ -1075,14 +1079,14 @@ export function Step2StructureCheck({
                             handleAdjustGridBound("left", Number(e.target.value))
                           }
                           aria-label="1回左端の位置調整"
-                          className="flex-1 min-w-0 accent-sky-500"
+                          className="flex-1 min-w-0 accent-primary"
                         />
                         <button
                           type="button"
                           onClick={() =>
                             handleAdjustGridBound("left", gridLeftX + 6)
                           }
-                          className="w-7 h-7 rounded-lg bg-card border border-border text-xs font-black text-foreground active:scale-90 cursor-pointer shrink-0"
+                          className="w-7 h-7 rounded-lg bg-card border border-border/60 hover:bg-muted text-xs font-black text-foreground active:scale-90 cursor-pointer shrink-0"
                         >
                           +
                         </button>
@@ -1090,9 +1094,9 @@ export function Step2StructureCheck({
                     </div>
 
                     {/* 最終回右端 */}
-                    <div className="p-2 rounded-2xl bg-muted/45 border border-border space-y-1">
+                    <div className="p-2 rounded-2xl bg-muted/35 border border-border/60 space-y-1">
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-black text-sky-700 dark:text-sky-300">
+                        <span className="text-[10px] font-black text-primary">
                           最終回右端
                         </span>
                         <span className="text-[10px] font-black text-muted-foreground">
@@ -1105,7 +1109,7 @@ export function Step2StructureCheck({
                           onClick={() =>
                             handleAdjustGridBound("right", gridRightX - 6)
                           }
-                          className="w-7 h-7 rounded-lg bg-card border border-border text-xs font-black text-foreground active:scale-90 cursor-pointer shrink-0"
+                          className="w-7 h-7 rounded-lg bg-card border border-border/60 hover:bg-muted text-xs font-black text-foreground active:scale-90 cursor-pointer shrink-0"
                         >
                           -
                         </button>
@@ -1121,14 +1125,14 @@ export function Step2StructureCheck({
                             )
                           }
                           aria-label="最終回右端の位置調整"
-                          className="flex-1 min-w-0 accent-sky-500"
+                          className="flex-1 min-w-0 accent-primary"
                         />
                         <button
                           type="button"
                           onClick={() =>
                             handleAdjustGridBound("right", gridRightX + 6)
                           }
-                          className="w-7 h-7 rounded-lg bg-card border border-border text-xs font-black text-foreground active:scale-90 cursor-pointer shrink-0"
+                          className="w-7 h-7 rounded-lg bg-card border border-border/60 hover:bg-muted text-xs font-black text-foreground active:scale-90 cursor-pointer shrink-0"
                         >
                           +
                         </button>
@@ -1136,9 +1140,9 @@ export function Step2StructureCheck({
                     </div>
 
                     {/* 1番上端 */}
-                    <div className="p-2 rounded-2xl bg-muted/45 border border-border space-y-1">
+                    <div className="p-2 rounded-2xl bg-muted/35 border border-border/60 space-y-1">
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-black text-emerald-700 dark:text-emerald-300">
+                        <span className="text-[10px] font-black text-primary">
                           1番打者の上端
                         </span>
                         <span className="text-[10px] font-black text-muted-foreground">
@@ -1151,7 +1155,7 @@ export function Step2StructureCheck({
                           onClick={() =>
                             handleAdjustGridBound("top", gridTopY - 5)
                           }
-                          className="w-7 h-7 rounded-lg bg-card border border-border text-xs font-black text-foreground active:scale-90 cursor-pointer shrink-0"
+                          className="w-7 h-7 rounded-lg bg-card border border-border/60 hover:bg-muted text-xs font-black text-foreground active:scale-90 cursor-pointer shrink-0"
                         >
                           -
                         </button>
@@ -1164,14 +1168,14 @@ export function Step2StructureCheck({
                             handleAdjustGridBound("top", Number(e.target.value))
                           }
                           aria-label="1番打者上端の位置調整"
-                          className="flex-1 min-w-0 accent-emerald-500"
+                          className="flex-1 min-w-0 accent-primary"
                         />
                         <button
                           type="button"
                           onClick={() =>
                             handleAdjustGridBound("top", gridTopY + 5)
                           }
-                          className="w-7 h-7 rounded-lg bg-card border border-border text-xs font-black text-foreground active:scale-90 cursor-pointer shrink-0"
+                          className="w-7 h-7 rounded-lg bg-card border border-border/60 hover:bg-muted text-xs font-black text-foreground active:scale-90 cursor-pointer shrink-0"
                         >
                           +
                         </button>
@@ -1179,9 +1183,9 @@ export function Step2StructureCheck({
                     </div>
 
                     {/* 最終打順の下端 */}
-                    <div className="p-2 rounded-2xl bg-muted/45 border border-border space-y-1">
+                    <div className="p-2 rounded-2xl bg-muted/35 border border-border/60 space-y-1">
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-black text-emerald-700 dark:text-emerald-300">
+                        <span className="text-[10px] font-black text-primary">
                           {current.batters.length}番打者の下端
                         </span>
                         <span className="text-[10px] font-black text-muted-foreground">
@@ -1194,7 +1198,7 @@ export function Step2StructureCheck({
                           onClick={() =>
                             handleAdjustGridBound("bottom", gridBottomY - 5)
                           }
-                          className="w-7 h-7 rounded-lg bg-card border border-border text-xs font-black text-foreground active:scale-90 cursor-pointer shrink-0"
+                          className="w-7 h-7 rounded-lg bg-card border border-border/60 hover:bg-muted text-xs font-black text-foreground active:scale-90 cursor-pointer shrink-0"
                         >
                           -
                         </button>
@@ -1210,14 +1214,14 @@ export function Step2StructureCheck({
                             )
                           }
                           aria-label="最終打順下端の位置調整"
-                          className="flex-1 min-w-0 accent-emerald-500"
+                          className="flex-1 min-w-0 accent-primary"
                         />
                         <button
                           type="button"
                           onClick={() =>
                             handleAdjustGridBound("bottom", gridBottomY + 5)
                           }
-                          className="w-7 h-7 rounded-lg bg-card border border-border text-xs font-black text-foreground active:scale-90 cursor-pointer shrink-0"
+                          className="w-7 h-7 rounded-lg bg-card border border-border/60 hover:bg-muted text-xs font-black text-foreground active:scale-90 cursor-pointer shrink-0"
                         >
                           +
                         </button>
@@ -1234,7 +1238,7 @@ export function Step2StructureCheck({
       )}
 
       {/* A. イニング別得点 ＆ 複数列（1列・2列・3列以上）設定 */}
-      <section className="rounded-3xl bg-card border border-border shadow-xs p-4 space-y-3">
+      <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3">
         <div className="flex items-center justify-between gap-2">
           <div>
             <h3 className="text-sm font-black text-foreground">
@@ -1248,14 +1252,14 @@ export function Step2StructureCheck({
             <button
               type="button"
               onClick={handleRemoveLastInning}
-              className="px-2 py-1 rounded-lg bg-muted border border-border text-[10px] font-black text-muted-foreground cursor-pointer"
+              className="px-2 py-1 rounded-lg bg-muted/50 border border-border/60 hover:bg-muted text-[10px] font-black text-muted-foreground cursor-pointer"
             >
               -回
             </button>
             <button
               type="button"
               onClick={handleAddInning}
-              className="px-2 py-1 rounded-lg bg-primary/12 text-primary text-[10px] font-black cursor-pointer"
+              className="px-2 py-1 rounded-lg bg-primary/10 border border-primary/25 hover:bg-primary/15 text-primary text-[10px] font-black cursor-pointer"
             >
               +回
             </button>
@@ -1280,10 +1284,10 @@ export function Step2StructureCheck({
                 key={inn.inning}
                 className={`p-2 rounded-2xl border text-center space-y-1.5 ${
                   cols >= 2
-                    ? "bg-amber-500/10 border-amber-500/50"
+                    ? "bg-primary/10 border-primary/40"
                     : maybeNeedsMoreCols
-                    ? "bg-amber-500/8 border-amber-500/60"
-                    : "bg-muted/35 border-border"
+                    ? "bg-primary/8 border-primary/35"
+                    : "bg-muted/35 border-border/60"
                 }`}
               >
                 <div className="flex items-center justify-center gap-1">
@@ -1301,7 +1305,7 @@ export function Step2StructureCheck({
                         runs: Math.max(0, inn.runs - 1),
                       })
                     }
-                    className="w-6 h-6 rounded-lg bg-card border border-border text-xs font-black text-foreground active:scale-90 cursor-pointer"
+                    className="w-6 h-6 rounded-lg bg-card border border-border/60 hover:bg-muted text-xs font-black text-foreground active:scale-90 cursor-pointer"
                   >
                     -
                   </button>
@@ -1313,7 +1317,7 @@ export function Step2StructureCheck({
                     onClick={() =>
                       updateInningMeta(inn.inning, { runs: inn.runs + 1 })
                     }
-                    className="w-6 h-6 rounded-lg bg-card border border-border text-xs font-black text-foreground active:scale-90 cursor-pointer"
+                    className="w-6 h-6 rounded-lg bg-card border border-border/60 hover:bg-muted text-xs font-black text-foreground active:scale-90 cursor-pointer"
                   >
                     +
                   </button>
@@ -1329,7 +1333,7 @@ export function Step2StructureCheck({
                         columnCount: Math.max(1, cols - 1),
                       })
                     }
-                    className="w-5 h-5 rounded-md bg-card border border-border text-[10px] font-black text-foreground disabled:opacity-35 active:scale-90 cursor-pointer shrink-0"
+                    className="w-5 h-5 rounded-md bg-card border border-border/60 hover:bg-muted text-[10px] font-black text-foreground disabled:opacity-35 active:scale-90 cursor-pointer shrink-0"
                     aria-label={`${inn.inning}回の列数を減らす`}
                   >
                     -
@@ -1337,7 +1341,7 @@ export function Step2StructureCheck({
                   <span
                     className={`flex-1 py-0.5 px-1 rounded-md text-[9px] font-black flex items-center justify-center gap-0.5 truncate ${
                       cols >= 2
-                        ? "bg-amber-600 text-white"
+                        ? "bg-primary text-primary-foreground"
                         : "bg-card text-muted-foreground border border-border/60"
                     }`}
                   >
@@ -1352,7 +1356,7 @@ export function Step2StructureCheck({
                         columnCount: Math.min(6, cols + 1),
                       })
                     }
-                    className="w-5 h-5 rounded-md bg-card border border-border text-[10px] font-black text-foreground disabled:opacity-35 active:scale-90 cursor-pointer shrink-0"
+                    className="w-5 h-5 rounded-md bg-card border border-border/60 hover:bg-muted text-[10px] font-black text-foreground disabled:opacity-35 active:scale-90 cursor-pointer shrink-0"
                     aria-label={`${inn.inning}回の列数を増やす`}
                   >
                     +
@@ -1360,7 +1364,7 @@ export function Step2StructureCheck({
                 </div>
 
                 {maybeNeedsMoreCols && (
-                  <span className="block text-[8px] font-black text-amber-700 dark:text-amber-300 leading-tight">
+                  <span className="block text-[8px] font-black text-primary leading-tight">
                     大量得点: 列数+を確認
                   </span>
                 )}
@@ -1369,7 +1373,7 @@ export function Step2StructureCheck({
           })}
 
           {/* 合計得点表示 */}
-          <div className="p-2 rounded-2xl bg-primary/10 border border-primary/30 flex flex-col items-center justify-center">
+          <div className="p-2 rounded-2xl bg-primary/10 border border-primary/25 flex flex-col items-center justify-center">
             <span className="text-[10px] font-black text-primary">合計得点</span>
             <span className="text-lg font-black text-primary">
               {current.innings.reduce((s, m) => s + m.runs, 0)}
@@ -1379,7 +1383,7 @@ export function Step2StructureCheck({
       </section>
 
       {/* B. 打順（1〜9番＋途中交代）確認 */}
-      <section className="rounded-3xl bg-card border border-border shadow-xs p-4 space-y-3">
+      <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Users className="w-4 h-4 text-primary" />
@@ -1400,7 +1404,7 @@ export function Step2StructureCheck({
           <button
             type="button"
             onClick={handleAddBatterSlot}
-            className="px-2.5 py-1 rounded-xl bg-muted border border-border text-[10px] font-black text-foreground cursor-pointer"
+            className="px-2.5 py-1 rounded-xl bg-muted/50 border border-border/60 hover:bg-muted text-[10px] font-black text-foreground cursor-pointer"
           >
             +10番以降
           </button>
@@ -1410,10 +1414,10 @@ export function Step2StructureCheck({
           {current.batters.map((slot) => (
             <div
               key={slot.battingOrder}
-              className="p-2.5 rounded-2xl bg-muted/35 border border-border/80 space-y-2"
+              className="p-2.5 rounded-2xl bg-muted/35 border border-border/60 space-y-2"
             >
               <div className="flex items-center gap-1.5">
-                <span className="w-6 h-6 rounded-lg bg-foreground text-background text-[11px] font-black flex items-center justify-center shrink-0">
+                <span className="w-6 h-6 rounded-lg bg-primary text-primary-foreground text-[11px] font-black flex items-center justify-center shrink-0">
                   {slot.battingOrder}
                 </span>
 
@@ -1426,7 +1430,7 @@ export function Step2StructureCheck({
                         e.target.value
                       )
                     }
-                    className="flex-1 min-w-0 h-9 px-2 rounded-xl bg-card border border-border text-xs font-black text-foreground"
+                    className="flex-1 min-w-0 h-9 px-2 rounded-xl bg-card border border-border/60 text-xs font-black text-foreground"
                   >
                     <option value="">
                       {slot.name
@@ -1450,7 +1454,7 @@ export function Step2StructureCheck({
                         })
                       }
                       placeholder="#"
-                      className="w-11 h-9 px-1.5 rounded-xl bg-card border border-border text-center text-xs font-black text-foreground"
+                      className="w-11 h-9 px-1.5 rounded-xl bg-card border border-border/60 text-center text-xs font-black text-foreground"
                     />
                     <input
                       type="text"
@@ -1459,7 +1463,7 @@ export function Step2StructureCheck({
                         updateBatter(slot.battingOrder, { name: e.target.value })
                       }
                       placeholder="選手名"
-                      className="flex-1 min-w-0 h-9 px-2.5 rounded-xl bg-card border border-border text-xs font-black text-foreground"
+                      className="flex-1 min-w-0 h-9 px-2.5 rounded-xl bg-card border border-border/60 text-xs font-black text-foreground"
                     />
                   </>
                 )}
@@ -1469,7 +1473,7 @@ export function Step2StructureCheck({
                   onChange={(e) =>
                     updateBatter(slot.battingOrder, { position: e.target.value })
                   }
-                  className="w-16 h-9 px-1 rounded-xl bg-card border border-border text-[11px] font-black text-foreground shrink-0"
+                  className="w-16 h-9 px-1 rounded-xl bg-card border border-border/60 text-[11px] font-black text-foreground shrink-0"
                 >
                   {POSITION_OPTIONS.map((pos) => (
                     <option key={pos.value} value={pos.value}>
@@ -1481,7 +1485,7 @@ export function Step2StructureCheck({
                 <button
                   type="button"
                   onClick={() => handleAddSubstitution(slot.battingOrder)}
-                  className="h-9 px-2 rounded-xl bg-card hover:bg-muted border border-border text-[10px] font-black text-primary flex items-center gap-0.5 shrink-0 cursor-pointer"
+                  className="h-9 px-2 rounded-xl bg-card hover:bg-muted border border-border/60 text-[10px] font-black text-primary flex items-center gap-0.5 shrink-0 cursor-pointer"
                   title="途中交代を追加"
                 >
                   <UserPlus className="w-3.5 h-3.5" />
@@ -1501,7 +1505,7 @@ export function Step2StructureCheck({
                       })
                     }
                     placeholder="背番号"
-                    className="w-14 h-8 px-1.5 rounded-lg bg-card border border-border text-center text-[11px] font-black text-foreground"
+                    className="w-14 h-8 px-1.5 rounded-lg bg-card border border-border/60 text-center text-[11px] font-black text-foreground"
                   />
                   <input
                     type="text"
@@ -1510,7 +1514,7 @@ export function Step2StructureCheck({
                       updateBatter(slot.battingOrder, { name: e.target.value })
                     }
                     placeholder="助っ人・未登録選手名を直接入力"
-                    className="flex-1 min-w-0 h-8 px-2.5 rounded-lg bg-card border border-border text-[11px] font-black text-foreground"
+                    className="flex-1 min-w-0 h-8 px-2.5 rounded-lg bg-card border border-border/60 text-[11px] font-black text-foreground"
                   />
                 </div>
               )}
@@ -1521,7 +1525,7 @@ export function Step2StructureCheck({
                   {slot.substitutions.map((sub) => (
                     <div
                       key={sub.id}
-                      className="p-2 rounded-xl bg-amber-500/8 border border-amber-500/25 space-y-1.5"
+                      className="p-2 rounded-xl bg-primary/5 border border-primary/25 space-y-1.5"
                     >
                       <div className="flex items-center gap-1.5">
                         <select
@@ -1531,7 +1535,7 @@ export function Step2StructureCheck({
                               inningEntered: Number(e.target.value),
                             })
                           }
-                          className="h-8 px-1 rounded-lg bg-card border border-border text-[10px] font-black text-foreground shrink-0"
+                          className="h-8 px-1 rounded-lg bg-card border border-border/60 text-[10px] font-black text-foreground shrink-0"
                         >
                           {inningOptions.map((n) => (
                             <option key={n} value={n}>
@@ -1551,7 +1555,7 @@ export function Step2StructureCheck({
                                 | "DEF",
                             })
                           }
-                          className="h-8 px-1 rounded-lg bg-card border border-border text-[10px] font-black text-amber-700 dark:text-amber-300 shrink-0"
+                          className="h-8 px-1 rounded-lg bg-card border border-border/60 text-[10px] font-black text-primary shrink-0"
                         >
                           <option value="PH">代打</option>
                           <option value="PR">代走</option>
@@ -1584,7 +1588,7 @@ export function Step2StructureCheck({
                                 });
                               }
                             }}
-                            className="flex-1 min-w-0 h-8 px-1.5 rounded-lg bg-card border border-border text-[11px] font-black text-foreground"
+                            className="flex-1 min-w-0 h-8 px-1.5 rounded-lg bg-card border border-border/60 text-[11px] font-black text-foreground"
                           >
                             <option value="">
                               {sub.name ? `未登録: ${sub.name}` : "-- 交代選手 --"}
@@ -1606,7 +1610,7 @@ export function Step2StructureCheck({
                                 })
                               }
                               placeholder="#"
-                              className="w-10 h-8 px-1 rounded-lg bg-card border border-border text-center text-[11px] font-black text-foreground shrink-0"
+                              className="w-10 h-8 px-1 rounded-lg bg-card border border-border/60 text-center text-[11px] font-black text-foreground shrink-0"
                             />
                             <input
                               type="text"
@@ -1617,7 +1621,7 @@ export function Step2StructureCheck({
                                 })
                               }
                               placeholder="交代選手名"
-                              className="flex-1 min-w-0 h-8 px-2 rounded-lg bg-card border border-border text-[11px] font-black text-foreground"
+                              className="flex-1 min-w-0 h-8 px-2 rounded-lg bg-card border border-border/60 text-[11px] font-black text-foreground"
                             />
                           </>
                         )}
@@ -1630,7 +1634,7 @@ export function Step2StructureCheck({
                             })
                           }
                           aria-label="交代後の守備位置"
-                          className="w-16 h-8 px-1 rounded-lg bg-card border border-border text-[10px] font-black text-foreground shrink-0"
+                          className="w-16 h-8 px-1 rounded-lg bg-card border border-border/60 text-[10px] font-black text-foreground shrink-0"
                         >
                           <option value="">守備 -</option>
                           {POSITION_OPTIONS.filter((p) => p.value !== "").map(
@@ -1666,7 +1670,7 @@ export function Step2StructureCheck({
                                 })
                               }
                               placeholder="背番号"
-                              className="w-14 h-7 px-1.5 rounded-lg bg-card border border-border text-center text-[10px] font-black text-foreground"
+                              className="w-14 h-7 px-1.5 rounded-lg bg-card border border-border/60 text-center text-[10px] font-black text-foreground"
                             />
                             <input
                               type="text"
@@ -1677,7 +1681,7 @@ export function Step2StructureCheck({
                                 })
                               }
                               placeholder="助っ人・未登録の交代選手名を入力"
-                              className="flex-1 min-w-0 h-7 px-2 rounded-lg bg-card border border-border text-[10px] font-black text-foreground"
+                              className="flex-1 min-w-0 h-7 px-2 rounded-lg bg-card border border-border/60 text-[10px] font-black text-foreground"
                             />
                           </div>
                         )}
@@ -1691,7 +1695,7 @@ export function Step2StructureCheck({
       </section>
 
       {/* C. 登板投手（先発・継投）確認 */}
-      <section className="rounded-3xl bg-card border border-border shadow-xs p-4 space-y-3">
+      <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3">
         <div className="flex items-center justify-between gap-2">
           <div>
             <h3 className="text-sm font-black text-foreground">
@@ -1706,7 +1710,7 @@ export function Step2StructureCheck({
           <button
             type="button"
             onClick={addPitcher}
-            className="px-2.5 py-1.5 rounded-xl bg-primary/12 text-primary text-[10px] font-black flex items-center gap-1 shrink-0 cursor-pointer"
+            className="px-2.5 py-1.5 rounded-xl bg-primary/10 border border-primary/25 hover:bg-primary/15 text-primary text-[10px] font-black flex items-center gap-1 shrink-0 cursor-pointer"
           >
             <Plus className="w-3 h-3" />
             <span>継投追加</span>
@@ -1717,10 +1721,10 @@ export function Step2StructureCheck({
           {current.pitchers.map((pt, idx) => (
             <div
               key={pt.id}
-              className="p-2.5 rounded-2xl bg-muted/35 border border-border/80 space-y-2"
+              className="p-2.5 rounded-2xl bg-muted/35 border border-border/60 space-y-2"
             >
               <div className="flex items-center gap-1.5">
-                <span className="px-2 py-1 rounded-lg bg-foreground text-background text-[10px] font-black shrink-0">
+                <span className="px-2 py-1 rounded-lg bg-primary text-primary-foreground text-[10px] font-black shrink-0">
                   {idx === 0 ? "先発" : `${idx + 1}番手`}
                 </span>
 
@@ -1739,7 +1743,7 @@ export function Step2StructureCheck({
                         updatePitcher(pt.id, { playerId: null });
                       }
                     }}
-                    className="flex-1 min-w-0 h-9 px-2.5 rounded-xl bg-card border border-border text-xs font-black text-foreground"
+                    className="flex-1 min-w-0 h-9 px-2.5 rounded-xl bg-card border border-border/60 text-xs font-black text-foreground"
                   >
                     <option value="">
                       {pt.name ? `未登録: ${pt.name}` : "-- 自チーム投手を選択 --"}
@@ -1759,7 +1763,7 @@ export function Step2StructureCheck({
                         updatePitcher(pt.id, { uniformNumber: e.target.value })
                       }
                       placeholder="#"
-                      className="w-11 h-9 px-1.5 rounded-xl bg-card border border-border text-center text-xs font-black text-foreground shrink-0"
+                      className="w-11 h-9 px-1.5 rounded-xl bg-card border border-border/60 text-center text-xs font-black text-foreground shrink-0"
                     />
                     <input
                       type="text"
@@ -1768,7 +1772,7 @@ export function Step2StructureCheck({
                         updatePitcher(pt.id, { name: e.target.value })
                       }
                       placeholder="相手投手名"
-                      className="flex-1 min-w-0 h-9 px-2.5 rounded-xl bg-card border border-border text-xs font-black text-foreground"
+                      className="flex-1 min-w-0 h-9 px-2.5 rounded-xl bg-card border border-border/60 text-xs font-black text-foreground"
                     />
                   </>
                 )}
@@ -1777,7 +1781,7 @@ export function Step2StructureCheck({
                   <button
                     type="button"
                     onClick={() => removePitcher(pt.id)}
-                    className="h-9 w-9 rounded-xl bg-card border border-border flex items-center justify-center text-destructive hover:bg-destructive/10 shrink-0 cursor-pointer"
+                    className="h-9 w-9 rounded-xl bg-card border border-border/60 flex items-center justify-center text-destructive hover:bg-destructive/10 shrink-0 cursor-pointer"
                     aria-label="投手を削除"
                   >
                     <Trash2 className="w-4 h-4" />
@@ -1794,7 +1798,7 @@ export function Step2StructureCheck({
                       updatePitcher(pt.id, { uniformNumber: e.target.value })
                     }
                     placeholder="背番号"
-                    className="w-14 h-8 px-1.5 rounded-lg bg-card border border-border text-center text-[11px] font-black text-foreground shrink-0"
+                    className="w-14 h-8 px-1.5 rounded-lg bg-card border border-border/60 text-center text-[11px] font-black text-foreground shrink-0"
                   />
                   <input
                     type="text"
@@ -1803,7 +1807,7 @@ export function Step2StructureCheck({
                       updatePitcher(pt.id, { name: e.target.value })
                     }
                     placeholder="助っ人・未登録投手名を直接入力"
-                    className="flex-1 min-w-0 h-8 px-2.5 rounded-lg bg-card border border-border text-[11px] font-black text-foreground"
+                    className="flex-1 min-w-0 h-8 px-2.5 rounded-lg bg-card border border-border/60 text-[11px] font-black text-foreground"
                   />
                 </div>
               )}
@@ -1845,7 +1849,7 @@ export function Step2StructureCheck({
                         pitchers: nextPitchers,
                       });
                     }}
-                    className="h-9 min-w-[4.5rem] px-2.5 rounded-xl bg-card border border-border text-xs font-black text-foreground cursor-pointer"
+                    className="h-9 min-w-[4.5rem] px-2.5 rounded-xl bg-card border border-border/60 text-xs font-black text-foreground cursor-pointer"
                   >
                     {inningOptions.map((n) => (
                       <option key={n} value={n}>
@@ -1866,7 +1870,7 @@ export function Step2StructureCheck({
                         toInning: nextTo,
                       });
                     }}
-                    className="h-9 min-w-[4.5rem] px-2.5 rounded-xl bg-card border border-border text-xs font-black text-foreground cursor-pointer"
+                    className="h-9 min-w-[4.5rem] px-2.5 rounded-xl bg-card border border-border/60 text-xs font-black text-foreground cursor-pointer"
                   >
                     {inningOptions.map((n) => (
                       <option key={n} value={n}>
@@ -1914,9 +1918,9 @@ export function Step2StructureCheck({
 
         {/* 途中完了イニング保持・再開パネル（エラー時やStep3から戻った際も完了分を無駄にしない） */}
         {!isBusy && preservedAtBatsCount > 0 && (
-          <div className="p-3.5 rounded-2xl bg-card border-2 border-emerald-500/50 shadow-xs space-y-2.5">
+          <div className="p-3.5 rounded-2xl border border-border/60 bg-card shadow-xs space-y-2.5">
             <div className="flex items-start gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+              <CheckCircle2 className="w-4 h-4 text-primary shrink-0 mt-0.5" />
               <div className="min-w-0 flex-1 space-y-0.5">
                 <p className="text-xs font-black text-foreground">
                   完了済みイニングの解析データを保持しています（計{" "}
@@ -1935,7 +1939,7 @@ export function Step2StructureCheck({
                 <button
                   type="button"
                   onClick={onResumeMissingInnings}
-                  className="flex-1 h-12 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black shadow-xs flex items-center justify-center gap-1.5 active:scale-98 transition-all cursor-pointer"
+                  className="flex-1 h-12 px-4 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black shadow-xs flex items-center justify-center gap-1.5 active:scale-98 transition-all cursor-pointer"
                 >
                   <RotateCcw className="w-4 h-4 shrink-0" />
                   <span>
@@ -1948,7 +1952,11 @@ export function Step2StructureCheck({
                 <button
                   type="button"
                   onClick={onProceedWithCompleted}
-                  className="flex-1 h-12 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow-xs flex items-center justify-center gap-1.5 active:scale-98 transition-all cursor-pointer"
+                  className={`flex-1 h-12 px-4 rounded-xl text-xs font-black shadow-xs flex items-center justify-center gap-1.5 active:scale-98 transition-all cursor-pointer ${
+                    missingInningsCount > 0 && onResumeMissingInnings
+                      ? "bg-primary/10 hover:bg-primary/15 border border-primary/25 text-primary"
+                      : "bg-primary hover:bg-primary/90 text-primary-foreground"
+                  }`}
                 >
                   <span>
                     {missingInningsCount > 0
@@ -1967,7 +1975,7 @@ export function Step2StructureCheck({
             type="button"
             disabled={isBusy}
             onClick={onBack}
-            className="h-13 px-4 rounded-2xl bg-card border border-border text-xs font-black text-foreground flex items-center gap-1 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+            className="h-13 px-4 rounded-2xl bg-card border border-border/60 hover:bg-muted text-xs font-black text-foreground flex items-center gap-1 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
           >
             <ChevronLeft className="w-4 h-4" />
             <span>画像選択へ</span>
@@ -1980,8 +1988,8 @@ export function Step2StructureCheck({
               onClick={onStartDeepAnalysis}
               className={`flex-1 h-13 px-4 rounded-2xl text-xs sm:text-sm font-black shadow-md flex items-center justify-center gap-2 active:scale-98 transition-all cursor-pointer disabled:opacity-50 ${
                 preservedAtBatsCount > 0
-                  ? "bg-muted hover:bg-muted/80 border border-border text-foreground shadow-none"
-                  : "bg-indigo-600 hover:bg-indigo-700 text-white"
+                  ? "bg-card hover:bg-muted border border-border/60 text-foreground shadow-xs"
+                  : "bg-primary hover:bg-primary/90 text-primary-foreground"
               }`}
             >
               <Sparkles className="w-4 h-4 shrink-0" />
@@ -1997,7 +2005,7 @@ export function Step2StructureCheck({
                 type="button"
                 disabled={isBusy}
                 onClick={onProceedWithCompleted}
-                className="flex-1 h-13 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-black shadow-md flex items-center justify-center gap-2 active:scale-98 transition-all cursor-pointer disabled:opacity-50"
+                className="flex-1 h-13 px-4 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs sm:text-sm font-black shadow-md flex items-center justify-center gap-2 active:scale-98 transition-all cursor-pointer disabled:opacity-50"
               >
                 <span>打席・1球検算の編集へ進む</span>
                 <ChevronRight className="w-4 h-4 shrink-0" />

@@ -467,13 +467,13 @@ function parseTimelineEntries(
 function getMiniPosBadge(pos: string | undefined) {
   if (!pos) return null;
   if (pos === "P") {
-    return { label: "打", className: "bg-indigo-600 text-white" };
+    return { label: "打", className: "bg-primary text-primary-foreground" };
   }
   if (pos === "R") {
-    return { label: "走", className: "bg-amber-600 text-white" };
+    return { label: "走", className: "bg-primary text-primary-foreground" };
   }
   if (pos === "TR") {
-    return { label: "臨", className: "bg-teal-600 text-white" };
+    return { label: "臨", className: "bg-primary text-primary-foreground" };
   }
   const info = getPositionBadgeInfo(pos);
   if (info) {
@@ -701,7 +701,7 @@ export function MatchStatsSection({
             <span>個人成績・打席経過</span>
           </h2>
         </div>
-        <div className="rounded-2xl border border-border bg-card p-6 shadow-xs flex items-center justify-center gap-2 text-xs font-bold text-muted-foreground">
+        <div className="rounded-2xl border border-border/60 bg-card p-6 shadow-xs flex items-center justify-center gap-2 text-xs font-bold text-muted-foreground">
           <span className="w-4 h-4 rounded-full border-2 border-primary border-t-transparent animate-spin" />
           <span>成績データを集計中...</span>
         </div>
@@ -718,7 +718,7 @@ export function MatchStatsSection({
             <span>個人成績・打席経過</span>
           </h2>
         </div>
-        <div className="rounded-2xl border border-border bg-card p-4 shadow-xs space-y-3">
+        <div className="rounded-2xl border border-border/60 bg-card p-4 shadow-xs space-y-3">
           <EmptyState
             icon={Target}
             title="個人成績データがまだありません"
@@ -730,7 +730,7 @@ export function MatchStatsSection({
                 href={`/liff/tools/scorebook-import?matchId=${encodeURIComponent(
                   matchId
                 )}`}
-                className="inline-flex items-center gap-1.5 h-9 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black shadow-2xs active:scale-95 transition-all"
+                className="inline-flex items-center gap-1.5 h-9 px-4 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black shadow-2xs active:scale-95 transition-all"
               >
                 <ScanLine className="w-3.5 h-3.5" />
                 <span>紙スコアブックを取り込む</span>
@@ -756,17 +756,17 @@ export function MatchStatsSection({
     }
     const toneClass =
       emphasis === "hr"
-        ? "text-rose-600 dark:text-rose-400 font-black"
+        ? "text-primary font-black"
         : emphasis === "hit" && n >= 2
-        ? "text-amber-600 dark:text-amber-400 font-black"
+        ? "text-primary font-black"
         : emphasis === "hit"
         ? "text-foreground font-black"
         : emphasis === "rbi"
-        ? "text-emerald-600 dark:text-emerald-400 font-black"
+        ? "text-primary font-black"
         : emphasis === "sb"
-        ? "text-indigo-600 dark:text-indigo-400 font-black"
+        ? "text-primary font-black"
         : emphasis === "err"
-        ? "text-rose-600 dark:text-rose-400 font-bold"
+        ? "text-foreground font-bold"
         : "text-foreground font-bold";
 
     return (
@@ -795,7 +795,7 @@ export function MatchStatsSection({
         <section className="space-y-2" aria-label="本日の注目選手">
           <div className="flex items-center justify-between gap-2 px-1">
             <h2 className="flex items-center gap-1.5 text-xs font-black text-foreground">
-              <Award className="w-4 h-4 text-amber-500 shrink-0" />
+              <Award className="w-4 h-4 text-primary shrink-0" />
               <span>本日の注目選手</span>
             </h2>
             <span className="text-[10px] font-black text-muted-foreground">
@@ -807,18 +807,9 @@ export function MatchStatsSection({
             {highlightHeroes.map((hero, idx) => (
               <div
                 key={`${hero.label}-${hero.value}-${idx}`}
-                className="rounded-2xl border border-border bg-card p-3 shadow-xs flex items-start gap-2.5"
+                className="rounded-2xl border border-border/60 bg-card p-3 shadow-xs flex items-start gap-2.5"
               >
-                <div
-                  className={cn(
-                    "w-8 h-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5 border",
-                    hero.type === "hit"
-                      ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/25"
-                      : hero.type === "rbi"
-                      ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/25"
-                      : "bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500/25"
-                  )}
-                >
+                <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5 border bg-primary/10 text-primary border-primary/25">
                   {hero.type === "hit" ? (
                     <Flame className="w-4 h-4" />
                   ) : (
@@ -828,16 +819,7 @@ export function MatchStatsSection({
 
                 <div className="min-w-0 flex-1 space-y-0.5">
                   <div className="flex items-center gap-1.5 flex-wrap">
-                    <span
-                      className={cn(
-                        "inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-black leading-none border",
-                        hero.type === "hit"
-                          ? "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/25"
-                          : hero.type === "rbi"
-                          ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/25"
-                          : "bg-sky-500/10 text-sky-700 dark:text-sky-300 border-sky-500/25"
-                      )}
-                    >
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-black leading-none border bg-primary/10 text-primary border-primary/25">
                       {hero.label}
                     </span>
                     <span className="text-xs font-black text-foreground truncate">
@@ -862,14 +844,14 @@ export function MatchStatsSection({
             <span className="truncate">打撃・走塁・守備成績</span>
           </h2>
 
-          <div className="inline-flex items-center p-0.5 rounded-xl bg-muted border border-border shrink-0">
+          <div className="inline-flex items-center p-0.5 rounded-xl bg-muted/50 border border-border/60 shrink-0">
             <button
               type="button"
               onClick={() => setBatterColumnMode("full")}
               className={cn(
                 "px-2 py-0.5 rounded-lg text-[10px] font-black transition-all cursor-pointer",
                 batterColumnMode === "full"
-                  ? "bg-card text-foreground shadow-2xs"
+                  ? "bg-card text-primary shadow-2xs"
                   : "text-muted-foreground hover:text-foreground"
               )}
             >
@@ -881,7 +863,7 @@ export function MatchStatsSection({
               className={cn(
                 "px-2 py-0.5 rounded-lg text-[10px] font-black transition-all cursor-pointer",
                 batterColumnMode === "compact"
-                  ? "bg-card text-foreground shadow-2xs"
+                  ? "bg-card text-primary shadow-2xs"
                   : "text-muted-foreground hover:text-foreground"
               )}
             >
@@ -890,11 +872,11 @@ export function MatchStatsSection({
           </div>
         </div>
 
-        <div className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+        <div className="rounded-2xl border border-border/60 bg-card shadow-xs overflow-hidden">
           {/* サマリー帯（チーム打率・安打・打点・盗塁をひと目で把握） */}
-          <div className="px-3 py-2 bg-slate-50 dark:bg-zinc-900 border-b border-border flex items-center justify-between gap-2 flex-wrap">
+          <div className="px-3 py-2 bg-muted/35 border-b border-border/60 flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-2 text-[11px] font-black text-foreground">
-              <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20 font-mono tabular-nums">
+              <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/25 font-mono tabular-nums">
                 チーム打率 {teamAvgStr}
               </span>
               <span className="text-muted-foreground font-mono tabular-nums">
@@ -921,8 +903,8 @@ export function MatchStatsSection({
                 )}
               >
                 <thead>
-                  <tr className="bg-slate-100 dark:bg-zinc-800 border-b border-border text-[10px] font-black text-muted-foreground">
-                    <th className="sticky left-0 z-10 bg-slate-100 dark:bg-zinc-800 border-r border-border py-2 pl-2.5 pr-2 text-left min-w-[126px]">
+                  <tr className="bg-muted border-b border-border/60 text-[10px] font-black text-muted-foreground">
+                    <th className="sticky left-0 z-10 bg-muted border-r border-border/60 py-2 pl-2.5 pr-2 text-left min-w-[126px]">
                       選手
                     </th>
                     {batterColumnMode === "full" && (
@@ -972,29 +954,20 @@ export function MatchStatsSection({
                   </tr>
                 </thead>
 
-                <tbody className="divide-y divide-border/70">
-                  {stats.map((player, rowIdx) => {
-                    const isEven = rowIdx % 2 === 1;
-                    const stickyRowBg = isEven
-                      ? "bg-slate-50 dark:bg-zinc-900"
-                      : "bg-card";
+                <tbody className="divide-y divide-border/60">
+                  {stats.map((player) => {
                     const posBadge = getMiniPosBadge(player.position);
 
                     return (
-                      <tr key={player.id} className={stickyRowBg}>
-                        <td
-                          className={cn(
-                            "sticky left-0 z-10 border-r border-border py-2 pl-2.5 pr-2 max-w-[144px]",
-                            stickyRowBg
-                          )}
-                        >
+                      <tr key={player.id} className="bg-card hover:bg-muted/35 transition-colors">
+                        <td className="sticky left-0 z-10 bg-card border-r border-border/60 py-2 pl-2.5 pr-2 max-w-[144px]">
                           <div className="flex items-center gap-1 min-w-0">
                             {player.battingOrder ? (
                               <span
                                 className={cn(
                                   "w-4 h-4 rounded text-[9px] font-mono tabular-nums font-black inline-flex items-center justify-center shrink-0",
                                   player.isSub
-                                    ? "bg-indigo-500/15 text-indigo-700 dark:text-indigo-300"
+                                    ? "bg-primary/15 text-primary"
                                     : "bg-primary/10 text-primary"
                                 )}
                               >
@@ -1072,8 +1045,8 @@ export function MatchStatsSection({
                   })}
 
                   {/* TEAM TOTAL 行 */}
-                  <tr className="bg-slate-100 dark:bg-zinc-800 border-t-2 border-border font-black text-xs">
-                    <td className="sticky left-0 z-10 bg-slate-100 dark:bg-zinc-800 border-r border-border py-2.5 pl-2.5 pr-2 text-[10px] font-black tracking-wider text-foreground">
+                  <tr className="bg-muted border-t border-border/60 font-black text-xs">
+                    <td className="sticky left-0 z-10 bg-muted border-r border-border/60 py-2.5 pl-2.5 pr-2 text-[10px] font-black tracking-wider text-foreground">
                       TOTAL
                     </td>
                     {batterColumnMode === "full" && (
@@ -1100,10 +1073,10 @@ export function MatchStatsSection({
                         </td>
                       </>
                     )}
-                    <td className="px-1.5 py-2.5 text-center font-mono tabular-nums text-rose-600 dark:text-rose-400">
+                    <td className="px-1.5 py-2.5 text-center font-mono tabular-nums text-primary">
                       {batterTotal.homeRuns}
                     </td>
-                    <td className="px-1.5 py-2.5 text-center font-mono tabular-nums text-emerald-600 dark:text-emerald-400">
+                    <td className="px-1.5 py-2.5 text-center font-mono tabular-nums text-primary">
                       {batterTotal.rbi}
                     </td>
                     <td className="px-1.5 py-2.5 text-center font-mono tabular-nums text-foreground">
@@ -1132,7 +1105,7 @@ export function MatchStatsSection({
                         </td>
                       </>
                     )}
-                    <td className="px-1.5 py-2.5 text-center font-mono tabular-nums text-indigo-600 dark:text-indigo-400">
+                    <td className="px-1.5 py-2.5 text-center font-mono tabular-nums text-primary">
                       {batterTotal.stolenBases}
                     </td>
                     {batterColumnMode === "full" && (
@@ -1168,7 +1141,7 @@ export function MatchStatsSection({
 
           {/* 📝 打撃・走塁詳細（新聞・プロ仕様詳細：本塁打・三塁打・二塁打・盗塁・犠打・犠飛・併殺打） */}
           {hasGameDetails && (
-            <div className="border-t border-border bg-slate-50/90 dark:bg-zinc-900 p-3 space-y-2">
+            <div className="border-t border-border/60 bg-muted/35 p-3 space-y-2">
               <div className="flex items-center gap-1.5 text-[10px] font-black text-primary">
                 <BookOpen className="w-3.5 h-3.5 shrink-0" />
                 <span>打撃・走塁詳細</span>
@@ -1182,49 +1155,49 @@ export function MatchStatsSection({
                       label: "本塁打",
                       items: resolvedGameDetails.homeRun,
                       badgeClass:
-                        "bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/30",
+                        "bg-primary/12 text-primary border-primary/25",
                     },
                     {
                       key: "triple",
                       label: "三塁打",
                       items: resolvedGameDetails.triple,
                       badgeClass:
-                        "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30",
+                        "bg-primary/10 text-primary border-primary/25",
                     },
                     {
                       key: "double",
                       label: "二塁打",
                       items: resolvedGameDetails.double,
                       badgeClass:
-                        "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/25",
+                        "bg-primary/10 text-primary border-primary/25",
                     },
                     {
                       key: "stolenBase",
                       label: "盗塁",
                       items: resolvedGameDetails.stolenBase,
                       badgeClass:
-                        "bg-indigo-500/12 text-indigo-700 dark:text-indigo-300 border-indigo-500/25",
+                        "bg-primary/10 text-primary border-primary/25",
                     },
                     {
                       key: "sacrificeBunt",
                       label: "犠打",
                       items: resolvedGameDetails.sacrificeBunt,
                       badgeClass:
-                        "bg-slate-200/80 dark:bg-zinc-800 text-foreground/85 border-border",
+                        "bg-muted/50 text-muted-foreground border-border/60",
                     },
                     {
                       key: "sacrificeFly",
                       label: "犠飛",
                       items: resolvedGameDetails.sacrificeFly,
                       badgeClass:
-                        "bg-slate-200/80 dark:bg-zinc-800 text-foreground/85 border-border",
+                        "bg-muted/50 text-muted-foreground border-border/60",
                     },
                     {
                       key: "doublePlay",
                       label: "併殺打",
                       items: resolvedGameDetails.doublePlay,
                       badgeClass:
-                        "bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/20",
+                        "bg-muted/50 text-muted-foreground border-border/60",
                     },
                   ] as const
                 )
@@ -1257,7 +1230,7 @@ export function MatchStatsSection({
       <section className="space-y-2" aria-label="投手成績">
         <div className="flex items-center justify-between gap-2 px-1">
           <h2 className="flex items-center gap-1.5 text-xs font-black text-foreground">
-            <Zap className="w-4 h-4 text-sky-500 shrink-0" />
+            <Zap className="w-4 h-4 text-primary shrink-0" />
             <span>投手成績</span>
           </h2>
           {pitcherStats.length > 0 && (
@@ -1267,7 +1240,7 @@ export function MatchStatsSection({
           )}
         </div>
 
-        <div className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+        <div className="rounded-2xl border border-border/60 bg-card shadow-xs overflow-hidden">
           {pitcherStats.length === 0 ? (
             <div className="p-6 text-center text-xs font-bold text-muted-foreground">
               投手データがありません
@@ -1276,8 +1249,8 @@ export function MatchStatsSection({
             <div className="overflow-x-auto">
               <table className="w-full min-w-[680px] border-collapse text-xs whitespace-nowrap">
                 <thead>
-                  <tr className="bg-slate-100 dark:bg-zinc-800 border-b border-border text-[10px] font-black text-muted-foreground">
-                    <th className="sticky left-0 z-10 bg-slate-100 dark:bg-zinc-800 border-r border-border py-2 pl-2.5 pr-2 text-left min-w-[116px]">
+                  <tr className="bg-muted border-b border-border/60 text-[10px] font-black text-muted-foreground">
+                    <th className="sticky left-0 z-10 bg-muted border-r border-border/60 py-2 pl-2.5 pr-2 text-left min-w-[116px]">
                       投手
                     </th>
                     <th className="px-1.5 py-2 text-center min-w-[44px] text-foreground">
@@ -1304,25 +1277,22 @@ export function MatchStatsSection({
                   </tr>
                 </thead>
 
-                <tbody className="divide-y divide-border/70">
-                  {pitcherStats.map((pitcher, rowIdx) => {
-                    const isEven = rowIdx % 2 === 1;
-                    const stickyRowBg = isEven
-                      ? "bg-slate-50 dark:bg-zinc-900"
-                      : "bg-card";
+                <tbody className="divide-y divide-border/60">
+                  {pitcherStats.map((pitcher) => {
                     const so = Number(pitcher.strikeouts) || 0;
                     const er = Number(pitcher.earnedRuns) || 0;
+                    const pitcherPosInfo = getPositionBadgeInfo("1");
 
                     return (
-                      <tr key={pitcher.id} className={stickyRowBg}>
-                        <td
-                          className={cn(
-                            "sticky left-0 z-10 border-r border-border py-2 pl-2.5 pr-2 max-w-[138px]",
-                            stickyRowBg
-                          )}
-                        >
+                      <tr key={pitcher.id} className="bg-card hover:bg-muted/35 transition-colors">
+                        <td className="sticky left-0 z-10 bg-card border-r border-border/60 py-2 pl-2.5 pr-2 max-w-[138px]">
                           <div className="flex items-center gap-1.5 min-w-0">
-                            <span className="w-4 h-4 rounded bg-red-500 text-white text-[9px] font-black inline-flex items-center justify-center shrink-0 leading-none">
+                            <span
+                              className={cn(
+                                "w-4 h-4 rounded text-white text-[9px] font-black inline-flex items-center justify-center shrink-0 leading-none",
+                                pitcherPosInfo?.color || "bg-primary"
+                              )}
+                            >
                               投
                             </span>
                             <span className="font-black text-xs text-foreground truncate">
@@ -1348,7 +1318,7 @@ export function MatchStatsSection({
                           className={cn(
                             "px-1.5 py-2 text-center font-mono tabular-nums text-xs",
                             so >= 3
-                              ? "text-sky-600 dark:text-sky-400 font-black"
+                              ? "text-primary font-black"
                               : so > 0
                               ? "text-foreground font-black"
                               : "text-muted-foreground/40 font-semibold"
@@ -1365,8 +1335,8 @@ export function MatchStatsSection({
                           className={cn(
                             "px-1.5 py-2 text-center font-mono tabular-nums text-xs font-black",
                             er > 0
-                              ? "text-rose-600 dark:text-rose-400"
-                              : "text-emerald-600 dark:text-emerald-400"
+                              ? "text-foreground"
+                              : "text-primary"
                           )}
                         >
                           {er}
@@ -1379,8 +1349,8 @@ export function MatchStatsSection({
                   })}
 
                   {/* PITCHING TEAM TOTAL 行 */}
-                  <tr className="bg-slate-100 dark:bg-zinc-800 border-t-2 border-border font-black text-xs">
-                    <td className="sticky left-0 z-10 bg-slate-100 dark:bg-zinc-800 border-r border-border py-2.5 pl-2.5 pr-2 text-[10px] font-black tracking-wider text-foreground">
+                  <tr className="bg-muted border-t border-border/60 font-black text-xs">
+                    <td className="sticky left-0 z-10 bg-muted border-r border-border/60 py-2.5 pl-2.5 pr-2 text-[10px] font-black tracking-wider text-foreground">
                       TEAM TOTAL
                     </td>
                     <td className="px-1.5 py-2.5 text-center font-mono tabular-nums text-foreground">
@@ -1422,7 +1392,7 @@ export function MatchStatsSection({
                     <td className="px-1.5 py-2.5 text-center font-mono tabular-nums text-muted-foreground">
                       {pitcherTotal.runs}
                     </td>
-                    <td className="px-1.5 py-2.5 text-center font-mono tabular-nums text-rose-600 dark:text-rose-400">
+                    <td className="px-1.5 py-2.5 text-center font-mono tabular-nums text-foreground">
                       {pitcherTotal.earnedRuns}
                     </td>
                     <td className="px-2 py-2.5 pr-2.5 text-right font-mono tabular-nums text-primary border-l border-border/60">
@@ -1451,17 +1421,17 @@ export function MatchStatsSection({
                 "px-2.5 py-1 rounded-xl border text-[10px] font-black transition-all cursor-pointer",
                 onlyMyAttackLogs
                   ? "bg-primary text-primary-foreground border-primary shadow-2xs"
-                  : "bg-card text-muted-foreground border-border hover:text-foreground"
+                  : "bg-card text-muted-foreground border-border/60 hover:bg-muted hover:text-foreground"
               )}
             >
               {onlyMyAttackLogs ? "自チーム攻撃のみ表示中" : "自チーム攻撃のみ"}
             </button>
           </div>
 
-          <div className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+          <div className="rounded-2xl border border-border/60 bg-card shadow-xs overflow-hidden">
             {/* イニング絞り込みチップ */}
             {timelineInnings.length > 1 && (
-              <div className="px-3 py-2 bg-slate-50 dark:bg-zinc-900 border-b border-border flex items-center gap-1.5 overflow-x-auto scrollbar-none">
+              <div className="px-3 py-2 bg-muted/35 border-b border-border/60 flex items-center gap-1.5 overflow-x-auto scrollbar-none">
                 <button
                   type="button"
                   onClick={() => setSelectedTimelineInning("all")}
@@ -1469,7 +1439,7 @@ export function MatchStatsSection({
                     "px-2.5 py-1 rounded-lg text-[11px] font-black shrink-0 transition-all cursor-pointer",
                     selectedTimelineInning === "all"
                       ? "bg-primary text-primary-foreground shadow-2xs"
-                      : "bg-card text-muted-foreground border border-border hover:text-foreground"
+                      : "bg-card text-muted-foreground border border-border/60 hover:bg-muted hover:text-foreground"
                   )}
                 >
                   すべて ({filteredTimelineEntries.length})
@@ -1483,7 +1453,7 @@ export function MatchStatsSection({
                       "px-2.5 py-1 rounded-lg text-[11px] font-black font-mono tabular-nums shrink-0 transition-all cursor-pointer",
                       selectedTimelineInning === inn
                         ? "bg-primary text-primary-foreground shadow-2xs"
-                        : "bg-card text-muted-foreground border border-border hover:text-foreground"
+                        : "bg-card text-muted-foreground border border-border/60 hover:bg-muted hover:text-foreground"
                     )}
                   >
                     {inn}回
@@ -1497,7 +1467,7 @@ export function MatchStatsSection({
                 該当するイニングの打席ログがありません
               </div>
             ) : (
-              <div className="divide-y divide-border/70">
+              <div className="divide-y divide-border/60">
                 {visibleTimelineEntries.map((entry, idx) => {
                   const prev = idx > 0 ? visibleTimelineEntries[idx - 1] : null;
                   const showHalfHeader =
@@ -1510,16 +1480,16 @@ export function MatchStatsSection({
 
                   const badgeStyle =
                     entry.badgeTone === "hr"
-                      ? "bg-rose-600 text-white border-rose-600"
+                      ? "bg-primary text-primary-foreground border-primary"
                       : entry.badgeTone === "hit"
-                      ? "bg-amber-500/15 text-amber-800 dark:text-amber-300 border-amber-500/35"
+                      ? "bg-primary/12 text-primary border-primary/25"
                       : entry.badgeTone === "walk"
-                      ? "bg-sky-500/15 text-sky-800 dark:text-sky-300 border-sky-500/30"
+                      ? "bg-primary/10 text-primary border-primary/20"
                       : entry.badgeTone === "sac"
-                      ? "bg-indigo-500/15 text-indigo-800 dark:text-indigo-300 border-indigo-500/30"
+                      ? "bg-primary/10 text-primary border-primary/20"
                       : entry.badgeTone === "score"
-                      ? "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border-emerald-500/30"
-                      : "bg-slate-100 dark:bg-zinc-800 text-foreground border-border";
+                      ? "bg-primary/12 text-primary border-primary/25"
+                      : "bg-muted/50 text-muted-foreground border-border/60";
 
                   return (
                     <React.Fragment key={entry.id}>
@@ -1529,7 +1499,7 @@ export function MatchStatsSection({
                             "px-3 py-1.5 flex items-center justify-between text-[11px] font-black border-b border-border/60",
                             isMyOffense
                               ? "bg-primary/[0.08] text-primary"
-                              : "bg-slate-100 dark:bg-zinc-800/90 text-muted-foreground"
+                              : "bg-muted/50 text-muted-foreground"
                           )}
                         >
                           <span>
@@ -1566,7 +1536,7 @@ export function MatchStatsSection({
                             {(entry.rbiTag || entry.runnerNote) && (
                               <div className="mt-1 flex items-center flex-wrap gap-1">
                                 {entry.rbiTag && (
-                                  <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 text-[10px] font-black">
+                                  <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/25 text-[10px] font-black">
                                     {entry.rbiTag}
                                   </span>
                                 )}
@@ -1614,11 +1584,11 @@ export function MatchStatsSection({
                         </div>
 
                         {canExpand && isExpanded && (
-                          <div className="pt-1.5 border-t border-border/50 flex flex-wrap gap-1">
+                          <div className="pt-1.5 border-t border-border/60 flex flex-wrap gap-1">
                             {entry.pitchesList.map((pLine, pIdx) => (
                               <span
                                 key={`${entry.id}-pt-${pIdx}`}
-                                className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-zinc-800 border border-border text-[10px] font-bold text-foreground font-mono"
+                                className="px-2 py-0.5 rounded-md bg-muted/50 border border-border/60 text-[10px] font-bold text-foreground font-mono"
                               >
                                 {pLine}
                               </span>
@@ -1635,11 +1605,11 @@ export function MatchStatsSection({
             {/* 折りたたみ解除ボタン */}
             {selectedTimelineInning === "all" &&
               filteredTimelineEntries.length > 8 && (
-                <div className="p-2.5 bg-slate-50 dark:bg-zinc-900 border-t border-border">
+                <div className="p-2.5 bg-muted/35 border-t border-border/60">
                   <button
                     type="button"
                     onClick={() => setShowAllTimeline((prev) => !prev)}
-                    className="w-full h-9 rounded-xl bg-card hover:bg-muted border border-border text-xs font-black text-foreground flex items-center justify-center gap-1.5 shadow-2xs active:scale-[0.99] transition-all cursor-pointer"
+                    className="w-full h-9 rounded-xl bg-card hover:bg-muted border border-border/60 text-xs font-black text-foreground flex items-center justify-center gap-1.5 shadow-2xs active:scale-[0.99] transition-all cursor-pointer"
                   >
                     {showAllTimeline ? (
                       <>

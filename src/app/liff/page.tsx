@@ -125,7 +125,7 @@ export default function LiffHubPage() {
             <div className="flex items-center gap-1.5">
               <Link
                 href="/liff/admin"
-                className="px-3 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-black text-[11px] shadow-xs transition-all flex items-center gap-1 shrink-0"
+                className="px-3 py-1.5 rounded-full bg-primary/10 hover:bg-primary/15 border border-primary/25 active:scale-95 text-primary font-black text-[11px] shadow-xs transition-all flex items-center gap-1 shrink-0"
               >
                 <ShieldCheck className="w-3.5 h-3.5" />
                 <span>IT管理</span>
@@ -146,7 +146,7 @@ export default function LiffHubPage() {
                 <button
                   type="button"
                   onClick={login}
-                  className="px-3 py-1.5 rounded-full bg-slate-700 hover:bg-slate-800 active:scale-95 text-white font-black text-[11px] shadow-xs transition-all flex items-center gap-1 shrink-0"
+                  className="px-3 py-1.5 rounded-full bg-primary hover:bg-primary/90 active:scale-95 text-primary-foreground font-black text-[11px] shadow-xs transition-all flex items-center gap-1 shrink-0"
                 >
                   <span>LINE連携</span>
                 </button>
