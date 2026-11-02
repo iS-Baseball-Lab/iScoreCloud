@@ -257,6 +257,11 @@ export function TeamSymbolRulesSettingsSection({
       options: SYMBOL_RULE_FIELD_CONFIGS.runMark.options,
     },
     {
+      key: "rbiMark",
+      title: SYMBOL_RULE_FIELD_CONFIGS.rbiMark.title,
+      options: SYMBOL_RULE_FIELD_CONFIGS.rbiMark.options,
+    },
+    {
       key: "pitchMark",
       title: SYMBOL_RULE_FIELD_CONFIGS.pitchMark.title,
       options: SYMBOL_RULE_FIELD_CONFIGS.pitchMark.options,

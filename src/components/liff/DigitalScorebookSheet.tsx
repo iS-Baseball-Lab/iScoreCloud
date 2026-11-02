@@ -1350,7 +1350,11 @@ export function renderSingleScorebookCellSvg(
     rules.hitLine === "quadrant_slash_hr_diamond" &&
     (abHitBases === 1 || abHitBases === 2 || abHitBases === 3);
   const rbiCount = Math.max(0, ab?.rbi || 0);
-  const rbiColor = rules.hitLine === "mono_bold" ? COLOR_INK : COLOR_RED;
+  const showRbiDots = rules.rbiMark !== "hidden" && rbiCount > 0;
+  const rbiColor =
+    rules.rbiMark === "black_dots" || rules.hitLine === "mono_bold"
+      ? COLOR_INK
+      : COLOR_RED;
   const showBsoSubLines =
     rules.cellStyle === "quadrant_bso_grid" && rules.pitchMark !== "numbered_bs";
 
@@ -1499,7 +1503,7 @@ export function renderSingleScorebookCellSvg(
       {cell && renderCenterStatus(cell, rules, cellGeom, ox, oy)}
 
       {/* 右上：打点ドット表示 */}
-      {rbiCount > 0 && (
+      {showRbiDots && (
         <g>
           {Array.from({ length: Math.min(4, rbiCount) }).map((_, i) => (
             <circle
@@ -3509,12 +3513,12 @@ export function ScorebookSymbolSamplePreview({
       pitcherName: "投手",
       pitcherPlayerId: null,
       resultCode: "home_run",
-      resultLabel: "中越本塁打",
+      resultLabel: "中越2点本塁打",
       battedDirection: "8",
-      rbi: 1,
+      rbi: 2,
       outsInPlay: 0,
       endingOuts: 0,
-      runsInPlay: 1,
+      runsInPlay: 2,
       balls: 1,
       strikes: 1,
       pitches: ["ball", "strike", "hit"],

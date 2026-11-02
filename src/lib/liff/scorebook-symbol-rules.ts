@@ -26,6 +26,7 @@ export type HitLineStyle =
 export type RunnerLineStyle = "dotted_only" | "solid_trace";
 export type RunnerOutLineStyle = "dotted_only" | "quadrant_arrow" | "t_stop";
 export type RunMarkStyle = "red_dot" | "double_circle" | "kanji_toku";
+export type RbiMarkStyle = "hidden" | "red_dots" | "black_dots";
 export type PitchMarkStyle =
   | "waseda_symbols"
   | "cross_swing"
@@ -61,6 +62,7 @@ export interface ScorebookSymbolRules {
   runnerLine: RunnerLineStyle;
   runnerOutLine: RunnerOutLineStyle;
   runMark: RunMarkStyle;
+  rbiMark: RbiMarkStyle;
   pitchMark: PitchMarkStyle;
   buntPitchMark: BuntPitchMarkStyle;
   pickoffMark: PickoffMarkStyle;
@@ -84,6 +86,7 @@ export const STANDARD_SCOREBOOK_SYMBOL_RULES: ScorebookSymbolRules = {
   runnerLine: "solid_trace",
   runnerOutLine: "t_stop",
   runMark: "red_dot",
+  rbiMark: "red_dots",
   pitchMark: "waseda_symbols",
   buntPitchMark: "filled_triangle",
   pickoffMark: "chevron_arrow",
@@ -108,6 +111,7 @@ export const DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES: ScorebookSymbolRules = {
   runnerLine: "dotted_only",
   runnerOutLine: "dotted_only",
   runMark: "red_dot",
+  rbiMark: "hidden",
   pitchMark: "waseda_symbols",
   buntPitchMark: "v_dot_circle_dot",
   pickoffMark: "chevron_arrow",
@@ -150,6 +154,7 @@ export const SCOREBOOK_SYMBOL_PRESETS: readonly ScorebookSymbolPreset[] = [
       runnerLine: "dotted_only",
       runnerOutLine: "dotted_only",
       runMark: "red_dot",
+      rbiMark: "hidden",
       pitchMark: "cross_swing",
       buntPitchMark: "v_dot_circle_dot",
       pickoffMark: "chevron_arrow",
@@ -174,6 +179,7 @@ export const SCOREBOOK_SYMBOL_PRESETS: readonly ScorebookSymbolPreset[] = [
       runnerLine: "solid_trace",
       runnerOutLine: "t_stop",
       runMark: "double_circle",
+      rbiMark: "red_dots",
       pitchMark: "numbered_bs",
       buntPitchMark: "inv_triangle_diamond",
       pickoffMark: "kanji_num",
@@ -198,6 +204,7 @@ export const SCOREBOOK_SYMBOL_PRESETS: readonly ScorebookSymbolPreset[] = [
       runnerLine: "solid_trace",
       runnerOutLine: "t_stop",
       runMark: "kanji_toku",
+      rbiMark: "black_dots",
       pitchMark: "slash_swing",
       buntPitchMark: "filled_triangle",
       pickoffMark: "chevron_arrow",
@@ -336,6 +343,26 @@ export const SYMBOL_RULE_FIELD_CONFIGS = {
       { value: "double_circle", label: "二重丸", sample: "◎" },
       { value: "kanji_toku", label: "丸得マーク", sample: "㋣（得）" },
     ] satisfies ReadonlyArray<SymbolRuleFieldOption<RunMarkStyle>>,
+  },
+  rbiMark: {
+    title: "打点（RBI）マーク表記",
+    options: [
+      {
+        value: "hidden",
+        label: "記載しない（なし）",
+        sample: "生還走者の (打順) 等で判別",
+      },
+      {
+        value: "red_dots",
+        label: "右上に赤点（早稲田式）",
+        sample: "打点数分の赤丸（●・●●…）",
+      },
+      {
+        value: "black_dots",
+        label: "右上に黒点（鉛筆・白黒式）",
+        sample: "打点数分の黒丸（・ / ・・…）",
+      },
+    ] satisfies ReadonlyArray<SymbolRuleFieldOption<RbiMarkStyle>>,
   },
   pitchMark: {
     title: "投球（BSO）記録方式",
@@ -517,6 +544,11 @@ export function sanitizeScorebookSymbolRules(
       ["red_dot", "double_circle", "kanji_toku"],
       fallback.runMark
     ),
+    rbiMark: isOneOf(
+      obj.rbiMark,
+      ["hidden", "red_dots", "black_dots"],
+      fallback.rbiMark
+    ),
     pitchMark: isOneOf(
       obj.pitchMark,
       [
@@ -694,6 +726,11 @@ export function summarizeSymbolRulesBadges(
     badges.push("走塁死矢印表記");
   } else if (rules.runnerOutLine === "t_stop") {
     badges.push("━━┫ストップ線");
+  }
+  if (rules.rbiMark === "red_dots") {
+    badges.push("右上赤打点");
+  } else if (rules.rbiMark === "black_dots") {
+    badges.push("右上黒打点");
   }
 
   return badges;
