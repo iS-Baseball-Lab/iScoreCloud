@@ -472,27 +472,27 @@ export const SYMBOL_RULE_FIELD_CONFIGS = {
     ] satisfies ReadonlyArray<SymbolRuleFieldOption<BuntMarkStyle>>,
   },
   pinchHitterMark: {
-    title: "代打・途中交代（打席境界）の表記",
+    title: "代打・代走・守備交代のマス境界表記",
     options: [
       {
         value: "red_wave_name",
-        label: "赤縦波線 ＋ 赤縦書き氏名",
-        sample: "境界に赤波線⌇＋縦書き選手名",
+        label: "赤縦波線 ＋ 左に上詰め黒字氏名",
+        sample: "代打＝左外・代走/守備＝右内に赤波線＋左に黒字名",
       },
       {
         value: "left_wave_only",
-        label: "マス左辺に縦波線のみ（早稲田）",
-        sample: "左辺に縦波線⌇（氏名は選手欄）",
+        label: "赤縦波線のみ（早稲田式）",
+        sample: "代打＝左外・代走/守備＝右内に赤波線（氏名は選手欄）",
       },
       {
         value: "cell_badge",
-        label: "マス内に PH / PR 記号表記",
-        sample: "左上に PH・PR・交 を表示",
+        label: "赤縦波線 ＋ PH / PR 記号表記",
+        sample: "赤波線の左上に PH・PR・交 バッジ",
       },
       {
         value: "lineup_only",
         label: "メンバー欄のみに記載",
-        sample: "イニングマスには波線を書かない",
+        sample: "イニングマスには波線・名前を書かない",
       },
     ] satisfies ReadonlyArray<SymbolRuleFieldOption<PinchHitterMarkStyle>>,
   },
@@ -815,9 +815,9 @@ export function summarizeSymbolRulesBadges(
     badges.push("右上黒打点");
   }
   if (rules.pinchHitterMark === "red_wave_name") {
-    badges.push("赤波線＋縦氏名交代");
+    badges.push("赤波線＋上詰黒氏名");
   } else if (rules.pinchHitterMark === "cell_badge") {
-    badges.push("PH/PRバッジ");
+    badges.push("赤波線＋PH/PR記号");
   }
   if (rules.doublePlayMark === "bracket_dp") {
     badges.push("]連結＋DP併殺");

@@ -19,6 +19,7 @@ import {
 import {
   formatSubstitutionRoleShort,
   type BaseSegmentIndex,
+  type CompiledCellSubMark,
   type CompiledDiamondSegment,
   type CompiledDoublePlayLink,
   type CompiledScorebookCell,
@@ -1386,7 +1387,8 @@ export function renderSingleScorebookCellSvg(
   cell: CompiledScorebookCell | undefined,
   rules: ScorebookSymbolRules,
   ox: number,
-  oy: number
+  oy: number,
+  hasUpperRightSubMark = false
 ): React.ReactNode {
   const ab = cell?.atBat ?? null;
   const cellGeom = getCellGeometry(rules);
@@ -1554,7 +1556,12 @@ export function renderSingleScorebookCellSvg(
           {Array.from({ length: Math.min(4, rbiCount) }).map((_, i) => (
             <circle
               key={i}
-              cx={ox + CELL_W - 6 - i * 5.2}
+              cx={
+                ox +
+                CELL_W -
+                (hasUpperRightSubMark ? 21 : 6) -
+                i * 5.2
+              }
               cy={oy + 7}
               r={2.1}
               fill={rbiColor}
@@ -1632,14 +1639,18 @@ function extractVerticalBatterName(
     !cleaned ||
     cleaned === "PH" ||
     cleaned === "PR" ||
+    cleaned === "DEF" ||
     cleaned === "代打" ||
     cleaned === "代走" ||
+    cleaned === "守備" ||
     cleaned === "選手";
   const baseText = isPlaceholder
     ? subType === "PR"
       ? "代走"
       : subType === "TR"
       ? "臨走"
+      : subType === "DEF"
+      ? "交代"
       : "代打"
     : cleaned.includes(" ")
     ? cleaned.split(/\s+/)[0] || cleaned
@@ -1650,29 +1661,44 @@ function extractVerticalBatterName(
     .map((ch) => (ch === "ー" || ch === "-" || ch === "−" ? "｜" : ch));
 }
 
-function renderBatterChangeIndicatorSvg(
-  cell: CompiledScorebookCell | undefined,
-  rules: ScorebookSymbolRules,
-  cx: number,
-  ry: number,
-  isLeftNeighborEmpty: boolean
-): React.ReactNode {
-  if (!cell?.hasBatterChangeBefore || rules.pinchHitterMark === "lineup_only") {
+function renderBoundarySubMarkSvg(params: {
+  mark: CompiledCellSubMark;
+  anchorSide: "left_outside" | "right_inside";
+  rules: ScorebookSymbolRules;
+  cx: number;
+  ry: number;
+  isInningEndCell?: boolean;
+  shiftLeftPx?: number;
+}): React.ReactNode {
+  const {
+    mark,
+    anchorSide,
+    rules,
+    cx,
+    ry,
+    isInningEndCell = false,
+    shiftLeftPx = 0,
+  } = params;
+  if (rules.pinchHitterMark === "lineup_only") {
     return null;
   }
 
-  const accentColor =
-    rules.hitLine === "mono_bold" ? COLOR_INK : COLOR_RED;
-  const waveX =
-    rules.pinchHitterMark === "red_wave_name" && isLeftNeighborEmpty
-      ? cx - 2.2
-      : cx + 2.0;
+  // 代打(left_outside)＝マス左外(cx - 3.4)に赤波線、その左に上詰め黒字名前
+  // 代走・守備交代(right_inside)＝マス右内(cx + CELL_W - 3.4)に赤波線、その左に上詰め黒字名前
+  const borderX = anchorSide === "left_outside" ? cx : cx + CELL_W;
+  const waveColor = rules.hitLine === "mono_bold" ? COLOR_INK : COLOR_RED;
+  const waveX = borderX - 3.4 - shiftLeftPx;
+  const waveYStart = ry + 2.5;
+  const waveYEnd =
+    anchorSide === "right_inside" && isInningEndCell && shiftLeftPx === 0
+      ? ry + CELL_H - 13.5
+      : ry + CELL_H - 2.5;
   const wavePath = buildVerticalWavePath(
     waveX,
-    ry + 3.5,
-    ry + CELL_H - 3.5,
-    1.85,
-    6.4
+    waveYStart,
+    waveYEnd,
+    1.65,
+    6.2
   );
 
   if (rules.pinchHitterMark === "left_wave_only") {
@@ -1680,7 +1706,7 @@ function renderBatterChangeIndicatorSvg(
       <path
         d={wavePath}
         fill="none"
-        stroke={accentColor}
+        stroke={waveColor}
         strokeWidth={1.55}
         strokeLinecap="round"
       />
@@ -1690,32 +1716,32 @@ function renderBatterChangeIndicatorSvg(
   if (rules.pinchHitterMark === "cell_badge") {
     const useKanji = rules.positionLabel === "kanji";
     const badgeText =
-      cell.batterSubType === "PR"
+      mark.subType === "PR"
         ? useKanji
           ? "代走"
           : "PR"
-        : cell.batterSubType === "TR"
+        : mark.subType === "TR"
         ? useKanji
           ? "臨走"
           : "TR"
-        : cell.batterSubType === "DEF"
+        : mark.subType === "DEF"
         ? useKanji
           ? "交代"
           : "交"
         : useKanji
         ? "代打"
         : "PH";
-    const badgeW = badgeText.length >= 2 && useKanji ? 18.5 : 15.5;
-    const bx = cx + BSO_W + 2.2;
-    const by = ry + 3.2;
+    const badgeW = badgeText.length >= 2 && useKanji ? 17.5 : 14.5;
+    const bx = waveX - 2.4 - badgeW;
+    const by = ry + 3.0;
 
     return (
       <g>
         <path
-          d={buildVerticalWavePath(cx + 2.0, ry + 3.5, ry + CELL_H - 3.5, 1.7, 6.4)}
+          d={wavePath}
           fill="none"
-          stroke={accentColor}
-          strokeWidth={1.35}
+          stroke={waveColor}
+          strokeWidth={1.45}
           strokeLinecap="round"
         />
         <rect
@@ -1724,17 +1750,17 @@ function renderBatterChangeIndicatorSvg(
           width={badgeW}
           height={10.5}
           rx={2.2}
-          fill={rules.hitLine === "mono_bold" ? COLOR_PAPER_SUB : COLOR_RED_SOFT}
-          stroke={accentColor}
-          strokeWidth={0.95}
+          fill={COLOR_PAPER}
+          stroke={COLOR_INK}
+          strokeWidth={0.9}
         />
         <text
           x={bx + badgeW / 2}
           y={by + 7.7}
-          fontSize={6.5}
+          fontSize={6.3}
           fontWeight={900}
           textAnchor="middle"
-          fill={accentColor}
+          fill={COLOR_INK}
           fontFamily={FONT_SANS}
         >
           {badgeText}
@@ -1743,72 +1769,31 @@ function renderBatterChangeIndicatorSvg(
     );
   }
 
-  // "red_wave_name": 打席境界に赤縦波線＋赤縦書き選手名（写真7回前の「佐藤⌇」・4回前の「中島⌇」形式）
-  const chars = extractVerticalBatterName(
-    cell.newBatterName ?? cell.atBat?.batterName,
-    cell.batterSubType
-  );
-  const fontSize = chars.length >= 4 ? 8.2 : chars.length === 3 ? 9.2 : 10.2;
-  const lineStep = chars.length >= 4 ? 9.2 : chars.length === 3 ? 10.6 : 12.0;
-
-  if (isLeftNeighborEmpty) {
-    const textX = cx - 10.5;
-    const blockH = (chars.length - 1) * lineStep;
-    const startY = ry + CELL_H / 2 - blockH / 2 + 3.5;
-    return (
-      <g>
-        <path
-          d={wavePath}
-          fill="none"
-          stroke={accentColor}
-          strokeWidth={1.55}
-          strokeLinecap="round"
-        />
-        {chars.map((ch, idx) => (
-          <text
-            key={idx}
-            x={textX}
-            y={startY + idx * lineStep}
-            fontSize={fontSize}
-            fontWeight={900}
-            textAnchor="middle"
-            fill={accentColor}
-            stroke={COLOR_PAPER}
-            strokeWidth={2.6}
-            paintOrder="stroke"
-            fontFamily={FONT_SANS}
-          >
-            {ch}
-          </text>
-        ))}
-      </g>
-    );
-  }
-
-  // 左隣マスが空欄でない場合（1回または前イニングに打席あり）は当マスのBSO右余白（左上）に縦書き配置
-  const innerFontSize = chars.length >= 4 ? 7.2 : 8.2;
-  const innerStep = chars.length >= 4 ? 8.0 : 9.2;
-  const innerX = cx + BSO_W + 6.4;
-  const innerStartY = ry + 11.5;
+  // "red_wave_name": 赤縦波線 ＋ その左に上詰め黒字で縦書き選手名
+  const chars = extractVerticalBatterName(mark.name, mark.subType);
+  const fontSize = chars.length >= 4 ? 7.8 : chars.length === 3 ? 8.6 : 9.2;
+  const lineStep = chars.length >= 4 ? 8.5 : chars.length === 3 ? 9.5 : 10.3;
+  const textX = waveX - 7.4;
+  const startY = ry + (chars.length >= 4 ? 9.6 : 10.8);
 
   return (
     <g>
       <path
         d={wavePath}
         fill="none"
-        stroke={accentColor}
+        stroke={waveColor}
         strokeWidth={1.55}
         strokeLinecap="round"
       />
       {chars.map((ch, idx) => (
         <text
           key={idx}
-          x={innerX}
-          y={innerStartY + idx * innerStep}
-          fontSize={innerFontSize}
+          x={textX}
+          y={startY + idx * lineStep}
+          fontSize={fontSize}
           fontWeight={900}
           textAnchor="middle"
-          fill={accentColor}
+          fill={COLOR_INK}
           stroke={COLOR_PAPER}
           strokeWidth={2.5}
           paintOrder="stroke"
@@ -1817,6 +1802,44 @@ function renderBatterChangeIndicatorSvg(
           {ch}
         </text>
       ))}
+    </g>
+  );
+}
+
+function renderCellSubstitutionsOverlaySvg(
+  cell: CompiledScorebookCell | undefined,
+  rules: ScorebookSymbolRules,
+  cx: number,
+  ry: number,
+  rightInsideShiftLeftPx = 0
+): React.ReactNode {
+  if (!cell || rules.pinchHitterMark === "lineup_only") {
+    return null;
+  }
+  if (!cell.leftOutsideSub && !cell.rightInsideSub) {
+    return null;
+  }
+
+  return (
+    <g>
+      {cell.leftOutsideSub &&
+        renderBoundarySubMarkSvg({
+          mark: cell.leftOutsideSub,
+          anchorSide: "left_outside",
+          rules,
+          cx,
+          ry,
+        })}
+      {cell.rightInsideSub &&
+        renderBoundarySubMarkSvg({
+          mark: cell.rightInsideSub,
+          anchorSide: "right_inside",
+          rules,
+          cx,
+          ry,
+          isInningEndCell: cell.isInningEndCell,
+          shiftLeftPx: rightInsideShiftLeftPx,
+        })}
     </g>
   );
 }
@@ -3416,9 +3439,27 @@ export function DigitalScorebookSheet({
               const cx = gridStartX + colIdx * CELL_W;
               const cellKey = `${col.inning}-${col.columnIndex}-${bRow.battingOrder}`;
               const cell = model.cellsByKey[cellKey];
+              const nextCol =
+                colIdx + 1 < model.columns.length
+                  ? model.columns[colIdx + 1]
+                  : undefined;
+              const nextCell = nextCol
+                ? model.cellsByKey[
+                    `${nextCol.inning}-${nextCol.columnIndex}-${bRow.battingOrder}`
+                  ]
+                : undefined;
+              const hasUpperRightSubMark =
+                rules.pinchHitterMark !== "lineup_only" &&
+                Boolean(cell?.rightInsideSub || nextCell?.leftOutsideSub);
               return (
                 <React.Fragment key={cellKey}>
-                  {renderSingleScorebookCellSvg(cell, rules, cx, ry)}
+                  {renderSingleScorebookCellSvg(
+                    cell,
+                    rules,
+                    cx,
+                    ry,
+                    hasUpperRightSubMark
+                  )}
                 </React.Fragment>
               );
             })}
@@ -3497,41 +3538,33 @@ export function DigitalScorebookSheet({
         );
       })}
 
-      {/* ━━━ 3B. 代打・途中出場境界マーク（縦波線＋赤縦書き氏名等）＆ 併殺連結ブラケット「 ] 」 ━━━ */}
+      {/* ━━━ 3B. 代打(マス左外)・代走/守備交代(マス右内)の赤波線＋上詰め黒字氏名 ＆ 併殺ブラケット「 ] 」 ━━━ */}
       {model.batterRows.map((bRow, rowIdx) => {
         const ry = gridBodyTopY + rowIdx * CELL_H;
         return model.columns.map((col, colIdx) => {
           const cellKey = `${col.inning}-${col.columnIndex}-${bRow.battingOrder}`;
           const cell = model.cellsByKey[cellKey];
-          if (!cell?.hasBatterChangeBefore) return null;
+          if (!cell?.leftOutsideSub && !cell?.rightInsideSub) return null;
           const cx = gridStartX + colIdx * CELL_W;
-          let isLeftNeighborEmpty = false;
-          if (colIdx > 0) {
-            const prevCol = model.columns[colIdx - 1]!;
-            const prevKey = `${prevCol.inning}-${prevCol.columnIndex}-${bRow.battingOrder}`;
-            const prevCell = model.cellsByKey[prevKey];
-            const hasPrevContent = Boolean(
-              prevCell &&
-                (prevCell.atBat ||
-                  prevCell.isTiebreakRunnerOnly ||
-                  prevCell.outNumber ||
-                  prevCell.runScored ||
-                  prevCell.isResidual ||
-                  prevCell.segments[1] ||
-                  prevCell.segments[2] ||
-                  prevCell.segments[3] ||
-                  prevCell.segments[4])
-            );
-            isLeftNeighborEmpty = !hasPrevContent;
-          }
+          const nextCol =
+            colIdx + 1 < model.columns.length
+              ? model.columns[colIdx + 1]
+              : undefined;
+          const nextCell = nextCol
+            ? model.cellsByKey[
+                `${nextCol.inning}-${nextCol.columnIndex}-${bRow.battingOrder}`
+              ]
+            : undefined;
+          const rightInsideShiftLeftPx =
+            cell.rightInsideSub && nextCell?.leftOutsideSub ? 15 : 0;
           return (
             <React.Fragment key={`bchg-${cellKey}`}>
-              {renderBatterChangeIndicatorSvg(
+              {renderCellSubstitutionsOverlaySvg(
                 cell,
                 rules,
                 cx,
                 ry,
-                isLeftNeighborEmpty
+                rightInsideShiftLeftPx
               )}
             </React.Fragment>
           );
@@ -4065,9 +4098,8 @@ export function ScorebookSymbolSamplePreview({
     isResidual: false,
     isInningEndCell: false,
     hasPitcherChangeBefore: false,
-    hasBatterChangeBefore: true,
-    newBatterName: "中島",
-    batterSubType: "PH",
+    leftOutsideSub: { name: "中島", subType: "PH" },
+    rightInsideSub: { name: "佐藤", subType: "DEF" },
   };
 
   const sampleCells: Array<{ title: string; cell: CompiledScorebookCell }> = [
@@ -4333,8 +4365,18 @@ export function ScorebookSymbolSamplePreview({
         subType: "PH",
         name: "中島",
         uniformNumber: "15",
-        position: "3",
+        position: "",
         playerId: "sample-p2",
+        bats: "R",
+      },
+      {
+        id: "sample-sub2",
+        inningEntered: 3,
+        subType: "DEF",
+        name: "佐藤",
+        uniformNumber: "24",
+        position: "3",
+        playerId: "sample-p3",
         bats: "R",
       },
     ],
@@ -4453,20 +4495,21 @@ export function ScorebookSymbolSamplePreview({
           topInning2BuntHitCell,
           rules,
           topOriginX + lineupW + CELL_W,
-          topOriginY + colHeadH
+          topOriginY + colHeadH,
+          rules.pinchHitterMark !== "lineup_only"
         )}
         {renderSingleScorebookCellSvg(
           topInning3HomeRunCell,
           rules,
           topOriginX + lineupW + CELL_W * 2,
-          topOriginY + colHeadH
+          topOriginY + colHeadH,
+          rules.pinchHitterMark !== "lineup_only"
         )}
-        {renderBatterChangeIndicatorSvg(
+        {renderCellSubstitutionsOverlaySvg(
           topInning3HomeRunCell,
           rules,
           topOriginX + lineupW + CELL_W * 2,
-          topOriginY + colHeadH,
-          false
+          topOriginY + colHeadH
         )}
         <line
           x1={topOriginX + lineupW}

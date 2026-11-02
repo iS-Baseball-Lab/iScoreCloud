@@ -810,7 +810,7 @@ liffScorebookRouter.post("/extract-symbol-rules", async (c) => {
 {
   "cellStyle": "quadrant" | "quadrant_bso_grid" | "simple_diamond", // マス枠線: 中央小ダイヤから上下左右へ十字点線が伸びBSO欄が空欄なら "quadrant"、十字4分割で左BSO欄に横仕切り線があれば "quadrant_bso_grid"、十字点線なしの大きなダイヤのみなら "simple_diamond"（不明なら "quadrant"）
   "lineupStyle": "classic_three_row" | "compact_order_first", // 選手欄様式: 先発・守備位置｜打順(1/11/21)｜左○｜選手名｜背番号 の3段フル様式なら "classic_three_row"、順｜守備｜背番｜選手名 のシンプル式なら "compact_order_first"（不明なら "classic_three_row"）
-  "pinchHitterMark": "red_wave_name" | "left_wave_only" | "cell_badge" | "lineup_only", // 代打・途中交代マーク: 打席境界に赤の縦波線＋赤縦書き選手名（例: 中島⌇・佐藤⌇）を添えるなら "red_wave_name"、左境界の縦波線のみなら "left_wave_only"、マス内にPH/PR/代打バッジなら "cell_badge"、左選手欄のみ記録なら "lineup_only"（不明なら "red_wave_name"）
+  "pinchHitterMark": "red_wave_name" | "left_wave_only" | "cell_badge" | "lineup_only", // 代打・代走・守備交代マーク: 代打はマス左外・代走/守備交代はマス右内に赤縦波線を引き、その左に上詰め黒字（または縦書き）で選手名を添えるなら "red_wave_name"、赤縦波線のみなら "left_wave_only"、PH/PR/交バッジなら "cell_badge"、左選手欄のみ記録なら "lineup_only"（不明なら "red_wave_name"）
   "outMark": "roman" | "circled", // アウト記号: Ⅰ・Ⅱ・Ⅲ なら "roman"、①・②・③ なら "circled"
   "strikeout": "k_called_reverse" | "k_called_circle" | "k_only" | "so", // 三振: 見逃しが左右反転Kなら "k_called_reverse"、丸囲みⓀなら "k_called_circle"、区別なしKなら "k_only"、SO表記なら "so"
   "walkHbp": "b_db" | "bb_hbp" | "kanji", // 四死球: B/DBなら "b_db"、BB/HBPなら "bb_hbp"、四/死なら "kanji"
@@ -1207,7 +1207,7 @@ ${battingTeamContext}${scoreboardHintText}
    - **先発と途中交代・守備位置変更（substitutions）の完全抽出**:
      - 各打順枠が上下2〜3段に分かれている場合、**一番上の段が先発選手（starter）**です。
      - 2段目・3段目に別の選手名が手書きされている場合は substitutions 配列に追加し、シート1全体の打席グリッド内の交代線（波線・二重線・斜線・『PH』『PR』表記）があるイニング列から出場イニング（inningEntered: 1以上の整数）、種別（"PH"=代打, "PR"=代走, "DEF"=守備交代）、および交代後の守備位置（position: "1"〜"9" または "D"）を特定してください。
-     - **🔥重要（打席グリッド内に直接赤縦波線＋縦書き氏名で書かれた代打の抽出）**: 日本の手書きスコアブックでは、左の選手名欄の3段目を空欄にしたまま、**打席グリッド内の該当イニングの左境界（直前の空欄マスの右端など）に赤の縦波線を引き、その横に赤字で縦書きの選手名（例: 『佐藤⌇』『中島⌇』）**を直接書き込んで代打出場を記録するケースが非常に多くあります！左の選手欄に書かれていなくても、打席グリッド内に赤縦波線＋選手名がある場合は漏れなく substitutions に {"inningEntered":その打席のイニング,"subType":"PH","name":"読み取った選手名","uniformNumber":"","position":"PH"} を追加してください！
+     - **🔥重要（打席グリッド内に直接赤縦波線＋縦書き氏名で書かれた代打・代走・守備交代の抽出）**: 日本の手書きスコアブックでは、左の選手名欄の段を空欄にしたまま、**代打は該当打席マスの左外に赤の縦波線＋その左に上詰め黒字（または赤字）で縦書き選手名**、**代走・守備交代は該当マスの右内に赤の縦波線＋その左に上詰め黒字（または赤字）で縦書き選手名**を直接書き込むケースが非常に多くあります！左の選手欄に書かれていなくても、打席グリッド内に赤縦波線＋選手名がある場合は漏れなく substitutions に {"inningEntered":交代回,"subType":"PH"|"PR"|"DEF","name":"読み取った選手名","uniformNumber":"","position":""} を追加してください！
      - **🔥重要（スタメン野手のマウンド登板・守備位置変更）**: 草野球・学童野球では新しい控え選手が出るのではなく、スタメン選手の守備位置欄が『6→1』『8/1』『投』のように途中イニングから変更（特に "1"=投手への継投変更！）されるケースが多発します。守備位置欄に複数の守備番号や矢印がある場合も、必ずその選手名で substitutions に {"inningEntered":交代回,"subType":"DEF","name":"その選手名","uniformNumber":"背番号","position":"変更後の守備番号"} を追加してください！空欄の段は出力しないでください。
    - **🔥外周ルーラー直読による精密グリッド座標（lineupRightX, ymin, ymax）の抽出**:
      - 画像1の外周4辺には **0〜1000 の目盛りルーラー** が付いています。直感で推測せず、**印刷された罫線が外周ルーラーにぶつかる目盛り数値**を直接読み取ってください！

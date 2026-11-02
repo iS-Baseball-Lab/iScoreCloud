@@ -53,6 +53,11 @@ export interface CompiledDiamondSegment {
   isPrePlay: boolean;
 }
 
+export interface CompiledCellSubMark {
+  name: string;
+  subType: "PH" | "PR" | "TR" | "DEF";
+}
+
 export interface CompiledScorebookCell {
   cellKey: string;
   inning: number;
@@ -75,10 +80,10 @@ export interface CompiledScorebookCell {
   /** この打席から相手投手が交代したか（マス上辺に投手交代波線を引く） */
   hasPitcherChangeBefore: boolean;
   newPitcherName?: string;
-  /** この打席から打者が交代したか（代打・途中出場後の初打席） */
-  hasBatterChangeBefore?: boolean;
-  newBatterName?: string;
-  batterSubType?: "PH" | "PR" | "TR" | "DEF";
+  /** 代打(PH)：このマスの左外に赤縦波線＋その左に上詰め黒字で選手名を描画 */
+  leftOutsideSub?: CompiledCellSubMark;
+  /** 代走(PR/TR)・守備交代(DEF)：このマスの右内に赤縦波線＋その左に上詰め黒字で選手名を描画 */
+  rightInsideSub?: CompiledCellSubMark;
 }
 
 export interface CompiledDoublePlayLink {
@@ -419,14 +424,15 @@ export function compileScorebookSheetModel(
     const clean = (name || "").replace(/\s+/g, "");
     return clean ? `name:${clean}` : null;
   };
-  const prevBatterKeyByOrder = new Map<number, string | null>();
-  const renderedBatterSubIds = new Set<string>();
-  for (const slot of normalizedSlots) {
-    prevBatterKeyByOrder.set(
-      slot.battingOrder,
-      normalizeBatterIdentity(slot.playerId, slot.name)
-    );
-  }
+  const prOriginCellByAtBatAndOrder = new Map<string, string>();
+  const prOriginCellByInningAndOrder = new Map<string, string>();
+  const explicitPinchRunnerRecords: Array<{
+    cellKey: string;
+    battingOrder: number;
+    name: string;
+    playerId: string | null;
+    subType: "PR" | "TR";
+  }> = [];
   const inningSummaries: CompiledInningSummary[] = [];
 
   for (let inn = 1; inn <= maxInning; inn++) {
@@ -490,46 +496,6 @@ export function compileScorebookSheetModel(
         prevPitcherKey = curPitcherKey;
       }
 
-      // 打者交代（代打・途中出場後の初打席）検出
-      const curSlot = batterStatsMap.get(ab.battingOrder)?.slot;
-      const curBatterKey = normalizeBatterIdentity(
-        ab.batterPlayerId,
-        ab.batterName
-      );
-      const prevBatterKey = prevBatterKeyByOrder.get(ab.battingOrder) ?? null;
-      const explicitAtBatSub = curSlot?.substitutions.find(
-        (s) =>
-          Boolean(s.enteredAtBatId) &&
-          s.enteredAtBatId === ab.id &&
-          !renderedBatterSubIds.has(s.id)
-      );
-      const matchedSlotSub = curSlot?.substitutions.find(
-        (s) =>
-          curBatterKey !== null &&
-          normalizeBatterIdentity(s.playerId, s.name) === curBatterKey
-      );
-      if (
-        (prevBatterKey !== null &&
-          curBatterKey !== null &&
-          curBatterKey !== prevBatterKey) ||
-        explicitAtBatSub
-      ) {
-        cell.hasBatterChangeBefore = true;
-        cell.newBatterName =
-          ab.batterName.trim() ||
-          explicitAtBatSub?.name.trim() ||
-          matchedSlotSub?.name.trim() ||
-          undefined;
-        cell.batterSubType =
-          explicitAtBatSub?.subType || matchedSlotSub?.subType || "PH";
-        if (explicitAtBatSub) {
-          renderedBatterSubIds.add(explicitAtBatSub.id);
-        }
-      }
-      if (curBatterKey !== null) {
-        prevBatterKeyByOrder.set(ab.battingOrder, curBatterKey);
-      }
-
       // 打者個人成績の加算（走塁死による打席途中断 resultCode==="other" は打席・打数に含めない）
       const bRow = batterStatsMap.get(ab.battingOrder);
       if (ab.resultCode !== "other") {
@@ -585,6 +551,41 @@ export function compileScorebookSheetModel(
               cellsByKey[tbKey] = tbCell;
             }
             originByBase[bKey] = tbKey;
+          }
+        }
+      }
+
+      // 代走・臨時代走の起点マス（出塁したマス）を記録
+      if (Array.isArray(ab.pinchRunners)) {
+        for (const prEntry of ab.pinchRunners) {
+          const originKey = originByBase[prEntry.base];
+          const resolvedOrder =
+            prEntry.battingOrder > 0
+              ? prEntry.battingOrder
+              : originKey
+              ? cellsByKey[originKey]?.battingOrder || 0
+              : 0;
+          const resolvedKey =
+            originKey ||
+            (resolvedOrder > 0 ? `${inn}-${col}-${resolvedOrder}` : null);
+          if (resolvedKey && resolvedOrder > 0) {
+            prOriginCellByAtBatAndOrder.set(
+              `${ab.id}:${resolvedOrder}`,
+              resolvedKey
+            );
+            prOriginCellByInningAndOrder.set(
+              `${inn}:${resolvedOrder}`,
+              resolvedKey
+            );
+            if (prEntry.name.trim()) {
+              explicitPinchRunnerRecords.push({
+                cellKey: resolvedKey,
+                battingOrder: resolvedOrder,
+                name: prEntry.name.trim(),
+                playerId: prEntry.playerId ?? null,
+                subType: prEntry.subType,
+              });
+            }
           }
         }
       }
@@ -870,6 +871,273 @@ export function compileScorebookSheetModel(
         originByBase = nextOrigins;
       }
     }
+  }
+
+  // 3B. 代打(マス左外)・代走/守備交代(マス右内)の配置解決
+  const ensureGridCell = (
+    inn: number,
+    colIdx: number,
+    ord: number
+  ): CompiledScorebookCell => {
+    const k = `${inn}-${colIdx}-${ord}`;
+    if (!cellsByKey[k]) {
+      cellsByKey[k] = makeEmptyCell(inn, colIdx, ord, null);
+    }
+    return cellsByKey[k];
+  };
+
+  const findColumnArrayIndex = (inn: number, colIdx: number): number =>
+    columns.findIndex((c) => c.inning === inn && c.columnIndex === colIdx);
+
+  const findFirstColOfInning = (inn: number, preferredCol = 1): CompiledGridColumn | undefined => {
+    const exact = columns.find(
+      (c) => c.inning === inn && c.columnIndex === preferredCol
+    );
+    if (exact) return exact;
+    return columns.find((c) => c.inning === inn);
+  };
+
+  const findLastColOfInning = (inn: number): CompiledGridColumn | undefined => {
+    for (let i = columns.length - 1; i >= 0; i--) {
+      if (columns[i]!.inning === inn) return columns[i];
+    }
+    return undefined;
+  };
+
+  const handledIdentitiesByOrder = new Map<number, Set<string>>();
+
+  for (const slot of normalizedSlots) {
+    const order = slot.battingOrder;
+    let activeIdentity = normalizeBatterIdentity(slot.playerId, slot.name);
+    const seen = new Set<string>();
+    if (activeIdentity) seen.add(activeIdentity);
+    handledIdentitiesByOrder.set(order, seen);
+
+    for (const sub of slot.substitutions) {
+      const subName = sub.name.trim();
+      const subIdentity = normalizeBatterIdentity(sub.playerId, subName);
+      const isSamePlayer =
+        (subIdentity !== null &&
+          activeIdentity !== null &&
+          subIdentity === activeIdentity) ||
+        (!subName && sub.subType === "DEF");
+      if (isSamePlayer) {
+        continue;
+      }
+      if (!subName) {
+        continue;
+      }
+
+      if (subIdentity && sub.subType !== "TR") {
+        activeIdentity = subIdentity;
+        seen.add(subIdentity);
+      }
+
+      const enteredInn = Math.min(maxInning, Math.max(1, sub.inningEntered || 1));
+
+      if (sub.subType === "PH") {
+        // 代打：該当打席マスの「左外」に赤波線＋その左に上詰め黒字で名前
+        const explicitAb = sub.enteredAtBatId
+          ? atBats.find(
+              (a) => a.id === sub.enteredAtBatId && a.battingOrder === order
+            )
+          : undefined;
+        const inningAb =
+          explicitAb ||
+          atBats.find(
+            (a) =>
+              a.battingOrder === order &&
+              a.inning === enteredInn &&
+              (sub.enteredColumnIndex
+                ? (assignedColByAtBatId.get(a.id) || 1) === sub.enteredColumnIndex
+                : true)
+          );
+        if (inningAb) {
+          const cIdx = assignedColByAtBatId.get(inningAb.id) || 1;
+          ensureGridCell(inningAb.inning, cIdx, order).leftOutsideSub = {
+            name: subName,
+            subType: "PH",
+          };
+        } else {
+          const targetCol =
+            findFirstColOfInning(enteredInn, sub.enteredColumnIndex || 1) ||
+            columns[0];
+          if (targetCol) {
+            ensureGridCell(
+              targetCol.inning,
+              targetCol.columnIndex,
+              order
+            ).leftOutsideSub = {
+              name: subName,
+              subType: "PH",
+            };
+          }
+        }
+        continue;
+      }
+
+      if (sub.subType === "PR" || sub.subType === "TR") {
+        // 代走・臨時代走：出塁したマスの「右内」に赤波線＋その左に上詰め黒字で名前
+        const mappedKey =
+          (sub.enteredAtBatId
+            ? prOriginCellByAtBatAndOrder.get(`${sub.enteredAtBatId}:${order}`)
+            : undefined) ||
+          prOriginCellByInningAndOrder.get(`${enteredInn}:${order}`);
+
+        if (mappedKey && cellsByKey[mappedKey]) {
+          cellsByKey[mappedKey].rightInsideSub = {
+            name: subName,
+            subType: sub.subType,
+          };
+        } else {
+          const reachAb = atBats.find(
+            (a) => a.battingOrder === order && a.inning === enteredInn
+          );
+          if (reachAb) {
+            const cIdx = assignedColByAtBatId.get(reachAb.id) || 1;
+            ensureGridCell(reachAb.inning, cIdx, order).rightInsideSub = {
+              name: subName,
+              subType: sub.subType,
+            };
+          } else {
+            const targetCol =
+              findFirstColOfInning(enteredInn, sub.enteredColumnIndex || 1) ||
+              columns[0];
+            if (targetCol) {
+              ensureGridCell(
+                targetCol.inning,
+                targetCol.columnIndex,
+                order
+              ).rightInsideSub = {
+                name: subName,
+                subType: sub.subType,
+              };
+            }
+          }
+        }
+        continue;
+      }
+
+      // sub.subType === "DEF"（守備交代：交代が発生したイニングマスの「右内」に赤波線＋その左に上詰め黒字で名前）
+      if (sub.enteredAtBatId) {
+        const targetAb = atBats.find((a) => a.id === sub.enteredAtBatId);
+        if (targetAb) {
+          const abCol = assignedColByAtBatId.get(targetAb.id) || 1;
+          const arrIdx = findColumnArrayIndex(targetAb.inning, abCol);
+          if (arrIdx > 0) {
+            const prevCol = columns[arrIdx - 1]!;
+            ensureGridCell(
+              prevCol.inning,
+              prevCol.columnIndex,
+              order
+            ).rightInsideSub = {
+              name: subName,
+              subType: "DEF",
+            };
+            continue;
+          }
+          if (arrIdx === 0) {
+            ensureGridCell(
+              columns[0]!.inning,
+              columns[0]!.columnIndex,
+              order
+            ).leftOutsideSub = {
+              name: subName,
+              subType: "DEF",
+            };
+            continue;
+          }
+        }
+      }
+
+      const alreadyBattedInEnteredInning = atBats.some(
+        (a) =>
+          a.battingOrder === order &&
+          a.inning === enteredInn &&
+          subIdentity !== null &&
+          normalizeBatterIdentity(a.batterPlayerId, a.batterName) === subIdentity
+      );
+
+      if ((!isTop || alreadyBattedInEnteredInning) && enteredInn > 1) {
+        const prevInnCol = findLastColOfInning(enteredInn - 1);
+        if (prevInnCol) {
+          ensureGridCell(
+            prevInnCol.inning,
+            prevInnCol.columnIndex,
+            order
+          ).rightInsideSub = {
+            name: subName,
+            subType: "DEF",
+          };
+          continue;
+        }
+      }
+
+      const curInnCol = findLastColOfInning(enteredInn) || columns[0];
+      if (curInnCol) {
+        if (!isTop && enteredInn === 1) {
+          ensureGridCell(
+            curInnCol.inning,
+            curInnCol.columnIndex,
+            order
+          ).leftOutsideSub = {
+            name: subName,
+            subType: "DEF",
+          };
+        } else {
+          ensureGridCell(
+            curInnCol.inning,
+            curInnCol.columnIndex,
+            order
+          ).rightInsideSub = {
+            name: subName,
+            subType: "DEF",
+          };
+        }
+      }
+    }
+  }
+
+  // pinchRunners 配列のみに記録されている代走の補完
+  for (const prRec of explicitPinchRunnerRecords) {
+    const prKey = normalizeBatterIdentity(prRec.playerId, prRec.name);
+    const seen = handledIdentitiesByOrder.get(prRec.battingOrder);
+    if (cellsByKey[prRec.cellKey] && !cellsByKey[prRec.cellKey].rightInsideSub) {
+      if (!prKey || !seen || !seen.has(prKey)) {
+        cellsByKey[prRec.cellKey].rightInsideSub = {
+          name: prRec.name,
+          subType: prRec.subType,
+        };
+        if (prKey && seen && prRec.subType !== "TR") {
+          seen.add(prKey);
+        }
+      }
+    }
+  }
+
+  // 打席データ上で直接選手名が変わっている未登録代打の補完
+  const lastSeenAtBatBatterByOrder = new Map<number, string>();
+  for (const slot of normalizedSlots) {
+    const k = normalizeBatterIdentity(slot.playerId, slot.name);
+    if (k) lastSeenAtBatBatterByOrder.set(slot.battingOrder, k);
+  }
+  for (const ab of atBats) {
+    const curKey = normalizeBatterIdentity(ab.batterPlayerId, ab.batterName);
+    if (!curKey || !ab.batterName.trim()) continue;
+    const prevKey = lastSeenAtBatBatterByOrder.get(ab.battingOrder);
+    const seen = handledIdentitiesByOrder.get(ab.battingOrder);
+    if (prevKey && curKey !== prevKey && (!seen || !seen.has(curKey))) {
+      const cIdx = assignedColByAtBatId.get(ab.id) || 1;
+      const target = ensureGridCell(ab.inning, cIdx, ab.battingOrder);
+      if (!target.leftOutsideSub) {
+        target.leftOutsideSub = {
+          name: ab.batterName.trim(),
+          subType: "PH",
+        };
+      }
+      if (seen) seen.add(curKey);
+    }
+    lastSeenAtBatBatterByOrder.set(ab.battingOrder, curKey);
   }
 
   // 4. 相手（守備側）投手ごとの登板成績集計
