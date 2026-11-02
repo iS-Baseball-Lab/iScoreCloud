@@ -616,26 +616,26 @@ export function HubHeroSection({
                 return (
                   <div
                     key={ev.id}
-                    className="w-[88vw] max-w-[360px] shrink-0 snap-center rounded-2xl border border-border/60 bg-card shadow-xs overflow-hidden flex flex-col justify-between transition-all"
+                    className="w-[88vw] max-w-[360px] shrink-0 snap-center rounded-2xl border border-border bg-card shadow-xs overflow-hidden flex flex-col justify-between transition-all"
                   >
-                    {/* 上部ヘッダー帯（淡いティントでフラット感を解消） */}
-                    <div className="px-4 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 space-y-1.5">
+                    {/* A-3 上帯ダークキャップ（日付・曜日・区分・対象・タイトル） */}
+                    <div className="px-4 py-2.5 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary space-y-1">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-1.5 flex-wrap">
                           {/* 日付 ＋ 曜日バッジ */}
                           <div className="flex items-center gap-1">
-                            <span className="text-xl font-black text-foreground tracking-tight">
+                            <span className="text-lg sm:text-xl font-black text-white tracking-tight tabular-nums">
                               {dateText}
                             </span>
                             {dayOfWeek && (
                               <span
                                 className={cn(
-                                  "px-1.5 py-0.5 rounded-md text-xs font-black border",
+                                  "px-1.5 py-0.5 rounded text-xs font-black",
                                   isSat
-                                    ? "bg-blue-500/10 text-blue-500 border-blue-500/20"
+                                    ? "bg-sky-500 text-slate-950"
                                     : isSun
-                                    ? "bg-red-500/10 text-red-500 border-red-500/20"
-                                    : "bg-card text-foreground border-border/60"
+                                    ? "bg-rose-500 text-white"
+                                    : "bg-slate-700 text-slate-100"
                                 )}
                               >
                                 {dayOfWeek}
@@ -646,12 +646,12 @@ export function HubHeroSection({
                           {/* ⚾ 試合 / 🏃 練習 区分バッジ */}
                           <span
                             className={cn(
-                              "px-2 py-0.5 rounded-lg text-[10.5px] font-black border shrink-0",
+                              "px-2 py-0.5 rounded text-[10.5px] font-black shrink-0",
                               isOfficial
-                                ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30"
+                                ? "bg-amber-400 text-slate-950"
                                 : isMatch
-                                ? "bg-primary/12 text-primary border-primary/25"
-                                : "bg-teal-500/12 text-teal-700 dark:text-teal-300 border-teal-500/25"
+                                ? "bg-primary text-primary-foreground"
+                                : "bg-teal-500 text-slate-950"
                             )}
                           >
                             {isOfficial ? "🏆 公式戦" : isMatch ? "⚾ 試合" : "🏃 練習"}
@@ -659,24 +659,24 @@ export function HubHeroSection({
 
                           {/* 🎯 対象チーム・グループバッジ（Aチーム/Bチーム/全体など） */}
                           {ev.targetGroup && ev.targetGroup !== "全体" && (
-                            <span className="px-2 py-0.5 rounded-lg bg-primary/10 text-primary text-[10.5px] font-black border border-primary/25 shrink-0">
+                            <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-100 text-[10.5px] font-black border border-slate-700 shrink-0">
                               🏷️ {ev.targetGroup}
                             </span>
                           )}
 
-                          <span className="px-2 py-0.5 rounded-full bg-card/80 text-muted-foreground border border-border/60 text-[10px] font-bold">
+                          <span className="px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700 text-[10px] font-bold tabular-nums">
                             {idx + 1} / {weeklyEvents.length}
                           </span>
                         </div>
 
-                        <Link href="/liff/schedule" className="text-xs font-black text-primary hover:underline flex items-center gap-0.5 shrink-0 ml-1">
+                        <Link href="/liff/schedule" className="text-xs font-black text-sky-300 hover:text-white flex items-center gap-0.5 shrink-0 ml-1">
                           <span>全予定</span>
                           <ChevronRight className="w-3.5 h-3.5" />
                         </Link>
                       </div>
 
                       {/* タイトル（大会名や練習内容） */}
-                      <h3 className="text-sm sm:text-base font-black text-foreground line-clamp-1">
+                      <h3 className="text-sm sm:text-base font-black text-white line-clamp-1">
                         {ev.title || (isMatch ? "公式戦・練習試合" : "通常練習")}
                       </h3>
                     </div>

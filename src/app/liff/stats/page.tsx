@@ -192,12 +192,12 @@ const MATCH_TYPE_META: Record<
 
 function getRankMedalClass(rank: number): string {
   if (rank === 1) {
-    return "bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30";
+    return "bg-amber-400 text-slate-950";
   }
   if (rank === 2) {
-    return "bg-slate-500/15 text-slate-600 dark:text-slate-300 border border-slate-500/30";
+    return "bg-slate-800 text-white";
   }
-  return "bg-orange-500/15 text-orange-700 dark:text-orange-400 border border-orange-500/30";
+  return "bg-amber-700 text-white";
 }
 
 function formatCompactDate(raw: string): string {
@@ -472,16 +472,16 @@ export default function LiffStatsPage() {
           </div>
         ) : (
           <>
-            {/* 🏆 チーム勝敗 & 得点・失点サマリーカード（ソリッド高視認性設計） */}
-            <section className="rounded-2xl border border-border/60 bg-card shadow-xs overflow-hidden">
-              {/* ヘッダー行 */}
-              <div className="px-4 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 flex items-center justify-between gap-2">
-                <div className="flex items-center gap-1.5 font-black text-xs text-foreground">
-                  <Trophy className="w-4 h-4 text-primary shrink-0" />
+            {/* 🏆 チーム勝敗 & 得点・失点サマリーカード（A-3 上帯ダークキャップ × 純白高視認性ボディ） */}
+            <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+              {/* A-3 上帯ダークヘッダー */}
+              <div className="px-4 py-2.5 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 font-black text-xs text-white">
+                  <Trophy className="w-4 h-4 text-amber-400 shrink-0" />
                   <span>{filterTitleLabel}</span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-black px-2.5 py-0.5 rounded-full bg-primary/12 text-primary border border-primary/25 tabular-nums">
+                  <span className="text-xs font-black px-2.5 py-0.5 rounded bg-primary text-primary-foreground tabular-nums">
                     勝率 {summary.winRate} ({summary.winRatePercent}%)
                   </span>
                 </div>
@@ -1011,56 +1011,85 @@ export default function LiffStatsPage() {
                   </div>
                 ) : (
                   <>
-                    {/* 打率リーダー TOP3 */}
+                    {/* 打率リーダー TOP3（A-3 上帯ダーク × 背番号ウォーターマーク × 単色ゲージバー） */}
                     {avgLeaders.length > 0 && (
-                      <div className="rounded-2xl border border-border/60 bg-card shadow-xs overflow-hidden">
-                        <div className="px-4 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 flex items-center justify-between">
-                          <h3 className="text-xs font-black text-foreground flex items-center gap-1.5">
-                            <Flame className="w-3.5 h-3.5 text-primary" />
+                      <div className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+                        <div className="px-4 py-2.5 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary flex items-center justify-between">
+                          <h3 className="text-xs font-black text-white flex items-center gap-1.5">
+                            <Flame className="w-3.5 h-3.5 text-amber-400" />
                             <span>打率 リーダー TOP3</span>
                           </h3>
-                          <span className="text-[10px] font-bold text-muted-foreground">
+                          <span className="px-2 py-0.5 rounded bg-primary text-primary-foreground text-[10px] font-black">
                             AVG
                           </span>
                         </div>
 
-                        <div className="p-4 space-y-2">
+                        <div className="p-3.5 space-y-2">
                           {avgLeaders.map((item, idx) => {
                             const rank = idx + 1;
                             const uni = cleanUniform(item.uniformNumber);
                             const canLinkGrowth = !item.id.startsWith("name:");
+                            const topAvgVal = Math.max(
+                              parseRateValue(avgLeaders[0]?.avg || ".400"),
+                              0.4
+                            );
+                            const avgPct = Math.min(
+                              100,
+                              Math.max(
+                                12,
+                                Math.round((parseRateValue(item.avg) / topAvgVal) * 100)
+                              )
+                            );
                             const inner = (
                               <>
-                                <div className="flex items-center gap-2.5 min-w-0">
+                                {uni !== "-" && (
                                   <span
-                                    className={cn(
-                                      "w-5 h-5 rounded-md font-black text-xs flex items-center justify-center shrink-0 tabular-nums",
-                                      getRankMedalClass(rank)
-                                    )}
+                                    aria-hidden="true"
+                                    className="pointer-events-none select-none absolute right-2 -bottom-2 text-[52px] font-black tracking-tighter leading-none tabular-nums text-slate-200 dark:text-slate-800"
                                   >
-                                    {rank}
+                                    {uni}
                                   </span>
-                                  <div className="min-w-0">
-                                    <span className="font-black text-foreground">
-                                      {item.name}
-                                    </span>
-                                    {uni !== "-" && (
-                                      <span className="text-[10px] text-muted-foreground ml-1.5 font-bold">
-                                        #{uni}
+                                )}
+                                <div className="relative z-10 space-y-1.5 w-full">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="flex items-center gap-2.5 min-w-0">
+                                      <span
+                                        className={cn(
+                                          "w-5 h-5 rounded font-black text-xs flex items-center justify-center shrink-0 tabular-nums",
+                                          getRankMedalClass(rank)
+                                        )}
+                                      >
+                                        {rank}
                                       </span>
-                                    )}
-                                    <span className="text-[10px] text-muted-foreground block tabular-nums">
-                                      {item.atBats}打数 {item.hits}安打（打点{item.rbi}・得点{item.runs}）
-                                    </span>
+                                      <div className="min-w-0">
+                                        <span className="font-black text-foreground">
+                                          {item.name}
+                                        </span>
+                                        {uni !== "-" && (
+                                          <span className="text-[10px] text-muted-foreground ml-1.5 font-bold tabular-nums">
+                                            #{uni}
+                                          </span>
+                                        )}
+                                        <span className="text-[10px] text-muted-foreground block tabular-nums">
+                                          {item.atBats}打数 {item.hits}安打（打点{item.rbi}・得点{item.runs}）
+                                        </span>
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center gap-1.5 shrink-0">
+                                      <span className="text-lg font-black tabular-nums text-primary leading-none">
+                                        {item.avg}
+                                      </span>
+                                      {canLinkGrowth && (
+                                        <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
+                                      )}
+                                    </div>
                                   </div>
-                                </div>
-                                <div className="flex items-center gap-1.5 shrink-0">
-                                  <span className="text-base font-black tabular-nums text-primary">
-                                    {item.avg}
-                                  </span>
-                                  {canLinkGrowth && (
-                                    <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
-                                  )}
+                                  <div className="w-4/5 h-1.5 rounded-xs bg-card border border-border/60 overflow-hidden">
+                                    <div
+                                      className="h-full bg-primary"
+                                      style={{ width: `${avgPct}%` }}
+                                    />
+                                  </div>
                                 </div>
                               </>
                             );
@@ -1069,14 +1098,14 @@ export default function LiffStatsPage() {
                               <Link
                                 key={`avg-${item.id}`}
                                 href={`/liff/players/growth?id=${encodeURIComponent(item.id)}`}
-                                className="flex items-center justify-between p-2.5 rounded-xl bg-muted/35 hover:bg-muted/60 hover:border-primary/40 border border-border/60 text-xs transition-all active:scale-[0.99]"
+                                className="relative overflow-hidden flex items-center justify-between p-3 rounded-xl bg-muted hover:bg-muted/80 hover:border-primary/50 border border-border text-xs transition-all active:scale-[0.99]"
                               >
                                 {inner}
                               </Link>
                             ) : (
                               <div
                                 key={`avg-${item.id}`}
-                                className="flex items-center justify-between p-2.5 rounded-xl bg-muted/35 border border-border/60 text-xs"
+                                className="relative overflow-hidden flex items-center justify-between p-3 rounded-xl bg-muted border border-border text-xs"
                               >
                                 {inner}
                               </div>
@@ -1089,37 +1118,53 @@ export default function LiffStatsPage() {
                     {/* 打点 ＆ 安打リーダー 2カラム */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {rbiLeaders.length > 0 && (
-                        <div className="rounded-2xl border border-border/60 bg-card shadow-xs overflow-hidden">
-                          <div className="px-3.5 py-2.5 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50">
-                            <h3 className="text-xs font-black text-foreground flex items-center gap-1.5">
-                              <Target className="w-3.5 h-3.5 text-primary" />
+                        <div className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+                          <div className="px-3.5 py-2 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary">
+                            <h3 className="text-xs font-black text-white flex items-center gap-1.5">
+                              <Target className="w-3.5 h-3.5 text-amber-400" />
                               <span>打点 TOP3</span>
                             </h3>
                           </div>
-                          <div className="p-3.5 space-y-1.5">
+                          <div className="p-3 space-y-1.5">
                             {rbiLeaders.map((item, idx) => {
                               const rank = idx + 1;
+                              const uni = cleanUniform(item.uniformNumber);
+                              const maxRbi = Math.max(rbiLeaders[0]?.rbi || 1, 1);
+                              const pct = Math.min(100, Math.max(12, Math.round((item.rbi / maxRbi) * 100)));
                               return (
                                 <div
                                   key={`rbi-${item.id}`}
-                                  className="flex items-center justify-between px-2.5 py-2 rounded-xl bg-muted/35 border border-border/60 text-xs gap-2"
+                                  className="relative overflow-hidden px-2.5 py-2 rounded-xl bg-muted border border-border text-xs space-y-1.5"
                                 >
-                                  <div className="flex items-center gap-2 min-w-0">
+                                  {uni !== "-" && (
                                     <span
-                                      className={cn(
-                                        "w-5 h-5 rounded-md font-black text-[11px] flex items-center justify-center shrink-0 tabular-nums",
-                                        getRankMedalClass(rank)
-                                      )}
+                                      aria-hidden="true"
+                                      className="pointer-events-none select-none absolute right-1.5 -bottom-1.5 text-[42px] font-black tracking-tighter leading-none tabular-nums text-slate-200 dark:text-slate-800"
                                     >
-                                      {rank}
+                                      {uni}
                                     </span>
-                                    <span className="font-bold text-foreground truncate">
-                                      {item.name}
+                                  )}
+                                  <div className="relative z-10 flex items-center justify-between gap-2">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <span
+                                        className={cn(
+                                          "w-5 h-5 rounded font-black text-[11px] flex items-center justify-center shrink-0 tabular-nums",
+                                          getRankMedalClass(rank)
+                                        )}
+                                      >
+                                        {rank}
+                                      </span>
+                                      <span className="font-black text-foreground truncate">
+                                        {item.name}
+                                      </span>
+                                    </div>
+                                    <span className="font-black tabular-nums text-primary shrink-0">
+                                      {item.rbi} 打点
                                     </span>
                                   </div>
-                                  <span className="font-black tabular-nums text-primary shrink-0">
-                                    {item.rbi} 打点
-                                  </span>
+                                  <div className="relative z-10 w-full h-1.5 rounded-xs bg-card border border-border/60 overflow-hidden">
+                                    <div className="h-full bg-primary" style={{ width: `${pct}%` }} />
+                                  </div>
                                 </div>
                               );
                             })}
@@ -1128,37 +1173,53 @@ export default function LiffStatsPage() {
                       )}
 
                       {hitLeaders.length > 0 && (
-                        <div className="rounded-2xl border border-border/60 bg-card shadow-xs overflow-hidden">
-                          <div className="px-3.5 py-2.5 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50">
-                            <h3 className="text-xs font-black text-foreground flex items-center gap-1.5">
-                              <TrendingUp className="w-3.5 h-3.5 text-primary" />
+                        <div className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+                          <div className="px-3.5 py-2 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary">
+                            <h3 className="text-xs font-black text-white flex items-center gap-1.5">
+                              <TrendingUp className="w-3.5 h-3.5 text-sky-400" />
                               <span>安打 TOP3</span>
                             </h3>
                           </div>
-                          <div className="p-3.5 space-y-1.5">
+                          <div className="p-3 space-y-1.5">
                             {hitLeaders.map((item, idx) => {
                               const rank = idx + 1;
+                              const uni = cleanUniform(item.uniformNumber);
+                              const maxHits = Math.max(hitLeaders[0]?.hits || 1, 1);
+                              const pct = Math.min(100, Math.max(12, Math.round((item.hits / maxHits) * 100)));
                               return (
                                 <div
                                   key={`hit-${item.id}`}
-                                  className="flex items-center justify-between px-2.5 py-2 rounded-xl bg-muted/35 border border-border/60 text-xs gap-2"
+                                  className="relative overflow-hidden px-2.5 py-2 rounded-xl bg-muted border border-border text-xs space-y-1.5"
                                 >
-                                  <div className="flex items-center gap-2 min-w-0">
+                                  {uni !== "-" && (
                                     <span
-                                      className={cn(
-                                        "w-5 h-5 rounded-md font-black text-[11px] flex items-center justify-center shrink-0 tabular-nums",
-                                        getRankMedalClass(rank)
-                                      )}
+                                      aria-hidden="true"
+                                      className="pointer-events-none select-none absolute right-1.5 -bottom-1.5 text-[42px] font-black tracking-tighter leading-none tabular-nums text-slate-200 dark:text-slate-800"
                                     >
-                                      {rank}
+                                      {uni}
                                     </span>
-                                    <span className="font-bold text-foreground truncate">
-                                      {item.name}
+                                  )}
+                                  <div className="relative z-10 flex items-center justify-between gap-2">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <span
+                                        className={cn(
+                                          "w-5 h-5 rounded font-black text-[11px] flex items-center justify-center shrink-0 tabular-nums",
+                                          getRankMedalClass(rank)
+                                        )}
+                                      >
+                                        {rank}
+                                      </span>
+                                      <span className="font-black text-foreground truncate">
+                                        {item.name}
+                                      </span>
+                                    </div>
+                                    <span className="font-black tabular-nums text-primary shrink-0">
+                                      {item.hits} 安打
                                     </span>
                                   </div>
-                                  <span className="font-black tabular-nums text-primary shrink-0">
-                                    {item.hits} 安打
-                                  </span>
+                                  <div className="relative z-10 w-full h-1.5 rounded-xs bg-card border border-border/60 overflow-hidden">
+                                    <div className="h-full bg-primary" style={{ width: `${pct}%` }} />
+                                  </div>
                                 </div>
                               );
                             })}
@@ -1168,12 +1229,12 @@ export default function LiffStatsPage() {
                     </div>
 
                     {/* 全選手 打撃成績一覧テーブル */}
-                    <div className="rounded-2xl border border-border/60 bg-card shadow-xs overflow-hidden">
-                      <div className="px-3.5 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 flex items-center justify-between gap-2 flex-wrap">
-                        <h3 className="text-xs font-black text-foreground">
+                    <div className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+                      <div className="px-3.5 py-2.5 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary flex items-center justify-between gap-2 flex-wrap">
+                        <h3 className="text-xs font-black text-white">
                           個人打撃成績一覧（{sortedBatters.length}名）
                         </h3>
-                        <div className="flex items-center gap-0.5 bg-muted/80 dark:bg-muted/50 p-1 rounded-xl border border-border/60">
+                        <div className="flex items-center gap-0.5 bg-slate-800 p-0.5 rounded-xl border border-slate-700">
                           {(
                             [
                               { key: "hits" as const, label: "安打順" },
@@ -1191,13 +1252,11 @@ export default function LiffStatsPage() {
                                 className={cn(
                                   "px-2 py-0.5 rounded-lg text-[10px] transition-all",
                                   activeSort
-                                    ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
-                                    : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
+                                    ? "bg-primary text-primary-foreground font-black"
+                                    : "text-slate-300 hover:text-white font-bold"
                                 )}
                               >
-                                <span className={cn(activeSort && "text-primary")}>
-                                  {s.label}
-                                </span>
+                                <span>{s.label}</span>
                               </button>
                             );
                           })}
@@ -1359,56 +1418,79 @@ export default function LiffStatsPage() {
                   </div>
                 ) : (
                   <>
-                    {/* 防御率リーダー TOP3 */}
+                    {/* 防御率リーダー TOP3（A-3 上帯ダーク × 背番号ウォーターマーク × 単色ゲージバー） */}
                     {eraLeaders.length > 0 && (
-                      <div className="rounded-2xl border border-border/60 bg-card shadow-xs overflow-hidden">
-                        <div className="px-4 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 flex items-center justify-between">
-                          <h3 className="text-xs font-black text-foreground flex items-center gap-1.5">
-                            <Activity className="w-3.5 h-3.5 text-primary" />
+                      <div className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+                        <div className="px-4 py-2.5 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary flex items-center justify-between">
+                          <h3 className="text-xs font-black text-white flex items-center gap-1.5">
+                            <Activity className="w-3.5 h-3.5 text-sky-400" />
                             <span>防御率 リーダー TOP3</span>
                           </h3>
-                          <span className="text-[10px] font-bold text-muted-foreground">
+                          <span className="px-2 py-0.5 rounded bg-primary text-primary-foreground text-[10px] font-black">
                             7回換算 ERA
                           </span>
                         </div>
 
-                        <div className="p-4 space-y-2">
+                        <div className="p-3.5 space-y-2">
                           {eraLeaders.map((item, idx) => {
                             const rank = idx + 1;
                             const uni = cleanUniform(item.uniformNumber);
                             const canLinkGrowth = !item.id.startsWith("name:");
+                            const eraNum = parseRateValue(item.era);
+                            const eraPct = Math.min(
+                              100,
+                              Math.max(15, Math.round(Math.max(0, 7 - eraNum) / 7 * 100))
+                            );
                             const inner = (
                               <>
-                                <div className="flex items-center gap-2.5 min-w-0">
+                                {uni !== "-" && (
                                   <span
-                                    className={cn(
-                                      "w-5 h-5 rounded-md font-black text-xs flex items-center justify-center shrink-0 tabular-nums",
-                                      getRankMedalClass(rank)
-                                    )}
+                                    aria-hidden="true"
+                                    className="pointer-events-none select-none absolute right-2 -bottom-2 text-[52px] font-black tracking-tighter leading-none tabular-nums text-slate-200 dark:text-slate-800"
                                   >
-                                    {rank}
+                                    {uni}
                                   </span>
-                                  <div className="min-w-0">
-                                    <span className="font-black text-foreground">
-                                      {item.name}
-                                    </span>
-                                    {uni !== "-" && (
-                                      <span className="text-[10px] text-muted-foreground ml-1.5 font-bold">
-                                        #{uni}
+                                )}
+                                <div className="relative z-10 space-y-1.5 w-full">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="flex items-center gap-2.5 min-w-0">
+                                      <span
+                                        className={cn(
+                                          "w-5 h-5 rounded font-black text-xs flex items-center justify-center shrink-0 tabular-nums",
+                                          getRankMedalClass(rank)
+                                        )}
+                                      >
+                                        {rank}
                                       </span>
-                                    )}
-                                    <span className="text-[10px] text-muted-foreground block tabular-nums">
-                                      {item.games}登板 {item.ip}回 奪三振{item.strikeouts}（失点{item.runs}・自責{item.earnedRuns}）
-                                    </span>
+                                      <div className="min-w-0">
+                                        <span className="font-black text-foreground">
+                                          {item.name}
+                                        </span>
+                                        {uni !== "-" && (
+                                          <span className="text-[10px] text-muted-foreground ml-1.5 font-bold tabular-nums">
+                                            #{uni}
+                                          </span>
+                                        )}
+                                        <span className="text-[10px] text-muted-foreground block tabular-nums">
+                                          {item.games}登板 {item.ip}回 奪三振{item.strikeouts}（失点{item.runs}・自責{item.earnedRuns}）
+                                        </span>
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center gap-1.5 shrink-0">
+                                      <span className="text-lg font-black tabular-nums text-primary leading-none">
+                                        {item.era}
+                                      </span>
+                                      {canLinkGrowth && (
+                                        <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
+                                      )}
+                                    </div>
                                   </div>
-                                </div>
-                                <div className="flex items-center gap-1.5 shrink-0">
-                                  <span className="text-base font-black tabular-nums text-primary">
-                                    {item.era}
-                                  </span>
-                                  {canLinkGrowth && (
-                                    <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
-                                  )}
+                                  <div className="w-4/5 h-1.5 rounded-xs bg-card border border-border/60 overflow-hidden">
+                                    <div
+                                      className="h-full bg-primary"
+                                      style={{ width: `${eraPct}%` }}
+                                    />
+                                  </div>
                                 </div>
                               </>
                             );
@@ -1417,14 +1499,14 @@ export default function LiffStatsPage() {
                               <Link
                                 key={`era-${item.id}`}
                                 href={`/liff/players/growth?id=${encodeURIComponent(item.id)}`}
-                                className="flex items-center justify-between p-2.5 rounded-xl bg-muted/35 hover:bg-muted/60 hover:border-primary/40 border border-border/60 text-xs transition-all active:scale-[0.99]"
+                                className="relative overflow-hidden flex items-center justify-between p-3 rounded-xl bg-muted hover:bg-muted/80 hover:border-primary/50 border border-border text-xs transition-all active:scale-[0.99]"
                               >
                                 {inner}
                               </Link>
                             ) : (
                               <div
                                 key={`era-${item.id}`}
-                                className="flex items-center justify-between p-2.5 rounded-xl bg-muted/35 border border-border/60 text-xs"
+                                className="relative overflow-hidden flex items-center justify-between p-3 rounded-xl bg-muted border border-border text-xs"
                               >
                                 {inner}
                               </div>
@@ -1436,37 +1518,53 @@ export default function LiffStatsPage() {
 
                     {/* 奪三振リーダー TOP3 */}
                     {soLeaders.length > 0 && (
-                      <div className="rounded-2xl border border-border/60 bg-card shadow-xs overflow-hidden">
-                        <div className="px-3.5 py-2.5 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50">
-                          <h3 className="text-xs font-black text-foreground flex items-center gap-1.5">
-                            <Flame className="w-3.5 h-3.5 text-primary" />
+                      <div className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+                        <div className="px-3.5 py-2 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary">
+                          <h3 className="text-xs font-black text-white flex items-center gap-1.5">
+                            <Flame className="w-3.5 h-3.5 text-amber-400" />
                             <span>奪三振 TOP3</span>
                           </h3>
                         </div>
-                        <div className="p-3.5 space-y-1.5">
+                        <div className="p-3 space-y-1.5">
                           {soLeaders.map((item, idx) => {
                             const rank = idx + 1;
+                            const uni = cleanUniform(item.uniformNumber);
+                            const maxSo = Math.max(soLeaders[0]?.strikeouts || 1, 1);
+                            const pct = Math.min(100, Math.max(12, Math.round((item.strikeouts / maxSo) * 100)));
                             return (
                               <div
                                 key={`so-${item.id}`}
-                                className="flex items-center justify-between px-2.5 py-2 rounded-xl bg-muted/35 border border-border/60 text-xs gap-2"
+                                className="relative overflow-hidden px-2.5 py-2 rounded-xl bg-muted border border-border text-xs space-y-1.5"
                               >
-                                <div className="flex items-center gap-2 min-w-0">
+                                {uni !== "-" && (
                                   <span
-                                    className={cn(
-                                      "w-5 h-5 rounded-md font-black text-[11px] flex items-center justify-center shrink-0 tabular-nums",
-                                      getRankMedalClass(rank)
-                                    )}
+                                    aria-hidden="true"
+                                    className="pointer-events-none select-none absolute right-2 -bottom-1.5 text-[42px] font-black tracking-tighter leading-none tabular-nums text-slate-200 dark:text-slate-800"
                                   >
-                                    {rank}
+                                    {uni}
                                   </span>
-                                  <span className="font-bold text-foreground truncate">
-                                    {item.name}（{item.ip}回）
+                                )}
+                                <div className="relative z-10 flex items-center justify-between gap-2">
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <span
+                                      className={cn(
+                                        "w-5 h-5 rounded font-black text-[11px] flex items-center justify-center shrink-0 tabular-nums",
+                                        getRankMedalClass(rank)
+                                      )}
+                                    >
+                                      {rank}
+                                    </span>
+                                    <span className="font-black text-foreground truncate">
+                                      {item.name}（{item.ip}回）
+                                    </span>
+                                  </div>
+                                  <span className="font-black tabular-nums text-primary shrink-0">
+                                    {item.strikeouts} 奪三振
                                   </span>
                                 </div>
-                                <span className="font-black tabular-nums text-primary shrink-0">
-                                  {item.strikeouts} 奪三振
-                                </span>
+                                <div className="relative z-10 w-full h-1.5 rounded-xs bg-card border border-border/60 overflow-hidden">
+                                  <div className="h-full bg-primary" style={{ width: `${pct}%` }} />
+                                </div>
                               </div>
                             );
                           })}
@@ -1475,12 +1573,12 @@ export default function LiffStatsPage() {
                     )}
 
                     {/* 全投手 成績一覧テーブル */}
-                    <div className="rounded-2xl border border-border/60 bg-card shadow-xs overflow-hidden">
-                      <div className="px-3.5 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 flex items-center justify-between">
-                        <h3 className="text-xs font-black text-foreground">
+                    <div className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+                      <div className="px-3.5 py-2.5 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary flex items-center justify-between">
+                        <h3 className="text-xs font-black text-white">
                           個人投手成績一覧（{activeSection.pitchingStats.length}名）
                         </h3>
-                        <span className="text-[10px] font-bold text-muted-foreground">
+                        <span className="text-[10px] font-bold text-slate-300">
                           防御率は7回制換算
                         </span>
                       </div>

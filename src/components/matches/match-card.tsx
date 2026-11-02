@@ -219,11 +219,13 @@ export function MatchCard({
   const topScores = match.battingOrder === 'first' ? myScores : oppScores;
   const bottomScores = match.battingOrder === 'second' ? myScores : oppScores;
   const isHomeWinning = !isFuture && secondScore > firstScore;
+  const isMyFirst = match.battingOrder === 'first';
+  const isLive = match.status === 'live';
 
   return (
     <div className={cn(
-      "group relative rounded-2xl border border-border/60 bg-card shadow-xs overflow-hidden transition-all duration-200 ease-out",
-      isExpanded && "border-primary/40"
+      "group relative rounded-2xl border border-border bg-card shadow-xs overflow-hidden transition-all duration-200 ease-out",
+      isExpanded && "border-primary/50 shadow-sm"
     )}>
       
       {/* スワイプ時のみ背面の編集・削除アクションを表示 */}
@@ -245,7 +247,7 @@ export function MatchCard({
           <div className="absolute top-0 right-0 h-full w-[75px]">
             <button
               onClick={(e) => { e.stopPropagation(); handleDelete(); setOffsetX(0); }}
-              className="flex flex-col items-center justify-center w-full h-full bg-rose-500 text-white active:bg-rose-600 transition-colors"
+              className="flex flex-col items-center justify-center w-full h-full bg-rose-600 text-white active:bg-rose-700 transition-colors"
             >
               <Trash2 className="h-5 w-5 mb-1" />
               <span className="text-[10px] font-black uppercase tracking-wider">削除</span>
@@ -266,7 +268,7 @@ export function MatchCard({
         {/* 🌟 試合動画がある場合、カード上部に埋め込む（カスタムサムネイル表記でYouTubeタイトルのオーバーレイを完全消去） */}
         {youtubeVideoId && (
           <div 
-            className="w-full aspect-video border-b border-border/60 overflow-hidden bg-black relative group/video"
+            className="w-full aspect-video border-b border-border overflow-hidden bg-black relative group/video"
             onTouchStart={(e) => e.stopPropagation()}
             onTouchMove={(e) => e.stopPropagation()}
             onTouchEnd={(e) => e.stopPropagation()}
@@ -295,19 +297,19 @@ export function MatchCard({
                   className="w-full h-full object-cover transition-transform duration-500 group-hover/thumb:scale-105"
                 />
                 
-                {/* 2. グラデーションオーバーレイ */}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent group-hover/thumb:from-black/80 transition-colors" />
+                {/* 2. ソリッドスクリム（グラデーションゼロ） */}
+                <div className="absolute inset-0 bg-black/30 group-hover/thumb:bg-black/40 transition-colors" />
 
                 {/* 3. 洗練されたカスタム再生ボタン */}
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-primary/90 text-primary-foreground flex items-center justify-center shadow-lg group-hover/thumb:scale-110 group-hover/thumb:bg-primary transition-all duration-300 ring-4 ring-white/20">
+                  <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-lg group-hover/thumb:scale-110 transition-all duration-300 ring-4 ring-white/25">
                     <Play className="w-7 h-7 sm:w-8 sm:h-8 fill-current translate-x-0.5" />
                   </div>
                 </div>
 
                 {/* 4. アプリ標準のクリーンな再生ガイドラベル */}
-                <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between text-[11px] font-bold text-white/90 drop-shadow-sm pointer-events-none">
-                  <span className="flex items-center gap-1.5 bg-black/50 backdrop-blur-md px-3 py-1.2 rounded-full border border-white/15">
+                <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between text-[11px] font-bold text-white pointer-events-none">
+                  <span className="flex items-center gap-1.5 bg-slate-950/85 px-3 py-1 rounded-full border border-white/20">
                     <Play className="w-3.5 h-3.5 fill-current text-primary" />
                     タップして試合動画を再生
                   </span>
@@ -318,153 +320,183 @@ export function MatchCard({
         )}
 
         <div
-          className="p-4 sm:p-5 cursor-pointer"
+          className="cursor-pointer"
           onClick={handleCardClick}
         >
-          <div className="flex items-center justify-between gap-4 pointer-events-none">
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center flex-wrap gap-2 mb-1.5">
-                <span className={cn(
-                  "w-16 text-center text-[10px] sm:text-xs font-black px-1.5 py-0.5 rounded shrink-0",
-                  match.matchType === 'official' ? "bg-amber-500/12 text-amber-700 dark:text-amber-300 border border-amber-500/30" :
-                  match.matchType === 'exchange' ? "bg-sky-500/12 text-sky-700 dark:text-sky-300 border border-sky-500/30" :
-                  "bg-muted/50 text-muted-foreground border border-border/60"
-                )}>
-                  {match.matchType === 'official' ? '公式戦' : match.matchType === 'exchange' ? '交流戦' : 'OP戦'}
-                </span>
+          {/* 🌟 A-3 上帯ダークキャップ（種別・大会名・取込状況・勝敗ステータス） */}
+          <div className="px-4 py-2 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary flex items-center justify-between gap-2 pointer-events-none">
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              <span className={cn(
+                "text-center text-[10px] sm:text-xs font-black px-2 py-0.5 rounded shrink-0",
+                match.matchType === 'official' ? "bg-amber-400 text-slate-950" :
+                match.matchType === 'exchange' ? "bg-sky-400 text-slate-950" :
+                "bg-slate-700 text-slate-100"
+              )}>
+                {match.matchType === 'official' ? '公式戦' : match.matchType === 'exchange' ? '交流戦' : 'OP戦'}
+              </span>
 
-                {!isFuture && match.status !== 'rainout' && match.status !== 'scheduled' && (
-                  match.hasScorebook ? (
-                    <span className="inline-flex items-center gap-1 text-[10px] sm:text-xs font-black px-2 py-0.5 rounded border bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 border-emerald-500/25 shrink-0">
-                      <CheckCircle2 className="h-3 w-3 shrink-0" />
-                      <span>スコア取込済</span>
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center text-[10px] sm:text-xs font-black px-2 py-0.5 rounded border bg-muted/50 text-muted-foreground border-border/60 shrink-0">
-                      未取込
-                    </span>
-                  )
-                )}
+              <span className="text-xs sm:text-sm font-bold text-slate-100 truncate min-w-0">
+                {match.tournamentName && match.tournamentName !== "公式戦" && match.tournamentName !== "OP戦"
+                  ? match.tournamentName
+                  : match.matchType === 'official'
+                  ? "大会名未登録"
+                  : match.matchType === 'exchange'
+                  ? "交流戦"
+                  : "OP戦"}
+              </span>
 
-                <span className="text-xs sm:text-sm font-bold text-muted-foreground truncate min-w-0">
-                  {match.tournamentName && match.tournamentName !== "公式戦" && match.tournamentName !== "OP戦"
-                    ? match.tournamentName
-                    : match.matchType === 'official'
-                    ? "大会名未登録"
-                    : match.matchType === 'exchange'
-                    ? "交流戦"
-                    : "OP戦"}
-                </span>
-              </div>
-
-              <h3 className="text-lg sm:text-xl font-black truncate text-foreground mb-1">
-                vs {match.opponent}
-              </h3>
-              
-              <p className="text-[11px] sm:text-xs font-bold text-muted-foreground flex items-center gap-1.5 mt-1 truncate">
-                <Calendar className="h-3.5 w-3.5 shrink-0" />
-                <span>{formatSafeDate(match.date, "MM/dd(E) HH:mm")}</span>
-                <span className="text-border">|</span>
-                <MapPin className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate">
-                  {(match.venueShortName && match.venueShortName.trim() !== "")
-                    ? match.venueShortName.trim()
-                    : (match.venueName && match.venueName.trim() !== "")
-                    ? match.venueName.trim()
-                    : (match.surfaceDetails && match.surfaceDetails.trim() !== "")
-                    ? match.surfaceDetails.trim()
-                    : "球場未設定"}
-                </span>
-              </p>
+              {!isFuture && match.status !== 'rainout' && match.status !== 'scheduled' && (
+                match.hasScorebook ? (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-black px-1.5 py-0.5 rounded bg-emerald-500 text-slate-950 shrink-0">
+                    <CheckCircle2 className="h-3 w-3 shrink-0" />
+                    <span>取込済</span>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center text-[10px] font-black px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 shrink-0">
+                    未取込
+                  </span>
+                )
+              )}
             </div>
 
-            <div className="flex flex-col items-center gap-1.5 shrink-0">
-              {!isFuture && match.status !== 'rainout' && (
-                <div className="w-14 text-center">
-                  {isWin && <span className="block w-full bg-blue-600 text-white text-[11px] font-black py-0.5 rounded shadow-sm">WIN</span>}
-                  {isLoss && <span className="block w-full bg-rose-600 text-white text-[11px] font-black py-0.5 rounded shadow-sm">LOSE</span>}
-                  {isDraw && <span className="block w-full bg-zinc-500 text-white text-[11px] font-black py-0.5 rounded shadow-sm">DRAW</span>}
-                </div>
-              )}
-              {match.status === 'rainout' && (
-                <div className="w-16 text-center">
-                  <span className="block w-full bg-muted/50 text-muted-foreground border border-border/60 text-[10px] sm:text-[11px] font-black py-0.5 rounded">雨天中止</span>
-                </div>
-              )}
-              
-              {match.status === 'rainout' ? (
-                <div className="px-2.5 py-1.5 bg-muted/35 rounded-xl border border-border/60 text-center min-w-[85px] flex flex-col items-center justify-center">
-                  <p className="text-[10px] font-black text-muted-foreground leading-none">☔ 中止</p>
-                </div>
-              ) : isFuture ? (
-                <div className="px-1 py-1.5 bg-primary/10 rounded-xl border border-primary/25 text-center min-w-[85px] flex flex-col items-center justify-center">
-                  <p className="text-[8px] font-black text-primary/70 uppercase leading-none mb-0.5">START IN</p>
-                  <MatchCountdown date={match.date} />
-                </div>
-              ) : (
-                <div className="flex items-center gap-2 px-3 py-1.5 bg-primary/5 rounded-xl border border-primary/25">
-                  <div className="text-center w-7">
-                    <p className="text-[9px] font-black text-primary/70 uppercase leading-none">先</p>
-                    <span className="text-xl font-black tabular-nums leading-none text-foreground">{firstScore}</span>
-                  </div>
-                  <span className="text-sm font-black text-primary/30">-</span>
-                  <div className="text-center w-7">
-                    <p className="text-[9px] font-black text-primary/70 uppercase leading-none">後</p>
-                    <span className="text-xl font-black tabular-nums leading-none text-foreground">{secondScore}</span>
-                  </div>
-                </div>
-              )}
-              {isExpanded ? <ChevronUp className="h-4 w-4 text-primary mt-1" /> : <ChevronDown className="h-4 w-4 text-muted-foreground/50 mt-1" />}
+            <div className="shrink-0 flex items-center gap-1.5">
+              {isLive ? (
+                <span className="px-2 py-0.5 rounded bg-rose-600 text-white text-[10px] sm:text-[11px] font-black animate-pulse">LIVE</span>
+              ) : match.status === 'rainout' ? (
+                <span className="px-2 py-0.5 rounded bg-sky-600 text-white text-[10px] sm:text-[11px] font-black">雨天中止</span>
+              ) : isFuture || match.status === 'scheduled' ? (
+                <span className="px-2 py-0.5 rounded bg-slate-700 text-slate-200 text-[10px] sm:text-[11px] font-black">予定</span>
+              ) : isWin ? (
+                <span className="px-2.5 py-0.5 rounded bg-primary text-primary-foreground text-[11px] font-black tabular-nums">WIN</span>
+              ) : isLoss ? (
+                <span className="px-2.5 py-0.5 rounded bg-rose-600 text-white text-[11px] font-black tabular-nums">LOSE</span>
+              ) : isDraw ? (
+                <span className="px-2.5 py-0.5 rounded bg-slate-600 text-white text-[11px] font-black tabular-nums">DRAW</span>
+              ) : null}
             </div>
           </div>
 
-          {isExpanded && (
-            <div className="mt-4 pt-2 animate-in fade-in slide-in-from-top-2 duration-300">
-              <div className="w-full overflow-hidden rounded-xl border border-border/60 bg-card shadow-xs flex flex-col pointer-events-auto">
+          {/* 🌟 純白カードボディ（対戦相手・日時球場・中継スコアボックス） */}
+          <div className="p-4 sm:p-5">
+            <div className="flex items-center justify-between gap-4 pointer-events-none">
+              <div className="flex-1 min-w-0">
+                <h3 className="text-lg sm:text-xl font-black truncate text-foreground tracking-tight">
+                  vs {match.opponent}
+                </h3>
                 
-                <div className="overflow-x-auto">
-                  <table className="w-full text-center whitespace-nowrap">
-                    <thead className="bg-muted/35 border-b border-border/60">
-                      <tr>
-                        <th className="py-2 px-3 text-left font-normal text-muted-foreground text-xs w-20 md:w-32">TEAM</th>
-                        {Array.from({ length: inningCount }).map((_, i) => (
-                          <th key={i} className="py-2 px-1 sm:px-2 text-sm md:text-base font-semibold text-foreground">{i + 1}</th>
-                        ))}
-                        <th className="py-2 px-3 text-sm md:text-base font-bold text-primary">R</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border/60 text-xs sm:text-sm font-medium tabular-nums">
-                      <tr>
-                        <td className="py-2 px-3 text-left">
-                          <div className="w-16 truncate md:w-auto md:whitespace-normal">
-                            {match.battingOrder === 'first' ? (teamFullName || "自チーム") : (match.opponent || "相手")}
-                          </div>
-                        </td>
-                        {Array.from({ length: inningCount }).map((_, i) => (
-                          <td key={`top-${i}`} className="py-2 text-muted-foreground">
-                            {formatScoreDisplay({ score: topScores[i], isBottom: false, isInningFinal: i === inningCount - 1, isHomeWinning })}
+                <p className="text-[11px] sm:text-xs font-bold text-muted-foreground flex items-center gap-1.5 mt-1 truncate">
+                  <Calendar className="h-3.5 w-3.5 shrink-0 text-primary" />
+                  <span>{formatSafeDate(match.date, "MM/dd(E) HH:mm")}</span>
+                  <span className="text-border">|</span>
+                  <MapPin className="h-3.5 w-3.5 shrink-0 text-primary" />
+                  <span className="truncate">
+                    {(match.venueShortName && match.venueShortName.trim() !== "")
+                      ? match.venueShortName.trim()
+                      : (match.venueName && match.venueName.trim() !== "")
+                      ? match.venueName.trim()
+                      : (match.surfaceDetails && match.surfaceDetails.trim() !== "")
+                      ? match.surfaceDetails.trim()
+                      : "球場未設定"}
+                  </span>
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                {match.status === 'rainout' ? (
+                  <div className="px-3 py-1.5 bg-muted rounded-xl border border-border text-center min-w-[85px] flex flex-col items-center justify-center">
+                    <p className="text-[11px] font-black text-muted-foreground leading-none">☔ 中止</p>
+                  </div>
+                ) : isFuture ? (
+                  <div className="px-2.5 py-1.5 bg-muted rounded-xl border border-border text-center min-w-[88px] flex flex-col items-center justify-center">
+                    <p className="text-[8px] font-black text-muted-foreground uppercase leading-none mb-0.5">START IN</p>
+                    <MatchCountdown date={match.date} />
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 px-3 py-1.5 bg-muted rounded-xl border border-border">
+                    <div className="text-center min-w-[28px]">
+                      <p className="text-[9px] font-black text-muted-foreground uppercase leading-none mb-0.5">先</p>
+                      <span className={cn(
+                        "text-xl sm:text-2xl font-black tabular-nums leading-none",
+                        isMyFirst && isWin ? "text-primary" : "text-foreground"
+                      )}>{firstScore}</span>
+                    </div>
+                    <span className="text-xs font-black text-muted-foreground">-</span>
+                    <div className="text-center min-w-[28px]">
+                      <p className="text-[9px] font-black text-muted-foreground uppercase leading-none mb-0.5">後</p>
+                      <span className={cn(
+                        "text-xl sm:text-2xl font-black tabular-nums leading-none",
+                        !isMyFirst && isWin ? "text-primary" : "text-foreground"
+                      )}>{secondScore}</span>
+                    </div>
+                  </div>
+                )}
+                {isExpanded ? <ChevronUp className="h-4 w-4 text-primary shrink-0" /> : <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />}
+              </div>
+            </div>
+
+            {isExpanded && (
+              <div className="mt-4 pt-3 border-t border-border animate-in fade-in slide-in-from-top-2 duration-300">
+                <div className="w-full overflow-hidden rounded-xl border border-border bg-card shadow-xs flex flex-col pointer-events-auto">
+                  
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-center whitespace-nowrap">
+                      <thead className="bg-[#0f172a] text-slate-200 border-b-2 border-primary">
+                        <tr>
+                          <th className="py-2 px-3 text-left font-black text-slate-300 text-xs w-20 md:w-32">TEAM</th>
+                          {Array.from({ length: inningCount }).map((_, i) => (
+                            <th key={i} className="py-2 px-1.5 sm:px-2 text-xs md:text-sm font-black tabular-nums text-slate-200">{i + 1}</th>
+                          ))}
+                          <th className="py-2 px-3 text-xs md:text-sm font-black bg-primary text-primary-foreground border-l border-slate-700 tabular-nums">R</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border text-xs sm:text-sm font-bold tabular-nums">
+                        <tr>
+                          <td className="py-2 px-3 text-left font-black text-foreground">
+                            <div className="w-16 truncate md:w-auto md:whitespace-normal">
+                              {match.battingOrder === 'first' ? (teamFullName || "自チーム") : (match.opponent || "相手")}
+                            </div>
                           </td>
-                        ))}
-                        <td className="py-2 px-3 font-bold text-primary">{isFuture ? "-" : firstScore}</td>
-                      </tr>
-                      <tr>
-                        <td className="py-2 px-3 text-left">
-                          <div className="w-16 truncate md:w-auto md:whitespace-normal">
-                            {match.battingOrder === 'second' ? (teamFullName || "自チーム") : (match.opponent || "相手")}
-                          </div>
-                        </td>
-                        {Array.from({ length: inningCount }).map((_, i) => (
-                          <td key={`bottom-${i}`} className="py-2 text-foreground font-semibold">
-                            {formatScoreDisplay({ score: bottomScores[i], isBottom: true, isInningFinal: i === inningCount - 1, isHomeWinning })}
+                          {Array.from({ length: inningCount }).map((_, i) => {
+                            const val = formatScoreDisplay({ score: topScores[i], isBottom: false, isInningFinal: i === inningCount - 1, isHomeWinning });
+                            const scored = typeof topScores[i] === "number" && (topScores[i] as number) > 0;
+                            return (
+                              <td key={`top-${i}`} className="py-2">
+                                {scored && isMyFirst ? (
+                                  <span className="inline-block min-w-5 px-1 py-0.5 rounded bg-primary text-primary-foreground font-black leading-none">{val}</span>
+                                ) : (
+                                  <span className={scored ? "text-foreground font-black" : "text-muted-foreground"}>{val}</span>
+                                )}
+                              </td>
+                            );
+                          })}
+                          <td className="py-2 px-3 font-black text-primary border-l border-border bg-muted/60 text-sm sm:text-base">{isFuture ? "-" : firstScore}</td>
+                        </tr>
+                        <tr>
+                          <td className="py-2 px-3 text-left font-black text-foreground">
+                            <div className="w-16 truncate md:w-auto md:whitespace-normal">
+                              {match.battingOrder === 'second' ? (teamFullName || "自チーム") : (match.opponent || "相手")}
+                            </div>
                           </td>
-                        ))}
-                        <td className="py-2 px-3 font-bold text-primary">{isFuture ? "-" : secondScore}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-                
-                <div className="p-3 border-t border-border/60 bg-muted/35 flex gap-2">
+                          {Array.from({ length: inningCount }).map((_, i) => {
+                            const val = formatScoreDisplay({ score: bottomScores[i], isBottom: true, isInningFinal: i === inningCount - 1, isHomeWinning });
+                            const scored = typeof bottomScores[i] === "number" && (bottomScores[i] as number) > 0;
+                            return (
+                              <td key={`bottom-${i}`} className="py-2">
+                                {scored && !isMyFirst ? (
+                                  <span className="inline-block min-w-5 px-1 py-0.5 rounded bg-primary text-primary-foreground font-black leading-none">{val}</span>
+                                ) : (
+                                  <span className={scored ? "text-foreground font-black" : "text-muted-foreground"}>{val}</span>
+                                )}
+                              </td>
+                            );
+                          })}
+                          <td className="py-2 px-3 font-black text-primary border-l border-border bg-muted/60 text-sm sm:text-base">{isFuture ? "-" : secondScore}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  
+                  <div className="p-3 border-t border-border bg-muted/60 flex gap-2">
                   {match.status === 'live' ? (
                     <Button
                       onClick={(e) => {
@@ -577,6 +609,7 @@ export function MatchCard({
               </div>
             </div>
           )}
+          </div>
         </div>
       </div>
 

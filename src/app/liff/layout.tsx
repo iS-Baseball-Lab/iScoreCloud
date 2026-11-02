@@ -15,13 +15,8 @@ export default function LiffLayout({
 }) {
   return (
     <LiffProvider>
-      <div className="min-h-screen bg-muted/20 text-foreground flex justify-center selection:bg-primary/20">
-        <main className="w-full max-w-lg min-h-screen bg-background border-x border-border/40 shadow-xs flex flex-col pb-28 sm:pb-32 relative overflow-x-clip">
-          {/* 🌟 トップページと全画面で統一されたアンビエントグラデーション背景 */}
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute top-0 left-0 right-0 h-[480px] bg-gradient-to-b from-primary/12 via-primary/6 to-transparent z-0"
-          />
+      <div className="min-h-screen bg-slate-200/60 dark:bg-slate-950 text-foreground flex justify-center selection:bg-primary/20">
+        <main className="w-full max-w-lg min-h-screen bg-background border-x border-border shadow-xs flex flex-col pb-28 sm:pb-32 relative overflow-x-clip">
           <div className="relative flex flex-col flex-1">
             {children}
           </div>

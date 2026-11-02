@@ -75,30 +75,35 @@ export interface QuickMenuToneStyle {
   iconBoxClass: string;
   badgeClass: string;
   hoverBorderClass: string;
+  topBarClass: string;
 }
 
 const PRIMARY_QUICK_MENU_TONE_STYLE: QuickMenuToneStyle = {
   iconBoxClass: "bg-primary/12 text-primary",
-  badgeClass: "bg-primary/10 text-primary",
-  hoverBorderClass: "hover:border-primary/40",
+  badgeClass: "bg-primary/12 text-primary",
+  hoverBorderClass: "hover:border-primary/50",
+  topBarClass: "bg-primary",
 };
 
 const TEAL_QUICK_MENU_TONE_STYLE: QuickMenuToneStyle = {
   iconBoxClass: "bg-teal-500/12 text-teal-600 dark:text-teal-400",
-  badgeClass: "bg-teal-500/10 text-teal-700 dark:text-teal-300",
-  hoverBorderClass: "hover:border-teal-500/40",
+  badgeClass: "bg-teal-500/12 text-teal-700 dark:text-teal-300",
+  hoverBorderClass: "hover:border-teal-500/50",
+  topBarClass: "bg-teal-600",
 };
 
 const AMBER_QUICK_MENU_TONE_STYLE: QuickMenuToneStyle = {
   iconBoxClass: "bg-amber-500/12 text-amber-600 dark:text-amber-400",
-  badgeClass: "bg-amber-500/10 text-amber-700 dark:text-amber-300",
-  hoverBorderClass: "hover:border-amber-500/40",
+  badgeClass: "bg-amber-500/12 text-amber-700 dark:text-amber-300",
+  hoverBorderClass: "hover:border-amber-500/50",
+  topBarClass: "bg-amber-500",
 };
 
 const SLATE_QUICK_MENU_TONE_STYLE: QuickMenuToneStyle = {
   iconBoxClass: "bg-slate-500/12 text-slate-700 dark:text-slate-300",
-  badgeClass: "bg-slate-500/10 text-slate-700 dark:text-slate-300",
-  hoverBorderClass: "hover:border-slate-500/40",
+  badgeClass: "bg-slate-500/12 text-slate-700 dark:text-slate-300",
+  hoverBorderClass: "hover:border-slate-500/50",
+  topBarClass: "bg-slate-600",
 };
 
 export const QUICK_MENU_TONE_STYLES: Record<QuickMenuTone, QuickMenuToneStyle> = {

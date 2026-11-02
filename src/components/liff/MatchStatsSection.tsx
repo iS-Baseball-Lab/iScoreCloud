@@ -813,12 +813,22 @@ export function MatchStatsSection({
                     ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30"
                     : "bg-orange-500/15 text-orange-600 dark:text-orange-400 border-orange-500/30"
                   : "bg-sky-500/15 text-sky-600 dark:text-sky-400 border-sky-500/30";
+              const heroTopBarClass =
+                hero.type === "hit"
+                  ? "bg-amber-500"
+                  : hero.type === "rbi"
+                  ? "bg-primary"
+                  : "bg-sky-500";
 
               return (
                 <div
                   key={`${hero.label}-${hero.value}-${idx}`}
-                  className="rounded-2xl border border-border/60 bg-card p-3 shadow-xs flex items-start gap-2.5"
+                  className="relative overflow-hidden rounded-2xl border border-border bg-card p-3 pt-3.5 shadow-xs flex items-start gap-2.5"
                 >
+                  <span
+                    aria-hidden="true"
+                    className={`pointer-events-none absolute inset-x-0 top-0 h-[3px] ${heroTopBarClass}`}
+                  />
                   <div
                     className={cn(
                       "w-8 h-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5 border",
@@ -867,14 +877,14 @@ export function MatchStatsSection({
             <span className="truncate">打撃・走塁・守備成績</span>
           </h2>
 
-          <div className="inline-flex items-center gap-0.5 bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl border border-border/60 shrink-0">
+          <div className="inline-flex items-center gap-0.5 bg-muted p-1 rounded-2xl border border-border shrink-0">
             <button
               type="button"
               onClick={() => setBatterColumnMode("full")}
               className={cn(
                 "px-2.5 py-0.5 rounded-xl text-[10px] transition-all cursor-pointer",
                 batterColumnMode === "full"
-                  ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                  ? "bg-card text-foreground shadow-sm border border-border font-black"
                   : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
               )}
             >
@@ -886,7 +896,7 @@ export function MatchStatsSection({
               className={cn(
                 "px-2.5 py-0.5 rounded-xl text-[10px] transition-all cursor-pointer",
                 batterColumnMode === "compact"
-                  ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                  ? "bg-card text-foreground shadow-sm border border-border font-black"
                   : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
               )}
             >
@@ -895,19 +905,19 @@ export function MatchStatsSection({
           </div>
         </div>
 
-        <div className="rounded-2xl border border-border/60 bg-card shadow-xs overflow-hidden">
-          {/* サマリー帯（チーム打率・安打・打点・盗塁をひと目で把握） */}
-          <div className="px-3.5 py-2.5 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 flex items-center justify-between gap-2 flex-wrap">
-            <div className="flex items-center gap-2 text-[11px] font-black text-foreground">
-              <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/25 font-mono tabular-nums">
+        <div className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+          {/* A-3 上帯ダークキャップ（チーム打率・安打・打点・盗塁をひと目で把握） */}
+          <div className="px-3.5 py-2.5 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2 text-[11px] font-black text-white">
+              <span className="px-2 py-0.5 rounded bg-primary text-primary-foreground font-mono tabular-nums">
                 チーム打率 {teamAvgStr}
               </span>
-              <span className="text-muted-foreground font-mono tabular-nums">
+              <span className="text-slate-200 font-mono tabular-nums">
                 {batterTotal.atBats}打数 {batterTotal.hits}安打 {batterTotal.rbi}打点
               </span>
             </div>
             {batterColumnMode === "full" && (
-              <span className="text-[10px] font-bold text-muted-foreground select-none">
+              <span className="text-[10px] font-bold text-slate-300 select-none">
                 ← 横スワイプで全項目 →
               </span>
             )}
@@ -1263,24 +1273,24 @@ export function MatchStatsSection({
           )}
         </div>
 
-        <div className="rounded-2xl border border-border/60 bg-card shadow-xs overflow-hidden">
+        <div className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
           {pitcherStats.length === 0 ? (
             <div className="p-6 text-center text-xs font-bold text-muted-foreground">
               投手データがありません
             </div>
           ) : (
             <>
-              {/* 投手サマリー帯 */}
-              <div className="px-3.5 py-2.5 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 flex items-center justify-between gap-2 flex-wrap">
-                <div className="flex items-center gap-2 text-[11px] font-black text-foreground">
-                  <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/25 font-mono tabular-nums">
+              {/* A-3 上帯ダークキャップ（投手サマリー帯） */}
+              <div className="px-3.5 py-2.5 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2 text-[11px] font-black text-white">
+                  <span className="px-2 py-0.5 rounded bg-primary text-primary-foreground font-mono tabular-nums">
                     チーム防御率 {teamEraStr}
                   </span>
-                  <span className="text-muted-foreground font-mono tabular-nums">
+                  <span className="text-slate-200 font-mono tabular-nums">
                     {teamIpStr}回 {pitcherTotal.strikeouts}奪三振 自責{pitcherTotal.earnedRuns}
                   </span>
                 </div>
-                <span className="text-[10px] font-bold text-muted-foreground select-none">
+                <span className="text-[10px] font-bold text-slate-300 select-none">
                   ← 横スワイプで全項目 →
                 </span>
               </div>

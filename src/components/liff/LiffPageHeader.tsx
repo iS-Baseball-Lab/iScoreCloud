@@ -60,13 +60,13 @@ export function LiffPageHeader({
   };
 
   return (
-    <div className="flex items-center justify-between gap-3 pb-2 border-b border-border/40">
+    <div className="flex items-center justify-between gap-3 pb-2.5 border-b border-border">
       <div className="flex items-center gap-2 min-w-0">
         {showBack && (
           <button
             type="button"
             onClick={() => router.back()}
-            className="p-2 -ml-1 rounded-2xl bg-card border border-border/60 text-foreground hover:bg-muted active:scale-95 transition-all shadow-xs shrink-0"
+            className="p-2 -ml-1 rounded-2xl bg-card border border-border text-foreground hover:bg-muted active:scale-95 transition-all shadow-xs shrink-0"
             aria-label="戻る"
           >
             <ChevronLeft className="w-5 h-5" />
@@ -94,7 +94,7 @@ export function LiffPageHeader({
           <button
             type="button"
             onClick={handleShare}
-            className="p-2 rounded-2xl bg-card border border-border/60 text-foreground hover:bg-muted active:scale-95 transition-all shadow-xs"
+            className="p-2 rounded-2xl bg-card border border-border text-foreground hover:bg-muted active:scale-95 transition-all shadow-xs"
             aria-label="LINEで共有"
             title="LINEで共有"
           >

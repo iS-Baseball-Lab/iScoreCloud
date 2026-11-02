@@ -103,7 +103,7 @@ export function Header() {
   const isAdmin = user?.systemRole === 'SYSTEM_ADMIN';
 
   return (
-    <header className="sticky top-0 z-40 w-full bg-white/95 dark:bg-background/60 backdrop-blur-xl border-b border-border/40 transition-colors duration-200">
+    <header className="sticky top-0 z-40 w-full bg-card border-b border-border shadow-xs transition-colors duration-200">
       <div className="flex h-16 sm:h-20 items-center justify-between px-3 sm:px-8">
 
         {/* 🌟 ロゴ & タイトル */}
@@ -152,7 +152,7 @@ export function Header() {
           />
         </div>
       </div>
-      <div className="h-[1px] sm:h-[2px] w-full bg-gradient-to-r from-transparent via-primary/30 to-transparent" />
+      <div className="h-[2px] w-full bg-primary" />
     </header>
   );
 }

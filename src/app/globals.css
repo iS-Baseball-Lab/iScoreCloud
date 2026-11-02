@@ -61,36 +61,32 @@
 }
 
 /* =======================================================
-   ⚾️ 3. BASE VARIABLES (LIGHT MODE)
+   ⚾️ 3. BASE VARIABLES (LIGHT MODE - CRISP SOLID SLATE)
    ======================================================= */
 :root {
-  --background: oklch(0.93 0 0);
-  --foreground: oklch(0.145 0 0);
+  --background: #eef2f6;
+  --foreground: #0f172a;
 
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+  --popover: #ffffff;
+  --popover-foreground: #0f172a;
 
-  --primary: oklch(0.58 0.15 250);
-  --primary-foreground: oklch(0.985 0 0);
+  --primary: #0284c7;
+  --primary-foreground: #ffffff;
 
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+  --secondary: #f1f5f9;
+  --secondary-foreground: #0f172a;
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b;
+  --accent: #f1f5f9;
+  --accent-foreground: #0f172a;
   --destructive: oklch(0.577 0.245 27.325);
 
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.97 0 0);
-  --ring: oklch(0.58 0.15 250);
+  --border: #cbd5e1;
+  --input: #f1f5f9;
+  --ring: #0284c7;
   --radius: 0.625rem;
-
-  --bg-glow: 4%;
-  --wavy-color: color-mix(in srgb, #616670 10%, transparent);
-  --wavy-size: 5px;
 
   --chart-1: oklch(0.809 0.105 251.813);
   --chart-2: oklch(0.623 0.214 259.815);
@@ -98,45 +94,42 @@
   --chart-4: oklch(0.488 0.243 264.376);
   --chart-5: oklch(0.424 0.199 265.638);
 
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.58 0.15 250);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.58 0.15 250);
+  --sidebar: #ffffff;
+  --sidebar-foreground: #0f172a;
+  --sidebar-primary: #0284c7;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f1f5f9;
+  --sidebar-accent-foreground: #0f172a;
+  --sidebar-border: #cbd5e1;
+  --sidebar-ring: #0284c7;
 }
 
 /* =======================================================
-   ⚾️ 4. DARK MODE VARIABLES
+   ⚾️ 4. DARK MODE VARIABLES (STADIUM NAVY SOLID)
    ======================================================= */
 .dark {
-  --background: oklch(0.22 0 0);
-  --foreground: oklch(0.985 0 0);
+  --background: #0b1120;
+  --foreground: #f8fafc;
 
-  --card: oklch(0.145 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.145 0 0);
-  --popover-foreground: oklch(0.985 0 0);
+  --card: #131c2e;
+  --card-foreground: #f8fafc;
+  --popover: #131c2e;
+  --popover-foreground: #f8fafc;
 
-  --primary: oklch(0.7 0.15 250);
-  --primary-foreground: oklch(0.145 0 0);
+  --primary: #0ea5e9;
+  --primary-foreground: #ffffff;
 
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  --secondary: #1c2942;
+  --secondary-foreground: #f8fafc;
+  --muted: #1c2942;
+  --muted-foreground: #94a3b8;
+  --accent: #1c2942;
+  --accent-foreground: #f8fafc;
   --destructive: oklch(0.704 0.191 22.216);
 
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.7 0.15 250);
-
-  --bg-glow: 8%;
-  --wavy-color: color-mix(in srgb, #9ca3af 10%, transparent);
+  --border: #243452;
+  --input: #1c2942;
+  --ring: #0ea5e9;
 
   --chart-1: oklch(0.809 0.105 251.813);
   --chart-2: oklch(0.623 0.214 259.815);
@@ -144,14 +137,14 @@
   --chart-4: oklch(0.488 0.243 264.376);
   --chart-5: oklch(0.424 0.199 265.638);
 
-  --sidebar: oklch(0.145 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.7 0.15 250);
-  --sidebar-primary-foreground: oklch(0.145 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.7 0.15 250);
+  --sidebar: #131c2e;
+  --sidebar-foreground: #f8fafc;
+  --sidebar-primary: #0ea5e9;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #1c2942;
+  --sidebar-accent-foreground: #f8fafc;
+  --sidebar-border: #243452;
+  --sidebar-ring: #0ea5e9;
 }
 
 /* =======================================================
@@ -309,20 +302,7 @@
   body {
     @apply bg-background text-foreground;
     font-family: var(--font-sans), Arial, Helvetica, sans-serif;
-
-    /* 💡 波線を復活させつつ、色の濃淡を最適化 */
-    background-image:
-      /* 1. 角の光（オーラ） */
-      radial-gradient(circle at 0% 0%, color-mix(in srgb, var(--primary) var(--bg-glow), transparent) 0%, transparent 45vw),
-      radial-gradient(circle at 100% 100%, color-mix(in srgb, var(--primary) var(--bg-glow), transparent) 0%, transparent 45vw),
-
-      /* 2. ⚾️ 波線の復活：var(--background) と var(--wavy-color) の交互配置でクッキリさせる */
-      repeating-radial-gradient(circle at 0 0,
-        var(--background) 0,
-        var(--background) calc(var(--wavy-size) * 0.5),
-        var(--wavy-color) var(--wavy-size));
-
-    background-attachment: fixed;
+    background-image: none;
   }
 }
 

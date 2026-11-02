@@ -56,41 +56,38 @@ interface MatchScoreCardProps {
 // 🌟 試合カード用スケルトンローダー（動画エリア含む）
 export function MatchScoreCardSkeleton({ hasVideo = true }: { hasVideo?: boolean }) {
   return (
-    <div className="rounded-2xl border border-border/60 bg-card overflow-hidden shadow-xs animate-pulse">
+    <div className="rounded-2xl border border-border bg-card overflow-hidden shadow-xs animate-pulse">
       {/* 📹 試合動画プレースホルダー（スケルトン表示） */}
       {hasVideo && (
-        <div className="w-full aspect-video bg-muted/60 relative flex flex-col items-center justify-center border-b border-border/40">
-          <div className="w-12 h-12 rounded-full bg-muted/90 flex items-center justify-center shadow-xs">
-            <Video className="w-6 h-6 text-muted-foreground/30 animate-pulse" />
+        <div className="w-full aspect-video bg-muted relative flex flex-col items-center justify-center border-b border-border">
+          <div className="w-12 h-12 rounded-full bg-card flex items-center justify-center shadow-xs">
+            <Video className="w-6 h-6 text-muted-foreground/40 animate-pulse" />
           </div>
-          <div className="mt-2.5 h-2.5 w-28 bg-muted/80 rounded-full" />
+          <div className="mt-2.5 h-2.5 w-28 bg-border rounded-full" />
         </div>
       )}
 
-      {/* カードヘッダー */}
-      <div className="p-3.5 space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="h-4 w-32 bg-muted/70 rounded-md" />
-          <div className="h-4 w-16 bg-muted/70 rounded-md" />
-        </div>
+      {/* A-3 ダークヘッダーキャップ（スケルトン） */}
+      <div className="px-3.5 py-2 bg-[#0f172a] border-b-[3px] border-primary flex items-center justify-between">
+        <div className="h-4 w-36 bg-slate-700 rounded" />
+        <div className="h-4 w-12 bg-slate-700 rounded" />
+      </div>
 
+      {/* カードボディ */}
+      <div className="p-3.5 space-y-3">
         {/* スコア対戦エリア */}
-        <div className="flex items-center justify-between py-2 border-y border-border/40">
+        <div className="flex items-center justify-between py-1">
           <div className="space-y-1.5 flex-1">
-            <div className="h-4 w-24 bg-muted/70 rounded" />
-            <div className="h-7 w-10 bg-muted/80 rounded" />
+            <div className="h-5 w-32 bg-muted rounded" />
+            <div className="h-3.5 w-40 bg-muted rounded" />
           </div>
-          <div className="h-6 w-14 bg-muted/60 rounded-full mx-2" />
-          <div className="space-y-1.5 flex-1 text-right flex flex-col items-end">
-            <div className="h-4 w-24 bg-muted/70 rounded" />
-            <div className="h-7 w-10 bg-muted/80 rounded" />
-          </div>
+          <div className="h-10 w-20 bg-muted rounded-xl border border-border" />
         </div>
 
         {/* 下部情報 */}
-        <div className="flex items-center justify-between pt-1">
-          <div className="h-3.5 w-28 bg-muted/50 rounded" />
-          <div className="h-3.5 w-16 bg-muted/50 rounded" />
+        <div className="flex items-center justify-between pt-2 border-t border-border/60 gap-2">
+          <div className="h-7 flex-1 bg-muted rounded-xl" />
+          <div className="h-7 w-16 bg-muted rounded-xl" />
         </div>
       </div>
     </div>
@@ -218,6 +215,7 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
 
   const topTeamName = match.battingOrder === "second" ? match.opponent : teamName;
   const bottomTeamName = match.battingOrder === "second" ? teamName : match.opponent;
+  const isMyFirst = match.battingOrder !== "second";
 
   const inningCount = Math.max(match.innings || 7, topScores.length, bottomScores.length, 7);
 
@@ -225,13 +223,13 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
     <div
       className={cn(
         "group relative overflow-hidden transition-all duration-200 ease-out",
-        "rounded-2xl border border-border/60 bg-card shadow-xs",
-        isExpanded && "border-border/80 shadow-sm"
+        "rounded-2xl border border-border bg-card shadow-xs",
+        isExpanded && "border-primary/50 shadow-sm"
       )}
     >
       {/* 🌟 1. YouTube 試合動画（本家同様の美しいサムネイル＆インライン埋め込み） */}
       {youtubeVideoId && (
-        <div className="w-full aspect-video border-b border-border/50 overflow-hidden bg-black relative group/video">
+        <div className="w-full aspect-video border-b border-border overflow-hidden bg-black relative group/video">
           {isPlayingVideo ? (
             <iframe
               src={`https://www.youtube-nocookie.com/embed/${youtubeVideoId}?autoplay=1&rel=0&modestbranding=1`}
@@ -244,13 +242,13 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
           ) : (
             <div
               onClick={() => setIsPlayingVideo(true)}
-              className="relative w-full h-full cursor-pointer overflow-hidden group/thumb bg-muted/60"
+              className="relative w-full h-full cursor-pointer overflow-hidden group/thumb bg-muted"
             >
               {/* 🌟 サムネイル読み込み中スケルトン */}
               {!isThumbLoaded && (
-                <div className="absolute inset-0 bg-muted/70 animate-pulse flex flex-col items-center justify-center z-0">
-                  <div className="w-12 h-12 rounded-full bg-muted/90 flex items-center justify-center shadow-xs">
-                    <Video className="w-6 h-6 text-muted-foreground/30 animate-pulse" />
+                <div className="absolute inset-0 bg-muted animate-pulse flex flex-col items-center justify-center z-0">
+                  <div className="w-12 h-12 rounded-full bg-card flex items-center justify-center shadow-xs">
+                    <Video className="w-6 h-6 text-muted-foreground/40 animate-pulse" />
                   </div>
                 </div>
               )}
@@ -266,19 +264,19 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
                 )}
               />
 
-              {/* グラデーションオーバーレイ */}
-              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent group-hover/thumb:from-black/80 transition-colors" />
+              {/* ソリッドスクリム（グラデーションゼロ） */}
+              <div className="absolute inset-0 bg-black/30 group-hover/thumb:bg-black/40 transition-colors" />
 
               {/* 再生ボタン */}
               <div className="absolute inset-0 flex items-center justify-center">
-                <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-primary/95 text-primary-foreground flex items-center justify-center shadow-lg group-hover/thumb:scale-110 group-hover/thumb:bg-primary transition-all duration-300 ring-4 ring-white/20">
+                <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-lg group-hover/thumb:scale-110 transition-all duration-300 ring-4 ring-white/25">
                   <Play className="w-6 h-6 sm:w-7 sm:h-7 fill-current translate-x-0.5" />
                 </div>
               </div>
 
               {/* ガイドラベル */}
-              <div className="absolute bottom-2.5 left-2.5 right-2.5 flex items-center justify-between text-[10px] sm:text-[11px] font-bold text-white/90 drop-shadow-sm pointer-events-none">
-                <span className="flex items-center gap-1.5 bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/15">
+              <div className="absolute bottom-2.5 left-2.5 right-2.5 flex items-center justify-between text-[10px] sm:text-[11px] font-bold text-white pointer-events-none">
+                <span className="flex items-center gap-1.5 bg-slate-950/85 px-2.5 py-1 rounded-full border border-white/20">
                   <Play className="w-3 h-3 fill-current text-primary" />
                   タップして試合動画を再生
                 </span>
@@ -291,253 +289,297 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
         </div>
       )}
 
-      {/* 🌟 2. 試合ヘッダー＆スコアサマリー */}
+      {/* 🌟 2. A-3 上帯ダークキャップ ＆ 純白スコアサマリー */}
       <div
-        className="p-3.5 sm:p-4 cursor-pointer"
+        className="cursor-pointer"
         onClick={() => setIsExpanded(!isExpanded)}
       >
-        <div className="flex items-center justify-between gap-3">
-          {/* 左側：大会・種別・対戦相手・日時球場 */}
-          <div className="flex-1 min-w-0">
-            {/* 大会バッジ ＆ 大会名 ＆ スコアブック取込状況 */}
-            <div className="flex items-center flex-wrap gap-1.5 mb-1">
-              <span
-                className={cn(
-                  "text-center text-[10px] font-black px-1.5 py-0.5 rounded shadow-2xs shrink-0",
-                  match.matchType === "official"
-                    ? "bg-amber-500/12 text-amber-700 dark:text-amber-300 border border-amber-500/30"
-                    : match.matchType === "exchange"
-                    ? "bg-sky-500/12 text-sky-700 dark:text-sky-300 border border-sky-500/30"
-                    : "bg-muted text-muted-foreground border border-border/60"
-                )}
-              >
-                {match.matchType === "official" ? "公式戦" : match.matchType === "exchange" ? "交流戦" : "OP戦"}
-              </span>
-
-              {!isFuture && match.status !== "scheduled" && !isRainout && (
-                match.hasScorebook ? (
-                  <span className="inline-flex items-center gap-0.5 text-[10px] font-black px-1.5 py-0.5 rounded border bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 border-emerald-500/25 shrink-0">
-                    <CheckCircle2 className="w-3 h-3 shrink-0" />
-                    <span>スコア取込済</span>
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center text-[10px] font-black px-1.5 py-0.5 rounded border bg-muted text-muted-foreground border-border/60 shrink-0">
-                    未取込
-                  </span>
-                )
-              )}
-
-              <span className="text-[11px] sm:text-xs font-bold text-muted-foreground truncate min-w-0">
-                {match.tournamentName && match.tournamentName !== "公式戦" && match.tournamentName !== "OP戦"
-                  ? match.tournamentName
-                  : match.matchType === "official"
-                  ? "大会名未登録"
+        {/* A-3 上帯ダークキャップ（種別・大会名・スコア取込・勝敗ステータス） */}
+        <div className="px-3.5 py-2 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+            <span
+              className={cn(
+                "text-center text-[10px] font-black px-1.5 py-0.5 rounded shrink-0",
+                match.matchType === "official"
+                  ? "bg-amber-400 text-slate-950"
                   : match.matchType === "exchange"
-                  ? "交流戦"
-                  : "練習試合"}
-              </span>
-            </div>
+                  ? "bg-sky-400 text-slate-950"
+                  : "bg-slate-700 text-slate-100"
+              )}
+            >
+              {match.matchType === "official" ? "公式戦" : match.matchType === "exchange" ? "交流戦" : "OP戦"}
+            </span>
 
-            {/* 対戦相手 */}
-            <h3 className="text-base sm:text-lg font-black truncate text-foreground tracking-tight">
-              vs {match.opponent}
-            </h3>
+            <span className="text-[11px] sm:text-xs font-bold text-slate-100 truncate min-w-0">
+              {match.tournamentName && match.tournamentName !== "公式戦" && match.tournamentName !== "OP戦"
+                ? match.tournamentName
+                : match.matchType === "official"
+                ? "大会名未登録"
+                : match.matchType === "exchange"
+                ? "交流戦"
+                : "練習試合"}
+            </span>
 
-            {/* 日時 ＆ 球場 (略称優先) */}
-            <p className="text-[10px] sm:text-[11px] font-bold text-muted-foreground flex items-center gap-1.5 mt-0.5 truncate">
-              <Calendar className="h-3 w-3 shrink-0" />
-              <span>{formatSafeDate(match.date, "MM/dd(E) HH:mm")}</span>
-              <span className="text-border">|</span>
-              <MapPin className="h-3 w-3 shrink-0" />
-              <span className="truncate">
-                {(match.venueShortName && match.venueShortName.trim() !== "")
-                  ? match.venueShortName.trim()
-                  : (match.venueName && match.venueName.trim() !== "")
-                  ? match.venueName.trim()
-                  : (match.surfaceDetails && match.surfaceDetails.trim() !== "")
-                  ? match.surfaceDetails.trim()
-                  : "球場未設定"}
-              </span>
-            </p>
+            {!isFuture && match.status !== "scheduled" && !isRainout && (
+              match.hasScorebook ? (
+                <span className="inline-flex items-center gap-0.5 text-[10px] font-black px-1.5 py-0.5 rounded bg-emerald-500 text-slate-950 shrink-0">
+                  <CheckCircle2 className="w-3 h-3 shrink-0" />
+                  <span>取込済</span>
+                </span>
+              ) : (
+                <span className="inline-flex items-center text-[10px] font-black px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 shrink-0">
+                  未取込
+                </span>
+              )
+            )}
           </div>
 
-          {/* 右側：勝敗バッジ・スコアボックス・アコーディオン */}
-          <div className="flex flex-col items-center gap-1 shrink-0">
-            {/* 勝敗 / ライブ / 中止 バッジ */}
+          <div className="shrink-0 flex items-center gap-1">
             {isLive ? (
-              <span className="w-14 text-center bg-rose-600 text-white text-[10px] font-black py-0.5 rounded shadow-xs animate-pulse">
+              <span className="px-2 py-0.5 bg-rose-600 text-white text-[10px] font-black rounded animate-pulse">
                 LIVE
               </span>
             ) : isRainout ? (
-              <span className="w-14 text-center bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/30 text-[10px] font-black py-0.5 rounded shadow-xs">
+              <span className="px-2 py-0.5 bg-sky-600 text-white text-[10px] font-black rounded">
                 雨天中止
               </span>
             ) : isWin ? (
-              <span className="w-14 text-center bg-blue-600 text-white text-[10px] font-black py-0.5 rounded shadow-xs">
+              <span className="px-2 py-0.5 bg-primary text-primary-foreground text-[10px] font-black rounded tabular-nums">
                 WIN
               </span>
             ) : isLoss ? (
-              <span className="w-14 text-center bg-rose-600 text-white text-[10px] font-black py-0.5 rounded shadow-xs">
+              <span className="px-2 py-0.5 bg-rose-600 text-white text-[10px] font-black rounded tabular-nums">
                 LOSE
               </span>
             ) : isDraw ? (
-              <span className="w-14 text-center bg-zinc-500 text-white text-[10px] font-black py-0.5 rounded shadow-xs">
+              <span className="px-2 py-0.5 bg-slate-600 text-white text-[10px] font-black rounded tabular-nums">
                 DRAW
               </span>
-            ) : null}
-
-            {/* スコアボックス / カウントダウン */}
-            {isRainout ? (
-              <div className="px-2.5 py-1 bg-blue-500/5 dark:bg-blue-500/10 rounded-xl border border-blue-500/20 text-center min-w-[76px]">
-                <p className="text-[10px] font-black text-blue-600 dark:text-blue-400">☔ 中止</p>
-              </div>
-            ) : isFuture ? (
-              <div className="px-1 py-1 bg-primary/10 rounded-xl border border-primary/20 text-center min-w-[76px]">
-                <p className="text-[8px] font-black text-primary/70 uppercase leading-none mb-0.5">START IN</p>
-                <MatchCountdown date={match.date} />
-              </div>
             ) : (
-              <div className="flex items-center gap-1.5 px-2.5 py-1 bg-primary/5 dark:bg-primary/10 rounded-xl border border-primary/20">
-                <div className="text-center w-6">
-                  <p className="text-[8px] font-black text-primary/70 uppercase leading-none">先</p>
-                  <span className="text-base font-black tabular-nums leading-none text-foreground">{firstScore}</span>
-                </div>
-                <span className="text-xs font-black text-primary/30">-</span>
-                <div className="text-center w-6">
-                  <p className="text-[8px] font-black text-primary/70 uppercase leading-none">後</p>
-                  <span className="text-base font-black tabular-nums leading-none text-foreground">{secondScore}</span>
-                </div>
-              </div>
+              <span className="px-2 py-0.5 bg-slate-700 text-slate-200 text-[10px] font-black rounded">
+                予定
+              </span>
             )}
-
-            {/* 開閉アイコン */}
-            <div className="text-primary/70">
-              {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-            </div>
           </div>
         </div>
 
-        {/* 🌟 2.5 折りたたみ時のワンタップ・クイックアクション（スタメン登録 / 詳細） */}
-        {!isExpanded && !isRainout && (
-          <div
-            className="mt-3 pt-2.5 border-t border-border/50 flex items-center justify-between gap-2"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <Link
-              href={`/liff/matches/lineup?id=${match.id}`}
-              className={cn(
-                "flex-1 inline-flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-xl text-[11px] font-black transition-all active:scale-95",
-                !match.hasLineup && (isFuture || isLive || match.status === "scheduled")
-                  ? "bg-primary text-primary-foreground shadow-2xs hover:bg-primary/90"
-                  : "bg-primary/10 text-primary border border-primary/25 hover:bg-primary/15"
-              )}
-            >
-              <Users className="w-3.5 h-3.5 shrink-0" />
-              <span>{match.hasLineup ? "スタメン・出欠編集" : "スタメン・出欠登録"}</span>
-            </Link>
+        {/* 純白ボディ：対戦相手・日時球場・中継スコアボックス */}
+        <div className="p-3.5 sm:p-4">
+          <div className="flex items-center justify-between gap-3">
+            {/* 左側：対戦相手・日時球場 */}
+            <div className="flex-1 min-w-0">
+              <h3 className="text-base sm:text-lg font-black truncate text-foreground tracking-tight">
+                vs {match.opponent}
+              </h3>
 
-            <Link
-              href={`/liff/matches?id=${match.id}`}
-              className="inline-flex items-center justify-center gap-1 py-1.5 px-3 rounded-xl bg-muted hover:bg-muted/80 border border-border/60 text-foreground text-[11px] font-black transition-all active:scale-95 shrink-0"
-            >
-              <FileText className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-              <span>詳細</span>
-            </Link>
-          </div>
-        )}
-
-        {/* 🌟 3. アコーディオン展開：本家同等のイニングスコアボード */}
-        {isExpanded && (
-          <div className="mt-3 pt-3 border-t border-border/60 animate-in fade-in slide-in-from-top-2 duration-200">
-            <div className="w-full overflow-hidden rounded-xl border border-border/60 bg-card shadow-xs flex flex-col">
-              <div className="overflow-x-auto scrollbar-none">
-                <table className="w-full text-center whitespace-nowrap text-xs">
-                  <thead>
-                    <tr className="border-b border-border bg-muted/40 text-[10px] text-muted-foreground font-black">
-                      <th className="p-1.5 text-left pl-2.5 min-w-[90px]">TEAM</th>
-                      {Array.from({ length: inningCount }).map((_, i) => (
-                        <th key={i} className="w-6 p-1.5 font-mono">{i + 1}</th>
-                      ))}
-                      <th className="w-8 p-1.5 bg-primary/10 text-primary font-black border-l border-border font-mono">R</th>
-                      <th className="w-6 p-1.5 font-mono">H</th>
-                      <th className="w-6 p-1.5 pr-2.5 font-mono">E</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border text-xs font-black">
-                    {/* 先攻チーム */}
-                    <tr className="hover:bg-muted/20">
-                      <td className="p-1.5 text-left pl-2.5 font-bold truncate max-w-[100px] text-foreground">
-                        {topTeamName}
-                      </td>
-                      {Array.from({ length: inningCount }).map((_, i) => (
-                        <td key={i} className="p-1.5 font-mono font-bold text-muted-foreground">
-                          {formatScoreDisplay(topScores[i], false, false, false)}
-                        </td>
-                      ))}
-                      <td className="p-1.5 font-mono bg-primary/10 text-primary font-black border-l border-border text-sm">
-                        {isFuture ? "-" : firstScore}
-                      </td>
-                      <td className="p-1.5 font-mono text-muted-foreground text-[11px]">
-                        {isFuture ? "-" : (match.battingOrder === "second" ? match.opponentHits ?? "-" : match.myHits ?? "-")}
-                      </td>
-                      <td className="p-1.5 pr-2.5 font-mono text-muted-foreground text-[11px]">
-                        {isFuture ? "-" : (match.battingOrder === "second" ? match.opponentErrors ?? "-" : match.myErrors ?? "-")}
-                      </td>
-                    </tr>
-
-                    {/* 後攻チーム */}
-                    <tr className="hover:bg-muted/20">
-                      <td className="p-1.5 text-left pl-2.5 font-bold truncate max-w-[100px] text-foreground">
-                        {bottomTeamName}
-                      </td>
-                      {Array.from({ length: inningCount }).map((_, i) => (
-                        <td key={i} className="p-1.5 font-mono font-bold text-muted-foreground">
-                          {formatScoreDisplay(bottomScores[i], true, i === inningCount - 1, isHomeWinning)}
-                        </td>
-                      ))}
-                      <td className="p-1.5 font-mono bg-primary/10 text-primary font-black border-l border-border text-sm">
-                        {isFuture ? "-" : secondScore}
-                      </td>
-                      <td className="p-1.5 font-mono text-muted-foreground text-[11px]">
-                        {isFuture ? "-" : (match.battingOrder === "second" ? match.myHits ?? "-" : match.opponentHits ?? "-")}
-                      </td>
-                      <td className="p-1.5 pr-2.5 font-mono text-muted-foreground text-[11px]">
-                        {isFuture ? "-" : (match.battingOrder === "second" ? match.myErrors ?? "-" : match.opponentErrors ?? "-")}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-
-              {/* フッターアクション：スタメン登録 ＆ 詳細スコアブックへの遷移 */}
-              <div
-                className="p-2 bg-muted/30 border-t border-border flex items-center justify-between gap-2 flex-wrap"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <span className="text-[10px] font-bold text-muted-foreground pl-1">
-                  {match.status === "finished" ? "試合終了" : isLive ? "試合中" : "予定"}
+              <p className="text-[10.5px] sm:text-[11.5px] font-bold text-muted-foreground flex items-center gap-1.5 mt-1 truncate">
+                <Calendar className="h-3 w-3 shrink-0 text-primary" />
+                <span>{formatSafeDate(match.date, "MM/dd(E) HH:mm")}</span>
+                <span className="text-border">|</span>
+                <MapPin className="h-3 w-3 shrink-0 text-primary" />
+                <span className="truncate">
+                  {(match.venueShortName && match.venueShortName.trim() !== "")
+                    ? match.venueShortName.trim()
+                    : (match.venueName && match.venueName.trim() !== "")
+                    ? match.venueName.trim()
+                    : (match.surfaceDetails && match.surfaceDetails.trim() !== "")
+                    ? match.surfaceDetails.trim()
+                    : "球場未設定"}
                 </span>
-                <div className="flex items-center gap-1.5">
-                  <Link
-                    href={`/liff/matches/lineup?id=${match.id}`}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-card border border-primary/30 text-primary hover:bg-primary/10 text-xs font-black transition-all active:scale-95 shadow-2xs"
-                  >
-                    <Users className="w-3.5 h-3.5" />
-                    <span>{match.hasLineup ? "スタメン編集" : "スタメン登録"}</span>
-                  </Link>
-                  <Link
-                    href={`/liff/matches?id=${match.id}`}
-                    className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-black transition-all active:scale-95 shadow-2xs"
-                  >
-                    <FileText className="w-3.5 h-3.5" />
-                    <span>スコア・詳細</span>
-                    <ExternalLink className="w-3 h-3 ml-0.5 opacity-70" />
-                  </Link>
+              </p>
+            </div>
+
+            {/* 右側：スコアボックス・アコーディオンアイコン */}
+            <div className="flex items-center gap-2 shrink-0">
+              {isRainout ? (
+                <div className="px-2.5 py-1.5 bg-muted rounded-xl border border-border text-center min-w-[76px]">
+                  <p className="text-[10px] font-black text-muted-foreground">☔ 中止</p>
                 </div>
+              ) : isFuture ? (
+                <div className="px-2 py-1.5 bg-muted rounded-xl border border-border text-center min-w-[82px]">
+                  <p className="text-[8px] font-black text-muted-foreground uppercase leading-none mb-0.5">START IN</p>
+                  <MatchCountdown date={match.date} />
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-muted rounded-xl border border-border">
+                  <div className="text-center min-w-[24px]">
+                    <p className="text-[8px] font-black text-muted-foreground uppercase leading-none mb-0.5">先</p>
+                    <span
+                      className={cn(
+                        "text-lg sm:text-xl font-black tabular-nums leading-none",
+                        isMyFirst && isWin ? "text-primary" : "text-foreground"
+                      )}
+                    >
+                      {firstScore}
+                    </span>
+                  </div>
+                  <span className="text-xs font-black text-muted-foreground">-</span>
+                  <div className="text-center min-w-[24px]">
+                    <p className="text-[8px] font-black text-muted-foreground uppercase leading-none mb-0.5">後</p>
+                    <span
+                      className={cn(
+                        "text-lg sm:text-xl font-black tabular-nums leading-none",
+                        !isMyFirst && isWin ? "text-primary" : "text-foreground"
+                      )}
+                    >
+                      {secondScore}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              <div className="text-muted-foreground">
+                {isExpanded ? <ChevronUp className="h-4 w-4 text-primary" /> : <ChevronDown className="h-4 w-4" />}
               </div>
             </div>
           </div>
-        )}
+
+          {/* 🌟 2.5 折りたたみ時のワンタップ・クイックアクション（スタメン登録 / 詳細） */}
+          {!isExpanded && !isRainout && (
+            <div
+              className="mt-3 pt-2.5 border-t border-border/70 flex items-center justify-between gap-2"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <Link
+                href={`/liff/matches/lineup?id=${match.id}`}
+                className={cn(
+                  "flex-1 inline-flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-xl text-[11px] font-black transition-all active:scale-95",
+                  !match.hasLineup && (isFuture || isLive || match.status === "scheduled")
+                    ? "bg-primary text-primary-foreground shadow-2xs hover:bg-primary/90"
+                    : "bg-muted text-primary border border-border hover:border-primary/40"
+                )}
+              >
+                <Users className="w-3.5 h-3.5 shrink-0" />
+                <span>{match.hasLineup ? "スタメン・出欠編集" : "スタメン・出欠登録"}</span>
+              </Link>
+
+              <Link
+                href={`/liff/matches?id=${match.id}`}
+                className="inline-flex items-center justify-center gap-1 py-1.5 px-3 rounded-xl bg-muted hover:bg-muted/80 border border-border text-foreground text-[11px] font-black transition-all active:scale-95 shrink-0"
+              >
+                <FileText className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                <span>詳細</span>
+              </Link>
+            </div>
+          )}
+
+          {/* 🌟 3. アコーディオン展開：本家同等のイニングスコアボード（A-3中継盤スタイル） */}
+          {isExpanded && (
+            <div className="mt-3 pt-3 border-t border-border animate-in fade-in slide-in-from-top-2 duration-200">
+              <div className="w-full overflow-hidden rounded-xl border border-border bg-card shadow-xs flex flex-col">
+                <div className="overflow-x-auto scrollbar-none">
+                  <table className="w-full text-center whitespace-nowrap text-xs">
+                    <thead>
+                      <tr className="border-b-2 border-primary bg-[#0f172a] text-[10px] text-slate-200 font-black">
+                        <th className="p-1.5 text-left pl-2.5 min-w-[90px] text-slate-300">TEAM</th>
+                        {Array.from({ length: inningCount }).map((_, i) => (
+                          <th key={i} className="w-6 p-1.5 font-mono tabular-nums">{i + 1}</th>
+                        ))}
+                        <th className="w-8 p-1.5 bg-primary text-primary-foreground font-black border-l border-slate-700 font-mono tabular-nums">R</th>
+                        <th className="w-6 p-1.5 font-mono tabular-nums">H</th>
+                        <th className="w-6 p-1.5 pr-2.5 font-mono tabular-nums">E</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border text-xs font-black">
+                      {/* 先攻チーム */}
+                      <tr className="hover:bg-muted/40">
+                        <td className="p-1.5 text-left pl-2.5 font-black truncate max-w-[100px] text-foreground">
+                          {topTeamName}
+                        </td>
+                        {Array.from({ length: inningCount }).map((_, i) => {
+                          const disp = formatScoreDisplay(topScores[i], false, false, false);
+                          const scored = typeof topScores[i] === "number" && (topScores[i] as number) > 0;
+                          return (
+                            <td key={i} className="p-1.5 font-mono tabular-nums">
+                              {scored && isMyFirst ? (
+                                <span className="inline-block min-w-5 px-1 py-0.5 rounded bg-primary text-primary-foreground font-black leading-none">
+                                  {disp}
+                                </span>
+                              ) : (
+                                <span className={scored ? "text-foreground font-black" : "text-muted-foreground font-bold"}>
+                                  {disp}
+                                </span>
+                              )}
+                            </td>
+                          );
+                        })}
+                        <td className="p-1.5 font-mono tabular-nums bg-muted/60 text-primary font-black border-l border-border text-sm">
+                          {isFuture ? "-" : firstScore}
+                        </td>
+                        <td className="p-1.5 font-mono tabular-nums text-foreground text-[11px] font-bold">
+                          {isFuture ? "-" : (match.battingOrder === "second" ? match.opponentHits ?? "-" : match.myHits ?? "-")}
+                        </td>
+                        <td className="p-1.5 pr-2.5 font-mono tabular-nums text-muted-foreground text-[11px] font-bold">
+                          {isFuture ? "-" : (match.battingOrder === "second" ? match.opponentErrors ?? "-" : match.myErrors ?? "-")}
+                        </td>
+                      </tr>
+
+                      {/* 後攻チーム */}
+                      <tr className="hover:bg-muted/40">
+                        <td className="p-1.5 text-left pl-2.5 font-black truncate max-w-[100px] text-foreground">
+                          {bottomTeamName}
+                        </td>
+                        {Array.from({ length: inningCount }).map((_, i) => {
+                          const disp = formatScoreDisplay(bottomScores[i], true, i === inningCount - 1, isHomeWinning);
+                          const scored = typeof bottomScores[i] === "number" && (bottomScores[i] as number) > 0;
+                          return (
+                            <td key={i} className="p-1.5 font-mono tabular-nums">
+                              {scored && !isMyFirst ? (
+                                <span className="inline-block min-w-5 px-1 py-0.5 rounded bg-primary text-primary-foreground font-black leading-none">
+                                  {disp}
+                                </span>
+                              ) : (
+                                <span className={scored ? "text-foreground font-black" : "text-muted-foreground font-bold"}>
+                                  {disp}
+                                </span>
+                              )}
+                            </td>
+                          );
+                        })}
+                        <td className="p-1.5 font-mono tabular-nums bg-muted/60 text-primary font-black border-l border-border text-sm">
+                          {isFuture ? "-" : secondScore}
+                        </td>
+                        <td className="p-1.5 font-mono tabular-nums text-foreground text-[11px] font-bold">
+                          {isFuture ? "-" : (match.battingOrder === "second" ? match.myHits ?? "-" : match.opponentHits ?? "-")}
+                        </td>
+                        <td className="p-1.5 pr-2.5 font-mono tabular-nums text-muted-foreground text-[11px] font-bold">
+                          {isFuture ? "-" : (match.battingOrder === "second" ? match.myErrors ?? "-" : match.opponentErrors ?? "-")}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* フッターアクション：スタメン登録 ＆ 詳細スコアブックへの遷移 */}
+                <div
+                  className="p-2 bg-muted/60 border-t border-border flex items-center justify-between gap-2 flex-wrap"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <span className="text-[10px] font-bold text-muted-foreground pl-1">
+                    {match.status === "finished" ? "試合終了" : isLive ? "試合中" : "予定"}
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <Link
+                      href={`/liff/matches/lineup?id=${match.id}`}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-card border border-border text-primary hover:border-primary/40 text-xs font-black transition-all active:scale-95 shadow-2xs"
+                    >
+                      <Users className="w-3.5 h-3.5" />
+                      <span>{match.hasLineup ? "スタメン編集" : "スタメン登録"}</span>
+                    </Link>
+                    <Link
+                      href={`/liff/matches?id=${match.id}`}
+                      className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-black transition-all active:scale-95 shadow-2xs"
+                    >
+                      <FileText className="w-3.5 h-3.5" />
+                      <span>スコア・詳細</span>
+                      <ExternalLink className="w-3 h-3 ml-0.5 opacity-70" />
+                    </Link>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

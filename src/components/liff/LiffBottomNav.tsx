@@ -373,7 +373,7 @@ export function LiffBottomNav() {
                    C 152,16 162,-14 187.5,-14 
                    C 213,-14 223,16 249,16 
                    L 375,16"
-                className="stroke-border/80"
+                className="stroke-border"
                 strokeWidth="1.2"
                 fill="none"
               />
@@ -473,15 +473,15 @@ export function LiffBottomNav() {
           📑 「その他」タップ時の全メニュー一覧ボトムシート
           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {isOtherMenuOpen && (
-        <div className="fixed inset-0 z-40 flex justify-center items-end bg-background/60 backdrop-blur-xs animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-40 flex justify-center items-end bg-slate-950/50 animate-in fade-in duration-200">
           <div 
             className="absolute inset-0"
             onClick={() => setIsOtherMenuOpen(false)}
           />
 
-          <div className="w-full max-w-lg bg-background rounded-t-2xl border-t border-x border-border/60 shadow-2xl p-5 pb-36 space-y-4 relative z-10 animate-in slide-in-from-bottom duration-200 max-h-[85vh] overflow-y-auto">
+          <div className="w-full max-w-lg bg-background rounded-t-2xl border-t border-x border-border shadow-2xl p-5 pb-36 space-y-4 relative z-10 animate-in slide-in-from-bottom duration-200 max-h-[85vh] overflow-y-auto">
             {/* 🏷️ スティッキーヘッダー & 3分割カテゴリタブ */}
-            <div className="sticky -top-5 -mt-5 pt-5 pb-3 bg-background/95 backdrop-blur-md z-10 border-b border-border/50 space-y-3">
+            <div className="sticky -top-5 -mt-5 pt-5 pb-3 bg-background z-10 border-b border-border space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <LayoutGrid className="w-4 h-4 text-primary" />

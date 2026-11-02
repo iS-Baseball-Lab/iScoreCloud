@@ -211,24 +211,24 @@ export function HubCalendarSection({
         </Link>
       </div>
 
-      {/* カレンダー本体カード */}
-      <div className="rounded-2xl border border-border/60 bg-card shadow-xs p-3.5 space-y-3">
-        {/* ━━ 1. カレンダーヘッダー（年月切り替え & 今日ボタン） ━━ */}
-        <div className="flex items-center justify-between pb-1 border-b border-border/60">
-          <div className="flex items-center gap-1.5">
-            <span className="w-6 h-6 rounded-lg bg-teal-500/12 text-teal-600 dark:text-teal-400 flex items-center justify-center font-black">
+      {/* カレンダー本体カード（A-3 上帯ダークキャップ × 純白グリッド） */}
+      <div className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+        {/* ━━ 1. A-3 カレンダーダークヘッダー（年月切り替え & 今日ボタン） ━━ */}
+        <div className="px-3.5 py-2.5 bg-[#0f172a] text-slate-50 border-b-[3px] border-teal-500 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="w-6 h-6 rounded-lg bg-teal-500 text-slate-950 flex items-center justify-center font-black">
               <Calendar className="w-3.5 h-3.5" />
             </span>
-            <span className="text-xs font-black text-foreground">
+            <span className="text-xs sm:text-sm font-black text-white tabular-nums">
               {currentYear}年 {currentMonth + 1}月
             </span>
           </div>
 
-          <div className="flex items-center gap-0.5">
+          <div className="flex items-center gap-1">
             <button
               type="button"
               onClick={handlePrevMonth}
-              className="p-1 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground active:scale-95 transition-all cursor-pointer"
+              className="p-1 rounded-lg hover:bg-slate-800 text-slate-300 hover:text-white active:scale-95 transition-all cursor-pointer"
               title="前月"
             >
               <ChevronLeft className="w-4 h-4" />
@@ -236,7 +236,7 @@ export function HubCalendarSection({
             <button
               type="button"
               onClick={handleNextMonth}
-              className="p-1 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground active:scale-95 transition-all cursor-pointer"
+              className="p-1 rounded-lg hover:bg-slate-800 text-slate-300 hover:text-white active:scale-95 transition-all cursor-pointer"
               title="翌月"
             >
               <ChevronRight className="w-4 h-4" />
@@ -244,13 +244,14 @@ export function HubCalendarSection({
             <button
               type="button"
               onClick={handleToday}
-              className="px-2 py-0.5 text-[10px] font-black rounded-lg bg-card hover:bg-muted text-foreground border border-border/60 active:scale-95 transition-all ml-1 cursor-pointer"
+              className="px-2.5 py-0.5 text-[10px] font-black rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700 active:scale-95 transition-all ml-0.5 cursor-pointer"
             >
               今日
             </button>
           </div>
         </div>
 
+        <div className="p-3.5 space-y-2.5">
         {/* ━━ 2. 曜日ヘッダー ━━ */}
         <div className="grid grid-cols-7 text-center text-[10px] font-black text-muted-foreground uppercase pb-0.5 border-b border-border/60">
           {weekDays.map((day, idx) => (
@@ -563,6 +564,7 @@ export function HubCalendarSection({
               ))}
             </div>
           </div>
+        </div>
         </div>
       </div>
     </div>

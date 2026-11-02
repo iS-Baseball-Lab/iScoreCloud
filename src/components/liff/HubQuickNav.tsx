@@ -55,7 +55,7 @@ export function HubQuickNav() {
 
         <Link
           href="/liff/settings#quick-menu"
-          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-card border border-border/60 text-[10.5px] font-black text-muted-foreground hover:text-primary hover:border-primary/40 active:scale-95 transition-all shadow-xs"
+          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-card border border-border text-[10.5px] font-black text-muted-foreground hover:text-primary hover:border-primary/50 active:scale-95 transition-all shadow-xs"
         >
           <SlidersHorizontal className="w-3 h-3 text-primary" />
           <span>メニュー設定</span>
@@ -87,8 +87,9 @@ export function HubQuickNav() {
               <Link
                 key={item.id}
                 href={item.href}
-                className={`flex flex-col items-center justify-center text-center p-3 rounded-2xl border border-border/60 bg-card shadow-xs ${tone.hoverBorderClass} transition-all active:scale-[0.98] group gap-1.5`}
+                className={`relative overflow-hidden flex flex-col items-center justify-center text-center p-3 pt-3.5 rounded-2xl border border-border bg-card shadow-xs ${tone.hoverBorderClass} transition-all active:scale-[0.98] group gap-1.5`}
               >
+                <span aria-hidden="true" className={`pointer-events-none absolute inset-x-0 top-0 h-[3px] ${tone.topBarClass}`} />
                 <span
                   className={`w-10 h-10 rounded-xl ${tone.iconBoxClass} flex items-center justify-center font-black shadow-2xs`}
                 >
@@ -117,8 +118,9 @@ export function HubQuickNav() {
               <Link
                 key={item.id}
                 href={item.href}
-                className={`flex items-center gap-2.5 p-3 rounded-2xl border border-border/60 bg-card shadow-xs ${tone.hoverBorderClass} transition-all active:scale-[0.98] group`}
+                className={`relative overflow-hidden flex items-center gap-2.5 p-3 pt-3.5 rounded-2xl border border-border bg-card shadow-xs ${tone.hoverBorderClass} transition-all active:scale-[0.98] group`}
               >
+                <span aria-hidden="true" className={`pointer-events-none absolute inset-x-0 top-0 h-[3px] ${tone.topBarClass}`} />
                 <span
                   className={`w-9 h-9 rounded-xl ${tone.iconBoxClass} flex items-center justify-center font-black shrink-0 shadow-2xs`}
                 >
@@ -145,8 +147,9 @@ export function HubQuickNav() {
               <Link
                 key={item.id}
                 href={item.href}
-                className={`flex flex-col justify-between p-4 rounded-2xl border border-border/60 bg-card shadow-xs ${tone.hoverBorderClass} transition-all active:scale-[0.98] group`}
+                className={`relative overflow-hidden flex flex-col justify-between p-4 pt-4.5 rounded-2xl border border-border bg-card shadow-xs ${tone.hoverBorderClass} transition-all active:scale-[0.98] group`}
               >
+                <span aria-hidden="true" className={`pointer-events-none absolute inset-x-0 top-0 h-[3px] ${tone.topBarClass}`} />
                 <div className="flex items-center justify-between">
                   <span
                     className={`w-10 h-10 rounded-xl ${tone.iconBoxClass} flex items-center justify-center font-black shadow-2xs`}

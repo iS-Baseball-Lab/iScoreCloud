@@ -25,11 +25,17 @@ export default function LiffToolsIndexPage() {
           showBack
         />
 
-        <div className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 flex items-start gap-3">
-          <span className="w-9 h-9 rounded-2xl bg-primary/12 text-primary flex items-center justify-center shrink-0 mt-0.5">
-            <Sparkles className="w-4 h-4" />
-          </span>
-          <div className="space-y-1">
+        <div className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+          <div className="px-4 py-2 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary flex items-center justify-between">
+            <span className="text-xs font-black flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+              <span>TEAM UTILITY LAB</span>
+            </span>
+            <span className="px-2 py-0.5 rounded bg-primary text-primary-foreground text-[10px] font-black">
+              {LIFF_TOOLS.length} TOOLS
+            </span>
+          </div>
+          <div className="p-4 space-y-1">
             <h2 className="text-xs font-black text-foreground">
               現場で使える便利ツールを順次追加予定
             </h2>
@@ -49,8 +55,14 @@ export default function LiffToolsIndexPage() {
               <Link
                 key={tool.id}
                 href={tool.href}
-                className="flex items-center gap-3.5 p-4 rounded-2xl border border-border/60 bg-card shadow-xs hover:border-primary/40 hover:bg-muted/35 transition-all active:scale-98 group"
+                className="relative overflow-hidden flex items-center gap-3.5 p-4 pt-4.5 rounded-2xl border border-border bg-card shadow-xs hover:border-primary/50 hover:bg-muted/40 transition-all active:scale-98 group"
               >
+                <span
+                  aria-hidden="true"
+                  className={`pointer-events-none absolute inset-x-0 top-0 h-[3px] ${
+                    isCarpool ? "bg-teal-600" : "bg-primary"
+                  }`}
+                />
                 <span
                   className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${
                     isCarpool
@@ -66,10 +78,10 @@ export default function LiffToolsIndexPage() {
                       {tool.title}
                     </p>
                     <span
-                      className={`px-2 py-0.5 rounded-full text-[10px] font-black shrink-0 ${
+                      className={`px-2 py-0.5 rounded text-[10px] font-black shrink-0 ${
                         isLiveTool
-                          ? "bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 border border-emerald-500/25"
-                          : "bg-muted text-muted-foreground border border-border/60"
+                          ? "bg-emerald-600 text-white"
+                          : "bg-muted text-muted-foreground border border-border"
                       }`}
                     >
                       {tool.statusLabel}

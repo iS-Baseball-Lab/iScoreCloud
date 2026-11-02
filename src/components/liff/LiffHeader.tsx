@@ -116,7 +116,7 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
   const userInitial = displayName.slice(0, 1).toUpperCase();
 
   return (
-    <header className="sticky top-0 z-40 w-full bg-white dark:bg-black backdrop-blur-xl border-b border-border/40 shadow-xs transition-colors duration-200">
+    <header className="sticky top-0 z-40 w-full bg-card border-b border-border shadow-xs transition-colors duration-200">
       <div className="flex h-14 sm:h-16 items-center justify-between px-3 sm:px-4 gap-2 sm:gap-3">
         {/* 🌟 1. 左側: ロゴ & ブランド (iScore for LINEミニアプリ) */}
         <Link
@@ -408,8 +408,8 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
         </div>
       </div>
 
-      {/* 🌟 iScore シグネチャーのグラデーションライン */}
-      <div className="h-[1px] sm:h-[1.5px] w-full bg-gradient-to-r from-transparent via-primary/30 to-transparent" />
+      {/* 🌟 iScore シグネチャーのソリッドテーマライン */}
+      <div className="h-[2px] w-full bg-primary" />
 
       {/* チーム参加申請モーダル */}
       <JoinTeamModal
