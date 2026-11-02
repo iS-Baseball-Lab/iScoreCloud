@@ -549,6 +549,16 @@ function renderPitchColumn(
   );
 }
 
+function getAtBatHitBases(
+  rc: NonNullable<CompiledScorebookCell["atBat"]>["resultCode"] | undefined
+): 0 | 1 | 2 | 3 | 4 {
+  if (rc === "single") return 1;
+  if (rc === "double") return 2;
+  if (rc === "triple") return 3;
+  if (rc === "home_run") return 4;
+  return 0;
+}
+
 function renderHitHashMarks(
   hitBases: 1 | 2 | 3 | 4,
   rules: ScorebookSymbolRules,
@@ -568,7 +578,7 @@ function renderHitHashMarks(
   const ny = ux;
 
   const count = hitBases;
-  const halfLen = rules.hitLine === "parallel_bars" ? 4.8 : 3.9;
+  const halfLen = 3.9;
   const spacing = cellGeom.hasQuadrantCrosshairs ? 3.2 : 3.6;
   const offsets: number[] = [];
   for (let i = 0; i < count; i++) {
@@ -588,12 +598,82 @@ function renderHitHashMarks(
             x2={cx + nx * halfLen}
             y2={cy + ny * halfLen}
             stroke={color}
-            strokeWidth={rules.hitLine === "parallel_bars" ? 1.85 : 1.5}
+            strokeWidth={1.5}
             strokeLinecap="round"
           />
         );
       })}
     </g>
+  );
+}
+
+function renderQuadrantHitSlashes(
+  hitBases: 1 | 2 | 3,
+  cellGeom: CellGeometry,
+  ox: number,
+  oy: number
+): React.ReactNode {
+  const baseCx = ox + (cellGeom.hasQuadrantCrosshairs ? 65.0 : 67.2);
+  const baseCy = oy + (cellGeom.hasQuadrantCrosshairs ? 51.4 : 52.0);
+  const ux = Math.SQRT1_2;
+  const uy = -Math.SQRT1_2;
+  const nx = Math.SQRT1_2;
+  const ny = Math.SQRT1_2;
+  const halfSlash = hitBases === 3 ? 5.6 : 6.2;
+  const step = hitBases === 3 ? 2.75 : 3.2;
+  const strokeW = hitBases === 3 ? 1.55 : 1.8;
+
+  const offsets: number[] = [];
+  for (let i = 0; i < hitBases; i++) {
+    offsets.push((i - (hitBases - 1) / 2) * step);
+  }
+
+  return (
+    <g>
+      {offsets.map((off, idx) => {
+        const cx = baseCx + nx * off;
+        const cy = baseCy + ny * off;
+        return (
+          <line
+            key={idx}
+            x1={cx - ux * halfSlash}
+            y1={cy - uy * halfSlash}
+            x2={cx + ux * halfSlash}
+            y2={cy + uy * halfSlash}
+            stroke={COLOR_RED}
+            strokeWidth={strokeW}
+            strokeLinecap="round"
+          />
+        );
+      })}
+    </g>
+  );
+}
+
+function renderParallelHitInnerDiamond(
+  cellGeom: CellGeometry,
+  ox: number,
+  oy: number
+): React.ReactNode {
+  const cx = ox + cellGeom.ptCenter.x;
+  const cy = oy + cellGeom.ptCenter.y;
+  const scale = 0.78;
+  const pts = [cellGeom.ptHP, cellGeom.pt1B, cellGeom.pt2B, cellGeom.pt3B]
+    .map((pt) => {
+      const px = cx + (ox + pt.x - cx) * scale;
+      const py = cy + (oy + pt.y - cy) * scale;
+      return `${px.toFixed(2)},${py.toFixed(2)}`;
+    })
+    .join(" ");
+
+  return (
+    <polygon
+      points={pts}
+      fill="none"
+      stroke={COLOR_RED}
+      strokeWidth={1.3}
+      strokeLinejoin="round"
+    />
   );
 }
 
@@ -610,13 +690,20 @@ function renderDiamondSegment(
   const x2 = ox + geom.to.x;
   const y2 = oy + geom.to.y;
 
-  const hitColor = rules.hitLine === "mono_bold" ? COLOR_INK : COLOR_RED;
-  const strokeColor = seg.isBatterHit ? hitColor : COLOR_INK;
-  const strokeW = seg.isBatterHit
-    ? rules.hitLine === "mono_bold"
+  const useRedStroke =
+    rules.hitLine === "mono_bold"
+      ? false
+      : rules.hitLine === "quadrant_slash_hr_diamond"
+      ? seg.isBatterHit && seg.hitBases === 4
+      : seg.isBatterHit;
+
+  const strokeColor = useRedStroke ? COLOR_RED : COLOR_INK;
+  const strokeW =
+    rules.hitLine === "mono_bold" && seg.isBatterHit
       ? 2.8
-      : 2.4
-    : 1.75;
+      : useRedStroke
+      ? 2.4
+      : 1.75;
 
   const advLabel = !seg.isBatterHit
     ? formatAdvanceMethodByRules(seg.method, rules, seg.drivingBatterOrder)
@@ -668,6 +755,41 @@ function renderDiamondSegment(
     );
   }
 
+  // parallel_bars: 1塁線自体を二塁打＝二重赤線、三塁打＝三重赤線で描画
+  if (
+    rules.hitLine === "parallel_bars" &&
+    seg.segment === 1 &&
+    seg.isBatterHit &&
+    (seg.hitBases === 2 || seg.hitBases === 3)
+  ) {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const len = Math.hypot(dx, dy) || 1;
+    const nx = -dy / len;
+    const ny = dx / len;
+    const pStep = seg.hitBases === 3 ? 2.25 : 1.45;
+    const pWidth = seg.hitBases === 3 ? 1.35 : 1.65;
+    const pOffsets =
+      seg.hitBases === 3 ? [-pStep, 0, pStep] : [-pStep, pStep];
+
+    return (
+      <g key={`seg-${seg.segment}`}>
+        {pOffsets.map((off, idx) => (
+          <line
+            key={idx}
+            x1={x1 + nx * off}
+            y1={y1 + ny * off}
+            x2={x2 + nx * off}
+            y2={y2 + ny * off}
+            stroke={COLOR_RED}
+            strokeWidth={pWidth}
+            strokeLinecap="round"
+          />
+        ))}
+      </g>
+    );
+  }
+
   return (
     <g key={`seg-${seg.segment}`}>
       <line
@@ -680,7 +802,8 @@ function renderDiamondSegment(
         strokeDasharray={seg.method === "tiebreak" ? "3,2" : undefined}
         strokeLinecap="round"
       />
-      {seg.segment === 1 &&
+      {(rules.hitLine === "red_slash" || rules.hitLine === "mono_bold") &&
+        seg.segment === 1 &&
         seg.isBatterHit &&
         seg.hitBases !== 0 &&
         renderHitHashMarks(seg.hitBases, rules, cellGeom, ox, oy)}
@@ -798,12 +921,25 @@ function renderPlayNotation(
   notation: FormattedPlayNotation,
   cellGeom: CellGeometry,
   ox: number,
-  oy: number
+  oy: number,
+  hasQuadrantHitSlash = false
 ): React.ReactNode {
   if (!notation.mainText) return null;
 
-  const px = ox + cellGeom.playNotationPos.x;
-  const py = oy + cellGeom.playNotationPos.y;
+  const px =
+    ox +
+    (hasQuadrantHitSlash
+      ? cellGeom.hasQuadrantCrosshairs
+        ? 75.5
+        : 76.0
+      : cellGeom.playNotationPos.x);
+  const py =
+    oy +
+    (hasQuadrantHitSlash
+      ? cellGeom.hasQuadrantCrosshairs
+        ? 66.2
+        : 66.8
+      : cellGeom.playNotationPos.y);
   const ink = notation.isRedInk ? COLOR_RED : COLOR_INK;
 
   if (notation.decorator === "reverse_k") {
@@ -1056,12 +1192,17 @@ function renderPlayNotation(
     );
   }
 
-  const fontSize =
-    notation.mainText.length >= 5
-      ? 7.8
+  const fontSize = hasQuadrantHitSlash
+    ? notation.mainText.length >= 5
+      ? 7.4
       : notation.mainText.length >= 4
-      ? 8.5
-      : 9.8;
+      ? 8.0
+      : 9.0
+    : notation.mainText.length >= 5
+    ? 7.8
+    : notation.mainText.length >= 4
+    ? 8.5
+    : 9.8;
 
   return (
     <g>
@@ -1102,6 +1243,10 @@ export function renderSingleScorebookCellSvg(
   const ab = cell?.atBat ?? null;
   const cellGeom = getCellGeometry(rules);
   const playNotation = ab ? formatAtBatPlayNotation(ab, rules) : null;
+  const abHitBases = getAtBatHitBases(ab?.resultCode);
+  const hasQuadrantHitSlash =
+    rules.hitLine === "quadrant_slash_hr_diamond" &&
+    (abHitBases === 1 || abHitBases === 2 || abHitBases === 3);
   const rbiCount = Math.max(0, ab?.rbi || 0);
   const rbiColor = rules.hitLine === "mono_bold" ? COLOR_INK : COLOR_RED;
   const showBsoSubLines =
@@ -1234,6 +1379,20 @@ export function renderSingleScorebookCellSvg(
           return renderDiamondSegment(seg, rules, cellGeom, ox, oy);
         })}
 
+      {/* parallel_bars 時の本塁打用：内側赤ダイヤ二重枠 */}
+      {rules.hitLine === "parallel_bars" &&
+        abHitBases === 4 &&
+        renderParallelHitInnerDiamond(cellGeom, ox, oy)}
+
+      {/* quadrant_slash_hr_diamond 時の単打・二塁打・三塁打用：右下赤斜線（／・／／・／／／） */}
+      {hasQuadrantHitSlash &&
+        renderQuadrantHitSlashes(
+          abHitBases as 1 | 2 | 3,
+          cellGeom,
+          ox,
+          oy
+        )}
+
       {/* 中央ステータス（●得点 / ⅠⅡⅢ・①②③アウト / ℓ残塁） */}
       {cell && renderCenterStatus(cell, rules, cellGeom, ox, oy)}
 
@@ -1253,7 +1412,14 @@ export function renderSingleScorebookCellSvg(
       )}
 
       {/* 右下：打撃結果記号 */}
-      {playNotation && renderPlayNotation(playNotation, cellGeom, ox, oy)}
+      {playNotation &&
+        renderPlayNotation(
+          playNotation,
+          cellGeom,
+          ox,
+          oy,
+          hasQuadrantHitSlash
+        )}
 
       {/* イニング3アウト終了打者マスの右下斜線 */}
       {cell?.isInningEndCell && (
@@ -3218,6 +3384,76 @@ export function ScorebookSymbolSamplePreview({
     hasPitcherChangeBefore: false,
   };
 
+  const topInning3HomeRunCell: CompiledScorebookCell = {
+    cellKey: "top-inn-3",
+    inning: 3,
+    columnIndex: 1,
+    battingOrder: 1,
+    atBat: {
+      id: "top-ab-3",
+      inning: 3,
+      isTop: true,
+      columnIndex: 1,
+      battingOrder: 1,
+      batterName: "中島",
+      batterPlayerId: null,
+      pitcherName: "投手",
+      pitcherPlayerId: null,
+      resultCode: "home_run",
+      resultLabel: "中越本塁打",
+      battedDirection: "8",
+      rbi: 1,
+      outsInPlay: 0,
+      endingOuts: 0,
+      runsInPlay: 1,
+      balls: 1,
+      strikes: 1,
+      pitches: ["ball", "strike", "hit"],
+      advances: [],
+      confidence: "high",
+    },
+    isTiebreakRunnerOnly: false,
+    segments: {
+      1: {
+        segment: 1,
+        status: "safe",
+        isBatterHit: true,
+        hitBases: 4,
+        method: "hit",
+        isPrePlay: false,
+      },
+      2: {
+        segment: 2,
+        status: "safe",
+        isBatterHit: true,
+        hitBases: 4,
+        method: "hit",
+        isPrePlay: false,
+      },
+      3: {
+        segment: 3,
+        status: "safe",
+        isBatterHit: true,
+        hitBases: 4,
+        method: "hit",
+        isPrePlay: false,
+      },
+      4: {
+        segment: 4,
+        status: "safe",
+        isBatterHit: true,
+        hitBases: 4,
+        method: "hit",
+        isPrePlay: false,
+      },
+    },
+    outNumber: null,
+    runScored: true,
+    isResidual: false,
+    isInningEndCell: false,
+    hasPitcherChangeBefore: false,
+  };
+
   const sampleCells: Array<{ title: string; cell: CompiledScorebookCell }> = [
     {
       title: "見逃三振(1死)",
@@ -3452,7 +3688,7 @@ export function ScorebookSymbolSamplePreview({
   const gap = 5;
   const lineupW = getLineupTotalWidth(rules);
   const colHeadH = 30;
-  const topPreviewW = lineupW + CELL_W * 2;
+  const topPreviewW = lineupW + CELL_W * 3;
   const cellsRowW =
     sampleCells.length * CELL_W + (sampleCells.length - 1) * gap;
   const totalW = Math.max(topPreviewW, cellsRowW) + 12;
@@ -3472,7 +3708,7 @@ export function ScorebookSymbolSamplePreview({
     >
       <rect x={0} y={0} width={totalW} height={totalH} fill={COLOR_PAPER} />
 
-      {/* 上段：メンバー欄＋1回（二塁打生還）・2回（バント安打）マスのリアルプレビュー */}
+      {/* 上段：メンバー欄＋1回（二塁打）・2回（バント単打）・3回（本塁打）マスのリアルプレビュー */}
       <g>
         <rect
           x={topOriginX}
@@ -3504,6 +3740,14 @@ export function ScorebookSymbolSamplePreview({
           stroke={COLOR_GRID}
           strokeWidth={0.9}
         />
+        <line
+          x1={topOriginX + lineupW + CELL_W * 2}
+          y1={topOriginY}
+          x2={topOriginX + lineupW + CELL_W * 2}
+          y2={topOriginY + colHeadH + CELL_H}
+          stroke={COLOR_GRID}
+          strokeWidth={0.9}
+        />
         <text
           x={topOriginX + lineupW + CELL_W / 2}
           y={topOriginY + (isClassicHead ? 20.5 : 19.5)}
@@ -3523,6 +3767,16 @@ export function ScorebookSymbolSamplePreview({
           fill={COLOR_INK}
         >
           {isClassicHead ? "2" : "2回"}
+        </text>
+        <text
+          x={topOriginX + lineupW + CELL_W * 2 + CELL_W / 2}
+          y={topOriginY + (isClassicHead ? 20.5 : 19.5)}
+          fontSize={isClassicHead ? 13.5 : 11}
+          fontWeight={900}
+          textAnchor="middle"
+          fill={COLOR_INK}
+        >
+          {isClassicHead ? "3" : "3回"}
         </text>
 
         {renderBatterLineupRowSvg({
@@ -3544,6 +3798,12 @@ export function ScorebookSymbolSamplePreview({
           topInning2BuntHitCell,
           rules,
           topOriginX + lineupW + CELL_W,
+          topOriginY + colHeadH
+        )}
+        {renderSingleScorebookCellSvg(
+          topInning3HomeRunCell,
+          rules,
+          topOriginX + lineupW + CELL_W * 2,
           topOriginY + colHeadH
         )}
         <line

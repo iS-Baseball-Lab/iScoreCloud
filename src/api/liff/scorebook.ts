@@ -810,7 +810,7 @@ liffScorebookRouter.post("/extract-symbol-rules", async (c) => {
   "walkHbp": "b_db" | "bb_hbp" | "kanji", // 四死球: B/DBなら "b_db"、BB/HBPなら "bb_hbp"、四/死なら "kanji"
   "buntMark": "square_all_bh" | "square_sac" | "diamond_sac" | "b_prefix", // バント結果表記: 犠打もバント凡退も四角囲み□[5-3]＋バント安打BH5なら "square_all_bh"、犠打のみ四角囲み□[1-3]なら "square_sac"、早稲田式の菱形囲み◇1-3なら "diamond_sac"、B1-3/BH5のB添字式なら "b_prefix"
   "buntPitchMark": "v_dot_circle_dot" | "filled_triangle" | "inv_triangle_diamond" | "same_as_normal", // BSOバント球記号: バントファウルがVの中に・＆バント空振りが○の中に・(⊙)なら "v_dot_circle_dot"、黒塗り三角▲なら "filled_triangle"、逆三角▽/ダイヤ◇なら "inv_triangle_diamond"、通常球と同じ記号なら "same_as_normal"
-  "hitLine": "red_slash" | "parallel_bars" | "mono_bold", // 安打線: 赤線＋斜線ハッシュなら "red_slash"、塁打数分の平行バーなら "parallel_bars"、白黒太線のみなら "mono_bold"
+  "hitLine": "quadrant_slash_hr_diamond" | "red_plain" | "red_slash" | "parallel_bars" | "mono_bold", // 安打赤線パターン: 進塁線は黒で右下欄に赤斜線（／・／／・／／／）＋HRはダイヤ1周赤囲みなら "quadrant_slash_hr_diamond"、ダイヤ進塁辺を赤実線のみ（チョン線なし）なら "red_plain"、進塁赤線＋1塁線上の直交チョン線なら "red_slash"、進塁赤線＋1塁線平行の二重・三重線なら "parallel_bars"、白黒太線のみなら "mono_bold"
   "runMark": "red_dot" | "double_circle" | "kanji_toku", // 得点マーク: 中央塗り丸●なら "red_dot"、二重丸◎なら "double_circle"、丸得なら "kanji_toku"
   "pitchMark": "waseda_symbols" | "cross_swing" | "cross_dot_swing" | "slash_swing" | "numbered_bs", // 投球BSO: ○見逃/●空振/ーB/△F なら "waseda_symbols"、○見逃/×空振/ーB(横棒ボール) なら "cross_swing"、○見逃/×空振/・B(点・黒点ボール) なら "cross_dot_swing"、○見逃/／空振 なら "slash_swing"、B/S欄に投球番号1,2,3を書く方式なら "numbered_bs"
   "pickoffMark": "chevron_arrow" | "full_arrow" | "kanji_num" | "hidden", // 牽制球記号: 軸線・中塗り無しの矢先記号（1塁＞・2塁∧・3塁＜）なら "chevron_arrow"、軸線付き矢印（1塁→・2塁↑・3塁←）なら "full_arrow"、1牽・2牽・3牽や丸数字なら "kanji_num"（不明なら "chevron_arrow"）
@@ -1818,8 +1818,8 @@ ${targetInningMetaLines.join("\n")}
    - 傘マーク付き **︵1〜︵9** は 100% フライ（rc: "flyout", dir: "1"〜"9"）。本塁→1塁が点線（b1: false）で送球ハイフンが無く外野番号 **『7』『8』『9』** が単独で書かれている場合も外野フライ（左飛・中飛・右飛）です。
    - **ファウルフライ（邪飛）**: 『︵2F』『(2)』『△2』『3F』『5F』等 ➔ rc: "flyout", dir: "2F" / "3F" / "5F", rl: "捕邪飛" / "一邪飛" / "三邪飛"。
    - **ライナー（直球）**: 直線バー『￣』『L』（例: 『6￣』『6L』『4L』『4-』※右に送球先数字無し）➔ rc: "flyout", dir: "6L" / "4L", rl: "遊直" / "二直"。
-4. **安打（rc: "single" | "double" | "triple" | "home_run"）の打球方向（dir）**:
-   - 本塁→1塁が太い実線・赤線（b1: true）で、1塁線上の斜線『/』=単打、2塁まで実線＋『//』=二塁打、3塁まで実線＋『///』=三塁打、本塁一周実線または『HR』『////』=本塁打。
+4. **安打（rc: "single" | "double" | "triple" | "home_run"）の塁打数判別と打球方向（dir）**:
+   - 安打の赤線には主に ①**右下欄に赤斜線『／』（単打）・『／／』（二塁打）・『／／／』（三塁打）を引き、進塁線は黒鉛筆・本塁打のみダイヤ1周赤実線で囲む方式**、②**到達塁までのダイヤ進塁辺を赤実線（＋直交チョン線 /,//,/// または平行二重・三重線）で引く方式** があります。後続打者による進塁線（黒鉛筆で2塁・3塁へ伸びる線）に惑わされず、**赤斜線の本数（1本=single, 2本=double, 3本=triple）や赤実線の到達塁**で正確な塁打数を判定してください（ダイヤ1周赤囲みまたは『HR』『////』=home_run）。
    - **守備方向の読み方（数字記法と打球線記法の両対応）**:
      ① 数字・バント安打記号が書かれている場合: **7**(左), **8**(中), **9**(右), **7-8**(左中間), **8-9**(右中間), **6**(遊内安), **5**(三内安), **4**(二内安)、およびバント安打 **BH1〜BH6（例: BH5=三バント安打, BH1=投バント安打）** をそのまま dir に設定（※b1: true かつ中央アウト無しの 7/8/9 や BH5 は安打です！）。
      ② 早稲田式の打球方向線（本塁からダイヤモンド外へ伸びる線＋先端の点『・』や山『⌒』）で書かれている場合: ダイヤモンドの向きに合わせて **左上（三遊間〜レフト側）="7"**、**真上（二塁ベース上〜センター側）="8"**、**右上（一二塁間〜ライト側）="9"**、**左斜め上中間="7-8"**、**右斜め上中間="8-9"** と正確に判定してください（左上7と右上9を絶対に逆にしないこと）！

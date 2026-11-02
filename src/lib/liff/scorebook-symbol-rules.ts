@@ -17,7 +17,12 @@ export type StrikeoutMarkStyle =
   | "k_only"
   | "so";
 export type WalkHbpMarkStyle = "b_db" | "bb_hbp" | "kanji";
-export type HitLineStyle = "red_slash" | "parallel_bars" | "mono_bold";
+export type HitLineStyle =
+  | "quadrant_slash_hr_diamond"
+  | "red_plain"
+  | "red_slash"
+  | "parallel_bars"
+  | "mono_bold";
 export type RunMarkStyle = "red_dot" | "double_circle" | "kanji_toku";
 export type PitchMarkStyle =
   | "waseda_symbols"
@@ -93,7 +98,7 @@ export const DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES: ScorebookSymbolRules = {
   outMark: "circled",
   strikeout: "k_called_circle",
   walkHbp: "b_db",
-  hitLine: "red_slash",
+  hitLine: "quadrant_slash_hr_diamond",
   runMark: "red_dot",
   pitchMark: "waseda_symbols",
   buntPitchMark: "v_dot_circle_dot",
@@ -126,14 +131,14 @@ export const SCOREBOOK_SYMBOL_PRESETS: readonly ScorebookSymbolPreset[] = [
   {
     id: "youth_senior",
     label: "少年・シニア 丸数字式",
-    description: "①②③・×空振り・□バント/BH・V点/○点・＞∧＜牽制",
+    description: "①②③・右下赤斜線／・×空振り・□バント/BH・V点/○点",
     rules: {
       cellStyle: "quadrant",
       lineupStyle: "classic_three_row",
       outMark: "circled",
       strikeout: "k_called_circle",
       walkHbp: "b_db",
-      hitLine: "red_slash",
+      hitLine: "quadrant_slash_hr_diamond",
       runMark: "red_dot",
       pitchMark: "cross_swing",
       buntPitchMark: "v_dot_circle_dot",
@@ -246,11 +251,33 @@ export const SYMBOL_RULE_FIELD_CONFIGS = {
     ] satisfies ReadonlyArray<SymbolRuleFieldOption<WalkHbpMarkStyle>>,
   },
   hitLine: {
-    title: "安打ライン・長打記号",
+    title: "安打の赤線・長打表記パターン",
     options: [
-      { value: "red_slash", label: "赤太線＋斜線（標準）", sample: "赤線 ／・〃・彡" },
-      { value: "parallel_bars", label: "赤太線＋塁打数バー", sample: "1〜4本バー" },
-      { value: "mono_bold", label: "黒太線（白黒印刷向き）", sample: "黒太線＋斜線" },
+      {
+        value: "quadrant_slash_hr_diamond",
+        label: "右下赤斜線＋HR1周赤",
+        sample: "右下 ／・／／・／／／ / HRダイヤ赤囲み",
+      },
+      {
+        value: "red_plain",
+        label: "進塁辺を赤実線のみ",
+        sample: "到達塁まで赤線（チョン線なし）",
+      },
+      {
+        value: "red_slash",
+        label: "進塁赤線＋直交線（早稲田）",
+        sample: "赤進塁線＋1塁線に1〜4本",
+      },
+      {
+        value: "parallel_bars",
+        label: "進塁赤線＋1塁平行重線",
+        sample: "単1本・二2重・三3重・HR二重枠",
+      },
+      {
+        value: "mono_bold",
+        label: "黒太線（白黒印刷向き）",
+        sample: "黒太線＋直交線（守備も黒）",
+      },
     ] satisfies ReadonlyArray<SymbolRuleFieldOption<HitLineStyle>>,
   },
   runMark: {
@@ -417,7 +444,13 @@ export function sanitizeScorebookSymbolRules(
     walkHbp: isOneOf(obj.walkHbp, ["b_db", "bb_hbp", "kanji"], fallback.walkHbp),
     hitLine: isOneOf(
       obj.hitLine,
-      ["red_slash", "parallel_bars", "mono_bold"],
+      [
+        "quadrant_slash_hr_diamond",
+        "red_plain",
+        "red_slash",
+        "parallel_bars",
+        "mono_bold",
+      ],
       fallback.hitLine
     ),
     runMark: isOneOf(
@@ -583,8 +616,17 @@ export function summarizeSymbolRulesBadges(
   else if (rules.pickoffMark === "full_arrow") badges.push("→↑←牽制");
   else if (rules.pickoffMark === "kanji_num") badges.push("1牽・2牽");
 
-  if (rules.hitLine === "mono_bold") badges.push("白黒太線");
-  else if (rules.hitLine === "parallel_bars") badges.push("塁打バー");
+  if (rules.hitLine === "quadrant_slash_hr_diamond") {
+    badges.push("右下赤斜線＋HR赤枠");
+  } else if (rules.hitLine === "red_plain") {
+    badges.push("赤実線のみ");
+  } else if (rules.hitLine === "parallel_bars") {
+    badges.push("平行重線ヒット");
+  } else if (rules.hitLine === "mono_bold") {
+    badges.push("白黒太線");
+  } else {
+    badges.push("赤進塁線＋直交線");
+  }
 
   return badges;
 }
@@ -868,10 +910,9 @@ export function formatAtBatPlayNotation(
   const rc: CanonicalAtBatResult = ab.resultCode;
   const dir = (ab.battedDirection || "").trim();
   const label = (ab.resultLabel || "").trim();
-  const useRed = rules.hitLine !== "mono_bold";
   const isBuntPlay = isBuntAtBatPlay(ab);
 
-  // 1. 安打系
+  // 1. 安打系（右下の打球方向数字・BH5・HR表記は黒字とし、赤は安打斜線/ラインと中央●のみに使用）
   if (
     rc === "single" ||
     rc === "double" ||
@@ -883,20 +924,20 @@ export function formatAtBatPlayNotation(
       return {
         mainText: fielder ? `HR(${fielder})` : "HR",
         decorator: "hit",
-        isRedInk: useRed,
+        isRedInk: false,
       };
     }
     if (isBuntPlay && rules.buntMark !== "diamond_sac") {
       return {
         mainText: fielder ? `BH${fielder}` : "BH",
         decorator: "hit",
-        isRedInk: useRed,
+        isRedInk: false,
       };
     }
     return {
       mainText: fielder || (rc === "single" ? "H" : rc === "double" ? "2B" : "3B"),
       decorator: "hit",
-      isRedInk: useRed,
+      isRedInk: false,
     };
   }
 
