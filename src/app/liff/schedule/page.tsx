@@ -49,10 +49,10 @@ import {
 const TARGET_GROUPS = ["全体", "Aチーム", "Bチーム", "高学年", "低学年", "試合組", "練習組"];
 const DUTY_GROUPS = ["1班", "2班", "3班", "4班", "なし"];
 const EVENT_TYPES = [
-  { id: "practice", label: "練習", icon: "🏃", color: "border-primary bg-primary/10 text-primary" },
-  { id: "match", label: "試合", icon: "⚾", color: "border-primary bg-primary/10 text-primary" },
-  { id: "camp", label: "合宿", icon: "🏕️", color: "border-primary bg-primary/10 text-primary" },
-  { id: "meeting", label: "ミーティング", icon: "📋", color: "border-primary bg-primary/10 text-primary" },
+  { id: "practice", label: "練習", icon: "🏃", color: "border-teal-500/35 bg-teal-500/12 text-teal-700 dark:text-teal-300" },
+  { id: "match", label: "試合", icon: "⚾", color: "border-primary/35 bg-primary/12 text-primary" },
+  { id: "camp", label: "合宿", icon: "🏕️", color: "border-amber-500/35 bg-amber-500/12 text-amber-700 dark:text-amber-300" },
+  { id: "meeting", label: "ミーティング", icon: "📋", color: "border-indigo-500/35 bg-indigo-500/12 text-indigo-700 dark:text-indigo-300" },
 ];
 
 export interface ActivityGroup {
@@ -127,7 +127,7 @@ const ATTENDANCE_BUTTONS: Array<{
   { id: "help", mark: "○", label: "ヘルプ", activeClass: "bg-blue-600 text-white shadow-xs" },
   { id: "setup", mark: "▲", label: "設営撤収", activeClass: "bg-amber-500 text-white shadow-xs" },
   { id: "game", mark: "△", label: "試合のみ", activeClass: "bg-emerald-600 text-white shadow-xs" },
-  { id: "absent", mark: "×", label: "欠席", activeClass: "bg-muted-foreground/70 text-background shadow-xs" },
+  { id: "absent", mark: "×", label: "欠席", activeClass: "bg-rose-600 text-white shadow-xs" },
   { id: "pending", mark: "？", label: "未定", activeClass: "bg-muted text-foreground shadow-xs" },
 ];
 
@@ -180,8 +180,8 @@ const getAttendanceBadgeInfo = (st: string | undefined) => {
       return {
         mark: "×",
         label: "欠席",
-        badgeClass: "bg-muted-foreground/70 text-background font-bold",
-        bgLight: "bg-muted text-muted-foreground border-border/60",
+        badgeClass: "bg-rose-600 text-white font-bold shadow-xs",
+        bgLight: "bg-rose-500/12 text-rose-700 dark:text-rose-300 border-rose-500/25",
       };
     default:
       return {
@@ -815,7 +815,7 @@ export default function LiffSchedulePage() {
           title="活動予定"
           subtitle="活動日程・球場・集合時間・お当番"
           icon={
-            <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
+            <span className="w-8 h-8 rounded-xl bg-teal-500/12 text-teal-600 dark:text-teal-400 flex items-center justify-center font-black">
               <CalendarIcon className="w-4 h-4" />
             </span>
           }
@@ -827,31 +827,31 @@ export default function LiffSchedulePage() {
         />
 
         {/* 🔀 タブ切り替え（予定一覧 / スケジューラー） */}
-        <div className="flex bg-muted p-1 rounded-2xl border border-border/60 gap-1">
+        <div className="flex bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl border border-border/60 gap-1">
           <button
             type="button"
             onClick={() => handleTabChange("list")}
             className={cn(
-              "flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl text-xs font-black transition-all cursor-pointer",
+              "flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl text-xs transition-all cursor-pointer",
               activeTab === "list"
-                ? "bg-card text-primary shadow-xs"
-                : "text-muted-foreground hover:text-foreground active:scale-95"
+                ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                : "text-muted-foreground hover:text-foreground font-bold border border-transparent active:scale-95"
             )}
           >
-            <CalendarIcon className="w-3.5 h-3.5" />
+            <CalendarIcon className={cn("w-3.5 h-3.5", activeTab === "list" ? "text-primary" : "text-muted-foreground")} />
             <span>予定一覧・カレンダー</span>
           </button>
           <button
             type="button"
             onClick={() => handleTabChange("planner")}
             className={cn(
-              "flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl text-xs font-black transition-all cursor-pointer",
+              "flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl text-xs transition-all cursor-pointer",
               activeTab === "planner"
-                ? "bg-card text-primary shadow-xs"
-                : "text-muted-foreground hover:text-foreground active:scale-95"
+                ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                : "text-muted-foreground hover:text-foreground font-bold border border-transparent active:scale-95"
             )}
           >
-            <Sparkles className="w-3.5 h-3.5" />
+            <Sparkles className={cn("w-3.5 h-3.5", activeTab === "planner" ? "text-primary" : "text-muted-foreground")} />
             <span>予定スケジューラー</span>
           </button>
         </div>
@@ -999,25 +999,30 @@ export default function LiffSchedulePage() {
 
         {/* フィルター切り替え ＆ 過去日トグル ＆ 昇順/降順ソート */}
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex-1 flex items-center gap-1 p-1 bg-muted rounded-2xl border border-border/60">
+          <div className="flex-1 flex items-center gap-1 p-1 bg-muted/80 dark:bg-muted/50 rounded-2xl border border-border/60">
             <button
               type="button"
               onClick={() => setFilter("all")}
-              className={`flex-1 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+              className={`flex-1 flex items-center justify-center gap-1 py-1.5 px-1 rounded-xl text-xs transition-all cursor-pointer ${
                 filter === "all"
-                  ? "bg-card text-primary shadow-xs"
-                  : "text-muted-foreground hover:text-foreground"
+                  ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                  : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
               }`}
             >
-              すべて ({eventsInCurrentMonth.length})
+              <span>すべて</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black leading-none ${
+                filter === "all" ? "bg-primary/12 text-primary" : "bg-background/70 text-muted-foreground"
+              }`}>
+                {eventsInCurrentMonth.length}
+              </span>
             </button>
             <button
               type="button"
               onClick={() => setFilter("match")}
-              className={`flex-1 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+              className={`flex-1 py-1.5 rounded-xl text-xs transition-all cursor-pointer ${
                 filter === "match"
-                  ? "bg-card text-primary shadow-xs"
-                  : "text-muted-foreground hover:text-foreground"
+                  ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                  : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
               }`}
             >
               ⚾ 試合のみ
@@ -1025,10 +1030,10 @@ export default function LiffSchedulePage() {
             <button
               type="button"
               onClick={() => setFilter("practice")}
-              className={`flex-1 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+              className={`flex-1 py-1.5 rounded-xl text-xs transition-all cursor-pointer ${
                 filter === "practice"
-                  ? "bg-card text-primary shadow-xs"
-                  : "text-muted-foreground hover:text-foreground"
+                  ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                  : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
               }`}
             >
               🏃 練習のみ
@@ -1040,10 +1045,10 @@ export default function LiffSchedulePage() {
             <button
               type="button"
               onClick={() => setShowPastDates(prev => !prev)}
-              className={`flex items-center gap-1 px-2.5 py-2 rounded-2xl text-xs font-bold transition-all active:scale-95 border cursor-pointer ${
+              className={`flex items-center gap-1 px-2.5 py-2 rounded-2xl text-xs transition-all active:scale-95 cursor-pointer ${
                 showPastDates
-                  ? "bg-primary/10 text-primary border-primary/25 font-black shadow-xs"
-                  : "bg-card text-muted-foreground border-border/60 shadow-xs hover:text-foreground hover:bg-muted"
+                  ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
+                  : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
               }`}
               title={showPastDates ? "過去日を表示中（クリックで非表示）" : "過去日を非表示中（クリックで表示）"}
             >
@@ -1060,11 +1065,11 @@ export default function LiffSchedulePage() {
               )}
             </button>
 
-          {/* 昇順 / 降順 切り替えボタン */}
+            {/* 昇順 / 降順 切り替えボタン */}
             <button
               type="button"
               onClick={() => setSortOrder(prev => prev === "asc" ? "desc" : "asc")}
-              className="py-2 px-2.5 rounded-2xl bg-card hover:bg-muted text-foreground text-xs font-black border border-border/60 shadow-xs transition-all active:scale-95 flex items-center gap-1 shrink-0 cursor-pointer"
+              className="py-2 px-2.5 rounded-2xl bg-card hover:bg-muted/50 text-foreground text-xs font-black border border-border/60 shadow-2xs transition-all active:scale-95 flex items-center gap-1 shrink-0 cursor-pointer"
               title={sortOrder === "asc" ? "現在：昇順（直近から）" : "現在：降順（未来から）"}
             >
               <span>{sortOrder === "asc" ? "↑ 昇順" : "↓ 降順"}</span>
@@ -1096,7 +1101,7 @@ export default function LiffSchedulePage() {
         ) : filteredEvents.length === 0 ? (
           /* 空ステート */
           <div className="flex flex-col items-center justify-center py-12 text-center rounded-2xl border border-border/60 bg-card shadow-xs p-6 space-y-3">
-            <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center text-primary">
+            <div className="w-12 h-12 rounded-2xl bg-teal-500/12 flex items-center justify-center text-teal-600 dark:text-teal-400">
               <CalendarIcon className="w-6 h-6" />
             </div>
             <div className="space-y-1">
@@ -1136,6 +1141,7 @@ export default function LiffSchedulePage() {
               const currentGroup = activityGroups.find(g => g.id === activeGroupId) || activityGroups[0];
 
               const isMatch = ev.eventType === "match" || ev.amType === "match" || ev.pmType === "match" || activityGroups.some(g => g.eventType === "match");
+              const isOfficial = isMatch && Boolean(ev.title && (ev.title.includes("大会") || ev.title.includes("公式")));
               const displayDutyGroup = (hasActivityGroups && currentGroup?.dutyGroup) ? currentGroup.dutyGroup : ev.dutyGroup;
               const displayCarInfo = (hasActivityGroups && currentGroup?.carInfo) ? currentGroup.carInfo : ev.carInfo;
               const displayTargetGroup = (hasActivityGroups && currentGroup?.targetGroup) ? currentGroup.targetGroup : ev.targetGroup;
@@ -1150,542 +1156,550 @@ export default function LiffSchedulePage() {
               return (
                 <div
                   key={ev.id}
-                  className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3.5 transition-all"
+                  className="rounded-2xl border border-border/60 bg-card shadow-xs overflow-hidden transition-all"
                 >
-                  {/* ① 上部ヘッダー：日程・日付 & 曜日バッジ & 対象チーム & 出欠カウント & ✏️ 編集ボタン */}
-                  <div className="flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      {/* 日付 ＋ 曜日バッジ */}
-                      <div className="flex items-center gap-1">
-                        <span className="text-xl font-black text-foreground tracking-tight">
-                          {dateText}
+                  {/* 上部ヘッダー帯（淡いティントでフラット感を解消） */}
+                  <div className="px-4 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 space-y-1.5">
+                    {/* ① 上部ヘッダー：日程・日付 & 曜日バッジ & 対象チーム & ✏️ 編集ボタン */}
+                    <div className="flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {/* 日付 ＋ 曜日バッジ */}
+                        <div className="flex items-center gap-1">
+                          <span className="text-xl font-black text-foreground tracking-tight">
+                            {dateText}
+                          </span>
+                          {dayOfWeek && (
+                            <span className={`px-1.5 py-0.5 rounded-md text-xs font-black border ${
+                              isSat
+                                ? "bg-blue-500/10 text-blue-500 border-blue-500/20"
+                                : isSun
+                                ? "bg-red-500/10 text-red-500 border-red-500/20"
+                                : "bg-card text-muted-foreground border-border/60"
+                            }`}>
+                              {dayOfWeek}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* ⚾ 試合 / 🏃 練習 区分バッジ */}
+                        <span className={`px-2 py-0.5 rounded-lg text-[10.5px] font-black border shrink-0 ${
+                          isOfficial
+                            ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30"
+                            : isMatch
+                            ? "bg-primary/12 text-primary border-primary/25"
+                            : "bg-teal-500/12 text-teal-700 dark:text-teal-300 border-teal-500/25"
+                        }`}>
+                          {isOfficial ? "🏆 公式戦" : isMatch ? "⚾ 試合" : "🏃 練習"}
                         </span>
-                        {dayOfWeek && (
-                          <span className={`px-1.5 py-0.5 rounded-md text-xs font-black border ${
-                            isSat
-                              ? "bg-blue-500/10 text-blue-500 border-blue-500/20"
-                              : isSun
-                              ? "bg-red-500/10 text-red-500 border-red-500/20"
-                              : "bg-muted/50 text-muted-foreground border-border/60"
-                          }`}>
-                            {dayOfWeek}
+
+                        {/* 🎯 対象チーム・グループバッジ（Aチーム/Bチーム/全体など） */}
+                        {displayTargetGroup && displayTargetGroup !== "全体" && (
+                          <span className="px-2 py-0.5 rounded-lg bg-primary/10 text-primary text-[10.5px] font-black border border-primary/25 shrink-0">
+                            🏷️ {displayTargetGroup}
                           </span>
                         )}
-                      </div>
 
-                      {/* ⚾ 試合 / 🏃 練習 区分バッジ */}
-                      <span className={`px-2 py-0.5 rounded-lg text-[10.5px] font-black border shrink-0 ${
-                        isMatch
-                          ? "bg-primary/12 text-primary border-primary/25"
-                          : "bg-muted/50 text-foreground border-border/60"
-                      }`}>
-                        {isMatch ? "⚾ 試合" : "🏃 練習"}
-                      </span>
-
-                      {/* 🎯 対象チーム・グループバッジ（Aチーム/Bチーム/全体など） */}
-                      {displayTargetGroup && displayTargetGroup !== "全体" && (
-                        <span className="px-2 py-0.5 rounded-lg bg-primary/10 text-primary text-[10.5px] font-black border border-primary/25 shrink-0">
-                          🏷️ {displayTargetGroup}
-                        </span>
-                      )}
-
-                      {hasActivityGroups && (
-                        <span className="px-2 py-0.5 rounded-lg bg-primary/10 text-primary text-[10px] font-black border border-primary/25 flex items-center gap-1 shrink-0">
-                          <Layers className="w-3 h-3 text-primary" />
-                          <span>{activityGroups.length}班</span>
-                        </span>
-                      )}
-
-                      <span className="px-2 py-0.5 rounded-full bg-muted/50 text-muted-foreground border border-border/60 text-[10px] font-bold">
-                        {idx + 1} / {filteredEvents.length}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-2 shrink-0 ml-auto">
-                      {/* ✏️ 編集ボタン */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          let grps: ActivityGroup[] | undefined = undefined;
-                          if (Array.isArray(ev.activityGroups) && ev.activityGroups.length > 1) {
-                            grps = ev.activityGroups;
-                          } else if (typeof ev.activityGroups === "string") {
-                            try {
-                              const parsed = JSON.parse(ev.activityGroups);
-                              if (Array.isArray(parsed) && parsed.length > 1) {
-                                grps = parsed;
-                              }
-                            } catch {}
-                          }
-
-                          if (grps && grps.length > 1) {
-                            setActiveEditGroupId(grps[0].id);
-                          } else {
-                            setActiveEditGroupId("main");
-                          }
-
-                          const isAmOff = ev.hasAm === false || ev.amType === "off";
-
-                          setEditingEvent({ 
-                            ...ev, 
-                            title: (ev.title && ev.title.trim()) ? ev.title : "通常練習",
-                            needsLunch: Boolean(ev.needsLunch), 
-                            needsSnack: Boolean(ev.needsSnack),
-                            memo: ev.memo || "",
-                            hasAm: !isAmOff,
-                            amType: isAmOff ? "off" : (ev.amType || ev.eventType || "practice"),
-                            amTime: isAmOff ? "" : (ev.amTime || ev.time || "08:00〜12:00"),
-                            amLocation: isAmOff ? "" : (ev.amLocation || ev.location || ""),
-                            pmType: ev.pmType || "practice",
-                            pmTime: ev.pmTime || "13:00〜17:00",
-                            pmLocation: ev.pmLocation || ev.amLocation || ev.location || "",
-                            hasPm: ev.hasPm !== undefined ? ev.hasPm : true,
-                            dutyGroup: ev.dutyGroup || "1班",
-                            activityGroups: grps,
-                          });
-                        }}
-                        className="py-1 px-2.5 rounded-xl bg-primary/10 hover:bg-primary text-primary hover:text-primary-foreground text-xs font-black border border-primary/25 active:scale-95 transition-all flex items-center gap-1 shrink-0 cursor-pointer"
-                      >
-                        <Edit3 className="w-3.5 h-3.5" />
-                        <span>編集</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* ② タイトル */}
-                  <h3 className="text-sm sm:text-base font-black text-foreground tracking-tight line-clamp-1">
-                    {ev.title || (isMatch ? "公式戦・練習試合" : "通常練習")}
-                  </h3>
-
-                  {/* ③ 活動スケジュール表示（午前・午後 ＆ グループ切り替え） */}
-                  {hasActivityGroups ? (
-                    <div className="space-y-2.5">
-                      {/* グループ切り替えタブ */}
-                      <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none">
-                        {activityGroups.map((grp) => {
-                          const isSel = (activeGroupId === grp.id);
-                          const gCount = ev.groupCounts?.[grp.id] || 0;
-                          return (
-                            <button
-                              key={grp.id}
-                              type="button"
-                              onClick={() => setActiveGroupTabMap(prev => ({ ...prev, [ev.id]: grp.id }))}
-                              className={`px-3 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all flex items-center gap-1.5 cursor-pointer border ${
-                                isSel
-                                  ? "bg-primary text-primary-foreground border-primary shadow-xs"
-                                  : "bg-muted/50 text-muted-foreground border-border/60 hover:text-foreground"
-                              }`}
-                            >
-                              <span>{grp.amType === "match" || grp.eventType === "match" ? "⚾" : "🏃"}</span>
-                              <span>{grp.name}</span>
-                              {grp.targetGroup && grp.targetGroup !== "全体" && (
-                                <span className={`px-1.5 py-0.2 rounded-md text-[9.5px] font-bold ${
-                                  isSel ? "bg-primary-foreground/20 text-primary-foreground" : "bg-primary/10 text-primary"
-                                }`}>
-                                  {grp.targetGroup}
-                                </span>
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
-
-                      {/* 選択中グループの 午前・午後 スケジュール */}
-                      {currentGroup && (
-                        (currentGroup.hasPm && currentGroup.pmTime) || (currentGroup.hasAm && currentGroup.hasPm) || currentGroup.hasPm || currentGroup.amType === "off" || currentGroup.hasAm === false ? (
-                          <div className="grid grid-cols-2 gap-2">
-                            {/* ☀️ 午前 */}
-                            {currentGroup.hasAm !== false && currentGroup.amType !== "off" ? (
-                              <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 flex flex-col justify-between space-y-2">
-                                <div className="flex items-center justify-between">
-                                  <span className="text-[11px] font-black text-foreground flex items-center gap-1.5">
-                                    <Sun className="w-3.5 h-3.5 text-primary shrink-0" />
-                                    <span>午前</span>
-                                  </span>
-                                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${
-                                    currentGroup.amType === "match"
-                                      ? "bg-primary/12 text-primary border-primary/25"
-                                      : "bg-card text-muted-foreground border-border/60"
-                                  }`}>
-                                    {currentGroup.amType === "match" ? "⚾ 試合" : "🏃 練習"}
-                                  </span>
-                                </div>
-                                <div className="p-2 rounded-xl bg-card border border-border/60 space-y-1">
-                                  <div className="flex items-center gap-1.5 text-xs font-black text-foreground">
-                                    <Clock className="w-3.5 h-3.5 text-primary shrink-0" />
-                                    <span className="truncate">{currentGroup.amTime || currentGroup.time || "08:00〜12:00"}</span>
-                                  </div>
-                                  <div className="flex items-center gap-1.5 text-[11px] font-bold text-foreground/90 truncate">
-                                    <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
-                                    <span className="truncate">{currentGroup.amLocation || currentGroup.location || "グラウンド"}</span>
-                                  </div>
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="p-3 rounded-2xl bg-muted/20 border border-dashed border-border/60 flex flex-col justify-between space-y-2 opacity-75">
-                                <div className="flex items-center justify-between">
-                                  <span className="text-[11px] font-bold text-muted-foreground flex items-center gap-1.5">
-                                    <Sun className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
-                                    <span>午前</span>
-                                  </span>
-                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-muted/50 text-muted-foreground border border-border/60">
-                                    🏖️ なし
-                                  </span>
-                                </div>
-                                <div className="p-2 rounded-xl bg-card/60 border border-border/60 space-y-1">
-                                  <div className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground">
-                                    <Clock className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
-                                    <span>なし (午後集合)</span>
-                                  </div>
-                                  <div className="flex items-center gap-1.5 text-[11px] font-bold text-muted-foreground">
-                                    <MapPin className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
-                                    <span>—</span>
-                                  </div>
-                                </div>
-                              </div>
-                            )}
-
-                            {/* 🌙 午後 */}
-                            {currentGroup.hasPm && currentGroup.pmType !== "off" ? (
-                              <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 flex flex-col justify-between space-y-2">
-                                <div className="flex items-center justify-between">
-                                  <span className="text-[11px] font-black text-foreground flex items-center gap-1.5">
-                                    <Moon className="w-3.5 h-3.5 text-primary shrink-0" />
-                                    <span>午後</span>
-                                  </span>
-                                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${
-                                    currentGroup.pmType === "match"
-                                      ? "bg-primary/12 text-primary border-primary/25"
-                                      : "bg-card text-muted-foreground border-border/60"
-                                  }`}>
-                                    {currentGroup.pmType === "match" ? "⚾ 試合" : "🏃 練習"}
-                                  </span>
-                                </div>
-                                <div className="p-2 rounded-xl bg-card border border-border/60 space-y-1">
-                                  <div className="flex items-center gap-1.5 text-xs font-black text-foreground">
-                                    <Clock className="w-3.5 h-3.5 text-primary shrink-0" />
-                                    <span className="truncate">{currentGroup.pmTime ? currentGroup.pmTime : "解散・なし"}</span>
-                                  </div>
-                                  <div className="flex items-center gap-1.5 text-[11px] font-bold text-foreground/90 truncate">
-                                    <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
-                                    <span className="truncate">{currentGroup.pmLocation || currentGroup.amLocation || "グラウンド"}</span>
-                                  </div>
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="p-3 rounded-2xl bg-muted/20 border border-dashed border-border/60 flex flex-col justify-between space-y-2 opacity-75">
-                                <div className="flex items-center justify-between">
-                                  <span className="text-[11px] font-bold text-muted-foreground flex items-center gap-1.5">
-                                    <Moon className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
-                                    <span>午後</span>
-                                  </span>
-                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-muted/50 text-muted-foreground border border-border/60">
-                                    🏖️ なし
-                                  </span>
-                                </div>
-                                <div className="p-2 rounded-xl bg-card/60 border border-border/60 space-y-1">
-                                  <div className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground">
-                                    <Clock className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
-                                    <span>解散・なし</span>
-                                  </div>
-                                  <div className="flex items-center gap-1.5 text-[11px] font-bold text-muted-foreground">
-                                    <MapPin className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
-                                    <span>—</span>
-                                  </div>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                          /* 単一活動表示 */
-                          <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 space-y-2">
-                            <div className="flex items-center justify-between">
-                              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${
-                                currentGroup.eventType === "match" || currentGroup.amType === "match"
-                                  ? "bg-primary/12 text-primary border-primary/25"
-                                  : "bg-card text-muted-foreground border-border/60"
-                              }`}>
-                                {currentGroup.eventType === "match" || currentGroup.amType === "match" ? "⚾ 試合" : "🏃 練習"}
-                              </span>
-                              {currentGroup.dutyGroup && (
-                                <span className="text-[10.5px] font-black text-primary flex items-center gap-1">
-                                  📋 {currentGroup.dutyGroup}
-                                </span>
-                              )}
-                            </div>
-                            <div className="grid grid-cols-2 gap-2 text-xs font-bold">
-                              <div className="flex items-center gap-1.5 text-foreground bg-card p-2 rounded-xl border border-border/60">
-                                <Clock className="w-3.5 h-3.5 text-primary shrink-0" />
-                                <span className="truncate font-black">{currentGroup.time || currentGroup.amTime || "時間調整中"}</span>
-                              </div>
-                              <div className="flex items-center gap-1.5 text-foreground bg-card p-2 rounded-xl border border-border/60">
-                                <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
-                                <span className="truncate font-black">{currentGroup.location || currentGroup.amLocation || "グラウンド"}</span>
-                              </div>
-                            </div>
-                          </div>
-                        )
-                      )}
-                    </div>
-                  ) : (
-                    /* ☀️🌙 午前/午後分割スケジュール（全体） */
-                    (ev.hasPm && ev.pmTime) || (ev.hasAm && ev.hasPm) || ev.hasPm || ev.amType === "off" || ev.hasAm === false ? (
-                      <div className="grid grid-cols-2 gap-2">
-                        {/* ☀️ 【午前】 */}
-                        {ev.hasAm !== false && ev.amType !== "off" ? (
-                          <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 flex flex-col justify-between space-y-2">
-                            <div className="flex items-center justify-between">
-                              <span className="text-[11px] font-black text-foreground flex items-center gap-1.5">
-                                <Sun className="w-3.5 h-3.5 text-primary shrink-0" />
-                                <span>午前</span>
-                              </span>
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${
-                                ev.amType === "match"
-                                  ? "bg-primary/12 text-primary border-primary/25"
-                                  : "bg-card text-muted-foreground border-border/60"
-                              }`}>
-                                {ev.amType === "match" ? "⚾ 試合" : "🏃 練習"}
-                              </span>
-                            </div>
-                            <div className="p-2 rounded-xl bg-card border border-border/60 space-y-1">
-                              <div className="flex items-center gap-1.5 text-xs font-black text-foreground">
-                                <Clock className="w-3.5 h-3.5 text-primary shrink-0" />
-                                <span className="truncate">{ev.amTime || ev.time || "08:00〜12:00"}</span>
-                              </div>
-                              <div className="flex items-center gap-1.5 text-[11px] font-bold text-foreground/90 truncate">
-                                <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
-                                <span className="truncate">{ev.amLocation || ev.location || "グラウンド"}</span>
-                              </div>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="p-3 rounded-2xl bg-muted/20 border border-dashed border-border/60 flex flex-col justify-between space-y-2 opacity-75">
-                            <div className="flex items-center justify-between">
-                              <span className="text-[11px] font-bold text-muted-foreground flex items-center gap-1.5">
-                                <Sun className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
-                                <span>午前</span>
-                              </span>
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-muted/50 text-muted-foreground border border-border/60">
-                                🏖️ なし
-                              </span>
-                            </div>
-                            <div className="p-2 rounded-xl bg-card/60 border border-border/60 space-y-1">
-                              <div className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground">
-                                <Clock className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
-                                <span>なし (午後集合)</span>
-                              </div>
-                              <div className="flex items-center gap-1.5 text-[11px] font-bold text-muted-foreground">
-                                <MapPin className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
-                                <span>—</span>
-                              </div>
-                            </div>
-                          </div>
+                        {hasActivityGroups && (
+                          <span className="px-2 py-0.5 rounded-lg bg-primary/10 text-primary text-[10px] font-black border border-primary/25 flex items-center gap-1 shrink-0">
+                            <Layers className="w-3 h-3 text-primary" />
+                            <span>{activityGroups.length}班</span>
+                          </span>
                         )}
 
-                        {/* 🌙 【午後】 */}
-                        {ev.hasPm && ev.pmType !== "off" ? (
-                          <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 flex flex-col justify-between space-y-2">
-                            <div className="flex items-center justify-between">
-                              <span className="text-[11px] font-black text-foreground flex items-center gap-1.5">
-                                <Moon className="w-3.5 h-3.5 text-primary shrink-0" />
-                                <span>午後</span>
-                              </span>
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${
-                                ev.pmType === "match"
-                                  ? "bg-primary/12 text-primary border-primary/25"
-                                  : "bg-card text-muted-foreground border-border/60"
-                              }`}>
-                                {ev.pmType === "match" ? "⚾ 試合" : "🏃 練習"}
-                              </span>
+                        <span className="px-2 py-0.5 rounded-full bg-card/80 text-muted-foreground border border-border/60 text-[10px] font-bold">
+                          {idx + 1} / {filteredEvents.length}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0 ml-auto">
+                        {/* ✏️ 編集ボタン */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            let grps: ActivityGroup[] | undefined = undefined;
+                            if (Array.isArray(ev.activityGroups) && ev.activityGroups.length > 1) {
+                              grps = ev.activityGroups;
+                            } else if (typeof ev.activityGroups === "string") {
+                              try {
+                                const parsed = JSON.parse(ev.activityGroups);
+                                if (Array.isArray(parsed) && parsed.length > 1) {
+                                  grps = parsed;
+                                }
+                              } catch {}
+                            }
+
+                            if (grps && grps.length > 1) {
+                              setActiveEditGroupId(grps[0].id);
+                            } else {
+                              setActiveEditGroupId("main");
+                            }
+
+                            const isAmOff = ev.hasAm === false || ev.amType === "off";
+
+                            setEditingEvent({ 
+                              ...ev, 
+                              title: (ev.title && ev.title.trim()) ? ev.title : "通常練習",
+                              needsLunch: Boolean(ev.needsLunch), 
+                              needsSnack: Boolean(ev.needsSnack),
+                              memo: ev.memo || "",
+                              hasAm: !isAmOff,
+                              amType: isAmOff ? "off" : (ev.amType || ev.eventType || "practice"),
+                              amTime: isAmOff ? "" : (ev.amTime || ev.time || "08:00〜12:00"),
+                              amLocation: isAmOff ? "" : (ev.amLocation || ev.location || ""),
+                              pmType: ev.pmType || "practice",
+                              pmTime: ev.pmTime || "13:00〜17:00",
+                              pmLocation: ev.pmLocation || ev.amLocation || ev.location || "",
+                              hasPm: ev.hasPm !== undefined ? ev.hasPm : true,
+                              dutyGroup: ev.dutyGroup || "1班",
+                              activityGroups: grps,
+                            });
+                          }}
+                          className="py-1 px-2.5 rounded-xl bg-card hover:bg-primary/12 text-foreground hover:text-primary text-xs font-black border border-border/60 hover:border-primary/35 shadow-2xs active:scale-95 transition-all flex items-center gap-1 shrink-0 cursor-pointer"
+                        >
+                          <Edit3 className="w-3.5 h-3.5 text-primary" />
+                          <span>編集</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* ② タイトル */}
+                    <h3 className="text-sm sm:text-base font-black text-foreground tracking-tight line-clamp-1">
+                      {ev.title || (isMatch ? "公式戦・練習試合" : "通常練習")}
+                    </h3>
+                  </div>
+
+                  <div className="p-4 pt-3.5 space-y-3.5">
+                    {/* ③ 活動スケジュール表示（午前・午後 ＆ グループ切り替え） */}
+                    {hasActivityGroups ? (
+                      <div className="space-y-2.5">
+                        {/* グループ切り替えチップ */}
+                        <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none">
+                          {activityGroups.map((grp) => {
+                            const isSel = (activeGroupId === grp.id);
+                            return (
+                              <button
+                                key={grp.id}
+                                type="button"
+                                onClick={() => setActiveGroupTabMap(prev => ({ ...prev, [ev.id]: grp.id }))}
+                                className={`px-3 py-1.5 rounded-xl text-xs shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
+                                  isSel
+                                    ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
+                                    : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
+                                }`}
+                              >
+                                <span>{grp.amType === "match" || grp.eventType === "match" ? "⚾" : "🏃"}</span>
+                                <span>{grp.name}</span>
+                                {grp.targetGroup && grp.targetGroup !== "全体" && (
+                                  <span className={`px-1.5 py-0.2 rounded-md text-[9.5px] font-bold ${
+                                    isSel ? "bg-primary/15 text-primary" : "bg-muted/60 text-muted-foreground"
+                                  }`}>
+                                    {grp.targetGroup}
+                                  </span>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {/* 選択中グループの 午前・午後 スケジュール */}
+                        {currentGroup && (
+                          (currentGroup.hasPm && currentGroup.pmTime) || (currentGroup.hasAm && currentGroup.hasPm) || currentGroup.hasPm || currentGroup.amType === "off" || currentGroup.hasAm === false ? (
+                            <div className="grid grid-cols-2 gap-2">
+                              {/* ☀️ 午前 */}
+                              {currentGroup.hasAm !== false && currentGroup.amType !== "off" ? (
+                                <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 flex flex-col justify-between space-y-2">
+                                  <div className="flex items-center justify-between gap-1">
+                                    <span className="px-2 py-0.5 rounded-md bg-sky-500/12 text-sky-700 dark:text-sky-300 border border-sky-500/25 text-[10.5px] font-black flex items-center gap-1 shrink-0">
+                                      <span>☀️ 午前</span>
+                                    </span>
+                                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border shrink-0 ${
+                                      currentGroup.amType === "match"
+                                        ? "bg-primary/12 text-primary border-primary/25"
+                                        : "bg-teal-500/12 text-teal-700 dark:text-teal-300 border-teal-500/25"
+                                    }`}>
+                                      {currentGroup.amType === "match" ? "⚾ 試合" : "🏃 練習"}
+                                    </span>
+                                  </div>
+                                  <div className="p-2 rounded-xl bg-card border border-border/60 space-y-1">
+                                    <div className="flex items-center gap-1.5 text-xs font-black text-foreground">
+                                      <Clock className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400 shrink-0" />
+                                      <span className="truncate">{currentGroup.amTime || currentGroup.time || "08:00〜12:00"}</span>
+                                    </div>
+                                    <div className="flex items-center gap-1.5 text-[11px] font-bold text-foreground/90 truncate">
+                                      <MapPin className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 shrink-0" />
+                                      <span className="truncate">{currentGroup.amLocation || currentGroup.location || "グラウンド"}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="p-3 rounded-2xl bg-muted/20 border border-dashed border-border/60 flex flex-col justify-between space-y-2 opacity-75">
+                                  <div className="flex items-center justify-between gap-1">
+                                    <span className="px-2 py-0.5 rounded-md bg-muted/50 text-muted-foreground border border-border/60 text-[10.5px] font-bold flex items-center gap-1 shrink-0">
+                                      <span>☀️ 午前</span>
+                                    </span>
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-muted/50 text-muted-foreground border border-border/60">
+                                      🏖️ なし
+                                    </span>
+                                  </div>
+                                  <div className="p-2 rounded-xl bg-card/60 border border-border/60 space-y-1">
+                                    <div className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground">
+                                      <Clock className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
+                                      <span>なし (午後集合)</span>
+                                    </div>
+                                    <div className="flex items-center gap-1.5 text-[11px] font-bold text-muted-foreground">
+                                      <MapPin className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
+                                      <span>—</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* 🌙 午後 */}
+                              {currentGroup.hasPm && currentGroup.pmType !== "off" ? (
+                                <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 flex flex-col justify-between space-y-2">
+                                  <div className="flex items-center justify-between gap-1">
+                                    <span className="px-2 py-0.5 rounded-md bg-indigo-500/12 text-indigo-700 dark:text-indigo-300 border border-indigo-500/25 text-[10.5px] font-black flex items-center gap-1 shrink-0">
+                                      <span>🌙 午後</span>
+                                    </span>
+                                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border shrink-0 ${
+                                      currentGroup.pmType === "match"
+                                        ? "bg-primary/12 text-primary border-primary/25"
+                                        : "bg-teal-500/12 text-teal-700 dark:text-teal-300 border-teal-500/25"
+                                    }`}>
+                                      {currentGroup.pmType === "match" ? "⚾ 試合" : "🏃 練習"}
+                                    </span>
+                                  </div>
+                                  <div className="p-2 rounded-xl bg-card border border-border/60 space-y-1">
+                                    <div className="flex items-center gap-1.5 text-xs font-black text-foreground">
+                                      <Clock className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                                      <span className="truncate">{currentGroup.pmTime ? currentGroup.pmTime : "解散・なし"}</span>
+                                    </div>
+                                    <div className="flex items-center gap-1.5 text-[11px] font-bold text-foreground/90 truncate">
+                                      <MapPin className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 shrink-0" />
+                                      <span className="truncate">{currentGroup.pmLocation || currentGroup.amLocation || "グラウンド"}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="p-3 rounded-2xl bg-muted/20 border border-dashed border-border/60 flex flex-col justify-between space-y-2 opacity-75">
+                                  <div className="flex items-center justify-between gap-1">
+                                    <span className="px-2 py-0.5 rounded-md bg-muted/50 text-muted-foreground border border-border/60 text-[10.5px] font-bold flex items-center gap-1 shrink-0">
+                                      <span>🌙 午後</span>
+                                    </span>
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-muted/50 text-muted-foreground border border-border/60">
+                                      🏖️ なし
+                                    </span>
+                                  </div>
+                                  <div className="p-2 rounded-xl bg-card/60 border border-border/60 space-y-1">
+                                    <div className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground">
+                                      <Clock className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
+                                      <span>解散・なし</span>
+                                    </div>
+                                    <div className="flex items-center gap-1.5 text-[11px] font-bold text-muted-foreground">
+                                      <MapPin className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
+                                      <span>—</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
                             </div>
-                            <div className="p-2 rounded-xl bg-card border border-border/60 space-y-1">
-                              <div className="flex items-center gap-1.5 text-xs font-black text-foreground">
-                                <Clock className="w-3.5 h-3.5 text-primary shrink-0" />
-                                <span className="truncate">{ev.pmTime ? ev.pmTime : "解散・なし"}</span>
+                          ) : (
+                            /* 単一活動表示 */
+                            <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 space-y-2">
+                              <div className="flex items-center justify-between gap-1.5">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="px-2 py-0.5 rounded-md bg-sky-500/12 text-sky-700 dark:text-sky-300 border border-sky-500/25 text-[10px] font-black">
+                                    ☀️ 午前
+                                  </span>
+                                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${
+                                    currentGroup.eventType === "match" || currentGroup.amType === "match"
+                                      ? "bg-primary/12 text-primary border-primary/25"
+                                      : "bg-teal-500/12 text-teal-700 dark:text-teal-300 border-teal-500/25"
+                                  }`}>
+                                    {currentGroup.eventType === "match" || currentGroup.amType === "match" ? "⚾ 試合" : "🏃 練習"}
+                                  </span>
+                                </div>
+                                {currentGroup.dutyGroup && (
+                                  <span className="px-2 py-0.5 rounded-full bg-amber-500/12 text-amber-700 dark:text-amber-300 border border-amber-500/25 text-[10px] font-black flex items-center gap-1">
+                                    📋 {currentGroup.dutyGroup}
+                                  </span>
+                                )}
                               </div>
-                              <div className="flex items-center gap-1.5 text-[11px] font-bold text-foreground/90 truncate">
-                                <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
-                                <span className="truncate">{ev.pmLocation || ev.amLocation || "グラウンド"}</span>
+                              <div className="grid grid-cols-2 gap-2 text-xs font-bold">
+                                <div className="flex items-center gap-1.5 text-foreground bg-card p-2 rounded-xl border border-border/60">
+                                  <Clock className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400 shrink-0" />
+                                  <span className="truncate font-black">{currentGroup.time || currentGroup.amTime || "時間調整中"}</span>
+                                </div>
+                                <div className="flex items-center gap-1.5 text-foreground bg-card p-2 rounded-xl border border-border/60">
+                                  <MapPin className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 shrink-0" />
+                                  <span className="truncate font-black">{currentGroup.location || currentGroup.amLocation || "グラウンド"}</span>
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        ) : (
-                          <div className="p-3 rounded-2xl bg-muted/20 border border-dashed border-border/60 flex flex-col justify-between space-y-2 opacity-75">
-                            <div className="flex items-center justify-between">
-                              <span className="text-[11px] font-bold text-muted-foreground flex items-center gap-1.5">
-                                <Moon className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
-                                <span>午後</span>
-                              </span>
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-muted/50 text-muted-foreground border border-border/60">
-                                🏖️ なし
-                              </span>
-                            </div>
-                            <div className="p-2 rounded-xl bg-card/60 border border-border/60 space-y-1">
-                              <div className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground">
-                                <Clock className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
-                                <span>解散・なし</span>
-                              </div>
-                              <div className="flex items-center gap-1.5 text-[11px] font-bold text-muted-foreground">
-                                <MapPin className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
-                                <span>—</span>
-                              </div>
-                            </div>
-                          </div>
+                          )
                         )}
                       </div>
                     ) : (
-                      /* 単一活動表示 */
-                      <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 space-y-2">
-                        <div className="flex items-center justify-between">
-                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${
-                            ev.eventType === "match"
-                              ? "bg-primary/12 text-primary border-primary/25"
-                              : "bg-card text-muted-foreground border-border/60"
-                          }`}>
-                            {ev.eventType === "match" ? "⚾ 試合" : "🏃 練習"}
-                          </span>
-                          {ev.dutyGroup && (
-                            <span className="text-[10.5px] font-black text-primary flex items-center gap-1">
-                              📋 {ev.dutyGroup}
-                            </span>
+                      /* ☀️🌙 午前/午後分割スケジュール（全体） */
+                      (ev.hasPm && ev.pmTime) || (ev.hasAm && ev.hasPm) || ev.hasPm || ev.amType === "off" || ev.hasAm === false ? (
+                        <div className="grid grid-cols-2 gap-2">
+                          {/* ☀️ 【午前】 */}
+                          {ev.hasAm !== false && ev.amType !== "off" ? (
+                            <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 flex flex-col justify-between space-y-2">
+                              <div className="flex items-center justify-between gap-1">
+                                <span className="px-2 py-0.5 rounded-md bg-sky-500/12 text-sky-700 dark:text-sky-300 border border-sky-500/25 text-[10.5px] font-black flex items-center gap-1 shrink-0">
+                                  <span>☀️ 午前</span>
+                                </span>
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border shrink-0 ${
+                                  ev.amType === "match"
+                                    ? "bg-primary/12 text-primary border-primary/25"
+                                    : "bg-teal-500/12 text-teal-700 dark:text-teal-300 border-teal-500/25"
+                                }`}>
+                                  {ev.amType === "match" ? "⚾ 試合" : "🏃 練習"}
+                                </span>
+                              </div>
+                              <div className="p-2 rounded-xl bg-card border border-border/60 space-y-1">
+                                <div className="flex items-center gap-1.5 text-xs font-black text-foreground">
+                                  <Clock className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400 shrink-0" />
+                                  <span className="truncate">{ev.amTime || ev.time || "08:00〜12:00"}</span>
+                                </div>
+                                <div className="flex items-center gap-1.5 text-[11px] font-bold text-foreground/90 truncate">
+                                  <MapPin className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 shrink-0" />
+                                  <span className="truncate">{ev.amLocation || ev.location || "グラウンド"}</span>
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="p-3 rounded-2xl bg-muted/20 border border-dashed border-border/60 flex flex-col justify-between space-y-2 opacity-75">
+                              <div className="flex items-center justify-between gap-1">
+                                <span className="px-2 py-0.5 rounded-md bg-muted/50 text-muted-foreground border border-border/60 text-[10.5px] font-bold flex items-center gap-1 shrink-0">
+                                  <span>☀️ 午前</span>
+                                </span>
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-muted/50 text-muted-foreground border border-border/60">
+                                  🏖️ なし
+                                </span>
+                              </div>
+                              <div className="p-2 rounded-xl bg-card/60 border border-border/60 space-y-1">
+                                <div className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground">
+                                  <Clock className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
+                                  <span>なし (午後集合)</span>
+                                </div>
+                                <div className="flex items-center gap-1.5 text-[11px] font-bold text-muted-foreground">
+                                  <MapPin className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
+                                  <span>—</span>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* 🌙 【午後】 */}
+                          {ev.hasPm && ev.pmType !== "off" ? (
+                            <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 flex flex-col justify-between space-y-2">
+                              <div className="flex items-center justify-between gap-1">
+                                <span className="px-2 py-0.5 rounded-md bg-indigo-500/12 text-indigo-700 dark:text-indigo-300 border border-indigo-500/25 text-[10.5px] font-black flex items-center gap-1 shrink-0">
+                                  <span>🌙 午後</span>
+                                </span>
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border shrink-0 ${
+                                  ev.pmType === "match"
+                                    ? "bg-primary/12 text-primary border-primary/25"
+                                    : "bg-teal-500/12 text-teal-700 dark:text-teal-300 border-teal-500/25"
+                                }`}>
+                                  {ev.pmType === "match" ? "⚾ 試合" : "🏃 練習"}
+                                </span>
+                              </div>
+                              <div className="p-2 rounded-xl bg-card border border-border/60 space-y-1">
+                                <div className="flex items-center gap-1.5 text-xs font-black text-foreground">
+                                  <Clock className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                                  <span className="truncate">{ev.pmTime ? ev.pmTime : "解散・なし"}</span>
+                                </div>
+                                <div className="flex items-center gap-1.5 text-[11px] font-bold text-foreground/90 truncate">
+                                  <MapPin className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 shrink-0" />
+                                  <span className="truncate">{ev.pmLocation || ev.amLocation || "グラウンド"}</span>
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="p-3 rounded-2xl bg-muted/20 border border-dashed border-border/60 flex flex-col justify-between space-y-2 opacity-75">
+                              <div className="flex items-center justify-between gap-1">
+                                <span className="px-2 py-0.5 rounded-md bg-muted/50 text-muted-foreground border border-border/60 text-[10.5px] font-bold flex items-center gap-1 shrink-0">
+                                  <span>🌙 午後</span>
+                                </span>
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-muted/50 text-muted-foreground border border-border/60">
+                                  🏖️ なし
+                                </span>
+                              </div>
+                              <div className="p-2 rounded-xl bg-card/60 border border-border/60 space-y-1">
+                                <div className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground">
+                                  <Clock className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
+                                  <span>解散・なし</span>
+                                </div>
+                                <div className="flex items-center gap-1.5 text-[11px] font-bold text-muted-foreground">
+                                  <MapPin className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
+                                  <span>—</span>
+                                </div>
+                              </div>
+                            </div>
                           )}
                         </div>
-                        <div className="grid grid-cols-2 gap-2 text-xs font-bold">
-                          <div className="flex items-center gap-1.5 text-foreground bg-card p-2 rounded-xl border border-border/60">
-                            <Clock className="w-3.5 h-3.5 text-primary shrink-0" />
-                            <span className="truncate font-black">{ev.time || "時間調整中"}</span>
-                          </div>
-                          <div className="flex items-center gap-1.5 text-foreground bg-card p-2 rounded-xl border border-border/60">
-                            <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
-                            <span className="truncate font-black">{ev.location || "グラウンド"}</span>
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  )}
-
-                  {/* ④ 📋 その他の詳細情報ブロック（上から：お弁当・補食、連絡事項、配車、当番） */}
-                  <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 space-y-2 text-xs">
-                    {/* 1. お弁当 & 補食 */}
-                    <div className="grid grid-cols-2 gap-2 font-bold">
-                      {/* お弁当 */}
-                      <div className="flex items-center justify-between p-2 rounded-xl bg-card border border-border/60">
-                        <span className="text-muted-foreground flex items-center gap-1.5 text-[11px]">
-                          <Utensils className="w-3.5 h-3.5 text-primary" />
-                          <span>お弁当</span>
-                        </span>
-                        <span className={`px-2 py-0.5 rounded-md text-[10.5px] font-black ${
-                          ev.needsLunch
-                            ? "bg-primary/10 text-primary border border-primary/25"
-                            : "text-muted-foreground/60"
-                        }`}>
-                          {ev.needsLunch ? "🍙 要" : "不要"}
-                        </span>
-                      </div>
-
-                      {/* 補食 */}
-                      <div className="flex items-center justify-between p-2 rounded-xl bg-card border border-border/60">
-                        <span className="text-muted-foreground flex items-center gap-1.5 text-[11px]">
-                          <span className="text-xs leading-none">🍌</span>
-                          <span>補食</span>
-                        </span>
-                        <span className={`px-2 py-0.5 rounded-md text-[10.5px] font-black ${
-                          ev.needsSnack
-                            ? "bg-primary/10 text-primary border border-primary/25"
-                            : "text-muted-foreground/60"
-                        }`}>
-                          {ev.needsSnack ? "🍌 要" : "不要"}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* 2. 連絡事項・メモ（アコーディオン展開対応） */}
-                    {(() => {
-                      const hasMemo = !!ev.memo && ev.memo.trim() !== "";
-                      const isExpanded = !!expandedMemos[ev.id];
-
-                      if (!hasMemo) {
-                        return (
-                          <div className="pt-2 border-t border-border/60 flex items-center justify-between text-[11px]">
-                            <span className="text-muted-foreground flex items-center gap-1.5">
-                              <FileText className="w-3.5 h-3.5 text-muted-foreground/60" />
-                              <span>連絡事項</span>
-                            </span>
-                            <span className="text-muted-foreground/60 font-bold">特になし</span>
-                          </div>
-                        );
-                      }
-
-                      return (
-                        <div className="pt-2 border-t border-border/60 space-y-1.5">
-                          {/* アコーディオンヘッダー・開閉トグルボタン */}
-                          <button
-                            type="button"
-                            onClick={() => toggleMemo(ev.id)}
-                            className="w-full flex items-center justify-between p-2 rounded-xl bg-card border border-border/60 hover:bg-muted/50 active:scale-[0.99] transition-all cursor-pointer select-none"
-                          >
-                            <div className="flex items-center gap-2 min-w-0">
-                              <FileText className="w-3.5 h-3.5 text-primary shrink-0" />
-                              <span className="text-[11px] font-black text-foreground">連絡事項</span>
-                              <span className="px-1.5 py-0.2 rounded-md bg-primary/10 text-primary border border-primary/25 text-[9.5px] font-black shrink-0">
-                                {isExpanded ? "表示中" : "タップで確認"}
+                      ) : (
+                        /* 単一活動表示 */
+                        <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 space-y-2">
+                          <div className="flex items-center justify-between gap-1.5">
+                            <div className="flex items-center gap-1.5">
+                              <span className="px-2 py-0.5 rounded-md bg-sky-500/12 text-sky-700 dark:text-sky-300 border border-sky-500/25 text-[10px] font-black">
+                                ☀️ 午前
+                              </span>
+                              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${
+                                ev.eventType === "match"
+                                  ? "bg-primary/12 text-primary border-primary/25"
+                                  : "bg-teal-500/12 text-teal-700 dark:text-teal-300 border-teal-500/25"
+                              }`}>
+                                {ev.eventType === "match" ? "⚾ 試合" : "🏃 練習"}
                               </span>
                             </div>
-
-                            <div className="flex items-center gap-1 text-muted-foreground hover:text-foreground text-[10px] font-bold shrink-0">
-                              <span>{isExpanded ? "閉じる" : "開く"}</span>
-                              {isExpanded ? (
-                                <ChevronUp className="w-3.5 h-3.5 text-primary transition-transform duration-200" />
-                              ) : (
-                                <ChevronDown className="w-3.5 h-3.5 text-muted-foreground transition-transform duration-200" />
-                              )}
+                            {ev.dutyGroup && (
+                              <span className="px-2 py-0.5 rounded-full bg-amber-500/12 text-amber-700 dark:text-amber-300 border border-amber-500/25 text-[10px] font-black flex items-center gap-1">
+                                📋 {ev.dutyGroup}
+                              </span>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 text-xs font-bold">
+                            <div className="flex items-center gap-1.5 text-foreground bg-card p-2 rounded-xl border border-border/60">
+                              <Clock className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400 shrink-0" />
+                              <span className="truncate font-black">{ev.time || "時間調整中"}</span>
                             </div>
-                          </button>
-
-                          {/* アコーディオン本文 */}
-                          {isExpanded && (
-                            <div className="animate-in fade-in slide-in-from-top-1 duration-150 p-2.5 rounded-xl bg-card border border-border/60 text-foreground leading-relaxed text-[11px] font-bold whitespace-pre-wrap">
-                              {ev.memo}
+                            <div className="flex items-center gap-1.5 text-foreground bg-card p-2 rounded-xl border border-border/60">
+                              <MapPin className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 shrink-0" />
+                              <span className="truncate font-black">{ev.location || "グラウンド"}</span>
                             </div>
-                          )}
+                          </div>
                         </div>
-                      );
-                    })()}
-
-                    {/* 3. 配車 */}
-                    <div className="pt-2 border-t border-border/60 flex items-center justify-between font-bold">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <Car className="w-3.5 h-3.5 text-primary shrink-0" />
-                        <span className="text-muted-foreground text-[11px] shrink-0">配車:</span>
-                        <span className="text-foreground truncate font-black text-[11px]">
-                          {displayCarInfo ? displayCarInfo : "なし（現地集合）"}
-                        </span>
-                      </div>
-
-                      {displayCarInfo ? (
-                        <Link
-                          href="/liff/carpool"
-                          className="text-[10.5px] font-black text-primary hover:underline flex items-center gap-0.5 shrink-0 ml-2"
-                        >
-                          <span>配車表へ</span>
-                          <ChevronRight className="w-3 h-3" />
-                        </Link>
-                      ) : null}
-                    </div>
-
-                    {/* 4. 一番下に当番 */}
-                    {displayDutyGroup && (
-                      <div className="pt-2 border-t border-border/60 flex items-center justify-between text-[11px] font-bold">
-                        <span className="text-muted-foreground flex items-center gap-1.5">
-                          <ClipboardList className="w-3.5 h-3.5 text-primary" />
-                          <span>お当番</span>
-                        </span>
-                        <span className="px-2.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/25 font-black flex items-center gap-1">
-                          <span>📋</span>
-                          <span>{displayDutyGroup}</span>
-                        </span>
-                      </div>
+                      )
                     )}
+
+                    {/* ④ 📋 その他の詳細情報ブロック（上から：お弁当・補食、連絡事項、配車、当番） */}
+                    <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 space-y-2.5 text-xs">
+                      {/* 1. お弁当 & 補食 */}
+                      <div className="grid grid-cols-2 gap-2 font-bold">
+                        {/* お弁当 */}
+                        <div className="flex items-center justify-between p-2 rounded-xl bg-card border border-border/60">
+                          <span className="text-muted-foreground flex items-center gap-1.5 text-[11px]">
+                            <Utensils className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                            <span>お弁当</span>
+                          </span>
+                          <span className={`px-2 py-0.5 rounded-md text-[10.5px] font-black ${
+                            ev.needsLunch
+                              ? "bg-amber-500/12 text-amber-700 dark:text-amber-300 border border-amber-500/25"
+                              : "text-muted-foreground/60"
+                          }`}>
+                            {ev.needsLunch ? "🍙 要" : "不要"}
+                          </span>
+                        </div>
+
+                        {/* 補食 */}
+                        <div className="flex items-center justify-between p-2 rounded-xl bg-card border border-border/60">
+                          <span className="text-muted-foreground flex items-center gap-1.5 text-[11px]">
+                            <span className="text-xs leading-none">🍌</span>
+                            <span>補食</span>
+                          </span>
+                          <span className={`px-2 py-0.5 rounded-md text-[10.5px] font-black ${
+                            ev.needsSnack
+                              ? "bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25"
+                              : "text-muted-foreground/60"
+                          }`}>
+                            {ev.needsSnack ? "🍌 要" : "不要"}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* 2. 連絡事項・メモ（アコーディオン展開対応・左アクセントバー） */}
+                      {(() => {
+                        const hasMemo = !!ev.memo && ev.memo.trim() !== "";
+                        const isExpanded = !!expandedMemos[ev.id];
+
+                        if (!hasMemo) {
+                          return (
+                            <div className="pt-2 border-t border-border/60 flex items-center justify-between text-[11px]">
+                              <span className="text-muted-foreground flex items-center gap-1.5">
+                                <FileText className="w-3.5 h-3.5 text-muted-foreground/60" />
+                                <span>連絡事項</span>
+                              </span>
+                              <span className="text-muted-foreground/60 font-bold">特になし</span>
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <div className="pt-2 border-t border-border/60 space-y-1.5">
+                            {/* アコーディオンヘッダー・開閉トグルボタン */}
+                            <button
+                              type="button"
+                              onClick={() => toggleMemo(ev.id)}
+                              className="w-full flex items-center justify-between p-2 rounded-xl bg-card border border-border/60 border-l-4 border-l-amber-500 hover:bg-muted/50 active:scale-[0.99] transition-all cursor-pointer select-none shadow-2xs"
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                <FileText className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                                <span className="text-[11px] font-black text-foreground">連絡事項</span>
+                                <span className="px-1.5 py-0.2 rounded-md bg-amber-500/12 text-amber-700 dark:text-amber-300 border border-amber-500/25 text-[9.5px] font-black shrink-0">
+                                  {isExpanded ? "表示中" : "タップで確認"}
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-1 text-muted-foreground hover:text-foreground text-[10px] font-bold shrink-0">
+                                <span>{isExpanded ? "閉じる" : "開く"}</span>
+                                {isExpanded ? (
+                                  <ChevronUp className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 transition-transform duration-200" />
+                                ) : (
+                                  <ChevronDown className="w-3.5 h-3.5 text-muted-foreground transition-transform duration-200" />
+                                )}
+                              </div>
+                            </button>
+
+                            {/* アコーディオン本文 */}
+                            {isExpanded && (
+                              <div className="animate-in fade-in slide-in-from-top-1 duration-150 p-2.5 rounded-xl bg-card border border-border/60 border-l-4 border-l-amber-500 text-foreground leading-relaxed text-[11px] font-bold whitespace-pre-wrap shadow-2xs">
+                                {ev.memo}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+
+                      {/* 3. 配車 */}
+                      <div className="pt-2 border-t border-border/60 flex items-center justify-between font-bold">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Car className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 shrink-0" />
+                          <span className="text-muted-foreground text-[11px] shrink-0">配車:</span>
+                          <span className="text-foreground truncate font-black text-[11px]">
+                            {displayCarInfo ? displayCarInfo : "なし（現地集合）"}
+                          </span>
+                        </div>
+
+                        {displayCarInfo ? (
+                          <Link
+                            href="/liff/carpool"
+                            className="text-[10.5px] font-black text-primary hover:underline flex items-center gap-0.5 shrink-0 ml-2"
+                          >
+                            <span>配車表へ</span>
+                            <ChevronRight className="w-3 h-3" />
+                          </Link>
+                        ) : null}
+                      </div>
+
+                      {/* 4. 一番下に当番（左アクセントバー） */}
+                      {displayDutyGroup && (
+                        <div className="p-2 rounded-xl bg-card border border-border/60 border-l-4 border-l-amber-500 flex items-center justify-between text-[11px] font-bold shadow-2xs">
+                          <span className="text-foreground font-black flex items-center gap-1.5">
+                            <ClipboardList className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                            <span>お当番</span>
+                          </span>
+                          <span className="px-2.5 py-0.5 rounded-full bg-amber-500/12 text-amber-700 dark:text-amber-300 border border-amber-500/25 font-black flex items-center gap-1">
+                            <span>📋</span>
+                            <span>{displayDutyGroup}</span>
+                          </span>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               );
@@ -1776,9 +1790,9 @@ export default function LiffSchedulePage() {
               onClick={(e) => e.stopPropagation()}
             >
               {/* モーダルヘッダー */}
-              <div className="px-5 py-3.5 border-b border-border/60 flex items-center justify-between bg-muted/35 shrink-0">
+              <div className="px-5 py-3.5 border-b border-border/50 flex items-center justify-between bg-primary/[0.04] dark:bg-primary/[0.07] shrink-0">
                 <div className="flex items-center gap-2">
-                  <span className="px-2.5 py-1 rounded-xl bg-primary text-primary-foreground text-xs font-black shrink-0">
+                  <span className="px-2.5 py-1 rounded-xl bg-primary/12 text-primary border border-primary/25 text-xs font-black shrink-0">
                     {editingEvent.date}
                   </span>
                   <h3 className="text-sm font-black text-foreground">
@@ -1820,10 +1834,10 @@ export default function LiffSchedulePage() {
                         key={preset}
                         type="button"
                         onClick={() => setEditingEvent({ ...editingEvent, title: preset })}
-                        className={`px-2 py-0.5 rounded-lg text-[10.5px] font-black border transition-all active:scale-95 cursor-pointer ${
+                        className={`px-2 py-0.5 rounded-lg text-[10.5px] transition-all active:scale-95 cursor-pointer ${
                           (editingEvent.title || "通常練習") === preset
-                            ? "bg-primary text-primary-foreground border-primary shadow-xs"
-                            : "bg-card text-muted-foreground border-border/60 hover:text-foreground"
+                            ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
+                            : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
                         }`}
                       >
                         {preset}
@@ -1953,10 +1967,10 @@ export default function LiffSchedulePage() {
                   {/* グループタブバー */}
                   <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
                     {!hasGroups ? (
-                      <div className="px-3 py-1.5 rounded-xl bg-primary text-primary-foreground text-xs font-black shadow-xs flex items-center gap-1.5 shrink-0">
+                      <div className="px-3 py-1.5 rounded-xl bg-primary/12 text-primary border border-primary/35 text-xs font-black shadow-2xs flex items-center gap-1.5 shrink-0">
                         <span>🏷️ 単一活動（全体）</span>
                         {curTargetGroup && curTargetGroup !== "全体" && (
-                          <span className="bg-primary-foreground/20 px-1.5 py-0.2 rounded-md text-[10px]">
+                          <span className="bg-primary/15 px-1.5 py-0.2 rounded-md text-[10px]">
                             {curTargetGroup}
                           </span>
                         )}
@@ -1967,10 +1981,10 @@ export default function LiffSchedulePage() {
                         return (
                           <div
                             key={grp.id}
-                            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all border ${
+                            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs shrink-0 transition-all ${
                               isSel
-                                ? "bg-primary text-primary-foreground border-primary shadow-xs"
-                                : "bg-card text-muted-foreground border-border/60 hover:text-foreground"
+                                ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
+                                : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
                             }`}
                           >
                             <button
@@ -1982,7 +1996,7 @@ export default function LiffSchedulePage() {
                               <span>{grp.name}</span>
                               {grp.targetGroup && grp.targetGroup !== "全体" && (
                                 <span className={`px-1.5 py-0.2 rounded-md text-[9.5px] font-bold ${
-                                  isSel ? "bg-primary-foreground/20 text-primary-foreground" : "bg-primary/10 text-primary"
+                                  isSel ? "bg-primary/15 text-primary" : "bg-muted/60 text-muted-foreground"
                                 }`}>
                                   {grp.targetGroup}
                                 </span>
@@ -2077,10 +2091,10 @@ export default function LiffSchedulePage() {
                                   setEditingEvent({ ...editingEvent, activityGroups: updated });
                                 }
                               }}
-                              className={`px-2.5 py-1 rounded-xl text-xs font-bold border transition-all active:scale-95 cursor-pointer ${
+                              className={`px-2.5 py-1 rounded-xl text-xs transition-all active:scale-95 cursor-pointer ${
                                 isSel
-                                  ? "bg-primary text-primary-foreground border-primary font-black shadow-xs"
-                                  : "bg-card hover:bg-muted text-muted-foreground hover:text-foreground border-border/60"
+                                  ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
+                                  : "bg-card hover:bg-muted/50 text-muted-foreground hover:text-foreground border border-border/60 font-bold"
                               }`}
                             >
                               {tg}
@@ -2103,7 +2117,7 @@ export default function LiffSchedulePage() {
                     {/* 1行目: 午前の活動タイトル & ON/OFF 切替スイッチ */}
                     <div className="flex items-center justify-between pb-2 border-b border-border/60">
                       <span className="text-xs font-black text-foreground flex items-center gap-1.5">
-                        <Sun className="w-3.5 h-3.5 text-primary" />
+                        <Sun className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
                         <span>午前の活動</span>
                       </span>
 
@@ -2121,7 +2135,7 @@ export default function LiffSchedulePage() {
                         }}
                         className={`px-2.5 py-0.5 rounded-full text-[10.5px] font-black border transition-all cursor-pointer ${
                           curHasAm
-                            ? "bg-primary text-primary-foreground border-primary shadow-xs"
+                            ? "bg-sky-500/12 text-sky-700 dark:text-sky-300 border-sky-500/35 shadow-2xs"
                             : "bg-muted/50 text-muted-foreground border-border/60"
                         }`}
                       >
@@ -2222,7 +2236,7 @@ export default function LiffSchedulePage() {
                     {/* 1行目: 午後の活動タイトル & ON/OFF 切替スイッチ */}
                     <div className="flex items-center justify-between pb-2 border-b border-border/60">
                       <span className="text-xs font-black text-foreground flex items-center gap-1.5">
-                        <Moon className="w-3.5 h-3.5 text-primary" />
+                        <Moon className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
                         <span>午後の活動</span>
                       </span>
 
@@ -2240,7 +2254,7 @@ export default function LiffSchedulePage() {
                         }}
                         className={`px-2.5 py-0.5 rounded-full text-[10.5px] font-black border transition-all cursor-pointer ${
                           curHasPm && curPmType !== "off"
-                            ? "bg-primary text-primary-foreground border-primary shadow-xs"
+                            ? "bg-indigo-500/12 text-indigo-700 dark:text-indigo-300 border-indigo-500/35 shadow-2xs"
                             : "bg-muted/50 text-muted-foreground border-border/60"
                         }`}
                       >
@@ -2382,10 +2396,10 @@ export default function LiffSchedulePage() {
                             key={dg}
                             type="button"
                             onClick={() => setEditingEvent({ ...editingEvent, dutyGroup: dg })}
-                            className={`py-1 text-center rounded-lg text-[11px] font-bold border transition-all active:scale-95 cursor-pointer ${
+                            className={`py-1 text-center rounded-lg text-[11px] transition-all active:scale-95 cursor-pointer ${
                               editingEvent.dutyGroup === dg
-                                ? "bg-primary text-primary-foreground border-primary font-black shadow-xs"
-                                : "bg-card border-border/60 text-muted-foreground hover:text-foreground"
+                                ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/35 font-black shadow-2xs"
+                                : "bg-card border border-border/60 text-muted-foreground hover:text-foreground hover:bg-muted/50 font-bold"
                             }`}
                           >
                             {dg}
@@ -2406,11 +2420,11 @@ export default function LiffSchedulePage() {
                           onClick={() => setEditingEvent({ ...editingEvent, needsLunch: true })}
                           className={`flex-1 py-1.5 rounded-xl text-[11px] font-bold border transition-all flex items-center justify-center gap-1 cursor-pointer ${
                             editingEvent.needsLunch === true
-                              ? "border-primary bg-primary/10 text-primary font-black"
+                              ? "border-amber-500/35 bg-amber-500/12 text-amber-700 dark:text-amber-300 font-black shadow-2xs"
                               : "bg-card border-border/60 text-muted-foreground hover:text-foreground"
                           }`}
                         >
-                          <Utensils className="w-3 h-3" />
+                          <Utensils className="w-3 h-3 text-amber-600 dark:text-amber-400" />
                           <span>持参要</span>
                         </button>
                         <button
@@ -2418,7 +2432,7 @@ export default function LiffSchedulePage() {
                           onClick={() => setEditingEvent({ ...editingEvent, needsLunch: false })}
                           className={`flex-1 py-1.5 rounded-xl text-[11px] font-bold border transition-all flex items-center justify-center gap-1 cursor-pointer ${
                             editingEvent.needsLunch !== true
-                              ? "border-primary bg-primary/10 text-primary font-black"
+                              ? "border-primary/35 bg-primary/12 text-primary font-black shadow-2xs"
                               : "bg-card border-border/60 text-muted-foreground hover:text-foreground"
                           }`}
                         >
@@ -2436,7 +2450,7 @@ export default function LiffSchedulePage() {
                           onClick={() => setEditingEvent({ ...editingEvent, needsSnack: true })}
                           className={`flex-1 py-1.5 rounded-xl text-[11px] font-bold border transition-all flex items-center justify-center gap-1 cursor-pointer ${
                             editingEvent.needsSnack === true
-                              ? "border-primary bg-primary/10 text-primary font-black"
+                              ? "border-emerald-500/35 bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 font-black shadow-2xs"
                               : "bg-card border-border/60 text-muted-foreground hover:text-foreground"
                           }`}
                         >
@@ -2448,7 +2462,7 @@ export default function LiffSchedulePage() {
                           onClick={() => setEditingEvent({ ...editingEvent, needsSnack: false })}
                           className={`flex-1 py-1.5 rounded-xl text-[11px] font-bold border transition-all flex items-center justify-center gap-1 cursor-pointer ${
                             editingEvent.needsSnack !== true
-                              ? "border-primary bg-primary/10 text-primary font-black"
+                              ? "border-primary/35 bg-primary/12 text-primary font-black shadow-2xs"
                               : "bg-card border-border/60 text-muted-foreground hover:text-foreground"
                           }`}
                         >

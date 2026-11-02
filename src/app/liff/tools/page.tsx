@@ -18,7 +18,7 @@ export default function LiffToolsIndexPage() {
           title="便利ツール一覧"
           subtitle="TEAM UTILITY TOOLS"
           icon={
-            <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
+            <span className="w-8 h-8 rounded-xl bg-primary/12 text-primary flex items-center justify-center font-black">
               <Wrench className="w-4 h-4" />
             </span>
           }
@@ -26,7 +26,7 @@ export default function LiffToolsIndexPage() {
         />
 
         <div className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 flex items-start gap-3">
-          <span className="w-9 h-9 rounded-2xl bg-primary/10 text-primary flex items-center justify-center shrink-0 mt-0.5">
+          <span className="w-9 h-9 rounded-2xl bg-primary/12 text-primary flex items-center justify-center shrink-0 mt-0.5">
             <Sparkles className="w-4 h-4" />
           </span>
           <div className="space-y-1">
@@ -42,13 +42,22 @@ export default function LiffToolsIndexPage() {
         <div className="space-y-2.5">
           {LIFF_TOOLS.map((tool) => {
             const Icon = tool.icon;
+            const isCarpool =
+              tool.id === "carpool-generator" || tool.href.includes("carpool");
+            const isLiveTool = tool.id === "scorebook-import";
             return (
               <Link
                 key={tool.id}
                 href={tool.href}
                 className="flex items-center gap-3.5 p-4 rounded-2xl border border-border/60 bg-card shadow-xs hover:border-primary/40 hover:bg-muted/35 transition-all active:scale-98 group"
               >
-                <span className="w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 bg-primary/10 text-primary">
+                <span
+                  className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${
+                    isCarpool
+                      ? "bg-teal-500/12 text-teal-600 dark:text-teal-400"
+                      : "bg-primary/12 text-primary"
+                  }`}
+                >
                   <Icon className="w-5 h-5" />
                 </span>
                 <div className="min-w-0 flex-1">
@@ -56,7 +65,13 @@ export default function LiffToolsIndexPage() {
                     <p className="text-sm font-black text-foreground truncate">
                       {tool.title}
                     </p>
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-muted text-muted-foreground border border-border/60 shrink-0">
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-black shrink-0 ${
+                        isLiveTool
+                          ? "bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 border border-emerald-500/25"
+                          : "bg-muted text-muted-foreground border border-border/60"
+                      }`}
+                    >
                       {tool.statusLabel}
                     </span>
                   </div>

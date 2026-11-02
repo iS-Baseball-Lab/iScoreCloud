@@ -10,10 +10,10 @@ interface DemoBannerProps {
 
 export function DemoBanner({ onOpenJoinModal }: DemoBannerProps) {
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-border/60 bg-card p-4 shadow-xs">
+    <div className="relative overflow-hidden rounded-2xl border border-border/60 border-l-4 border-l-amber-500 bg-card p-4 shadow-xs">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 relative z-10">
         <div className="flex items-start gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-primary/12 text-primary flex items-center justify-center shrink-0 mt-0.5">
+          <div className="w-8 h-8 rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 mt-0.5">
             <Sparkles className="w-4 h-4" />
           </div>
           <div className="space-y-0.5">
@@ -21,7 +21,7 @@ export function DemoBanner({ onOpenJoinModal }: DemoBannerProps) {
               <span className="text-xs font-black text-foreground">
                 体験用デモチーム表示中
               </span>
-              <span className="px-1.5 py-0.2 rounded-md bg-primary text-primary-foreground text-[9px] font-black tracking-wide">
+              <span className="px-1.5 py-0.2 rounded-md bg-amber-500 text-white text-[9px] font-black tracking-wide">
                 SAMPLE
               </span>
             </div>

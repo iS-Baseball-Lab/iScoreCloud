@@ -123,7 +123,7 @@ export default function LiffSettingsPage() {
           title="アプリ設定"
           subtitle="クイックメニュー・カラー・デザイン・表示サイズ"
           icon={
-            <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
+            <span className="w-8 h-8 rounded-xl bg-slate-500/12 text-slate-700 dark:text-slate-300 flex items-center justify-center font-black">
               <Settings className="w-4 h-4" />
             </span>
           }
@@ -140,7 +140,7 @@ export default function LiffSettingsPage() {
           className="p-4 rounded-2xl border border-border/60 bg-card shadow-xs hover:border-primary/40 transition-all flex items-center justify-between group active:scale-[0.99]"
         >
           <div className="flex items-center gap-3 min-w-0">
-            <span className="w-10 h-10 rounded-2xl bg-primary/10 text-primary flex items-center justify-center font-black shrink-0 group-hover:scale-105 transition-transform">
+            <span className="w-10 h-10 rounded-2xl bg-slate-500/12 text-slate-700 dark:text-slate-300 flex items-center justify-center font-black shrink-0 group-hover:scale-105 transition-transform">
               <UserCircle className="w-5 h-5" />
             </span>
             <div className="min-w-0">
@@ -152,15 +152,15 @@ export default function LiffSettingsPage() {
               </p>
             </div>
           </div>
-          <ChevronRight className="w-5 h-5 text-primary group-hover:translate-x-1 transition-transform shrink-0" />
+          <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all shrink-0" />
         </Link>
 
         {/* ━━━ セクション 1: 🚀 クイックメニュー設定 ━━━ */}
         <QuickMenuSettingsSection />
 
         {/* ━━━ セクション 2: 🎨 表示・デザイン設定 ━━━ */}
-        <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-5">
-          <div className="flex items-center gap-2 pb-2 border-b border-border/60">
+        <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-5 overflow-hidden">
+          <div className="-mx-4 -mt-4 px-4 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 border-l-4 border-l-primary flex items-center gap-2">
             <Palette className="w-4 h-4 text-primary" />
             <h2 className="text-sm font-black text-foreground">表示・デザイン設定</h2>
           </div>
@@ -228,7 +228,7 @@ export default function LiffSettingsPage() {
                     }}
                     className={`flex flex-col items-center justify-center py-2.5 px-1 rounded-2xl border transition-all active:scale-95 gap-1 ${
                       isActive
-                        ? "bg-primary text-primary-foreground border-primary shadow-xs font-black"
+                        ? "bg-primary/12 text-primary border-primary shadow-2xs font-black"
                         : "bg-muted/50 border-border/60 text-muted-foreground hover:text-foreground font-bold"
                     }`}
                   >
@@ -259,7 +259,7 @@ export default function LiffSettingsPage() {
                     }}
                     className={`flex flex-col items-center justify-center py-2.5 px-2 rounded-2xl border transition-all active:scale-95 gap-0.5 ${
                       isActive
-                        ? "bg-primary text-primary-foreground border-primary shadow-xs font-black"
+                        ? "bg-primary/12 text-primary border-primary shadow-2xs font-black"
                         : "bg-muted/50 border-border/60 text-muted-foreground hover:text-foreground font-bold"
                     }`}
                   >
@@ -267,7 +267,7 @@ export default function LiffSettingsPage() {
                     <span className="text-xs leading-tight">{opt.label}</span>
                     <span
                       className={`text-[9.5px] leading-tight ${
-                        isActive ? "text-primary-foreground/85" : "text-muted-foreground"
+                        isActive ? "text-primary/80" : "text-muted-foreground"
                       }`}
                     >
                       {opt.desc}
@@ -299,7 +299,7 @@ export default function LiffSettingsPage() {
                     }}
                     className={`flex flex-col items-center justify-center py-2.5 rounded-2xl border transition-all active:scale-95 ${
                       isActive
-                        ? "bg-primary text-primary-foreground border-primary shadow-xs font-black"
+                        ? "bg-primary/12 text-primary border-primary shadow-2xs font-black"
                         : "bg-muted/50 border-border/60 text-muted-foreground hover:text-foreground font-bold"
                     }`}
                   >
@@ -318,7 +318,7 @@ export default function LiffSettingsPage() {
           className="p-4 rounded-2xl border border-border/60 bg-card shadow-xs hover:border-primary/40 transition-all flex items-center justify-between group active:scale-[0.99]"
         >
           <div className="flex items-center gap-3 min-w-0">
-            <span className="w-10 h-10 rounded-2xl bg-primary/10 text-primary flex items-center justify-center font-black group-hover:scale-105 transition-transform shrink-0">
+            <span className="w-10 h-10 rounded-2xl bg-slate-500/12 text-slate-700 dark:text-slate-300 flex items-center justify-center font-black group-hover:scale-105 transition-transform shrink-0">
               <BookOpen className="w-5 h-5" />
             </span>
             <div className="min-w-0">
@@ -330,7 +330,7 @@ export default function LiffSettingsPage() {
               </p>
             </div>
           </div>
-          <ChevronRight className="w-5 h-5 text-primary group-hover:translate-x-1 transition-transform shrink-0" />
+          <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all shrink-0" />
         </Link>
 
         <Link
@@ -338,7 +338,7 @@ export default function LiffSettingsPage() {
           className="p-4 rounded-2xl border border-border/60 bg-card shadow-xs hover:border-primary/40 transition-all flex items-center justify-between group active:scale-[0.99]"
         >
           <div className="flex items-center gap-3 min-w-0">
-            <span className="w-10 h-10 rounded-2xl bg-primary/10 text-primary flex items-center justify-center font-black group-hover:scale-105 transition-transform shrink-0">
+            <span className="w-10 h-10 rounded-2xl bg-slate-500/12 text-slate-700 dark:text-slate-300 flex items-center justify-center font-black group-hover:scale-105 transition-transform shrink-0">
               <ShieldCheck className="w-5 h-5" />
             </span>
             <div className="min-w-0">
@@ -350,13 +350,13 @@ export default function LiffSettingsPage() {
               </p>
             </div>
           </div>
-          <ChevronRight className="w-5 h-5 text-primary group-hover:translate-x-1 transition-transform shrink-0" />
+          <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all shrink-0" />
         </Link>
 
         {/* ━━━ セクション 3: 💾 システム・キャッシュ管理 ━━━ */}
-        <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3.5">
-          <div className="flex items-center gap-2 pb-2 border-b border-border/60">
-            <Layers className="w-4 h-4 text-primary" />
+        <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3.5 overflow-hidden">
+          <div className="-mx-4 -mt-4 px-4 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 border-l-4 border-l-primary flex items-center gap-2">
+            <Layers className="w-4 h-4 text-slate-700 dark:text-slate-300" />
             <h2 className="text-sm font-black text-foreground">システム & データ管理</h2>
           </div>
 
@@ -388,41 +388,51 @@ export default function LiffSettingsPage() {
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-center text-xs">
           <Link
             href="/liff/rules"
-            className="p-3 rounded-2xl border border-border/60 bg-card shadow-xs hover:border-primary/40 font-bold text-muted-foreground hover:text-foreground transition-all flex flex-col items-center gap-1"
+            className="p-3 rounded-2xl border border-border/60 bg-card shadow-xs hover:border-primary/40 font-bold text-muted-foreground hover:text-foreground transition-all flex flex-col items-center gap-1.5"
           >
-            <AlertTriangle className="w-4 h-4 text-primary" />
+            <span className="w-8 h-8 rounded-xl bg-amber-500/12 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+              <AlertTriangle className="w-4 h-4" />
+            </span>
             <span>ルール & 注意事項</span>
           </Link>
 
           <Link
             href="/liff/faq"
-            className="p-3 rounded-2xl border border-border/60 bg-card shadow-xs hover:border-primary/40 font-bold text-muted-foreground hover:text-foreground transition-all flex flex-col items-center gap-1"
+            className="p-3 rounded-2xl border border-border/60 bg-card shadow-xs hover:border-primary/40 font-bold text-muted-foreground hover:text-foreground transition-all flex flex-col items-center gap-1.5"
           >
-            <HelpCircle className="w-4 h-4 text-primary" />
+            <span className="w-8 h-8 rounded-xl bg-amber-500/12 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+              <HelpCircle className="w-4 h-4" />
+            </span>
             <span>よくある質問</span>
           </Link>
 
           <Link
             href="/liff/links"
-            className="p-3 rounded-2xl border border-border/60 bg-card shadow-xs hover:border-primary/40 font-bold text-muted-foreground hover:text-foreground transition-all flex flex-col items-center gap-1"
+            className="p-3 rounded-2xl border border-border/60 bg-card shadow-xs hover:border-primary/40 font-bold text-muted-foreground hover:text-foreground transition-all flex flex-col items-center gap-1.5"
           >
-            <Link2 className="w-4 h-4 text-primary" />
+            <span className="w-8 h-8 rounded-xl bg-amber-500/12 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+              <Link2 className="w-4 h-4" />
+            </span>
             <span>関連リンク集</span>
           </Link>
 
           <Link
             href="/liff/terms"
-            className="p-3 rounded-2xl border border-border/60 bg-card shadow-xs hover:border-primary/40 font-bold text-muted-foreground hover:text-foreground transition-all flex flex-col items-center gap-1"
+            className="p-3 rounded-2xl border border-border/60 bg-card shadow-xs hover:border-primary/40 font-bold text-muted-foreground hover:text-foreground transition-all flex flex-col items-center gap-1.5"
           >
-            <FileText className="w-4 h-4 text-primary" />
+            <span className="w-8 h-8 rounded-xl bg-amber-500/12 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+              <FileText className="w-4 h-4" />
+            </span>
             <span>サービス利用規約</span>
           </Link>
 
           <Link
             href="/liff/privacy"
-            className="p-3 rounded-2xl border border-border/60 bg-card shadow-xs hover:border-primary/40 font-bold text-muted-foreground hover:text-foreground transition-all flex flex-col items-center gap-1"
+            className="p-3 rounded-2xl border border-border/60 bg-card shadow-xs hover:border-primary/40 font-bold text-muted-foreground hover:text-foreground transition-all flex flex-col items-center gap-1.5"
           >
-            <ShieldCheck className="w-4 h-4 text-primary" />
+            <span className="w-8 h-8 rounded-xl bg-amber-500/12 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+              <ShieldCheck className="w-4 h-4" />
+            </span>
             <span>プライバシー</span>
           </Link>
         </div>

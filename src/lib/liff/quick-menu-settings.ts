@@ -77,26 +77,69 @@ export interface QuickMenuToneStyle {
   hoverBorderClass: string;
 }
 
-const UNIFIED_QUICK_MENU_TONE_STYLE: QuickMenuToneStyle = {
+const PRIMARY_QUICK_MENU_TONE_STYLE: QuickMenuToneStyle = {
   iconBoxClass: "bg-primary/12 text-primary",
   badgeClass: "bg-primary/10 text-primary",
   hoverBorderClass: "hover:border-primary/40",
 };
 
-export const QUICK_MENU_TONE_STYLES: Record<QuickMenuTone, QuickMenuToneStyle> = {
-  primary: UNIFIED_QUICK_MENU_TONE_STYLE,
-  amber: UNIFIED_QUICK_MENU_TONE_STYLE,
-  teal: UNIFIED_QUICK_MENU_TONE_STYLE,
-  purple: UNIFIED_QUICK_MENU_TONE_STYLE,
-  sky: UNIFIED_QUICK_MENU_TONE_STYLE,
-  blue: UNIFIED_QUICK_MENU_TONE_STYLE,
-  red: UNIFIED_QUICK_MENU_TONE_STYLE,
-  cyan: UNIFIED_QUICK_MENU_TONE_STYLE,
-  emerald: UNIFIED_QUICK_MENU_TONE_STYLE,
-  indigo: UNIFIED_QUICK_MENU_TONE_STYLE,
-  rose: UNIFIED_QUICK_MENU_TONE_STYLE,
-  orange: UNIFIED_QUICK_MENU_TONE_STYLE,
+const TEAL_QUICK_MENU_TONE_STYLE: QuickMenuToneStyle = {
+  iconBoxClass: "bg-teal-500/12 text-teal-600 dark:text-teal-400",
+  badgeClass: "bg-teal-500/10 text-teal-700 dark:text-teal-300",
+  hoverBorderClass: "hover:border-teal-500/40",
 };
+
+const AMBER_QUICK_MENU_TONE_STYLE: QuickMenuToneStyle = {
+  iconBoxClass: "bg-amber-500/12 text-amber-600 dark:text-amber-400",
+  badgeClass: "bg-amber-500/10 text-amber-700 dark:text-amber-300",
+  hoverBorderClass: "hover:border-amber-500/40",
+};
+
+const SLATE_QUICK_MENU_TONE_STYLE: QuickMenuToneStyle = {
+  iconBoxClass: "bg-slate-500/12 text-slate-700 dark:text-slate-300",
+  badgeClass: "bg-slate-500/10 text-slate-700 dark:text-slate-300",
+  hoverBorderClass: "hover:border-slate-500/40",
+};
+
+export const QUICK_MENU_TONE_STYLES: Record<QuickMenuTone, QuickMenuToneStyle> = {
+  primary: PRIMARY_QUICK_MENU_TONE_STYLE,
+  amber: AMBER_QUICK_MENU_TONE_STYLE,
+  teal: TEAL_QUICK_MENU_TONE_STYLE,
+  purple: AMBER_QUICK_MENU_TONE_STYLE,
+  sky: SLATE_QUICK_MENU_TONE_STYLE,
+  blue: TEAL_QUICK_MENU_TONE_STYLE,
+  red: PRIMARY_QUICK_MENU_TONE_STYLE,
+  cyan: PRIMARY_QUICK_MENU_TONE_STYLE,
+  emerald: TEAL_QUICK_MENU_TONE_STYLE,
+  indigo: PRIMARY_QUICK_MENU_TONE_STYLE,
+  rose: PRIMARY_QUICK_MENU_TONE_STYLE,
+  orange: PRIMARY_QUICK_MENU_TONE_STYLE,
+};
+
+const SLATE_SETTINGS_ITEM_IDS: ReadonlySet<QuickMenuItemId> = new Set([
+  "profile",
+  "score_settings",
+  "team_settings",
+  "admin",
+]);
+
+export function getQuickMenuItemToneStyle(
+  item: Pick<QuickMenuItemDef, "id" | "category">,
+): QuickMenuToneStyle {
+  if (item.category === "match_team") {
+    return PRIMARY_QUICK_MENU_TONE_STYLE;
+  }
+  if (item.category === "schedule_access" || item.id === "carpool_generator") {
+    return TEAL_QUICK_MENU_TONE_STYLE;
+  }
+  if (item.category === "docs") {
+    return AMBER_QUICK_MENU_TONE_STYLE;
+  }
+  if (SLATE_SETTINGS_ITEM_IDS.has(item.id)) {
+    return SLATE_QUICK_MENU_TONE_STYLE;
+  }
+  return PRIMARY_QUICK_MENU_TONE_STYLE;
+}
 
 export interface QuickMenuItemDef {
   id: QuickMenuItemId;

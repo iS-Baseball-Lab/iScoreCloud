@@ -40,150 +40,160 @@ export function HubHeroCard({
   };
 
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-4">
-      {/* 上部タグ & 日時 */}
-      <div className="flex items-center justify-between">
-        <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-black tracking-tight ${
-          event.eventType === "match"
-            ? "bg-primary text-primary-foreground border border-primary"
-            : "bg-primary/10 text-primary border border-primary/25"
-        }`}>
-          {event.eventType === "match" ? "⚾ 次回公式戦" : "🏃 次回練習"}
-        </span>
+    <div className="relative overflow-hidden rounded-2xl border border-border/60 bg-card shadow-xs">
+      {/* 上部ヘッダー帯（淡いティントでフラット感を解消） */}
+      <div className="px-4 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 space-y-2">
+        {/* 上部タグ & 日時 */}
+        <div className="flex items-center justify-between">
+          <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-black tracking-tight border ${
+            event.eventType === "match"
+              ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30"
+              : "bg-teal-500/12 text-teal-700 dark:text-teal-300 border-teal-500/25"
+          }`}>
+            {event.eventType === "match" ? "⚾ 次回公式戦" : "🏃 次回練習"}
+          </span>
 
-        <span className="text-xs font-black text-primary flex items-center gap-0.5">
-          {event.date}
-        </span>
-      </div>
+          <span className="text-xs font-black text-primary flex items-center gap-0.5">
+            {event.date}
+          </span>
+        </div>
 
-      {/* メイン予定タイトル & 時間・球場 */}
-      <div className="space-y-2">
+        {/* メイン予定タイトル */}
         <h2 className="text-base font-black text-foreground tracking-tight line-clamp-2">
           {event.title}
         </h2>
+      </div>
 
-        <div className="grid grid-cols-1 gap-1.5 text-xs font-bold text-muted-foreground pt-0.5">
+      <div className="p-4 pt-3 space-y-3.5">
+        {/* 時間・球場 */}
+        <div className="grid grid-cols-1 gap-1.5 text-xs font-bold text-muted-foreground">
           <div className="flex items-center gap-1.5">
-            <Clock className="w-3.5 h-3.5 text-primary shrink-0" />
+            <Clock className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400 shrink-0" />
             <span className="text-foreground">{event.time}</span>
           </div>
 
           <div className="flex items-center gap-1.5">
-            <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
+            <MapPin className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 shrink-0" />
             <span className="truncate">{event.location}</span>
           </div>
         </div>
-      </div>
 
-      {/* 連絡事項：配車・お当番・お弁当インフォメーション */}
-      <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 space-y-2 text-xs">
-        <div className="grid grid-cols-2 gap-2 text-xs">
-          <div className="flex items-center gap-1.5 font-bold">
-            <Car className="w-3.5 h-3.5 text-primary shrink-0" />
-            <div className="min-w-0">
-              <span className="text-[10px] text-muted-foreground block">配車担当</span>
-              <span className="text-foreground truncate block">{event.carInfo || "配車調整中"}</span>
+        {/* 連絡事項：配車・お当番・お弁当インフォメーション */}
+        <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 space-y-2.5 text-xs">
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <div className="flex items-center gap-1.5 font-bold">
+              <Car className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 shrink-0" />
+              <div className="min-w-0">
+                <span className="text-[10px] text-muted-foreground block">配車担当</span>
+                <span className="text-foreground truncate block">{event.carInfo || "配車調整中"}</span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 font-bold">
+              <Utensils className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+              <div className="min-w-0">
+                <span className="text-[10px] text-muted-foreground block">お弁当</span>
+                {event.needsLunch ? (
+                  <span className="inline-block px-2 py-0.5 rounded-md bg-amber-500/12 text-amber-700 dark:text-amber-300 border border-amber-500/25 text-[10.5px] font-black truncate">
+                    🍙 お弁当：要
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground truncate block">不要 (半日)</span>
+                )}
+              </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5 font-bold">
-            <Utensils className="w-3.5 h-3.5 text-primary shrink-0" />
-            <div className="min-w-0">
-              <span className="text-[10px] text-muted-foreground block">お弁当</span>
-              <span className="text-foreground truncate block">
-                {event.needsLunch ? "持参要 (各自)" : "不要 (半日)"}
+          {event.dutyGroup && (
+            <div className="p-2 rounded-xl bg-card border border-border/60 border-l-4 border-l-amber-500 flex items-center justify-between text-[11px] font-bold shadow-2xs">
+              <span className="text-foreground font-black">お当番</span>
+              <span className="px-2 py-0.5 rounded-full bg-amber-500/12 text-amber-700 dark:text-amber-300 border border-amber-500/25 font-black">
+                📋 {event.dutyGroup}
               </span>
             </div>
+          )}
+        </div>
+
+        {/* ワンタップ出欠回答エリア */}
+        <div className="pt-2 border-t border-border/60 space-y-2.5">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-black text-foreground">あなたの出欠回答</span>
+            <span className="text-[10px] font-bold text-muted-foreground">タップして変更</span>
           </div>
-        </div>
 
-        {event.dutyGroup && (
-          <div className="pt-1.5 border-t border-border/60 flex items-center justify-between text-[11px] font-bold">
-            <span className="text-muted-foreground">お当番</span>
-            <span className="text-primary font-black">{event.dutyGroup}</span>
+          {/* 参加 / 不参加 / 未定 */}
+          <div className="grid grid-cols-3 gap-2">
+            <button
+              type="button"
+              onClick={() => setPlayerStatus("present")}
+              className={`flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-2xl text-xs font-black border transition-all active:scale-95 ${
+                playerStatus === "present"
+                  ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                  : "bg-card hover:bg-muted text-muted-foreground border-border/60"
+              }`}
+            >
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              <span>○ 参加</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setPlayerStatus("absent")}
+              className={`flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-2xl text-xs font-black border transition-all active:scale-95 ${
+                playerStatus === "absent"
+                  ? "bg-rose-600 text-white border-rose-600 shadow-xs"
+                  : "bg-card hover:bg-muted text-muted-foreground border-border/60"
+              }`}
+            >
+              <XCircle className="w-4 h-4 shrink-0" />
+              <span>× 欠席</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setPlayerStatus("pending")}
+              className={`flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-2xl text-xs font-black border transition-all active:scale-95 ${
+                playerStatus === "pending"
+                  ? "bg-amber-500 text-white border-amber-500 shadow-xs"
+                  : "bg-card hover:bg-muted text-muted-foreground border-border/60"
+              }`}
+            >
+              <HelpCircle className="w-4 h-4 shrink-0" />
+              <span>△ 未定</span>
+            </button>
           </div>
-        )}
-      </div>
 
-      {/* ワンタップ出欠回答エリア */}
-      <div className="pt-2 border-t border-border/60 space-y-2.5">
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-black text-foreground">あなたの出欠回答</span>
-          <span className="text-[10px] font-bold text-muted-foreground">タップして変更</span>
-        </div>
-
-        {/* 参加 / 不参加 / 未定 */}
-        <div className="grid grid-cols-3 gap-2">
-          <button
-            type="button"
-            onClick={() => setPlayerStatus("present")}
-            className={`flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-2xl text-xs font-black border transition-all active:scale-95 ${
-              playerStatus === "present"
-                ? "bg-primary text-primary-foreground border-primary shadow-xs"
-                : "bg-card hover:bg-muted text-muted-foreground border-border/60"
-            }`}
-          >
-            <CheckCircle2 className="w-4 h-4 shrink-0" />
-            <span>○ 参加</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setPlayerStatus("absent")}
-            className={`flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-2xl text-xs font-black border transition-all active:scale-95 ${
-              playerStatus === "absent"
-                ? "bg-primary text-primary-foreground border-primary shadow-xs"
-                : "bg-card hover:bg-muted text-muted-foreground border-border/60"
-            }`}
-          >
-            <XCircle className="w-4 h-4 shrink-0" />
-            <span>× 欠席</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setPlayerStatus("pending")}
-            className={`flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-2xl text-xs font-black border transition-all active:scale-95 ${
-              playerStatus === "pending"
-                ? "bg-primary text-primary-foreground border-primary shadow-xs"
-                : "bg-card hover:bg-muted text-muted-foreground border-border/60"
-            }`}
-          >
-            <HelpCircle className="w-4 h-4 shrink-0" />
-            <span>△ 未定</span>
-          </button>
-        </div>
-
-        {/* 車出し可能かどうかのセレクト（参加時のみ） */}
-        {playerStatus === "present" && (
-          <div className="pt-2 flex items-center justify-between gap-2 text-xs bg-muted/35 p-2.5 rounded-xl border border-border/60 animate-in fade-in slide-in-from-top-1">
-            <span className="font-bold text-foreground text-[11px] shrink-0">車出し</span>
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => setCarStatus("can_drive")}
-                className={`px-2 py-1 rounded-lg text-[10px] font-black border transition-all ${
-                  carStatus === "can_drive"
-                    ? "bg-primary text-primary-foreground border-primary shadow-xs"
-                    : "bg-card border-border/60 text-muted-foreground hover:bg-muted"
-                }`}
-              >
-                出せる (乗車可)
-              </button>
-              <button
-                type="button"
-                onClick={() => setCarStatus("need_ride")}
-                className={`px-2 py-1 rounded-lg text-[10px] font-black border transition-all ${
-                  carStatus === "need_ride"
-                    ? "bg-primary text-primary-foreground border-primary shadow-xs"
-                    : "bg-card border-border/60 text-muted-foreground hover:bg-muted"
-                }`}
-              >
-                乗せてほしい
-              </button>
+          {/* 車出し可能かどうかのセレクト（参加時のみ） */}
+          {playerStatus === "present" && (
+            <div className="pt-2 flex items-center justify-between gap-2 text-xs bg-muted/35 p-2.5 rounded-xl border border-border/60 animate-in fade-in slide-in-from-top-1">
+              <span className="font-bold text-foreground text-[11px] shrink-0">車出し</span>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setCarStatus("can_drive")}
+                  className={`px-2.5 py-1 rounded-lg text-[10px] transition-all ${
+                    carStatus === "can_drive"
+                      ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
+                      : "bg-card border border-border/60 text-muted-foreground hover:text-foreground hover:bg-muted/50 font-bold"
+                  }`}
+                >
+                  出せる (乗車可)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCarStatus("need_ride")}
+                  className={`px-2.5 py-1 rounded-lg text-[10px] transition-all ${
+                    carStatus === "need_ride"
+                      ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
+                      : "bg-card border border-border/60 text-muted-foreground hover:text-foreground hover:bg-muted/50 font-bold"
+                  }`}
+                >
+                  乗せてほしい
+                </button>
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );

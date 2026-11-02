@@ -8,8 +8,8 @@ import { EmptyState } from "@/components/layout/EmptyState";
 import {
   LIFF_QUICK_MENU_CHANGE_EVENT,
   LIFF_QUICK_MENU_STORAGE_KEY,
-  QUICK_MENU_TONE_STYLES,
   getDefaultQuickMenuConfig,
+  getQuickMenuItemToneStyle,
   getSavedQuickMenuConfig,
   resolveQuickMenuItems,
   type QuickMenuConfig,
@@ -82,7 +82,7 @@ export function HubQuickNav() {
         <div className="grid grid-cols-3 gap-2.5">
           {items.map((item) => {
             const Icon = item.icon;
-            const tone = QUICK_MENU_TONE_STYLES[item.tone];
+            const tone = getQuickMenuItemToneStyle(item);
             return (
               <Link
                 key={item.id}
@@ -112,7 +112,7 @@ export function HubQuickNav() {
         <div className="grid grid-cols-2 gap-2.5">
           {items.map((item) => {
             const Icon = item.icon;
-            const tone = QUICK_MENU_TONE_STYLES[item.tone];
+            const tone = getQuickMenuItemToneStyle(item);
             return (
               <Link
                 key={item.id}
@@ -140,7 +140,7 @@ export function HubQuickNav() {
         <div className="grid grid-cols-2 gap-3">
           {items.map((item) => {
             const Icon = item.icon;
-            const tone = QUICK_MENU_TONE_STYLES[item.tone];
+            const tone = getQuickMenuItemToneStyle(item);
             return (
               <Link
                 key={item.id}

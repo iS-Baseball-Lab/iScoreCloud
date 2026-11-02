@@ -49,7 +49,7 @@ export default function LiffNewsGeneratorPage() {
           title="試合速報ジェネレータ"
           subtitle="QUICK NEWS GENERATOR"
           icon={
-            <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
+            <span className="w-8 h-8 rounded-xl bg-primary/12 text-primary flex items-center justify-center font-black">
               <Megaphone className="w-4 h-4" />
             </span>
           }
@@ -67,7 +67,7 @@ export default function LiffNewsGeneratorPage() {
         {/* コンセプト概要バナー */}
         <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-2.5">
           <div className="flex items-center gap-2">
-            <span className="px-2 py-0.5 rounded-lg bg-primary/10 text-primary text-[10px] font-black">
+            <span className="px-2 py-0.5 rounded-lg bg-primary/12 text-primary text-[10px] font-black">
               CONCEPT
             </span>
             <h2 className="text-xs font-black text-foreground">
@@ -80,8 +80,8 @@ export default function LiffNewsGeneratorPage() {
         </section>
 
         {/* 簡易入力フォーム枠（ワイヤーフレーム） */}
-        <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-4">
-          <div className="flex items-center justify-between">
+        <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-4 overflow-hidden">
+          <div className="-mx-4 -mt-4 px-4 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 border-l-4 border-l-primary flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Zap className="w-4 h-4 text-primary" />
               <h3 className="text-sm font-black text-foreground">
@@ -98,7 +98,7 @@ export default function LiffNewsGeneratorPage() {
             <label className="text-[11px] font-black text-muted-foreground">
               1. 速報のタイミングを選択
             </label>
-            <div className="grid grid-cols-3 gap-1.5 p-1 rounded-2xl bg-muted/50 border border-border/60">
+            <div className="grid grid-cols-3 gap-1 bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl border border-border/60">
               {[
                 { id: "start" as const, label: "試合開始" },
                 { id: "inning" as const, label: "得点・経過" },
@@ -110,8 +110,8 @@ export default function LiffNewsGeneratorPage() {
                   onClick={() => setScene(tab.id)}
                   className={`py-2 px-2 rounded-xl text-xs transition-all cursor-pointer ${
                     scene === tab.id
-                      ? "bg-primary text-primary-foreground font-black shadow-2xs"
-                      : "text-muted-foreground hover:text-foreground font-bold"
+                      ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                      : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
                   }`}
                 >
                   {tab.label}

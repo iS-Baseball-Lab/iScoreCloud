@@ -148,14 +148,14 @@ export function ActionStatusBanner({
             {isEntryError ? (
               <AlertCircle className="w-3 h-3 text-destructive shrink-0" />
             ) : (
-              <CheckCircle2 className="w-3 h-3 text-primary shrink-0" />
+              <CheckCircle2 className="w-3 h-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
             )}
             <span>{entry.label}</span>
             <span
               className={
                 isEntryError
                   ? "text-destructive"
-                  : "text-primary"
+                  : "text-emerald-700 dark:text-emerald-400"
               }
             >
               {isEntryError

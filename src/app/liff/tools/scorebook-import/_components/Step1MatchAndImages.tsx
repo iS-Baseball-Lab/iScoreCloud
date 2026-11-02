@@ -582,13 +582,13 @@ export function Step1MatchAndImages({
     const targetKey: ImagePickerTarget = isTop ? "top" : "bottom";
 
     return (
-      <div className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3">
-        <div className="flex items-center justify-between gap-2">
+      <div className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3 overflow-hidden">
+        <div className="-mx-4 -mt-4 px-4 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 border-l-4 border-l-primary flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
             <span
               className={`px-2.5 py-0.5 rounded-lg text-[10px] font-black shrink-0 ${
                 isMyTeamSide
-                  ? "bg-primary/10 text-primary"
+                  ? "bg-primary/12 text-primary border border-primary/30"
                   : "bg-muted text-muted-foreground border border-border/60"
               }`}
             >
@@ -739,17 +739,13 @@ export function Step1MatchAndImages({
                 type="button"
                 disabled={isControlsDisabled}
                 onClick={() => onToggleEnhance(isTop)}
-                className={`py-2 px-2 rounded-xl border text-[11px] font-black flex items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+                className={`py-2 px-2 rounded-xl border text-[11px] flex items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
                   state.enhancePencil
-                    ? "bg-primary text-primary-foreground border-primary"
-                    : "bg-card hover:bg-muted text-foreground border-border/60"
+                    ? "bg-primary/12 text-primary border-primary/35 font-black shadow-2xs"
+                    : "bg-card hover:bg-muted/50 text-muted-foreground hover:text-foreground border-border/60 font-bold"
                 }`}
               >
-                <Sparkles
-                  className={`w-3.5 h-3.5 shrink-0 ${
-                    state.enhancePencil ? "text-primary-foreground" : "text-primary"
-                  }`}
-                />
+                <Sparkles className="w-3.5 h-3.5 shrink-0 text-primary" />
                 <span className="truncate">
                   {state.enhancePencil ? "濃さ強調ON" : "原本高精細"}
                 </span>
@@ -761,18 +757,19 @@ export function Step1MatchAndImages({
                 onClick={() =>
                   setOpenCropSide(isCropOpen ? null : cropKey)
                 }
-                className={`py-2 px-2 rounded-xl border text-[11px] font-black flex items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+                className={`py-2 px-2 rounded-xl border text-[11px] flex items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
                   state.perspectiveCorners ||
                   Math.abs(state.fineTiltDeg) >= 0.1 ||
                   state.cropTop > 0 ||
                   state.cropBottom > 0 ||
                   state.cropLeft > 0 ||
-                  state.cropRight > 0
-                    ? "bg-primary text-primary-foreground border-primary"
-                    : "bg-card hover:bg-muted text-foreground border-border/60"
+                  state.cropRight > 0 ||
+                  isCropOpen
+                    ? "bg-primary/12 text-primary border-primary/35 font-black shadow-2xs"
+                    : "bg-card hover:bg-muted/50 text-muted-foreground hover:text-foreground border-border/60 font-bold"
                 }`}
               >
-                <Crop className="w-3.5 h-3.5 shrink-0" />
+                <Crop className="w-3.5 h-3.5 shrink-0 text-primary" />
                 <span className="truncate">歪み・余白</span>
                 {isCropOpen ? (
                   <ChevronUp className="w-3 h-3 shrink-0" />
@@ -822,14 +819,14 @@ export function Step1MatchAndImages({
             {/* 4隅台形・歪み補正 ＆ 傾き角度・余白カットパネル */}
             {isCropOpen && state.processed && (
               <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 space-y-3">
-                <div className="grid grid-cols-2 gap-1.5 p-1 rounded-xl bg-card border border-border/60">
+                <div className="grid grid-cols-2 gap-1 bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl border border-border/60">
                   <button
                     type="button"
                     onClick={() => setAdjustTab("perspective")}
-                    className={`py-1.5 px-2 rounded-lg text-[11px] font-black transition-all cursor-pointer ${
+                    className={`py-1.5 px-2 rounded-xl text-[11px] transition-all cursor-pointer ${
                       adjustTab === "perspective"
-                        ? "bg-primary text-primary-foreground shadow-2xs"
-                        : "text-muted-foreground hover:text-foreground"
+                        ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                        : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
                     }`}
                   >
                     4隅台形・歪み補正
@@ -837,10 +834,10 @@ export function Step1MatchAndImages({
                   <button
                     type="button"
                     onClick={() => setAdjustTab("tilt_crop")}
-                    className={`py-1.5 px-2 rounded-lg text-[11px] font-black transition-all cursor-pointer ${
+                    className={`py-1.5 px-2 rounded-xl text-[11px] transition-all cursor-pointer ${
                       adjustTab === "tilt_crop"
-                        ? "bg-primary text-primary-foreground shadow-2xs"
-                        : "text-muted-foreground hover:text-foreground"
+                        ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                        : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
                     }`}
                   >
                     傾き角度・余白カット
@@ -986,10 +983,10 @@ export function Step1MatchAndImages({
       />
 
       {/* ① 対象試合の選択・新規作成 */}
-      <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3">
-        <div className="flex items-center justify-between gap-2">
+      <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3 overflow-hidden">
+        <div className="-mx-4 -mt-4 px-4 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 border-l-4 border-l-primary flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <span className="w-6 h-6 rounded-full bg-primary text-primary-foreground text-[11px] font-black flex items-center justify-center">
+            <span className="w-6 h-6 rounded-full bg-primary/12 text-primary border border-primary/30 text-[11px] font-black flex items-center justify-center">
               1
             </span>
             <h2 className="text-sm font-black text-foreground">
@@ -1000,7 +997,7 @@ export function Step1MatchAndImages({
           <button
             type="button"
             onClick={() => setShowCreateForm((prev) => !prev)}
-            className="px-2.5 py-1.5 rounded-xl bg-primary/10 hover:bg-primary/15 text-primary text-[11px] font-black flex items-center gap-1 active:scale-95 transition-all cursor-pointer"
+            className="px-2.5 py-1.5 rounded-xl bg-primary/12 hover:bg-primary/18 border border-primary/30 text-primary text-[11px] font-black flex items-center gap-1 active:scale-95 transition-all cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>{showCreateForm ? "閉じる" : "新規試合を作成"}</span>
@@ -1018,7 +1015,7 @@ export function Step1MatchAndImages({
             ) : (
               <>
                 {/* スコアブック取込状況フィルター */}
-                <div className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-muted/50 border border-border/60">
+                <div className="grid grid-cols-3 gap-1.5">
                   {(
                     [
                       {
@@ -1056,10 +1053,10 @@ export function Step1MatchAndImages({
                             onSelectMatchId(nextList[0].id);
                           }
                         }}
-                        className={`py-1.5 px-1.5 rounded-lg text-[10px] font-black transition-all truncate cursor-pointer tabular-nums ${
+                        className={`py-1.5 px-1.5 rounded-xl text-[10px] transition-all truncate cursor-pointer tabular-nums ${
                           active
-                            ? "bg-primary text-primary-foreground shadow-2xs"
-                            : "text-muted-foreground hover:text-foreground"
+                            ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
+                            : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
                         }`}
                       >
                         {item.label}
@@ -1102,37 +1099,53 @@ export function Step1MatchAndImages({
               </>
             )}
 
-            {selectedMatch && (
-              <div className="flex items-center justify-between gap-2 flex-wrap px-3 py-2 rounded-xl bg-muted/35 border border-border/60 text-[11px] font-bold">
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  {selectedMatch.hasExistingAtBats ? (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-black bg-primary/10 text-primary border-primary/25">
-                      <CheckCircle2 className="w-3 h-3 shrink-0" />
-                      <span>スコア取込済</span>
+            {selectedMatch && (() => {
+              const isOfficialMatch = selectedMatch.matchType === "official";
+              const isExchangeMatch = selectedMatch.matchType === "exchange";
+              return (
+                <div className="flex items-center justify-between gap-2 flex-wrap px-3 py-2 rounded-xl bg-muted/35 border border-border/60 text-[11px] font-bold">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {selectedMatch.hasExistingAtBats ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-black bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 border-emerald-500/25">
+                        <CheckCircle2 className="w-3 h-3 shrink-0" />
+                        <span>スコア取込済</span>
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-md border text-[10px] font-black bg-muted text-muted-foreground border-border/60">
+                        スコア未取込
+                      </span>
+                    )}
+                    <span className="text-muted-foreground">
+                      <strong className="text-foreground font-black">
+                        {selectedMatch.battingOrder === "first"
+                          ? "自チーム【先攻（表）】"
+                          : "自チーム【後攻（裏）】"}
+                      </strong>
                     </span>
-                  ) : (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-md border text-[10px] font-black bg-muted text-muted-foreground border-border/60">
-                      スコア未取込
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {isOfficialMatch ? (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-amber-500/12 text-amber-700 dark:text-amber-300 border border-amber-500/30 text-[10px] font-black">
+                        公式戦
+                      </span>
+                    ) : isExchangeMatch ? (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-sky-500/12 text-sky-700 dark:text-sky-300 border border-sky-500/30 text-[10px] font-black">
+                        交流戦
+                      </span>
+                    ) : null}
+                    <span className="text-muted-foreground">
+                      {selectedMatch.tournamentName ||
+                        (isOfficialMatch ? "公式戦" : "OP戦")}
                     </span>
-                  )}
-                  <span className="text-muted-foreground">
-                    <strong className="text-foreground font-black">
-                      {selectedMatch.battingOrder === "first"
-                        ? "自チーム【先攻（表）】"
-                        : "自チーム【後攻（裏）】"}
-                    </strong>
-                  </span>
+                  </div>
                 </div>
-                <span className="text-muted-foreground">
-                  {selectedMatch.tournamentName || "OP戦"}
-                </span>
-              </div>
-            )}
+              );
+            })()}
 
             {selectedMatch?.hasExistingAtBats && onLoadSavedScorebook && (
-              <div className="p-3.5 rounded-2xl border border-border/60 bg-card shadow-xs space-y-2.5">
+              <div className="p-3.5 rounded-2xl border border-border/60 border-l-4 border-l-emerald-500 bg-card shadow-xs space-y-2.5">
                 <div className="flex items-start gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
                   <div className="space-y-0.5 min-w-0">
                     <p className="text-xs font-black text-foreground">
                       保存済みのスコア・打席データがあります（現在スコア:{" "}
@@ -1321,9 +1334,9 @@ export function Step1MatchAndImages({
       </section>
 
       {/* ② 取り込み単位の選択（2枚セット / 片面のみ） */}
-      <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3">
-        <div className="flex items-center gap-2">
-          <span className="w-6 h-6 rounded-full bg-primary text-primary-foreground text-[11px] font-black flex items-center justify-center">
+      <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3 overflow-hidden">
+        <div className="-mx-4 -mt-4 px-4 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 border-l-4 border-l-primary flex items-center gap-2">
+          <span className="w-6 h-6 rounded-full bg-primary/12 text-primary border border-primary/30 text-[11px] font-black flex items-center justify-center">
             2
           </span>
           <h2 className="text-sm font-black text-foreground">
@@ -1331,7 +1344,7 @@ export function Step1MatchAndImages({
           </h2>
         </div>
 
-        <div className="grid grid-cols-3 gap-1.5 p-1 rounded-2xl bg-muted/50 border border-border/60">
+        <div className="grid grid-cols-3 gap-1 bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl border border-border/60">
           {(
             [
               { id: "both" as const, label: "先攻＋後攻 (2枚)" },
@@ -1345,8 +1358,8 @@ export function Step1MatchAndImages({
               onClick={() => onChangeImportScope(opt.id)}
               className={`py-2 px-1.5 rounded-xl text-[11px] transition-all cursor-pointer ${
                 importScope === opt.id
-                  ? "bg-primary text-primary-foreground font-black shadow-2xs"
-                  : "text-muted-foreground font-bold hover:text-foreground"
+                  ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                  : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
               }`}
             >
               {opt.label}
@@ -1368,10 +1381,12 @@ export function Step1MatchAndImages({
       </div>
 
       {/* ④ 記号早見表（スコア設定との自動連携） */}
-      <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3">
-        <div className="flex items-center justify-between gap-2">
+      <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3 overflow-hidden">
+        <div className="-mx-4 -mt-4 px-4 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 border-l-4 border-l-primary flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
-            <BookOpen className="w-4 h-4 text-primary shrink-0" />
+            <span className="w-6 h-6 rounded-lg bg-primary/12 text-primary flex items-center justify-center shrink-0">
+              <BookOpen className="w-3.5 h-3.5" />
+            </span>
             <p className="text-xs font-black text-foreground truncate">
               スコア記号早見表
             </p>
@@ -1380,25 +1395,32 @@ export function Step1MatchAndImages({
           <Link
             href="/liff/settings/score"
             onClick={() => onNavigateScoreSettings?.()}
-            className="px-2.5 py-1.5 rounded-xl bg-primary/10 hover:bg-primary/15 border border-primary/25 text-[11px] font-black text-primary flex items-center gap-1 shrink-0 active:scale-95 transition-all"
+            className="px-2.5 py-1.5 rounded-xl bg-card hover:bg-muted border border-border/60 text-[11px] font-black text-foreground flex items-center gap-1.5 shrink-0 active:scale-95 transition-all"
           >
-            <Settings className="w-3.5 h-3.5" />
+            <span className="w-4 h-4 rounded-md bg-slate-500/12 text-slate-700 dark:text-slate-300 flex items-center justify-center shrink-0">
+              <Settings className="w-3 h-3" />
+            </span>
             <span>スコア設定</span>
           </Link>
         </div>
 
         {legendOverrideDataUrl ? (
-          <div className="p-2.5 rounded-2xl bg-primary/10 border border-primary/25 flex items-center justify-between gap-2.5">
+          <div className="p-2.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-2.5">
             <div className="flex items-center gap-2.5 min-w-0">
               <img
                 src={legendOverrideDataUrl}
                 alt="一時指定した早見表"
-                className="w-11 h-11 rounded-lg object-cover border border-border/60 bg-neutral-950 shrink-0"
+                className="w-11 h-11 rounded-lg object-cover border border-amber-500/30 bg-neutral-950 shrink-0"
               />
               <div className="min-w-0 space-y-0.5">
-                <p className="text-[11px] font-black text-foreground truncate">
-                  この試合のみ一時添付した早見表を適用中
-                </p>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 text-[10px] font-black shrink-0">
+                    一時添付中
+                  </span>
+                  <p className="text-[11px] font-black text-foreground truncate">
+                    この試合のみ一時添付した早見表を適用中
+                  </p>
+                </div>
                 <p className="text-[10px] font-bold text-muted-foreground leading-snug">
                   毎回使う場合は右上の「スコア設定」に登録すると次回から添付不要です
                 </p>
@@ -1416,17 +1438,22 @@ export function Step1MatchAndImages({
           </div>
         ) : teamLegendUrl ? (
           <div className="space-y-2">
-            <div className="p-2.5 rounded-2xl bg-primary/10 border border-primary/25 flex items-center justify-between gap-2.5">
+            <div className="p-2.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-between gap-2.5">
               <div className="flex items-center gap-2.5 min-w-0">
                 <img
                   src={teamLegendUrl}
                   alt="登録済みの早見表"
-                  className="w-11 h-11 rounded-lg object-cover border border-primary/25 bg-neutral-950 shrink-0"
+                  className="w-11 h-11 rounded-lg object-cover border border-emerald-500/25 bg-neutral-950 shrink-0"
                 />
                 <div className="min-w-0 space-y-0.5">
-                  <div className="flex items-center gap-1 text-[11px] font-black text-primary">
-                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                    <span className="truncate">登録済み（毎回自動適用）</span>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 border border-emerald-500/25 text-[10px] font-black shrink-0">
+                      <CheckCircle2 className="w-3 h-3 shrink-0" />
+                      <span>登録済</span>
+                    </span>
+                    <span className="text-[11px] font-black text-emerald-700 dark:text-emerald-400 truncate">
+                      毎回自動適用中
+                    </span>
                   </div>
                   <p className="text-[10px] font-bold text-muted-foreground leading-snug">
                     スコア設定の早見表を自動で参照します。毎回の添付は不要です

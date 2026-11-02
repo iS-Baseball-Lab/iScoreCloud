@@ -942,7 +942,7 @@ function LiffLineupContent() {
           title="スタメン・出欠登録"
           subtitle="打順・守備位置・控え・欠席の設定"
           icon={
-            <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
+            <span className="w-8 h-8 rounded-xl bg-primary/12 text-primary flex items-center justify-center font-black">
               <Users className="w-4 h-4" />
             </span>
           }
@@ -995,10 +995,10 @@ function LiffLineupContent() {
                     className={cn(
                       "text-[10px] font-black px-1.5 py-0.5 rounded border",
                       currentMatch?.matchType === "official"
-                        ? "bg-primary/12 text-primary border-primary/25"
+                        ? "bg-amber-500/12 text-amber-700 dark:text-amber-300 border-amber-500/30"
                         : currentMatch?.matchType === "exchange"
-                        ? "bg-primary/10 text-primary border-primary/20"
-                        : "bg-muted/50 text-muted-foreground border-border/60"
+                        ? "bg-sky-500/12 text-sky-700 dark:text-sky-300 border-sky-500/25"
+                        : "bg-muted text-muted-foreground border-border/60"
                     )}
                   >
                     {currentMatch?.matchType === "official"
@@ -1122,7 +1122,7 @@ function LiffLineupContent() {
             {currentMatch &&
               currentMatch.status === "finished" &&
               !isDemoMatchId(currentMatch.id) && (
-                <div className="p-3.5 rounded-2xl border border-border/60 bg-card shadow-xs flex items-center justify-between gap-2 flex-wrap">
+                <div className="p-3.5 rounded-2xl border border-border/60 border-l-4 border-l-primary bg-card shadow-xs flex items-center justify-between gap-2 flex-wrap">
                   <div className="min-w-0">
                     <p className="text-xs font-black text-foreground">
                       試合途中の「選手交代・代打・代走・継投」を追加・修正したい場合
@@ -1135,7 +1135,7 @@ function LiffLineupContent() {
                     href={`/liff/tools/scorebook-import?matchId=${encodeURIComponent(
                       currentMatch.id
                     )}&mode=edit`}
-                    className="px-3 py-2 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-[11px] font-black inline-flex items-center gap-1.5 shrink-0"
+                    className="px-3 py-2 rounded-xl bg-primary/12 hover:bg-primary/20 text-primary border border-primary/35 text-[11px] font-black inline-flex items-center gap-1.5 shrink-0 shadow-2xs transition-colors"
                   >
                     <Users className="w-3.5 h-3.5" />
                     <span>選手交代・打席を編集</span>
@@ -1146,31 +1146,41 @@ function LiffLineupContent() {
             {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                 🔀 自チーム / 相手チーム タブ切り替え（Web版流用）
             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-            <div className="flex bg-muted/50 p-1 rounded-2xl border border-border/60">
+            <div className="flex gap-1 bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl border border-border/60">
               <button
                 type="button"
                 onClick={() => setActiveTab("myTeam")}
                 className={cn(
-                  "flex-1 py-2.5 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer",
+                  "flex-1 py-2.5 text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer",
                   activeTab === "myTeam"
-                    ? "bg-primary text-primary-foreground shadow-xs"
-                    : "text-muted-foreground hover:text-foreground"
+                    ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                    : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
                 )}
               >
-                <Shield className="w-4 h-4" />
+                <Shield
+                  className={cn(
+                    "w-4 h-4",
+                    activeTab === "myTeam" ? "text-primary" : "text-muted-foreground"
+                  )}
+                />
                 <span>自チーム</span>
               </button>
               <button
                 type="button"
                 onClick={() => setActiveTab("opponent")}
                 className={cn(
-                  "flex-1 py-2.5 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer",
+                  "flex-1 py-2.5 text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer",
                   activeTab === "opponent"
-                    ? "bg-primary text-primary-foreground shadow-xs"
-                    : "text-muted-foreground hover:text-foreground"
+                    ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                    : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
                 )}
               >
-                <Swords className="w-4 h-4" />
+                <Swords
+                  className={cn(
+                    "w-4 h-4",
+                    activeTab === "opponent" ? "text-primary" : "text-muted-foreground"
+                  )}
+                />
                 <span>相手チーム</span>
               </button>
             </div>
@@ -1479,7 +1489,7 @@ function LiffLineupContent() {
                           </div>
 
                           {/* 控え / 欠席 セグメントトグル */}
-                          <div className="flex bg-muted/50 p-1 rounded-xl w-[136px] shrink-0 border border-border/60">
+                          <div className="flex gap-0.5 bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl w-[142px] shrink-0 border border-border/60">
                             <button
                               type="button"
                               onClick={() => {
@@ -1491,14 +1501,19 @@ function LiffLineupContent() {
                               }}
                               disabled={isLockedBySchedule}
                               className={cn(
-                                "flex-1 flex items-center justify-center py-1.5 rounded-lg text-[11px] font-black transition-all cursor-pointer",
+                                "flex-1 flex items-center justify-center py-1.5 rounded-xl text-[11px] transition-all cursor-pointer",
                                 status === "bench"
-                                  ? "bg-card text-primary shadow-xs"
-                                  : "text-muted-foreground hover:text-foreground",
+                                  ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                                  : "text-muted-foreground hover:text-foreground font-bold border border-transparent",
                                 isLockedBySchedule && "opacity-45 cursor-not-allowed"
                               )}
                             >
-                              <UserCheck className="w-3 h-3 mr-1" />
+                              <UserCheck
+                                className={cn(
+                                  "w-3 h-3 mr-1",
+                                  status === "bench" ? "text-primary" : "text-muted-foreground"
+                                )}
+                              />
                               控え
                             </button>
                             <button
@@ -1507,13 +1522,18 @@ function LiffLineupContent() {
                                 setAttendance((prev) => ({ ...prev, [player.id]: "absent" }))
                               }
                               className={cn(
-                                "flex-1 flex items-center justify-center py-1.5 rounded-lg text-[11px] font-black transition-all cursor-pointer",
+                                "flex-1 flex items-center justify-center py-1.5 rounded-xl text-[11px] transition-all cursor-pointer",
                                 status === "absent"
-                                  ? "bg-card text-foreground shadow-xs"
-                                  : "text-muted-foreground hover:text-foreground"
+                                  ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                                  : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
                               )}
                             >
-                              <UserMinus className="w-3 h-3 mr-1" />
+                              <UserMinus
+                                className={cn(
+                                  "w-3 h-3 mr-1",
+                                  status === "absent" ? "text-primary" : "text-muted-foreground"
+                                )}
+                              />
                               欠席
                             </button>
                           </div>
@@ -1936,10 +1956,10 @@ function LiffLineupContent() {
                     type="button"
                     onClick={() => setNewMatchType(item.id)}
                     className={cn(
-                      "py-2 rounded-xl text-xs font-black border transition-all cursor-pointer",
+                      "py-2 rounded-xl text-xs border transition-all cursor-pointer",
                       newMatchType === item.id
-                        ? "bg-primary text-primary-foreground border-primary"
-                        : "bg-muted/50 text-muted-foreground border-border/60"
+                        ? "bg-primary/12 text-primary border-primary/35 font-black shadow-2xs"
+                        : "bg-card text-muted-foreground border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
                     )}
                   >
                     {item.label}
@@ -1967,10 +1987,10 @@ function LiffLineupContent() {
                   type="button"
                   onClick={() => setNewBattingOrder("first")}
                   className={cn(
-                    "py-2 rounded-xl text-xs font-black border transition-all cursor-pointer",
+                    "py-2 rounded-xl text-xs border transition-all cursor-pointer",
                     newBattingOrder === "first"
-                      ? "bg-primary text-primary-foreground border-primary"
-                      : "bg-muted/50 text-muted-foreground border-border/60"
+                      ? "bg-primary/12 text-primary border-primary/35 font-black shadow-2xs"
+                      : "bg-card text-muted-foreground border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
                   )}
                 >
                   先攻（表）
@@ -1979,10 +1999,10 @@ function LiffLineupContent() {
                   type="button"
                   onClick={() => setNewBattingOrder("second")}
                   className={cn(
-                    "py-2 rounded-xl text-xs font-black border transition-all cursor-pointer",
+                    "py-2 rounded-xl text-xs border transition-all cursor-pointer",
                     newBattingOrder === "second"
-                      ? "bg-primary text-primary-foreground border-primary"
-                      : "bg-muted/50 text-muted-foreground border-border/60"
+                      ? "bg-primary/12 text-primary border-primary/35 font-black shadow-2xs"
+                      : "bg-card text-muted-foreground border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
                   )}
                 >
                   後攻（裏）

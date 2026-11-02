@@ -308,19 +308,19 @@ export default function LiffLinksPage() {
   const getCategoryIcon = (category: string) => {
     switch (category) {
       case "league":
-        return <Globe className="w-4 h-4 text-primary" />;
+        return <Globe className="w-4 h-4" />;
       case "tournament":
-        return <Trophy className="w-4 h-4 text-primary" />;
+        return <Trophy className="w-4 h-4" />;
       case "weather":
-        return <Sun className="w-4 h-4 text-primary" />;
+        return <Sun className="w-4 h-4" />;
       case "sns":
-        return <Instagram className="w-4 h-4 text-primary" />;
+        return <Instagram className="w-4 h-4" />;
       case "grounds":
-        return <MapPin className="w-4 h-4 text-primary" />;
+        return <MapPin className="w-4 h-4" />;
       case "partner":
-        return <ShoppingBag className="w-4 h-4 text-primary" />;
+        return <ShoppingBag className="w-4 h-4" />;
       default:
-        return <Link2 className="w-4 h-4 text-primary" />;
+        return <Link2 className="w-4 h-4" />;
     }
   };
 
@@ -344,7 +344,7 @@ export default function LiffLinksPage() {
           title="関連リンク集"
           subtitle="連盟・大会速報・施設予約・公式SNS"
           icon={
-            <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
+            <span className="w-8 h-8 rounded-xl bg-amber-500/12 text-amber-600 dark:text-amber-400 flex items-center justify-center font-black">
               <Link2 className="w-4 h-4" />
             </span>
           }
@@ -360,10 +360,10 @@ export default function LiffLinksPage() {
           <button
             type="button"
             onClick={() => setSelectedScope("all")}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all cursor-pointer ${
+            className={`px-3.5 py-1.5 rounded-xl text-xs shrink-0 transition-all cursor-pointer ${
               selectedScope === "all"
-                ? "bg-primary text-primary-foreground shadow-xs"
-                : "bg-card border border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
+                ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
+                : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
             }`}
           >
             すべて ({links.length})
@@ -371,10 +371,10 @@ export default function LiffLinksPage() {
           <button
             type="button"
             onClick={() => setSelectedScope("organization")}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
+            className={`px-3.5 py-1.5 rounded-xl text-xs shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
               selectedScope === "organization"
-                ? "bg-primary text-primary-foreground shadow-xs"
-                : "bg-card border border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
+                ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
+                : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
             }`}
           >
             <Building2 className="w-3.5 h-3.5" />
@@ -383,10 +383,10 @@ export default function LiffLinksPage() {
           <button
             type="button"
             onClick={() => setSelectedScope("team")}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
+            className={`px-3.5 py-1.5 rounded-xl text-xs shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
               selectedScope === "team"
-                ? "bg-primary text-primary-foreground shadow-xs"
-                : "bg-card border border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
+                ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
+                : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
             }`}
           >
             <Users2 className="w-3.5 h-3.5" />
@@ -440,10 +440,10 @@ export default function LiffLinksPage() {
                 key={c.id}
                 type="button"
                 onClick={() => setSelectedCategory(c.id)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
+                className={`px-3 py-1.5 rounded-xl text-xs shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
                   isSelected
-                    ? "bg-primary text-primary-foreground shadow-xs"
-                    : "bg-card border border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
+                    : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
                 }`}
               >
                 <Icon className="w-3.5 h-3.5" />
@@ -461,7 +461,7 @@ export default function LiffLinksPage() {
           </div>
         ) : filteredLinks.length === 0 ? (
           <div className="p-8 rounded-2xl border border-border/60 bg-card shadow-xs text-center space-y-2">
-            <AlertCircle className="w-8 h-8 text-muted-foreground mx-auto" />
+            <AlertCircle className="w-8 h-8 text-amber-600 dark:text-amber-400 mx-auto" />
             <p className="text-xs font-black text-foreground">
               該当する関連リンクが見つかりませんでした
             </p>
@@ -478,7 +478,9 @@ export default function LiffLinksPage() {
               return (
                 <div
                   key={link.id}
-                  className="rounded-2xl border border-border/60 bg-card shadow-xs hover:border-primary/40 transition-all duration-200 overflow-hidden"
+                  className={`rounded-2xl border border-border/60 bg-card shadow-xs hover:border-primary/40 transition-all duration-200 overflow-hidden ${
+                    isImportant ? "border-l-4 border-l-amber-500" : ""
+                  }`}
                 >
                   <div className="p-3.5 sm:p-4 space-y-3">
                     <div className="flex items-start justify-between gap-3">
@@ -488,7 +490,7 @@ export default function LiffLinksPage() {
                             <img src={link.imageUrl} alt={link.title} className="w-full h-full object-cover" />
                           </div>
                         ) : (
-                          <span className="w-9 h-9 rounded-xl flex items-center justify-center text-xs font-black shrink-0 bg-primary/10 text-primary">
+                          <span className="w-9 h-9 rounded-xl flex items-center justify-center text-xs font-black shrink-0 bg-amber-500/12 text-amber-600 dark:text-amber-400">
                             {getCategoryIcon(link.category)}
                           </span>
                         )}
@@ -497,7 +499,7 @@ export default function LiffLinksPage() {
                           <div className="flex items-center gap-1.5 flex-wrap">
                             {/* 🔥 おすすめ/公式ピン留めバッジ */}
                             {isImportant && (
-                              <span className="px-2 py-0.5 rounded-md bg-primary text-primary-foreground text-[9.5px] font-black shrink-0 shadow-2xs flex items-center gap-0.5">
+                              <span className="px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 text-[9.5px] font-black shrink-0 flex items-center gap-0.5">
                                 <Flame className="w-3 h-3" />
                                 <span>公式・推奨</span>
                               </span>
@@ -555,8 +557,8 @@ export default function LiffLinksPage() {
                         >
                           {copiedId === link.id ? (
                             <>
-                              <Check className="w-3.5 h-3.5 text-primary" />
-                              <span className="text-primary">コピー済</span>
+                              <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                              <span className="text-emerald-700 dark:text-emerald-400 font-black">コピー済</span>
                             </>
                           ) : (
                             <>
@@ -602,7 +604,7 @@ export default function LiffLinksPage() {
           >
             <div className="flex items-center justify-between border-b border-border/60 pb-3">
               <div className="flex items-center gap-2">
-                <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
+                <span className="w-8 h-8 rounded-xl bg-amber-500/12 text-amber-600 dark:text-amber-400 flex items-center justify-center font-black">
                   <Link2 className="w-4 h-4" />
                 </span>
                 <div>
@@ -634,13 +636,13 @@ export default function LiffLinksPage() {
                 onClick={() => setNewIsImportant(!newIsImportant)}
                 className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 select-none ${
                   newIsImportant
-                    ? "bg-primary/10 border-primary text-primary"
+                    ? "bg-amber-500/12 border-amber-500/40 text-amber-700 dark:text-amber-300"
                     : "bg-muted/35 border-border/60 text-muted-foreground hover:bg-muted"
                 }`}
               >
                 <div className="flex items-center gap-2.5">
                   <span className={`w-7 h-7 rounded-xl flex items-center justify-center text-sm font-black ${
-                    newIsImportant ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                    newIsImportant ? "bg-amber-500/20 text-amber-700 dark:text-amber-300" : "bg-muted text-muted-foreground"
                   }`}>
                     <Flame className="w-4 h-4" />
                   </span>
@@ -662,14 +664,14 @@ export default function LiffLinksPage() {
               {/* スコープ選択 */}
               <div className="space-y-1.5">
                 <label className="text-muted-foreground">公開範囲</label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 gap-1 bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl border border-border/60">
                   <button
                     type="button"
                     onClick={() => setNewScope("organization")}
-                    className={`py-2 px-3 rounded-xl border text-xs font-black transition-all cursor-pointer ${
+                    className={`py-2 px-3 rounded-xl text-xs transition-all cursor-pointer ${
                       newScope === "organization"
-                        ? "bg-primary text-primary-foreground border-primary shadow-xs"
-                        : "bg-card border-border/60 text-muted-foreground hover:bg-muted"
+                        ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                        : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
                     }`}
                   >
                     🏢 チーム全体（共通）
@@ -677,10 +679,10 @@ export default function LiffLinksPage() {
                   <button
                     type="button"
                     onClick={() => setNewScope("team")}
-                    className={`py-2 px-3 rounded-xl border text-xs font-black transition-all cursor-pointer ${
+                    className={`py-2 px-3 rounded-xl text-xs transition-all cursor-pointer ${
                       newScope === "team"
-                        ? "bg-primary text-primary-foreground border-primary shadow-xs"
-                        : "bg-card border-border/60 text-muted-foreground hover:bg-muted"
+                        ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                        : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
                     }`}
                   >
                     👥 {currentTeam?.teamName || "この編成"} のみ
@@ -837,7 +839,7 @@ export default function LiffLinksPage() {
           >
             <div className="flex items-center justify-between border-b border-border/60 pb-3">
               <div className="flex items-center gap-2">
-                <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
+                <span className="w-8 h-8 rounded-xl bg-amber-500/12 text-amber-600 dark:text-amber-400 flex items-center justify-center font-black">
                   <Pencil className="w-4 h-4" />
                 </span>
                 <div>
@@ -867,13 +869,13 @@ export default function LiffLinksPage() {
                 onClick={() => setEditIsImportant(!editIsImportant)}
                 className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 select-none ${
                   editIsImportant
-                    ? "bg-primary/10 border-primary text-primary"
+                    ? "bg-amber-500/12 border-amber-500/40 text-amber-700 dark:text-amber-300"
                     : "bg-muted/35 border-border/60 text-muted-foreground hover:bg-muted"
                 }`}
               >
                 <div className="flex items-center gap-2.5">
                   <span className={`w-7 h-7 rounded-xl flex items-center justify-center text-sm font-black ${
-                    editIsImportant ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                    editIsImportant ? "bg-amber-500/20 text-amber-700 dark:text-amber-300" : "bg-muted text-muted-foreground"
                   }`}>
                     <Flame className="w-4 h-4" />
                   </span>
@@ -895,14 +897,14 @@ export default function LiffLinksPage() {
               {/* スコープ選択 */}
               <div className="space-y-1.5">
                 <label className="text-muted-foreground">公開範囲</label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 gap-1 bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl border border-border/60">
                   <button
                     type="button"
                     onClick={() => setEditScope("organization")}
-                    className={`py-2 px-3 rounded-xl border text-xs font-black transition-all cursor-pointer ${
+                    className={`py-2 px-3 rounded-xl text-xs transition-all cursor-pointer ${
                       editScope === "organization"
-                        ? "bg-primary text-primary-foreground border-primary shadow-xs"
-                        : "bg-card border-border/60 text-muted-foreground hover:bg-muted"
+                        ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                        : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
                     }`}
                   >
                     🏢 チーム全体（共通）
@@ -910,10 +912,10 @@ export default function LiffLinksPage() {
                   <button
                     type="button"
                     onClick={() => setEditScope("team")}
-                    className={`py-2 px-3 rounded-xl border text-xs font-black transition-all cursor-pointer ${
+                    className={`py-2 px-3 rounded-xl text-xs transition-all cursor-pointer ${
                       editScope === "team"
-                        ? "bg-primary text-primary-foreground border-primary shadow-xs"
-                        : "bg-card border-border/60 text-muted-foreground hover:bg-muted"
+                        ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                        : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
                     }`}
                   >
                     👥 {currentTeam?.teamName || "この編成"} のみ

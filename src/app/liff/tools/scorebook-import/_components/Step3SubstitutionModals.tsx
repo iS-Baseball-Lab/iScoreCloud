@@ -834,20 +834,20 @@ export function AtBatPlayerSubstitutionPanel({
       {isOpen && (
         <div className="space-y-2.5 pt-2 border-t border-border/60">
           {appliedToast && (
-            <div className="px-2.5 py-1.5 rounded-xl bg-primary text-primary-foreground text-[11px] font-black">
+            <div className="px-2.5 py-1.5 rounded-xl bg-emerald-500/12 border border-emerald-500/30 text-emerald-700 dark:text-emerald-400 text-[11px] font-black">
               ✓ {appliedToast}
             </div>
           )}
 
           {/* 打者交代 / 投手交代 サブタブ */}
-          <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-muted/50 border border-border/60">
+          <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-muted/80 dark:bg-muted/50 border border-border/60">
             <button
               type="button"
               onClick={() => setActiveTab("batter")}
-              className={`py-1.5 px-2 rounded-lg text-[11px] font-black cursor-pointer transition-colors ${
+              className={`py-1.5 px-2 rounded-lg border text-[11px] font-black cursor-pointer transition-colors ${
                 activeTab === "batter"
-                  ? "bg-primary text-primary-foreground shadow-2xs"
-                  : "text-muted-foreground hover:text-foreground"
+                  ? "bg-card text-foreground border-border/50 shadow-sm"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
               }`}
             >
               打者交代・変更（{atBat.battingOrder}番）
@@ -855,10 +855,10 @@ export function AtBatPlayerSubstitutionPanel({
             <button
               type="button"
               onClick={() => setActiveTab("pitcher")}
-              className={`py-1.5 px-2 rounded-lg text-[11px] font-black cursor-pointer transition-colors ${
+              className={`py-1.5 px-2 rounded-lg border text-[11px] font-black cursor-pointer transition-colors ${
                 activeTab === "pitcher"
-                  ? "bg-primary text-primary-foreground shadow-2xs"
-                  : "text-muted-foreground hover:text-foreground"
+                  ? "bg-card text-foreground border-border/50 shadow-sm"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
               }`}
             >
               投手交代・継投変更
@@ -944,7 +944,7 @@ export function AtBatPlayerSubstitutionPanel({
                     }}
                     className={`py-1.5 px-2 rounded-lg border text-[10px] font-black cursor-pointer text-left transition-colors ${
                       batterMode === opt.id
-                        ? "bg-primary text-primary-foreground border-primary"
+                        ? "bg-primary/12 text-primary border-primary/40 shadow-2xs"
                         : "bg-muted/35 border-border/60 text-foreground hover:bg-muted"
                     }`}
                   >
@@ -1075,7 +1075,7 @@ export function AtBatPlayerSubstitutionPanel({
                   onClick={() => setPitcherMode("FROM_HERE")}
                   className={`py-1.5 px-2 rounded-lg border text-[10px] font-black cursor-pointer text-left transition-colors ${
                     pitcherMode === "FROM_HERE"
-                      ? "bg-primary text-primary-foreground border-primary"
+                      ? "bg-primary/12 text-primary border-primary/40 shadow-2xs"
                       : "bg-muted/35 border-border/60 text-foreground hover:bg-muted"
                   }`}
                 >
@@ -1086,7 +1086,7 @@ export function AtBatPlayerSubstitutionPanel({
                   onClick={() => setPitcherMode("SINGLE_AB")}
                   className={`py-1.5 px-2 rounded-lg border text-[10px] font-black cursor-pointer text-left transition-colors ${
                     pitcherMode === "SINGLE_AB"
-                      ? "bg-primary text-primary-foreground border-primary"
+                      ? "bg-primary/12 text-primary border-primary/40 shadow-2xs"
                       : "bg-muted/35 border-border/60 text-foreground hover:bg-muted"
                   }`}
                 >
@@ -1321,7 +1321,7 @@ export function Step3QuickSubstitutionModal({
         onClick={(e) => e.stopPropagation()}
       >
         {/* ヘッダー */}
-        <div className="px-4 py-3 border-b border-border/60 bg-card flex items-center justify-between gap-2">
+        <div className="px-4 py-3 border-b border-border/50 bg-primary/[0.04] dark:bg-primary/[0.07] flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
             <Users className="w-4 h-4 text-primary shrink-0" />
             <div className="min-w-0">
@@ -1336,7 +1336,7 @@ export function Step3QuickSubstitutionModal({
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-full bg-muted/50 hover:bg-muted border border-border/60 text-foreground cursor-pointer shrink-0"
+            className="p-1.5 rounded-full bg-card hover:bg-muted border border-border/60 text-foreground cursor-pointer shrink-0"
             aria-label="閉じる"
           >
             <X className="w-4 h-4" />
@@ -1345,14 +1345,14 @@ export function Step3QuickSubstitutionModal({
 
         {/* タブ切替 */}
         <div className="px-4 pt-3 bg-card">
-          <div className="grid grid-cols-2 gap-1.5 p-1 rounded-2xl bg-muted/50 border border-border/60">
+          <div className="grid grid-cols-2 gap-1 p-1 rounded-2xl bg-muted/80 dark:bg-muted/50 border border-border/60">
             <button
               type="button"
               onClick={() => setTab("batters")}
-              className={`py-2 px-2 rounded-xl text-xs font-black cursor-pointer transition-colors ${
+              className={`py-2 px-2 rounded-xl border text-xs font-black cursor-pointer transition-colors ${
                 tab === "batters"
-                  ? "bg-primary text-primary-foreground shadow-2xs"
-                  : "text-muted-foreground hover:text-foreground"
+                  ? "bg-card text-foreground border-border/50 shadow-sm"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
               }`}
             >
               {battingTeamLabel}の打順・交代
@@ -1360,10 +1360,10 @@ export function Step3QuickSubstitutionModal({
             <button
               type="button"
               onClick={() => setTab("pitchers")}
-              className={`py-2 px-2 rounded-xl text-xs font-black cursor-pointer transition-colors ${
+              className={`py-2 px-2 rounded-xl border text-xs font-black cursor-pointer transition-colors ${
                 tab === "pitchers"
-                  ? "bg-primary text-primary-foreground shadow-2xs"
-                  : "text-muted-foreground hover:text-foreground"
+                  ? "bg-card text-foreground border-border/50 shadow-sm"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
               }`}
             >
               {pitchingTeamLabel}の継投投手

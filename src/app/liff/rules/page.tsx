@@ -418,7 +418,7 @@ export default function LiffRulesPage() {
           title="ルール & 注意事項"
           subtitle="安全で円滑なチーム活動のためのガイドライン"
           icon={
-            <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
+            <span className="w-8 h-8 rounded-xl bg-amber-500/12 text-amber-600 dark:text-amber-400 flex items-center justify-center font-black">
               <AlertTriangle className="w-4 h-4" />
             </span>
           }
@@ -434,10 +434,10 @@ export default function LiffRulesPage() {
           <button
             type="button"
             onClick={() => setSelectedScope("all")}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all cursor-pointer ${
+            className={`px-3.5 py-1.5 rounded-xl text-xs shrink-0 transition-all cursor-pointer ${
               selectedScope === "all"
-                ? "bg-primary text-primary-foreground shadow-xs"
-                : "bg-card border border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
+                ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
+                : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
             }`}
           >
             すべて ({rules.length})
@@ -445,10 +445,10 @@ export default function LiffRulesPage() {
           <button
             type="button"
             onClick={() => setSelectedScope("organization")}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
+            className={`px-3.5 py-1.5 rounded-xl text-xs shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
               selectedScope === "organization"
-                ? "bg-primary text-primary-foreground shadow-xs"
-                : "bg-card border border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
+                ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
+                : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
             }`}
           >
             <Building2 className="w-3.5 h-3.5" />
@@ -457,10 +457,10 @@ export default function LiffRulesPage() {
           <button
             type="button"
             onClick={() => setSelectedScope("team")}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
+            className={`px-3.5 py-1.5 rounded-xl text-xs shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
               selectedScope === "team"
-                ? "bg-primary text-primary-foreground shadow-xs"
-                : "bg-card border border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
+                ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
+                : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
             }`}
           >
             <Users2 className="w-3.5 h-3.5" />
@@ -514,10 +514,10 @@ export default function LiffRulesPage() {
                 key={c.id}
                 type="button"
                 onClick={() => setSelectedCategory(c.id)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
+                className={`px-3 py-1.5 rounded-xl text-xs shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
                   isSelected
-                    ? "bg-primary text-primary-foreground shadow-xs"
-                    : "bg-card border border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
+                    : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
                 }`}
               >
                 <Icon className="w-3.5 h-3.5" />
@@ -535,7 +535,7 @@ export default function LiffRulesPage() {
           </div>
         ) : filteredRules.length === 0 ? (
           <div className="p-8 rounded-2xl border border-border/60 bg-card shadow-xs text-center space-y-2">
-            <AlertCircle className="w-8 h-8 text-muted-foreground mx-auto" />
+            <AlertCircle className="w-8 h-8 text-amber-600 dark:text-amber-400 mx-auto" />
             <p className="text-xs font-black text-foreground">
               該当するルール & 注意事項が見つかりませんでした
             </p>
@@ -553,9 +553,9 @@ export default function LiffRulesPage() {
               return (
                 <div
                   key={rule.id}
-                  className={`rounded-2xl border bg-card shadow-xs transition-all duration-200 overflow-hidden hover:border-primary/40 ${
-                    isOpen ? "border-primary/40" : "border-border/60"
-                  }`}
+                  className={`rounded-2xl border border-border/60 bg-card shadow-xs transition-all duration-200 overflow-hidden hover:border-primary/40 ${
+                    isImportant ? "border-l-4 border-l-amber-500" : ""
+                  } ${isOpen ? "ring-1 ring-primary/25" : ""}`}
                 >
                   {/* ヘッダー・開閉トグル */}
                   <div
@@ -563,7 +563,7 @@ export default function LiffRulesPage() {
                     className="p-3.5 sm:p-4 cursor-pointer select-none flex items-start justify-between gap-3"
                   >
                     <div className="flex items-start gap-2.5 min-w-0 flex-1">
-                      <span className="w-5 h-5 rounded-lg flex items-center justify-center text-xs font-black shrink-0 mt-0.5 bg-primary/10 text-primary">
+                      <span className="w-5 h-5 rounded-lg flex items-center justify-center text-xs font-black shrink-0 mt-0.5 bg-amber-500/12 text-amber-600 dark:text-amber-400">
                         {isImportant ? "🔥" : "⚠️"}
                       </span>
 
@@ -571,7 +571,7 @@ export default function LiffRulesPage() {
                         <div className="flex items-center gap-1.5 flex-wrap">
                           {/* 🔥 重要バッジ */}
                           {isImportant && (
-                            <span className="px-2 py-0.5 rounded-md bg-primary text-primary-foreground text-[9.5px] font-black shrink-0 shadow-2xs flex items-center gap-0.5">
+                            <span className="px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 text-[9.5px] font-black shrink-0 flex items-center gap-0.5">
                               <Flame className="w-3 h-3" />
                               <span>重要</span>
                             </span>
@@ -603,7 +603,7 @@ export default function LiffRulesPage() {
 
                           {/* PDF添付バッジ */}
                           {rule.pdfUrl && (
-                            <span className="px-1.5 py-0.5 rounded-md bg-primary/10 text-primary text-[9.5px] font-black shrink-0 flex items-center gap-0.5 border border-primary/25">
+                            <span className="px-1.5 py-0.5 rounded-md bg-rose-500/12 text-rose-600 dark:text-rose-400 text-[9.5px] font-black shrink-0 flex items-center gap-0.5 border border-rose-500/25">
                               <FileText className="w-2.5 h-2.5" />
                               <span>PDFあり</span>
                             </span>
@@ -795,7 +795,7 @@ export default function LiffRulesPage() {
           <div className="relative w-full max-w-4xl h-[92vh] rounded-2xl border border-border/60 bg-card shadow-xs overflow-hidden flex flex-col z-10 animate-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between p-3.5 sm:p-4 border-b border-border/60 bg-card/95">
               <div className="flex items-center gap-2 min-w-0">
-                <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                <span className="w-8 h-8 rounded-xl bg-amber-500/12 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
                   <FileText className="w-4 h-4" />
                 </span>
                 <div className="min-w-0">
@@ -860,7 +860,7 @@ export default function LiffRulesPage() {
           >
             <div className="flex items-center justify-between border-b border-border/60 pb-3">
               <div className="flex items-center gap-2">
-                <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
+                <span className="w-8 h-8 rounded-xl bg-amber-500/12 text-amber-600 dark:text-amber-400 flex items-center justify-center font-black">
                   <AlertTriangle className="w-4 h-4" />
                 </span>
                 <div>
@@ -892,13 +892,13 @@ export default function LiffRulesPage() {
                 onClick={() => setNewIsImportant(!newIsImportant)}
                 className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 select-none ${
                   newIsImportant
-                    ? "bg-primary/10 border-primary text-primary"
+                    ? "bg-amber-500/12 border-amber-500/40 text-amber-700 dark:text-amber-300"
                     : "bg-muted/35 border-border/60 text-muted-foreground hover:bg-muted"
                 }`}
               >
                 <div className="flex items-center gap-2.5">
                   <span className={`w-7 h-7 rounded-xl flex items-center justify-center text-sm font-black ${
-                    newIsImportant ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                    newIsImportant ? "bg-amber-500/20 text-amber-700 dark:text-amber-300" : "bg-muted text-muted-foreground"
                   }`}>
                     <Flame className="w-4 h-4" />
                   </span>
@@ -920,14 +920,14 @@ export default function LiffRulesPage() {
               {/* スコープ選択 */}
               <div className="space-y-1.5">
                 <label className="text-muted-foreground">公開範囲</label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 gap-1 bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl border border-border/60">
                   <button
                     type="button"
                     onClick={() => setNewScope("team")}
-                    className={`py-2 px-3 rounded-xl border text-xs font-black transition-all cursor-pointer ${
+                    className={`py-2 px-3 rounded-xl text-xs transition-all cursor-pointer ${
                       newScope === "team"
-                        ? "bg-primary text-primary-foreground border-primary shadow-xs"
-                        : "bg-card border-border/60 text-muted-foreground hover:bg-muted"
+                        ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                        : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
                     }`}
                   >
                     👥 {currentTeam?.teamName || "この編成"} のみ
@@ -935,10 +935,10 @@ export default function LiffRulesPage() {
                   <button
                     type="button"
                     onClick={() => setNewScope("organization")}
-                    className={`py-2 px-3 rounded-xl border text-xs font-black transition-all cursor-pointer ${
+                    className={`py-2 px-3 rounded-xl text-xs transition-all cursor-pointer ${
                       newScope === "organization"
-                        ? "bg-primary text-primary-foreground border-primary shadow-xs"
-                        : "bg-card border-border/60 text-muted-foreground hover:bg-muted"
+                        ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                        : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
                     }`}
                   >
                     🏢 チーム全体（共通）
@@ -1168,7 +1168,7 @@ export default function LiffRulesPage() {
           >
             <div className="flex items-center justify-between border-b border-border/60 pb-3">
               <div className="flex items-center gap-2">
-                <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
+                <span className="w-8 h-8 rounded-xl bg-amber-500/12 text-amber-600 dark:text-amber-400 flex items-center justify-center font-black">
                   <Pencil className="w-4 h-4" />
                 </span>
                 <div>
@@ -1198,13 +1198,13 @@ export default function LiffRulesPage() {
                 onClick={() => setEditIsImportant(!editIsImportant)}
                 className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 select-none ${
                   editIsImportant
-                    ? "bg-primary/10 border-primary text-primary"
+                    ? "bg-amber-500/12 border-amber-500/40 text-amber-700 dark:text-amber-300"
                     : "bg-muted/35 border-border/60 text-muted-foreground hover:bg-muted"
                 }`}
               >
                 <div className="flex items-center gap-2.5">
                   <span className={`w-7 h-7 rounded-xl flex items-center justify-center text-sm font-black ${
-                    editIsImportant ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                    editIsImportant ? "bg-amber-500/20 text-amber-700 dark:text-amber-300" : "bg-muted text-muted-foreground"
                   }`}>
                     <Flame className="w-4 h-4" />
                   </span>
@@ -1226,14 +1226,14 @@ export default function LiffRulesPage() {
               {/* スコープ選択 */}
               <div className="space-y-1.5">
                 <label className="text-muted-foreground">公開範囲</label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 gap-1 bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl border border-border/60">
                   <button
                     type="button"
                     onClick={() => setEditScope("team")}
-                    className={`py-2 px-3 rounded-xl border text-xs font-black transition-all cursor-pointer ${
+                    className={`py-2 px-3 rounded-xl text-xs transition-all cursor-pointer ${
                       editScope === "team"
-                        ? "bg-primary text-primary-foreground border-primary shadow-xs"
-                        : "bg-card border-border/60 text-muted-foreground hover:bg-muted"
+                        ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                        : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
                     }`}
                   >
                     👥 {currentTeam?.teamName || "この編成"} のみ
@@ -1241,10 +1241,10 @@ export default function LiffRulesPage() {
                   <button
                     type="button"
                     onClick={() => setEditScope("organization")}
-                    className={`py-2 px-3 rounded-xl border text-xs font-black transition-all cursor-pointer ${
+                    className={`py-2 px-3 rounded-xl text-xs transition-all cursor-pointer ${
                       editScope === "organization"
-                        ? "bg-primary text-primary-foreground border-primary shadow-xs"
-                        : "bg-card border-border/60 text-muted-foreground hover:bg-muted"
+                        ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                        : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
                     }`}
                   >
                     🏢 チーム全体（共通）

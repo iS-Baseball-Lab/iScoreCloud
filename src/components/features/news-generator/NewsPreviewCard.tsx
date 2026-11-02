@@ -64,7 +64,7 @@ export function NewsPreviewCard({
           variant="outline"
         >
           {copied ? (
-            <Check className="h-8 w-8 text-primary shrink-0 animate-in zoom-in-50 duration-200" />
+            <Check className="h-8 w-8 text-emerald-600 dark:text-emerald-400 shrink-0 animate-in zoom-in-50 duration-200" />
           ) : (
             <Copy className="h-8 w-8 shrink-0" />
           )}

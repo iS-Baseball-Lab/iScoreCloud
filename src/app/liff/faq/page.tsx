@@ -235,7 +235,7 @@ export default function LiffFaqPage() {
           title="よくある質問 (Q&A)"
           subtitle="保護者・選手の疑問を即座に解決"
           icon={
-            <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
+            <span className="w-8 h-8 rounded-xl bg-amber-500/12 text-amber-600 dark:text-amber-400 flex items-center justify-center font-black">
               <HelpCircle className="w-4 h-4" />
             </span>
           }
@@ -251,10 +251,10 @@ export default function LiffFaqPage() {
           <button
             type="button"
             onClick={() => setSelectedScope("all")}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all cursor-pointer ${
+            className={`px-3.5 py-1.5 rounded-xl text-xs shrink-0 transition-all cursor-pointer ${
               selectedScope === "all"
-                ? "bg-primary text-primary-foreground shadow-xs"
-                : "bg-card border border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
+                ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
+                : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
             }`}
           >
             すべて ({faqs.length})
@@ -262,10 +262,10 @@ export default function LiffFaqPage() {
           <button
             type="button"
             onClick={() => setSelectedScope("organization")}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
+            className={`px-3.5 py-1.5 rounded-xl text-xs shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
               selectedScope === "organization"
-                ? "bg-primary text-primary-foreground shadow-xs"
-                : "bg-card border border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
+                ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
+                : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
             }`}
           >
             <Building2 className="w-3.5 h-3.5" />
@@ -274,10 +274,10 @@ export default function LiffFaqPage() {
           <button
             type="button"
             onClick={() => setSelectedScope("team")}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
+            className={`px-3.5 py-1.5 rounded-xl text-xs shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
               selectedScope === "team"
-                ? "bg-primary text-primary-foreground shadow-xs"
-                : "bg-card border border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
+                ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
+                : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
             }`}
           >
             <Users2 className="w-3.5 h-3.5" />
@@ -328,10 +328,10 @@ export default function LiffFaqPage() {
               key={cat.id}
               type="button"
               onClick={() => setSelectedCategory(cat.id)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all ${
+              className={`px-3 py-1.5 rounded-xl text-xs shrink-0 transition-all cursor-pointer ${
                 selectedCategory === cat.id
-                  ? "bg-primary text-primary-foreground shadow-xs"
-                  : "bg-card border border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
+                  : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
               }`}
             >
               {cat.label}
@@ -347,7 +347,7 @@ export default function LiffFaqPage() {
           </div>
         ) : filteredFaqs.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center rounded-2xl border border-border/60 bg-card shadow-xs p-6 space-y-3">
-            <div className="w-12 h-12 rounded-2xl bg-muted flex items-center justify-center text-muted-foreground">
+            <div className="w-12 h-12 rounded-2xl bg-amber-500/12 text-amber-600 dark:text-amber-400 flex items-center justify-center">
               <MessageCircleQuestion className="w-6 h-6" />
             </div>
             <div className="space-y-1">
@@ -365,8 +365,8 @@ export default function LiffFaqPage() {
               return (
                 <div
                   key={faq.id}
-                  className={`rounded-2xl border bg-card shadow-xs overflow-hidden transition-all hover:border-primary/40 ${
-                    isOpen ? "border-primary/40" : "border-border/60"
+                  className={`rounded-2xl border border-border/60 bg-card shadow-xs overflow-hidden transition-all hover:border-primary/40 ${
+                    isOpen ? "ring-1 ring-primary/25" : ""
                   }`}
                 >
                   <div className="w-full p-4 text-left flex items-start justify-between gap-3">
@@ -375,7 +375,7 @@ export default function LiffFaqPage() {
                       onClick={() => toggleAccordion(faq.id)}
                       className="flex items-start gap-2.5 min-w-0 flex-1 focus:outline-hidden text-left"
                     >
-                      <span className="w-6 h-6 rounded-lg bg-primary/10 text-primary font-black text-xs flex items-center justify-center shrink-0 mt-0.5">
+                      <span className="w-6 h-6 rounded-lg bg-primary/12 text-primary font-black text-xs flex items-center justify-center shrink-0 mt-0.5">
                         Q
                       </span>
                       <div className="space-y-1.5 min-w-0 flex-1">
@@ -421,7 +421,7 @@ export default function LiffFaqPage() {
                         type="button"
                         onClick={() => toggleAccordion(faq.id)}
                         className={`w-6 h-6 rounded-full bg-muted flex items-center justify-center transition-transform duration-200 ${
-                          isOpen ? "rotate-180 bg-primary/10 text-primary" : "text-muted-foreground"
+                          isOpen ? "rotate-180 bg-primary/12 text-primary" : "text-muted-foreground"
                         }`}
                       >
                         <ChevronDown className="w-3.5 h-3.5" />
@@ -430,9 +430,9 @@ export default function LiffFaqPage() {
                   </div>
 
                   {isOpen && (
-                    <div className="px-4 pb-4 pt-1 border-t border-border/60 bg-muted/35 animate-in fade-in duration-200">
-                      <div className="flex items-start gap-2.5 mt-2">
-                        <span className="w-6 h-6 rounded-lg bg-primary/10 text-primary font-black text-xs flex items-center justify-center shrink-0 mt-0.5">
+                    <div className="px-4 pb-4 pt-2 border-t border-border/60 border-l-4 border-l-emerald-500/60 bg-emerald-500/[0.03] dark:bg-emerald-500/[0.06] animate-in fade-in duration-200">
+                      <div className="flex items-start gap-2.5 mt-1.5">
+                        <span className="w-6 h-6 rounded-lg bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 font-black text-xs flex items-center justify-center shrink-0 mt-0.5">
                           A
                         </span>
                         <p className="text-xs text-foreground/90 font-bold leading-relaxed whitespace-pre-wrap flex-1">
@@ -461,7 +461,7 @@ export default function LiffFaqPage() {
               
               <div className="flex items-center justify-between pb-3 border-b border-border/60 sticky top-0 bg-card z-10">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-2xl bg-primary/10 text-primary flex items-center justify-center font-black">
+                  <div className="w-9 h-9 rounded-2xl bg-amber-500/12 text-amber-600 dark:text-amber-400 flex items-center justify-center font-black">
                     <Plus className="w-5 h-5" />
                   </div>
                   <div>
@@ -612,7 +612,7 @@ export default function LiffFaqPage() {
               
               <div className="flex items-center justify-between pb-3 border-b border-border/60 sticky top-0 bg-card z-10">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-2xl bg-primary/10 text-primary flex items-center justify-center font-black">
+                  <div className="w-9 h-9 rounded-2xl bg-amber-500/12 text-amber-600 dark:text-amber-400 flex items-center justify-center font-black">
                     <Pencil className="w-4 h-4" />
                   </div>
                   <div>

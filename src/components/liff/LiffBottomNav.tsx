@@ -49,6 +49,7 @@ interface MenuItem {
   href: string;
   icon: React.ComponentType<{ className?: string }>;
   colorClass: string;
+  hoverBorderClass?: string;
   category: MenuCategory;
   subGroup?: MenuSubGroup;
   fullWidth?: boolean;
@@ -66,19 +67,20 @@ const CATEGORY_SECTIONS: Record<
     key: MenuSubGroup;
     label: string;
     icon: React.ComponentType<{ className?: string }>;
+    iconTextClass: string;
   }>
 > = {
   schedule: [
-    { key: "match_team", label: "試合・チーム", icon: Trophy },
-    { key: "schedule_access", label: "予定・配車・施設", icon: Calendar },
+    { key: "match_team", label: "試合・チーム", icon: Trophy, iconTextClass: "text-primary" },
+    { key: "schedule_access", label: "予定・配車・施設", icon: Calendar, iconTextClass: "text-teal-600 dark:text-teal-400" },
   ],
   manual: [
-    { key: "docs", label: "資料・マニュアル", icon: BookOpen },
-    { key: "tools", label: "便利ツール", icon: Wrench },
+    { key: "docs", label: "資料・マニュアル", icon: BookOpen, iconTextClass: "text-amber-600 dark:text-amber-400" },
+    { key: "tools", label: "便利ツール", icon: Wrench, iconTextClass: "text-primary" },
   ],
   settings: [
-    { key: "settings_general", label: "設定", icon: Settings },
-    { key: "settings_admin", label: "管理", icon: ShieldCheck },
+    { key: "settings_general", label: "設定", icon: Settings, iconTextClass: "text-slate-600 dark:text-slate-400" },
+    { key: "settings_admin", label: "管理", icon: ShieldCheck, iconTextClass: "text-slate-600 dark:text-slate-400" },
   ],
 };
 
@@ -90,6 +92,7 @@ const MENU_ITEMS: MenuItem[] = [
     href: "/liff/matches",
     icon: Video,
     colorClass: "bg-primary/12 text-primary",
+    hoverBorderClass: "hover:border-primary/40",
     category: "schedule" as const,
     subGroup: "match_team",
   },
@@ -99,6 +102,7 @@ const MENU_ITEMS: MenuItem[] = [
     href: "/liff/matches/lineup",
     icon: Users,
     colorClass: "bg-primary/12 text-primary",
+    hoverBorderClass: "hover:border-primary/40",
     category: "schedule" as const,
     subGroup: "match_team",
   },
@@ -108,6 +112,7 @@ const MENU_ITEMS: MenuItem[] = [
     href: "/liff/stats",
     icon: Trophy,
     colorClass: "bg-primary/12 text-primary",
+    hoverBorderClass: "hover:border-primary/40",
     category: "schedule" as const,
     subGroup: "match_team",
   },
@@ -117,6 +122,7 @@ const MENU_ITEMS: MenuItem[] = [
     href: "/liff/players",
     icon: IdCard,
     colorClass: "bg-primary/12 text-primary",
+    hoverBorderClass: "hover:border-primary/40",
     category: "schedule" as const,
     subGroup: "match_team",
   },
@@ -127,7 +133,8 @@ const MENU_ITEMS: MenuItem[] = [
     subtitle: "当番・イベントスケジュール",
     href: "/liff/schedule",
     icon: Calendar,
-    colorClass: "bg-primary/12 text-primary",
+    colorClass: "bg-teal-500/12 text-teal-600 dark:text-teal-400",
+    hoverBorderClass: "hover:border-teal-500/40",
     category: "schedule" as const,
     subGroup: "schedule_access",
   },
@@ -136,7 +143,8 @@ const MENU_ITEMS: MenuItem[] = [
     subtitle: "当番集計・出欠確認",
     href: "/liff/schedule/board",
     icon: ClipboardCheck,
-    colorClass: "bg-primary/12 text-primary",
+    colorClass: "bg-teal-500/12 text-teal-600 dark:text-teal-400",
+    hoverBorderClass: "hover:border-teal-500/40",
     category: "schedule" as const,
     subGroup: "schedule_access",
   },
@@ -145,7 +153,8 @@ const MENU_ITEMS: MenuItem[] = [
     subtitle: "乗車割り・集合時間",
     href: "/liff/carpool",
     icon: Car,
-    colorClass: "bg-primary/12 text-primary",
+    colorClass: "bg-teal-500/12 text-teal-600 dark:text-teal-400",
+    hoverBorderClass: "hover:border-teal-500/40",
     category: "schedule" as const,
     subGroup: "schedule_access",
   },
@@ -154,7 +163,8 @@ const MENU_ITEMS: MenuItem[] = [
     subtitle: "アクセス・駐車場",
     href: "/liff/grounds",
     icon: MapPin,
-    colorClass: "bg-primary/12 text-primary",
+    colorClass: "bg-teal-500/12 text-teal-600 dark:text-teal-400",
+    hoverBorderClass: "hover:border-teal-500/40",
     category: "schedule" as const,
     subGroup: "schedule_access",
   },
@@ -165,7 +175,8 @@ const MENU_ITEMS: MenuItem[] = [
     subtitle: "試合・配車・活動心得",
     href: "/liff/rules",
     icon: AlertTriangle,
-    colorClass: "bg-primary/12 text-primary",
+    colorClass: "bg-amber-500/12 text-amber-600 dark:text-amber-400",
+    hoverBorderClass: "hover:border-amber-500/40",
     category: "manual" as const,
     subGroup: "docs",
   },
@@ -174,7 +185,8 @@ const MENU_ITEMS: MenuItem[] = [
     subtitle: "規約・配車マニュアル",
     href: "/liff/documents",
     icon: FileText,
-    colorClass: "bg-primary/12 text-primary",
+    colorClass: "bg-amber-500/12 text-amber-600 dark:text-amber-400",
+    hoverBorderClass: "hover:border-amber-500/40",
     category: "manual" as const,
     subGroup: "docs",
   },
@@ -183,7 +195,8 @@ const MENU_ITEMS: MenuItem[] = [
     subtitle: "雨天判断・Q&A",
     href: "/liff/faq",
     icon: HelpCircle,
-    colorClass: "bg-primary/12 text-primary",
+    colorClass: "bg-amber-500/12 text-amber-600 dark:text-amber-400",
+    hoverBorderClass: "hover:border-amber-500/40",
     category: "manual" as const,
     subGroup: "docs",
   },
@@ -192,7 +205,8 @@ const MENU_ITEMS: MenuItem[] = [
     subtitle: "連盟・大会速報・SNS",
     href: "/liff/links",
     icon: Link2,
-    colorClass: "bg-primary/12 text-primary",
+    colorClass: "bg-amber-500/12 text-amber-600 dark:text-amber-400",
+    hoverBorderClass: "hover:border-amber-500/40",
     category: "manual" as const,
     subGroup: "docs",
   },
@@ -202,6 +216,7 @@ const MENU_ITEMS: MenuItem[] = [
     href: "/liff/tools/scorebook-import",
     icon: ScanLine,
     colorClass: "bg-primary/12 text-primary",
+    hoverBorderClass: "hover:border-primary/40",
     category: "manual" as const,
     subGroup: "tools",
   },
@@ -211,6 +226,7 @@ const MENU_ITEMS: MenuItem[] = [
     href: "/liff/tools/news-generator",
     icon: Megaphone,
     colorClass: "bg-primary/12 text-primary",
+    hoverBorderClass: "hover:border-primary/40",
     category: "manual" as const,
     subGroup: "tools",
   },
@@ -220,6 +236,7 @@ const MENU_ITEMS: MenuItem[] = [
     href: "/liff/tools/cheer-songs",
     icon: Music,
     colorClass: "bg-primary/12 text-primary",
+    hoverBorderClass: "hover:border-primary/40",
     category: "manual" as const,
     subGroup: "tools",
   },
@@ -228,7 +245,8 @@ const MENU_ITEMS: MenuItem[] = [
     subtitle: "配車割り作成支援 (検討中)",
     href: "/liff/tools/carpool-generator",
     icon: Wand2,
-    colorClass: "bg-primary/12 text-primary",
+    colorClass: "bg-teal-500/12 text-teal-600 dark:text-teal-400",
+    hoverBorderClass: "hover:border-teal-500/40",
     category: "manual" as const,
     subGroup: "tools",
   },
@@ -239,7 +257,8 @@ const MENU_ITEMS: MenuItem[] = [
     subtitle: "表示名・お子様紐付け・マイカー",
     href: "/liff/profile",
     icon: UserCircle,
-    colorClass: "bg-primary/12 text-primary",
+    colorClass: "bg-slate-500/12 text-slate-700 dark:text-slate-300",
+    hoverBorderClass: "hover:border-slate-500/40",
     category: "settings" as const,
     subGroup: "settings_general",
   },
@@ -248,7 +267,8 @@ const MENU_ITEMS: MenuItem[] = [
     subtitle: "クイックメニュー・カラー・表示設定",
     href: "/liff/settings",
     icon: Settings,
-    colorClass: "bg-primary/12 text-primary",
+    colorClass: "bg-slate-500/12 text-slate-700 dark:text-slate-300",
+    hoverBorderClass: "hover:border-slate-500/40",
     category: "settings" as const,
     subGroup: "settings_general",
   },
@@ -257,7 +277,8 @@ const MENU_ITEMS: MenuItem[] = [
     subtitle: "チーム情報・活動班・マスタ管理",
     href: "/liff/settings/team",
     icon: SlidersHorizontal,
-    colorClass: "bg-primary/12 text-primary",
+    colorClass: "bg-slate-500/12 text-slate-700 dark:text-slate-300",
+    hoverBorderClass: "hover:border-slate-500/40",
     category: "settings" as const,
     subGroup: "settings_general",
   },
@@ -266,7 +287,8 @@ const MENU_ITEMS: MenuItem[] = [
     subtitle: "試合規定・記号早見表・AI読取",
     href: "/liff/settings/score",
     icon: BookOpen,
-    colorClass: "bg-primary/12 text-primary",
+    colorClass: "bg-slate-500/12 text-slate-700 dark:text-slate-300",
+    hoverBorderClass: "hover:border-slate-500/40",
     category: "settings" as const,
     subGroup: "settings_general",
   },
@@ -277,7 +299,8 @@ const MENU_ITEMS: MenuItem[] = [
     subtitle: "参加承認・メンバー管理・招待",
     href: "/liff/admin",
     icon: ShieldCheck,
-    colorClass: "bg-primary/12 text-primary",
+    colorClass: "bg-slate-500/12 text-slate-700 dark:text-slate-300",
+    hoverBorderClass: "hover:border-slate-500/40",
     category: "settings" as const,
     subGroup: "settings_admin",
   },
@@ -474,7 +497,7 @@ export function LiffBottomNav() {
               </div>
 
               {/* 🏷️ 均等3分割セグメントタブ（横スクロール一切なし・全画面幅フィット） */}
-              <div className="grid grid-cols-3 gap-1 p-1 bg-card rounded-2xl border border-border/60 shadow-xs">
+              <div className="grid grid-cols-3 gap-1 p-1 bg-muted/80 dark:bg-muted/50 rounded-2xl border border-border/60">
                 {MENU_TABS.map((tab) => {
                   const isSelected = selectedCategory === tab.id;
                   const TabIcon = tab.icon;
@@ -485,19 +508,19 @@ export function LiffBottomNav() {
                       key={tab.id}
                       type="button"
                       onClick={() => setSelectedCategory(tab.id)}
-                      className={`flex items-center justify-center gap-1.5 py-2 px-1 rounded-xl text-xs transition-all active:scale-95 ${
+                      className={`flex items-center justify-center gap-1.5 py-2 px-1 rounded-xl border text-xs transition-all active:scale-95 ${
                         isSelected
-                          ? "bg-primary text-primary-foreground shadow-xs font-black"
-                          : "text-muted-foreground hover:text-foreground hover:bg-muted/60 font-bold"
+                          ? "bg-card text-foreground border-border/50 shadow-sm font-black"
+                          : "border-transparent text-muted-foreground hover:text-foreground font-bold"
                       }`}
                     >
-                      <TabIcon className="w-3.5 h-3.5 shrink-0" />
+                      <TabIcon className={`w-3.5 h-3.5 shrink-0 ${isSelected ? "text-primary" : ""}`} />
                       <span className="truncate">{tab.label}</span>
                       <span
                         className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
                           isSelected 
-                            ? "bg-primary-foreground/20 text-primary-foreground" 
-                            : "bg-muted text-muted-foreground"
+                            ? "bg-primary/12 text-primary font-black" 
+                            : "bg-card/80 text-muted-foreground"
                         }`}
                       >
                         {count}
@@ -517,7 +540,7 @@ export function LiffBottomNav() {
                   return (
                     <div key={section.key} className="space-y-2">
                       <div className="flex items-center gap-1.5 px-1">
-                        <SectionIcon className="w-3.5 h-3.5 text-primary" />
+                        <SectionIcon className={`w-3.5 h-3.5 ${section.iconTextClass}`} />
                         <span className="text-[11px] font-black tracking-tight text-muted-foreground">
                           {section.label}
                         </span>
@@ -532,7 +555,7 @@ export function LiffBottomNav() {
                               key={item.href}
                               href={item.href}
                               onClick={() => setIsOtherMenuOpen(false)}
-                              className={`flex items-center gap-3 p-3 rounded-2xl border border-border/60 bg-card shadow-xs hover:border-primary/40 transition-all group active:scale-95 ${
+                              className={`flex items-center gap-3 p-3 rounded-2xl border border-border/60 bg-card shadow-xs ${item.hoverBorderClass ?? "hover:border-primary/40"} transition-all group active:scale-95 ${
                                 isFullWidth ? "col-span-2" : ""
                               }`}
                             >

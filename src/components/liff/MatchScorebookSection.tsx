@@ -395,61 +395,83 @@ export function MatchScorebookSection({
             </p>
           </div>
         ) : !topModel && !bottomModel ? null : (
-          <div className="p-3 sm:p-3.5 space-y-3">
-            {/* ━━━ 上段コントロール：先攻（表） ⇄ 後攻（裏） シート切替 ━━━ */}
-            <div className="grid grid-cols-2 gap-1.5 p-1 rounded-xl bg-muted/50 border border-border/60">
-              <button
-                type="button"
-                disabled={!topModel}
-                onClick={() => setActiveSide("top")}
-                className={cn(
-                  "py-2 px-2.5 rounded-lg text-xs font-black transition-all flex items-center justify-between gap-1.5 cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed",
-                  activeSide === "top" && topModel
-                    ? "bg-card text-primary shadow-xs border border-border/60"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <span className="truncate">
-                  先攻: {matchMeta.topTeamName}
-                </span>
-                <span
-                  className={cn(
-                    "font-mono text-[10px] px-1.5 py-0.5 rounded shrink-0",
-                    activeSide === "top" && topModel
-                      ? "bg-primary/10 text-primary"
-                      : "bg-muted text-muted-foreground"
-                  )}
-                >
-                  {topModel ? `${topModel.totals.runs}点` : "未取込"}
-                </span>
-              </button>
-
-              <button
-                type="button"
-                disabled={!bottomModel}
-                onClick={() => setActiveSide("bottom")}
-                className={cn(
-                  "py-2 px-2.5 rounded-lg text-xs font-black transition-all flex items-center justify-between gap-1.5 cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed",
-                  activeSide === "bottom" && bottomModel
-                    ? "bg-card text-primary shadow-xs border border-border/60"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <span className="truncate">
-                  後攻: {matchMeta.bottomTeamName}
-                </span>
-                <span
-                  className={cn(
-                    "font-mono text-[10px] px-1.5 py-0.5 rounded shrink-0",
-                    activeSide === "bottom" && bottomModel
-                      ? "bg-primary/10 text-primary"
-                      : "bg-muted text-muted-foreground"
-                  )}
-                >
-                  {bottomModel ? `${bottomModel.totals.runs}点` : "未取込"}
-                </span>
-              </button>
+          <>
+            {/* カードヘッダー帯 */}
+            <div className="px-3.5 py-2.5 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 text-[11px] font-black text-foreground">
+                <FileSpreadsheet className="w-3.5 h-3.5 text-primary shrink-0" />
+                <span>デジタル清書スコアシート</span>
+              </div>
+              <span className="text-[10px] font-bold text-muted-foreground">
+                {hasBothSides
+                  ? "先攻・後攻 両面データ"
+                  : activeSide === "top"
+                  ? "先攻シート"
+                  : "後攻シート"}
+              </span>
             </div>
+
+            <div className="p-3 sm:p-3.5 space-y-3">
+              {/* ━━━ 上段コントロール：先攻（表） ⇄ 後攻（裏） シート切替 ━━━ */}
+              <div className="grid grid-cols-2 gap-1.5 bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl border border-border/60">
+                <button
+                  type="button"
+                  disabled={!topModel}
+                  onClick={() => setActiveSide("top")}
+                  className={cn(
+                    "py-2 px-2.5 rounded-xl text-xs transition-all flex items-center justify-between gap-1.5 cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed",
+                    activeSide === "top" && topModel
+                      ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                      : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
+                  )}
+                >
+                  <span className="truncate">
+                    <span className={activeSide === "top" && topModel ? "text-primary mr-1" : "mr-1"}>
+                      先攻:
+                    </span>
+                    {matchMeta.topTeamName}
+                  </span>
+                  <span
+                    className={cn(
+                      "font-mono text-[10px] px-1.5 py-0.5 rounded shrink-0",
+                      activeSide === "top" && topModel
+                        ? "bg-primary/12 text-primary font-black"
+                        : "bg-muted text-muted-foreground"
+                    )}
+                  >
+                    {topModel ? `${topModel.totals.runs}点` : "未取込"}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={!bottomModel}
+                  onClick={() => setActiveSide("bottom")}
+                  className={cn(
+                    "py-2 px-2.5 rounded-xl text-xs transition-all flex items-center justify-between gap-1.5 cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed",
+                    activeSide === "bottom" && bottomModel
+                      ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                      : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
+                  )}
+                >
+                  <span className="truncate">
+                    <span className={activeSide === "bottom" && bottomModel ? "text-primary mr-1" : "mr-1"}>
+                      後攻:
+                    </span>
+                    {matchMeta.bottomTeamName}
+                  </span>
+                  <span
+                    className={cn(
+                      "font-mono text-[10px] px-1.5 py-0.5 rounded shrink-0",
+                      activeSide === "bottom" && bottomModel
+                        ? "bg-primary/12 text-primary font-black"
+                        : "bg-muted text-muted-foreground"
+                    )}
+                  >
+                    {bottomModel ? `${bottomModel.totals.runs}点` : "未取込"}
+                  </span>
+                </button>
+              </div>
 
             {/* ━━━ スコアブックSVGシート本体（横スクロール＋タップ拡大対応） ━━━ */}
             {activeModel && (
@@ -485,7 +507,7 @@ export function MatchScorebookSection({
                       setFullscreenZoom(1);
                       setIsFullscreenOpen(true);
                     }}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 font-black text-[10px] shadow-2xs active:scale-95 transition-all cursor-pointer shrink-0"
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary/12 text-primary border border-primary/35 hover:bg-primary/18 font-black text-[10px] shadow-2xs active:scale-95 transition-all cursor-pointer shrink-0"
                   >
                     <Maximize2 className="w-3 h-3" />
                     <span>拡大表示</span>
@@ -569,6 +591,7 @@ export function MatchScorebookSection({
               </button>
             </div>
           </div>
+          </>
         )}
       </div>
 
@@ -582,19 +605,19 @@ export function MatchScorebookSection({
         >
           {/* 上部ツールバー */}
           <div className="px-3 py-2.5 bg-card border-b border-border/60 flex items-center justify-between gap-2 shrink-0">
-            <div className="flex items-center gap-1.5 min-w-0">
+            <div className="inline-flex items-center gap-1 bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl border border-border/60 min-w-0">
               {topModel && (
                 <button
                   type="button"
                   onClick={() => setActiveSide("top")}
                   className={cn(
-                    "px-2.5 py-1 rounded-lg text-[11px] font-black transition-all cursor-pointer",
+                    "px-2.5 py-1 rounded-xl text-[11px] transition-all cursor-pointer",
                     activeSide === "top"
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted/50 text-muted-foreground border border-border/60 hover:text-foreground"
+                      ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                      : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
                   )}
                 >
-                  先攻
+                  <span className={activeSide === "top" ? "text-primary" : ""}>先攻</span>
                 </button>
               )}
               {bottomModel && (
@@ -602,13 +625,13 @@ export function MatchScorebookSection({
                   type="button"
                   onClick={() => setActiveSide("bottom")}
                   className={cn(
-                    "px-2.5 py-1 rounded-lg text-[11px] font-black transition-all cursor-pointer",
+                    "px-2.5 py-1 rounded-xl text-[11px] transition-all cursor-pointer",
                     activeSide === "bottom"
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted/50 text-muted-foreground border border-border/60 hover:text-foreground"
+                      ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                      : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
                   )}
                 >
-                  後攻
+                  <span className={activeSide === "bottom" ? "text-primary" : ""}>後攻</span>
                 </button>
               )}
             </div>

@@ -184,33 +184,63 @@ interface CategoryStyleDef {
   pillSoft: string;
   barSolid: string;
   dot: string;
-  filterActive: string;
+  codeText: string;
   ring: string;
 }
 
-const ACTIVE_CATEGORY_STYLE: CategoryStyleDef = {
-  stageBg: "bg-primary/10 border-b border-border/60",
-  pillSolid: "bg-primary text-primary-foreground",
-  pillSoft: "bg-primary/10 text-primary border-primary/25",
-  barSolid: "bg-primary",
-  dot: "bg-primary",
-  filterActive: "bg-primary text-primary-foreground border-primary shadow-xs",
-  ring: "ring-primary/30",
-};
-
 const CATEGORY_STYLES: Record<RosterCategory, CategoryStyleDef> = {
-  投手: ACTIVE_CATEGORY_STYLE,
-  捕手: ACTIVE_CATEGORY_STYLE,
-  内野手: ACTIVE_CATEGORY_STYLE,
-  外野手: ACTIVE_CATEGORY_STYLE,
-  DH: ACTIVE_CATEGORY_STYLE,
+  投手: {
+    stageBg: "bg-rose-500/[0.06] dark:bg-rose-500/[0.10] border-b border-border/50",
+    pillSolid: "bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-500/30",
+    pillSoft: "bg-rose-500/12 text-rose-700 dark:text-rose-300 border-rose-500/25",
+    barSolid: "bg-rose-500",
+    dot: "bg-rose-500",
+    codeText: "text-rose-600/85 dark:text-rose-300/85",
+    ring: "ring-rose-500/25",
+  },
+  捕手: {
+    stageBg: "bg-sky-500/[0.06] dark:bg-sky-500/[0.10] border-b border-border/50",
+    pillSolid: "bg-sky-500/15 text-sky-700 dark:text-sky-300 border border-sky-500/30",
+    pillSoft: "bg-sky-500/12 text-sky-700 dark:text-sky-300 border-sky-500/25",
+    barSolid: "bg-sky-500",
+    dot: "bg-sky-500",
+    codeText: "text-sky-600/85 dark:text-sky-300/85",
+    ring: "ring-sky-500/25",
+  },
+  内野手: {
+    stageBg: "bg-amber-500/[0.06] dark:bg-amber-500/[0.10] border-b border-border/50",
+    pillSolid: "bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30",
+    pillSoft: "bg-amber-500/12 text-amber-700 dark:text-amber-300 border-amber-500/25",
+    barSolid: "bg-amber-500",
+    dot: "bg-amber-500",
+    codeText: "text-amber-700/85 dark:text-amber-300/85",
+    ring: "ring-amber-500/25",
+  },
+  外野手: {
+    stageBg: "bg-emerald-500/[0.06] dark:bg-emerald-500/[0.10] border-b border-border/50",
+    pillSolid: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30",
+    pillSoft: "bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 border-emerald-500/25",
+    barSolid: "bg-emerald-500",
+    dot: "bg-emerald-500",
+    codeText: "text-emerald-700/85 dark:text-emerald-300/85",
+    ring: "ring-emerald-500/25",
+  },
+  DH: {
+    stageBg: "bg-purple-500/[0.06] dark:bg-purple-500/[0.10] border-b border-border/50",
+    pillSolid: "bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/30",
+    pillSoft: "bg-purple-500/12 text-purple-700 dark:text-purple-300 border-purple-500/25",
+    barSolid: "bg-purple-500",
+    dot: "bg-purple-500",
+    codeText: "text-purple-700/85 dark:text-purple-300/85",
+    ring: "ring-purple-500/25",
+  },
   未設定: {
-    stageBg: "bg-muted/50 border-b border-border/60",
+    stageBg: "bg-muted/50 border-b border-border/50",
     pillSolid: "bg-muted text-muted-foreground border border-border/60",
     pillSoft: "bg-muted/50 text-muted-foreground border-border/60",
     barSolid: "bg-muted-foreground/40",
     dot: "bg-muted-foreground",
-    filterActive: "bg-primary text-primary-foreground border-primary shadow-xs",
+    codeText: "text-muted-foreground",
     ring: "ring-border",
   },
 };
@@ -364,7 +394,7 @@ export default function LiffPlayersDirectoryPage() {
           title="選手名鑑"
           subtitle={`${seasonYear} OFFICIAL ROSTER`}
           icon={
-            <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
+            <span className="w-8 h-8 rounded-xl bg-primary/12 text-primary flex items-center justify-center font-black">
               <IdCard className="w-4.5 h-4.5" />
             </span>
           }
@@ -391,112 +421,113 @@ export default function LiffPlayersDirectoryPage() {
         />
 
         {/* ━━━ 🏟️ スタジアム風ロースターヒーローバナー ━━━ */}
-        <section className="relative overflow-hidden rounded-2xl border border-border/60 bg-card text-foreground p-4 shadow-xs space-y-3.5">
-          {/* アスレチック斜線 & ダイヤモンド装飾 */}
-          <svg
-            aria-hidden="true"
-            viewBox="0 0 160 160"
-            className="pointer-events-none absolute -right-6 -top-6 w-40 h-40 text-primary/[0.06]"
-            fill="none"
-          >
-            <rect
-              x="80"
-              y="14"
-              width="92"
-              height="92"
-              rx="10"
-              transform="rotate(45 80 14)"
-              stroke="currentColor"
-              strokeWidth="8"
-            />
-            <circle cx="80" cy="80" r="16" stroke="currentColor" strokeWidth="6" />
-          </svg>
+        <section className="relative overflow-hidden rounded-2xl border border-border/60 bg-card text-foreground shadow-xs">
+          {/* 上段ヒーローヘッダー帯 */}
+          <div className="relative p-4 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 overflow-hidden">
+            {/* アスレチック斜線 & ダイヤモンド装飾 */}
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 160 160"
+              className="pointer-events-none absolute -right-6 -top-6 w-40 h-40 text-primary/[0.07]"
+              fill="none"
+            >
+              <rect
+                x="80"
+                y="14"
+                width="92"
+                height="92"
+                rx="10"
+                transform="rotate(45 80 14)"
+                stroke="currentColor"
+                strokeWidth="8"
+              />
+              <circle cx="80" cy="80" r="16" stroke="currentColor" strokeWidth="6" />
+            </svg>
 
-          <div className="relative z-10 flex items-start justify-between gap-3">
-            <div className="min-w-0 space-y-1">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/25 text-[10px] font-black tracking-widest uppercase">
-                  {seasonYear} ROSTER
+            <div className="relative z-10 flex items-start justify-between gap-3">
+              <div className="min-w-0 space-y-1">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="px-2 py-0.5 rounded-full bg-primary/12 text-primary border border-primary/25 text-[10px] font-black tracking-widest uppercase">
+                    {seasonYear} ROSTER
+                  </span>
+                  {hasMatchAggregatedPositions && (
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 border border-emerald-500/25 text-[10px] font-black">
+                      実戦守備集計
+                    </span>
+                  )}
+                  {(isDemoMode || providerDemo) && (
+                    <span className="px-2 py-0.5 rounded-full bg-muted/50 text-muted-foreground border border-border/60 text-[10px] font-black">
+                      DEMO
+                    </span>
+                  )}
+                </div>
+
+                <h2 className="text-lg sm:text-xl font-black tracking-tight text-foreground truncate">
+                  {teamHeadline}
+                </h2>
+
+                <div className="flex items-center gap-2 text-[11px] font-bold text-muted-foreground flex-wrap">
+                  {teamSubname && teamSubname !== teamHeadline && <span>{teamSubname}</span>}
+                  {teamInfo?.managerName && (
+                    <span className="px-2 py-0.5 rounded-md bg-card border border-border/60 text-foreground text-[10px] font-bold">
+                      監督: {teamInfo.managerName}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="shrink-0 text-right bg-card border border-primary/25 rounded-2xl px-3 py-2 shadow-2xs">
+                <span className="text-[9.5px] font-bold text-primary/80 block uppercase tracking-wider">
+                  PLAYERS
                 </span>
-                {hasMatchAggregatedPositions && (
-                  <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/25 text-[10px] font-black">
-                    実戦守備集計
-                  </span>
-                )}
-                {(isDemoMode || providerDemo) && (
-                  <span className="px-2 py-0.5 rounded-full bg-muted/50 text-muted-foreground border border-border/60 text-[10px] font-black">
-                    DEMO
-                  </span>
-                )}
+                <span className="text-2xl font-black italic tracking-tighter tabular-nums text-primary leading-none">
+                  {players.length}
+                </span>
               </div>
-
-              <h2 className="text-lg sm:text-xl font-black tracking-tight text-foreground truncate">
-                {teamHeadline}
-              </h2>
-
-              <div className="flex items-center gap-2 text-[11px] font-bold text-muted-foreground flex-wrap">
-                {teamSubname && teamSubname !== teamHeadline && <span>{teamSubname}</span>}
-                {teamInfo?.managerName && (
-                  <span className="px-2 py-0.5 rounded-md bg-muted/50 border border-border/60 text-foreground text-[10px] font-bold">
-                    監督: {teamInfo.managerName}
-                  </span>
-                )}
-              </div>
-            </div>
-
-            <div className="shrink-0 text-right bg-primary/10 border border-primary/25 rounded-2xl px-3 py-2">
-              <span className="text-[9.5px] font-bold text-primary/80 block uppercase tracking-wider">
-                PLAYERS
-              </span>
-              <span className="text-2xl font-black italic tracking-tighter tabular-nums text-primary leading-none">
-                {players.length}
-              </span>
             </div>
           </div>
 
           {/* ポジション別サマリーバー（タップで即絞り込み連動） */}
-          <div className="relative z-10 grid grid-cols-4 gap-1.5 pt-1">
-            {(["投手", "捕手", "内野手", "外野手"] as const).map((cat) => {
-              const active = selectedCategory === cat;
-              const st = CATEGORY_STYLES[cat];
-              return (
-                <button
-                  key={cat}
-                  type="button"
-                  onClick={() => setSelectedCategory(active ? "すべて" : cat)}
-                  className={`py-2 px-2 rounded-2xl border text-left transition-all active:scale-95 ${
-                    active
-                      ? "bg-primary text-primary-foreground border-primary shadow-xs"
-                      : "bg-muted/35 hover:bg-muted/60 border-border/60 text-foreground"
-                  }`}
-                >
-                  <div className="flex items-center gap-1.5">
-                    <span
-                      className={`w-2 h-2 rounded-full shrink-0 ${
-                        active ? "bg-primary-foreground" : st.dot
-                      }`}
-                    />
-                    <span
-                      className={`text-[10px] font-black truncate ${
-                        active ? "text-primary-foreground/90" : "text-muted-foreground"
-                      }`}
-                    >
-                      {cat}
-                    </span>
-                  </div>
-                  <p className="text-sm font-black tabular-nums mt-0.5 pl-3.5">
-                    {categoryCounts[cat]}
-                    <span
-                      className={`text-[10px] font-bold ml-0.5 ${
-                        active ? "text-primary-foreground/80" : "text-muted-foreground"
-                      }`}
-                    >
-                      名
-                    </span>
-                  </p>
-                </button>
-              );
-            })}
+          <div className="p-3.5 bg-card">
+            <div className="grid grid-cols-4 gap-1.5">
+              {(["投手", "捕手", "内野手", "外野手"] as const).map((cat) => {
+                const active = selectedCategory === cat;
+                const st = CATEGORY_STYLES[cat];
+                return (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => setSelectedCategory(active ? "すべて" : cat)}
+                    className={`py-2 px-2 rounded-2xl border text-left transition-all active:scale-95 cursor-pointer ${
+                      active
+                        ? "bg-primary/12 text-primary border-primary/35 shadow-2xs"
+                        : "bg-muted/35 hover:bg-muted/60 border-border/60 text-foreground"
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span className={`w-2 h-2 rounded-full shrink-0 ${st.dot}`} />
+                      <span
+                        className={`text-[10px] font-black truncate ${
+                          active ? "text-primary" : "text-muted-foreground"
+                        }`}
+                      >
+                        {cat}
+                      </span>
+                    </div>
+                    <p className="text-sm font-black tabular-nums mt-0.5 pl-3.5">
+                      {categoryCounts[cat]}
+                      <span
+                        className={`text-[10px] font-bold ml-0.5 ${
+                          active ? "text-primary/80" : "text-muted-foreground"
+                        }`}
+                      >
+                        名
+                      </span>
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </section>
 
@@ -526,31 +557,31 @@ export default function LiffPlayersDirectoryPage() {
             </div>
 
             {/* 表示モード切替（カード / リスト） */}
-            <div className="flex items-center p-1 rounded-2xl bg-card border border-border/60 shadow-xs shrink-0">
+            <div className="flex items-center gap-0.5 bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl border border-border/60 shrink-0">
               <button
                 type="button"
                 onClick={() => setViewMode("grid")}
-                className={`p-2 rounded-xl transition-all active:scale-95 flex items-center gap-1 text-xs ${
+                className={`p-2 rounded-xl transition-all active:scale-95 flex items-center gap-1 text-xs cursor-pointer ${
                   viewMode === "grid"
-                    ? "bg-primary text-primary-foreground font-black shadow-2xs"
-                    : "text-muted-foreground hover:text-foreground font-bold"
+                    ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                    : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
                 }`}
                 title="カード表示"
               >
-                <LayoutGrid className="w-4 h-4" />
+                <LayoutGrid className={`w-4 h-4 ${viewMode === "grid" ? "text-primary" : ""}`} />
                 <span className="hidden min-[390px]:inline text-[11px]">カード</span>
               </button>
               <button
                 type="button"
                 onClick={() => setViewMode("list")}
-                className={`p-2 rounded-xl transition-all active:scale-95 flex items-center gap-1 text-xs ${
+                className={`p-2 rounded-xl transition-all active:scale-95 flex items-center gap-1 text-xs cursor-pointer ${
                   viewMode === "list"
-                    ? "bg-primary text-primary-foreground font-black shadow-2xs"
-                    : "text-muted-foreground hover:text-foreground font-bold"
+                    ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                    : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
                 }`}
                 title="リスト表示"
               >
-                <List className="w-4 h-4" />
+                <List className={`w-4 h-4 ${viewMode === "list" ? "text-primary" : ""}`} />
                 <span className="hidden min-[390px]:inline text-[11px]">リスト</span>
               </button>
             </div>
@@ -561,26 +592,25 @@ export default function LiffPlayersDirectoryPage() {
             {filterTabs.map((tab) => {
               const isSelected = selectedCategory === tab;
               const count = tab === "すべて" ? players.length : categoryCounts[tab];
-              const activeClass =
-                tab === "すべて"
-                  ? "bg-primary text-primary-foreground border-primary shadow-xs"
-                  : CATEGORY_STYLES[tab].filterActive;
 
               return (
                 <button
                   key={tab}
                   type="button"
                   onClick={() => setSelectedCategory(tab)}
-                  className={`px-3 py-1.5 rounded-full border text-xs whitespace-nowrap transition-all active:scale-95 flex items-center gap-1.5 shrink-0 ${
+                  className={`px-3 py-1.5 rounded-full text-xs whitespace-nowrap transition-all active:scale-95 flex items-center gap-1.5 shrink-0 cursor-pointer ${
                     isSelected
-                      ? `${activeClass} font-black`
-                      : "bg-card border-border/60 text-muted-foreground hover:text-foreground font-bold"
+                      ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
+                      : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
                   }`}
                 >
+                  {tab !== "すべて" && (
+                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${CATEGORY_STYLES[tab].dot}`} />
+                  )}
                   <span>{tab}</span>
                   <span
                     className={`text-[10px] tabular-nums px-1.5 py-0.2 rounded-full ${
-                      isSelected ? "bg-black/15 text-current" : "bg-muted text-muted-foreground"
+                      isSelected ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"
                     }`}
                   >
                     {count}
@@ -673,7 +703,7 @@ export default function LiffPlayersDirectoryPage() {
                         </AvatarFallback>
                       </Avatar>
 
-                      <span className="text-[10px] font-black tracking-widest text-primary/80 uppercase">
+                      <span className={`text-[10px] font-black tracking-widest uppercase ${style.codeText}`}>
                         {posMeta.code}
                       </span>
                     </div>
@@ -1123,7 +1153,7 @@ export default function LiffPlayersDirectoryPage() {
 
                 {/* 選手紹介メモ */}
                 {selectedPlayer.notes && (
-                  <div className="p-3.5 rounded-2xl bg-primary/10 border border-primary/25 space-y-1">
+                  <div className="p-3.5 rounded-2xl bg-card border border-border/60 border-l-4 border-l-primary shadow-2xs space-y-1">
                     <div className="flex items-center gap-1.5 text-[11px] font-black text-primary">
                       <Sparkles className="w-3.5 h-3.5" />
                       <span>PLAYER NOTE</span>

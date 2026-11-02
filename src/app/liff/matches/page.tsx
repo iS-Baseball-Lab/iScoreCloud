@@ -818,10 +818,10 @@ function MatchesContent() {
           : "OP戦";
     const matchTypeBadgeClass =
       match.matchType === "official"
-        ? "bg-primary/12 text-primary border-primary/25"
+        ? "bg-amber-500/12 text-amber-700 dark:text-amber-300 border border-amber-500/30"
         : match.matchType === "exchange"
-          ? "bg-primary/10 text-primary border-primary/20"
-          : "bg-muted/50 text-muted-foreground border-border/60";
+          ? "bg-sky-500/12 text-sky-700 dark:text-sky-300 border border-sky-500/25"
+          : "bg-muted text-muted-foreground border border-border/60";
 
     const inningsBadgeLabel = `${match.innings || 7}回制`;
     const neutralBadgeClass =
@@ -901,7 +901,7 @@ function MatchesContent() {
           <LiffPageHeader
             title="試合情報"
             icon={
-              <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
+              <span className="w-8 h-8 rounded-xl bg-primary/12 text-primary flex items-center justify-center font-black">
                 <Video className="w-4 h-4" />
               </span>
             }
@@ -1010,8 +1010,8 @@ function MatchesContent() {
 
                 {!isFutureOrScheduled && !isRainout && !isStatsLoading && (
                   hasPersonalStatsData ? (
-                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[11px] font-black leading-tight bg-primary/10 text-primary border-primary/25">
-                      <CheckCircle2 className="w-3 h-3 shrink-0" />
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[11px] font-black leading-tight bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 border-emerald-500/25">
+                      <CheckCircle2 className="w-3 h-3 shrink-0 text-emerald-600 dark:text-emerald-400" />
                       <span>スコア取込済</span>
                     </span>
                   ) : (
@@ -1064,7 +1064,7 @@ function MatchesContent() {
                 />
 
                 {/* ⚠️ 動画取り扱いに関する注意書き */}
-                <div className="p-3 rounded-2xl border border-border/60 bg-card shadow-xs flex items-start gap-2 text-[11px] text-muted-foreground font-bold">
+                <div className="p-3 rounded-2xl border border-border/60 border-l-4 border-l-primary bg-card shadow-xs flex items-start gap-2 text-[11px] text-muted-foreground font-bold">
                   <ShieldAlert className="w-4 h-4 text-primary shrink-0 mt-0.5" />
                   <p className="leading-snug">
                     本動画は選手・チームのプライバシー保護のため<strong className="text-foreground">YouTube限定公開</strong>です。SNS等への無断転載・拡散はご遠慮ください。
@@ -1117,7 +1117,7 @@ function MatchesContent() {
               <div className="overflow-x-auto scrollbar-none">
                 <table className="w-full text-center whitespace-nowrap text-xs">
                   <thead>
-                    <tr className="border-b border-border/60 bg-muted/40 text-[10px] text-muted-foreground font-black">
+                    <tr className="border-b border-border/50 bg-primary/[0.04] dark:bg-primary/[0.07] text-[10px] text-muted-foreground font-black">
                       <th className="p-2 text-left pl-3 min-w-[92px]">TEAM</th>
                       {inningsArray.map((inningNum) => (
                         <th key={inningNum} className="w-6 p-2 font-mono">
@@ -1213,30 +1213,42 @@ function MatchesContent() {
             <div className="rounded-2xl border border-border/60 bg-card p-3.5 shadow-xs space-y-3.5">
               {/* 自チーム / 相手チーム 切り替え（相手スタメンが存在する場合のみ表示） */}
               {filledOpponentStarters.length > 0 && (
-                <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-muted/50 border border-border/60">
+                <div className="grid grid-cols-2 gap-1 bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl border border-border/60">
                   <button
                     type="button"
                     onClick={() => setLineupTeamTab("my")}
                     className={cn(
-                      "py-1.5 px-2 rounded-lg text-[11px] font-black transition-all truncate cursor-pointer",
+                      "py-1.5 px-2 rounded-xl text-[11px] transition-all flex items-center justify-center gap-1.5 truncate cursor-pointer",
                       lineupTeamTab === "my"
-                        ? "bg-card text-primary shadow-xs"
-                        : "text-muted-foreground hover:text-foreground"
+                        ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                        : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
                     )}
                   >
-                    {myTeamLabel}
+                    <Shield
+                      className={cn(
+                        "w-3.5 h-3.5 shrink-0",
+                        lineupTeamTab === "my" ? "text-primary" : "text-muted-foreground"
+                      )}
+                    />
+                    <span className="truncate">{myTeamLabel}</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => setLineupTeamTab("opponent")}
                     className={cn(
-                      "py-1.5 px-2 rounded-lg text-[11px] font-black transition-all truncate cursor-pointer",
+                      "py-1.5 px-2 rounded-xl text-[11px] transition-all flex items-center justify-center gap-1.5 truncate cursor-pointer",
                       lineupTeamTab === "opponent"
-                        ? "bg-card text-primary shadow-xs"
-                        : "text-muted-foreground hover:text-foreground"
+                        ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                        : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
                     )}
                   >
-                    {match.opponent}
+                    <Users
+                      className={cn(
+                        "w-3.5 h-3.5 shrink-0",
+                        lineupTeamTab === "opponent" ? "text-primary" : "text-muted-foreground"
+                      )}
+                    />
+                    <span className="truncate">{match.opponent}</span>
                   </button>
                 </div>
               )}
@@ -1843,8 +1855,8 @@ function MatchesContent() {
                   <div className="flex items-center gap-2 shrink-0">
                     {!isFutureOrScheduled && !isRainout && !isStatsLoading && (
                       hasPersonalStatsData ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-black bg-primary/10 text-primary border-primary/25">
-                          <CheckCircle2 className="w-3 h-3 shrink-0" />
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-black bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 border-emerald-500/25">
+                          <CheckCircle2 className="w-3 h-3 shrink-0 text-emerald-600 dark:text-emerald-400" />
                           <span>取込済</span>
                         </span>
                       ) : (
@@ -2076,7 +2088,7 @@ function MatchesContent() {
           title="試合情報 & ハイライト"
           subtitle="スコア速報・スタメン登録・ハイライト動画"
           icon={
-            <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
+            <span className="w-8 h-8 rounded-xl bg-primary/12 text-primary flex items-center justify-center font-black">
               <Video className="w-4 h-4" />
             </span>
           }
@@ -2097,7 +2109,7 @@ function MatchesContent() {
         />
 
         {/* 🔒 動画取り扱い・プライバシーに関する重要なお知らせ */}
-        <div className="p-3.5 rounded-2xl border border-border/60 bg-card space-y-1.5 shadow-xs">
+        <div className="p-3.5 rounded-2xl border border-border/60 border-l-4 border-l-primary bg-card space-y-1.5 shadow-xs">
           <div className="flex items-center gap-2 text-xs font-black text-foreground">
             <ShieldAlert className="w-4 h-4 shrink-0 text-primary" />
             <span>【重要】試合動画・写真の取り扱いについて</span>
@@ -2109,53 +2121,57 @@ function MatchesContent() {
         </div>
 
         {/* フィルタータブ */}
-        <div className="grid grid-cols-4 gap-1 p-1 bg-muted/50 rounded-2xl border border-border/60">
+        <div className="grid grid-cols-4 gap-1 bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl border border-border/60">
           <button
             type="button"
             onClick={() => setFilter("all")}
-            className={`py-1.5 px-1 rounded-xl text-[11px] font-black transition-all truncate ${
+            className={cn(
+              "py-1.5 px-1 rounded-xl text-[11px] transition-all truncate cursor-pointer tabular-nums",
               filter === "all"
-                ? "bg-card text-primary shadow-xs"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
+                ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
+            )}
           >
-            すべて ({matchesList.length})
+            すべて <span className={filter === "all" ? "text-primary" : ""}>({matchesList.length})</span>
           </button>
 
           <button
             type="button"
             onClick={() => setFilter("scheduled")}
-            className={`py-1.5 px-1 rounded-xl text-[11px] font-black transition-all truncate ${
+            className={cn(
+              "py-1.5 px-1 rounded-xl text-[11px] transition-all truncate cursor-pointer tabular-nums",
               filter === "scheduled"
-                ? "bg-card text-primary shadow-xs"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
+                ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
+            )}
           >
-            ⚾ 予定 ({scheduledMatchesCount})
+            ⚾ 予定 <span className={filter === "scheduled" ? "text-primary" : ""}>({scheduledMatchesCount})</span>
           </button>
 
           <button
             type="button"
             onClick={() => setFilter("video")}
-            className={`py-1.5 px-1 rounded-xl text-[11px] font-black transition-all truncate ${
+            className={cn(
+              "py-1.5 px-1 rounded-xl text-[11px] transition-all truncate cursor-pointer tabular-nums",
               filter === "video"
-                ? "bg-card text-primary shadow-xs"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
+                ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
+            )}
           >
-            📹 動画 ({videoMatchesCount})
+            📹 動画 <span className={filter === "video" ? "text-primary" : ""}>({videoMatchesCount})</span>
           </button>
 
           <button
             type="button"
             onClick={() => setFilter("official")}
-            className={`py-1.5 px-1 rounded-xl text-[11px] font-black transition-all truncate ${
+            className={cn(
+              "py-1.5 px-1 rounded-xl text-[11px] transition-all truncate cursor-pointer",
               filter === "official"
-                ? "bg-card text-primary shadow-xs"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
+                ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
+            )}
           >
-            🏆 公式戦
+            <span className={filter === "official" ? "text-primary" : ""}>🏆</span> 公式戦
           </button>
         </div>
 
@@ -2166,15 +2182,15 @@ function MatchesContent() {
             <span>スコアブック取込状況</span>
           </span>
 
-          <div className="inline-flex items-center gap-1 p-0.5 rounded-xl bg-muted/50 border border-border/60">
+          <div className="inline-flex items-center gap-1.5 flex-wrap">
             <button
               type="button"
               onClick={() => setScorebookFilter("all")}
               className={cn(
-                "px-2.5 py-1 rounded-lg text-[10px] font-black transition-all cursor-pointer tabular-nums",
+                "px-2.5 py-1 rounded-full text-[10px] transition-all cursor-pointer tabular-nums",
                 scorebookFilter === "all"
-                  ? "bg-card text-primary shadow-2xs border border-border/60"
-                  : "text-muted-foreground hover:text-foreground"
+                  ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
+                  : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
               )}
             >
               すべて
@@ -2183,23 +2199,23 @@ function MatchesContent() {
               type="button"
               onClick={() => setScorebookFilter("imported")}
               className={cn(
-                "px-2.5 py-1 rounded-lg text-[10px] font-black transition-all cursor-pointer tabular-nums inline-flex items-center gap-1",
+                "px-2.5 py-1 rounded-full text-[10px] transition-all cursor-pointer tabular-nums inline-flex items-center gap-1",
                 scorebookFilter === "imported"
-                  ? "bg-primary text-primary-foreground shadow-2xs"
-                  : "text-muted-foreground hover:text-foreground"
+                  ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
+                  : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
               )}
             >
-              <CheckCircle2 className="w-3 h-3 shrink-0" />
+              <CheckCircle2 className="w-3 h-3 shrink-0 text-emerald-600 dark:text-emerald-400" />
               <span>取込済 ({importedMatchesCount})</span>
             </button>
             <button
               type="button"
               onClick={() => setScorebookFilter("unimported")}
               className={cn(
-                "px-2.5 py-1 rounded-lg text-[10px] font-black transition-all cursor-pointer tabular-nums",
+                "px-2.5 py-1 rounded-full text-[10px] transition-all cursor-pointer tabular-nums",
                 scorebookFilter === "unimported"
-                  ? "bg-card text-primary shadow-2xs border border-border/60"
-                  : "text-muted-foreground hover:text-foreground"
+                  ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
+                  : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
               )}
             >
               未取込 ({unimportedMatchesCount})

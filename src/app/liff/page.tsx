@@ -125,7 +125,7 @@ export default function LiffHubPage() {
             <div className="flex items-center gap-1.5">
               <Link
                 href="/liff/admin"
-                className="px-3 py-1.5 rounded-full bg-primary/10 hover:bg-primary/15 border border-primary/25 active:scale-95 text-primary font-black text-[11px] shadow-xs transition-all flex items-center gap-1 shrink-0"
+                className="px-3 py-1.5 rounded-full bg-slate-500/12 hover:bg-slate-500/20 text-slate-700 dark:text-slate-300 border border-slate-500/25 active:scale-95 font-black text-[11px] shadow-2xs transition-all flex items-center gap-1 shrink-0"
               >
                 <ShieldCheck className="w-3.5 h-3.5" />
                 <span>IT管理</span>

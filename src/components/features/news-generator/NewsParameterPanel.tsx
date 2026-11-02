@@ -244,26 +244,29 @@ export function NewsParameterPanel({
       </div>
 
       {/* 🚀 2. 速報タイプのタブ切り替え */}
-      <div className="rounded-2xl border border-border/60 bg-card shadow-xs p-2 flex gap-1">
-        {[
-          { id: "lineup", label: "スタメン速報", icon: Users },
-          { id: "inning", label: "イニング速報", icon: Activity },
-          { id: "end", label: "試合終了速報", icon: Trophy }
-        ].map((tab) => {
+      <div className="rounded-2xl border border-border/60 bg-muted/80 dark:bg-muted/50 p-1 flex gap-1">
+        {(
+          [
+            { id: "lineup", label: "スタメン速報", icon: Users },
+            { id: "inning", label: "イニング速報", icon: Activity },
+            { id: "end", label: "試合終了速報", icon: Trophy },
+          ] as const
+        ).map((tab) => {
           const Icon = tab.icon;
           const isActive = newsType === tab.id;
           return (
             <button
               key={tab.id}
-              onClick={() => setNewsType(tab.id as any)}
+              type="button"
+              onClick={() => setNewsType(tab.id)}
               className={cn(
-                "flex-1 flex flex-col sm:flex-row items-center justify-center gap-1.5 py-3 sm:py-2.5 rounded-xl font-black text-[11px] sm:text-xs transition-all duration-300 cursor-pointer",
+                "flex-1 flex flex-col sm:flex-row items-center justify-center gap-1.5 py-3 sm:py-2.5 rounded-xl border text-[11px] sm:text-xs transition-all duration-200 cursor-pointer",
                 isActive
-                  ? "bg-primary text-primary-foreground shadow-xs scale-100"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted active:scale-95"
+                  ? "bg-card text-foreground border-border/50 shadow-sm font-black"
+                  : "border-transparent text-muted-foreground hover:text-foreground font-bold active:scale-95"
               )}
             >
-              <Icon className="h-3.5 w-3.5" />
+              <Icon className={cn("h-3.5 w-3.5", isActive && "text-primary")} />
               {tab.label}
             </button>
           );

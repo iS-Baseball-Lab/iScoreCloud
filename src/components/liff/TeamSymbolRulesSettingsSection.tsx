@@ -296,10 +296,10 @@ export function TeamSymbolRulesSettingsSection({
   return (
     <section
       id="symbol-rules"
-      className="scroll-mt-16 rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-4"
+      className="scroll-mt-16 rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-4 overflow-hidden"
     >
       {/* ヘッダー */}
-      <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-border/60">
+      <div className="-mx-4 -mt-4 px-4 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 border-l-4 border-l-primary flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
           <FileSpreadsheet className="w-4 h-4 text-primary shrink-0" />
           <h2 className="text-sm font-black text-foreground truncate">
@@ -313,7 +313,7 @@ export function TeamSymbolRulesSettingsSection({
             保存中...
           </span>
         ) : hasSavedCloud ? (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/25 text-[10px] font-black shrink-0">
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 border border-emerald-500/25 text-[10px] font-black shrink-0">
             <CheckCircle2 className="w-3 h-3" />
             チーム保存済
           </span>
@@ -431,7 +431,7 @@ export function TeamSymbolRulesSettingsSection({
                       className={cn(
                         "py-2 px-2 rounded-xl border text-left transition-all active:scale-95 cursor-pointer",
                         isActive
-                          ? "bg-primary text-primary-foreground border-primary shadow-2xs"
+                          ? "bg-primary/12 text-primary border-primary shadow-2xs"
                           : "bg-muted/50 border-border/60 text-foreground hover:bg-muted"
                       )}
                     >
@@ -441,7 +441,7 @@ export function TeamSymbolRulesSettingsSection({
                       <p
                         className={cn(
                           "text-[10px] font-mono font-bold leading-tight mt-0.5 truncate",
-                          isActive ? "text-primary-foreground/85" : "text-muted-foreground"
+                          isActive ? "text-primary/80" : "text-muted-foreground"
                         )}
                       >
                         {opt.sample}

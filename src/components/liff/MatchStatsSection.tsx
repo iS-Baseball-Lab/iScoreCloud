@@ -804,34 +804,57 @@ export function MatchStatsSection({
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {highlightHeroes.map((hero, idx) => (
-              <div
-                key={`${hero.label}-${hero.value}-${idx}`}
-                className="rounded-2xl border border-border/60 bg-card p-3 shadow-xs flex items-start gap-2.5"
-              >
-                <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5 border bg-primary/10 text-primary border-primary/25">
-                  {hero.type === "hit" ? (
-                    <Flame className="w-4 h-4" />
-                  ) : (
-                    <Award className="w-4 h-4" />
-                  )}
-                </div>
+            {highlightHeroes.map((hero, idx) => {
+              const heroAccentClass =
+                hero.type === "hit"
+                  ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30"
+                  : hero.type === "rbi"
+                  ? idx === 0
+                    ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30"
+                    : "bg-orange-500/15 text-orange-600 dark:text-orange-400 border-orange-500/30"
+                  : "bg-sky-500/15 text-sky-600 dark:text-sky-400 border-sky-500/30";
 
-                <div className="min-w-0 flex-1 space-y-0.5">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-black leading-none border bg-primary/10 text-primary border-primary/25">
-                      {hero.label}
-                    </span>
-                    <span className="text-xs font-black text-foreground truncate">
-                      {hero.value}
-                    </span>
+              return (
+                <div
+                  key={`${hero.label}-${hero.value}-${idx}`}
+                  className="rounded-2xl border border-border/60 bg-card p-3 shadow-xs flex items-start gap-2.5"
+                >
+                  <div
+                    className={cn(
+                      "w-8 h-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5 border",
+                      heroAccentClass
+                    )}
+                  >
+                    {hero.type === "hit" ? (
+                      <Flame className="w-4 h-4" />
+                    ) : hero.type === "rbi" ? (
+                      <Target className="w-4 h-4" />
+                    ) : (
+                      <Award className="w-4 h-4" />
+                    )}
                   </div>
-                  <p className="text-[11px] font-bold text-muted-foreground leading-snug">
-                    {hero.description}
-                  </p>
+
+                  <div className="min-w-0 flex-1 space-y-0.5">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span
+                        className={cn(
+                          "inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-black leading-none border",
+                          heroAccentClass
+                        )}
+                      >
+                        {hero.label}
+                      </span>
+                      <span className="text-xs font-black text-foreground truncate">
+                        {hero.value}
+                      </span>
+                    </div>
+                    <p className="text-[11px] font-bold text-muted-foreground leading-snug">
+                      {hero.description}
+                    </p>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
       )}
@@ -844,37 +867,37 @@ export function MatchStatsSection({
             <span className="truncate">打撃・走塁・守備成績</span>
           </h2>
 
-          <div className="inline-flex items-center p-0.5 rounded-xl bg-muted/50 border border-border/60 shrink-0">
+          <div className="inline-flex items-center gap-0.5 bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl border border-border/60 shrink-0">
             <button
               type="button"
               onClick={() => setBatterColumnMode("full")}
               className={cn(
-                "px-2 py-0.5 rounded-lg text-[10px] font-black transition-all cursor-pointer",
+                "px-2.5 py-0.5 rounded-xl text-[10px] transition-all cursor-pointer",
                 batterColumnMode === "full"
-                  ? "bg-card text-primary shadow-2xs"
-                  : "text-muted-foreground hover:text-foreground"
+                  ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                  : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
               )}
             >
-              全項目
+              <span className={batterColumnMode === "full" ? "text-primary" : ""}>全項目</span>
             </button>
             <button
               type="button"
               onClick={() => setBatterColumnMode("compact")}
               className={cn(
-                "px-2 py-0.5 rounded-lg text-[10px] font-black transition-all cursor-pointer",
+                "px-2.5 py-0.5 rounded-xl text-[10px] transition-all cursor-pointer",
                 batterColumnMode === "compact"
-                  ? "bg-card text-primary shadow-2xs"
-                  : "text-muted-foreground hover:text-foreground"
+                  ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                  : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
               )}
             >
-              主要のみ
+              <span className={batterColumnMode === "compact" ? "text-primary" : ""}>主要のみ</span>
             </button>
           </div>
         </div>
 
         <div className="rounded-2xl border border-border/60 bg-card shadow-xs overflow-hidden">
           {/* サマリー帯（チーム打率・安打・打点・盗塁をひと目で把握） */}
-          <div className="px-3 py-2 bg-muted/35 border-b border-border/60 flex items-center justify-between gap-2 flex-wrap">
+          <div className="px-3.5 py-2.5 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-2 text-[11px] font-black text-foreground">
               <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/25 font-mono tabular-nums">
                 チーム打率 {teamAvgStr}
@@ -1246,7 +1269,23 @@ export function MatchStatsSection({
               投手データがありません
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <>
+              {/* 投手サマリー帯 */}
+              <div className="px-3.5 py-2.5 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2 text-[11px] font-black text-foreground">
+                  <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/25 font-mono tabular-nums">
+                    チーム防御率 {teamEraStr}
+                  </span>
+                  <span className="text-muted-foreground font-mono tabular-nums">
+                    {teamIpStr}回 {pitcherTotal.strikeouts}奪三振 自責{pitcherTotal.earnedRuns}
+                  </span>
+                </div>
+                <span className="text-[10px] font-bold text-muted-foreground select-none">
+                  ← 横スワイプで全項目 →
+                </span>
+              </div>
+
+              <div className="overflow-x-auto">
               <table className="w-full min-w-[680px] border-collapse text-xs whitespace-nowrap">
                 <thead>
                   <tr className="bg-muted border-b border-border/60 text-[10px] font-black text-muted-foreground">
@@ -1401,7 +1440,8 @@ export function MatchStatsSection({
                   </tr>
                 </tbody>
               </table>
-            </div>
+              </div>
+            </>
           )}
         </div>
       </section>
@@ -1418,10 +1458,10 @@ export function MatchStatsSection({
               type="button"
               onClick={() => setOnlyMyAttackLogs((prev) => !prev)}
               className={cn(
-                "px-2.5 py-1 rounded-xl border text-[10px] font-black transition-all cursor-pointer",
+                "px-2.5 py-1 rounded-full text-[10px] transition-all cursor-pointer",
                 onlyMyAttackLogs
-                  ? "bg-primary text-primary-foreground border-primary shadow-2xs"
-                  : "bg-card text-muted-foreground border-border/60 hover:bg-muted hover:text-foreground"
+                  ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
+                  : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
               )}
             >
               {onlyMyAttackLogs ? "自チーム攻撃のみ表示中" : "自チーム攻撃のみ"}
@@ -1429,38 +1469,44 @@ export function MatchStatsSection({
           </div>
 
           <div className="rounded-2xl border border-border/60 bg-card shadow-xs overflow-hidden">
-            {/* イニング絞り込みチップ */}
-            {timelineInnings.length > 1 && (
-              <div className="px-3 py-2 bg-muted/35 border-b border-border/60 flex items-center gap-1.5 overflow-x-auto scrollbar-none">
-                <button
-                  type="button"
-                  onClick={() => setSelectedTimelineInning("all")}
-                  className={cn(
-                    "px-2.5 py-1 rounded-lg text-[11px] font-black shrink-0 transition-all cursor-pointer",
-                    selectedTimelineInning === "all"
-                      ? "bg-primary text-primary-foreground shadow-2xs"
-                      : "bg-card text-muted-foreground border border-border/60 hover:bg-muted hover:text-foreground"
-                  )}
-                >
-                  すべて ({filteredTimelineEntries.length})
-                </button>
-                {timelineInnings.map((inn) => (
+            {/* カードヘッダー帯 ＆ イニング絞り込みチップ */}
+            <div className="px-3.5 py-2.5 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 flex items-center gap-1.5 overflow-x-auto scrollbar-none">
+              {timelineInnings.length > 1 ? (
+                <>
                   <button
-                    key={inn}
                     type="button"
-                    onClick={() => setSelectedTimelineInning(inn)}
+                    onClick={() => setSelectedTimelineInning("all")}
                     className={cn(
-                      "px-2.5 py-1 rounded-lg text-[11px] font-black font-mono tabular-nums shrink-0 transition-all cursor-pointer",
-                      selectedTimelineInning === inn
-                        ? "bg-primary text-primary-foreground shadow-2xs"
-                        : "bg-card text-muted-foreground border border-border/60 hover:bg-muted hover:text-foreground"
+                      "px-2.5 py-1 rounded-full text-[11px] shrink-0 transition-all cursor-pointer tabular-nums",
+                      selectedTimelineInning === "all"
+                        ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
+                        : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
                     )}
                   >
-                    {inn}回
+                    すべて ({filteredTimelineEntries.length})
                   </button>
-                ))}
-              </div>
-            )}
+                  {timelineInnings.map((inn) => (
+                    <button
+                      key={inn}
+                      type="button"
+                      onClick={() => setSelectedTimelineInning(inn)}
+                      className={cn(
+                        "px-2.5 py-1 rounded-full text-[11px] font-mono tabular-nums shrink-0 transition-all cursor-pointer",
+                        selectedTimelineInning === inn
+                          ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
+                          : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
+                      )}
+                    >
+                      {inn}回
+                    </button>
+                  ))}
+                </>
+              ) : (
+                <span className="text-[11px] font-black text-foreground">
+                  打席経過ログ（全{filteredTimelineEntries.length}打席）
+                </span>
+              )}
+            </div>
 
             {visibleTimelineEntries.length === 0 ? (
               <div className="p-6 text-center text-xs font-bold text-muted-foreground">

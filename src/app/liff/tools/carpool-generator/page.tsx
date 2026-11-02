@@ -30,12 +30,12 @@ export default function LiffCarpoolGeneratorPage() {
           title="配車ジェネレータ"
           subtitle="CARPOOL PLANNER"
           icon={
-            <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
+            <span className="w-8 h-8 rounded-xl bg-teal-500/12 text-teal-600 dark:text-teal-400 flex items-center justify-center font-black">
               <Wand2 className="w-4 h-4" />
             </span>
           }
           rightElement={
-            <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-primary/10 text-primary border border-primary/25">
+            <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-amber-500/12 text-amber-700 dark:text-amber-300 border border-amber-500/30">
               要MTG・新規検討中
             </span>
           }
@@ -48,10 +48,10 @@ export default function LiffCarpoolGeneratorPage() {
         {/* ステータス・コンセプト概要バナー */}
         <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-2.5">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="px-2 py-0.5 rounded-lg bg-primary/10 text-primary text-[10px] font-black">
+            <span className="px-2 py-0.5 rounded-lg bg-teal-500/12 text-teal-600 dark:text-teal-400 text-[10px] font-black">
               NEW PROJECT
             </span>
-            <span className="px-2 py-0.5 rounded-lg bg-muted text-muted-foreground border border-border/60 text-[10px] font-black">
+            <span className="px-2 py-0.5 rounded-lg bg-amber-500/12 text-amber-700 dark:text-amber-300 border border-amber-500/30 text-[10px] font-black">
               配車係と要ミーティング
             </span>
           </div>
@@ -64,8 +64,8 @@ export default function LiffCarpoolGeneratorPage() {
         </section>
 
         {/* 想定ワークフロー枠（たたき台） */}
-        <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3.5">
-          <div className="flex items-center justify-between">
+        <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3.5 overflow-hidden">
+          <div className="-mx-4 -mt-4 px-4 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 border-l-4 border-l-primary flex items-center justify-between">
             <h3 className="text-sm font-black text-foreground">
               想定ワークフロー（たたき台枠）
             </h3>
@@ -103,7 +103,7 @@ export default function LiffCarpoolGeneratorPage() {
                   key={item.step}
                   className="flex items-start gap-3 p-3 rounded-xl bg-muted/35 border border-border/60"
                 >
-                  <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0 mt-0.5">
+                  <span className="w-8 h-8 rounded-xl bg-teal-500/12 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0 mt-0.5">
                     <StepIcon className="w-4 h-4" />
                   </span>
                   <div className="space-y-0.5 min-w-0">
@@ -121,9 +121,9 @@ export default function LiffCarpoolGeneratorPage() {
         </section>
 
         {/* 配車係ミーティング用 確認アジェンダ枠 */}
-        <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3">
-          <div className="flex items-center gap-2">
-            <MessageCircleQuestion className="w-4 h-4 text-primary" />
+        <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3 overflow-hidden">
+          <div className="-mx-4 -mt-4 px-4 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 border-l-4 border-l-primary flex items-center gap-2">
+            <MessageCircleQuestion className="w-4 h-4 text-teal-600 dark:text-teal-400" />
             <h3 className="text-xs font-black text-foreground">
               配車係ミーティングでの確認ポイントメモ
             </h3>
@@ -141,7 +141,7 @@ export default function LiffCarpoolGeneratorPage() {
                 key={agenda}
                 className="flex items-start gap-2.5 p-2.5 rounded-xl bg-muted/35 border border-border/60"
               >
-                <span className="w-5 h-5 rounded-full bg-primary/10 text-primary text-[10px] font-black flex items-center justify-center shrink-0 mt-0.5">
+                <span className="w-5 h-5 rounded-full bg-teal-500/12 text-teal-600 dark:text-teal-400 text-[10px] font-black flex items-center justify-center shrink-0 mt-0.5">
                   {idx + 1}
                 </span>
                 <p className="text-[11px] font-bold text-foreground leading-relaxed">
@@ -157,7 +157,9 @@ export default function LiffCarpoolGeneratorPage() {
               className="py-2.5 px-3 rounded-2xl bg-card hover:bg-muted hover:border-primary/40 border border-border/60 text-xs font-black text-foreground flex items-center justify-between transition-all active:scale-98"
             >
               <span className="flex items-center gap-1.5 truncate">
-                <ClipboardList className="w-3.5 h-3.5 text-primary shrink-0" />
+                <span className="w-6 h-6 rounded-lg bg-teal-500/12 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
+                  <ClipboardList className="w-3.5 h-3.5" />
+                </span>
                 <span className="truncate">現在の配車表</span>
               </span>
               <ArrowRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
@@ -168,7 +170,9 @@ export default function LiffCarpoolGeneratorPage() {
               className="py-2.5 px-3 rounded-2xl bg-card hover:bg-muted hover:border-primary/40 border border-border/60 text-xs font-black text-foreground flex items-center justify-between transition-all active:scale-98"
             >
               <span className="flex items-center gap-1.5 truncate">
-                <Car className="w-3.5 h-3.5 text-primary shrink-0" />
+                <span className="w-6 h-6 rounded-lg bg-slate-500/12 text-slate-700 dark:text-slate-300 flex items-center justify-center shrink-0">
+                  <Car className="w-3.5 h-3.5" />
+                </span>
                 <span className="truncate">マイカー設定</span>
               </span>
               <ArrowRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />

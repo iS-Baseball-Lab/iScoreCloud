@@ -24,7 +24,7 @@ export default function LiffPrivacyPage() {
           title="プライバシーポリシー"
           subtitle="個人情報の取扱いと保護方針"
           icon={
-            <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
+            <span className="w-8 h-8 rounded-xl bg-slate-500/12 text-slate-700 dark:text-slate-300 flex items-center justify-center font-black">
               <ShieldCheck className="w-4 h-4" />
             </span>
           }
@@ -32,7 +32,7 @@ export default function LiffPrivacyPage() {
         />
 
         {/* 前文 */}
-        <div className="p-4 rounded-2xl border border-border/60 bg-card shadow-xs space-y-2">
+        <div className="p-4 rounded-2xl border border-border/60 border-l-4 border-l-primary bg-card shadow-xs space-y-2">
           <div className="flex items-center gap-2 text-xs font-black text-primary">
             <Lock className="w-4 h-4" />
             <span>個人情報保護への取り組み</span>

@@ -374,7 +374,7 @@ export default function LiffScoreSettingsPage() {
           title="スコア設定"
           subtitle="SCORE & AI IMPORT SETTINGS"
           icon={
-            <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
+            <span className="w-8 h-8 rounded-xl bg-slate-500/12 text-slate-700 dark:text-slate-300 flex items-center justify-center font-black">
               <BookOpen className="w-4 h-4" />
             </span>
           }
@@ -391,8 +391,8 @@ export default function LiffScoreSettingsPage() {
         )}
 
         {/* ━━━ セクション 1: ⚾ 試合・スコア規定（試合作成・スコア表記ルール） ━━━ */}
-        <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-4">
-          <div className="flex items-center justify-between pb-2 border-b border-border/60">
+        <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-4 overflow-hidden">
+          <div className="-mx-4 -mt-4 px-4 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 border-l-4 border-l-primary flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Sliders className="w-4 h-4 text-primary" />
               <h2 className="text-sm font-black text-foreground">
@@ -473,7 +473,7 @@ export default function LiffScoreSettingsPage() {
                     }
                     className={`py-2 px-1 rounded-2xl text-xs font-bold transition-all active:scale-95 border cursor-pointer ${
                       isActive
-                        ? "bg-primary text-primary-foreground border-primary shadow-xs font-black"
+                        ? "bg-primary/12 text-primary border-primary shadow-2xs font-black"
                         : "bg-muted/50 border-border/60 text-muted-foreground hover:text-foreground"
                     }`}
                   >
@@ -511,7 +511,7 @@ export default function LiffScoreSettingsPage() {
                     }
                     className={`py-2 px-1 rounded-2xl text-xs font-bold transition-all active:scale-95 border cursor-pointer ${
                       isActive
-                        ? "bg-primary text-primary-foreground border-primary shadow-xs font-black"
+                        ? "bg-primary/12 text-primary border-primary shadow-2xs font-black"
                         : "bg-muted/50 border-border/60 text-muted-foreground hover:text-foreground"
                     }`}
                   >
@@ -559,8 +559,8 @@ export default function LiffScoreSettingsPage() {
         </section>
 
         {/* ━━━ セクション 2: 📘 スコア記号早見表（チーム共通・毎回自動参照） ━━━ */}
-        <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3.5">
-          <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-border/60">
+        <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3.5 overflow-hidden">
+          <div className="-mx-4 -mt-4 px-4 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 border-l-4 border-l-primary flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
               <BookOpen className="w-4 h-4 text-primary shrink-0" />
               <h2 className="text-sm font-black text-foreground truncate">
@@ -573,11 +573,11 @@ export default function LiffScoreSettingsPage() {
                 確認中...
               </span>
             ) : stagedLegend ? (
-              <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/25 shrink-0">
+              <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-amber-500/12 text-amber-700 dark:text-amber-300 border border-amber-500/30 shrink-0">
                 未保存プレビュー
               </span>
             ) : savedLegendUrl ? (
-              <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/25 flex items-center gap-1 shrink-0">
+              <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 border border-emerald-500/25 flex items-center gap-1 shrink-0">
                 <CheckCircle2 className="w-3 h-3" />
                 登録済み・自動適用中
               </span>
@@ -640,7 +640,7 @@ export default function LiffScoreSettingsPage() {
                   disabled={stagedLegend.isProcessing || isSavingLegend}
                   className={`py-2.5 px-3 rounded-xl border text-xs font-black flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer ${
                     stagedLegend.enhancePencil
-                      ? "bg-primary text-primary-foreground border-primary"
+                      ? "bg-primary/12 text-primary border-primary"
                       : "bg-card text-foreground border-border/60 hover:bg-muted"
                   }`}
                 >
@@ -705,7 +705,7 @@ export default function LiffScoreSettingsPage() {
                 </span>
               </div>
 
-              <div className="p-2.5 rounded-2xl bg-primary/10 border border-primary/25 flex items-center gap-2 text-[11px] font-black text-primary">
+              <div className="p-2.5 rounded-2xl bg-emerald-500/12 border border-emerald-500/25 flex items-center gap-2 text-[11px] font-black text-emerald-700 dark:text-emerald-400">
                 <CheckCircle2 className="w-4 h-4 shrink-0" />
                 <span>
                   スコアブック取り込み（STEP 1・2）で毎回自動的にこの早見表を参照します
@@ -839,8 +839,8 @@ export default function LiffScoreSettingsPage() {
         />
 
         {/* ━━━ セクション 3: ⚙️ AIスコアブック取り込みの初期設定 ━━━ */}
-        <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-4">
-          <div className="flex items-center gap-2 pb-2 border-b border-border/60">
+        <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-4 overflow-hidden">
+          <div className="-mx-4 -mt-4 px-4 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 border-l-4 border-l-primary flex items-center gap-2">
             <ScanLine className="w-4 h-4 text-primary" />
             <h2 className="text-sm font-black text-foreground">
               AIスコアブック取り込みの初期設定
@@ -874,7 +874,7 @@ export default function LiffScoreSettingsPage() {
                     }
                     className={`py-2.5 px-2 rounded-2xl border text-[11px] transition-all active:scale-95 cursor-pointer ${
                       isActive
-                        ? "bg-primary text-primary-foreground border-primary shadow-xs font-black"
+                        ? "bg-primary/12 text-primary border-primary shadow-2xs font-black"
                         : "bg-muted/50 border-border/60 text-muted-foreground hover:text-foreground font-bold"
                     }`}
                   >
@@ -923,7 +923,7 @@ export default function LiffScoreSettingsPage() {
                     }
                     className={`p-3 rounded-2xl border text-left transition-all active:scale-95 cursor-pointer space-y-0.5 ${
                       isActive
-                        ? "bg-primary text-primary-foreground border-primary shadow-xs"
+                        ? "bg-primary/12 text-primary border-primary shadow-2xs"
                         : "bg-muted/50 border-border/60 text-foreground"
                     }`}
                   >
@@ -931,7 +931,7 @@ export default function LiffScoreSettingsPage() {
                     <p
                       className={`text-[10px] leading-snug ${
                         isActive
-                          ? "text-primary-foreground/85 font-bold"
+                          ? "text-primary/80 font-bold"
                           : "text-muted-foreground font-bold"
                       }`}
                     >
@@ -959,7 +959,7 @@ export default function LiffScoreSettingsPage() {
             className="p-3.5 rounded-2xl border border-border/60 bg-card shadow-xs hover:border-primary/40 transition-all flex items-center justify-between group active:scale-[0.99]"
           >
             <div className="flex items-center gap-3 min-w-0">
-              <span className="w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+              <span className="w-9 h-9 rounded-xl bg-slate-500/12 text-slate-700 dark:text-slate-300 flex items-center justify-center shrink-0">
                 <ShieldCheck className="w-4 h-4" />
               </span>
               <div className="min-w-0">
@@ -971,7 +971,7 @@ export default function LiffScoreSettingsPage() {
                 </p>
               </div>
             </div>
-            <ChevronRight className="w-4 h-4 text-primary group-hover:translate-x-0.5 transition-transform shrink-0" />
+            <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-0.5 transition-all shrink-0" />
           </Link>
         </div>
 

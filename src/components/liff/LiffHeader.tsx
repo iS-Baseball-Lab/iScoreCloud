@@ -147,7 +147,7 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
               <div
                 className={`flex items-center gap-2 pl-1 pr-2.5 py-1 rounded-full backdrop-blur-md border text-foreground shadow-xs hover:opacity-90 transition-all cursor-pointer flex-1 max-w-[200px] min-[400px]:max-w-[230px] sm:max-w-[290px] outline-hidden select-none ${
                   isDemo
-                    ? "bg-primary/10 border-primary/40"
+                    ? "bg-amber-500/10 border-amber-500/40"
                     : "bg-primary/10 border-primary/40"
                 }`}
                 title={`${orgDisplayName} (${teamDisplayName})`}
@@ -174,7 +174,7 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
                   <span
                     className={`text-[9.5px] font-black uppercase truncate leading-none mt-0.5 ${
                       isDemo
-                        ? "text-primary font-black"
+                        ? "text-amber-600 dark:text-amber-400 font-black"
                         : "text-muted-foreground font-bold"
                     }`}
                   >
@@ -271,7 +271,7 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
                   <div className="flex items-center gap-1.5 mt-0.5">
                     <span
                       className={`w-2 h-2 rounded-full shrink-0 ${
-                        isLoggedIn ? "bg-primary" : "bg-muted-foreground/50"
+                        isLoggedIn ? "bg-emerald-500" : "bg-amber-500"
                       }`}
                     />
                     <span className="text-[10px] font-bold text-muted-foreground">
@@ -301,7 +301,7 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
                     className="flex items-center justify-between p-2 cursor-pointer rounded-xl hover:bg-muted transition-colors"
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <span className="w-8 h-8 rounded-lg bg-primary/12 text-primary flex items-center justify-center shrink-0">
+                      <span className="w-8 h-8 rounded-lg bg-slate-500/12 text-slate-700 dark:text-slate-300 flex items-center justify-center shrink-0">
                         <UserCircle className="w-4.5 h-4.5" />
                       </span>
                       <div className="flex flex-col min-w-0">
@@ -321,7 +321,7 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
                     className="flex items-center justify-between p-2 cursor-pointer rounded-xl hover:bg-muted transition-colors"
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <span className="w-8 h-8 rounded-lg bg-primary/12 text-primary flex items-center justify-center shrink-0">
+                      <span className="w-8 h-8 rounded-lg bg-slate-500/12 text-slate-700 dark:text-slate-300 flex items-center justify-center shrink-0">
                         <BookOpen className="w-4 h-4" />
                       </span>
                       <div className="flex flex-col min-w-0">
@@ -341,7 +341,7 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
                     className="flex items-center justify-between p-2 cursor-pointer rounded-xl hover:bg-muted transition-colors"
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <span className="w-8 h-8 rounded-lg bg-primary/12 text-primary flex items-center justify-center shrink-0">
+                      <span className="w-8 h-8 rounded-lg bg-slate-500/12 text-slate-700 dark:text-slate-300 flex items-center justify-center shrink-0">
                         <Settings className="w-4 h-4" />
                       </span>
                       <div className="flex flex-col min-w-0">
@@ -363,7 +363,7 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
                 <p className="text-[10px] font-black text-muted-foreground mb-1.5 pl-1">
                   外観モード
                 </p>
-                <div className="flex gap-1.5">
+                <div className="flex gap-1 p-1 rounded-2xl bg-muted/80 dark:bg-muted/50 border border-border/60">
                   {APPEARANCES.map((a) => {
                     const Icon = a.icon;
                     const isActive = theme === a.id;
@@ -376,13 +376,13 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
                           setTheme(a.id);
                         }}
                         className={cn(
-                          "flex-1 flex flex-col items-center justify-center py-2 gap-1 rounded-xl border transition-all active:scale-95",
+                          "flex-1 flex flex-col items-center justify-center py-1.5 gap-1 rounded-xl border transition-all active:scale-95",
                           isActive
-                            ? "bg-primary/10 border-primary/40 text-primary font-black shadow-xs"
-                            : "bg-muted/40 border-transparent text-muted-foreground hover:bg-muted hover:text-foreground font-bold"
+                            ? "bg-card border-border/50 text-foreground font-black shadow-sm"
+                            : "border-transparent text-muted-foreground hover:text-foreground font-bold"
                         )}
                       >
-                        <Icon className="h-4 w-4" />
+                        <Icon className={cn("h-4 w-4", isActive && "text-primary")} />
                         <span className="text-[10px] leading-tight">{a.label}</span>
                       </button>
                     );

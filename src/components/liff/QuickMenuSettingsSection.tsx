@@ -24,6 +24,7 @@ import {
   QUICK_MENU_LAYOUT_OPTIONS,
   QUICK_MENU_PRESETS,
   getDefaultQuickMenuConfig,
+  getQuickMenuItemToneStyle,
   getSavedQuickMenuConfig,
   isDefaultQuickMenuConfig,
   resetQuickMenuConfig,
@@ -133,17 +134,19 @@ export function QuickMenuSettingsSection() {
   return (
     <section
       id="quick-menu"
-      className="scroll-mt-20 rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-4"
+      className="scroll-mt-20 rounded-2xl border border-border/60 bg-card shadow-xs overflow-hidden"
     >
       {/* ヘッダー */}
-      <div className="space-y-1.5 pb-2.5 border-b border-border/60">
+      <div className="px-4 py-3.5 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 space-y-1.5">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
-            <LayoutGrid className="w-4 h-4 text-primary shrink-0" />
+            <span className="w-7 h-7 rounded-xl bg-slate-500/12 text-slate-700 dark:text-slate-300 flex items-center justify-center shrink-0">
+              <LayoutGrid className="w-4 h-4" />
+            </span>
             <h2 className="text-sm font-black text-foreground truncate">
               クイックメニュー設定
             </h2>
-            <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-black shrink-0 font-mono">
+            <span className="px-2 py-0.5 rounded-full bg-primary/12 text-primary text-[10px] font-black shrink-0 font-mono">
               {selectedItems.length}件表示中
             </span>
           </div>
@@ -164,12 +167,13 @@ export function QuickMenuSettingsSection() {
         </p>
       </div>
 
+      <div className="p-4 space-y-4">
       {/* 1. 表示レイアウト */}
       <div className="space-y-1.5">
         <label className="text-xs font-black text-foreground block">
           表示レイアウト
         </label>
-        <div className="grid grid-cols-3 gap-1.5">
+        <div className="grid grid-cols-3 gap-1 p-1 rounded-2xl bg-muted/80 dark:bg-muted/50 border border-border/60">
           {QUICK_MENU_LAYOUT_OPTIONS.map((opt) => {
             const isActive = config.layout === opt.id;
             return (
@@ -177,17 +181,17 @@ export function QuickMenuSettingsSection() {
                 key={opt.id}
                 type="button"
                 onClick={() => handleLayoutChange(opt.id, opt.label)}
-                className={`flex flex-col items-center justify-center py-2.5 px-1.5 rounded-2xl border transition-all active:scale-95 gap-0.5 ${
+                className={`flex flex-col items-center justify-center py-2 px-1.5 rounded-xl border transition-all active:scale-95 gap-0.5 ${
                   isActive
-                    ? "bg-primary text-primary-foreground border-primary shadow-xs font-black"
-                    : "bg-muted/50 border-border/60 text-muted-foreground hover:text-foreground font-bold"
+                    ? "bg-card text-foreground border-border/50 shadow-sm font-black"
+                    : "border-transparent text-muted-foreground hover:text-foreground font-bold"
                 }`}
               >
                 <span className="text-xs leading-tight">{opt.label}</span>
                 <span
                   className={`text-[9.5px] leading-tight ${
                     isActive
-                      ? "text-primary-foreground/85"
+                      ? "text-primary font-black"
                       : "text-muted-foreground"
                   }`}
                 >
@@ -261,6 +265,7 @@ export function QuickMenuSettingsSection() {
           <div className="space-y-1.5">
             {selectedItems.map((item, idx) => {
               const Icon = item.icon;
+              const tone = getQuickMenuItemToneStyle(item);
               const isFirst = idx === 0;
               const isLast = idx === selectedItems.length - 1;
 
@@ -273,7 +278,7 @@ export function QuickMenuSettingsSection() {
                     {idx + 1}
                   </span>
 
-                  <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                  <span className={`w-8 h-8 rounded-xl ${tone.iconBoxClass} flex items-center justify-center shrink-0`}>
                     <Icon className="w-4 h-4" />
                   </span>
 
@@ -333,7 +338,7 @@ export function QuickMenuSettingsSection() {
         </div>
 
         {/* カテゴリ切替タブ */}
-        <div className="grid grid-cols-4 gap-1 p-1 rounded-2xl bg-muted/50 border border-border/60">
+        <div className="grid grid-cols-4 gap-1 p-1 rounded-2xl bg-muted/80 dark:bg-muted/50 border border-border/60">
           {QUICK_MENU_CATEGORIES.map((cat) => {
             const isTabActive = activeCategory === cat.id;
             const enabledInCat = QUICK_MENU_CATALOG.filter(
@@ -345,10 +350,10 @@ export function QuickMenuSettingsSection() {
                 key={cat.id}
                 type="button"
                 onClick={() => setActiveCategory(cat.id)}
-                className={`flex flex-col items-center justify-center py-2 px-1 rounded-xl text-[11px] transition-all active:scale-95 gap-0.5 ${
+                className={`flex flex-col items-center justify-center py-2 px-1 rounded-xl border text-[11px] transition-all active:scale-95 gap-0.5 ${
                   isTabActive
-                    ? "bg-primary text-primary-foreground shadow-xs font-black"
-                    : "text-muted-foreground hover:text-foreground font-bold"
+                    ? "bg-card text-foreground border-border/50 shadow-sm font-black"
+                    : "border-transparent text-muted-foreground hover:text-foreground font-bold"
                 }`}
               >
                 <span className="truncate max-w-full leading-tight">
@@ -357,10 +362,10 @@ export function QuickMenuSettingsSection() {
                 <span
                   className={`text-[9px] font-mono leading-none px-1.5 py-0.5 rounded-full ${
                     isTabActive
-                      ? "bg-primary-foreground/20 text-primary-foreground font-black"
+                      ? "bg-primary/12 text-primary font-black"
                       : enabledInCat > 0
                         ? "bg-primary/10 text-primary font-black"
-                        : "bg-card text-muted-foreground font-bold"
+                        : "bg-card/80 text-muted-foreground font-bold"
                   }`}
                 >
                   {enabledInCat}件ON
@@ -374,6 +379,7 @@ export function QuickMenuSettingsSection() {
         <div className="grid grid-cols-2 gap-2">
           {categoryItems.map((item) => {
             const Icon = item.icon;
+            const tone = getQuickMenuItemToneStyle(item);
             const isSelected = selectedIdSet.has(item.id);
             const orderIdx = config.itemIds.indexOf(item.id);
 
@@ -384,16 +390,12 @@ export function QuickMenuSettingsSection() {
                 onClick={() => handleToggleItem(item)}
                 className={`flex items-center gap-2.5 p-2.5 rounded-2xl border text-left transition-all active:scale-95 ${
                   isSelected
-                    ? "border-primary bg-primary/10 text-primary shadow-2xs"
-                    : "bg-card border-border/60 hover:border-primary/40"
+                    ? "border-primary/40 bg-primary/10 shadow-2xs"
+                    : `bg-card border-border/60 ${tone.hoverBorderClass}`
                 }`}
               >
                 <span
-                  className={`w-8 h-8 rounded-xl ${
-                    isSelected
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-primary/10 text-primary"
-                  } flex items-center justify-center shrink-0`}
+                  className={`w-8 h-8 rounded-xl ${tone.iconBoxClass} flex items-center justify-center shrink-0`}
                 >
                   <Icon className="w-4 h-4" />
                 </span>
@@ -402,7 +404,13 @@ export function QuickMenuSettingsSection() {
                   <p className="text-xs font-black text-foreground truncate">
                     {item.label}
                   </p>
-                  <p className="text-[10px] font-bold text-muted-foreground truncate">
+                  <p
+                    className={`text-[10px] font-bold truncate ${
+                      isSelected && orderIdx >= 0
+                        ? "text-primary font-black"
+                        : "text-muted-foreground"
+                    }`}
+                  >
                     {isSelected && orderIdx >= 0
                       ? `${orderIdx + 1}番目に表示中`
                       : item.description}
@@ -437,6 +445,7 @@ export function QuickMenuSettingsSection() {
           <span>トップページでクイックメニューを確認する</span>
           <ExternalLink className="w-3.5 h-3.5 text-primary" />
         </Link>
+      </div>
       </div>
     </section>
   );

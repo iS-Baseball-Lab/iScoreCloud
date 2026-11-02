@@ -68,7 +68,7 @@ export const LIFF_TOOLS: LiffToolMeta[] = [
     statusLabel: "要MTG・検討中",
     statusTone: "emerald",
     icon: Wand2,
-    iconColorClass: "bg-primary/12 text-primary",
+    iconColorClass: "bg-teal-500/12 text-teal-600 dark:text-teal-400",
   },
 ];
 
@@ -76,7 +76,7 @@ export function LiffToolSubNav() {
   const pathname = usePathname();
 
   return (
-    <div className="grid grid-cols-4 gap-1.5 p-1 rounded-2xl bg-card border border-border/60 shadow-xs">
+    <div className="grid grid-cols-4 gap-1 p-1 rounded-2xl bg-muted/80 dark:bg-muted/50 border border-border/60">
       {LIFF_TOOLS.map((tool) => {
         const Icon = tool.icon;
         const isActive = pathname === tool.href;
@@ -85,13 +85,13 @@ export function LiffToolSubNav() {
           <Link
             key={tool.id}
             href={tool.href}
-            className={`flex flex-col items-center justify-center gap-1 py-2 px-1 rounded-xl text-center transition-all active:scale-95 ${
+            className={`flex flex-col items-center justify-center gap-1 py-2 px-1 rounded-xl border text-center transition-all active:scale-95 ${
               isActive
-                ? "bg-primary text-primary-foreground shadow-xs font-black"
-                : "text-muted-foreground hover:text-foreground hover:bg-muted/60 font-bold"
+                ? "bg-card text-foreground border-border/50 shadow-sm font-black"
+                : "border-transparent text-muted-foreground hover:text-foreground font-bold"
             }`}
           >
-            <Icon className="w-4 h-4 shrink-0" />
+            <Icon className={`w-4 h-4 shrink-0 ${isActive ? "text-primary" : ""}`} />
             <span className="text-[10px] leading-tight truncate max-w-full">
               {tool.shortTitle}
             </span>
@@ -107,10 +107,10 @@ export function LiffToolOtherLinks() {
   const otherTools = LIFF_TOOLS.filter((tool) => tool.href !== pathname);
 
   return (
-    <section className="rounded-2xl bg-card border border-border/60 shadow-xs p-4 space-y-3">
-      <div className="flex items-center justify-between">
+    <section className="rounded-2xl bg-card border border-border/60 shadow-xs overflow-hidden">
+      <div className="px-4 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="w-7 h-7 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
+          <span className="w-7 h-7 rounded-xl bg-primary/12 text-primary flex items-center justify-center">
             <Wrench className="w-4 h-4" />
           </span>
           <div>
@@ -122,14 +122,25 @@ export function LiffToolOtherLinks() {
         </div>
       </div>
 
-      <div className="space-y-2">
+      <div className="p-4 space-y-2">
         {otherTools.map((tool) => {
           const Icon = tool.icon;
+          const statusBadgeClass =
+            tool.id === "scorebook-import"
+              ? "bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 border-emerald-500/25"
+              : tool.id === "carpool-generator"
+              ? "bg-amber-500/12 text-amber-700 dark:text-amber-300 border-amber-500/30"
+              : "bg-muted text-muted-foreground border-border/60";
+          const hoverBorderClass =
+            tool.id === "carpool-generator"
+              ? "hover:border-teal-500/40"
+              : "hover:border-primary/40";
+
           return (
             <Link
               key={tool.id}
               href={tool.href}
-              className="flex items-center gap-3 p-3 rounded-2xl bg-muted/35 hover:bg-muted/70 border border-border/60 hover:border-primary/40 transition-all active:scale-98 group"
+              className={`flex items-center gap-3 p-3 rounded-2xl bg-muted/35 hover:bg-muted/70 border border-border/60 ${hoverBorderClass} transition-all active:scale-98 group`}
             >
               <span
                 className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${tool.iconColorClass}`}
@@ -141,7 +152,7 @@ export function LiffToolOtherLinks() {
                   <p className="text-xs font-black text-foreground truncate">
                     {tool.title}
                   </p>
-                  <span className="px-1.5 py-0.5 rounded-full text-[9px] font-black bg-primary/10 border border-primary/20 text-primary shrink-0">
+                  <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black border shrink-0 ${statusBadgeClass}`}>
                     {tool.statusLabel}
                   </span>
                 </div>

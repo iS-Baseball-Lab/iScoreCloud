@@ -2922,7 +2922,7 @@ export default function LiffScorebookImportPage() {
           title="スコアブック取り込み"
           subtitle="SCOREBOOK AI IMPORT v2"
           icon={
-            <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
+            <span className="w-8 h-8 rounded-xl bg-primary/12 text-primary flex items-center justify-center font-black">
               <ScanLine className="w-4 h-4" />
             </span>
           }
@@ -2930,9 +2930,11 @@ export default function LiffScorebookImportPage() {
           rightElement={
             <Link
               href="/liff/settings/score"
-              className="px-2.5 py-1.5 rounded-2xl bg-card border border-border/60 hover:bg-muted text-foreground text-[11px] font-black flex items-center gap-1 shadow-xs active:scale-95 transition-all"
+              className="px-2.5 py-1.5 rounded-2xl bg-card border border-border/60 hover:bg-muted text-foreground text-[11px] font-black flex items-center gap-1.5 shadow-xs active:scale-95 transition-all"
             >
-              <Settings className="w-3.5 h-3.5 text-primary" />
+              <span className="w-5 h-5 rounded-lg bg-slate-500/12 text-slate-700 dark:text-slate-300 flex items-center justify-center shrink-0">
+                <Settings className="w-3 h-3" />
+              </span>
               <span>スコア設定</span>
             </Link>
           }
@@ -2956,9 +2958,9 @@ export default function LiffScorebookImportPage() {
                   key={s.num}
                   className={`py-2 px-2 rounded-xl text-center text-[11px] font-black border transition-all ${
                     active
-                      ? "bg-primary text-primary-foreground border-primary shadow-2xs"
+                      ? "bg-primary/12 text-primary border-primary/40 shadow-2xs"
                       : done
-                      ? "bg-primary/10 text-primary border-primary/25"
+                      ? "bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 border-emerald-500/25"
                       : "bg-card text-muted-foreground border-border/60"
                   }`}
                 >
@@ -2972,7 +2974,7 @@ export default function LiffScorebookImportPage() {
           {step !== 4 && lastAutoSavedAt && (
             <div className="px-3 py-1.5 rounded-2xl border border-border/60 bg-card shadow-xs flex items-center justify-between gap-2">
               <div className="flex items-center gap-1.5 min-w-0">
-                <Save className="w-3.5 h-3.5 text-primary shrink-0" />
+                <Save className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
                 <span className="text-[10px] font-bold text-muted-foreground truncate">
                   自動下書き保存済み（{formatSavedTime(lastAutoSavedAt)}）
                 </span>
@@ -2991,9 +2993,9 @@ export default function LiffScorebookImportPage() {
 
         {/* 前回の途中データがある場合のオンデマンド復元バナー（初期表示時はメモリに読み込まず軽快に起動） */}
         {step === 1 && availableDraftMeta && !lastAutoSavedAt && (
-          <div className="p-3.5 rounded-2xl border border-border/60 bg-card shadow-xs space-y-2.5">
+          <div className="p-3.5 rounded-2xl border border-border/60 border-l-4 border-l-amber-500 bg-card shadow-xs space-y-2.5">
             <div className="flex items-start gap-2">
-              <RotateCcw className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+              <RotateCcw className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
               <div className="space-y-0.5 min-w-0">
                 <p className="text-xs font-black text-foreground">
                   前回入力途中の下書き（{formatSavedTime(availableDraftMeta.savedAt)} 保存 / STEP {availableDraftMeta.step}）があります
@@ -3037,9 +3039,9 @@ export default function LiffScorebookImportPage() {
 
         {/* 前回の途中入力を復元した際の通知バナー */}
         {step !== 4 && restoredDraftBannerAt && (
-          <div className="p-3 rounded-2xl border border-border/60 bg-card shadow-xs flex items-center justify-between gap-2">
+          <div className="p-3 rounded-2xl border border-border/60 border-l-4 border-l-amber-500 bg-card shadow-xs flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
-              <CheckCircle2 className="w-4 h-4 text-primary shrink-0" />
+              <CheckCircle2 className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
               <p className="text-[11px] font-black text-foreground leading-snug">
                 前回入力途中の下書き（{formatSavedTime(restoredDraftBannerAt)} 保存）を自動復元しました
               </p>
@@ -3270,11 +3272,14 @@ export default function LiffScorebookImportPage() {
 
             {step === 4 && saveSummary && (
               <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-6 text-center space-y-5">
-                <div className="w-14 h-14 rounded-full bg-primary/10 text-primary flex items-center justify-center mx-auto">
+                <div className="w-14 h-14 rounded-full bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 border border-emerald-500/25 flex items-center justify-center mx-auto">
                   <CheckCircle2 className="w-8 h-8" />
                 </div>
 
                 <div className="space-y-1">
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 border border-emerald-500/25 text-[10px] font-black mb-1">
+                    取込完了
+                  </span>
                   <h2 className="text-base font-black text-foreground">
                     {isEditingSavedMatch
                       ? "打席・個人成績の修正を保存しました！"

@@ -260,31 +260,31 @@ export default function LiffGroundsPage() {
         return {
           icon: Home,
           label: "本拠地・ホーム",
-          className: "bg-primary/10 text-primary border-primary/25",
+          className: "bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 border-emerald-500/25",
         };
       case "stadium":
         return {
           icon: Trophy,
           label: "球場・公営",
-          className: "bg-primary/10 text-primary border-primary/25",
+          className: "bg-amber-500/12 text-amber-700 dark:text-amber-300 border-amber-500/25",
         };
       case "school":
         return {
           icon: School,
           label: "学校・地域",
-          className: "bg-primary/10 text-primary border-primary/25",
+          className: "bg-teal-500/12 text-teal-700 dark:text-teal-300 border-teal-500/25",
         };
       case "indoor":
         return {
           icon: Dumbbell,
           label: "室内・練習場",
-          className: "bg-primary/10 text-primary border-primary/25",
+          className: "bg-indigo-500/12 text-indigo-700 dark:text-indigo-300 border-indigo-500/25",
         };
       default:
         return {
           icon: Building2,
           label: "球場・施設",
-          className: "bg-primary/10 text-primary border-primary/25",
+          className: "bg-teal-500/12 text-teal-700 dark:text-teal-300 border-teal-500/25",
         };
     }
   };
@@ -299,7 +299,7 @@ export default function LiffGroundsPage() {
           title="球場 & 施設"
           subtitle="グラウンド情報・アクセス・駐車場ルール"
           icon={
-            <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
+            <span className="w-8 h-8 rounded-xl bg-teal-500/12 text-teal-600 dark:text-teal-400 flex items-center justify-center font-black">
               <MapPin className="w-4 h-4" />
             </span>
           }
@@ -354,10 +354,10 @@ export default function LiffGroundsPage() {
                 key={cat.id}
                 type="button"
                 onClick={() => setSelectedCategory(cat.id)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-black shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
+                className={`px-3 py-1.5 rounded-xl text-xs shrink-0 transition-all flex items-center gap-1.5 cursor-pointer ${
                   isSelected
-                    ? "bg-primary text-primary-foreground shadow-xs"
-                    : "bg-card border border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
+                    : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
                 }`}
               >
                 <Icon className="w-3.5 h-3.5" />
@@ -365,8 +365,8 @@ export default function LiffGroundsPage() {
                 <span
                   className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
                     isSelected
-                      ? "bg-primary-foreground/20 text-primary-foreground"
-                      : "bg-muted/50 text-muted-foreground"
+                      ? "bg-primary/15 text-primary"
+                      : "bg-muted/60 text-muted-foreground"
                   }`}
                 >
                   {count}
@@ -384,7 +384,7 @@ export default function LiffGroundsPage() {
           </div>
         ) : filteredVenues.length === 0 ? (
           <div className="rounded-2xl border border-border/60 bg-card shadow-xs p-8 text-center space-y-3">
-            <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto text-primary">
+            <div className="w-12 h-12 rounded-2xl bg-teal-500/12 flex items-center justify-center mx-auto text-teal-600 dark:text-teal-400">
               <MapPin className="w-6 h-6" />
             </div>
             <p className="text-sm font-black text-foreground">
@@ -425,10 +425,10 @@ export default function LiffGroundsPage() {
               return (
                 <div
                   key={venue.id}
-                  className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3 transition-all"
+                  className="rounded-2xl border border-border/60 bg-card shadow-xs overflow-hidden transition-all"
                 >
                   {/* ヘッダー: 分類バッジ・編集/削除ボタン */}
-                  <div className="flex items-start justify-between gap-2 pb-2.5 border-b border-border/60">
+                  <div className="px-4 py-3.5 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 flex items-start justify-between gap-2">
                     <div className="space-y-1.5 min-w-0 flex-1">
                       {/* バッジ群（分類 & サーフェス） */}
                       <div className="flex items-center gap-1.5 flex-wrap">
@@ -439,7 +439,7 @@ export default function LiffGroundsPage() {
                           <span>{venue.categoryLabel || catBadge.label}</span>
                         </span>
 
-                        <span className="px-2 py-0.5 rounded-md bg-muted/50 text-muted-foreground border border-border/60 text-[10px] font-black">
+                        <span className="px-2 py-0.5 rounded-md bg-card text-muted-foreground border border-border/60 text-[10px] font-black">
                           {venue.surface}
                         </span>
                       </div>
@@ -451,7 +451,7 @@ export default function LiffGroundsPage() {
 
                       {/* 住所 ＆ コピーボタン */}
                       <div className="flex items-center gap-1 text-[11px] font-bold text-muted-foreground">
-                        <MapPin className="w-3 h-3 shrink-0 text-primary" />
+                        <MapPin className="w-3 h-3 shrink-0 text-teal-600 dark:text-teal-400" />
                         <span className="truncate">{venue.address || "住所未登録"}</span>
                         {venue.address && (
                           <button
@@ -461,7 +461,7 @@ export default function LiffGroundsPage() {
                             title="住所をコピー"
                           >
                             {isCopied ? (
-                              <Check className="w-3 h-3 text-primary" />
+                              <Check className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
                             ) : (
                               <Copy className="w-3 h-3" />
                             )}
@@ -491,57 +491,59 @@ export default function LiffGroundsPage() {
                     </div>
                   </div>
 
-                  {/* 🅿️ 駐車場情報 */}
-                  <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 space-y-1 text-xs">
-                    <div className="flex items-center gap-1.5 font-black text-primary text-[11px]">
-                      <Car className="w-3.5 h-3.5 shrink-0" />
-                      <span>駐車場ルール & 台数</span>
+                  <div className="p-4 pt-3 space-y-3">
+                    {/* 🅿️ 駐車場情報 */}
+                    <div className="p-3 rounded-xl bg-muted/35 border border-border/60 border-l-4 border-l-primary space-y-1 text-xs">
+                      <div className="flex items-center gap-1.5 font-black text-primary text-[11px]">
+                        <Car className="w-3.5 h-3.5 shrink-0" />
+                        <span>駐車場ルール & 台数</span>
+                      </div>
+                      <p className="text-foreground font-medium text-[11px] leading-relaxed">
+                        {venue.parkingInfo || "駐車場ルールは管理者にお問い合わせください。"}
+                      </p>
                     </div>
-                    <p className="text-foreground font-medium text-[11px] leading-relaxed">
-                      {venue.parkingInfo || "駐車場ルールは管理者にお問い合わせください。"}
-                    </p>
-                  </div>
 
-                  {/* ⚠️ スパイク規定 & ℹ️ 諸注意 */}
-                  <div className="space-y-1.5 text-xs pt-0.5">
-                    {venue.spikeRule && (
-                      <div className="flex items-start gap-1.5 text-foreground font-bold">
-                        <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-primary" />
-                        <span className="text-[11px] leading-relaxed">{venue.spikeRule}</span>
-                      </div>
-                    )}
+                    {/* ⚠️ スパイク規定 & ℹ️ 諸注意 */}
+                    <div className="space-y-1.5 text-xs pt-0.5">
+                      {venue.spikeRule && (
+                        <div className="flex items-start gap-1.5 text-foreground font-bold">
+                          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+                          <span className="text-[11px] leading-relaxed">{venue.spikeRule}</span>
+                        </div>
+                      )}
 
-                    {venue.notes && (
-                      <div className="flex items-start gap-1.5 text-muted-foreground font-medium">
-                        <Info className="w-3.5 h-3.5 shrink-0 mt-0.5 text-primary/80" />
-                        <span className="text-[11px] leading-relaxed">{venue.notes}</span>
-                      </div>
-                    )}
-                  </div>
+                      {venue.notes && (
+                        <div className="flex items-start gap-1.5 text-muted-foreground font-medium">
+                          <Info className="w-3.5 h-3.5 shrink-0 mt-0.5 text-teal-600 dark:text-teal-400" />
+                          <span className="text-[11px] leading-relaxed">{venue.notes}</span>
+                        </div>
+                      )}
+                    </div>
 
-                  {/* 🗺️ ナビ・地図起動フッターバー */}
-                  <div className="pt-2 border-t border-border/60 flex items-center justify-end gap-2">
-                    <a
-                      href={venue.mapUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-black active:scale-95 shadow-xs transition-all"
-                    >
-                      <Navigation className="w-3.5 h-3.5" />
-                      <span>Google Map</span>
-                    </a>
-                    <a
-                      href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(
-                        venue.address || venue.name
-                      )}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-primary/10 text-primary border border-primary/25 hover:bg-primary/15 text-xs font-black active:scale-95 transition-all"
-                      title="ナビ案内を開始"
-                    >
-                      <Compass className="w-3.5 h-3.5" />
-                      <span>ルート案内</span>
-                    </a>
+                    {/* 🗺️ ナビ・地図起動フッターバー */}
+                    <div className="pt-2 border-t border-border/60 flex items-center justify-end gap-2">
+                      <a
+                        href={venue.mapUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-black active:scale-95 shadow-xs transition-all"
+                      >
+                        <Navigation className="w-3.5 h-3.5" />
+                        <span>Google Map</span>
+                      </a>
+                      <a
+                        href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(
+                          venue.address || venue.name
+                        )}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-primary/12 text-primary border border-primary/25 hover:bg-primary/18 text-xs font-black active:scale-95 transition-all"
+                        title="ナビ案内を開始"
+                      >
+                        <Compass className="w-3.5 h-3.5" />
+                        <span>ルート案内</span>
+                      </a>
+                    </div>
                   </div>
                 </div>
               );
@@ -563,7 +565,7 @@ export default function LiffGroundsPage() {
           >
             <div className="flex items-center justify-between border-b border-border/60 pb-3">
               <div className="flex items-center gap-2">
-                <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
+                <span className="w-8 h-8 rounded-xl bg-teal-500/12 text-teal-600 dark:text-teal-400 flex items-center justify-center font-black">
                   <MapPin className="w-4 h-4" />
                 </span>
                 <div>
@@ -692,7 +694,7 @@ export default function LiffGroundsPage() {
               {/* スパイク規定 */}
               <div className="space-y-1">
                 <label className="font-black text-foreground flex items-center gap-1">
-                  <AlertTriangle className="w-3.5 h-3.5 text-primary" />
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
                   <span>スパイク規定</span>
                 </label>
                 <input
@@ -707,7 +709,7 @@ export default function LiffGroundsPage() {
               {/* メモ・諸注意 */}
               <div className="space-y-1">
                 <label className="font-bold text-muted-foreground flex items-center gap-1">
-                  <Info className="w-3.5 h-3.5 text-primary" />
+                  <Info className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
                   <span>施設設備・諸注意メモ</span>
                 </label>
                 <textarea

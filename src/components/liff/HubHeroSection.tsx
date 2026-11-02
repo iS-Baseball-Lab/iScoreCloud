@@ -438,19 +438,19 @@ export function HubHeroSection({
 
   return (
     <div className="space-y-2.5">
-      {/* 🌟 1. 上部セグメントタブ（カラーテーマ完全連動：直近の試合 / 直近の予定） */}
-      <div className="flex items-center p-1 rounded-2xl border border-border/60 bg-card shadow-xs">
+      {/* 🌟 1. 上部セグメントタブ（直近の試合 / 直近の予定） */}
+      <div className="flex items-center gap-1 bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl border border-border/60">
         <button
           type="button"
           onClick={() => setActiveTab("score")}
           className={cn(
-            "flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-xl text-xs font-black transition-all active:scale-95 cursor-pointer",
+            "flex-1 flex items-center justify-center gap-1.5 py-2 px-2 rounded-xl text-xs transition-all active:scale-95 cursor-pointer",
             activeTab === "score"
-              ? "bg-primary text-primary-foreground shadow-xs font-black"
-              : "text-muted-foreground hover:text-foreground hover:bg-muted/50 font-bold"
+              ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+              : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
           )}
         >
-          <Trophy className="w-3.5 h-3.5" />
+          <Trophy className={cn("w-3.5 h-3.5", activeTab === "score" ? "text-primary" : "text-muted-foreground")} />
           <span>直近の試合</span>
         </button>
 
@@ -458,14 +458,24 @@ export function HubHeroSection({
           type="button"
           onClick={() => setActiveTab("next")}
           className={cn(
-            "flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-xl text-xs font-black transition-all active:scale-95 cursor-pointer",
+            "flex-1 flex items-center justify-center gap-1.5 py-2 px-2 rounded-xl text-xs transition-all active:scale-95 cursor-pointer",
             activeTab === "next"
-              ? "bg-primary text-primary-foreground shadow-xs font-black"
-              : "text-muted-foreground hover:text-foreground hover:bg-muted/50 font-bold"
+              ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+              : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
           )}
         >
-          <Sparkles className="w-3.5 h-3.5" />
-          <span>直近の予定 ({weeklyEvents.length})</span>
+          <Sparkles className={cn("w-3.5 h-3.5", activeTab === "next" ? "text-primary" : "text-muted-foreground")} />
+          <span>直近の予定</span>
+          <span
+            className={cn(
+              "px-1.5 py-0.2 rounded-full text-[10px] font-black leading-none",
+              activeTab === "next"
+                ? "bg-primary/12 text-primary"
+                : "bg-background/70 text-muted-foreground"
+            )}
+          >
+            {weeklyEvents.length}
+          </span>
         </button>
       </div>
 
@@ -508,7 +518,7 @@ export function HubHeroSection({
           {/* カルーセル期間ヘッダー & スワイプ案内 */}
           <div className="flex items-center justify-between px-1 text-xs">
             <span className="font-extrabold text-muted-foreground flex items-center gap-1.5">
-              <Calendar className="w-3.5 h-3.5 text-primary" />
+              <Calendar className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
               <span>対象期間: <strong className="text-foreground">{weeklyPeriodLabel}</strong></span>
             </span>
             {weeklyEvents.length > 1 && (
@@ -574,7 +584,7 @@ export function HubHeroSection({
             </div>
           ) : weeklyEvents.length === 0 ? (
             <div className="p-6 rounded-2xl border border-border/60 bg-card shadow-xs text-center space-y-2">
-              <div className="w-10 h-10 rounded-full bg-primary/10 text-primary mx-auto flex items-center justify-center">
+              <div className="w-10 h-10 rounded-full bg-teal-500/12 text-teal-600 dark:text-teal-400 mx-auto flex items-center justify-center">
                 <Calendar className="w-5 h-5" />
               </div>
               <p className="text-sm font-black text-foreground">この期間の活動予定はありません</p>
@@ -596,392 +606,499 @@ export function HubHeroSection({
                 const pStatus = getEventAttendance(ev.id);
                 const cStatus = getEventCarStatus(ev.id);
                 const isMatch = ev.eventType === "match" || ev.amType === "match" || ev.pmType === "match" || (ev.title && (ev.title.includes("試合") || ev.title.includes("vs")));
+                const isOfficial = isMatch && Boolean(ev.title && (ev.title.includes("大会") || ev.title.includes("公式")));
                 const dateMatch = ev.date?.match(/^(.*?)(?:\((.)\))?$/);
                 const dateText = dateMatch ? dateMatch[1] : ev.date;
                 const dayOfWeek = dateMatch ? dateMatch[2] : "";
+                const isSat = dayOfWeek === "土";
+                const isSun = dayOfWeek === "日";
 
                 return (
                   <div
                     key={ev.id}
-                    className="w-[88vw] max-w-[360px] shrink-0 snap-center rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3.5 flex flex-col justify-between transition-all"
+                    className="w-[88vw] max-w-[360px] shrink-0 snap-center rounded-2xl border border-border/60 bg-card shadow-xs overflow-hidden flex flex-col justify-between transition-all"
                   >
-                  <div className="space-y-3">
-                    {/* 上部ヘッダー：日程・日付 & 曜日バッジ & 対象チーム & 全予定リンク */}
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        {/* 日付 ＋ 曜日バッジ */}
-                        <div className="flex items-center gap-1">
-                          <span className="text-xl font-black text-foreground tracking-tight">
-                            {dateText}
-                          </span>
-                          {dayOfWeek && (
-                            <span className="px-1.5 py-0.5 rounded-md text-xs font-black bg-muted/50 text-foreground border border-border/60">
-                              {dayOfWeek}
+                    {/* 上部ヘッダー帯（淡いティントでフラット感を解消） */}
+                    <div className="px-4 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {/* 日付 ＋ 曜日バッジ */}
+                          <div className="flex items-center gap-1">
+                            <span className="text-xl font-black text-foreground tracking-tight">
+                              {dateText}
                             </span>
-                          )}
-                        </div>
-
-                        {/* ⚾ 試合 / 🏃 練習 区分バッジ */}
-                        <span className={`px-2 py-0.5 rounded-lg text-[10.5px] font-black border shrink-0 ${
-                          isMatch
-                            ? "bg-primary text-primary-foreground border-primary"
-                            : "bg-primary/10 text-primary border-primary/25"
-                        }`}>
-                          {isMatch ? "⚾ 試合" : "🏃 練習"}
-                        </span>
-
-                        {/* 🎯 対象チーム・グループバッジ（Aチーム/Bチーム/全体など） */}
-                        {ev.targetGroup && ev.targetGroup !== "全体" && (
-                          <span className="px-2 py-0.5 rounded-lg bg-primary/10 text-primary text-[10.5px] font-black border border-primary/25 shrink-0">
-                            🏷️ {ev.targetGroup}
-                          </span>
-                        )}
-
-                        <span className="px-2 py-0.5 rounded-full bg-muted/50 text-muted-foreground border border-border/60 text-[10px] font-bold">
-                          {idx + 1} / {weeklyEvents.length}
-                        </span>
-                      </div>
-
-                      <Link href="/liff/schedule" className="text-xs font-black text-primary hover:underline flex items-center gap-0.5 shrink-0 ml-1">
-                        <span>全予定</span>
-                        <ChevronRight className="w-3.5 h-3.5" />
-                      </Link>
-                    </div>
-
-                    {/* タイトル（大会名や練習内容） */}
-                    <h3 className="text-sm sm:text-base font-black text-foreground line-clamp-1">
-                      {ev.title || (isMatch ? "公式戦・練習試合" : "通常練習")}
-                    </h3>
-
-                    {/* 活動スケジュール表示 */}
-                    {ev.activityGroups && ev.activityGroups.length > 0 ? (
-                      <div className="space-y-1.5">
-                        <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 space-y-2">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-black text-foreground flex items-center gap-1.5">
-                              <span>{ev.activityGroups[0].eventType === "match" ? "⚾" : "🏃"}</span>
-                              <span>{ev.activityGroups[0].name}</span>
-                            </span>
-                            {ev.activityGroups.length > 1 && (
-                              <span className="text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded-md border border-primary/25">
-                                ＋他{ev.activityGroups.length - 1}班
+                            {dayOfWeek && (
+                              <span
+                                className={cn(
+                                  "px-1.5 py-0.5 rounded-md text-xs font-black border",
+                                  isSat
+                                    ? "bg-blue-500/10 text-blue-500 border-blue-500/20"
+                                    : isSun
+                                    ? "bg-red-500/10 text-red-500 border-red-500/20"
+                                    : "bg-card text-foreground border-border/60"
+                                )}
+                              >
+                                {dayOfWeek}
                               </span>
                             )}
                           </div>
-                          <div className="grid grid-cols-2 gap-2 text-xs font-bold">
-                            <div className="flex items-center gap-1.5 text-foreground bg-card p-2 rounded-xl border border-border/60 shadow-2xs">
-                              <Clock className="w-3.5 h-3.5 text-primary shrink-0" />
-                              <span className="truncate font-black">{ev.activityGroups[0].time || ev.time}</span>
-                            </div>
-                            <div className="flex items-center gap-1.5 text-foreground bg-card p-2 rounded-xl border border-border/60 shadow-2xs">
-                              <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
-                              <span className="truncate font-black">{ev.activityGroups[0].location || ev.location}</span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ) : ev.hasPm && ev.pmTime ? (
-                      /* ☀️🌙 午前/午後分割表示 */
-                      <div className="grid grid-cols-2 gap-2">
-                        {/* ☀️ 【午前】（左） */}
-                        <div className="p-2.5 rounded-2xl bg-muted/35 border border-border/60 flex flex-col justify-between space-y-2">
-                          <div className="flex items-center justify-between">
-                            <span className="text-[10.5px] font-black text-foreground flex items-center gap-1.5">
-                              <span className="w-4 h-4 rounded-md bg-primary/10 text-primary flex items-center justify-center">
-                                <Sun className="w-3 h-3 text-primary" />
-                              </span>
-                              <span>午前</span>
-                            </span>
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${
-                              ev.amType === "match"
-                                ? "bg-primary text-primary-foreground border-primary"
-                                : "bg-primary/10 text-primary border-primary/25"
-                            }`}>
-                              {ev.amType === "match" ? "⚾ 試合" : "🏃 練習"}
-                            </span>
-                          </div>
-                          <div className="p-2 rounded-xl bg-card border border-border/60 space-y-1 shadow-2xs">
-                            <div className="flex items-center gap-1.5 text-xs font-black text-foreground">
-                              <Clock className="w-3.5 h-3.5 text-primary shrink-0" />
-                              <span className="truncate">{ev.amTime || ev.time}</span>
-                            </div>
-                            <div className="flex items-center gap-1.5 text-[11px] font-bold text-foreground/90 truncate">
-                              <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
-                              <span className="truncate">{ev.amLocation || ev.location || "グラウンド"}</span>
-                            </div>
-                          </div>
-                        </div>
 
-                        {/* 🌙 【午後】（右） */}
-                        <div className={`p-2.5 rounded-2xl border flex flex-col justify-between space-y-2 ${
-                          ev.hasPm && ev.pmType !== "off"
-                            ? "bg-muted/35 border-border/60"
-                            : "bg-muted/25 border-dashed border-border/60 opacity-75"
-                        }`}>
-                          <div className="flex items-center justify-between">
-                            <span className="text-[10.5px] font-black text-foreground flex items-center gap-1.5">
-                              <span className="w-4 h-4 rounded-md bg-primary/10 text-primary flex items-center justify-center">
-                                <Moon className="w-3 h-3 text-primary" />
-                              </span>
-                              <span>午後</span>
-                            </span>
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${
-                              !ev.hasPm || ev.pmType === "off"
-                                ? "bg-muted/50 text-muted-foreground border-border/60"
-                                : ev.pmType === "match"
-                                ? "bg-primary text-primary-foreground border-primary"
-                                : "bg-primary/10 text-primary border-primary/25"
-                            }`}>
-                              {!ev.hasPm || ev.pmType === "off" ? "🏖️ なし" : ev.pmType === "match" ? "⚾ 試合" : "🏃 練習"}
-                            </span>
-                          </div>
-                          <div className="p-2 rounded-xl bg-card border border-border/60 space-y-1 shadow-2xs">
-                            <div className="flex items-center gap-1.5 text-xs font-black text-foreground">
-                              <Clock className="w-3.5 h-3.5 text-primary shrink-0" />
-                              <span className="truncate">{ev.hasPm && ev.pmTime ? ev.pmTime : "解散・なし"}</span>
-                            </div>
-                            <div className="flex items-center gap-1.5 text-[11px] font-bold text-foreground/90 truncate">
-                              <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
-                              <span className="truncate">{ev.hasPm && ev.pmLocation ? ev.pmLocation : (ev.hasPm ? ev.amLocation : "—")}</span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      /* 🏃 単一活動表示 */
-                      <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 space-y-2">
-                        <div className="flex items-center justify-between">
-                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${
-                            ev.eventType === "match"
-                              ? "bg-primary text-primary-foreground border-primary"
-                              : "bg-primary/10 text-primary border-primary/25"
-                          }`}>
-                            {ev.eventType === "match" ? "⚾ 試合" : "🏃 練習"}
+                          {/* ⚾ 試合 / 🏃 練習 区分バッジ */}
+                          <span
+                            className={cn(
+                              "px-2 py-0.5 rounded-lg text-[10.5px] font-black border shrink-0",
+                              isOfficial
+                                ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30"
+                                : isMatch
+                                ? "bg-primary/12 text-primary border-primary/25"
+                                : "bg-teal-500/12 text-teal-700 dark:text-teal-300 border-teal-500/25"
+                            )}
+                          >
+                            {isOfficial ? "🏆 公式戦" : isMatch ? "⚾ 試合" : "🏃 練習"}
                           </span>
-                          {ev.dutyGroup && (
-                            <span className="text-[10.5px] font-black text-foreground flex items-center gap-1">
-                              📋 {ev.dutyGroup}
+
+                          {/* 🎯 対象チーム・グループバッジ（Aチーム/Bチーム/全体など） */}
+                          {ev.targetGroup && ev.targetGroup !== "全体" && (
+                            <span className="px-2 py-0.5 rounded-lg bg-primary/10 text-primary text-[10.5px] font-black border border-primary/25 shrink-0">
+                              🏷️ {ev.targetGroup}
                             </span>
                           )}
-                        </div>
-                        <div className="grid grid-cols-2 gap-2 text-xs font-bold">
-                          <div className="flex items-center gap-1.5 text-foreground bg-card p-2 rounded-xl border border-border/60 shadow-2xs">
-                            <Clock className="w-3.5 h-3.5 text-primary shrink-0" />
-                            <span className="truncate font-black">{ev.time || "時間調整中"}</span>
-                          </div>
-                          <div className="flex items-center gap-1.5 text-foreground bg-card p-2 rounded-xl border border-border/60 shadow-2xs">
-                            <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
-                            <span className="truncate font-black">{ev.location || "グラウンド"}</span>
-                          </div>
-                        </div>
-                      </div>
-                    )}
 
-                    {/* 📋 その他の詳細情報ブロック（上から：お弁当・補食、連絡事項、配車、当番） */}
-                    <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 space-y-2.5 text-xs">
-                      {/* 1. お弁当 & 補食 */}
-                      <div className="grid grid-cols-2 gap-2 font-bold">
-                        {/* お弁当 */}
-                        <div className="flex items-center justify-between p-2 rounded-xl bg-card border border-border/60 shadow-2xs">
-                          <span className="text-muted-foreground flex items-center gap-1.5 text-[11px]">
-                            <Utensils className="w-3.5 h-3.5 text-primary" />
-                            <span>お弁当</span>
-                          </span>
-                          <span className={`px-2 py-0.5 rounded-md text-[10.5px] font-black ${
-                            ev.needsLunch
-                              ? "bg-primary/10 text-primary border border-primary/25"
-                              : "text-muted-foreground/70"
-                          }`}>
-                            {ev.needsLunch ? "🍙 要" : "不要"}
+                          <span className="px-2 py-0.5 rounded-full bg-card/80 text-muted-foreground border border-border/60 text-[10px] font-bold">
+                            {idx + 1} / {weeklyEvents.length}
                           </span>
                         </div>
 
-                        {/* 補食 */}
-                        <div className="flex items-center justify-between p-2 rounded-xl bg-card border border-border/60 shadow-2xs">
-                          <span className="text-muted-foreground flex items-center gap-1.5 text-[11px]">
-                            <span className="text-xs leading-none">🍌</span>
-                            <span>補食</span>
-                          </span>
-                          <span className={`px-2 py-0.5 rounded-md text-[10.5px] font-black ${
-                            ev.needsSnack
-                              ? "bg-primary/10 text-primary border border-primary/25"
-                              : "text-muted-foreground/70"
-                          }`}>
-                            {ev.needsSnack ? "🍌 要" : "不要"}
-                          </span>
-                        </div>
+                        <Link href="/liff/schedule" className="text-xs font-black text-primary hover:underline flex items-center gap-0.5 shrink-0 ml-1">
+                          <span>全予定</span>
+                          <ChevronRight className="w-3.5 h-3.5" />
+                        </Link>
                       </div>
 
-                      {/* 2. 連絡事項・メモ（アコーディオン展開対応） */}
-                      {(() => {
-                        const hasMemo = !!ev.memo && ev.memo.trim() !== "";
-                        const isExpanded = !!expandedMemos[ev.id];
+                      {/* タイトル（大会名や練習内容） */}
+                      <h3 className="text-sm sm:text-base font-black text-foreground line-clamp-1">
+                        {ev.title || (isMatch ? "公式戦・練習試合" : "通常練習")}
+                      </h3>
+                    </div>
 
-                        if (!hasMemo) {
-                          return (
-                            <div className="pt-2 border-t border-border/60 flex items-center justify-between text-[11px]">
-                              <span className="text-muted-foreground flex items-center gap-1.5">
-                                <FileText className="w-3.5 h-3.5 text-muted-foreground/70" />
-                                <span>連絡事項</span>
-                              </span>
-                              <span className="text-muted-foreground/70 font-bold">特になし</span>
-                            </div>
-                          );
-                        }
-
-                        return (
-                          <div className="pt-2 border-t border-border/60 space-y-1.5">
-                            {/* アコーディオンヘッダー・開閉トグルボタン */}
-                            <button
-                              type="button"
-                              onClick={() => toggleMemo(ev.id)}
-                              className="w-full flex items-center justify-between p-2 rounded-xl bg-card border border-border/60 hover:bg-muted/50 active:scale-[0.99] transition-all cursor-pointer select-none shadow-2xs"
-                            >
-                              <div className="flex items-center gap-2 min-w-0">
-                                <FileText className="w-3.5 h-3.5 text-primary shrink-0" />
-                                <span className="text-[11px] font-black text-foreground">連絡事項</span>
-                                <span className="px-1.5 py-0.2 rounded-md bg-primary/10 text-primary border border-primary/25 text-[9.5px] font-black shrink-0">
-                                  {isExpanded ? "表示中" : "タップで確認"}
+                    <div className="p-4 pt-3 space-y-3.5 flex-1 flex flex-col justify-between">
+                      <div className="space-y-3">
+                        {/* 活動スケジュール表示 */}
+                        {ev.activityGroups && ev.activityGroups.length > 0 ? (
+                          <div className="space-y-1.5">
+                            <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 space-y-2">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-black text-foreground flex items-center gap-1.5">
+                                  <span>{ev.activityGroups[0].eventType === "match" ? "⚾" : "🏃"}</span>
+                                  <span>{ev.activityGroups[0].name}</span>
                                 </span>
-                              </div>
-
-                              <div className="flex items-center gap-1 text-muted-foreground hover:text-foreground text-[10px] font-bold shrink-0">
-                                <span>{isExpanded ? "閉じる" : "開く"}</span>
-                                {isExpanded ? (
-                                  <ChevronUp className="w-3.5 h-3.5 text-primary transition-transform duration-200" />
-                                ) : (
-                                  <ChevronDown className="w-3.5 h-3.5 text-muted-foreground transition-transform duration-200" />
+                                {ev.activityGroups.length > 1 && (
+                                  <span className="text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded-md border border-primary/25">
+                                    ＋他{ev.activityGroups.length - 1}班
+                                  </span>
                                 )}
                               </div>
-                            </button>
-
-                            {/* アコーディオン本文 */}
-                            {isExpanded && (
-                              <div className="animate-in fade-in slide-in-from-top-1 duration-150 p-2.5 rounded-xl bg-card border border-primary/25 shadow-2xs">
-                                <p className="text-[11px] font-bold text-foreground/90 whitespace-pre-wrap leading-relaxed">
-                                  {ev.memo}
-                                </p>
+                              <div className="grid grid-cols-2 gap-2 text-xs font-bold">
+                                <div className="flex items-center gap-1.5 text-foreground bg-card p-2 rounded-xl border border-border/60 shadow-2xs">
+                                  <Clock className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400 shrink-0" />
+                                  <span className="truncate font-black">{ev.activityGroups[0].time || ev.time}</span>
+                                </div>
+                                <div className="flex items-center gap-1.5 text-foreground bg-card p-2 rounded-xl border border-border/60 shadow-2xs">
+                                  <MapPin className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 shrink-0" />
+                                  <span className="truncate font-black">{ev.activityGroups[0].location || ev.location}</span>
+                                </div>
                               </div>
-                            )}
+                            </div>
                           </div>
-                        );
-                      })()}
+                        ) : ev.hasPm && ev.pmTime ? (
+                          /* ☀️🌙 午前/午後分割表示（Sky vs Indigo コントラスト） */
+                          <div className="grid grid-cols-2 gap-2">
+                            {/* ☀️ 【午前】（左） */}
+                            <div className="p-2.5 rounded-2xl bg-muted/35 border border-border/60 flex flex-col justify-between space-y-2">
+                              <div className="flex items-center justify-between gap-1">
+                                <span className="px-1.5 py-0.5 rounded-md bg-sky-500/12 text-sky-700 dark:text-sky-300 border border-sky-500/25 text-[10px] font-black flex items-center gap-1 shrink-0">
+                                  <span>☀️ 午前</span>
+                                </span>
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border shrink-0 ${
+                                  ev.amType === "match"
+                                    ? "bg-primary/12 text-primary border-primary/25"
+                                    : "bg-teal-500/12 text-teal-700 dark:text-teal-300 border-teal-500/25"
+                                }`}>
+                                  {ev.amType === "match" ? "⚾ 試合" : "🏃 練習"}
+                                </span>
+                              </div>
+                              <div className="p-2 rounded-xl bg-card border border-border/60 space-y-1 shadow-2xs">
+                                <div className="flex items-center gap-1.5 text-xs font-black text-foreground">
+                                  <Clock className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400 shrink-0" />
+                                  <span className="truncate">{ev.amTime || ev.time}</span>
+                                </div>
+                                <div className="flex items-center gap-1.5 text-[11px] font-bold text-foreground/90 truncate">
+                                  <MapPin className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 shrink-0" />
+                                  <span className="truncate">{ev.amLocation || ev.location || "グラウンド"}</span>
+                                </div>
+                              </div>
+                            </div>
 
-                      {/* 3. 配車 */}
-                      <div className="pt-2 border-t border-border/60 flex items-center justify-between font-bold">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <div className="w-6 h-6 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                            <Car className="w-3.5 h-3.5 text-primary" />
+                            {/* 🌙 【午後】（右） */}
+                            <div className={`p-2.5 rounded-2xl border flex flex-col justify-between space-y-2 ${
+                              ev.hasPm && ev.pmType !== "off"
+                                ? "bg-muted/35 border-border/60"
+                                : "bg-muted/25 border-dashed border-border/60 opacity-75"
+                            }`}>
+                              <div className="flex items-center justify-between gap-1">
+                                <span
+                                  className={cn(
+                                    "px-1.5 py-0.5 rounded-md text-[10px] font-black border flex items-center gap-1 shrink-0",
+                                    ev.hasPm && ev.pmType !== "off"
+                                      ? "bg-indigo-500/12 text-indigo-700 dark:text-indigo-300 border-indigo-500/25"
+                                      : "bg-muted/50 text-muted-foreground border-border/60"
+                                  )}
+                                >
+                                  <span>🌙 午後</span>
+                                </span>
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border shrink-0 ${
+                                  !ev.hasPm || ev.pmType === "off"
+                                    ? "bg-muted/50 text-muted-foreground border-border/60"
+                                    : ev.pmType === "match"
+                                    ? "bg-primary/12 text-primary border-primary/25"
+                                    : "bg-teal-500/12 text-teal-700 dark:text-teal-300 border-teal-500/25"
+                                }`}>
+                                  {!ev.hasPm || ev.pmType === "off" ? "🏖️ なし" : ev.pmType === "match" ? "⚾ 試合" : "🏃 練習"}
+                                </span>
+                              </div>
+                              <div className="p-2 rounded-xl bg-card border border-border/60 space-y-1 shadow-2xs">
+                                <div className="flex items-center gap-1.5 text-xs font-black text-foreground">
+                                  <Clock className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                                  <span className="truncate">{ev.hasPm && ev.pmTime ? ev.pmTime : "解散・なし"}</span>
+                                </div>
+                                <div className="flex items-center gap-1.5 text-[11px] font-bold text-foreground/90 truncate">
+                                  <MapPin className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 shrink-0" />
+                                  <span className="truncate">{ev.hasPm && ev.pmLocation ? ev.pmLocation : (ev.hasPm ? ev.amLocation : "—")}</span>
+                                </div>
+                              </div>
+                            </div>
                           </div>
-                          <span className="text-muted-foreground text-[11px] shrink-0">配車:</span>
-                          <span className="text-foreground truncate font-black text-[11px]">
-                            {ev.carInfo ? ev.carInfo : "なし（現地集合）"}
-                          </span>
-                        </div>
-
-                        {ev.carInfo ? (
-                          <Link
-                            href="/liff/carpool"
-                            className="text-[10.5px] font-black text-primary hover:underline flex items-center gap-0.5 shrink-0 ml-2"
-                          >
-                            <span>配車表へ</span>
-                            <ChevronRight className="w-3.5 h-3.5" />
-                          </Link>
-                        ) : null}
-                      </div>
-
-                      {/* 4. 一番下に当番 */}
-                      {ev.dutyGroup && (
-                        <div className="pt-2 border-t border-border/60 flex items-center justify-between text-[11px] font-bold">
-                          <span className="text-muted-foreground flex items-center gap-1.5">
-                            <ClipboardList className="w-3.5 h-3.5 text-primary" />
-                            <span>お当番</span>
-                          </span>
-                          <span className="px-2.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/25 font-black flex items-center gap-1">
-                            <span>📋</span>
-                            <span>{ev.dutyGroup}</span>
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* 🌟 出欠回答エリア (アコーディオン化・デフォルト閉じ) */}
-                  <div className="pt-2 border-t border-border/60 space-y-2">
-                    {/* アコーディオントグルボタン */}
-                    <button
-                      type="button"
-                      onClick={() => toggleAttendance(ev.id)}
-                      className="w-full flex items-center justify-between p-2.5 rounded-2xl bg-card border border-border/60 hover:border-primary/40 shadow-2xs transition-all cursor-pointer group select-none"
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="w-7 h-7 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
-                          <Users className="w-4 h-4" />
-                        </span>
-                        <div className="flex items-center gap-2 text-xs font-black text-foreground">
-                          <span>出欠を回答・確認</span>
-                          {/* 現在のステータス要約バッジ */}
-                          <span className={`px-2.5 py-0.5 rounded-full text-[10.5px] font-black border ${
-                            pStatus === "pending"
-                              ? "bg-muted/50 text-muted-foreground border-border/60"
-                              : "bg-primary/10 text-primary border-primary/25"
-                          }`}>
-                            {pStatus === "present" ? "○ 出席" : pStatus === "late" ? "△ 調整" : pStatus === "absent" ? "× 欠席" : "？ 未定"}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-1 text-[11px] font-bold text-muted-foreground group-hover:text-foreground">
-                        <span>{expandedAttendance[ev.id] ? "閉じる" : "開く"}</span>
-                        {expandedAttendance[ev.id] ? (
-                          <ChevronUp className="w-4 h-4 text-primary shrink-0" />
                         ) : (
-                          <ChevronDown className="w-4 h-4 text-muted-foreground group-hover:text-primary shrink-0" />
-                        )}
-                      </div>
-                    </button>
-
-                    {/* 展開時の中身 */}
-                    {expandedAttendance[ev.id] && (
-                      <div className="space-y-3 pt-1 animate-in fade-in slide-in-from-top-1 duration-150">
-                        {/* 👦 1. 保護者の場合: お子様（選手）の出欠回答 */}
-                        {userRole === "parent" && children.map((child) => {
-                          const childStatus = getChildAttendance(ev.id, child.id);
-                          return (
-                            <div key={child.id} className="p-3 rounded-2xl bg-muted/35 border border-border/60 space-y-2.5">
-                              <div className="flex items-center justify-between text-xs">
-                                <span className="font-black text-foreground flex items-center gap-1.5">
-                                  <span className="w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs">👦</span>
-                                  <span>お子様（{child.name}{child.uniformNumber ? ` ${child.uniformNumber}` : ""}）の出欠</span>
+                          /* 🏃 単一活動表示 */
+                          <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 space-y-2">
+                            <div className="flex items-center justify-between gap-1.5">
+                              <div className="flex items-center gap-1.5">
+                                <span className="px-1.5 py-0.5 rounded-md bg-sky-500/12 text-sky-700 dark:text-sky-300 border border-sky-500/25 text-[10px] font-black">
+                                  ☀️ 午前
                                 </span>
-                                <span className="text-[11px] font-bold">
-                                  {childStatus === "present" && <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/25 font-black">○ 参加</span>}
-                                  {childStatus === "late" && <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/25 font-black">△ 調整</span>}
-                                  {childStatus === "absent" && <span className="px-2 py-0.5 rounded-full bg-muted/60 text-foreground border border-border/60 font-black">× 欠席</span>}
-                                  {childStatus === "pending" && <span className="px-2 py-0.5 rounded-full bg-muted/50 text-muted-foreground border border-border/60 font-black">？ 未定</span>}
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${
+                                  ev.eventType === "match"
+                                    ? "bg-primary/12 text-primary border-primary/25"
+                                    : "bg-teal-500/12 text-teal-700 dark:text-teal-300 border-teal-500/25"
+                                }`}>
+                                  {ev.eventType === "match" ? "⚾ 試合" : "🏃 練習"}
                                 </span>
                               </div>
+                              {ev.dutyGroup && (
+                                <span className="px-2 py-0.5 rounded-full bg-amber-500/12 text-amber-700 dark:text-amber-300 border border-amber-500/25 text-[10px] font-black flex items-center gap-1">
+                                  📋 {ev.dutyGroup}
+                                </span>
+                              )}
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 text-xs font-bold">
+                              <div className="flex items-center gap-1.5 text-foreground bg-card p-2 rounded-xl border border-border/60 shadow-2xs">
+                                <Clock className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400 shrink-0" />
+                                <span className="truncate font-black">{ev.time || "時間調整中"}</span>
+                              </div>
+                              <div className="flex items-center gap-1.5 text-foreground bg-card p-2 rounded-xl border border-border/60 shadow-2xs">
+                                <MapPin className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 shrink-0" />
+                                <span className="truncate font-black">{ev.location || "グラウンド"}</span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
 
-                              <div className="grid grid-cols-4 gap-1.5">
+                        {/* 📋 その他の詳細情報ブロック（上から：お弁当・補食、連絡事項、配車、当番） */}
+                        <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 space-y-2.5 text-xs">
+                          {/* 1. お弁当 & 補食 */}
+                          <div className="grid grid-cols-2 gap-2 font-bold">
+                            {/* お弁当 */}
+                            <div className="flex items-center justify-between p-2 rounded-xl bg-card border border-border/60 shadow-2xs">
+                              <span className="text-muted-foreground flex items-center gap-1 text-[11px]">
+                                <Utensils className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                                <span>お弁当</span>
+                              </span>
+                              <span className={`px-2 py-0.5 rounded-md text-[10.5px] font-black ${
+                                ev.needsLunch
+                                  ? "bg-amber-500/12 text-amber-700 dark:text-amber-300 border border-amber-500/25"
+                                  : "text-muted-foreground/70"
+                              }`}>
+                                {ev.needsLunch ? "🍙 要" : "不要"}
+                              </span>
+                            </div>
+
+                            {/* 補食 */}
+                            <div className="flex items-center justify-between p-2 rounded-xl bg-card border border-border/60 shadow-2xs">
+                              <span className="text-muted-foreground flex items-center gap-1 text-[11px]">
+                                <span className="text-xs leading-none">🍌</span>
+                                <span>補食</span>
+                              </span>
+                              <span className={`px-2 py-0.5 rounded-md text-[10.5px] font-black ${
+                                ev.needsSnack
+                                  ? "bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25"
+                                  : "text-muted-foreground/70"
+                              }`}>
+                                {ev.needsSnack ? "🍌 要" : "不要"}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* 2. 連絡事項・メモ（アコーディオン展開対応・左アクセントバー） */}
+                          {(() => {
+                            const hasMemo = !!ev.memo && ev.memo.trim() !== "";
+                            const isExpanded = !!expandedMemos[ev.id];
+
+                            if (!hasMemo) {
+                              return (
+                                <div className="pt-2 border-t border-border/60 flex items-center justify-between text-[11px]">
+                                  <span className="text-muted-foreground flex items-center gap-1.5">
+                                    <FileText className="w-3.5 h-3.5 text-muted-foreground/70" />
+                                    <span>連絡事項</span>
+                                  </span>
+                                  <span className="text-muted-foreground/70 font-bold">特になし</span>
+                                </div>
+                              );
+                            }
+
+                            return (
+                              <div className="pt-2 border-t border-border/60 space-y-1.5">
+                                {/* アコーディオンヘッダー・開閉トグルボタン */}
                                 <button
                                   type="button"
-                                  onClick={() => setChildAttendance(ev.id, child.id, "present")}
+                                  onClick={() => toggleMemo(ev.id)}
+                                  className="w-full flex items-center justify-between p-2 rounded-xl bg-card border border-border/60 border-l-4 border-l-amber-500 hover:bg-muted/50 active:scale-[0.99] transition-all cursor-pointer select-none shadow-2xs"
+                                >
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <FileText className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                                    <span className="text-[11px] font-black text-foreground">連絡事項</span>
+                                    <span className="px-1.5 py-0.2 rounded-md bg-amber-500/12 text-amber-700 dark:text-amber-300 border border-amber-500/25 text-[9.5px] font-black shrink-0">
+                                      {isExpanded ? "表示中" : "タップで確認"}
+                                    </span>
+                                  </div>
+
+                                  <div className="flex items-center gap-1 text-muted-foreground hover:text-foreground text-[10px] font-bold shrink-0">
+                                    <span>{isExpanded ? "閉じる" : "開く"}</span>
+                                    {isExpanded ? (
+                                      <ChevronUp className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 transition-transform duration-200" />
+                                    ) : (
+                                      <ChevronDown className="w-3.5 h-3.5 text-muted-foreground transition-transform duration-200" />
+                                    )}
+                                  </div>
+                                </button>
+
+                                {/* アコーディオン本文 */}
+                                {isExpanded && (
+                                  <div className="animate-in fade-in slide-in-from-top-1 duration-150 p-2.5 rounded-xl bg-card border border-border/60 border-l-4 border-l-amber-500 shadow-2xs">
+                                    <p className="text-[11px] font-bold text-foreground/90 whitespace-pre-wrap leading-relaxed">
+                                      {ev.memo}
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
+
+                          {/* 3. 配車 */}
+                          <div className="pt-2 border-t border-border/60 flex items-center justify-between font-bold">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <div className="w-6 h-6 rounded-lg bg-teal-500/12 flex items-center justify-center shrink-0">
+                                <Car className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
+                              </div>
+                              <span className="text-muted-foreground text-[11px] shrink-0">配車:</span>
+                              <span className="text-foreground truncate font-black text-[11px]">
+                                {ev.carInfo ? ev.carInfo : "なし（現地集合）"}
+                              </span>
+                            </div>
+
+                            {ev.carInfo ? (
+                              <Link
+                                href="/liff/carpool"
+                                className="text-[10.5px] font-black text-primary hover:underline flex items-center gap-0.5 shrink-0 ml-2"
+                              >
+                                <span>配車表へ</span>
+                                <ChevronRight className="w-3.5 h-3.5" />
+                              </Link>
+                            ) : null}
+                          </div>
+
+                          {/* 4. 一番下に当番（左アクセントバー） */}
+                          {ev.dutyGroup && (
+                            <div className="p-2 rounded-xl bg-card border border-border/60 border-l-4 border-l-amber-500 flex items-center justify-between text-[11px] font-bold shadow-2xs">
+                              <span className="text-foreground font-black flex items-center gap-1.5">
+                                <ClipboardList className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                                <span>お当番</span>
+                              </span>
+                              <span className="px-2.5 py-0.5 rounded-full bg-amber-500/12 text-amber-700 dark:text-amber-300 border border-amber-500/25 font-black flex items-center gap-1">
+                                <span>📋</span>
+                                <span>{ev.dutyGroup}</span>
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* 🌟 出欠回答エリア (アコーディオン化・デフォルト閉じ) */}
+                      <div className="pt-2 border-t border-border/60 space-y-2">
+                        {/* アコーディオントグルボタン */}
+                        <button
+                          type="button"
+                          onClick={() => toggleAttendance(ev.id)}
+                          className="w-full flex items-center justify-between p-2.5 rounded-2xl bg-card border border-border/60 hover:border-primary/40 shadow-2xs transition-all cursor-pointer group select-none"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="w-7 h-7 rounded-xl bg-teal-500/12 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
+                              <Users className="w-4 h-4" />
+                            </span>
+                            <div className="flex items-center gap-2 text-xs font-black text-foreground">
+                              <span>出欠を回答・確認</span>
+                              {/* 現在のステータス要約バッジ */}
+                              <span className={`px-2.5 py-0.5 rounded-full text-[10.5px] font-black border ${
+                                pStatus === "present"
+                                  ? "bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 border-emerald-500/25"
+                                  : pStatus === "late"
+                                  ? "bg-amber-500/12 text-amber-700 dark:text-amber-300 border-amber-500/25"
+                                  : pStatus === "absent"
+                                  ? "bg-rose-500/12 text-rose-700 dark:text-rose-300 border-rose-500/25"
+                                  : "bg-muted/50 text-muted-foreground border-border/60"
+                              }`}>
+                                {pStatus === "present" ? "○ 出席" : pStatus === "late" ? "△ 調整" : pStatus === "absent" ? "× 欠席" : "？ 未定"}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1 text-[11px] font-bold text-muted-foreground group-hover:text-foreground">
+                            <span>{expandedAttendance[ev.id] ? "閉じる" : "開く"}</span>
+                            {expandedAttendance[ev.id] ? (
+                              <ChevronUp className="w-4 h-4 text-primary shrink-0" />
+                            ) : (
+                              <ChevronDown className="w-4 h-4 text-muted-foreground group-hover:text-primary shrink-0" />
+                            )}
+                          </div>
+                        </button>
+
+                        {/* 展開時の中身 */}
+                        {expandedAttendance[ev.id] && (
+                          <div className="space-y-3 pt-1 animate-in fade-in slide-in-from-top-1 duration-150">
+                            {/* 👦 1. 保護者の場合: お子様（選手）の出欠回答 */}
+                            {userRole === "parent" && children.map((child) => {
+                              const childStatus = getChildAttendance(ev.id, child.id);
+                              return (
+                                <div key={child.id} className="p-3 rounded-2xl bg-muted/35 border border-border/60 space-y-2.5">
+                                  <div className="flex items-center justify-between text-xs">
+                                    <span className="font-black text-foreground flex items-center gap-1.5">
+                                      <span className="w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs">👦</span>
+                                      <span>お子様（{child.name}{child.uniformNumber ? ` ${child.uniformNumber}` : ""}）の出欠</span>
+                                    </span>
+                                    <span className="text-[11px] font-bold">
+                                      {childStatus === "present" && <span className="px-2 py-0.5 rounded-full bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 font-black">○ 参加</span>}
+                                      {childStatus === "late" && <span className="px-2 py-0.5 rounded-full bg-amber-500/12 text-amber-700 dark:text-amber-300 border border-amber-500/25 font-black">△ 調整</span>}
+                                      {childStatus === "absent" && <span className="px-2 py-0.5 rounded-full bg-rose-500/12 text-rose-700 dark:text-rose-300 border border-rose-500/25 font-black">× 欠席</span>}
+                                      {childStatus === "pending" && <span className="px-2 py-0.5 rounded-full bg-muted/50 text-muted-foreground border border-border/60 font-black">？ 未定</span>}
+                                    </span>
+                                  </div>
+
+                                  <div className="grid grid-cols-4 gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => setChildAttendance(ev.id, child.id, "present")}
+                                      className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black border transition-all active:scale-95 cursor-pointer ${
+                                        childStatus === "present"
+                                          ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                                          : "bg-card hover:bg-muted text-muted-foreground border-border/60"
+                                      }`}
+                                    >
+                                      <span className="text-base leading-none mb-0.5 font-black">○</span>
+                                      <span className="text-[10px]">参加</span>
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => setChildAttendance(ev.id, child.id, "late")}
+                                      className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black border transition-all active:scale-95 cursor-pointer ${
+                                        childStatus === "late"
+                                          ? "bg-amber-500 text-white border-amber-500 shadow-xs"
+                                          : "bg-card hover:bg-muted text-muted-foreground border-border/60"
+                                      }`}
+                                    >
+                                      <span className="text-base leading-none mb-0.5 font-black">△</span>
+                                      <span className="text-[10px]">調整</span>
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => setChildAttendance(ev.id, child.id, "absent")}
+                                      className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black border transition-all active:scale-95 cursor-pointer ${
+                                        childStatus === "absent"
+                                          ? "bg-rose-600 text-white border-rose-600 shadow-xs"
+                                          : "bg-card hover:bg-muted text-muted-foreground border-border/60"
+                                      }`}
+                                    >
+                                      <span className="text-base leading-none mb-0.5 font-black">×</span>
+                                      <span className="text-[10px]">欠席</span>
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => setChildAttendance(ev.id, child.id, "pending")}
+                                      className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black border transition-all active:scale-95 cursor-pointer ${
+                                        childStatus === "pending"
+                                          ? "bg-slate-600 text-white border-slate-600 shadow-xs"
+                                          : "bg-card hover:bg-muted text-muted-foreground border-border/60"
+                                      }`}
+                                    >
+                                      <span className="text-base leading-none mb-0.5 font-black">？</span>
+                                      <span className="text-[10px]">未定</span>
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+
+                            {/* 👨 2. 保護者本人（または選手本人）の出欠回答 */}
+                            <div className="space-y-2.5 p-3 rounded-2xl bg-muted/35 border border-border/60">
+                              <div className="flex items-center justify-between text-xs">
+                                <span className="font-black text-foreground flex items-center gap-1.5">
+                                  <span className="w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs">
+                                    {userRole === "parent" ? "👨" : "⚾"}
+                                  </span>
+                                  <span>{userRole === "parent" ? "保護者（自分）の参加・当番" : "あなたの出欠回答"}</span>
+                                </span>
+                                <span className="text-[11px] font-bold">
+                                  {pStatus === "present" && <span className="px-2 py-0.5 rounded-full bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 font-black">○ {userRole === "parent" ? "参加・当番可" : "出席"}</span>}
+                                  {pStatus === "late" && <span className="px-2 py-0.5 rounded-full bg-amber-500/12 text-amber-700 dark:text-amber-300 border border-amber-500/25 font-black">△ 調整</span>}
+                                  {pStatus === "absent" && <span className="px-2 py-0.5 rounded-full bg-rose-500/12 text-rose-700 dark:text-rose-300 border border-rose-500/25 font-black">× 欠席</span>}
+                                  {pStatus === "pending" && <span className="px-2 py-0.5 rounded-full bg-muted/50 text-muted-foreground border border-border/60 font-black">？ 未定</span>}
+                                </span>
+                              </div>
+
+                              {/* ○, △, ×, ？ の4等分グリッド */}
+                              <div className="grid grid-cols-4 gap-1.5">
+                                {/* ○ 出席 */}
+                                <button
+                                  type="button"
+                                  onClick={() => setEventAttendance(ev.id, "present")}
                                   className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black border transition-all active:scale-95 cursor-pointer ${
-                                    childStatus === "present"
-                                      ? "bg-primary text-primary-foreground border-primary shadow-xs"
+                                    pStatus === "present"
+                                      ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
                                       : "bg-card hover:bg-muted text-muted-foreground border-border/60"
                                   }`}
                                 >
                                   <span className="text-base leading-none mb-0.5 font-black">○</span>
-                                  <span className="text-[10px]">参加</span>
+                                  <span className="text-[10px]">{userRole === "parent" ? "参加/当番" : "出席"}</span>
                                 </button>
 
+                                {/* △ 調整 / 遅刻 */}
                                 <button
                                   type="button"
-                                  onClick={() => setChildAttendance(ev.id, child.id, "late")}
+                                  onClick={() => setEventAttendance(ev.id, "late")}
                                   className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black border transition-all active:scale-95 cursor-pointer ${
-                                    childStatus === "late"
-                                      ? "bg-primary text-primary-foreground border-primary shadow-xs"
+                                    pStatus === "late"
+                                      ? "bg-amber-500 text-white border-amber-500 shadow-xs"
                                       : "bg-card hover:bg-muted text-muted-foreground border-border/60"
                                   }`}
                                 >
@@ -989,12 +1106,13 @@ export function HubHeroSection({
                                   <span className="text-[10px]">調整</span>
                                 </button>
 
+                                {/* × 欠席 */}
                                 <button
                                   type="button"
-                                  onClick={() => setChildAttendance(ev.id, child.id, "absent")}
+                                  onClick={() => setEventAttendance(ev.id, "absent")}
                                   className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black border transition-all active:scale-95 cursor-pointer ${
-                                    childStatus === "absent"
-                                      ? "bg-primary text-primary-foreground border-primary shadow-xs"
+                                    pStatus === "absent"
+                                      ? "bg-rose-600 text-white border-rose-600 shadow-xs"
                                       : "bg-card hover:bg-muted text-muted-foreground border-border/60"
                                   }`}
                                 >
@@ -1002,12 +1120,13 @@ export function HubHeroSection({
                                   <span className="text-[10px]">欠席</span>
                                 </button>
 
+                                {/* ？ 未定 */}
                                 <button
                                   type="button"
-                                  onClick={() => setChildAttendance(ev.id, child.id, "pending")}
+                                  onClick={() => setEventAttendance(ev.id, "pending")}
                                   className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black border transition-all active:scale-95 cursor-pointer ${
-                                    childStatus === "pending"
-                                      ? "bg-primary text-primary-foreground border-primary shadow-xs"
+                                    pStatus === "pending"
+                                      ? "bg-slate-600 text-white border-slate-600 shadow-xs"
                                       : "bg-card hover:bg-muted text-muted-foreground border-border/60"
                                   }`}
                                 >
@@ -1016,142 +1135,64 @@ export function HubHeroSection({
                                 </button>
                               </div>
                             </div>
-                          );
-                        })}
 
-                        {/* 👨 2. 保護者本人（または選手本人）の出欠回答 */}
-                        <div className="space-y-2.5 p-3 rounded-2xl bg-muted/35 border border-border/60">
-                          <div className="flex items-center justify-between text-xs">
-                            <span className="font-black text-foreground flex items-center gap-1.5">
-                              <span className="w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs">
-                                {userRole === "parent" ? "👨" : "⚾"}
-                              </span>
-                              <span>{userRole === "parent" ? "保護者（自分）の参加・当番" : "あなたの出欠回答"}</span>
-                            </span>
-                            <span className="text-[11px] font-bold">
-                              {pStatus === "present" && <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/25 font-black">○ {userRole === "parent" ? "参加・当番可" : "出席"}</span>}
-                              {pStatus === "late" && <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/25 font-black">△ 調整</span>}
-                              {pStatus === "absent" && <span className="px-2 py-0.5 rounded-full bg-muted/60 text-foreground border border-border/60 font-black">× 欠席</span>}
-                              {pStatus === "pending" && <span className="px-2 py-0.5 rounded-full bg-muted/50 text-muted-foreground border border-border/60 font-black">？ 未定</span>}
-                            </span>
-                          </div>
+                            {/* 参加時の配車アンケート (※試合・遠征時のみ表示) */}
+                            {(ev.eventType === "match" || (ev.title && (ev.title.includes("試合") || ev.title.includes("遠征") || ev.title.includes("大会") || ev.title.includes("vs")))) && (pStatus === "present" || pStatus === "late") && (
+                              <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 space-y-2 animate-in fade-in duration-200">
+                                <div className="flex items-center justify-between text-[11px] font-bold text-foreground">
+                                  <span className="flex items-center gap-1.5 font-black text-foreground">
+                                    <Car className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
+                                    <span>配車・移動手段 (試合・遠征)</span>
+                                  </span>
+                                </div>
 
-                          {/* ○, △, ×, ？ の4等分グリッド */}
-                          <div className="grid grid-cols-4 gap-1.5">
-                            {/* ○ 出席 */}
-                            <button
-                              type="button"
-                              onClick={() => setEventAttendance(ev.id, "present")}
-                              className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black border transition-all active:scale-95 cursor-pointer ${
-                                pStatus === "present"
-                                  ? "bg-primary text-primary-foreground border-primary shadow-xs"
-                                  : "bg-card hover:bg-muted text-muted-foreground border-border/60"
-                              }`}
-                            >
-                              <span className="text-base leading-none mb-0.5 font-black">○</span>
-                              <span className="text-[10px]">{userRole === "parent" ? "参加/当番" : "出席"}</span>
-                            </button>
+                                <div className="grid grid-cols-3 gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => setEventCarStatus(ev.id, "can_drive")}
+                                    className={`py-1.5 px-1 rounded-xl text-[10.5px] transition-all cursor-pointer ${
+                                      cStatus === "can_drive"
+                                        ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
+                                        : "bg-card border border-border/60 text-muted-foreground hover:bg-muted/50 hover:text-foreground font-bold"
+                                    }`}
+                                  >
+                                    🚗 車出し可
+                                  </button>
 
-                            {/* △ 調整 / 遅刻 */}
-                            <button
-                              type="button"
-                              onClick={() => setEventAttendance(ev.id, "late")}
-                              className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black border transition-all active:scale-95 cursor-pointer ${
-                                pStatus === "late"
-                                  ? "bg-primary text-primary-foreground border-primary shadow-xs"
-                                  : "bg-card hover:bg-muted text-muted-foreground border-border/60"
-                              }`}
-                            >
-                              <span className="text-base leading-none mb-0.5 font-black">△</span>
-                              <span className="text-[10px]">調整</span>
-                            </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setEventCarStatus(ev.id, "need_ride")}
+                                    className={`py-1.5 px-1 rounded-xl text-[10.5px] transition-all cursor-pointer ${
+                                      cStatus === "need_ride"
+                                        ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
+                                        : "bg-card border border-border/60 text-muted-foreground hover:bg-muted/50 hover:text-foreground font-bold"
+                                    }`}
+                                  >
+                                    🙋 送迎希望
+                                  </button>
 
-                            {/* × 欠席 */}
-                            <button
-                              type="button"
-                              onClick={() => setEventAttendance(ev.id, "absent")}
-                              className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black border transition-all active:scale-95 cursor-pointer ${
-                                pStatus === "absent"
-                                  ? "bg-primary text-primary-foreground border-primary shadow-xs"
-                                  : "bg-card hover:bg-muted text-muted-foreground border-border/60"
-                              }`}
-                            >
-                              <span className="text-base leading-none mb-0.5 font-black">×</span>
-                              <span className="text-[10px]">欠席</span>
-                            </button>
-
-                            {/* ？ 未定 */}
-                            <button
-                              type="button"
-                              onClick={() => setEventAttendance(ev.id, "pending")}
-                              className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black border transition-all active:scale-95 cursor-pointer ${
-                                pStatus === "pending"
-                                  ? "bg-primary text-primary-foreground border-primary shadow-xs"
-                                  : "bg-card hover:bg-muted text-muted-foreground border-border/60"
-                              }`}
-                            >
-                              <span className="text-base leading-none mb-0.5 font-black">？</span>
-                              <span className="text-[10px]">未定</span>
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* 参加時の配車アンケート (※試合・遠征時のみ表示) */}
-                        {(ev.eventType === "match" || (ev.title && (ev.title.includes("試合") || ev.title.includes("遠征") || ev.title.includes("大会") || ev.title.includes("vs")))) && (pStatus === "present" || pStatus === "late") && (
-                          <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 space-y-2 animate-in fade-in duration-200">
-                            <div className="flex items-center justify-between text-[11px] font-bold text-foreground">
-                              <span className="flex items-center gap-1.5 font-black text-foreground">
-                                <Car className="w-3.5 h-3.5 text-primary" />
-                                <span>配車・移動手段 (試合・遠征)</span>
-                              </span>
-                            </div>
-
-                            <div className="grid grid-cols-3 gap-1.5">
-                              <button
-                                type="button"
-                                onClick={() => setEventCarStatus(ev.id, "can_drive")}
-                                className={`py-1.5 px-1 rounded-xl text-[10.5px] font-bold border transition-all cursor-pointer ${
-                                  cStatus === "can_drive"
-                                    ? "bg-primary text-primary-foreground border-primary shadow-2xs font-black"
-                                    : "bg-card border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
-                                }`}
-                              >
-                                🚗 車出し可
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => setEventCarStatus(ev.id, "need_ride")}
-                                className={`py-1.5 px-1 rounded-xl text-[10.5px] font-bold border transition-all cursor-pointer ${
-                                  cStatus === "need_ride"
-                                    ? "bg-primary text-primary-foreground border-primary shadow-2xs font-black"
-                                    : "bg-card border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
-                                }`}
-                              >
-                                🙋 送迎希望
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => setEventCarStatus(ev.id, "not_needed")}
-                                className={`py-1.5 px-1 rounded-xl text-[10.5px] font-bold border transition-all cursor-pointer ${
-                                  cStatus === "not_needed"
-                                    ? "bg-primary text-primary-foreground border-primary shadow-2xs font-black"
-                                    : "bg-card border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"
-                                }`}
-                              >
-                                🚶 自走・不要
-                              </button>
-                            </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => setEventCarStatus(ev.id, "not_needed")}
+                                    className={`py-1.5 px-1 rounded-xl text-[10.5px] transition-all cursor-pointer ${
+                                      cStatus === "not_needed"
+                                        ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
+                                        : "bg-card border border-border/60 text-muted-foreground hover:bg-muted/50 hover:text-foreground font-bold"
+                                    }`}
+                                  >
+                                    🚶 自走・不要
+                                  </button>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
-                    )}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
           )}
         </div>
       )}

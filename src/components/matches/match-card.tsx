@@ -326,8 +326,8 @@ export function MatchCard({
               <div className="flex items-center flex-wrap gap-2 mb-1.5">
                 <span className={cn(
                   "w-16 text-center text-[10px] sm:text-xs font-black px-1.5 py-0.5 rounded shrink-0",
-                  match.matchType === 'official' ? "bg-primary/12 text-primary border border-primary/25" :
-                  match.matchType === 'exchange' ? "bg-primary/10 text-primary border border-primary/20" :
+                  match.matchType === 'official' ? "bg-amber-500/12 text-amber-700 dark:text-amber-300 border border-amber-500/30" :
+                  match.matchType === 'exchange' ? "bg-sky-500/12 text-sky-700 dark:text-sky-300 border border-sky-500/30" :
                   "bg-muted/50 text-muted-foreground border border-border/60"
                 )}>
                   {match.matchType === 'official' ? '公式戦' : match.matchType === 'exchange' ? '交流戦' : 'OP戦'}
@@ -335,7 +335,7 @@ export function MatchCard({
 
                 {!isFuture && match.status !== 'rainout' && match.status !== 'scheduled' && (
                   match.hasScorebook ? (
-                    <span className="inline-flex items-center gap-1 text-[10px] sm:text-xs font-black px-2 py-0.5 rounded border bg-primary/10 text-primary border-primary/25 shrink-0">
+                    <span className="inline-flex items-center gap-1 text-[10px] sm:text-xs font-black px-2 py-0.5 rounded border bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 border-emerald-500/25 shrink-0">
                       <CheckCircle2 className="h-3 w-3 shrink-0" />
                       <span>スコア取込済</span>
                     </span>

@@ -118,7 +118,7 @@ export default function LiffTeamSettingsPage() {
           title="チーム設定"
           subtitle="チーム情報・活動班・マスタ管理・LINE連携"
           icon={
-            <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
+            <span className="w-8 h-8 rounded-xl bg-slate-500/12 text-slate-700 dark:text-slate-300 flex items-center justify-center font-black">
               <ShieldCheck className="w-4 h-4" />
             </span>
           }
@@ -126,8 +126,8 @@ export default function LiffTeamSettingsPage() {
         />
 
         {/* ━━━ セクション 1: 🛡️ チーム基本情報 ━━━ */}
-        <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3.5">
-          <div className="flex items-center justify-between pb-2 border-b border-border/60">
+        <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3.5 overflow-hidden">
+          <div className="-mx-4 -mt-4 px-4 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 border-l-4 border-l-primary flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Building className="w-4 h-4 text-primary" />
               <h2 className="text-sm font-black text-foreground">チーム基本情報</h2>
@@ -181,8 +181,8 @@ export default function LiffTeamSettingsPage() {
         </section>
 
         {/* ━━━ セクション 2: 👥 活動グループ（班分け） ━━━ */}
-        <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3.5">
-          <div className="flex items-center justify-between pb-2 border-b border-border/60">
+        <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3.5 overflow-hidden">
+          <div className="-mx-4 -mt-4 px-4 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 border-l-4 border-l-primary flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Layers className="w-4 h-4 text-primary" />
               <h2 className="text-sm font-black text-foreground">活動グループ（チーム区分）</h2>
@@ -238,7 +238,7 @@ export default function LiffTeamSettingsPage() {
             href="/liff/settings/score"
             className="p-3.5 rounded-2xl border border-border/60 bg-card shadow-xs hover:border-primary/40 flex items-center gap-3 group active:scale-98 transition-all"
           >
-            <span className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black shrink-0 group-hover:scale-105 transition-transform">
+            <span className="w-10 h-10 rounded-xl bg-slate-500/12 text-slate-700 dark:text-slate-300 flex items-center justify-center font-black shrink-0 group-hover:scale-105 transition-transform">
               <BookOpen className="w-5 h-5" />
             </span>
             <div className="min-w-0 flex-1">
@@ -249,7 +249,7 @@ export default function LiffTeamSettingsPage() {
                 規定イニング・コールド・守備表記・AI読取の早見表登録
               </p>
             </div>
-            <ChevronRight className="w-4 h-4 text-primary shrink-0" />
+            <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-primary shrink-0" />
           </Link>
 
           <div className="grid grid-cols-2 gap-2.5">
@@ -257,40 +257,40 @@ export default function LiffTeamSettingsPage() {
               href="/liff/grounds"
               className="p-3.5 rounded-2xl border border-border/60 bg-card shadow-xs hover:border-primary/40 flex items-center gap-3 group active:scale-95 transition-all"
             >
-              <span className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black shrink-0 group-hover:scale-105 transition-transform">
+              <span className="w-10 h-10 rounded-xl bg-teal-500/12 text-teal-600 dark:text-teal-400 flex items-center justify-center font-black shrink-0 group-hover:scale-105 transition-transform">
                 <MapPin className="w-5 h-5" />
               </span>
               <div className="min-w-0 flex-1">
                 <p className="text-xs font-black text-foreground truncate">球場 & 施設</p>
                 <p className="text-[10px] text-muted-foreground font-bold truncate">ホーム・練習場</p>
               </div>
-              <ChevronRight className="w-4 h-4 text-primary shrink-0" />
+              <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-teal-600 dark:group-hover:text-teal-400 shrink-0" />
             </Link>
 
             <Link
               href="/liff/carpool"
               className="p-3.5 rounded-2xl border border-border/60 bg-card shadow-xs hover:border-primary/40 flex items-center gap-3 group active:scale-95 transition-all"
             >
-              <span className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black shrink-0 group-hover:scale-105 transition-transform">
+              <span className="w-10 h-10 rounded-xl bg-teal-500/12 text-teal-600 dark:text-teal-400 flex items-center justify-center font-black shrink-0 group-hover:scale-105 transition-transform">
                 <Car className="w-5 h-5" />
               </span>
               <div className="min-w-0 flex-1">
                 <p className="text-xs font-black text-foreground truncate">配車 & 登録車両</p>
                 <p className="text-[10px] text-muted-foreground font-bold truncate">乗車割り・定員</p>
               </div>
-              <ChevronRight className="w-4 h-4 text-primary shrink-0" />
+              <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-teal-600 dark:group-hover:text-teal-400 shrink-0" />
             </Link>
           </div>
         </section>
 
         {/* ━━━ セクション 5: 🔔 LINE通知・連携ステータス ━━━ */}
-        <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3">
-          <div className="flex items-center justify-between pb-2 border-b border-border/60">
+        <section className="rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3 overflow-hidden">
+          <div className="-mx-4 -mt-4 px-4 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 border-l-4 border-l-primary flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Bell className="w-4 h-4 text-primary" />
               <h2 className="text-sm font-black text-foreground">LINE速報配信・通知連携</h2>
             </div>
-            <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/25">
+            <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 border border-emerald-500/25">
               連携稼働中
             </span>
           </div>
@@ -302,7 +302,7 @@ export default function LiffTeamSettingsPage() {
             </div>
             <div className="flex items-center justify-between text-xs font-bold">
               <span className="text-muted-foreground">試合速報自動配信</span>
-              <span className="text-primary font-black">有効 (イニング毎)</span>
+              <span className="text-emerald-700 dark:text-emerald-400 font-black">有効 (イニング毎)</span>
             </div>
           </div>
           <p className="text-[10px] text-muted-foreground font-bold">

@@ -437,7 +437,7 @@ export function MonthlySchedulePlanner({
             <button
               type="button"
               onClick={handleSelectAllWeekends}
-              className="py-2 px-3 rounded-xl bg-primary/10 hover:bg-primary text-primary hover:text-primary-foreground text-xs font-black border border-primary/25 active:scale-95 transition-all flex items-center gap-1 cursor-pointer"
+              className="py-2 px-3 rounded-xl bg-primary/12 hover:bg-primary/20 text-primary text-xs font-black border border-primary/35 shadow-2xs active:scale-95 transition-all flex items-center gap-1 cursor-pointer"
             >
               <Sparkles className="w-3.5 h-3.5" />
               <span>土日を全選択</span>
@@ -504,7 +504,7 @@ export function MonthlySchedulePlanner({
                 className={cn(
                   "flex flex-col items-center justify-center p-2 rounded-2xl min-h-[58px] sm:min-h-[64px] transition-all relative cursor-pointer active:scale-95",
                   isSelected
-                    ? "bg-primary text-primary-foreground font-black shadow-xs border border-primary"
+                    ? "bg-primary/12 text-foreground font-black shadow-2xs border border-primary/40"
                     : isToday
                     ? "bg-primary/10 border border-primary/40 text-foreground font-black"
                     : d.isCurrentMonth
@@ -516,12 +516,12 @@ export function MonthlySchedulePlanner({
                 <span
                   className={cn(
                     "text-sm",
-                    isSelected
-                      ? "text-primary-foreground font-black"
-                      : isSun
+                    isSun
                       ? "text-red-500 font-black"
                       : isSat
                       ? "text-blue-500 font-black"
+                      : isSelected
+                      ? "text-primary font-black"
                       : "font-bold"
                   )}
                 >
@@ -530,7 +530,7 @@ export function MonthlySchedulePlanner({
 
                 {/* 選択状態ラベル */}
                 {isSelected ? (
-                  <span className="mt-1 px-1.5 py-0.2 rounded-md bg-primary-foreground/20 text-primary-foreground text-[9.5px] font-black tracking-tight leading-none flex items-center gap-0.5">
+                  <span className="mt-1 px-1.5 py-0.2 rounded-md bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 text-[9.5px] font-black tracking-tight leading-none flex items-center gap-0.5">
                     <Check className="w-2.5 h-2.5" />
                     <span>活動日</span>
                   </span>
@@ -553,15 +553,17 @@ export function MonthlySchedulePlanner({
         const currentMonthItems = selectedDayItems.filter(it => it.dateStr.startsWith(currentMonthPrefix));
 
         return (
-          <div className="p-4 rounded-2xl border border-border/60 bg-card shadow-xs space-y-4">
+          <div className="rounded-2xl border border-border/60 bg-card shadow-xs overflow-hidden">
             {/* ヘッダー */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2 border-b border-border/60">
+            <div className="px-4 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
               <div className="flex items-center gap-2">
                 <h3 className="text-sm font-black text-foreground flex items-center gap-1.5">
-                  <Layers className="w-4 h-4 text-primary" />
+                  <span className="w-6 h-6 rounded-lg bg-teal-500/12 text-teal-600 dark:text-teal-400 flex items-center justify-center">
+                    <Layers className="w-3.5 h-3.5" />
+                  </span>
                   <span>{currentMonth + 1}月の活動日 & 当番一覧</span>
                 </h3>
-                <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-black">
+                <span className="px-2 py-0.5 rounded-full bg-primary/12 text-primary border border-primary/25 text-xs font-black">
                   {currentMonthItems.length}日
                 </span>
               </div>
@@ -571,10 +573,10 @@ export function MonthlySchedulePlanner({
                   <button
                     type="button"
                     onClick={handleAutoRotateDuties}
-                    className="py-1 px-2.5 rounded-xl bg-card hover:bg-muted text-foreground text-xs font-black border border-border/60 flex items-center gap-1 transition-all active:scale-95 cursor-pointer"
+                    className="py-1 px-2.5 rounded-xl bg-card hover:bg-muted text-foreground text-xs font-black border border-border/60 flex items-center gap-1 transition-all active:scale-95 cursor-pointer shadow-2xs"
                     title="1班〜4班を日付順に均等に割り当てます"
                   >
-                    <RotateCw className="w-3 h-3 text-primary" />
+                    <RotateCw className="w-3 h-3 text-amber-600 dark:text-amber-400" />
                     <span>当番を1〜4班で順繰り割当</span>
                   </button>
                 )}
@@ -589,187 +591,198 @@ export function MonthlySchedulePlanner({
               </div>
             </div>
 
-            {currentMonthItems.length === 0 ? (
-              <div className="py-8 text-center space-y-2">
-                <p className="text-xs font-bold text-muted-foreground">
-                  {currentMonth + 1}月のカレンダーの日付をタップして活動日を選択してください。
-                </p>
-                <button
-                  type="button"
-                  onClick={handleSelectAllWeekends}
-                  className="py-1.5 px-3 rounded-xl bg-primary/10 hover:bg-primary text-primary hover:text-primary-foreground text-xs font-black border border-primary/25 active:scale-95 transition-all inline-flex items-center gap-1 cursor-pointer"
-                >
-                  <Sparkles className="w-3 h-3" />
-                  <span>今月の土日を全選択</span>
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {currentMonthItems.map((it) => {
-                  const [y, m, d] = it.dateStr.split("-").map(Number);
-                  const dObj = new Date(y, m - 1, d);
-                  const isSun = dObj.getDay() === 0;
-                  const isSat = dObj.getDay() === 6;
+            <div className="p-4 space-y-4">
+              {currentMonthItems.length === 0 ? (
+                <div className="py-8 text-center space-y-2">
+                  <p className="text-xs font-bold text-muted-foreground">
+                    {currentMonth + 1}月のカレンダーの日付をタップして活動日を選択してください。
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleSelectAllWeekends}
+                    className="py-1.5 px-3 rounded-xl bg-primary/12 hover:bg-primary/20 text-primary text-xs font-black border border-primary/35 shadow-2xs active:scale-95 transition-all inline-flex items-center gap-1 cursor-pointer"
+                  >
+                    <Sparkles className="w-3 h-3" />
+                    <span>今月の土日を全選択</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {currentMonthItems.map((it) => {
+                    const [y, m, d] = it.dateStr.split("-").map(Number);
+                    const dObj = new Date(y, m - 1, d);
+                    const isSun = dObj.getDay() === 0;
+                    const isSat = dObj.getDay() === 6;
 
-                  return (
-                    <div
-                      key={it.id}
-                      className="p-3 sm:p-3.5 rounded-2xl bg-muted/35 hover:bg-muted/50 border border-border/60 hover:border-primary/40 transition-all flex flex-col md:flex-row md:items-center justify-between gap-3"
-                    >
-                      {/* 上段 / 左側: 日付 ＆ 予定情報 */}
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        {/* 日付バッジ */}
-                        <div
-                          className={cn(
-                            "w-12 h-12 rounded-xl flex flex-col items-center justify-center shrink-0 font-black leading-tight border",
-                            isSun
-                              ? "bg-red-500/10 text-red-500 border-red-500/20"
-                              : isSat
-                              ? "bg-blue-500/10 text-blue-500 border-blue-500/20"
-                              : "bg-muted/50 text-foreground border-border/60"
-                          )}
-                        >
-                          <span className="text-[10px] opacity-75">{m}/{d}</span>
-                          <span className="text-xs font-black">{weekDays[dObj.getDay()]}</span>
+                    return (
+                      <div
+                        key={it.id}
+                        className={cn(
+                          "p-3 sm:p-3.5 rounded-2xl bg-muted/35 hover:bg-muted/50 border border-border/60 border-l-4 hover:border-primary/40 transition-all flex flex-col md:flex-row md:items-center justify-between gap-3",
+                          it.eventType === "match"
+                            ? "border-l-primary"
+                            : it.eventType === "camp"
+                            ? "border-l-amber-500"
+                            : "border-l-teal-500"
+                        )}
+                      >
+                        {/* 上段 / 左側: 日付 ＆ 予定情報 */}
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          {/* 日付バッジ */}
+                          <div
+                            className={cn(
+                              "w-12 h-12 rounded-xl flex flex-col items-center justify-center shrink-0 font-black leading-tight border",
+                              isSun
+                                ? "bg-red-500/10 text-red-500 border-red-500/20"
+                                : isSat
+                                ? "bg-blue-500/10 text-blue-500 border-blue-500/20"
+                                : "bg-card text-foreground border-border/60"
+                            )}
+                          >
+                            <span className="text-[10px] opacity-75">{m}/{d}</span>
+                            <span className="text-xs font-black">{weekDays[dObj.getDay()]}</span>
+                          </div>
+
+                          {/* 予定詳細 */}
+                          <div className="min-w-0 flex-1 space-y-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-xs font-black text-foreground">
+                                {it.title || "通常練習"}
+                              </span>
+
+                              {/* 予定タイプ切替 */}
+                              <select
+                                value={it.eventType || "practice"}
+                                onChange={(e) => handleUpdateEventType(it.dateStr, e.target.value as "practice" | "match" | "camp")}
+                                className="text-[10.5px] font-bold px-2 py-0.5 rounded-lg bg-card border border-border/60 text-foreground cursor-pointer focus:outline-hidden"
+                              >
+                                <option value="practice">🏃 通常練習</option>
+                                <option value="match">⚾ 公式戦・試合</option>
+                                <option value="camp">🏕️ 合宿・遠征</option>
+                              </select>
+                            </div>
+
+                            <div className="flex items-center gap-2 text-[10.5px] font-bold text-muted-foreground flex-wrap">
+                              {/* お弁当トグル */}
+                              <button
+                                type="button"
+                                onClick={() => handleToggleLunch(it.dateStr)}
+                                className={cn(
+                                  "px-2 py-0.5 rounded-md text-[10px] font-black transition-all flex items-center gap-1 cursor-pointer",
+                                  it.needsLunch
+                                    ? "bg-amber-500/12 text-amber-700 dark:text-amber-300 border border-amber-500/25"
+                                    : "bg-card text-muted-foreground border border-border/60 hover:text-foreground line-through opacity-65"
+                                )}
+                              >
+                                <span>🍙</span>
+                                <span>{it.needsLunch ? "お弁当：要" : "弁当なし"}</span>
+                              </button>
+
+                              <span>•</span>
+                              <span className="truncate max-w-[140px] text-[10px]">
+                                📍 {it.location || "球場確認中"}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* モバイル時の削除ボタン */}
+                          <button
+                            type="button"
+                            onClick={() => handleToggleDate(dObj)}
+                            className="md:hidden p-1.5 rounded-xl text-muted-foreground hover:text-rose-600 hover:bg-rose-500/10 transition-all cursor-pointer shrink-0 ml-auto"
+                            title="活動日を解除"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
                         </div>
 
-                        {/* 予定詳細 */}
-                        <div className="min-w-0 flex-1 space-y-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-xs font-black text-foreground">
-                              {it.title || "通常練習"}
+                        {/* 下段 / 右側: 当番選択ボタン群 */}
+                        <div className="flex items-center justify-between md:justify-end gap-2 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-border/60">
+                          <div className="flex items-center gap-1 bg-muted/80 dark:bg-muted/50 p-1 rounded-xl border border-border/60 overflow-x-auto scrollbar-none">
+                            <span className="text-[10px] font-black text-amber-700 dark:text-amber-300 pl-1.5 pr-0.5 shrink-0 flex items-center gap-0.5">
+                              <span>📋</span>
+                              <span>当番:</span>
                             </span>
 
-                            {/* 予定タイプ切替 */}
+                            {["1班", "2班", "3班", "4班", "なし"].map((dg) => {
+                              const isCurDuty = (it.dutyGroup === dg) || (!it.dutyGroup && dg === "なし");
+                              return (
+                                <button
+                                  key={dg}
+                                  type="button"
+                                  onClick={() => handleUpdateDuty(it.dateStr, dg)}
+                                  className={cn(
+                                    "px-2.5 py-1 rounded-lg text-xs transition-all active:scale-95 shrink-0 cursor-pointer",
+                                    isCurDuty
+                                      ? dg === "なし"
+                                        ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                                        : "bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/35 shadow-2xs font-black"
+                                      : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
+                                  )}
+                                >
+                                  {dg}
+                                </button>
+                              );
+                            })}
+
+                            {/* その他（5班・A班など）の場合の選択表示 */}
+                            {it.dutyGroup && !["1班", "2班", "3班", "4班", "なし"].includes(it.dutyGroup) && (
+                              <span className="px-2 py-1 rounded-lg text-xs font-black bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/35 shadow-2xs shrink-0">
+                                {it.dutyGroup}
+                              </span>
+                            )}
+
                             <select
-                              value={it.eventType || "practice"}
-                              onChange={(e) => handleUpdateEventType(it.dateStr, e.target.value as any)}
-                              className="text-[10.5px] font-bold px-2 py-0.5 rounded-lg bg-card border border-border/60 text-foreground cursor-pointer focus:outline-hidden"
+                              value={["1班", "2班", "3班", "4班", "なし"].includes(it.dutyGroup) ? "" : it.dutyGroup}
+                              onChange={(e) => {
+                                if (e.target.value) handleUpdateDuty(it.dateStr, e.target.value);
+                              }}
+                              className="text-[10px] font-bold px-1.5 py-1 rounded-lg bg-card border border-border/60 text-muted-foreground hover:text-foreground cursor-pointer focus:outline-hidden shrink-0"
+                              title="その他の当番を選択"
                             >
-                              <option value="practice">⚾ 通常練習</option>
-                              <option value="match">🏆 公式戦・試合</option>
-                              <option value="camp">🏕️ 合宿・遠征</option>
+                              <option value="" disabled>他</option>
+                              <option value="5班">5班</option>
+                              <option value="6班">6班</option>
+                              <option value="A班">A班</option>
+                              <option value="B班">B班</option>
+                              <option value="C班">C班</option>
+                              <option value="役員当番">役員当番</option>
+                              <option value="鍵当番">鍵当番</option>
+                              <option value="救急当番">救急当番</option>
                             </select>
                           </div>
 
-                          <div className="flex items-center gap-2 text-[10.5px] font-bold text-muted-foreground flex-wrap">
-                            {/* お弁当トグル */}
-                            <button
-                              type="button"
-                              onClick={() => handleToggleLunch(it.dateStr)}
-                              className={cn(
-                                "px-2 py-0.5 rounded-md text-[10px] font-black transition-all flex items-center gap-1 cursor-pointer",
-                                it.needsLunch
-                                  ? "bg-primary/10 text-primary border border-primary/25"
-                                  : "bg-muted/50 text-muted-foreground border border-border/60 hover:text-foreground line-through opacity-60"
-                              )}
-                            >
-                              <span>🍱</span>
-                              <span>{it.needsLunch ? "弁当あり" : "弁当なし"}</span>
-                            </button>
-
-                            <span>•</span>
-                            <span className="truncate max-w-[140px] text-[10px]">
-                              📍 {it.location || "球場確認中"}
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* モバイル時の削除ボタン */}
-                        <button
-                          type="button"
-                          onClick={() => handleToggleDate(dObj)}
-                          className="md:hidden p-1.5 rounded-xl text-muted-foreground hover:text-rose-600 hover:bg-rose-500/10 transition-all cursor-pointer shrink-0 ml-auto"
-                          title="活動日を解除"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      </div>
-
-                      {/* 下段 / 右側: 当番選択ボタン群 */}
-                      <div className="flex items-center justify-between md:justify-end gap-2 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-border/60">
-                        <div className="flex items-center gap-1 bg-muted/50 p-1 rounded-xl border border-border/60 overflow-x-auto scrollbar-none">
-                          <span className="text-[10px] font-black text-muted-foreground pl-1.5 pr-0.5 shrink-0 flex items-center gap-0.5">
-                            <span>📋</span>
-                            <span>当番:</span>
-                          </span>
-
-                          {["1班", "2班", "3班", "4班", "なし"].map((dg) => {
-                            const isCurDuty = (it.dutyGroup === dg) || (!it.dutyGroup && dg === "なし");
-                            return (
-                              <button
-                                key={dg}
-                                type="button"
-                                onClick={() => handleUpdateDuty(it.dateStr, dg)}
-                                className={cn(
-                                  "px-2.5 py-1 rounded-lg text-xs font-black transition-all active:scale-95 shrink-0 cursor-pointer",
-                                  isCurDuty
-                                    ? "bg-primary text-primary-foreground shadow-xs font-black"
-                                    : "text-muted-foreground hover:text-foreground hover:bg-card"
-                                )}
-                              >
-                                {dg}
-                              </button>
-                            );
-                          })}
-
-                          {/* その他（5班・A班など）の場合の選択表示 */}
-                          {it.dutyGroup && !["1班", "2班", "3班", "4班", "なし"].includes(it.dutyGroup) && (
-                            <span className="px-2 py-1 rounded-lg text-xs font-black bg-primary text-primary-foreground shadow-xs shrink-0">
-                              {it.dutyGroup}
-                            </span>
-                          )}
-
-                          <select
-                            value={["1班", "2班", "3班", "4班", "なし"].includes(it.dutyGroup) ? "" : it.dutyGroup}
-                            onChange={(e) => {
-                              if (e.target.value) handleUpdateDuty(it.dateStr, e.target.value);
-                            }}
-                            className="text-[10px] font-bold px-1.5 py-1 rounded-lg bg-card border border-border/60 text-muted-foreground hover:text-foreground cursor-pointer focus:outline-hidden shrink-0"
-                            title="その他の当番を選択"
+                          {/* PC時の削除ボタン */}
+                          <button
+                            type="button"
+                            onClick={() => handleToggleDate(dObj)}
+                            className="hidden md:flex p-2 rounded-xl text-muted-foreground hover:text-rose-600 hover:bg-rose-500/10 transition-all cursor-pointer"
+                            title="活動日を解除"
                           >
-                            <option value="" disabled>他</option>
-                            <option value="5班">5班</option>
-                            <option value="6班">6班</option>
-                            <option value="A班">A班</option>
-                            <option value="B班">B班</option>
-                            <option value="C班">C班</option>
-                            <option value="役員当番">役員当番</option>
-                            <option value="鍵当番">鍵当番</option>
-                            <option value="救急当番">救急当番</option>
-                          </select>
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
-
-                        {/* PC時の削除ボタン */}
-                        <button
-                          type="button"
-                          onClick={() => handleToggleDate(dObj)}
-                          className="hidden md:flex p-2 rounded-xl text-muted-foreground hover:text-rose-600 hover:bg-rose-500/10 transition-all cursor-pointer"
-                          title="活動日を解除"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+                    );
+                  })}
+                </div>
+              )}
 
-            {/* 保存ボタン */}
-            {currentMonthItems.length > 0 && (
-              <div className="pt-2 border-t border-border/60 flex justify-end">
-                <button
-                  type="button"
-                  onClick={handleSaveAll}
-                  disabled={isSaving}
-                  className="py-2.5 px-6 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-black shadow-xs active:scale-95 transition-all flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
-                >
-                  <Save className="w-4 h-4" />
-                  <span>{isSaving ? "保存中..." : `${currentMonth + 1}月の活動日 & 当番（${currentMonthItems.length}日）を一括保存`}</span>
-                </button>
-              </div>
-            )}
+              {/* 保存ボタン */}
+              {currentMonthItems.length > 0 && (
+                <div className="pt-2 border-t border-border/60 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={handleSaveAll}
+                    disabled={isSaving}
+                    className="py-2.5 px-6 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-black shadow-xs active:scale-95 transition-all flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                  >
+                    <Save className="w-4 h-4" />
+                    <span>{isSaving ? "保存中..." : `${currentMonth + 1}月の活動日 & 当番（${currentMonthItems.length}日）を一括保存`}</span>
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         );
       })()}

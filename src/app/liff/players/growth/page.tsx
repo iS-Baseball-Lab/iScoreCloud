@@ -41,18 +41,78 @@ interface PositionLabelMeta {
   barClass: string;
 }
 
-const POSITION_SHORT_LABELS: Record<string, { shortLabel: string; code: string }> = {
-  P: { shortLabel: "投手", code: "P" },
-  C: { shortLabel: "捕手", code: "C" },
-  "1B": { shortLabel: "一塁手", code: "1B" },
-  "2B": { shortLabel: "二塁手", code: "2B" },
-  "3B": { shortLabel: "三塁手", code: "3B" },
-  SS: { shortLabel: "遊撃手", code: "SS" },
-  LF: { shortLabel: "左翼手", code: "LF" },
-  CF: { shortLabel: "中堅手", code: "CF" },
-  RF: { shortLabel: "右翼手", code: "RF" },
-  DH: { shortLabel: "指名打者", code: "DH" },
+const POSITION_SHORT_LABELS: Record<
+  string,
+  { shortLabel: string; code: string; group: "P" | "C" | "IF" | "OF" | "DH" }
+> = {
+  P: { shortLabel: "投手", code: "P", group: "P" },
+  "1": { shortLabel: "投手", code: "P", group: "P" },
+  投手: { shortLabel: "投手", code: "P", group: "P" },
+  C: { shortLabel: "捕手", code: "C", group: "C" },
+  "2": { shortLabel: "捕手", code: "C", group: "C" },
+  捕手: { shortLabel: "捕手", code: "C", group: "C" },
+  "1B": { shortLabel: "一塁手", code: "1B", group: "IF" },
+  "3": { shortLabel: "一塁手", code: "1B", group: "IF" },
+  一塁手: { shortLabel: "一塁手", code: "1B", group: "IF" },
+  "2B": { shortLabel: "二塁手", code: "2B", group: "IF" },
+  "4": { shortLabel: "二塁手", code: "2B", group: "IF" },
+  二塁手: { shortLabel: "二塁手", code: "2B", group: "IF" },
+  "3B": { shortLabel: "三塁手", code: "3B", group: "IF" },
+  "5": { shortLabel: "三塁手", code: "3B", group: "IF" },
+  三塁手: { shortLabel: "三塁手", code: "3B", group: "IF" },
+  SS: { shortLabel: "遊撃手", code: "SS", group: "IF" },
+  "6": { shortLabel: "遊撃手", code: "SS", group: "IF" },
+  遊撃手: { shortLabel: "遊撃手", code: "SS", group: "IF" },
+  LF: { shortLabel: "左翼手", code: "LF", group: "OF" },
+  "7": { shortLabel: "左翼手", code: "LF", group: "OF" },
+  左翼手: { shortLabel: "左翼手", code: "LF", group: "OF" },
+  CF: { shortLabel: "中堅手", code: "CF", group: "OF" },
+  "8": { shortLabel: "中堅手", code: "CF", group: "OF" },
+  中堅手: { shortLabel: "中堅手", code: "CF", group: "OF" },
+  RF: { shortLabel: "右翼手", code: "RF", group: "OF" },
+  "9": { shortLabel: "右翼手", code: "RF", group: "OF" },
+  右翼手: { shortLabel: "右翼手", code: "RF", group: "OF" },
+  DH: { shortLabel: "指名打者", code: "DH", group: "DH" },
+  指名打者: { shortLabel: "指名打者", code: "DH", group: "DH" },
 };
+
+function getGroupStyle(group: "P" | "C" | "IF" | "OF" | "DH"): {
+  pillClass: string;
+  barClass: string;
+} {
+  switch (group) {
+    case "P":
+      return {
+        pillClass:
+          "bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-500/30",
+        barClass: "bg-rose-500",
+      };
+    case "C":
+      return {
+        pillClass:
+          "bg-sky-500/15 text-sky-700 dark:text-sky-300 border border-sky-500/30",
+        barClass: "bg-sky-500",
+      };
+    case "IF":
+      return {
+        pillClass:
+          "bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30",
+        barClass: "bg-amber-500",
+      };
+    case "OF":
+      return {
+        pillClass:
+          "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30",
+        barClass: "bg-emerald-500",
+      };
+    case "DH":
+      return {
+        pillClass:
+          "bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/30",
+        barClass: "bg-purple-500",
+      };
+  }
+}
 
 function getPosMeta(raw: string | null | undefined): PositionLabelMeta {
   if (!raw) {
@@ -63,21 +123,39 @@ function getPosMeta(raw: string | null | undefined): PositionLabelMeta {
       barClass: "bg-muted-foreground/40",
     };
   }
-  const key = raw.trim().toUpperCase();
-  const known = POSITION_SHORT_LABELS[key];
+  const clean = raw.trim();
+  const key = clean.toUpperCase();
+  const known = POSITION_SHORT_LABELS[clean] || POSITION_SHORT_LABELS[key];
   if (known) {
+    const gs = getGroupStyle(known.group);
     return {
       shortLabel: known.shortLabel,
       code: known.code,
-      pillClass: "bg-primary text-primary-foreground",
-      barClass: "bg-primary",
+      pillClass: gs.pillClass,
+      barClass: gs.barClass,
     };
   }
+  if (clean.includes("投")) {
+    const gs = getGroupStyle("P");
+    return { shortLabel: clean, code: "P", ...gs };
+  }
+  if (clean.includes("捕")) {
+    const gs = getGroupStyle("C");
+    return { shortLabel: clean, code: "C", ...gs };
+  }
+  if (clean.includes("一") || clean.includes("二") || clean.includes("三") || clean.includes("遊") || clean.includes("内")) {
+    const gs = getGroupStyle("IF");
+    return { shortLabel: clean, code: "IF", ...gs };
+  }
+  if (clean.includes("左") || clean.includes("中") || clean.includes("右") || clean.includes("外")) {
+    const gs = getGroupStyle("OF");
+    return { shortLabel: clean, code: "OF", ...gs };
+  }
   return {
-    shortLabel: raw.trim(),
+    shortLabel: clean,
     code: key,
-    pillClass: "bg-primary/10 text-primary border border-primary/25",
-    barClass: "bg-primary",
+    pillClass: "bg-muted text-muted-foreground border border-border/60",
+    barClass: "bg-muted-foreground/40",
   };
 }
 
@@ -113,15 +191,15 @@ const MATCH_TYPE_BADGES: Record<
 > = {
   official: {
     label: "公式戦",
-    cls: "bg-primary/12 text-primary border-primary/25",
+    cls: "bg-amber-500/12 text-amber-700 dark:text-amber-300 border-amber-500/30",
   },
   exchange: {
     label: "交流戦",
-    cls: "bg-primary/10 text-primary border-primary/20",
+    cls: "bg-sky-500/12 text-sky-700 dark:text-sky-300 border-sky-500/25",
   },
   practice: {
     label: "OP戦",
-    cls: "bg-muted/50 text-muted-foreground border-border/60",
+    cls: "bg-muted text-muted-foreground border-border/60",
   },
 };
 
@@ -384,7 +462,7 @@ function BattingGrowthChart({
 
       {/* 選択した試合のソリッド詳細コールアウト */}
       {activeItem && (
-        <div className="rounded-2xl bg-muted/50 border border-border/60 p-3 flex items-center justify-between gap-2">
+        <div className="rounded-2xl bg-card border border-border/60 border-l-4 border-l-primary p-3 shadow-2xs flex items-center justify-between gap-2">
           <div className="min-w-0 space-y-0.5">
             <div className="flex items-center gap-1.5 flex-wrap text-[10px]">
               <span className="font-black text-foreground tabular-nums">
@@ -611,7 +689,7 @@ function PitchingGrowthChart({
       </div>
 
       {activeItem && (
-        <div className="rounded-2xl bg-muted/50 border border-border/60 p-3 flex items-center justify-between gap-2">
+        <div className="rounded-2xl bg-card border border-border/60 border-l-4 border-l-primary p-3 shadow-2xs flex items-center justify-between gap-2">
           <div className="min-w-0 space-y-0.5">
             <div className="flex items-center gap-1.5 flex-wrap text-[10px]">
               <span className="font-black text-foreground tabular-nums">
@@ -767,7 +845,7 @@ function PlayerGrowthContent() {
           title="個人成長レポート"
           subtitle="PLAYER GROWTH & ANALYTICS"
           icon={
-            <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
+            <span className="w-8 h-8 rounded-xl bg-primary/12 text-primary flex items-center justify-center font-black">
               <TrendingUp className="w-4.5 h-4.5" />
             </span>
           }
@@ -865,64 +943,70 @@ function PlayerGrowthContent() {
               );
 
               return (
-                <section className="relative overflow-hidden rounded-2xl border border-border/60 bg-card text-foreground p-4 shadow-xs space-y-3">
-                  <span
-                    aria-hidden="true"
-                    className="pointer-events-none select-none absolute right-2 -bottom-5 text-[96px] font-black italic tracking-tighter leading-none text-primary/[0.08] tabular-nums"
-                  >
-                    {numStr}
-                  </span>
+                <section className="relative overflow-hidden rounded-2xl border border-border/60 bg-card text-foreground shadow-xs">
+                  <div className="relative p-4 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 overflow-hidden">
+                    <span
+                      aria-hidden="true"
+                      className="pointer-events-none select-none absolute right-2 -bottom-5 text-[96px] font-black italic tracking-tighter leading-none text-primary/[0.08] tabular-nums"
+                    >
+                      {numStr}
+                    </span>
 
-                  <div className="relative z-10 flex items-center gap-3.5">
-                    <Avatar className="h-16 w-16 border-2 border-primary/25 shadow-xs shrink-0">
-                      {player.profileImageUrl && (
-                        <AvatarImage
-                          src={player.profileImageUrl}
-                          alt={player.name}
-                          className="object-cover"
-                        />
-                      )}
-                      <AvatarFallback className="bg-primary/15 text-primary font-black text-xl">
-                        {initial}
-                      </AvatarFallback>
-                    </Avatar>
+                    <div className="relative z-10 flex items-center gap-3.5">
+                      <Avatar className="h-16 w-16 border-2 border-primary/25 shadow-xs shrink-0">
+                        {player.profileImageUrl && (
+                          <AvatarImage
+                            src={player.profileImageUrl}
+                            alt={player.name}
+                            className="object-cover"
+                          />
+                        )}
+                        <AvatarFallback className="bg-primary/15 text-primary font-black text-xl">
+                          {initial}
+                        </AvatarFallback>
+                      </Avatar>
 
-                    <div className="min-w-0 flex-1 space-y-1">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="px-2 py-0.5 rounded-lg bg-primary/10 text-primary border border-primary/25 text-xs font-black italic tabular-nums">
-                          #{numStr}
-                        </span>
-                        <span
-                          className={cn(
-                            "px-2.5 py-0.5 rounded-full text-[11px] font-black",
-                            mainMeta.pillClass
+                      <div className="min-w-0 flex-1 space-y-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="px-2 py-0.5 rounded-lg bg-primary/12 text-primary border border-primary/25 text-xs font-black italic tabular-nums">
+                            #{numStr}
+                          </span>
+                          <span
+                            className={cn(
+                              "px-2.5 py-0.5 rounded-full text-[11px] font-black",
+                              mainMeta.pillClass
+                            )}
+                          >
+                            メイン: {mainMeta.shortLabel}
+                          </span>
+                          {player.isCaptain && (
+                            <span className="px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 text-[10px] font-black flex items-center gap-0.5">
+                              <Crown className="w-3 h-3 fill-current" />
+                              <span>主将</span>
+                            </span>
                           )}
-                        >
-                          メイン: {mainMeta.shortLabel}
-                        </span>
-                        {player.isCaptain && (
-                          <span className="px-2 py-0.5 rounded-full bg-primary text-primary-foreground text-[10px] font-black flex items-center gap-0.5">
-                            <Crown className="w-3 h-3 fill-current" />
-                            <span>主将</span>
-                          </span>
+                          {(growthData.isDemo || providerDemo) && (
+                            <span className="px-2 py-0.5 rounded-full bg-muted/50 text-muted-foreground border border-border/60 text-[10px] font-black">
+                              DEMO
+                            </span>
+                          )}
+                        </div>
+
+                        {player.nameKana && (
+                          <p className="text-[10px] font-bold text-muted-foreground tracking-wider truncate">
+                            {player.nameKana}
+                          </p>
                         )}
-                        {(growthData.isDemo || providerDemo) && (
-                          <span className="px-2 py-0.5 rounded-full bg-muted/50 text-muted-foreground border border-border/60 text-[10px] font-black">
-                            DEMO
-                          </span>
-                        )}
+                        <h2 className="text-lg sm:text-xl font-black tracking-tight text-foreground truncate">
+                          {player.name}
+                        </h2>
                       </div>
+                    </div>
+                  </div>
 
-                      {player.nameKana && (
-                        <p className="text-[10px] font-bold text-muted-foreground tracking-wider truncate">
-                          {player.nameKana}
-                        </p>
-                      )}
-                      <h2 className="text-lg sm:text-xl font-black tracking-tight text-foreground truncate">
-                        {player.name}
-                      </h2>
-
-                      <div className="flex items-center gap-2 text-[11px] font-bold text-muted-foreground flex-wrap">
+                  <div className="px-4 py-2.5 bg-card space-y-2">
+                    <div className="flex items-center justify-between gap-2 text-[11px] font-bold text-muted-foreground flex-wrap">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span>{formatThrowsBats(player.throws, player.bats)}</span>
                         {player.height && (
                           <span className="tabular-nums">
@@ -931,36 +1015,36 @@ function PlayerGrowthContent() {
                           </span>
                         )}
                       </div>
-                    </div>
-                  </div>
-
-                  {/* サブ守備位置行 */}
-                  {subLabels.length > 0 && (
-                    <div className="relative z-10 flex items-center gap-1.5 flex-wrap pt-2 border-t border-border/60 text-[11px]">
-                      <span className="font-bold text-muted-foreground shrink-0">
-                        サブ守備位置:
-                      </span>
-                      {subLabels.map((lbl, idx) => (
-                        <span
-                          key={`${lbl}-${idx}`}
-                          className="px-2 py-0.5 rounded-md bg-muted/50 border border-border/60 text-foreground font-black text-[10.5px]"
-                        >
-                          {lbl}
-                        </span>
-                      ))}
                       {player.positionSource === "match_data" && (
-                        <span className="ml-auto text-[10px] font-bold text-primary tabular-nums">
+                        <span className="text-[10px] font-bold text-primary tabular-nums">
                           実戦 {player.totalPositionGames}試合集計
                         </span>
                       )}
                     </div>
-                  )}
+
+                    {/* サブ守備位置行 */}
+                    {subLabels.length > 0 && (
+                      <div className="flex items-center gap-1.5 flex-wrap pt-2 border-t border-border/60 text-[11px]">
+                        <span className="font-bold text-muted-foreground shrink-0">
+                          サブ守備位置:
+                        </span>
+                        {subLabels.map((lbl, idx) => (
+                          <span
+                            key={`${lbl}-${idx}`}
+                            className="px-2 py-0.5 rounded-md bg-muted/50 border border-border/60 text-foreground font-black text-[10.5px]"
+                          >
+                            {lbl}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </section>
               );
             })()}
 
-            {/* ━━━ 試合種別フィルタータブ ━━━ */}
-            <div className="grid grid-cols-4 gap-1 p-1 bg-muted/50 rounded-2xl border border-border/60">
+            {/* ━━━ 試合種別フィルターチップ ━━━ */}
+            <div className="grid grid-cols-4 gap-1.5">
               {(
                 [
                   {
@@ -995,10 +1079,10 @@ function PlayerGrowthContent() {
                     type="button"
                     onClick={() => setFilter(item.key)}
                     className={cn(
-                      "py-1.5 px-1 rounded-xl text-[11px] font-black transition-all truncate tabular-nums",
+                      "py-1.5 px-1 rounded-xl text-[11px] transition-all truncate tabular-nums",
                       active
-                        ? "bg-card text-primary shadow-xs border border-border/60"
-                        : "text-muted-foreground hover:text-foreground"
+                        ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
+                        : "bg-card text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted/50 font-bold"
                     )}
                   >
                     {item.label} ({item.count})
@@ -1035,8 +1119,8 @@ function PlayerGrowthContent() {
               <>
                 {/* ━━━ 🔥 Section 1: 成長ハイライト（直近フォーム vs 通算比較 & 記録バッジ） ━━━ */}
                 {activeSection.battingSummary.pa > 0 && (
-                  <section className="rounded-2xl border border-border/60 bg-card p-4 shadow-xs space-y-3">
-                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <section className="rounded-2xl border border-border/60 bg-card shadow-xs overflow-hidden">
+                    <div className="px-4 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 flex items-center justify-between gap-2 flex-wrap">
                       <h3 className="text-xs font-black text-foreground flex items-center gap-1.5">
                         <Sparkles className="w-4 h-4 text-primary" />
                         <span>
@@ -1050,6 +1134,7 @@ function PlayerGrowthContent() {
                       </span>
                     </div>
 
+                    <div className="p-4 space-y-3">
                     {/* 継続中ストリーク・達成バッジ */}
                     {(activeSection.recentForm.currentHitStreak >= 2 ||
                       activeSection.recentForm.currentOnBaseStreak >= 2 ||
@@ -1151,13 +1236,14 @@ function PlayerGrowthContent() {
                         </span>
                       </div>
                     </div>
+                    </div>
                   </section>
                 )}
 
                 {/* ━━━ 📈 Section 2: 打撃成績サマリー & 推移グラフ ━━━ */}
                 {activeSection.battingSummary.games > 0 && (
-                  <section className="rounded-2xl border border-border/60 bg-card p-4 shadow-xs space-y-4">
-                    <div className="flex items-center justify-between gap-2">
+                  <section className="rounded-2xl border border-border/60 bg-card shadow-xs overflow-hidden">
+                    <div className="px-4 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 flex items-center justify-between gap-2">
                       <h3 className="text-xs font-black text-foreground flex items-center gap-1.5">
                         <Flame className="w-4 h-4 text-primary" />
                         <span>打撃成長チャート & 通算指標</span>
@@ -1168,6 +1254,7 @@ function PlayerGrowthContent() {
                       </span>
                     </div>
 
+                    <div className="p-4 space-y-4">
                     {/* 主要打撃 8指標グリッド */}
                     <div className="grid grid-cols-4 gap-2 text-center">
                       <div className="p-2 rounded-2xl bg-primary/10 border border-primary/25">
@@ -1304,13 +1391,14 @@ function PlayerGrowthContent() {
                         </div>
                       </div>
                     )}
+                    </div>
                   </section>
                 )}
 
                 {/* ━━━ 🎯 Section 3: 打球方向バランス（広角打法チェック） ━━━ */}
                 {activeSection.battedDirection.total > 0 && (
-                  <section className="rounded-2xl border border-border/60 bg-card p-4 shadow-xs space-y-3">
-                    <div className="flex items-center justify-between gap-2">
+                  <section className="rounded-2xl border border-border/60 bg-card shadow-xs overflow-hidden">
+                    <div className="px-4 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 flex items-center justify-between gap-2">
                       <h3 className="text-xs font-black text-foreground flex items-center gap-1.5">
                         <Target className="w-4 h-4 text-primary" />
                         <span>打球方向バランス（左・中・右）</span>
@@ -1320,6 +1408,7 @@ function PlayerGrowthContent() {
                       </span>
                     </div>
 
+                    <div className="p-4 space-y-3">
                     {/* 3方向比率プログレスバー */}
                     <div className="h-3.5 w-full rounded-full overflow-hidden flex border border-border/60 bg-muted/40">
                       {activeSection.battedDirection.leftPercent > 0 && (
@@ -1385,13 +1474,14 @@ function PlayerGrowthContent() {
                         </span>
                       </div>
                     </div>
+                    </div>
                   </section>
                 )}
 
                 {/* ━━━ ⚾ Section 4: 投手成長レポート（登板実績がある選手に自動表示） ━━━ */}
                 {activeSection.pitchingSummary && (
-                  <section className="rounded-2xl border border-border/60 bg-card p-4 shadow-xs space-y-4">
-                    <div className="flex items-center justify-between gap-2">
+                  <section className="rounded-2xl border border-border/60 bg-card shadow-xs overflow-hidden">
+                    <div className="px-4 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 flex items-center justify-between gap-2">
                       <h3 className="text-xs font-black text-foreground flex items-center gap-1.5">
                         <Activity className="w-4 h-4 text-primary" />
                         <span>投手成長レポート（制球力・防御率推移）</span>
@@ -1401,6 +1491,7 @@ function PlayerGrowthContent() {
                       </span>
                     </div>
 
+                    <div className="p-4 space-y-4">
                     <div className="grid grid-cols-4 gap-2 text-center">
                       <div className="p-2 rounded-2xl bg-primary/10 border border-primary/25">
                         <span className="text-[9.5px] font-bold text-muted-foreground block">
@@ -1478,14 +1569,15 @@ function PlayerGrowthContent() {
                       selectedIndex={selectedPitchGameIdx}
                       onSelectIndex={setSelectedPitchGameIdx}
                     />
+                    </div>
                   </section>
                 )}
 
                 {/* ━━━ 🧤 Section 5: 実戦守備位置（メイン＆サブ集計）＆ 打順経験マップ ━━━ */}
                 {(player.positionCounts.length > 0 ||
                   player.battingOrderCounts.length > 0) && (
-                  <section className="rounded-2xl border border-border/60 bg-card p-4 shadow-xs space-y-4">
-                    <div className="flex items-center justify-between gap-2">
+                  <section className="rounded-2xl border border-border/60 bg-card shadow-xs overflow-hidden">
+                    <div className="px-4 py-3 bg-primary/[0.04] dark:bg-primary/[0.07] border-b border-border/50 flex items-center justify-between gap-2">
                       <h3 className="text-xs font-black text-foreground flex items-center gap-1.5">
                         <Shield className="w-4 h-4 text-primary" />
                         <span>守備位置・打順の実戦経験マップ</span>
@@ -1497,6 +1589,7 @@ function PlayerGrowthContent() {
                       )}
                     </div>
 
+                    <div className="p-4 space-y-4">
                     {player.positionCounts.length > 0 && (
                       <div className="space-y-2">
                         <p className="text-[10.5px] font-bold text-muted-foreground">
@@ -1581,6 +1674,7 @@ function PlayerGrowthContent() {
                         </div>
                       </div>
                     )}
+                    </div>
                   </section>
                 )}
 
@@ -1590,30 +1684,34 @@ function PlayerGrowthContent() {
                     <h3 className="text-xs font-black text-foreground">
                       試合別 個人成績ログ（{orderedGameLogs.length}試合）
                     </h3>
-                    <div className="inline-flex items-center gap-1 p-0.5 rounded-xl bg-muted/50 border border-border/60">
+                    <div className="inline-flex items-center gap-1 bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl border border-border/60">
                       <button
                         type="button"
                         onClick={() => setLogSortOrder("desc")}
                         className={cn(
-                          "px-2 py-0.5 rounded-lg text-[10px] font-black transition-all",
+                          "px-2.5 py-1 rounded-xl text-[10px] transition-all",
                           logSortOrder === "desc"
-                            ? "bg-card text-primary shadow-2xs"
-                            : "text-muted-foreground"
+                            ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                            : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
                         )}
                       >
-                        新しい順
+                        <span className={cn(logSortOrder === "desc" && "text-primary")}>
+                          新しい順
+                        </span>
                       </button>
                       <button
                         type="button"
                         onClick={() => setLogSortOrder("asc")}
                         className={cn(
-                          "px-2 py-0.5 rounded-lg text-[10px] font-black transition-all",
+                          "px-2.5 py-1 rounded-xl text-[10px] transition-all",
                           logSortOrder === "asc"
-                            ? "bg-card text-primary shadow-2xs"
-                            : "text-muted-foreground"
+                            ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                            : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
                         )}
                       >
-                        古い順
+                        <span className={cn(logSortOrder === "asc" && "text-primary")}>
+                          古い順
+                        </span>
                       </button>
                     </div>
                   </div>
@@ -1705,11 +1803,11 @@ function PlayerGrowthContent() {
                               {g.atBatChips.map((chip, cIdx) => {
                                 const chipCls =
                                   chip.kind === "hr"
-                                    ? "bg-primary text-primary-foreground border-primary"
+                                    ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/35"
                                     : chip.kind === "hit"
-                                    ? "bg-primary/15 text-primary border-primary/30"
+                                    ? "bg-primary/12 text-primary border-primary/30"
                                     : chip.kind === "walk" || chip.kind === "sac"
-                                    ? "bg-primary/10 text-primary border-primary/20"
+                                    ? "bg-sky-500/12 text-sky-700 dark:text-sky-300 border-sky-500/25"
                                     : "bg-muted/50 text-muted-foreground border-border/60";
 
                                 return (

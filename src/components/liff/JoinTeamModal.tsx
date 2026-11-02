@@ -87,8 +87,8 @@ export function JoinTeamModal({ isOpen, onClose, onSuccess }: JoinTeamModalProps
       }
 
       if (onSuccess) onSuccess();
-    } catch (err: any) {
-      setErrorMsg(err.message || "参加申請に失敗しました");
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error && err.message ? err.message : "参加申請に失敗しました");
     } finally {
       setIsSubmitting(false);
     }
@@ -121,8 +121,18 @@ export function JoinTeamModal({ isOpen, onClose, onSuccess }: JoinTeamModalProps
         {/* 申請完了画面 */}
         {statusResult ? (
           <div className="py-4 space-y-4 text-center">
-            <div className="w-14 h-14 mx-auto rounded-2xl bg-primary/10 text-primary flex items-center justify-center">
-              <Clock className="w-8 h-8 animate-pulse" />
+            <div
+              className={`w-14 h-14 mx-auto rounded-2xl flex items-center justify-center ${
+                statusResult.status === "active"
+                  ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                  : "bg-amber-500/15 text-amber-600 dark:text-amber-400"
+              }`}
+            >
+              {statusResult.status === "active" ? (
+                <CheckCircle2 className="w-8 h-8" />
+              ) : (
+                <Clock className="w-8 h-8 animate-pulse" />
+              )}
             </div>
             <div className="space-y-1">
               <h4 className="text-base font-black text-foreground">参加申請を受け付けました！</h4>
@@ -130,7 +140,7 @@ export function JoinTeamModal({ isOpen, onClose, onSuccess }: JoinTeamModalProps
                 {statusResult.message}
               </p>
             </div>
-            <div className="p-3.5 rounded-2xl bg-muted/50 border border-border/60 text-left text-xs font-bold text-muted-foreground space-y-1">
+            <div className="p-3.5 rounded-2xl bg-muted/50 border border-border/60 border-l-4 border-l-amber-500 text-left text-xs font-bold text-muted-foreground space-y-1">
               <p className="text-foreground font-black">🔒 セキュリティ・承認制について</p>
               <p>チーム管理者が承認するまで、個人情報や配車表・詳細予定は非公開となります。承認後に自動的にチームHUBが解禁されます。</p>
             </div>
@@ -182,20 +192,22 @@ export function JoinTeamModal({ isOpen, onClose, onSuccess }: JoinTeamModalProps
 
             <div className="space-y-1.5">
               <label className="text-xs font-black text-foreground">区分</label>
-              <div className="grid grid-cols-3 gap-2">
-                {[
-                  { id: "parent", label: "保護者" },
-                  { id: "player", label: "選手" },
-                  { id: "staff", label: "指導者・役員" },
-                ].map((item) => (
+              <div className="grid grid-cols-3 gap-1 p-1 rounded-2xl bg-muted/80 dark:bg-muted/50 border border-border/60">
+                {(
+                  [
+                    { id: "parent", label: "保護者" },
+                    { id: "player", label: "選手" },
+                    { id: "staff", label: "指導者・役員" },
+                  ] as const
+                ).map((item) => (
                   <button
                     key={item.id}
                     type="button"
-                    onClick={() => setMemberType(item.id as any)}
-                    className={`py-2 rounded-xl text-xs font-bold border transition-all ${
+                    onClick={() => setMemberType(item.id)}
+                    className={`py-2 rounded-xl text-xs border transition-all ${
                       memberType === item.id
-                        ? "bg-primary text-primary-foreground border-primary shadow-xs"
-                        : "bg-background border-border text-muted-foreground hover:text-foreground"
+                        ? "bg-card text-foreground border-border/50 font-black shadow-sm"
+                        : "border-transparent text-muted-foreground hover:text-foreground font-bold"
                     }`}
                   >
                     {item.label}
