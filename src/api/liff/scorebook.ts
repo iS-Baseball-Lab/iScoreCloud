@@ -718,10 +718,12 @@ interface ExtractTeamSymbolRulesPayload {
 interface GeminiExtractedSymbolRulesResponse {
   cellStyle?: string;
   lineupStyle?: string;
+  pinchHitterMark?: string;
   outMark?: string;
   strikeout?: string;
   walkHbp?: string;
   buntMark?: string;
+  doublePlayMark?: string;
   buntPitchMark?: string;
   hitLine?: string;
   runnerLine?: string;
@@ -808,10 +810,12 @@ liffScorebookRouter.post("/extract-symbol-rules", async (c) => {
 {
   "cellStyle": "quadrant" | "quadrant_bso_grid" | "simple_diamond", // マス枠線: 中央小ダイヤから上下左右へ十字点線が伸びBSO欄が空欄なら "quadrant"、十字4分割で左BSO欄に横仕切り線があれば "quadrant_bso_grid"、十字点線なしの大きなダイヤのみなら "simple_diamond"（不明なら "quadrant"）
   "lineupStyle": "classic_three_row" | "compact_order_first", // 選手欄様式: 先発・守備位置｜打順(1/11/21)｜左○｜選手名｜背番号 の3段フル様式なら "classic_three_row"、順｜守備｜背番｜選手名 のシンプル式なら "compact_order_first"（不明なら "classic_three_row"）
+  "pinchHitterMark": "red_wave_name" | "left_wave_only" | "cell_badge" | "lineup_only", // 代打・途中交代マーク: 打席境界に赤の縦波線＋赤縦書き選手名（例: 中島⌇・佐藤⌇）を添えるなら "red_wave_name"、左境界の縦波線のみなら "left_wave_only"、マス内にPH/PR/代打バッジなら "cell_badge"、左選手欄のみ記録なら "lineup_only"（不明なら "red_wave_name"）
   "outMark": "roman" | "circled", // アウト記号: Ⅰ・Ⅱ・Ⅲ なら "roman"、①・②・③ なら "circled"
   "strikeout": "k_called_reverse" | "k_called_circle" | "k_only" | "so", // 三振: 見逃しが左右反転Kなら "k_called_reverse"、丸囲みⓀなら "k_called_circle"、区別なしKなら "k_only"、SO表記なら "so"
   "walkHbp": "b_db" | "bb_hbp" | "kanji", // 四死球: B/DBなら "b_db"、BB/HBPなら "bb_hbp"、四/死なら "kanji"
   "buntMark": "square_all_bh" | "square_sac" | "diamond_sac" | "b_prefix", // バント結果表記: 犠打もバント凡退も四角囲み□[5-3]＋バント安打BH5なら "square_all_bh"、犠打のみ四角囲み□[1-3]なら "square_sac"、早稲田式の菱形囲み◇1-3なら "diamond_sac"、B1-3/BH5のB添字式なら "b_prefix"
+  "doublePlayMark": "bracket_dp" | "dp_only" | "wavy_link" | "chain_only", // 併殺打(DP)表記: アウトになった2人のマス右端を『 ] 』括弧で結びDPを添えるなら "bracket_dp"、括弧なしでDP添字のみなら "dp_only"、縦波線で2マスを結ぶ早稲田式なら "wavy_link"、6-4-3等の送球番号のみなら "chain_only"（不明なら "bracket_dp"）
   "buntPitchMark": "v_dot_circle_dot" | "filled_triangle" | "inv_triangle_diamond" | "same_as_normal", // BSOバント球記号: バントファウルがVの中に・＆バント空振りが○の中に・(⊙)なら "v_dot_circle_dot"、黒塗り三角▲なら "filled_triangle"、逆三角▽/ダイヤ◇なら "inv_triangle_diamond"、通常球と同じ記号なら "same_as_normal"
   "hitLine": "quadrant_slash_hr_diamond" | "red_plain" | "red_slash" | "parallel_bars" | "mono_bold", // 安打赤線パターン: 右下欄に赤斜線（／・／／・／／／）＋HRはダイヤ1周赤囲みなら "quadrant_slash_hr_diamond"、ダイヤ進塁辺を赤実線のみ（チョン線なし）なら "red_plain"、進塁赤線＋1塁線上の直交チョン線なら "red_slash"、進塁赤線＋1塁線平行の二重・三重線なら "parallel_bars"、白黒太線のみなら "mono_bold"
   "runnerLine": "dotted_only" | "solid_trace", // 出塁・進塁時のひし形ライン: 通常の出塁・進塁ではひし形の点線を黒実線でなぞらず点線のまま残し進塁記号のみを添える方式なら "dotted_only"、進んだ塁間を黒実線でなぞる早稲田式なら "solid_trace"
@@ -1203,6 +1207,7 @@ ${battingTeamContext}${scoreboardHintText}
    - **先発と途中交代・守備位置変更（substitutions）の完全抽出**:
      - 各打順枠が上下2〜3段に分かれている場合、**一番上の段が先発選手（starter）**です。
      - 2段目・3段目に別の選手名が手書きされている場合は substitutions 配列に追加し、シート1全体の打席グリッド内の交代線（波線・二重線・斜線・『PH』『PR』表記）があるイニング列から出場イニング（inningEntered: 1以上の整数）、種別（"PH"=代打, "PR"=代走, "DEF"=守備交代）、および交代後の守備位置（position: "1"〜"9" または "D"）を特定してください。
+     - **🔥重要（打席グリッド内に直接赤縦波線＋縦書き氏名で書かれた代打の抽出）**: 日本の手書きスコアブックでは、左の選手名欄の3段目を空欄にしたまま、**打席グリッド内の該当イニングの左境界（直前の空欄マスの右端など）に赤の縦波線を引き、その横に赤字で縦書きの選手名（例: 『佐藤⌇』『中島⌇』）**を直接書き込んで代打出場を記録するケースが非常に多くあります！左の選手欄に書かれていなくても、打席グリッド内に赤縦波線＋選手名がある場合は漏れなく substitutions に {"inningEntered":その打席のイニング,"subType":"PH","name":"読み取った選手名","uniformNumber":"","position":"PH"} を追加してください！
      - **🔥重要（スタメン野手のマウンド登板・守備位置変更）**: 草野球・学童野球では新しい控え選手が出るのではなく、スタメン選手の守備位置欄が『6→1』『8/1』『投』のように途中イニングから変更（特に "1"=投手への継投変更！）されるケースが多発します。守備位置欄に複数の守備番号や矢印がある場合も、必ずその選手名で substitutions に {"inningEntered":交代回,"subType":"DEF","name":"その選手名","uniformNumber":"背番号","position":"変更後の守備番号"} を追加してください！空欄の段は出力しないでください。
    - **🔥外周ルーラー直読による精密グリッド座標（lineupRightX, ymin, ymax）の抽出**:
      - 画像1の外周4辺には **0〜1000 の目盛りルーラー** が付いています。直感で推測せず、**印刷された罫線が外周ルーラーにぶつかる目盛り数値**を直接読み取ってください！
@@ -1814,8 +1819,9 @@ ${targetInningMetaLines.join("\n")}
    - 手書きではフライを表す山なり曲線『︵』『⌒』が、直下の守備数字（1〜9）の上端にくっついて1文字のように書かれることが非常に多いです！
    - 特に **『︵』＋『4』（二飛）が接触すると『傘』『全』『B』『A』『8』『9』のような合体字形** に見えます（同様に『︵』＋『6』＝遊飛、『︵』＋『8』＝中飛、『︵』＋『3』＝一飛、『︵』＋『5』＝三飛、『︵』＋『7』＝左飛、『︵』＋『9』＝右飛）。
    - **[中央・右下拡大]で上部に山なりアーチ曲線『︵』が見え、下に数字の脚があり、本塁→1塁が破線（b1: false）で中央にアウト数字があるマスは100%フライアウト（rc: "flyout", dir: "4"〜"9"）です！絶対に英字『B』（四球 walk）と誤読しないでください！**
-2. **ゴロ・封殺・併殺（rc: "groundout" / "double_play"）の連綿（一筆書き接触）分解**:
+2. **ゴロ・封殺・併殺（rc: "groundout" / "double_play"）の連綿（一筆書き接触）分解と『 ] 』＋『DP』判定**:
    - ハイフン繋ぎの送球番号（例: **6-3**=遊ゴロ, **4-3**=二ゴロ, **5-3**=三ゴロ, **1-3**=投ゴロ, **2-3**=捕ゴロ, **3-1**=一ゴロ投カバー、封殺 **6-4 / 4-6 / 5-4 / 5-2**、併殺 **6-4-3 / 4-6-3 / 5-4-3 / 1-6-3**）または一塁無補殺の単独 **『3』『〜3』** はゴロです！
+   - **🔥併殺打（rc: "double_play", o: 2）の確実な識別**: 6-4-3 / 4-6-3 / 5-4-3 等の3者中継だけでなく、**上下2つのアウトマス（例: 先行走者の『Ⅱ FC』マスと打者の『Ⅲ 6-4-3』マス）の右端が縦の角括弧『 ] 』や縦波線で結ばれ、『DP』が添えられている場合**は 100% 併殺打（打者側の打席を **rc: "double_play", dir: "6-4-3" 等, o: 2** とし、先行走者の封殺アウトも a 配列に含める）です！
    - 手書きでは左の数字・ハイフン『-』・右の数字がペンを離さず繋がって（連綿で）書かれることが多いため、[中央・右下拡大]でハイフン位置を切り離して左右の数字を特定してください。
    - **⚠️にじんだ手書き数字（1〜9）の字形見分けと野球理論チェック**:
      ・**『4』**(角張った縦横交差で下に縦脚が突き出る) vs **『6』**(上から左へ降りて下半分が丸ループ) vs **『5』**(上端に水平横棒＋下丸み) vs **『8』**(上下2つの閉じた輪) vs **『1』**(縦1本線) vs **『2』**(上丸＋下水平線) を[中央・右下拡大]で1画ずつ確認せよ！

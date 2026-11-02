@@ -20,6 +20,7 @@ import {
   formatSubstitutionRoleShort,
   type BaseSegmentIndex,
   type CompiledDiamondSegment,
+  type CompiledDoublePlayLink,
   type CompiledScorebookCell,
   type CompiledScorebookSheetModel,
   type ScorebookMatchHeaderMeta,
@@ -1161,23 +1162,37 @@ function renderPlayNotation(
         {notation.subText && (
           <text
             x={
-              notation.decorator === "bunt_fly_square_umbrella"
+              notation.subText === "DP" || notation.subText === "TP"
+                ? px - 2
+                : notation.decorator === "bunt_fly_square_umbrella"
                 ? px
                 : px + 8.5
             }
             y={
-              notation.decorator === "bunt_fly_square_umbrella"
+              notation.subText === "DP" || notation.subText === "TP"
+                ? py + 7.2
+                : notation.decorator === "bunt_fly_square_umbrella"
                 ? py + 9.2
                 : py + 0.5
             }
-            fontSize={6.2}
-            fontWeight={800}
+            fontSize={
+              notation.subText === "DP" || notation.subText === "TP" ? 6.6 : 6.2
+            }
+            fontWeight={
+              notation.subText === "DP" || notation.subText === "TP" ? 900 : 800
+            }
             textAnchor={
+              notation.subText === "DP" ||
+              notation.subText === "TP" ||
               notation.decorator === "bunt_fly_square_umbrella"
                 ? "middle"
                 : "start"
             }
-            fill={COLOR_MUTED}
+            fill={
+              notation.subText === "DP" || notation.subText === "TP"
+                ? COLOR_INK
+                : COLOR_MUTED
+            }
             fontFamily={FONT_MONO}
           >
             {notation.subText}
@@ -1210,6 +1225,31 @@ function renderPlayNotation(
         >
           {notation.mainText}
         </text>
+        {notation.subText && (
+          <text
+            x={
+              notation.subText === "DP" || notation.subText === "TP"
+                ? px - 2
+                : px
+            }
+            y={py + 7.2}
+            fontSize={
+              notation.subText === "DP" || notation.subText === "TP" ? 6.6 : 6.0
+            }
+            fontWeight={
+              notation.subText === "DP" || notation.subText === "TP" ? 900 : 800
+            }
+            textAnchor="middle"
+            fill={
+              notation.subText === "DP" || notation.subText === "TP"
+                ? COLOR_INK
+                : COLOR_MUTED
+            }
+            fontFamily={FONT_MONO}
+          >
+            {notation.subText}
+          </text>
+        )}
       </g>
     );
   }
@@ -1218,10 +1258,11 @@ function renderPlayNotation(
     const boxW = notation.mainText.length >= 5 ? 21 : 19;
     const boxH = 12.2;
     const boxFontSize = notation.mainText.length >= 5 ? 6.8 : 8.1;
+    const isDpSub = notation.subText === "DP" || notation.subText === "TP";
     return (
       <g>
         <rect
-          x={px - boxW / 2}
+          x={px - boxW / 2 - (isDpSub ? 1.5 : 0)}
           y={py - 9.5}
           width={boxW}
           height={boxH}
@@ -1230,7 +1271,7 @@ function renderPlayNotation(
           strokeWidth={1.15}
         />
         <text
-          x={px}
+          x={px - (isDpSub ? 1.5 : 0)}
           y={py - 0.5}
           fontSize={boxFontSize}
           fontWeight={900}
@@ -1242,12 +1283,12 @@ function renderPlayNotation(
         </text>
         {notation.subText && (
           <text
-            x={px}
+            x={px - (isDpSub ? 2 : 0)}
             y={py + 8.3}
-            fontSize={5.8}
-            fontWeight={800}
+            fontSize={isDpSub ? 6.6 : 5.8}
+            fontWeight={isDpSub ? 900 : 800}
             textAnchor="middle"
-            fill={COLOR_MUTED}
+            fill={isDpSub ? COLOR_INK : COLOR_MUTED}
             fontFamily={FONT_MONO}
           >
             {notation.subText}
@@ -1258,6 +1299,7 @@ function renderPlayNotation(
   }
 
   if (notation.decorator === "sac_diamond") {
+    const isDpSub = notation.subText === "DP" || notation.subText === "TP";
     return (
       <g>
         <polygon
@@ -1279,12 +1321,12 @@ function renderPlayNotation(
         </text>
         {notation.subText && (
           <text
-            x={px}
+            x={px - (isDpSub ? 1.5 : 0)}
             y={py + 9.2}
-            fontSize={5.8}
-            fontWeight={800}
+            fontSize={isDpSub ? 6.6 : 5.8}
+            fontWeight={isDpSub ? 900 : 800}
             textAnchor="middle"
-            fill={COLOR_MUTED}
+            fill={isDpSub ? COLOR_INK : COLOR_MUTED}
             fontFamily={FONT_MONO}
           >
             {notation.subText}
@@ -1294,6 +1336,7 @@ function renderPlayNotation(
     );
   }
 
+  const isDpSub = notation.subText === "DP" || notation.subText === "TP";
   const fontSize = hasQuadrantHitSlash
     ? notation.mainText.length >= 5
       ? 7.4
@@ -1306,11 +1349,14 @@ function renderPlayNotation(
     ? 8.5
     : 9.8;
 
+  const mainX = isDpSub ? px - 2.5 : px;
+  const mainY = isDpSub ? py - 2.8 : py;
+
   return (
     <g>
       <text
-        x={px}
-        y={py}
+        x={mainX}
+        y={mainY}
         fontSize={fontSize}
         fontWeight={900}
         textAnchor="middle"
@@ -1321,12 +1367,12 @@ function renderPlayNotation(
       </text>
       {notation.subText && (
         <text
-          x={px}
-          y={py + 7.2}
-          fontSize={6.2}
-          fontWeight={800}
+          x={isDpSub ? px - 2.5 : px}
+          y={isDpSub ? py + 5.2 : py + 7.2}
+          fontSize={isDpSub ? 6.8 : 6.2}
+          fontWeight={isDpSub ? 900 : 800}
           textAnchor="middle"
-          fill={COLOR_MUTED}
+          fill={isDpSub ? COLOR_INK : COLOR_MUTED}
           fontFamily={FONT_MONO}
         >
           {notation.subText}
@@ -1548,6 +1594,410 @@ export function renderSingleScorebookCellSvg(
           />
         </g>
       )}
+    </g>
+  );
+}
+
+function buildVerticalWavePath(
+  x: number,
+  yStart: number,
+  yEnd: number,
+  amp = 2.0,
+  step = 6.5
+): string {
+  const parts: string[] = [`M ${x.toFixed(1)} ${yStart.toFixed(1)}`];
+  let curY = yStart;
+  let dir = 1;
+  while (curY + 0.5 < yEnd) {
+    const nextY = Math.min(yEnd, curY + step);
+    const midY = (curY + nextY) / 2;
+    const ctrlX = x + dir * amp;
+    parts.push(
+      `Q ${ctrlX.toFixed(1)} ${midY.toFixed(1)} ${x.toFixed(1)} ${nextY.toFixed(1)}`
+    );
+    curY = nextY;
+    dir *= -1;
+  }
+  return parts.join(" ");
+}
+
+function extractVerticalBatterName(
+  rawName: string | undefined,
+  subType: "PH" | "PR" | "TR" | "DEF" | undefined
+): string[] {
+  const cleaned = (rawName || "")
+    .replace(/\u3000/g, " ")
+    .trim();
+  const isPlaceholder =
+    !cleaned ||
+    cleaned === "PH" ||
+    cleaned === "PR" ||
+    cleaned === "代打" ||
+    cleaned === "代走" ||
+    cleaned === "選手";
+  const baseText = isPlaceholder
+    ? subType === "PR"
+      ? "代走"
+      : subType === "TR"
+      ? "臨走"
+      : "代打"
+    : cleaned.includes(" ")
+    ? cleaned.split(/\s+/)[0] || cleaned
+    : cleaned;
+
+  return Array.from(baseText)
+    .slice(0, 4)
+    .map((ch) => (ch === "ー" || ch === "-" || ch === "−" ? "｜" : ch));
+}
+
+function renderBatterChangeIndicatorSvg(
+  cell: CompiledScorebookCell | undefined,
+  rules: ScorebookSymbolRules,
+  cx: number,
+  ry: number,
+  isLeftNeighborEmpty: boolean
+): React.ReactNode {
+  if (!cell?.hasBatterChangeBefore || rules.pinchHitterMark === "lineup_only") {
+    return null;
+  }
+
+  const accentColor =
+    rules.hitLine === "mono_bold" ? COLOR_INK : COLOR_RED;
+  const waveX =
+    rules.pinchHitterMark === "red_wave_name" && isLeftNeighborEmpty
+      ? cx - 2.2
+      : cx + 2.0;
+  const wavePath = buildVerticalWavePath(
+    waveX,
+    ry + 3.5,
+    ry + CELL_H - 3.5,
+    1.85,
+    6.4
+  );
+
+  if (rules.pinchHitterMark === "left_wave_only") {
+    return (
+      <path
+        d={wavePath}
+        fill="none"
+        stroke={accentColor}
+        strokeWidth={1.55}
+        strokeLinecap="round"
+      />
+    );
+  }
+
+  if (rules.pinchHitterMark === "cell_badge") {
+    const useKanji = rules.positionLabel === "kanji";
+    const badgeText =
+      cell.batterSubType === "PR"
+        ? useKanji
+          ? "代走"
+          : "PR"
+        : cell.batterSubType === "TR"
+        ? useKanji
+          ? "臨走"
+          : "TR"
+        : cell.batterSubType === "DEF"
+        ? useKanji
+          ? "交代"
+          : "交"
+        : useKanji
+        ? "代打"
+        : "PH";
+    const badgeW = badgeText.length >= 2 && useKanji ? 18.5 : 15.5;
+    const bx = cx + BSO_W + 2.2;
+    const by = ry + 3.2;
+
+    return (
+      <g>
+        <path
+          d={buildVerticalWavePath(cx + 2.0, ry + 3.5, ry + CELL_H - 3.5, 1.7, 6.4)}
+          fill="none"
+          stroke={accentColor}
+          strokeWidth={1.35}
+          strokeLinecap="round"
+        />
+        <rect
+          x={bx}
+          y={by}
+          width={badgeW}
+          height={10.5}
+          rx={2.2}
+          fill={rules.hitLine === "mono_bold" ? COLOR_PAPER_SUB : COLOR_RED_SOFT}
+          stroke={accentColor}
+          strokeWidth={0.95}
+        />
+        <text
+          x={bx + badgeW / 2}
+          y={by + 7.7}
+          fontSize={6.5}
+          fontWeight={900}
+          textAnchor="middle"
+          fill={accentColor}
+          fontFamily={FONT_SANS}
+        >
+          {badgeText}
+        </text>
+      </g>
+    );
+  }
+
+  // "red_wave_name": 打席境界に赤縦波線＋赤縦書き選手名（写真7回前の「佐藤⌇」・4回前の「中島⌇」形式）
+  const chars = extractVerticalBatterName(
+    cell.newBatterName ?? cell.atBat?.batterName,
+    cell.batterSubType
+  );
+  const fontSize = chars.length >= 4 ? 8.2 : chars.length === 3 ? 9.2 : 10.2;
+  const lineStep = chars.length >= 4 ? 9.2 : chars.length === 3 ? 10.6 : 12.0;
+
+  if (isLeftNeighborEmpty) {
+    const textX = cx - 10.5;
+    const blockH = (chars.length - 1) * lineStep;
+    const startY = ry + CELL_H / 2 - blockH / 2 + 3.5;
+    return (
+      <g>
+        <path
+          d={wavePath}
+          fill="none"
+          stroke={accentColor}
+          strokeWidth={1.55}
+          strokeLinecap="round"
+        />
+        {chars.map((ch, idx) => (
+          <text
+            key={idx}
+            x={textX}
+            y={startY + idx * lineStep}
+            fontSize={fontSize}
+            fontWeight={900}
+            textAnchor="middle"
+            fill={accentColor}
+            stroke={COLOR_PAPER}
+            strokeWidth={2.6}
+            paintOrder="stroke"
+            fontFamily={FONT_SANS}
+          >
+            {ch}
+          </text>
+        ))}
+      </g>
+    );
+  }
+
+  // 左隣マスが空欄でない場合（1回または前イニングに打席あり）は当マスのBSO右余白（左上）に縦書き配置
+  const innerFontSize = chars.length >= 4 ? 7.2 : 8.2;
+  const innerStep = chars.length >= 4 ? 8.0 : 9.2;
+  const innerX = cx + BSO_W + 6.4;
+  const innerStartY = ry + 11.5;
+
+  return (
+    <g>
+      <path
+        d={wavePath}
+        fill="none"
+        stroke={accentColor}
+        strokeWidth={1.55}
+        strokeLinecap="round"
+      />
+      {chars.map((ch, idx) => (
+        <text
+          key={idx}
+          x={innerX}
+          y={innerStartY + idx * innerStep}
+          fontSize={innerFontSize}
+          fontWeight={900}
+          textAnchor="middle"
+          fill={accentColor}
+          stroke={COLOR_PAPER}
+          strokeWidth={2.5}
+          paintOrder="stroke"
+          fontFamily={FONT_SANS}
+        >
+          {ch}
+        </text>
+      ))}
+    </g>
+  );
+}
+
+function renderDoublePlayLinksSvg(
+  links: CompiledDoublePlayLink[],
+  columns: CompiledScorebookSheetModel["columns"],
+  batterRows: CompiledScorebookSheetModel["batterRows"],
+  rules: ScorebookSymbolRules,
+  gridStartX: number,
+  battersTopY: number
+): React.ReactNode {
+  if (
+    rules.doublePlayMark !== "bracket_dp" &&
+    rules.doublePlayMark !== "wavy_link"
+  ) {
+    return null;
+  }
+  if (!links.length) return null;
+
+  const colIndexByColKey = new Map<string, number>();
+  columns.forEach((c, idx) => {
+    colIndexByColKey.set(`${c.inning}-${c.columnIndex}`, idx);
+  });
+
+  const rowIndexByOrder = new Map<number, number>();
+  batterRows.forEach((r, idx) => {
+    rowIndexByOrder.set(r.battingOrder, idx);
+  });
+
+  const parseCellPos = (
+    cellKey: string
+  ): { colIdx: number; rowIdx: number; cellKey: string } | null => {
+    const parts = cellKey.split("-");
+    if (parts.length < 3) return null;
+    const colKey = `${parts[0]}-${parts[1]}`;
+    const order = Number(parts[2]);
+    const colIdx = colIndexByColKey.get(colKey);
+    const rowIdx = rowIndexByOrder.get(order);
+    if (colIdx === undefined || rowIdx === undefined) return null;
+    return { colIdx, rowIdx, cellKey };
+  };
+
+  return (
+    <g>
+      {links.map((link) => {
+        const resolved = link.outCellKeys
+          .map(parseCellPos)
+          .filter(
+            (p): p is { colIdx: number; rowIdx: number; cellKey: string } =>
+              p !== null
+          );
+        if (resolved.length < 2) return null;
+
+        const firstCol = resolved[0]!.colIdx;
+        const sameCol = resolved.every((p) => p.colIdx === firstCol);
+        const sortedByRow = [...resolved].sort((a, b) => a.rowIdx - b.rowIdx);
+        const minRow = sortedByRow[0]!.rowIdx;
+        const maxRow = sortedByRow[sortedByRow.length - 1]!.rowIdx;
+
+        // 同一イニング列かつ近接打順（例: 2番走者Ⅱと3番打者Ⅲ 6-4-3）を右端「 ] 」または縦波線で連結
+        if (sameCol && maxRow > minRow && maxRow - minRow <= 3) {
+          const cx = gridStartX + firstCol * CELL_W;
+          const xBar = cx + CELL_W - 2.6;
+          const xTick = cx + CELL_W - 7.2;
+          const yTop = battersTopY + minRow * CELL_H + CELL_H * 0.44;
+          const yBot = battersTopY + maxRow * CELL_H + CELL_H * 0.54;
+
+          if (rules.doublePlayMark === "wavy_link") {
+            return (
+              <g key={link.id}>
+                <line
+                  x1={xTick}
+                  y1={yTop}
+                  x2={xBar}
+                  y2={yTop}
+                  stroke={COLOR_INK}
+                  strokeWidth={1.45}
+                  strokeLinecap="round"
+                />
+                <path
+                  d={buildVerticalWavePath(xBar, yTop, yBot, 1.5, 5.8)}
+                  fill="none"
+                  stroke={COLOR_INK}
+                  strokeWidth={1.45}
+                  strokeLinecap="round"
+                />
+                <line
+                  x1={xTick}
+                  y1={yBot}
+                  x2={xBar}
+                  y2={yBot}
+                  stroke={COLOR_INK}
+                  strokeWidth={1.45}
+                  strokeLinecap="round"
+                />
+              </g>
+            );
+          }
+
+          return (
+            <g key={link.id}>
+              <path
+                d={`M ${xTick} ${yTop} L ${xBar} ${yTop} L ${xBar} ${yBot} L ${xTick} ${yBot}`}
+                fill="none"
+                stroke={COLOR_INK}
+                strokeWidth={1.65}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              {sortedByRow.slice(1, -1).map((mid) => {
+                const yMid =
+                  battersTopY + mid.rowIdx * CELL_H + CELL_H * 0.49;
+                return (
+                  <line
+                    key={mid.cellKey}
+                    x1={xTick + 1.5}
+                    y1={yMid}
+                    x2={xBar}
+                    y2={yMid}
+                    stroke={COLOR_INK}
+                    strokeWidth={1.4}
+                    strokeLinecap="round"
+                  />
+                );
+              })}
+            </g>
+          );
+        }
+
+        // 打順折り返し（9番→1番等）で離れている場合は無関係な行を跨がず各対象マス右端にペア括弧＋DP添字を描画
+        const tagLabel = link.isTriplePlay ? "TP" : "DP";
+        return (
+          <g key={link.id}>
+            {sortedByRow.map((pt) => {
+              const cx = gridStartX + pt.colIdx * CELL_W;
+              const ry = battersTopY + pt.rowIdx * CELL_H;
+              const xBar = cx + CELL_W - 2.6;
+              const xTick = cx + CELL_W - 6.6;
+              const y1 = ry + 22;
+              const y2 = ry + 45;
+              const isBatterCell = pt.cellKey === link.batterCellKey;
+              return (
+                <g key={pt.cellKey}>
+                  {rules.doublePlayMark === "wavy_link" ? (
+                    <path
+                      d={buildVerticalWavePath(xBar, y1, y2, 1.4, 5.5)}
+                      fill="none"
+                      stroke={COLOR_INK}
+                      strokeWidth={1.4}
+                      strokeLinecap="round"
+                    />
+                  ) : (
+                    <path
+                      d={`M ${xTick} ${y1} L ${xBar} ${y1} L ${xBar} ${y2} L ${xTick} ${y2}`}
+                      fill="none"
+                      stroke={COLOR_INK}
+                      strokeWidth={1.55}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  )}
+                  {!isBatterCell && (
+                    <text
+                      x={xTick - 1.5}
+                      y={ry + 36}
+                      fontSize={6.2}
+                      fontWeight={900}
+                      textAnchor="end"
+                      fill={COLOR_INK}
+                      fontFamily={FONT_MONO}
+                    >
+                      {tagLabel}
+                    </text>
+                  )}
+                </g>
+              );
+            })}
+          </g>
+        );
+      })}
     </g>
   );
 }
@@ -3047,6 +3497,56 @@ export function DigitalScorebookSheet({
         );
       })}
 
+      {/* ━━━ 3B. 代打・途中出場境界マーク（縦波線＋赤縦書き氏名等）＆ 併殺連結ブラケット「 ] 」 ━━━ */}
+      {model.batterRows.map((bRow, rowIdx) => {
+        const ry = gridBodyTopY + rowIdx * CELL_H;
+        return model.columns.map((col, colIdx) => {
+          const cellKey = `${col.inning}-${col.columnIndex}-${bRow.battingOrder}`;
+          const cell = model.cellsByKey[cellKey];
+          if (!cell?.hasBatterChangeBefore) return null;
+          const cx = gridStartX + colIdx * CELL_W;
+          let isLeftNeighborEmpty = false;
+          if (colIdx > 0) {
+            const prevCol = model.columns[colIdx - 1]!;
+            const prevKey = `${prevCol.inning}-${prevCol.columnIndex}-${bRow.battingOrder}`;
+            const prevCell = model.cellsByKey[prevKey];
+            const hasPrevContent = Boolean(
+              prevCell &&
+                (prevCell.atBat ||
+                  prevCell.isTiebreakRunnerOnly ||
+                  prevCell.outNumber ||
+                  prevCell.runScored ||
+                  prevCell.isResidual ||
+                  prevCell.segments[1] ||
+                  prevCell.segments[2] ||
+                  prevCell.segments[3] ||
+                  prevCell.segments[4])
+            );
+            isLeftNeighborEmpty = !hasPrevContent;
+          }
+          return (
+            <React.Fragment key={`bchg-${cellKey}`}>
+              {renderBatterChangeIndicatorSvg(
+                cell,
+                rules,
+                cx,
+                ry,
+                isLeftNeighborEmpty
+              )}
+            </React.Fragment>
+          );
+        });
+      })}
+
+      {renderDoublePlayLinksSvg(
+        model.doublePlayLinks,
+        model.columns,
+        model.batterRows,
+        rules,
+        gridStartX,
+        gridBodyTopY
+      )}
+
       {/* ━━━ 4. グリッド下段：各イニング集計行（安打・四死/失・残塁・得点）＋ チーム合計 ━━━ */}
       {(
         [
@@ -3565,6 +4065,9 @@ export function ScorebookSymbolSamplePreview({
     isResidual: false,
     isInningEndCell: false,
     hasPitcherChangeBefore: false,
+    hasBatterChangeBefore: true,
+    newBatterName: "中島",
+    batterSubType: "PH",
   };
 
   const sampleCells: Array<{ title: string; cell: CompiledScorebookCell }> = [
@@ -3686,18 +4189,57 @@ export function ScorebookSymbolSamplePreview({
       },
     },
     {
+      title: "併殺打(DP)",
+      cell: {
+        cellKey: "s-dp",
+        inning: 1,
+        columnIndex: 1,
+        battingOrder: 5,
+        atBat: {
+          id: "s-ab-dp",
+          inning: 1,
+          isTop: true,
+          columnIndex: 1,
+          battingOrder: 5,
+          batterName: "サンプルDP",
+          batterPlayerId: null,
+          pitcherName: "投手",
+          pitcherPlayerId: null,
+          resultCode: "double_play",
+          resultLabel: "遊ゴロ併殺打 (6-4-3)",
+          battedDirection: "6-4-3",
+          rbi: 0,
+          outsInPlay: 2,
+          endingOuts: 3,
+          runsInPlay: 0,
+          balls: 1,
+          strikes: 1,
+          pitches: ["ball", "strike", "in_play"],
+          advances: [],
+          confidence: "high",
+        },
+        isTiebreakRunnerOnly: false,
+        segments: { 1: null, 2: null, 3: null, 4: null },
+        outNumber: 3,
+        runScored: false,
+        isResidual: false,
+        isInningEndCell: true,
+        hasPitcherChangeBefore: false,
+      },
+    },
+    {
       title: "中飛(2死)",
       cell: {
         cellKey: "s-4",
         inning: 1,
         columnIndex: 1,
-        battingOrder: 5,
+        battingOrder: 6,
         atBat: {
           id: "s-ab-4",
           inning: 1,
           isTop: true,
           columnIndex: 1,
-          battingOrder: 5,
+          battingOrder: 6,
           batterName: "サンプル4",
           batterPlayerId: null,
           pitcherName: "投手",
@@ -3730,13 +4272,13 @@ export function ScorebookSymbolSamplePreview({
         cellKey: "s-5",
         inning: 1,
         columnIndex: 1,
-        battingOrder: 6,
+        battingOrder: 7,
         atBat: {
           id: "s-ab-5",
           inning: 1,
           isTop: true,
           columnIndex: 1,
-          battingOrder: 6,
+          battingOrder: 7,
           batterName: "サンプル5",
           batterPlayerId: null,
           pitcherName: "投手",
@@ -3787,8 +4329,8 @@ export function ScorebookSymbolSamplePreview({
     substitutions: [
       {
         id: "sample-sub1",
-        inningEntered: 4,
-        subType: "DEF",
+        inningEntered: 3,
+        subType: "PH",
         name: "中島",
         uniformNumber: "15",
         position: "3",
@@ -3798,7 +4340,7 @@ export function ScorebookSymbolSamplePreview({
     ],
   };
 
-  const gap = 5;
+  const gap = 4;
   const lineupW = getLineupTotalWidth(rules);
   const colHeadH = 30;
   const topPreviewW = lineupW + CELL_W * 3;
@@ -3821,7 +4363,7 @@ export function ScorebookSymbolSamplePreview({
     >
       <rect x={0} y={0} width={totalW} height={totalH} fill={COLOR_PAPER} />
 
-      {/* 上段：メンバー欄＋1回（二塁打）・2回（バント単打）・3回（本塁打）マスのリアルプレビュー */}
+      {/* 上段：メンバー欄＋1回（二塁打）・2回（バント単打）・3回（代打本塁打）マスのリアルプレビュー */}
       <g>
         <rect
           x={topOriginX}
@@ -3919,6 +4461,13 @@ export function ScorebookSymbolSamplePreview({
           topOriginX + lineupW + CELL_W * 2,
           topOriginY + colHeadH
         )}
+        {renderBatterChangeIndicatorSvg(
+          topInning3HomeRunCell,
+          rules,
+          topOriginX + lineupW + CELL_W * 2,
+          topOriginY + colHeadH,
+          false
+        )}
         <line
           x1={topOriginX + lineupW}
           y1={topOriginY + colHeadH}
@@ -3938,9 +4487,10 @@ export function ScorebookSymbolSamplePreview({
         />
       </g>
 
-      {/* 下段：5パターンの打席・バント・走塁記号サンプル */}
+      {/* 下段：6パターンの打席・バント・併殺・走塁記号サンプル */}
       {sampleCells.map((item, idx) => {
         const ox = (totalW - cellsRowW) / 2 + idx * (CELL_W + gap);
+        const isDpSample = item.cell.atBat?.resultCode === "double_play";
         return (
           <g key={item.title}>
             <text
@@ -3954,6 +4504,56 @@ export function ScorebookSymbolSamplePreview({
               {item.title}
             </text>
             {renderSingleScorebookCellSvg(item.cell, rules, ox, cellsOriginY)}
+            {isDpSample &&
+              (rules.doublePlayMark === "bracket_dp" ||
+                rules.doublePlayMark === "wavy_link") && (
+                <g>
+                  {rules.doublePlayMark === "wavy_link" ? (
+                    <>
+                      <line
+                        x1={ox + CELL_W - 7.2}
+                        y1={cellsOriginY + 4}
+                        x2={ox + CELL_W - 2.6}
+                        y2={cellsOriginY + 4}
+                        stroke={COLOR_INK}
+                        strokeWidth={1.45}
+                        strokeLinecap="round"
+                      />
+                      <path
+                        d={buildVerticalWavePath(
+                          ox + CELL_W - 2.6,
+                          cellsOriginY + 4,
+                          cellsOriginY + CELL_H * 0.54,
+                          1.5,
+                          5.8
+                        )}
+                        fill="none"
+                        stroke={COLOR_INK}
+                        strokeWidth={1.45}
+                        strokeLinecap="round"
+                      />
+                      <line
+                        x1={ox + CELL_W - 7.2}
+                        y1={cellsOriginY + CELL_H * 0.54}
+                        x2={ox + CELL_W - 2.6}
+                        y2={cellsOriginY + CELL_H * 0.54}
+                        stroke={COLOR_INK}
+                        strokeWidth={1.45}
+                        strokeLinecap="round"
+                      />
+                    </>
+                  ) : (
+                    <path
+                      d={`M ${ox + CELL_W - 7.2} ${cellsOriginY + 4} L ${ox + CELL_W - 2.6} ${cellsOriginY + 4} L ${ox + CELL_W - 2.6} ${cellsOriginY + CELL_H * 0.54} L ${ox + CELL_W - 7.2} ${cellsOriginY + CELL_H * 0.54}`}
+                      fill="none"
+                      stroke={COLOR_INK}
+                      strokeWidth={1.65}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  )}
+                </g>
+              )}
           </g>
         );
       })}

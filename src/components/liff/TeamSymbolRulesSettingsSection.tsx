@@ -212,6 +212,11 @@ export function TeamSymbolRulesSettingsSection({
       options: SYMBOL_RULE_FIELD_CONFIGS.positionLabel.options,
     },
     {
+      key: "pinchHitterMark",
+      title: SYMBOL_RULE_FIELD_CONFIGS.pinchHitterMark.title,
+      options: SYMBOL_RULE_FIELD_CONFIGS.pinchHitterMark.options,
+    },
+    {
       key: "outMark",
       title: SYMBOL_RULE_FIELD_CONFIGS.outMark.title,
       options: SYMBOL_RULE_FIELD_CONFIGS.outMark.options,
@@ -235,6 +240,11 @@ export function TeamSymbolRulesSettingsSection({
       key: "buntMark",
       title: SYMBOL_RULE_FIELD_CONFIGS.buntMark.title,
       options: SYMBOL_RULE_FIELD_CONFIGS.buntMark.options,
+    },
+    {
+      key: "doublePlayMark",
+      title: SYMBOL_RULE_FIELD_CONFIGS.doublePlayMark.title,
+      options: SYMBOL_RULE_FIELD_CONFIGS.doublePlayMark.options,
     },
     {
       key: "hitLine",

@@ -75,6 +75,18 @@ export interface CompiledScorebookCell {
   /** この打席から相手投手が交代したか（マス上辺に投手交代波線を引く） */
   hasPitcherChangeBefore: boolean;
   newPitcherName?: string;
+  /** この打席から打者が交代したか（代打・途中出場後の初打席） */
+  hasBatterChangeBefore?: boolean;
+  newBatterName?: string;
+  batterSubType?: "PH" | "PR" | "TR" | "DEF";
+}
+
+export interface CompiledDoublePlayLink {
+  id: string;
+  inning: number;
+  outCellKeys: string[];
+  batterCellKey: string;
+  isTriplePlay: boolean;
 }
 
 export interface CompiledGridColumn {
@@ -132,6 +144,7 @@ export interface CompiledScorebookSheetModel {
   columns: CompiledGridColumn[];
   batterRows: CompiledBatterRowStats[];
   cellsByKey: Record<string, CompiledScorebookCell>;
+  doublePlayLinks: CompiledDoublePlayLink[];
   inningSummaries: CompiledInningSummary[];
   totals: {
     plateAppearances: number;
@@ -397,6 +410,23 @@ export function compileScorebookSheetModel(
   };
 
   let prevPitcherKey: string | null = null;
+  const doublePlayLinks: CompiledDoublePlayLink[] = [];
+  const normalizeBatterIdentity = (
+    playerId: string | null | undefined,
+    name: string | null | undefined
+  ): string | null => {
+    if (playerId && playerId.trim()) return `id:${playerId.trim()}`;
+    const clean = (name || "").replace(/\s+/g, "");
+    return clean ? `name:${clean}` : null;
+  };
+  const prevBatterKeyByOrder = new Map<number, string | null>();
+  const renderedBatterSubIds = new Set<string>();
+  for (const slot of normalizedSlots) {
+    prevBatterKeyByOrder.set(
+      slot.battingOrder,
+      normalizeBatterIdentity(slot.playerId, slot.name)
+    );
+  }
   const inningSummaries: CompiledInningSummary[] = [];
 
   for (let inn = 1; inn <= maxInning; inn++) {
@@ -458,6 +488,46 @@ export function compileScorebookSheetModel(
           cell.newPitcherName = ab.pitcherName || undefined;
         }
         prevPitcherKey = curPitcherKey;
+      }
+
+      // 打者交代（代打・途中出場後の初打席）検出
+      const curSlot = batterStatsMap.get(ab.battingOrder)?.slot;
+      const curBatterKey = normalizeBatterIdentity(
+        ab.batterPlayerId,
+        ab.batterName
+      );
+      const prevBatterKey = prevBatterKeyByOrder.get(ab.battingOrder) ?? null;
+      const explicitAtBatSub = curSlot?.substitutions.find(
+        (s) =>
+          Boolean(s.enteredAtBatId) &&
+          s.enteredAtBatId === ab.id &&
+          !renderedBatterSubIds.has(s.id)
+      );
+      const matchedSlotSub = curSlot?.substitutions.find(
+        (s) =>
+          curBatterKey !== null &&
+          normalizeBatterIdentity(s.playerId, s.name) === curBatterKey
+      );
+      if (
+        (prevBatterKey !== null &&
+          curBatterKey !== null &&
+          curBatterKey !== prevBatterKey) ||
+        explicitAtBatSub
+      ) {
+        cell.hasBatterChangeBefore = true;
+        cell.newBatterName =
+          ab.batterName.trim() ||
+          explicitAtBatSub?.name.trim() ||
+          matchedSlotSub?.name.trim() ||
+          undefined;
+        cell.batterSubType =
+          explicitAtBatSub?.subType || matchedSlotSub?.subType || "PH";
+        if (explicitAtBatSub) {
+          renderedBatterSubIds.add(explicitAtBatSub.id);
+        }
+      }
+      if (curBatterKey !== null) {
+        prevBatterKeyByOrder.set(ab.battingOrder, curBatterKey);
       }
 
       // 打者個人成績の加算（走塁死による打席途中断 resultCode==="other" は打席・打数に含めない）
@@ -524,6 +594,13 @@ export function compileScorebookSheetModel(
         return outsTracker as 1 | 2 | 3;
       };
 
+      const playOutCellKeys: string[] = [];
+      const recordPlayOutCell = (outKey: string) => {
+        if (!playOutCellKeys.includes(outKey)) {
+          playOutCellKeys.push(outKey);
+        }
+      };
+
       // A) 投球間（盗塁・暴投・捕逸・牽制死・盗塁死）の反映
       for (const pr of snap.precedingRunners) {
         const originKey = originByBase[pr.startBase];
@@ -555,6 +632,12 @@ export function compileScorebookSheetModel(
           const ord = nextOutOrdinal();
           if (originCell) {
             originCell.outNumber = ord;
+            if (
+              ab.resultCode === "strikeout" ||
+              ab.resultCode === "dropped_third_strike_out"
+            ) {
+              recordPlayOutCell(originCell.cellKey);
+            }
           }
         }
       }
@@ -574,6 +657,7 @@ export function compileScorebookSheetModel(
       const assignBatterOutIfApplicable = () => {
         if (isBatterIntrinsicOut || snap.batterSummary.isOutOnBases) {
           cell.outNumber = nextOutOrdinal();
+          recordPlayOutCell(cell.cellKey);
         }
       };
 
@@ -601,6 +685,7 @@ export function compileScorebookSheetModel(
                 }
               );
               originCell.outNumber = nextOutOrdinal();
+              recordPlayOutCell(originCell.cellKey);
             } else {
               nextOutOrdinal();
             }
@@ -644,6 +729,32 @@ export function compileScorebookSheetModel(
       } else {
         assignInPlayPrecedingRunners();
         assignBatterOutIfApplicable();
+      }
+
+      if (
+        playOutCellKeys.length >= 2 ||
+        ab.resultCode === "double_play" ||
+        ab.resultCode === "triple_play"
+      ) {
+        const resolvedOutCellKeys = [...playOutCellKeys];
+        if (resolvedOutCellKeys.length === 1 && ab.resultCode === "double_play") {
+          const fallbackRunnerKey =
+            originByBase["1B"] ?? originByBase["2B"] ?? originByBase["3B"];
+          if (fallbackRunnerKey && !resolvedOutCellKeys.includes(fallbackRunnerKey)) {
+            resolvedOutCellKeys.unshift(fallbackRunnerKey);
+          }
+        }
+        doublePlayLinks.push({
+          id: `dp-${ab.id}`,
+          inning: inn,
+          outCellKeys:
+            resolvedOutCellKeys.length >= 2
+              ? resolvedOutCellKeys
+              : [cell.cellKey],
+          batterCellKey: cell.cellKey,
+          isTriplePlay:
+            ab.resultCode === "triple_play" || resolvedOutCellKeys.length >= 3,
+        });
       }
 
       // C) 打者自身のベース進塁セグメント反映
@@ -794,6 +905,7 @@ export function compileScorebookSheetModel(
     columns,
     batterRows,
     cellsByKey,
+    doublePlayLinks,
     inningSummaries,
     totals: {
       plateAppearances: totalPa,

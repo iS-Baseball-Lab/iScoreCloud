@@ -49,6 +49,16 @@ export type BuntPitchMarkStyle =
   | "inv_triangle_diamond"
   | "same_as_normal";
 export type FlyLinerMarkStyle = "umbrella" | "paren" | "alphabet";
+export type PinchHitterMarkStyle =
+  | "red_wave_name"
+  | "left_wave_only"
+  | "cell_badge"
+  | "lineup_only";
+export type DoublePlayMarkStyle =
+  | "bracket_dp"
+  | "dp_only"
+  | "wavy_link"
+  | "chain_only";
 export type AdvanceErrorMarkStyle = "english" | "kanji";
 export type PositionLabelStyle = "kanji" | "number" | "english";
 
@@ -67,6 +77,8 @@ export interface ScorebookSymbolRules {
   buntPitchMark: BuntPitchMarkStyle;
   pickoffMark: PickoffMarkStyle;
   buntMark: BuntMarkStyle;
+  pinchHitterMark: PinchHitterMarkStyle;
+  doublePlayMark: DoublePlayMarkStyle;
   flyLiner: FlyLinerMarkStyle;
   advanceError: AdvanceErrorMarkStyle;
   positionLabel: PositionLabelStyle;
@@ -91,6 +103,8 @@ export const STANDARD_SCOREBOOK_SYMBOL_RULES: ScorebookSymbolRules = {
   buntPitchMark: "filled_triangle",
   pickoffMark: "chevron_arrow",
   buntMark: "diamond_sac",
+  pinchHitterMark: "left_wave_only",
+  doublePlayMark: "wavy_link",
   flyLiner: "umbrella",
   advanceError: "english",
   positionLabel: "number",
@@ -116,6 +130,8 @@ export const DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES: ScorebookSymbolRules = {
   buntPitchMark: "v_dot_circle_dot",
   pickoffMark: "chevron_arrow",
   buntMark: "square_all_bh",
+  pinchHitterMark: "red_wave_name",
+  doublePlayMark: "bracket_dp",
   flyLiner: "umbrella",
   advanceError: "english",
   positionLabel: "number",
@@ -159,6 +175,8 @@ export const SCOREBOOK_SYMBOL_PRESETS: readonly ScorebookSymbolPreset[] = [
       buntPitchMark: "v_dot_circle_dot",
       pickoffMark: "chevron_arrow",
       buntMark: "square_all_bh",
+      pinchHitterMark: "red_wave_name",
+      doublePlayMark: "bracket_dp",
       flyLiner: "paren",
       advanceError: "kanji",
       positionLabel: "number",
@@ -184,6 +202,8 @@ export const SCOREBOOK_SYMBOL_PRESETS: readonly ScorebookSymbolPreset[] = [
       buntPitchMark: "inv_triangle_diamond",
       pickoffMark: "kanji_num",
       buntMark: "b_prefix",
+      pinchHitterMark: "cell_badge",
+      doublePlayMark: "dp_only",
       flyLiner: "alphabet",
       advanceError: "english",
       positionLabel: "english",
@@ -209,6 +229,8 @@ export const SCOREBOOK_SYMBOL_PRESETS: readonly ScorebookSymbolPreset[] = [
       buntPitchMark: "filled_triangle",
       pickoffMark: "chevron_arrow",
       buntMark: "square_sac",
+      pinchHitterMark: "left_wave_only",
+      doublePlayMark: "bracket_dp",
       flyLiner: "umbrella",
       advanceError: "kanji",
       positionLabel: "kanji",
@@ -449,6 +471,56 @@ export const SYMBOL_RULE_FIELD_CONFIGS = {
       },
     ] satisfies ReadonlyArray<SymbolRuleFieldOption<BuntMarkStyle>>,
   },
+  pinchHitterMark: {
+    title: "代打・途中交代（打席境界）の表記",
+    options: [
+      {
+        value: "red_wave_name",
+        label: "赤縦波線 ＋ 赤縦書き氏名",
+        sample: "境界に赤波線⌇＋縦書き選手名",
+      },
+      {
+        value: "left_wave_only",
+        label: "マス左辺に縦波線のみ（早稲田）",
+        sample: "左辺に縦波線⌇（氏名は選手欄）",
+      },
+      {
+        value: "cell_badge",
+        label: "マス内に PH / PR 記号表記",
+        sample: "左上に PH・PR・交 を表示",
+      },
+      {
+        value: "lineup_only",
+        label: "メンバー欄のみに記載",
+        sample: "イニングマスには波線を書かない",
+      },
+    ] satisfies ReadonlyArray<SymbolRuleFieldOption<PinchHitterMarkStyle>>,
+  },
+  doublePlayMark: {
+    title: "併殺打（ダブルプレー）の表記",
+    options: [
+      {
+        value: "bracket_dp",
+        label: "「 ] 」でつなぎ DP 表記",
+        sample: "2マス右端を ] で連結＋DP",
+      },
+      {
+        value: "dp_only",
+        label: "送球番号 ＋ DP のみ",
+        sample: "6-4-3 DP（連結線は引かない）",
+      },
+      {
+        value: "wavy_link",
+        label: "波線・曲線でつなぐ（早稲田）",
+        sample: "2マス右端を波線連結＋DP",
+      },
+      {
+        value: "chain_only",
+        label: "送球番号のみ（DP・線なし）",
+        sample: "6-4-3 のみ記載",
+      },
+    ] satisfies ReadonlyArray<SymbolRuleFieldOption<DoublePlayMarkStyle>>,
+  },
   flyLiner: {
     title: "フライ・ライナー表記",
     options: [
@@ -579,6 +651,16 @@ export function sanitizeScorebookSymbolRules(
       obj.buntMark,
       ["square_all_bh", "square_sac", "diamond_sac", "b_prefix"],
       fallback.buntMark
+    ),
+    pinchHitterMark: isOneOf(
+      obj.pinchHitterMark,
+      ["red_wave_name", "left_wave_only", "cell_badge", "lineup_only"],
+      fallback.pinchHitterMark
+    ),
+    doublePlayMark: isOneOf(
+      obj.doublePlayMark,
+      ["bracket_dp", "dp_only", "wavy_link", "chain_only"],
+      fallback.doublePlayMark
     ),
     flyLiner: isOneOf(
       obj.flyLiner,
@@ -731,6 +813,18 @@ export function summarizeSymbolRulesBadges(
     badges.push("右上赤打点");
   } else if (rules.rbiMark === "black_dots") {
     badges.push("右上黒打点");
+  }
+  if (rules.pinchHitterMark === "red_wave_name") {
+    badges.push("赤波線＋縦氏名交代");
+  } else if (rules.pinchHitterMark === "cell_badge") {
+    badges.push("PH/PRバッジ");
+  }
+  if (rules.doublePlayMark === "bracket_dp") {
+    badges.push("]連結＋DP併殺");
+  } else if (rules.doublePlayMark === "wavy_link") {
+    badges.push("波線連結＋DP併殺");
+  } else if (rules.doublePlayMark === "dp_only") {
+    badges.push("DP添字併殺");
   }
 
   return badges;
@@ -1271,15 +1365,21 @@ export function formatAtBatPlayNotation(
     } else if (/^[1-9]$/.test(main) && main !== "3") {
       main = `${main}-3`;
     }
+    const isDp =
+      rc === "double_play" || (ab.outsInPlay === 2 && rc !== "triple_play");
+    const isTp = rc === "triple_play" || ab.outsInPlay >= 3;
+    const dpSub =
+      rules.doublePlayMark === "chain_only"
+        ? undefined
+        : isTp
+        ? "TP"
+        : isDp
+        ? "DP"
+        : undefined;
     return {
       mainText:
         isBuntPlay && rules.buntMark === "b_prefix" ? `B${main}` : main,
-      subText:
-        rc === "double_play"
-          ? "DP"
-          : rc === "triple_play"
-          ? "TP"
-          : undefined,
+      subText: dpSub,
       decorator:
         isBuntPlay && rules.buntMark === "square_all_bh"
           ? "sac_square"
