@@ -23,6 +23,7 @@ export type HitLineStyle =
   | "red_slash"
   | "parallel_bars"
   | "mono_bold";
+export type RunnerLineStyle = "dotted_only" | "solid_trace";
 export type RunMarkStyle = "red_dot" | "double_circle" | "kanji_toku";
 export type PitchMarkStyle =
   | "waseda_symbols"
@@ -56,6 +57,7 @@ export interface ScorebookSymbolRules {
   strikeout: StrikeoutMarkStyle;
   walkHbp: WalkHbpMarkStyle;
   hitLine: HitLineStyle;
+  runnerLine: RunnerLineStyle;
   runMark: RunMarkStyle;
   pitchMark: PitchMarkStyle;
   buntPitchMark: BuntPitchMarkStyle;
@@ -77,6 +79,7 @@ export const STANDARD_SCOREBOOK_SYMBOL_RULES: ScorebookSymbolRules = {
   strikeout: "k_called_reverse",
   walkHbp: "b_db",
   hitLine: "red_slash",
+  runnerLine: "solid_trace",
   runMark: "red_dot",
   pitchMark: "waseda_symbols",
   buntPitchMark: "filled_triangle",
@@ -99,6 +102,7 @@ export const DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES: ScorebookSymbolRules = {
   strikeout: "k_called_circle",
   walkHbp: "b_db",
   hitLine: "quadrant_slash_hr_diamond",
+  runnerLine: "dotted_only",
   runMark: "red_dot",
   pitchMark: "waseda_symbols",
   buntPitchMark: "v_dot_circle_dot",
@@ -131,7 +135,7 @@ export const SCOREBOOK_SYMBOL_PRESETS: readonly ScorebookSymbolPreset[] = [
   {
     id: "youth_senior",
     label: "少年・シニア 丸数字式",
-    description: "①②③・右下赤斜線／・×空振り・□バント/BH・V点/○点",
+    description: "①②③・進塁点線維持・右下赤斜線／・×空振り・□バント/BH",
     rules: {
       cellStyle: "quadrant",
       lineupStyle: "classic_three_row",
@@ -139,6 +143,7 @@ export const SCOREBOOK_SYMBOL_PRESETS: readonly ScorebookSymbolPreset[] = [
       strikeout: "k_called_circle",
       walkHbp: "b_db",
       hitLine: "quadrant_slash_hr_diamond",
+      runnerLine: "dotted_only",
       runMark: "red_dot",
       pitchMark: "cross_swing",
       buntPitchMark: "v_dot_circle_dot",
@@ -161,6 +166,7 @@ export const SCOREBOOK_SYMBOL_PRESETS: readonly ScorebookSymbolPreset[] = [
       strikeout: "k_called_reverse",
       walkHbp: "bb_hbp",
       hitLine: "parallel_bars",
+      runnerLine: "solid_trace",
       runMark: "double_circle",
       pitchMark: "numbered_bs",
       buntPitchMark: "inv_triangle_diamond",
@@ -183,6 +189,7 @@ export const SCOREBOOK_SYMBOL_PRESETS: readonly ScorebookSymbolPreset[] = [
       strikeout: "k_called_circle",
       walkHbp: "kanji",
       hitLine: "mono_bold",
+      runnerLine: "solid_trace",
       runMark: "kanji_toku",
       pitchMark: "slash_swing",
       buntPitchMark: "filled_triangle",
@@ -279,6 +286,21 @@ export const SYMBOL_RULE_FIELD_CONFIGS = {
         sample: "黒太線＋直交線（守備も黒）",
       },
     ] satisfies ReadonlyArray<SymbolRuleFieldOption<HitLineStyle>>,
+  },
+  runnerLine: {
+    title: "出塁・進塁時のひし形ライン（黒実線）",
+    options: [
+      {
+        value: "dotted_only",
+        label: "なぞらない（点線のまま）",
+        sample: "ひし形は点線維持・進塁記号のみ",
+      },
+      {
+        value: "solid_trace",
+        label: "黒実線でなぞる（早稲田式）",
+        sample: "進んだ塁間を黒実線でなぞる",
+      },
+    ] satisfies ReadonlyArray<SymbolRuleFieldOption<RunnerLineStyle>>,
   },
   runMark: {
     title: "本塁生還（得点）マーク",
@@ -453,6 +475,11 @@ export function sanitizeScorebookSymbolRules(
       ],
       fallback.hitLine
     ),
+    runnerLine: isOneOf(
+      obj.runnerLine,
+      ["dotted_only", "solid_trace"],
+      fallback.runnerLine
+    ),
     runMark: isOneOf(
       obj.runMark,
       ["red_dot", "double_circle", "kanji_toku"],
@@ -626,6 +653,10 @@ export function summarizeSymbolRulesBadges(
     badges.push("白黒太線");
   } else {
     badges.push("赤進塁線＋直交線");
+  }
+
+  if (rules.runnerLine === "dotted_only") {
+    badges.push("進塁点線維持");
   }
 
   return badges;

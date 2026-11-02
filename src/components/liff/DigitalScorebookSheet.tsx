@@ -697,6 +697,13 @@ function renderDiamondSegment(
       ? seg.isBatterHit && seg.hitBases === 4
       : seg.isBatterHit;
 
+  const isExplicitHitStroke =
+    seg.isBatterHit &&
+    (rules.hitLine !== "quadrant_slash_hr_diamond" || seg.hitBases === 4);
+
+  const shouldDrawSegmentLine =
+    isExplicitHitStroke || rules.runnerLine === "solid_trace";
+
   const strokeColor = useRedStroke ? COLOR_RED : COLOR_INK;
   const strokeW =
     rules.hitLine === "mono_bold" && seg.isBatterHit
@@ -790,23 +797,31 @@ function renderDiamondSegment(
     );
   }
 
+  if (!shouldDrawSegmentLine && !advLabel) {
+    return null;
+  }
+
   return (
     <g key={`seg-${seg.segment}`}>
-      <line
-        x1={x1}
-        y1={y1}
-        x2={x2}
-        y2={y2}
-        stroke={strokeColor}
-        strokeWidth={strokeW}
-        strokeDasharray={seg.method === "tiebreak" ? "3,2" : undefined}
-        strokeLinecap="round"
-      />
-      {(rules.hitLine === "red_slash" || rules.hitLine === "mono_bold") &&
-        seg.segment === 1 &&
-        seg.isBatterHit &&
-        seg.hitBases !== 0 &&
-        renderHitHashMarks(seg.hitBases, rules, cellGeom, ox, oy)}
+      {shouldDrawSegmentLine && (
+        <>
+          <line
+            x1={x1}
+            y1={y1}
+            x2={x2}
+            y2={y2}
+            stroke={strokeColor}
+            strokeWidth={strokeW}
+            strokeDasharray={seg.method === "tiebreak" ? "3,2" : undefined}
+            strokeLinecap="round"
+          />
+          {(rules.hitLine === "red_slash" || rules.hitLine === "mono_bold") &&
+            seg.segment === 1 &&
+            seg.isBatterHit &&
+            seg.hitBases !== 0 &&
+            renderHitHashMarks(seg.hitBases, rules, cellGeom, ox, oy)}
+        </>
+      )}
       {advLabel && (
         <text
           x={ox + geom.labelPos.x}

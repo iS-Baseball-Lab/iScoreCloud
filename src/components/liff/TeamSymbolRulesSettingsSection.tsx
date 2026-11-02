@@ -242,6 +242,11 @@ export function TeamSymbolRulesSettingsSection({
       options: SYMBOL_RULE_FIELD_CONFIGS.hitLine.options,
     },
     {
+      key: "runnerLine",
+      title: SYMBOL_RULE_FIELD_CONFIGS.runnerLine.title,
+      options: SYMBOL_RULE_FIELD_CONFIGS.runnerLine.options,
+    },
+    {
       key: "runMark",
       title: SYMBOL_RULE_FIELD_CONFIGS.runMark.title,
       options: SYMBOL_RULE_FIELD_CONFIGS.runMark.options,
