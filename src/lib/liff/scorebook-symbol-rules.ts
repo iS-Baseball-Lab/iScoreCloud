@@ -24,6 +24,7 @@ export type HitLineStyle =
   | "parallel_bars"
   | "mono_bold";
 export type RunnerLineStyle = "dotted_only" | "solid_trace";
+export type RunnerOutLineStyle = "dotted_only" | "quadrant_arrow" | "t_stop";
 export type RunMarkStyle = "red_dot" | "double_circle" | "kanji_toku";
 export type PitchMarkStyle =
   | "waseda_symbols"
@@ -58,6 +59,7 @@ export interface ScorebookSymbolRules {
   walkHbp: WalkHbpMarkStyle;
   hitLine: HitLineStyle;
   runnerLine: RunnerLineStyle;
+  runnerOutLine: RunnerOutLineStyle;
   runMark: RunMarkStyle;
   pitchMark: PitchMarkStyle;
   buntPitchMark: BuntPitchMarkStyle;
@@ -80,6 +82,7 @@ export const STANDARD_SCOREBOOK_SYMBOL_RULES: ScorebookSymbolRules = {
   walkHbp: "b_db",
   hitLine: "red_slash",
   runnerLine: "solid_trace",
+  runnerOutLine: "t_stop",
   runMark: "red_dot",
   pitchMark: "waseda_symbols",
   buntPitchMark: "filled_triangle",
@@ -103,6 +106,7 @@ export const DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES: ScorebookSymbolRules = {
   walkHbp: "b_db",
   hitLine: "quadrant_slash_hr_diamond",
   runnerLine: "dotted_only",
+  runnerOutLine: "dotted_only",
   runMark: "red_dot",
   pitchMark: "waseda_symbols",
   buntPitchMark: "v_dot_circle_dot",
@@ -144,6 +148,7 @@ export const SCOREBOOK_SYMBOL_PRESETS: readonly ScorebookSymbolPreset[] = [
       walkHbp: "b_db",
       hitLine: "quadrant_slash_hr_diamond",
       runnerLine: "dotted_only",
+      runnerOutLine: "dotted_only",
       runMark: "red_dot",
       pitchMark: "cross_swing",
       buntPitchMark: "v_dot_circle_dot",
@@ -167,6 +172,7 @@ export const SCOREBOOK_SYMBOL_PRESETS: readonly ScorebookSymbolPreset[] = [
       walkHbp: "bb_hbp",
       hitLine: "parallel_bars",
       runnerLine: "solid_trace",
+      runnerOutLine: "t_stop",
       runMark: "double_circle",
       pitchMark: "numbered_bs",
       buntPitchMark: "inv_triangle_diamond",
@@ -190,6 +196,7 @@ export const SCOREBOOK_SYMBOL_PRESETS: readonly ScorebookSymbolPreset[] = [
       walkHbp: "kanji",
       hitLine: "mono_bold",
       runnerLine: "solid_trace",
+      runnerOutLine: "t_stop",
       runMark: "kanji_toku",
       pitchMark: "slash_swing",
       buntPitchMark: "filled_triangle",
@@ -301,6 +308,26 @@ export const SYMBOL_RULE_FIELD_CONFIGS = {
         sample: "進んだ塁間を黒実線でなぞる",
       },
     ] satisfies ReadonlyArray<SymbolRuleFieldOption<RunnerLineStyle>>,
+  },
+  runnerOutLine: {
+    title: "走塁死・封殺時のひし形ライン（ストップ線）",
+    options: [
+      {
+        value: "dotted_only",
+        label: "線なし（点線のまま・記号のみ）",
+        sample: "ひし形は点線維持・中央アウト＋記号",
+      },
+      {
+        value: "quadrant_arrow",
+        label: "外側に矢印 ＋ 記号（点線維持）",
+        sample: "ひし形外側に進行矢印＋T.O/CS等",
+      },
+      {
+        value: "t_stop",
+        label: "T字ストップ線 ━━┫（早稲田式）",
+        sample: "塁間途中で切って垂直の止め線を描く",
+      },
+    ] satisfies ReadonlyArray<SymbolRuleFieldOption<RunnerOutLineStyle>>,
   },
   runMark: {
     title: "本塁生還（得点）マーク",
@@ -480,6 +507,11 @@ export function sanitizeScorebookSymbolRules(
       ["dotted_only", "solid_trace"],
       fallback.runnerLine
     ),
+    runnerOutLine: isOneOf(
+      obj.runnerOutLine,
+      ["dotted_only", "quadrant_arrow", "t_stop"],
+      fallback.runnerOutLine
+    ),
     runMark: isOneOf(
       obj.runMark,
       ["red_dot", "double_circle", "kanji_toku"],
@@ -658,6 +690,11 @@ export function summarizeSymbolRulesBadges(
   if (rules.runnerLine === "dotted_only") {
     badges.push("進塁点線維持");
   }
+  if (rules.runnerOutLine === "quadrant_arrow") {
+    badges.push("走塁死矢印表記");
+  } else if (rules.runnerOutLine === "t_stop") {
+    badges.push("━━┫ストップ線");
+  }
 
   return badges;
 }
@@ -814,10 +851,11 @@ export function formatAdvanceMethodByRules(
         : isKanji
         ? "送"
         : "T";
+    case "out_on_base":
+      return isKanji ? "走死" : "T.O";
     case "hit":
     case "sac":
     case "walk":
-    case "out_on_base":
     case "other":
     default:
       if (drivingBatterOrder && drivingBatterOrder > 0) {

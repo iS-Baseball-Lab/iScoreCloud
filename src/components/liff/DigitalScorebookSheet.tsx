@@ -717,6 +717,93 @@ function renderDiamondSegment(
     : "";
 
   if (seg.status === "out") {
+    if (rules.runnerOutLine === "dotted_only") {
+      if (!advLabel) return null;
+      return (
+        <g key={`seg-${seg.segment}`}>
+          <text
+            x={ox + geom.labelPos.x}
+            y={oy + geom.labelPos.y}
+            fontSize={7.2}
+            fontWeight={800}
+            textAnchor="middle"
+            fill={COLOR_INK}
+            fontFamily={FONT_SANS}
+          >
+            {advLabel}
+          </text>
+        </g>
+      );
+    }
+
+    if (rules.runnerOutLine === "quadrant_arrow") {
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const len = Math.hypot(dx, dy) || 1;
+      const ux = dx / len;
+      const uy = dy / len;
+      const onx = -dy / len;
+      const ony = dx / len;
+      const outDist = cellGeom.hasQuadrantCrosshairs ? 5.6 : 4.8;
+      const halfArrow = cellGeom.hasQuadrantCrosshairs ? 4.1 : 3.8;
+      const mx = (x1 + x2) / 2 + onx * outDist;
+      const my = (y1 + y2) / 2 + ony * outDist;
+      const ax1 = mx - ux * halfArrow;
+      const ay1 = my - uy * halfArrow;
+      const ax2 = mx + ux * halfArrow;
+      const ay2 = my + uy * halfArrow;
+      const wingBack = 2.6;
+      const wingHalfW = 2.05;
+      const w1x = ax2 - ux * wingBack + onx * wingHalfW;
+      const w1y = ay2 - uy * wingBack + ony * wingHalfW;
+      const w2x = ax2 - ux * wingBack - onx * wingHalfW;
+      const w2y = ay2 - uy * wingBack - ony * wingHalfW;
+
+      const arrowLabelPos =
+        seg.segment === 1
+          ? { x: 76.5, y: 47.5 }
+          : seg.segment === 2
+          ? { x: 76.5, y: cellGeom.hasQuadrantCrosshairs ? 15.5 : 13.5 }
+          : seg.segment === 3
+          ? { x: 30.5, y: cellGeom.hasQuadrantCrosshairs ? 15.5 : 13.5 }
+          : { x: 31.5, y: cellGeom.hasQuadrantCrosshairs ? 62.5 : 59.5 };
+
+      return (
+        <g key={`seg-${seg.segment}`}>
+          <line
+            x1={ax1}
+            y1={ay1}
+            x2={ax2}
+            y2={ay2}
+            stroke={COLOR_INK}
+            strokeWidth={1.3}
+            strokeLinecap="round"
+          />
+          <polyline
+            points={`${w1x.toFixed(2)},${w1y.toFixed(2)} ${ax2.toFixed(2)},${ay2.toFixed(2)} ${w2x.toFixed(2)},${w2y.toFixed(2)}`}
+            fill="none"
+            stroke={COLOR_INK}
+            strokeWidth={1.3}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          {advLabel && (
+            <text
+              x={ox + arrowLabelPos.x}
+              y={oy + arrowLabelPos.y}
+              fontSize={7.0}
+              fontWeight={800}
+              textAnchor="middle"
+              fill={COLOR_INK}
+              fontFamily={FONT_SANS}
+            >
+              {advLabel}
+            </text>
+          )}
+        </g>
+      );
+    }
+
     const ratio = 0.66;
     const stopX = x1 + (x2 - x1) * ratio;
     const stopY = y1 + (y2 - y1) * ratio;
@@ -3388,13 +3475,20 @@ export function ScorebookSymbolSamplePreview({
         method: "hit",
         isPrePlay: false,
       },
-      2: null,
+      2: {
+        segment: 2,
+        status: "out",
+        isBatterHit: false,
+        hitBases: 0,
+        method: "out_on_base",
+        isPrePlay: false,
+      },
       3: null,
       4: null,
     },
-    outNumber: null,
+    outNumber: 1,
     runScored: false,
-    isResidual: true,
+    isResidual: false,
     isInningEndCell: false,
     hasPitcherChangeBefore: false,
   };

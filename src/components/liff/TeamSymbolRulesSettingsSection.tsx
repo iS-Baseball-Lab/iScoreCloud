@@ -247,6 +247,11 @@ export function TeamSymbolRulesSettingsSection({
       options: SYMBOL_RULE_FIELD_CONFIGS.runnerLine.options,
     },
     {
+      key: "runnerOutLine",
+      title: SYMBOL_RULE_FIELD_CONFIGS.runnerOutLine.title,
+      options: SYMBOL_RULE_FIELD_CONFIGS.runnerOutLine.options,
+    },
+    {
       key: "runMark",
       title: SYMBOL_RULE_FIELD_CONFIGS.runMark.title,
       options: SYMBOL_RULE_FIELD_CONFIGS.runMark.options,

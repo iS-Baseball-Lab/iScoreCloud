@@ -725,6 +725,7 @@ interface GeminiExtractedSymbolRulesResponse {
   buntPitchMark?: string;
   hitLine?: string;
   runnerLine?: string;
+  runnerOutLine?: string;
   runMark?: string;
   pitchMark?: string;
   pickoffMark?: string;
@@ -813,6 +814,7 @@ liffScorebookRouter.post("/extract-symbol-rules", async (c) => {
   "buntPitchMark": "v_dot_circle_dot" | "filled_triangle" | "inv_triangle_diamond" | "same_as_normal", // BSOバント球記号: バントファウルがVの中に・＆バント空振りが○の中に・(⊙)なら "v_dot_circle_dot"、黒塗り三角▲なら "filled_triangle"、逆三角▽/ダイヤ◇なら "inv_triangle_diamond"、通常球と同じ記号なら "same_as_normal"
   "hitLine": "quadrant_slash_hr_diamond" | "red_plain" | "red_slash" | "parallel_bars" | "mono_bold", // 安打赤線パターン: 右下欄に赤斜線（／・／／・／／／）＋HRはダイヤ1周赤囲みなら "quadrant_slash_hr_diamond"、ダイヤ進塁辺を赤実線のみ（チョン線なし）なら "red_plain"、進塁赤線＋1塁線上の直交チョン線なら "red_slash"、進塁赤線＋1塁線平行の二重・三重線なら "parallel_bars"、白黒太線のみなら "mono_bold"
   "runnerLine": "dotted_only" | "solid_trace", // 出塁・進塁時のひし形ライン: 通常の出塁・進塁ではひし形の点線を黒実線でなぞらず点線のまま残し進塁記号のみを添える方式なら "dotted_only"、進んだ塁間を黒実線でなぞる早稲田式なら "solid_trace"
+  "runnerOutLine": "dotted_only" | "quadrant_arrow" | "t_stop", // 走塁死・封殺時のひし形ライン: 線を描かず点線のまま中央アウトと記号のみなら "dotted_only"、ひし形は点線のまま外側に進行方向の矢印＋T.O/CS等を添える方式なら "quadrant_arrow"、塁間途中で切って先端に垂直の止め線（━━┫）を描く早稲田式なら "t_stop"
   "runMark": "red_dot" | "double_circle" | "kanji_toku", // 得点マーク: 中央塗り丸●なら "red_dot"、二重丸◎なら "double_circle"、丸得なら "kanji_toku"
   "pitchMark": "waseda_symbols" | "cross_swing" | "cross_dot_swing" | "slash_swing" | "numbered_bs", // 投球BSO: ○見逃/●空振/ーB/△F なら "waseda_symbols"、○見逃/×空振/ーB(横棒ボール) なら "cross_swing"、○見逃/×空振/・B(点・黒点ボール) なら "cross_dot_swing"、○見逃/／空振 なら "slash_swing"、B/S欄に投球番号1,2,3を書く方式なら "numbered_bs"
   "pickoffMark": "chevron_arrow" | "full_arrow" | "kanji_num" | "hidden", // 牽制球記号: 軸線・中塗り無しの矢先記号（1塁＞・2塁∧・3塁＜）なら "chevron_arrow"、軸線付き矢印（1塁→・2塁↑・3塁←）なら "full_arrow"、1牽・2牽・3牽や丸数字なら "kanji_num"（不明なら "chevron_arrow"）
