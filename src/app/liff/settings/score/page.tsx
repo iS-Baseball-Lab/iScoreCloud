@@ -21,13 +21,18 @@ import {
   Sliders,
   Save,
   AlertCircle,
+  FileSpreadsheet,
 } from "lucide-react";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { ScorebookCameraModal } from "@/components/liff/ScorebookCameraModal";
+import { ScorebookSymbolChartSheetModal } from "@/components/liff/ScorebookSymbolChartSheetModal";
 import { TeamSymbolRulesSettingsSection } from "@/components/liff/TeamSymbolRulesSettingsSection";
 import { useLiff } from "@/components/liff/LiffProvider";
-import type { ScorebookSymbolRules } from "@/lib/liff/scorebook-symbol-rules";
+import {
+  DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES,
+  type ScorebookSymbolRules,
+} from "@/lib/liff/scorebook-symbol-rules";
 import { getClientQueryParam } from "@/lib/liff/liff-client";
 import {
   ensureCompactApiImage,
@@ -95,6 +100,9 @@ export default function LiffScoreSettingsPage() {
   const [scoreSettings, setScoreSettings] = useState<LiffScoreSettings>(
     DEFAULT_LIFF_SCORE_SETTINGS
   );
+  const [activeSymbolRules, setActiveSymbolRules] =
+    useState<ScorebookSymbolRules>(DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES);
+  const [isChartGeneratorOpen, setIsChartGeneratorOpen] = useState(false);
   const [isCameraModalOpen, setIsCameraModalOpen] = useState(false);
   const stageSeqRef = useRef<number>(0);
 
@@ -123,6 +131,9 @@ export default function LiffScoreSettingsPage() {
         setResolvedTeamName(data.team.name);
         setSavedLegendUrl(data.team.scorebookLegendUrl);
         setSavedTeamSymbolRules(data.team.scorebookSymbolRules ?? null);
+        if (data.team.scorebookSymbolRules) {
+          setActiveSymbolRules(data.team.scorebookSymbolRules);
+        }
       } else {
         setResolvedTeamId(qTeam);
         setResolvedTeamName(currentTeam?.name || "マイチーム");
@@ -318,6 +329,55 @@ export default function LiffScoreSettingsPage() {
     }
   };
 
+  // 4-B. アプリ内で生成した清書マス版「スコア記号早見表」をそのままクラウド登録
+  const handleSaveGeneratedLegendToCloud = useCallback(
+    async (file: File) => {
+      setIsSavingLegend(true);
+      setErrorMessage(null);
+      try {
+        const processed = await preprocessScorebookImage(file, {
+          rotationDeg: 0,
+          enhancePencil: false,
+          maxLongEdge: 2000,
+        });
+
+        if (isDemoContext) {
+          setSavedLegendUrl(processed.dataUrl);
+          setStagedLegend(null);
+          toast.success(
+            "作り直した「スコア記号早見表」をチーム早見表として反映しました！"
+          );
+          return;
+        }
+
+        const compact = await ensureCompactApiImage(processed, 2000, 0.9);
+        const res = await fetch("/api/liff/scorebook/legend", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            teamId: resolvedTeamId || currentTeam?.id || "",
+            imageBase64: compact.base64,
+            mimeType: compact.mimeType,
+          }),
+        });
+
+        const data = (await res.json()) as UpdateLegendApiResponse;
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || "生成した早見表の保存に失敗しました");
+        }
+
+        setSavedLegendUrl(data.scorebookLegendUrl ?? null);
+        setStagedLegend(null);
+        toast.success(
+          "作り直した清書マス版「スコア記号早見表」をチーム共通設定として保存しました！"
+        );
+      } finally {
+        setIsSavingLegend(false);
+      }
+    },
+    [currentTeam?.id, isDemoContext, resolvedTeamId]
+  );
+
   // 5. 登録済み早見表の解除
   const handleClearSavedLegend = async () => {
     if (isSavingLegend) return;
@@ -372,6 +432,14 @@ export default function LiffScoreSettingsPage() {
         hintText="記載例・記号早見表のページ全体が枠に入るよう撮影してください"
         onClose={() => setIsCameraModalOpen(false)}
         onCapture={(file) => handleSelectLegendFile(file)}
+      />
+
+      <ScorebookSymbolChartSheetModal
+        isOpen={isChartGeneratorOpen}
+        onClose={() => setIsChartGeneratorOpen(false)}
+        teamName={resolvedTeamName}
+        rules={activeSymbolRules}
+        onRegisterLegendToCloud={handleSaveGeneratedLegendToCloud}
       />
 
       <LiffHeader />
@@ -759,6 +827,18 @@ export default function LiffScoreSettingsPage() {
                   )}
                 </div>
 
+                <button
+                  type="button"
+                  disabled={isSavingLegend}
+                  onClick={() => setIsChartGeneratorOpen(true)}
+                  className="w-full py-2.5 px-3 rounded-2xl bg-[#0f172a] hover:bg-slate-800 text-white border border-amber-500/50 text-xs font-black flex items-center justify-center gap-2 shadow-2xs active:scale-[0.99] transition-all cursor-pointer disabled:opacity-50"
+                >
+                  <FileSpreadsheet className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span>
+                    清書マス目で「チーム早見表」を作り直す（A4出力・そのまま登録）
+                  </span>
+                </button>
+
                 {!confirmClearLegend ? (
                   <div className="flex justify-end">
                     <button
@@ -840,6 +920,17 @@ export default function LiffScoreSettingsPage() {
                     </div>
                   )}
                 </div>
+                <button
+                  type="button"
+                  disabled={isSavingLegend}
+                  onClick={() => setIsChartGeneratorOpen(true)}
+                  className="w-full py-3 px-3 rounded-2xl bg-[#0f172a] hover:bg-slate-800 text-white border border-amber-500/50 text-xs font-black flex items-center justify-center gap-2 shadow-xs active:scale-[0.99] transition-all cursor-pointer disabled:opacity-50"
+                >
+                  <FileSpreadsheet className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span>
+                    本物の清書マス目で早見表を新規作成（A4出力・そのまま登録）
+                  </span>
+                </button>
               </div>
             )}
           </div>
@@ -853,6 +944,8 @@ export default function LiffScoreSettingsPage() {
           savedLegendUrl={savedLegendUrl}
           initialCloudRules={savedTeamSymbolRules}
           isLoadingTeam={isLoadingTeam}
+          onRulesChange={setActiveSymbolRules}
+          onOpenChartGenerator={() => setIsChartGeneratorOpen(true)}
         />
 
         {/* ━━━ セクション 3: ⚙️ AIスコアブック取り込みの初期設定 ━━━ */}
@@ -996,7 +1089,7 @@ export default function LiffScoreSettingsPage() {
           </Link>
         </div>
 
-        <div className="h-8 w-full shrink-0" aria-hidden="true" />
+        <div className="h-8 w-full shrink-0 pointer-events-none select-none" aria-hidden="true" />
       </div>
 
       {/* 全画面拡大プレビューモーダル（Portal z-[9999]） */}

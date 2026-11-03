@@ -729,22 +729,29 @@ function buildResultSection(
         : rc === "triple"
         ? "三塁打（スリーベース）"
         : "本塁打（ホームラン）";
-    const slashRuleJa =
-      rules.hitLine === "quadrant_slash_hr_diamond"
-        ? rc === "home_run"
-          ? "ダイヤモンド全体を太い赤線で一周させて本塁打を表し、右下に打球方向を黒字で記します。"
-          : `右下の赤い斜線の本数（${
-              rc === "single" ? "／＝1本" : rc === "double" ? "／／＝2本" : "／／／＝3本"
-            }）で${hitKindJa}を表し、その横に打球方向の番号を記します。`
-        : rules.hitLine === "parallel_bars"
-        ? rc === "home_run"
-          ? "ダイヤモンドを赤実線で結び、内側に赤ダイヤ枠を添えて本塁打を表します。"
-          : "一塁線の赤い平行線の本数で単打・二塁打・三塁打を区別します。"
-        : rules.hitLine === "mono_bold"
-        ? "白黒印刷でも判別しやすい太い黒実線と一塁線の直交マークで安打を表します。"
-        : rc === "home_run"
-        ? "一塁から本塁までダイヤモンドの4辺すべてを赤実線で結んで本塁打を表します。"
-        : "到達した塁まで赤実線を引き、一塁線に直交する赤線マークで安打の種類を表します。";
+    const slashRuleJa = notation.isRunningHomeRun
+      ? "ダイヤモンドの二重赤囲みと「RH」表記でランニングホームランを表します。"
+      : notation.infieldHitArc
+      ? "一塁線の赤実線に加え、右下の部屋を赤い円弧で囲むことで「内野安打（またはバントヒット）」であることを一目で表します。"
+      : rules.hitLine === "red_edge_infield_arc" || rules.hitLine === "red_plain"
+      ? rc === "home_run"
+        ? "一塁から本塁までダイヤモンドの4辺すべてを赤太線で結んで本塁打を表し、右下に打球方向を記します。"
+        : "到達した塁までダイヤモンドの辺を赤太線で結んで安打を表します。"
+      : rules.hitLine === "quadrant_slash_hr_diamond"
+      ? rc === "home_run"
+        ? "ダイヤモンド全体を太い赤線で一周させて本塁打を表し、右下に打球方向を黒字で記します。"
+        : `右下の赤い斜線の本数（${
+            rc === "single" ? "／＝1本" : rc === "double" ? "／／＝2本" : "／／／＝3本"
+          }）で${hitKindJa}を表し、その横に打球方向の番号を記します。`
+      : rules.hitLine === "parallel_bars"
+      ? rc === "home_run"
+        ? "ダイヤモンドを赤実線で結び、内側に赤ダイヤ枠を添えて本塁打を表します。"
+        : "一塁線の赤い平行線の本数で単打・二塁打・三塁打を区別します。"
+      : rules.hitLine === "mono_bold"
+      ? "白黒印刷でも判別しやすい太い黒実線と一塁線の直交マークで安打を表します。"
+      : rc === "home_run"
+      ? "一塁から本塁までダイヤモンドの4辺すべてを赤実線で結んで本塁打を表します。"
+      : "到達した塁まで赤実線を引き、一塁線に直交する赤線マークで安打の種類を表します。";
 
     rows.push({
       badge: notation.mainText || "H",
@@ -786,14 +793,28 @@ function buildResultSection(
     rc === "dropped_third_strike"
   ) {
     if (notation.decorator === "reverse_k") {
-      decoratorLabel = "反転K（見逃し三振）";
-      rows.push({
-        badge: "反転K",
-        badgeTone: "dark",
-        title: "見逃し三振（最後の3ストライク目を見逃し）",
-        description:
-          "左右反転させた「K」は、最後の球をバットを振らずに見逃して三振になったことを表します（空振り三振の通常Kと一目で区別できます）。",
-      });
+      if (
+        rules.strikeout === "k_called_so_swing" &&
+        (rc === "dropped_third_strike" || rc === "dropped_third_strike_out")
+      ) {
+        decoratorLabel = "反転K（三振振り逃げ）";
+        rows.push({
+          badge: "ꓘ",
+          badgeTone: "amber",
+          title: "三振振り逃げ（反転K）",
+          description:
+            "早見表ルールでは、左右反転させた「ꓘ」で三振振り逃げを表します（見逃し三振＝K、空振り三振＝SO と3区分します）。",
+        });
+      } else {
+        decoratorLabel = "反転K（見逃し三振）";
+        rows.push({
+          badge: "反転K",
+          badgeTone: "dark",
+          title: "見逃し三振（最後の3ストライク目を見逃し）",
+          description:
+            "左右反転させた「K」は、最後の球をバットを振らずに見逃して三振になったことを表します（空振り三振の通常Kと一目で区別できます）。",
+        });
+      }
     } else if (notation.decorator === "circle_k") {
       decoratorLabel = "丸囲みK（見逃し三振）";
       rows.push({
@@ -804,11 +825,17 @@ function buildResultSection(
           "丸で囲んだ「Ⓚ」は、最後の球を見逃して三振になったことを表します（空振り三振は丸なしのK）。",
       });
     } else {
+      const isCalled = headlineResult.includes("見逃") || notation.mainText === "K" && rules.strikeout === "k_called_so_swing";
       rows.push({
         badge: notation.mainText,
         badgeTone: "dark",
-        title: headlineResult.includes("見逃") ? "見逃し三振" : "空振り三振",
-        description: `「${notation.mainText}」は3ストライクによる三振を表します。`,
+        title: isCalled ? "見逃し三振" : "空振り三振",
+        description:
+          rules.strikeout === "k_called_so_swing"
+            ? isCalled
+              ? "「K」は見逃し三振を表します（空振り三振は「SO」、振り逃げは「ꓘ」）。"
+              : "「SO」は空振り三振を表します（見逃し三振は「K」、振り逃げは「ꓘ」）。"
+            : `「${notation.mainText}」は3ストライクによる三振を表します。`,
       });
     }
 
@@ -850,16 +877,21 @@ function buildResultSection(
       description: `${shapeName}で守備番号を囲むことで、走者を進めるための犠打（送りバント）が成功したことを表します（打数には含まれません）。`,
     });
   } else if (rc === "sac_fly") {
-    decoratorLabel = "犠飛マーク";
+    decoratorLabel =
+      notation.decorator === "sac_triangle" ? "△枠（犠飛）" : "犠飛マーク";
     rows.push({
       badge:
-        notation.decorator === "sac_fly_umbrella"
+        notation.decorator === "sac_triangle"
+          ? `△${notation.mainText}`
+          : notation.decorator === "sac_fly_umbrella"
           ? `◇︵${notation.mainText}`
           : `◇${notation.mainText}`,
       badgeTone: "amber",
       title: `犠飛（犠牲フライ：${headlineResult}）`,
       description:
-        "外野フライ等の捕球後に走者がタッチアップでホームインした「犠牲フライ」を表します（打数には含まれず打点がつきます）。",
+        notation.decorator === "sac_triangle"
+          ? "三角枠「△」で守備番号を囲むことで、外野フライ捕球後に走者がタッチアップ生還した「犠牲フライ」を表します（犠打の四角枠□と明確に区別します）。"
+          : "外野フライ等の捕球後に走者がタッチアップでホームインした「犠牲フライ」を表します（打数には含まれず打点がつきます）。",
     });
   } else if (rc === "flyout" || rc === "infield_fly") {
     if (
@@ -934,12 +966,20 @@ function buildResultSection(
         "野手が打者走者ではなく先行走者をアウトにしようと送球した結果、打者走者が一塁に生きたプレイを表します。",
     });
   } else if (rc === "groundout" || rc === "double_play" || rc === "triple_play") {
+    if (notation.decorator === "under_arc") {
+      decoratorLabel = "⏝ 下弧マーク（ゴロ）";
+    }
     rows.push({
-      badge: notation.mainText,
+      badge:
+        notation.decorator === "under_arc"
+          ? `${notation.mainText}⏝`
+          : notation.mainText,
       badgeTone: "dark",
       title: headlineResult,
       description:
-        "ゴロを捕球した野手の番号から送球先の野手の番号へハイフン「-」でつなぎ、ゴロ送球アウトを表します。",
+        notation.decorator === "under_arc"
+          ? "守備番号の下にある曲線「⏝（下弧マーク）」は、内野へのゴロ打球であることを表します。"
+          : "ゴロを捕球した野手の番号から送球先の野手の番号へハイフン「-」でつなぎ、ゴロ送球アウトを表します。",
     });
     if (notation.subText === "DP" || rc === "double_play") {
       rows.push({
@@ -1017,11 +1057,21 @@ function describeAdvanceMethodMeaning(
   rules: ScorebookSymbolRules
 ): { symbolText: string; tone: DiamondBreakdownRow["tone"]; title: string; description: string } {
   const rangeJa = segmentRangeLabel(startSeg, endSeg);
-  const advSymbol = formatAdvanceMethodByRules(
-    seg.method,
-    rules,
-    seg.drivingBatterOrder
-  );
+  const advSymbol =
+    seg.customLabelOverride !== undefined
+      ? seg.customLabelOverride
+      : formatAdvanceMethodByRules(
+          seg.method,
+          rules,
+          seg.drivingBatterOrder,
+          {
+            targetBase: endSeg,
+            isForceOut: seg.isForceOut,
+            throwChain: seg.throwChain,
+            isDoubleSteal: seg.isDoubleSteal,
+            isOut: seg.status === "out",
+          }
+        );
   const dottedNote =
     seg.status === "safe" && !seg.isBatterHit && rules.runnerLine === "dotted_only"
       ? "（※現在の記号ルールでは進塁線を点線のまま残し、記号で進塁位置を示します）"
@@ -1295,8 +1345,14 @@ function buildDiamondSection(
 
   // 2. ダイヤモンド中央ステータス（得点・アウト番号・残塁）
   if (cell.runScored) {
+    const isUnearnedOpen =
+      rules.runMark === "earned_filled_unearned_open" && Boolean(cell.isUnearnedRun);
     const runSymbol =
-      rules.runMark === "double_circle"
+      rules.runMark === "earned_filled_unearned_open"
+        ? isUnearnedOpen
+          ? "○"
+          : "●"
+        : rules.runMark === "double_circle"
         ? "◎"
         : rules.runMark === "kanji_toku"
         ? "丸得"
@@ -1305,8 +1361,18 @@ function buildDiamondSection(
       zoneLabel: "ダイヤ中央",
       symbolText: runSymbol,
       tone: "red",
-      title: "本塁生還（1得点）",
-      description: `ダイヤモンド中央の「${runSymbol}」は、この走者がホームベースを踏んで1点が入ったことを表す最も大切なマークです。`,
+      title:
+        rules.runMark === "earned_filled_unearned_open"
+          ? isUnearnedOpen
+            ? "本塁生還（非自責点：○）"
+            : "本塁生還（自責点：●）"
+          : "本塁生還（1得点）",
+      description:
+        rules.runMark === "earned_filled_unearned_open"
+          ? isUnearnedOpen
+            ? "白抜き丸「○」は、相手エラーや捕逸、2死後の失策絡みなどで入った「非自責点」によるホームインを表します（自責点は塗り丸「●」）。"
+            : "塗り丸「●」は、相手投手の責任となる「自責点」によるホームインを表します（非自責点は白抜き丸「○」）。"
+          : `ダイヤモンド中央の「${runSymbol}」は、この走者がホームベースを踏んで1点が入ったことを表す最も大切なマークです。`,
     });
   } else if (cell.outNumber) {
     const outText = formatOutOrdinalText(cell.outNumber, rules);
@@ -1366,18 +1432,26 @@ function buildDiamondSection(
     });
   }
 
-  // 5. マス上辺：途中投手交代の青波線
+  // 5. マス上辺：投手交代の赤波線
   if (cell.hasPitcherChangeBefore) {
     rows.push({
-      zoneLabel: "マス上辺",
-      symbolText: "〜〜",
-      tone: "blue",
+      zoneLabel:
+        typeof cell.pitcherChangeAtPitchIndex === "number"
+          ? "BSO〜左辺"
+          : "マス上辺",
+      symbolText: "赤波線",
+      tone: "red",
       title: `相手投手の交代${
         cell.newPitcherName ? `（→ ${cell.newPitcherName}）` : ""
       }`,
-      description: `マスの上辺に引かれた青い波線は、この打者の打席から相手投手が${
-        cell.newPitcherName ? `「${cell.newPitcherName}」に` : ""
-      }交代したことを表します。`,
+      description:
+        typeof cell.pitcherChangeAtPitchIndex === "number"
+          ? `投球カウント欄の途中から左辺へ階段状に引かれた赤い波線は、打席の途中で相手投手が${
+              cell.newPitcherName ? `「${cell.newPitcherName}」に` : ""
+            }交代したことを表します。`
+          : `マスの上辺に引かれた赤い波線は、この打者の打席から相手投手が${
+              cell.newPitcherName ? `「${cell.newPitcherName}」に` : ""
+            }交代したことを表します。`,
     });
   }
 

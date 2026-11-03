@@ -46,8 +46,9 @@ description: 草野球・アマチュア野球向けの本格的スコアブッ�
 ・試合当日のチーム運営統合（保護者役割・配車・施設ルール自動引当）：
   - お父さん・保護者が担う当日運営ロール（`球審` / `塁審` / `スコアラー` / `BSO・得点板` / `LINE速報` / `動画撮影` / `アナウンス・当番` 等）や集合・服装・昼食しおりは `matches.match_day_ops` で管理し、ログイン中の保護者自身の担当ロールおよび家族の乗車号車を自動照合して最上部にハイライト表示する。
   - 同日スケジュール（`events` / `eventCarpools`）の配車・弁当・当番班や、球場マスタ（`venues`）の駐車制限・スパイク規定は二重入力させず自動連携し、前日・当日のグループLINE連絡文を1タップでコピー＆LINE共有（`#06C755`）できるようにする。
-・スコアブック1マス記号ガイド（初心者でも見て覚えられるUI）：
+・スコアブック1マス記号ガイド ＆ チーム記号早見表ジェネレーター：
   - 清書シート（`DigitalScorebookSheet`）の打席セルタップおよびタイムラインのミニ1マス（`ScorebookSingleCellView`）から記号解説モーダル（`ScorebookCellGuideModal`）を開き、1球ごとの○×△記号・守備番号・進塁線の意味を実データ連動で分解解説する。
+  - チームごとのスコア記号流儀（見逃K/空振SO/振逃反転K、ベースアウト1A/6B/5C/2H、タッチアウト3TO、自責点●/非自責点○、内野安打の赤円弧囲み、ゴロ下弧6⏝・邪飛︵F7、□犠打/△犠飛、捕球E6/送球6E/4FC/2IF/OB6/IP/S′/DS、代打・代走・投手交代の赤波線ルール等）は `ScorebookSymbolRules` で網羅し、`/liff/settings/score` の `ScorebookSymbolChartSheetModal` から本物の清書マス目を使った5列「チーム スコア記号 早見表」を自動生成・A4出力・クラウド早見表登録できるようにする。
 ・LIFF ボトムナビ（`LiffBottomNav`）干渉防止・モーダルPortal設計規約（超重要）：
   - **ページ最外枠 ＆ 最下部スペーサー**：`/liff` 配下の各ページ最外枠は `min-h-screen` を使わず `<div className="flex flex-col flex-1">` とし、メインコンテンツ末尾（`<div className="p-4 space-y-4">` の直下末尾）には必ず `<div className="h-8 w-full shrink-0 pointer-events-none select-none" aria-hidden="true" />` を配置すること。これにより `LiffLayout` 側の下部余白（`pb-28 sm:pb-32`）と合わせて、`LiffBottomNav`（本体 `68px` ＋ 中央アーチ突起 `26px` ＝ 計 `94px` ＋ Safe Area）に最下部のボタンやカードが絶対に隠れないようにする。また、ページ下部に独自の `fixed bottom-0` アクションバーを設置して `LiffBottomNav` と二重衝突させる設計は禁止する。
   - **モーダル・ボトムシート・全画面ビューアの `createPortal` ＆ `z-[9999]` 必須化**：`LiffLayout` 内で `<LiffBottomNav />`（`z-50`）は `{children}` の後ろにDOM配置されており、また親要素の `animate-in` / `transform` が局所スタッキングコンテキストを生成するため、ページや子コンポーネント内でインラインのまま `fixed inset-0 z-50` 等を描画するとボトムナビの背面に隠れてしまう。すべてのモーダル・ドロワー・拡大プレビュー・カメラUIは必ず `createPortal(..., document.body)` で `document.body` 直下へ脱出させ、`z-[9999]`（親子2段モーダルの背面側は `z-[9990]` 等、`z-50` 以下は厳禁）を指定すること。

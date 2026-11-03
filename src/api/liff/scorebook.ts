@@ -727,6 +727,7 @@ interface GeminiExtractedSymbolRulesResponse {
   hitLine?: string;
   runnerLine?: string;
   runnerOutLine?: string;
+  forceOutMark?: string;
   runMark?: string;
   rbiMark?: string;
   pitchMark?: string;
@@ -809,22 +810,23 @@ liffScorebookRouter.post("/extract-symbol-rules", async (c) => {
 {
   "cellStyle": "quadrant" | "quadrant_bso_grid" | "simple_diamond", // マス枠線: 中央小ダイヤから上下左右へ十字点線が伸びBSO欄が空欄なら "quadrant"、十字4分割で左BSO欄に横仕切り線があれば "quadrant_bso_grid"、十字点線なしの大きなダイヤのみなら "simple_diamond"（不明なら "quadrant"）
   "lineupStyle": "classic_three_row" | "compact_order_first", // 選手欄様式: 先発・守備位置｜打順(1/11/21)｜左○｜選手名｜背番号 の3段フル様式なら "classic_three_row"、順｜守備｜背番｜選手名 のシンプル式なら "compact_order_first"（不明なら "classic_three_row"）
-  "pinchHitterMark": "red_wave_name" | "left_wave_only" | "cell_badge" | "lineup_only", // 代打・代走・守備交代マーク: 代打はマス左外・代走/守備交代はマス右内に赤縦波線を引き、その左に上詰め黒字（または縦書き）で選手名を添えるなら "red_wave_name"、赤縦波線のみなら "left_wave_only"、PH/PR/交バッジなら "cell_badge"、左選手欄のみ記録なら "lineup_only"（不明なら "red_wave_name"）
+  "pinchHitterMark": "red_wave_name" | "waseda_diamond_pr" | "left_wave_only" | "cell_badge" | "lineup_only", // 代打・代走・守備交代マーク: 代打はマス左外・代走/守備交代はマス右内に赤縦波線を引き縦書き選手名を添えるなら "red_wave_name"、代走を出塁した塁間の赤波線＋氏名で書く早稲田式なら "waseda_diamond_pr"、赤縦波線のみなら "left_wave_only"、PH/PR/交バッジなら "cell_badge"、左選手欄のみ記録なら "lineup_only"（不明なら "red_wave_name"）
   "outMark": "roman" | "circled", // アウト記号: Ⅰ・Ⅱ・Ⅲ なら "roman"、①・②・③ なら "circled"
-  "strikeout": "k_called_reverse" | "k_called_circle" | "k_only" | "so", // 三振: 見逃しが左右反転Kなら "k_called_reverse"、丸囲みⓀなら "k_called_circle"、区別なしKなら "k_only"、SO表記なら "so"
+  "strikeout": "k_called_so_swing" | "k_called_reverse" | "k_called_circle" | "k_only" | "so", // 三振: 見逃しが通常K・空振りがSO・振逃げが左右反転K(ꓘ)なら "k_called_so_swing"、見逃しが左右反転K(ꓘ)で空振りがKなら "k_called_reverse"、丸囲みⓀなら "k_called_circle"、区別なしKなら "k_only"、すべてSO表記なら "so"
   "walkHbp": "b_db" | "bb_hbp" | "kanji", // 四死球: B/DBなら "b_db"、BB/HBPなら "bb_hbp"、四/死なら "kanji"
-  "buntMark": "square_all_bh" | "square_sac" | "diamond_sac" | "b_prefix", // バント結果表記: 犠打もバント凡退も四角囲み□[5-3]＋バント安打BH5なら "square_all_bh"、犠打のみ四角囲み□[1-3]なら "square_sac"、早稲田式の菱形囲み◇1-3なら "diamond_sac"、B1-3/BH5のB添字式なら "b_prefix"
+  "buntMark": "square_sac_triangle_sf_bh" | "square_all_bh" | "square_sac" | "diamond_sac" | "b_prefix", // バント・犠飛表記: 犠打が四角囲み□[1-3]＋犠飛が三角囲み△8＋バント安打BH5なら "square_sac_triangle_sf_bh"、犠打もバント凡退も四角囲み□[5-3]＋BH5なら "square_all_bh"、犠打のみ四角囲み□[1-3]なら "square_sac"、早稲田式の菱形囲み◇1-3なら "diamond_sac"、B1-3/BH5のB添字式なら "b_prefix"
   "doublePlayMark": "bracket_dp" | "dp_only" | "wavy_link" | "chain_only", // 併殺打(DP)表記: アウトになった2人のマス右端を『 ] 』括弧で結びDPを添えるなら "bracket_dp"、括弧なしでDP添字のみなら "dp_only"、縦波線で2マスを結ぶ早稲田式なら "wavy_link"、6-4-3等の送球番号のみなら "chain_only"（不明なら "bracket_dp"）
-  "buntPitchMark": "v_dot_circle_dot" | "filled_triangle" | "inv_triangle_diamond" | "same_as_normal", // BSOバント球記号: バントファウルがVの中に・＆バント空振りが○の中に・(⊙)なら "v_dot_circle_dot"、黒塗り三角▲なら "filled_triangle"、逆三角▽/ダイヤ◇なら "inv_triangle_diamond"、通常球と同じ記号なら "same_as_normal"
-  "hitLine": "quadrant_slash_hr_diamond" | "red_plain" | "red_slash" | "parallel_bars" | "mono_bold", // 安打赤線パターン: 右下欄に赤斜線（／・／／・／／／）＋HRはダイヤ1周赤囲みなら "quadrant_slash_hr_diamond"、ダイヤ進塁辺を赤実線のみ（チョン線なし）なら "red_plain"、進塁赤線＋1塁線上の直交チョン線なら "red_slash"、進塁赤線＋1塁線平行の二重・三重線なら "parallel_bars"、白黒太線のみなら "mono_bold"
+  "buntPitchMark": "v_dot_circle_dot" | "filled_triangle" | "inv_triangle_diamond" | "same_as_normal", // BSOバント球記号: バントファウルがVの中に・(V̇)＆バント空振りが○の中に・(⊙)なら "v_dot_circle_dot"、黒塗り三角▲なら "filled_triangle"、逆三角▽/ダイヤ◇なら "inv_triangle_diamond"、通常球と同じ記号なら "same_as_normal"
+  "hitLine": "red_edge_infield_arc" | "quadrant_slash_hr_diamond" | "red_plain" | "red_slash" | "parallel_bars" | "mono_bold", // 安打赤線パターン: 進塁辺を赤太線で引き内野安打/BHの右下欄を赤円弧で囲む(RHは二重赤ダイヤ)なら "red_edge_infield_arc"、右下欄に赤斜線（／・／／・／／／）＋HRはダイヤ1周赤囲みなら "quadrant_slash_hr_diamond"、ダイヤ進塁辺を赤実線のみ（チョン線なし・赤円弧なし）なら "red_plain"、進塁赤線＋1塁線上の直交チョン線なら "red_slash"、進塁赤線＋1塁線平行の二重・三重線なら "parallel_bars"、白黒太線のみなら "mono_bold"
   "runnerLine": "dotted_only" | "solid_trace", // 出塁・進塁時のひし形ライン: 通常の出塁・進塁ではひし形の点線を黒実線でなぞらず点線のまま残し進塁記号のみを添える方式なら "dotted_only"、進んだ塁間を黒実線でなぞる早稲田式なら "solid_trace"
   "runnerOutLine": "dotted_only" | "quadrant_arrow" | "t_stop", // 走塁死・封殺時のひし形ライン: 線を描かず点線のまま中央アウトと記号のみなら "dotted_only"、ひし形は点線のまま外側に進行方向の矢印＋T.O/CS等を添える方式なら "quadrant_arrow"、塁間途中で切って先端に垂直の止め線（━━┫）を描く早稲田式なら "t_stop"
-  "runMark": "red_dot" | "double_circle" | "kanji_toku", // 得点マーク: 中央塗り丸●なら "red_dot"、二重丸◎なら "double_circle"、丸得なら "kanji_toku"
+  "forceOutMark": "base_letter_abch" | "standard_to", // ベースアウト・タッチアウト表記: 1塁=1A・2塁=6B・3塁=5C・本塁=2Hのように塁アルファベット(A/B/C/H)を使いタッチアウトを3TO/1-3TOと書くなら "base_letter_abch"、T.OやFCで統一する標準式なら "standard_to"
+  "runMark": "earned_filled_unearned_open" | "red_dot" | "double_circle" | "kanji_toku", // 得点マーク: 自責点を塗り丸●・非自責点を白抜き丸○で区別するなら "earned_filled_unearned_open"、すべて中央塗り丸●なら "red_dot"、二重丸◎なら "double_circle"、丸得なら "kanji_toku"
   "rbiMark": "hidden" | "red_dots" | "black_dots", // 打点(RBI)マーク: 打席マス右上に打点ドットを打たない方式なら "hidden"、右上に打点数分の赤点(●・●●)を打つ早稲田式なら "red_dots"、黒点(・/・・)なら "black_dots"
   "pitchMark": "waseda_symbols" | "cross_swing" | "cross_dot_swing" | "slash_swing" | "numbered_bs", // 投球BSO: ○見逃/●空振/ーB/△F なら "waseda_symbols"、○見逃/×空振/ーB(横棒ボール) なら "cross_swing"、○見逃/×空振/・B(点・黒点ボール) なら "cross_dot_swing"、○見逃/／空振 なら "slash_swing"、B/S欄に投球番号1,2,3を書く方式なら "numbered_bs"
   "pickoffMark": "chevron_arrow" | "full_arrow" | "kanji_num" | "hidden", // 牽制球記号: 軸線・中塗り無しの矢先記号（1塁＞・2塁∧・3塁＜）なら "chevron_arrow"、軸線付き矢印（1塁→・2塁↑・3塁←）なら "full_arrow"、1牽・2牽・3牽や丸数字なら "kanji_num"（不明なら "chevron_arrow"）
-  "flyLiner": "umbrella" | "paren" | "alphabet", // フライ・ライナー: 傘曲線︵8・直線￣8なら "umbrella"、(8)・[8]なら "paren"、8F・8Lなら "alphabet"
-  "advanceError": "english" | "kanji", // 盗塁・暴投・失策: S/WP/PB/6Eなら "english"、盗/暴/捕/6失なら "kanji"
+  "flyLiner": "umbrella_f_prefix_ground_arc" | "umbrella" | "paren" | "alphabet", // フライ・邪飛・ゴロ・ライナー: フライ︵7・ファールフライ︵F7・ゴロ下弧6⏝・ライナー￣6なら "umbrella_f_prefix_ground_arc"、傘曲線︵8・邪飛︵8F・直線￣8(ゴロ下弧なし)なら "umbrella"、(8)・[8]なら "paren"、8F・8Lなら "alphabet"
+  "advanceError": "senior_chart" | "english" | "kanji", // 盗塁・失策・妨害等の略号: 捕球エラーE6/送球エラー6E・野選4FC・打撃妨害2IF・走塁妨害OB6・守備妨害IP・盗塁S′/DSなら "senior_chart"、S/WP/PB/6E/FCなら "english"、盗/暴/捕/6失なら "kanji"
   "positionLabel": "kanji" | "number" | "english", // 守備位置表記: 投・捕・遊なら "kanji"、1〜9なら "number"、P/C/SSなら "english"
   "customNote": "早見表に記載されている特記事項（50文字以内・なければ空文字）",
   "summary": "読み取った記号ルールの特徴を日本語1文（60文字以内）で要約"

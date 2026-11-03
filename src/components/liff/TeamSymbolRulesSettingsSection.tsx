@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   FileSpreadsheet,
   Loader2,
+  Printer,
   Sparkles,
   Wand2,
 } from "lucide-react";
@@ -42,6 +43,8 @@ export interface TeamSymbolRulesSettingsSectionProps {
   savedLegendUrl: string | null;
   initialCloudRules: ScorebookSymbolRules | null;
   isLoadingTeam: boolean;
+  onRulesChange?: (rules: ScorebookSymbolRules) => void;
+  onOpenChartGenerator?: () => void;
 }
 
 export function TeamSymbolRulesSettingsSection({
@@ -51,6 +54,8 @@ export function TeamSymbolRulesSettingsSection({
   savedLegendUrl,
   initialCloudRules,
   isLoadingTeam,
+  onRulesChange,
+  onOpenChartGenerator,
 }: TeamSymbolRulesSettingsSectionProps) {
   const [rules, setRules] = useState<ScorebookSymbolRules>(
     DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES
@@ -66,8 +71,9 @@ export function TeamSymbolRulesSettingsSection({
     const cached = loadCachedTeamSymbolRules();
     if (cached && !hydratedRef.current) {
       setRules(cached);
+      onRulesChange?.(cached);
     }
-  }, []);
+  }, [onRulesChange]);
 
   useEffect(() => {
     if (initialCloudRules) {
@@ -75,8 +81,9 @@ export function TeamSymbolRulesSettingsSection({
       setRules(initialCloudRules);
       setHasSavedCloud(true);
       saveCachedTeamSymbolRules(initialCloudRules);
+      onRulesChange?.(initialCloudRules);
     }
-  }, [initialCloudRules]);
+  }, [initialCloudRules, onRulesChange]);
 
   const persistRules = useCallback(
     async (
@@ -89,6 +96,7 @@ export function TeamSymbolRulesSettingsSection({
       );
       setRules(sanitized);
       saveCachedTeamSymbolRules(sanitized);
+      onRulesChange?.(sanitized);
 
       if (isDemo || !teamId) {
         setHasSavedCloud(true);
@@ -124,7 +132,7 @@ export function TeamSymbolRulesSettingsSection({
         setIsSaving(false);
       }
     },
-    [isDemo, teamId]
+    [isDemo, teamId, onRulesChange]
   );
 
   const handleFieldSelect = <K extends keyof ScorebookSymbolRules>(
@@ -176,6 +184,7 @@ export function TeamSymbolRulesSettingsSection({
       setRules(json.scorebookSymbolRules);
       setHasSavedCloud(true);
       saveCachedTeamSymbolRules(json.scorebookSymbolRules);
+      onRulesChange?.(json.scorebookSymbolRules);
       if (json.summary) {
         setLastAiSummary(json.summary);
       }
@@ -262,6 +271,11 @@ export function TeamSymbolRulesSettingsSection({
       options: SYMBOL_RULE_FIELD_CONFIGS.runnerOutLine.options,
     },
     {
+      key: "forceOutMark",
+      title: SYMBOL_RULE_FIELD_CONFIGS.forceOutMark.title,
+      options: SYMBOL_RULE_FIELD_CONFIGS.forceOutMark.options,
+    },
+    {
       key: "runMark",
       title: SYMBOL_RULE_FIELD_CONFIGS.runMark.title,
       options: SYMBOL_RULE_FIELD_CONFIGS.runMark.options,
@@ -337,7 +351,7 @@ export function TeamSymbolRulesSettingsSection({
         </p>
 
         {/* リアルタイム4マス記号プレビュー */}
-        <div className="space-y-1.5 rounded-2xl bg-muted/35 border border-border p-2.5">
+        <div className="space-y-2 rounded-2xl bg-muted/35 border border-border p-2.5">
           <div className="flex items-center justify-between px-0.5">
             <span className="text-[11px] font-black text-foreground flex items-center gap-1">
               <Sparkles className="w-3.5 h-3.5 text-primary" />
@@ -348,6 +362,19 @@ export function TeamSymbolRulesSettingsSection({
             </span>
           </div>
           <ScorebookSymbolSamplePreview rules={rules} />
+
+          {onOpenChartGenerator && (
+            <button
+              type="button"
+              onClick={onOpenChartGenerator}
+              className="w-full py-2.5 px-3 rounded-xl bg-[#0f172a] hover:bg-slate-800 text-white border border-amber-500/50 text-xs font-black flex items-center justify-center gap-2 shadow-2xs active:scale-[0.99] transition-all cursor-pointer"
+            >
+              <Printer className="w-4 h-4 text-amber-400 shrink-0" />
+              <span>
+                本物の清書マス目で「スコア記号 早見表」を作成・印刷・登録
+              </span>
+            </button>
+          )}
         </div>
 
         {/* 登録済み早見表画像からのAIワンタップ自動抽出ボタン */}

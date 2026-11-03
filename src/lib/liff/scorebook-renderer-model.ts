@@ -51,6 +51,16 @@ export interface CompiledDiamondSegment {
   drivingBatterOrder?: number;
   /** 投球間進塁（盗塁・暴投・捕逸・ボーク等）か */
   isPrePlay: boolean;
+  /** アウト時のフォースプレイ（封殺）判定 */
+  isForceOut?: boolean;
+  /** 送球・守備番号チェーン（例: "6-4", "5", "1-3", "6"） */
+  throwChain?: string;
+  /** ダブルスチール（重盗）か */
+  isDoubleSteal?: boolean;
+  /** 特殊表記の上書きラベル（早見表の "(ー)" 等） */
+  customLabelOverride?: string;
+  /** 早稲田式（塁線波線）モード用の代走選手名 */
+  pinchRunnerName?: string;
 }
 
 export interface CompiledCellSubMark {
@@ -72,17 +82,24 @@ export interface CompiledScorebookCell {
   outNumber: 1 | 2 | 3 | null;
   /** 本塁生還（得点）したか */
   runScored: boolean;
+  /** 非自責点（失策・捕逸・2死後失策絡み等による得点）か */
+  isUnearnedRun?: boolean;
   /** イニング終了時点で塁上に残った残塁走者か */
   isResidual: boolean;
   residualBase?: OccupiedBaseKey;
   /** このイニングの最終打席（イニング終了斜線「／」を引くマス）か */
   isInningEndCell: boolean;
-  /** この打席から相手投手が交代したか（マス上辺に投手交代波線を引く） */
+  /** この打席から相手投手が交代したか（マス上辺に投手交代赤波線を引く） */
   hasPitcherChangeBefore: boolean;
   newPitcherName?: string;
-  /** 代打(PH)：このマスの左外に赤縦波線＋その左に上詰め黒字で選手名を描画 */
+  newPitcherUniformNumber?: string;
+  /** 打席途中での投手交代位置（0始まりの投球インデックス、指定時は階段状赤波線を描画） */
+  pitcherChangeAtPitchIndex?: number;
+  /** この打席中に盗塁が発生した投球インデックス配列（BSOの○′表記用） */
+  stealPitchIndices?: number[];
+  /** 代打(PH)：このマスの左境界に赤縦波線＋縦書き選手名を描画 */
   leftOutsideSub?: CompiledCellSubMark;
-  /** 代走(PR/TR)・守備交代(DEF)：このマスの右内に赤縦波線＋その左に上詰め黒字で選手名を描画 */
+  /** 代走(PR/TR)・守備交代(DEF)：このマスの右内に赤縦波線＋縦書き選手名を描画 */
   rightInsideSub?: CompiledCellSubMark;
 }
 
@@ -264,6 +281,9 @@ function applyRunnerStepSegments(
     method: AdvanceMethodCode;
     drivingBatterOrder?: number;
     isPrePlay: boolean;
+    isForceOut?: boolean;
+    throwChain?: string;
+    isDoubleSteal?: boolean;
   }
 ): void {
   const startLv = baseToLevel(fromBase);
@@ -281,8 +301,46 @@ function applyRunnerStepSegments(
       method: options.method,
       drivingBatterOrder: isFinalStep ? options.drivingBatterOrder : undefined,
       isPrePlay: options.isPrePlay,
+      isForceOut: isFinalStep ? options.isForceOut : undefined,
+      throwChain: isFinalStep ? options.throwChain : undefined,
+      isDoubleSteal: isFinalStep ? options.isDoubleSteal : undefined,
     };
   }
+}
+
+function inferRunnerOutThrowChain(
+  ab: ScorebookV2AtBat,
+  targetLv: BaseSegmentIndex,
+  isForceOut: boolean
+): string {
+  const raw = (ab.battedDirection || "").trim();
+  const digits = raw.match(/[1-9]/g) || [];
+  if (digits.length === 0) return "";
+  if (digits.length === 1) return digits[0]!;
+
+  if (isForceOut) {
+    if (targetLv === 3 && digits[0] === "5") {
+      return "5";
+    }
+    if (targetLv === 2 && (digits[0] === "4" || digits[0] === "6") && digits[1] === "3") {
+      return digits[0]!;
+    }
+    if (digits.length >= 3) {
+      return `${digits[0]}-${digits[1]}`;
+    }
+  }
+  return digits.slice(0, 2).join("-");
+}
+
+function isOriginCellReachedByErrorOrUncharged(
+  originCell: CompiledScorebookCell | undefined
+): boolean {
+  const rc = originCell?.atBat?.resultCode;
+  return (
+    rc === "error" ||
+    rc === "dropped_third_strike" ||
+    rc === "interference"
+  );
 }
 
 /**
@@ -462,6 +520,7 @@ export function compileScorebookSheetModel(
       "3B": null,
     };
     let outsTracker = 0;
+    let virtualErrorSavedOuts = 0;
     let innRuns = 0;
     let innHits = 0;
     let innErrors = 0;
@@ -482,7 +541,7 @@ export function compileScorebookSheetModel(
       const cell = makeEmptyCell(inn, col, ab.battingOrder, ab);
       cellsByKey[cellKey] = cell;
 
-      // 投手交代検出
+      // 投手交代検出（背番号も structure.pitchers から照合）
       const curPitcherKey = (
         ab.pitcherPlayerId ||
         ab.pitcherName ||
@@ -492,6 +551,18 @@ export function compileScorebookSheetModel(
         if (prevPitcherKey !== null && prevPitcherKey !== curPitcherKey) {
           cell.hasPitcherChangeBefore = true;
           cell.newPitcherName = ab.pitcherName || undefined;
+          const matchedPitcher = structure.pitchers.find(
+            (st) =>
+              (ab.pitcherPlayerId &&
+                st.playerId &&
+                st.playerId === ab.pitcherPlayerId) ||
+              (ab.pitcherName &&
+                st.name.replace(/\s+/g, "") ===
+                  ab.pitcherName.replace(/\s+/g, ""))
+          );
+          if (matchedPitcher?.uniformNumber) {
+            cell.newPitcherUniformNumber = matchedPitcher.uniformNumber;
+          }
         }
         prevPitcherKey = curPitcherKey;
       }
@@ -522,6 +593,9 @@ export function compileScorebookSheetModel(
       }
       if (ab.resultCode === "error") {
         innErrors += 1;
+        virtualErrorSavedOuts += 1;
+      } else if (ab.resultCode === "dropped_third_strike") {
+        virtualErrorSavedOuts += 1;
       }
 
       const snap = runnerSnapshots.get(ab.id);
@@ -585,6 +659,14 @@ export function compileScorebookSheetModel(
                 playerId: prEntry.playerId ?? null,
                 subType: prEntry.subType,
               });
+              const prTargetCell = cellsByKey[resolvedKey];
+              const prLv = baseToLevel(prEntry.base);
+              if (prTargetCell && prLv >= 1 && prLv <= 3) {
+                const seg = prTargetCell.segments[prLv as BaseSegmentIndex];
+                if (seg) {
+                  seg.pinchRunnerName = prEntry.name.trim();
+                }
+              }
             }
           }
         }
@@ -601,6 +683,22 @@ export function compileScorebookSheetModel(
           playOutCellKeys.push(outKey);
         }
       };
+
+      // 同一打席中の盗塁数（2人以上ならダブルスチール DS）
+      let stealRunnersInAtBat = 0;
+      for (const pr of snap.precedingRunners) {
+        if (pr.prePlayMoves.some((pm) => !pm.isOut && pm.method === "steal")) {
+          stealRunnersInAtBat += 1;
+        }
+      }
+      if (stealRunnersInAtBat > 0) {
+        const visiblePitches = ab.pitches.filter(
+          (p) => p !== "in_play" && p !== "hit" && p !== "hbp"
+        );
+        if (visiblePitches.length > 0) {
+          cell.stealPitchIndices = [0];
+        }
+      }
 
       // A) 投球間（盗塁・暴投・捕逸・牽制死・盗塁死）の反映
       for (const pr of snap.precedingRunners) {
@@ -620,12 +718,26 @@ export function compileScorebookSheetModel(
               hitBases: 0,
               method: pm.method,
               isPrePlay: true,
+              isForceOut: false,
+              isDoubleSteal:
+                !pm.isOut && pm.method === "steal" && stealRunnersInAtBat >= 2,
             });
           }
           if (!pm.isOut && pm.to === "HP") {
             innRuns += 1;
             if (pr.runner.battingOrder > 0) addRunToOrder(pr.runner.battingOrder);
-            if (originCell) originCell.runScored = true;
+            if (originCell) {
+              originCell.runScored = true;
+              if (
+                pm.method === "error" ||
+                pm.method === "pb" ||
+                pm.method === "pickoff_error" ||
+                isOriginCellReachedByErrorOrUncharged(originCell) ||
+                outsTracker + virtualErrorSavedOuts >= 3
+              ) {
+                originCell.isUnearnedRun = true;
+              }
+            }
           }
         }
 
@@ -672,6 +784,27 @@ export function compileScorebookSheetModel(
 
           if (pr.isOut) {
             if (originCell) {
+              const endLv = baseToLevel(pr.finalBase) as BaseSegmentIndex;
+              const isNonFlyPlay =
+                ab.resultCode !== "flyout" &&
+                ab.resultCode !== "sac_fly" &&
+                ab.resultCode !== "infield_fly" &&
+                ab.resultCode !== "strikeout";
+              const isRunnerForced =
+                isNonFlyPlay &&
+                ((inPlayFrom === "1B" && pr.finalBase === "2B") ||
+                  (inPlayFrom === "2B" &&
+                    pr.finalBase === "3B" &&
+                    Boolean(snap.basesBefore["1B"])) ||
+                  (inPlayFrom === "3B" &&
+                    pr.finalBase === "HP" &&
+                    Boolean(snap.basesBefore["1B"]) &&
+                    Boolean(snap.basesBefore["2B"])));
+              const runnerThrowChain = inferRunnerOutThrowChain(
+                ab,
+                endLv,
+                isRunnerForced
+              );
               applyRunnerStepSegments(
                 originCell,
                 inPlayFrom,
@@ -683,6 +816,8 @@ export function compileScorebookSheetModel(
                   method: pr.effectiveMethod,
                   drivingBatterOrder: ab.battingOrder,
                   isPrePlay: false,
+                  isForceOut: isRunnerForced,
+                  throwChain: runnerThrowChain || undefined,
                 }
               );
               originCell.outNumber = nextOutOrdinal();
@@ -718,6 +853,14 @@ export function compileScorebookSheetModel(
               }
               if (originCell) {
                 originCell.runScored = true;
+                if (
+                  pr.effectiveMethod === "error" ||
+                  pr.effectiveMethod === "pb" ||
+                  isOriginCellReachedByErrorOrUncharged(originCell) ||
+                  outsTracker + virtualErrorSavedOuts >= 3
+                ) {
+                  originCell.isUnearnedRun = true;
+                }
               }
             }
           }
@@ -803,6 +946,12 @@ export function compileScorebookSheetModel(
 
         if (!snap.batterSummary.isOutOnBases && finalBase === "HP") {
           cell.runScored = true;
+          if (
+            isOriginCellReachedByErrorOrUncharged(cell) ||
+            outsTracker + virtualErrorSavedOuts >= 3
+          ) {
+            cell.isUnearnedRun = true;
+          }
           innRuns += 1;
           addRunToOrder(ab.battingOrder);
         }
@@ -936,7 +1085,7 @@ export function compileScorebookSheetModel(
       const enteredInn = Math.min(maxInning, Math.max(1, sub.inningEntered || 1));
 
       if (sub.subType === "PH") {
-        // 代打：該当打席マスの「左外」に赤波線＋その左に上詰め黒字で名前
+        // 代打：該当打席マスの左境界に赤波線＋縦書き選手名（実際の打席が存在するマスに紐づける）
         const explicitAb = sub.enteredAtBatId
           ? atBats.find(
               (a) => a.id === sub.enteredAtBatId && a.battingOrder === order
@@ -951,6 +1100,14 @@ export function compileScorebookSheetModel(
               (sub.enteredColumnIndex
                 ? (assignedColByAtBatId.get(a.id) || 1) === sub.enteredColumnIndex
                 : true)
+          ) ||
+          atBats.find(
+            (a) =>
+              a.battingOrder === order &&
+              a.inning >= enteredInn &&
+              subIdentity !== null &&
+              normalizeBatterIdentity(a.batterPlayerId, a.batterName) ===
+                subIdentity
           );
         if (inningAb) {
           const cIdx = assignedColByAtBatId.get(inningAb.id) || 1;
@@ -958,26 +1115,29 @@ export function compileScorebookSheetModel(
             name: subName,
             subType: "PH",
           };
-        } else {
-          const targetCol =
-            findFirstColOfInning(enteredInn, sub.enteredColumnIndex || 1) ||
-            columns[0];
-          if (targetCol) {
-            ensureGridCell(
-              targetCol.inning,
-              targetCol.columnIndex,
-              order
-            ).leftOutsideSub = {
-              name: subName,
-              subType: "PH",
-            };
-          }
         }
         continue;
       }
 
       if (sub.subType === "PR" || sub.subType === "TR") {
-        // 代走・臨時代走：出塁したマスの「右内」に赤波線＋その左に上詰め黒字で名前
+        // 代走・臨時代走：出塁したマスの「右内」に赤波線＋縦書き選手名（＋早稲田式用に到達セグメントへも名前付与）
+        const attachPrSegmentName = (targetCell: CompiledScorebookCell) => {
+          const hb = targetCell.atBat
+            ? getHitBasesForResult(targetCell.atBat.resultCode)
+            : 0;
+          const prefSeg = (
+            hb >= 1 && hb <= 3 ? hb : targetCell.segments[1] ? 1 : 2
+          ) as BaseSegmentIndex;
+          const seg =
+            targetCell.segments[prefSeg] ||
+            targetCell.segments[1] ||
+            targetCell.segments[2] ||
+            targetCell.segments[3];
+          if (seg && !seg.pinchRunnerName) {
+            seg.pinchRunnerName = subName;
+          }
+        };
+
         const mappedKey =
           (sub.enteredAtBatId
             ? prOriginCellByAtBatAndOrder.get(`${sub.enteredAtBatId}:${order}`)
@@ -989,29 +1149,34 @@ export function compileScorebookSheetModel(
             name: subName,
             subType: sub.subType,
           };
+          attachPrSegmentName(cellsByKey[mappedKey]);
         } else {
           const reachAb = atBats.find(
             (a) => a.battingOrder === order && a.inning === enteredInn
           );
           if (reachAb) {
             const cIdx = assignedColByAtBatId.get(reachAb.id) || 1;
-            ensureGridCell(reachAb.inning, cIdx, order).rightInsideSub = {
+            const tCell = ensureGridCell(reachAb.inning, cIdx, order);
+            tCell.rightInsideSub = {
               name: subName,
               subType: sub.subType,
             };
+            attachPrSegmentName(tCell);
           } else {
             const targetCol =
               findFirstColOfInning(enteredInn, sub.enteredColumnIndex || 1) ||
               columns[0];
             if (targetCol) {
-              ensureGridCell(
+              const tCell = ensureGridCell(
                 targetCol.inning,
                 targetCol.columnIndex,
                 order
-              ).rightInsideSub = {
+              );
+              tCell.rightInsideSub = {
                 name: subName,
                 subType: sub.subType,
               };
+              attachPrSegmentName(tCell);
             }
           }
         }
@@ -1436,7 +1601,7 @@ export function buildDemoScorebookSavedBundle(params: {
       substitutions: [
         {
           id: "demo-sub-1",
-          inningEntered: 6,
+          inningEntered: 5,
           subType: "PH",
           name: "伊藤 蒼真",
           uniformNumber: "12",
@@ -1529,13 +1694,13 @@ export function buildDemoScorebookSavedBundle(params: {
     mkAb("dm-24", myIsTop, 5, 6, "高橋 陸", oppPitcher2, "groundout", "一ゴロ", "3", ["in_play"], 1, 2, 0, 0, [
       { id: "adv-13", runnerName: "山田 翔太", from: "1B", to: "2B", method: "other", isOut: false },
     ]),
-    mkAb("dm-25", myIsTop, 5, 7, "山本 大翔", oppPitcher2, "home_run", "左越本塁打", "7", ["ball", "ball", "swinging_strike", "hit"], 0, 2, 2, 2, [
+    mkAb("dm-25", myIsTop, 5, 7, "伊藤 蒼真", oppPitcher2, "home_run", "左越本塁打", "7", ["ball", "ball", "swinging_strike", "hit"], 0, 2, 2, 2, [
       { id: "adv-14", runnerName: "山田 翔太", from: "2B", to: "HP", method: "hit", isOut: false },
     ]),
     mkAb("dm-26", myIsTop, 5, 8, "中村 颯", oppPitcher2, "groundout", "三ゴロ", "5-3", ["strike", "in_play"], 1, 3),
 
     // 6回 (0点)
-    mkAb("dm-27", myIsTop, 6, 9, "小林 樹", oppPitcher2, "groundout", "二ゴロ", "4-3", ["ball", "in_play"], 1, 1),
+    mkAb("dm-27", myIsTop, 6, 9, "小西 湊", oppPitcher2, "groundout", "二ゴロ", "4-3", ["ball", "in_play"], 1, 1),
     mkAb("dm-28", myIsTop, 6, 1, "田中 健太", oppPitcher2, "flyout", "遊飛", "6", ["foul", "in_play"], 1, 2),
     mkAb("dm-29", myIsTop, 6, 2, "渡辺 陽向", oppPitcher2, "groundout", "遊ゴロ", "6-3", ["strike", "in_play"], 1, 3),
 

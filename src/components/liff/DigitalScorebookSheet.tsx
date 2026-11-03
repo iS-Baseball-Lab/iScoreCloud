@@ -51,6 +51,9 @@ const CELL_W = 88;
 const CELL_H = 74;
 const BSO_W = 19;
 
+export const SCOREBOOK_CELL_W = CELL_W;
+export const SCOREBOOK_CELL_H = CELL_H;
+
 // 3段フル様式（先発・守備位置｜打順(1/11/21)｜左○｜選手名｜背番号）の列幅定数
 const CLASSIC_STARTER_POS_W = 19;
 const CLASSIC_SUB_POS_COL_W = 15;
@@ -139,7 +142,8 @@ function renderPitchColumn(
   pitches: CanonicalPitchResult[],
   rules: ScorebookSymbolRules,
   originX: number,
-  originY: number
+  originY: number,
+  stealPitchIndices?: number[]
 ): React.ReactNode {
   if (rules.pitchMark === "numbered_bs") {
     const strikeTokens: string[] = [];
@@ -365,18 +369,18 @@ function renderPitchColumn(
         }
         if (p === "bunt_foul") {
           if (rules.buntPitchMark === "v_dot_circle_dot") {
-            // バントファウル＝Vの中に・（上向き開きのVシェブロン＋内側黒点）
+            // バントファウル＝V̇（上向き開きのVシェブロン＋上部黒点）
             return (
               <g key={idx}>
                 <polyline
-                  points={`${cx - 2.9},${cy - 2.3} ${cx},${cy + 2.6} ${cx + 2.9},${cy - 2.3}`}
+                  points={`${cx - 2.9},${cy - 2.1} ${cx},${cy + 2.7} ${cx + 2.9},${cy - 2.1}`}
                   fill="none"
                   stroke={COLOR_INK}
                   strokeWidth={1.2}
                   strokeLinecap="round"
                   strokeLinejoin="round"
                 />
-                <circle cx={cx} cy={cy - 0.85} r={0.95} fill={COLOR_INK} />
+                <circle cx={cx} cy={cy - 1.5} r={0.95} fill={COLOR_INK} />
               </g>
             );
           }
@@ -547,6 +551,24 @@ function renderPitchColumn(
           </text>
         );
       })}
+      {rules.advanceError === "senior_chart" &&
+        Array.isArray(stealPitchIndices) &&
+        stealPitchIndices.map((sIdx) => {
+          if (sIdx < 0 || sIdx >= maxDraw.length) return null;
+          const cy = originY + 8.5 + sIdx * stepY;
+          return (
+            <line
+              key={`steal-prime-${sIdx}`}
+              x1={cx + 4.4}
+              y1={cy - 3.6}
+              x2={cx + 3.4}
+              y2={cy - 1.1}
+              stroke={COLOR_INK}
+              strokeWidth={1.2}
+              strokeLinecap="round"
+            />
+          );
+        })}
     </g>
   );
 }
@@ -655,7 +677,8 @@ function renderQuadrantHitSlashes(
 function renderParallelHitInnerDiamond(
   cellGeom: CellGeometry,
   ox: number,
-  oy: number
+  oy: number,
+  strokeColor = COLOR_RED
 ): React.ReactNode {
   const cx = ox + cellGeom.ptCenter.x;
   const cy = oy + cellGeom.ptCenter.y;
@@ -672,10 +695,98 @@ function renderParallelHitInnerDiamond(
     <polygon
       points={pts}
       fill="none"
-      stroke={COLOR_RED}
-      strokeWidth={1.3}
+      stroke={strokeColor}
+      strokeWidth={1.35}
       strokeLinejoin="round"
     />
+  );
+}
+
+function renderInfieldHitArc(
+  cellGeom: CellGeometry,
+  rules: ScorebookSymbolRules,
+  ox: number,
+  oy: number
+): React.ReactNode {
+  const color = rules.hitLine === "mono_bold" ? COLOR_INK : COLOR_RED;
+  const x1 = ox + cellGeom.pt1B.x;
+  const y1 = oy + cellGeom.pt1B.y;
+  const x2 = ox + cellGeom.ptHP.x;
+  const y2 = oy + cellGeom.ptHP.y;
+  const c1x = ox + CELL_W + 4.2;
+  const c1y = oy + cellGeom.pt1B.y + 15.8;
+  const c2x = ox + cellGeom.ptHP.x + 28.8;
+  const c2y = oy + CELL_H + 7.2;
+
+  return (
+    <path
+      d={`M ${x1.toFixed(1)} ${y1.toFixed(1)} C ${c1x.toFixed(1)} ${c1y.toFixed(1)}, ${c2x.toFixed(1)} ${c2y.toFixed(1)}, ${x2.toFixed(1)} ${y2.toFixed(1)}`}
+      fill="none"
+      stroke={color}
+      strokeWidth={2.0}
+      strokeLinecap="round"
+    />
+  );
+}
+
+function renderWasedaDiamondPinchRunnerMark(
+  seg: CompiledDiamondSegment,
+  rules: ScorebookSymbolRules,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number
+): React.ReactNode {
+  if (
+    rules.pinchHitterMark !== "waseda_diamond_pr" ||
+    !seg.pinchRunnerName
+  ) {
+    return null;
+  }
+  const color = rules.hitLine === "mono_bold" ? COLOR_INK : COLOR_RED;
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const len = Math.hypot(dx, dy) || 1;
+  const nx = -dy / len;
+  const ny = dx / len;
+  const anchorX = x1 + dx * 0.78;
+  const anchorY = y1 + dy * 0.78;
+  const pStartX = anchorX - nx * 4.8;
+  const pStartY = anchorY - ny * 4.8;
+  const pEndX = anchorX + nx * 4.8;
+  const pEndY = anchorY + ny * 4.8;
+  const surname =
+    (seg.pinchRunnerName.replace(/\u3000/g, " ").trim().split(/\s+/)[0] ||
+      seg.pinchRunnerName)
+      .slice(0, 3);
+  const labelOffset = seg.segment === 1 ? 8.5 : 8.0;
+  const lx = anchorX + nx * labelOffset;
+  const ly = anchorY + ny * labelOffset + 2.2;
+
+  return (
+    <g>
+      <path
+        d={`M ${pStartX.toFixed(1)} ${pStartY.toFixed(1)} Q ${(anchorX - nx * 2.4 + (dx / len) * 1.6).toFixed(1)} ${(anchorY - ny * 2.4 + (dy / len) * 1.6).toFixed(1)} ${anchorX.toFixed(1)} ${anchorY.toFixed(1)} T ${pEndX.toFixed(1)} ${pEndY.toFixed(1)}`}
+        fill="none"
+        stroke={color}
+        strokeWidth={1.55}
+        strokeLinecap="round"
+      />
+      <text
+        x={lx}
+        y={ly}
+        fontSize={6.2}
+        fontWeight={900}
+        textAnchor="middle"
+        fill={color}
+        stroke={COLOR_PAPER}
+        strokeWidth={2.0}
+        paintOrder="stroke"
+        fontFamily={FONT_SANS}
+      >
+        {surname}
+      </text>
+    </g>
   );
 }
 
@@ -714,9 +825,23 @@ function renderDiamondSegment(
       ? 2.4
       : 1.75;
 
-  const advLabel = !seg.isBatterHit
-    ? formatAdvanceMethodByRules(seg.method, rules, seg.drivingBatterOrder)
-    : "";
+  const advLabel =
+    seg.customLabelOverride !== undefined
+      ? seg.customLabelOverride
+      : !seg.isBatterHit
+      ? formatAdvanceMethodByRules(
+          seg.method,
+          rules,
+          seg.drivingBatterOrder,
+          {
+            targetBase: seg.segment,
+            isForceOut: seg.isForceOut,
+            throwChain: seg.throwChain,
+            isDoubleSteal: seg.isDoubleSteal,
+            isOut: seg.status === "out",
+          }
+        )
+      : "";
 
   if (seg.status === "out") {
     if (rules.runnerOutLine === "dotted_only") {
@@ -886,7 +1011,10 @@ function renderDiamondSegment(
     );
   }
 
-  if (!shouldDrawSegmentLine && !advLabel) {
+  const hasWasedaPrMark =
+    rules.pinchHitterMark === "waseda_diamond_pr" && Boolean(seg.pinchRunnerName);
+
+  if (!shouldDrawSegmentLine && !advLabel && !hasWasedaPrMark) {
     return null;
   }
 
@@ -911,6 +1039,7 @@ function renderDiamondSegment(
             renderHitHashMarks(seg.hitBases, rules, cellGeom, ox, oy)}
         </>
       )}
+      {renderWasedaDiamondPinchRunnerMark(seg, rules, x1, y1, x2, y2)}
       {advLabel && (
         <text
           x={ox + geom.labelPos.x}
@@ -941,6 +1070,21 @@ function renderCenterStatus(
   const compact = cellGeom.hasQuadrantCrosshairs;
 
   if (cell.runScored) {
+    if (rules.runMark === "earned_filled_unearned_open") {
+      if (cell.isUnearnedRun) {
+        return (
+          <circle
+            cx={cx}
+            cy={cy}
+            r={compact ? 6.1 : 6.9}
+            fill={COLOR_PAPER}
+            stroke={runColor}
+            strokeWidth={1.85}
+          />
+        );
+      }
+      return <circle cx={cx} cy={cy} r={compact ? 6.3 : 7.2} fill={runColor} />;
+    }
     if (rules.runMark === "double_circle") {
       return (
         <g>
@@ -1032,14 +1176,22 @@ function renderPlayNotation(
 
   const px =
     ox +
-    (hasQuadrantHitSlash
+    (notation.infieldHitArc
+      ? cellGeom.hasQuadrantCrosshairs
+        ? 68.4
+        : 69.2
+      : hasQuadrantHitSlash
       ? cellGeom.hasQuadrantCrosshairs
         ? 75.5
         : 76.0
       : cellGeom.playNotationPos.x);
   const py =
     oy +
-    (hasQuadrantHitSlash
+    (notation.infieldHitArc
+      ? cellGeom.hasQuadrantCrosshairs
+        ? 57.6
+        : 58.6
+      : hasQuadrantHitSlash
       ? cellGeom.hasQuadrantCrosshairs
         ? 66.2
         : 66.8
@@ -1121,6 +1273,14 @@ function renderPlayNotation(
     notation.decorator === "sac_fly_umbrella" ||
     notation.decorator === "bunt_fly_square_umbrella"
   ) {
+    const halfArc =
+      notation.mainText.length >= 3
+        ? 8.5
+        : notation.mainText.length === 2
+        ? 6.9
+        : 5.8;
+    const umbrellaFontSize =
+      notation.mainText.length >= 3 ? 8.3 : notation.mainText.length === 2 ? 9.0 : 9.6;
     return (
       <g>
         {notation.decorator === "sac_fly_umbrella" && (
@@ -1143,7 +1303,7 @@ function renderPlayNotation(
           />
         )}
         <path
-          d={`M ${px - 5.8} ${py - 8.2} Q ${px} ${py - 12.6} ${px + 5.8} ${py - 8.2}`}
+          d={`M ${(px - halfArc).toFixed(1)} ${py - 8.2} Q ${px} ${py - 12.6} ${(px + halfArc).toFixed(1)} ${py - 8.2}`}
           fill="none"
           stroke={ink}
           strokeWidth={1.35}
@@ -1152,7 +1312,7 @@ function renderPlayNotation(
         <text
           x={px}
           y={py + 0.5}
-          fontSize={9.6}
+          fontSize={umbrellaFontSize}
           fontWeight={900}
           textAnchor="middle"
           fill={ink}
@@ -1199,6 +1359,61 @@ function renderPlayNotation(
             {notation.subText}
           </text>
         )}
+      </g>
+    );
+  }
+
+  if (notation.decorator === "under_arc") {
+    const isChain = notation.mainText.includes("-");
+    const arcCx = isChain ? px - (notation.mainText.length >= 4 ? 6.5 : 5.4) : px;
+    const halfArc = isChain ? 4.3 : 5.2;
+    const textFontSize = notation.mainText.length >= 4 ? 8.4 : 9.6;
+    return (
+      <g>
+        <text
+          x={px}
+          y={py - 0.8}
+          fontSize={textFontSize}
+          fontWeight={900}
+          textAnchor="middle"
+          fill={ink}
+          fontFamily={FONT_MONO}
+        >
+          {notation.mainText}
+        </text>
+        <path
+          d={`M ${(arcCx - halfArc).toFixed(1)} ${(py + 1.6).toFixed(1)} Q ${arcCx.toFixed(1)} ${(py + 5.8).toFixed(1)} ${(arcCx + halfArc).toFixed(1)} ${(py + 1.6).toFixed(1)}`}
+          fill="none"
+          stroke={ink}
+          strokeWidth={1.35}
+          strokeLinecap="round"
+        />
+      </g>
+    );
+  }
+
+  if (notation.decorator === "sac_triangle") {
+    const triFontSize = notation.mainText.length >= 2 ? 7.4 : 8.4;
+    return (
+      <g>
+        <polygon
+          points={`${px},${py - 13.5} ${px + 10.6},${py + 3.6} ${px - 10.6},${py + 3.6}`}
+          fill="none"
+          stroke={ink}
+          strokeWidth={1.2}
+          strokeLinejoin="round"
+        />
+        <text
+          x={px}
+          y={py + 1.0}
+          fontSize={triFontSize}
+          fontWeight={900}
+          textAnchor="middle"
+          fill={ink}
+          fontFamily={FONT_MONO}
+        >
+          {notation.mainText}
+        </text>
       </g>
     );
   }
@@ -1510,20 +1725,118 @@ export function renderSingleScorebookCellSvg(
           )
         )}
 
-      {/* 途中投手交代の波線マーク（マス上辺） */}
-      {cell?.hasPitcherChangeBefore && (
-        <g>
-          <path
-            d={`M ${ox + 1} ${oy + 2.5} q 4 -2.5 8 0 t 8 0 t 8 0 t 8 0 t 8 0 t 8 0 t 8 0 t 8 0 t 8 0 t 8 0 t 6 0`}
-            fill="none"
-            stroke={COLOR_BLUE}
-            strokeWidth={1.6}
-          />
-        </g>
-      )}
+      {/* 投手交代の赤波線マーク（打席前＝マス上辺赤波線 ／ イニング・打席途中交代＝階段状赤波線） */}
+      {cell?.hasPitcherChangeBefore &&
+        (() => {
+          const pWaveColor =
+            rules.hitLine === "mono_bold" ? COLOR_INK : COLOR_RED;
+          const pSurname = cell.newPitcherName
+            ? (
+                cell.newPitcherName.replace(/\u3000/g, " ").trim().split(/\s+/)[0] ||
+                cell.newPitcherName
+              ).slice(0, 4)
+            : "";
+          const pLabel = cell.newPitcherUniformNumber
+            ? `#${cell.newPitcherUniformNumber}`
+            : pSurname;
+
+          if (typeof cell.pitcherChangeAtPitchIndex === "number") {
+            const stepY =
+              oy +
+              Math.min(
+                CELL_H - 12,
+                Math.max(18, 6 + cell.pitcherChangeAtPitchIndex * 7.2)
+              );
+            return (
+              <g>
+                <path
+                  d={buildHorizontalWavePath(
+                    ox + 1.4,
+                    ox + BSO_W + 4.5,
+                    stepY,
+                    1.55,
+                    5.6
+                  )}
+                  fill="none"
+                  stroke={pWaveColor}
+                  strokeWidth={1.6}
+                  strokeLinecap="round"
+                />
+                <path
+                  d={buildVerticalWavePath(
+                    ox + 1.4,
+                    stepY,
+                    oy + CELL_H - 1.5,
+                    1.55,
+                    5.8
+                  )}
+                  fill="none"
+                  stroke={pWaveColor}
+                  strokeWidth={1.6}
+                  strokeLinecap="round"
+                />
+                {pLabel && (
+                  <text
+                    x={ox + BSO_W + 6.5}
+                    y={stepY + 2.4}
+                    fontSize={6.8}
+                    fontWeight={900}
+                    fill={pWaveColor}
+                    stroke={COLOR_PAPER}
+                    strokeWidth={2.2}
+                    paintOrder="stroke"
+                    fontFamily={FONT_SANS}
+                  >
+                    {pLabel}
+                  </text>
+                )}
+              </g>
+            );
+          }
+
+          return (
+            <g>
+              <path
+                d={buildHorizontalWavePath(
+                  ox + 1,
+                  ox + CELL_W - 1,
+                  oy + 1.7,
+                  1.6,
+                  6.2
+                )}
+                fill="none"
+                stroke={pWaveColor}
+                strokeWidth={1.65}
+                strokeLinecap="round"
+              />
+              {pLabel && (
+                <text
+                  x={ox + BSO_W + 2.2}
+                  y={oy + 9.2}
+                  fontSize={6.8}
+                  fontWeight={900}
+                  fill={pWaveColor}
+                  stroke={COLOR_PAPER}
+                  strokeWidth={2.2}
+                  paintOrder="stroke"
+                  fontFamily={FONT_SANS}
+                >
+                  {pLabel}
+                </text>
+              )}
+            </g>
+          );
+        })()}
 
       {/* 投球履歴 (BSO) */}
-      {ab && renderPitchColumn(ab.pitches, rules, ox, oy)}
+      {ab &&
+        renderPitchColumn(
+          ab.pitches,
+          rules,
+          ox,
+          oy,
+          cell?.stealPitchIndices
+        )}
 
       {/* ダイヤモンド進塁線 (1〜4区間) */}
       {cell &&
@@ -1533,10 +1846,19 @@ export function renderSingleScorebookCellSvg(
           return renderDiamondSegment(seg, rules, cellGeom, ox, oy);
         })}
 
-      {/* parallel_bars 時の本塁打用：内側赤ダイヤ二重枠 */}
-      {rules.hitLine === "parallel_bars" &&
-        abHitBases === 4 &&
-        renderParallelHitInnerDiamond(cellGeom, ox, oy)}
+      {/* 内野安打・バントヒット時の右下赤円弧囲み（早見表・手書きシート準拠） */}
+      {playNotation?.infieldHitArc &&
+        renderInfieldHitArc(cellGeom, rules, ox, oy)}
+
+      {/* ランニングホームラン(RH) または parallel_bars 時の本塁打用：内側赤ダイヤ二重枠 */}
+      {(playNotation?.isRunningHomeRun ||
+        (rules.hitLine === "parallel_bars" && abHitBases === 4)) &&
+        renderParallelHitInnerDiamond(
+          cellGeom,
+          ox,
+          oy,
+          rules.hitLine === "mono_bold" ? COLOR_INK : COLOR_RED
+        )}
 
       {/* quadrant_slash_hr_diamond 時の単打・二塁打・三塁打用：右下赤斜線（／・／／・／／／） */}
       {hasQuadrantHitSlash &&
@@ -1547,7 +1869,7 @@ export function renderSingleScorebookCellSvg(
           oy
         )}
 
-      {/* 中央ステータス（●得点 / ⅠⅡⅢ・①②③アウト / ℓ残塁） */}
+      {/* 中央ステータス（●自責点・○非自責点 / ⅠⅡⅢ・①②③アウト / ℓ残塁） */}
       {cell && renderCenterStatus(cell, rules, cellGeom, ox, oy)}
 
       {/* 右上：打点ドット表示 */}
@@ -1580,7 +1902,7 @@ export function renderSingleScorebookCellSvg(
           hasQuadrantHitSlash
         )}
 
-      {/* イニング3アウト終了打者マスの右下斜線 */}
+      {/* イニング3アウト終了打者マスの右下二重斜線 */}
       {cell?.isInningEndCell && (
         <g>
           <line
@@ -1588,7 +1910,12 @@ export function renderSingleScorebookCellSvg(
             y1={oy + CELL_H}
             x2={ox + CELL_W}
             y2={oy + CELL_H - 14}
-            stroke={COLOR_INK}
+            stroke={
+              rules.forceOutMark === "base_letter_abch" &&
+              rules.hitLine !== "mono_bold"
+                ? COLOR_RED
+                : COLOR_INK
+            }
             strokeWidth={1.7}
           />
           <line
@@ -1596,13 +1923,41 @@ export function renderSingleScorebookCellSvg(
             y1={oy + CELL_H}
             x2={ox + CELL_W}
             y2={oy + CELL_H - 10}
-            stroke={COLOR_INK}
+            stroke={
+              rules.forceOutMark === "base_letter_abch" &&
+              rules.hitLine !== "mono_bold"
+                ? COLOR_RED
+                : COLOR_INK
+            }
             strokeWidth={1.1}
           />
         </g>
       )}
     </g>
   );
+}
+
+function buildHorizontalWavePath(
+  xStart: number,
+  xEnd: number,
+  y: number,
+  amp = 1.6,
+  step = 6.0
+): string {
+  const parts: string[] = [`M ${xStart.toFixed(1)} ${y.toFixed(1)}`];
+  let curX = xStart;
+  let dir = -1;
+  while (curX + 0.5 < xEnd) {
+    const nextX = Math.min(xEnd, curX + step);
+    const midX = (curX + nextX) / 2;
+    const ctrlY = y + dir * amp;
+    parts.push(
+      `Q ${midX.toFixed(1)} ${ctrlY.toFixed(1)} ${nextX.toFixed(1)} ${y.toFixed(1)}`
+    );
+    curX = nextX;
+    dir *= -1;
+  }
+  return parts.join(" ");
 }
 
 function buildVerticalWavePath(
@@ -1669,6 +2024,7 @@ function renderBoundarySubMarkSvg(params: {
   ry: number;
   isInningEndCell?: boolean;
   shiftLeftPx?: number;
+  leftSideBlocked?: boolean;
 }): React.ReactNode {
   const {
     mark,
@@ -1678,16 +2034,21 @@ function renderBoundarySubMarkSvg(params: {
     ry,
     isInningEndCell = false,
     shiftLeftPx = 0,
+    leftSideBlocked = false,
   } = params;
   if (rules.pinchHitterMark === "lineup_only") {
     return null;
   }
 
-  // 代打(left_outside)＝マス左外(cx - 3.4)に赤波線、その左に上詰め黒字名前
-  // 代走・守備交代(right_inside)＝マス右内(cx + CELL_W - 3.4)に赤波線、その左に上詰め黒字名前
-  const borderX = anchorSide === "left_outside" ? cx : cx + CELL_W;
+  // 代打(left_outside)＝マス左縦罫線に沿って赤波線＋左余白（左マスに記録がある時や1回先頭時はマス内左上）に縦書き氏名
+  // 代走・守備交代(right_inside)＝マス右端内側に赤波線＋その左に縦書き氏名
   const waveColor = rules.hitLine === "mono_bold" ? COLOR_INK : COLOR_RED;
-  const waveX = borderX - 3.4 - shiftLeftPx;
+  const waveX =
+    anchorSide === "left_outside"
+      ? leftSideBlocked
+        ? cx + 1.5
+        : cx - 0.8
+      : cx + CELL_W - 2.8 - shiftLeftPx;
   const waveYStart = ry + 2.5;
   const waveYEnd =
     anchorSide === "right_inside" && isInningEndCell && shiftLeftPx === 0
@@ -1732,7 +2093,10 @@ function renderBoundarySubMarkSvg(params: {
         ? "代打"
         : "PH";
     const badgeW = badgeText.length >= 2 && useKanji ? 17.5 : 14.5;
-    const bx = waveX - 2.4 - badgeW;
+    const bx =
+      anchorSide === "left_outside" && leftSideBlocked
+        ? cx + BSO_W + 1.5
+        : waveX - 2.4 - badgeW;
     const by = ry + 3.0;
 
     return (
@@ -1751,7 +2115,7 @@ function renderBoundarySubMarkSvg(params: {
           height={10.5}
           rx={2.2}
           fill={COLOR_PAPER}
-          stroke={COLOR_INK}
+          stroke={waveColor}
           strokeWidth={0.9}
         />
         <text
@@ -1760,7 +2124,7 @@ function renderBoundarySubMarkSvg(params: {
           fontSize={6.3}
           fontWeight={900}
           textAnchor="middle"
-          fill={COLOR_INK}
+          fill={waveColor}
           fontFamily={FONT_SANS}
         >
           {badgeText}
@@ -1769,12 +2133,33 @@ function renderBoundarySubMarkSvg(params: {
     );
   }
 
-  // "red_wave_name": 赤縦波線 ＋ その左に上詰め黒字で縦書き選手名
+  // "red_wave_name" | "waseda_diamond_pr": 赤縦波線 ＋ 縦書き選手名（赤インク＋紙色縁取り）
   const chars = extractVerticalBatterName(mark.name, mark.subType);
-  const fontSize = chars.length >= 4 ? 7.8 : chars.length === 3 ? 8.6 : 9.2;
-  const lineStep = chars.length >= 4 ? 8.5 : chars.length === 3 ? 9.5 : 10.3;
-  const textX = waveX - 7.4;
-  const startY = ry + (chars.length >= 4 ? 9.6 : 10.8);
+  const placeInsideDiamondLeft =
+    anchorSide === "left_outside" && leftSideBlocked;
+  const fontSize = placeInsideDiamondLeft
+    ? chars.length >= 4
+      ? 7.2
+      : 7.9
+    : chars.length >= 4
+    ? 7.8
+    : chars.length === 3
+    ? 8.5
+    : 9.0;
+  const lineStep = placeInsideDiamondLeft
+    ? chars.length >= 4
+      ? 7.8
+      : 8.6
+    : chars.length >= 4
+    ? 8.5
+    : chars.length === 3
+    ? 9.4
+    : 10.2;
+  const textX = placeInsideDiamondLeft
+    ? cx + BSO_W + 6.4
+    : waveX - 6.8;
+  const startY =
+    ry + (placeInsideDiamondLeft ? 9.4 : chars.length >= 4 ? 9.6 : 10.8);
 
   return (
     <g>
@@ -1782,7 +2167,7 @@ function renderBoundarySubMarkSvg(params: {
         d={wavePath}
         fill="none"
         stroke={waveColor}
-        strokeWidth={1.55}
+        strokeWidth={1.6}
         strokeLinecap="round"
       />
       {chars.map((ch, idx) => (
@@ -1793,7 +2178,7 @@ function renderBoundarySubMarkSvg(params: {
           fontSize={fontSize}
           fontWeight={900}
           textAnchor="middle"
-          fill={COLOR_INK}
+          fill={waveColor}
           stroke={COLOR_PAPER}
           strokeWidth={2.5}
           paintOrder="stroke"
@@ -1811,12 +2196,20 @@ export function renderCellSubstitutionsOverlaySvg(
   rules: ScorebookSymbolRules,
   cx: number,
   ry: number,
-  rightInsideShiftLeftPx = 0
+  rightInsideShiftLeftPx = 0,
+  leftSideBlocked = false
 ): React.ReactNode {
   if (!cell || rules.pinchHitterMark === "lineup_only") {
     return null;
   }
-  if (!cell.leftOutsideSub && !cell.rightInsideSub) {
+  const showRightInside =
+    Boolean(cell.rightInsideSub) &&
+    !(
+      rules.pinchHitterMark === "waseda_diamond_pr" &&
+      (cell.rightInsideSub?.subType === "PR" ||
+        cell.rightInsideSub?.subType === "TR")
+    );
+  if (!cell.leftOutsideSub && !showRightInside) {
     return null;
   }
 
@@ -1829,8 +2222,10 @@ export function renderCellSubstitutionsOverlaySvg(
           rules,
           cx,
           ry,
+          leftSideBlocked,
         })}
-      {cell.rightInsideSub &&
+      {showRightInside &&
+        cell.rightInsideSub &&
         renderBoundarySubMarkSvg({
           mark: cell.rightInsideSub,
           anchorSide: "right_inside",
@@ -3540,7 +3935,7 @@ export function DigitalScorebookSheet({
         );
       })}
 
-      {/* ━━━ 3B. 代打(マス左外)・代走/守備交代(マス右内)の赤波線＋上詰め黒字氏名 ＆ 併殺ブラケット「 ] 」 ━━━ */}
+      {/* ━━━ 3B. 代打(マス左境界)・代走/守備交代(マス右内)の赤波線＋縦書き氏名 ＆ 併殺ブラケット「 ] 」 ━━━ */}
       {model.batterRows.map((bRow, rowIdx) => {
         const ry = gridBodyTopY + rowIdx * CELL_H;
         return model.columns.map((col, colIdx) => {
@@ -3548,6 +3943,12 @@ export function DigitalScorebookSheet({
           const cell = model.cellsByKey[cellKey];
           if (!cell?.leftOutsideSub && !cell?.rightInsideSub) return null;
           const cx = gridStartX + colIdx * CELL_W;
+          const prevCol = colIdx > 0 ? model.columns[colIdx - 1] : undefined;
+          const prevCell = prevCol
+            ? model.cellsByKey[
+                `${prevCol.inning}-${prevCol.columnIndex}-${bRow.battingOrder}`
+              ]
+            : undefined;
           const nextCol =
             colIdx + 1 < model.columns.length
               ? model.columns[colIdx + 1]
@@ -3557,8 +3958,17 @@ export function DigitalScorebookSheet({
                 `${nextCol.inning}-${nextCol.columnIndex}-${bRow.battingOrder}`
               ]
             : undefined;
+          const leftSideBlocked =
+            colIdx === 0 ||
+            Boolean(
+              prevCell?.atBat ||
+                prevCell?.isTiebreakRunnerOnly ||
+                prevCell?.rightInsideSub
+            );
           const rightInsideShiftLeftPx =
-            cell.rightInsideSub && nextCell?.leftOutsideSub ? 15 : 0;
+            cell.rightInsideSub && nextCell?.leftOutsideSub && !leftSideBlocked
+              ? 14
+              : 0;
           return (
             <React.Fragment key={`bchg-${cellKey}`}>
               {renderCellSubstitutionsOverlaySvg(
@@ -3566,7 +3976,8 @@ export function DigitalScorebookSheet({
                 rules,
                 cx,
                 ry,
-                rightInsideShiftLeftPx
+                rightInsideShiftLeftPx,
+                leftSideBlocked
               )}
             </React.Fragment>
           );
@@ -4053,6 +4464,9 @@ export function ScorebookSymbolSamplePreview({
         hitBases: 0,
         method: "out_on_base",
         isPrePlay: false,
+        isForceOut: true,
+        throwChain: "6-4",
+        pinchRunnerName: "山田",
       },
       3: null,
       4: null,
@@ -4543,7 +4957,9 @@ export function ScorebookSymbolSamplePreview({
           topInning3HomeRunCell,
           rules,
           topOriginX + lineupW + CELL_W * 2,
-          topOriginY + colHeadH
+          topOriginY + colHeadH,
+          0,
+          true
         )}
         <line
           x1={topOriginX + lineupW}
@@ -4729,11 +5145,12 @@ export async function exportScorebookSvgElementsToPngBlob(
 }
 
 /**
- * ページ遷移（window.location変更）を一切起こさず、非表示iframe経由でA4横向き印刷 / PDF保存ダイアログを起動する
+ * ページ遷移（window.location変更）を一切起こさず、非表示iframe経由でA4印刷 / PDF保存ダイアログを起動する
  */
 export function printScorebookSvgElements(
   svgElements: SVGSVGElement[],
-  documentTitle: string
+  documentTitle: string,
+  orientation: "landscape" | "portrait" = "landscape"
 ): void {
   if (typeof document === "undefined" || svgElements.length === 0) return;
 
@@ -4748,13 +5165,14 @@ export function printScorebookSvgElements(
     })
     .join("");
 
+  const maxPageHeightMm = orientation === "portrait" ? 284 : 196;
   const html = `<!DOCTYPE html>
 <html lang="ja">
 <head>
 <meta charset="utf-8" />
 <title>${documentTitle.replace(/[<>&"]/g, "")}</title>
 <style>
-  @page { size: A4 landscape; margin: 6mm; }
+  @page { size: A4 ${orientation}; margin: 6mm; }
   html, body {
     margin: 0;
     padding: 0;
@@ -4777,7 +5195,7 @@ export function printScorebookSvgElements(
   .sheet-page svg {
     width: 100%;
     height: auto;
-    max-height: 196mm;
+    max-height: ${maxPageHeightMm}mm;
   }
 </style>
 </head>

@@ -13,11 +13,13 @@ export type LineupColumnStyle = "classic_three_row" | "compact_order_first";
 export type OutMarkStyle = "roman" | "circled";
 export type StrikeoutMarkStyle =
   | "k_called_reverse"
+  | "k_called_so_swing"
   | "k_called_circle"
   | "k_only"
   | "so";
 export type WalkHbpMarkStyle = "b_db" | "bb_hbp" | "kanji";
 export type HitLineStyle =
+  | "red_edge_infield_arc"
   | "quadrant_slash_hr_diamond"
   | "red_plain"
   | "red_slash"
@@ -25,7 +27,12 @@ export type HitLineStyle =
   | "mono_bold";
 export type RunnerLineStyle = "dotted_only" | "solid_trace";
 export type RunnerOutLineStyle = "dotted_only" | "quadrant_arrow" | "t_stop";
-export type RunMarkStyle = "red_dot" | "double_circle" | "kanji_toku";
+export type ForceOutMarkStyle = "standard_to" | "base_letter_abch";
+export type RunMarkStyle =
+  | "red_dot"
+  | "earned_filled_unearned_open"
+  | "double_circle"
+  | "kanji_toku";
 export type RbiMarkStyle = "hidden" | "red_dots" | "black_dots";
 export type PitchMarkStyle =
   | "waseda_symbols"
@@ -39,6 +46,7 @@ export type PickoffMarkStyle =
   | "kanji_num"
   | "hidden";
 export type BuntMarkStyle =
+  | "square_sac_triangle_sf_bh"
   | "square_all_bh"
   | "square_sac"
   | "diamond_sac"
@@ -48,9 +56,14 @@ export type BuntPitchMarkStyle =
   | "filled_triangle"
   | "inv_triangle_diamond"
   | "same_as_normal";
-export type FlyLinerMarkStyle = "umbrella" | "paren" | "alphabet";
+export type FlyLinerMarkStyle =
+  | "umbrella_f_prefix_ground_arc"
+  | "umbrella"
+  | "paren"
+  | "alphabet";
 export type PinchHitterMarkStyle =
   | "red_wave_name"
+  | "waseda_diamond_pr"
   | "left_wave_only"
   | "cell_badge"
   | "lineup_only";
@@ -59,7 +72,7 @@ export type DoublePlayMarkStyle =
   | "dp_only"
   | "wavy_link"
   | "chain_only";
-export type AdvanceErrorMarkStyle = "english" | "kanji";
+export type AdvanceErrorMarkStyle = "senior_chart" | "english" | "kanji";
 export type PositionLabelStyle = "kanji" | "number" | "english";
 
 export interface ScorebookSymbolRules {
@@ -71,6 +84,7 @@ export interface ScorebookSymbolRules {
   hitLine: HitLineStyle;
   runnerLine: RunnerLineStyle;
   runnerOutLine: RunnerOutLineStyle;
+  forceOutMark: ForceOutMarkStyle;
   runMark: RunMarkStyle;
   rbiMark: RbiMarkStyle;
   pitchMark: PitchMarkStyle;
@@ -97,13 +111,14 @@ export const STANDARD_SCOREBOOK_SYMBOL_RULES: ScorebookSymbolRules = {
   hitLine: "red_slash",
   runnerLine: "solid_trace",
   runnerOutLine: "t_stop",
+  forceOutMark: "standard_to",
   runMark: "red_dot",
   rbiMark: "red_dots",
   pitchMark: "waseda_symbols",
   buntPitchMark: "filled_triangle",
   pickoffMark: "chevron_arrow",
   buntMark: "diamond_sac",
-  pinchHitterMark: "left_wave_only",
+  pinchHitterMark: "waseda_diamond_pr",
   doublePlayMark: "wavy_link",
   flyLiner: "umbrella",
   advanceError: "english",
@@ -112,30 +127,38 @@ export const STANDARD_SCOREBOOK_SYMBOL_RULES: ScorebookSymbolRules = {
 };
 
 /**
- * チーム記号ルール未設定時の初期テンプレート（少年野球・中学硬式・草野球で人気の丸数字＋丸Kベース）
+ * シニア・チーム早見表準拠テンプレート（川崎中央リトルシニア等の現場早見表フル対応）
+ */
+export const SENIOR_CHART_SCOREBOOK_SYMBOL_RULES: ScorebookSymbolRules = {
+  cellStyle: "quadrant",
+  lineupStyle: "classic_three_row",
+  outMark: "roman",
+  strikeout: "k_called_so_swing",
+  walkHbp: "b_db",
+  hitLine: "red_edge_infield_arc",
+  runnerLine: "dotted_only",
+  runnerOutLine: "dotted_only",
+  forceOutMark: "base_letter_abch",
+  runMark: "earned_filled_unearned_open",
+  rbiMark: "hidden",
+  pitchMark: "cross_swing",
+  buntPitchMark: "v_dot_circle_dot",
+  pickoffMark: "chevron_arrow",
+  buntMark: "square_sac_triangle_sf_bh",
+  pinchHitterMark: "red_wave_name",
+  doublePlayMark: "bracket_dp",
+  flyLiner: "umbrella_f_prefix_ground_arc",
+  advanceError: "senior_chart",
+  positionLabel: "number",
+  customNote: "",
+};
+
+/**
+ * チーム記号ルール未設定時の初期テンプレート（シニア・早見表準拠式ベース）
  * ※ ユーザーがスコア設定でいつでも自由に変更可能
  */
 export const DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES: ScorebookSymbolRules = {
-  cellStyle: "quadrant",
-  lineupStyle: "classic_three_row",
-  outMark: "circled",
-  strikeout: "k_called_circle",
-  walkHbp: "b_db",
-  hitLine: "quadrant_slash_hr_diamond",
-  runnerLine: "dotted_only",
-  runnerOutLine: "dotted_only",
-  runMark: "red_dot",
-  rbiMark: "hidden",
-  pitchMark: "waseda_symbols",
-  buntPitchMark: "v_dot_circle_dot",
-  pickoffMark: "chevron_arrow",
-  buntMark: "square_all_bh",
-  pinchHitterMark: "red_wave_name",
-  doublePlayMark: "bracket_dp",
-  flyLiner: "umbrella",
-  advanceError: "english",
-  positionLabel: "number",
-  customNote: "",
+  ...SENIOR_CHART_SCOREBOOK_SYMBOL_RULES,
 };
 
 export interface ScorebookSymbolPreset {
@@ -147,9 +170,18 @@ export interface ScorebookSymbolPreset {
 
 export const SCOREBOOK_SYMBOL_PRESETS: readonly ScorebookSymbolPreset[] = [
   {
+    id: "senior_chart_style",
+    label: "シニア・早見表準拠式",
+    description:
+      "ⅠⅡⅢ・見逃K/空振SO/振逃反転K・□犠打/△犠飛・内野安打赤弧・1A/6B/5C・赤波線",
+    rules: {
+      ...SENIOR_CHART_SCOREBOOK_SYMBOL_RULES,
+    },
+  },
+  {
     id: "waseda_standard",
     label: "早稲田・成美堂 標準",
-    description: "3段メンバー欄・ⅠⅡⅢ・反転K・◇犠打・傘フライ",
+    description: "3段メンバー欄・ⅠⅡⅢ・反転K・◇犠打・傘フライ・塁線代走",
     rules: {
       ...STANDARD_SCOREBOOK_SYMBOL_RULES,
       pickoffMark: "full_arrow",
@@ -158,7 +190,7 @@ export const SCOREBOOK_SYMBOL_PRESETS: readonly ScorebookSymbolPreset[] = [
   },
   {
     id: "youth_senior",
-    label: "少年・シニア 丸数字式",
+    label: "学童・丸数字スラッシュ式",
     description: "①②③・進塁点線維持・右下赤斜線／・×空振り・□バント/BH",
     rules: {
       cellStyle: "quadrant",
@@ -169,6 +201,7 @@ export const SCOREBOOK_SYMBOL_PRESETS: readonly ScorebookSymbolPreset[] = [
       hitLine: "quadrant_slash_hr_diamond",
       runnerLine: "dotted_only",
       runnerOutLine: "dotted_only",
+      forceOutMark: "standard_to",
       runMark: "red_dot",
       rbiMark: "hidden",
       pitchMark: "cross_swing",
@@ -196,6 +229,7 @@ export const SCOREBOOK_SYMBOL_PRESETS: readonly ScorebookSymbolPreset[] = [
       hitLine: "parallel_bars",
       runnerLine: "solid_trace",
       runnerOutLine: "t_stop",
+      forceOutMark: "standard_to",
       runMark: "double_circle",
       rbiMark: "red_dots",
       pitchMark: "numbered_bs",
@@ -223,6 +257,7 @@ export const SCOREBOOK_SYMBOL_PRESETS: readonly ScorebookSymbolPreset[] = [
       hitLine: "mono_bold",
       runnerLine: "solid_trace",
       runnerOutLine: "t_stop",
+      forceOutMark: "standard_to",
       runMark: "kanji_toku",
       rbiMark: "black_dots",
       pitchMark: "slash_swing",
@@ -277,12 +312,17 @@ export const SYMBOL_RULE_FIELD_CONFIGS = {
     ] satisfies ReadonlyArray<SymbolRuleFieldOption<OutMarkStyle>>,
   },
   strikeout: {
-    title: "三振（空振り / 見逃し）",
+    title: "三振（見逃し / 空振り / 振逃げ）",
     options: [
-      { value: "k_called_reverse", label: "反転K式（早稲田）", sample: "K / 反転K" },
-      { value: "k_called_circle", label: "丸囲みK式", sample: "K / Ⓚ" },
+      {
+        value: "k_called_so_swing",
+        label: "見逃K・空振SO・振逃反転K",
+        sample: "見逃 K / 空振 SO / 振逃 反転K",
+      },
+      { value: "k_called_reverse", label: "反転K式（早稲田）", sample: "空振 K / 見逃 反転K" },
+      { value: "k_called_circle", label: "丸囲みK式", sample: "空振 K / 見逃 Ⓚ" },
       { value: "k_only", label: "K統一", sample: "すべて K" },
-      { value: "so", label: "SO表記", sample: "SO" },
+      { value: "so", label: "SO表記", sample: "すべて SO" },
     ] satisfies ReadonlyArray<SymbolRuleFieldOption<StrikeoutMarkStyle>>,
   },
   walkHbp: {
@@ -294,8 +334,13 @@ export const SYMBOL_RULE_FIELD_CONFIGS = {
     ] satisfies ReadonlyArray<SymbolRuleFieldOption<WalkHbpMarkStyle>>,
   },
   hitLine: {
-    title: "安打の赤線・長打表記パターン",
+    title: "安打の赤線・長打・内野安打パターン",
     options: [
+      {
+        value: "red_edge_infield_arc",
+        label: "進塁赤線＋内野安打赤弧（早見表）",
+        sample: "1〜4辺赤線 / 内野安打(BH5・6)右下赤弧囲み",
+      },
       {
         value: "quadrant_slash_hr_diamond",
         label: "右下赤斜線＋HR1周赤",
@@ -358,10 +403,30 @@ export const SYMBOL_RULE_FIELD_CONFIGS = {
       },
     ] satisfies ReadonlyArray<SymbolRuleFieldOption<RunnerOutLineStyle>>,
   },
-  runMark: {
-    title: "本塁生還（得点）マーク",
+  forceOutMark: {
+    title: "ベースアウト（封殺）・タッチアウト・チェンジ斜線",
     options: [
-      { value: "red_dot", label: "中央赤丸（標準）", sample: "●" },
+      {
+        value: "base_letter_abch",
+        label: "1A・6B・5C・2H ＋ 3TO（早見表）",
+        sample: "封殺 A/B/C/H・触球 TO・チェンジ赤 //",
+      },
+      {
+        value: "standard_to",
+        label: "T.O / CS 標準表記",
+        sample: "走塁死 T.O・盗死 CS・チェンジ黒 //",
+      },
+    ] satisfies ReadonlyArray<SymbolRuleFieldOption<ForceOutMarkStyle>>,
+  },
+  runMark: {
+    title: "本塁生還（得点・自責 / 非自責）マーク",
+    options: [
+      {
+        value: "earned_filled_unearned_open",
+        label: "自責● / 非自責○ 使い分け",
+        sample: "自責点＝塗り丸 ● / 非自責点＝白丸 ○",
+      },
+      { value: "red_dot", label: "中央赤丸統一（標準）", sample: "すべて ●" },
       { value: "double_circle", label: "二重丸", sample: "◎" },
       { value: "kanji_toku", label: "丸得マーク", sample: "㋣（得）" },
     ] satisfies ReadonlyArray<SymbolRuleFieldOption<RunMarkStyle>>,
@@ -389,8 +454,8 @@ export const SYMBOL_RULE_FIELD_CONFIGS = {
   pitchMark: {
     title: "投球（BSO）記録方式",
     options: [
-      { value: "waseda_symbols", label: "早稲田記号式", sample: "○見逃 ●空振 ーB △F" },
       { value: "cross_swing", label: "×空振り式（横棒B）", sample: "○見逃 ×空振 ーB △F" },
+      { value: "waseda_symbols", label: "早稲田記号式", sample: "○見逃 ●空振 ーB △F" },
       { value: "cross_dot_swing", label: "×空振り式（点・B）", sample: "○見逃 ×空振 ・B △F" },
       { value: "slash_swing", label: "斜線空振り式", sample: "○見逃 ／空振 ・B △F" },
       { value: "numbered_bs", label: "球数番号式", sample: "B/S枠に 1,2,3..." },
@@ -401,8 +466,8 @@ export const SYMBOL_RULE_FIELD_CONFIGS = {
     options: [
       {
         value: "v_dot_circle_dot",
-        label: "Vに点・丸に点式",
-        sample: "BF＝Vの中に・ / 空振＝○の中に・",
+        label: "Vに点・丸に点式（早見表）",
+        sample: "BF＝V̇ / 空振＝⊙",
       },
       {
         value: "filled_triangle",
@@ -426,7 +491,7 @@ export const SYMBOL_RULE_FIELD_CONFIGS = {
     options: [
       {
         value: "chevron_arrow",
-        label: "矢先のみ（塗無）",
+        label: "矢先のみ（早見表）",
         sample: "1塁＞  2塁∧  3塁＜",
       },
       {
@@ -447,8 +512,13 @@ export const SYMBOL_RULE_FIELD_CONFIGS = {
     ] satisfies ReadonlyArray<SymbolRuleFieldOption<PickoffMarkStyle>>,
   },
   buntMark: {
-    title: "バント打球（犠打・バント凡退・バント安打）表記",
+    title: "犠打・犠飛・バント打球表記",
     options: [
+      {
+        value: "square_sac_triangle_sf_bh",
+        label: "□犠打 ＋ △犠飛 ＋ BH（早見表）",
+        sample: "犠打 □[1-3] / 犠飛 △8 / 安 BH5",
+      },
       {
         value: "square_all_bh",
         label: "四角囲み □（全バント）＋ BH",
@@ -462,7 +532,7 @@ export const SYMBOL_RULE_FIELD_CONFIGS = {
       {
         value: "diamond_sac",
         label: "ひし形 ◇（早稲田標準）",
-        sample: "犠 ◇1-3 / 凡・安は通常",
+        sample: "犠 ◇1-3 / 犠飛 ◇︵8",
       },
       {
         value: "b_prefix",
@@ -472,17 +542,22 @@ export const SYMBOL_RULE_FIELD_CONFIGS = {
     ] satisfies ReadonlyArray<SymbolRuleFieldOption<BuntMarkStyle>>,
   },
   pinchHitterMark: {
-    title: "代打・代走・守備交代のマス境界表記",
+    title: "選手交代（代打・代走・守備・継投）の赤波線表記",
     options: [
       {
         value: "red_wave_name",
-        label: "赤縦波線 ＋ 左に上詰め黒字氏名",
-        sample: "代打＝左外・代走/守備＝右内に赤波線＋左に黒字名",
+        label: "赤縦波線 ＋ 縦書き氏名（早見表）",
+        sample: "代打＝左罫線・代走/守備＝右内・継投＝上辺赤波線",
+      },
+      {
+        value: "waseda_diamond_pr",
+        label: "早稲田式（代走は塁線波線）",
+        sample: "代打/守備＝境界赤波線・代走＝出塁ベース赤波線",
       },
       {
         value: "left_wave_only",
-        label: "赤縦波線のみ（早稲田式）",
-        sample: "代打＝左外・代走/守備＝右内に赤波線（氏名は選手欄）",
+        label: "赤縦波線のみ（氏名は選手欄）",
+        sample: "境界に赤波線のみ（氏名は左メンバー欄）",
       },
       {
         value: "cell_badge",
@@ -522,16 +597,26 @@ export const SYMBOL_RULE_FIELD_CONFIGS = {
     ] satisfies ReadonlyArray<SymbolRuleFieldOption<DoublePlayMarkStyle>>,
   },
   flyLiner: {
-    title: "フライ・ライナー表記",
+    title: "フライ・邪飛・ライナー・ゴロ表記",
     options: [
-      { value: "umbrella", label: "傘・直線記号（標準）", sample: "︵8 / ￣8" },
+      {
+        value: "umbrella_f_prefix_ground_arc",
+        label: "傘︵7・邪飛︵F7・ゴロ下弧（早見表）",
+        sample: "飛 ︵7 / 邪 ︵F7 / ゴロ 6⏝ / 直 ￣6",
+      },
+      { value: "umbrella", label: "傘・直線記号（標準）", sample: "︵8 / ︵8F / ￣8" },
       { value: "paren", label: "カッコ囲み式", sample: "(8) / [8]" },
       { value: "alphabet", label: "F / L 添字式", sample: "8F / 8L" },
     ] satisfies ReadonlyArray<SymbolRuleFieldOption<FlyLinerMarkStyle>>,
   },
   advanceError: {
-    title: "盗塁・暴投・失策などの略号",
+    title: "盗塁・失策・妨害などの略号",
     options: [
+      {
+        value: "senior_chart",
+        label: "早見表詳細式（E6/6E・4FC・S′）",
+        sample: "捕E6・送6E・4FC・2IF・OB6・IP・S′/DS",
+      },
       { value: "english", label: "英字略号（標準）", sample: "S・WP・PB・6E・FC" },
       { value: "kanji", label: "漢字略号", sample: "盗・暴・捕・6失・野" },
     ] satisfies ReadonlyArray<SymbolRuleFieldOption<AdvanceErrorMarkStyle>>,
@@ -586,13 +671,14 @@ export function sanitizeScorebookSymbolRules(
     outMark: isOneOf(obj.outMark, ["roman", "circled"], fallback.outMark),
     strikeout: isOneOf(
       obj.strikeout,
-      ["k_called_reverse", "k_called_circle", "k_only", "so"],
+      ["k_called_so_swing", "k_called_reverse", "k_called_circle", "k_only", "so"],
       fallback.strikeout
     ),
     walkHbp: isOneOf(obj.walkHbp, ["b_db", "bb_hbp", "kanji"], fallback.walkHbp),
     hitLine: isOneOf(
       obj.hitLine,
       [
+        "red_edge_infield_arc",
         "quadrant_slash_hr_diamond",
         "red_plain",
         "red_slash",
@@ -611,9 +697,14 @@ export function sanitizeScorebookSymbolRules(
       ["dotted_only", "quadrant_arrow", "t_stop"],
       fallback.runnerOutLine
     ),
+    forceOutMark: isOneOf(
+      obj.forceOutMark,
+      ["base_letter_abch", "standard_to"],
+      fallback.forceOutMark
+    ),
     runMark: isOneOf(
       obj.runMark,
-      ["red_dot", "double_circle", "kanji_toku"],
+      ["earned_filled_unearned_open", "red_dot", "double_circle", "kanji_toku"],
       fallback.runMark
     ),
     rbiMark: isOneOf(
@@ -649,12 +740,24 @@ export function sanitizeScorebookSymbolRules(
     ),
     buntMark: isOneOf(
       obj.buntMark,
-      ["square_all_bh", "square_sac", "diamond_sac", "b_prefix"],
+      [
+        "square_sac_triangle_sf_bh",
+        "square_all_bh",
+        "square_sac",
+        "diamond_sac",
+        "b_prefix",
+      ],
       fallback.buntMark
     ),
     pinchHitterMark: isOneOf(
       obj.pinchHitterMark,
-      ["red_wave_name", "left_wave_only", "cell_badge", "lineup_only"],
+      [
+        "red_wave_name",
+        "waseda_diamond_pr",
+        "left_wave_only",
+        "cell_badge",
+        "lineup_only",
+      ],
       fallback.pinchHitterMark
     ),
     doublePlayMark: isOneOf(
@@ -664,12 +767,12 @@ export function sanitizeScorebookSymbolRules(
     ),
     flyLiner: isOneOf(
       obj.flyLiner,
-      ["umbrella", "paren", "alphabet"],
+      ["umbrella_f_prefix_ground_arc", "umbrella", "paren", "alphabet"],
       fallback.flyLiner
     ),
     advanceError: isOneOf(
       obj.advanceError,
-      ["english", "kanji"],
+      ["senior_chart", "english", "kanji"],
       fallback.advanceError
     ),
     positionLabel: isOneOf(
@@ -754,7 +857,8 @@ export function summarizeSymbolRulesBadges(
       : "3段フル選手欄"
   );
   badges.push(rules.outMark === "circled" ? "①②③アウト" : "ⅠⅡⅢアウト");
-  if (rules.strikeout === "k_called_reverse") badges.push("見逃し反転K");
+  if (rules.strikeout === "k_called_so_swing") badges.push("見逃K・空振SO・振逃ꓘ");
+  else if (rules.strikeout === "k_called_reverse") badges.push("見逃し反転K");
   else if (rules.strikeout === "k_called_circle") badges.push("見逃しⓀ");
   else if (rules.strikeout === "so") badges.push("三振SO");
   else badges.push("三振K統一");
@@ -763,14 +867,27 @@ export function summarizeSymbolRulesBadges(
   else if (rules.walkHbp === "kanji") badges.push("四/死");
   else badges.push("B/DB");
 
-  if (rules.buntMark === "square_all_bh") badges.push("□バント＋BH");
-  else if (rules.buntMark === "square_sac") badges.push("□犠打＋BH");
-  else if (rules.buntMark === "b_prefix") badges.push("◇犠打＋B/BH");
-  else badges.push("◇犠打");
+  if (rules.buntMark === "square_sac_triangle_sf_bh") {
+    badges.push("□犠打・△犠飛・BH");
+  } else if (rules.buntMark === "square_all_bh") {
+    badges.push("□バント＋BH");
+  } else if (rules.buntMark === "square_sac") {
+    badges.push("□犠打＋BH");
+  } else if (rules.buntMark === "b_prefix") {
+    badges.push("◇犠打＋B/BH");
+  } else {
+    badges.push("◇犠打");
+  }
 
-  if (rules.flyLiner === "paren") badges.push("(8)フライ");
-  else if (rules.flyLiner === "alphabet") badges.push("8F/8L");
-  else badges.push("傘フライ");
+  if (rules.flyLiner === "umbrella_f_prefix_ground_arc") {
+    badges.push("︵7・︵F7・6⏝");
+  } else if (rules.flyLiner === "paren") {
+    badges.push("(8)フライ");
+  } else if (rules.flyLiner === "alphabet") {
+    badges.push("8F/8L");
+  } else {
+    badges.push("傘フライ");
+  }
 
   if (rules.pitchMark === "numbered_bs") badges.push("球数番号BS");
   else if (
@@ -782,14 +899,16 @@ export function summarizeSymbolRulesBadges(
     badges.push("／空振り");
   }
 
-  if (rules.buntPitchMark === "v_dot_circle_dot") badges.push("V・/○・バント球");
+  if (rules.buntPitchMark === "v_dot_circle_dot") badges.push("V̇/⊙バント球");
   else if (rules.buntPitchMark === "inv_triangle_diamond") badges.push("▽/◇バント球");
 
   if (rules.pickoffMark === "chevron_arrow") badges.push("＞∧＜牽制");
   else if (rules.pickoffMark === "full_arrow") badges.push("→↑←牽制");
   else if (rules.pickoffMark === "kanji_num") badges.push("1牽・2牽");
 
-  if (rules.hitLine === "quadrant_slash_hr_diamond") {
+  if (rules.hitLine === "red_edge_infield_arc") {
+    badges.push("赤進塁線＋内野安打赤弧");
+  } else if (rules.hitLine === "quadrant_slash_hr_diamond") {
     badges.push("右下赤斜線＋HR赤枠");
   } else if (rules.hitLine === "red_plain") {
     badges.push("赤実線のみ");
@@ -801,6 +920,12 @@ export function summarizeSymbolRulesBadges(
     badges.push("赤進塁線＋直交線");
   }
 
+  if (rules.forceOutMark === "base_letter_abch") {
+    badges.push("1A/6B/5C/2H封殺");
+  }
+  if (rules.runMark === "earned_filled_unearned_open") {
+    badges.push("自責●/非自責○");
+  }
   if (rules.runnerLine === "dotted_only") {
     badges.push("進塁点線維持");
   }
@@ -815,7 +940,9 @@ export function summarizeSymbolRulesBadges(
     badges.push("右上黒打点");
   }
   if (rules.pinchHitterMark === "red_wave_name") {
-    badges.push("赤波線＋上詰黒氏名");
+    badges.push("赤波線＋縦書き氏名");
+  } else if (rules.pinchHitterMark === "waseda_diamond_pr") {
+    badges.push("早稲田塁線代走");
   } else if (rules.pinchHitterMark === "cell_badge") {
     badges.push("赤波線＋PH/PR記号");
   }
@@ -825,6 +952,9 @@ export function summarizeSymbolRulesBadges(
     badges.push("波線連結＋DP併殺");
   } else if (rules.doublePlayMark === "dp_only") {
     badges.push("DP添字併殺");
+  }
+  if (rules.advanceError === "senior_chart") {
+    badges.push("E6/6E・4FC・S′");
   }
 
   return badges;
@@ -939,18 +1069,61 @@ export function formatPositionByRules(
   return NUM_TO_KANJI[canonical] || (rawPosition || "-").trim().slice(0, 2);
 }
 
+export interface FormatAdvanceMethodExtraOptions {
+  /** 到達（またはアウトになった）目標塁: 1=1塁(A), 2=2塁(B), 3=3塁(C), 4=本塁(H) */
+  targetBase?: 1 | 2 | 3 | 4;
+  /** フォースアウト（封殺）かタッチアウトか */
+  isForceOut?: boolean;
+  /** 送球経路（例: "6", "6-4", "1-3", "5", "2"） */
+  throwChain?: string;
+  /** ダブルスチール（重盗）か */
+  isDoubleSteal?: boolean;
+  /** この移動でアウトになったか */
+  isOut?: boolean;
+}
+
 export function formatAdvanceMethodByRules(
   method: AdvanceMethodCode,
   rules: ScorebookSymbolRules,
-  drivingBatterOrder?: number
+  drivingBatterOrder?: number,
+  extra?: FormatAdvanceMethodExtraOptions
 ): string {
   const isKanji = rules.advanceError === "kanji";
+  const isSeniorChart = rules.advanceError === "senior_chart";
+  const chain = (extra?.throwChain || "").trim();
+
+  if (
+    rules.forceOutMark === "base_letter_abch" &&
+    (method === "out_on_base" || (extra?.isOut && method === "fc"))
+  ) {
+    const baseLetter =
+      extra?.targetBase === 1
+        ? "A"
+        : extra?.targetBase === 2
+        ? "B"
+        : extra?.targetBase === 3
+        ? "C"
+        : extra?.targetBase === 4
+        ? "H"
+        : "";
+    if (extra?.isForceOut && baseLetter) {
+      return chain ? `${chain}${baseLetter}` : baseLetter;
+    }
+    return chain ? `${chain}TO` : "TO";
+  }
+
   switch (method) {
     case "steal":
+      if (isSeniorChart) {
+        return extra?.isDoubleSteal ? "DS" : "S′";
+      }
       return isKanji ? "盗" : "S";
     case "caught_stealing":
       return isKanji ? "盗死" : "CS";
     case "pickoff_out":
+      if (rules.forceOutMark === "base_letter_abch" && chain) {
+        return `${chain}TO`;
+      }
       return isKanji ? "牽死" : "PO";
     case "pickoff_error":
       return isKanji ? "牽失" : "POE";
@@ -961,6 +1134,9 @@ export function formatAdvanceMethodByRules(
     case "balk":
       return isKanji ? "ボ" : "BK";
     case "error":
+      if (chain) {
+        return isKanji ? `${chain}失` : `${chain}E`;
+      }
       return isKanji ? "失" : "E";
     case "fc":
       return drivingBatterOrder && drivingBatterOrder > 0
@@ -969,8 +1145,14 @@ export function formatAdvanceMethodByRules(
         ? "野"
         : "FC";
     case "obstruction":
+      if (isSeniorChart) {
+        return chain ? `OB${chain}` : "OB";
+      }
       return isKanji ? "妨" : "OBS";
     case "interference_out":
+      if (isSeniorChart) {
+        return "IP";
+      }
       return isKanji ? "守妨" : "INT";
     case "appeal_out":
       return isKanji ? "離死" : "AP";
@@ -997,17 +1179,19 @@ export function formatAdvanceMethodByRules(
 }
 
 export interface FormattedPlayNotation {
-  /** メイン文字列（例: "6-3", "8", "K", "B", "6E", "BH5"） */
+  /** メイン文字列（例: "6-3", "8", "K", "SO", "B", "6E", "E6", "BH5"） */
   mainText: string;
   /** サブ添字（例: 振り逃げ時の "2-3" や "WP"、3バント失敗の "3B" など） */
   subText?: string;
-  /** 視覚装飾種別（SVG側で傘・直線・犠打ダイヤ・四角枠・反転K・丸Kを精密描画） */
+  /** 視覚装飾種別（SVG側で傘・下弧・直線・犠打ダイヤ・四角枠・三角枠・反転K・丸Kを精密描画） */
   decorator:
     | "none"
     | "umbrella"
+    | "under_arc"
     | "overline"
     | "sac_diamond"
     | "sac_square"
+    | "sac_triangle"
     | "sac_fly_umbrella"
     | "bunt_fly_square_umbrella"
     | "reverse_k"
@@ -1015,6 +1199,10 @@ export interface FormattedPlayNotation {
     | "hit";
   /** 安打・出塁系の赤インク表示か */
   isRedInk: boolean;
+  /** 内野安打・バントヒット時の第4象限（右下）赤円弧囲み */
+  infieldHitArc?: boolean;
+  /** ランニングホームラン（RH）時の内側二重赤ダイヤモンド */
+  isRunningHomeRun?: boolean;
 }
 
 const KANJI_DIR_TO_NUM: ReadonlyArray<[RegExp, string]> = [
@@ -1120,23 +1308,96 @@ export function formatAtBatPlayNotation(
     rc === "home_run"
   ) {
     const fielder = inferFielderToken(dir, label, "");
+    const isGroundArcMode = rules.flyLiner === "umbrella_f_prefix_ground_arc";
+
     if (rc === "home_run") {
+      const isRunningHr =
+        /^︵?RH/i.test(dir) || /ランニング|RH/i.test(label);
+      if (isRunningHr) {
+        const useUmbrella =
+          rules.flyLiner === "umbrella" || isGroundArcMode;
+        return {
+          mainText: fielder ? `RH${fielder}` : "RH",
+          decorator: useUmbrella ? "umbrella" : "hit",
+          isRedInk: false,
+          isRunningHomeRun: true,
+        };
+      }
+      if (rules.hitLine === "red_edge_infield_arc") {
+        return {
+          mainText: fielder || "HR",
+          decorator: "hit",
+          isRedInk: false,
+        };
+      }
       return {
         mainText: fielder ? `HR(${fielder})` : "HR",
         decorator: "hit",
         isRedInk: false,
       };
     }
+
+    // ポテンヒット（T9 等）
+    const bloopMatch = dir.match(/^T([1-9])/i);
+    if (bloopMatch || /ポテン/.test(label)) {
+      const bf = bloopMatch?.[1] || fielder || "9";
+      return {
+        mainText: `T${bf}`,
+        decorator: "hit",
+        isRedInk: false,
+      };
+    }
+
+    // バントヒット（BH5 等）
     if (isBuntPlay && rules.buntMark !== "diamond_sac") {
       return {
         mainText: fielder ? `BH${fielder}` : "BH",
         decorator: "hit",
         isRedInk: false,
+        infieldHitArc:
+          rules.hitLine === "red_edge_infield_arc" && rc === "single",
       };
     }
+
+    // 内野安打判定（単打かつ内野手 1〜6 記録、または明示的な内野安打表記）
+    const isExplicitInfieldHit = /内野安打|内安/.test(label);
+    const isOutfieldTrajectory = /越|抜|ライナー|直/.test(label) && !isExplicitInfieldHit;
+    const isInfieldSingle =
+      rc === "single" &&
+      rules.hitLine === "red_edge_infield_arc" &&
+      (isExplicitInfieldHit ||
+        (/^[1-6](?:-[1-9])?$/.test(fielder) && !isOutfieldTrajectory));
+
+    if (isInfieldSingle) {
+      return {
+        mainText: fielder || "H",
+        decorator: "hit",
+        isRedInk: false,
+        infieldHitArc: true,
+      };
+    }
+
+    const formattedFielder =
+      dir.includes("・") && /^[1-9]・[1-9]$/.test(dir)
+        ? dir
+        : isGroundArcMode && (fielder === "78" || fielder === "89")
+        ? `${fielder[0]}・${fielder[1]}`
+        : fielder;
+
+    let hitDecorator: FormattedPlayNotation["decorator"] = "hit";
+    if (isGroundArcMode && formattedFielder) {
+      if (/ゴロ|⏝/.test(`${dir} ${label}`)) {
+        hitDecorator = "under_arc";
+      } else if (/飛|越|中間|︵/.test(`${dir} ${label}`)) {
+        hitDecorator = "umbrella";
+      }
+    }
+
     return {
-      mainText: fielder || (rc === "single" ? "H" : rc === "double" ? "2B" : "3B"),
-      decorator: "hit",
+      mainText:
+        formattedFielder ||
+        (rc === "single" ? "H" : rc === "double" ? "2B" : "3B"),
+      decorator: hitDecorator,
       isRedInk: false,
     };
   }
@@ -1170,6 +1431,14 @@ export function formatAtBatPlayNotation(
     return { mainText: text, decorator: "none", isRedInk: false };
   }
   if (rc === "interference") {
+    if (rules.advanceError === "senior_chart") {
+      const f = inferFielderToken(dir, label, "2") || "2";
+      return {
+        mainText: `${f}IF`,
+        decorator: "none",
+        isRedInk: false,
+      };
+    }
     return {
       mainText: rules.advanceError === "kanji" ? "打妨" : "INT",
       decorator: "none",
@@ -1185,6 +1454,31 @@ export function formatAtBatPlayNotation(
   ) {
     const called = isCalledStrikeout(ab);
     const isThreeBunt = /3バント|スリーバント/.test(label);
+
+    if (rules.strikeout === "k_called_so_swing") {
+      if (
+        rc === "dropped_third_strike" ||
+        rc === "dropped_third_strike_out"
+      ) {
+        const throwSub =
+          rc === "dropped_third_strike_out"
+            ? inferFielderToken(dir, label, "") || undefined
+            : undefined;
+        return {
+          mainText: "K",
+          subText: throwSub,
+          decorator: "reverse_k",
+          isRedInk: false,
+        };
+      }
+      return {
+        mainText: called ? "K" : "SO",
+        subText: isThreeBunt ? "3B" : undefined,
+        decorator: "none",
+        isRedInk: false,
+      };
+    }
+
     const dtsSub =
       rc === "dropped_third_strike_out"
         ? inferFielderToken(dir, label, "2-3")
@@ -1233,7 +1527,9 @@ export function formatAtBatPlayNotation(
     const token = inferFielderToken(dir, label, "1-3");
     const main = token.includes("-") || token === "3" ? token : `${token}-3`;
     const sacDecorator =
-      rules.buntMark === "square_all_bh" || rules.buntMark === "square_sac"
+      rules.buntMark === "square_sac_triangle_sf_bh" ||
+      rules.buntMark === "square_all_bh" ||
+      rules.buntMark === "square_sac"
         ? "sac_square"
         : "sac_diamond";
     return {
@@ -1246,7 +1542,17 @@ export function formatAtBatPlayNotation(
   // 5. 犠飛（犠牲フライ）
   if (rc === "sac_fly") {
     const f = inferFielderToken(dir, label, "8").slice(0, 2);
-    if (rules.flyLiner === "umbrella") {
+    if (rules.buntMark === "square_sac_triangle_sf_bh") {
+      return {
+        mainText: f,
+        decorator: "sac_triangle",
+        isRedInk: false,
+      };
+    }
+    if (
+      rules.flyLiner === "umbrella" ||
+      rules.flyLiner === "umbrella_f_prefix_ground_arc"
+    ) {
       return {
         mainText: f,
         decorator: "sac_fly_umbrella",
@@ -1270,9 +1576,36 @@ export function formatAtBatPlayNotation(
   // 6. フライ・ライナー・インフィールドフライ
   if (rc === "flyout" || rc === "infield_fly") {
     const f = inferFielderToken(dir, label, "8").slice(0, 2);
-    const isFoulFly = /邪/.test(label) || /F$/i.test(dir);
+    const isFoulFly =
+      /邪|ファール|ファウル/.test(label) ||
+      /^F[1-9]|[1-9]F$|^FF[1-9]|[1-9]FF$/i.test(dir);
     const isIf = rc === "infield_fly";
     const liner = !isIf && isLinerPlay(ab);
+
+    if (rules.flyLiner === "umbrella_f_prefix_ground_arc") {
+      if (liner) {
+        return {
+          mainText: f,
+          subText: isIf ? "IF" : undefined,
+          decorator: "overline",
+          isRedInk: false,
+        };
+      }
+      if (isFoulFly) {
+        return {
+          mainText: `F${f}`,
+          subText: isIf ? "IF" : undefined,
+          decorator: "umbrella",
+          isRedInk: false,
+        };
+      }
+      return {
+        mainText: f,
+        subText: isIf ? "IF" : undefined,
+        decorator: "umbrella",
+        isRedInk: false,
+      };
+    }
 
     if (rules.flyLiner === "umbrella") {
       if (isBuntPlay && rules.buntMark === "square_all_bh" && !liner) {
@@ -1330,10 +1663,35 @@ export function formatAtBatPlayNotation(
 
   // 7. 失策出塁
   if (rc === "error") {
-    const f = inferFielderToken(dir, label, "").replace(/-/g, "");
+    if (/^E[1-9]$/i.test(dir)) {
+      const f = dir.slice(1);
+      return {
+        mainText: rules.advanceError === "kanji" ? `${f}失` : `E${f}`,
+        decorator: "none",
+        isRedInk: false,
+      };
+    }
+    if (/^[1-9](?:-[1-9])*E$/i.test(dir)) {
+      const chainPart = dir.slice(0, -1);
+      return {
+        mainText:
+          rules.advanceError === "kanji" ? `${chainPart}失` : `${chainPart}E`,
+        decorator: "none",
+        isRedInk: false,
+      };
+    }
+    const f = inferFielderToken(dir, label, "");
+    if (rules.advanceError === "senior_chart") {
+      const isCatchErr = /捕球|落球|ファンブル|トンネル/.test(label);
+      return {
+        mainText: f ? (isCatchErr ? `E${f}` : `${f}E`) : "E",
+        decorator: "none",
+        isRedInk: false,
+      };
+    }
     const errSuffix = rules.advanceError === "kanji" ? "失" : "E";
     return {
-      mainText: f ? `${f}${errSuffix}` : errSuffix,
+      mainText: f ? `${f.replace(/-/g, "")}${errSuffix}` : errSuffix,
       decorator: "none",
       isRedInk: false,
     };
@@ -1341,7 +1699,21 @@ export function formatAtBatPlayNotation(
 
   // 8. 野手選択 (FC)
   if (rc === "fc") {
+    if (/^[1-9]-$/.test(dir)) {
+      return {
+        mainText: dir,
+        decorator: "none",
+        isRedInk: false,
+      };
+    }
     const chain = inferFielderToken(dir, label, "");
+    if (rules.advanceError === "senior_chart") {
+      return {
+        mainText: chain ? `${chain}FC` : "FC",
+        decorator: "none",
+        isRedInk: false,
+      };
+    }
     const fcTag = rules.advanceError === "kanji" ? "野" : "FC";
     const fcMain = chain || fcTag;
     return {
@@ -1358,12 +1730,12 @@ export function formatAtBatPlayNotation(
 
   // 9. ゴロ・併殺打・三重殺・守備妨害・途中断
   if (rc === "groundout" || rc === "double_play" || rc === "triple_play") {
-    const rawChain = inferFielderToken(dir, label, "");
-    let main = rawChain;
-    if (!main) {
-      main = rc === "double_play" ? "6-4-3" : "6-3";
-    } else if (/^[1-9]$/.test(main) && main !== "3") {
-      main = `${main}-3`;
+    if (/^[1-9]-$/.test(dir)) {
+      return {
+        mainText: dir,
+        decorator: "none",
+        isRedInk: false,
+      };
     }
     const isDp =
       rc === "double_play" || (ab.outsInPlay === 2 && rc !== "triple_play");
@@ -1376,27 +1748,66 @@ export function formatAtBatPlayNotation(
         : isDp
         ? "DP"
         : undefined;
+
+    if (/^[1-9](?:-[1-9])*(?:A|B|C|H|TO)$/i.test(dir)) {
+      return {
+        mainText: dir.toUpperCase(),
+        subText: dpSub,
+        decorator: "none",
+        isRedInk: false,
+      };
+    }
+
+    const rawChain = inferFielderToken(dir, label, "");
+    const isGroundArcMode = rules.flyLiner === "umbrella_f_prefix_ground_arc";
+    let main = rawChain;
+    if (!main) {
+      main = rc === "double_play" ? "6-4-3" : isGroundArcMode ? "6" : "6-3";
+    } else if (/^[1-9]$/.test(main) && main !== "3") {
+      if (!(isGroundArcMode && /^[1-9]$/.test(dir))) {
+        main = `${main}-3`;
+      }
+    }
+
+    const groundDecorator: FormattedPlayNotation["decorator"] =
+      isBuntPlay &&
+      (rules.buntMark === "square_all_bh" ||
+        rules.buntMark === "square_sac_triangle_sf_bh")
+        ? "sac_square"
+        : isGroundArcMode && !isDp && !isTp
+        ? "under_arc"
+        : "none";
+
     return {
       mainText:
         isBuntPlay && rules.buntMark === "b_prefix" ? `B${main}` : main,
       subText: dpSub,
-      decorator:
-        isBuntPlay && rules.buntMark === "square_all_bh"
-          ? "sac_square"
-          : "none",
+      decorator: groundDecorator,
       isRedInk: false,
     };
   }
 
   if (rc === "interference_out") {
     return {
-      mainText: rules.advanceError === "kanji" ? "守妨" : "INT",
+      mainText:
+        rules.advanceError === "senior_chart"
+          ? "IP"
+          : rules.advanceError === "kanji"
+          ? "守妨"
+          : "INT",
       decorator: "none",
       isRedInk: false,
     };
   }
 
-  // other（走塁死による打席途中断など）
+  // other（走塁死による打席途中断、またはボーク・暴投・捕逸等の単独記号表示）
+  if (dir) {
+    return {
+      mainText: dir,
+      decorator: "none",
+      isRedInk: false,
+    };
+  }
   return {
     mainText: "",
     decorator: "none",
