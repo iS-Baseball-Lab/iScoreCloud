@@ -1,7 +1,8 @@
 // filepath: src/components/liff/ScorebookCellGuideModal.tsx
 "use client";
 
-import React, { useEffect, useMemo, useRef } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   BookOpen,
   ChevronLeft,
@@ -394,7 +395,13 @@ export function ScorebookCellGuideModal({
     );
   }, [activeItem, navigationItems]);
 
-  if (!activeItem || !guide) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted || !activeItem || !guide) {
     return null;
   }
 
@@ -404,12 +411,12 @@ export function ScorebookCellGuideModal({
       ? navigationItems[currentIndex + 1]
       : null;
 
-  return (
+  return createPortal(
     <div
       role="dialog"
       aria-modal="true"
       aria-label={`${guide.inningText} ${guide.batterOrder}番 ${guide.batterName} スコア記号解説`}
-      className="fixed inset-0 z-[60] bg-black/75 flex items-end sm:items-center justify-center p-0 sm:p-4"
+      className="fixed inset-0 z-[9999] bg-slate-950/75 flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-150"
       onClick={(e) => {
         if (e.target === e.currentTarget) {
           onClose();
@@ -506,7 +513,11 @@ export function ScorebookCellGuideModal({
         {/* ━━━ スクロール解説エリア（①配球 / ②打席結果・守備番号 / ③ダイヤ・進塁・アウト） ━━━ */}
         <div
           ref={scrollBodyRef}
-          className="flex-1 overflow-y-auto overscroll-contain p-3.5 space-y-3.5 bg-card"
+          className={cn(
+            "flex-1 overflow-y-auto overscroll-contain p-3.5 space-y-3.5 bg-card",
+            navigationItems.length <= 1 &&
+              "pb-[max(env(safe-area-inset-bottom),20px)] sm:pb-3.5"
+          )}
         >
           {/* ① 左列：配球記号 */}
           <section className="rounded-xl border border-border bg-card overflow-hidden">
@@ -674,7 +685,7 @@ export function ScorebookCellGuideModal({
 
         {/* ━━━ 下段ナビバー：前後のマスへワンタップ移動 ━━━ */}
         {navigationItems.length > 1 && (
-          <div className="bg-card border-t border-border px-3.5 py-2.5 flex items-center justify-between gap-2 shrink-0">
+          <div className="bg-card border-t border-border px-3.5 py-2.5 pb-[max(env(safe-area-inset-bottom),20px)] sm:pb-2.5 flex items-center justify-between gap-2 shrink-0">
             <button
               type="button"
               disabled={!prevItem}
@@ -703,6 +714,7 @@ export function ScorebookCellGuideModal({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

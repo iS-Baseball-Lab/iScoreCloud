@@ -2,6 +2,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { 
   ShieldCheck, 
@@ -118,6 +119,11 @@ export default function LiffAdminDashboardPage() {
 
   // 招待コードコピーフィードバック
   const [isCopied, setIsCopied] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // ─── ダッシュボードデータの取得 ─────────────────────
   const loadDashboardData = useCallback(async (silent = false) => {
@@ -964,9 +970,11 @@ export default function LiffAdminDashboardPage() {
         <div className="h-8 w-full shrink-0" aria-hidden="true" />
       </div>
 
-      {/* 🌟 メンバー役割・班編集ポップアップモーダル */}
-      {editingMember && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/60 animate-in fade-in duration-150">
+      {/* 🌟 メンバー役割・班編集ポップアップモーダル（Portal z-[9999]） */}
+      {mounted &&
+        editingMember &&
+        createPortal(
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/60 animate-in fade-in duration-150">
           <div className="w-full max-w-sm rounded-2xl border border-border bg-card shadow-xs overflow-hidden animate-in zoom-in-95 duration-150">
             <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-slate-500 px-4 py-3 flex items-center justify-between gap-2">
               <div className="flex items-center gap-2.5 min-w-0">
@@ -1076,14 +1084,17 @@ export default function LiffAdminDashboardPage() {
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          🔗 メンバー統合（マージ）ダイアログ
+          🔗 メンバー統合（マージ）ダイアログ（Portal z-[9999]）
       ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-      {isMergeModalOpen && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-3 bg-slate-950/60 animate-in fade-in duration-200">
+      {mounted &&
+        isMergeModalOpen &&
+        createPortal(
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 bg-slate-950/60 animate-in fade-in duration-200">
           <div className="w-full max-w-md rounded-2xl border border-border bg-card shadow-xs overflow-hidden max-h-[90vh] flex flex-col animate-in zoom-in-95 duration-200">
             {/* ヘッダー (A-3 Dark Solid Header Cap) */}
             <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3 flex items-center justify-between gap-2 shrink-0">
@@ -1214,7 +1225,8 @@ export default function LiffAdminDashboardPage() {
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

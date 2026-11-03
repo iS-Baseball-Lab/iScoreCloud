@@ -1333,7 +1333,7 @@ export function Step3QuickSubstitutionModal({
       onClick={onClose}
     >
       <div
-        className="w-full sm:max-w-lg max-h-[90vh] bg-card rounded-t-2xl sm:rounded-2xl border border-border shadow-xl flex flex-col overflow-hidden"
+        className="w-full sm:max-w-lg max-h-[88dvh] sm:max-h-[90dvh] bg-card rounded-t-2xl sm:rounded-2xl border border-border shadow-xl flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* ヘッダー */}
@@ -1953,7 +1953,7 @@ export function Step3QuickSubstitutionModal({
         </div>
 
         {/* フッター */}
-        <div className="px-4 py-3 border-t border-border bg-card flex justify-end">
+        <div className="px-4 py-3 pb-[max(env(safe-area-inset-bottom),24px)] sm:pb-3 border-t border-border bg-card flex justify-end shrink-0">
           <button
             type="button"
             onClick={onClose}

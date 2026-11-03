@@ -3405,6 +3405,8 @@ export default function LiffScorebookImportPage() {
             onConfirm={(options) => void handleDeleteSavedScorebook(options)}
           />
         )}
+
+        <div className="h-8 w-full shrink-0 pointer-events-none select-none" aria-hidden="true" />
       </div>
     </div>
   );

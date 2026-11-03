@@ -2,6 +2,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo, Suspense } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { LiffHeader } from "@/components/liff/LiffHeader";
@@ -210,6 +211,15 @@ function LiffMatchEditContent() {
     Array(7).fill("")
   );
   const [isScoreDirty, setIsScoreDirty] = useState<boolean>(false);
+  const [mounted, setMounted] = useState<boolean>(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    setShowDeleteModal(false);
+  }, [matchId, currentTeam?.id]);
 
   const navigateBackToMatchDetail = useCallback(() => {
     if (typeof window !== "undefined" && window.history.length > 1) {
@@ -1422,48 +1432,61 @@ function LiffMatchEditContent() {
         <div className="h-8 w-full shrink-0" aria-hidden="true" />
       </div>
 
-      {/* 🗑️ 試合全体の削除確認モーダル（A-3 ソリッド規格） */}
-      {showDeleteModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 animate-in fade-in duration-150">
-          <div className="w-full max-w-sm rounded-2xl border border-border bg-card shadow-xl overflow-hidden">
-            <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-rose-500 px-4 py-3 flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
-              <h3 className="text-sm font-black text-white">
-                この試合データを削除しますか？
-              </h3>
-            </div>
-            <div className="p-4 space-y-4">
-              <p className="text-xs font-bold text-muted-foreground leading-relaxed">
-                <strong className="text-foreground">vs {opponent || loadedMatch.opponent}</strong>{" "}
-                の試合日程・スタメン・スコア・打席記録がすべて削除されます。この操作は取り消せません。
-              </p>
-              <div className="grid grid-cols-2 gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={isDeleting}
-                  onClick={() => setShowDeleteModal(false)}
-                  className="h-10 rounded-xl font-black text-xs"
-                >
-                  キャンセル
-                </Button>
-                <Button
-                  type="button"
-                  disabled={isDeleting}
-                  onClick={() => void handleDeleteMatch()}
-                  className="h-10 rounded-xl font-black text-xs bg-rose-600 hover:bg-rose-700 text-white border-0"
-                >
-                  {isDeleting ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    "削除する"
-                  )}
-                </Button>
+      {/* 🗑️ 試合全体の削除確認モーダル（A-3 ソリッド規格・Portal z-[9999]） */}
+      {mounted &&
+        showDeleteModal &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/70 animate-in fade-in duration-150"
+            onClick={(e) => {
+              if (e.target === e.currentTarget && !isDeleting) {
+                setShowDeleteModal(false);
+              }
+            }}
+          >
+            <div
+              className="w-full max-w-sm rounded-2xl border border-border bg-card shadow-xl overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-rose-500 px-4 py-3 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                <h3 className="text-sm font-black text-white">
+                  この試合データを削除しますか？
+                </h3>
+              </div>
+              <div className="p-4 space-y-4">
+                <p className="text-xs font-bold text-muted-foreground leading-relaxed">
+                  <strong className="text-foreground">vs {opponent || loadedMatch.opponent}</strong>{" "}
+                  の試合日程・スタメン・スコア・打席記録がすべて削除されます。この操作は取り消せません。
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={isDeleting}
+                    onClick={() => setShowDeleteModal(false)}
+                    className="h-10 rounded-xl font-black text-xs"
+                  >
+                    キャンセル
+                  </Button>
+                  <Button
+                    type="button"
+                    disabled={isDeleting}
+                    onClick={() => void handleDeleteMatch()}
+                    className="h-10 rounded-xl font-black text-xs bg-rose-600 hover:bg-rose-700 text-white border-0"
+                  >
+                    {isDeleting ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      "削除する"
+                    )}
+                  </Button>
+                </div>
               </div>
             </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
     </div>
   );
 }

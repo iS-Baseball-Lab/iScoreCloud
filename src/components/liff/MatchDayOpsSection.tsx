@@ -2,6 +2,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import {
   ClipboardList,
@@ -863,13 +864,30 @@ export function MatchDayOpsEditorModal({
     setNewCustomRoleLabel("");
   }, [isOpen, initialTab, matchId, ops]);
 
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !isSaving) {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, isSaving, onClose]);
+
   const visibleAdultMembers = useMemo(() => {
     if (!showFathersFirstOnly) return adultMembers;
     const filtered = adultMembers.filter((m) => m.isFatherOrStaff);
     return filtered.length > 0 ? filtered : adultMembers;
   }, [adultMembers, showFathersFirstOnly]);
 
-  if (!isOpen) return null;
+  if (!mounted || !isOpen) return null;
 
   const toggleRoleAssignee = (roleKey: string, memberName: string) => {
     setRoleRows((prev) =>
@@ -953,14 +971,22 @@ export function MatchDayOpsEditorModal({
     await onSave(payload);
   };
 
-  return (
+  return createPortal(
     <div
       role="dialog"
       aria-modal="true"
       aria-label="当日のしおり・役割担当・配車設定"
-      className="fixed inset-0 z-50 bg-black/70 flex items-end sm:items-center justify-center p-0 sm:p-4"
+      className="fixed inset-0 z-[9999] bg-slate-950/70 flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-150"
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !isSaving) {
+          onClose();
+        }
+      }}
     >
-      <div className="w-full sm:max-w-lg max-h-[90dvh] rounded-t-2xl sm:rounded-2xl border border-border bg-card shadow-xl overflow-hidden flex flex-col">
+      <div
+        className="w-full sm:max-w-lg max-h-[88dvh] sm:max-h-[90dvh] rounded-t-2xl sm:rounded-2xl border border-border bg-card shadow-xl overflow-hidden flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* A-3 上帯ダークキャップ */}
         <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3 flex items-center justify-between gap-2 shrink-0">
           <div className="min-w-0">
@@ -1455,8 +1481,8 @@ export function MatchDayOpsEditorModal({
           )}
         </div>
 
-        {/* フッター保存バー */}
-        <div className="p-3.5 border-t border-border bg-card grid grid-cols-2 gap-2 shrink-0">
+        {/* フッター保存バー（モバイル下部Safe Area対応） */}
+        <div className="px-4 py-3.5 pb-[max(env(safe-area-inset-bottom),24px)] sm:pb-3.5 border-t border-border bg-card grid grid-cols-2 gap-2 shrink-0">
           <button
             type="button"
             onClick={onClose}
@@ -1482,7 +1508,8 @@ export function MatchDayOpsEditorModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

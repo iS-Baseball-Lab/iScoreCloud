@@ -2,6 +2,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   BookOpen,
   Download,
@@ -92,6 +93,11 @@ export function MatchScorebookSection({
   >(null);
   const [isExportingPng, setIsExportingPng] = useState(false);
   const [mountOffscreenSheet, setMountOffscreenSheet] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const topSvgRef = useRef<SVGSVGElement | null>(null);
   const bottomSvgRef = useRef<SVGSVGElement | null>(null);
@@ -572,161 +578,168 @@ export function MatchScorebookSection({
         )}
       </div>
 
-      {/* ━━━ モーダル1：全画面・高精細ズームビューア（明示的な×ボタンでのみ閉じる・拡大中もマスタップ解説に対応） ━━━ */}
-      {isFullscreenOpen && activeModel && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="スコアブック全画面表示"
-          className="fixed inset-0 z-50 bg-black/95 flex flex-col"
-        >
-          {/* 上部ツールバー */}
-          <div className="px-3 py-2.5 bg-card border-b border-border/60 flex items-center justify-between gap-2 shrink-0">
-            <div className="flex items-center gap-2 min-w-0">
-              <div className="inline-flex items-center gap-1 bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl border border-border/60 min-w-0">
-                {topModel && (
-                  <button
-                    type="button"
-                    onClick={() => setActiveSide("top")}
-                    className={cn(
-                      "px-2.5 py-1 rounded-xl text-[11px] transition-all cursor-pointer",
-                      activeSide === "top"
-                        ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
-                        : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
-                    )}
-                  >
-                    <span className={activeSide === "top" ? "text-primary" : ""}>
-                      先攻
-                    </span>
-                  </button>
-                )}
-                {bottomModel && (
-                  <button
-                    type="button"
-                    onClick={() => setActiveSide("bottom")}
-                    className={cn(
-                      "px-2.5 py-1 rounded-xl text-[11px] transition-all cursor-pointer",
-                      activeSide === "bottom"
-                        ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
-                        : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
-                    )}
-                  >
-                    <span
-                      className={activeSide === "bottom" ? "text-primary" : ""}
+      {/* ━━━ モーダル1：全画面・高精細ズームビューア（Portal z-[9990]・拡大中もマスタップ解説 z-[9999] に対応） ━━━ */}
+      {mounted &&
+        isFullscreenOpen &&
+        activeModel &&
+        createPortal(
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="スコアブック全画面表示"
+            className="fixed inset-0 z-[9990] bg-slate-950 flex flex-col"
+          >
+            {/* 上部ツールバー */}
+            <div className="px-3 py-2.5 bg-card border-b border-border/60 flex items-center justify-between gap-2 shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="inline-flex items-center gap-1 bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl border border-border/60 min-w-0">
+                  {topModel && (
+                    <button
+                      type="button"
+                      onClick={() => setActiveSide("top")}
+                      className={cn(
+                        "px-2.5 py-1 rounded-xl text-[11px] transition-all cursor-pointer",
+                        activeSide === "top"
+                          ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                          : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
+                      )}
                     >
-                      後攻
-                    </span>
-                  </button>
+                      <span className={activeSide === "top" ? "text-primary" : ""}>
+                        先攻
+                      </span>
+                    </button>
+                  )}
+                  {bottomModel && (
+                    <button
+                      type="button"
+                      onClick={() => setActiveSide("bottom")}
+                      className={cn(
+                        "px-2.5 py-1 rounded-xl text-[11px] transition-all cursor-pointer",
+                        activeSide === "bottom"
+                          ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                          : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
+                      )}
+                    >
+                      <span
+                        className={activeSide === "bottom" ? "text-primary" : ""}
+                      >
+                        後攻
+                      </span>
+                    </button>
+                  )}
+                </div>
+
+                {onInspectCell && (
+                  <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-bold text-muted-foreground truncate">
+                    <BookOpen className="w-3.5 h-3.5 text-primary shrink-0" />
+                    <span>マスをタップで記号解説</span>
+                  </span>
                 )}
               </div>
 
-              {onInspectCell && (
-                <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-bold text-muted-foreground truncate">
-                  <BookOpen className="w-3.5 h-3.5 text-primary shrink-0" />
-                  <span>マスをタップで記号解説</span>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setFullscreenZoom((z) =>
+                      Math.max(0.75, +(z - 0.25).toFixed(2))
+                    )
+                  }
+                  aria-label="縮小"
+                  className="w-8 h-8 rounded-lg bg-card border border-border/60 hover:bg-muted text-foreground flex items-center justify-center cursor-pointer active:scale-95"
+                >
+                  <ZoomOut className="w-4 h-4" />
+                </button>
+                <span className="text-[11px] font-mono font-black text-foreground w-11 text-center">
+                  {Math.round(fullscreenZoom * 100)}%
                 </span>
-              )}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setFullscreenZoom((z) =>
+                      Math.min(2.5, +(z + 0.25).toFixed(2))
+                    )
+                  }
+                  aria-label="拡大"
+                  className="w-8 h-8 rounded-lg bg-card border border-border/60 hover:bg-muted text-foreground flex items-center justify-center cursor-pointer active:scale-95"
+                >
+                  <ZoomIn className="w-4 h-4" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsFullscreenOpen(false)}
+                  aria-label="全画面表示を閉じる"
+                  className="ml-1 w-9 h-9 rounded-full bg-muted hover:bg-muted/80 border border-border/60 text-foreground flex items-center justify-center cursor-pointer active:scale-95"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
-            <div className="flex items-center gap-1.5 shrink-0">
-              <button
-                type="button"
-                onClick={() =>
-                  setFullscreenZoom((z) =>
-                    Math.max(0.75, +(z - 0.25).toFixed(2))
-                  )
-                }
-                aria-label="縮小"
-                className="w-8 h-8 rounded-lg bg-card border border-border/60 hover:bg-muted text-foreground flex items-center justify-center cursor-pointer active:scale-95"
+            {/* ズーム＆2軸パン領域 */}
+            <div className="flex-1 overflow-auto p-3 pb-[max(env(safe-area-inset-bottom),20px)]">
+              <div
+                style={{
+                  width: `${Math.round(980 * fullscreenZoom)}px`,
+                }}
+                className="mx-auto"
               >
-                <ZoomOut className="w-4 h-4" />
-              </button>
-              <span className="text-[11px] font-mono font-black text-foreground w-11 text-center">
-                {Math.round(fullscreenZoom * 100)}%
-              </span>
-              <button
-                type="button"
-                onClick={() =>
-                  setFullscreenZoom((z) =>
-                    Math.min(2.5, +(z + 0.25).toFixed(2))
-                  )
-                }
-                aria-label="拡大"
-                className="w-8 h-8 rounded-lg bg-card border border-border/60 hover:bg-muted text-foreground flex items-center justify-center cursor-pointer active:scale-95"
-              >
-                <ZoomIn className="w-4 h-4" />
-              </button>
+                <DigitalScorebookSheet
+                  model={activeModel}
+                  matchMeta={matchMeta}
+                  rules={effectiveRules}
+                  onCellClick={
+                    onInspectCell
+                      ? activeSide === "top"
+                        ? handleTopCellClick
+                        : handleBottomCellClick
+                      : undefined
+                  }
+                  className="w-full h-auto rounded-lg shadow-2xl"
+                />
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
 
+      {/* ━━━ モーダル2：生成PNG画像の長押し保存プレビュー（LINEアプリ内ブラウザ用） ━━━ */}
+      {mounted &&
+        exportedPreviewDataUrl &&
+        createPortal(
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="生成スコアブック画像"
+            className="fixed inset-0 z-[9995] bg-slate-950 flex flex-col p-3 pb-[max(env(safe-area-inset-bottom),20px)]"
+          >
+            <div className="flex items-center justify-between pb-2.5 text-white shrink-0">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <ImageIcon className="w-4 h-4 text-primary shrink-0" />
+                <span className="text-xs font-black truncate">
+                  画像を長押しして「写真に保存」できます
+                </span>
+              </div>
               <button
                 type="button"
-                onClick={() => setIsFullscreenOpen(false)}
-                aria-label="全画面表示を閉じる"
-                className="ml-1 w-9 h-9 rounded-full bg-muted hover:bg-muted/80 border border-border/60 text-foreground flex items-center justify-center cursor-pointer active:scale-95"
+                onClick={() => setExportedPreviewDataUrl(null)}
+                aria-label="閉じる"
+                className="p-2 rounded-full bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
-          </div>
-
-          {/* ズーム＆2軸パン領域 */}
-          <div className="flex-1 overflow-auto p-3">
-            <div
-              style={{
-                width: `${Math.round(980 * fullscreenZoom)}px`,
-              }}
-              className="mx-auto"
-            >
-              <DigitalScorebookSheet
-                model={activeModel}
-                matchMeta={matchMeta}
-                rules={effectiveRules}
-                onCellClick={
-                  onInspectCell
-                    ? activeSide === "top"
-                      ? handleTopCellClick
-                      : handleBottomCellClick
-                    : undefined
-                }
-                className="w-full h-auto rounded-lg shadow-2xl"
+            <div className="flex-1 overflow-auto flex items-start justify-center">
+              <img
+                src={exportedPreviewDataUrl}
+                alt="デジタルスコアブック清書画像"
+                className="max-w-full h-auto rounded-xl border border-slate-700 shadow-xl"
               />
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* ━━━ モーダル2：生成PNG画像の長押し保存プレビュー（LINEアプリ内ブラウザ用） ━━━ */}
-      {exportedPreviewDataUrl && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="生成スコアブック画像"
-          className="fixed inset-0 z-50 bg-black/95 flex flex-col p-3"
-        >
-          <div className="flex items-center justify-between pb-2.5 text-white shrink-0">
-            <div className="flex items-center gap-1.5 min-w-0">
-              <ImageIcon className="w-4 h-4 text-primary shrink-0" />
-              <span className="text-xs font-black truncate">
-                画像を長押しして「写真に保存」できます
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={() => setExportedPreviewDataUrl(null)}
-              aria-label="閉じる"
-              className="p-2 rounded-full bg-white/15 hover:bg-white/25 text-white cursor-pointer"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-          <div className="flex-1 overflow-auto flex items-start justify-center">
-            <img
-              src={exportedPreviewDataUrl}
-              alt="デジタルスコアブック清書画像"
-              className="max-w-full h-auto rounded-xl border border-white/20 shadow-xl"
-            />
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
     </section>
   );
 }

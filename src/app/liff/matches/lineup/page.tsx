@@ -2,6 +2,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo, useRef, Suspense } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { LiffHeader } from "@/components/liff/LiffHeader";
@@ -280,6 +281,12 @@ function LiffLineupContent() {
   }, [urlMatchId]);
 
   // 🛡️ オーバーレイの自動リセット（試合切り替え・チーム切り替え時）
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   useEffect(() => {
     setActiveSelectionIndex(null);
     setTempSelectedPlayer(null);
@@ -1605,79 +1612,85 @@ function LiffLineupContent() {
       </div>
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          📁 テンプレート保存モーダル (z-[60] でボトムナビより前面)
+          📁 テンプレート保存モーダル (Portal z-[9999] でボトムナビより前面)
       ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-      {isTemplateModalOpen && (
-        <div
-          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/60 animate-in fade-in duration-150"
-          onClick={() => setIsTemplateModalOpen(false)}
-        >
+      {mounted &&
+        isTemplateModalOpen &&
+        createPortal(
           <div
-            className="bg-card w-full max-w-sm rounded-2xl border border-border shadow-xs overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/60 animate-in fade-in duration-150"
+            onClick={() => setIsTemplateModalOpen(false)}
           >
-            <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3 flex items-center justify-between gap-2">
-              <div className="min-w-0">
-                <h3 className="text-sm font-black text-white">テンプレート保存</h3>
-                <p className="text-[11px] font-bold text-slate-300 mt-0.5">
-                  現在のスタメンを基本オーダーとして保存します
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsTemplateModalOpen(false)}
-                className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-300 hover:text-white hover:bg-slate-800 transition-colors shrink-0"
-                aria-label="閉じる"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="p-5 space-y-4 bg-card">
-              <Input
-                placeholder="例：Aチーム 基本オーダー"
-                className="h-12 rounded-2xl bg-muted/50 border-border font-bold text-sm"
-                value={templateName}
-                onChange={(e) => setTemplateName(e.target.value)}
-              />
-
-              <div className="flex gap-2.5 pt-1">
-                <Button
+            <div
+              className="bg-card w-full max-w-sm rounded-2xl border border-border shadow-xs overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3 flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <h3 className="text-sm font-black text-white">テンプレート保存</h3>
+                  <p className="text-[11px] font-bold text-slate-300 mt-0.5">
+                    現在のスタメンを基本オーダーとして保存します
+                  </p>
+                </div>
+                <button
                   type="button"
-                  variant="outline"
                   onClick={() => setIsTemplateModalOpen(false)}
-                  className="flex-1 h-12 rounded-2xl border-border font-black"
+                  className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-300 hover:text-white hover:bg-slate-800 transition-colors shrink-0"
+                  aria-label="閉じる"
                 >
-                  キャンセル
-                </Button>
-                <Button
-                  type="button"
-                  onClick={handleSaveTemplate}
-                  className="flex-1 h-12 rounded-2xl font-black shadow-xs"
-                >
-                  保存する
-                </Button>
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="p-5 space-y-4 bg-card">
+                <Input
+                  placeholder="例：Aチーム 基本オーダー"
+                  className="h-12 rounded-2xl bg-muted/50 border-border font-bold text-sm"
+                  value={templateName}
+                  onChange={(e) => setTemplateName(e.target.value)}
+                />
+
+                <div className="flex gap-2.5 pt-1">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setIsTemplateModalOpen(false)}
+                    className="flex-1 h-12 rounded-2xl border-border font-black"
+                  >
+                    キャンセル
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={handleSaveTemplate}
+                    className="flex-1 h-12 rounded-2xl font-black shadow-xs"
+                  >
+                    保存する
+                  </Button>
+                </div>
               </div>
             </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          ⚾ 選手・守備位置 2ステップ選択モーダル（Web版完全流用, z-[60]）
+          ⚾ 選手・守備位置 2ステップ選択モーダル（Portal z-[9999]）
       ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-      {activeSelectionIndex !== null && myLineup[activeSelectionIndex] && (
-        <div
-          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/60 animate-in fade-in duration-150"
-          onClick={() => {
-            setActiveSelectionIndex(null);
-            setTempSelectedPlayer(null);
-          }}
-        >
+      {mounted &&
+        activeSelectionIndex !== null &&
+        myLineup[activeSelectionIndex] &&
+        createPortal(
           <div
-            className="bg-card w-full max-w-md rounded-2xl border border-border shadow-xs overflow-hidden flex flex-col max-h-[82vh] animate-in zoom-in-95 duration-150"
-            onClick={(e) => e.stopPropagation()}
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/60 animate-in fade-in duration-150"
+            onClick={() => {
+              setActiveSelectionIndex(null);
+              setTempSelectedPlayer(null);
+            }}
           >
+            <div
+              className="bg-card w-full max-w-md rounded-2xl border border-border shadow-xs overflow-hidden flex flex-col max-h-[85dvh] animate-in zoom-in-95 duration-150"
+              onClick={(e) => e.stopPropagation()}
+            >
             {/* モーダルヘッダー (A-3 ダークソリッドキャップ) */}
             <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3 flex items-center justify-between gap-2 shrink-0">
               <div className="min-w-0">
@@ -1891,23 +1904,26 @@ function LiffLineupContent() {
                 </div>
               )}
             </div>
-          </div>
-        </div>
-      )}
+            </div>
+          </div>,
+          document.body
+        )}
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          ➕ 新規試合予定作成モーダル (z-[60])
+          ➕ 新規試合予定作成モーダル (Portal z-[9999])
       ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-      {isCreateMatchModalOpen && (
-        <div
-          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/60 animate-in fade-in duration-150"
-          onClick={() => setIsCreateMatchModalOpen(false)}
-        >
-          <form
-            onSubmit={handleCreateMatch}
-            onClick={(e) => e.stopPropagation()}
-            className="bg-card w-full max-w-md rounded-2xl border border-border shadow-xs overflow-hidden flex flex-col max-h-[85vh]"
+      {mounted &&
+        isCreateMatchModalOpen &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/60 animate-in fade-in duration-150"
+            onClick={() => setIsCreateMatchModalOpen(false)}
           >
+            <form
+              onSubmit={handleCreateMatch}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-card w-full max-w-md rounded-2xl border border-border shadow-xs overflow-hidden flex flex-col max-h-[88dvh]"
+            >
             <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3 flex items-center justify-between gap-2 shrink-0">
               <div className="min-w-0">
                 <h3 className="text-sm font-black text-white">新しい試合予定を作成</h3>
@@ -2058,7 +2074,8 @@ function LiffLineupContent() {
               </div>
             </div>
           </form>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

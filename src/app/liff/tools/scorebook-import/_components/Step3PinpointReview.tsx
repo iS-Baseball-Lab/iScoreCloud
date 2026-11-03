@@ -1998,7 +1998,7 @@ export function Step3PinpointReview({
               onClick={() => setEditingAtBatId(null)}
             />
 
-            <div className="relative z-10 w-full max-w-lg max-h-[92dvh] rounded-t-2xl sm:rounded-2xl border border-border bg-card shadow-xl flex flex-col overflow-hidden">
+            <div className="relative z-10 w-full max-w-lg max-h-[88dvh] sm:max-h-[92dvh] rounded-t-2xl sm:rounded-2xl border border-border bg-card shadow-xl flex flex-col overflow-hidden">
               {/* モーダルヘッダー（A-3 Dark Solid Header Cap ＋ 前後打席送り付き） */}
               <div className="px-4 py-3 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary flex items-center justify-between gap-2 shrink-0">
                 <div className="flex items-center gap-1.5">
@@ -4267,7 +4267,7 @@ export function Step3PinpointReview({
                 />
 
                 {/* 打席削除 */}
-                <div className="flex justify-between items-center pt-1">
+                <div className="flex justify-between items-center pt-1 pb-[max(env(safe-area-inset-bottom),20px)] sm:pb-1">
                   <button
                     type="button"
                     onClick={() => handleDeleteAtBat(editingAtBat.id)}

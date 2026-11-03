@@ -405,7 +405,7 @@ export function ScorebookCameraModal({
       role="dialog"
       aria-modal="true"
       aria-label={title}
-      className="fixed inset-0 z-50 bg-slate-950 text-white flex flex-col select-none"
+      className="fixed inset-0 z-[9999] bg-slate-950 text-white flex flex-col select-none"
     >
       {/* 上部ソリッドヘッダー（常に即タップ可能でデッドロックゼロ） */}
       <div className="px-4 py-3 bg-slate-900 border-b border-slate-800 flex items-center justify-between gap-2 shrink-0">
@@ -516,7 +516,7 @@ export function ScorebookCameraModal({
 
       {/* 下部シャッター操作バー */}
       {status !== "error" && (
-        <div className="px-4 py-4 pb-7 bg-slate-900 border-t border-slate-800 flex items-center justify-between gap-3 shrink-0">
+        <div className="px-4 py-4 pb-[max(env(safe-area-inset-bottom),28px)] bg-slate-900 border-t border-slate-800 flex items-center justify-between gap-3 shrink-0">
           {status !== "capturing" ? (
             <div className="relative overflow-hidden py-2.5 px-3 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white text-[11px] font-black flex items-center gap-1.5">
               <ImagePlus className="w-4 h-4 text-primary shrink-0 pointer-events-none" />

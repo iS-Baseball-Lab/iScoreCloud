@@ -2,6 +2,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
@@ -407,6 +408,11 @@ export default function AttendanceMatrixBoardPage() {
     staff: [],
   });
   const [isSavingOrder, setIsSavingOrder] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // グループ別ステータス設定状態
   const [groupStatusConfig, setGroupStatusConfig] = useState<GroupStatusConfigMap>(DEFAULT_GROUP_STATUS_CONFIG);
@@ -1970,11 +1976,14 @@ export default function AttendanceMatrixBoardPage() {
         {/* 🌟 最下部マージン（ボトムナビに被らず快適にタップできる適度な余白） */}
         <div className="h-8 w-full shrink-0 pointer-events-none select-none" aria-hidden="true" />
 
+        {mounted &&
+          createPortal(
+            <>
         {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
             ✏️ セルタップ時の出欠変更モーダル (ボトムナビと重ならない中央フロート配置)
             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
         {editingCell && (
-          <div className="fixed inset-0 z-[70] flex items-center justify-center p-3.5 bg-slate-950/60 animate-in fade-in duration-150">
+          <div className="fixed inset-0 z-[9990] flex items-center justify-center p-3.5 bg-slate-950/60 animate-in fade-in duration-150">
             <div
               className="absolute inset-0"
               onClick={() => !isSavingCell && setEditingCell(null)}
@@ -2101,7 +2110,7 @@ export default function AttendanceMatrixBoardPage() {
             💬 コメント・連絡事項閲覧モーダル (閲覧専用・権限なし時用)
             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
         {viewingComment && (
-          <div className="fixed inset-0 z-[70] flex items-center justify-center p-3.5 bg-slate-950/60 animate-in fade-in duration-200">
+          <div className="fixed inset-0 z-[9990] flex items-center justify-center p-3.5 bg-slate-950/60 animate-in fade-in duration-200">
             <div
               className="absolute inset-0"
               onClick={() => setViewingComment(null)}
@@ -2194,7 +2203,7 @@ export default function AttendanceMatrixBoardPage() {
             📝 日別メモ・備考入力モーダル
             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
         {editingDayNote && (
-          <div className="fixed inset-0 z-[70] flex items-center justify-center p-3.5 bg-slate-950/60 animate-in fade-in duration-200">
+          <div className="fixed inset-0 z-[9990] flex items-center justify-center p-3.5 bg-slate-950/60 animate-in fade-in duration-200">
             <div
               className="absolute inset-0"
               onClick={() => !isSavingDayNote && setEditingDayNote(null)}
@@ -2296,7 +2305,7 @@ export default function AttendanceMatrixBoardPage() {
             ⚙️ メンバー並び順設定モーダル
             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
         {isOrderModalOpen && (
-          <div className="fixed inset-0 z-[70] flex items-center justify-center p-3 bg-slate-950/60 animate-in fade-in duration-200">
+          <div className="fixed inset-0 z-[9990] flex items-center justify-center p-3 bg-slate-950/60 animate-in fade-in duration-200">
             <div className="w-full max-w-md rounded-2xl border border-border bg-card shadow-xl overflow-hidden flex flex-col max-h-[88vh]">
               <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-teal-500 px-4 py-3 flex items-center justify-between gap-2 shrink-0">
                 <div className="flex items-center gap-2 min-w-0">
@@ -2438,7 +2447,7 @@ export default function AttendanceMatrixBoardPage() {
             🏷️ グループ別ステータス設定モーダル
             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
         {isStatusConfigModalOpen && (
-          <div className="fixed inset-0 z-[70] flex items-center justify-center p-3 bg-slate-950/60 animate-in fade-in duration-200">
+          <div className="fixed inset-0 z-[9990] flex items-center justify-center p-3 bg-slate-950/60 animate-in fade-in duration-200">
             <div className="w-full max-w-md rounded-2xl border border-border bg-card shadow-xl overflow-hidden flex flex-col max-h-[85vh]">
               {/* ヘッダー */}
               <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-teal-500 px-4 py-3 flex items-start justify-between gap-2 shrink-0">
@@ -2569,7 +2578,7 @@ export default function AttendanceMatrixBoardPage() {
             🏷️ メンバー班・サブラベル一括設定モーダル
             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
         {isSubLabelsModalOpen && (
-          <div className="fixed inset-0 z-[70] flex items-center justify-center p-3 bg-slate-950/60 animate-in fade-in duration-200">
+          <div className="fixed inset-0 z-[9990] flex items-center justify-center p-3 bg-slate-950/60 animate-in fade-in duration-200">
             <div className="w-full max-w-md rounded-2xl border border-border bg-card shadow-xl overflow-hidden flex flex-col max-h-[88vh]">
               {/* ヘッダー */}
               <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-teal-500 px-4 py-3 flex items-start justify-between gap-2 shrink-0">
@@ -2786,7 +2795,7 @@ export default function AttendanceMatrixBoardPage() {
             🏷️ 単一メンバーのクイック表示ラベル設定ポップアップ
             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
         {editingSingleSubLabel && (
-          <div className="fixed inset-0 z-[75] flex items-center justify-center p-4 bg-slate-950/60 animate-in fade-in duration-150">
+          <div className="fixed inset-0 z-[9995] flex items-center justify-center p-4 bg-slate-950/60 animate-in fade-in duration-150">
             <div className="w-full max-w-xs rounded-2xl border border-border bg-card shadow-xl overflow-hidden">
               {/* ヘッダー */}
               <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-teal-500 px-4 py-3 flex items-start justify-between gap-2">
@@ -2881,6 +2890,9 @@ export default function AttendanceMatrixBoardPage() {
             </div>
           </div>
         )}
+            </>,
+            document.body
+          )}
       </div>
     </div>
   );

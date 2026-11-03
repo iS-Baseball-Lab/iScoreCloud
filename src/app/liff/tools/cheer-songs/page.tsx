@@ -245,6 +245,8 @@ export default function LiffCheerSongsPage() {
 
         {/* 他のツールへの回遊リンク */}
         <LiffToolOtherLinks />
+
+        <div className="h-8 w-full shrink-0 pointer-events-none select-none" aria-hidden="true" />
       </div>
     </div>
   );

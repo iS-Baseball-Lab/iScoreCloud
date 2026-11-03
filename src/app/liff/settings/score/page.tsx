@@ -2,6 +2,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import {
   BookOpen,
@@ -135,6 +136,12 @@ export default function LiffScoreSettingsPage() {
       setIsLoadingTeam(false);
     }
   }, [currentTeam?.id, currentTeam?.name]);
+
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     void fetchTeamLegendContext();
@@ -992,39 +999,43 @@ export default function LiffScoreSettingsPage() {
         <div className="h-8 w-full shrink-0" aria-hidden="true" />
       </div>
 
-      {/* 全画面拡大プレビューモーダル */}
-      {isZoomOpen && previewImageUrl && (
-        <div
-          className="fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-3"
-          onClick={() => setIsZoomOpen(false)}
-        >
+      {/* 全画面拡大プレビューモーダル（Portal z-[9999]） */}
+      {mounted &&
+        isZoomOpen &&
+        previewImageUrl &&
+        createPortal(
           <div
-            className="w-full max-w-3xl max-h-[90vh] rounded-2xl border border-border bg-card shadow-xs overflow-hidden flex flex-col"
-            onClick={(e) => e.stopPropagation()}
+            className="fixed inset-0 z-[9999] bg-slate-950/70 flex items-center justify-center p-3 pb-[max(env(safe-area-inset-bottom),16px)]"
+            onClick={() => setIsZoomOpen(false)}
           >
-            <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3 flex items-center justify-between gap-2 shrink-0">
-              <span className="text-xs sm:text-sm font-black text-white truncate">
-                登録済みスコア記号早見表プレビュー
-              </span>
-              <button
-                type="button"
-                onClick={() => setIsZoomOpen(false)}
-                className="p-1.5 rounded-full text-slate-300 hover:text-white hover:bg-slate-800 cursor-pointer transition-colors"
-                aria-label="閉じる"
-              >
-                <X className="w-5 h-5" />
-              </button>
+            <div
+              className="w-full max-w-3xl max-h-[88dvh] rounded-2xl border border-border bg-card shadow-xs overflow-hidden flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3 flex items-center justify-between gap-2 shrink-0">
+                <span className="text-xs sm:text-sm font-black text-white truncate">
+                  登録済みスコア記号早見表プレビュー
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setIsZoomOpen(false)}
+                  className="p-1.5 rounded-full text-slate-300 hover:text-white hover:bg-slate-800 cursor-pointer transition-colors"
+                  aria-label="閉じる"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="flex-1 overflow-auto p-3 bg-slate-950 flex items-center justify-center">
+                <img
+                  src={previewImageUrl}
+                  alt="スコア記号早見表の拡大表示"
+                  className="max-w-full max-h-[75dvh] object-contain rounded-xl"
+                />
+              </div>
             </div>
-            <div className="flex-1 overflow-auto p-3 bg-slate-950 flex items-center justify-center">
-              <img
-                src={previewImageUrl}
-                alt="スコア記号早見表の拡大表示"
-                className="max-w-full max-h-[75vh] object-contain rounded-xl"
-              />
-            </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
     </div>
   );
 }
