@@ -127,7 +127,7 @@ const ATTENDANCE_BUTTONS: Array<{
   { id: "help", mark: "○", label: "ヘルプ", activeClass: "bg-blue-600 text-white shadow-xs" },
   { id: "setup", mark: "▲", label: "設営撤収", activeClass: "bg-amber-500 text-white shadow-xs" },
   { id: "game", mark: "△", label: "試合のみ", activeClass: "bg-emerald-600 text-white shadow-xs" },
-  { id: "absent", mark: "×", label: "欠席", activeClass: "bg-rose-600 text-white shadow-xs" },
+  { id: "absent", mark: "×", label: "欠席", activeClass: "bg-slate-600 dark:bg-slate-500 text-white shadow-xs" },
   { id: "pending", mark: "？", label: "未定", activeClass: "bg-muted text-foreground shadow-xs" },
 ];
 
@@ -180,8 +180,8 @@ const getAttendanceBadgeInfo = (st: string | undefined) => {
       return {
         mark: "×",
         label: "欠席",
-        badgeClass: "bg-rose-600 text-white font-bold shadow-xs",
-        bgLight: "bg-rose-500/12 text-rose-700 dark:text-rose-300 border-rose-500/25",
+        badgeClass: "bg-slate-600 dark:bg-slate-500 text-white font-black shadow-xs",
+        bgLight: "bg-slate-500/12 text-slate-700 dark:text-slate-300 border-slate-500/25",
       };
     default:
       return {
@@ -1749,7 +1749,7 @@ export default function LiffSchedulePage() {
                           )}
                           {ev.attendCount.absent > 0 && (
                             <div
-                              className="h-full rounded-xs bg-rose-600"
+                              className="h-full rounded-xs bg-slate-500"
                               style={{ width: `${(ev.attendCount.absent / totalResponses) * 100}%` }}
                             />
                           )}

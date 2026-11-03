@@ -963,7 +963,7 @@ export function HubHeroSection({
                                   : pStatus === "late"
                                   ? "bg-amber-500/12 text-amber-700 dark:text-amber-300 border-amber-500/25"
                                   : pStatus === "absent"
-                                  ? "bg-rose-500/12 text-rose-700 dark:text-rose-300 border-rose-500/25"
+                                  ? "bg-slate-500/15 text-slate-700 dark:text-slate-300 border-slate-500/30"
                                   : "bg-muted/50 text-muted-foreground border-border/60"
                               }`}>
                                 {pStatus === "present" ? "○ 出席" : pStatus === "late" ? "△ 調整" : pStatus === "absent" ? "× 欠席" : "？ 未定"}
@@ -997,7 +997,7 @@ export function HubHeroSection({
                                     <span className="text-[11px] font-bold">
                                       {childStatus === "present" && <span className="px-2 py-0.5 rounded-full bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 font-black">○ 参加</span>}
                                       {childStatus === "late" && <span className="px-2 py-0.5 rounded-full bg-amber-500/12 text-amber-700 dark:text-amber-300 border border-amber-500/25 font-black">△ 調整</span>}
-                                      {childStatus === "absent" && <span className="px-2 py-0.5 rounded-full bg-rose-500/12 text-rose-700 dark:text-rose-300 border border-rose-500/25 font-black">× 欠席</span>}
+                                      {childStatus === "absent" && <span className="px-2 py-0.5 rounded-full bg-slate-500/15 text-slate-700 dark:text-slate-300 border-slate-500/30 font-black">× 欠席</span>}
                                       {childStatus === "pending" && <span className="px-2 py-0.5 rounded-full bg-muted/50 text-muted-foreground border border-border/60 font-black">？ 未定</span>}
                                     </span>
                                   </div>
@@ -1034,7 +1034,7 @@ export function HubHeroSection({
                                       onClick={() => setChildAttendance(ev.id, child.id, "absent")}
                                       className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black border transition-all active:scale-95 cursor-pointer ${
                                         childStatus === "absent"
-                                          ? "bg-rose-600 text-white border-rose-600 shadow-xs"
+                                          ? "bg-slate-600 dark:bg-slate-500 text-white border-slate-600 dark:border-slate-500 shadow-xs"
                                           : "bg-card hover:bg-muted text-muted-foreground border-border/60"
                                       }`}
                                     >
@@ -1047,7 +1047,7 @@ export function HubHeroSection({
                                       onClick={() => setChildAttendance(ev.id, child.id, "pending")}
                                       className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black border transition-all active:scale-95 cursor-pointer ${
                                         childStatus === "pending"
-                                          ? "bg-slate-600 text-white border-slate-600 shadow-xs"
+                                          ? "bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-600 shadow-2xs"
                                           : "bg-card hover:bg-muted text-muted-foreground border-border/60"
                                       }`}
                                     >
@@ -1071,7 +1071,7 @@ export function HubHeroSection({
                                 <span className="text-[11px] font-bold">
                                   {pStatus === "present" && <span className="px-2 py-0.5 rounded-full bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 font-black">○ {userRole === "parent" ? "参加・当番可" : "出席"}</span>}
                                   {pStatus === "late" && <span className="px-2 py-0.5 rounded-full bg-amber-500/12 text-amber-700 dark:text-amber-300 border border-amber-500/25 font-black">△ 調整</span>}
-                                  {pStatus === "absent" && <span className="px-2 py-0.5 rounded-full bg-rose-500/12 text-rose-700 dark:text-rose-300 border border-rose-500/25 font-black">× 欠席</span>}
+                                  {pStatus === "absent" && <span className="px-2 py-0.5 rounded-full bg-slate-500/15 text-slate-700 dark:text-slate-300 border-slate-500/30 font-black">× 欠席</span>}
                                   {pStatus === "pending" && <span className="px-2 py-0.5 rounded-full bg-muted/50 text-muted-foreground border border-border/60 font-black">？ 未定</span>}
                                 </span>
                               </div>
@@ -1112,7 +1112,7 @@ export function HubHeroSection({
                                   onClick={() => setEventAttendance(ev.id, "absent")}
                                   className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black border transition-all active:scale-95 cursor-pointer ${
                                     pStatus === "absent"
-                                      ? "bg-rose-600 text-white border-rose-600 shadow-xs"
+                                      ? "bg-slate-600 dark:bg-slate-500 text-white border-slate-600 dark:border-slate-500 shadow-xs"
                                       : "bg-card hover:bg-muted text-muted-foreground border-border/60"
                                   }`}
                                 >
@@ -1126,7 +1126,7 @@ export function HubHeroSection({
                                   onClick={() => setEventAttendance(ev.id, "pending")}
                                   className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black border transition-all active:scale-95 cursor-pointer ${
                                     pStatus === "pending"
-                                      ? "bg-slate-600 text-white border-slate-600 shadow-xs"
+                                      ? "bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-600 shadow-2xs"
                                       : "bg-card hover:bg-muted text-muted-foreground border-border/60"
                                   }`}
                                 >

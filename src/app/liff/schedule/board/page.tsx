@@ -99,7 +99,7 @@ const ATTENDANCE_STATUSES: Record<AttendanceMarkType, AttendanceStatusConfig> = 
     mark: "×",
     label: "欠席",
     shortLabel: "欠席",
-    badgeClass: "bg-rose-600 text-white font-bold shadow-xs",
+    badgeClass: "bg-slate-600 dark:bg-slate-500 text-white font-black shadow-xs",
     buttonClass: "border-border bg-card text-foreground hover:bg-muted active:scale-95",
     description: "終日不参加",
   },
@@ -108,7 +108,7 @@ const ATTENDANCE_STATUSES: Record<AttendanceMarkType, AttendanceStatusConfig> = 
     mark: "－",
     label: "未定・未回答",
     shortLabel: "未回答",
-    badgeClass: "bg-muted text-muted-foreground font-medium border border-border",
+    badgeClass: "bg-slate-100 dark:bg-slate-800/70 text-slate-400 dark:text-slate-500 font-medium border border-border",
     buttonClass: "border-border bg-card text-foreground hover:bg-muted active:scale-95",
     description: "調整中または回答前",
   },
@@ -130,34 +130,56 @@ interface StatusSettingItem {
 
 type GroupStatusConfigMap = Record<SortGroupKey, StatusSettingItem[]>;
 
+const STATUS_BG_CLASS_BY_ID: Record<AttendanceMarkType, string> = {
+  duty: "bg-red-500",
+  help: "bg-blue-600",
+  setup: "bg-amber-500",
+  game: "bg-emerald-600",
+  absent: "bg-slate-600 dark:bg-slate-500",
+  pending: "bg-slate-100 dark:bg-slate-800/70",
+};
+
+function normalizeGroupStatusColors(config: GroupStatusConfigMap): GroupStatusConfigMap {
+  const keys: SortGroupKey[] = ["player", "mother", "father", "staff"];
+  const normalized = { ...config };
+  for (const key of keys) {
+    const items = normalized[key] || DEFAULT_GROUP_STATUS_CONFIG[key];
+    normalized[key] = items.map((item) => ({
+      ...item,
+      bgClass: STATUS_BG_CLASS_BY_ID[item.id] || item.bgClass,
+    }));
+  }
+  return normalized;
+}
+
 const DEFAULT_GROUP_STATUS_CONFIG: GroupStatusConfigMap = {
   player: [
     { id: "duty", mark: "◎", label: "出席", enabled: true, bgClass: "bg-red-500" },
     { id: "help", mark: "○", label: "ヘルプ", enabled: false, bgClass: "bg-blue-600" },
     { id: "setup", mark: "▲", label: "設営撤収", enabled: false, bgClass: "bg-amber-500" },
     { id: "game", mark: "△", label: "試合のみ", enabled: true, bgClass: "bg-emerald-600" },
-    { id: "absent", mark: "×", label: "欠席", enabled: true, bgClass: "bg-rose-600" },
+    { id: "absent", mark: "×", label: "欠席", enabled: true, bgClass: "bg-slate-600 dark:bg-slate-500" },
   ],
   mother: [
     { id: "duty", mark: "◎", label: "当番", enabled: true, bgClass: "bg-red-500" },
     { id: "help", mark: "○", label: "ヘルプ", enabled: true, bgClass: "bg-blue-600" },
     { id: "setup", mark: "▲", label: "設営撤収", enabled: true, bgClass: "bg-amber-500" },
     { id: "game", mark: "△", label: "試合のみ", enabled: true, bgClass: "bg-emerald-600" },
-    { id: "absent", mark: "×", label: "欠席", enabled: true, bgClass: "bg-rose-600" },
+    { id: "absent", mark: "×", label: "欠席", enabled: true, bgClass: "bg-slate-600 dark:bg-slate-500" },
   ],
   father: [
     { id: "duty", mark: "◎", label: "当番", enabled: true, bgClass: "bg-red-500" },
     { id: "help", mark: "○", label: "ヘルプ", enabled: true, bgClass: "bg-blue-600" },
     { id: "setup", mark: "▲", label: "設営撤収", enabled: true, bgClass: "bg-amber-500" },
     { id: "game", mark: "△", label: "試合のみ", enabled: true, bgClass: "bg-emerald-600" },
-    { id: "absent", mark: "×", label: "欠席", enabled: true, bgClass: "bg-rose-600" },
+    { id: "absent", mark: "×", label: "欠席", enabled: true, bgClass: "bg-slate-600 dark:bg-slate-500" },
   ],
   staff: [
     { id: "duty", mark: "◎", label: "当番", enabled: true, bgClass: "bg-red-500" },
     { id: "help", mark: "○", label: "指導参加", enabled: true, bgClass: "bg-blue-600" },
     { id: "setup", mark: "▲", label: "設営撤収", enabled: true, bgClass: "bg-amber-500" },
     { id: "game", mark: "△", label: "試合のみ", enabled: true, bgClass: "bg-emerald-600" },
-    { id: "absent", mark: "×", label: "欠席", enabled: true, bgClass: "bg-rose-600" },
+    { id: "absent", mark: "×", label: "欠席", enabled: true, bgClass: "bg-slate-600 dark:bg-slate-500" },
   ],
 };
 
@@ -529,7 +551,7 @@ export default function AttendanceMatrixBoardPage() {
       if (data.attendanceStatusConfig) {
         effectiveStatusConfig = { ...effectiveStatusConfig, ...data.attendanceStatusConfig };
       }
-      setGroupStatusConfig(effectiveStatusConfig);
+      setGroupStatusConfig(normalizeGroupStatusColors(effectiveStatusConfig));
 
       // メンバー並び順の復元（LocalStorage ＆ サーバー設定）
       let effectiveOrder: MemberSortOrderMap = {};
@@ -1030,19 +1052,19 @@ export default function AttendanceMatrixBoardPage() {
           id === "help" ? "bg-[#dbeafe] dark:bg-[#172554] text-blue-700 dark:text-blue-300" :
           id === "setup" ? "bg-[#fef3c7] dark:bg-[#451a03] text-amber-700 dark:text-amber-300" :
           id === "game" ? "bg-[#d1fae5] dark:bg-[#064e3b] text-emerald-700 dark:text-emerald-300" :
-          "bg-rose-500/12 text-rose-700 dark:text-rose-300",
+          "bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200",
         cellTextClass:
           id === "duty" ? "text-red-700 dark:text-red-300 bg-red-50/90 dark:bg-red-950/40 font-black" :
           id === "help" ? "text-blue-700 dark:text-blue-300 bg-blue-50/90 dark:bg-blue-950/40 font-black" :
           id === "setup" ? "text-amber-700 dark:text-amber-300 bg-amber-50/90 dark:bg-amber-950/40 font-black" :
           id === "game" ? "text-emerald-700 dark:text-emerald-300 bg-emerald-50/90 dark:bg-emerald-950/40 font-black" :
-          "text-rose-700 dark:text-rose-300 bg-rose-50/90 dark:bg-rose-950/40 font-black",
+          "text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800/80 font-black",
         cellMutedClass:
           id === "duty" ? "text-red-400/40 dark:text-red-400/25 bg-red-50/40 dark:bg-red-950/20 font-medium" :
           id === "help" ? "text-blue-400/40 dark:text-blue-400/25 bg-blue-50/40 dark:bg-blue-950/20 font-medium" :
           id === "setup" ? "text-amber-400/40 dark:text-amber-400/25 bg-amber-50/40 dark:bg-amber-950/20 font-medium" :
           id === "game" ? "text-emerald-400/40 dark:text-emerald-400/25 bg-emerald-50/40 dark:bg-emerald-950/20 font-medium" :
-          "text-rose-400/40 dark:text-rose-400/25 bg-rose-50/40 dark:bg-rose-950/20 font-medium",
+          "text-slate-400/50 dark:text-slate-500/40 bg-slate-50 dark:bg-slate-900/40 font-medium",
       };
     });
   }, [selectedGroupTab, groupStatusConfig]);
@@ -1551,7 +1573,7 @@ export default function AttendanceMatrixBoardPage() {
                   key={item.id}
                   className="flex-1 min-w-[50px] flex items-center justify-center gap-1 font-bold py-1 px-0.5 rounded-lg bg-muted/35 border border-border text-center"
                 >
-                  <span className={`w-3.5 h-3.5 rounded-full ${item.id === "absent" ? "bg-rose-600" : item.bgClass} text-white flex items-center justify-center text-[9px] font-black shrink-0`}>
+                  <span className={`w-3.5 h-3.5 rounded-full ${STATUS_BG_CLASS_BY_ID[item.id] || item.bgClass} text-white flex items-center justify-center text-[9px] font-black shrink-0`}>
                     {item.mark}
                   </span>
                   <span className="truncate text-foreground text-[9px]">{item.label}</span>
@@ -2480,7 +2502,7 @@ export default function AttendanceMatrixBoardPage() {
                         }`}
                       >
                         <div className="flex items-center gap-2 flex-1 min-w-0 mr-2">
-                          <span className={`w-6 h-6 rounded-lg ${item.id === "absent" ? "bg-rose-600" : item.bgClass} text-white font-black text-xs flex items-center justify-center shrink-0 shadow-xs`}>
+                          <span className={`w-6 h-6 rounded-lg ${STATUS_BG_CLASS_BY_ID[item.id] || item.bgClass} text-white font-black text-xs flex items-center justify-center shrink-0 shadow-xs`}>
                             {item.mark}
                           </span>
                           <input
